@@ -31,6 +31,8 @@ import { Avatar, DropdownMenu, useBreakpoint, type MenuItem } from '@jirawatpyk/
 import { AURA_FOCUS_RING } from '@/components/shell/aura-classes';
 import { cn } from '@/lib/utils';
 import { useSignOut } from '@/components/shell/use-sign-out';
+import { useLocaleChoice } from '@/components/shell/locale-switcher';
+import { localeLabels, locales } from '@/i18n/config';
 
 import type { Role } from '@/modules/auth/domain/role';
 
@@ -44,6 +46,11 @@ export interface UserMenuProps {
    * into this menu below 640px. The member portal keeps its own button.
    */
   readonly themeChoicesOnPhone?: boolean;
+  /**
+   * The language choice, while the staff top bar is too crowded for its pill
+   * (a phone at 200% text): the same switch as the pill, as radio items.
+   */
+  readonly languageChoices?: boolean;
   /** Sizing for the trigger where a bar's board differs (the portal header's 44px button). */
   readonly className?: string;
   /**
@@ -54,7 +61,15 @@ export interface UserMenuProps {
   readonly firstNameOnTrigger?: boolean;
 }
 
-export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false, className, firstNameOnTrigger = false }: UserMenuProps) {
+export function UserMenu({
+  displayName,
+  email,
+  role,
+  themeChoicesOnPhone = false,
+  languageChoices = false,
+  className,
+  firstNameOnTrigger = false,
+}: UserMenuProps) {
   const t = useTranslations('shell.userMenu');
   const tBadge = useTranslations('shell.roleBadge');
   const tHub = useTranslations('portal.account.menu');
@@ -65,6 +80,8 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
   const tTheme = useTranslations('shell.theme');
   const { theme, setTheme } = useTheme();
   const onPhone = useBreakpoint() === 'base';
+  const tLocale = useTranslations('shell.locale');
+  const { activeLocale, choose } = useLocaleChoice();
 
   // rbac-portal-identity-ok: picks which sign-in screen to return to.
   const handleSignOut = useSignOut(isMember ? 'member' : 'staff');
@@ -102,6 +119,19 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
         ]
       : [];
 
+  const languageItems: MenuItem[] = languageChoices
+    ? [
+        { separator: true },
+        ...locales.map((locale) => ({
+          type: 'radio' as const,
+          group: tLocale('label'),
+          label: localeLabels[locale],
+          checked: locale === activeLocale,
+          onSelect: () => choose(locale),
+        })),
+      ]
+    : [];
+
   return (
     <DropdownMenu
       label={t('label')}
@@ -129,6 +159,7 @@ export function UserMenu({ displayName, email, role, themeChoicesOnPhone = false
       items={[
         ...links,
         ...themeChoices,
+        ...languageItems,
         { separator: true },
         { label: t('signOut'), icon: <LogOutIcon aria-hidden />, onSelect: () => void handleSignOut() },
       ]}

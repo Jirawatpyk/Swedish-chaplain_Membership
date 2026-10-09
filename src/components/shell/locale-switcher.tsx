@@ -42,14 +42,13 @@ function writeLocaleCookie(value: Locale): void {
 
 const PERSIST_TIMEOUT_MS = 8000;
 
-export function LocaleSwitcher({
-  className,
-  persistToAccount = false,
-}: {
-  readonly className?: string;
-  readonly persistToAccount?: boolean;
-} = {}) {
-  const t = useTranslations('shell.locale');
+/**
+ * The switch itself, shared by the pill and by the staff account menu (which
+ * offers the same choice while the top bar is too crowded for the pill, at
+ * 200% text on a phone): the cookie, the optional account persist, and the
+ * refresh, with re-entrant picks ignored.
+ */
+export function useLocaleChoice({ persistToAccount = false }: { readonly persistToAccount?: boolean } = {}) {
   const activeLocale = useLocale() as Locale;
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -78,6 +77,19 @@ export function LocaleSwitcher({
     if (persistToAccount) persistPreferredLocale(value); // value is Locale (isLocale guard above)
     startTransition(() => router.refresh());
   };
+
+  return { activeLocale, isPending, choose: handleValueChange };
+}
+
+export function LocaleSwitcher({
+  className,
+  persistToAccount = false,
+}: {
+  readonly className?: string;
+  readonly persistToAccount?: boolean;
+} = {}) {
+  const t = useTranslations('shell.locale');
+  const { activeLocale, isPending, choose } = useLocaleChoice({ persistToAccount });
 
   return (
     <DropdownMenu
@@ -111,7 +123,7 @@ export function LocaleSwitcher({
         group: t('label'),
         label: localeLabels[locale],
         checked: locale === activeLocale,
-        onSelect: () => handleValueChange(locale),
+        onSelect: () => choose(locale),
       }))}
     />
   );

@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { SearchIcon } from 'lucide-react';
@@ -13,6 +13,7 @@ import { BrandMark } from '@/components/shell/brand-mark';
 import { LocaleSwitcher } from '@/components/shell/locale-switcher';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu, type UserMenuProps } from '@/components/shell/user-menu';
+import { measureRow, nextCrowded } from '@/components/layout/top-bar-crowding';
 import { cn } from '@/lib/utils';
 
 /**
@@ -32,17 +33,47 @@ export interface StaffTopBarProps {
 
 export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopBarProps) {
   const t = useTranslations('shell.search');
+  const rowRef = useRef<HTMLDivElement>(null);
+  const brandRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLSpanElement>(null);
+  const pillWidth = useRef(0);
+  const [crowded, setCrowded] = useState(false);
+
+  // PR #530 follow-up: when the controls cannot fit one row (a phone at 200%
+  // text) the language pill leaves the bar and its choice moves into the
+  // account menu, so the sticky bar stays one row. It comes back once the row
+  // has room for it (top-bar-crowding.ts).
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row || typeof ResizeObserver === 'undefined') return;
+    const update = () => {
+      const pill = (pillRef.current?.firstElementChild as HTMLElement | null) ?? null;
+      if (pill && getComputedStyle(pillRef.current!).display !== 'none') {
+        pillWidth.current = pill.getBoundingClientRect().width;
+      }
+      const m = measureRow(row, brandRef.current, pill, pillWidth.current);
+      setCrowded((was) => nextCrowded(was, m));
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(row);
+    update();
+    return () => observer.disconnect();
+  }, []);
 
   return (
     // Relay R34b: when one row cannot hold the controls (a phone at 200% text
     // with the outbox alert showing) they wrap onto a second row, at the end,
     // rather than pushing the page past the screen (WCAG 1.4.4).
-    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1.5 gap-y-1 sm:gap-x-3">
+    <div
+      ref={rowRef}
+      data-crowded={crowded ? 'true' : undefined}
+      className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1.5 gap-y-1 sm:gap-x-3"
+    >
       {/* A size container: when the row is crowded (a phone with the outbox
           alert showing) the wordmark leaves the view rather than being cut to
           "SweCh…"; the link keeps it as its name. The min width keeps the
           tile's, so wrapping controls never cover it (PR #530 review). */}
-      <div className="@container flex min-w-8 flex-1 items-center gap-3 sm:min-w-10">
+      <div ref={brandRef} className="@container flex min-w-8 flex-1 items-center gap-3 sm:min-w-10">
         <div className="hidden min-w-0 lg:block">
           <BreadcrumbNav pathname={currentPath} />
         </div>
@@ -90,13 +121,17 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
       />
 
       {extras}
-      {/* The phone board's 44px pill, tighter so the row fits 390px. */}
-      <LocaleSwitcher className="max-sm:h-11 max-sm:gap-1 max-sm:pr-2 max-sm:pl-3" />
+      {/* The phone board's 44px pill, tighter so the row fits 390px. While the
+          row is crowded it is hidden (`hidden`: preflight's display:none, out
+          of the tab order too) and the account menu offers the language. */}
+      <span ref={pillRef} className="contents" hidden={crowded}>
+        <LocaleSwitcher className="max-sm:h-11 max-sm:gap-1 max-sm:pr-2 max-sm:pl-3" />
+      </span>
       {/* The wrapper, not the button, so the menu's own box leaves the row too. */}
       <span className="contents max-sm:hidden">
         <ThemeToggle />
       </span>
-      <UserMenu {...user} themeChoicesOnPhone />
+      <UserMenu {...user} themeChoicesOnPhone languageChoices={crowded} />
     </div>
   );
 }
