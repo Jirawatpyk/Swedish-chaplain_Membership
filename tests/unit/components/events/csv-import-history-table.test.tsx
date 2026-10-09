@@ -203,3 +203,16 @@ describe('<CsvImportHistoryTable> Badge tone per outcome', () => {
     expect(badges[2]).toHaveAttribute('data-tone', 'danger');
   });
 });
+
+describe('<CsvImportHistoryTable> error-rows download (US9b-2 parity)', () => {
+  afterEach(() => cleanup());
+
+  it('is an icon button in the table (label hidden from 640px) and keeps its name', () => {
+    renderTable([{ ...makeRow('partial_failure', 3), errorCsvAvailable: true }]);
+    const link = screen.getByTestId('csv-import-history-download');
+    expect(link).toHaveAccessibleName('Download error CSV for import 00000000');
+    const label = screen.getByText('Download error CSV');
+    expect(link).toContainElement(label);
+    expect(label.className).toMatch(/(^|\s)sm:sr-only(\s|$)/);
+  });
+});
