@@ -188,8 +188,10 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the events CSV import keeps the legacy kit until US9b', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/events/import/page.tsx')).toEqual([]);
+    it('control: the EventCreate integration page keeps the legacy kit until US9c', async () => {
+      expect(
+        await ratchetHits(legacy, 'src/app/(staff)/admin/settings/integrations/eventcreate/loading.tsx'),
+      ).toEqual([]);
     });
   });
 
@@ -544,6 +546,25 @@ describe('UI import ratchet (spec 122)', () => {
       'src/components/events/erase-pii-dialog.tsx',
       'src/components/events/erase-by-email-panel.tsx',
       'src/components/events/erasure-results-table.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+  });
+  describe('the US9b-2 events CSV import is on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/events/import/page.tsx',
+      'src/app/(staff)/admin/events/import/loading.tsx',
+      'src/app/(staff)/admin/events/import/history/page.tsx',
+      'src/app/(staff)/admin/events/import/history/loading.tsx',
+      'src/app/(staff)/admin/events/import/history/error.tsx',
+      'src/components/events/csv-mapping-form.tsx',
+      'src/components/events/event-picker.tsx',
+      'src/components/events/event-create-inline-modal.tsx',
+      'src/components/events/event-mismatch-warning-dialog.tsx',
+      'src/components/events/csv-import-result.tsx',
+      'src/components/events/csv-import-history-table.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
