@@ -83,7 +83,10 @@ test.describe('F6 secret rotation — AS1 UI flow @workers=1', () => {
     // Capture pre-rotation last-4 to assert it changes.
     const masked = page.locator('code', { hasText: /^whsec_/ }).first();
     await expect(masked).toBeVisible();
-    const preLastFour = (await masked.textContent())?.slice(-4) ?? '';
+    // The visible (aria-hidden) dots + last 4; the box also carries an
+    // sr-only "hidden, ending in …" line for screen readers.
+    const preLastFour =
+      (await masked.locator('[aria-hidden="true"]').textContent())?.slice(-4) ?? '';
     expect(preLastFour.length).toBe(4);
     expect(preLastFour).toBe(F6_E2E_FIXTURE_SECRET.slice(-4));
 
@@ -110,7 +113,8 @@ test.describe('F6 secret rotation — AS1 UI flow @workers=1', () => {
     await expect(secretValueCode).toBeVisible({ timeout: 10_000 });
 
     // The plaintext starts MASKED — body shows bullets + new last4.
-    const maskedReveal = (await secretValueCode.textContent()) ?? '';
+    const maskedReveal =
+      (await secretValueCode.locator('[aria-hidden="true"]').textContent()) ?? '';
     expect(maskedReveal).toMatch(/•/);
     // The new last4 is NOT the old last4 (one-time-reveal of fresh secret).
     const newLastFour = maskedReveal.slice(-4);
@@ -158,10 +162,13 @@ test.describe('F6 secret rotation — AS1 UI flow @workers=1', () => {
     const maskedAfter = page.locator('code', { hasText: /^whsec_/ }).first();
     await expect(maskedAfter).toBeVisible();
     await expect.poll(
-      async () => (await maskedAfter.textContent())?.slice(-4) ?? '',
+      async () =>
+        (await maskedAfter.locator('[aria-hidden="true"]').textContent())?.slice(-4) ?? '',
       { timeout: 5_000 },
     ).not.toBe(preLastFour);
-    expect((await maskedAfter.textContent())?.slice(-4)).toBe(newLastFour);
+    expect(
+      (await maskedAfter.locator('[aria-hidden="true"]').textContent())?.slice(-4),
+    ).toBe(newLastFour);
 
     // T102 — grace banner appears on the wizard surface while the
     // grace window is active. Asserted via stable `data-testid` rather

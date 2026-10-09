@@ -109,6 +109,10 @@ describe('<WebhookConfigWizard> on AURA', () => {
     expect(screen.getByRole('group', { name: w.webhookUrlLabel })).toHaveTextContent(URL_);
     const secret = screen.getByRole('group', { name: w.secretLabel });
     expect(secret).toHaveTextContent(/^.*whsec_•{16}7f3a/);
+    expect(within(secret).getByText(/whsec_•{16}7f3a/)).toHaveAttribute('aria-hidden', 'true');
+    expect(
+      within(secret).getByText(en.admin.integrations.eventcreate.phaseA.maskedSecret.replace('{lastFour}', '7f3a')),
+    ).toHaveClass('sr-only');
     expect(within(secret).getByRole('button', { name: w.rotateButton })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: en.admin.integrations.eventcreate.phaseC.test.sendTest })).toBeEnabled();
   });

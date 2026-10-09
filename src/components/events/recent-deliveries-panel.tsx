@@ -122,7 +122,9 @@ export function RecentDeliveriesPanel({
           label={t('includeTestDeliveriesLabel')}
           checked={optimisticInclude}
           onChange={handleToggle}
-          disabled={pending}
+          // Read-only, not disabled, while the URL updates: it stays in the
+          // Tab order so keyboard focus is not dropped, and ignores input.
+          readOnly={pending}
         />
 
         {/*
