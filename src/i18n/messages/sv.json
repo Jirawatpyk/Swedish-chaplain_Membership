@@ -155,6 +155,7 @@
     "skipToContent": "Hoppa till huvudinnehållet",
     "welcome": "Välkommen",
     "userMenu": {
+      "languageGroup": "Språk",
       "label": "Kontomeny",
       "account": "Kontoinställningar",
       "signOut": "Logga ut",

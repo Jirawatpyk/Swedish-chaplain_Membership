@@ -17,8 +17,9 @@ import enMessages from '@/i18n/messages/en.json';
 import { UserMenu } from '@/components/shell/user-menu';
 
 const pushSpy = vi.fn();
+const refreshSpy = vi.fn();
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: pushSpy, refresh: vi.fn() }),
+  useRouter: () => ({ push: pushSpy, refresh: refreshSpy }),
 }));
 
 vi.mock('next-themes', () => ({
@@ -133,5 +134,61 @@ describe('<UserMenu> name on the trigger (spec 122, portal boards)', () => {
     expect(trigger).not.toHaveTextContent('Jane Member');
     fireEvent.click(trigger);
     expect(await screen.findByText('Jane Member')).toBeInTheDocument();
+  });
+});
+
+// PR #530 follow-up: at 200% text on a phone the staff top bar has no room for
+// the language pill, so while it is crowded the choice moves in here, the way
+// the colour scheme does on phones. Same cookie + refresh as the pill.
+describe('<UserMenu> language choices (staff top bar, crowded)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    refreshSpy.mockClear();
+    document.cookie = 'NEXT_LOCALE=; max-age=0; path=/';
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useFakeTimers();
+  });
+
+  function renderWithLanguages(languageChoices: boolean) {
+    return render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <UserMenu displayName="Malin Berg" email="malin@example.com" role="admin" languageChoices={languageChoices} />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('lists the three languages as radio items, the current one checked', async () => {
+    renderWithLanguages(true);
+    openMenu();
+    const english = await screen.findByRole('menuitemradio', { name: 'English' });
+    expect(english).toHaveAttribute('aria-checked', 'true');
+    // A noun for the group (UX review of #547), not the pill's "Change language".
+    expect(screen.getByRole('group', { name: 'Language' })).toContainElement(english);
+    expect(screen.getByRole('menuitemradio', { name: 'ไทย' })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('menuitemradio', { name: 'Svenska' })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('switches language the way the pill does: the cookie, then a refresh', async () => {
+    renderWithLanguages(true);
+    openMenu();
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Svenska' }));
+    expect(document.cookie).toContain('NEXT_LOCALE=sv');
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing when the current language is picked', async () => {
+    renderWithLanguages(true);
+    openMenu();
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'English' }));
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it('has no language items unless asked', async () => {
+    renderWithLanguages(false);
+    openMenu();
+    await screen.findByRole('menuitem', { name: /account settings/i });
+    expect(screen.queryByRole('menuitemradio', { name: 'Svenska' })).toBeNull();
   });
 });

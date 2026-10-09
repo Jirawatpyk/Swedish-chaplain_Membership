@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { SearchIcon } from 'lucide-react';
@@ -13,6 +13,21 @@ import { BrandMark } from '@/components/shell/brand-mark';
 import { LocaleSwitcher } from '@/components/shell/locale-switcher';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu, type UserMenuProps } from '@/components/shell/user-menu';
+import {
+  HUGE_TEXT_HIDDEN_CLASS,
+  HUGE_TEXT_QUERY,
+  flexItems,
+  measureRow,
+  nextCrowded,
+} from '@/components/layout/top-bar-crowding';
+
+function subscribeHugeText(onChange: () => void) {
+  if (typeof window.matchMedia !== 'function') return () => {};
+  const mq = window.matchMedia(HUGE_TEXT_QUERY);
+  mq.addEventListener('change', onChange);
+  return () => mq.removeEventListener('change', onChange);
+}
+const hugeTextNow = () => typeof window.matchMedia === 'function' && window.matchMedia(HUGE_TEXT_QUERY).matches;
 import { cn } from '@/lib/utils';
 
 /**
@@ -32,17 +47,67 @@ export interface StaffTopBarProps {
 
 export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopBarProps) {
   const t = useTranslations('shell.search');
+  const rowRef = useRef<HTMLDivElement>(null);
+  const brandRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLSpanElement>(null);
+  const menuRef = useRef<HTMLSpanElement>(null);
+  const pillWidth = useRef(0);
+  const crowdedRef = useRef(false);
+  const refocusMenu = useRef(false);
+  const [crowded, setCrowded] = useState(false);
+  // Server snapshot false: the CSS class hides the pill there already.
+  const hugeText = useSyncExternalStore(subscribeHugeText, hugeTextNow, () => false);
+
+  // PR #530 follow-up: when the controls cannot fit one row (a phone at 200%
+  // text) the language pill leaves the bar and its choice moves into the
+  // account menu, so the sticky bar stays one row. It comes back once the row
+  // has room for it (top-bar-crowding.ts).
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row || typeof ResizeObserver === 'undefined') return;
+    const update = () => {
+      const pill = (pillRef.current?.firstElementChild as HTMLElement | null) ?? null;
+      if (pill && getComputedStyle(pillRef.current!).display !== 'none') {
+        pillWidth.current = pill.getBoundingClientRect().width;
+      }
+      const m = measureRow(row, brandRef.current, pill, pillWidth.current);
+      const was = crowdedRef.current;
+      const next = nextCrowded(was, m);
+      // The pill is about to hide with focus in it: hand focus to the account
+      // menu, which now holds the language, rather than letting it drop.
+      if (next && !was && pillRef.current?.contains(document.activeElement)) refocusMenu.current = true;
+      crowdedRef.current = next;
+      setCrowded(next);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(row);
+    // The controls too: the outbox alert coming or going does not always
+    // change the row's own size.
+    for (const item of flexItems(row)) observer.observe(item);
+    update();
+    return () => observer.disconnect();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!crowded || !refocusMenu.current) return;
+    refocusMenu.current = false;
+    menuRef.current?.querySelector('button')?.focus();
+  }, [crowded]);
 
   return (
     // Relay R34b: when one row cannot hold the controls (a phone at 200% text
     // with the outbox alert showing) they wrap onto a second row, at the end,
     // rather than pushing the page past the screen (WCAG 1.4.4).
-    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1.5 gap-y-1 sm:gap-x-3">
+    <div
+      ref={rowRef}
+      data-crowded={crowded ? 'true' : undefined}
+      className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1.5 gap-y-1 sm:gap-x-3"
+    >
       {/* A size container: when the row is crowded (a phone with the outbox
           alert showing) the wordmark leaves the view rather than being cut to
           "SweCh…"; the link keeps it as its name. The min width keeps the
           tile's, so wrapping controls never cover it (PR #530 review). */}
-      <div className="@container flex min-w-8 flex-1 items-center gap-3 sm:min-w-10">
+      <div ref={brandRef} className="@container flex min-w-8 flex-1 items-center gap-3 sm:min-w-10">
         <div className="hidden min-w-0 lg:block">
           <BreadcrumbNav pathname={currentPath} />
         </div>
@@ -90,13 +155,20 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
       />
 
       {extras}
-      {/* The phone board's 44px pill, tighter so the row fits 390px. */}
-      <LocaleSwitcher className="max-sm:h-11 max-sm:gap-1 max-sm:pr-2 max-sm:pl-3" />
+      {/* The phone board's 44px pill, tighter so the row fits 390px. While the
+          row is crowded it is hidden (`hidden`: preflight's display:none, out
+          of the tab order too) and the account menu offers the language; at
+          very large text a media query hides it from the first paint. */}
+      <span ref={pillRef} data-slot="top-bar-locale" className={cn('contents', HUGE_TEXT_HIDDEN_CLASS)} hidden={crowded}>
+        <LocaleSwitcher className="max-sm:h-11 max-sm:gap-1 max-sm:pr-2 max-sm:pl-3" />
+      </span>
       {/* The wrapper, not the button, so the menu's own box leaves the row too. */}
       <span className="contents max-sm:hidden">
         <ThemeToggle />
       </span>
-      <UserMenu {...user} themeChoicesOnPhone />
+      <span ref={menuRef} className="contents">
+        <UserMenu {...user} themeChoicesOnPhone languageChoices={crowded || hugeText} />
+      </span>
     </div>
   );
 }

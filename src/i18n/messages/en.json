@@ -155,6 +155,7 @@
     "skipToContent": "Skip to main content",
     "welcome": "Welcome",
     "userMenu": {
+      "languageGroup": "Language",
       "label": "Account menu",
       "account": "Account settings",
       "signOut": "Sign out",

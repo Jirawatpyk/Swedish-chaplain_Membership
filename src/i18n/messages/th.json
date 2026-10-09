@@ -155,6 +155,7 @@
     "skipToContent": "ข้ามไปยังเนื้อหาหลัก",
     "welcome": "ยินดีต้อนรับ",
     "userMenu": {
+      "languageGroup": "ภาษา",
       "label": "เมนูบัญชี",
       "account": "การตั้งค่าบัญชี",
       "signOut": "ออกจากระบบ",
