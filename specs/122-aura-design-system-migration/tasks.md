@@ -620,10 +620,10 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 #### US9b-2 — CSV import
 
 - [x] T930 [US9] Spec clarifications (Session 2026-10-09) and this task list.
-- [ ] T931 [US9] The file field on AURA `FileUpload`. RED: a picked file reaches the same preview; a file over 5 MiB still shows the "file too large" error panel.
-- [ ] T932 [US9] The event picker on AURA `Combobox` (local filtering). RED: the combobox is named "Event"; the filename suggestion still selects a match; an event created inline survives a late fetch of the list.
-- [ ] T933 [US9] The column remap on AURA `Select`. RED: picking a column sends the same `column_mapping`; Confirm stays gated until the required columns are mapped.
-- [ ] T934 [US9] The rest of the form on AURA: the error and missing-column panels on `Alert`, the detected-column chips on `Tag`, the cards and buttons; the preview table restyled with tokens. RED: the header-error panel still takes focus, and the testids stay.
+- [x] T931 [US9] The file field on AURA `FileUpload`. RED: a picked file reaches the same preview; a file over 5 MiB still shows the "file too large" error panel.
+- [x] T932 [US9] The event picker on AURA `Combobox` (local filtering). RED: the combobox is named "Event"; the filename suggestion still selects a match; an event created inline survives a late fetch of the list.
+- [x] T933 [US9] The column remap on AURA `Select`. RED: picking a column sends the same `column_mapping`; Confirm stays gated until the required columns are mapped.
+- [x] T934 [US9] The rest of the form on AURA: the error and missing-column panels on `Alert`, the detected-column chips on `Tag`, the cards and buttons; the preview table restyled with tokens. RED: the header-error panel still takes focus, and the testids stay.
 - [ ] T935 [US9] The inline create on AURA `Dialog`, with the start on `DatePicker` + `TimePicker` in Bangkok time. RED: a picked date and time post the same ISO instant; a missing date or time shows a field error.
 - [ ] T936 [US9] The event-mismatch warning on AURA `Dialog role="alertdialog"`. RED: Cancel has the initial focus; "Continue anyway" re-sends with `force_proceed`.
 - [ ] T937 [US9] The import result on AURA (`Card`, warning `Alert`s, the download link). RED: the counters, the three degraded notices (`role=status`) and the error-row list keep their testids.

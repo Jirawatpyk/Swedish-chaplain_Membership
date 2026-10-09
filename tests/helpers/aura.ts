@@ -11,7 +11,7 @@
  * `@/lib/toast`; `expectToast` is for tests that render the real Toaster.
  */
 import { screen, waitFor, within } from '@testing-library/react';
-import type { UserEvent } from '@testing-library/user-event';
+import userEvent, { type UserEvent } from '@testing-library/user-event';
 
 type Name = string | RegExp;
 
@@ -49,4 +49,54 @@ export async function checkBox(user: UserEvent, label: Name, checked = true): Pr
 export async function openMenu(user: UserEvent, trigger: Name): Promise<HTMLElement> {
   await user.click(screen.getByRole('button', { name: trigger }));
   return screen.findByRole('menu');
+}
+
+/**
+ * `userEvent.setup()` for a test that mounts an AURA `Select`.
+ *
+ * user-event replaces `HTMLElement.prototype.focus` / `blur` with getters
+ * that have no setter, and AURA's Select assigns its own `focus` on the
+ * hidden native `<select>` (so a label click or the required bubble hands
+ * focus to its button). In strict mode that assignment throws on mount.
+ * Adding a setter that stores an own property keeps user-event's patched
+ * methods for every other element and lets the Select mount as it does in
+ * a browser.
+ */
+export function setupUserForAuraSelect(): UserEvent {
+  const user = userEvent.setup();
+  for (const key of ['focus', 'blur'] as const) {
+    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, key);
+    if (desc?.get && !desc.set) {
+      Object.defineProperty(HTMLElement.prototype, key, {
+        ...desc,
+        set(this: HTMLElement, value: unknown) {
+          Object.defineProperty(this, key, {
+            value,
+            configurable: true,
+            writable: true,
+          });
+        },
+      });
+    }
+  }
+  return user;
+}
+
+/**
+ * Lets an AURA `Select` pick an option in jsdom. Call it after the Select
+ * mounts.
+ *
+ * The Select defines its own `value` / `selectedIndex` accessors on the
+ * hidden native `<select>`, so a programmatic write also updates the shown
+ * label. jsdom models `<select>` as a Proxy (it has indexed option access)
+ * whose set trap does not honour an own accessor, so the Select's write
+ * when an option is clicked throws. Removing the two accessors restores the
+ * native ones; the Select still re-reads its label after every pick.
+ */
+export function releaseAuraSelectValueHooks(): void {
+  for (const el of document.querySelectorAll('select[aria-hidden="true"]')) {
+    const own = el as unknown as Record<string, unknown>;
+    delete own['value'];
+    delete own['selectedIndex'];
+  }
 }

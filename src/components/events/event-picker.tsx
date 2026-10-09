@@ -14,29 +14,13 @@
  * selected `eventId` state and forwards it to the import API.
  *
  * Accessibility:
- *   - Combobox pattern: `<button role="combobox">` + popover listbox.
- *   - Keyboard nav: ArrowUp/Down/Enter/Escape inherited from `cmdk`.
+ *   - AURA `Combobox` (spec 122 US9b-2): a text field named by its label,
+ *     filtering the events locally, with the APG listbox keyboard model.
  *   - aria-live announces the fuzzy-match hint when filename changes.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { Check, ChevronsUpDown, Plus, RefreshCcw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { Button, Combobox, IconButton } from '@jirawatpyk/aura-react';
 import { formatDatePreset } from '@/lib/format-date-localised';
 
 export interface EventPickerOption {
@@ -69,14 +53,10 @@ export interface EventPickerProps {
   readonly registerAddEvent?: (
     add: (event: EventPickerOption) => void,
   ) => void;
-  /**
-   * Optional `id` of an external `<Label>` element. When set, the
-   * combobox trigger uses `aria-labelledby={triggerAriaLabelledBy}`
-   * instead of the default `aria-label={t('triggerAriaLabel')}`. This
-   * lets a form-shaped surface (e.g. csv-mapping-form) wire a visible
-   * label without producing duplicate accessible names.
-   */
-  readonly triggerAriaLabelledBy?: string;
+  /** The field's visible label, which is also its accessible name. */
+  readonly label: string;
+  /** Helper line under the field. */
+  readonly hint?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,8 +139,6 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
   // pages where some surfaces use locale-aware formatters and others
   // don't.
   const locale = useLocale();
-  const popoverContentId = useId();
-  const [open, setOpen] = useState(false);
   const [fetchedEvents, setFetchedEvents] = useState<
     ReadonlyArray<EventPickerOption>
   >(props.events ?? []);
@@ -317,148 +295,53 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
     }
   }, [propsFilenameHint, suggestedEvent, propsValue, propsOnChange]);
 
-  return (
-    <div className="flex flex-col gap-2">
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger
-          render={
-            <Button
-              type="button"
-              variant="outline"
-              role="combobox"
-              aria-expanded={open}
-              aria-haspopup="listbox"
-              // APG Combobox: aria-controls always references the listbox
-              // by id. When closed, the listbox is unmounted (Base UI
-              // Portal) so the reference is dangling — modern SR
-              // implementations still announce "has popup listbox"
-              // correctly via aria-haspopup, and the controls reference
-              // takes effect when the popup mounts on open.
-              aria-controls={popoverContentId}
-              // Prefer an external Label association (WCAG 1.3.1 + 4.1.2)
-              // when the parent provides one. Otherwise fall back to the
-              // self-describing aria-label so the picker stays accessible
-              // when used standalone.
-              {...(props.triggerAriaLabelledBy !== undefined
-                ? { 'aria-labelledby': props.triggerAriaLabelledBy }
-                : { 'aria-label': t('triggerAriaLabel') })}
-              className="min-h-11 w-full justify-between text-left font-normal"
-            >
-              {/* UX-R1.2 F-05 — show shimmer skeleton (not text) while
-                  events are loading. shadcn/ui Skeleton aligned to text
-                  size so CLS=0 when fetch resolves and the selected /
-                  placeholder text takes over. aria-label on the trigger
-                  carries the semantic for SR; visual loading state is
-                  purely decorative shimmer per ux-standards.md § 2.1. */}
-              {selected !== null ? (
-                <span className="truncate">
-                  {`${selected.name} — ${formatDatePreset(selected.startDate, locale, 'medium')}`}
-                </span>
-              ) : loading ? (
-                <Skeleton aria-hidden="true" className="h-4 w-48" />
-              ) : (
-                <span className="truncate text-muted-foreground">
-                  {t('placeholder')}
-                </span>
-              )}
-              <ChevronsUpDown
-                aria-hidden="true"
-                className="ml-2 size-4 shrink-0 opacity-50"
-              />
-            </Button>
-          }
-        />
-        <PopoverContent
-          id={popoverContentId}
-          className="w-(--anchor-width) min-w-[280px] p-0"
-        >
-          <Command>
-            <CommandInput
-              placeholder={t('searchPlaceholder')}
-              aria-label={t('searchAriaLabel')}
-            />
-            <CommandList>
-              <CommandEmpty>
-                {/* UX-R1.2 F-08 — surface an inline "+ Create new event"
-                    CTA inside the empty state so an admin who searches
-                    and finds nothing can act without leaving the
-                    dropdown. Only renders when a parent supplied
-                    `onCreateNew`; otherwise we fall back to the plain
-                    empty-state copy. The button closes the popover
-                    before invoking the create callback so focus follows
-                    into the inline-create modal. */}
-                <div className="flex flex-col items-center gap-2 py-3 text-center">
-                  <span className="text-caption text-muted-foreground">
-                    {error ?? t('emptyState')}
-                  </span>
-                  {props.onCreateNew !== undefined ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setOpen(false);
-                        props.onCreateNew?.();
-                      }}
-                      className="min-h-9 gap-1.5"
-                    >
-                      <Plus aria-hidden="true" className="size-3.5" />
-                      {t('createInlineCta')}
-                    </Button>
-                  ) : null}
-                </div>
-              </CommandEmpty>
-              <CommandGroup>
-                {events.map((event) => (
-                  <CommandItem
-                    key={event.eventId}
-                    value={`${event.name} ${event.startDate}`}
-                    onSelect={() => {
-                      props.onChange(event.eventId, event);
-                      setOpen(false);
-                    }}
-                    className="cursor-pointer"
-                  >
-                    <Check
-                      aria-hidden="true"
-                      className={cn(
-                        'mr-2 size-4',
-                        props.value === event.eventId
-                          ? 'opacity-100'
-                          : 'opacity-0',
-                      )}
-                    />
-                    <div className="flex flex-col">
-                      <span>{event.name}</span>
-                      <span className="text-caption text-muted-foreground">
-                        {formatDatePreset(event.startDate, locale, 'medium')}
-                      </span>
-                    </div>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+  // Each option reads "name — date", so the closed field shows the date
+  // as the cmdk trigger did; the name and raw date stay search terms.
+  const options = useMemo(
+    () =>
+      events.map((event) => ({
+        value: event.eventId,
+        label: `${event.name} — ${formatDatePreset(event.startDate, locale, 'medium')}`,
+        keywords: [event.name, event.startDate],
+      })),
+    [events, locale],
+  );
 
-      <div className="flex flex-row gap-2">
+  return (
+    <div className="flex flex-col gap-[var(--aura-space-2)]">
+      <Combobox
+        label={props.label}
+        {...(props.hint !== undefined ? { hint: props.hint } : {})}
+        placeholder={t('placeholder')}
+        options={options}
+        value={selected?.eventId ?? null}
+        onChange={(eventId) => {
+          const event = events.find((e) => e.eventId === eventId) ?? null;
+          props.onChange(event?.eventId ?? null, event);
+        }}
+        clearable={false}
+        loading={loading}
+        loadingText={t('loading')}
+        emptyText={error ?? t('emptyState')}
+      />
+
+      <div className="flex flex-row items-center gap-[var(--aura-space-2)]">
         {props.onCreateNew !== undefined ? (
           <Button
             type="button"
             variant="ghost"
             size="sm"
+            icon="plus"
+            touchHeight
             onClick={props.onCreateNew}
-            className="min-h-9"
           >
-            <Plus aria-hidden="true" className="mr-1 size-4" />
             {t('createNewCta')}
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
+        <IconButton
+          icon="rotate-ccw"
+          label={t('refreshAriaLabel')}
+          touchHeight
           onClick={() => {
             // Cancel any in-flight load before starting a new one;
             // sharing the ref means unmount kills BOTH this fetch and
@@ -473,11 +356,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             setFetchedEvents([]);
             void loadEvents(loadCancelRef.current);
           }}
-          className="min-h-9"
-          aria-label={t('refreshAriaLabel')}
-        >
-          <RefreshCcw aria-hidden="true" className="size-4" />
-        </Button>
+        />
       </div>
 
       {/*
@@ -489,7 +368,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
         element appears already populated.
       */}
       <p
-        className="text-caption text-muted-foreground min-h-[1lh]"
+        className="aura-text-caption min-h-[1lh] text-[var(--aura-fg-secondary)]"
         role="status"
         aria-live="polite"
         aria-atomic="true"

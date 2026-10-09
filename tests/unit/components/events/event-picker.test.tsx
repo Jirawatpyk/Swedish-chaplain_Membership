@@ -93,7 +93,7 @@ describe('EventPicker on AURA Combobox (US9b-2)', () => {
     expect(onChange).toHaveBeenLastCalledWith('ev-gala');
     // The closed field shows the event with its date.
     await waitFor(() =>
-      expect(field).toHaveValue(expect.stringMatching(/^Midsummer Gala — /)),
+      expect((field as HTMLInputElement).value).toMatch(/^Midsummer Gala — /),
     );
   });
 

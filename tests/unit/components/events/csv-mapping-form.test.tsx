@@ -20,6 +20,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
+import {
+  releaseAuraSelectValueHooks,
+  setupUserForAuraSelect,
+} from '../../../helpers/aura';
 
 // The component imports `toast` from sonner (used only on completed /
 // timeout branches, but mocked so no real toast host is needed).
@@ -301,7 +305,7 @@ describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
         completedResponse(),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const user = userEvent.setup();
+    const user = setupUserForAuraSelect();
     renderForm();
 
     await uploadRemapCsv(user);
@@ -313,6 +317,7 @@ describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
       name: /attendee_email/i,
     });
     const nameField = screen.getByRole('combobox', { name: /attendee_name/i });
+    releaseAuraSelectValueHooks();
     async function pick(field: HTMLElement, header: string): Promise<void> {
       await user.click(field);
       const listbox = await screen.findByRole('listbox');
