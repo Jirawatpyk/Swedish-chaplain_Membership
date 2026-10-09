@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonClass } from '@jirawatpyk/aura-react/server';
+import { Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { StaffShell } from '@/components/layout/staff-shell';
 import { AuraDensity } from '@/components/providers/aura-bridge';
 import type { PlanOption } from '@/components/members/directory-filters';
@@ -1545,6 +1545,7 @@ export default async function AuraAdminPreviewPage({
             subtitle={t('pageSubtitle')}
             actions={
               <a href="#" className={buttonClass({ variant: 'secondary' })}>
+                <Icon name="clock" />
                 {t('viewHistory')}
               </a>
             }
@@ -1575,6 +1576,7 @@ export default async function AuraAdminPreviewPage({
             subtitle={t('pageSubtitle')}
             actions={
               <a href="#" className={buttonClass({ variant: 'secondary' })}>
+                <Icon name="arrow-left" />
                 {t('backToImport')}
               </a>
             }
