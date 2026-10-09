@@ -433,6 +433,15 @@ export const MIGRATED_PATHS = [
   'src/components/events/erase-pii-dialog.tsx',
   'src/components/events/erase-by-email-panel.tsx',
   'src/components/events/erasure-results-table.tsx',
+  // US9b-2 — the events CSV import: the import page (mapping form, event
+  // picker, inline create, mismatch warning, result) and the import history.
+  'src/app/(staff)/admin/events/import/**',
+  'src/components/events/csv-mapping-form.tsx',
+  'src/components/events/event-picker.tsx',
+  'src/components/events/event-create-inline-modal.tsx',
+  'src/components/events/event-mismatch-warning-dialog.tsx',
+  'src/components/events/csv-import-result.tsx',
+  'src/components/events/csv-import-history-table.tsx',
 ];
 
 /**
