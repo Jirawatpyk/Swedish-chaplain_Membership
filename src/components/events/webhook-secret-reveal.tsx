@@ -19,12 +19,9 @@
  */
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { CopyIcon, CheckIcon, EyeIcon, EyeOffIcon } from 'lucide-react';
+import { Button, Card, Checkbox, IconButton } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Label } from '@/components/ui/label';
+import { WebhookValueBox } from './webhook-value-box';
 
 export interface WebhookSecretRevealProps {
   /** Plaintext secret returned by `/generate-secret`. */
@@ -120,120 +117,69 @@ export function WebhookSecretReveal({
     // when `saved === true` and explicitly invokes `onContinue`.
   }
 
+  // Spec 122 US9c — AURA has no secret field: the value sits in the page's
+  // value box with eye / eye-off and copy IconButtons, and the "saved" gate
+  // is AURA Checkbox (its hint is the description, linked for AT).
   return (
     <Card>
-      <CardContent className="flex flex-col gap-4">
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
         {/*
-          Round 2 CRIT-02 fix (2026-05-13) — `<Label htmlFor="webhook-
-          secret-input">` previously targeted a `<code>` element. HTML
-          `<label>` only associates with form controls; the SR
-          association silently fails. Same A-04 fix that landed in
-          `wizard.tsx` propagated here. Replaced with `<span id>` +
-          `role="group" aria-labelledby`.
+          Round 2 CRIT-02 — a `<span id>` names the group; a `<label>` can
+          only point at a form control and the value is a `<code>`.
         */}
         <div
-          className="space-y-2"
+          className="flex flex-col gap-[var(--aura-space-2)]"
           role="group"
           aria-labelledby="webhook-secret-label"
         >
-          <span
-            id="webhook-secret-label"
-            className="text-sm font-medium leading-none"
-          >
+          <span id="webhook-secret-label" className="aura-text-label">
             {t('secretLabel')}
           </span>
-          <div className="flex items-stretch gap-2">
-            <code
-              id="webhook-secret-input"
-              className="flex-1 break-all rounded-md border bg-muted px-3 py-2 font-mono text-sm"
-              data-testid="webhook-secret-value"
-            >
+          <div className="flex min-w-0 items-center gap-[var(--aura-space-2)]">
+            <WebhookValueBox id="webhook-secret-input" data-testid="webhook-secret-value">
               {visible ? secret : `${'•'.repeat(20)}${secretLastFour}`}
-            </code>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+            </WebhookValueBox>
+            <IconButton
+              icon={visible ? 'eye-off' : 'eye'}
+              label={visible ? t('hideSecret') : t('revealSecret')}
               onClick={() => setVisible((v) => !v)}
-              aria-label={visible ? t('hideSecret') : t('revealSecret')}
-              className="min-h-11 min-w-11"
-            >
-              {visible ? (
-                <EyeOffIcon className="size-4" aria-hidden />
-              ) : (
-                <EyeIcon className="size-4" aria-hidden />
-              )}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleCopy}
-              aria-label={t('copySecret')}
-              className="min-h-11 min-w-11"
-            >
-              {copied ? (
-                <CheckIcon className="size-4" aria-hidden />
-              ) : (
-                <CopyIcon className="size-4" aria-hidden />
-              )}
-              <span role="status" aria-live="polite" className="sr-only">
-                {copied ? t('copied') : ''}
-              </span>
-            </Button>
+            />
+            <IconButton
+              icon={copied ? 'check' : 'copy'}
+              label={t('copySecret')}
+              onClick={() => void handleCopy()}
+            />
           </div>
-          <p className="text-sm text-muted-foreground">{t('warning')}</p>
+          <span role="status" aria-live="polite" className="sr-only">
+            {copied ? t('copied') : ''}
+          </span>
+          <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('warning')}</p>
         </div>
 
-        <div className="flex items-start gap-2">
-          <Checkbox
-            id="secret-saved-checkbox"
-            // base-ui Checkbox.Root renders its own internal id, so the
-            // sibling <Label htmlFor> can't name it — set the accessible
-            // name directly (fixes axe aria-toggle-field-name).
-            aria-label={t('savedInPasswordManager')}
-            checked={saved}
-            onCheckedChange={(checked) =>
-              handleSavedChange(checked === true)
-            }
-            aria-describedby="secret-saved-description"
-          />
-          <div className="space-y-1 leading-none">
-            <Label
-              htmlFor="secret-saved-checkbox"
-              className="cursor-pointer"
-            >
-              {t('savedInPasswordManager')}
-            </Label>
-            <p
-              id="secret-saved-description"
-              className="text-xs text-muted-foreground"
-            >
-              {t('savedHint', { lastFour: secretLastFour })}
-            </p>
-          </div>
-        </div>
+        <Checkbox
+          id="secret-saved-checkbox"
+          checked={saved}
+          onChange={handleSavedChange}
+          description={t('savedHint', { lastFour: secretLastFour })}
+        >
+          {t('savedInPasswordManager')}
+        </Checkbox>
 
-        {/* Explicit Continue button (verify-fix 2026-05-13). Disabled
-            until the saved-checkbox is ticked — preserves FR-024 gate
-            without the race-condition risk of auto-advance-on-tick.
-
-            Phase 5 review-fix W-04 (2026-05-13) — suppressed when
-            rendered inside a wrapper dialog that supplies its own
-            completion button (`RotateSecretDialog` Done). Eliminates
-            the dual-completion-path confusion for keyboard/AT users. */}
+        {/* Explicit Continue (verify-fix 2026-05-13), disabled until the box
+            is ticked (FR-024). Hidden inside the rotate dialog, which has its
+            own Done (Phase 5 review-fix W-04). */}
         {hideInternalContinue ? null : (
           <Button
             type="button"
+            touchHeight
+            className="self-end max-sm:w-full"
             onClick={onContinue}
             disabled={!saved}
-            aria-disabled={!saved}
-            className="min-h-11 self-end"
           >
             {t('continueToSetup')}
           </Button>
         )}
-      </CardContent>
+      </div>
     </Card>
   );
 }
