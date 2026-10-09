@@ -96,10 +96,24 @@ export function RecentDeliveriesPanel({
     });
   }
 
+  // Key includes the index: the 10-row read can repeat a (receivedAt,
+  // requestId) pair on a retried delivery.
+  const rows = deliveries.map((row, index) => ({
+    key: `${row.receivedAt}-${row.requestId}-${index}`,
+    receivedAt: row.receivedAt,
+    shortId: `${row.requestId.slice(0, 12)}${row.requestId.length > 12 ? '…' : ''}`,
+    tone: signatureTone(row.signatureOutcome),
+    signature: t(`signature.${row.signatureOutcome}`),
+    processing: row.processingOutcome
+      ? KNOWN_RECENT_PROCESSING_OUTCOMES.has(row.processingOutcome)
+        ? t(`processing.${row.processingOutcome}`)
+        : row.processingOutcome
+      : null,
+  }));
+
   // Spec 122 US9c — board `Admin-eventcreate`: one card with the heading,
   // the switch, then the rows. Signature is a status pill; processing is
-  // plain text. On phones each row reads as the time with its pill and one
-  // line "processing · request ID" (the board's mobile list).
+  // plain text. Below 640px the rows are the mobile board's list.
   return (
     <Card title={t('title')} headingLevel={2}>
       <div className="flex flex-col gap-[var(--aura-space-4)]">
@@ -124,55 +138,67 @@ export function RecentDeliveriesPanel({
         {deliveries.length === 0 ? (
           <p className="text-[var(--aura-fg-secondary)]">{t('empty')}</p>
         ) : (
-          <Table
-            caption={t('table.caption')}
-            captionHidden
-            bordered={false}
-            stackBelow="sm"
-            aria-busy={pending}
-          >
-            <THead>
-              <Tr>
-                <Th>{t('table.received')}</Th>
-                <Th>{t('table.requestId')}</Th>
-                <Th>{t('table.signature')}</Th>
-                <Th>{t('table.processing')}</Th>
-              </Tr>
-            </THead>
-            <TBody>
-              {deliveries.map((row, index) => {
-                const shortId = `${row.requestId.slice(0, 12)}${row.requestId.length > 12 ? '…' : ''}`;
-                const processing = row.processingOutcome
-                  ? KNOWN_RECENT_PROCESSING_OUTCOMES.has(row.processingOutcome)
-                    ? t(`processing.${row.processingOutcome}`)
-                    : row.processingOutcome
-                  : null;
-                const tone = signatureTone(row.signatureOutcome);
-                return (
-                  // Key includes the index: the 10-row read can repeat a
-                  // (receivedAt, requestId) pair on a retried delivery.
-                  <Tr key={`${row.receivedAt}-${row.requestId}-${index}`}>
-                    <Td card="title">
+          <>
+            {/* From 640px: the board's four-column table. */}
+            <Table
+              caption={t('table.caption')}
+              captionHidden
+              bordered={false}
+              className="max-sm:hidden"
+              aria-busy={pending}
+            >
+              <THead>
+                <Tr>
+                  <Th>{t('table.received')}</Th>
+                  <Th>{t('table.requestId')}</Th>
+                  <Th>{t('table.signature')}</Th>
+                  <Th>{t('table.processing')}</Th>
+                </Tr>
+              </THead>
+              <TBody>
+                {rows.map((row) => (
+                  <Tr key={row.key}>
+                    <Td>
                       <RelativeTime iso={row.receivedAt} />
                     </Td>
-                    <Td mono className="max-sm:hidden">
-                      {shortId}
-                    </Td>
-                    <Td card="action">
-                      <StatusPill tone={tone} data-tone={tone}>
-                        {t(`signature.${row.signatureOutcome}`)}
+                    <Td mono>{row.shortId}</Td>
+                    <Td>
+                      <StatusPill tone={row.tone} data-tone={row.tone}>
+                        {row.signature}
                       </StatusPill>
                     </Td>
-                    <Td className="max-sm:hidden">{processing}</Td>
-                    <Td label="" className="aura-text-caption text-[var(--aura-fg-secondary)] sm:hidden">
-                      {processing ? `${processing} · ` : null}
-                      <span className="aura-text-mono">{shortId}</span>
-                    </Td>
+                    <Td>{row.processing}</Td>
                   </Tr>
-                );
-              })}
-            </TBody>
-          </Table>
+                ))}
+              </TBody>
+            </Table>
+            {/* Below 640px: the mobile board's list — the time with its pill,
+                then one line "processing · request ID". Only one of the two
+                is displayed, so assistive tech meets each row once. */}
+            <ul
+              aria-label={t('table.caption')}
+              aria-busy={pending}
+              className="flex flex-col sm:hidden"
+            >
+              {rows.map((row) => (
+                <li
+                  key={row.key}
+                  className="flex flex-col gap-[var(--aura-space-1)] border-t border-[var(--aura-border-default)] py-[var(--aura-space-3)]"
+                >
+                  <span className="flex items-center justify-between gap-[var(--aura-space-2)]">
+                    <RelativeTime iso={row.receivedAt} />
+                    <StatusPill tone={row.tone} data-tone={row.tone}>
+                      {row.signature}
+                    </StatusPill>
+                  </span>
+                  <span className="aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">
+                    {row.processing ? `${row.processing} · ` : null}
+                    <span className="aura-text-mono">{row.shortId}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </div>
     </Card>

@@ -106,9 +106,11 @@ import {
   renderEventDetailView,
 } from '@/app/(staff)/admin/events/[eventId]/_components/event-detail-view';
 import { ATTENDEE_ROWS, ERASURE_EMAIL, ERASURE_ROWS, EVENT_DETAIL, EVENT_ID, EVENT_ROWS, IMPORT_HISTORY_ROWS, IMPORT_PICKER_EVENTS, MEMBER_SEARCH_HITS } from './event-fixtures';
-import { ImportPreviewDriver, MemberSearchStub, OpenRowEraseMenu } from './event-previews';
+import { ImportPreviewDriver, MemberSearchStub, OpenRotateDialog, OpenRowEraseMenu, RevealPreview } from './event-previews';
 import { CsvMappingForm } from '@/components/events/csv-mapping-form';
 import { CsvImportHistoryTable } from '@/components/events/csv-import-history-table';
+import { WebhookConfigWizard } from '@/components/events/webhook-config-wizard';
+import { ZapierWalkthrough } from '@/components/events/zapier-walkthrough';
 import { renderErasureBody } from '@/app/(staff)/admin/events/erasure/_components/erasure-view';
 import { renderErasePageBody } from '@/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/_components/erase-page-view';
 import Link from 'next/link';
@@ -157,6 +159,7 @@ export const dynamic = 'force-dynamic';
  *   ?view=erase-page · &dialog=erase
  *   ?view=import&state=idle|preview|remap|error|mismatch|result · &dialog=create (US9b-2)
  *   ?view=import-history&state=default|empty|running
+ *   ?view=eventcreate&state=fresh|reveal|configured|grace|empty · &dialog=rotate (US9c)
  *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|
  *         credit-notes|credit-note|registers|invoice-settings|events|event|…
  *
@@ -429,6 +432,11 @@ const LOADING_ROUTES = {
   'import-history': {
     path: '/admin/events/import/history',
     load: async () => (await import('@/app/(staff)/admin/events/import/history/loading')).default(),
+  },
+  eventcreate: {
+    path: '/admin/settings/integrations/eventcreate',
+    load: async () =>
+      (await import('@/app/(staff)/admin/settings/integrations/eventcreate/loading')).default(),
   },
   'invoice-settings': {
     path: '/admin/settings/invoicing',
@@ -1586,6 +1594,56 @@ export default async function AuraAdminPreviewPage({
             pagination={{ page: 1, perPage: 30, totalRecords: rows.length, totalPages: 1 }}
           />
         </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  // 122 US9c (T948) — the EventCreate integration page (board
+  // Admin-eventcreate): fresh (step 1) | reveal (the one-time reveal) |
+  // configured (step 3, the board) | grace (after a rotation) | empty (no
+  // deliveries yet); `&dialog=rotate` opens the rotate confirmation.
+  if (view === 'eventcreate') {
+    const { dialog } = await searchParams;
+    const t = await getTranslations('admin.integrations.eventcreate.page');
+    const webhookUrl = 'https://swecham.dxtspace.com/api/webhooks/eventcreate/v1/swecham';
+    const ago = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
+    const deliveries =
+      state === 'empty'
+        ? []
+        : [
+            { receivedAt: ago(2), requestId: 'req_8f3a1c9e5d2b47a1', signatureOutcome: 'verified' as const, processingOutcome: 'matched_member_contact' as const, matchedMemberId: null, registrationId: null },
+            { receivedAt: ago(15), requestId: 'req_2c7e90aa13f04b9c', signatureOutcome: 'verified' as const, processingOutcome: 'matched_member_domain' as const, matchedMemberId: null, registrationId: null },
+            { receivedAt: ago(15.5), requestId: 'req_91bd04e6c7a85e2d', signatureOutcome: 'verified' as const, processingOutcome: 'non_member' as const, matchedMemberId: null, registrationId: null },
+            { receivedAt: ago(50), requestId: 'req_5e11f8d7b9c2a6e4', signatureOutcome: 'rejected' as const, processingOutcome: null, matchedMemberId: null, registrationId: null },
+          ];
+    const view_ =
+      state === 'fresh'
+        ? { secretConfigured: false as const, webhookUrl, recentDeliveries: [], recentDeliveriesIncludeTests: false }
+        : {
+            secretConfigured: true as const,
+            webhookUrl,
+            secretLastFour: '7f3a' as never,
+            graceActiveUntil: state === 'grace' ? new Date(Date.now() + 20 * 3_600_000).toISOString() : null,
+            ingestEnabled: true,
+            lastReceivedAt: deliveries[0]?.receivedAt ?? null,
+            recentDeliveries: deliveries,
+            recentDeliveriesIncludeTests: false,
+          };
+    const wizard = (
+      <WebhookConfigWizard view={view_} walkthrough={<ZapierWalkthrough webhookUrl={webhookUrl} />} />
+    );
+    return (
+      <StaffFrame path="/admin/settings/integrations/eventcreate">
+        <FormContainer align="start">
+          <PageHeader title={t('title')} subtitle={t('subtitle')} />
+          {state === 'reveal' ? (
+            <RevealPreview />
+          ) : dialog === 'rotate' ? (
+            <OpenRotateDialog>{wizard}</OpenRotateDialog>
+          ) : (
+            wizard
+          )}
+        </FormContainer>
       </StaffFrame>
     );
   }

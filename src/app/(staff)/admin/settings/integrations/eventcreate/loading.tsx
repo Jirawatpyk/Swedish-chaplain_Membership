@@ -18,7 +18,7 @@ export default async function EventCreateIntegrationLoading() {
   const t = await getTranslations('admin.integrations.eventcreate.page');
   return (
     <PageSkeletonShell ariaLabel={t('loading')}>
-      <FormContainer aria-busy="true">
+      <FormContainer align="start" aria-busy="true">
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <div aria-hidden className="flex flex-col gap-[var(--aura-space-5)]">
           <div className="flex items-center gap-[var(--aura-space-2)] max-sm:hidden" data-skeleton="stepper">

@@ -30,7 +30,7 @@ export default function EventCreateWizardError({
   }, [error]);
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={tPage('title')} subtitle={tPage('subtitle')} />
       <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </FormContainer>

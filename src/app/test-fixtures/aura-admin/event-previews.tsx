@@ -6,6 +6,7 @@
  * network. Restores `fetch` on unmount.
  */
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { WebhookSecretReveal } from '@/components/events/webhook-secret-reveal';
 
 const MEMBER_SEARCH_PATH = '/api/admin/members/search';
 
@@ -185,4 +186,38 @@ export function ImportPreviewDriver({
     return () => window.clearInterval(id);
   }, [state, dialog]);
   return <div ref={ref}>{children}</div>;
+}
+
+/**
+ * 122 US9c (T948) — `&dialog=rotate` on the EventCreate preview: clicks
+ * "Rotate secret" once the wizard has mounted, so the rotate confirmation
+ * opens with no session (confirming it only reaches the API and errors).
+ */
+export function OpenRotateDialog({ children }: { readonly children: ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    let tries = 0;
+    const id = window.setInterval(() => {
+      const root = ref.current;
+      if (!root || document.querySelector('[role="alertdialog"]') || ++tries > 50) {
+        window.clearInterval(id);
+        return;
+      }
+      const group = root.querySelector('[aria-labelledby="webhook-secret-label"]');
+      group?.querySelector<HTMLButtonElement>('button')?.click();
+    }, 100);
+    return () => window.clearInterval(id);
+  }, []);
+  return <div ref={ref}>{children}</div>;
+}
+
+/** 122 US9c (T948) — the one-time reveal for `state=reveal`; Continue only logs. */
+export function RevealPreview() {
+  return (
+    <WebhookSecretReveal
+      secret="whsec_Zp4q9TnW2xL7mR8vK3sJ6yB1cH5d7f3a"
+      secretLastFour="7f3a"
+      onContinue={() => console.info('[preview] continue')}
+    />
+  );
 }

@@ -60,9 +60,9 @@ beforeEach(() => {
 describe('<RecentDeliveriesPanel> on AURA', () => {
   it('shows signature as a status pill toned by outcome', () => {
     renderPanel();
-    expect(screen.getByText(r.signature.verified)).toHaveAttribute('data-tone', 'ready');
-    expect(screen.getByText(r.signature.rejected)).toHaveAttribute('data-tone', 'blocked');
-    expect(screen.getByText(r.signature.unknown)).toHaveAttribute('data-tone', 'neutral');
+    expect(screen.getAllByText(r.signature.verified)[0]).toHaveAttribute('data-tone', 'ready');
+    expect(screen.getAllByText(r.signature.rejected)[0]).toHaveAttribute('data-tone', 'blocked');
+    expect(screen.getAllByText(r.signature.unknown)[0]).toHaveAttribute('data-tone', 'neutral');
   });
 
   it('shows processing as plain text, and keeps the caption and the cut request ID', () => {

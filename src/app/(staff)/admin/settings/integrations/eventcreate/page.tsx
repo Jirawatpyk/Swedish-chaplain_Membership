@@ -100,7 +100,7 @@ export default async function EventCreateIntegrationPage({
   // could compile with mismatched fields under the old flat-bag
   // interface.
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       <WebhookConfigWizard
         view={view}
