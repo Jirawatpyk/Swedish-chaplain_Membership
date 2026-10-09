@@ -630,9 +630,18 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T938 [US9] The history page and table on AURA: `DataTable` (cards on phones), outcome and source badges, `Pagination` with the server-built links, the error state; the import and history `loading.tsx` / `error.tsx` files. RED: outcome tones by state; polling while a row is running is unchanged.
 - [x] T939 [US9] Ratchet and exit: `MIGRATED_PATHS` gains the import routes and components; the events legacy control moves to the US9c integration page; preview views (import states, inline create, history, both loading files); first bundle budgets for both routes; e2e selectors (`csv-mapping-remap`, `csv-eventcreate-import`, `csv-fallback-import`, `eventcreate-a11y`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX and i18n reviews with fixes RED first; draft PR; relay R39.
 
-### US9c — EventCreate integration (PR 19; tasks written when it starts)
+### US9c — EventCreate integration (PR 19)
 
-- [ ] T940 [US9] The integration page on AURA `Stepper`, the secret reveal and rotation, the test webhook and the recent deliveries.
+- [x] T940 [US9] Spec clarifications (Session 2026-10-09, US9c start) and this task list.
+- [ ] T941 [US9] The wizard frame on AURA: `Stepper`, phase cards, the tier notice and grace banner on `Alert`, the grace chip on `Badge`, the webhook URL and masked secret as the board's value boxes, the setup-guide disclosure. RED: the current step for a fresh and a configured tenant; a 409 on generate lands on step 3 with its toast; the grace banner keeps `role=status` and its testid.
+- [ ] T942 [US9] The one-time secret reveal on AURA `IconButton`s and `Checkbox`. RED: Continue stays disabled until the box is ticked; reveal toggles the value; copy writes the secret.
+- [ ] T943 [US9] The rotate dialog (already `ConfirmationDialog`) with the new reveal inside. RED only if its behaviour moves: Done stays disabled until the new secret is acknowledged.
+- [ ] T944 [US9] "Send test event" on AURA `Button` (secondary, loading). RED: one click sends one request; a second click during the cooldown sends none.
+- [ ] T945 [US9] Recent deliveries on AURA `Switch`, `Table` (rows as a list on phones) and `StatusPill`. RED: signature tones by outcome; processing is plain text; the switch is named "Include test deliveries" and toggling it only changes the URL.
+- [ ] T946 [US9] The Zapier walkthrough on AURA `Card` (server). The list of 8 steps, its name and step 4's URL stay.
+- [ ] T947 [US9] `loading.tsx` (skeleton Stepper and cards) and `error.tsx` (`RouteErrorPanel`).
+- [ ] T948 [US9] Ratchet, preview and budget: `MIGRATED_PATHS` gains the route and its components; the legacy control moves to a US10 page; preview views (`?view=eventcreate&state=fresh|reveal|configured|grace|empty`, the rotate dialog, the loading file); a first bundle budget for the route.
+- [ ] T949 [US9] Exit: e2e selectors (`integration-config-wizard`, `secret-rotation`, `eventcreate-a11y`, `eventcreate-i18n`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX and security reviews with fixes RED first; draft PR; relay R40.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
