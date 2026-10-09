@@ -121,9 +121,9 @@ export function ImportPreviewDriver({
 
     const canonical = [
       'event_external_id,event_name,event_start,attendee_email,attendee_name,ticket_type',
-      'crayfish-2026,SweCham Crayfish Party 2026,2026-09-05T18:00,erik@siamnordic.example,Erik Johansson,Member ticket',
-      'crayfish-2026,SweCham Crayfish Party 2026,2026-09-05T18:00,karin@andamanmarine.example,Karin Lund,Partner ticket',
-      'crayfish-2026,SweCham Crayfish Party 2026,2026-09-05T18:00,ploy.r@gmail.example,Ploy Rattanakul,',
+      'midsummer-2026,Midsummer Celebration 2026,2026-06-20T17:00,erik@siamnordic.example,Erik Johansson,Member ticket',
+      'midsummer-2026,Midsummer Celebration 2026,2026-06-20T17:00,karin@andamanmarine.example,Karin Lund,Partner ticket',
+      'midsummer-2026,Midsummer Celebration 2026,2026-06-20T17:00,ploy.r@gmail.example,Ploy Rattanakul,',
     ].join('\n');
     const remap = [
       'Email Address,Full Name,Company Name,Ticket',
@@ -134,8 +134,8 @@ export function ImportPreviewDriver({
       state === 'idle'
         ? null
         : state === 'error'
-          ? new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'crayfish-2026-attendees.csv', { type: 'text/csv' })
-          : new File([state === 'remap' ? remap : canonical], 'swecham-crayfish-party-2026.csv', { type: 'text/csv' });
+          ? new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'midsummer-celebration-2026.csv', { type: 'text/csv' })
+          : new File([state === 'remap' ? remap : canonical], 'midsummer-celebration-2026.csv', { type: 'text/csv' });
 
     let tries = 0;
     let picked = false;

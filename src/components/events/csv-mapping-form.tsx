@@ -1027,6 +1027,10 @@ function PreviewPanel({
           </span>
         </div>
         {/*
+          Spec 122 US9b-2: `contain: paint` keeps the wide table's layout
+          inside the region; without it the page itself scrolled sideways
+          at 390px.
+
           F6.1 R3 a11y-fix 2026-05-16 — axe-core `scrollable-region-focusable`
           required a keyboard-focusable handle on the horizontally-scrolling
           region so keyboard-only users can pan a wide preview. Pattern
@@ -1055,7 +1059,7 @@ function PreviewPanel({
           role="region"
           aria-labelledby="csv-preview-rows"
           tabIndex={0}
-          className="max-h-[28rem] overflow-x-scroll overflow-y-auto rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] [scrollbar-color:var(--aura-fg-tertiary)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-[var(--aura-fg-tertiary)] [&::-webkit-scrollbar-track]:bg-[var(--aura-bg-surface-hover)]"
+          className="max-h-[28rem] overflow-x-scroll overflow-y-auto [contain:paint] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] [scrollbar-color:var(--aura-fg-tertiary)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-[var(--aura-fg-tertiary)] [&::-webkit-scrollbar-track]:bg-[var(--aura-bg-surface-hover)]"
         >
           {/*
             UX-fix 2026-05-18 — `table-fixed` forces browser to honor
@@ -1081,7 +1085,7 @@ function PreviewPanel({
             }}
             aria-label={t('tableAriaLabel', { fileName })}
           >
-            <thead className="sticky top-0 z-10 bg-[var(--aura-bg-surface-strong)]">
+            <thead className="sticky top-0 z-10 bg-[var(--aura-bg-canvas)]">
               <tr>
                 {/*
                   Bug-fix 2026-05-18 — some EventCreate CSV exports
@@ -1134,7 +1138,7 @@ function PreviewPanel({
                             // (6rem ≈ 96px = 26% of 375px viewport, was
                             // 37% at 8rem). Restores at sm: ≥640px where
                             // there's more horizontal space.
-                            `sticky left-0 z-20 w-[6rem] min-w-[6rem] max-w-[6rem] sm:w-[8rem] sm:min-w-[8rem] sm:max-w-[8rem] truncate border-r border-[var(--aura-border-default)] bg-[var(--aura-bg-surface-strong)] px-2 py-1.5 text-left font-medium ${accentClass}`
+                            `sticky left-0 z-20 w-[6rem] min-w-[6rem] max-w-[6rem] sm:w-[8rem] sm:min-w-[8rem] sm:max-w-[8rem] truncate border-r border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)] px-2 py-1.5 text-left font-medium ${accentClass}`
                           : `w-[8rem] min-w-[8rem] max-w-[8rem] truncate px-2 py-1.5 text-left font-medium ${accentClass}`
                       }
                     >
@@ -1151,7 +1155,7 @@ function PreviewPanel({
                   key={rowIdx}
                   data-testid="csv-preview-row"
                   className={`border-b border-[var(--aura-border-subtle)] hover:bg-[var(--aura-bg-surface-hover)] ${
-                    rowIdx % 2 === 1 ? 'bg-[var(--aura-bg-surface-strong)]' : ''
+                    rowIdx % 2 === 1 ? 'bg-[var(--aura-bg-canvas)]' : ''
                   }`}
                 >
                   {row.map((cell, cellIdx) => (
@@ -1166,7 +1170,7 @@ function PreviewPanel({
                             // bleed through. Use solid `bg-background`
                             // OR `bg-muted` per row parity (both solid).
                             `sticky left-0 z-10 w-[6rem] min-w-[6rem] max-w-[6rem] sm:w-[8rem] sm:min-w-[8rem] sm:max-w-[8rem] truncate border-r border-[var(--aura-border-default)] ${
-                              rowIdx % 2 === 1 ? 'bg-[var(--aura-bg-surface-strong)]' : 'bg-[var(--aura-bg-surface)]'
+                              rowIdx % 2 === 1 ? 'bg-[var(--aura-bg-canvas)]' : 'bg-[var(--aura-bg-surface)]'
                             } px-2 py-1 align-top`
                           : 'w-[8rem] min-w-[8rem] max-w-[8rem] truncate px-2 py-1 align-top'
                       }
