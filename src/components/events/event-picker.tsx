@@ -322,7 +322,8 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
             // then the help text. Both sit in the field's hint, so the field
             // describes itself with them.
             hint={
-              <>
+              // One column: AURA's hint lays its children out in a row.
+              <span className="flex flex-col">
                 {/* Surface fuzzy-match confidence so admins can decide
                     whether to trust the auto-suggestion (score as an
                     integer percent). The live region stays mounted so
@@ -341,7 +342,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
                     : ''}
                 </span>
                 {props.hint !== undefined ? <span className="block">{props.hint}</span> : null}
-              </>
+              </span>
             }
             required
             placeholder={t('placeholder')}
