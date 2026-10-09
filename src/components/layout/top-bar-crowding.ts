@@ -44,8 +44,10 @@ function flexItems(row: HTMLElement): HTMLElement[] {
  */
 export function measureRow(row: HTMLElement, brand: HTMLElement | null, pill: HTMLElement | null, pillWidth: number): RowMeasure {
   const items = flexItems(row);
-  const tops = items.map((el) => el.getBoundingClientRect().top);
-  const wraps = tops.length > 1 && Math.max(...tops) - Math.min(...tops) > 1;
+  // Centred controls of different heights have different tops on one line;
+  // it is a wrap only when one starts below another one's bottom.
+  const boxes = items.map((el) => el.getBoundingClientRect()).filter((r) => r.height > 0);
+  const wraps = boxes.length > 1 && Math.max(...boxes.map((r) => r.top)) >= Math.min(...boxes.map((r) => r.bottom)) - 1;
   const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
   let needed = 0;
   for (const el of items) {
