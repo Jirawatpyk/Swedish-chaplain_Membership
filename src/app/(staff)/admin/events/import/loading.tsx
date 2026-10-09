@@ -4,12 +4,12 @@
  * Spec 122 US9b-2 (T938): the real page's shape on AURA for CLS 0 — the
  * header (real title and subtitle), then the form card: the event field
  * with its hint and the create/refresh row, the upload field with its
- * hint. Renders inside TableContainer, so `pnpm check:layout` accepts the
+ * hint. Renders inside FormContainer (as the page), so `pnpm check:layout` accepts the
  * container pair.
  */
 import { getTranslations } from 'next-intl/server';
 import { Card } from '@jirawatpyk/aura-react/server';
-import { TableContainer } from '@/components/layout';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
@@ -18,9 +18,9 @@ export default async function CsvImportLoading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <TableContainer aria-busy="true">
+      <FormContainer align="start" aria-busy="true">
         <PageHeader title={t('pageTitle')} subtitle={t('pageSubtitle')} />
-        <Card aria-hidden className="w-full max-w-[45rem]">
+        <Card aria-hidden>
           <div className="flex flex-col gap-[var(--aura-space-6)]">
             <div className="flex flex-col gap-[var(--aura-space-2)]">
               <SkeletonBlock className="h-6 w-40" />
@@ -42,7 +42,7 @@ export default async function CsvImportLoading() {
             </div>
           </div>
         </Card>
-      </TableContainer>
+      </FormContainer>
     </PageSkeletonShell>
   );
 }

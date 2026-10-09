@@ -2,12 +2,12 @@
  * T098 — /admin/events/import — CSV bulk-import admin page (F6 Phase 7).
  *
  * Server component. Admin-only via `requireAdminContext` (F1 RBAC).
- * Renders the `<CsvMappingForm>` client component inside the
- * project's `TableContainer` (96rem, content-type "wide data preview"
- * per ux-standards.md §18). Migrated UX-R1.1 2026-05-18 from
- * `FormContainer` (42rem) because the CSV preview table renders
- * natively at ~4480px and was visibly cramped in a 672px container.
- * `PageHeader` primitive.
+ * Renders the `<CsvMappingForm>` client component in the form column
+ * (`FormContainer`, 720px, start-aligned), header included, as the
+ * `Admin-events-import` board draws it (spec 122 US9b-2 parity, decided
+ * 2026-10-09). The CSV preview table scrolls inside its own region, so
+ * the narrow column no longer cramps it (the reason UX-R1.1 had moved
+ * the page to `TableContainer` on 2026-05-18).
  *
  * Feature-flag gated by `env.features.f6EventCreate`: when off,
  * `notFound()` returns 404. Mirrors the surface-disclosure pattern
@@ -18,7 +18,7 @@ import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { env } from '@/lib/env';
 import { requirePagePermission } from '@/lib/rbac';
-import { TableContainer } from '@/components/layout';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { CsvMappingForm } from '@/components/events/csv-mapping-form';
@@ -33,7 +33,7 @@ export default async function CsvImportPage() {
 
   const t = await getTranslations('admin.events.import');
   return (
-    <TableContainer>
+    <FormContainer align="start">
       <PageHeader
         title={t('pageTitle')}
         subtitle={t('pageSubtitle')}
@@ -52,6 +52,6 @@ export default async function CsvImportPage() {
         }
       />
       <CsvMappingForm />
-    </TableContainer>
+    </FormContainer>
   );
 }

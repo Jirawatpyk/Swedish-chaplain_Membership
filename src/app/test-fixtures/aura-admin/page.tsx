@@ -1539,7 +1539,7 @@ export default async function AuraAdminPreviewPage({
     const importState = (['preview', 'remap', 'error', 'mismatch', 'result'] as const).find((s) => s === state) ?? 'idle';
     return (
       <StaffFrame path="/admin/events/import">
-        <TableContainer>
+        <FormContainer align="start">
           <PageHeader
             title={t('pageTitle')}
             subtitle={t('pageSubtitle')}
@@ -1553,7 +1553,7 @@ export default async function AuraAdminPreviewPage({
           <ImportPreviewDriver events={IMPORT_PICKER_EVENTS} state={importState} dialog={dialog === 'create' ? 'create' : null}>
             <CsvMappingForm />
           </ImportPreviewDriver>
-        </TableContainer>
+        </FormContainer>
       </StaffFrame>
     );
   }

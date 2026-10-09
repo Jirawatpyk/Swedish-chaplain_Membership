@@ -664,7 +664,6 @@ export function CsvMappingForm() {
         />
       ) : (
         <Card
-          className="w-full max-w-[45rem]"
           title={t('formTitle')}
           description={t('formDescription')}
           headingLevel={2}

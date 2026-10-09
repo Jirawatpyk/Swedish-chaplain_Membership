@@ -131,7 +131,6 @@ export function CsvImportResult({ result, footerAction }: CsvImportResultProps) 
       role="region"
       aria-label={t('regionLabel')}
       data-testid="csv-import-result"
-      className="w-full max-w-[45rem]"
       title={t('title')}
       headingLevel={2}
     >
