@@ -395,7 +395,7 @@ export function BulkMarkPaidConfirmDialog({
           </p>
         )}
         {preview.kind === 'ready' && (
-          <div className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-strong)] p-[var(--aura-space-3)]">
+          <div className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-subtle)] bg-[var(--aura-bg-canvas)] p-[var(--aura-space-3)]">
             <ul className="flex flex-col gap-[var(--aura-space-1)] text-sm">
               {previewableItems.map((item) => (
                 <li key={item.cycleId} className="flex items-center justify-between gap-2">
