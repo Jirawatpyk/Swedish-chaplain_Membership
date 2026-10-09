@@ -51,6 +51,7 @@ function Harness(props: {
   return (
     <EventPicker
       label="Event"
+      hint="Choose the event this CSV should reconcile to."
       value={value}
       onChange={(id) => {
         setValue(id);
@@ -125,6 +126,20 @@ describe('EventPicker on AURA Combobox (US9b-2)', () => {
     expect(
       await screen.findByText(/Auto-suggested from filename: SweCham AGM 2026/),
     ).toBeInTheDocument();
+  });
+
+  it('reads the filename suggestion first in the field description, then the hint (board order)', async () => {
+    render(
+      wrap(
+        <Harness events={[AGM, GALA]} filenameHint="swecham-agm-2026.csv" />,
+      ),
+    );
+    const field = screen.getByRole('combobox', { name: 'Event' });
+    await waitFor(() =>
+      expect(field).toHaveAccessibleDescription(
+        /^Auto-suggested from filename: SweCham AGM 2026.*Choose the event/,
+      ),
+    );
   });
 
   it('keeps an inline-created event when the events fetch resolves later', async () => {

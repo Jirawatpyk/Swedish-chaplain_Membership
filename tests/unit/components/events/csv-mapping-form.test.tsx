@@ -440,3 +440,18 @@ describe('CsvMappingForm — board layout (US9b-2 parity)', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('CsvMappingForm — event block (US9b-2 parity)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('drops the "Selected:" line — the field already shows the chosen event', async () => {
+    renderForm();
+    await screen.findByTestId('event-picker-stub');
+    expect(screen.queryByText(/^Selected/)).not.toBeInTheDocument();
+  });
+});
