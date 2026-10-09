@@ -150,13 +150,13 @@ export async function renderCreditNoteDetailView(p: CreditNoteDetailViewProps) {
             aria-label={t('amountsLabel')}
             className="ms-auto grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-sm sm:max-w-sm sm:gap-x-8"
           >
-            <dt className="text-[var(--aura-fg-secondary)]">{t('fields.creditAmount')}</dt>
+            <dt className="min-w-0 text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">{t('fields.creditAmount')}</dt>
             <dd className="text-end tabular-nums">{formatSatangAmount(p.creditAmountSatang)} THB</dd>
-            <dt className="text-[var(--aura-fg-secondary)]">{t('fields.vat')}</dt>
+            <dt className="min-w-0 text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">{t('fields.vat')}</dt>
             <dd className="text-end tabular-nums">{formatSatangAmount(p.vatSatang)} THB</dd>
             {/* One rule across the whole row, not one per cell with the gap between. */}
             <div className="col-span-2 grid grid-cols-subgrid border-t border-[var(--aura-border-default)] pt-2 font-semibold">
-              <dt>{t('fields.total')}</dt>
+              <dt className="min-w-0 [overflow-wrap:anywhere]">{t('fields.total')}</dt>
               <dd className="text-end tabular-nums">{formatSatangAmount(p.totalSatang)} THB</dd>
             </div>
           </dl>

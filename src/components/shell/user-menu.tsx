@@ -80,7 +80,8 @@ export function UserMenu({
   const tTheme = useTranslations('shell.theme');
   const { theme, setTheme } = useTheme();
   const onPhone = useBreakpoint() === 'base';
-  const tLocale = useTranslations('shell.locale');
+  // Staff only for now: the member pill also saves the choice to the account
+  // (`persistToAccount`); offering it here on the portal would need the same.
   const { activeLocale, choose } = useLocaleChoice();
 
   // rbac-portal-identity-ok: picks which sign-in screen to return to.
@@ -124,7 +125,7 @@ export function UserMenu({
         { separator: true },
         ...locales.map((locale) => ({
           type: 'radio' as const,
-          group: tLocale('label'),
+          group: t('languageGroup'),
           label: localeLabels[locale],
           checked: locale === activeLocale,
           onSelect: () => choose(locale),

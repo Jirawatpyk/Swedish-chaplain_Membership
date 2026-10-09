@@ -26,7 +26,7 @@ export function nextCrowded(wasCrowded: boolean, m: RowMeasure): boolean {
 }
 
 /** The row's flex items: `display: contents` wrappers count as their children, hidden ones not at all. */
-function flexItems(row: HTMLElement): HTMLElement[] {
+export function flexItems(row: HTMLElement): HTMLElement[] {
   const items: HTMLElement[] = [];
   for (const child of Array.from(row.children) as HTMLElement[]) {
     const display = getComputedStyle(child).display;
@@ -58,3 +58,15 @@ export function measureRow(row: HTMLElement, brand: HTMLElement | null, pill: HT
   needed += (pillShown ? 0 : pillWidth) + gap * Math.max(0, count - 1);
   return { wraps, rowWidth: row.clientWidth, neededWithPill: needed };
 }
+
+/**
+ * The same decision from the first paint, before anything is measured: the
+ * server renders the pill, so at 200% text the bar drew two rows and then
+ * jumped to one. In a media query `em` follows the text size, so this matches
+ * a 393px phone at about 190% text and up (393 / 16 / 1.9 ≈ 12.9em), not at
+ * 100% (24.6em) or 175% (14.04em, where the row still fits). The class hides
+ * the pill with no JS; the account menu reads the same query.
+ */
+export const HUGE_TEXT_QUERY = '(max-width: 14em)';
+export const HUGE_TEXT_HIDDEN_CLASS = '[@media(max-width:14em)]:hidden';
+

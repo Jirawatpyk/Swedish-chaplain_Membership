@@ -1,6 +1,6 @@
 'use client';
 
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { SearchIcon } from 'lucide-react';
@@ -13,7 +13,21 @@ import { BrandMark } from '@/components/shell/brand-mark';
 import { LocaleSwitcher } from '@/components/shell/locale-switcher';
 import { ThemeToggle } from '@/components/shell/theme-toggle';
 import { UserMenu, type UserMenuProps } from '@/components/shell/user-menu';
-import { measureRow, nextCrowded } from '@/components/layout/top-bar-crowding';
+import {
+  HUGE_TEXT_HIDDEN_CLASS,
+  HUGE_TEXT_QUERY,
+  flexItems,
+  measureRow,
+  nextCrowded,
+} from '@/components/layout/top-bar-crowding';
+
+function subscribeHugeText(onChange: () => void) {
+  if (typeof window.matchMedia !== 'function') return () => {};
+  const mq = window.matchMedia(HUGE_TEXT_QUERY);
+  mq.addEventListener('change', onChange);
+  return () => mq.removeEventListener('change', onChange);
+}
+const hugeTextNow = () => typeof window.matchMedia === 'function' && window.matchMedia(HUGE_TEXT_QUERY).matches;
 import { cn } from '@/lib/utils';
 
 /**
@@ -36,8 +50,13 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
   const rowRef = useRef<HTMLDivElement>(null);
   const brandRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
+  const menuRef = useRef<HTMLSpanElement>(null);
   const pillWidth = useRef(0);
+  const crowdedRef = useRef(false);
+  const refocusMenu = useRef(false);
   const [crowded, setCrowded] = useState(false);
+  // Server snapshot false: the CSS class hides the pill there already.
+  const hugeText = useSyncExternalStore(subscribeHugeText, hugeTextNow, () => false);
 
   // PR #530 follow-up: when the controls cannot fit one row (a phone at 200%
   // text) the language pill leaves the bar and its choice moves into the
@@ -52,13 +71,28 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
         pillWidth.current = pill.getBoundingClientRect().width;
       }
       const m = measureRow(row, brandRef.current, pill, pillWidth.current);
-      setCrowded((was) => nextCrowded(was, m));
+      const was = crowdedRef.current;
+      const next = nextCrowded(was, m);
+      // The pill is about to hide with focus in it: hand focus to the account
+      // menu, which now holds the language, rather than letting it drop.
+      if (next && !was && pillRef.current?.contains(document.activeElement)) refocusMenu.current = true;
+      crowdedRef.current = next;
+      setCrowded(next);
     };
     const observer = new ResizeObserver(update);
     observer.observe(row);
+    // The controls too: the outbox alert coming or going does not always
+    // change the row's own size.
+    for (const item of flexItems(row)) observer.observe(item);
     update();
     return () => observer.disconnect();
   }, []);
+
+  useLayoutEffect(() => {
+    if (!crowded || !refocusMenu.current) return;
+    refocusMenu.current = false;
+    menuRef.current?.querySelector('button')?.focus();
+  }, [crowded]);
 
   return (
     // Relay R34b: when one row cannot hold the controls (a phone at 200% text
@@ -123,15 +157,18 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
       {extras}
       {/* The phone board's 44px pill, tighter so the row fits 390px. While the
           row is crowded it is hidden (`hidden`: preflight's display:none, out
-          of the tab order too) and the account menu offers the language. */}
-      <span ref={pillRef} className="contents" hidden={crowded}>
+          of the tab order too) and the account menu offers the language; at
+          very large text a media query hides it from the first paint. */}
+      <span ref={pillRef} data-slot="top-bar-locale" className={cn('contents', HUGE_TEXT_HIDDEN_CLASS)} hidden={crowded}>
         <LocaleSwitcher className="max-sm:h-11 max-sm:gap-1 max-sm:pr-2 max-sm:pl-3" />
       </span>
       {/* The wrapper, not the button, so the menu's own box leaves the row too. */}
       <span className="contents max-sm:hidden">
         <ThemeToggle />
       </span>
-      <UserMenu {...user} themeChoicesOnPhone languageChoices={crowded} />
+      <span ref={menuRef} className="contents">
+        <UserMenu {...user} themeChoicesOnPhone languageChoices={crowded || hugeText} />
+      </span>
     </div>
   );
 }

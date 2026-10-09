@@ -201,8 +201,10 @@ describe('StaffTopBar (spec 122 US1)', () => {
   // resize the row, so each control is observed too.
   it('observes the controls as well as the row', () => {
     observed.length = 0;
-    renderBar();
-    expect(observed).toContain(screen.getByRole('button', { name: /^Account menu/ }));
+    const { container } = renderBar();
+    const row = container.querySelector('div');
+    const account = screen.getByRole('button', { name: /^Account menu/ });
+    expect(observed.some((el) => el !== row && el.contains(account))).toBe(true);
   });
 });
 
