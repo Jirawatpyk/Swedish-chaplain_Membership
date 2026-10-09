@@ -188,10 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the EventCreate integration page keeps the legacy kit until US9c', async () => {
-      expect(
-        await ratchetHits(legacy, 'src/app/(staff)/admin/settings/integrations/eventcreate/loading.tsx'),
-      ).toEqual([]);
+    it('control: the audit log keeps the legacy kit until US10', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/audit/loading.tsx')).toEqual([]);
     });
   });
 
@@ -565,6 +563,24 @@ describe('UI import ratchet (spec 122)', () => {
       'src/components/events/event-mismatch-warning-dialog.tsx',
       'src/components/events/csv-import-result.tsx',
       'src/components/events/csv-import-history-table.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+  });
+
+  describe('the US9c EventCreate integration page is on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+    it.each([
+      'src/app/(staff)/admin/settings/integrations/eventcreate/page.tsx',
+      'src/app/(staff)/admin/settings/integrations/eventcreate/loading.tsx',
+      'src/app/(staff)/admin/settings/integrations/eventcreate/error.tsx',
+      'src/components/events/webhook-config-wizard.tsx',
+      'src/components/events/webhook-secret-reveal.tsx',
+      'src/components/events/webhook-value-box.tsx',
+      'src/components/events/rotate-secret-dialog.tsx',
+      'src/components/events/test-webhook-button.tsx',
+      'src/components/events/recent-deliveries-panel.tsx',
+      'src/components/events/zapier-walkthrough.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 /**
  * Test-webhook button (F6 Phase 5 / US3 AS2).
@@ -15,9 +15,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2Icon, SendIcon } from 'lucide-react';
+import { Button } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
 import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
 import { parseRetryAfterSeconds } from '@/lib/http/parse-retry-after';
 import { adminPost } from '@/lib/http/admin-post';
@@ -129,23 +128,20 @@ export function TestWebhookButton({ onResolved }: TestWebhookButtonProps) {
     }
   }
 
+  // Spec 122 US9c — board `Admin-eventcreate`: a secondary button with no
+  // icon, full width on phones; while it runs, AURA's spinner and the same
+  // "Sending test event…" text. `disabled` keeps the 2-second cooldown.
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-[var(--aura-space-2)]">
       <Button
         type="button"
+        variant="secondary"
+        touchHeight
+        className="self-start max-sm:w-full"
         onClick={() => void handleClick()}
         disabled={loading}
-        aria-busy={loading}
-        className="min-h-11"
+        loading={loading}
       >
-        {loading ? (
-          <Loader2Icon
-            className="size-4 animate-spin motion-reduce:animate-none"
-            aria-hidden
-          />
-        ) : (
-          <SendIcon className="size-4" aria-hidden />
-        )}
         {loading ? t('inProgress') : t('sendTest')}
       </Button>
       <span role="status" aria-live="polite" className="sr-only">

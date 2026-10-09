@@ -1,99 +1,69 @@
 /**
  * /admin/settings/integrations/eventcreate loading skeleton (T080).
  *
- * Renders a placeholder stepper + card layout while the server
- * component fetches the integration config via
- * `runLoadIntegrationConfig`. Layout pair with the canonical page so
- * `pnpm check:layout` accepts the FormContainer / FormContainer match.
- *
- * Phase 5 review-fix S-12 (2026-05-13) — `aria-busy="true"` +
- * `role="status"` + sr-only label on the root so assistive tech
- * announces a positive "loading" signal during the shimmer phase
- * instead of silently rendering blank skeleton boxes.
+ * Spec 122 US9c — AURA skeleton in the page's own frame (`FormContainer`
+ * + the real page header, so `pnpm check:layout` pairs it with page.tsx):
+ * a three-step stepper shape (only the "Step n of 3" line on phones, as
+ * AURA's Stepper), the value-box card and the recent-deliveries card.
+ * `PageSkeletonShell` announces the loading state; the blocks are hidden
+ * from assistive tech.
  */
+import { getTranslations } from 'next-intl/server';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { getTranslations } from 'next-intl/server';
+import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
 export default async function EventCreateIntegrationLoading() {
   const t = await getTranslations('admin.integrations.eventcreate.page');
   return (
-    <FormContainer>
-      <div aria-busy="true" role="status" className="contents">
-        <span className="sr-only">{t('loading')}</span>
-        <PageHeader
-          title={<Skeleton className="h-7 w-56" />}
-          subtitle={<Skeleton className="h-4 w-80" />}
-        />
-
-        {/*
-          Phase 5 review-fix S-10 (2026-05-13) — skeleton stepper
-          shape matches the real `<Stepper>` layout (no gap, three
-          equally-weighted cells with a connector strip between
-          indicators) so the visual handoff to the real stepper is
-          CLS-0 per docs/ux-standards.md § 2.1.
-        */}
-        {/*
-          Round 2 review-fix WARN-01 (2026-05-14) — match real
-          `<Stepper>` horizontal layout exactly:
-          - parent `<ol>`: `flex flex-row items-start gap-0`
-          - each `<li>`: `flex min-w-0 flex-1 flex-col items-center text-center`
-          - indicator row: `flex w-full items-center` with before/after
-            connector strips flanking the size-7 circle
-          - label row: `mt-2` to match Stepper's mt-2 label offset
-
-          The skeleton size-7 circle + h-px connectors mirror the
-          real component's sizing so hydration is CLS-0 (was minor
-          jump under `items-center` before this fix).
-        */}
-        <ol
-          className="flex flex-row items-start gap-0"
-          aria-label={t('loading')}
-        >
-          {[1, 2, 3].map((n) => (
-            <li
-              key={n}
-              className="flex min-w-0 flex-1 flex-col items-center text-center"
-            >
-              <div className="flex w-full items-center">
-                <Skeleton className="h-px flex-1" />
-                <Skeleton className="size-7 shrink-0 rounded-full" />
-                <Skeleton className="h-px flex-1" />
+    <PageSkeletonShell ariaLabel={t('loading')}>
+      <FormContainer align="start" aria-busy="true">
+        <PageHeader title={t('title')} subtitle={t('subtitle')} />
+        <div aria-hidden className="flex flex-col gap-[var(--aura-space-5)]">
+          {/* AURA Stepper: markers joined by a rule, each label under its marker. */}
+          <div className="flex gap-[var(--aura-space-2)] max-sm:hidden" data-skeleton="stepper">
+            {[0, 1, 2].map((n) => (
+              <div key={n} className={n < 2 ? 'flex flex-1 flex-col gap-[var(--aura-space-2)]' : 'flex flex-col gap-[var(--aura-space-2)]'}>
+                <div className="flex items-center gap-[var(--aura-space-2)]">
+                  <SkeletonBlock className="size-7 shrink-0 rounded-full" />
+                  {n < 2 ? <span className="h-px flex-1 bg-[var(--aura-border-subtle)]" /> : null}
+                </div>
+                <SkeletonBlock className="h-4 w-24" />
               </div>
-              <Skeleton className="mt-2 h-4 w-20" />
-            </li>
-          ))}
-        </ol>
-
-        {/* Phase card placeholder — Card root supplies py-[var(--card-padding)]
-            so CardContent must NOT add its own `py-*` (additive double
-            padding) — Phase 5 review-fix (2026-05-13). */}
-        <Card>
-          <CardContent className="flex flex-col gap-4">
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-40" />
-          </CardContent>
-        </Card>
-
-        {/* Recent deliveries placeholder */}
-        <div className="space-y-3">
-          <Skeleton className="h-6 w-40" />
+            ))}
+          </div>
+          <div className="flex flex-col gap-[var(--aura-space-2)] sm:hidden">
+            <div className="flex items-center gap-[var(--aura-space-2)]">
+              {[0, 1, 2].map((n) => (
+                <SkeletonBlock key={n} className="size-7 shrink-0 rounded-full" />
+              ))}
+            </div>
+            <SkeletonBlock className="h-4 w-40" />
+          </div>
+          <SkeletonBlock className="h-12 w-full rounded-[var(--aura-radius-lg)]" />
           <Card>
-            <CardContent className="space-y-3">
-              {[1, 2, 3].map((n) => (
-                <div key={n} className="flex items-center gap-3">
-                  <Skeleton className="h-3 w-24" />
-                  <Skeleton className="h-5 flex-1" />
-                  <Skeleton className="h-5 w-20" />
+            <div className="flex flex-col gap-[var(--aura-space-4)]">
+              {[0, 1].map((n) => (
+                <div key={n} className="flex flex-col gap-[var(--aura-space-2)]">
+                  <SkeletonBlock className="h-4 w-28" />
+                  <SkeletonBlock className="h-10 w-full" />
                 </div>
               ))}
-            </CardContent>
+              <SkeletonBlock className="h-9 w-40 max-sm:h-11 max-sm:w-full" />
+            </div>
+          </Card>
+          <Card>
+            <div className="flex flex-col gap-[var(--aura-space-4)]">
+              <SkeletonBlock className="h-6 w-40" />
+              <SkeletonBlock className="h-5 w-52" />
+              {[0, 1, 2].map((n) => (
+                <SkeletonBlock key={n} className="h-8 w-full" />
+              ))}
+            </div>
           </Card>
         </div>
-      </div>
-    </FormContainer>
+      </FormContainer>
+    </PageSkeletonShell>
   );
 }

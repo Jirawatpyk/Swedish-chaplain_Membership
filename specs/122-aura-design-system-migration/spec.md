@@ -450,6 +450,18 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - the grid's download is a bare icon button;
   - "Back to import" hides below 1024px, where the shell's back link does the same (the erasure page's rule).
 
+### Session 2026-10-09 (maintainer, US9c start)
+
+- **US9c is one PR:** the EventCreate integration page (`/admin/settings/integrations/eventcreate`) and its loading and error files. Boards `Admin-eventcreate` and `Admin-eventcreate-mobile` draw only the configured state (step 3); the fresh-secret, one-time reveal and Zapier steps follow the same parts by analogy.
+- **Unchanged (FR-011):** the flag and permission guards, the config read and its `?includeTestDeliveries` URL, the generate / rotate / test requests with their 409 and 429 branches, every toast, the wizard's step order, the one-time reveal with its "I've saved this secret" gate, the 2-second test cooldown and the clipboard fallback.
+- **The steps are AURA `Stepper`,** driven by the current step, so earlier steps show as done. Below 640px it shows only "Step 3 of 3 — Test & manage", as the mobile board does.
+- **Webhook URL and current secret are read-only value boxes** (mono, tokens) with their label above, as on the board: copy beside the URL (the existing AURA `CopyButton`), "Rotate secret" (secondary, `rotate-ccw` icon) beside the secret, full width under it on phones. AURA has no secret field, so the one-time reveal is the same value box with eye / eye-off and copy `IconButton`s, and the "saved" gate is AURA `Checkbox`.
+- **"Send test event" is a secondary button without an icon** (board); while it runs it shows AURA's loading spinner and the same "Sending test event…" text.
+- **"View setup guide" stays a native disclosure,** drawn as the board's bordered row with a chevron; the walkthrough still renders only while it is open.
+- **Recent deliveries:** the heading, then the "Include test deliveries" `Switch`, then the rows. Signature is a status pill (Verified → ready, Signature rejected → blocked, Unknown → neutral); processing is plain text, as on the board. On phones each row is the time with the pill beside it and one line "processing · request ID". With no rows, the existing empty text.
+- **The grace banner and the "old secret still verifies until" chip** (no board) become an info `Alert` (`role=status`) and a `Badge`.
+- **`ui/stepper.tsx` loses its last consumer** but stays until US13 removes `src/components/ui/`. The error boundary moves to the shared `RouteErrorPanel`, as the import history page did.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

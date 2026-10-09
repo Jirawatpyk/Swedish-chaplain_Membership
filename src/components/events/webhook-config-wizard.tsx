@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 /**
  * Webhook config wizard orchestrator (F6 Phase 5 / US3).
@@ -24,13 +24,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { Alert, Badge, Button, Card, Icon, Stepper } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { InfoIcon } from 'lucide-react';
-import { Stepper, type StepperStep } from '@/components/ui/stepper';
-import { Card, CardContent } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { CopyButton } from '@/components/members/copy-button';
 import { formatGraceTimestamp } from '@/lib/format-grace-timestamp';
 import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
@@ -40,6 +35,7 @@ import { WebhookSecretReveal } from './webhook-secret-reveal';
 import { RotateSecretDialog } from './rotate-secret-dialog';
 import { TestWebhookButton } from './test-webhook-button';
 import { RecentDeliveriesPanel } from './recent-deliveries-panel';
+import { WebhookValueBox } from './webhook-value-box';
 
 export interface WebhookConfigWizardProps {
   /**
@@ -98,32 +94,16 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
     // toast idempotent (a repeat replaces it in place instead of stacking).
   }, [phase, view.secretConfigured, t]);
 
-  const steps: StepperStep[] = [
-    {
-      id: 'a',
-      label: t('phaseAStep'),
-      status: phase.startsWith('a-')
-        ? 'current'
-        : view.secretConfigured || generated
-          ? 'complete'
-          : 'upcoming',
-    },
-    {
-      id: 'b',
-      label: t('phaseBStep'),
-      status:
-        phase === 'b-walkthrough'
-          ? 'current'
-          : phase === 'c-test'
-            ? 'complete'
-            : 'upcoming',
-    },
-    {
-      id: 'c',
-      label: t('phaseCStep'),
-      status: phase === 'c-test' ? 'current' : 'upcoming',
-    },
+  // Spec 122 US9c — AURA `Stepper` takes the current step and shows the
+  // ones before it as done. The phases only move forward through A → B → C
+  // (Back from B returns to A's reveal or to C), so that is the same
+  // complete / current / upcoming the legacy stepper was given by hand.
+  const steps = [
+    { id: 'a', label: t('phaseAStep') },
+    { id: 'b', label: t('phaseBStep') },
+    { id: 'c', label: t('phaseCStep') },
   ];
+  const currentStep = phase.startsWith('a-') ? 'a' : phase === 'b-walkthrough' ? 'b' : 'c';
 
   async function handleGenerate() {
     setGenerating(true);
@@ -202,116 +182,79 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
     : null;
 
   return (
-    <div className="space-y-6">
-      <Stepper steps={steps} aria-label={t('stepsLabel')} />
+    <div className="flex flex-col gap-[var(--aura-space-5)]">
+      <Stepper label={t('stepsLabel')} steps={steps} current={currentStep} />
 
       {phase === 'a-generate' && !view.secretConfigured && (
         <>
           {/*
-            Round 9 banner — EventCreate API access is
-            gated to Corporate plan and up. Admins on Pro/Free plans
-            cannot complete the Zapier flow even with a perfect
-            wizard. Banner sets expectation upfront + offers CSV
-            import (US5 / T090–T099) as the equivalent ingest path
-            so admins don't waste time generating a secret they
-            cannot use. Limited to Phase A intentionally — admins
-            who already passed Phase A (configured tenants in
-            Phase C) have already cleared the tier gate; showing
-            the same banner there is reminder-noise. CSV affordance
-            stays signal-tight at the exact decision point.
+            Round 9 banner — EventCreate API access is gated to the
+            Corporate plan and up, so the notice sets that expectation at
+            the decision point and offers the CSV import as the equivalent
+            ingest path. Phase A only: configured tenants have cleared the
+            tier gate already.
           */}
-          <Card size="sm" className="border-info/30 bg-info-surface">
-            <CardContent className="flex items-start gap-3 text-sm">
-              <InfoIcon className="size-4 shrink-0 text-info" aria-hidden />
-              <div className="flex flex-col gap-1">
-                <p className="font-medium">{t('tierNotice.title')}</p>
-                <p className="text-muted-foreground">{t('tierNotice.body')}</p>
-                <p className="text-muted-foreground">
-                  {/*
-                    Round 2 review-fix W-R10-01 —
-                    forward-reference to Phase 7 (US5 / T090–T099)
-                    route. The href matches the canonical
-                    `/admin/events/import` path from plan.md project
-                    structure. Until Phase 7 ships, this resolves
-                    to the standard Next.js 404 boundary; acceptable
-                    transient state while F6 ships dark behind
-                    FEATURE_F6_EVENTCREATE=false (no user reaches
-                    this surface in production until flag-flip).
-                    Phase 7 implementation MUST land at exactly
-                    this path — any rename is a forward-compat
-                    break against this banner.
-                  */}
-                  {t.rich('tierNotice.csvFallback', {
-                    csvLink: (chunks) => (
-                      <Link
-                        href="/admin/events/import"
-                        className="font-medium text-primary underline-offset-2 hover:underline"
-                      >
-                        {chunks}
-                      </Link>
-                    ),
-                  })}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+          <Alert tone="info" role="note" title={t('tierNotice.title')}>
+            <p>{t('tierNotice.body')}</p>
+            <p className="mt-[var(--aura-space-2)]">
+              {t.rich('tierNotice.csvFallback', {
+                csvLink: (chunks) => (
+                  <Link
+                    href="/admin/events/import"
+                    className="font-medium text-[var(--aura-fg-accent)] underline-offset-2 hover:underline"
+                  >
+                    {chunks}
+                  </Link>
+                ),
+              })}
+            </p>
+          </Alert>
 
           <Card>
-            <CardContent className="flex flex-col gap-4">
-              <p className="text-sm">{t('phaseAIntro')}</p>
+            <div className="flex flex-col items-start gap-[var(--aura-space-4)]">
+              <p>{t('phaseAIntro')}</p>
               <Button
                 type="button"
+                touchHeight
                 onClick={() => void handleGenerate()}
                 disabled={generating}
-                aria-busy={generating}
-                className="min-h-11 self-start"
+                loading={generating}
               >
                 {generating ? t('generating') : t('generateButton')}
               </Button>
-            </CardContent>
+            </div>
           </Card>
         </>
       )}
 
       {phase === 'a-reveal' && generated && (
-        <div className="space-y-4">
-          <WebhookSecretReveal
-            secret={generated.secret}
-            secretLastFour={generated.secretLastFour}
-            onContinue={handleContinueFromReveal}
-          />
-        </div>
+        <WebhookSecretReveal
+          secret={generated.secret}
+          secretLastFour={generated.secretLastFour}
+          onContinue={handleContinueFromReveal}
+        />
       )}
 
       {phase === 'b-walkthrough' && (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
           {walkthrough}
-          <div className="flex justify-end gap-2">
+          <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:[&>button]:w-full">
             {/*
-              Round 3 H2 — Back-to-Phase-A only when the
-              one-time-reveal payload is still in memory. The reveal
-              payload is set once on the 200-generate response; the
-              409 / refresh paths clear it (CRIT-01 fix synchronously
-              moves to 'c-test'). Falling back to Phase A without
-              `generated` would render an empty card with no last-4
-              hint — broken dead-end for keyboard + screen-reader
-              users. Fall back to Phase C instead (configured-tenant
-              view is correct once the row exists).
+              Round 3 H2 — Back returns to the reveal only while the
+              one-time payload is still in memory; otherwise to step 3
+              (the 409 / refresh paths clear it).
             */}
             <Button
               type="button"
               variant="ghost"
+              touchHeight
               onClick={() =>
                 generated ? setPhase('a-reveal') : setPhase('c-test')
               }
             >
               {t('back')}
             </Button>
-            <Button
-              type="button"
-              onClick={handleWalkthroughComplete}
-              className="min-h-11"
-            >
+            <Button type="button" touchHeight onClick={handleWalkthroughComplete}>
               {t('connectComplete')}
             </Button>
           </div>
@@ -319,155 +262,100 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
       )}
 
       {phase === 'c-test' && (
-        <div className="space-y-6">
+        <>
           {/*
-            T102 (Phase 8 — US7 FR-008) — page-level 24h grace info
-            banner. Rendered only while `graceActiveUntilDisplay` is
-            truthy (i.e. `grace_rotated_at` within 24h of NOW per
-            research.md R7). Larger and more prominent than the
-            inline `<Badge>` next to the masked secret — the rotation
-            window is the admin's time-bounded ask to update Zapier,
-            and visibility here directly reduces the risk that
-            Zapier traffic starts being rejected at the 24h mark.
-            Disappears automatically once the grace window expires.
-
-            A11y: shadcn `<Alert>` defaults to `role="alert"`
-            (assertive — interrupts current SR speech). The rotation
-            reminder is informational, not emergency, and the wizard
-            re-renders on every `router.refresh()` (test-webhook
-            button, recent-deliveries toggle, secret-revealed
-            acknowledgement). Override to `role="status"` +
-            `aria-live="polite"` so SRs queue the announcement
-            politely on initial render and stay quiet on subsequent
-            reconciliations within the 24h window. WCAG 2.1 4.1.3 /
-            3.3.1 — informational live regions should be polite by
-            default; assertive is reserved for actionable errors.
+            T102 (US7 FR-008) — the 24h grace banner, shown while the old
+            secret still verifies. Informational, and the wizard
+            re-renders on every refresh inside the window, so it is a
+            polite status rather than an assertive alert.
           */}
           {graceActiveUntilDisplay ? (
             <Alert
-              data-testid="grace-banner"
+              tone="info"
               role="status"
               aria-live="polite"
+              data-testid="grace-banner"
+              title={t('graceBanner.title')}
             >
-              <InfoIcon aria-hidden />
-              <AlertTitle>{t('graceBanner.title')}</AlertTitle>
-              <AlertDescription>
-                {t('graceBanner.description', {
-                  graceActiveUntil: graceActiveUntilDisplay,
-                })}
-              </AlertDescription>
+              {t('graceBanner.description', {
+                graceActiveUntil: graceActiveUntilDisplay,
+              })}
             </Alert>
           ) : null}
-          {/*
-            Round-6 verify-fix 2026-05-13 (UX D-01) — "View setup
-            guide" reference expandable. Phase 5's original
-            doc-comment referenced this affordance but never wired
-            it. The admin can re-open the Zapier walkthrough on the
-            configured-tenant screen without leaving Phase C — useful
-            when re-pasting the webhook URL into a second Zap or when
-            onboarding a colleague.
 
-            Round 2 fixes:
-              - HIGH-04: `<summary>` adds `min-h-6` + `py-1` for the
-                opportunistic WCAG 2.5.8 24×24 tap-target. (The wider
-                44×44 is reserved for primary action buttons; this is
-                a disclosure widget, not a CTA.)
-              - MED-09: walkthrough children render only when the
-                `<details>` is open via a controlled `guideOpen`
-                state. Native `<details>` keeps content in the DOM
-                even when closed, so the 8 `<Image>` tags fired
-                requests on every Phase C render. The controlled
-                pattern keeps native keyboard/screen-reader behaviour
-                while skipping the 8 eager image fetches.
+          {/*
+            "View setup guide" (UX D-01) — the Zapier walkthrough stays
+            reachable on step 3. A native disclosure drawn as the board's
+            bordered row with a chevron; the walkthrough mounts only while
+            it is open, so its 8 images are not fetched on every render.
           */}
           <details
-            className="rounded-md border bg-muted/30 p-3 text-sm"
+            className="group rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] px-[var(--aura-space-4)]"
             onToggle={(e) =>
               setGuideOpen((e.currentTarget as HTMLDetailsElement).open)
             }
           >
-            {/*
-              Phase 5 review-fix S-11 — explicit
-              `aria-expanded` on `<summary>` mirrors the native
-              `<details>` open state for assistive tech that doesn't
-              consume the `details` role natively. Belt-and-braces
-              against the controlled `guideOpen` state going briefly
-              stale (transition aborted, fast double-click); the
-              native attribute on the parent `<details>` and this
-              ARIA attribute always agree because both derive from
-              the same toggle event.
-            */}
             <summary
-              className="min-h-6 cursor-pointer py-1 font-medium"
+              className="flex min-h-12 cursor-pointer list-none items-center gap-[var(--aura-space-2)] font-medium [&::-webkit-details-marker]:hidden"
               aria-expanded={guideOpen}
             >
+              <Icon
+                name="chevron-right"
+                size={16}
+                className="shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none"
+              />
               {t('viewSetupGuide')}
             </summary>
-            {guideOpen ? <div className="mt-3">{walkthrough}</div> : null}
+            {guideOpen ? <div className="pb-[var(--aura-space-4)]">{walkthrough}</div> : null}
           </details>
 
           <Card>
-            <CardContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-[var(--aura-space-4)]">
+              {/*
+                UX A-04 — a `<span id>` names each group: a `<label>` can
+                only point at a form control, and these values are read
+                and copied, not edited.
+              */}
               <div
-                className="flex flex-col gap-1"
+                className="flex flex-col gap-[var(--aura-space-2)]"
                 role="group"
                 aria-labelledby="webhook-url-label"
               >
-                <span id="webhook-url-label" className="text-sm font-medium">
+                <span id="webhook-url-label" className="aura-text-label">
                   {t('webhookUrlLabel')}
                 </span>
-                <div className="flex items-stretch gap-2">
-                  {/*
-                    Round-6 verify-fix 2026-05-13 (UX A-04) — the
-                    previous version used `<Label htmlFor>` pointing
-                    to a `<code>` element, which is invalid: HTML
-                    `<label>` only associates with form controls.
-                    Replaced with a `<span id>` + `role="group"
-                    aria-labelledby"` on the wrapper so screen readers
-                    still announce the group's accessible name.
-
-                    Round 2 MED-08 fix — dropped
-                    redundant `aria-label` on `<code>`. The accessible
-                    name is already supplied via the `role="group"
-                    aria-labelledby` wrapper; double-announcement
-                    behaviour varies across screen readers and adds no
-                    information.
-                  */}
-                  <code
-                    className="flex-1 break-all rounded-md border bg-muted px-3 py-2 font-mono text-sm"
-                  >
-                    {view.webhookUrl}
-                  </code>
+                <div className="flex min-w-0 items-center gap-[var(--aura-space-2)]">
+                  <WebhookValueBox>{view.webhookUrl}</WebhookValueBox>
                   <CopyButton value={view.webhookUrl} label={t('copyUrl')} />
                 </div>
               </div>
 
               <div
-                className="flex flex-col gap-1"
+                className="flex flex-col gap-[var(--aura-space-2)]"
                 role="group"
                 aria-labelledby="webhook-secret-label"
               >
-                <span id="webhook-secret-label" className="text-sm font-medium">
+                <span id="webhook-secret-label" className="aura-text-label">
                   {t('secretLabel')}
                 </span>
-                <div className="flex items-center gap-2">
-                  <code
-                    className="rounded-md border bg-muted px-3 py-2 font-mono text-sm"
-                  >
+                <div className="flex min-w-0 flex-col gap-[var(--aura-space-2)] sm:flex-row sm:items-center">
+                  <WebhookValueBox>
                     whsec_{'•'.repeat(16)}
                     {configured?.secretLastFour ?? ''}
-                  </code>
+                  </WebhookValueBox>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="secondary"
+                    icon="rotate-ccw"
+                    touchHeight
+                    className="max-sm:w-full"
                     onClick={() => setRotateOpen(true)}
-                    className="min-h-11"
                   >
                     {t('rotateButton')}
                   </Button>
                 </div>
                 {graceActiveUntilDisplay ? (
-                  <Badge variant="secondary" className="self-start">
+                  <Badge tone="accent" className="self-start">
                     {t('graceActiveUntil', {
                       timestamp: graceActiveUntilDisplay,
                     })}
@@ -475,15 +363,18 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
                 ) : null}
               </div>
 
-              <TestWebhookButton onResolved={() => router.refresh()} />
-            </CardContent>
+              {/* Board: on phones a rule above, the button full width. */}
+              <div className="pt-[var(--aura-space-1)] max-sm:border-t max-sm:border-[var(--aura-border-default)] max-sm:pt-[var(--aura-space-3)]">
+                <TestWebhookButton onResolved={() => router.refresh()} />
+              </div>
+            </div>
           </Card>
 
           <RecentDeliveriesPanel
             deliveries={view.recentDeliveries}
             includeTestDeliveries={view.recentDeliveriesIncludeTests}
           />
-        </div>
+        </>
       )}
 
       <RotateSecretDialog

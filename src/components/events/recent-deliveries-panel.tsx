@@ -16,14 +16,22 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Badge } from '@/components/ui/badge';
+import {
+  Card,
+  StatusPill,
+  Switch,
+  Table,
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
+  type StatusTone,
+} from '@jirawatpyk/aura-react';
 import { RelativeTime } from '@/components/shell/relative-time';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
 import {
   KNOWN_RECENT_PROCESSING_OUTCOMES,
   type RecentDelivery,
-  type RecentDeliveryProcessingOutcome,
 } from '@/lib/events-admin-integration-types';
 
 /**
@@ -40,29 +48,11 @@ export interface RecentDeliveriesPanelProps {
   readonly includeTestDeliveries: boolean;
 }
 
-function signatureBadgeVariant(
-  outcome: RecentDelivery['signatureOutcome'],
-): 'default' | 'destructive' | 'secondary' {
-  if (outcome === 'verified') return 'default';
-  if (outcome === 'rejected') return 'destructive';
-  return 'secondary';
-}
-
-function processingBadgeVariant(
-  outcome: RecentDeliveryProcessingOutcome | null,
-): 'default' | 'destructive' | 'secondary' | 'outline' {
-  if (!outcome) return 'outline';
-  if (outcome === 'short_circuited_test') return 'secondary';
-  if (
-    outcome === 'matched_member_contact' ||
-    outcome === 'matched_member_domain' ||
-    outcome === 'matched_member_fuzzy'
-  ) {
-    return 'default';
-  }
-  if (outcome === 'non_member' || outcome === 'unmatched') return 'secondary';
-  if (outcome === 'rolled_back' || outcome === 'malformed') return 'destructive';
-  return 'outline';
+/** Board `Admin-eventcreate`: Verified → ready, Signature rejected → blocked. */
+function signatureTone(outcome: RecentDelivery['signatureOutcome']): StatusTone {
+  if (outcome === 'verified') return 'ready';
+  if (outcome === 'rejected') return 'blocked';
+  return 'neutral';
 }
 
 export function RecentDeliveriesPanel({
@@ -106,163 +96,111 @@ export function RecentDeliveriesPanel({
     });
   }
 
+  // Key includes the index: the 10-row read can repeat a (receivedAt,
+  // requestId) pair on a retried delivery.
+  const rows = deliveries.map((row, index) => ({
+    key: `${row.receivedAt}-${row.requestId}-${index}`,
+    receivedAt: row.receivedAt,
+    shortId: `${row.requestId.slice(0, 12)}${row.requestId.length > 12 ? '…' : ''}`,
+    tone: signatureTone(row.signatureOutcome),
+    signature: t(`signature.${row.signatureOutcome}`),
+    processing: row.processingOutcome
+      ? KNOWN_RECENT_PROCESSING_OUTCOMES.has(row.processingOutcome)
+        ? t(`processing.${row.processingOutcome}`)
+        : row.processingOutcome
+      : null,
+  }));
+
+  // Spec 122 US9c — board `Admin-eventcreate`: one card with the heading,
+  // the switch, then the rows. Signature is a status pill; processing is
+  // plain text. Below 640px the rows are the mobile board's list.
   return (
-    <section className="space-y-3" aria-labelledby="recent-deliveries-heading">
-      <header className="flex items-center justify-between gap-3">
-        <h2
-          id="recent-deliveries-heading"
-          className="text-h3 font-semibold"
-        >
-          {t('title')}
-        </h2>
-        <div className="flex items-center gap-2">
-          {/*
-            F6.1 R3 a11y-fix 2026-05-16 — Base UI Switch generates an
-            internal id (`base-ui-_R_…`) on its inner `<span role="switch">`
-            that does NOT match the wrapper id we set, so `<Label htmlFor>`
-            alone failed `aria-toggle-field-name` (no `aria-label` /
-            `aria-labelledby` / visible text on the role=switch element).
-            Add `aria-label` for AT consumers + keep the visible `<Label>`
-            for sighted users (visual label remains; AT redundancy OK).
-          */}
-          <Switch
-            id="include-test-deliveries"
-            aria-label={t('includeTestDeliveriesLabel')}
-            checked={optimisticInclude}
-            onCheckedChange={handleToggle}
-            disabled={pending}
-          />
-          <Label
-            htmlFor="include-test-deliveries"
-            className="cursor-pointer text-sm"
-          >
-            {t('includeTestDeliveriesLabel')}
-          </Label>
-        </div>
-      </header>
+    <Card title={t('title')} headingLevel={2}>
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
+        <Switch
+          id="include-test-deliveries"
+          label={t('includeTestDeliveriesLabel')}
+          checked={optimisticInclude}
+          onChange={handleToggle}
+          disabled={pending}
+        />
 
-      {/*
-        Round 2 MED-07 fix (2026-05-13) — `aria-live="polite"` moved
-        OFF the `<ul>` to a dedicated `<span role="status">` summary
-        below. The previous wiring caused VoiceOver/NVDA to re-announce
-        every visible row (up to 10 rows × 3 badge labels) on every
-        filter toggle — extremely verbose. The summary span announces
-        only the row-count delta, which is the meaningful change.
-        `aria-busy={pending}` is retained on the `<ul>` so AT
-        suppresses any sub-tree announcements during the transition.
-      */}
-      <span role="status" aria-live="polite" className="sr-only">
-        {pending
-          ? t('updating')
-          : t('listSummary', { count: deliveries.length })}
-      </span>
+        {/*
+          Round 2 MED-07 — one summary line announces the change, so a toggle
+          does not re-read every row.
+        */}
+        <span role="status" aria-live="polite" className="sr-only">
+          {pending
+            ? t('updating')
+            : t('listSummary', { count: deliveries.length })}
+        </span>
 
-      {deliveries.length === 0 ? (
-        <p className="rounded-md border border-dashed bg-muted/40 p-6 text-center text-sm text-muted-foreground">
-          {t('empty')}
-        </p>
-      ) : (
-        /*
-          Phase 5 review-fix W-03 (2026-05-13) — proper `<table>`
-          semantics replace the prior `<ul>/<li>` layout to satisfy
-          WCAG 1.3.1 Information and Relationships. Each row has 4
-          logical columns (received / request ID / signature / process)
-          and AT users now hear the column context when each badge is
-          announced.
-
-          The wrapper `<div tabIndex={0}` enables horizontal scroll
-          on narrow viewports (320–480px) without losing keyboard
-          accessibility — the focusable container is the recommended
-          accessible pattern for responsive tables per W3C's
-          "Tables Tutorial" + WCAG 2.4.7 (Focus Visible).
-          `role="region"` + `aria-labelledby` tie the scroller to
-          the section heading so screen readers announce context
-          when the user tabs into the scrollable region.
-        */
-        <div
-          tabIndex={0}
-          role="region"
-          aria-labelledby="recent-deliveries-heading"
-          className="overflow-x-auto rounded-md border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          <table
-            className="w-full min-w-[34rem] divide-y text-sm"
-            aria-busy={pending}
-          >
-            <caption className="sr-only">{t('table.caption')}</caption>
-            <thead className="bg-muted/40 text-xs uppercase text-muted-foreground">
-              <tr>
-                <th
-                  scope="col"
-                  className="px-3 py-2 text-left font-medium"
+        {deliveries.length === 0 ? (
+          <p className="text-[var(--aura-fg-secondary)]">{t('empty')}</p>
+        ) : (
+          <>
+            {/* From 640px: the board's four-column table. */}
+            <Table
+              caption={t('table.caption')}
+              captionHidden
+              bordered={false}
+              className="max-sm:hidden"
+              aria-busy={pending}
+            >
+              <THead>
+                <Tr>
+                  <Th>{t('table.received')}</Th>
+                  <Th>{t('table.requestId')}</Th>
+                  <Th>{t('table.signature')}</Th>
+                  <Th>{t('table.processing')}</Th>
+                </Tr>
+              </THead>
+              <TBody>
+                {rows.map((row) => (
+                  <Tr key={row.key}>
+                    <Td>
+                      <RelativeTime iso={row.receivedAt} />
+                    </Td>
+                    <Td mono>{row.shortId}</Td>
+                    <Td>
+                      <StatusPill tone={row.tone} data-tone={row.tone}>
+                        {row.signature}
+                      </StatusPill>
+                    </Td>
+                    <Td>{row.processing}</Td>
+                  </Tr>
+                ))}
+              </TBody>
+            </Table>
+            {/* Below 640px: the mobile board's list — the time with its pill,
+                then one line "processing · request ID". Only one of the two
+                is displayed, so assistive tech meets each row once. */}
+            <ul
+              aria-label={t('table.caption')}
+              aria-busy={pending}
+              className="flex flex-col sm:hidden"
+            >
+              {rows.map((row) => (
+                <li
+                  key={row.key}
+                  className="flex flex-col gap-[var(--aura-space-1)] border-t border-[var(--aura-border-default)] py-[var(--aura-space-3)]"
                 >
-                  {t('table.received')}
-                </th>
-                <th
-                  scope="col"
-                  className="px-3 py-2 text-left font-medium"
-                >
-                  {t('table.requestId')}
-                </th>
-                <th
-                  scope="col"
-                  className="px-3 py-2 text-left font-medium"
-                >
-                  {t('table.signature')}
-                </th>
-                <th
-                  scope="col"
-                  className="px-3 py-2 text-left font-medium"
-                >
-                  {t('table.processing')}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {deliveries.map((row, index) => (
-                // Round 11 code-reviewer fix #3 (2026-05-14) — index
-                // suffix prevents key collision on the `no-request-id`
-                // sentinel. Two rows received in the same millisecond
-                // with no `X-Request-ID` header would otherwise share
-                // the same `${receivedAt}-${requestId}` key (sentinel
-                // string is constant). Index disambiguates within the
-                // map() call without harming stable-key semantics
-                // because the list is sorted descending by timestamp +
-                // capped at 10 rows; visual position is the natural
-                // identity.
-                <tr key={`${row.receivedAt}-${row.requestId}-${index}`}>
-                  <td className="px-3 py-3 align-top">
-                    <RelativeTime
-                      iso={row.receivedAt}
-                      className="text-xs text-muted-foreground"
-                    />
-                  </td>
-                  <td className="px-3 py-3 align-top">
-                    <code className="font-mono text-xs text-muted-foreground">
-                      {row.requestId.slice(0, 12)}
-                      {row.requestId.length > 12 ? '…' : ''}
-                    </code>
-                  </td>
-                  <td className="px-3 py-3 align-top">
-                    <Badge variant={signatureBadgeVariant(row.signatureOutcome)}>
-                      {t(`signature.${row.signatureOutcome}`)}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-3 align-top">
-                    {row.processingOutcome ? (
-                      <Badge variant={processingBadgeVariant(row.processingOutcome)}>
-                        {KNOWN_RECENT_PROCESSING_OUTCOMES.has(row.processingOutcome)
-                          ? t(`processing.${row.processingOutcome}`)
-                          : row.processingOutcome}
-                      </Badge>
-                    ) : null}
-                  </td>
-                </tr>
+                  <span className="flex items-center justify-between gap-[var(--aura-space-2)]">
+                    <RelativeTime iso={row.receivedAt} />
+                    <StatusPill tone={row.tone} data-tone={row.tone}>
+                      {row.signature}
+                    </StatusPill>
+                  </span>
+                  <span className="aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">
+                    {row.processing ? `${row.processing} · ` : null}
+                    <span className="aura-text-mono">{row.shortId}</span>
+                  </span>
+                </li>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
+            </ul>
+          </>
+        )}
+      </div>
+    </Card>
   );
 }
