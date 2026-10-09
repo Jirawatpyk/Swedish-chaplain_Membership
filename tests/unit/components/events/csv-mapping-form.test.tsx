@@ -17,7 +17,7 @@
  * dialog's double-RAF focus effect can hang jsdom (project gotcha).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 
@@ -240,7 +240,7 @@ describe('CsvMappingForm — FR-019b mismatch preview preservation', () => {
 // PR 4.2 (#10a) — FR-026 column remap. A non-EventCreate tenant uploads a
 // CSV whose attendee columns are under NON-canonical headers (and which
 // lacks event columns entirely — the picker supplies them per #10b). The
-// admin maps each required attendee column via a native <select>; Confirm
+// admin maps each required attendee column via a select; Confirm
 // stays disabled until the required columns are mapped; on submit the form
 // sends the mapping INVERTED to the parser's header→canonical direction.
 // ---------------------------------------------------------------------------
@@ -306,20 +306,18 @@ describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
 
     await uploadRemapCsv(user);
 
-    // A <select> renders per required attendee column, labelled by the
-    // canonical field name.
-    const emailSelect = (await screen.findByLabelText(
-      /attendee_email/i,
-    )) as HTMLSelectElement;
-    const nameSelect = (await screen.findByLabelText(
-      /attendee_name/i,
-    )) as HTMLSelectElement;
-    expect(emailSelect.tagName).toBe('SELECT');
-    expect(nameSelect.tagName).toBe('SELECT');
-    // The detected (non-canonical) headers are the options.
-    expect(
-      within(emailSelect).getByRole('option', { name: 'Email Address' }),
-    ).toBeInTheDocument();
+    // Spec 122 US9b-2 (T933): each remap field is an AURA Select — a
+    // combobox named by the canonical field that opens a listbox of the
+    // detected (non-canonical) headers.
+    const emailField = await screen.findByRole('combobox', {
+      name: /attendee_email/i,
+    });
+    const nameField = screen.getByRole('combobox', { name: /attendee_name/i });
+    async function pick(field: HTMLElement, header: string): Promise<void> {
+      await user.click(field);
+      const listbox = await screen.findByRole('listbox');
+      await user.click(within(listbox).getByRole('option', { name: header }));
+    }
 
     // Confirm is disabled until the required columns are mapped.
     const confirm = await screen.findByRole('button', {
@@ -328,11 +326,11 @@ describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
     expect(confirm).toBeDisabled();
 
     // Map only one required column → still gated.
-    await user.selectOptions(emailSelect, 'Email Address');
+    await pick(emailField, 'Email Address');
     expect(confirm).toBeDisabled();
 
     // Map the second required column → gate opens.
-    await user.selectOptions(nameSelect, 'Full Name');
+    await pick(nameField, 'Full Name');
     await waitFor(() => expect(confirm).toBeEnabled());
 
     // Submit → assert the FormData carries the INVERTED map.
@@ -349,5 +347,45 @@ describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
       'Full Name': 'attendee_name',
     });
     expect(body?.get('event_id')).toBe('ev-fixed-1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 122 US9b-2 (T931) — the file field is AURA `FileUpload`. A CSV
+// dropped on the field reaches the same preview as a picked one, and the
+// 5 MiB guard stays in the form, so an oversized file still lands on the
+// "file too large" panel (FileUpload is given no `maxSize`).
+// ---------------------------------------------------------------------------
+describe('CsvMappingForm — file field (US9b-2)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useFakeTimers();
+  });
+
+  it('accepts a CSV dropped on the upload field and shows its preview', async () => {
+    renderForm();
+    const file = new File([CSV_3_ROWS], 'dropped.csv', { type: 'text/csv' });
+    Object.defineProperty(file, 'text', {
+      value: () => Promise.resolve(CSV_3_ROWS),
+      configurable: true,
+    });
+    const input = screen.getByLabelText(/Choose a \.csv file/i);
+    fireEvent.drop(input, { dataTransfer: { files: [file] } });
+    expect(await screen.findByText('Preview (3 rows)')).toBeInTheDocument();
+  });
+
+  it('still shows the file-too-large panel for a file over 5 MiB', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const file = new File(['x'], 'huge.csv', { type: 'text/csv' });
+    Object.defineProperty(file, 'size', { value: 5 * 1024 * 1024 + 1 });
+    await user.upload(screen.getByLabelText(/Choose a \.csv file/i), file);
+    const panel = await screen.findByTestId('csv-header-error');
+    expect(
+      within(panel).getByText(enMessages.admin.events.import.errors.fileTooLargeTitle),
+    ).toBeInTheDocument();
   });
 });
