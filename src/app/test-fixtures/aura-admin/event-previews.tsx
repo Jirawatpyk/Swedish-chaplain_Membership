@@ -215,7 +215,7 @@ export function OpenRotateDialog({ children }: { readonly children: ReactNode })
 export function RevealPreview() {
   return (
     <WebhookSecretReveal
-      secret="whsec_Zp4q9TnW2xL7mR8vK3sJ6yB1cH5d7f3a"
+      secret="whsec_PREVIEW_not_a_real_secret_7f3a"
       secretLastFour="7f3a"
       onContinue={() => console.info('[preview] continue')}
     />

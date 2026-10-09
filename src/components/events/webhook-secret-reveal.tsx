@@ -17,7 +17,7 @@
  *   - Checkbox + label associated via shadcn `<Label htmlFor>`.
  *   - Reduced-motion safe — no CSS animation.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, Card, Checkbox, IconButton } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
@@ -72,6 +72,9 @@ export function WebhookSecretReveal({
   const [visible, setVisible] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saved, setSaved] = useState(false);
+  // Its own label id: in the rotate dialog step 3's "Current secret" group
+  // is still on the page, and a shared id would name this group after it.
+  const labelId = useId();
 
   // Reset the 2s "copied" indicator.
   useEffect(() => {
@@ -130,9 +133,9 @@ export function WebhookSecretReveal({
         <div
           className="flex flex-col gap-[var(--aura-space-2)]"
           role="group"
-          aria-labelledby="webhook-secret-label"
+          aria-labelledby={labelId}
         >
-          <span id="webhook-secret-label" className="aura-text-label">
+          <span id={labelId} className="aura-text-label">
             {t('secretLabel')}
           </span>
           <div className="flex min-w-0 items-center gap-[var(--aura-space-2)]">

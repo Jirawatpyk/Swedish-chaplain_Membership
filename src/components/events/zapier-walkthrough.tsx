@@ -69,7 +69,8 @@ export async function ZapierWalkthrough({ webhookUrl }: ZapierWalkthroughProps) 
         {t('englishOnlyNotice')}
       </Alert>
 
-      <ol aria-label={t('stepsLabel')} className="flex flex-col gap-[var(--aura-space-3)]">
+      {/* role="list": preflight's list-style:none drops the list role in Safari. */}
+      <ol role="list" aria-label={t('stepsLabel')} className="flex flex-col gap-[var(--aura-space-3)]">
         {Array.from({ length: STEP_COUNT }, (_, i) => i + 1).map((step) => (
           <li key={step}>
             <Card>
