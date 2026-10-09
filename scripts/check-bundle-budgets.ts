@@ -174,6 +174,10 @@
  *     /admin/events/erasure                             821.2 KB measured → ≤  930 KB
  *     /admin/events/[eventId]/registrations/[registrationId]/erase
  *                                                       811.8 KB measured → ≤  920 KB
+ *   122 US9b-2 (events CSV import on AURA, 2026-10-09) — budgeted for the first
+ *   time on the branch build:
+ *     /admin/events/import                              972.5 KB measured → ≤ 1080 KB
+ *     /admin/events/import/history                      813.3 KB measured → ≤  920 KB
  *
  * Run as a post-build step:
  *
@@ -270,6 +274,8 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/events/[eventId]', maxKb: 1020 },
   { route: '/admin/events/erasure', maxKb: 930 },
   { route: '/admin/events/[eventId]/registrations/[registrationId]/erase', maxKb: 920 },
+  { route: '/admin/events/import', maxKb: 1080 },
+  { route: '/admin/events/import/history', maxKb: 920 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');
