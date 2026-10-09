@@ -18,13 +18,14 @@
  *       stays enabled so the admin can retry without re-opening the modal.
  *
  * Accessibility:
- *   - role=dialog + aria-modal inherited from shadcn Dialog (Base UI).
- *   - Form fields use Label + htmlFor association.
- *   - Field + server errors use role="alert" (assertive) so a newly-inserted
- *     validation/rejection message is announced reliably; the server-error
- *     Alert also takes focus on a failed submit.
+ *   - AURA `Dialog` (spec 122 US9b-2): role=dialog, focus trap, Escape.
+ *   - AURA fields carry their label, hint and error; each field error is
+ *     wrapped in role="alert" (assertive) so a newly-inserted validation
+ *     message is announced reliably; the server-error Alert also takes
+ *     focus on a failed submit.
  *   - Default focus on the externalId input (admin-facing field).
- *   - All buttons min-h-11 (WCAG 2.5.8 target size).
+ *   - The start is a DatePicker plus a TimePicker in Bangkok time
+ *     (Buddhist Era on TH is display only; the value stays ISO).
  *
  * The form is intentionally minimal — only the 4 fields needed by the
  * CSV import path. Advanced fields (description / location / partner-
@@ -33,24 +34,20 @@
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Loader2 } from 'lucide-react';
+import {
+  Alert,
+  Button,
+  DatePicker,
+  Dialog,
+  TextField,
+  TimePicker,
+  type ISODate,
+} from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { bangkokInputToIso } from '@/components/broadcast/bangkok-datetime';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 export interface CreatedEvent {
   readonly eventId: string;
@@ -79,9 +76,10 @@ const FormSchema = z.object({
     .max(100, 'externalIdTooLong')
     .regex(/^[a-z0-9][a-z0-9-]{0,99}$/i, 'externalIdInvalid'),
   name: z.string().trim().min(1, 'nameRequired').max(500, 'nameTooLong'),
-  // `datetime-local` <input> returns "YYYY-MM-DDTHH:mm" without tz.
-  // It is read as Bangkok wall time and posted as UTC ISO (onSubmit).
-  startDateLocal: z.string().min(1, 'startDateRequired'),
+  // The DatePicker gives "YYYY-MM-DD" and the TimePicker "HH:mm"; joined,
+  // they are read as Bangkok wall time and posted as UTC ISO (onSubmit).
+  startDate: z.string().min(1, 'startDateRequired'),
+  startTime: z.string().min(1, 'startTimeRequired'),
   category: z.string().trim().max(100, 'categoryTooLong').optional(),
 });
 
@@ -98,14 +96,7 @@ export function EventCreateInlineModal(
   const t = useTranslations(
     'admin.events.import.eventPicker.inlineCreateModal',
   );
-  const externalIdId = useId();
-  const externalIdHintId = useId();
-  const nameId = useId();
-  const nameHintId = useId();
-  const startDateId = useId();
-  const startDateHintId = useId();
-  const categoryId = useId();
-  const categoryHintId = useId();
+  const formId = useId();
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<ServerError | null>(null);
   // Move focus to the server-error Alert on a failed submit so a keyboard/SR
@@ -117,6 +108,7 @@ export function EventCreateInlineModal(
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { errors },
@@ -125,7 +117,8 @@ export function EventCreateInlineModal(
     defaultValues: {
       externalId: '',
       name: '',
-      startDateLocal: '',
+      startDate: '',
+      startTime: '',
       category: '',
     },
   });
@@ -144,11 +137,11 @@ export function EventCreateInlineModal(
     setSubmitting(true);
     setServerError(null);
 
-    // `datetime-local` carries no timezone. The typed value is the
-    // chamber's wall time (Asia/Bangkok, as the help text promises), not
-    // the browser's: `new Date(local)` would shift it by the admin's
-    // offset. Stored as UTC per project convention.
-    const startDate = bangkokInputToIso(values.startDateLocal);
+    // The picked date and time carry no timezone. They are the chamber's
+    // wall time (Asia/Bangkok, as the help text promises), not the
+    // browser's: `new Date(local)` would shift it by the admin's offset.
+    // Stored as UTC per project convention.
+    const startDate = bangkokInputToIso(`${values.startDate}T${values.startTime}`);
     if (startDate === null) {
       setServerError({
         title: t('errors.invalidStartDateTitle'),
@@ -246,192 +239,117 @@ export function EventCreateInlineModal(
     setSubmitting(false);
   });
 
+  /** A field error, announced assertively when it appears (audit XF-07). */
+  const fieldError = (message: string | undefined, fallback: string) =>
+    message !== undefined ? (
+      <span role="alert">{t(`fields.errors.${message || fallback}`)}</span>
+    ) : undefined;
+
   return (
     <Dialog
       open={props.open}
-      onOpenChange={(open) => {
-        if (!open) handleClose();
-        else props.onOpenChange(true);
-      }}
+      onClose={handleClose}
+      dismissible={!submitting}
+      title={t('title')}
+      description={t('description')}
+      footer={
+        <>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleClose}
+            disabled={submitting}
+            touchHeight
+          >
+            {t('cancelCta')}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            loading={submitting}
+            touchHeight
+          >
+            {submitting ? t('submittingCta') : t('submitCta')}
+          </Button>
+        </>
+      }
     >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-          <DialogDescription>{t('description')}</DialogDescription>
-        </DialogHeader>
-
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          {serverError !== null ? (
-            <div ref={serverErrorRef} tabIndex={-1} className="outline-none">
-              {/* Alert already carries role="alert" (assertive) — no aria-live
-                * override, which would downgrade it to polite. */}
-              <Alert variant="destructive">
-                <AlertTitle>{serverError.title}</AlertTitle>
-                <AlertDescription>{serverError.detail}</AlertDescription>
-              </Alert>
-            </div>
-          ) : null}
-
-          {/* APG Form Pattern: keep the hint paragraph always-mounted +
-              add the error paragraph as a sibling. `aria-describedby`
-              points to BOTH ids when an error fires so SR users hear
-              the field context (e.g. "1-100 alphanumeric + hyphen")
-              AND the validation message — losing context on error
-              defeats the purpose of the hint. */}
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={externalIdId}>{t('fields.externalIdLabel')}</Label>
-            <Input
-              id={externalIdId}
-              {...register('externalId')}
-              autoFocus
-              placeholder={t('fields.externalIdPlaceholder')}
-              aria-invalid={errors.externalId !== undefined}
-              aria-describedby={
-                errors.externalId !== undefined
-                  ? `${externalIdHintId} ${externalIdId}-error`
-                  : externalIdHintId
-              }
-            />
-            <p
-              id={externalIdHintId}
-              className="text-caption text-muted-foreground"
-            >
-              {t('fields.externalIdHelp')}
-            </p>
-            {errors.externalId ? (
-              <p
-                id={`${externalIdId}-error`}
-                className="text-caption text-destructive"
-                role="alert"
-              >
-                {t(`fields.errors.${errors.externalId.message ?? 'externalIdInvalid'}`)}
-              </p>
-            ) : null}
+      <form
+        id={formId}
+        onSubmit={onSubmit}
+        noValidate
+        className="flex flex-col gap-[var(--aura-space-4)]"
+      >
+        {serverError !== null ? (
+          <div ref={serverErrorRef} tabIndex={-1} className="outline-none">
+            {/* Alert carries role="alert" (assertive) for the danger tone. */}
+            <Alert tone="danger" title={serverError.title}>
+              {serverError.detail}
+            </Alert>
           </div>
+        ) : null}
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={nameId}>{t('fields.nameLabel')}</Label>
-            <Input
-              id={nameId}
-              {...register('name')}
-              placeholder={t('fields.namePlaceholder')}
-              aria-invalid={errors.name !== undefined}
-              aria-describedby={
-                errors.name !== undefined
-                  ? `${nameHintId} ${nameId}-error`
-                  : nameHintId
-              }
-            />
-            <p
-              id={nameHintId}
-              className="text-caption text-muted-foreground"
-            >
-              {t('fields.nameHelp')}
-            </p>
-            {errors.name ? (
-              <p
-                id={`${nameId}-error`}
-                className="text-caption text-destructive"
-                role="alert"
-              >
-                {t(`fields.errors.${errors.name.message ?? 'nameRequired'}`)}
-              </p>
-            ) : null}
-          </div>
+        <TextField
+          {...register('externalId')}
+          label={t('fields.externalIdLabel')}
+          autoFocus
+          placeholder={t('fields.externalIdPlaceholder')}
+          hint={t('fields.externalIdHelp')}
+          error={fieldError(errors.externalId?.message, 'externalIdInvalid')}
+        />
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={startDateId}>{t('fields.startDateLabel')}</Label>
-            <Input
-              id={startDateId}
-              type="datetime-local"
-              {...register('startDateLocal')}
-              aria-invalid={errors.startDateLocal !== undefined}
-              aria-describedby={
-                errors.startDateLocal !== undefined
-                  ? `${startDateHintId} ${startDateId}-error`
-                  : startDateHintId
-              }
-            />
-            <p
-              id={startDateHintId}
-              className="text-caption text-muted-foreground"
-            >
-              {t('fields.startDateHelp')}
-            </p>
-            {errors.startDateLocal ? (
-              <p
-                id={`${startDateId}-error`}
-                className="text-caption text-destructive"
-                role="alert"
-              >
-                {t(
-                  `fields.errors.${errors.startDateLocal.message ?? 'startDateRequired'}`,
-                )}
-              </p>
-            ) : null}
-          </div>
+        <TextField
+          {...register('name')}
+          label={t('fields.nameLabel')}
+          placeholder={t('fields.namePlaceholder')}
+          hint={t('fields.nameHelp')}
+          error={fieldError(errors.name?.message, 'nameRequired')}
+        />
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={categoryId}>{t('fields.categoryLabel')}</Label>
-            <Input
-              id={categoryId}
-              {...register('category')}
-              placeholder={t('fields.categoryPlaceholder')}
-              aria-invalid={errors.category !== undefined}
-              aria-describedby={
-                errors.category !== undefined
-                  ? `${categoryHintId} ${categoryId}-error`
-                  : categoryHintId
-              }
-            />
-            <p
-              id={categoryHintId}
-              className="text-caption text-muted-foreground"
-            >
-              {t('fields.categoryHelp')}
-            </p>
-            {errors.category ? (
-              <p
-                id={`${categoryId}-error`}
-                className="text-caption text-destructive"
-                role="alert"
-              >
-                {t(`fields.errors.${errors.category.message ?? 'categoryTooLong'}`)}
-              </p>
-            ) : null}
-          </div>
+        <div className="grid gap-[var(--aura-space-4)] sm:grid-cols-2">
+          <Controller
+            control={control}
+            name="startDate"
+            render={({ field }) => (
+              <DatePicker
+                id={`${formId}-start-date`}
+                name={field.name}
+                ref={field.ref}
+                label={t('fields.startDateLabel')}
+                timeZone="Asia/Bangkok"
+                value={(field.value || null) as ISODate | null}
+                onChange={(iso) => field.onChange(iso ?? '')}
+                error={fieldError(errors.startDate?.message, 'startDateRequired')}
+              />
+            )}
+          />
+          <Controller
+            control={control}
+            name="startTime"
+            render={({ field }) => (
+              <TimePicker
+                id={`${formId}-start-time`}
+                name={field.name}
+                label={t('fields.startTimeLabel')}
+                step={15}
+                suggest="09:00"
+                value={field.value || null}
+                onChange={(time) => field.onChange(time ?? '')}
+                hint={t('fields.startDateHelp')}
+                error={fieldError(errors.startTime?.message, 'startTimeRequired')}
+              />
+            )}
+          />
+        </div>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleClose}
-              disabled={submitting}
-              className="min-h-11"
-            >
-              {t('cancelCta')}
-            </Button>
-            <Button
-              type="submit"
-              disabled={submitting}
-              aria-busy={submitting}
-              className="min-h-11"
-            >
-              {submitting ? (
-                <>
-                  <Loader2
-                    aria-hidden="true"
-                    className="mr-2 size-4 animate-spin motion-reduce:animate-none"
-                  />
-                  {t('submittingCta')}
-                </>
-              ) : (
-                t('submitCta')
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
+        <TextField
+          {...register('category')}
+          label={t('fields.categoryLabel')}
+          placeholder={t('fields.categoryPlaceholder')}
+          hint={t('fields.categoryHelp')}
+          error={fieldError(errors.category?.message, 'categoryTooLong')}
+        />
+      </form>
     </Dialog>
   );
 }

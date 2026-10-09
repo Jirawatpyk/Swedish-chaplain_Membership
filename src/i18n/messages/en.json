@@ -5649,7 +5649,8 @@
               "nameLabel": "Event name",
               "namePlaceholder": "e.g. SweCham AGM 2026",
               "nameHelp": "Public-facing event title shown on the import history and audit log (up to 500 characters).",
-              "startDateLabel": "Start date & time",
+              "startDateLabel": "Start date",
+              "startTimeLabel": "Start time",
               "startDateHelp": "Local time in your tenant's primary timezone — stored as UTC.",
               "categoryLabel": "Category (optional)",
               "categoryPlaceholder": "e.g. AGM, Networking, Workshop",
@@ -5660,7 +5661,8 @@
                 "externalIdInvalid": "Use alphanumeric characters and hyphens only (e.g. agm-2026).",
                 "nameRequired": "Event name is required.",
                 "nameTooLong": "Event name must be at most 500 characters.",
-                "startDateRequired": "Start date & time is required.",
+                "startDateRequired": "Start date is required.",
+                "startTimeRequired": "Start time is required.",
                 "categoryTooLong": "Category must be at most 100 characters."
               }
             },

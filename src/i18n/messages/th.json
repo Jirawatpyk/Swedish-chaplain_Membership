@@ -5649,7 +5649,8 @@
               "nameLabel": "ชื่อกิจกรรม",
               "namePlaceholder": "เช่น SweCham AGM 2026",
               "nameHelp": "ชื่อกิจกรรมที่แสดงบนหน้าประวัติการนำเข้าและบันทึกการตรวจสอบ (ไม่เกิน 500 ตัวอักษร)",
-              "startDateLabel": "วันที่และเวลาเริ่ม",
+              "startDateLabel": "วันที่เริ่ม",
+              "startTimeLabel": "เวลาเริ่ม",
               "startDateHelp": "เวลาตามเขตเวลาหลักของหอการค้า ระบบจะบันทึกเป็น UTC",
               "categoryLabel": "หมวดหมู่ (ไม่จำเป็น)",
               "categoryPlaceholder": "เช่น AGM, Networking, Workshop",
@@ -5660,7 +5661,8 @@
                 "externalIdInvalid": "ใช้ได้เฉพาะตัวอักษร a-z, ตัวเลข และยัติภังค์เท่านั้น (เช่น agm-2026)",
                 "nameRequired": "ต้องระบุชื่อกิจกรรม",
                 "nameTooLong": "ชื่อกิจกรรมต้องมีความยาวไม่เกิน 500 ตัวอักษร",
-                "startDateRequired": "ต้องระบุวันที่และเวลาเริ่ม",
+                "startDateRequired": "ต้องระบุวันที่เริ่ม",
+                "startTimeRequired": "ต้องระบุเวลาเริ่ม",
                 "categoryTooLong": "หมวดหมู่ต้องมีความยาวไม่เกิน 100 ตัวอักษร"
               }
             },

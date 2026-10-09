@@ -5649,7 +5649,8 @@
               "nameLabel": "Evenemangsnamn",
               "namePlaceholder": "t.ex. SweCham AGM 2026",
               "nameHelp": "Publikt evenemangsnamn som visas i importhistoriken och granskningstabellen (högst 500 tecken).",
-              "startDateLabel": "Startdatum och tid",
+              "startDateLabel": "Startdatum",
+              "startTimeLabel": "Starttid",
               "startDateHelp": "Lokal tid i kammarens primära tidszon — lagras som UTC.",
               "categoryLabel": "Kategori (valfri)",
               "categoryPlaceholder": "t.ex. AGM, Nätverk, Workshop",
@@ -5660,7 +5661,8 @@
                 "externalIdInvalid": "Använd endast alfanumeriska tecken och bindestreck (t.ex. agm-2026).",
                 "nameRequired": "Evenemangsnamn krävs.",
                 "nameTooLong": "Evenemangsnamn får vara högst 500 tecken.",
-                "startDateRequired": "Startdatum och tid krävs.",
+                "startDateRequired": "Startdatum krävs.",
+                "startTimeRequired": "Starttid krävs.",
                 "categoryTooLong": "Kategori får vara högst 100 tecken."
               }
             },
