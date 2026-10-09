@@ -64,6 +64,18 @@ describe('<WebhookSecretReveal> on AURA', () => {
     expect(value).not.toHaveTextContent(SECRET);
   });
 
+  it('keeps its own group name when step 3 is behind it (the rotate dialog)', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <span id="webhook-secret-label">Current secret</span>
+        <WebhookSecretReveal secret={SECRET} secretLastFour="7f3a" onContinue={vi.fn()} hideInternalContinue />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByRole('group', { name: a.secretLabel })).toContainElement(
+      screen.getByTestId('webhook-secret-value'),
+    );
+  });
+
   it('copies the plaintext secret', async () => {
     renderReveal();
     await act(async () => {
