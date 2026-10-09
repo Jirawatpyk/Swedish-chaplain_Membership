@@ -26,11 +26,7 @@
  *   - data-testid hooks for the E2E spec.
  */
 import { useTranslations } from 'next-intl';
-import { Download, TriangleAlert } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Alert, Card, Icon, buttonClass } from '@jirawatpyk/aura-react';
 import { MatchStatusBadge } from './match-status-badge';
 import type { MatchType } from '@/modules/events';
 
@@ -133,13 +129,12 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
       role="region"
       aria-label={t('regionLabel')}
       data-testid="csv-import-result"
+      title={t('title')}
+      headingLevel={2}
     >
-      <CardHeader>
-        <CardTitle>{t('title')}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-6">
+      <div className="flex flex-col gap-[var(--aura-space-6)]">
         {/* Headline counters */}
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 md:grid-cols-6">
+        <dl className="grid grid-cols-2 gap-x-[var(--aura-space-6)] gap-y-[var(--aura-space-3)] sm:grid-cols-3 md:grid-cols-6">
           <Counter
             label={t('rowsProcessedLabel')}
             value={result.rowsProcessed}
@@ -188,53 +183,50 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
             warning first — the recordId is meaningless if support
             cannot find a matching DB row. */}
         {result.recordId !== undefined ? (
-          <div className="flex flex-col gap-2" data-testid="result-record-id-block">
+          <div
+            className="flex flex-col items-start gap-[var(--aura-space-2)]"
+            data-testid="result-record-id-block"
+          >
             {result.historyPersisted === false ? (
-              <InlineAlert
+              <Alert
                 tone="warning"
                 role="status"
+                className="w-full"
                 data-testid="result-history-degraded"
               >
-                <TriangleAlert aria-hidden="true" className="shrink-0" />
-                <InlineAlertDescription className="font-medium opacity-100">
-                  {t('historyDegraded')}
-                </InlineAlertDescription>
-              </InlineAlert>
+                {t('historyDegraded')}
+              </Alert>
             ) : null}
             {/* Audit-completion degraded chip — when false, the per- */}
             {/* import csv_import_completed audit row failed to emit. */}
             {/* Rows + history may still be safe; the gap is purely on */}
             {/* the audit trail. */}
             {result.auditCompletionEmitted === false ? (
-              <InlineAlert
+              <Alert
                 tone="warning"
                 role="status"
+                className="w-full"
                 data-testid="result-audit-degraded"
               >
-                <TriangleAlert aria-hidden="true" className="shrink-0" />
-                <InlineAlertDescription className="font-medium opacity-100">
-                  {t('auditDegraded')}
-                </InlineAlertDescription>
-              </InlineAlert>
+                {t('auditDegraded')}
+              </Alert>
             ) : null}
             {/* R7.B1 / Staff R2 R030 — FR-019b safety-net fail-open chip */}
             {/* When true, the duplicate-protection query was unavailable */}
             {/* and the import proceeded without it. Admin should */}
             {/* manually verify the event selection. */}
             {result.safetyNetFailedOpen === true ? (
-              <InlineAlert
+              <Alert
                 tone="warning"
                 role="status"
+                className="w-full"
                 data-testid="result-safety-net-unavailable"
               >
-                <TriangleAlert aria-hidden="true" className="shrink-0" />
-                <InlineAlertDescription className="font-medium opacity-100">
-                  {t('safetyNetUnavailable')}
-                </InlineAlertDescription>
-              </InlineAlert>
+                {t('safetyNetUnavailable')}
+              </Alert>
             ) : null}
             <p
-              className="text-caption text-muted-foreground"
+              className="aura-text-caption text-[var(--aura-fg-secondary)]"
               data-testid="result-record-id"
             >
               {t('recordIdLabel')}:{' '}
@@ -247,16 +239,13 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
             {result.errorCsvAvailable ? (
               <a
                 href={`/api/admin/events/import/${result.recordId}/error-csv`}
-                className={cn(
-                  buttonVariants({ variant: 'outline' }),
-                  'min-h-11 self-start',
-                )}
+                className={buttonClass({ variant: 'secondary', touchHeight: true })}
                 data-testid="result-download-error-csv"
                 aria-label={tHistory('downloadErrorCsvAriaLabel', {
                   recordId: result.recordId.slice(0, 8),
                 })}
               >
-                <Download aria-hidden="true" className="mr-2 size-4" />
+                <Icon name="download" />
                 {tHistory('downloadErrorCsv')}
               </a>
             ) : null}
@@ -265,14 +254,17 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
 
         {/* Per-match-type breakdown */}
         <section aria-labelledby="csv-result-match-breakdown" data-testid="result-match-counts">
-          <h3 id="csv-result-match-breakdown" className="text-body mb-2 font-medium">
+          <h3
+            id="csv-result-match-breakdown"
+            className="mb-[var(--aura-space-2)] font-medium"
+          >
             {t('matchBreakdownTitle')}
           </h3>
-          <ul className="flex flex-wrap gap-3">
+          <ul className="flex flex-wrap gap-[var(--aura-space-3)]">
             {MATCH_TYPE_ORDER.map((mt) => (
-              <li key={mt} className="flex items-center gap-2">
+              <li key={mt} className="flex items-center gap-[var(--aura-space-2)]">
                 <MatchStatusBadge matchType={mt} label={tMatch(mt)} />
-                <span className="text-body tabular-nums">
+                <span className="tabular-nums">
                   {result.matchCounts[mt]}
                 </span>
               </li>
@@ -282,11 +274,11 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
 
         {/* Error rows (collapsible) */}
         {result.errorRows.length > 0 ? (
-          <details className="rounded-md border border-destructive/30 bg-destructive/5 p-3">
-            <summary className="text-body cursor-pointer min-h-6 py-1 font-medium text-destructive">
+          <details className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-danger)] p-[var(--aura-space-3)]">
+            <summary className="min-h-6 cursor-pointer py-1 font-medium text-[var(--aura-fg-danger)]">
               {t('errorRowsTitle', { count: result.errorRows.length })}
             </summary>
-            <ul className="text-caption mt-3 flex flex-col gap-2">
+            <ul className="aura-text-caption mt-[var(--aura-space-3)] flex flex-col gap-[var(--aura-space-2)]">
               {result.errorRows.map((row) => (
                 <li
                   key={`${row.rowNumber}-${row.reason}`}
@@ -302,11 +294,11 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
             </ul>
           </details>
         ) : (
-          <p className="text-caption text-muted-foreground">
+          <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
             {t('noErrorRows')}
           </p>
         )}
-      </CardContent>
+      </div>
     </Card>
   );
 }
@@ -321,8 +313,8 @@ interface CounterProps {
 }
 
 const COUNTER_TONE_CLASSES = {
-  success: 'text-success',
-  muted: 'text-muted-foreground',
+  success: 'text-[var(--aura-fg-positive)]',
+  muted: 'text-[var(--aura-fg-secondary)]',
 } as const;
 
 function Counter({ label, description, value, valueText, testId, tone }: CounterProps) {
@@ -333,15 +325,15 @@ function Counter({ label, description, value, valueText, testId, tone }: Counter
   // description into the `<dd>` as a `<small>` block-styled child;
   // keeps semantic pair grouping intact + retains visual layout.
   return (
-    <div className="flex flex-col gap-1">
-      <dt className="text-caption text-muted-foreground">{label}</dt>
+    <div className="flex flex-col gap-[var(--aura-space-1)]">
+      <dt className="aura-text-caption text-[var(--aura-fg-secondary)]">{label}</dt>
       <dd
         data-testid={testId}
-        className={`text-h2 tabular-nums ${tone ? COUNTER_TONE_CLASSES[tone] : ''}`}
+        className={`aura-text-h2 tabular-nums ${tone ? COUNTER_TONE_CLASSES[tone] : ''}`}
       >
         {valueText ?? value}
         {description ? (
-          <small className="text-caption mt-1 block font-normal text-muted-foreground">
+          <small className="aura-text-caption mt-[var(--aura-space-1)] block font-normal text-[var(--aura-fg-secondary)]">
             {description}
           </small>
         ) : null}
