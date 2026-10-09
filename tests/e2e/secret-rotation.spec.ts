@@ -142,7 +142,9 @@ test.describe('F6 secret rotation — AS1 UI flow @workers=1', () => {
       name: /saved.*password manager|saved.*manager/i,
     });
     await savedCheckbox.click();
-    await expect(savedCheckbox).toHaveAttribute('aria-checked', 'true');
+    // Spec 122 US9c: AURA's Checkbox is a native input, whose state is the
+    // `checked` property (no aria-checked attribute).
+    await expect(savedCheckbox).toBeChecked();
     await expect(doneButton).toBeEnabled();
 
     // Click Done — dialog closes via parent state via inline
