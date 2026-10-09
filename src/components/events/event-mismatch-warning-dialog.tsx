@@ -94,7 +94,7 @@ export function EventMismatchWarningDialog(
           {t('description', { count: props.priorImports.length })}
         </p>
         {props.priorImports.length > 0 ? (
-          <div className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-subtle)] bg-[var(--aura-bg-surface-strong)] p-[var(--aura-space-3)]">
+          <div className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-subtle)] bg-[var(--aura-bg-canvas)] p-[var(--aura-space-3)]">
             <p className="aura-text-caption mb-[var(--aura-space-2)] font-medium text-[var(--aura-fg-secondary)]">
               {t('priorImportsHeading')}
             </p>
