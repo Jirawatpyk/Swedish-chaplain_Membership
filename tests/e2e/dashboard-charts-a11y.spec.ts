@@ -138,6 +138,9 @@ async function hoverCartesianCanvas(page: Page, chartSlot: Locator): Promise<voi
     return;
   }
   const svg = chartSlot.locator('svg').first();
+  // `mouse.move` never scrolls (unlike `hover()`): on a phone the chart sits
+  // below the fold, so its box must be read after it is in view.
+  await svg.scrollIntoViewIfNeeded();
   const box = await svg.boundingBox();
   if (!box) throw new Error('Chart <svg> has no bounding box — did it actually mount?');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -153,6 +156,7 @@ async function hoverCartesianCanvas(page: Page, chartSlot: Locator): Promise<voi
  */
 async function hoverDonutUntilTooltipVisible(page: Page, chartSlot: Locator): Promise<boolean> {
   const svg = chartSlot.locator('svg').first();
+  await svg.scrollIntoViewIfNeeded(); // see hoverCartesianCanvas
   const box = await svg.boundingBox();
   if (!box) throw new Error('Donut <svg> has no bounding box — did it actually mount?');
   const cx = box.x + box.width / 2;
