@@ -53,7 +53,10 @@ export function ActivityFeed({
         ) : (
           <ul className="grid gap-2 text-body">
             {items.map((item) => (
-              <li key={item.id} className="flex items-baseline justify-between gap-3">
+              // min-w-0: a grid item defaults to min-width:auto, so without
+              // it the column grows to the row's no-wrap width, the label
+              // never truncates and the time is pushed past the card edge.
+              <li key={item.id} className="flex min-w-0 items-baseline justify-between gap-3">
                 <span className="min-w-0 truncate">
                   {item.actor ? (
                     <>
