@@ -11,6 +11,37 @@ import en from '@/i18n/messages/en.json';
 import { StaffTopBar } from '@/components/layout/staff-top-bar';
 import { OPEN_COMMAND_PALETTE_EVENT } from '@/components/command-palette/open-event';
 import { BreadcrumbProvider } from '@/components/layout/breadcrumb-provider';
+import { nextCrowded, type RowMeasure } from '@/components/layout/top-bar-crowding';
+
+// jsdom has no layout: the row's measurements come from this stub, and the
+// ResizeObserver callback is fired by hand.
+const measure = vi.hoisted(() => ({
+  next: { wraps: false, rowWidth: 1280, neededWithPill: 600 } as {
+    wraps: boolean;
+    rowWidth: number;
+    neededWithPill: number;
+  },
+}));
+vi.mock('@/components/layout/top-bar-crowding', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/layout/top-bar-crowding')>();
+  return { ...actual, measureRow: () => measure.next };
+});
+const observers: Array<() => void> = [];
+class StubResizeObserver {
+  constructor(private readonly cb: () => void) {
+    observers.push(() => this.cb());
+  }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+vi.stubGlobal('ResizeObserver', StubResizeObserver);
+function relayout(next: RowMeasure) {
+  measure.next = next;
+  act(() => {
+    for (const fire of observers) fire();
+  });
+}
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/admin/members',
@@ -86,5 +117,50 @@ describe('StaffTopBar (spec 122 US1)', () => {
     const { container } = renderBar();
     const brandBox = container.querySelector('a[href="/admin"]')!.parentElement as HTMLElement;
     expect(brandBox).toHaveClass('min-w-8', 'sm:min-w-10');
+  });
+
+  // PR #530 follow-up: at 393px / 200% text the row wrapped to two rows
+  // (~185px, sticky). While the controls cannot fit one row the language pill
+  // leaves the bar and the choice moves into the account menu; at normal text
+  // size the pill stays.
+  it('keeps the language pill in the bar while the row fits', () => {
+    const { container } = renderBar();
+    relayout({ wraps: false, rowWidth: 345, neededWithPill: 300 });
+    expect(container.querySelector('div')).not.toHaveAttribute('data-crowded');
+    expect(screen.getByRole('button', { name: /change language/i })).toBeInTheDocument();
+  });
+
+  it('moves the language choice into the account menu while the row wraps', async () => {
+    vi.useRealTimers();
+    const { container } = renderBar();
+    relayout({ wraps: true, rowWidth: 337, neededWithPill: 376 });
+    expect(container.querySelector('div')).toHaveAttribute('data-crowded', 'true');
+    // Out of the tab order, not just visually hidden.
+    expect(screen.queryByRole('button', { name: /change language/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Account menu/ }));
+    expect(await screen.findByRole('menuitemradio', { name: 'English' })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('brings the pill back only once the row has room for it', () => {
+    const { container } = renderBar();
+    relayout({ wraps: true, rowWidth: 337, neededWithPill: 376 });
+    // Without the pill the row fits: still crowded, or it would flip back and forth.
+    relayout({ wraps: false, rowWidth: 337, neededWithPill: 376 });
+    expect(container.querySelector('div')).toHaveAttribute('data-crowded', 'true');
+    relayout({ wraps: false, rowWidth: 1216, neededWithPill: 376 });
+    expect(container.querySelector('div')).not.toHaveAttribute('data-crowded');
+    expect(screen.getByRole('button', { name: /change language/i })).toBeInTheDocument();
+  });
+});
+
+describe('nextCrowded', () => {
+  it.each([
+    ['fits, not crowded', false, { wraps: false, rowWidth: 345, neededWithPill: 300 }, false],
+    ['wraps', false, { wraps: true, rowWidth: 337, neededWithPill: 376 }, true],
+    ['crowded, fits only without the pill', true, { wraps: false, rowWidth: 337, neededWithPill: 376 }, false],
+    ['crowded, room for the pill', true, { wraps: false, rowWidth: 376, neededWithPill: 376 }, true],
+    ['crowded and still wrapping', true, { wraps: true, rowWidth: 300, neededWithPill: 376 }, false],
+  ] as const)('%s', (_name, wasCrowded, m, uncrowds) => {
+    expect(nextCrowded(wasCrowded, m)).toBe(wasCrowded ? !uncrowds : m.wraps);
   });
 });
