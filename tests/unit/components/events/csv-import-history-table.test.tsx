@@ -49,6 +49,10 @@ import {
 } from '@/components/events/csv-import-history-table';
 
 const MESSAGES = {
+  pagination: {
+    summary: 'Showing {from}\u2013{to} of {total}',
+    emptyCount: 'No records',
+  },
   admin: {
     events: {
       import: {
@@ -58,6 +62,7 @@ const MESSAGES = {
           tableAriaLabel: 'CSV import history table',
           backToImport: 'Back to import',
           downloadErrorCsv: 'Download error CSV',
+          cardSummary: '{source} · {processed} processed · {skipped} skipped · {failed} failed',
           downloadErrorCsvAriaLabel: 'Download error CSV for import {recordId}',
           expiredBadge: 'Expired',
           expiredTooltip:
@@ -213,6 +218,32 @@ describe('<CsvImportHistoryTable> error-rows download (US9b-2 parity)', () => {
     expect(link).toHaveAccessibleName('Download error CSV for import 00000000');
     const label = screen.getByText('Download error CSV');
     expect(link).toContainElement(label);
-    expect(label.className).toMatch(/(^|\s)sm:sr-only(\s|$)/);
+    expect(label.className).toMatch(/(^|\s)sr-only(\s|$)/);
+    // Board: a bare icon button in the row, no frame.
+    expect(link.className).toMatch(/aura-btn--ghost/);
+  });
+});
+
+describe('<CsvImportHistoryTable> list pattern (US9b-2 parity)', () => {
+  afterEach(() => cleanup());
+
+  it('uses the shared TablePagination like the other list pages', () => {
+    renderTable([makeRow('completed', 0), makeRow('timeout', 1)]);
+    expect(document.querySelector('[data-slot="table-pagination"]')).not.toBeNull();
+    expect(screen.getByText('Showing 1\u20132 of 2')).toBeInTheDocument();
+  });
+
+  it('takes no space for the auto-refresh line while nothing is running', () => {
+    renderTable([makeRow('completed', 0)]);
+    expect(screen.getByTestId('csv-import-history-live').className).toMatch(
+      /(^|\s)sr-only(\s|$)/,
+    );
+  });
+
+  it('gives each phone card a one-line summary', () => {
+    renderTable([makeRow('completed', 0)]);
+    expect(
+      screen.getByText('EventCreate · 8 processed · 1 skipped · 1 failed'),
+    ).toBeInTheDocument();
   });
 });

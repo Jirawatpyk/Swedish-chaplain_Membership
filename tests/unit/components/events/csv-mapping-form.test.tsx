@@ -394,3 +394,49 @@ describe('CsvMappingForm — file field (US9b-2)', () => {
     ).toBeInTheDocument();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spec 122 US9b-2 parity (decided 2026-10-09): the board's layout. Cancel
+// sits before Confirm, the chosen file reads as a row with "Change" (the
+// same reset as Cancel), and "Upload another CSV" sits in the result
+// card's footer.
+describe('CsvMappingForm — board layout (US9b-2 parity)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useFakeTimers();
+  });
+
+  it('puts Cancel before Confirm, and "Change" on the chosen file returns to the upload field', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await uploadThreeRowCsv(user);
+    const confirm = await screen.findByRole('button', { name: /Confirm and import/i });
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    expect(
+      cancel.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    const fileRow = screen.getByTestId('csv-chosen-file');
+    expect(fileRow).toHaveTextContent('attendees.csv');
+    await user.click(within(fileRow).getByRole('button', { name: 'Change' }));
+    expect(await screen.findByLabelText(/Choose a \.csv file/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('csv-chosen-file')).not.toBeInTheDocument();
+  });
+
+  it('shows "Upload another CSV" inside the result card', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => completedResponse()));
+    const user = userEvent.setup();
+    renderForm();
+    await uploadThreeRowCsv(user);
+    const confirm = await screen.findByRole('button', { name: /Confirm and import/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await user.click(confirm);
+    const card = await screen.findByTestId('csv-import-result');
+    expect(
+      within(card).getByRole('button', { name: 'Upload another CSV' }),
+    ).toBeInTheDocument();
+  });
+});

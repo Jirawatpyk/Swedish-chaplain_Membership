@@ -97,6 +97,19 @@ describe('EventPicker on AURA Combobox (US9b-2)', () => {
     );
   });
 
+  it('marks the field required and puts the refresh button beside it (board)', () => {
+    render(wrap(<Harness events={[AGM, GALA]} />));
+    const field = screen.getByRole('combobox', { name: /Event/ });
+    expect(field).toBeRequired();
+    const row = screen.getByTestId('event-picker-field-row');
+    expect(row).toContainElement(field);
+    expect(
+      within(row).getByRole('button', {
+        name: enMessages.admin.events.import.eventPicker.refreshAriaLabel,
+      }),
+    ).toBeInTheDocument();
+  });
+
   it('selects the filename suggestion when nothing is chosen', async () => {
     const onChange = vi.fn();
     render(
