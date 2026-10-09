@@ -35,9 +35,11 @@ describe('EventCreateInlineModal', () => {
     const alerts = await screen.findAllByRole('alert');
     expect(alerts.length).toBeGreaterThan(0);
     // The required-field messages are the assertive field errors (not a polite
-    // live region that may be missed on insertion).
+    // live region that may be missed on insertion), and the field says it is
+    // invalid.
     expect(
-      alerts.some((el) => el.className.includes('text-destructive')),
+      alerts.some((el) => el.textContent === 'External ID is required.'),
     ).toBe(true);
+    expect(screen.getByLabelText('External ID')).toHaveAttribute('aria-invalid', 'true');
   });
 });
