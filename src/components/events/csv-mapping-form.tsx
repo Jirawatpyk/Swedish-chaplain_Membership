@@ -247,9 +247,6 @@ export function CsvMappingForm() {
   // so the admin can change the dropdown between Cancel/Continue cycles
   // without losing the preview file.
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [selectedEventLabel, setSelectedEventLabel] = useState<string | null>(
-    null,
-  );
   // FR-026 (#10a) — canonical→CSV-header remap selections. Hoisted OUTSIDE
   // the phase machine (like `selectedEventId`) so they survive the
   // submitting→preview restore on an event-mismatch warning. Re-seeded on
@@ -640,7 +637,6 @@ export function CsvMappingForm() {
             startDate: event.startDate,
           });
           setSelectedEventId(event.eventId);
-          setSelectedEventLabel(event.name);
         }}
       />
       {/* F6.1 (T027) — FR-019b event-mismatch warning. */}
@@ -678,10 +674,7 @@ export function CsvMappingForm() {
                 label={t('eventPicker.fieldLabel')}
                 hint={t('eventPicker.fieldHelp')}
                 value={selectedEventId}
-                onChange={(eventId, event) => {
-                  setSelectedEventId(eventId);
-                  setSelectedEventLabel(event?.name ?? null);
-                }}
+                onChange={(eventId) => setSelectedEventId(eventId)}
                 filenameHint={
                   phase.kind === 'preview' ? phase.file.name : null
                 }
@@ -690,12 +683,6 @@ export function CsvMappingForm() {
                   addPickerEventRef.current = add;
                 }}
               />
-              {selectedEventLabel !== null && (
-                <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
-                  <strong>{t('eventPicker.selectedPrefix')}:</strong>{' '}
-                  {selectedEventLabel}
-                </p>
-              )}
             </div>
 
             {phase.kind === 'error' ? (

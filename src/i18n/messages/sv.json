@@ -5620,7 +5620,6 @@
         "eventPicker": {
           "fieldLabel": "Evenemang",
           "fieldHelp": "Välj evenemanget som denna CSV ska kopplas till. Valet i rullgardinsmenyn är auktoritativt — eventuella evenemangskolumner i CSV-filen åsidosätts.",
-          "selectedPrefix": "Valt",
           "submitGatedHint": "Välj ett evenemang från rullgardinsmenyn ovan för att fortsätta.",
           "loading": "Hämtar evenemang…",
           "placeholder": "Välj ett evenemang…",

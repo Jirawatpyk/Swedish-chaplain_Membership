@@ -318,7 +318,31 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
         <div className="min-w-0 flex-1">
           <Combobox
             label={props.label}
-            {...(props.hint !== undefined ? { hint: props.hint } : {})}
+            // Board order: the filename suggestion straight under the field,
+            // then the help text. Both sit in the field's hint, so the field
+            // describes itself with them.
+            hint={
+              <>
+                {/* Surface fuzzy-match confidence so admins can decide
+                    whether to trust the auto-suggestion (score as an
+                    integer percent). The live region stays mounted so
+                    screen readers register it before content arrives. */}
+                <span
+                  className="block empty:hidden"
+                  role="status"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  {suggestedEvent !== null && props.value === suggestedEvent.eventId
+                    ? t('filenameMatchHintWithScore', {
+                        eventName: suggestedEvent.name,
+                        score: Math.round(suggestionScore * 100),
+                      })
+                    : ''}
+                </span>
+                {props.hint !== undefined ? <span className="block">{props.hint}</span> : null}
+              </>
+            }
             required
             placeholder={t('placeholder')}
             options={options}
@@ -359,28 +383,6 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
           />
         </div>
       </div>
-
-      {/*
-        Surface fuzzy-match confidence so admins can decide whether to
-        trust the auto-suggestion. Score displayed as integer percent.
-        Region is ALWAYS mounted with `min-h-[1lh]` so NVDA/JAWS register
-        the live region BEFORE content arrives — conditional-mount with
-        text causes some SRs to swallow the announcement when the
-        element appears already populated.
-      */}
-      <p
-        className="aura-text-caption text-[var(--aura-fg-secondary)] empty:hidden"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        {suggestedEvent !== null && props.value === suggestedEvent.eventId
-          ? t('filenameMatchHintWithScore', {
-              eventName: suggestedEvent.name,
-              score: Math.round(suggestionScore * 100),
-            })
-          : ''}
-      </p>
 
       {props.onCreateNew !== undefined ? (
         // Board: an accent text link, 44px tall on touch.

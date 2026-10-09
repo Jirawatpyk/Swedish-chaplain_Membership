@@ -5620,7 +5620,6 @@
         "eventPicker": {
           "fieldLabel": "Event",
           "fieldHelp": "Choose the event this CSV should reconcile to. The dropdown selection is authoritative — any event columns in the CSV are overridden.",
-          "selectedPrefix": "Selected",
           "submitGatedHint": "Select an event from the dropdown above to continue.",
           "loading": "Loading events…",
           "placeholder": "Choose an event…",
