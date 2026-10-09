@@ -428,6 +428,28 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **The inline create's start is two fields:** "Start date" (`DatePicker`, Bangkok time, Buddhist Era on TH display only) and "Start time" (`TimePicker`). They feed the same `bangkokInputToIso` conversion, so the instant sent is unchanged.
 - **The CSV preview stays a semantic table** with sticky headers in both directions, restyled with AURA tokens. It previews raw file rows, not records, so `DataTable` does not fit.
 
+### Session 2026-10-09 (maintainer, US9b-2 parity, decided on the parity page)
+
+- **The import screens follow the board** (comment "เอาตามบอร์ดดีไหม"; form and result card both). Each change is layout only, on existing handlers and state (FR-011).
+- **Import form:**
+  - the card is capped at about 720px (45rem);
+  - Cancel comes before Confirm, both at the end of the row; on phones they stack full width, Confirm on top;
+  - Event is marked required and gets a clear ×, which returns to the existing "no event" state with Confirm gated;
+  - the refresh button sits beside the field, and "+ Create new event" is an accent text link;
+  - the chosen file stays where the upload field was, as a row with "Change", which uses the same reset as Cancel;
+  - required columns that are present become filled green chips.
+- **Result card:**
+  - the counters are tiles;
+  - the reference ID, the error-CSV download and a primary "Upload another CSV" sit in the card footer (on phones: the ID, then the primary action, then the download);
+  - the error disclosure has a neutral frame.
+  - Not done: the board's "Open event" button and its footnote (new content), and the "Before you import" summary (it needs a dry run the server does not have).
+- **History** (comments "ช่องว่างเยอะไปไหม", "ตรงนี้ใช้ Consist เหมือนหน้าอื่นไหม", "ปุ่มนี้แก้ไหม"):
+  - the list-card rule and the shared `TablePagination`, as on Events, Members and Invoices, with the same `?page=N&perPage=M` URLs;
+  - the auto-refresh line takes no room while nothing runs, and stays a mounted live region;
+  - phone cards follow the board: date and file, the outcome pill, one summary line ("EventCreate · 146 processed · 2 skipped · 3 failed", a new EN/TH/SV string), and a full-width download only when there is one;
+  - the grid's download is a bare icon button;
+  - "Back to import" hides below 1024px, where the shell's back link does the same (the erasure page's rule).
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

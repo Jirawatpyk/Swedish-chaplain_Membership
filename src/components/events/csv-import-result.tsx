@@ -281,11 +281,10 @@ export function CsvImportResult({ result, footerAction }: CsvImportResultProps) 
 
         {/* Board: the card footer — the reference ID for support, then the
             error-CSV download and the primary action at the end. On phones
-            they stack full width, primary first (column-reverse keeps the
-            reading order). */}
+            they stack full width: the ID, the primary action, the download. */}
         {result.recordId !== undefined || footerAction !== undefined ? (
           <div
-            className="flex flex-wrap items-center gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:items-stretch max-sm:[&>button]:w-full"
+            className="flex flex-wrap items-center gap-[var(--aura-space-2)] max-sm:flex-col max-sm:items-stretch"
             data-testid="result-footer"
           >
             {result.recordId !== undefined ? (
@@ -304,7 +303,7 @@ export function CsvImportResult({ result, footerAction }: CsvImportResultProps) 
             {result.errorCsvAvailable ? (
               <a
                 href={`/api/admin/events/import/${result.recordId}/error-csv`}
-                className={buttonClass({ variant: 'secondary', touchHeight: true, className: 'max-sm:w-full' })}
+                className={buttonClass({ variant: 'secondary', touchHeight: true, className: 'max-sm:order-2 max-sm:w-full' })}
                 data-testid="result-download-error-csv"
                 aria-label={tHistory('downloadErrorCsvAriaLabel', {
                   recordId: result.recordId.slice(0, 8),
@@ -316,7 +315,9 @@ export function CsvImportResult({ result, footerAction }: CsvImportResultProps) 
             ) : null}
               </>
             ) : null}
-            {footerAction}
+            {footerAction !== undefined ? (
+              <div className="contents max-sm:order-1 max-sm:flex max-sm:flex-col">{footerAction}</div>
+            ) : null}
           </div>
         ) : null}
       </div>
