@@ -32,7 +32,6 @@ import { RelativeTime } from '@/components/shell/relative-time';
 import {
   KNOWN_RECENT_PROCESSING_OUTCOMES,
   type RecentDelivery,
-  type RecentDeliveryProcessingOutcome,
 } from '@/lib/events-admin-integration-types';
 
 /**
