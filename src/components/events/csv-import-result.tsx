@@ -26,11 +26,7 @@
  *   - data-testid hooks for the E2E spec.
  */
 import { useTranslations } from 'next-intl';
-import { Download, TriangleAlert } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Alert, Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { MatchStatusBadge } from './match-status-badge';
 import type { MatchType } from '@/modules/events';
 
@@ -98,6 +94,8 @@ export interface CsvImportResultPayload {
 
 interface CsvImportResultProps {
   readonly result: CsvImportResultPayload;
+  /** The card's primary action, in its footer (the form's "Upload another CSV"). */
+  readonly footerAction?: React.ReactNode;
 }
 
 const MATCH_TYPE_ORDER: ReadonlyArray<MatchType> = [
@@ -117,7 +115,7 @@ function formatDuration(ms: number): string {
   return `${minutes}m ${remainder}s`;
 }
 
-export function CsvImportResult({ result }: CsvImportResultProps) {
+export function CsvImportResult({ result, footerAction }: CsvImportResultProps) {
   const t = useTranslations('admin.events.import.result');
   const tHistory = useTranslations('admin.events.import.history');
   const tMatch = useTranslations('admin.events.matchType');
@@ -133,25 +131,23 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
       role="region"
       aria-label={t('regionLabel')}
       data-testid="csv-import-result"
+      title={t('title')}
+      headingLevel={2}
     >
-      <CardHeader>
-        <CardTitle>{t('title')}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-6">
+      <div className="flex flex-col gap-[var(--aura-space-6)]">
         {/* Headline counters */}
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 md:grid-cols-6">
+        {/* Board: the counters are tiles, three to a row (two on phones). */}
+        <dl className="grid grid-cols-2 gap-[var(--aura-space-3)] sm:grid-cols-3">
           <Counter
             label={t('rowsProcessedLabel')}
             value={result.rowsProcessed}
             testId="result-rows-processed"
-            tone="success"
           />
           <Counter
             label={t('rowsAlreadyImportedLabel')}
             description={t('rowsAlreadyImportedDescription')}
             value={result.rowsAlreadyImported}
             testId="result-rows-already-imported"
-            tone="muted"
           />
           {/* Render the state-change counter only when at least one
               row's payment_status flipped; admins for vanilla re-
@@ -162,7 +158,6 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
               description={t('rowsStateChangedDescription')}
               value={result.rowsStateChanged ?? 0}
               testId="result-rows-state-changed"
-              tone="success"
             />
           ) : null}
           <Counter
@@ -187,92 +182,68 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
             Degraded banner sits ABOVE the recordId so admins read the
             warning first — the recordId is meaningless if support
             cannot find a matching DB row. */}
-        {result.recordId !== undefined ? (
-          <div className="flex flex-col gap-2" data-testid="result-record-id-block">
+        {result.recordId !== undefined &&
+        (result.historyPersisted === false ||
+          result.auditCompletionEmitted === false ||
+          result.safetyNetFailedOpen === true) ? (
+          <div
+            className="flex flex-col items-start gap-[var(--aura-space-2)]"
+            data-testid="result-record-id-block"
+          >
             {result.historyPersisted === false ? (
-              <InlineAlert
+              <Alert
                 tone="warning"
                 role="status"
+                className="w-full"
                 data-testid="result-history-degraded"
               >
-                <TriangleAlert aria-hidden="true" className="shrink-0" />
-                <InlineAlertDescription className="font-medium opacity-100">
-                  {t('historyDegraded')}
-                </InlineAlertDescription>
-              </InlineAlert>
+                {t('historyDegraded')}
+              </Alert>
             ) : null}
             {/* Audit-completion degraded chip — when false, the per- */}
             {/* import csv_import_completed audit row failed to emit. */}
             {/* Rows + history may still be safe; the gap is purely on */}
             {/* the audit trail. */}
             {result.auditCompletionEmitted === false ? (
-              <InlineAlert
+              <Alert
                 tone="warning"
                 role="status"
+                className="w-full"
                 data-testid="result-audit-degraded"
               >
-                <TriangleAlert aria-hidden="true" className="shrink-0" />
-                <InlineAlertDescription className="font-medium opacity-100">
-                  {t('auditDegraded')}
-                </InlineAlertDescription>
-              </InlineAlert>
+                {t('auditDegraded')}
+              </Alert>
             ) : null}
             {/* R7.B1 / Staff R2 R030 — FR-019b safety-net fail-open chip */}
             {/* When true, the duplicate-protection query was unavailable */}
             {/* and the import proceeded without it. Admin should */}
             {/* manually verify the event selection. */}
             {result.safetyNetFailedOpen === true ? (
-              <InlineAlert
+              <Alert
                 tone="warning"
                 role="status"
+                className="w-full"
                 data-testid="result-safety-net-unavailable"
               >
-                <TriangleAlert aria-hidden="true" className="shrink-0" />
-                <InlineAlertDescription className="font-medium opacity-100">
-                  {t('safetyNetUnavailable')}
-                </InlineAlertDescription>
-              </InlineAlert>
-            ) : null}
-            <p
-              className="text-caption text-muted-foreground"
-              data-testid="result-record-id"
-            >
-              {t('recordIdLabel')}:{' '}
-              <span className="font-mono select-all">{result.recordId}</span>
-            </p>
-            {/* F6.1 T045 — persistent download link to the signed-URL
-                endpoint. Only rendered when the import committed an
-                error-CSV blob (rowsFailed > 0 + blob upload succeeded).
-                Browser follows the 307 redirect from the server. */}
-            {result.errorCsvAvailable ? (
-              <a
-                href={`/api/admin/events/import/${result.recordId}/error-csv`}
-                className={cn(
-                  buttonVariants({ variant: 'outline' }),
-                  'min-h-11 self-start',
-                )}
-                data-testid="result-download-error-csv"
-                aria-label={tHistory('downloadErrorCsvAriaLabel', {
-                  recordId: result.recordId.slice(0, 8),
-                })}
-              >
-                <Download aria-hidden="true" className="mr-2 size-4" />
-                {tHistory('downloadErrorCsv')}
-              </a>
+                {t('safetyNetUnavailable')}
+              </Alert>
             ) : null}
           </div>
         ) : null}
 
         {/* Per-match-type breakdown */}
         <section aria-labelledby="csv-result-match-breakdown" data-testid="result-match-counts">
-          <h3 id="csv-result-match-breakdown" className="text-body mb-2 font-medium">
+          <h3
+            id="csv-result-match-breakdown"
+            className="mb-[var(--aura-space-2)] font-medium"
+          >
             {t('matchBreakdownTitle')}
           </h3>
-          <ul className="flex flex-wrap gap-3">
+          <ul className="flex flex-wrap gap-[var(--aura-space-3)]">
             {MATCH_TYPE_ORDER.map((mt) => (
-              <li key={mt} className="flex items-center gap-2">
+              <li key={mt} className="flex items-center gap-[var(--aura-space-2)]">
                 <MatchStatusBadge matchType={mt} label={tMatch(mt)} />
-                <span className="text-body tabular-nums">
+                <span className="tabular-nums">
                   {result.matchCounts[mt]}
                 </span>
               </li>
@@ -282,11 +253,11 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
 
         {/* Error rows (collapsible) */}
         {result.errorRows.length > 0 ? (
-          <details className="rounded-md border border-destructive/30 bg-destructive/5 p-3">
-            <summary className="text-body cursor-pointer min-h-6 py-1 font-medium text-destructive">
+          <details className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-[var(--aura-space-3)]">
+            <summary className="min-h-6 cursor-pointer py-1 font-medium">
               {t('errorRowsTitle', { count: result.errorRows.length })}
             </summary>
-            <ul className="text-caption mt-3 flex flex-col gap-2">
+            <ul className="aura-text-caption mt-[var(--aura-space-3)] flex flex-col gap-[var(--aura-space-2)]">
               {result.errorRows.map((row) => (
                 <li
                   key={`${row.rowNumber}-${row.reason}`}
@@ -302,11 +273,53 @@ export function CsvImportResult({ result }: CsvImportResultProps) {
             </ul>
           </details>
         ) : (
-          <p className="text-caption text-muted-foreground">
+          <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
             {t('noErrorRows')}
           </p>
         )}
-      </CardContent>
+
+        {/* Board: the card footer — the reference ID for support, then the
+            error-CSV download and the primary action at the end. On phones
+            they stack full width: the ID, the primary action, the download. */}
+        {result.recordId !== undefined || footerAction !== undefined ? (
+          <div
+            className="flex flex-wrap items-center gap-[var(--aura-space-2)] max-sm:flex-col max-sm:items-stretch"
+            data-testid="result-footer"
+          >
+            {result.recordId !== undefined ? (
+              <>
+            <p
+              className="aura-text-caption mr-auto text-[var(--aura-fg-secondary)] max-sm:mr-0"
+              data-testid="result-record-id"
+            >
+              {t('recordIdLabel')}:{' '}
+              <span className="font-mono select-all">{result.recordId}</span>
+            </p>
+            {/* F6.1 T045 — persistent download link to the signed-URL
+                endpoint. Only rendered when the import committed an
+                error-CSV blob (rowsFailed > 0 + blob upload succeeded).
+                Browser follows the 307 redirect from the server. */}
+            {result.errorCsvAvailable ? (
+              <a
+                href={`/api/admin/events/import/${result.recordId}/error-csv`}
+                className={buttonClass({ variant: 'secondary', touchHeight: true, className: 'max-sm:order-2 max-sm:w-full' })}
+                data-testid="result-download-error-csv"
+                aria-label={tHistory('downloadErrorCsvAriaLabel', {
+                  recordId: result.recordId.slice(0, 8),
+                })}
+              >
+                <Icon name="download" />
+                {tHistory('downloadErrorCsv')}
+              </a>
+            ) : null}
+              </>
+            ) : null}
+            {footerAction !== undefined ? (
+              <div className="contents max-sm:order-1 max-sm:flex max-sm:flex-col">{footerAction}</div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </Card>
   );
 }
@@ -317,33 +330,30 @@ interface CounterProps {
   readonly value?: number;
   readonly valueText?: string;
   readonly testId: string;
-  readonly tone?: 'success' | 'muted';
 }
 
-const COUNTER_TONE_CLASSES = {
-  success: 'text-success',
-  muted: 'text-muted-foreground',
-} as const;
-
-function Counter({ label, description, value, valueText, testId, tone }: CounterProps) {
+function Counter({ label, description, value, valueText, testId }: CounterProps) {
   // F6.1 R3 a11y-fix 2026-05-16 — description was previously a
   // sibling `<p>` after `<dd>` inside the `<dl>`'s wrapping `<div>`.
   // HTML spec + axe `only-dlitems` rule restrict `<dl> > <div>` to
   // ONLY contain `<dt>`/`<dd>` (definition pair grouping). Move the
-  // description into the `<dd>` as a `<small>` block-styled child;
+  // description into the `<dd>` as a block-styled child;
   // keeps semantic pair grouping intact + retains visual layout.
   return (
-    <div className="flex flex-col gap-1">
-      <dt className="text-caption text-muted-foreground">{label}</dt>
+    // Board: each counter is a tile on the canvas tone.
+    <div className="flex flex-col gap-[var(--aura-space-1)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] p-[var(--aura-space-3)]">
+      <dt className="aura-text-caption text-[var(--aura-fg-secondary)]">{label}</dt>
       <dd
         data-testid={testId}
-        className={`text-h2 tabular-nums ${tone ? COUNTER_TONE_CLASSES[tone] : ''}`}
+        className="aura-text-h2 tabular-nums"
       >
         {valueText ?? value}
         {description ? (
-          <small className="text-caption mt-1 block font-normal text-muted-foreground">
+          // A span, not <small>: Tailwind preflight's `small { font-size: 80% }`
+          // sits in a later layer than `aura-text-caption`, so it would win.
+          <span className="aura-text-caption mt-[var(--aura-space-1)] block font-normal text-[var(--aura-fg-secondary)]">
             {description}
-          </small>
+          </span>
         ) : null}
       </dd>
     </div>

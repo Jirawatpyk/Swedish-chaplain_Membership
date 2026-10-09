@@ -1,6 +1,8 @@
 /**
  * EventCreateInlineModal — the start date is the chamber's wall time (spec 122
- * clarification 2026-10-06: fixed in its own PR before US9b).
+ * clarification 2026-10-06: fixed in its own PR before US9b). Since US9b-2 the
+ * start is an AURA DatePicker ("Start date") plus a TimePicker ("Start time"),
+ * joined into the same `YYYY-MM-DDTHH:mm` before the Bangkok conversion.
  *
  * `<input type="datetime-local">` gives a naive `YYYY-MM-DDTHH:mm`. The help
  * text promises the tenant's timezone (Asia/Bangkok for every tenant today, as
@@ -35,7 +37,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** AURA's DatePicker and TimePicker take typed text on blur. */
+function typeInto(label: string, value: string) {
+  const input = screen.getByLabelText(new RegExp(`^${label}`));
+  fireEvent.change(input, { target: { value } });
+  fireEvent.blur(input);
+}
+
 async function submitWithStart(local: string): Promise<Record<string, unknown>> {
+  const [day = '', time = ''] = local.split('T');
   render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <EventCreateInlineModal open onOpenChange={vi.fn()} />
@@ -43,7 +53,12 @@ async function submitWithStart(local: string): Promise<Record<string, unknown>> 
   );
   fireEvent.change(screen.getByLabelText('External ID'), { target: { value: 'midsummer-2026' } });
   fireEvent.change(screen.getByLabelText('Event name'), { target: { value: 'Midsummer' } });
-  fireEvent.change(screen.getByLabelText('Start date & time'), { target: { value: local } });
+  typeInto('Start date', day);
+  typeInto('Start time', time);
+  // The TimePicker commits typed text on a 0 ms timer after blur.
+  await waitFor(() =>
+    expect(screen.getByLabelText(/^Start time/)).toHaveValue(time),
+  );
   const form = document.querySelector('form');
   if (!form) throw new Error('event modal form did not render');
   fireEvent.submit(form);
@@ -61,5 +76,21 @@ describe('EventCreateInlineModal start date', () => {
   it('keeps the Bangkok calendar day for an early-morning start', async () => {
     const body = await submitWithStart('2026-01-01T05:00');
     expect(body['startDate']).toBe('2025-12-31T22:00:00.000Z');
+  });
+
+  it('asks for the start time when only the date is picked', async () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <EventCreateInlineModal open onOpenChange={vi.fn()} />
+      </NextIntlClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText('External ID'), { target: { value: 'midsummer-2026' } });
+    fireEvent.change(screen.getByLabelText('Event name'), { target: { value: 'Midsummer' } });
+    typeInto('Start date', '2026-11-20');
+    const form = document.querySelector('form');
+    if (!form) throw new Error('event modal form did not render');
+    fireEvent.submit(form);
+    expect(await screen.findByText('Start time is required.')).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -121,8 +121,12 @@ test.describe('F6.1 EventCreate CSV import — manual-gate E2E', () => {
 
     await dialog.getByLabel(/external id/i).fill(externalId);
     await dialog.getByLabel(/event name/i).fill(eventName);
-    // The datetime-local input — fill ISO-ish local datetime.
-    await dialog.getByLabel(/start date/i).fill('2026-03-15T13:00');
+    // Spec 122 US9b-2: the start is an AURA DatePicker and TimePicker; each
+    // takes typed text when it loses focus.
+    await dialog.getByLabel(/^start date/i).fill('2026-03-15');
+    await dialog.getByLabel(/^start date/i).press('Tab');
+    await dialog.getByLabel(/^start time/i).fill('13:00');
+    await dialog.getByLabel(/^start time/i).press('Tab');
     // Category is optional — fill anyway for completeness.
     await dialog.getByLabel(/^category/i).fill('Workshop');
 
@@ -147,7 +151,8 @@ test.describe('F6.1 EventCreate CSV import — manual-gate E2E', () => {
     // Combobox should now show the just-created event as selected.
     // We don't assert exact label text (locale-dependent date formatting)
     // — instead verify the combobox value changed away from placeholder.
-    await expect(eventCombobox).not.toHaveText(/choose an event/i);
+    // The AURA Combobox is a text field: its value is the chosen event.
+    await expect(eventCombobox).not.toHaveValue('');
 
     // Upload the Grant Thornton fixture via the file input.
     const fileInput = page.locator('input[type="file"]');
@@ -159,7 +164,7 @@ test.describe('F6.1 EventCreate CSV import — manual-gate E2E', () => {
 
     // Form transitions to preview phase — wait for the Confirm button
     // (rendered by PreviewPanel; only visible once parse completes).
-    const confirmBtn = page.getByRole('button', { name: /^confirm and import$/i });
+    const confirmBtn = page.getByRole('button', { name: /^confirm and import/i });
     await expect(confirmBtn).toBeVisible({ timeout: 30_000 });
     await expect(confirmBtn).toBeEnabled();
     await confirmBtn.click();

@@ -6,6 +6,7 @@
 import type { EventsListTableRow } from '@/components/events/events-list-table';
 import type { AttendeeRow } from '@/components/events/attendee-table';
 import type { ErasureResultRow } from '@/components/events/erasure-results-table';
+import type { CsvImportHistoryRow } from '@/components/events/csv-import-history-table';
 import { asEventId } from '@/modules/events/domain/branded-types';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -67,4 +68,48 @@ export const ERASURE_ROWS: ErasureResultRow[] = [
   { registrationId: id(942), eventId: id(902), eventName: 'Nordic Business Breakfast — Bangkok', dateLabel: '2026-06-18', attendeeName: 'Ploy Rattanakul', matchType: 'member_contact', quota: 'partnership', isPseudonymised: false },
   { registrationId: id(943), eventId: id(903), eventName: 'Midsummer Celebration 2026', dateLabel: '2026-06-20', attendeeName: 'Ploy Rattanakul', matchType: 'member_contact', quota: 'cultural', isPseudonymised: false },
   { registrationId: id(944), eventId: id(904), eventName: null, dateLabel: null, attendeeName: 'Attendee 7f3a', matchType: 'non_member', quota: 'none', isPseudonymised: true },
+];
+
+/** 122 US9b-2 (T939) — the CSV import's event list (`/api/admin/events`). */
+export const IMPORT_PICKER_EVENTS = EVENT_ROWS.filter((e) => e.archivedAt === null).map((e) => ({
+  eventId: e.eventId as string,
+  name: e.name,
+  startDate: e.startDate,
+}));
+
+function historyRow(
+  n: number,
+  row: Pick<CsvImportHistoryRow, 'uploadedAtDisplay' | 'sourceFormat' | 'originalFilename' | 'outcome' | 'errorCsvAvailable'> & {
+    readonly processed: number;
+    readonly skipped: number;
+    readonly failed: number;
+  },
+): CsvImportHistoryRow {
+  return {
+    recordId: id(960 + n),
+    uploadedAt: '2026-09-24T07:05:00Z',
+    uploadedAtDisplay: row.uploadedAtDisplay,
+    sourceFormat: row.sourceFormat,
+    originalFilename: row.originalFilename,
+    originalSizeBytes: 48_213,
+    counts: {
+      total: row.processed + row.skipped + row.failed,
+      processed: row.processed,
+      alreadyImported: 0,
+      skipped: row.skipped,
+      failed: row.failed,
+    },
+    outcome: row.outcome,
+    durationMs: 4280,
+    errorCsvAvailable: row.errorCsvAvailable,
+    errorCsvExpiresAt: null,
+  };
+}
+
+/** 122 US9b-2 (T939) — the CSV import history (board `Admin-events-import-history`). */
+export const IMPORT_HISTORY_ROWS: CsvImportHistoryRow[] = [
+  historyRow(1, { uploadedAtDisplay: '24 Sep 2026, 14:05', sourceFormat: 'eventcreate_csv', originalFilename: 'swecham-crayfish-party-2026.csv', outcome: 'completed', processed: 146, skipped: 2, failed: 0, errorCsvAvailable: false }),
+  historyRow(2, { uploadedAtDisplay: '22 Aug 2026, 09:40', sourceFormat: 'generic_csv', originalFilename: 'business-breakfast-trade-outlook.csv', outcome: 'partial_failure', processed: 58, skipped: 1, failed: 3, errorCsvAvailable: true }),
+  historyRow(3, { uploadedAtDisplay: '22 Jun 2026, 11:10', sourceFormat: 'eventcreate_csv', originalFilename: 'midsummer-celebration-2026-attendees.csv', outcome: 'completed', processed: 208, skipped: 0, failed: 2, errorCsvAvailable: false }),
+  historyRow(4, { uploadedAtDisplay: '15 May 2026, 18:22', sourceFormat: 'generic_csv', originalFilename: 'yp-afterwork-may.csv', outcome: 'invalid_header', processed: 0, skipped: 0, failed: 0, errorCsvAvailable: false }),
 ];

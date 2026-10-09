@@ -17,9 +17,13 @@
  * dialog's double-RAF focus effect can hang jsdom (project gotcha).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
+import {
+  releaseAuraSelectValueHooks,
+  setupUserForAuraSelect,
+} from '../../../helpers/aura';
 
 // The component imports `toast` from sonner (used only on completed /
 // timeout branches, but mocked so no real toast host is needed).
@@ -240,7 +244,7 @@ describe('CsvMappingForm — FR-019b mismatch preview preservation', () => {
 // PR 4.2 (#10a) — FR-026 column remap. A non-EventCreate tenant uploads a
 // CSV whose attendee columns are under NON-canonical headers (and which
 // lacks event columns entirely — the picker supplies them per #10b). The
-// admin maps each required attendee column via a native <select>; Confirm
+// admin maps each required attendee column via a select; Confirm
 // stays disabled until the required columns are mapped; on submit the form
 // sends the mapping INVERTED to the parser's header→canonical direction.
 // ---------------------------------------------------------------------------
@@ -301,25 +305,24 @@ describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
         completedResponse(),
     );
     vi.stubGlobal('fetch', fetchMock);
-    const user = userEvent.setup();
+    const user = setupUserForAuraSelect();
     renderForm();
 
     await uploadRemapCsv(user);
 
-    // A <select> renders per required attendee column, labelled by the
-    // canonical field name.
-    const emailSelect = (await screen.findByLabelText(
-      /attendee_email/i,
-    )) as HTMLSelectElement;
-    const nameSelect = (await screen.findByLabelText(
-      /attendee_name/i,
-    )) as HTMLSelectElement;
-    expect(emailSelect.tagName).toBe('SELECT');
-    expect(nameSelect.tagName).toBe('SELECT');
-    // The detected (non-canonical) headers are the options.
-    expect(
-      within(emailSelect).getByRole('option', { name: 'Email Address' }),
-    ).toBeInTheDocument();
+    // Spec 122 US9b-2 (T933): each remap field is an AURA Select — a
+    // combobox named by the canonical field that opens a listbox of the
+    // detected (non-canonical) headers.
+    const emailField = await screen.findByRole('combobox', {
+      name: /attendee_email/i,
+    });
+    const nameField = screen.getByRole('combobox', { name: /attendee_name/i });
+    releaseAuraSelectValueHooks();
+    async function pick(field: HTMLElement, header: string): Promise<void> {
+      await user.click(field);
+      const listbox = await screen.findByRole('listbox');
+      await user.click(within(listbox).getByRole('option', { name: header }));
+    }
 
     // Confirm is disabled until the required columns are mapped.
     const confirm = await screen.findByRole('button', {
@@ -328,11 +331,11 @@ describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
     expect(confirm).toBeDisabled();
 
     // Map only one required column → still gated.
-    await user.selectOptions(emailSelect, 'Email Address');
+    await pick(emailField, 'Email Address');
     expect(confirm).toBeDisabled();
 
     // Map the second required column → gate opens.
-    await user.selectOptions(nameSelect, 'Full Name');
+    await pick(nameField, 'Full Name');
     await waitFor(() => expect(confirm).toBeEnabled());
 
     // Submit → assert the FormData carries the INVERTED map.
@@ -349,5 +352,106 @@ describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
       'Full Name': 'attendee_name',
     });
     expect(body?.get('event_id')).toBe('ev-fixed-1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 122 US9b-2 (T931) — the file field is AURA `FileUpload`. A CSV
+// dropped on the field reaches the same preview as a picked one, and the
+// 5 MiB guard stays in the form, so an oversized file still lands on the
+// "file too large" panel (FileUpload is given no `maxSize`).
+// ---------------------------------------------------------------------------
+describe('CsvMappingForm — file field (US9b-2)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useFakeTimers();
+  });
+
+  it('accepts a CSV dropped on the upload field and shows its preview', async () => {
+    renderForm();
+    const file = new File([CSV_3_ROWS], 'dropped.csv', { type: 'text/csv' });
+    Object.defineProperty(file, 'text', {
+      value: () => Promise.resolve(CSV_3_ROWS),
+      configurable: true,
+    });
+    const input = screen.getByLabelText(/Choose a \.csv file/i);
+    fireEvent.drop(input, { dataTransfer: { files: [file] } });
+    expect(await screen.findByText('Preview (3 rows)')).toBeInTheDocument();
+  });
+
+  it('still shows the file-too-large panel for a file over 5 MiB', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const file = new File(['x'], 'huge.csv', { type: 'text/csv' });
+    Object.defineProperty(file, 'size', { value: 5 * 1024 * 1024 + 1 });
+    await user.upload(screen.getByLabelText(/Choose a \.csv file/i), file);
+    const panel = await screen.findByTestId('csv-header-error');
+    expect(
+      within(panel).getByText(enMessages.admin.events.import.errors.fileTooLargeTitle),
+    ).toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spec 122 US9b-2 parity (decided 2026-10-09): the board's layout. Cancel
+// sits before Confirm, the chosen file reads as a row with "Change" (the
+// same reset as Cancel), and "Upload another CSV" sits in the result
+// card's footer.
+describe('CsvMappingForm — board layout (US9b-2 parity)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useFakeTimers();
+  });
+
+  it('puts Cancel before Confirm, and "Change" on the chosen file returns to the upload field', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await uploadThreeRowCsv(user);
+    const confirm = await screen.findByRole('button', { name: /Confirm and import/i });
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    expect(
+      cancel.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    const fileRow = screen.getByTestId('csv-chosen-file');
+    expect(fileRow).toHaveTextContent('attendees.csv');
+    await user.click(within(fileRow).getByRole('button', { name: 'Change' }));
+    expect(await screen.findByLabelText(/Choose a \.csv file/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('csv-chosen-file')).not.toBeInTheDocument();
+  });
+
+  it('shows "Upload another CSV" inside the result card', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => completedResponse()));
+    const user = userEvent.setup();
+    renderForm();
+    await uploadThreeRowCsv(user);
+    const confirm = await screen.findByRole('button', { name: /Confirm and import/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await user.click(confirm);
+    const card = await screen.findByTestId('csv-import-result');
+    expect(
+      within(card).getByRole('button', { name: 'Upload another CSV' }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('CsvMappingForm — event block (US9b-2 parity)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('drops the "Selected:" line — the field already shows the chosen event', async () => {
+    renderForm();
+    await screen.findByTestId('event-picker-stub');
+    expect(screen.queryByText(/^Selected/)).not.toBeInTheDocument();
   });
 });

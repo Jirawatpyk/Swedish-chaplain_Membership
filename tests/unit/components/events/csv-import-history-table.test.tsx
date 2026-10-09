@@ -9,19 +9,19 @@
  * CI. Spec coverage of US5 AS3 ("in-progress imports shown as
  * Running…") depends on this UI render assertion.
  *
- * Pins:
- *   1. `outcome:'running'`     → variant `'secondary'` + i18n "Running…"
- *   2. `outcome:'completed'`   → variant `'default'`   + i18n "Completed"
- *   3. `outcome:'timeout'`     → variant `'destructive'` (any non-
- *                                 completed, non-running = destructive)
- *   4. `outcome:'partial_failure'` → variant `'destructive'`
- *   5. `outcome:'unexpected_error'` → variant `'destructive'`
+ * Pins (spec 122 US9b-2: AURA Badge tones, exposed as `data-tone`):
+ *   1. `outcome:'running'`     → tone `neutral` + i18n "Running…"
+ *   2. `outcome:'completed'`   → tone `success` + i18n "Completed"
+ *   3. `outcome:'timeout'`     → tone `danger` (any non-completed,
+ *                                 non-running outcome)
+ *   4. `outcome:'partial_failure'` → tone `danger`
+ *   5. `outcome:'unexpected_error'` → tone `danger`
  *
  * Mocks: i18n via NextIntlClientProvider with inline messages — keeps
  * the test deterministic without loading the full message catalogue.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, cleanup, screen } from '@testing-library/react';
+import { render, cleanup, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
 // Phase G G3 — auto-refresh polling uses `useRouter().refresh()` from
@@ -49,6 +49,10 @@ import {
 } from '@/components/events/csv-import-history-table';
 
 const MESSAGES = {
+  pagination: {
+    summary: 'Showing {from}\u2013{to} of {total}',
+    emptyCount: 'No records',
+  },
   admin: {
     events: {
       import: {
@@ -58,6 +62,7 @@ const MESSAGES = {
           tableAriaLabel: 'CSV import history table',
           backToImport: 'Back to import',
           downloadErrorCsv: 'Download error CSV',
+          cardSummary: '{source} · {processed} processed · {skipped} skipped · {failed} failed',
           downloadErrorCsvAriaLabel: 'Download error CSV for import {recordId}',
           expiredBadge: 'Expired',
           expiredTooltip:
@@ -142,55 +147,48 @@ function renderTable(rows: ReadonlyArray<CsvImportHistoryRow>) {
       <CsvImportHistoryTable
         rows={rows}
         pagination={pagination}
-        prevPageHref={null}
-        nextPageHref={null}
       />
     </NextIntlClientProvider>,
   );
 }
 
-describe('<CsvImportHistoryTable> Badge variant per outcome', () => {
+describe('<CsvImportHistoryTable> Badge tone per outcome', () => {
   afterEach(() => cleanup());
 
-  it("outcome:'running' renders Badge variant='secondary' + 'Running…' label", () => {
+  it("outcome:'running' renders a neutral badge + 'Running…' label", () => {
     renderTable([makeRow('running')]);
     const badge = screen.getByTestId('csv-import-history-outcome');
     expect(badge).toHaveTextContent('Running…');
-    // shadcn Badge variants render distinct className prefixes; the
-    // `'secondary'` variant uses `bg-secondary`/`text-secondary-foreground`
-    // tokens, distinct from `'default'` (primary) and `'destructive'`.
-    // We assert the variant via the data attribute the component
-    // emits, which is stable across Tailwind theme tweaks.
-    expect(badge.className).toMatch(/bg-secondary/);
+    // In flight: neutral, so it reads neither as done nor as failed.
+    expect(badge).toHaveAttribute('data-tone', 'neutral');
   });
 
-  it("outcome:'completed' renders Badge variant='default' + 'Completed' label", () => {
+  it("outcome:'completed' renders a success badge + 'Completed' label", () => {
     renderTable([makeRow('completed')]);
     const badge = screen.getByTestId('csv-import-history-outcome');
     expect(badge).toHaveTextContent('Completed');
-    expect(badge.className).not.toMatch(/bg-secondary/);
-    expect(badge.className).not.toMatch(/bg-destructive/);
+    expect(badge).toHaveAttribute('data-tone', 'success');
   });
 
-  it("outcome:'timeout' renders Badge variant='destructive' + 'Timed out' label", () => {
+  it("outcome:'timeout' renders a danger badge + 'Timed out' label", () => {
     renderTable([makeRow('timeout')]);
     const badge = screen.getByTestId('csv-import-history-outcome');
     expect(badge).toHaveTextContent('Timed out');
-    expect(badge.className).toMatch(/bg-destructive/);
+    expect(badge).toHaveAttribute('data-tone', 'danger');
   });
 
-  it("outcome:'partial_failure' renders Badge variant='destructive' + 'Partial'", () => {
+  it("outcome:'partial_failure' renders a danger badge + 'Partial'", () => {
     renderTable([makeRow('partial_failure')]);
     const badge = screen.getByTestId('csv-import-history-outcome');
     expect(badge).toHaveTextContent('Partial');
-    expect(badge.className).toMatch(/bg-destructive/);
+    expect(badge).toHaveAttribute('data-tone', 'danger');
   });
 
-  it("outcome:'unexpected_error' renders Badge variant='destructive' + 'Failed'", () => {
+  it("outcome:'unexpected_error' renders a danger badge + 'Failed'", () => {
     renderTable([makeRow('unexpected_error')]);
     const badge = screen.getByTestId('csv-import-history-outcome');
     expect(badge).toHaveTextContent('Failed');
-    expect(badge.className).toMatch(/bg-destructive/);
+    expect(badge).toHaveAttribute('data-tone', 'danger');
   });
 
   it('renders 3 rows with distinct outcomes — running, completed, timeout — in order', () => {
@@ -204,9 +202,45 @@ describe('<CsvImportHistoryTable> Badge variant per outcome', () => {
     expect(badges[0]).toHaveTextContent('Running…');
     expect(badges[1]).toHaveTextContent('Completed');
     expect(badges[2]).toHaveTextContent('Timed out');
-    // First row (running) should NOT have the destructive variant
-    // visible alongside the secondary one.
-    expect(badges[0]!.className).toMatch(/bg-secondary/);
-    expect(badges[0]!.className).not.toMatch(/bg-destructive/);
+    expect(badges[0]).toHaveAttribute('data-tone', 'neutral');
+    expect(badges[2]).toHaveAttribute('data-tone', 'danger');
+  });
+});
+
+describe('<CsvImportHistoryTable> error-rows download (US9b-2 parity)', () => {
+  afterEach(() => cleanup());
+
+  it('is a bare icon button in the table row and keeps its name', () => {
+    renderTable([{ ...makeRow('partial_failure', 3), errorCsvAvailable: true }]);
+    const link = screen.getByTestId('csv-import-history-download');
+    expect(link).toHaveAccessibleName('Download error CSV for import 00000000');
+    const label = within(link).getByText('Download error CSV');
+    expect(label.className).toMatch(/(^|\s)sr-only(\s|$)/);
+    // Board: a bare icon button in the row, no frame.
+    expect(link.className).toMatch(/aura-btn--ghost/);
+  });
+});
+
+describe('<CsvImportHistoryTable> list pattern (US9b-2 parity)', () => {
+  afterEach(() => cleanup());
+
+  it('uses the shared TablePagination like the other list pages', () => {
+    renderTable([makeRow('completed', 0), makeRow('timeout', 1)]);
+    expect(document.querySelector('[data-slot="table-pagination"]')).not.toBeNull();
+    expect(screen.getByText('Showing 1\u20132 of 2')).toBeInTheDocument();
+  });
+
+  it('takes no space for the auto-refresh line while nothing is running', () => {
+    renderTable([makeRow('completed', 0)]);
+    expect(screen.getByTestId('csv-import-history-live').className).toMatch(
+      /(^|\s)sr-only(\s|$)/,
+    );
+  });
+
+  it('gives each phone card a one-line summary', () => {
+    renderTable([makeRow('completed', 0)]);
+    expect(
+      screen.getByText('EventCreate · 8 processed · 1 skipped · 1 failed'),
+    ).toBeInTheDocument();
   });
 });

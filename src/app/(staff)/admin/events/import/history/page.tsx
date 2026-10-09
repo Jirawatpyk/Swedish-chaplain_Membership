@@ -23,8 +23,7 @@ import { requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { Alert, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { runListCsvImportRecords } from '@/lib/events-csv-import-deps';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import {
@@ -75,18 +74,15 @@ export default async function CsvImportHistoryPage({
     return (
       <TableContainer>
         <PageHeader title={t('pageTitle')} subtitle={t('pageSubtitle')} />
-        <div
-          className="text-body rounded-md border border-destructive/30 bg-destructive/5 p-4"
-          role="alert"
-        >
+        <Alert tone="danger" role="alert">
           {t('loadError')}{' '}
           <Link
             href="/admin/events/import/history"
-            className="font-medium underline-offset-2 hover:underline"
+            className="font-medium text-[var(--aura-fg-accent)] underline-offset-2 hover:underline"
           >
             {t('loadErrorRetry')}
           </Link>
-        </div>
+        </Alert>
       </TableContainer>
     );
   }
@@ -130,33 +126,19 @@ export default async function CsvImportHistoryPage({
     errorCsvExpiresAt: row.record.errorCsvExpiresAt?.toISOString() ?? null,
   }));
 
-  // Staff-review T060 follow-up (2026-05-16): pre-compute prev/next
-  // pagination URLs on the server (serializable strings) instead of
-  // passing a `pageHref(page) => string` function prop. Only the two
-  // neighbouring pages are ever linked, so per-page URL pre-building
-  // is bounded + cheap.
-  const buildPageHref = (targetPage: number): string => {
-    const params = new URLSearchParams();
-    params.set('page', String(targetPage));
-    if (perPage !== 30) params.set('perPage', String(perPage));
-    return `/admin/events/import/history?${params.toString()}`;
-  };
-  const { page: currentPage, totalPages } = result.value.pagination;
-  const prevPageHref =
-    currentPage > 1 ? buildPageHref(currentPage - 1) : null;
-  const nextPageHref =
-    currentPage < totalPages ? buildPageHref(currentPage + 1) : null;
-
   return (
     <TableContainer>
       <PageHeader
         title={t('pageTitle')}
         subtitle={t('pageSubtitle')}
         actions={
+          // Below 1024px the shell's "← Import CSV" is the way back, so the
+          // page drops its own button (the erasure page's rule).
           <Link
             href="/admin/events/import"
-            className={cn(buttonVariants({ variant: 'outline' }))}
+            className={buttonClass({ variant: 'secondary', className: 'max-lg:hidden' })}
           >
+            <Icon name="arrow-left" />
             {t('backToImport')}
           </Link>
         }
@@ -164,8 +146,6 @@ export default async function CsvImportHistoryPage({
       <CsvImportHistoryTable
         rows={rows}
         pagination={result.value.pagination}
-        prevPageHref={prevPageHref}
-        nextPageHref={nextPageHref}
       />
     </TableContainer>
   );

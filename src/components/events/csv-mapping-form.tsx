@@ -20,26 +20,24 @@
  *   - File input has explicit `<label>` association via htmlFor.
  *   - Phase progression is announced via `aria-live="polite"`.
  *   - Reduced-motion safe on spinners (`motion-reduce:animate-none`).
- *   - Phase B remap selects use shadcn/ui `<select>` (native, keyboard-
- *     friendly).
+ *   - Phase B remap fields are AURA `Select`s (spec 122 US9b-2) over a
+ *     real `<select>`, so the change event and value are unchanged.
  *
  * Pure client component — no DB access. The route handler at
  * `/api/admin/events/import` does the parse-and-import.
  */
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2, UploadCloud } from 'lucide-react';
-import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
 import {
+  Alert,
+  Button,
   Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+  FileUpload,
+  Icon,
+  Select,
+  Tag,
+} from '@jirawatpyk/aura-react';
+import { toast } from '@/lib/toast';
 import { parseProblemDetail } from '@/lib/http/parse-problem-detail';
 import { CsvImportResult, type CsvImportResultPayload } from './csv-import-result';
 import { EventPicker } from './event-picker';
@@ -249,9 +247,6 @@ export function CsvMappingForm() {
   // so the admin can change the dropdown between Cancel/Continue cycles
   // without losing the preview file.
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [selectedEventLabel, setSelectedEventLabel] = useState<string | null>(
-    null,
-  );
   // FR-026 (#10a) — canonical→CSV-header remap selections. Hoisted OUTSIDE
   // the phase machine (like `selectedEventId`) so they survive the
   // submitting→preview restore on an event-mismatch warning. Re-seeded on
@@ -273,9 +268,7 @@ export function CsvMappingForm() {
     open: boolean;
     priorImports: ReadonlyArray<PriorImportEntry>;
   }>({ open: false, priorImports: [] });
-  const fileInputId = useId();
   const liveRegionId = useId();
-  const eventPickerLabelId = useId();
   // Tracks whether a previous completed phase happened so the idle
   // re-entry announcement only fires on intentional reset (not first
   // mount). Updated alongside the `setPhase({kind:'completed'})`
@@ -626,7 +619,7 @@ export function CsvMappingForm() {
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-[var(--aura-space-4)]">
       {liveRegion}
       {/* F6.1 (T026) — inline event-create modal (MVP placeholder). */}
       <EventCreateInlineModal
@@ -644,7 +637,6 @@ export function CsvMappingForm() {
             startDate: event.startDate,
           });
           setSelectedEventId(event.eventId);
-          setSelectedEventLabel(event.name);
         }}
       />
       {/* F6.1 (T027) — FR-019b event-mismatch warning. */}
@@ -657,39 +649,32 @@ export function CsvMappingForm() {
         onContinue={onContinueDespiteMismatch}
       />
       {phase.kind === 'completed' ? (
-        <>
-          <CsvImportResult result={phase.summary} />
-          <div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={resetToUpload}
-              className="min-h-11"
-            >
+        // Board: "Upload another CSV" is the result card's primary action.
+        <CsvImportResult
+          result={phase.summary}
+          footerAction={
+            <Button type="button" touchHeight onClick={resetToUpload}>
               {t('uploadAnother')}
             </Button>
-          </div>
-        </>
+          }
+        />
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('formTitle')}</CardTitle>
-            <CardDescription>{t('formDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-6">
+        <Card
+          title={t('formTitle')}
+          description={t('formDescription')}
+          headingLevel={2}
+        >
+          <div className="flex flex-col gap-[var(--aura-space-6)]">
             {/* F6.1 (T028 · 4-phase wizard) — EventPicker rendered ABOVE
                 the file input across every non-completed phase. Admin
                 can change selection between attempts; the picker is the
                 authoritative event binding. */}
-            <div className="flex flex-col gap-2">
-              <Label id={eventPickerLabelId}>{t('eventPicker.fieldLabel')}</Label>
+            <div className="flex flex-col gap-[var(--aura-space-2)]">
               <EventPicker
-                triggerAriaLabelledBy={eventPickerLabelId}
+                label={t('eventPicker.fieldLabel')}
+                hint={t('eventPicker.fieldHelp')}
                 value={selectedEventId}
-                onChange={(eventId, event) => {
-                  setSelectedEventId(eventId);
-                  setSelectedEventLabel(event?.name ?? null);
-                }}
+                onChange={(eventId) => setSelectedEventId(eventId)}
                 filenameHint={
                   phase.kind === 'preview' ? phase.file.name : null
                 }
@@ -698,15 +683,6 @@ export function CsvMappingForm() {
                   addPickerEventRef.current = add;
                 }}
               />
-              <p className="text-caption text-muted-foreground">
-                {t('eventPicker.fieldHelp')}
-              </p>
-              {selectedEventLabel !== null && (
-                <p className="text-caption text-muted-foreground">
-                  <strong>{t('eventPicker.selectedPrefix')}:</strong>{' '}
-                  {selectedEventLabel}
-                </p>
-              )}
             </div>
 
             {phase.kind === 'error' ? (
@@ -714,21 +690,44 @@ export function CsvMappingForm() {
             ) : null}
 
             {(phase.kind === 'idle' || phase.kind === 'error') && (
-              <div className="flex flex-col gap-2">
-                <Label htmlFor={fileInputId}>{t('fileInputLabel')}</Label>
-                <input
-                  id={fileInputId}
-                  type="file"
-                  accept=".csv,text/csv,application/vnd.ms-excel"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      void handleFile(file);
-                    }
-                  }}
-                  className="text-body block w-full cursor-pointer rounded-md border border-input bg-background p-2 file:mr-3 file:rounded file:border-0 file:bg-primary file:px-3 file:py-1 file:text-primary-foreground hover:file:bg-primary/90"
-                />
-                <p className="text-caption text-muted-foreground">
+              // Spec 122 US9b-2: AURA FileUpload, given no `accept` or
+              // `maxSize` — either would turn a rejected file into an
+              // error item and never hand it on, losing the 5 MiB error
+              // panel below. The field stays empty (`value={[]}`): the
+              // picked file moves the form to its preview phase.
+              <FileUpload
+                label={t('fileInputLabel')}
+                hint={t('fileInputHelp')}
+                value={[]}
+                onChange={(items) => {
+                  const file = items[0]?.file;
+                  if (file) {
+                    void handleFile(file);
+                  }
+                }}
+              />
+            )}
+
+            {phase.kind === 'preview' && (
+              // Board: the chosen file keeps the upload field's place as a
+              // row with "Change", which returns to the empty field — the
+              // same reset as Cancel.
+              <div className="flex flex-col gap-[var(--aura-space-1)]">
+                <span className="aura-text-label">{t('fileInputLabel')}</span>
+                <div
+                  className="flex items-center gap-[var(--aura-space-3)] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)] py-[var(--aura-space-2)] pr-[var(--aura-space-2)] pl-[var(--aura-space-4)]"
+                  data-testid="csv-chosen-file"
+                >
+                  <Icon name="file-text" size={16} className="shrink-0 text-[var(--aura-fg-secondary)]" />
+                  <p className="min-w-0 flex-1 [overflow-wrap:anywhere]">
+                    {t('preview.fileNameLabel')}:{' '}
+                    <span className="aura-text-mono">{phase.file.name}</span>
+                  </p>
+                  <Button type="button" variant="ghost" size="sm" touchHeight onClick={resetToUpload}>
+                    {t('changeFileCta')}
+                  </Button>
+                </div>
+                <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
                   {t('fileInputHelp')}
                 </p>
               </div>
@@ -752,20 +751,13 @@ export function CsvMappingForm() {
             )}
 
             {phase.kind === 'submitting' && (
-              <Button
-                type="button"
-                disabled
-                aria-busy="true"
-                className="min-h-11 self-start"
-              >
-                <Loader2
-                  aria-hidden="true"
-                  className="mr-2 size-4 animate-spin motion-reduce:animate-none"
-                />
-                {t('submittingCta')}
-              </Button>
+              <div>
+                <Button type="button" loading disabled touchHeight>
+                  {t('submittingCta')}
+                </Button>
+              </div>
             )}
-          </CardContent>
+          </div>
         </Card>
       )}
     </div>
@@ -783,7 +775,7 @@ function ErrorPanel({ phase, onRetry }: ErrorPanelProps) {
   // double-RAF pattern as PreviewPanel; moves SR focus to the
   // error AlertTitle on mount so users hear the error message
   // instead of staying anchored on the now-unmounted file input.
-  const errorTitleRef = useRef<HTMLDivElement>(null);
+  const errorTitleRef = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     let raf2 = 0;
     const raf1 = window.requestAnimationFrame(() => {
@@ -797,27 +789,37 @@ function ErrorPanel({ phase, onRetry }: ErrorPanelProps) {
     };
   }, []);
   return (
-    <div data-testid="csv-header-error">
-      <Alert variant="destructive">
-        <AlertTitle ref={errorTitleRef} tabIndex={-1} className="focus:outline-none">
-          {phase.title}
-        </AlertTitle>
-        <AlertDescription>
-          <p>{phase.detail}</p>
-          {phase.missingColumns && phase.missingColumns.length > 0 ? (
-            <ul className="mt-2 list-disc pl-5 font-mono">
-              {phase.missingColumns.map((col) => (
-                <li key={col}>{col}</li>
-              ))}
-            </ul>
-          ) : null}
-        </AlertDescription>
+    <div
+      data-testid="csv-header-error"
+      className="flex flex-col items-start gap-[var(--aura-space-3)]"
+    >
+      {/* role="note": focus moves to the title, which reads it; a live
+          region as well would announce the error twice. */}
+      <Alert
+        tone="danger"
+        role="note"
+        className="w-full"
+        title={
+          <span ref={errorTitleRef} tabIndex={-1} className="focus:outline-none">
+            {phase.title}
+          </span>
+        }
+      >
+        <p>{phase.detail}</p>
+        {phase.missingColumns && phase.missingColumns.length > 0 ? (
+          <ul className="mt-[var(--aura-space-2)] list-disc pl-[var(--aura-space-5)] font-mono">
+            {phase.missingColumns.map((col) => (
+              <li key={col}>{col}</li>
+            ))}
+          </ul>
+        ) : null}
       </Alert>
       <Button
         type="button"
         onClick={onRetry}
-        variant="outline"
-        className="mt-3 min-h-11"
+        variant="secondary"
+        icon="rotate-ccw"
+        touchHeight
       >
         {t('retryCta')}
       </Button>
@@ -886,60 +888,77 @@ function PreviewPanel({
   }, []);
 
   return (
-    <div className="flex flex-col gap-4">
-      <p className="text-body">
-        <strong>{t('fileNameLabel')}:</strong>{' '}
-        <span className="font-mono">{fileName}</span>
-      </p>
-
+    <div className="flex flex-col gap-[var(--aura-space-4)]">
       {hasMissing ? (
-        <Alert variant="destructive" data-testid="csv-header-error">
-          <AlertTitle>{t('missingColumnsTitle')}</AlertTitle>
-          <AlertDescription>
-            <p>{t('missingColumnsDescription')}</p>
-            <ul className="mt-2 list-disc pl-5 font-mono">
-              {preview.missingRequired.map((col) => (
-                <li key={col}>{col}</li>
-              ))}
-            </ul>
-          </AlertDescription>
+        // role="note": focus moves to the preview heading on mount; an
+        // assertive alert here would talk over it.
+        <Alert
+          tone="danger"
+          role="note"
+          data-testid="csv-header-error"
+          title={t('missingColumnsTitle')}
+        >
+          <p>{t('missingColumnsDescription')}</p>
+          <ul className="mt-[var(--aura-space-2)] list-disc pl-[var(--aura-space-5)] font-mono">
+            {preview.missingRequired.map((col) => (
+              <li key={col}>{col}</li>
+            ))}
+          </ul>
         </Alert>
       ) : null}
 
       <section aria-labelledby="csv-preview-columns">
-        <h3 id="csv-preview-columns" className="text-body mb-2 font-medium">
+        <h3
+          id="csv-preview-columns"
+          className="mb-[var(--aura-space-2)] font-medium"
+        >
           {t('columnMappingTitle')}
         </h3>
-        <ul className="flex flex-wrap gap-2">
-          {REQUIRED_COLUMNS.map((canonical) => (
-            <li
-              key={canonical}
-              data-testid={`column-mapping-${canonical}`}
-              className={`text-caption rounded-md border px-2 py-1 font-mono ${
-                preview.detectedColumns.includes(canonical)
-                  ? 'border-emerald-700 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100'
-                  : 'border-destructive text-destructive'
-              }`}
-            >
-              {canonical}
-            </li>
-          ))}
-          {OPTIONAL_PREVIEW_COLUMNS.map((canonical) => (
-            <li
-              key={canonical}
-              data-testid={`column-mapping-${canonical}`}
-              className={`text-caption rounded-md border px-2 py-1 font-mono ${
-                preview.detectedColumns.includes(canonical)
-                  ? 'border-emerald-700 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100'
-                  : 'border-border text-muted-foreground'
-              }`}
-              title={t('optionalColumnTooltip')}
-            >
-              {canonical}
-            </li>
-          ))}
+        {/* A detected column reads in the success tone with a check; a
+            missing required one in the danger tone; a missing optional one
+            stays neutral. The words carry the state too (the legend below),
+            so colour is never the only cue. */}
+        <ul className="flex flex-wrap gap-[var(--aura-space-2)]">
+          {REQUIRED_COLUMNS.map((canonical) => {
+            const detected = preview.detectedColumns.includes(canonical);
+            return (
+              <li key={canonical} data-testid={`column-mapping-${canonical}`}>
+                <Tag
+                  icon={detected ? 'check' : 'x'}
+                  className={`font-mono ${
+                    detected
+                      ? 'border-transparent bg-[var(--aura-status-ready-bg)] text-[var(--aura-status-ready-fg)]'
+                      : 'text-[var(--aura-fg-danger)]'
+                  }`}
+                >
+                  {canonical}
+                </Tag>
+              </li>
+            );
+          })}
+          {OPTIONAL_PREVIEW_COLUMNS.map((canonical) => {
+            const detected = preview.detectedColumns.includes(canonical);
+            return (
+              <li
+                key={canonical}
+                data-testid={`column-mapping-${canonical}`}
+                title={t('optionalColumnTooltip')}
+              >
+                <Tag
+                  {...(detected ? { icon: 'check' as const } : {})}
+                  className={`font-mono ${
+                    detected
+                      ? 'text-[var(--aura-fg-positive)]'
+                      : 'text-[var(--aura-fg-secondary)]'
+                  }`}
+                >
+                  {canonical}
+                </Tag>
+              </li>
+            );
+          })}
         </ul>
-        <p className="text-caption mt-2 text-muted-foreground">
+        <p className="aura-text-caption mt-[var(--aura-space-2)] text-[var(--aura-fg-secondary)]">
           {t('columnMappingLegend')}
         </p>
       </section>
@@ -949,48 +968,49 @@ function PreviewPanel({
           Event fields are optional here (the picker supplies them, #10b);
           only the attendee columns are required to enable Confirm. */}
       {showRemap ? (
-        <section aria-labelledby="csv-remap-title" className="flex flex-col gap-3">
+        <section
+          aria-labelledby="csv-remap-title"
+          className="flex flex-col gap-[var(--aura-space-3)]"
+        >
           <div>
             <h3
               id="csv-remap-title"
-              className="text-body mb-1 font-medium"
+              className="mb-[var(--aura-space-1)] font-medium"
             >
               {t('remapSectionTitle')}
             </h3>
-            <p className="text-caption text-muted-foreground">
+            <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
               {t('remapIntro')}
             </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-[var(--aura-space-3)] sm:grid-cols-2">
             {REMAP_COLUMNS.map((canonical) => {
               const isRequired = (
                 REMAP_REQUIRED_COLUMNS as ReadonlyArray<string>
               ).includes(canonical);
-              const selectId = `${remapSelectIdBase}-${canonical}`;
               return (
-                <div key={canonical} className="flex flex-col gap-1">
-                  <Label htmlFor={selectId} className="font-mono">
-                    {isRequired
+                <Select
+                  key={canonical}
+                  id={`${remapSelectIdBase}-${canonical}`}
+                  data-testid={`remap-select-${canonical}`}
+                  label={
+                    isRequired
                       ? t('remapFieldLabelRequired', { field: canonical })
-                      : t('remapFieldLabelOptional', { field: canonical })}
-                  </Label>
-                  <select
-                    id={selectId}
-                    data-testid={`remap-select-${canonical}`}
-                    value={columnSelections[canonical] ?? ''}
-                    onChange={(e) =>
-                      onColumnSelectionChange(canonical, e.target.value)
-                    }
-                    className="text-body min-h-11 rounded-md border border-input bg-background px-2 py-1"
-                  >
-                    <option value="">{t('remapPlaceholder')}</option>
-                    {preview.detectedColumns.map((header, idx) => (
-                      <option key={`${header}-${idx}`} value={header}>
-                        {header}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                      : t('remapFieldLabelOptional', { field: canonical })
+                  }
+                  touchHeight
+                  value={columnSelections[canonical] ?? ''}
+                  onChange={(e) =>
+                    onColumnSelectionChange(canonical, e.target.value)
+                  }
+                >
+                  <option value="">{t('remapPlaceholder')}</option>
+                  {preview.detectedColumns.map((header, idx) => (
+                    <option key={`${header}-${idx}`} value={header}>
+                      {header}
+                    </option>
+                  ))}
+                </Select>
               );
             })}
           </div>
@@ -998,16 +1018,16 @@ function PreviewPanel({
       ) : null}
 
       <section aria-labelledby="csv-preview-rows">
-        <div className="mb-2 flex items-baseline justify-between">
+        <div className="mb-[var(--aura-space-2)] flex flex-wrap items-baseline justify-between gap-x-[var(--aura-space-3)]">
           <h3
             id="csv-preview-rows"
             ref={previewHeadingRef}
             tabIndex={-1}
-            className="text-body font-medium focus:outline-none"
+            className="font-medium focus:outline-none"
           >
             {t('previewRowsTitle', { count: sampleRows.length })}
           </h3>
-          <span className="text-caption text-muted-foreground">
+          <span className="aura-text-caption text-[var(--aura-fg-secondary)]">
             {t('totalRowsHint', {
               columns: preview.detectedColumns.length,
               sampled: sampleRows.length,
@@ -1016,6 +1036,10 @@ function PreviewPanel({
           </span>
         </div>
         {/*
+          Spec 122 US9b-2: `contain: paint` keeps the wide table's layout
+          inside the region; without it the page itself scrolled sideways
+          at 390px.
+
           F6.1 R3 a11y-fix 2026-05-16 — axe-core `scrollable-region-focusable`
           required a keyboard-focusable handle on the horizontally-scrolling
           region so keyboard-only users can pan a wide preview. Pattern
@@ -1044,7 +1068,7 @@ function PreviewPanel({
           role="region"
           aria-labelledby="csv-preview-rows"
           tabIndex={0}
-          className="max-h-[28rem] overflow-x-scroll overflow-y-auto rounded-md border border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [scrollbar-color:var(--muted-foreground)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 [&::-webkit-scrollbar-thumb:hover]:bg-muted-foreground/60 [&::-webkit-scrollbar-track]:bg-muted/30"
+          className="max-h-[28rem] overflow-x-scroll overflow-y-auto [contain:paint] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] [scrollbar-color:var(--aura-fg-tertiary)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar]:w-2.5 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-[var(--aura-fg-tertiary)] [&::-webkit-scrollbar-track]:bg-[var(--aura-bg-surface-hover)]"
         >
           {/*
             UX-fix 2026-05-18 — `table-fixed` forces browser to honor
@@ -1070,7 +1094,7 @@ function PreviewPanel({
             }}
             aria-label={t('tableAriaLabel', { fileName })}
           >
-            <thead className="sticky top-0 z-10 bg-muted">
+            <thead className="sticky top-0 z-10 bg-[var(--aura-bg-canvas)]">
               <tr>
                 {/*
                   Bug-fix 2026-05-18 — some EventCreate CSV exports
@@ -1110,8 +1134,8 @@ function PreviewPanel({
                   // content width and the table would silently fit the
                   // container with no scroll affordance.
                   const accentClass = isCanonical
-                    ? 'border-b-2 border-b-success bg-success-surface text-success'
-                    : 'border-b border-border text-muted-foreground';
+                    ? 'border-b-2 border-b-[var(--aura-fg-positive)] bg-[var(--aura-status-ready-bg)] text-[var(--aura-fg-positive)]'
+                    : 'border-b border-[var(--aura-border-default)] text-[var(--aura-fg-secondary)]';
                   return (
                     <th
                       key={`${c}-${idx}`}
@@ -1123,7 +1147,7 @@ function PreviewPanel({
                             // (6rem ≈ 96px = 26% of 375px viewport, was
                             // 37% at 8rem). Restores at sm: ≥640px where
                             // there's more horizontal space.
-                            `sticky left-0 z-20 w-[6rem] min-w-[6rem] max-w-[6rem] sm:w-[8rem] sm:min-w-[8rem] sm:max-w-[8rem] truncate border-r border-border bg-muted px-2 py-1.5 text-left font-medium ${accentClass}`
+                            `sticky left-0 z-20 w-[6rem] min-w-[6rem] max-w-[6rem] sm:w-[8rem] sm:min-w-[8rem] sm:max-w-[8rem] truncate border-r border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)] px-2 py-1.5 text-left font-medium ${accentClass}`
                           : `w-[8rem] min-w-[8rem] max-w-[8rem] truncate px-2 py-1.5 text-left font-medium ${accentClass}`
                       }
                     >
@@ -1139,8 +1163,8 @@ function PreviewPanel({
                 <tr
                   key={rowIdx}
                   data-testid="csv-preview-row"
-                  className={`border-b border-border/40 transition-colors hover:bg-muted/40 ${
-                    rowIdx % 2 === 1 ? 'bg-muted/20' : ''
+                  className={`border-b border-[var(--aura-border-subtle)] hover:bg-[var(--aura-bg-surface-hover)] ${
+                    rowIdx % 2 === 1 ? 'bg-[var(--aura-bg-canvas)]' : ''
                   }`}
                 >
                   {row.map((cell, cellIdx) => (
@@ -1154,8 +1178,8 @@ function PreviewPanel({
                             // transparent and lets scrolled-past columns
                             // bleed through. Use solid `bg-background`
                             // OR `bg-muted` per row parity (both solid).
-                            `sticky left-0 z-10 w-[6rem] min-w-[6rem] max-w-[6rem] sm:w-[8rem] sm:min-w-[8rem] sm:max-w-[8rem] truncate border-r border-border ${
-                              rowIdx % 2 === 1 ? 'bg-muted' : 'bg-background'
+                            `sticky left-0 z-10 w-[6rem] min-w-[6rem] max-w-[6rem] sm:w-[8rem] sm:min-w-[8rem] sm:max-w-[8rem] truncate border-r border-[var(--aura-border-default)] ${
+                              rowIdx % 2 === 1 ? 'bg-[var(--aura-bg-canvas)]' : 'bg-[var(--aura-bg-surface)]'
                             } px-2 py-1 align-top`
                           : 'w-[8rem] min-w-[8rem] max-w-[8rem] truncate px-2 py-1 align-top'
                       }
@@ -1171,7 +1195,7 @@ function PreviewPanel({
                               exemption. */}
                           <span
                             aria-hidden="true"
-                            className="text-muted-foreground/70"
+                            className="text-[var(--aura-fg-tertiary)]"
                           >
                             —
                           </span>
@@ -1187,15 +1211,28 @@ function PreviewPanel({
             </tbody>
           </table>
         </div>
-        <p className="text-caption mt-1.5 text-muted-foreground">
+        <p className="aura-text-caption mt-[var(--aura-space-2)] text-[var(--aura-fg-secondary)]">
           {t('tableHelpText')}
         </p>
       </section>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex gap-2">
+      <div className="flex flex-col gap-[var(--aura-space-2)]">
+        {/* Board: Cancel then Confirm, at the end of the row. On phones they
+            stack full width with Confirm on top (column-reverse), so the
+            reading order stays Cancel → Confirm. */}
+        <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:[&>button]:w-full">
           <Button
             type="button"
+            onClick={onCancel}
+            variant="secondary"
+            touchHeight
+          >
+            {cancelLabel}
+          </Button>
+          <Button
+            type="button"
+            icon="cloud-upload"
+            touchHeight
             onClick={onSubmit}
             // FR-026 (#10a) — the parent folds BOTH the event-selection gate
             // AND the remap-required gate into `submitDisabled`, so a generic
@@ -1203,18 +1240,8 @@ function PreviewPanel({
             // columns are remapped (rather than being permanently blocked by
             // `hasMissing`). Canonical + EventCreate uploads are unaffected.
             disabled={submitDisabled}
-            className="min-h-11"
           >
-            <UploadCloud aria-hidden="true" className="mr-2 size-4" />
             {submitLabel}
-          </Button>
-          <Button
-            type="button"
-            onClick={onCancel}
-            variant="outline"
-            className="min-h-11"
-          >
-            {cancelLabel}
           </Button>
         </div>
         {/* H7.2 / IMP-R2-4 — stable outer mount of the aria-live region
@@ -1223,7 +1250,7 @@ function PreviewPanel({
             when there's no reason. Mirrors the precedent at the
             phase-state live region near the top of this component. */}
         <p
-          className="text-caption text-muted-foreground min-h-[1lh]"
+          className="aura-text-caption min-h-[1lh] text-[var(--aura-fg-secondary)]"
           aria-live="polite"
           aria-atomic="true"
         >

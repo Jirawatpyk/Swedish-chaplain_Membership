@@ -5557,6 +5557,7 @@
         "importSuccessToastDesc": "{count, plural, =0 {Inga nya rader — alla har redan importerats.} one {1 rad importerad.} other {# rader importerade.}}",
         "retryCta": "Försök igen",
         "uploadAnother": "Ladda upp en till CSV",
+        "changeFileCta": "Byt",
         "viewHistory": "Visa importhistorik",
         "preview": {
           "fileNameLabel": "Fil",
@@ -5619,15 +5620,10 @@
         "eventPicker": {
           "fieldLabel": "Evenemang",
           "fieldHelp": "Välj evenemanget som denna CSV ska kopplas till. Valet i rullgardinsmenyn är auktoritativt — eventuella evenemangskolumner i CSV-filen åsidosätts.",
-          "selectedPrefix": "Valt",
           "submitGatedHint": "Välj ett evenemang från rullgardinsmenyn ovan för att fortsätta.",
-          "triggerAriaLabel": "Välj evenemang för CSV-import",
           "loading": "Hämtar evenemang…",
           "placeholder": "Välj ett evenemang…",
-          "searchPlaceholder": "Sök evenemang efter namn…",
-          "searchAriaLabel": "Sök efter evenemang",
           "emptyState": "Inget evenemang matchar. Skapa ett först eller förfina sökningen.",
-          "createInlineCta": "+ Skapa nytt evenemang",
           "loadErrorDetail": "Kunde inte hämta evenemang. Uppdatera och försök igen.",
           "filenameMatchHint": "Auto-föreslagen från filnamnet: {eventName}",
           "createNewCta": "Skapa nytt evenemang",
@@ -5649,7 +5645,8 @@
               "nameLabel": "Evenemangsnamn",
               "namePlaceholder": "t.ex. SweCham AGM 2026",
               "nameHelp": "Publikt evenemangsnamn som visas i importhistoriken och granskningstabellen (högst 500 tecken).",
-              "startDateLabel": "Startdatum och tid",
+              "startDateLabel": "Startdatum",
+              "startTimeLabel": "Starttid",
               "startDateHelp": "Lokal tid i kammarens primära tidszon — lagras som UTC.",
               "categoryLabel": "Kategori (valfri)",
               "categoryPlaceholder": "t.ex. AGM, Nätverk, Workshop",
@@ -5660,7 +5657,8 @@
                 "externalIdInvalid": "Använd endast alfanumeriska tecken och bindestreck (t.ex. agm-2026).",
                 "nameRequired": "Evenemangsnamn krävs.",
                 "nameTooLong": "Evenemangsnamn får vara högst 500 tecken.",
-                "startDateRequired": "Startdatum och tid krävs.",
+                "startDateRequired": "Startdatum krävs.",
+                "startTimeRequired": "Starttid krävs.",
                 "categoryTooLong": "Kategori får vara högst 100 tecken."
               }
             },
@@ -5717,6 +5715,7 @@
             "unexpected_error": "Misslyckades"
           },
           "downloadErrorCsv": "Ladda ner fel-CSV",
+          "cardSummary": "{source} · {processed} bearbetade · {skipped} hoppade över · {failed} misslyckade",
           "downloadErrorCsvAriaLabel": "Ladda ner fel-CSV för importen {recordId}",
           "expiredBadge": "Utgången",
           "expiredTooltip": "Fel-CSV-filen för denna import utgick efter 30 dagar. Kör om importen för att återskapa filen.",

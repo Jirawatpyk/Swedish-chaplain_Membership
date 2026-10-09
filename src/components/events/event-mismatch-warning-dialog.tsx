@@ -11,25 +11,16 @@
  * anyway" which re-submits the parent form with `force_proceed=true`.
  *
  * Accessibility:
- *   - `role="alertdialog"` inherited from shadcn `<AlertDialog>` (Radix).
- *   - Cancel = default focus + Escape key dismiss.
+ *   - AURA `Dialog role="alertdialog"` (spec 122 US9b-2).
+ *   - Cancel = first in the footer, so it takes the initial focus; Escape
+ *     dismisses.
  *   - Continue button has `aria-describedby` linking the warning copy
  *     so screen readers announce the consequence before activation.
  *   - WCAG 2.5.8 target size: buttons inherit `min-h-11` from primitives.
  */
 import { useId } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { AlertTriangle } from 'lucide-react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { Button, Dialog, Icon } from '@jirawatpyk/aura-react';
 import { formatDatePreset } from '@/lib/format-date-localised';
 
 export interface PriorImportEntry {
@@ -62,37 +53,58 @@ export function EventMismatchWarningDialog(
   // `Date.prototype.toLocaleString()` which uses browser locale.
   const locale = useLocale();
   const describedById = useId();
+  const close = () => props.onOpenChange(false);
   return (
-    <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex flex-row items-center gap-2">
-            <AlertTriangle
-              aria-hidden="true"
-              className="size-5 text-amber-600 dark:text-amber-500"
-            />
-            {t('title')}
-          </AlertDialogTitle>
-          <AlertDialogDescription id={describedById}>
-            {t('description', { count: props.priorImports.length })}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
+    <Dialog
+      open={props.open}
+      onClose={close}
+      role="alertdialog"
+      aria-describedby={describedById}
+      title={
+        <span className="flex flex-row items-center gap-[var(--aura-space-2)]">
+          <Icon
+            name="triangle-alert"
+            size="md"
+            className="shrink-0 text-[var(--aura-fg-warning)]"
+          />
+          {t('title')}
+        </span>
+      }
+      footer={
+        <>
+          <Button type="button" variant="secondary" touchHeight onClick={close}>
+            {t('cancelCta')}
+          </Button>
+          <Button
+            type="button"
+            touchHeight
+            aria-describedby={describedById}
+            onClick={() => {
+              close();
+              props.onContinue();
+            }}
+          >
+            {t('continueCta')}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-[var(--aura-space-3)]">
+        <p id={describedById}>
+          {t('description', { count: props.priorImports.length })}
+        </p>
         {props.priorImports.length > 0 ? (
-          <div className="rounded-md border bg-muted/40 p-3">
-            <p className="text-caption mb-2 font-medium text-muted-foreground">
+          <div className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-subtle)] bg-[var(--aura-bg-canvas)] p-[var(--aura-space-3)]">
+            <p className="aura-text-caption mb-[var(--aura-space-2)] font-medium text-[var(--aura-fg-secondary)]">
               {t('priorImportsHeading')}
             </p>
-            <ul className="flex flex-col gap-2">
+            <ul className="flex flex-col gap-[var(--aura-space-2)]">
               {props.priorImports.map((p) => (
-                <li
-                  key={p.recordId}
-                  className="text-body flex flex-col"
-                >
+                <li key={p.recordId} className="flex flex-col">
                   <span className="font-medium">
                     {p.eventName ?? p.eventId}
                   </span>
-                  <span className="text-caption text-muted-foreground">
+                  <span className="aura-text-caption text-[var(--aura-fg-secondary)]">
                     {t('priorImportRow', {
                       uploadedAt: formatDatePreset(p.uploadedAt, locale, 'mediumWithTime'),
                     })}
@@ -102,20 +114,7 @@ export function EventMismatchWarningDialog(
             </ul>
           </div>
         ) : null}
-
-        <AlertDialogFooter>
-          <AlertDialogCancel autoFocus className="min-h-11">
-            {t('cancelCta')}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={props.onContinue}
-            aria-describedby={describedById}
-            className="min-h-11"
-          >
-            {t('continueCta')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      </div>
+    </Dialog>
   );
 }
