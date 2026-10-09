@@ -215,8 +215,11 @@ test.describe('F6 wizard — configured tenant (AS2 / AS3 / FR-008) @workers=1',
     // outcome "Verified" + processing outcome (test event). After the
     // response arrives the UI re-render is sub-second; a short 10s
     // ceiling distinguishes a render bug from a server-side flake.
+    // Spec 122 US9c: the rows render as a table from 640px and as a list
+    // below it (only one is displayed), so pick the visible match.
     const outcomeIndicator = page
       .getByText(/short.?circuit|matched|verified|test event/i)
+      .filter({ visible: true })
       .first();
     await expect(outcomeIndicator).toBeVisible({ timeout: 10_000 });
   });
