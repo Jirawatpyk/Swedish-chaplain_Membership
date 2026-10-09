@@ -603,7 +603,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 
 ### US9b — erasure and CSV import (two PRs: US9b-1 erasure, US9b-2 CSV import)
 
-- [x] T920 [US9] Split (Clarifications, Session 2026-10-06, US9b start): US9b-1 erasure (T921–T929), US9b-2 CSV import (T930–T939, tasks written when it starts).
+- [x] T920 [US9] Split (Clarifications, Session 2026-10-06, US9b start): US9b-1 erasure (T921–T929), US9b-2 CSV import (T930–T939).
 
 #### US9b-1 — events erasure
 
@@ -617,9 +617,18 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T928 [US9] Ratchet and preview: `MIGRATED_PATHS` gains the erasure and erase-page routes and the US9b-1 components; the erasure ratchet control flips; preview views (erasure states, the erase dialog from the row menu, the erase page, both loading files); first bundle budgets for both routes.
 - [x] T929 [US9] Exit: e2e selectors (`erase-attendee`, `admin-events-erasure`, `eventcreate-a11y`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX and PDPA reviews with fixes RED first; draft PR; relay R37.
 
-#### US9b-2 — CSV import (tasks written when it starts)
+#### US9b-2 — CSV import
 
-- [ ] T930 [US9] CSV import on `FileUpload`, the event `Combobox`, the remap on AURA `Select`, the result and the history table; the inline create on `DatePicker` + `TimePicker` in Bangkok time.
+- [x] T930 [US9] Spec clarifications (Session 2026-10-09) and this task list.
+- [ ] T931 [US9] The file field on AURA `FileUpload`. RED: a picked file reaches the same preview; a file over 5 MiB still shows the "file too large" error panel.
+- [ ] T932 [US9] The event picker on AURA `Combobox` (local filtering). RED: the combobox is named "Event"; the filename suggestion still selects a match; an event created inline survives a late fetch of the list.
+- [ ] T933 [US9] The column remap on AURA `Select`. RED: picking a column sends the same `column_mapping`; Confirm stays gated until the required columns are mapped.
+- [ ] T934 [US9] The rest of the form on AURA: the error and missing-column panels on `Alert`, the detected-column chips on `Tag`, the cards and buttons; the preview table restyled with tokens. RED: the header-error panel still takes focus, and the testids stay.
+- [ ] T935 [US9] The inline create on AURA `Dialog`, with the start on `DatePicker` + `TimePicker` in Bangkok time. RED: a picked date and time post the same ISO instant; a missing date or time shows a field error.
+- [ ] T936 [US9] The event-mismatch warning on AURA `Dialog role="alertdialog"`. RED: Cancel has the initial focus; "Continue anyway" re-sends with `force_proceed`.
+- [ ] T937 [US9] The import result on AURA (`Card`, warning `Alert`s, the download link). RED: the counters, the three degraded notices (`role=status`) and the error-row list keep their testids.
+- [ ] T938 [US9] The history page and table on AURA: `DataTable` (cards on phones), outcome and source badges, `Pagination` with the server-built links, the error state; the import and history `loading.tsx` / `error.tsx` files. RED: outcome tones by state; polling while a row is running is unchanged.
+- [ ] T939 [US9] Ratchet and exit: `MIGRATED_PATHS` gains the import routes and components; the events legacy control moves to the US9c integration page; preview views (import states, inline create, history, both loading files); first bundle budgets for both routes; e2e selectors (`csv-mapping-remap`, `csv-eventcreate-import`, `csv-fallback-import`, `eventcreate-a11y`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX and i18n reviews with fixes RED first; draft PR; relay R39.
 
 ### US9c — EventCreate integration (PR 19; tasks written when it starts)
 

@@ -419,6 +419,15 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - the deep-link erase page's hint says the dialog opens automatically, but it does not. Fixed: the dialog opens on arrival, and a successful erase sends the admin back to the event (the erase deletes the registration, so the old refresh landed on a 404);
   - the erase action shows to staff who can relink, while both erase routes need the super-admin `events.erasure` permission, so a plain admin's submit is refused. Fixed: the row's erase menu shows only with `events.erasure`; Relink stays on `events.relink`, so a super admin can also erase on an archived event (the routes allow it). No new error copy: the F6 guard answers a plain admin with 404 by design, so hiding the action is the control.
 
+### Session 2026-10-09 (maintainer, US9b-2 start)
+
+- **US9b-2 is one PR:** the import page (mapping form, event picker, inline create, mismatch warning, result) and the history page.
+- **The file field is AURA `FileUpload`, given no `maxSize` or `accept`.** With either, `FileUpload` turns a rejected file into an error item and never hands it on, so a file over 5 MiB would lose today's error panel and its copy. The 5 MiB check and the header parse stay in the form (FR-011).
+- **The column remap moves to AURA `Select`.** Labels, options and the mapping sent to the server are unchanged. Tests pick through the combobox and option roles instead of a native `<select>`.
+- **The event picker moves to AURA `Combobox`, filtering locally.** The fetch, the filename suggestion and the separately kept newly-created events are unchanged. Each option reads "name — date", so the closed field still shows the date. The "+ Create new event" button inside the empty list goes, because the Combobox empty text is text only. The "Create new event" button under the field stays, so nothing is lost.
+- **The inline create's start is two fields:** "Start date" (`DatePicker`, Bangkok time, Buddhist Era on TH display only) and "Start time" (`TimePicker`). They feed the same `bangkokInputToIso` conversion, so the instant sent is unchanged.
+- **The CSV preview stays a semantic table** with sticky headers in both directions, restyled with AURA tokens. It previews raw file rows, not records, so `DataTable` does not fit.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
