@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 
 import { PageHeader } from '@/components/layout/page-header';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { StaffShell } from '@/components/layout/staff-shell';
 import { AuraDensity } from '@/components/providers/aura-bridge';
 import type { PlanOption } from '@/components/members/directory-filters';
@@ -104,8 +105,10 @@ import {
   renderEventDetailError,
   renderEventDetailView,
 } from '@/app/(staff)/admin/events/[eventId]/_components/event-detail-view';
-import { ATTENDEE_ROWS, ERASURE_EMAIL, ERASURE_ROWS, EVENT_DETAIL, EVENT_ID, EVENT_ROWS, MEMBER_SEARCH_HITS } from './event-fixtures';
-import { MemberSearchStub, OpenRowEraseMenu } from './event-previews';
+import { ATTENDEE_ROWS, ERASURE_EMAIL, ERASURE_ROWS, EVENT_DETAIL, EVENT_ID, EVENT_ROWS, IMPORT_HISTORY_ROWS, IMPORT_PICKER_EVENTS, MEMBER_SEARCH_HITS } from './event-fixtures';
+import { ImportPreviewDriver, MemberSearchStub, OpenRowEraseMenu } from './event-previews';
+import { CsvMappingForm } from '@/components/events/csv-mapping-form';
+import { CsvImportHistoryTable } from '@/components/events/csv-import-history-table';
 import { renderErasureBody } from '@/app/(staff)/admin/events/erasure/_components/erasure-view';
 import { renderErasePageBody } from '@/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/_components/erase-page-view';
 import Link from 'next/link';
@@ -150,6 +153,10 @@ export const dynamic = 'force-dynamic';
  *   ?view=invoice-settings&state=default|first-time|read-only|dirty|prefix-confirm (US8c-2)
  *   ?view=events&state=default|manager|no-integration|waiting|archived|filtered|error (US9a)
  *   ?view=event&state=default|manager|archived|error · &dialog=relink|archive|flag
+ *   ?view=erasure&state=default|idle|empty|truncated|error · &dialog=erase-all  (US9b-1)
+ *   ?view=erase-page · &dialog=erase
+ *   ?view=import&state=idle|preview|remap|error|mismatch|result · &dialog=create (US9b-2)
+ *   ?view=import-history&state=default|empty|running
  *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|
  *         credit-notes|credit-note|registers|invoice-settings|events|event|…
  *
@@ -414,6 +421,14 @@ const LOADING_ROUTES = {
   'erase-page': {
     path: `/admin/events/${EVENT_ID}/registrations/${ATTENDEE_ROWS[2]!.registrationId}/erase`,
     load: async () => (await import('@/app/(staff)/admin/events/[eventId]/registrations/[registrationId]/erase/loading')).default(),
+  },
+  import: {
+    path: '/admin/events/import',
+    load: async () => (await import('@/app/(staff)/admin/events/import/loading')).default(),
+  },
+  'import-history': {
+    path: '/admin/events/import/history',
+    load: async () => (await import('@/app/(staff)/admin/events/import/history/loading')).default(),
   },
   'invoice-settings': {
     path: '/admin/settings/invoicing',
@@ -1510,6 +1525,67 @@ export default async function AuraAdminPreviewPage({
             body
           )}
         </DetailContainer>
+      </StaffFrame>
+    );
+  }
+
+  // 122 US9b-2 (T939) — the CSV import page (board Admin-events-import and
+  // -import-result): idle | preview | remap (non-canonical headers) | error
+  // (file over 5 MiB) | mismatch (the event-mismatch warning) | result;
+  // `&dialog=create` opens the inline create dialog.
+  if (view === 'import') {
+    const { dialog } = await searchParams;
+    const t = await getTranslations('admin.events.import');
+    const importState = (['preview', 'remap', 'error', 'mismatch', 'result'] as const).find((s) => s === state) ?? 'idle';
+    return (
+      <StaffFrame path="/admin/events/import">
+        <TableContainer>
+          <PageHeader
+            title={t('pageTitle')}
+            subtitle={t('pageSubtitle')}
+            actions={
+              <a href="#" className={buttonClass({ variant: 'secondary' })}>
+                {t('viewHistory')}
+              </a>
+            }
+          />
+          <ImportPreviewDriver events={IMPORT_PICKER_EVENTS} state={importState} dialog={dialog === 'create' ? 'create' : null}>
+            <CsvMappingForm />
+          </ImportPreviewDriver>
+        </TableContainer>
+      </StaffFrame>
+    );
+  }
+
+  // 122 US9b-2 (T939) — the import history (board Admin-events-import-history):
+  // default | empty | running (a row in flight, the auto-refresh chip).
+  if (view === 'import-history') {
+    const t = await getTranslations('admin.events.import.history');
+    const rows =
+      state === 'empty'
+        ? []
+        : state === 'running'
+          ? [{ ...IMPORT_HISTORY_ROWS[0]!, outcome: 'running' as const, counts: { ...IMPORT_HISTORY_ROWS[0]!.counts, processed: 0, failed: 0 } }, ...IMPORT_HISTORY_ROWS.slice(1)]
+          : IMPORT_HISTORY_ROWS;
+    return (
+      <StaffFrame path="/admin/events/import/history">
+        <TableContainer>
+          <PageHeader
+            title={t('pageTitle')}
+            subtitle={t('pageSubtitle')}
+            actions={
+              <a href="#" className={buttonClass({ variant: 'secondary' })}>
+                {t('backToImport')}
+              </a>
+            }
+          />
+          <CsvImportHistoryTable
+            rows={rows}
+            pagination={{ page: 1, perPage: 30, totalRecords: rows.length, totalPages: 1 }}
+            prevPageHref={null}
+            nextPageHref={null}
+          />
+        </TableContainer>
       </StaffFrame>
     );
   }
