@@ -41,7 +41,7 @@ export default async function CsvImportHistoryLoading() {
           actions={<SkeletonBlock className="h-[var(--aura-button-height)] w-36 max-lg:hidden" />}
         />
         {/* The list-card rule, as the page draws it. */}
-        <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+        <Card flushBelow="sm" className="overflow-hidden max-sm:border-0 max-sm:p-0 sm:pt-0">
           <div className="flex flex-col gap-[var(--aura-space-3)]">
             <DataTableSkeleton
               label={t('tableAriaLabel')}

@@ -320,8 +320,9 @@ export function CsvImportHistoryTable({
   return (
     // The list-card rule shared with Events, Members and Invoices: one card
     // on a desktop with the table edge to edge; on a phone the rows are cards
-    // of their own, so this one drops its frame and padding.
-    <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+    // of their own, so this one drops its frame and padding. No filter row
+    // here, so the table starts at the card's top edge (no top padding).
+    <Card flushBelow="sm" className="overflow-hidden max-sm:border-0 max-sm:p-0 sm:pt-0">
       <div className="flex flex-col gap-[var(--aura-space-3)]">
         {/* R2-I6 — stable outer mount of the polling indicator (see above).
             While nothing runs it stays mounted but screen-reader only, so it
