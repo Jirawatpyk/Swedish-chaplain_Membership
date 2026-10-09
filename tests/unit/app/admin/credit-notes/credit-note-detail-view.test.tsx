@@ -140,6 +140,27 @@ describe('renderCreditNoteDetailView', () => {
     );
     expect(screen.getByText('no-primary-contact')).toBeInTheDocument();
   });
+  // A phone at 200% text: "CN-2026-000014" alone is wider than the column, and
+  // a whitespace-nowrap span ran the page 50px past the screen (WCAG 1.4.4).
+  // The number stays whole and moves to its own line when it fits there; it
+  // breaks inside only when it cannot fit at all.
+  it('lets the title number break only when it cannot fit the column', async () => {
+    await renderView();
+    const number = within(screen.getByRole('heading', { level: 1 })).getByText('CN-2026-000014');
+    expect(number).toHaveClass('inline-block', 'max-w-full', '[overflow-wrap:anywhere]');
+    expect(number).not.toHaveClass('whitespace-nowrap');
+  });
+
+  // Same fix as the invoice totals in #530: the label column may shrink, and
+  // the gap tightens on phones, so a long label wraps rather than overflowing.
+  it('lets the amount labels shrink and wrap on a phone', async () => {
+    const { container } = await renderView();
+    expect(container.querySelector('[data-slot="credit-note-amounts"]')).toHaveClass(
+      'grid-cols-[minmax(0,1fr)_auto]',
+      'gap-x-4',
+      'sm:gap-x-8',
+    );
+  });
 });
 
 describe('<CreditNoteActions> resend', () => {
