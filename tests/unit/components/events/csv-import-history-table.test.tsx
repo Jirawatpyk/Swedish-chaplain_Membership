@@ -9,13 +9,13 @@
  * CI. Spec coverage of US5 AS3 ("in-progress imports shown as
  * Running…") depends on this UI render assertion.
  *
- * Pins:
- *   1. `outcome:'running'`     → variant `'secondary'` + i18n "Running…"
- *   2. `outcome:'completed'`   → variant `'default'`   + i18n "Completed"
- *   3. `outcome:'timeout'`     → variant `'destructive'` (any non-
- *                                 completed, non-running = destructive)
- *   4. `outcome:'partial_failure'` → variant `'destructive'`
- *   5. `outcome:'unexpected_error'` → variant `'destructive'`
+ * Pins (spec 122 US9b-2: AURA Badge tones, exposed as `data-tone`):
+ *   1. `outcome:'running'`     → tone `neutral` + i18n "Running…"
+ *   2. `outcome:'completed'`   → tone `success` + i18n "Completed"
+ *   3. `outcome:'timeout'`     → tone `danger` (any non-completed,
+ *                                 non-running outcome)
+ *   4. `outcome:'partial_failure'` → tone `danger`
+ *   5. `outcome:'unexpected_error'` → tone `danger`
  *
  * Mocks: i18n via NextIntlClientProvider with inline messages — keeps
  * the test deterministic without loading the full message catalogue.
@@ -149,48 +149,43 @@ function renderTable(rows: ReadonlyArray<CsvImportHistoryRow>) {
   );
 }
 
-describe('<CsvImportHistoryTable> Badge variant per outcome', () => {
+describe('<CsvImportHistoryTable> Badge tone per outcome', () => {
   afterEach(() => cleanup());
 
-  it("outcome:'running' renders Badge variant='secondary' + 'Running…' label", () => {
+  it("outcome:'running' renders a neutral badge + 'Running…' label", () => {
     renderTable([makeRow('running')]);
     const badge = screen.getByTestId('csv-import-history-outcome');
     expect(badge).toHaveTextContent('Running…');
-    // shadcn Badge variants render distinct className prefixes; the
-    // `'secondary'` variant uses `bg-secondary`/`text-secondary-foreground`
-    // tokens, distinct from `'default'` (primary) and `'destructive'`.
-    // We assert the variant via the data attribute the component
-    // emits, which is stable across Tailwind theme tweaks.
-    expect(badge.className).toMatch(/bg-secondary/);
+    // In flight: neutral, so it reads neither as done nor as failed.
+    expect(badge).toHaveAttribute('data-tone', 'neutral');
   });
 
-  it("outcome:'completed' renders Badge variant='default' + 'Completed' label", () => {
+  it("outcome:'completed' renders a success badge + 'Completed' label", () => {
     renderTable([makeRow('completed')]);
     const badge = screen.getByTestId('csv-import-history-outcome');
     expect(badge).toHaveTextContent('Completed');
-    expect(badge.className).not.toMatch(/bg-secondary/);
-    expect(badge.className).not.toMatch(/bg-destructive/);
+    expect(badge).toHaveAttribute('data-tone', 'success');
   });
 
-  it("outcome:'timeout' renders Badge variant='destructive' + 'Timed out' label", () => {
+  it("outcome:'timeout' renders a danger badge + 'Timed out' label", () => {
     renderTable([makeRow('timeout')]);
     const badge = screen.getByTestId('csv-import-history-outcome');
     expect(badge).toHaveTextContent('Timed out');
-    expect(badge.className).toMatch(/bg-destructive/);
+    expect(badge).toHaveAttribute('data-tone', 'danger');
   });
 
-  it("outcome:'partial_failure' renders Badge variant='destructive' + 'Partial'", () => {
+  it("outcome:'partial_failure' renders a danger badge + 'Partial'", () => {
     renderTable([makeRow('partial_failure')]);
     const badge = screen.getByTestId('csv-import-history-outcome');
     expect(badge).toHaveTextContent('Partial');
-    expect(badge.className).toMatch(/bg-destructive/);
+    expect(badge).toHaveAttribute('data-tone', 'danger');
   });
 
-  it("outcome:'unexpected_error' renders Badge variant='destructive' + 'Failed'", () => {
+  it("outcome:'unexpected_error' renders a danger badge + 'Failed'", () => {
     renderTable([makeRow('unexpected_error')]);
     const badge = screen.getByTestId('csv-import-history-outcome');
     expect(badge).toHaveTextContent('Failed');
-    expect(badge.className).toMatch(/bg-destructive/);
+    expect(badge).toHaveAttribute('data-tone', 'danger');
   });
 
   it('renders 3 rows with distinct outcomes — running, completed, timeout — in order', () => {
@@ -204,9 +199,7 @@ describe('<CsvImportHistoryTable> Badge variant per outcome', () => {
     expect(badges[0]).toHaveTextContent('Running…');
     expect(badges[1]).toHaveTextContent('Completed');
     expect(badges[2]).toHaveTextContent('Timed out');
-    // First row (running) should NOT have the destructive variant
-    // visible alongside the secondary one.
-    expect(badges[0]!.className).toMatch(/bg-secondary/);
-    expect(badges[0]!.className).not.toMatch(/bg-destructive/);
+    expect(badges[0]).toHaveAttribute('data-tone', 'neutral');
+    expect(badges[2]).toHaveAttribute('data-tone', 'danger');
   });
 });
