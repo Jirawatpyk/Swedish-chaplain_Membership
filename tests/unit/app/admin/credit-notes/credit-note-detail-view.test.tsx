@@ -160,6 +160,11 @@ describe('renderCreditNoteDetailView', () => {
       'gap-x-4',
       'sm:gap-x-8',
     );
+    // UX review of #547: a shrinkable label column alone lets a long label
+    // (SV "Kreditbelopp (exkl. moms)") run over the amount; the label wraps.
+    for (const dt of container.querySelectorAll('[data-slot="credit-note-amounts"] dt')) {
+      expect(dt).toHaveClass('min-w-0', '[overflow-wrap:anywhere]');
+    }
   });
 });
 

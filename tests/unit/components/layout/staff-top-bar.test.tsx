@@ -27,11 +27,14 @@ vi.mock('@/components/layout/top-bar-crowding', async (importOriginal) => {
   return { ...actual, measureRow: () => measure.next };
 });
 const observers: Array<() => void> = [];
+const observed: Element[] = [];
 class StubResizeObserver {
   constructor(private readonly cb: () => void) {
     observers.push(() => this.cb());
   }
-  observe() {}
+  observe(el: Element) {
+    observed.push(el);
+  }
   unobserve() {}
   disconnect() {}
 }
@@ -150,6 +153,56 @@ describe('StaffTopBar (spec 122 US1)', () => {
     relayout({ wraps: false, rowWidth: 1216, neededWithPill: 376 });
     expect(container.querySelector('div')).not.toHaveAttribute('data-crowded');
     expect(screen.getByRole('button', { name: /change language/i })).toBeInTheDocument();
+  });
+
+  // UX review of #547 (M1): the server renders before anything is measured, so
+  // at 200% text the bar first drew two rows and then jumped to one. A media
+  // query in em (it follows the text size) hides the pill from the first
+  // paint; the account menu offers the language under the same query.
+  it('hides the pill from the first paint when the text is very large', () => {
+    renderBar();
+    const pillBox = screen.getByRole('button', { name: /change language/i }).closest('[data-slot="top-bar-locale"]');
+    expect(pillBox).toHaveClass('[@media(max-width:14em)]:hidden');
+  });
+
+  it('offers the language in the account menu under the same query, before any measurement', async () => {
+    vi.useRealTimers();
+    const matchMedia = window.matchMedia;
+    window.matchMedia = ((q: string) => ({
+      matches: q === '(max-width: 14em)',
+      media: q,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    })) as typeof window.matchMedia;
+    try {
+      renderBar();
+      fireEvent.click(screen.getByRole('button', { name: /^Account menu/ }));
+      expect(await screen.findByRole('menuitemradio', { name: 'Svenska' })).toBeInTheDocument();
+    } finally {
+      window.matchMedia = matchMedia;
+    }
+  });
+
+  // UX review of #547 (M2): when the pill hides while it has focus (the text
+  // is enlarged with focus on it), focus moves to the account menu, which now
+  // holds the language, instead of dropping to the page.
+  it('moves focus to the account menu when the focused pill hides', () => {
+    renderBar();
+    screen.getByRole('button', { name: /change language/i }).focus();
+    relayout({ wraps: true, rowWidth: 337, neededWithPill: 376 });
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^Account menu/ }));
+  });
+
+  // UX review of #547 (L3): the alert appearing or going does not always
+  // resize the row, so each control is observed too.
+  it('observes the controls as well as the row', () => {
+    observed.length = 0;
+    renderBar();
+    expect(observed).toContain(screen.getByRole('button', { name: /^Account menu/ }));
   });
 });
 

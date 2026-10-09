@@ -164,6 +164,8 @@ describe('<UserMenu> language choices (staff top bar, crowded)', () => {
     openMenu();
     const english = await screen.findByRole('menuitemradio', { name: 'English' });
     expect(english).toHaveAttribute('aria-checked', 'true');
+    // A noun for the group (UX review of #547), not the pill's "Change language".
+    expect(screen.getByRole('group', { name: 'Language' })).toContainElement(english);
     expect(screen.getByRole('menuitemradio', { name: 'ไทย' })).toHaveAttribute('aria-checked', 'false');
     expect(screen.getByRole('menuitemradio', { name: 'Svenska' })).toHaveAttribute('aria-checked', 'false');
   });
