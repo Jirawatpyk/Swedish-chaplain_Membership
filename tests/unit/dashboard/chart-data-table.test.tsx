@@ -41,8 +41,21 @@ describe('ChartDataTable', () => {
   it('is visually hidden but present in the accessibility tree (sr-only, never aria-hidden)', () => {
     render(<ChartDataTable caption="Cap" columns={['A']} rows={[['x']]} />);
     const table = screen.getByRole('table');
-    expect(table).toHaveClass('sr-only');
+    expect(table.parentElement).toHaveClass('sr-only');
     expect(table).not.toHaveAttribute('aria-hidden');
+    expect(table.parentElement).not.toHaveAttribute('aria-hidden');
+  });
+
+  // `overflow` does not apply to table boxes, so `sr-only` on the <table>
+  // itself never clipped it: the table kept its no-wrap width, and being
+  // absolutely positioned it escaped the card's overflow and widened the
+  // page — 218px of sideways scroll on a phone at 200% text. The clip has
+  // to sit on a block wrapper.
+  it('puts the sr-only clip on a block wrapper, not on the table box', () => {
+    render(<ChartDataTable caption="Cap" columns={['A']} rows={[['x']]} />);
+    const table = screen.getByRole('table');
+    expect(table).not.toHaveClass('sr-only');
+    expect(table.parentElement?.tagName).toBe('DIV');
   });
 
   it('renders numeric cells (caller passes pre-formatted strings/numbers)', () => {

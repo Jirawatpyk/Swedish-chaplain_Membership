@@ -138,6 +138,9 @@ async function hoverCartesianCanvas(page: Page, chartSlot: Locator): Promise<voi
     return;
   }
   const svg = chartSlot.locator('svg').first();
+  // `mouse.move` never scrolls (unlike `hover()`): on a phone the chart sits
+  // below the fold, so its box must be read after it is in view.
+  await svg.scrollIntoViewIfNeeded();
   const box = await svg.boundingBox();
   if (!box) throw new Error('Chart <svg> has no bounding box — did it actually mount?');
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -153,6 +156,7 @@ async function hoverCartesianCanvas(page: Page, chartSlot: Locator): Promise<voi
  */
 async function hoverDonutUntilTooltipVisible(page: Page, chartSlot: Locator): Promise<boolean> {
   const svg = chartSlot.locator('svg').first();
+  await svg.scrollIntoViewIfNeeded(); // see hoverCartesianCanvas
   const box = await svg.boundingBox();
   if (!box) throw new Error('Donut <svg> has no bounding box — did it actually mount?');
   const cx = box.x + box.width / 2;
@@ -328,6 +332,18 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
       const empty = chartCard(page, caption).getByText(CHART_EMPTY_TEXT[key], { exact: true });
       await expect(table.or(empty), `${caption}: data table or empty state`).toHaveCount(1);
     }
+  });
+
+  test('no sideways scroll on a phone-width page at 200% text (WCAG 1.4.4 / 1.4.10)', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await gotoDashboard(page);
+    await page.waitForLoadState('networkidle');
+
+    await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, 'page overflow at 200% text').toBeLessThanOrEqual(1);
   });
 
   test('@i18n prefers-reduced-motion: charts render with no animation errors', async ({ page }) => {
