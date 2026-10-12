@@ -648,7 +648,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 ### US10a — Users (PR 20)
 
 - [x] T1000 [US10] Spec clarifications (Session 2026-10-12, US10 start) and this task list.
-- [x] T1001 [US10] The users list on AURA `Table` (cards on phones): role `Badge`, status `StatusPill` with the expiry hint, inline row actions on desktop, a primary action plus a ⋯ `Menu` with danger items on phones. RED: which actions each row offers by capability, status and self; Disable and Revoke are danger items on phones; every destructive action asks before its request.
+- [x] T1001 [US10] The users list on AURA `Table` (cards on phones): role `Badge`, status `StatusPill` with the expiry hint, a primary action plus a ⋯ `Menu` with danger items on desktop rows and phone cards alike (desktop was inline until R42 found the rows wrapping at 1280; maintainer decision 2026-10-12). RED: which actions each row offers by capability, status and self; Disable and Revoke are danger items; every destructive action asks before its request.
 - [x] T1002 [US10] The filters on AURA `FilterBar` (search, Role, Status, chips, count). RED: each change replaces the URL with the same query as today.
 - [x] T1003 [US10] The change-role dialog on AURA `Dialog role="alertdialog"`, `RadioGroup`, `Alert` and `TextField`. RED: the options and their names, the Super Admin warning and PROMOTE gate, the request body.
 - [x] T1004 [US10] The invite dialog on AURA `Dialog`, `TextField` and `Select`. RED: the request body; the member link only for the Member role.

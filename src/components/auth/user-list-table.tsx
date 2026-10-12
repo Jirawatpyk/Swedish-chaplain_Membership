@@ -358,7 +358,7 @@ export function UserListTable({
     setRoleDialogOpen(true);
   };
 
-  /** One row action, as a button. The text label stays in the name below `md`, where only the icon shows. */
+  /** One row action, as a button. The text label shows from `xl` (1280px); below it only the icon shows, and the label stays in the name and the tooltip, so the Email column keeps its width on a 1024px screen. */
   function actionButton(
     key: 'changeRole' | 'disable' | 'enable' | 'resend' | 'revoke',
     user: UserRow,
@@ -400,7 +400,7 @@ export function UserListTable({
         {opts.full ? (
           resending ? t('invite.submitting') : label
         ) : (
-          <span className="max-md:sr-only">{resending ? t('invite.submitting') : label}</span>
+          <span className="max-xl:sr-only">{resending ? t('invite.submitting') : label}</span>
         )}
       </Button>
     );
