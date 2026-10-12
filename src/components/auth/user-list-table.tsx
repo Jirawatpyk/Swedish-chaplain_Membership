@@ -441,7 +441,7 @@ export function UserListTable({
         className={
           layout === 'card'
             ? 'flex items-center gap-[var(--aura-space-2)] pt-[var(--aura-space-1)]'
-            : 'flex flex-nowrap items-center gap-[var(--aura-space-2)]'
+            : 'flex flex-nowrap items-center justify-end gap-[var(--aura-space-2)]'
         }
       >
         {primary ? actionButton(primary, user, view, { full: layout === 'card' }) : null}
@@ -459,6 +459,10 @@ export function UserListTable({
               />
             }
           />
+        ) : layout === 'row' ? (
+          // Keeps the ⋯ column: without it, a row with no menu (Enable alone)
+          // would put its button where the other rows have their ⋯.
+          <span data-menu-slot aria-hidden="true" className="inline-block size-[var(--aura-control-sm)] shrink-0" />
         ) : null}
       </div>
     );
@@ -517,7 +521,7 @@ export function UserListTable({
                 <Th>{t('columns.name')}</Th>
                 <Th>{t('columns.role')}</Th>
                 <Th>{t('columns.status')}</Th>
-                <Th>{t('columns.actions')}</Th>
+                <Th align="end">{t('columns.actions')}</Th>
               </Tr>
             </THead>
             <TBody>
@@ -535,7 +539,7 @@ export function UserListTable({
                         {expiryFor(view)}
                       </div>
                     </Td>
-                    <Td>
+                    <Td align="end">
                       {none ? (
                         <span className="text-[var(--aura-fg-secondary)]">{view.isSelf ? t('actions.self') : '—'}</span>
                       ) : (
