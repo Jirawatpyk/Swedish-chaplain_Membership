@@ -648,14 +648,14 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 ### US10a — Users (PR 20)
 
 - [x] T1000 [US10] Spec clarifications (Session 2026-10-12, US10 start) and this task list.
-- [ ] T1001 [US10] The users list on AURA `Table` (cards on phones): role `Badge`, status `StatusPill` with the expiry hint, inline row actions on desktop, a primary action plus a ⋯ `Menu` with danger items on phones. RED: which actions each row offers by capability, status and self; Disable and Revoke are danger items on phones; every destructive action asks before its request.
-- [ ] T1002 [US10] The filters on AURA `FilterBar` (search, Role, Status, chips, count). RED: each change replaces the URL with the same query as today.
-- [ ] T1003 [US10] The change-role dialog on AURA `Dialog role="alertdialog"`, `RadioGroup`, `Alert` and `TextField`. RED: the options and their names, the Super Admin warning and PROMOTE gate, the request body.
-- [ ] T1004 [US10] The invite dialog on AURA `Dialog`, `TextField` and `Select`. RED: the request body; the member link only for the Member role.
-- [ ] T1005 [US10] The member picker on AURA `Combobox` with server search. RED: its name, a picked result, clearing it.
-- [ ] T1006 [US10] The page frame: header with Invite, the list card, `loading.tsx` on the AURA skeleton and a new `error.tsx` (`RouteErrorPanel`).
-- [ ] T1007 [US10] Ratchet, preview and budget: `MIGRATED_PATHS` gains the users route and its five components; the US2 and US8a legacy controls and the stale member-picker controls move to US11/US12 files; preview views (`?view=users`, `users-empty`, `users-filtered`, `users-manager`, the invite and change-role dialogs, the loading file); a first bundle budget for `/admin/users`.
-- [ ] T1008 [US10] e2e selectors where the swap moves them (invite-flow, destructive-confirm, session-revocation, manager-read-only, table-consistency, overlay-consistency, the rbac personas).
+- [x] T1001 [US10] The users list on AURA `Table` (cards on phones): role `Badge`, status `StatusPill` with the expiry hint, inline row actions on desktop, a primary action plus a ⋯ `Menu` with danger items on phones. RED: which actions each row offers by capability, status and self; Disable and Revoke are danger items on phones; every destructive action asks before its request.
+- [x] T1002 [US10] The filters on AURA `FilterBar` (search, Role, Status, chips, count). RED: each change replaces the URL with the same query as today.
+- [x] T1003 [US10] The change-role dialog on AURA `Dialog role="alertdialog"`, `RadioGroup`, `Alert` and `TextField`. RED: the options and their names, the Super Admin warning and PROMOTE gate, the request body.
+- [x] T1004 [US10] The invite dialog on AURA `Dialog`, `TextField` and `Select`. RED: the request body; the member link only for the Member role.
+- [x] T1005 [US10] The member picker on AURA `Combobox` with server search. RED: its name, a picked result, clearing it.
+- [x] T1006 [US10] The page frame: header with Invite, the list card, `loading.tsx` on the AURA skeleton and a new `error.tsx` (`RouteErrorPanel`).
+- [ ] T1007 [US10] Ratchet, preview and budget: `MIGRATED_PATHS` gains the users route and its five components; the US2 and US8a legacy controls and the stale member-picker controls move to US10b/US12 files; preview views (`?view=users` with `state=empty|manager` and `dialog=invite|change-role|change-role-super|disable`, and the loading file); a first bundle budget for `/admin/users`.
+- [x] T1008 [US10] e2e selectors where the swap moves them: invite-flow and the super-admin persona (the role Select by its label, the current role named in its option), destructive-confirm (Disable from the phone card's menu), table-consistency (the SC-013 horizontal-padding case now passes). session-revocation keeps `data-user-*` on rows and cards; manager-read-only and overlay-consistency do not open the page.
 - [ ] T1009 [US10] Exit: gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; UX and security reviews with fixes RED first; draft PR; relay R42.
 
 ### US10b — Audit log and erasure log (PR 21)
