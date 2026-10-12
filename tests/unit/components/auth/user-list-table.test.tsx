@@ -512,6 +512,20 @@ describe('UserListTable on AURA', () => {
     expect(button).toHaveAttribute('title', en.admin.users.actions.changeRole);
   });
 
+  it('lines the ⋯ buttons up at the end of the Actions column, keeping the slot on rows without one', () => {
+    const { container } = renderTable([MANAGER_USER, PENDING_USER, DISABLED_USER]);
+    expect(screen.getByRole('columnheader', { name: en.admin.users.columns.actions })).toHaveClass('is-end');
+    const actions = (id: string) => container.querySelector(`tr[data-user-id="${id}"] td:last-child`)!;
+    for (const id of [MANAGER_USER.id, PENDING_USER.id, DISABLED_USER.id]) {
+      expect(actions(id)).toHaveClass('is-end');
+      expect(actions(id).firstElementChild).toHaveClass('justify-end');
+    }
+    // Enable alone: an empty, hidden slot where the ⋯ sits on the other rows.
+    const slot = actions(DISABLED_USER.id).querySelector('[data-menu-slot]');
+    expect(slot).toHaveAttribute('aria-hidden', 'true');
+    expect(actions(MANAGER_USER.id).querySelector('[data-menu-slot]')).toBeNull();
+  });
+
   it('keeps Enable reachable on a disabled staff row: Change role in the row, Enable in the ⋯ menu', async () => {
     const disabledStaff = { ...DISABLED_USER, id: 'u-disabled-staff', email: 'off.staff@example.com', role: 'manager' } as const;
     renderTable([disabledStaff]);
