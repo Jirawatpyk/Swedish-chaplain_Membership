@@ -214,7 +214,7 @@ export function InviteUserDialog({
       onClose={() => setOpen(false)}
       trigger={
         trigger ?? (
-          <Button variant="primary" icon={<UserIcon aria-hidden />} disabled={disabled}>
+          <Button variant="primary" icon={<UserIcon aria-hidden />} touchHeight disabled={disabled}>
             {tActions('invite')}
           </Button>
         )
