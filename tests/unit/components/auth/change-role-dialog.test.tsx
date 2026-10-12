@@ -60,9 +60,9 @@ describe('ChangeRoleDialog', () => {
     expect(screen.getByRole('button', { name: en.admin.users.changeRole.confirm })).toBeDisabled();
   });
 
-  it('marks the current role with a "Current" badge', () => {
+  it('marks the current role in its option, as the board does ("Admin (Current)")', () => {
     renderDialog();
-    expect(screen.getByText(en.admin.users.changeRole.current)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Admin (Current)' })).toBeChecked();
   });
 
   it('states what each role grants — a bare role name is not an informed choice', () => {
@@ -304,7 +304,7 @@ describe('ChangeRoleDialog', () => {
       screen.getByRole('button', { name: en.admin.users.changeRole.confirm }),
       'reopening for another row must not inherit the previous row’s selection',
     ).toBeDisabled();
-    expect(screen.getByText(en.admin.users.changeRole.current)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Manager (Current)' })).toBeChecked();
     // …and the promotion gate is gone with it, rather than sitting pre-satisfied.
     expect(screen.queryByTestId('super-admin-promotion-warning')).toBeNull();
   });
@@ -545,5 +545,55 @@ describe('ChangeRoleDialog', () => {
     expect(toast.success, 'stale success must not toast').not.toHaveBeenCalled();
     expect(onChanged, 'stale success must not refresh').not.toHaveBeenCalled();
     expect(onOpenChange, 'stale success must not force-close a reopened dialog').not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Spec 122 US10a (T1003; board `Admin-user-role`) — on AURA: an alertdialog
+ * with the role options as a named radio group (the member hint under it),
+ * the promotion warning as a warning Alert, and the phrase as a required
+ * field whose mismatch is announced. Requests and gates are the ones above.
+ */
+describe('ChangeRoleDialog on AURA', () => {
+  const c = en.admin.users.changeRole;
+  const phraseLabel = c.superAdminConfirmCopy.replace('{phrase}', c.superAdminPhrase);
+
+  it('is an alertdialog named by its title and described by the description', () => {
+    renderDialog();
+    const dialog = screen.getByRole('alertdialog', { name: c.title.replace('{email}', ADMIN_USER.email) });
+    expect(dialog).toHaveAccessibleDescription(c.description);
+  });
+
+  it('groups the options under "New role", with the member hint describing the group', () => {
+    renderDialog();
+    const group = screen.getByRole('group', { name: c.roleLabel });
+    expect(group).toHaveAccessibleDescription(c.memberHint);
+    expect(group.querySelectorAll('input[type="radio"]')).toHaveLength(4);
+  });
+
+  it('shows the promotion warning as a warning Alert, and the phrase as a required field', async () => {
+    renderDialog();
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    const warning = await screen.findByTestId('super-admin-promotion-warning');
+    expect(warning).toHaveClass('aura-alert', 'aura-alert--warning');
+    expect(warning).toHaveTextContent(c.superAdminWarning);
+    expect(screen.getByLabelText(phraseLabel)).toBeRequired();
+  });
+
+  it('announces a phrase mismatch and marks the field invalid', async () => {
+    renderDialog();
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    const input = screen.getByLabelText(phraseLabel);
+    fireEvent.change(input, { target: { value: 'PROM' } });
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    const mismatch = c.superAdminConfirmMismatch.replace('{phrase}', c.superAdminPhrase);
+    expect(screen.getByText(mismatch).closest('[role="alert"]')).not.toBeNull();
+    expect(input).toHaveAccessibleDescription(expect.stringContaining(mismatch));
+  });
+
+  it('Escape closes it', () => {
+    const { onOpenChange } = renderDialog();
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
