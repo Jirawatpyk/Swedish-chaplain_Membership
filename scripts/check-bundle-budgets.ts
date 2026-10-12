@@ -181,6 +181,9 @@
  *   122 US9c (EventCreate integration page on AURA, 2026-10-09) — budgeted for
  *   the first time on the branch build:
  *     /admin/settings/integrations/eventcreate          817.5 KB measured → ≤  920 KB
+ *   122 US10a (users page on AURA, 2026-10-12) — budgeted for the first time on
+ *   the branch build:
+ *     /admin/users                                      862.8 KB measured → ≤  970 KB
  *
  * Run as a post-build step:
  *
@@ -280,6 +283,8 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/events/import', maxKb: 1080 },
   { route: '/admin/events/import/history', maxKb: 920 },
   { route: '/admin/settings/integrations/eventcreate', maxKb: 920 },
+  // --- Spec 122 US10a users page (AURA) — see docblock ---
+  { route: '/admin/users', maxKb: 970 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');
