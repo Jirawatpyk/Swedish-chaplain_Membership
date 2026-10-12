@@ -47,13 +47,14 @@ test.describe('destructive-action confirmation (T120)', () => {
     // matching it here asserted the wrong dialog's contract. Its own focus
     // behaviour is pinned by the T046 persona spec.
     //
-    // Spec 122 US10a: on a phone (below 640px) each user is a card whose
-    // Disable sits in its "More actions" menu as a danger item, so there the
-    // trigger is that menu item; on a wider screen it is the row's button.
+    // Spec 122 US10a: every row (a desktop table row or a phone card) has one
+    // primary action and keeps the rest in its "More actions" menu, where
+    // Disable and Revoke are danger items (desktop moved there after R42). So
+    // the trigger is a row button only when Enable is a row's primary;
+    // otherwise it is a menu item, at any width.
     const rowButton = page.getByRole('button', { name: /disable|enable/i }).first();
     const moreMenu = page.getByRole('button', { name: /^more actions for /i }).first();
-    const onPhone = (page.viewportSize()?.width ?? 1280) < 640;
-    if ((await rowButton.count()) === 0 && (!onPhone || (await moreMenu.count()) === 0)) {
+    if ((await rowButton.count()) === 0 && (await moreMenu.count()) === 0) {
       test.skip(
         true,
         'No destructive actions visible — users table may be empty',
@@ -71,17 +72,20 @@ test.describe('destructive-action confirmation (T120)', () => {
         req.method() === 'POST' &&
         (url.includes('/disable') ||
           url.includes('/enable') ||
+          url.includes('/revoke') ||
           url.includes('/role'))
       ) {
         mutationFired = true;
       }
     });
 
-    if (onPhone && (await moreMenu.count()) > 0) {
-      await moreMenu.click();
-      await page.getByRole('menuitem', { name: /disable|revoke/i }).first().click();
-    } else {
+    if ((await rowButton.count()) > 0) {
       await rowButton.click();
+    } else {
+      await moreMenu.click();
+      // Enable too: a disabled staff row's menu holds only Enable, and it
+      // opens the same confirmation.
+      await page.getByRole('menuitem', { name: /disable|enable|revoke/i }).first().click();
     }
 
     // Dialog should be visible and Cancel should have focus.
