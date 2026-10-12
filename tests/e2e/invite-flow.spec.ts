@@ -59,7 +59,7 @@ test.describe('invite-flow wall-clock (T119, SC-008)', () => {
     await page.waitForLoadState('networkidle');
 
     // Click the "Invite user" CTA that opens the dialog
-    await page.getByRole('button', { name: /invite/i }).click();
+    await page.getByRole('button', { name: /^invite user$/i }).click();
 
     // Dialog should open — email field becomes visible
     const dialog = page.getByRole('dialog');

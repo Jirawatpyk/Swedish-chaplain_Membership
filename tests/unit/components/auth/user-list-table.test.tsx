@@ -104,6 +104,14 @@ function renderTable(users: Users, opts: RenderOpts = {}) {
   );
 }
 
+/** A row's other actions sit in its ⋯ menu, on desktop as on phones (spec 122 US10a, after R42). */
+async function pickFromMenu(email: string, item: string): Promise<HTMLElement> {
+  fireEvent.click(screen.getByRole('button', { name: `More actions for ${email}` }));
+  const el = await screen.findByRole('menuitem', { name: item });
+  fireEvent.click(el);
+  return el;
+}
+
 beforeEach(() => {
   vi.useRealTimers();
   refreshSpy.mockClear();
@@ -117,10 +125,12 @@ afterEach(() => {
 });
 
 describe('UserListTable — resend + revoke invitation actions', () => {
-  it('shows Resend invitation + Revoke on a pending row for an admin viewer', () => {
+  it('shows Resend invitation in the row and Revoke as a danger item in its ⋯ menu on a pending row', async () => {
     renderTable([PENDING_USER]);
     expect(screen.getByRole('button', { name: 'Resend invitation' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: `More actions for ${PENDING_USER.email}` }));
+    expect(await screen.findByRole('menuitem', { name: 'Revoke' })).toHaveClass('aura-menu__item--danger');
   });
 
   it('does NOT show Resend/Revoke on an active row', () => {
@@ -141,14 +151,14 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     expect(screen.queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
   });
 
-  it('clicking Revoke opens the confirm dialog and does NOT post immediately', () => {
+  it('clicking Revoke opens the confirm dialog and does NOT post immediately', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true }),
     } as Response);
     renderTable([PENDING_USER]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await pickFromMenu(PENDING_USER.email, 'Revoke');
 
     expect(screen.getByText(en.admin.users.confirm.revoke.title)).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -161,7 +171,7 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     } as Response);
     renderTable([PENDING_USER]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await pickFromMenu(PENDING_USER.email, 'Revoke');
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
 
     await waitFor(() =>
@@ -270,7 +280,7 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     } as unknown as Response);
     renderTable([PENDING_USER]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await pickFromMenu(PENDING_USER.email, 'Revoke');
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
 
     await waitFor(() =>
@@ -291,7 +301,7 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     } as unknown as Response);
     renderTable([PENDING_USER]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await pickFromMenu(PENDING_USER.email, 'Revoke');
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
 
     await waitFor(() =>
@@ -307,14 +317,14 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
     renderTable([PENDING_USER]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await pickFromMenu(PENDING_USER.email, 'Revoke');
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(en.admin.users.toast.revokeError));
-    // The row must not stay stuck busy: the Revoke trigger button is
+    // The row must not stay stuck busy: its ⋯ menu button is
     // clickable again (no lingering `disabled` from a swallowed throw).
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Revoke' })).not.toBeDisabled(),
+      expect(screen.getByRole('button', { name: `More actions for ${PENDING_USER.email}` })).not.toBeDisabled(),
     );
     expect(refreshSpy).not.toHaveBeenCalled();
   });
@@ -379,14 +389,15 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('hides "Change role" for a viewer without users.manage but keeps lifecycle actions (plain admin, ON leg)', () => {
+  it('hides "Change role" for a viewer without users.manage but keeps lifecycle actions (plain admin, ON leg)', async () => {
     renderTable([ADMIN_USER], { canManageAccounts: true, canManageStaffRoles: false });
     // No staff-role reassignment...
     expect(
       screen.queryByRole('button', { name: en.admin.users.actions.changeRole }),
     ).not.toBeInTheDocument();
     // ...but member-account lifecycle (this admin row is active) still shows.
-    expect(screen.getByRole('button', { name: en.admin.users.actions.disable })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: `More actions for ${ADMIN_USER.email}` }));
+    expect(await screen.findByRole('menuitem', { name: en.admin.users.actions.disable })).toBeInTheDocument();
   });
 
   it('the affordance is permission-driven, not role-literal: canManageAccounts=false hides every lifecycle action even for an admin-role row', () => {
@@ -396,6 +407,7 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
     // regardless of what role string the VIEWER happens to hold.
     renderTable([ADMIN_USER], { canManageAccounts: false, canManageStaffRoles: false });
     expect(screen.queryByRole('button', { name: en.admin.users.actions.disable })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^More actions for/ })).toBeNull();
   });
 
   it('opens the picker with every STAFF role — including marketing (PR 4 reveal)', () => {
@@ -443,9 +455,11 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
 });
 
 // Spec 122 US10a (T1001) — the users list on AURA (board `Admin-users`,
-// `-mobile`; Clarifications 2026-10-12). Desktop keeps the inline row actions;
-// on a phone each row is a card with one primary action and a ⋯ menu, where
-// Disable and Revoke are AURA danger items that still ask before posting.
+// `-mobile`; Clarifications 2026-10-12). Each row, a desktop table row or a
+// phone card, has one primary action and a ⋯ menu, where Disable and Revoke
+// are AURA danger items that still ask before posting. (Desktop had the board's
+// inline buttons until R42: three of them wrapped at 1280, so the maintainer
+// moved desktop to the phone pattern.)
 /** The staff layout's focusable landmark, which every page has (the dialogs' fallback). */
 function withMainLandmark(): HTMLElement {
   // Real timers: AURA restores focus after its close transition, which a
@@ -480,15 +494,42 @@ describe('UserListTable on AURA', () => {
     expect(container.querySelector('[data-user-email="admin@example.com"]')).toHaveAttribute('data-user-id', 'u-admin-1');
   });
 
-  it('Cancel on a confirmation returns focus to the button that opened it', async () => {
+  it('offers Change role in the row and Disable as a danger item in the ⋯ menu', async () => {
+    renderTable([MANAGER_USER]);
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: en.admin.users.actions.changeRole })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.admin.users.actions.disable })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: `More actions for ${MANAGER_USER.email}` }));
+    expect(await screen.findByRole('menuitem', { name: en.admin.users.actions.disable })).toHaveClass(
+      'aura-menu__item--danger',
+    );
+  });
+
+  it('keeps Enable reachable on a disabled staff row: Change role in the row, Enable in the ⋯ menu', async () => {
+    const disabledStaff = { ...DISABLED_USER, id: 'u-disabled-staff', email: 'off.staff@example.com', role: 'manager' } as const;
+    renderTable([disabledStaff]);
+    expect(screen.getByRole('button', { name: en.admin.users.actions.changeRole })).toBeInTheDocument();
+    await pickFromMenu(disabledStaff.email, en.admin.users.actions.enable);
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('shows the status pill and the invitation expiry on one line', () => {
+    const expiring = { ...PENDING_USER, invitationExpiresAt: new Date('2026-07-21T00:00:00Z') };
+    renderTable([expiring]);
+    const expiry = screen.getByText('Expires in 3 days');
+    const row = expiry.parentElement!;
+    expect(row).toContainElement(screen.getByText(en.admin.users.filters.status.pending));
+    expect(row).not.toHaveClass('flex-col');
+  });
+
+  it('Cancel on a confirmation from a row\'s ⋯ menu returns focus to that ⋯ button', async () => {
     const main = withMainLandmark();
     renderTable([MANAGER_USER]);
-    const disable = screen.getByRole('button', { name: en.admin.users.actions.disable });
-    disable.focus();
-    fireEvent.click(disable);
+    const more = screen.getByRole('button', { name: `More actions for ${MANAGER_USER.email}` });
+    await pickFromMenu(MANAGER_USER.email, en.admin.users.actions.disable);
     const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: en.admin.users.confirm.cancel }));
-    await waitFor(() => expect(document.activeElement).toBe(disable));
+    await waitFor(() => expect(document.activeElement).toBe(more));
     main.remove();
     vi.useFakeTimers();
   });
@@ -497,7 +538,7 @@ describe('UserListTable on AURA', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ ok: true }) } as Response);
     const main = withMainLandmark();
     renderTable([MANAGER_USER]);
-    fireEvent.click(screen.getByRole('button', { name: en.admin.users.actions.disable }));
+    await pickFromMenu(MANAGER_USER.email, en.admin.users.actions.disable);
     const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: en.admin.users.actions.disable }));
     await waitFor(() => expect(document.activeElement).toBe(main));
