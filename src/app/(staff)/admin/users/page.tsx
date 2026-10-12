@@ -2,7 +2,7 @@
  * Admin users list page (T135) at URL `/admin/users`.
  *
  * Server component with **Suspense streaming** (F4 best-practice upgrade):
- * the page shell — `<PageHeader>`, `<Card>` chrome — renders instantly
+ * the page shell — `<PageHeader>`, the AURA `<Card>` — renders instantly
  * off the fast `requireSession` + `getTranslations` calls, while the
  * table body (which depends on a 50-row DB fetch + count) streams in
  * behind a `<TableSkeleton>` fallback. Zero CLS because the skeleton
@@ -36,7 +36,7 @@ import {
 import { UsersFilters } from '@/components/auth/users-filters';
 import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
 import { TablePagination } from '@/components/layout/table-pagination';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 
@@ -100,24 +100,23 @@ export default async function AdminUsersPage({
         }
       />
 
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <UsersFilters />
-          {/*
-            No internal <Suspense> — route-level loading.tsx is the only
-            Suspense boundary. Double-wrapping caused the skeleton
-            shimmer to re-run when the outer boundary swapped into the
-            inner one.
-          */}
-          <UsersDataSection
-            currentUserId={currentUser.id}
-            capabilities={capabilities}
-            page={page}
-            {...(q !== undefined ? { q } : {})}
-            {...(role !== undefined ? { role } : {})}
-            {...(status !== undefined ? { status } : {})}
-          />
-        </CardContent>
+      {/* Spec 122 US10a (T1006; board `Admin-users`): one AURA card holds
+          the filters and the list, the table edge to edge in it; below 640px
+          the card drops its frame and the rows become cards of their own. */}
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+        {/*
+          No internal <Suspense> — route-level loading.tsx is the only
+          Suspense boundary. Double-wrapping caused the skeleton to re-run
+          when the outer boundary swapped into the inner one.
+        */}
+        <UsersDataSection
+          currentUserId={currentUser.id}
+          capabilities={capabilities}
+          page={page}
+          {...(q !== undefined ? { q } : {})}
+          {...(role !== undefined ? { role } : {})}
+          {...(status !== undefined ? { status } : {})}
+        />
       </Card>
     </TableContainer>
   );
@@ -161,8 +160,11 @@ async function UsersDataSection({
   // hydration — see UserListTableProps.now.
   const now = new Date();
 
+  // The filters sit in this section so the bar can show the count of every
+  // match across pages (the filter pattern, spec 122).
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-[var(--aura-space-4)]">
+      <UsersFilters resultCount={total} />
       <UserListTable
         users={users.map((u) => ({
           id: u.id,
