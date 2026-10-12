@@ -398,6 +398,11 @@ export function UserListTable({
     if (view.canChangeRole && view.canManageInvite) {
       menu.push({ label: t('actions.resend'), onSelect: () => void handleResend(user) });
     }
+    // A disabled staff row: Change role is the primary, so Enable goes here
+    // (security review — it was otherwise unreachable on a phone).
+    if (view.canChangeRole && view.canEnable) {
+      menu.push({ label: t('actions.enable'), onSelect: () => setPending({ kind: 'enable', user }) });
+    }
     if (view.canDisable) {
       menu.push({ label: t('actions.disable'), tone: 'danger', onSelect: () => setPending({ kind: 'disable', user }) });
     }
