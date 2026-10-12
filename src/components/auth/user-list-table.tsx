@@ -8,7 +8,7 @@
  *
  * Keeps the parent server component free of 'use client' noise.
  */
-import { useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
@@ -157,14 +157,28 @@ export function UserListTable({
   // over while the page stays open (a fresh value only arrives on the next
   // server render / router.refresh()).
 
-  // Focus-return target shared by every dialog on this page. Both the row
-  // action buttons and the "Change role" trigger unmount when a successful
-  // action fires `router.refresh()` (status flips / role changes / row
-  // filtered out), so returning focus to the trigger would drop it to
-  // `<body>`. The #main-content landmark (staff layout's focusable <main>)
-  // always survives (reference: dialog-focus-lost-after-unmount).
-  const dialogFinalFocus = () =>
-    typeof document !== 'undefined' ? document.getElementById('main-content') : null;
+  // Focus-return target shared by every dialog on this page. After a
+  // CANCEL the button that opened the dialog is still there, so focus goes
+  // back to it — for an action chosen from a phone card's ⋯ menu, to that
+  // ⋯ button, since the menu item itself is gone (UX review, US10a). After
+  // a CONFIRMED action the row may flip or leave the list under
+  // `router.refresh()`, so focus goes to the #main-content landmark (the
+  // staff layout's focusable <main>), which always survives (reference:
+  // dialog-focus-lost-after-unmount).
+  const returnFocusRef = useRef<HTMLElement | null>(null);
+  const actedRef = useRef(false);
+  const rememberOpener = (el: HTMLElement | null) => {
+    returnFocusRef.current = el;
+    actedRef.current = false;
+  };
+  const rememberMenuOpener = (userId: string) =>
+    rememberOpener(document.querySelector<HTMLElement>(`[data-more-for="${CSS.escape(userId)}"]`));
+  const dialogFinalFocus = () => {
+    if (typeof document === 'undefined') return null;
+    const opener = returnFocusRef.current;
+    if (!actedRef.current && opener?.isConnected) return opener;
+    return document.getElementById('main-content');
+  };
 
   async function runAction(
     url: string,
@@ -373,7 +387,10 @@ export function UserListTable({
         loading={resending}
         disabled={view.busy && !resending}
         title={label}
-        onClick={onClick}
+        onClick={(event) => {
+          rememberOpener(event.currentTarget);
+          onClick();
+        }}
         className={opts.full ? 'min-w-0 flex-1' : undefined}
       >
         {opts.full ? (
@@ -401,13 +418,13 @@ export function UserListTable({
     // A disabled staff row: Change role is the primary, so Enable goes here
     // (security review — it was otherwise unreachable on a phone).
     if (view.canChangeRole && view.canEnable) {
-      menu.push({ label: t('actions.enable'), onSelect: () => setPending({ kind: 'enable', user }) });
+      menu.push({ label: t('actions.enable'), onSelect: () => { rememberMenuOpener(user.id); setPending({ kind: 'enable', user }); } });
     }
     if (view.canDisable) {
-      menu.push({ label: t('actions.disable'), tone: 'danger', onSelect: () => setPending({ kind: 'disable', user }) });
+      menu.push({ label: t('actions.disable'), tone: 'danger', onSelect: () => { rememberMenuOpener(user.id); setPending({ kind: 'disable', user }); } });
     }
     if (view.canManageInvite) {
-      menu.push({ label: t('actions.revoke'), tone: 'danger', onSelect: () => setPending({ kind: 'revoke', user }) });
+      menu.push({ label: t('actions.revoke'), tone: 'danger', onSelect: () => { rememberMenuOpener(user.id); setPending({ kind: 'revoke', user }); } });
     }
     if (primary === null && menu.length === 0) return null;
     return (
@@ -420,6 +437,7 @@ export function UserListTable({
             trigger={
               <IconButton
                 icon="ellipsis"
+                data-more-for={user.id}
                 label={t('actions.moreFor', { email: user.email })}
                 touchHeight
                 disabled={view.busy}
@@ -596,6 +614,7 @@ export function UserListTable({
         destructive={pending?.kind === 'disable' || pending?.kind === 'revoke'}
         finalFocus={dialogFinalFocus}
         onConfirm={async () => {
+          actedRef.current = true;
           if (pending?.kind === 'disable') await handleDisable(pending.user);
           else if (pending?.kind === 'enable') await handleEnable(pending.user);
           else if (pending?.kind === 'revoke') await handleRevoke(pending.user);
@@ -612,7 +631,10 @@ export function UserListTable({
         user={roleChangeUser}
         open={roleDialogOpen}
         onOpenChange={setRoleDialogOpen}
-        onChanged={() => router.refresh()}
+        onChanged={() => {
+          actedRef.current = true;
+          router.refresh();
+        }}
         finalFocus={dialogFinalFocus}
       />
     </>
