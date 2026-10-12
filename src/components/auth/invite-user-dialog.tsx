@@ -241,6 +241,7 @@ export function InviteUserDialog({
       <form id={formId} onSubmit={handleSubmit} className="flex flex-col gap-4">
         <TextField
           id="invite-email"
+          touchHeight
           label={t('emailLabel')}
           type="email"
           autoComplete="off"
@@ -254,11 +255,12 @@ export function InviteUserDialog({
             is force-set to 'member' for the reverse entry point on the member
             detail page. The /admin/users entry point shows the full role
             selector. The options carry the role NAMES; the hint under the
-            field names the chosen role and what it grants (the summary, shared
-            with the change-role picker, moved off the options — same words). */}
+            field says what the chosen role grants (the summary, shared with
+            the change-role picker, moved off the options — same words). */}
         {!lockMember && (
           <Select
             id="invite-role"
+            touchHeight
             label={t('roleLabel')}
             required
             value={role}
@@ -268,7 +270,7 @@ export function InviteUserDialog({
               if (isRole(next)) setRole(next);
             }}
             options={byDisplayOrder(ASSIGNABLE_ROLES).map((r) => ({ value: r, label: tRole(r) }))}
-            hint={`${tRole(role)} — ${tSummary(role)}`}
+            hint={tSummary(role)}
           />
         )}
         {lockMember ? (
@@ -276,6 +278,7 @@ export function InviteUserDialog({
           // order with `readOnly`, so its name and value are heard.
           <TextField
             id="invite-link-member"
+            touchHeight
             label={tLink('label')}
             readOnly
             value={lockedMemberLabel ?? tLink('lockedFallback')}

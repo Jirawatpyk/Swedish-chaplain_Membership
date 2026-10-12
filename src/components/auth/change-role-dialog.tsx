@@ -347,6 +347,7 @@ export function ChangeRoleDialog({
             comment: an operator who saw five roles in the invite dialog and
             four here reads it as a bug, so the hint under the group says why. */}
         <RadioGroup
+          touchHeight
           label={t('changeRole.roleLabel')}
           hint={t('changeRole.memberHint')}
           value={selected ?? ''}
@@ -381,6 +382,7 @@ export function ChangeRoleDialog({
             </Alert>
             <TextField
               id="change-role-phrase"
+              touchHeight
               label={t('changeRole.superAdminConfirmCopy', { phrase: confirmPhrase })}
               required
               value={typedPhrase}
