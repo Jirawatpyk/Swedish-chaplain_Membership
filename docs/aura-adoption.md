@@ -168,10 +168,13 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 138 | 5.31.0: `labelAddon` on TextField, Textarea, PasswordField and Field, a node between the label and the box (`.aura-field__addon`, id `{id}-addon`), first in the input's `aria-describedby` (`labelAddonDescribes={false}` keeps it out) | The typed-phrase chip sits above the box on the void page and in the full-refund dialog; the hand-wired chip id leaves the input's `aria-describedby` (US8c-2) |
 | 139 | 5.31.0: `aura-theme` / `createTheme` emit `--aura-control-checked-bg/-fg` from the brand (#10487A: light `#2e6397` with a white mark, dark `#9cc5f1` with an ink mark) | `src/styles/aura-theme.css` regenerated; the hand-written `src/styles/aura-overrides.css` stand-in and its test go (US8c-2) |
 
-No items are open (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
+Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #140 | Addendum 43 (US10a): the `FilterBar` search box has no `touchHeight`, so it is 42px on a touch phone while the rest of the row is 44px | None: the search stays 42px on every list page until AURA ships |
+| #141 | Addendum 44 (US10a): `Combobox` has no `touchHeight`, unlike TextField and Select (#135) | None: the invite dialog's member picker (and the event and relink pickers) stay at the compact height |
+| #142 | Addendum 45 (US10a): `DataTable` rows take no `data-*` or `id` of their own | None: `/admin/users` uses static `Table`, whose `Tr` keeps the `data-user-*` the session e2e reads. Low priority |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
