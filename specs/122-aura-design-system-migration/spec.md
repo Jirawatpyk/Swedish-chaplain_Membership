@@ -462,6 +462,17 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **The grace banner and the "old secret still verifies until" chip** (no board) become an info `Alert` (`role=status`) and a `Badge`.
 - **`ui/stepper.tsx` loses its last consumer** but stays until US13 removes `src/components/ui/`. The error boundary moves to the shared `RouteErrorPanel`, as the import history page did.
 
+### Session 2026-10-12 (maintainer, US10 start)
+
+- **US10 ships as three PRs:** US10a the users page (list, filters, change-role and invite dialogs, and the member picker the invite uses); US10b the audit log and the compliance erasure log; US10c the settings hub, member-change approval settings and the staff account page.
+- **The broadcast settings pages** (`/admin/settings/broadcasts` and `/brand`) **are US12**, not US10: they are built from the E-Blast components US12 migrates.
+- **Users list (board `Admin-users`, `-mobile`):** on desktop the actions stay inline buttons in the row (Change role and Disable; Resend invitation and Revoke; Enable), as the board draws them. On phones each row is a card with the name, status pill, email, role badge and expiry, one primary action full width, and the remaining actions in a ⋯ `Menu`; Disable and Revoke there are AURA danger items, and every destructive action still opens the existing confirmation dialog (the US10 acceptance scenario). "That's you" stays on your own row.
+- **Unchanged (FR-011):** the page and action permission checks (`users.member_accounts`, `users.manage`), the `?q`/`role`/`status`/`page` URL, every request (invite, change role, disable, enable, resend, revoke) with its toasts, the 404/409 stale-row refresh, the 429 resend wait, the self and last-admin rules, the typed PROMOTE confirmation for Super Admin, and the invitation-expiry hint computed on the server.
+- **Filters follow the one filter pattern** (docs/aura-adoption.md § Filters): `FilterBar` with the search, then Role and Status `FilterSelect`s, the result count and a chip per applied value.
+- **Change role (board `Admin-user-role`):** AURA `Dialog role="alertdialog"` with a labelled `RadioGroup` (each role with its description, "(Current)" on the current one), the member-portal note, the Super Admin warning as an AURA warning `Alert` and the typed confirmation as an AURA `TextField`.
+- **Invite (board `Admin-user-invite`):** AURA `Dialog` with the email `TextField`, the role `Select` and the member link. The role's summary moves from inside each option to a hint under the select (same words; AURA's select lists one line per option). The board marks the member link required, which would change what the form accepts, so it stays optional (FR-011, a board deviation).
+- **The member picker moves to AURA `Combobox`** with server search (`onSearch`), as the relink dialog did; its props stay, so its E-Blast consumer is unaffected.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
