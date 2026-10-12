@@ -6,8 +6,7 @@
  * `/api/auth/invite` endpoint.
  *
  * UX (ux-standards § 6 / § 11):
- *   - Dialog opens from the "Invite user" button at the bottom of
- *     the users table.
+ *   - Dialog opens from the "Invite user" button in the page header.
  *   - Fields: email (auto-focus), role (every role in ASSIGNABLE_ROLES —
  *     super_admin / admin / manager / marketing / member),
  *     optional "link to member" picker — enabled only when role=member
@@ -19,32 +18,19 @@
  *   - On error: surfaces the server error code as an inline alert
  *     inside the dialog.
  *   - Keyboard: Enter submits, Escape cancels.
+ *
+ * Spec 122 US10a (T1004; board `Admin-user-invite`) — on AURA: Dialog,
+ * TextField, the role on a Select with the chosen role's summary as its
+ * hint, and the member link on the AURA Combobox picker (T1005). The
+ * member link stays optional (the board marks it required; recorded as a
+ * deviation in the spec). Request body, toasts and errors are unchanged.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Loader2Icon, UserPlusIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { UserIcon } from 'lucide-react';
+import { Alert, Button, Dialog, Select, TextField } from '@jirawatpyk/aura-react';
 import { MemberPicker } from '@/components/members/member-picker';
 // Client component — same rationale as `idle-warning-dialog.tsx`:
 // the `@/modules/auth` barrel transitively loads Node-only
@@ -104,8 +90,8 @@ function resolveInviteErrorKey(code: string): InviteErrorKey {
 type InviteUserDialogBaseProps = {
   readonly disabled?: boolean;
   /** Custom trigger element (replaces the default "Invite user" button).
-   *  Must be a single ReactElement — DialogTrigger's `render` prop does
-   *  not accept fragments or strings. */
+   *  Must be a single ReactElement — AURA's Dialog renders it in place and
+   *  wires its click, `aria-haspopup` and `aria-expanded`. */
   readonly trigger?: React.ReactElement;
 };
 
@@ -156,23 +142,16 @@ export function InviteUserDialog({
   );
   const [submitting, setSubmitting] = useState(false);
   const [errorCode, setErrorCode] = useState<string | null>(null);
-  const emailRef = useRef<HTMLInputElement>(null);
 
-  // Auto-focus the email field when the dialog opens. A 0ms timeout
-  // defers the `.focus()` call to the next task so Base UI has time
-  // to finish its portal mount (same pattern as MemberPicker).
-  // On close we reset to the pristine state: `defaultMemberId` (not
-  // null) + role='member' so locked reopens preserve the preset.
+  // On close we reset to the pristine state: `defaultMemberId` (not null) +
+  // role='member' so locked reopens preserve the preset. Focus on open needs
+  // no help: AURA's Dialog lands it on the first field, the email.
   useEffect(() => {
-    if (!open) {
-      setEmail('');
-      setRole('member');
-      setMemberId(defaultMemberId ?? null);
-      setErrorCode(null);
-      return;
-    }
-    const timer = setTimeout(() => emailRef.current?.focus(), 0);
-    return () => clearTimeout(timer);
+    if (open) return;
+    setEmail('');
+    setRole('member');
+    setMemberId(defaultMemberId ?? null);
+    setErrorCode(null);
   }, [open, defaultMemberId]);
 
   // Clear memberId when role switches away from 'member' — the
@@ -226,172 +205,97 @@ export function InviteUserDialog({
     }
   }
 
+  const formId = 'invite-user-form';
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={
-          trigger ?? (
-            <Button disabled={disabled}>
-              <UserPlusIcon className="size-4" aria-hidden />
-              {tActions('invite')}
-            </Button>
-          )
-        }
-      />
-      <DialogContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <DialogHeader>
-            <DialogTitle>{t('title')}</DialogTitle>
-            <DialogDescription>{t('description')}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-email">{t('emailLabel')}</Label>
-              <Input
-                id="invite-email"
-                ref={emailRef}
-                type="email"
-                autoComplete="off"
-                required
-                value={email}
-                disabled={submitting}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={t('emailPlaceholder')}
-              />
-            </div>
-            {/* Role dropdown is hidden when invoked in locked-member
-                mode — role is force-set to 'member' for the reverse
-                entry point on the member detail page. The original
-                /admin/users entry point shows the full role selector. */}
-            {!lockMember && (
-              <div className="space-y-1.5">
-                <Label id="invite-role-label" htmlFor="invite-role">
-                  {t('roleLabel')}
-                </Label>
-                <Select
-                  value={role}
-                  disabled={submitting}
-                  onValueChange={(next) => {
-                    if (next && isRole(next)) setRole(next);
-                  }}
-                >
-                  {/* `<label for>` does NOT name a button, and Base UI renders
-                      SelectTrigger as one — so the accessible name of the
-                      control that hands out super_admin was its own selected
-                      VALUE ("Member — self-service portal"), never the word
-                      "Role" (WCAG 1.3.1 + 4.1.2, level A). axe cannot see this:
-                      `button-name` is satisfied by the subtree text. Same
-                      `aria-labelledby` lists the label FIRST and then the
-                      trigger itself, so the name reads "Role, <value>". The
-                      self-reference is safe: accname takes this node's own
-                      subtree, it does not recurse. (The MemberPicker below uses
-                      a single id — it has no value to append.) */}
-                  <SelectTrigger
-                    id="invite-role"
-                    aria-labelledby="invite-role-label invite-role"
-                    className="w-full"
-                  >
-                    {/* NAME only. The trigger is `whitespace-nowrap` with
-                        `line-clamp-1`, and line-clamp can only draw an ellipsis
-                        on text that wraps — so the old "Admin — everything
-                        except user management, audit log, invoice settings and
-                        erasure" was hard-cut with no "…" at roughly
-                        "settings and erasure", losing the entire exclusion list
-                        that was the point of the sentence. The summary now
-                        lives on the option, where it has two lines. */}
-                    <TranslatedSelectValue
-                      translate={(v) => (v ? tRole(v) : t('roleLabel'))}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {byDisplayOrder(ASSIGNABLE_ROLES).map((r) => (
-                      <SelectItem key={r} value={r} label={tRole(r)} className="items-start">
-                        <span className="flex max-w-[42ch] flex-col gap-0.5 whitespace-normal">
-                          <span>{tRole(r)}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {tSummary(r)}
-                          </span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            <div className="space-y-1.5">
-              <Label
-                id="invite-link-member-label"
-                htmlFor="invite-link-member"
-              >
-                {tLink('label')}
-              </Label>
-              {lockMember ? (
-                // Read-only display of the pre-selected company.
-                // Mirrors the MemberPicker trigger's visual footprint
-                // so the dialog layout doesn't jump between the two
-                // modes. `aria-readonly` + non-interactive styling
-                // make it unambiguous to SR users that this value
-                // cannot be changed in the current flow.
-                <div
-                  id="invite-link-member"
-                  role="textbox"
-                  aria-readonly="true"
-                  // A readonly textbox is still focusable — keep it in the tab
-                  // order (matching the focusable <MemberPicker> it swaps with,
-                  // so tab order is stable across the two modes) and honour the
-                  // role=textbox contract (an unfocusable textbox is invalid).
-                  tabIndex={0}
-                  aria-labelledby="invite-link-member-label"
-                  aria-describedby="invite-link-member-help"
-                  className="flex h-9 w-full items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <span className="truncate">
-                    {lockedMemberLabel ?? tLink('lockedFallback')}
-                  </span>
-                </div>
-              ) : (
-                <MemberPicker
-                  id="invite-link-member"
-                  aria-labelledby="invite-link-member-label"
-                  aria-describedby="invite-link-member-help"
-                  value={memberId}
-                  onChange={setMemberId}
-                  // rbac-presentation-only-ok: enables a field, grants nothing
-                  disabled={submitting || role !== 'member'}
-                />
-              )}
-              {/* id wired so MemberPicker's trigger can reference this
-                  paragraph via aria-describedby when the picker is active. */}
-              <p id="invite-link-member-help" className="text-xs text-muted-foreground">
-                {lockMember ? tLink('lockedHelpText') : tLink('helpText')}
-              </p>
-            </div>
-            {errorCode ? (
-              <div
-                role="alert"
-                className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive"
-              >
-                {t(`errors.${resolveInviteErrorKey(errorCode)}`)}
-              </div>
-            ) : null}
-          </div>
-          <DialogFooter>
-            <DialogClose render={<Button type="button" variant="outline" />}>
-              {t('cancel')}
-            </DialogClose>
-            <Button type="submit" disabled={submitting || !email.trim()}>
-              {submitting ? (
-                <>
-                  <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-                  {t('submitting')}
-                </>
-              ) : (
-                t('submit')
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
+    <Dialog
+      open={open}
+      onOpen={() => setOpen(true)}
+      onClose={() => setOpen(false)}
+      trigger={
+        trigger ?? (
+          <Button variant="primary" icon={<UserIcon aria-hidden />} disabled={disabled}>
+            {tActions('invite')}
+          </Button>
+        )
+      }
+      title={t('title')}
+      description={t('description')}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => setOpen(false)}>
+            {t('cancel')}
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="primary"
+            loading={submitting}
+            disabled={submitting || !email.trim()}
+          >
+            {submitting ? t('submitting') : t('submit')}
+          </Button>
+        </>
+      }
+    >
+      <form id={formId} onSubmit={handleSubmit} className="flex flex-col gap-4">
+        <TextField
+          id="invite-email"
+          label={t('emailLabel')}
+          type="email"
+          autoComplete="off"
+          required
+          value={email}
+          disabled={submitting}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder={t('emailPlaceholder')}
+        />
+        {/* Role dropdown is hidden when invoked in locked-member mode — role
+            is force-set to 'member' for the reverse entry point on the member
+            detail page. The /admin/users entry point shows the full role
+            selector. The options carry the role NAMES; the hint under the
+            field names the chosen role and what it grants (the summary, shared
+            with the change-role picker, moved off the options — same words). */}
+        {!lockMember && (
+          <Select
+            id="invite-role"
+            label={t('roleLabel')}
+            required
+            value={role}
+            disabled={submitting}
+            onChange={(e) => {
+              const next = e.target.value;
+              if (isRole(next)) setRole(next);
+            }}
+            options={byDisplayOrder(ASSIGNABLE_ROLES).map((r) => ({ value: r, label: tRole(r) }))}
+            hint={`${tRole(role)} — ${tSummary(role)}`}
+          />
+        )}
+        {lockMember ? (
+          // Read-only display of the pre-selected company: still in the Tab
+          // order with `readOnly`, so its name and value are heard.
+          <TextField
+            id="invite-link-member"
+            label={tLink('label')}
+            readOnly
+            value={lockedMemberLabel ?? tLink('lockedFallback')}
+            hint={tLink('lockedHelpText')}
+          />
+        ) : (
+          <MemberPicker
+            id="invite-link-member"
+            label={tLink('label')}
+            hint={tLink('helpText')}
+            value={memberId}
+            onChange={setMemberId}
+            // rbac-presentation-only-ok: enables a field, grants nothing
+            disabled={submitting || role !== 'member'}
+          />
+        )}
+        {errorCode ? (
+          <Alert tone="danger">{t(`errors.${resolveInviteErrorKey(errorCode)}`)}</Alert>
+        ) : null}
+      </form>
     </Dialog>
   );
 }

@@ -61,8 +61,16 @@ function open() {
   return screen.getByRole('dialog', { name: i.title });
 }
 
+/** AURA's Select drives a native <select> under its face. */
 const roleSelect = (dialog: HTMLElement) =>
-  within(dialog).getByRole('combobox', { name: new RegExp(`^${i.roleLabel}`) }) as HTMLSelectElement;
+  within(dialog)
+    .getAllByRole('combobox', { name: new RegExp(`^${i.roleLabel}`) })
+    .at(-1)!
+    .closest('.aura-select')!
+    .querySelector('select')!;
+/** The field a person meets: AURA's combobox face, which carries the hint. */
+const roleFace = (dialog: HTMLElement) =>
+  within(dialog).getAllByRole('combobox', { name: new RegExp(`^${i.roleLabel}`) })[0]!;
 const memberBox = (dialog: HTMLElement) =>
   within(dialog).getByRole('combobox', { name: i.linkMember.label });
 const posts = () => fetchMock.mock.calls.filter(([url]) => url === '/api/auth/invite');
@@ -77,9 +85,9 @@ describe('InviteUserDialog on AURA', () => {
 
   it('names the chosen role and what it grants in the hint under the Select', () => {
     const dialog = open();
-    expect(roleSelect(dialog)).toHaveAccessibleDescription(`${roles.member} — ${summary.member}`);
+    expect(roleFace(dialog)).toHaveAccessibleDescription(`${roles.member} — ${summary.member}`);
     fireEvent.change(roleSelect(dialog), { target: { value: 'manager' } });
-    expect(roleSelect(dialog)).toHaveAccessibleDescription(`${roles.manager} — ${summary.manager}`);
+    expect(roleFace(dialog)).toHaveAccessibleDescription(`${roles.manager} — ${summary.manager}`);
     // The options carry the role names alone.
     expect(within(roleSelect(dialog)).getByRole('option', { name: roles.super_admin, hidden: true })).toBeInTheDocument();
   });
