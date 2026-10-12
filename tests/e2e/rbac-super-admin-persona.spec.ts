@@ -52,12 +52,10 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
     await page.getByRole('button', { name: /invite user/i }).click();
     // The invite dialog's role select now offers Super Admin (PR 3 assignable).
     await expect(page.getByRole('dialog')).toBeVisible();
-    // Target the trigger by its explicit id rather than an accessible name: the
-    // dialog also renders the MemberPicker combobox, so a bare
-    // getByRole('combobox') is ambiguous under strict mode, and the Base UI
-    // Select trigger's name derives from a <Label htmlFor> association that is
-    // not worth betting the assertion on.
-    await page.locator('#invite-role').click();
+    // The dialog also renders the member picker combobox, so a bare
+    // getByRole('combobox') is ambiguous under strict mode: target the AURA
+    // Select by its label, "Role" (spec 122 US10a).
+    await page.getByRole('dialog').getByRole('combobox', { name: /^role/i }).click();
     await expect(page.getByRole('option', { name: /super admin/i })).toBeVisible();
   });
 
@@ -74,10 +72,10 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
     // and this case asserted that state. `member` stays out: it is not a staff
     // role, and promoting a member from this table would strand their portal
     // access. That distinction is the reason the list is not simply `ROLES`.
-    await expect(page.getByRole('radio', { name: /^super admin$/i })).toBeVisible();
-    await expect(page.getByRole('radio', { name: /^admin$/i })).toBeVisible();
-    await expect(page.getByRole('radio', { name: /^manager$/i })).toBeVisible();
-    await expect(page.getByRole('radio', { name: /^marketing$/i })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^super admin( \(current\))?$/i })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^admin( \(current\))?$/i })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^manager( \(current\))?$/i })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^marketing( \(current\))?$/i })).toBeVisible();
     await expect(page.getByRole('radio', { name: /^member$/i })).toHaveCount(0);
   });
 
@@ -90,9 +88,9 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
     // the Cancel close; the success close runs the identical cycle.
     await page.goto('/admin/users', { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: /change role/i }).first().click();
-    await expect(page.getByRole('radio', { name: /^manager$/i })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^manager( \(current\))?$/i })).toBeVisible();
     await page.getByRole('button', { name: /^cancel$/i }).click();
-    await expect(page.getByRole('radio', { name: /^manager$/i })).toHaveCount(0);
+    await expect(page.getByRole('radio', { name: /^manager( \(current\))?$/i })).toHaveCount(0);
     // Read activeElement directly — that IS the CHK050 measure. `expect(body)
     // .not.toBeFocused()` would also pass when focus sits on a DETACHED node,
     // which is the very failure mode being guarded.
@@ -186,7 +184,7 @@ test.describe('T046 RBAC v2 — super_admin persona (ON leg) @a11y', () => {
 
     // Scan #2 — the change-role picker open (RadioGroup + inline-error region).
     await page.getByRole('button', { name: /change role/i }).first().click();
-    await expect(page.getByRole('radio', { name: /^manager$/i })).toBeVisible();
+    await expect(page.getByRole('radio', { name: /^manager( \(current\))?$/i })).toBeVisible();
     expect(
       (await scan()).violations,
     ).toEqual([]);

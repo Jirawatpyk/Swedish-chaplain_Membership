@@ -46,10 +46,14 @@ test.describe('destructive-action confirmation (T120)', () => {
     // review I1), and it renders FIRST in a super_admin's row cluster, so
     // matching it here asserted the wrong dialog's contract. Its own focus
     // behaviour is pinned by the T046 persona spec.
-    const destructiveBtn = page
-      .getByRole('button', { name: /disable|enable/i })
-      .first();
-    if ((await destructiveBtn.count()) === 0) {
+    //
+    // Spec 122 US10a: on a phone (below 640px) each user is a card whose
+    // Disable sits in its "More actions" menu as a danger item, so there the
+    // trigger is that menu item; on a wider screen it is the row's button.
+    const rowButton = page.getByRole('button', { name: /disable|enable/i }).first();
+    const moreMenu = page.getByRole('button', { name: /^more actions for /i }).first();
+    const onPhone = (page.viewportSize()?.width ?? 1280) < 640;
+    if ((await rowButton.count()) === 0 && (!onPhone || (await moreMenu.count()) === 0)) {
       test.skip(
         true,
         'No destructive actions visible — users table may be empty',
@@ -73,7 +77,12 @@ test.describe('destructive-action confirmation (T120)', () => {
       }
     });
 
-    await destructiveBtn.click();
+    if (onPhone && (await moreMenu.count()) > 0) {
+      await moreMenu.click();
+      await page.getByRole('menuitem', { name: /disable|revoke/i }).first().click();
+    } else {
+      await rowButton.click();
+    }
 
     // Dialog should be visible and Cancel should have focus.
     const dialog = page.getByRole('alertdialog');

@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 
 import { PageHeader } from '@/components/layout/page-header';
-import { Icon, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { StaffShell } from '@/components/layout/staff-shell';
 import { AuraDensity } from '@/components/providers/aura-bridge';
 import type { PlanOption } from '@/components/members/directory-filters';
@@ -107,6 +107,9 @@ import {
 } from '@/app/(staff)/admin/events/[eventId]/_components/event-detail-view';
 import { ATTENDEE_ROWS, ERASURE_EMAIL, ERASURE_ROWS, EVENT_DETAIL, EVENT_ID, EVENT_ROWS, IMPORT_HISTORY_ROWS, IMPORT_PICKER_EVENTS, MEMBER_SEARCH_HITS } from './event-fixtures';
 import { ImportPreviewDriver, MemberSearchStub, OpenRotateDialog, OpenRowEraseMenu, RevealPreview } from './event-previews';
+import { MembersApiStub, PickRadioInDialog } from './user-previews';
+import { UsersListBody } from '@/app/(staff)/admin/users/_components/users-list-body';
+import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
 import { CsvMappingForm } from '@/components/events/csv-mapping-form';
 import { CsvImportHistoryTable } from '@/components/events/csv-import-history-table';
 import { WebhookConfigWizard } from '@/components/events/webhook-config-wizard';
@@ -374,6 +377,12 @@ const REVIEW_FIELDS = [
   },
 ] as unknown as ChangeRequestReviewFieldView[];
 
+const USER_INVITE_MEMBERS = [
+  { member_id: '00000000-0000-4000-8000-000000000003', company_name: 'Siam Nordic Trading Co., Ltd.', country: 'TH', status: 'active' },
+  { member_id: '00000000-0000-4000-8000-000000000004', company_name: 'Midsommar Foods AB', country: 'SE', status: 'active' },
+  { member_id: '00000000-0000-4000-8000-000000000005', company_name: 'Nordic Bangkok Logistics', country: 'TH', status: 'active' },
+] as const;
+
 const LOADING_ROUTES = {
   members: { path: '/admin/members', load: async () => (await import('@/app/(staff)/admin/members/loading')).default() },
   plans: { path: '/admin/plans', load: async () => (await import('@/app/(staff)/admin/plans/loading')).default() },
@@ -438,6 +447,7 @@ const LOADING_ROUTES = {
     load: async () =>
       (await import('@/app/(staff)/admin/settings/integrations/eventcreate/loading')).default(),
   },
+  users: { path: '/admin/users', load: async () => (await import('@/app/(staff)/admin/users/loading')).default() },
   'invoice-settings': {
     path: '/admin/settings/invoicing',
     load: async () => (await import('@/app/(staff)/admin/settings/invoicing/loading')).default(),
@@ -1602,6 +1612,64 @@ export default async function AuraAdminPreviewPage({
   // Admin-eventcreate): fresh (step 1) | reveal (the one-time reveal) |
   // configured (step 3, the board) | grace (after a rotation) | empty (no
   // deliveries yet); `&dialog=rotate` opens the rotate confirmation.
+  // 122 US10a (T1007) — the users page (boards Admin-users, -mobile):
+  // default | empty (a filter with no match) | manager (a viewer who manages
+  // accounts but not staff roles, so no Change role); `&dialog=invite |
+  // change-role | change-role-super | disable` opens that dialog.
+  if (view === 'users') {
+    const { dialog } = await searchParams;
+    const t = await getTranslations('admin.users');
+    const now = new Date();
+    const inDays = (n: number) => new Date(now.getTime() + n * DAY);
+    const users = state === 'empty' ? [] : [
+      { id: 'u-malin', email: 'malin.berg@swecham.example', role: 'super_admin' as const, status: 'active' as const, displayName: 'Malin Berg', invitationExpiresAt: null },
+      { id: 'u-karin', email: 'karin.ek@swecham.example', role: 'manager' as const, status: 'active' as const, displayName: 'Karin Ek', invitationExpiresAt: null },
+      { id: 'u-nok', email: 'nok.suwan@swecham.example', role: 'admin' as const, status: 'active' as const, displayName: 'Nok Suwan', invitationExpiresAt: null },
+      { id: 'u-johan', email: 'johan.strand@swecham.example', role: 'marketing' as const, status: 'active' as const, displayName: 'Johan Strand', invitationExpiresAt: null },
+      { id: 'u-ploy', email: 'ploy@siamnordic.example', role: 'member' as const, status: 'pending' as const, displayName: null, invitationExpiresAt: inDays(5) },
+      { id: 'u-anders', email: 'anders@midsommar.example', role: 'member' as const, status: 'disabled' as const, displayName: 'Anders Lind', invitationExpiresAt: null },
+    ];
+    const capabilities = { manageAccounts: true, manageStaffRoles: state !== 'manager' };
+    const body = (
+      <UsersListBody
+        users={users}
+        total={users.length}
+        page={1}
+        pageSize={50}
+        currentUserId="u-malin"
+        capabilities={capabilities}
+        now={now}
+      />
+    );
+    const trigger =
+      dialog === 'invite'
+        ? { label: t('actions.invite') }
+        : dialog === 'change-role' || dialog === 'change-role-super'
+          ? { label: t('actions.changeRole') }
+          : dialog === 'disable'
+            ? { label: t('actions.disable') }
+            : null;
+    const page = (
+      <TableContainer>
+        <PageHeader
+          title={t('title')}
+          subtitle={t('pageSubtitle')}
+          actions={<InviteUserDialog disabled={!capabilities.manageAccounts} />}
+        />
+        <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+          {body}
+        </Card>
+      </TableContainer>
+    );
+    return (
+      <StaffFrame path="/admin/users">
+        <MembersApiStub rows={USER_INVITE_MEMBERS} />
+        {dialog === 'change-role-super' ? <PickRadioInDialog value="super_admin" /> : null}
+        {trigger ? <OpenFirstMatchingButton {...trigger}>{page}</OpenFirstMatchingButton> : page}
+      </StaffFrame>
+    );
+  }
+
   if (view === 'eventcreate') {
     const { dialog } = await searchParams;
     const t = await getTranslations('admin.integrations.eventcreate.page');
