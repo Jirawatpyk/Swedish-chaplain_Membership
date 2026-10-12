@@ -505,6 +505,13 @@ describe('UserListTable on AURA', () => {
     );
   });
 
+  it('shows the row button\'s label from 1280px up, and its icon alone below (the name stays)', () => {
+    renderTable([MANAGER_USER]);
+    const button = screen.getByRole('button', { name: en.admin.users.actions.changeRole });
+    expect(within(button).getByText(en.admin.users.actions.changeRole)).toHaveClass('max-xl:sr-only');
+    expect(button).toHaveAttribute('title', en.admin.users.actions.changeRole);
+  });
+
   it('keeps Enable reachable on a disabled staff row: Change role in the row, Enable in the ⋯ menu', async () => {
     const disabledStaff = { ...DISABLED_USER, id: 'u-disabled-staff', email: 'off.staff@example.com', role: 'manager' } as const;
     renderTable([disabledStaff]);
