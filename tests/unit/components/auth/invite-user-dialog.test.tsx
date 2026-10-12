@@ -83,11 +83,11 @@ describe('InviteUserDialog on AURA', () => {
     expect(roleSelect(dialog).value).toBe('member');
   });
 
-  it('names the chosen role and what it grants in the hint under the Select', () => {
+  it('says what the chosen role grants in the hint under the Select (the summary, no second dash)', () => {
     const dialog = open();
-    expect(roleFace(dialog)).toHaveAccessibleDescription(`${roles.member} — ${summary.member}`);
+    expect(roleFace(dialog)).toHaveAccessibleDescription(summary.member);
     fireEvent.change(roleSelect(dialog), { target: { value: 'manager' } });
-    expect(roleFace(dialog)).toHaveAccessibleDescription(`${roles.manager} — ${summary.manager}`);
+    expect(roleFace(dialog)).toHaveAccessibleDescription(summary.manager);
     // The options carry the role names alone.
     expect(within(roleSelect(dialog)).getByRole('option', { name: roles.super_admin, hidden: true })).toBeInTheDocument();
   });
@@ -149,5 +149,11 @@ describe('InviteUserDialog on AURA', () => {
     await flush();
     expect(within(dialog).getByRole('alert')).toHaveTextContent(i.errors['email-taken']);
     expect(toastMock.success).not.toHaveBeenCalled();
+  });
+
+  it('gives its fields 44px boxes on phones (UX review)', () => {
+    const dialog = open();
+    expect(within(dialog).getByRole('textbox', { name: i.emailLabel }).closest('.aura-field')).toHaveClass('is-touch');
+    expect(roleSelect(dialog).closest('.aura-field')).toHaveClass('is-touch');
   });
 });

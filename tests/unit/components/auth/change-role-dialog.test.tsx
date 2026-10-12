@@ -601,4 +601,11 @@ describe('ChangeRoleDialog on AURA', () => {
     fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it('gives the options and the phrase field 44px rows on phones (UX review)', () => {
+    renderDialog();
+    expect(screen.getByRole('group', { name: c.roleLabel })).toHaveClass('is-touch');
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    expect(phraseField(phraseLabel).closest('.aura-field')).toHaveClass('is-touch');
+  });
 });
