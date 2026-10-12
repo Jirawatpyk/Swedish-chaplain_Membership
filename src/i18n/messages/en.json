@@ -706,7 +706,8 @@
         "resend": "Resend invitation",
         "revoke": "Revoke",
         "self": "That's you",
-        "changeRole": "Change role"
+        "changeRole": "Change role",
+        "moreFor": "More actions for {email}"
       },
       "confirm": {
         "cancel": "Cancel",
@@ -802,7 +803,8 @@
           "lockedHelpText": "This invite is pre-linked to the current member company."
         },
         "expiresIn": "{days, plural, one {Expires in # day} other {Expires in # days}}",
-        "expired": "Invitation expired"
+        "expired": "Invitation expired",
+        "noNameYet": "Invitation pending — no name yet"
       }
     },
     "plans": {

@@ -8,29 +8,33 @@
  *
  * Keeps the parent server component free of 'use client' noise.
  */
-import { useState } from 'react';
+import { useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import {
   BanIcon,
   CircleCheckIcon,
-  Loader2Icon,
   MailIcon,
   ShieldCheckIcon,
   Trash2Icon,
-  UserCogIcon,
+  UserIcon,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import {
+  Badge,
+  Button,
+  DropdownMenu,
+  IconButton,
+  StatusPill,
   Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
+  useBreakpoint,
+  type MenuItem,
+} from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { ChangeRoleDialog, CHANGE_ROLE_OPTIONS } from '@/components/auth/change-role-dialog';
 // The deep path (rather than the `@/modules/auth` barrel) matches the
@@ -99,19 +103,27 @@ type PendingAction =
   | { readonly kind: 'revoke'; readonly user: UserRow }
   | null;
 
-const statusVariant: Record<Status, 'default' | 'secondary' | 'outline' | 'destructive'> = {
-  active: 'default',
-  pending: 'secondary',
-  disabled: 'outline',
-};
+// Spec 122 US10a — board `Admin-users`: status as a pill (Active → ready,
+// Pending → progress, Disabled → neutral), role as a badge.
+const statusTone = { active: 'ready', pending: 'progress', disabled: 'neutral' } as const satisfies Record<
+  Status,
+  'ready' | 'progress' | 'neutral'
+>;
 
-const roleVariant: Record<Role, 'default' | 'secondary' | 'outline'> = {
-  super_admin: 'default',
-  admin: 'default',
-  manager: 'secondary',
-  marketing: 'secondary',
-  member: 'outline',
-};
+const roleBadge = {
+  super_admin: { tone: 'neutral', variant: 'solid' },
+  admin: { tone: 'accent', variant: 'soft' },
+  manager: { tone: 'neutral', variant: 'soft' },
+  marketing: { tone: 'success', variant: 'soft' },
+  member: { tone: 'neutral', variant: 'outline' },
+} as const satisfies Record<Role, { tone: 'neutral' | 'accent' | 'success'; variant: 'solid' | 'soft' | 'outline' }>;
+
+// The server renders both layouts (CSS shows one); once on the client only the
+// one for this width is mounted, so no action is in the page twice.
+const noopSubscribe = () => () => {};
+function useIsClient(): boolean {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -288,226 +300,264 @@ export function UserListTable({
     }
   }
 
+  const onPhone = useBreakpoint() === 'base';
+  const isClient = useIsClient();
+  const showTable = !isClient || !onPhone;
+  const showCards = !isClient || onPhone;
+
+  /** What a row offers, from the capabilities and its status (unchanged rules). */
+  function rowView(user: UserRow) {
+    const isSelf = user.id === currentUserId;
+    const canDisable = canManageAccounts && !isSelf && user.status === 'active';
+    const canEnable = canManageAccounts && user.status === 'disabled';
+    const canManageInvite = canManageAccounts && user.status === 'pending';
+    // Staff-role reassignment (users.manage). Never on your own row
+    // (self-demotion lockout) and only on rows whose CURRENT role is
+    // one the picker offers (all four staff roles, marketing included
+    // since PR 4) — that keeps the "Current" badge meaningful and
+    // avoids a row opening a picker that cannot show its own role.
+    // A member↔staff move is a portal change, out of this picker's
+    // scope; `changeRole.memberHint` says so in the dialog.
+    const canChangeRole = canManageStaffRoles && !isSelf && CHANGE_ROLE_OPTIONS.includes(user.role);
+    const busy = busyId === user.id;
+    const daysRemaining = user.invitationExpiresAt ? daysUntil(user.invitationExpiresAt, now) : null;
+    // An EXPIRED invite gets the danger tone (not just muted text) so it's
+    // scannable at a glance; the wording says it too (WCAG 1.4.1).
+    const isExpired = user.status === 'pending' && daysRemaining !== null && daysRemaining <= 0;
+    const expiryLabel =
+      user.status === 'pending' && daysRemaining !== null
+        ? daysRemaining > 0
+          ? t('invite.expiresIn', { days: daysRemaining })
+          : t('invite.expired')
+        : null;
+    return { isSelf, canDisable, canEnable, canManageInvite, canChangeRole, busy, isExpired, expiryLabel };
+  }
+
+  type View = ReturnType<typeof rowView>;
+
+  const openChangeRole = (user: UserRow) => {
+    setRoleChangeUser(user);
+    setRoleDialogOpen(true);
+  };
+
+  /** One row action, as a button. The text label stays in the name below `md`, where only the icon shows. */
+  function actionButton(
+    key: 'changeRole' | 'disable' | 'enable' | 'resend' | 'revoke',
+    user: UserRow,
+    view: View,
+    opts: { readonly full?: boolean } = {},
+  ): ReactNode {
+    const icon = {
+      changeRole: <UserIcon aria-hidden />,
+      disable: <BanIcon aria-hidden />,
+      enable: <CircleCheckIcon aria-hidden />,
+      resend: <MailIcon aria-hidden />,
+      revoke: <Trash2Icon aria-hidden />,
+    }[key];
+    const onClick = {
+      changeRole: () => openChangeRole(user),
+      disable: () => setPending({ kind: 'disable', user }),
+      enable: () => setPending({ kind: 'enable', user }),
+      resend: () => void handleResend(user),
+      revoke: () => setPending({ kind: 'revoke', user }),
+    }[key];
+    const label = t(`actions.${key}`);
+    const resending = key === 'resend' && view.busy;
+    return (
+      <Button
+        key={key}
+        size="sm"
+        variant="secondary"
+        touchHeight
+        icon={icon}
+        loading={resending}
+        disabled={view.busy && !resending}
+        title={label}
+        onClick={onClick}
+        className={opts.full ? 'min-w-0 flex-1' : undefined}
+      >
+        {opts.full ? (
+          resending ? t('invite.submitting') : label
+        ) : (
+          <span className="max-md:sr-only">{resending ? t('invite.submitting') : label}</span>
+        )}
+      </Button>
+    );
+  }
+
+  /** Phone card: one primary action, the rest in a ⋯ menu (destructive ones as danger items). */
+  function phoneActions(user: UserRow, view: View): ReactNode {
+    const primary = view.canChangeRole
+      ? 'changeRole'
+      : view.canManageInvite
+        ? 'resend'
+        : view.canEnable
+          ? 'enable'
+          : null;
+    const menu: MenuItem[] = [];
+    if (view.canChangeRole && view.canManageInvite) {
+      menu.push({ label: t('actions.resend'), onSelect: () => void handleResend(user) });
+    }
+    if (view.canDisable) {
+      menu.push({ label: t('actions.disable'), tone: 'danger', onSelect: () => setPending({ kind: 'disable', user }) });
+    }
+    if (view.canManageInvite) {
+      menu.push({ label: t('actions.revoke'), tone: 'danger', onSelect: () => setPending({ kind: 'revoke', user }) });
+    }
+    if (primary === null && menu.length === 0) return null;
+    return (
+      <div className="flex items-center gap-[var(--aura-space-2)] pt-[var(--aura-space-1)]">
+        {primary ? actionButton(primary, user, view, { full: true }) : null}
+        {menu.length > 0 ? (
+          <DropdownMenu
+            label={t('actions.moreFor', { email: user.email })}
+            items={menu}
+            trigger={
+              <IconButton
+                icon="ellipsis"
+                label={t('actions.moreFor', { email: user.email })}
+                touchHeight
+                disabled={view.busy}
+              />
+            }
+          />
+        ) : null}
+      </div>
+    );
+  }
+
+  function roleBadgeFor(user: UserRow): ReactNode {
+    const { tone, variant } = roleBadge[user.role];
+    return (
+      <Badge
+        tone={tone}
+        variant={variant}
+        // super_admin is set apart by its icon as well as its fill, so it is
+        // not a colour-only cue (WCAG 1.4.1).
+        // rbac-presentation-only-ok: picks a badge icon
+        icon={user.role === 'super_admin' ? <ShieldCheckIcon aria-hidden /> : undefined}
+      >
+        {t(`filters.role.${user.role}`)}
+      </Badge>
+    );
+  }
+
+  function statusPillFor(user: UserRow): ReactNode {
+    return (
+      <StatusPill tone={statusTone[user.status]} data-tone={statusTone[user.status]}>
+        {t(`filters.status.${user.status}`)}
+      </StatusPill>
+    );
+  }
+
+  function expiryFor(view: View): ReactNode {
+    return view.expiryLabel ? (
+      <span
+        className={
+          view.isExpired
+            ? 'aura-text-caption font-medium text-[var(--aura-fg-danger)]'
+            : 'aura-text-caption text-[var(--aura-fg-secondary)]'
+        }
+      >
+        {view.expiryLabel}
+      </span>
+    ) : null;
+  }
+
   return (
     <>
-      {/* Matches /admin/members table style — uppercase muted header
-          + hover feedback. No outer border: the parent <Card> is the
-          container. */}
-      {/* Minor fix: name the scroll-region landmark from the page title
-          instead of the Table primitive's hardcoded English "Data table"
-          fallback (src/components/ui/table.tsx). */}
-      <Table aria-label={t('title')}>
-          <TableHeader>
-            <TableRow>
-              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.email')}
-              </TableHead>
-              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.name')}
-              </TableHead>
-              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.role')}
-              </TableHead>
-              <TableHead scope="col" className="text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.status')}
-              </TableHead>
-              <TableHead scope="col" className="text-right text-xs uppercase tracking-wide text-muted-foreground">
-                {t('columns.actions')}
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.map((user) => {
-              const isSelf = user.id === currentUserId;
-              const canDisable = canManageAccounts && !isSelf && user.status === 'active';
-              const canEnable = canManageAccounts && user.status === 'disabled';
-              const canManageInvite = canManageAccounts && user.status === 'pending';
-              // Staff-role reassignment (users.manage). Never on your own row
-              // (self-demotion lockout) and only on rows whose CURRENT role is
-              // one the picker offers (all four staff roles, marketing included
-              // since PR 4) — that keeps the "Current" badge meaningful and
-              // avoids a row opening a picker that cannot show its own role.
-              // A member↔staff move is a portal change, out of this picker's
-              // scope; `changeRole.memberHint` says so in the dialog.
-              const canChangeRole =
-                canManageStaffRoles && !isSelf && CHANGE_ROLE_OPTIONS.includes(user.role);
-              const busy = busyId === user.id;
-              const daysRemaining = user.invitationExpiresAt
-                ? daysUntil(user.invitationExpiresAt, now)
-                : null;
-              // Minor fix: an EXPIRED invite gets a destructive tone (not
-              // just muted text) so it's scannable at a glance, closer to
-              // the member-detail page's stronger treatment. Wording
-              // ("Invitation expired") stays — this is tone-only, not
-              // color-only, so WCAG 1.4.1 is unaffected.
-              const isExpired =
-                user.status === 'pending' && daysRemaining !== null && daysRemaining <= 0;
-              const invitationExpiryLabel =
-                user.status === 'pending' && daysRemaining !== null
-                  ? daysRemaining > 0
-                    ? t('invite.expiresIn', { days: daysRemaining })
-                    : t('invite.expired')
-                  : null;
-              return (
-                <TableRow
-                  key={user.id}
-                  className="hover:bg-accent/40"
-                  // Data attrs for deterministic E2E selectors — the
-                  // session-revocation spec (T-05) needs to find a
-                  // specific user's id by email without scraping the
-                  // visible text.
-                  data-user-id={user.id}
-                  data-user-email={user.email.toLowerCase()}
-                >
-                <TableCell>{user.email}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {user.displayName ?? '—'}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={roleVariant[user.role]}>
-                    {/* super_admin and admin both map to `default`, so on a
-                        50-row table the one distinction this page exists to
-                        show could not be scanned — you had to read every badge.
-                        A leading icon separates them by SHAPE, so it is not a
-                        colour-only cue (WCAG 1.4.1) and survives the shared
-                        variant. */}
-                    {/* rbac-presentation-only-ok: picks a badge icon */}
-                    {user.role === 'super_admin' ? (
-                      <ShieldCheckIcon className="size-3" aria-hidden />
-                    ) : null}
-                    {t(`filters.role.${user.role}`)}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={statusVariant[user.status]}>
-                      {t(`filters.status.${user.status}`)}
-                    </Badge>
-                    {invitationExpiryLabel ? (
-                      <span
-                        className={
-                          isExpired
-                            ? 'text-xs font-medium text-destructive'
-                            : 'text-xs text-muted-foreground'
-                        }
-                      >
-                        {invitationExpiryLabel}
-                      </span>
-                    ) : null}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  {/* ≤md the text labels collapse to `sr-only` (016 polish,
-                      S5): a pending staff row carries THREE icon+text buttons
-                      and TableCell is whitespace-nowrap, so at small widths
-                      the full-text cluster pushed the actions column into the
-                      table region's horizontal scroll on every row. Icons
-                      stay, each button keeps its accessible name (the span is
-                      hidden visually, not from the tree), and — because ≤md
-                      is exactly the touch context — the buttons grow to the
-                      ux-standards §9.1 ≥44px tappable size there
-                      (`max-md:h-11 max-md:min-w-11`; UX review I2). `title`
-                      gives narrow-desktop mouse users a native hover label
-                      while the text is collapsed. */}
-                  <div className="flex items-center justify-end gap-2">
-                    {canChangeRole ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="max-md:h-11 max-md:min-w-11"
-                        disabled={busy}
-                        title={t('actions.changeRole')}
-                        onClick={() => {
-                          setRoleChangeUser(user);
-                          setRoleDialogOpen(true);
-                        }}
-                      >
-                        <UserCogIcon className="size-4" aria-hidden />
-                        <span className="max-md:sr-only">{t('actions.changeRole')}</span>
-                      </Button>
-                    ) : null}
-                    {canDisable ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="max-md:h-11 max-md:min-w-11"
-                        disabled={busy}
-                        title={t('actions.disable')}
-                        onClick={() => setPending({ kind: 'disable', user })}
-                      >
-                        <BanIcon className="size-4" aria-hidden />
-                        <span className="max-md:sr-only">{t('actions.disable')}</span>
-                      </Button>
-                    ) : null}
-                    {canEnable ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="max-md:h-11 max-md:min-w-11"
-                        disabled={busy}
-                        title={t('actions.enable')}
-                        onClick={() => setPending({ kind: 'enable', user })}
-                      >
-                        <CircleCheckIcon className="size-4" aria-hidden />
-                        <span className="max-md:sr-only">{t('actions.enable')}</span>
-                      </Button>
-                    ) : null}
-                    {canManageInvite ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="max-md:h-11 max-md:min-w-11"
-                        disabled={busy}
-                        title={t('actions.resend')}
-                        onClick={() => void handleResend(user)}
-                      >
-                        {/* Spinner while THIS row's resend is in flight (UX
-                            review I3): with the label sr-only at ≤md, the
-                            label swap alone left no visible signal. `busy` is
-                            per-row (`busyId === user.id`), so this cannot
-                            animate other rows. */}
-                        {busy ? (
-                          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-                        ) : (
-                          <MailIcon className="size-4" aria-hidden />
-                        )}
-                        <span className="max-md:sr-only">
-                          {busy ? t('invite.submitting') : t('actions.resend')}
-                        </span>
-                      </Button>
-                    ) : null}
-                    {canManageInvite ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="max-md:h-11 max-md:min-w-11"
-                        disabled={busy}
-                        title={t('actions.revoke')}
-                        onClick={() => setPending({ kind: 'revoke', user })}
-                      >
-                        <Trash2Icon className="size-4" aria-hidden />
-                        <span className="max-md:sr-only">{t('actions.revoke')}</span>
-                      </Button>
-                    ) : null}
-                    {!canDisable && !canEnable && !canManageInvite && !canChangeRole ? (
-                      <span className="text-xs text-muted-foreground">
-                        {isSelf ? t('actions.self') : '—'}
-                      </span>
-                    ) : null}
-                  </div>
-                </TableCell>
-              </TableRow>
+      {showTable ? (
+        // Desktop: the board's table, its row actions inline. The rows keep
+        // data-user-id / data-user-email for the e2e (session-revocation finds
+        // a user's id by email). Server-rendered under a phone's width it is
+        // hidden by CSS until the client mounts the cards instead.
+        <div className={isClient ? undefined : 'max-sm:hidden'}>
+          <Table caption={t('title')} captionHidden align="middle" bleed stickyHeader>
+            <THead>
+              <Tr>
+                <Th>{t('columns.email')}</Th>
+                <Th>{t('columns.name')}</Th>
+                <Th>{t('columns.role')}</Th>
+                <Th>{t('columns.status')}</Th>
+                <Th>{t('columns.actions')}</Th>
+              </Tr>
+            </THead>
+            <TBody>
+              {users.map((user) => {
+                const view = rowView(user);
+                const none = !view.canDisable && !view.canEnable && !view.canManageInvite && !view.canChangeRole;
+                return (
+                  <Tr key={user.id} data-user-id={user.id} data-user-email={user.email.toLowerCase()}>
+                    <Td>{user.email}</Td>
+                    <Td>{user.displayName ?? '—'}</Td>
+                    <Td>{roleBadgeFor(user)}</Td>
+                    <Td>
+                      <div className="flex flex-col items-start gap-[var(--aura-space-1)]">
+                        {statusPillFor(user)}
+                        {expiryFor(view)}
+                      </div>
+                    </Td>
+                    <Td>
+                      <div className="flex flex-wrap items-center gap-[var(--aura-space-2)]">
+                        {view.canChangeRole ? actionButton('changeRole', user, view) : null}
+                        {view.canDisable ? actionButton('disable', user, view) : null}
+                        {view.canEnable ? actionButton('enable', user, view) : null}
+                        {view.canManageInvite ? actionButton('resend', user, view) : null}
+                        {view.canManageInvite ? actionButton('revoke', user, view) : null}
+                        {none ? (
+                          <span className="text-[var(--aura-fg-secondary)]">{view.isSelf ? t('actions.self') : '—'}</span>
+                        ) : null}
+                      </div>
+                    </Td>
+                  </Tr>
+                );
+              })}
+              {users.length === 0 ? (
+                <Tr>
+                  <Td colSpan={5} className="text-center text-[var(--aura-fg-secondary)]">
+                    {t('empty')}
+                  </Td>
+                </Tr>
+              ) : null}
+            </TBody>
+          </Table>
+        </div>
+      ) : null}
+
+      {showCards ? (
+        // Phone (board `Admin-users-mobile`): a card per user — name and status,
+        // email, role and expiry, then one primary action and a ⋯ menu.
+        <ul aria-label={t('title')} className={isClient ? 'flex flex-col gap-[var(--aura-space-3)]' : 'flex flex-col gap-[var(--aura-space-3)] sm:hidden'}>
+          {users.map((user) => {
+            const view = rowView(user);
+            return (
+              <li
+                key={user.id}
+                data-user-id={isClient ? user.id : undefined}
+                data-user-email={isClient ? user.email.toLowerCase() : undefined}
+                className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-[var(--aura-space-4)]"
+              >
+                <div className="flex items-start justify-between gap-[var(--aura-space-2)]">
+                  <span className="aura-text-label min-w-0 [overflow-wrap:anywhere]">{user.displayName ?? user.email}</span>
+                  {statusPillFor(user)}
+                </div>
+                {user.displayName ? (
+                  <span className="min-w-0 text-[var(--aura-fg-primary)] [overflow-wrap:anywhere]">{user.email}</span>
+                ) : user.status === 'pending' ? (
+                  <span className="text-[var(--aura-fg-secondary)]">{t('invite.noNameYet')}</span>
+                ) : null}
+                <div className="flex flex-wrap items-center gap-[var(--aura-space-2)]">
+                  {roleBadgeFor(user)}
+                  {view.isSelf ? <span className="text-[var(--aura-fg-secondary)]">{t('actions.self')}</span> : null}
+                  {expiryFor(view)}
+                </div>
+                {phoneActions(user, view)}
+              </li>
             );
           })}
-            {users.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
-                  {t('empty')}
-                </TableCell>
-              </TableRow>
-            ) : null}
-        </TableBody>
-      </Table>
+          {users.length === 0 ? <li className="text-center text-[var(--aura-fg-secondary)]">{t('empty')}</li> : null}
+        </ul>
+      ) : null}
 
       <ConfirmationDialog
         open={pending !== null}

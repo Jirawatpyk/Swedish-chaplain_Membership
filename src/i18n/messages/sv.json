@@ -706,7 +706,8 @@
         "resend": "Skicka inbjudan igen",
         "revoke": "Återkalla",
         "self": "Det är du",
-        "changeRole": "Ändra roll"
+        "changeRole": "Ändra roll",
+        "moreFor": "Fler åtgärder för {email}"
       },
       "confirm": {
         "cancel": "Avbryt",
@@ -802,7 +803,8 @@
           "lockedHelpText": "Denna inbjudan är förkopplad till det aktuella medlemsbolaget."
         },
         "expiresIn": "{days, plural, one {Går ut om # dag} other {Går ut om # dagar}}",
-        "expired": "Inbjudan har gått ut"
+        "expired": "Inbjudan har gått ut",
+        "noNameYet": "Inbjudan väntar — inget namn ännu"
       }
     },
     "plans": {
