@@ -633,19 +633,41 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 ### US9c — EventCreate integration (PR 19)
 
 - [x] T940 [US9] Spec clarifications (Session 2026-10-09, US9c start) and this task list.
-- [ ] T941 [US9] The wizard frame on AURA: `Stepper`, phase cards, the tier notice and grace banner on `Alert`, the grace chip on `Badge`, the webhook URL and masked secret as the board's value boxes, the setup-guide disclosure. RED: the current step for a fresh and a configured tenant; a 409 on generate lands on step 3 with its toast; the grace banner keeps `role=status` and its testid.
-- [ ] T942 [US9] The one-time secret reveal on AURA `IconButton`s and `Checkbox`. RED: Continue stays disabled until the box is ticked; reveal toggles the value; copy writes the secret.
-- [ ] T943 [US9] The rotate dialog (already `ConfirmationDialog`) with the new reveal inside. RED only if its behaviour moves: Done stays disabled until the new secret is acknowledged.
-- [ ] T944 [US9] "Send test event" on AURA `Button` (secondary, loading). RED: one click sends one request; a second click during the cooldown sends none.
-- [ ] T945 [US9] Recent deliveries on AURA `Switch`, `Table` (rows as a list on phones) and `StatusPill`. RED: signature tones by outcome; processing is plain text; the switch is named "Include test deliveries" and toggling it only changes the URL.
-- [ ] T946 [US9] The Zapier walkthrough on AURA `Card` (server). The list of 8 steps, its name and step 4's URL stay.
-- [ ] T947 [US9] `loading.tsx` (skeleton Stepper and cards) and `error.tsx` (`RouteErrorPanel`).
-- [ ] T948 [US9] Ratchet, preview and budget: `MIGRATED_PATHS` gains the route and its components; the legacy control moves to a US10 page; preview views (`?view=eventcreate&state=fresh|reveal|configured|grace|empty`, the rotate dialog, the loading file); a first bundle budget for the route.
-- [ ] T949 [US9] Exit: e2e selectors (`integration-config-wizard`, `secret-rotation`, `eventcreate-a11y`, `eventcreate-i18n`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX and security reviews with fixes RED first; draft PR; relay R40.
+- [x] T941 [US9] The wizard frame on AURA: `Stepper`, phase cards, the tier notice and grace banner on `Alert`, the grace chip on `Badge`, the webhook URL and masked secret as the board's value boxes, the setup-guide disclosure. RED: the current step for a fresh and a configured tenant; a 409 on generate lands on step 3 with its toast; the grace banner keeps `role=status` and its testid.
+- [x] T942 [US9] The one-time secret reveal on AURA `IconButton`s and `Checkbox`. RED: Continue stays disabled until the box is ticked; reveal toggles the value; copy writes the secret.
+- [x] T943 [US9] The rotate dialog (already `ConfirmationDialog`) with the new reveal inside. RED only if its behaviour moves: Done stays disabled until the new secret is acknowledged.
+- [x] T944 [US9] "Send test event" on AURA `Button` (secondary, loading). RED: one click sends one request; a second click during the cooldown sends none.
+- [x] T945 [US9] Recent deliveries on AURA `Switch`, `Table` (rows as a list on phones) and `StatusPill`. RED: signature tones by outcome; processing is plain text; the switch is named "Include test deliveries" and toggling it only changes the URL.
+- [x] T946 [US9] The Zapier walkthrough on AURA `Card` (server). The list of 8 steps, its name and step 4's URL stay.
+- [x] T947 [US9] `loading.tsx` (skeleton Stepper and cards) and `error.tsx` (`RouteErrorPanel`).
+- [x] T948 [US9] Ratchet, preview and budget: `MIGRATED_PATHS` gains the route and its components; the legacy control moves to a US10 page; preview views (`?view=eventcreate&state=fresh|reveal|configured|grace|empty`, the rotate dialog, the loading file); a first bundle budget for the route.
+- [x] T949 [US9] Exit: e2e selectors (`integration-config-wizard`, `secret-rotation`, `eventcreate-a11y`, `eventcreate-i18n`); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark; UX and security reviews with fixes RED first; draft PR; relay R40.
+
+## Phase 12: User Story 10 — Users, audit, compliance, settings (Priority: P3) — PRs 20–22 (US10a, US10b, US10c)
+
+### US10a — Users (PR 20)
+
+- [x] T1000 [US10] Spec clarifications (Session 2026-10-12, US10 start) and this task list.
+- [x] T1001 [US10] The users list on AURA `Table` (cards on phones): role `Badge`, status `StatusPill` with the expiry hint, a primary action plus a ⋯ `Menu` with danger items on desktop rows and phone cards alike (desktop was inline until R42 found the rows wrapping at 1280; maintainer decision 2026-10-12). RED: which actions each row offers by capability, status and self; Disable and Revoke are danger items; every destructive action asks before its request.
+- [x] T1002 [US10] The filters on AURA `FilterBar` (search, Role, Status, chips, count). RED: each change replaces the URL with the same query as today.
+- [x] T1003 [US10] The change-role dialog on AURA `Dialog role="alertdialog"`, `RadioGroup`, `Alert` and `TextField`. RED: the options and their names, the Super Admin warning and PROMOTE gate, the request body.
+- [x] T1004 [US10] The invite dialog on AURA `Dialog`, `TextField` and `Select`. RED: the request body; the member link only for the Member role.
+- [x] T1005 [US10] The member picker on AURA `Combobox` with server search. RED: its name, a picked result, clearing it.
+- [x] T1006 [US10] The page frame: header with Invite, the list card, `loading.tsx` on the AURA skeleton and a new `error.tsx` (`RouteErrorPanel`).
+- [x] T1007 [US10] Ratchet, preview and budget: `MIGRATED_PATHS` gains the users route and its five components; the US2 and US8a legacy controls and the stale member-picker controls move to US10b/US12 files; preview views (`?view=users` with `state=empty|manager` and `dialog=invite|change-role|change-role-super|disable`, and the loading file); a first bundle budget for `/admin/users` (862.8 KB → ≤ 970 KB).
+- [x] T1008 [US10] e2e selectors where the swap moves them: invite-flow and the super-admin persona (the role Select by its label, the current role named in its option), destructive-confirm (Disable from the phone card's menu), table-consistency (the SC-013 horizontal-padding case now passes). session-revocation keeps `data-user-*` on rows and cards; manager-read-only and overlay-consistency do not open the page.
+- [ ] T1009 [US10] Exit: gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; UX and security reviews with fixes RED first; draft PR; relay R42.
+
+### US10b — Audit log and erasure log (PR 21)
+
+- [ ] T1010 [US10] Audit log and compliance erasure log (tasks written when US10b starts).
+
+### US10c — Settings hub, member changes, account (PR 22)
+
+- [ ] T1020 [US10] Settings hub, member-change approval settings and the staff account page (tasks written when US10c starts).
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
-- [ ] T1000 [US10] Users, audit, compliance, settings: DataTable, Menu danger items.
 - [ ] T1100 [US11] Dashboard: Stat tiles; recharts recoloured with `--aura-chart-*`.
 - [ ] T1200 [US12] E-Blast: queue DataTable (item 52, or a local selection column), workspace, schedule dialog, member sign-off.
 - [ ] T1300 [US13] Exit: delete `src/components/ui`; uninstall `@base-ui/react`, `tw-animate-css`, `shadcn`; drop the TanStack table UI; make the old-kit ban global; remove the token bridge; check the facade decision; confirm the date is within 10 weeks of the US0 merge.

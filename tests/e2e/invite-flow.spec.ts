@@ -59,7 +59,7 @@ test.describe('invite-flow wall-clock (T119, SC-008)', () => {
     await page.waitForLoadState('networkidle');
 
     // Click the "Invite user" CTA that opens the dialog
-    await page.getByRole('button', { name: /invite/i }).click();
+    await page.getByRole('button', { name: /^invite user$/i }).click();
 
     // Dialog should open — email field becomes visible
     const dialog = page.getByRole('dialog');
@@ -68,9 +68,12 @@ test.describe('invite-flow wall-clock (T119, SC-008)', () => {
     const inviteeEmail = `invitee-${Date.now()}@swecham.test`;
     await fillField(dialog.getByLabel(/email/i), inviteeEmail);
 
-    // Select manager role via the Base UI combobox (button, not native <select>)
-    await dialog.getByLabel(/role/i).click();
-    await page.getByRole('option', { name: /manager/i }).click();
+    // Select manager role via the AURA Select labelled "Role" (spec 122
+    // US10a): open it, wait for the listbox, pick the option.
+    await dialog.getByRole('combobox', { name: /^role/i }).click();
+    const managerOption = page.getByRole('option', { name: /^manager$/i });
+    await managerOption.waitFor({ state: 'visible', timeout: 5_000 });
+    await managerOption.click();
 
     // Submit → wait for the 201
     const [inviteResponse] = await Promise.all([

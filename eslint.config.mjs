@@ -453,6 +453,14 @@ export const MIGRATED_PATHS = [
   'src/components/events/test-webhook-button.tsx',
   'src/components/events/recent-deliveries-panel.tsx',
   'src/components/events/zapier-walkthrough.tsx',
+  // US10a — the users page: the list, its filters, the change-role and
+  // invite dialogs, and the member picker the invite dialog links with.
+  'src/app/(staff)/admin/users/**',
+  'src/components/auth/user-list-table.tsx',
+  'src/components/auth/users-filters.tsx',
+  'src/components/auth/change-role-dialog.tsx',
+  'src/components/auth/invite-user-dialog.tsx',
+  'src/components/members/member-picker.tsx',
 ];
 
 /**

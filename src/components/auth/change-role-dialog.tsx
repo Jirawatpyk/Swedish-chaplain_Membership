@@ -26,9 +26,9 @@
  * super_admin additionally requires a typed phrase — see `promotingToSuperAdmin`
  * below for why that one transition is heavier than the rest.
  *
- * A11y (ux-standards §6, WCAG 2.1 AA): the picker is a RadioGroup (arrow-key
- * navigable, single-select semantics) with each option's summary wired through
- * `aria-describedby`; confirm is disabled until a DIFFERENT role is chosen (and
+ * A11y (ux-standards §6, WCAG 2.1 AA): the picker is AURA's RadioGroup (a
+ * fieldset of native radios, arrow-key navigable) with each option's summary
+ * read after its name; confirm is disabled until a DIFFERENT role is chosen (and
  * until the phrase matches, when one is required); `finalFocus` returns focus to
  * a surviving landmark on close because the row trigger unmounts under the
  * success `router.refresh()` (reference: dialog-focus-lost-after-unmount).
@@ -36,20 +36,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Loader2Icon } from 'lucide-react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Alert, Button, Dialog, RadioGroup, TextField } from '@jirawatpyk/aura-react';
 import { byDisplayOrder, isRole, type Role } from '@/modules/auth/domain/role';
 
 /**
@@ -304,146 +291,124 @@ export function ChangeRoleDialog({
     }
   }
 
-  return (
-    // AlertDialog (not Dialog) is DELIBERATE — 016 UX review S1, recorded
-    // WON'T-FIX: Base UI's AlertDialog has no backdrop/outside-press dismiss,
-    // and a role grant mid-decision should not be dismissible by a stray
-    // click the way a browse dialog is. Escape still closes (and now aborts
-    // any in-flight POST). The two §6.4 confirmation-checklist deviations
-    // this picker keeps are documented on `promotingToSuperAdmin` above.
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      {/* No `initialFocus` on Cancel — this is a picker, not a destructive
-          confirm. Confirm is disabled until a DIFFERENT role is chosen, so
-          there is no accidental-confirm risk to guard; letting Base UI land
-          focus in the RadioGroup makes arrow-key selection work immediately
-          (016 UX review I1; ux-standards §6 form vs confirmation focus). */}
-      {/* `max-h` + scroll: AlertDialogContent is `fixed top-1/2 -translate-y-1/2`
-          with NO height cap, so content taller than the viewport is clipped at
-          BOTH ends with no way to reach it — and this dialog grew from ~380px to
-          roughly 1,000px once every option gained a summary and the promotion
-          gained a warning + input. `max-w-xs` (320px) on mobile makes the copy
-          taller still. Idiom: issue-invoice-dialog.tsx. */}
-      <AlertDialogContent finalFocus={finalFocus} className="max-h-[85vh] overflow-y-auto">
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {t('changeRole.title', { email: user?.email ?? '' })}
-          </AlertDialogTitle>
-          <AlertDialogDescription>{t('changeRole.description')}</AlertDialogDescription>
-        </AlertDialogHeader>
+  // `user === null` is folded into the gate so the "open with no target"
+  // state (representable because `user` and `open` are independent props)
+  // cannot present an enabled Confirm whose handler then early-returns in
+  // silence — review Suggestion #11. The non-retryable arm (S-10): while an
+  // error whose verbatim retry cannot succeed is on screen, Confirm is dead —
+  // picking a different role clears the error and revives it.
+  const confirmDisabled =
+    user === null ||
+    unchanged ||
+    submitting ||
+    phraseBlocking ||
+    (errorCode !== null && NON_RETRYABLE_ERROR_CODES.has(errorCode));
 
+  return (
+    // `role="alertdialog"` is DELIBERATE — 016 UX review S1, recorded
+    // WON'T-FIX: a role grant mid-decision should not be dismissible by a
+    // stray click the way a browse dialog is, and AURA's alertdialog ignores
+    // the scrim. Escape and the close button still close it (and abort any
+    // in-flight POST). The two §6.4 confirmation-checklist deviations this
+    // picker keeps are documented on `promotingToSuperAdmin` above.
+    //
+    // No initial focus on Cancel — this is a picker, not a destructive
+    // confirm. Confirm is disabled until a DIFFERENT role is chosen, so there
+    // is no accidental-confirm risk to guard; AURA lands focus on the first
+    // radio, so arrow-key selection works at once (016 UX review I1).
+    <Dialog
+      role="alertdialog"
+      open={open}
+      onClose={() => onOpenChange(false)}
+      finalFocus={() => finalFocus?.() || null}
+      title={t('changeRole.title', { email: user?.email ?? '' })}
+      description={t('changeRole.description')}
+      footer={
+        <>
+          <Button variant="secondary" disabled={submitting} onClick={() => onOpenChange(false)}>
+            {t('confirm.cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={confirmDisabled}
+            loading={submitting}
+            onClick={() => void handleConfirm()}
+          >
+            {t('changeRole.confirm')}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {/* Each option is named by its role alone (the current one says so,
+            as the board does) and described by what it grants — before the
+            summaries the option announced a bare role name. `member` is
+            absent from the options and the reason existed only in a source
+            comment: an operator who saw five roles in the invite dialog and
+            four here reads it as a bug, so the hint under the group says why. */}
         <RadioGroup
-          aria-label={t('changeRole.roleLabel')}
+          touchHeight
+          label={t('changeRole.roleLabel')}
+          hint={t('changeRole.memberHint')}
           value={selected ?? ''}
-          onValueChange={(next) => {
-            if (typeof next === 'string' && isRole(next)) {
+          disabled={submitting}
+          onChange={(next) => {
+            if (isRole(next)) {
               setErrorCode(null);
               setSelected(next);
             }
           }}
-        >
-          {byDisplayOrder(CHANGE_ROLE_OPTIONS).map((r) => (
-            <label
-              key={r}
-              className="flex cursor-pointer items-start gap-2 rounded-md border border-input px-3 py-2 text-sm hover:bg-accent/40 has-[[data-checked]]:border-primary"
-            >
-              {/* Base UI Radio auto-sets its own `aria-labelledby` to a
-                  generated (and here dangling) id, which WINS over `aria-label`
-                  per ARIA. Point it at our visible label span instead so the
-                  accessible name is the role name (WCAG 2.5.3 Label in Name).
-                  `aria-describedby` carries the summary, which a screen reader
-                  otherwise never reached — before this the option announced a
-                  bare role name and nothing about what it grants. */}
-              <RadioGroupItem
-                value={r}
-                disabled={submitting}
-                aria-labelledby={`change-role-opt-${r}`}
-                // The promotion warning is appended to the DESCRIPTION of the
-                // super_admin option: selecting it mounts an amber box and a
-                // required field with no announcement of either, so a screen
-                // reader user met a disabled Confirm and no stated reason.
-                aria-describedby={
-                  r === 'super_admin' && promotingToSuperAdmin
-                    ? `change-role-desc-${r} change-role-sa-warning`
-                    : `change-role-desc-${r}`
-                }
-                className="mt-0.5"
-              />
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="flex items-center gap-2">
-                  <span id={`change-role-opt-${r}`}>{tRole(r)}</span>
-                  {r === currentRole ? (
-                    <span className="text-xs text-muted-foreground">
-                      {t('changeRole.current')}
-                    </span>
-                  ) : null}
-                </span>
-                <span id={`change-role-desc-${r}`} className="text-xs text-muted-foreground">
-                  {tSummary(r)}
-                </span>
-              </span>
-            </label>
-          ))}
-        </RadioGroup>
-
-        {/* `member` is absent from the options and the reason existed only in a
-            source comment: an operator who saw five roles in the invite dialog
-            and four here reads it as a bug. */}
-        <p className="text-xs text-muted-foreground">{t('changeRole.memberHint')}</p>
+          options={byDisplayOrder(CHANGE_ROLE_OPTIONS).map((r) => ({
+            value: r,
+            label: r === currentRole ? t('changeRole.currentOption', { role: tRole(r) }) : tRole(r),
+            description: tSummary(r),
+          }))}
+        />
 
         {/* Promotion to super_admin is the one irreversible-in-practice choice
             here — it grants users.manage, audit.read, invoice settings and GDPR
             erasure, and the grantee can immediately demote the grantor. It had
             exactly the same weight as every other pick: one primary button
             labelled "Change role". ux-standards § 6.1 names "Change user role"
-            directly; this is the § 6.3 inline warning, short of the typed-phrase
-            gate the repo uses for credit notes. */}
+            directly; this is the § 6.3 inline warning plus the typed phrase.
+            The warning is an alert, so picking the option announces it — a
+            screen reader user otherwise met a disabled Confirm and no reason. */}
         {/* rbac-presentation-only-ok: shows an advisory warning; the server
             gate on this promotion is `users.manage` in the route. */}
-        {selected === 'super_admin' && currentRole !== 'super_admin' ? (
-          <div
-            className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-foreground"
-            data-testid="super-admin-promotion-warning"
-          >
-            <p id="change-role-sa-warning">{t('changeRole.superAdminWarning')}</p>
-            <div className="mt-2 grid gap-1.5">
-              <Label htmlFor="change-role-phrase" className="text-xs font-normal">
-                {t('changeRole.superAdminConfirmCopy', { phrase: confirmPhrase })}
-              </Label>
-              <Input
-                id="change-role-phrase"
-                value={typedPhrase}
-                onChange={(e) => setTypedPhrase(e.target.value)}
-                placeholder={confirmPhrase}
-                disabled={submitting}
-                autoComplete="off"
-                // Case-insensitive compare above, so do NOT force uppercase —
-                // that fights the keyboard for no gain (idiom: void-confirm-dialog).
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                aria-invalid={typedPhrase.length > 0 && !phraseMatches}
-                aria-describedby={
-                  typedPhrase.length > 0 && !phraseMatches
-                    ? 'change-role-phrase-error'
-                    : undefined
-                }
-              />
-              {typedPhrase.length > 0 && !phraseMatches ? (
-                <p
-                  id="change-role-phrase-error"
-                  role="alert"
-                  className="text-xs text-destructive"
-                >
-                  {t('changeRole.superAdminConfirmMismatch', { phrase: confirmPhrase })}
-                </p>
-              ) : null}
-            </div>
-          </div>
+        {promotingToSuperAdmin ? (
+          <>
+            <Alert tone="warning" data-testid="super-admin-promotion-warning">
+              {t('changeRole.superAdminWarning')}
+            </Alert>
+            <TextField
+              id="change-role-phrase"
+              touchHeight
+              label={t('changeRole.superAdminConfirmCopy', { phrase: confirmPhrase })}
+              required
+              value={typedPhrase}
+              onChange={(e) => setTypedPhrase(e.target.value)}
+              placeholder={confirmPhrase}
+              disabled={submitting}
+              autoComplete="off"
+              // Case-insensitive compare above, so do NOT force uppercase —
+              // that fights the keyboard for no gain (idiom: void-confirm-dialog).
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              error={
+                typedPhrase.length > 0 && !phraseMatches ? (
+                  <span role="alert">
+                    {t('changeRole.superAdminConfirmMismatch', { phrase: confirmPhrase })}
+                  </span>
+                ) : undefined
+              }
+            />
+          </>
         ) : null}
 
         {errorCode ? (
-          <div
-            role="alert"
+          <Alert
+            tone="danger"
             // Focused ONCE per error, via a ref + effect keyed on `errorCode`
             // (idiom: void-confirm-dialog.tsx). An INLINE `ref={(n) => n?.focus()}`
             // looks equivalent and is not: its identity changes every render, so
@@ -455,53 +420,19 @@ export function ChangeRoleDialog({
             // while typing AFTER a failed attempt".
             ref={errorRef}
             tabIndex={-1}
-            className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-sm text-destructive outline-none"
+            className="outline-none"
           >
             {t(`changeRole.errors.${resolveErrorKey(errorCode)}`)}
-          </div>
+          </Alert>
         ) : null}
 
         {/* Confirm is disabled until a DIFFERENT role is picked, which on open
             is always — so the dialog presented a dead primary button with no
             statement of what would revive it. */}
         {unchanged && errorCode === null ? (
-          <p className="text-xs text-muted-foreground">{t('changeRole.pickDifferent')}</p>
+          <p className="text-xs text-[var(--aura-fg-secondary)]">{t('changeRole.pickDifferent')}</p>
         ) : null}
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={submitting}>
-            {t('confirm.cancel')}
-          </AlertDialogCancel>
-          {/* `user === null` is folded into the gate so the "open with no
-              target" state (representable because `user` and `open` are
-              independent props) cannot present an enabled Confirm whose handler
-              then early-returns in silence — review Suggestion #11. */}
-          {/* No `aria-disabled` alongside `disabled`: a disabled button is out
-              of the tab order, so the ARIA attribute is never announced and
-              only suggests the two could disagree. */}
-          {/* The non-retryable arm (S-10): while an error whose verbatim retry
-              cannot succeed is on screen, Confirm is dead — picking a different
-              role clears the error and revives it. */}
-          <AlertDialogAction
-            disabled={
-              user === null ||
-              unchanged ||
-              submitting ||
-              phraseBlocking ||
-              (errorCode !== null && NON_RETRYABLE_ERROR_CODES.has(errorCode))
-            }
-            onClick={(event) => {
-              event.preventDefault();
-              void handleConfirm();
-            }}
-          >
-            {submitting ? (
-              <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden />
-            ) : null}
-            {t('changeRole.confirm')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      </div>
+    </Dialog>
   );
 }

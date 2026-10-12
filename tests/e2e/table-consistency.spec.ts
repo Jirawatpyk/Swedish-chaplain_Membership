@@ -4,8 +4,8 @@
  * SC-013 (`specs/004-page-layout-standard/spec.md:265`) names two tables
  * exactly: "Row heights, cell padding, and hover backgrounds are identical
  * across the Users table and the Plans list table." Spec 122 migrated the Plans
- * table to AURA `Table` and left `/admin/users` on the legacy kit (plan.md:136
- * puts Users in phase 10), so measured on the dev server, 2026-10-02:
+ * table to AURA `Table` first and `/admin/users` in US10a (2026-10-12), also on
+ * AURA's static `Table`; before that, measured on the dev server, 2026-10-02:
  *
  *   /admin/users  legacy `td.px-[var(--table-cell-padding-x)]`  12px / 8px, row 45px,   thead sticky
  *   /admin/plans  AURA   `td.aura-tbl__td`                      16px / 8px, row 48.5px, thead static
@@ -13,24 +13,22 @@
  * padding-y and row height already agree (8px both, 3.5px apart). The inline
  * padding does not: `--table-cell-padding-x` is 0.75rem, AURA's cell is
  * `padding: ... var(--aura-space-4)` (16px). That is the whole of the remaining
- * SC-013 gap, and it closes when `/admin/users` migrates — so it is one
- * `test.fail()` below rather than a red suite, and Playwright will say so
- * loudly on the day it starts passing.
+ * SC-013 gap, and it closed when `/admin/users` migrated (US10a).
  *
- * Two traps this spec previously fell into, both worth keeping in mind when
- * phase 10 lands:
+ * Two traps this spec previously fell into, both worth keeping in mind whenever
+ * either table changes:
  *
  *  - **The first cell is not a cell padding.** `.aura-tbl__td:first-child` takes
  *    `padding-left: var(--aura-space-6)` (24px) so the table's content lines up
  *    with the card's own 24px inset. The old code took "the first `td` whose
  *    paddingLeft > 0", which on AURA is that gutter, and reported a 12-vs-24
  *    drift that does not exist. Measure a MIDDLE cell.
- *  - **Phase 10 moves Users to AURA `DataTable`, not `Table`.** DataTable
+ *  - **Users stayed on `Table`, not `DataTable` (US10a)** — had it moved, DataTable
  *    renders no `table` element at all — 50 `.aura-table__row` divs whose
  *    `.aura-table__td` cells are spans with `padding-left: 0`, because the 24px
- *    inset is a separate `.aura-table__gutter` element. `tbody tr` will find
- *    nothing and this spec will time out rather than fail an assertion. At that
- *    point SC-013 needs a decision, not a selector: the two pages will be using
+ *    inset is a separate `.aura-table__gutter` element. `tbody tr` would find
+ *    nothing and this spec would time out rather than fail an assertion. At that
+ *    point SC-013 needs a decision, not a selector: the two pages would be using
  *    two different AURA table components on purpose, and "identical cell
  *    padding" across them is not a thing either component promises.
  *
@@ -121,12 +119,9 @@ test.describe('F4 SC-013 — data table consistency @layout', () => {
   });
 
   test('Users + Plans rows agree on horizontal cell padding', async ({ page }) => {
-    // Expected to fail until `/admin/users` migrates to AURA (122 phase 10):
-    // the legacy kit's `--table-cell-padding-x` is 12px, AURA's cell is 16px.
-    // When this starts passing, Playwright reports "expected to fail but
-    // passed" — remove the annotation then, and re-read the DataTable note in
-    // this file's header before trusting the number.
-    test.fail();
+    // Spec 122 US10a moved `/admin/users` to AURA's static `Table` (the same
+    // component as Plans, not DataTable), so both cells now take AURA's 16px
+    // and the gap this case recorded as `test.fail()` is closed.
     await signInAsSuperAdmin(page);
 
     const users = await probeRow(page, '/admin/users');

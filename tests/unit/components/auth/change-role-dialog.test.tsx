@@ -30,6 +30,10 @@ if (typeof globalThis.PointerEvent === 'undefined') {
 
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+// The phrase field is required (the board's asterisk sits in its label,
+// hidden from screen readers), so it is found by its accessible name.
+const phraseField = (name: string) => screen.getByRole('textbox', { name });
+
 const ADMIN_USER = { id: 'u-admin-1', email: 'admin@example.com', role: 'admin' } as const;
 const MANAGER_USER = { id: 'u-manager-1', email: 'manager@example.com', role: 'manager' } as const;
 
@@ -60,9 +64,9 @@ describe('ChangeRoleDialog', () => {
     expect(screen.getByRole('button', { name: en.admin.users.changeRole.confirm })).toBeDisabled();
   });
 
-  it('marks the current role with a "Current" badge', () => {
+  it('marks the current role in its option, as the board does ("Admin (Current)")', () => {
     renderDialog();
-    expect(screen.getByText(en.admin.users.changeRole.current)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Admin (Current)' })).toBeChecked();
   });
 
   it('states what each role grants — a bare role name is not an informed choice', () => {
@@ -103,7 +107,7 @@ describe('ChangeRoleDialog', () => {
     await waitFor(() => expect(confirm).toBeDisabled());
 
     // A near-miss must not pass — this is the whole point of a typed phrase.
-    const input = screen.getByLabelText(
+    const input = phraseField(
       en.admin.users.changeRole.superAdminConfirmCopy.replace(
         '{phrase}',
         en.admin.users.changeRole.superAdminPhrase,
@@ -148,14 +152,15 @@ describe('ChangeRoleDialog', () => {
       en.admin.users.changeRole.superAdminPhrase,
     );
     fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
-    const input = screen.getByLabelText(phraseLabel);
+    const input = phraseField(phraseLabel);
     fireEvent.change(input, {
       target: { value: en.admin.users.changeRole.superAdminPhrase },
     });
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
-    const alert = await screen.findByText(
-      en.admin.users.changeRole.errors['last-admin-protection'],
-    );
+    // The text sits inside AURA's Alert; the focus lands on the Alert itself.
+    const alert = (
+      await screen.findByText(en.admin.users.changeRole.errors['last-admin-protection'])
+    ).closest('[role="alert"]');
     // Wait for the alert to actually HOLD focus, not merely to be on screen.
     // `errorRef.current?.focus()` runs in an effect keyed on `errorCode`, and
     // the text lands in the DOM one flush BEFORE that effect. Waiting only for
@@ -271,7 +276,7 @@ describe('ChangeRoleDialog', () => {
     // survived a row change would be worse than a stale radio: it would carry
     // the deliberate friction across to a user the operator never typed it for.
     fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
-    const phraseInput = screen.getByLabelText(
+    const phraseInput = phraseField(
       en.admin.users.changeRole.superAdminConfirmCopy.replace(
         '{phrase}',
         en.admin.users.changeRole.superAdminPhrase,
@@ -304,7 +309,7 @@ describe('ChangeRoleDialog', () => {
       screen.getByRole('button', { name: en.admin.users.changeRole.confirm }),
       'reopening for another row must not inherit the previous row’s selection',
     ).toBeDisabled();
-    expect(screen.getByText(en.admin.users.changeRole.current)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Manager (Current)' })).toBeChecked();
     // …and the promotion gate is gone with it, rather than sitting pre-satisfied.
     expect(screen.queryByTestId('super-admin-promotion-warning')).toBeNull();
   });
@@ -319,7 +324,7 @@ describe('ChangeRoleDialog', () => {
       en.admin.users.changeRole.superAdminPhrase,
     );
     fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
-    fireEvent.change(screen.getByLabelText(phraseLabel), {
+    fireEvent.change(phraseField(phraseLabel), {
       target: { value: en.admin.users.changeRole.superAdminPhrase },
     });
     expect(screen.getByRole('button', { name: en.admin.users.changeRole.confirm })).toBeEnabled();
@@ -545,5 +550,62 @@ describe('ChangeRoleDialog', () => {
     expect(toast.success, 'stale success must not toast').not.toHaveBeenCalled();
     expect(onChanged, 'stale success must not refresh').not.toHaveBeenCalled();
     expect(onOpenChange, 'stale success must not force-close a reopened dialog').not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Spec 122 US10a (T1003; board `Admin-user-role`) — on AURA: an alertdialog
+ * with the role options as a named radio group (the member hint under it),
+ * the promotion warning as a warning Alert, and the phrase as a required
+ * field whose mismatch is announced. Requests and gates are the ones above.
+ */
+describe('ChangeRoleDialog on AURA', () => {
+  const c = en.admin.users.changeRole;
+  const phraseLabel = c.superAdminConfirmCopy.replace('{phrase}', c.superAdminPhrase);
+
+  it('is an alertdialog named by its title and described by the description', () => {
+    renderDialog();
+    const dialog = screen.getByRole('alertdialog', { name: c.title.replace('{email}', ADMIN_USER.email) });
+    expect(dialog).toHaveAccessibleDescription(c.description);
+  });
+
+  it('groups the options under "New role", with the member hint describing the group', () => {
+    renderDialog();
+    const group = screen.getByRole('group', { name: c.roleLabel });
+    expect(group).toHaveAccessibleDescription(c.memberHint);
+    expect(group.querySelectorAll('input[type="radio"]')).toHaveLength(4);
+  });
+
+  it('shows the promotion warning as a warning Alert, and the phrase as a required field', async () => {
+    renderDialog();
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    const warning = await screen.findByTestId('super-admin-promotion-warning');
+    expect(warning).toHaveClass('aura-alert', 'aura-alert--warning');
+    expect(warning).toHaveTextContent(c.superAdminWarning);
+    expect(phraseField(phraseLabel)).toBeRequired();
+  });
+
+  it('announces a phrase mismatch and marks the field invalid', async () => {
+    renderDialog();
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    const input = phraseField(phraseLabel);
+    fireEvent.change(input, { target: { value: 'PROM' } });
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    const mismatch = c.superAdminConfirmMismatch.replace('{phrase}', c.superAdminPhrase);
+    expect(screen.getByText(mismatch).closest('[role="alert"]')).not.toBeNull();
+    expect(input).toHaveAccessibleDescription(expect.stringContaining(mismatch));
+  });
+
+  it('Escape closes it', () => {
+    const { onOpenChange } = renderDialog();
+    fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' });
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('gives the options and the phrase field 44px rows on phones (UX review)', () => {
+    renderDialog();
+    expect(screen.getByRole('group', { name: c.roleLabel })).toHaveClass('is-touch');
+    fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
+    expect(phraseField(phraseLabel).closest('.aura-field')).toHaveClass('is-touch');
   });
 });

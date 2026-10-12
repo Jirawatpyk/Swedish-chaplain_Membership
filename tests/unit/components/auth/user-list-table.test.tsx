@@ -16,7 +16,7 @@
 //      expired" label renders from the real en.json ICU plural
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { toast } from '@/lib/toast';
@@ -104,6 +104,14 @@ function renderTable(users: Users, opts: RenderOpts = {}) {
   );
 }
 
+/** A row's other actions sit in its ⋯ menu, on desktop as on phones (spec 122 US10a, after R42). */
+async function pickFromMenu(email: string, item: string): Promise<HTMLElement> {
+  fireEvent.click(screen.getByRole('button', { name: `More actions for ${email}` }));
+  const el = await screen.findByRole('menuitem', { name: item });
+  fireEvent.click(el);
+  return el;
+}
+
 beforeEach(() => {
   vi.useRealTimers();
   refreshSpy.mockClear();
@@ -117,10 +125,12 @@ afterEach(() => {
 });
 
 describe('UserListTable — resend + revoke invitation actions', () => {
-  it('shows Resend invitation + Revoke on a pending row for an admin viewer', () => {
+  it('shows Resend invitation in the row and Revoke as a danger item in its ⋯ menu on a pending row', async () => {
     renderTable([PENDING_USER]);
     expect(screen.getByRole('button', { name: 'Resend invitation' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Revoke' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Revoke' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: `More actions for ${PENDING_USER.email}` }));
+    expect(await screen.findByRole('menuitem', { name: 'Revoke' })).toHaveClass('aura-menu__item--danger');
   });
 
   it('does NOT show Resend/Revoke on an active row', () => {
@@ -141,14 +151,14 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     expect(screen.queryByRole('button', { name: 'Revoke' })).not.toBeInTheDocument();
   });
 
-  it('clicking Revoke opens the confirm dialog and does NOT post immediately', () => {
+  it('clicking Revoke opens the confirm dialog and does NOT post immediately', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({ ok: true }),
     } as Response);
     renderTable([PENDING_USER]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await pickFromMenu(PENDING_USER.email, 'Revoke');
 
     expect(screen.getByText(en.admin.users.confirm.revoke.title)).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -161,7 +171,7 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     } as Response);
     renderTable([PENDING_USER]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await pickFromMenu(PENDING_USER.email, 'Revoke');
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
 
     await waitFor(() =>
@@ -270,7 +280,7 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     } as unknown as Response);
     renderTable([PENDING_USER]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await pickFromMenu(PENDING_USER.email, 'Revoke');
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
 
     await waitFor(() =>
@@ -291,7 +301,7 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     } as unknown as Response);
     renderTable([PENDING_USER]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await pickFromMenu(PENDING_USER.email, 'Revoke');
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
 
     await waitFor(() =>
@@ -307,14 +317,14 @@ describe('UserListTable — resend + revoke invitation actions', () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
     renderTable([PENDING_USER]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
+    await pickFromMenu(PENDING_USER.email, 'Revoke');
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.confirm.revoke.confirm }));
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(en.admin.users.toast.revokeError));
-    // The row must not stay stuck busy: the Revoke trigger button is
+    // The row must not stay stuck busy: its ⋯ menu button is
     // clickable again (no lingering `disabled` from a swallowed throw).
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Revoke' })).not.toBeDisabled(),
+      expect(screen.getByRole('button', { name: `More actions for ${PENDING_USER.email}` })).not.toBeDisabled(),
     );
     expect(refreshSpy).not.toHaveBeenCalled();
   });
@@ -344,8 +354,8 @@ describe('UserListTable — pending-row invitation expiry label', () => {
     renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
 
     const label = screen.getByText('Invitation expired');
-    expect(label).toHaveClass('text-destructive');
-    expect(label).not.toHaveClass('text-muted-foreground');
+    expect(label).toHaveClass('text-[var(--aura-fg-danger)]');
+    expect(label).not.toHaveClass('text-[var(--aura-fg-secondary)]');
   });
 
   it('minor fix: a not-yet-expired "Expires in N days" label keeps the muted tone', () => {
@@ -353,15 +363,15 @@ describe('UserListTable — pending-row invitation expiry label', () => {
     renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
 
     const label = screen.getByText('Expires in 3 days');
-    expect(label).toHaveClass('text-muted-foreground');
-    expect(label).not.toHaveClass('text-destructive');
+    expect(label).toHaveClass('text-[var(--aura-fg-secondary)]');
+    expect(label).not.toHaveClass('text-[var(--aura-fg-danger)]');
   });
 });
 
-describe('UserListTable — table landmark aria-label (minor fix)', () => {
-  it('names the scroll-region landmark from the page title instead of the hardcoded "Data table" fallback', () => {
+describe('UserListTable — the table is named (minor fix)', () => {
+  it('names the table from the page title instead of a hardcoded "Data table" fallback', () => {
     renderTable([PENDING_USER]);
-    expect(screen.getByRole('region', { name: en.admin.users.title })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: en.admin.users.title })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Data table' })).not.toBeInTheDocument();
   });
 });
@@ -379,14 +389,15 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('hides "Change role" for a viewer without users.manage but keeps lifecycle actions (plain admin, ON leg)', () => {
+  it('hides "Change role" for a viewer without users.manage but keeps lifecycle actions (plain admin, ON leg)', async () => {
     renderTable([ADMIN_USER], { canManageAccounts: true, canManageStaffRoles: false });
     // No staff-role reassignment...
     expect(
       screen.queryByRole('button', { name: en.admin.users.actions.changeRole }),
     ).not.toBeInTheDocument();
     // ...but member-account lifecycle (this admin row is active) still shows.
-    expect(screen.getByRole('button', { name: en.admin.users.actions.disable })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: `More actions for ${ADMIN_USER.email}` }));
+    expect(await screen.findByRole('menuitem', { name: en.admin.users.actions.disable })).toBeInTheDocument();
   });
 
   it('the affordance is permission-driven, not role-literal: canManageAccounts=false hides every lifecycle action even for an admin-role row', () => {
@@ -396,6 +407,7 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
     // regardless of what role string the VIEWER happens to hold.
     renderTable([ADMIN_USER], { canManageAccounts: false, canManageStaffRoles: false });
     expect(screen.queryByRole('button', { name: en.admin.users.actions.disable })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^More actions for/ })).toBeNull();
   });
 
   it('opens the picker with every STAFF role — including marketing (PR 4 reveal)', () => {
@@ -408,7 +420,8 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
       en.admin.users.filters.role.manager,
       en.admin.users.filters.role.marketing,
     ]) {
-      expect(screen.getByRole('radio', { name: label })).toBeInTheDocument();
+      // The row's own role is named "Admin (Current)", as the board does.
+      expect(screen.getByRole('radio', { name: new RegExp(`^${label}( \\(Current\\))?$`) })).toBeInTheDocument();
     }
     // `member` stays out: moving between the staff and member portals is a
     // different operation, and the route answers `role-portal-mismatch`.
@@ -433,10 +446,208 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
     renderTable([MARKETING_USER], { canManageStaffRoles: true });
 
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.actions.changeRole }));
-    expect(screen.getByText(en.admin.users.changeRole.current)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Marketing (Current)' })).toBeChecked();
     expect(
-      screen.getByRole('button', { name: en.admin.users.changeRole.confirm }),
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: en.admin.users.changeRole.confirm }),
       'its own role is pre-selected, so nothing is armed on open',
     ).toBeDisabled();
   });
 });
+
+// Spec 122 US10a (T1001) — the users list on AURA (board `Admin-users`,
+// `-mobile`; Clarifications 2026-10-12). Each row, a desktop table row or a
+// phone card, has one primary action and a ⋯ menu, where Disable and Revoke
+// are AURA danger items that still ask before posting. (Desktop had the board's
+// inline buttons until R42: three of them wrapped at 1280, so the maintainer
+// moved desktop to the phone pattern.)
+/** The staff layout's focusable landmark, which every page has (the dialogs' fallback). */
+function withMainLandmark(): HTMLElement {
+  // Real timers: AURA restores focus after its close transition, which a
+  // fake clock never reaches (the restore is what these tests measure).
+  vi.useRealTimers();
+  const main = document.createElement('main');
+  main.id = 'main-content';
+  main.tabIndex = -1;
+  document.body.appendChild(main);
+  return main;
+}
+
+describe('UserListTable on AURA', () => {
+  const MANAGER_USER = {
+    id: 'u-manager-1',
+    email: 'manager@example.com',
+    role: 'manager',
+    status: 'active',
+    displayName: 'Karin Ek',
+    invitationExpiresAt: null,
+  } as const;
+
+  it('shows status as a pill toned by status', () => {
+    renderTable([ACTIVE_USER, PENDING_USER, DISABLED_USER]);
+    expect(screen.getByText(en.admin.users.filters.status.active)).toHaveAttribute('data-tone', 'ready');
+    expect(screen.getByText(en.admin.users.filters.status.pending)).toHaveAttribute('data-tone', 'progress');
+    expect(screen.getByText(en.admin.users.filters.status.disabled)).toHaveAttribute('data-tone', 'neutral');
+  });
+
+  it('keeps each row\'s data-user-id / data-user-email for the e2e', () => {
+    const { container } = renderTable([ADMIN_USER]);
+    expect(container.querySelector('[data-user-email="admin@example.com"]')).toHaveAttribute('data-user-id', 'u-admin-1');
+  });
+
+  it('offers Change role in the row and Disable as a danger item in the ⋯ menu', async () => {
+    renderTable([MANAGER_USER]);
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: en.admin.users.actions.changeRole })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: en.admin.users.actions.disable })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: `More actions for ${MANAGER_USER.email}` }));
+    expect(await screen.findByRole('menuitem', { name: en.admin.users.actions.disable })).toHaveClass(
+      'aura-menu__item--danger',
+    );
+  });
+
+  it('shows the row button\'s label from 1280px up, and its icon alone below (the name stays)', () => {
+    renderTable([MANAGER_USER]);
+    const button = screen.getByRole('button', { name: en.admin.users.actions.changeRole });
+    expect(within(button).getByText(en.admin.users.actions.changeRole)).toHaveClass('max-xl:sr-only');
+    expect(button).toHaveAttribute('title', en.admin.users.actions.changeRole);
+  });
+
+  it('lines the ⋯ buttons up at the end of the Actions column, keeping the slot on rows without one', () => {
+    const { container } = renderTable([MANAGER_USER, PENDING_USER, DISABLED_USER]);
+    expect(screen.getByRole('columnheader', { name: en.admin.users.columns.actions })).toHaveClass('is-end');
+    const actions = (id: string) => container.querySelector(`tr[data-user-id="${id}"] td:last-child`)!;
+    for (const id of [MANAGER_USER.id, PENDING_USER.id, DISABLED_USER.id]) {
+      expect(actions(id)).toHaveClass('is-end');
+      expect(actions(id).firstElementChild).toHaveClass('justify-end');
+    }
+    // Enable alone: an empty, hidden slot where the ⋯ sits on the other rows.
+    const slot = actions(DISABLED_USER.id).querySelector('[data-menu-slot]');
+    expect(slot).toHaveAttribute('aria-hidden', 'true');
+    expect(actions(MANAGER_USER.id).querySelector('[data-menu-slot]')).toBeNull();
+  });
+
+  it('keeps Enable reachable on a disabled staff row: Change role in the row, Enable in the ⋯ menu', async () => {
+    const disabledStaff = { ...DISABLED_USER, id: 'u-disabled-staff', email: 'off.staff@example.com', role: 'manager' } as const;
+    renderTable([disabledStaff]);
+    expect(screen.getByRole('button', { name: en.admin.users.actions.changeRole })).toBeInTheDocument();
+    await pickFromMenu(disabledStaff.email, en.admin.users.actions.enable);
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('shows the status pill and the invitation expiry on one line', () => {
+    const expiring = { ...PENDING_USER, invitationExpiresAt: new Date('2026-07-21T00:00:00Z') };
+    renderTable([expiring]);
+    const expiry = screen.getByText('Expires in 3 days');
+    const row = expiry.parentElement!;
+    expect(row).toContainElement(screen.getByText(en.admin.users.filters.status.pending));
+    expect(row).not.toHaveClass('flex-col');
+  });
+
+  it('Cancel on a confirmation from a row\'s ⋯ menu returns focus to that ⋯ button', async () => {
+    const main = withMainLandmark();
+    renderTable([MANAGER_USER]);
+    const more = screen.getByRole('button', { name: `More actions for ${MANAGER_USER.email}` });
+    await pickFromMenu(MANAGER_USER.email, en.admin.users.actions.disable);
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: en.admin.users.confirm.cancel }));
+    await waitFor(() => expect(document.activeElement).toBe(more));
+    main.remove();
+    vi.useFakeTimers();
+  });
+
+  it('after a confirmed action focus goes to the page landmark (the row may refresh away)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ ok: true }) } as Response);
+    const main = withMainLandmark();
+    renderTable([MANAGER_USER]);
+    await pickFromMenu(MANAGER_USER.email, en.admin.users.actions.disable);
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: en.admin.users.actions.disable }));
+    await waitFor(() => expect(document.activeElement).toBe(main));
+    main.remove();
+    vi.useFakeTimers();
+  });
+
+  it('Cancel on the change-role picker returns focus to its Change role button', async () => {
+    const main = withMainLandmark();
+    renderTable([MANAGER_USER]);
+    const trigger = screen.getByRole('button', { name: en.admin.users.actions.changeRole });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: en.admin.users.confirm.cancel }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    main.remove();
+    vi.useFakeTimers();
+  });
+
+  describe('on a phone', () => {
+    const width = window.innerWidth;
+    beforeEach(() => {
+      window.innerWidth = 390;
+      window.dispatchEvent(new Event('resize'));
+    });
+    afterEach(() => {
+      window.innerWidth = width;
+    });
+
+    it('draws each row as a card in a list named after the page', () => {
+      renderTable([MANAGER_USER, PENDING_USER]);
+      const list = screen.getByRole('list', { name: en.admin.users.title });
+      expect(list.querySelectorAll(':scope > li')).toHaveLength(2);
+      expect(screen.queryByRole('table')).toBeNull();
+    });
+
+    it('offers Change role as the primary action and Disable as a danger item in the ⋯ menu', async () => {
+      renderTable([MANAGER_USER]);
+      expect(screen.getByRole('button', { name: en.admin.users.actions.changeRole })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: en.admin.users.actions.disable })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: `More actions for ${MANAGER_USER.email}` }));
+      const disable = await screen.findByRole('menuitem', { name: en.admin.users.actions.disable });
+      expect(disable).toHaveClass('aura-menu__item--danger');
+    });
+
+    it('asks before revoking from the menu', async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      renderTable([PENDING_USER]);
+      expect(screen.getByRole('button', { name: en.admin.users.actions.resend })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: `More actions for ${PENDING_USER.email}` }));
+      fireEvent.click(await screen.findByRole('menuitem', { name: en.admin.users.actions.revoke }));
+      expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    });
+
+    it('Cancel on a confirmation opened from the ⋯ menu returns focus to that ⋯ button', async () => {
+      const main = withMainLandmark();
+      renderTable([MANAGER_USER]);
+      const more = screen.getByRole('button', { name: `More actions for ${MANAGER_USER.email}` });
+      fireEvent.click(more);
+      fireEvent.click(await screen.findByRole('menuitem', { name: en.admin.users.actions.disable }));
+      const dialog = await screen.findByRole('alertdialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: en.admin.users.confirm.cancel }));
+      await waitFor(() => expect(document.activeElement).toBe(more));
+      main.remove();
+      vi.useFakeTimers();
+    });
+
+    it('a disabled STAFF row keeps Enable reachable: Change role first, Enable in the ⋯ menu (security review)', async () => {
+      const disabledStaff = { ...DISABLED_USER, id: 'u-disabled-staff', email: 'off.staff@example.com', role: 'manager' } as const;
+      renderTable([disabledStaff]);
+      expect(screen.getByRole('button', { name: en.admin.users.actions.changeRole })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: `More actions for ${disabledStaff.email}` }));
+      const enable = await screen.findByRole('menuitem', { name: en.admin.users.actions.enable });
+      expect(enable).not.toHaveClass('aura-menu__item--danger');
+      fireEvent.click(enable);
+      expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    });
+
+    it('a disabled row has Enable alone, and your own row says "That\'s you"', () => {
+      renderTable([DISABLED_USER, { ...ADMIN_USER, id: 'current-viewer' }]);
+      expect(screen.getByRole('button', { name: en.admin.users.actions.enable })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: `More actions for ${DISABLED_USER.email}` })).toBeNull();
+      expect(screen.getByText(en.admin.users.actions.self)).toBeInTheDocument();
+    });
+  });
+});
+

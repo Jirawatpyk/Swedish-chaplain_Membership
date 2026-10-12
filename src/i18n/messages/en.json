@@ -674,6 +674,11 @@
       "filters": {
         "searchPlaceholder": "Search by email or display name",
         "searchSrLabel": "Search users",
+        "groupLabel": "Filter users",
+        "chip": "{label}: {value}",
+        "chipSearch": "Search: {q}",
+        "removeChip": "Remove filter: {label}",
+        "count": "{count, plural, one {# user} other {# users}}",
         "role": {
           "label": "Role",
           "all": "All roles",
@@ -706,7 +711,8 @@
         "resend": "Resend invitation",
         "revoke": "Revoke",
         "self": "That's you",
-        "changeRole": "Change role"
+        "changeRole": "Change role",
+        "moreFor": "More actions for {email}"
       },
       "confirm": {
         "cancel": "Cancel",
@@ -728,7 +734,7 @@
         "title": "Change role for {email}",
         "description": "Choose a new role. Changing it signs the user out of all active sessions immediately.",
         "roleLabel": "New role",
-        "current": "Current",
+        "currentOption": "{role} (Current)",
         "confirm": "Change role",
         "pickDifferent": "Pick a different role to continue.",
         "memberHint": "Moving someone between the staff portal and the member portal isn't a role change — invite them separately.",
@@ -793,16 +799,15 @@
           "label": "Link to member company",
           "placeholder": "Search members…",
           "helpText": "Link this user to a member company. Only available for the Member role.",
-          "clear": "Clear selection",
           "loading": "Loading members…",
           "noMembersFound": "No members found. Try a different search term.",
           "fetchError": "Failed to load members. Please try again.",
-          "disabledHint": "Select role Member to link",
           "lockedFallback": "Selected member",
           "lockedHelpText": "This invite is pre-linked to the current member company."
         },
         "expiresIn": "{days, plural, one {Expires in # day} other {Expires in # days}}",
-        "expired": "Invitation expired"
+        "expired": "Invitation expired",
+        "noNameYet": "Invitation pending — no name yet"
       }
     },
     "plans": {

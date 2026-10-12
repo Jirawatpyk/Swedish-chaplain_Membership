@@ -118,8 +118,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the user-admin screens in the same folder keep the legacy kit until US10', async () => {
-      expect(await ratchetHits(legacy, 'src/components/auth/user-list-table.tsx')).toEqual([]);
+    it('control: the E-Blast queue keeps the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/admin/queue-table.tsx')).toEqual([]);
     });
   });
 
@@ -284,8 +284,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the member picker keeps the legacy kit until the invoice forms move (US8)', async () => {
-      expect(await ratchetHits(legacy, 'src/components/members/member-picker.tsx')).toEqual([]);
+    it('control: the E-Blast member picker keeps the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/member-picker.tsx')).toEqual([]);
     });
   });
 
@@ -309,8 +309,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the member picker keeps the legacy kit until the invoice forms move (US8)', async () => {
-      expect(await ratchetHits(legacy, 'src/components/members/member-picker.tsx')).toEqual([]);
+    it('control: the E-Blast member picker keeps the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/member-picker.tsx')).toEqual([]);
     });
   });
 
@@ -427,8 +427,29 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the users page keeps the legacy kit until US10', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/users/page.tsx')).toEqual([]);
+    it('control: the E-Blast queue keeps the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/admin/queue-table.tsx')).toEqual([]);
+    });
+  });
+
+  describe('the US10a users page is on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/users/page.tsx',
+      'src/app/(staff)/admin/users/loading.tsx',
+      'src/app/(staff)/admin/users/error.tsx',
+      'src/components/auth/user-list-table.tsx',
+      'src/components/auth/users-filters.tsx',
+      'src/components/auth/change-role-dialog.tsx',
+      'src/components/auth/invite-user-dialog.tsx',
+      'src/components/members/member-picker.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the audit log keeps the legacy kit until US10b', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/audit/page.tsx')).toEqual([]);
     });
   });
 
