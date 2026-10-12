@@ -446,6 +446,18 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
 // `-mobile`; Clarifications 2026-10-12). Desktop keeps the inline row actions;
 // on a phone each row is a card with one primary action and a ⋯ menu, where
 // Disable and Revoke are AURA danger items that still ask before posting.
+/** The staff layout's focusable landmark, which every page has (the dialogs' fallback). */
+function withMainLandmark(): HTMLElement {
+  // Real timers: AURA restores focus after its close transition, which a
+  // fake clock never reaches (the restore is what these tests measure).
+  vi.useRealTimers();
+  const main = document.createElement('main');
+  main.id = 'main-content';
+  main.tabIndex = -1;
+  document.body.appendChild(main);
+  return main;
+}
+
 describe('UserListTable on AURA', () => {
   const MANAGER_USER = {
     id: 'u-manager-1',
@@ -466,6 +478,44 @@ describe('UserListTable on AURA', () => {
   it('keeps each row\'s data-user-id / data-user-email for the e2e', () => {
     const { container } = renderTable([ADMIN_USER]);
     expect(container.querySelector('[data-user-email="admin@example.com"]')).toHaveAttribute('data-user-id', 'u-admin-1');
+  });
+
+  it('Cancel on a confirmation returns focus to the button that opened it', async () => {
+    const main = withMainLandmark();
+    renderTable([MANAGER_USER]);
+    const disable = screen.getByRole('button', { name: en.admin.users.actions.disable });
+    disable.focus();
+    fireEvent.click(disable);
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: en.admin.users.confirm.cancel }));
+    await waitFor(() => expect(document.activeElement).toBe(disable));
+    main.remove();
+    vi.useFakeTimers();
+  });
+
+  it('after a confirmed action focus goes to the page landmark (the row may refresh away)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, json: async () => ({ ok: true }) } as Response);
+    const main = withMainLandmark();
+    renderTable([MANAGER_USER]);
+    fireEvent.click(screen.getByRole('button', { name: en.admin.users.actions.disable }));
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: en.admin.users.actions.disable }));
+    await waitFor(() => expect(document.activeElement).toBe(main));
+    main.remove();
+    vi.useFakeTimers();
+  });
+
+  it('Cancel on the change-role picker returns focus to its Change role button', async () => {
+    const main = withMainLandmark();
+    renderTable([MANAGER_USER]);
+    const trigger = screen.getByRole('button', { name: en.admin.users.actions.changeRole });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: en.admin.users.confirm.cancel }));
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    main.remove();
+    vi.useFakeTimers();
   });
 
   describe('on a phone', () => {
@@ -504,6 +554,19 @@ describe('UserListTable on AURA', () => {
       expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
       expect(fetchMock).not.toHaveBeenCalled();
       vi.unstubAllGlobals();
+    });
+
+    it('Cancel on a confirmation opened from the ⋯ menu returns focus to that ⋯ button', async () => {
+      const main = withMainLandmark();
+      renderTable([MANAGER_USER]);
+      const more = screen.getByRole('button', { name: `More actions for ${MANAGER_USER.email}` });
+      fireEvent.click(more);
+      fireEvent.click(await screen.findByRole('menuitem', { name: en.admin.users.actions.disable }));
+      const dialog = await screen.findByRole('alertdialog');
+      fireEvent.click(within(dialog).getByRole('button', { name: en.admin.users.confirm.cancel }));
+      await waitFor(() => expect(document.activeElement).toBe(more));
+      main.remove();
+      vi.useFakeTimers();
     });
 
     it('a disabled STAFF row keeps Enable reachable: Change role first, Enable in the ⋯ menu (security review)', async () => {
