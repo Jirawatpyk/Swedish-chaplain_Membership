@@ -6,25 +6,20 @@
  *
  * URL is the source of truth (bookmarkable). Search debounces 300ms
  * before committing. Role + status selects commit immediately.
+ *
+ * Spec 122 US10a (T1002) — on AURA, in the filter pattern (spec 122,
+ * 2 Oct 2026; docs/aura-adoption.md § Filters): the FilterBar's own search
+ * (debounced 300 ms, synced from the URL `q`), Role and Status as compact
+ * `FilterSelect`s, every applied filter a removable chip that brings the
+ * bar's own "Clear filters", and the count of every match at the end of the
+ * row. The URL contract is unchanged.
  */
 
-import { useCallback, useRef, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SearchIcon, XIcon } from 'lucide-react';
+import { AuraProvider, FilterBar, FilterSelect } from '@jirawatpyk/aura-react';
 import { byDisplayOrder, ROLES } from '@/modules/auth/domain/role';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { FilterBar } from '@/components/ui/filter-bar';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-
-const DEBOUNCE_MS = 300;
 
 /**
  * Every role that can EXIST — derived, never re-typed.
@@ -42,18 +37,42 @@ const DEBOUNCE_MS = 300;
 const ROLE_VALUES = byDisplayOrder(ROLES);
 const STATUS_VALUES = ['active', 'disabled', 'pending'] as const;
 
-export function UsersFilters() {
+type RoleValue = (typeof ROLE_VALUES)[number];
+type StatusValue = (typeof STATUS_VALUES)[number];
+
+const isRole = (v: string): v is RoleValue => ROLE_VALUES.some((r) => r === v);
+const isStatus = (v: string): v is StatusValue => STATUS_VALUES.some((s) => s === v);
+
+interface UsersFiltersProps {
+  /** Every match across pages, shown and announced at the end of the row. */
+  readonly resultCount?: number;
+}
+
+export function UsersFilters({ resultCount }: UsersFiltersProps = {}) {
   const t = useTranslations('admin.users.filters');
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  // Removing a chip unmounts it; focus moves to the always-rendered search
+  // input so it never drops to <body> (mirrors `invoice-filters.tsx`).
+  const barRef = useRef<HTMLDivElement>(null);
+  const focusSearch = () =>
+    barRef.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+  // Bumped to remount the FilterBar: its unmount drops a search still waiting
+  // on the debounce, and the draft restarts from the URL.
+  const [searchResetKey, setSearchResetKey] = useState(0);
+  useEffect(() => {
+    if (searchResetKey > 0) focusSearch();
+  }, [searchResetKey]);
 
   const currentQ = searchParams.get('q') ?? '';
-  const currentRole = searchParams.get('role') ?? 'all';
-  const currentStatus = searchParams.get('status') ?? 'all';
+  // A value with no matching option (a hand-typed URL) shows as "All", as
+  // the page ignores it too.
+  const rawRole = searchParams.get('role') ?? '';
+  const currentRole = isRole(rawRole) ? rawRole : 'all';
+  const rawStatus = searchParams.get('status') ?? '';
+  const currentStatus = isStatus(rawStatus) ? rawStatus : 'all';
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -77,101 +96,93 @@ export function UsersFilters() {
     [searchParams, router, pathname],
   );
 
-  const onSearchChange = (value: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      pushUrl({ q: value.trim() || null });
-    }, DEBOUNCE_MS);
-  };
+  const resetSearch = () => setSearchResetKey((k) => k + 1);
 
-  const hasAnyFilter =
-    Boolean(currentQ) || currentRole !== 'all' || currentStatus !== 'all';
+  const chips: { readonly id: string; readonly label: string; readonly clear: () => void }[] = [];
+  if (currentQ.trim() !== '') {
+    chips.push({
+      id: 'q',
+      label: t('chipSearch', { q: currentQ.trim() }),
+      clear: () => {
+        resetSearch();
+        pushUrl({ q: null });
+      },
+    });
+  }
+  if (currentRole !== 'all') {
+    chips.push({
+      id: 'role',
+      label: t('chip', { label: t('role.label'), value: t(`role.${currentRole}`) }),
+      clear: () => pushUrl({ role: null }),
+    });
+  }
+  if (currentStatus !== 'all') {
+    chips.push({
+      id: 'status',
+      label: t('chip', { label: t('status.label'), value: t(`status.${currentStatus}`) }),
+      clear: () => pushUrl({ status: null }),
+    });
+  }
+  const activeFilters = chips.map((c) => ({
+    id: c.id,
+    label: c.label,
+    onRemove: () => {
+      c.clear();
+      if (c.id !== 'q') focusSearch();
+    },
+  }));
+
   const clearAll = () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (inputRef.current) inputRef.current.value = '';
+    resetSearch();
     pushUrl({ q: null, role: null, status: null });
   };
 
+  // The bar's own "Clear filters" and chip × labels, in this page's words.
+  const barStrings = useMemo(
+    () => ({
+      clearFilters: t('clear'),
+      remove: (label: string) => t('removeChip', { label }),
+    }),
+    [t],
+  );
+
   return (
-    <FilterBar>
-      <div className="relative sm:flex-1 min-w-0">
-        <SearchIcon
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          ref={inputRef}
-          type="search"
-          key={currentQ}
-          defaultValue={currentQ}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder={t('searchPlaceholder')}
-          aria-label={t('searchSrLabel')}
-          autoComplete="off"
-          className="pl-9"
-        />
-      </div>
-
-      <Select
-        value={currentRole}
-        onValueChange={(v) => pushUrl({ role: v === 'all' ? null : v })}
+    <AuraProvider strings={barStrings}>
+      <FilterBar
+        key={searchResetKey}
+        ref={barRef}
+        label={t('groupLabel')}
+        searchGrow
+        search={currentQ}
+        // Untrimmed on purpose: the FilterBar compares the URL back against
+        // what it sent, so a trimmed "ann " would rewrite the box while the
+        // admin types. The page trims `q` server-side.
+        onSearchChange={(v) => pushUrl({ q: v || null })}
+        searchLabel={t('searchSrLabel')}
+        searchPlaceholder={t('searchPlaceholder')}
+        filters={activeFilters}
+        {...(activeFilters.length > 0 ? { onClearAll: clearAll } : {})}
+        {...(resultCount !== undefined ? { resultCount: t('count', { count: resultCount }) } : {})}
       >
-        <SelectTrigger className="sm:w-36" aria-label={t('role.label')}>
-          <TranslatedSelectValue
-            placeholder={t('role.label')}
-            translate={(v) =>
-              v === 'all'
-                ? t('role.all')
-                : t(`role.${v as (typeof ROLE_VALUES)[number]}`)
-            }
-          />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t('role.all')}</SelectItem>
-          {ROLE_VALUES.map((role) => (
-            <SelectItem key={role} value={role}>
-              {t(`role.${role}`)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select
-        value={currentStatus}
-        onValueChange={(v) => pushUrl({ status: v === 'all' ? null : v })}
-      >
-        <SelectTrigger className="sm:w-36" aria-label={t('status.label')}>
-          <TranslatedSelectValue
-            placeholder={t('status.label')}
-            translate={(v) =>
-              v === 'all'
-                ? t('status.all')
-                : t(`status.${v as (typeof STATUS_VALUES)[number]}`)
-            }
-          />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t('status.all')}</SelectItem>
-          {STATUS_VALUES.map((status) => (
-            <SelectItem key={status} value={status}>
-              {t(`status.${status}`)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      {hasAnyFilter && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={clearAll}
-          className="whitespace-nowrap"
-        >
-          <XIcon className="size-4" />
-          {t('clear')}
-        </Button>
-      )}
-    </FilterBar>
+        <FilterSelect
+          label={t('role.label')}
+          value={currentRole}
+          onChange={(v) => pushUrl({ role: v === 'all' ? null : v })}
+          options={[
+            { value: 'all', label: t('role.all') },
+            ...ROLE_VALUES.map((role) => ({ value: role, label: t(`role.${role}`) })),
+          ]}
+        />
+        <FilterSelect
+          label={t('status.label')}
+          value={currentStatus}
+          onChange={(v) => pushUrl({ status: v === 'all' ? null : v })}
+          options={[
+            { value: 'all', label: t('status.all') },
+            ...STATUS_VALUES.map((status) => ({ value: status, label: t(`status.${status}`) })),
+          ]}
+        />
+      </FilterBar>
+    </AuraProvider>
   );
 }

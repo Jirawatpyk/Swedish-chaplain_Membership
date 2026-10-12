@@ -674,6 +674,11 @@
       "filters": {
         "searchPlaceholder": "Search by email or display name",
         "searchSrLabel": "Search users",
+        "groupLabel": "Filter users",
+        "chip": "{label}: {value}",
+        "chipSearch": "Search: {q}",
+        "removeChip": "Remove filter: {label}",
+        "count": "{count, plural, one {# user} other {# users}}",
         "role": {
           "label": "Role",
           "all": "All roles",

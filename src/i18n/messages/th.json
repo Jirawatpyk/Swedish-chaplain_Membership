@@ -674,6 +674,11 @@
       "filters": {
         "searchPlaceholder": "ค้นหาด้วยอีเมลหรือชื่อที่แสดง",
         "searchSrLabel": "ค้นหาผู้ใช้",
+        "groupLabel": "กรองผู้ใช้",
+        "chip": "{label}: {value}",
+        "chipSearch": "ค้นหา: {q}",
+        "removeChip": "ลบตัวกรอง: {label}",
+        "count": "{count, plural, other {ผู้ใช้ # คน}}",
         "role": {
           "label": "บทบาท",
           "all": "ทุกบทบาท",

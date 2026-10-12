@@ -674,6 +674,11 @@
       "filters": {
         "searchPlaceholder": "Sök på e-post eller visningsnamn",
         "searchSrLabel": "Sök användare",
+        "groupLabel": "Filtrera användare",
+        "chip": "{label}: {value}",
+        "chipSearch": "Sök: {q}",
+        "removeChip": "Ta bort filter: {label}",
+        "count": "{count, plural, one {# användare} other {# användare}}",
         "role": {
           "label": "Roll",
           "all": "Alla roller",
