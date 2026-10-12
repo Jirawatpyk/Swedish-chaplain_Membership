@@ -506,6 +506,17 @@ describe('UserListTable on AURA', () => {
       vi.unstubAllGlobals();
     });
 
+    it('a disabled STAFF row keeps Enable reachable: Change role first, Enable in the ⋯ menu (security review)', async () => {
+      const disabledStaff = { ...DISABLED_USER, id: 'u-disabled-staff', email: 'off.staff@example.com', role: 'manager' } as const;
+      renderTable([disabledStaff]);
+      expect(screen.getByRole('button', { name: en.admin.users.actions.changeRole })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: `More actions for ${disabledStaff.email}` }));
+      const enable = await screen.findByRole('menuitem', { name: en.admin.users.actions.enable });
+      expect(enable).not.toHaveClass('aura-menu__item--danger');
+      fireEvent.click(enable);
+      expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    });
+
     it('a disabled row has Enable alone, and your own row says "That\'s you"', () => {
       renderTable([DISABLED_USER, { ...ADMIN_USER, id: 'current-viewer' }]);
       expect(screen.getByRole('button', { name: en.admin.users.actions.enable })).toBeInTheDocument();
