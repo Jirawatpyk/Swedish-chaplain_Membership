@@ -172,8 +172,8 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| #140 | Addendum 43 (US10a): the `FilterBar` search box has no `touchHeight`, so it is 42px on a touch phone while the rest of the row is 44px | None: the search stays 42px on every list page until AURA ships |
-| #141 | Addendum 44 (US10a): `Combobox` has no `touchHeight`, unlike TextField and Select (#135) | None: the invite dialog's member picker (and the event and relink pickers) stay at the compact height |
+| #140 | Addendum 43 (US10a): the `FilterBar` search and `FilterSelect` reach 44px only on a coarse pointer, not below 640px with a mouse (36px there, beside 44px `touchHeight` buttons) | None: real touch phones get 44px; a narrow window with a mouse gets 36px |
+| #141 | Addendum 44 (US10a): `Combobox` has no `touchHeight`, unlike TextField and Select (#135): 44px on a coarse pointer, 36px below 640px with a mouse beside 44px fields | None: the invite dialog's member picker (and the event and relink pickers) |
 | #142 | Addendum 45 (US10a): `DataTable` rows take no `data-*` or `id` of their own | None: `/admin/users` uses static `Table`, whose `Tr` keeps the `data-user-*` the session e2e reads. Low priority |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
