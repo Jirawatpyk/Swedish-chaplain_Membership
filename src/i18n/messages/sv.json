@@ -735,6 +735,7 @@
         "description": "Välj en ny roll. Ändringen loggar ut användaren från alla aktiva sessioner direkt.",
         "roleLabel": "Ny roll",
         "current": "Nuvarande",
+        "currentOption": "{role} (Nuvarande)",
         "confirm": "Ändra roll",
         "pickDifferent": "Välj en annan roll för att fortsätta.",
         "memberHint": "Att flytta någon mellan personalportalen och medlemsportalen är inte en rolländring — bjud in personen separat.",

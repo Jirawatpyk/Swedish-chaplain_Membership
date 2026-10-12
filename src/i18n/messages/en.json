@@ -735,6 +735,7 @@
         "description": "Choose a new role. Changing it signs the user out of all active sessions immediately.",
         "roleLabel": "New role",
         "current": "Current",
+        "currentOption": "{role} (Current)",
         "confirm": "Change role",
         "pickDifferent": "Pick a different role to continue.",
         "memberHint": "Moving someone between the staff portal and the member portal isn't a role change — invite them separately.",

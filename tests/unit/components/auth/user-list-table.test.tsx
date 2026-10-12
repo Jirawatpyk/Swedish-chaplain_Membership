@@ -16,7 +16,7 @@
 //      expired" label renders from the real en.json ICU plural
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { toast } from '@/lib/toast';
@@ -408,7 +408,8 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
       en.admin.users.filters.role.manager,
       en.admin.users.filters.role.marketing,
     ]) {
-      expect(screen.getByRole('radio', { name: label })).toBeInTheDocument();
+      // The row's own role is named "Admin (Current)", as the board does.
+      expect(screen.getByRole('radio', { name: new RegExp(`^${label}( \\(Current\\))?$`) })).toBeInTheDocument();
     }
     // `member` stays out: moving between the staff and member portals is a
     // different operation, and the route answers `role-portal-mismatch`.
@@ -433,9 +434,9 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
     renderTable([MARKETING_USER], { canManageStaffRoles: true });
 
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.actions.changeRole }));
-    expect(screen.getByText(en.admin.users.changeRole.current)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Marketing (Current)' })).toBeChecked();
     expect(
-      screen.getByRole('button', { name: en.admin.users.changeRole.confirm }),
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: en.admin.users.changeRole.confirm }),
       'its own role is pre-selected, so nothing is armed on open',
     ).toBeDisabled();
   });

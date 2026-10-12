@@ -30,6 +30,10 @@ if (typeof globalThis.PointerEvent === 'undefined') {
 
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+// The phrase field is required (the board's asterisk sits in its label,
+// hidden from screen readers), so it is found by its accessible name.
+const phraseField = (name: string) => screen.getByRole('textbox', { name });
+
 const ADMIN_USER = { id: 'u-admin-1', email: 'admin@example.com', role: 'admin' } as const;
 const MANAGER_USER = { id: 'u-manager-1', email: 'manager@example.com', role: 'manager' } as const;
 
@@ -103,7 +107,7 @@ describe('ChangeRoleDialog', () => {
     await waitFor(() => expect(confirm).toBeDisabled());
 
     // A near-miss must not pass — this is the whole point of a typed phrase.
-    const input = screen.getByLabelText(
+    const input = phraseField(
       en.admin.users.changeRole.superAdminConfirmCopy.replace(
         '{phrase}',
         en.admin.users.changeRole.superAdminPhrase,
@@ -148,14 +152,15 @@ describe('ChangeRoleDialog', () => {
       en.admin.users.changeRole.superAdminPhrase,
     );
     fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
-    const input = screen.getByLabelText(phraseLabel);
+    const input = phraseField(phraseLabel);
     fireEvent.change(input, {
       target: { value: en.admin.users.changeRole.superAdminPhrase },
     });
     fireEvent.click(screen.getByRole('button', { name: en.admin.users.changeRole.confirm }));
-    const alert = await screen.findByText(
-      en.admin.users.changeRole.errors['last-admin-protection'],
-    );
+    // The text sits inside AURA's Alert; the focus lands on the Alert itself.
+    const alert = (
+      await screen.findByText(en.admin.users.changeRole.errors['last-admin-protection'])
+    ).closest('[role="alert"]');
     // Wait for the alert to actually HOLD focus, not merely to be on screen.
     // `errorRef.current?.focus()` runs in an effect keyed on `errorCode`, and
     // the text lands in the DOM one flush BEFORE that effect. Waiting only for
@@ -271,7 +276,7 @@ describe('ChangeRoleDialog', () => {
     // survived a row change would be worse than a stale radio: it would carry
     // the deliberate friction across to a user the operator never typed it for.
     fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
-    const phraseInput = screen.getByLabelText(
+    const phraseInput = phraseField(
       en.admin.users.changeRole.superAdminConfirmCopy.replace(
         '{phrase}',
         en.admin.users.changeRole.superAdminPhrase,
@@ -319,7 +324,7 @@ describe('ChangeRoleDialog', () => {
       en.admin.users.changeRole.superAdminPhrase,
     );
     fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
-    fireEvent.change(screen.getByLabelText(phraseLabel), {
+    fireEvent.change(phraseField(phraseLabel), {
       target: { value: en.admin.users.changeRole.superAdminPhrase },
     });
     expect(screen.getByRole('button', { name: en.admin.users.changeRole.confirm })).toBeEnabled();
@@ -577,13 +582,13 @@ describe('ChangeRoleDialog on AURA', () => {
     const warning = await screen.findByTestId('super-admin-promotion-warning');
     expect(warning).toHaveClass('aura-alert', 'aura-alert--warning');
     expect(warning).toHaveTextContent(c.superAdminWarning);
-    expect(screen.getByLabelText(phraseLabel)).toBeRequired();
+    expect(phraseField(phraseLabel)).toBeRequired();
   });
 
   it('announces a phrase mismatch and marks the field invalid', async () => {
     renderDialog();
     fireEvent.click(screen.getByRole('radio', { name: en.admin.users.filters.role.super_admin }));
-    const input = screen.getByLabelText(phraseLabel);
+    const input = phraseField(phraseLabel);
     fireEvent.change(input, { target: { value: 'PROM' } });
     expect(input).toHaveAttribute('aria-invalid', 'true');
     const mismatch = c.superAdminConfirmMismatch.replace('{phrase}', c.superAdminPhrase);
