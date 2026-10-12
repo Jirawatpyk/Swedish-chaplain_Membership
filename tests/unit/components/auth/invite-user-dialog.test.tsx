@@ -151,6 +151,15 @@ describe('InviteUserDialog on AURA', () => {
     expect(toastMock.success).not.toHaveBeenCalled();
   });
 
+  it('gives its own "Invite user" button a 44px box on phones', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <InviteUserDialog />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByRole('button', { name: en.admin.users.actions.invite })).toHaveClass('aura-btn--touch');
+  });
+
   it('gives its fields 44px boxes on phones (UX review)', () => {
     const dialog = open();
     expect(within(dialog).getByRole('textbox', { name: i.emailLabel }).closest('.aura-field')).toHaveClass('is-touch');
