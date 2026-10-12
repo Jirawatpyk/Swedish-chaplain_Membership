@@ -171,8 +171,12 @@ export function UserListTable({
     returnFocusRef.current = el;
     actedRef.current = false;
   };
-  const rememberMenuOpener = (userId: string) =>
-    rememberOpener(document.querySelector<HTMLElement>(`[data-more-for="${CSS.escape(userId)}"]`));
+  // Before the client mounts, the table and the cards are both in the DOM (CSS
+  // shows one), so take the ⋯ that is actually shown.
+  const rememberMenuOpener = (userId: string) => {
+    const all = Array.from(document.querySelectorAll<HTMLElement>(`[data-more-for="${CSS.escape(userId)}"]`));
+    rememberOpener(all.find((el) => el.offsetParent !== null) ?? all[0] ?? null);
+  };
   const dialogFinalFocus = () => {
     if (typeof document === 'undefined') return null;
     const opener = returnFocusRef.current;
@@ -402,8 +406,13 @@ export function UserListTable({
     );
   }
 
-  /** Phone card: one primary action, the rest in a ⋯ menu (destructive ones as danger items). */
-  function phoneActions(user: UserRow, view: View): ReactNode {
+  /**
+   * A row's actions, on a phone card and a desktop row alike: one primary
+   * action, the rest in a ⋯ menu (destructive ones as danger items). Desktop
+   * had the board's inline buttons until R42 showed three of them wrapping at
+   * 1280; the maintainer moved it to this pattern (spec 122 US10a).
+   */
+  function rowActions(user: UserRow, view: View, layout: 'card' | 'row'): ReactNode {
     const primary = view.canChangeRole
       ? 'changeRole'
       : view.canManageInvite
@@ -428,8 +437,14 @@ export function UserListTable({
     }
     if (primary === null && menu.length === 0) return null;
     return (
-      <div className="flex items-center gap-[var(--aura-space-2)] pt-[var(--aura-space-1)]">
-        {primary ? actionButton(primary, user, view, { full: true }) : null}
+      <div
+        className={
+          layout === 'card'
+            ? 'flex items-center gap-[var(--aura-space-2)] pt-[var(--aura-space-1)]'
+            : 'flex flex-nowrap items-center gap-[var(--aura-space-2)]'
+        }
+      >
+        {primary ? actionButton(primary, user, view, { full: layout === 'card' }) : null}
         {menu.length > 0 ? (
           <DropdownMenu
             label={t('actions.moreFor', { email: user.email })}
@@ -490,7 +505,7 @@ export function UserListTable({
   return (
     <>
       {showTable ? (
-        // Desktop: the board's table, its row actions inline. The rows keep
+        // Desktop: the board's table, each row with one primary action and a ⋯ menu. The rows keep
         // data-user-id / data-user-email for the e2e (session-revocation finds
         // a user's id by email). Server-rendered under a phone's width it is
         // hidden by CSS until the client mounts the cards instead.
@@ -512,25 +527,20 @@ export function UserListTable({
                 return (
                   <Tr key={user.id} data-user-id={user.id} data-user-email={user.email.toLowerCase()}>
                     <Td>{user.email}</Td>
-                    <Td>{user.displayName ?? '—'}</Td>
+                    <Td className="whitespace-nowrap">{user.displayName ?? '—'}</Td>
                     <Td>{roleBadgeFor(user)}</Td>
                     <Td>
-                      <div className="flex flex-col items-start gap-[var(--aura-space-1)]">
+                      <div className="flex flex-wrap items-center gap-[var(--aura-space-2)]">
                         {statusPillFor(user)}
                         {expiryFor(view)}
                       </div>
                     </Td>
                     <Td>
-                      <div className="flex flex-wrap items-center gap-[var(--aura-space-2)]">
-                        {view.canChangeRole ? actionButton('changeRole', user, view) : null}
-                        {view.canDisable ? actionButton('disable', user, view) : null}
-                        {view.canEnable ? actionButton('enable', user, view) : null}
-                        {view.canManageInvite ? actionButton('resend', user, view) : null}
-                        {view.canManageInvite ? actionButton('revoke', user, view) : null}
-                        {none ? (
-                          <span className="text-[var(--aura-fg-secondary)]">{view.isSelf ? t('actions.self') : '—'}</span>
-                        ) : null}
-                      </div>
+                      {none ? (
+                        <span className="text-[var(--aura-fg-secondary)]">{view.isSelf ? t('actions.self') : '—'}</span>
+                      ) : (
+                        rowActions(user, view, 'row')
+                      )}
                     </Td>
                   </Tr>
                 );
@@ -574,7 +584,7 @@ export function UserListTable({
                   {view.isSelf ? <span className="text-[var(--aura-fg-secondary)]">{t('actions.self')}</span> : null}
                   {expiryFor(view)}
                 </div>
-                {phoneActions(user, view)}
+                {rowActions(user, view, 'card')}
               </li>
             );
           })}
