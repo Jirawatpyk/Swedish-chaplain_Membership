@@ -344,8 +344,8 @@ describe('UserListTable — pending-row invitation expiry label', () => {
     renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
 
     const label = screen.getByText('Invitation expired');
-    expect(label).toHaveClass('text-destructive');
-    expect(label).not.toHaveClass('text-muted-foreground');
+    expect(label).toHaveClass('text-[var(--aura-fg-danger)]');
+    expect(label).not.toHaveClass('text-[var(--aura-fg-secondary)]');
   });
 
   it('minor fix: a not-yet-expired "Expires in N days" label keeps the muted tone', () => {
@@ -353,15 +353,15 @@ describe('UserListTable — pending-row invitation expiry label', () => {
     renderTable([{ ...PENDING_USER, invitationExpiresAt }]);
 
     const label = screen.getByText('Expires in 3 days');
-    expect(label).toHaveClass('text-muted-foreground');
-    expect(label).not.toHaveClass('text-destructive');
+    expect(label).toHaveClass('text-[var(--aura-fg-secondary)]');
+    expect(label).not.toHaveClass('text-[var(--aura-fg-danger)]');
   });
 });
 
-describe('UserListTable — table landmark aria-label (minor fix)', () => {
-  it('names the scroll-region landmark from the page title instead of the hardcoded "Data table" fallback', () => {
+describe('UserListTable — the table is named (minor fix)', () => {
+  it('names the table from the page title instead of a hardcoded "Data table" fallback', () => {
     renderTable([PENDING_USER]);
-    expect(screen.getByRole('region', { name: en.admin.users.title })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: en.admin.users.title })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Data table' })).not.toBeInTheDocument();
   });
 });
@@ -440,3 +440,77 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
     ).toBeDisabled();
   });
 });
+
+// Spec 122 US10a (T1001) — the users list on AURA (board `Admin-users`,
+// `-mobile`; Clarifications 2026-10-12). Desktop keeps the inline row actions;
+// on a phone each row is a card with one primary action and a ⋯ menu, where
+// Disable and Revoke are AURA danger items that still ask before posting.
+describe('UserListTable on AURA', () => {
+  const MANAGER_USER = {
+    id: 'u-manager-1',
+    email: 'manager@example.com',
+    role: 'manager',
+    status: 'active',
+    displayName: 'Karin Ek',
+    invitationExpiresAt: null,
+  } as const;
+
+  it('shows status as a pill toned by status', () => {
+    renderTable([ACTIVE_USER, PENDING_USER, DISABLED_USER]);
+    expect(screen.getByText(en.admin.users.filters.status.active)).toHaveAttribute('data-tone', 'ready');
+    expect(screen.getByText(en.admin.users.filters.status.pending)).toHaveAttribute('data-tone', 'progress');
+    expect(screen.getByText(en.admin.users.filters.status.disabled)).toHaveAttribute('data-tone', 'neutral');
+  });
+
+  it('keeps each row\'s data-user-id / data-user-email for the e2e', () => {
+    const { container } = renderTable([ADMIN_USER]);
+    expect(container.querySelector('[data-user-email="admin@example.com"]')).toHaveAttribute('data-user-id', 'u-admin-1');
+  });
+
+  describe('on a phone', () => {
+    const width = window.innerWidth;
+    beforeEach(() => {
+      window.innerWidth = 390;
+      window.dispatchEvent(new Event('resize'));
+    });
+    afterEach(() => {
+      window.innerWidth = width;
+    });
+
+    it('draws each row as a card in a list named after the page', () => {
+      renderTable([MANAGER_USER, PENDING_USER]);
+      const list = screen.getByRole('list', { name: en.admin.users.title });
+      expect(list.querySelectorAll(':scope > li')).toHaveLength(2);
+      expect(screen.queryByRole('table')).toBeNull();
+    });
+
+    it('offers Change role as the primary action and Disable as a danger item in the ⋯ menu', async () => {
+      renderTable([MANAGER_USER]);
+      expect(screen.getByRole('button', { name: en.admin.users.actions.changeRole })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: en.admin.users.actions.disable })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: `More actions for ${MANAGER_USER.email}` }));
+      const disable = await screen.findByRole('menuitem', { name: en.admin.users.actions.disable });
+      expect(disable).toHaveClass('aura-menu__item--danger');
+    });
+
+    it('asks before revoking from the menu', async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      renderTable([PENDING_USER]);
+      expect(screen.getByRole('button', { name: en.admin.users.actions.resend })).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: `More actions for ${PENDING_USER.email}` }));
+      fireEvent.click(await screen.findByRole('menuitem', { name: en.admin.users.actions.revoke }));
+      expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    });
+
+    it('a disabled row has Enable alone, and your own row says "That\'s you"', () => {
+      renderTable([DISABLED_USER, { ...ADMIN_USER, id: 'current-viewer' }]);
+      expect(screen.getByRole('button', { name: en.admin.users.actions.enable })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: `More actions for ${DISABLED_USER.email}` })).toBeNull();
+      expect(screen.getByText(en.admin.users.actions.self)).toBeInTheDocument();
+    });
+  });
+});
+
