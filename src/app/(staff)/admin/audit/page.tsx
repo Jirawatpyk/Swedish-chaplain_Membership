@@ -167,7 +167,7 @@ export default async function AuditLogPage({
   };
   const invalidFilterState = (field: AuditInvalidFilterField | null) => (
     <>
-      <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
+      <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} timeZone={tz} />
       <DashboardErrorState
         title={t('invalidRange.title')}
         description={invalidFilterDescription(field)}
@@ -329,7 +329,7 @@ export default async function AuditLogPage({
 
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
+          <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} timeZone={tz} />
 
           {/* SR result-count announcement — re-rendered on every filter navigation. */}
           <p role="status" className="sr-only">

@@ -81,10 +81,10 @@ describe('<AuditFilters> on AURA', () => {
     expect(replace).toHaveBeenLastCalledWith('/admin/audit?targetRef=SC-2026-000131', { scroll: false });
   });
 
-  it('the acting user, under "More filters", commits trimmed after the debounce', async () => {
+  it('the acting user, under "More filters", commits trimmed after the debounce', () => {
     render(tree());
     fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${f.moreFilters}`) }));
-    const actor = await screen.findByRole('textbox', { name: f.actor });
+    const actor = screen.getByRole('textbox', { name: f.actor });
     fireEvent.change(actor, { target: { value: ' 8b21-77c0 ' } });
     act(() => vi.advanceTimersByTime(350));
     expect(replace).toHaveBeenLastCalledWith('/admin/audit?actorUserId=8b21-77c0', { scroll: false });
