@@ -58,6 +58,13 @@ describe('<AuditTable> on AURA', () => {
     expect(screen.getByText(ROW.occurredAtUtc, { exact: false }).textContent).toContain('UTC');
   });
 
+  it('lets the UTC instant wrap in a phone card instead of running into the next field', () => {
+    render(<AuditTable rows={[ROW]} labels={labels} />);
+    const utc = screen.getByText(ROW.occurredAtUtc, { exact: false });
+    expect(utc).toHaveClass('[overflow-wrap:anywhere]');
+    expect(utc.closest('td')).toHaveClass('max-sm:whitespace-normal');
+  });
+
   it('shows the payload as label/value pairs, and "None" when there is none', () => {
     render(<AuditTable rows={[ROW, { ...ROW, id: 'a-2', payloadEntries: [] }]} labels={labels} />);
     const dt = screen.getByText('Outcome:');
