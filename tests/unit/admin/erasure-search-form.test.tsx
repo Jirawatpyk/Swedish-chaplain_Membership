@@ -38,6 +38,11 @@ describe('ErasureSearchForm', () => {
     expect(screen.getByRole('link', { name: /clear search/i })).toBeInTheDocument();
   });
 
+  it('gives the clear-search link a 44px box on phones (UX review L1)', () => {
+    renderForm('all', '42');
+    expect(screen.getByRole('link', { name: /clear search/i })).toHaveClass('max-sm:min-h-11');
+  });
+
   it('hides the clear-search link when q is empty', () => {
     renderForm('all', '');
     expect(screen.queryByRole('link', { name: /clear search/i })).not.toBeInTheDocument();
