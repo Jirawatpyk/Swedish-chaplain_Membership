@@ -301,10 +301,12 @@ function ActorField({
     [],
   );
   // The URL moved to another actor (a chip ×, Clear, back/forward): show it.
-  // Its own commit (the trimmed text) leaves what was typed alone.
+  // Never while the field has focus — a commit landing late would overwrite
+  // what is being typed.
   useEffect(() => {
     const input = box.current?.querySelector('input');
-    if (input && input.value.trim() !== initial) input.value = initial;
+    if (!input || document.activeElement === input) return;
+    if (input.value.trim() !== initial) input.value = initial;
   }, [initial]);
   return (
     <div ref={box}>
