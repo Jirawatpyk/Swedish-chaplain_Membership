@@ -669,7 +669,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1016 [US10] The evidence card on AURA `Card`, `StatusPill`, `Alert` and `Badge`; the `<details>` disclosure and its headings stay. RED: the status tone per state, the half-run note's role, the tax-document kind.
 - [x] T1017 [US10] The erasure page frame: tabs and search, the breach and all-clear alerts, the cap note, the empty state, `loading.tsx` and `error.tsx` on AURA.
 - [x] T1018 [US10] Ratchet, preview and budgets: `MIGRATED_PATHS` gains the audit and compliance routes and `src/components/audit`; the two audit controls move to US10c files; preview views (`?view=audit` and `?view=erasure-log` with their states, and both loading files); first bundle budgets for both routes.
-- [ ] T1019 [US10] Exit: e2e selectors (f9-audit's event-type select, the erasure status pill); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; UX, privacy and i18n reviews with fixes RED first; draft PR; relay R43.
+- [x] T1019 [US10] Exit: e2e selectors (f9-audit's event-type select, the erasure status pill); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; UX, privacy and i18n reviews with fixes RED first; draft PR; relay R43 → R43b green (hydration sort + erasure search name fixed RED first).
 
 ### US10c — Settings hub, member changes, account (PR 22)
 
