@@ -483,7 +483,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **Found in the preview (2026-10-13), fixed in this PR:**
   - AURA wraps a `Card`'s children in its body, so the audit card's spacing sits on a wrapper inside it.
   - On phones, Export CSV, the pager links and "More filters" get 44px boxes (`touchHeight`).
-  - In a phone card the UTC instant may break, so it no longer runs into the Actor field.
+  - Below 640px the audit list follows board `Admin-audit-mobile` (maintainer, parity comments 13 Oct): one compact card per event — time · HH:MM UTC, the event, "Target: …" when there is one, the summary, and "by {actor} · label: value". The table from 640px up keeps every column (raw codes, actor and target ids, the ISO instant). New EN/TH/SV strings `admin.audit.table.cardTarget` / `cardBy`.
   - The breadcrumb on `/admin/audit` read the raw slug "audit"; it now reads "Audit log" (EN/TH/SV, the nav's own label).
   - The evidence card follows the board's layout: a bold title, the request and completion fields three-up on wide screens, and a rule between sections. The sub-processor block stays 2×2 (its Round 4 L10 decision: four fields, stable height).
 - **Kept against the board:**
