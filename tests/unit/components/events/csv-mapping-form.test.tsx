@@ -317,7 +317,7 @@ describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
     // the focus move has happened. Reproduced locally by delaying
     // requestAnimationFrame 50-150ms.
     await waitFor(() =>
-      expect(document.getElementById('csv-preview-rows')).toHaveFocus(),
+      expect(screen.getByRole('heading', { name: /^Preview \(/ })).toHaveFocus(),
     );
 
     // Spec 122 US9b-2 (T933): each remap field is an AURA Select — a
