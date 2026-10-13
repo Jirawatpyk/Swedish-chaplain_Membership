@@ -60,7 +60,7 @@ export function ErasureSearchForm({
       {q !== '' ? (
         <Link
           href={clearHref}
-          className="inline-flex min-h-9 items-center gap-1 text-sm font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline"
+          className="inline-flex min-h-9 items-center gap-1 text-sm font-medium text-[var(--aura-fg-accent)] max-sm:min-h-11 underline-offset-4 hover:underline"
         >
           <XIcon className="size-3.5" aria-hidden />
           {t('search.clear')}

@@ -54,8 +54,8 @@ function ExpandedCardSkeleton(): React.JSX.Element {
         {[0, 1].map((s) => (
           <div key={s} className="flex flex-col gap-2">
             <SkeletonBlock className="h-4 w-32" />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {[0, 1, 2, 3].map((f) => (
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[0, 1, 2, 3, 4].map((f) => (
                 <div key={f} className="flex flex-col gap-1">
                   <SkeletonBlock className="h-3 w-24" />
                   <SkeletonBlock className="h-4 w-40" />
@@ -85,8 +85,8 @@ export default async function Loading(): Promise<React.JSX.Element> {
           <div className="flex flex-col gap-1">
             <SkeletonBlock className="h-4 w-40" />
             <div className="flex gap-[var(--aura-space-2)]">
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-60 max-sm:flex-1" />
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-24" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-60 max-sm:h-11 max-sm:flex-1" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-24 max-sm:h-11" />
             </div>
           </div>
         </div>
