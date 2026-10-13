@@ -69,11 +69,13 @@ test.describe('F9 — audit-log viewer (US2) @f9', () => {
 
     // Event-type filter (FR-009): pick the first real type (options show the
     // LOCALISED label, not the raw code), expect it to commit to the URL.
-    const eventFilter = page.getByRole('combobox', { name: /event type/i });
+    // Spec 122 US10b: an AURA FilterSelect — a native <select> (grouped by
+    // category) under the face that names it "Event type …".
+    const eventFilter = page.getByRole('combobox', { name: /^event type/i }).first();
     await expect(eventFilter).toBeVisible();
-    await eventFilter.click();
-    // nth(0) is "All event types"; nth(1) is the first concrete event type.
-    await page.getByRole('option').nth(1).click();
+    const nativeSelect = page.locator('.aura-select', { has: eventFilter }).locator('select');
+    // Index 0 is "All event types"; index 1 is the first concrete event type.
+    await nativeSelect.selectOption({ index: 1 });
     await page.waitForURL(/eventType=/, { timeout: 15_000 });
     // The filtered view re-renders without crashing — either a results table or
     // the empty-state copy (the chosen type may have no rows in this tenant).
