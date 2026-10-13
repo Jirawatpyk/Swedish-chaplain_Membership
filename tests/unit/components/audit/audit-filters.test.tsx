@@ -169,4 +169,15 @@ describe('<AuditFilters> on AURA', () => {
     rerender(tree());
     expect(screen.getByRole('textbox', { name: f.actor })).toHaveValue('Johan S');
   });
+
+  it('"Clear filters" keeps the bar mounted, so its live count stays in place to announce the new count (UX review L4)', () => {
+    searchParamsStub = new URLSearchParams('eventType=invoice_paid&targetRef=t-9');
+    const { rerender } = render(tree(2));
+    const count = screen.getByText('2 audit events');
+    fireEvent.click(screen.getByRole('button', { name: f.clear }));
+    searchParamsStub = new URLSearchParams();
+    rerender(tree(5));
+    expect(screen.getByText('5 audit events')).toBe(count);
+    expect(screen.getByRole('searchbox', { name: f.target })).toHaveValue('');
+  });
 });
