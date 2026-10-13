@@ -192,6 +192,11 @@ describe('AuditLogPage on AURA', () => {
     expect(html).toContain(en.admin.audit.retentionNote);
   });
 
+  it('spaces the filters, the list and the retention line inside the card body (AURA wraps the children of a Card)', async () => {
+    const html = await renderPage();
+    expect(html).toMatch(/class="aura-card__body"><div class="flex flex-col gap-\[var\(--aura-space-4\)\]"/);
+  });
+
   it('pages with AURA button links over the cursor', async () => {
     const html = await renderPage();
     const older = tagFor(html, en.admin.audit.pagination.next);

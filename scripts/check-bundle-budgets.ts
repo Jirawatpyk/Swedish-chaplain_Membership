@@ -184,6 +184,10 @@
  *   122 US10a (users page on AURA, 2026-10-12) — budgeted for the first time on
  *   the branch build:
  *     /admin/users                                      862.8 KB measured → ≤  970 KB
+ *   122 US10b (audit log + erasure evidence log on AURA, 2026-10-13) —
+ *   budgeted for the first time on the branch build:
+ *     /admin/audit                                      865.9 KB measured → ≤  970 KB
+ *     /admin/compliance/erasure-log                     783.6 KB measured → ≤  890 KB
  *
  * Run as a post-build step:
  *
@@ -285,6 +289,9 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/settings/integrations/eventcreate', maxKb: 920 },
   // --- Spec 122 US10a users page (AURA) — see docblock ---
   { route: '/admin/users', maxKb: 970 },
+  // --- Spec 122 US10b audit log + erasure evidence log (AURA) — see docblock ---
+  { route: '/admin/audit', maxKb: 970 },
+  { route: '/admin/compliance/erasure-log', maxKb: 890 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');
