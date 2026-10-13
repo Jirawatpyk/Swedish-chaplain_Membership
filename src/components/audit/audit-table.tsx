@@ -91,11 +91,12 @@ export function AuditTable({
       <TBody>
         {rows.map((r) => (
           <Tr key={r.id}>
-            <Td className="whitespace-nowrap">
+            <Td className="whitespace-nowrap max-sm:whitespace-normal">
               <time dateTime={r.occurredAtUtc} className="block font-medium">
                 {r.occurredAtLocal}
               </time>
-              <span className={code}>
+              {/* In a phone card the time shares a row with Actor; the instant may break. */}
+              <span className={`${code} [overflow-wrap:anywhere]`}>
                 <span className="sr-only">{labels.utcLabel}: </span>
                 {r.occurredAtUtc}
               </span>
