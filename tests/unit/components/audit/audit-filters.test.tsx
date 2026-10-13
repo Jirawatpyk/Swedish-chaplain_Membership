@@ -156,4 +156,17 @@ describe('<AuditFilters> on AURA', () => {
     expect(after).toBe(actor);
     expect(after).toHaveValue('Johan ');
   });
+
+  it('does not overwrite what is being typed when an earlier commit lands late (UX review M2)', () => {
+    const { rerender } = render(tree());
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${f.moreFilters}`) }));
+    const actor = screen.getByRole('textbox', { name: f.actor });
+    actor.focus();
+    fireEvent.change(actor, { target: { value: 'Johan' } });
+    act(() => vi.advanceTimersByTime(350));
+    fireEvent.change(actor, { target: { value: 'Johan S' } });
+    searchParamsStub = new URLSearchParams('actorUserId=Johan');
+    rerender(tree());
+    expect(screen.getByRole('textbox', { name: f.actor })).toHaveValue('Johan S');
+  });
 });
