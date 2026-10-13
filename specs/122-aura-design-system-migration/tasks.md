@@ -660,15 +660,15 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 
 ### US10b — Audit log and erasure log (PR 21)
 
-- [ ] T1010 [US10] Spec clarifications (Session 2026-10-13, US10b start) and this task list.
-- [ ] T1011 [US10] The audit filters on AURA `FilterBar` in the filter pattern: Target record as the search, Event type as a grouped `FilterSelect`, Actor as a text field in a "More filters" popover, From–To as one `FilterDateRange`, a chip per applied value. RED: each change replaces the URL with the same query as today and drops the cursor.
-- [ ] T1012 [US10] The audit table on AURA `Table` (cards on phones): the dual timestamp, the raw event and actor codes, the payload pairs, the empty state. RED: the caption, the UTC line and the payload pairs.
-- [ ] T1013 [US10] The audit page frame: header with Export CSV, the list card with the count in the bar and the retention note under the table, keyset pagination links, the invalid-filter and load-error states, `loading.tsx` on the AURA skeleton and `error.tsx` (`RouteErrorPanel`).
-- [ ] T1014 [US10] The erasure status filter on AURA link `Tabs` with counts. RED: the hrefs keep the search, the current tab is `aria-current="page"`, Overdue carries its warning icon.
-- [ ] T1015 [US10] The erasure search on AURA `TextField` and `Button`, still a GET form. RED: the visible label, the hidden status, the clear link.
-- [ ] T1016 [US10] The evidence card on AURA `Card`, `StatusPill`, `Alert` and `Badge`; the `<details>` disclosure and its headings stay. RED: the status tone per state, the half-run note's role, the tax-document kind.
-- [ ] T1017 [US10] The erasure page frame: tabs and search, the breach and all-clear alerts, the cap note, the empty state, `loading.tsx` and `error.tsx` on AURA.
-- [ ] T1018 [US10] Ratchet, preview and budgets: `MIGRATED_PATHS` gains the audit and compliance routes and `src/components/audit`; the two audit controls move to US10c files; preview views (`?view=audit` and `?view=erasure-log` with their states, and both loading files); first bundle budgets for both routes.
+- [x] T1010 [US10] Spec clarifications (Session 2026-10-13, US10b start) and this task list.
+- [x] T1011 [US10] The audit filters on AURA `FilterBar` in the filter pattern: Target record as the search, Event type as a grouped `FilterSelect`, Actor as a text field in a "More filters" popover, From–To as one `FilterDateRange`, a chip per applied value. RED: each change replaces the URL with the same query as today and drops the cursor.
+- [x] T1012 [US10] The audit table on AURA `Table` (cards on phones): the dual timestamp, the raw event and actor codes, the payload pairs, the empty state. RED: the caption, the UTC line and the payload pairs.
+- [x] T1013 [US10] The audit page frame: header with Export CSV, the list card with the count in the bar and the retention note under the table, keyset pagination links, the invalid-filter and load-error states, `loading.tsx` on the AURA skeleton and `error.tsx` (`RouteErrorPanel`).
+- [x] T1014 [US10] The erasure status filter on AURA link `Tabs` with counts. RED: the hrefs keep the search, the current tab is `aria-current="page"`, Overdue carries its warning icon.
+- [x] T1015 [US10] The erasure search on AURA `TextField` and `Button`, still a GET form. RED: the visible label, the hidden status, the clear link.
+- [x] T1016 [US10] The evidence card on AURA `Card`, `StatusPill`, `Alert` and `Badge`; the `<details>` disclosure and its headings stay. RED: the status tone per state, the half-run note's role, the tax-document kind.
+- [x] T1017 [US10] The erasure page frame: tabs and search, the breach and all-clear alerts, the cap note, the empty state, `loading.tsx` and `error.tsx` on AURA.
+- [x] T1018 [US10] Ratchet, preview and budgets: `MIGRATED_PATHS` gains the audit and compliance routes and `src/components/audit`; the two audit controls move to US10c files; preview views (`?view=audit` and `?view=erasure-log` with their states, and both loading files); first bundle budgets for both routes.
 - [ ] T1019 [US10] Exit: e2e selectors (f9-audit's event-type select, the erasure status pill); gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; UX, privacy and i18n reviews with fixes RED first; draft PR; relay R43.
 
 ### US10c — Settings hub, member changes, account (PR 22)

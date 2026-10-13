@@ -480,6 +480,16 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **The audit filters follow the one filter pattern** (docs/aura-adoption.md § Filters), not the board's five labelled fields: Target record is the bar's search, Event type a `FilterSelect` keeping today's category groups, Actor a labelled text field in the bar's "More filters" popover (AURA has no compact free-text filter besides the search, and a `TextField` always shows its label above the box), and From–To one `FilterDateRange`. Every applied value is a removable chip, the bar carries the count and "Clear all", and the URL parameters stay the same. The board's phone "Filters — None applied" row is not used: the chips wrap, as on Members.
 - **The audit table** stays AURA's static `Table` (cards on phones), because its pagination is first/previous/next links over a cursor, not numbered pages. The board's retention line goes under the table: "Audit records are kept for 5 years; tax-document events for 10 years." (EN/TH/SV), which matches `audit_log.retention_years`.
 - **The erasure log:** the status filter becomes AURA link `Tabs` with counts; an inactive Overdue tab keeps its warning icon but not the red text, as the board draws it. The search gets the board's visible label "Search by member number" and stays a GET form. The all-clear notice stays though the board does not draw it, since dropping it would change what the page reports.
+- **Found in the preview (2026-10-13), fixed in this PR:**
+  - AURA wraps a `Card`'s children in its body, so the audit card's spacing sits on a wrapper inside it.
+  - On phones, Export CSV, the pager links and "More filters" get 44px boxes (`touchHeight`).
+  - In a phone card the UTC instant may break, so it no longer runs into the Actor field.
+  - The breadcrumb on `/admin/audit` read the raw slug "audit"; it now reads "Audit log" (EN/TH/SV, the nav's own label).
+  - The evidence card follows the board's layout: a bold title, the request and completion fields three-up on wide screens, and a rule between sections. The sub-processor block stays 2×2 (its Round 4 L10 decision: four fields, stable height).
+- **Kept against the board:**
+  - The evidence card's half-run note stays an AURA `Alert` (warning, or danger when overdue); the board draws plain text. Its `role` is unchanged. It is a reportable-breach line on a compliance surface, so the emphasis stays unless the maintainer decides otherwise.
+  - The evidence card keeps the login-credential and tax-document sections when they are empty (the board leaves them out): a DPO answering a request needs "none recorded" stated.
+- **AURA gaps (handoff):** in 5.31 the erasure status `Tabs` links and the FilterBar's `FilterSelect` / `FilterDateRange` are 36px with a mouse; on a touch screen they already measure 44px. The load-error card's "Try again" (shared `DashboardErrorState`, not in this PR) is 32px on phones.
 
 ## User Scenarios & Testing *(mandatory)*
 
