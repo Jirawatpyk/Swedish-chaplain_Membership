@@ -58,5 +58,10 @@ describe('ErasureSearchForm', () => {
     expect(label).not.toHaveClass('sr-only');
     expect(screen.getByRole('button', { name: /^search$/i })).toHaveClass('aura-btn');
   });
+
+  it('the Search button is text only, as board Admin-erasure-log draws it (maintainer, parity comment 13 Oct)', () => {
+    renderForm();
+    expect(screen.getByRole('button', { name: /^search$/i }).querySelector('svg')).toBeNull();
+  });
 });
 
