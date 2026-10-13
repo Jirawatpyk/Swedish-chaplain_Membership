@@ -187,7 +187,12 @@ describe('<AuditFilters> on AURA', () => {
   it('sorts the event types in the UI locale, not the runtime default', () => {
     const spy = vi.spyOn(String.prototype, 'localeCompare');
     try {
-      render(tree());
+      // The pair R43 caught: same category, so the sort compares them.
+      render(
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <AuditFilters eventTypeOptions={['members_backup_exported', 'member_timeline_viewed']} timeZone="Asia/Bangkok" />
+        </NextIntlClientProvider>,
+      );
       expect(spy).toHaveBeenCalled();
       for (const call of spy.mock.calls) expect(call[1]).toBe('en');
     } finally {
