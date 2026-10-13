@@ -209,4 +209,12 @@ describe('AuditLogPage on AURA', () => {
     expect(tagFor(html, en.admin.audit.export)).toContain('aura-btn--touch');
     expect(tagFor(html, en.admin.audit.pagination.next)).toContain('aura-btn--touch');
   });
+
+  it('an invalid filter is named in an alert inside the list card, under the filters (board `Admin-state-audit-invalid`)', async () => {
+    const html = await renderPage({ from: '2026-02-30' });
+    const card = html.slice(html.indexOf('aura-card'));
+    expect(card).toContain('data-testid="audit-filters"');
+    expect(card).toMatch(/role="alert"[^>]*data-testid="invalid-filter"|data-testid="invalid-filter"[^>]*role="alert"/);
+    expect(card).toContain(en.admin.audit.invalidRange.title);
+  });
 });

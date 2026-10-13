@@ -127,4 +127,33 @@ describe('<AuditFilters> on AURA', () => {
     render(tree());
     expect(screen.getByRole('button', { name: new RegExp(`^${f.moreFilters}`) })).toHaveClass('aura-btn--touch');
   });
+
+  it('a hand-typed bad date still gets a chip and "Clear filters", so the invalid view can be left (UX review M1)', () => {
+    searchParamsStub = new URLSearchParams('from=2026-02-30&to=abc');
+    render(tree());
+    expect(screen.getByText(/2026-02-30/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: f.clear }));
+    expect(replace).toHaveBeenLastCalledWith('/admin/audit', { scroll: false });
+  });
+
+  it('a from-after-to range is not drawn as one reversed range (UX review L3)', () => {
+    searchParamsStub = new URLSearchParams('from=2026-05-10&to=2026-05-01');
+    render(tree());
+    expect(screen.queryByText(/10.{1,4}1 May 2026|May 10.{1,4}1, 2026/)).toBeNull();
+    expect(screen.getByText(/10 May 2026.*1 May 2026/)).toBeInTheDocument();
+  });
+
+  it('the acting-user field keeps focus and a trailing space after its own commit (UX review M2)', () => {
+    const { rerender } = render(tree());
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${f.moreFilters}`) }));
+    const actor = screen.getByRole('textbox', { name: f.actor });
+    actor.focus();
+    fireEvent.change(actor, { target: { value: 'Johan ' } });
+    act(() => vi.advanceTimersByTime(350));
+    searchParamsStub = new URLSearchParams('actorUserId=Johan');
+    rerender(tree());
+    const after = screen.getByRole('textbox', { name: f.actor });
+    expect(after).toBe(actor);
+    expect(after).toHaveValue('Johan ');
+  });
 });
