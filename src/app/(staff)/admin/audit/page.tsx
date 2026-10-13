@@ -20,10 +20,10 @@ import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
 import { getTranslations, getLocale } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
+import { DownloadIcon } from 'lucide-react';
+import { buttonClass, Card, Icon } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { EmptyState } from '@/components/shell/empty-state';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
@@ -259,7 +259,8 @@ export default async function AuditLogPage({
       subtitle={t('subtitle')}
       actions={
         result.ok ? (
-          <a href={exportHref} download className={buttonVariants({ variant: 'outline' })}>
+          <a href={exportHref} download className={buttonClass({ variant: 'secondary' })}>
+            <Icon name={<DownloadIcon />} size={16} />
             {t('export')}
           </a>
         ) : undefined
@@ -327,59 +328,55 @@ export default async function AuditLogPage({
     <TableContainer>
       {header}
 
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} timeZone={tz} />
+      {/* Spec 122 US10b (T1013; board `Admin-audit`): one AURA card holds the
+          filters, the list (edge to edge) and the retention line; below 640px
+          the card drops its frame and the rows become cards of their own. The
+          count sits at the end of the filter row, in its live region. */}
+      <Card flushBelow="sm" className="flex flex-col gap-[var(--aura-space-4)] max-sm:border-0 max-sm:p-0">
+        <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} timeZone={tz} resultCount={rows.length} />
 
-          {/* SR result-count announcement — re-rendered on every filter navigation. */}
-          <p role="status" className="sr-only">
-            {t('resultCount', { count: rows.length })}
-          </p>
+        <AuditTable
+          rows={rows}
+          labels={{
+            caption: t('table.caption'),
+            time: t('table.time'),
+            event: t('table.event'),
+            actor: t('table.actor'),
+            target: t('table.target'),
+            summary: t('table.summary'),
+            payload: t('table.payload'),
+            emptyTitle: t('table.emptyTitle'),
+            empty: t('table.empty'),
+            none: t('table.none'),
+            utcLabel: t('table.utcLabel'),
+          }}
+        />
 
-          <AuditTable
-            rows={rows}
-            labels={{
-              caption: t('table.caption'),
-              time: t('table.time'),
-              event: t('table.event'),
-              actor: t('table.actor'),
-              target: t('table.target'),
-              summary: t('table.summary'),
-              payload: t('table.payload'),
-              emptyTitle: t('table.emptyTitle'),
-              empty: t('table.empty'),
-              none: t('table.none'),
-              utcLabel: t('table.utcLabel'),
-            }}
-          />
-
-          {showFirst || prevHref || nextHref ? (
-            <nav
-              aria-label={t('pagination.label')}
-              className="flex flex-wrap items-center justify-between gap-2"
-            >
-              <div className="flex gap-2">
-                {showFirst ? (
-                  <a href={firstHref} className={buttonVariants({ variant: 'outline' })}>
-                    {t('pagination.first')}
-                  </a>
-                ) : null}
-                {prevHref ? (
-                  <a href={prevHref} className={buttonVariants({ variant: 'outline' })}>
-                    {t('pagination.previous')}
-                  </a>
-                ) : null}
-              </div>
-              {nextHref ? (
-                <a href={nextHref} className={buttonVariants({ variant: 'outline' })}>
-                  {t('pagination.next')}
+        {showFirst || prevHref || nextHref ? (
+          <nav aria-label={t('pagination.label')} className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex gap-2">
+              {showFirst ? (
+                <a href={firstHref} className={buttonClass({ variant: 'secondary' })}>
+                  {t('pagination.first')}
                 </a>
-              ) : (
-                <span aria-hidden />
-              )}
-            </nav>
-          ) : null}
-        </CardContent>
+              ) : null}
+              {prevHref ? (
+                <a href={prevHref} className={buttonClass({ variant: 'secondary' })}>
+                  {t('pagination.previous')}
+                </a>
+              ) : null}
+            </div>
+            {nextHref ? (
+              <a href={nextHref} className={buttonClass({ variant: 'secondary' })}>
+                {t('pagination.next')}
+              </a>
+            ) : (
+              <span aria-hidden />
+            )}
+          </nav>
+        ) : null}
+
+        <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('retentionNote')}</p>
       </Card>
     </TableContainer>
   );

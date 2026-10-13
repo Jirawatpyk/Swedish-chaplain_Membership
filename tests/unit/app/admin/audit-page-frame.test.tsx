@@ -52,7 +52,6 @@ function makeRealTranslator(ns: string) {
   return Object.assign(t, { has: (key: string) => typeof getPath(getPath(en as unknown, ns), key) === 'string' });
 }
 
-const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/;
 
 /**
  * renderToStaticMarkup escapes `'` / `"` / `&` — decode them so copy like
