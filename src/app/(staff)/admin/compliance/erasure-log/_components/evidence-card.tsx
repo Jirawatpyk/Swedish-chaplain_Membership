@@ -85,7 +85,7 @@ export function EvidenceCard({
               className="mt-1 size-4 shrink-0 -rotate-90 text-[var(--aura-fg-secondary)] transition-transform group-open:rotate-0 motion-reduce:transition-none"
             />
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-[var(--aura-space-3)] gap-y-1">
-              <h2 id={headingId} className="aura-text-h4">
+              <h2 id={headingId} className="aura-text-h3">
                 {t('memberNumber', { ref })}
               </h2>
               <p className="text-sm text-[var(--aura-fg-secondary)]">{t('erasedAt', { at: fmtDate(row.erasedAt) })}</p>
