@@ -1,8 +1,10 @@
 /**
- * Spec 122 US10b (T1012) — the audit table on AURA's static Table, stacking
- * into cards on phones with the event as each card's title. What it shows is
- * today's: the dual timestamp (FR-012), the raw event and actor codes, the
- * role-redacted payload as label/value pairs, and the empty state.
+ * Spec 122 US10b (T1012) — the audit table on AURA's static Table from 640px
+ * up: the dual timestamp (FR-012), the raw event and actor codes, the
+ * role-redacted payload as label/value pairs, and the empty state. Below
+ * 640px, board `Admin-audit-mobile`'s compact cards (maintainer, parity
+ * comments 13 Oct): time · UTC, the event, Target, the summary, by actor ·
+ * details.
  */
 import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -20,6 +22,8 @@ const labels = {
   empty: 'No audit events match these filters.',
   none: 'None',
   utcLabel: 'UTC',
+  cardTarget: 'Target: {target}',
+  cardBy: 'by {actor}',
 };
 
 const ROW: AuditTableRow = {
@@ -36,46 +40,64 @@ const ROW: AuditTableRow = {
   payloadEntries: [{ label: 'Outcome', value: 'partially approved' }],
 };
 
+const table = () => screen.getByRole('table', { name: labels.caption });
+const cards = () => screen.getByRole('list', { name: labels.caption });
+
 describe('<AuditTable> on AURA', () => {
-  it('is an AURA table named by its caption that stacks into cards on phones', () => {
+  it('is an AURA table named by its caption from 640px up, and a list of cards below it', () => {
     render(<AuditTable rows={[ROW]} labels={labels} />);
-    const table = screen.getByRole('table', { name: labels.caption });
-    expect(table).toHaveClass('aura-tbl', 'aura-tbl--stack-sm', 'aura-tbl--cards');
+    expect(table()).toHaveClass('aura-tbl');
+    expect(table()).not.toHaveClass('aura-tbl--stack-sm');
+    expect(table().closest('.max-sm\\:hidden')).not.toBeNull();
+    expect(cards()).toHaveClass('sm:hidden');
+    expect(within(cards()).getAllByRole('listitem')).toHaveLength(1);
   });
 
-  it('makes the event each card’s title, with its raw code under it', () => {
+  it('a phone card reads as the board: time · UTC, the event, Target, the summary, by actor · details', () => {
     render(<AuditTable rows={[ROW]} labels={labels} />);
-    const cell = screen.getByText(ROW.eventTypeLabel).closest('td')!;
-    expect(cell).toHaveAttribute('data-card', 'title');
+    const card = within(cards()).getByRole('listitem');
+    const time = within(card).getByText(ROW.occurredAtLocal);
+    expect(time.tagName).toBe('TIME');
+    expect(time).toHaveAttribute('dateTime', ROW.occurredAtUtc);
+    expect(card).toHaveTextContent('24 Sep 2026, 10:18 · UTC: 03:18 UTC');
+    expect(within(card).getByText(ROW.eventTypeLabel)).toBeInTheDocument();
+    expect(within(card).getByText('Target: Midsommar Hospitality Co., Ltd.')).toBeInTheDocument();
+    expect(within(card).getByText(ROW.summary)).toBeInTheDocument();
+    expect(within(card).getByText('by Johan Strand · Outcome: partially approved')).toBeInTheDocument();
+    expect(within(card).queryByText(ROW.eventType)).toBeNull();
+  });
+
+  it('a phone card has no Target line when the event has no target', () => {
+    render(<AuditTable rows={[{ ...ROW, targetLabel: null, targetUserId: null }]} labels={labels} />);
+    expect(within(cards()).queryByText(/^Target:/)).toBeNull();
+  });
+
+  it('the table keeps the event with its raw code under it', () => {
+    render(<AuditTable rows={[ROW]} labels={labels} />);
+    const cell = within(table()).getByText(ROW.eventTypeLabel).closest('td')!;
     expect(within(cell).getByText(ROW.eventType)).toBeInTheDocument();
   });
 
-  it('keeps the dual timestamp: the local time on a <time> and the UTC instant named as UTC', () => {
+  it('the table keeps the dual timestamp: the local time on a <time> and the UTC instant named as UTC', () => {
     render(<AuditTable rows={[ROW]} labels={labels} />);
-    const time = screen.getByText(ROW.occurredAtLocal);
+    const time = within(table()).getByText(ROW.occurredAtLocal);
     expect(time.tagName).toBe('TIME');
     expect(time).toHaveAttribute('dateTime', ROW.occurredAtUtc);
-    expect(screen.getByText(ROW.occurredAtUtc, { exact: false }).textContent).toContain('UTC');
+    expect(within(table()).getByText(ROW.occurredAtUtc, { exact: false }).textContent).toContain('UTC');
   });
 
-  it('lets the UTC instant wrap in a phone card instead of running into the next field', () => {
-    render(<AuditTable rows={[ROW]} labels={labels} />);
-    const utc = screen.getByText(ROW.occurredAtUtc, { exact: false });
-    expect(utc).toHaveClass('[overflow-wrap:anywhere]');
-    expect(utc.closest('td')).toHaveClass('max-sm:whitespace-normal');
-  });
-
-  it('shows the payload as label/value pairs, and "None" when there is none', () => {
+  it('the table shows the payload as label/value pairs, and "None" when there is none', () => {
     render(<AuditTable rows={[ROW, { ...ROW, id: 'a-2', payloadEntries: [] }]} labels={labels} />);
-    const dt = screen.getByText('Outcome:');
+    const dt = within(table()).getByText('Outcome:');
     expect(dt.tagName).toBe('DT');
     expect(dt.nextElementSibling).toHaveTextContent('partially approved');
-    expect(screen.getByText(labels.none)).toBeInTheDocument();
+    expect(within(table()).getByText(labels.none)).toBeInTheDocument();
   });
 
   it('shows the empty state when nothing matches', () => {
     render(<AuditTable rows={[]} labels={labels} />);
     expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('list')).toBeNull();
     expect(screen.getByText(labels.emptyTitle)).toBeInTheDocument();
   });
 });
