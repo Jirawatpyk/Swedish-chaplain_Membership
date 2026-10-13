@@ -122,6 +122,10 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
     if (searchResetKey > 0) focusEventType();
   }, [searchResetKey]);
   const resetSearch = () => setSearchResetKey((k) => k + 1);
+  // Bumped only by a chip × or Clear, never by the field's own commit, so
+  // typing keeps its focus and its trailing space.
+  const [actorResetKey, setActorResetKey] = useState(0);
+  const resetActor = () => setActorResetKey((k) => k + 1);
 
   // Calendar days (UTC-anchored ISO dates), so no timezone shifts them.
   const day = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium', timeZone: 'UTC' });
@@ -153,11 +157,28 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
     chips.push({
       id: 'actorUserId',
       label: chip(t('actor'), currentActor.trim()),
-      clear: () => pushUrl({ actorUserId: null }),
+      clear: () => {
+        resetActor();
+        pushUrl({ actorUserId: null });
+      },
     });
   }
-  if (from || to) {
-    const value = from && to ? dayRange(from, to) : from ? t('dateFrom', { from: day(from) }) : t('dateTo', { to: day(to) });
+  // Built from the raw parameters, so a hand-typed bad date (which the range
+  // control ignores) still gets a chip and "Clear filters" and the invalid
+  // view can be left. A reversed range is shown as its two days, not as one.
+  const rawFrom = (searchParams.get('from') ?? '').trim();
+  const rawTo = (searchParams.get('to') ?? '').trim();
+  if (rawFrom || rawTo) {
+    const fromText = from ? day(from) : rawFrom;
+    const toText = to ? day(to) : rawTo;
+    const value =
+      from && to && from <= to
+        ? dayRange(from, to)
+        : rawFrom && rawTo
+          ? `${fromText} – ${toText}`
+          : rawFrom
+            ? t('dateFrom', { from: fromText })
+            : t('dateTo', { to: toText });
     chips.push({ id: 'dates', label: chip(t('date'), value), clear: () => pushUrl({ from: null, to: null }) });
   }
   const activeFilters = chips.map((c) => ({
@@ -171,6 +192,7 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
 
   const clearAll = () => {
     resetSearch();
+    resetActor();
     pushUrl({ eventType: null, actorUserId: null, targetRef: null, from: null, to: null });
   };
 
@@ -247,9 +269,9 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
             </Button>
           }
         >
-          {/* Remounts when the URL's actor changes (a chip ×, Clear), which drops a pending write. */}
+          {/* Remounts on a chip × or Clear, which drops a pending write. */}
           <ActorField
-            key={`actor-${currentActor}`}
+            key={`actor-${actorResetKey}`}
             label={t('actor')}
             initial={currentActor}
             onCommit={(v) => pushUrl({ actorUserId: v || null })}
@@ -271,22 +293,31 @@ function ActorField({
   readonly onCommit: (value: string) => void;
 }): React.JSX.Element {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const box = useRef<HTMLDivElement>(null);
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
     },
     [],
   );
+  // The URL moved to another actor (a chip ×, Clear, back/forward): show it.
+  // Its own commit (the trimmed text) leaves what was typed alone.
+  useEffect(() => {
+    const input = box.current?.querySelector('input');
+    if (input && input.value.trim() !== initial) input.value = initial;
+  }, [initial]);
   return (
-    <TextField
-      label={label}
-      defaultValue={initial}
-      autoComplete="off"
-      onChange={(e) => {
-        const value = e.target.value;
-        if (timer.current) clearTimeout(timer.current);
-        timer.current = setTimeout(() => onCommit(value.trim()), DEBOUNCE_MS);
-      }}
-    />
+    <div ref={box}>
+      <TextField
+        label={label}
+        defaultValue={initial}
+        autoComplete="off"
+        onChange={(e) => {
+          const value = e.target.value;
+          if (timer.current) clearTimeout(timer.current);
+          timer.current = setTimeout(() => onCommit(value.trim()), DEBOUNCE_MS);
+        }}
+      />
+    </div>
   );
 }

@@ -21,10 +21,9 @@ import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { DownloadIcon } from 'lucide-react';
-import { buttonClass, Card, Icon } from '@jirawatpyk/aura-react/server';
+import { Alert, buttonClass, Card, Icon } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { EmptyState } from '@/components/shell/empty-state';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
@@ -165,14 +164,18 @@ export default async function AuditLogPage({
         return t('invalidRange.body');
     }
   };
+  // Board `Admin-state-audit-invalid`: the filters and the message share the
+  // list card. The filter bar's chips and "Clear filters" are the way out (a
+  // retry would reload the same URL).
   const invalidFilterState = (field: AuditInvalidFilterField | null) => (
-    <>
-      <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} timeZone={tz} />
-      <DashboardErrorState
-        title={t('invalidRange.title')}
-        description={invalidFilterDescription(field)}
-      />
-    </>
+    <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
+        <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} timeZone={tz} />
+        <Alert tone="danger" role="alert" title={t('invalidRange.title')} data-testid="invalid-filter">
+          {invalidFilterDescription(field)}
+        </Alert>
+      </div>
+    </Card>
   );
   const invalidField = invalidAuditFilterField(filterParams, ALL_AUDIT_EVENT_TYPES);
   if (invalidField !== null) {
