@@ -85,8 +85,7 @@ export default async function Loading(): Promise<React.JSX.Element> {
           <div className="flex flex-col gap-1">
             <SkeletonBlock className="h-4 w-40" />
             <div className="flex gap-[var(--aura-space-2)]">
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-60 max-sm:h-11 max-sm:flex-1" />
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-24 max-sm:h-11" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-72 max-w-full max-sm:h-11 max-sm:flex-1" />
             </div>
           </div>
         </div>

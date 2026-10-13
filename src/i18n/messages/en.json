@@ -459,7 +459,6 @@
         "search": {
           "label": "Search by member number",
           "placeholder": "e.g. SCCM-0042",
-          "submit": "Search",
           "clear": "Clear search",
           "empty": "No erasure matches {ref}."
         },

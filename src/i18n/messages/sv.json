@@ -459,7 +459,6 @@
         "search": {
           "label": "Sök på medlemsnummer",
           "placeholder": "t.ex. SCCM-0042",
-          "submit": "Sök",
           "clear": "Rensa sökning",
           "empty": "Ingen radering matchar {ref}."
         },
