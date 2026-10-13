@@ -180,4 +180,18 @@ describe('<AuditFilters> on AURA', () => {
     expect(screen.getByText('5 audit events')).toBe(count);
     expect(screen.getByRole('searchbox', { name: f.target })).toHaveValue('');
   });
+
+  // R43: the AURA FilterSelect renders every <option> on the server, so the
+  // per-group sort must collate in the UI locale — the runtime default differs
+  // between the server and the browser (th-TH vs en) and broke hydration.
+  it('sorts the event types in the UI locale, not the runtime default', () => {
+    const spy = vi.spyOn(String.prototype, 'localeCompare');
+    try {
+      render(tree());
+      expect(spy).toHaveBeenCalled();
+      for (const call of spy.mock.calls) expect(call[1]).toBe('en');
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

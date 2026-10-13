@@ -67,4 +67,11 @@ describe('ErasureSearchForm', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(replace).toHaveBeenLastCalledWith('/admin/compliance/erasure-log?q=17', { scroll: false });
   });
+
+  // R43: the bar's region must not repeat the search's name, or a screen
+  // reader hears it twice and getByLabel finds two elements.
+  it('names the search once: the bar region keeps its own name', () => {
+    renderForm();
+    expect(screen.getAllByLabelText(/search by member number/i)).toHaveLength(1);
+  });
 });
