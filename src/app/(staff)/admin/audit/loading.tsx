@@ -25,27 +25,30 @@ export default async function Loading(): Promise<React.JSX.Element> {
           subtitle={t('subtitle')}
           actions={<SkeletonBlock className="h-9 w-32 max-sm:h-11" />}
         />
-        <Card flushBelow="sm" className="flex flex-col gap-[var(--aura-space-4)] max-sm:border-0 max-sm:p-0">
-          {/* The filter row — matches <AuditFilters />: the target search, Event type, Date, More filters, the count. */}
-          <div aria-hidden data-skeleton="filters" className="flex flex-wrap items-center gap-2">
-            <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1" />
-            <SkeletonBlock className="h-8 w-40" data-skeleton="filter-select" />
-            <SkeletonBlock className="h-8 w-28" data-skeleton="filter-select" />
-            <SkeletonBlock className="h-8 w-28" data-skeleton="filter-select" />
-            <SkeletonBlock className="ml-auto h-4 w-20" data-skeleton="result-count" />
+        <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+          {/* AURA wraps the children of a Card in its body, so the spacing lives on this wrapper. */}
+          <div className="flex flex-col gap-[var(--aura-space-4)]">
+            {/* The filter row — matches <AuditFilters />: the target search, Event type, Date, More filters, the count. */}
+            <div aria-hidden data-skeleton="filters" className="flex flex-wrap items-center gap-2">
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1" />
+              <SkeletonBlock className="h-8 w-40" data-skeleton="filter-select" />
+              <SkeletonBlock className="h-8 w-28" data-skeleton="filter-select" />
+              <SkeletonBlock className="h-8 w-28" data-skeleton="filter-select" />
+              <SkeletonBlock className="ml-auto h-4 w-20" data-skeleton="result-count" />
+            </div>
+            <AuditTableSkeleton
+              labels={{
+                caption: t('table.caption'),
+                time: t('table.time'),
+                event: t('table.event'),
+                actor: t('table.actor'),
+                target: t('table.target'),
+                summary: t('table.summary'),
+                payload: t('table.payload'),
+              }}
+            />
+            <SkeletonBlock aria-hidden className="h-4 w-72 max-w-full" />
           </div>
-          <AuditTableSkeleton
-            labels={{
-              caption: t('table.caption'),
-              time: t('table.time'),
-              event: t('table.event'),
-              actor: t('table.actor'),
-              target: t('table.target'),
-              summary: t('table.summary'),
-              payload: t('table.payload'),
-            }}
-          />
-          <SkeletonBlock aria-hidden className="h-4 w-72 max-w-full" />
         </Card>
       </TableContainer>
     </PageSkeletonShell>

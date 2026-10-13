@@ -356,51 +356,54 @@ export async function renderAuditListView({
           filters, the list (edge to edge) and the retention line; below 640px
           the card drops its frame and the rows become cards of their own. The
           count sits at the end of the filter row, in its live region. */}
-      <Card flushBelow="sm" className="flex flex-col gap-[var(--aura-space-4)] max-sm:border-0 max-sm:p-0">
-        <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} timeZone={tz} resultCount={rows.length} />
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+        {/* AURA wraps the children of a Card in its body, so the spacing lives on this wrapper. */}
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} timeZone={tz} resultCount={rows.length} />
 
-        <AuditTable
-          rows={rows}
-          labels={{
-            caption: t('table.caption'),
-            time: t('table.time'),
-            event: t('table.event'),
-            actor: t('table.actor'),
-            target: t('table.target'),
-            summary: t('table.summary'),
-            payload: t('table.payload'),
-            emptyTitle: t('table.emptyTitle'),
-            empty: t('table.empty'),
-            none: t('table.none'),
-            utcLabel: t('table.utcLabel'),
-          }}
-        />
+          <AuditTable
+            rows={rows}
+            labels={{
+              caption: t('table.caption'),
+              time: t('table.time'),
+              event: t('table.event'),
+              actor: t('table.actor'),
+              target: t('table.target'),
+              summary: t('table.summary'),
+              payload: t('table.payload'),
+              emptyTitle: t('table.emptyTitle'),
+              empty: t('table.empty'),
+              none: t('table.none'),
+              utcLabel: t('table.utcLabel'),
+            }}
+          />
 
-        {showFirst || prevHref || nextHref ? (
-          <nav aria-label={t('pagination.label')} className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex gap-2">
-              {showFirst ? (
-                <a href={firstHref} className={buttonClass({ variant: 'secondary' })}>
-                  {t('pagination.first')}
+          {showFirst || prevHref || nextHref ? (
+            <nav aria-label={t('pagination.label')} className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex gap-2">
+                {showFirst ? (
+                  <a href={firstHref} className={buttonClass({ variant: 'secondary' })}>
+                    {t('pagination.first')}
+                  </a>
+                ) : null}
+                {prevHref ? (
+                  <a href={prevHref} className={buttonClass({ variant: 'secondary' })}>
+                    {t('pagination.previous')}
+                  </a>
+                ) : null}
+              </div>
+              {nextHref ? (
+                <a href={nextHref} className={buttonClass({ variant: 'secondary' })}>
+                  {t('pagination.next')}
                 </a>
-              ) : null}
-              {prevHref ? (
-                <a href={prevHref} className={buttonClass({ variant: 'secondary' })}>
-                  {t('pagination.previous')}
-                </a>
-              ) : null}
-            </div>
-            {nextHref ? (
-              <a href={nextHref} className={buttonClass({ variant: 'secondary' })}>
-                {t('pagination.next')}
-              </a>
-            ) : (
-              <span aria-hidden />
-            )}
-          </nav>
-        ) : null}
+              ) : (
+                <span aria-hidden />
+              )}
+            </nav>
+          ) : null}
 
-        <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('retentionNote')}</p>
+          <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('retentionNote')}</p>
+        </div>
       </Card>
     </TableContainer>
   );
