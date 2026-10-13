@@ -661,7 +661,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 ### US10b — Audit log and erasure log (PR 21)
 
 - [ ] T1010 [US10] Spec clarifications (Session 2026-10-13, US10b start) and this task list.
-- [ ] T1011 [US10] The audit filters on AURA `FilterBar` in the filter pattern: Target record as the search, Event type as a grouped `FilterSelect`, Actor as a text field in the bar, From–To as one `FilterDateRange`, a chip per applied value. RED: each change replaces the URL with the same query as today and drops the cursor.
+- [ ] T1011 [US10] The audit filters on AURA `FilterBar` in the filter pattern: Target record as the search, Event type as a grouped `FilterSelect`, Actor as a text field in a "More filters" popover, From–To as one `FilterDateRange`, a chip per applied value. RED: each change replaces the URL with the same query as today and drops the cursor.
 - [ ] T1012 [US10] The audit table on AURA `Table` (cards on phones): the dual timestamp, the raw event and actor codes, the payload pairs, the empty state. RED: the caption, the UTC line and the payload pairs.
 - [ ] T1013 [US10] The audit page frame: header with Export CSV, the list card with the count in the bar and the retention note under the table, keyset pagination links, the invalid-filter and load-error states, `loading.tsx` on the AURA skeleton and `error.tsx` (`RouteErrorPanel`).
 - [ ] T1014 [US10] The erasure status filter on AURA link `Tabs` with counts. RED: the hrefs keep the search, the current tab is `aria-current="page"`, Overdue carries its warning icon.
