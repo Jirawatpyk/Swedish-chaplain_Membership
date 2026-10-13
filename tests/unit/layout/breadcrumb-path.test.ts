@@ -326,6 +326,10 @@ describe('buildBreadcrumbStaticLabels (real en.json breadcrumb copy)', () => {
     ]);
   });
 
+  it('/admin/audit renders "Audit log", not the raw slug (spec 122 US10b, board `Admin-audit`)', () => {
+    expect(labelsFor('/admin/audit')).toEqual(['Audit log']);
+  });
+
   it('a registered company name replaces "Details" on member sub-pages', () => {
     expect(
       labelsFor(`/admin/members/${MEMBER}/edit`, new Map([[MEMBER, 'Siam Nordic Trading Co., Ltd.']])),
