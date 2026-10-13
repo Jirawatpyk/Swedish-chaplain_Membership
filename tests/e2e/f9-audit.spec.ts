@@ -63,8 +63,14 @@ test.describe('F9 — audit-log viewer (US2) @f9', () => {
     await page.goto('/admin/audit');
 
     await expect(page.getByRole('heading', { name: 'Audit log', level: 1 })).toBeVisible();
-    // Read-only table present (FR-008/010) + export affordance (FR-012).
-    await expect(page.getByRole('table')).toBeVisible();
+    // Read-only list present (FR-008/010) + export affordance (FR-012). Spec
+    // 122 US10b: a table from 640px up, board cards below it.
+    const auditList = page
+      .getByRole('table', { name: 'Audit events, newest first' })
+      .or(page.getByRole('list', { name: 'Audit events, newest first' }))
+      // Both are in the DOM; CSS hides one per width.
+      .filter({ visible: true });
+    await expect(auditList).toBeVisible();
     await expect(page.getByRole('link', { name: /export csv/i })).toBeVisible();
 
     // Event-type filter (FR-009): pick the first real type (options show the
@@ -80,7 +86,7 @@ test.describe('F9 — audit-log viewer (US2) @f9', () => {
     // The filtered view re-renders without crashing — either a results table or
     // the empty-state copy (the chosen type may have no rows in this tenant).
     await expect(
-      page.getByRole('table').or(page.getByText(/no audit events match/i)),
+      auditList.or(page.getByText(/no audit events match/i)),
     ).toBeVisible();
   });
 

@@ -931,14 +931,20 @@ test.describe('@change-requests US6 — tenant switch, dashboard count, nav badg
     // 2. as SUPER_ADMIN: the viewer.
     await signInAsSuperAdmin(page);
     await page.goto('/admin/audit?eventType=member_change_approval_setting_changed');
-    const table = page.getByRole('table');
-    await expect(table).toBeVisible();
-    // header + at least one data row. `toContainText` on the table alone is
-    // satisfied by the filter chip echoing the event type, so an EMPTY result
-    // passed it.
-    const rows = table.getByRole('row');
-    expect(await rows.count()).toBeGreaterThanOrEqual(2);
-    await expect(rows.nth(1)).toContainText(en.audit.eventType.member_change_approval_setting_changed);
+    // Spec 122 US10b: a table from 640px up, board cards below it (one list
+    // item per event). Either way the first entry must carry the event —
+    // `toContainText` on the whole region alone is satisfied by the filter
+    // chip echoing the event type, so an EMPTY result passed it.
+    const caption = en.admin.audit.table.caption;
+    const table = page.getByRole('table', { name: caption });
+    const cards = page.getByRole('list', { name: caption });
+    // Both are in the DOM; CSS hides one per width.
+    await expect(table.or(cards).filter({ visible: true })).toBeVisible();
+    const entries = (await table.isVisible())
+      ? table.getByRole('row').filter({ hasNot: page.getByRole('columnheader') })
+      : cards.getByRole('listitem');
+    expect(await entries.count()).toBeGreaterThanOrEqual(1);
+    await expect(entries.first()).toContainText(en.audit.eventType.member_change_approval_setting_changed);
   });
 
   test('@a11y axe: the settings card at 320 px', async ({ page }, testInfo) => {
