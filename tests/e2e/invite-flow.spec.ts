@@ -18,8 +18,8 @@
  *   7. Assert wall-clock elapsed < 300 s (SC-008 generous budget).
  *
  * Idempotent: the dialog target email uses `Date.now()` so each run
- * creates a unique invitee. The pending row + invitation row stay in
- * the DB until cleaned up by the retention policy or a manual purge.
+ * creates a unique invitee, and `afterEach` revokes it (which deletes the
+ * pending row), so runs leave nothing behind.
  */
 import { expect, fillField, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
@@ -40,6 +40,22 @@ test.describe('invite-flow wall-clock (T119, SC-008)', () => {
 
   test.beforeAll(async () => {
     await clearE2ERateLimits();
+  });
+
+  // Every run used to leave its `invitee-<ms>@swecham.test` pending invite
+  // behind (24 had piled up on the dev DB by 2026-10-13). They sort to the top
+  // of /admin/users, so other specs met fake invites first: a /invite/i
+  // selector matched their "More actions for invitee-…" buttons, and
+  // destructive-confirm exercised Revoke instead of Disable. Revoke the one
+  // this run created, even when an assertion after the 201 failed.
+  let invitedUserId: string | null = null;
+  test.afterEach(async ({ page }) => {
+    if (!invitedUserId) return;
+    const res = await page.request.post(`/api/auth/users/${invitedUserId}/revoke-invite`, {
+      headers: { Origin: new URL(page.url()).origin },
+    });
+    invitedUserId = null;
+    expect(res.status(), 'revoking the invite this run created').toBe(200);
   });
 
   test('a super_admin invites a manager via the dialog and completes under 300 s', async ({
@@ -87,6 +103,7 @@ test.describe('invite-flow wall-clock (T119, SC-008)', () => {
     ]);
 
     expect(inviteResponse.status()).toBe(201);
+    invitedUserId = ((await inviteResponse.json()) as { user: { id: string } }).user.id;
 
     // Dialog closes on success
     await expect(dialog).not.toBeVisible({ timeout: 5_000 });
