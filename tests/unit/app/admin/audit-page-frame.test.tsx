@@ -203,4 +203,10 @@ describe('AuditLogPage on AURA', () => {
     expect(older).toContain('href="/admin/audit?cursor=c-next"');
     expect(older).toContain('aura-btn');
   });
+
+  it('gives Export CSV and the pager links 44px boxes on phones', async () => {
+    const html = await renderPage();
+    expect(tagFor(html, en.admin.audit.export)).toContain('aura-btn--touch');
+    expect(tagFor(html, en.admin.audit.pagination.next)).toContain('aura-btn--touch');
+  });
 });

@@ -122,4 +122,9 @@ describe('<AuditFilters> on AURA', () => {
     render(tree(5));
     expect(screen.getByText('5 audit events')).toBeInTheDocument();
   });
+
+  it('gives "More filters" a 44px box on phones', () => {
+    render(tree());
+    expect(screen.getByRole('button', { name: new RegExp(`^${f.moreFilters}`) })).toHaveClass('aura-btn--touch');
+  });
 });
