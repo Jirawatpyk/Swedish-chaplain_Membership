@@ -433,7 +433,9 @@
         "empty": "No audit events match these filters.",
         "none": "None",
         "emptyTitle": "No audit events",
-        "utcLabel": "UTC"
+        "utcLabel": "UTC",
+        "cardTarget": "Target: {target}",
+        "cardBy": "by {actor}"
       },
       "pagination": {
         "label": "Audit log pages",

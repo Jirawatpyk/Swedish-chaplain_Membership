@@ -54,6 +54,10 @@ export interface AuditTableLabels {
   readonly none: string;
   /** sr-only prefix clarifying the second timestamp line is UTC (Gregorian). */
   readonly utcLabel: string;
+  /** Phone card line, with `{target}`: "Target: {target}". */
+  readonly cardTarget: string;
+  /** Phone card line, with `{actor}`: "by {actor}". */
+  readonly cardBy: string;
 }
 
 export function AuditTable({
@@ -72,12 +76,15 @@ export function AuditTable({
   // No wrapper div: the shared <Table> primitive already provides the
   // overflow-x-auto scroll region, and the page's <Card> provides the border +
   // radius — matching the Members/Plans/Invoices house style (no double frame).
-  // Spec 122 US10b (T1012): AURA's static Table, stacking into cards below
-  // `sm` with the event as each card's title (board `Admin-audit-mobile`).
-  // The cells are today's. A client file: AURA's Table is not in `/server`.
+  // Spec 122 US10b (T1012): AURA's static Table from 640px up, with today's
+  // cells. Below 640px, board `Admin-audit-mobile`'s compact cards instead
+  // (maintainer, parity comments 13 Oct); the raw codes stay in the table.
+  // A client file: AURA's Table is not in `/server`.
   const code = 'block font-mono aura-text-caption text-[var(--aura-fg-secondary)]';
   return (
-    <Table caption={labels.caption} captionHidden stackBelow="sm" stackStyle="cards" bleed>
+    <>
+    <div className="max-sm:hidden">
+    <Table caption={labels.caption} captionHidden bleed>
       <THead>
         <Tr>
           <Th>{labels.time}</Th>
@@ -91,17 +98,16 @@ export function AuditTable({
       <TBody>
         {rows.map((r) => (
           <Tr key={r.id}>
-            <Td className="whitespace-nowrap max-sm:whitespace-normal">
+            <Td className="whitespace-nowrap">
               <time dateTime={r.occurredAtUtc} className="block font-medium">
                 {r.occurredAtLocal}
               </time>
-              {/* In a phone card the time shares a row with Actor; the instant may break. */}
-              <span className={`${code} [overflow-wrap:anywhere]`}>
+              <span className={code}>
                 <span className="sr-only">{labels.utcLabel}: </span>
                 {r.occurredAtUtc}
               </span>
             </Td>
-            <Td card="title">
+            <Td>
               <span className="block font-medium">{r.eventTypeLabel}</span>
               <span className={code}>{r.eventType}</span>
             </Td>
@@ -140,5 +146,33 @@ export function AuditTable({
         ))}
       </TBody>
     </Table>
+    </div>
+    <ul aria-label={labels.caption} className="flex flex-col gap-[var(--aura-space-3)] sm:hidden">
+      {rows.map((r) => {
+        const target = r.targetUserId === null ? null : (r.targetLabel ?? r.targetUserId);
+        const by = [
+          labels.cardBy.replace('{actor}', r.actorLabel),
+          ...r.payloadEntries.map((e) => `${e.label}: ${e.value}`),
+        ].join(' · ');
+        return (
+          <li
+            key={r.id}
+            className="flex flex-col gap-[var(--aura-space-1)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-[var(--aura-space-4)] break-words"
+          >
+            <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
+              <time dateTime={r.occurredAtUtc}>{r.occurredAtLocal}</time>
+              {' · '}
+              <span className="sr-only">{labels.utcLabel}: </span>
+              {r.occurredAtUtc.slice(11, 16)} {labels.utcLabel}
+            </p>
+            <p className="font-semibold">{r.eventTypeLabel}</p>
+            {target !== null ? <p>{labels.cardTarget.replace('{target}', target)}</p> : null}
+            <p>{r.summary}</p>
+            <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{by}</p>
+          </li>
+        );
+      })}
+    </ul>
+    </>
   );
 }

@@ -378,6 +378,9 @@ export async function renderAuditListView({
               empty: t('table.empty'),
               none: t('table.none'),
               utcLabel: t('table.utcLabel'),
+              // The card fills these per row; the placeholder passes through.
+              cardTarget: t('table.cardTarget', { target: '{target}' }),
+              cardBy: t('table.cardBy', { actor: '{actor}' }),
             }}
           />
 

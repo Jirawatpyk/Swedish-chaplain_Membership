@@ -433,7 +433,9 @@
         "empty": "Inga revisionshändelser matchar dessa filter.",
         "none": "Ingen",
         "emptyTitle": "Inga revisionshändelser",
-        "utcLabel": "UTC"
+        "utcLabel": "UTC",
+        "cardTarget": "Mål: {target}",
+        "cardBy": "av {actor}"
       },
       "pagination": {
         "label": "Granskningsloggens sidor",

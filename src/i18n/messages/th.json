@@ -433,7 +433,9 @@
         "empty": "ไม่มีเหตุการณ์ที่ตรงกับตัวกรองนี้",
         "none": "ไม่มี",
         "emptyTitle": "ไม่มีเหตุการณ์การตรวจสอบ",
-        "utcLabel": "UTC"
+        "utcLabel": "UTC",
+        "cardTarget": "เป้าหมาย: {target}",
+        "cardBy": "โดย {actor}"
       },
       "pagination": {
         "label": "หน้าของบันทึกการตรวจสอบ",
