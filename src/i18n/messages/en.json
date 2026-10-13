@@ -380,7 +380,7 @@
       "export": "Export CSV",
       "resultCount": "{count, plural, =0 {No audit events} one {# audit event} other {# audit events}}",
       "loadFailed": "Couldn't load the audit log. Please try again.",
-      "retentionNote": "Audit records are kept for 5 years; tax-document events for 10 years.",
+      "retentionNote": "Audit records are kept for at least 5 years; tax-document and payment records for at least 10 years.",
       "invalidRange": {
         "title": "Invalid filter",
         "body": "Check the date range and filters, then try again.",
@@ -399,9 +399,6 @@
         "eventTypeAll": "All event types",
         "actor": "Acting user",
         "target": "Target record",
-        "from": "From",
-        "to": "To",
-        "reset": "Reset",
         "date": "Date",
         "chip": "{label}: {value}",
         "clear": "Clear filters",

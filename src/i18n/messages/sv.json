@@ -380,7 +380,7 @@
       "export": "Exportera CSV",
       "resultCount": "{count, plural, =0 {Inga revisionshändelser} one {# revisionshändelse} other {# revisionshändelser}}",
       "loadFailed": "Det gick inte att ladda granskningsloggen. Försök igen.",
-      "retentionNote": "Granskningsposter sparas i 5 år; händelser för skattedokument i 10 år.",
+      "retentionNote": "Granskningsposter sparas i minst 5 år; poster som rör skattedokument och betalningar i minst 10 år.",
       "invalidRange": {
         "title": "Ogiltigt filter",
         "body": "Kontrollera datumintervallet och filtren och försök igen.",
@@ -399,9 +399,6 @@
         "eventTypeAll": "Alla händelsetyper",
         "actor": "Utförande användare",
         "target": "Målpost",
-        "from": "Från",
-        "to": "Till",
-        "reset": "Återställ",
         "date": "Datum",
         "chip": "{label}: {value}",
         "clear": "Rensa filter",
