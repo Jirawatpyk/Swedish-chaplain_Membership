@@ -12,6 +12,8 @@
  * like every other list's — the AURA `FilterBar` search, its name read out
  * but not shown above the box, the hint inside it, its own × to clear, and no
  * Search button. It searches 300 ms after typing stops and at once on Enter.
+ * The bar's region keeps AURA's own name ("Filters"), so the search's name is
+ * read once (R43).
  */
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -40,7 +42,6 @@ export function ErasureSearchForm({
 
   return (
     <FilterBar
-      label={t('search.label')}
       search={q}
       onSearchChange={(value) => router.replace(searchHref(status, value.trim()), { scroll: false })}
       searchLabel={t('search.label')}

@@ -83,9 +83,15 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
     const cat = auditEventCategory(et);
     (grouped.get(cat) ?? grouped.set(cat, []).get(cat)!).push(et);
   }
+  // Collate in the UI locale: the FilterSelect renders every option on the
+  // server, and the runtime default (th-TH on a server, en in a browser)
+  // would order them differently on each side and break hydration (R43).
   for (const list of grouped.values()) {
     list.sort((a, b) =>
-      resolveEventLabel(tEvents, a, tEventsFallback).localeCompare(resolveEventLabel(tEvents, b, tEventsFallback)),
+      resolveEventLabel(tEvents, a, tEventsFallback).localeCompare(
+        resolveEventLabel(tEvents, b, tEventsFallback),
+        locale,
+      ),
     );
   }
 
