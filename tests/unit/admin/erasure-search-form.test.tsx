@@ -59,8 +59,8 @@ describe('ErasureSearchForm', () => {
   });
 
   // Spec 122 US10b (T1015; board `Admin-erasure-log`): an AURA field with the
-  // board's visible label, and an AURA submit button.
-  it('is an AURA field with a visible label and an AURA Search button', () => {
+  // board's visible label (no Search button, maintainer 13 Oct).
+  it('is an AURA field with a visible label', () => {
     const { container } = renderForm();
     const input = screen.getByLabelText(/search by member number/i);
     expect(input.closest('.aura-field')).not.toBeNull();
