@@ -157,6 +157,12 @@ test.describe('T045 RBAC v2 — plain-admin persona (ON leg) @a11y', () => {
     // never render it. Scan an admin-reachable surface to prove PR 3 introduced
     // no a11y regression on the pages this persona DOES see.
     await page.goto('/admin/invoices', { waitUntil: 'domcontentloaded' });
+    // Scan the hydrated page, as invoice-admin-a11y does. Before hydration the
+    // AURA DataTable's server HTML has the phone card's gridcell (tabindex 0)
+    // AND the invoice-number link inside it focusable, so axe reports the link
+    // as a partly covered target (target-size / target-offset, 25 nodes); once
+    // AURA hydrates it gives the link tabindex -1 and the scan is clean.
+    await page.waitForLoadState('networkidle');
     const results = await new AxeBuilder({ page }).withTags([...AXE_TAGS]).analyze();
     expect(results.violations).toEqual([]);
   });
