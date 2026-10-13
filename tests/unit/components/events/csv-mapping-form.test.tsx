@@ -310,6 +310,16 @@ describe('CsvMappingForm — FR-026 column remap (#10a)', () => {
 
     await uploadRemapCsv(user);
 
+    // The preview panel moves focus to its heading two animation frames after
+    // it mounts. On a slow runner that lands after the click below has opened
+    // a Select, and the Select closes when it loses focus, so the listbox was
+    // gone ("Unable to find role=listbox", CI 2026-10-13). Interact only once
+    // the focus move has happened. Reproduced locally by delaying
+    // requestAnimationFrame 50-150ms.
+    await waitFor(() =>
+      expect(document.getElementById('csv-preview-rows')).toHaveFocus(),
+    );
+
     // Spec 122 US9b-2 (T933): each remap field is an AURA Select — a
     // combobox named by the canonical field that opens a listbox of the
     // detected (non-canonical) headers.
