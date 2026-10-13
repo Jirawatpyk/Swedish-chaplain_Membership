@@ -98,6 +98,14 @@ describe('EvidenceCard', () => {
       renderCard(baseRow({ taxRedactions: [{ documentKind: 'invoice', occurredAt: new Date('2026-06-19T01:00:00Z') }] }));
       expect(screen.getByText(e.documentKind.invoice).closest('.aura-badge')).not.toBeNull();
     });
+
+    it('lays the evidence out as the board does: a bold title, three-up fields on wide screens, ruled sections', () => {
+      const { container } = renderCard(baseRow({ halfRun: true, completedAt: null }));
+      expect(container.querySelector('summary h2')).toHaveClass('font-semibold');
+      const request = screen.getByRole('region', { name: e.sections.requested });
+      expect(request.querySelector('dl')).toHaveClass('lg:grid-cols-3');
+      expect(screen.getByRole('region', { name: e.sections.completion }).querySelector('dl')).toHaveClass('lg:grid-cols-3');
+      expect(request.parentElement).toHaveClass('[&>section+section]:border-t');
+    });
   });
 });
-
