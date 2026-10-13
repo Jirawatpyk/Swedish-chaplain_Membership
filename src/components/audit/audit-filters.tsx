@@ -190,9 +190,13 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
     },
   }));
 
+  // No remount here: the bar's own "Clear filters" already drops its search
+  // draft and pending debounce, and a remount would recreate the live count
+  // so the new count went unannounced. Focus moves to Event type before the
+  // Clear button unmounts itself.
   const clearAll = () => {
-    resetSearch();
     resetActor();
+    focusEventType();
     pushUrl({ eventType: null, actorUserId: null, targetRef: null, from: null, to: null });
   };
 
