@@ -54,7 +54,7 @@ export function ErasureSearchForm({
         touchHeight
         className="min-w-0 flex-1 sm:w-60 sm:flex-none"
       />
-      <Button type="submit" variant="secondary" icon="search" touchHeight>
+      <Button type="submit" variant="secondary" touchHeight>
         {t('search.submit')}
       </Button>
       {q !== '' ? (
