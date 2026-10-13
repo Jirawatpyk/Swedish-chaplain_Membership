@@ -188,8 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the audit log keeps the legacy kit until US10', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/audit/loading.tsx')).toEqual([]);
+    it('control: the settings hub keeps the legacy kit until US10c', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/loading.tsx')).toEqual([]);
     });
   });
 
@@ -448,8 +448,34 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the audit log keeps the legacy kit until US10b', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/audit/page.tsx')).toEqual([]);
+    it('control: the settings hub keeps the legacy kit until US10c', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/page.tsx')).toEqual([]);
+    });
+  });
+
+  describe('the US10b audit log and erasure log are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/audit/page.tsx',
+      'src/app/(staff)/admin/audit/loading.tsx',
+      'src/app/(staff)/admin/audit/error.tsx',
+      'src/components/audit/audit-filters.tsx',
+      'src/components/audit/audit-table.tsx',
+      'src/components/audit/audit-table-skeleton.tsx',
+      'src/app/(staff)/admin/compliance/page.tsx',
+      'src/app/(staff)/admin/compliance/erasure-log/page.tsx',
+      'src/app/(staff)/admin/compliance/erasure-log/loading.tsx',
+      'src/app/(staff)/admin/compliance/erasure-log/error.tsx',
+      'src/app/(staff)/admin/compliance/erasure-log/_components/evidence-card.tsx',
+      'src/app/(staff)/admin/compliance/erasure-log/_components/erasure-filter-tabs.tsx',
+      'src/app/(staff)/admin/compliance/erasure-log/_components/erasure-search-form.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the account page keeps the legacy kit until US10c', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/account/page.tsx')).toEqual([]);
     });
   });
 
