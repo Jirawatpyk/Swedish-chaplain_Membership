@@ -495,8 +495,8 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The invalid-filter state follows board `Admin-state-audit-invalid`: the filters and a danger alert (same title and field-naming text, `role="alert"`) share the list card, and the "Try again" button is gone because it reloaded the same URL.
   - A from-after-to range shows its two days rather than one reversed range.
   - The erasure "Clear search" link is 44px on phones, and the erasure loading skeleton matches the 44px field and the three-up grid.
-- **UX review, not done here:** after "Clear filters" the filter bar remounts, so its live count is not announced (L4). AURA's FilterBar has no way to reset only its search draft; this goes to the AURA handoff list.
-- **AURA gaps (handoff):** in 5.31 the erasure status `Tabs` links and the FilterBar's `FilterSelect` / `FilterDateRange` are 36px with a mouse; on a touch screen they already measure 44px. The load-error card's "Try again" (shared `DashboardErrorState`, not in this PR) is 32px on phones.
+  - "Clear filters" no longer remounts the filter bar, so its live count stays mounted and announces the new count (L4). AURA's own Clear button already drops the search draft and its pending debounce.
+- **AURA gaps (handoff #143):** in 5.31 the erasure status `Tabs` links and the FilterBar's `FilterSelect` / `FilterDateRange` are 36px with a mouse; on a touch screen they already measure 44px. The load-error card's "Try again" (shared `DashboardErrorState`, not in this PR) is 32px on phones.
 
 ## User Scenarios & Testing *(mandatory)*
 
