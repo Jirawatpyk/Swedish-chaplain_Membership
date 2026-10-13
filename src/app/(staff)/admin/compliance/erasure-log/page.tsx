@@ -39,7 +39,7 @@
 import type { Metadata } from 'next';
 import { getTranslations, getLocale } from 'next-intl/server';
 import { env } from '@/lib/env';
-import { Card, CardContent } from '@/components/ui/card';
+import { Alert, Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
@@ -174,39 +174,37 @@ export default async function ErasureLogPage({
     <TableContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {/* Spec 122 US10b (T1017; boards `Admin-erasure-log`, `Admin-state-erasure-breach`):
+          the status tabs and the member-number search share a row on a wide
+          screen, the breach banner and the all-clear notice are AURA alerts. */}
+      <div className="flex flex-col gap-[var(--aura-space-3)] sm:flex-row sm:items-end sm:justify-between">
         <ErasureFilterTabs active={status} summary={result.summary} q={q} />
         <ErasureSearchForm status={status} q={q} />
       </div>
 
       {topBannerPresent ? (
-        <div
-          role="alert"
-          className="rounded-md border border-destructive/40 bg-destructive-surface p-3 text-sm font-medium text-destructive"
-        >
+        <Alert tone="danger" role="alert">
           {t('breachAlert', { count: result.summary.overdue })}
-        </div>
+        </Alert>
       ) : showAllClear ? (
-        <div className="rounded-md border border-success/40 bg-success-surface p-3 text-sm text-success">
+        <Alert tone="success" role="none">
           {t('allClear')}
-        </div>
+        </Alert>
       ) : null}
 
       {result.capped ? (
-        <p className="text-sm text-muted-foreground">{t('capNote', { cap: DEFAULT_DISPLAY_CAP })}</p>
+        <p className="text-sm text-[var(--aura-fg-secondary)]">{t('capNote', { cap: DEFAULT_DISPLAY_CAP })}</p>
       ) : null}
 
       {result.rows.length === 0 ? (
         <Card>
-          <CardContent>
-            <EmptyState
-              icon={ShieldCheckIcon}
-              title={emptyStateTitle(status, q, memberPrefix, t)}
-              bordered={false}
-              data-testid="erasure-log-empty"
-              {...(unfiltered ? { description: t('empty.body') } : {})}
-            />
-          </CardContent>
+          <EmptyState
+            icon={ShieldCheckIcon}
+            title={emptyStateTitle(status, q, memberPrefix, t)}
+            bordered={false}
+            data-testid="erasure-log-empty"
+            {...(unfiltered ? { description: t('empty.body') } : {})}
+          />
         </Card>
       ) : (
         <ul className="flex flex-col gap-[var(--page-section-gap)]">
