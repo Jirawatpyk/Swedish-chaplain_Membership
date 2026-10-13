@@ -120,6 +120,11 @@ import Link from 'next/link';
 import { ArrowLeftIcon } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
+import { renderAuditListView } from '@/app/(staff)/admin/audit/page';
+import { AuditFilters } from '@/components/audit/audit-filters';
+import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
+import { renderErasureLogView } from '@/app/(staff)/admin/compliance/erasure-log/page';
+import type { GroupedEvidence } from '@/modules/insights';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -448,6 +453,11 @@ const LOADING_ROUTES = {
       (await import('@/app/(staff)/admin/settings/integrations/eventcreate/loading')).default(),
   },
   users: { path: '/admin/users', load: async () => (await import('@/app/(staff)/admin/users/loading')).default() },
+  audit: { path: '/admin/audit', load: async () => (await import('@/app/(staff)/admin/audit/loading')).default() },
+  'erasure-log': {
+    path: '/admin/compliance/erasure-log',
+    load: async () => (await import('@/app/(staff)/admin/compliance/erasure-log/loading')).default(),
+  },
   'invoice-settings': {
     path: '/admin/settings/invoicing',
     load: async () => (await import('@/app/(staff)/admin/settings/invoicing/loading')).default(),
@@ -1666,6 +1676,135 @@ export default async function AuraAdminPreviewPage({
         <MembersApiStub rows={USER_INVITE_MEMBERS} />
         {dialog === 'change-role-super' ? <PickRadioInDialog value="super_admin" /> : null}
         {trigger ? <OpenFirstMatchingButton {...trigger}>{page}</OpenFirstMatchingButton> : page}
+      </StaffFrame>
+    );
+  }
+
+  // 122 US10b (T1018) — the audit log (boards Admin-audit, -mobile,
+  // Admin-state-audit-invalid): default | empty (a filter with no match) |
+  // invalid (a From after To).
+  if (view === 'audit') {
+    const t = await getTranslations('admin.audit');
+    const tz = 'Asia/Bangkok';
+    const at = (iso: string) =>
+      new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: tz }).format(new Date(iso));
+    const row = (
+      id: string,
+      iso: string,
+      eventTypeLabel: string,
+      eventType: string,
+      actorLabel: string,
+      actorUserId: string,
+      targetLabel: string | null,
+      summary: string,
+      payloadEntries: { label: string; value: string }[],
+    ) => ({
+      id,
+      occurredAtUtc: iso,
+      occurredAtLocal: at(iso),
+      eventTypeLabel,
+      eventType,
+      actorLabel,
+      actorUserId,
+      targetLabel,
+      targetUserId: targetLabel === null ? null : `t-${id}`,
+      summary,
+      payloadEntries,
+    });
+    const rows =
+      state === 'empty' || state === 'invalid'
+        ? []
+        : [
+            row('a1', '2026-09-24T03:18:00.000Z', 'Member change request decided', 'member_change_request_decided', 'Johan Strand', '8b21…77c0', 'Midsommar Hospitality Co., Ltd.', 'Approved 2 fields, rejected 1', [{ label: 'Outcome', value: 'partially approved' }]),
+            row('a2', '2026-09-24T02:05:00.000Z', 'Invoice paid', 'invoice_paid', 'Johan Strand', '8b21…77c0', 'SC-2026-000131', 'Bank transfer · 10,700.00 THB', [{ label: 'Method', value: 'bank_transfer' }, { label: 'Receipt', value: 'RC-2026-000052' }]),
+            row('a3', '2026-09-23T10:30:00.000Z', 'Permission denied', 'permission_denied', 'Nok Suwan', '1d4e…09b3', null, 'Opened /admin/invoices', [{ label: 'Permission', value: 'invoicing.read' }, { label: 'Role', value: 'marketing' }]),
+            row('a4', '2026-09-23T01:00:00.000Z', 'Renewal reminder sent', 'renewal_reminder_sent', 'System', 'System', 'Scandia Health Partners Ltd.', 't-30.email', [{ label: 'Channel', value: 'email' }]),
+            row('a5', '2026-09-21T02:30:00.000Z', 'Member change approval setting changed', 'member_change_approval_setting_changed', 'Malin Berg', '3f9c…a1e2', null, 'Approval switched on', [{ label: 'Previous', value: 'false' }, { label: 'Next', value: 'true' }]),
+          ];
+    const eventTypes = rows.map((r) => r.eventType).concat(['invoice_issued', 'user_signed_in']);
+    if (state === 'invalid') {
+      return (
+        <StaffFrame path="/admin/audit">
+          <TableContainer>
+            <PageHeader title={t('title')} subtitle={t('subtitle')} />
+            <AuditFilters eventTypeOptions={eventTypes} timeZone={tz} />
+            <DashboardErrorState title={t('invalidRange.title')} description={t('invalidRange.field.range')} />
+          </TableContainer>
+        </StaffFrame>
+      );
+    }
+    return (
+      <StaffFrame path="/admin/audit">
+        {await renderAuditListView({
+          rows,
+          timeZone: tz,
+          exportHref: '/api/admin/audit/export.csv',
+          links: { firstHref: '/admin/audit', showFirst: false, prevHref: null, nextHref: null },
+        })}
+      </StaffFrame>
+    );
+  }
+
+  // 122 US10b (T1018) — the erasure evidence log (boards Admin-erasure-log,
+  // -mobile, Admin-state-erasure-breach): default (one in progress, one
+  // complete) | breach (one overdue) | empty | capped.
+  if (view === 'erasure-log') {
+    const now = new Date();
+    const daysAgo = (n: number) => new Date(now.getTime() - n * DAY);
+    const evidence = (over: Partial<GroupedEvidence>): GroupedEvidence => ({
+      memberId: 'm-19',
+      memberNumber: 19,
+      erasedAt: daysAgo(12),
+      requestedAt: daysAgo(12),
+      reason: 'Company dissolved — former director\u2019s request (PDPA §33)',
+      identityVerified: true,
+      verificationMethod: 'Company affidavit + ID copy',
+      note: null,
+      completedAt: null,
+      sessionsRevokedTotal: 2,
+      invitationsRevokedCount: 0,
+      reDrive: false,
+      userErasedProofs: [],
+      taxRedactions: [],
+      subprocessorOutcome: null,
+      halfRun: true,
+      isOverdue: false,
+      ...over,
+    });
+    const complete = evidence({
+      memberId: 'm-7',
+      memberNumber: 7,
+      erasedAt: daysAgo(100),
+      requestedAt: daysAgo(100),
+      completedAt: daysAgo(100),
+      halfRun: false,
+      userErasedProofs: [{ occurredAt: daysAgo(100), credentialErased: true }],
+      taxRedactions: [{ documentKind: 'invoice', occurredAt: daysAgo(100) }],
+      subprocessorOutcome: { resendOutcome: 'ok', contactsRemoved: 1, contactsAlreadyAbsent: 0, contactsFailed: 0 },
+    });
+    const rows =
+      state === 'empty'
+        ? []
+        : state === 'breach'
+          ? [evidence({ erasedAt: daysAgo(34), requestedAt: daysAgo(34), isOverdue: true })]
+          : [evidence({}), complete];
+    const summary = {
+      total: rows.length,
+      overdue: rows.filter((r) => r.isOverdue).length,
+      inProgress: rows.filter((r) => r.halfRun).length,
+      complete: rows.filter((r) => !r.halfRun).length,
+    };
+    const fmt = new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' });
+    return (
+      <StaffFrame path="/admin/compliance/erasure-log">
+        {await renderErasureLogView({
+          status: 'all',
+          q: '',
+          result: { rows, summary, capped: state === 'capped', loadedCount: rows.length },
+          memberPrefix: 'SCCM',
+          fmt,
+          now,
+        })}
       </StaffFrame>
     );
   }
