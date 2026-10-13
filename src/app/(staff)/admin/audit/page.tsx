@@ -31,7 +31,7 @@ import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import { ShieldAlertIcon } from 'lucide-react';
 import { AuditFilters } from '@/components/audit/audit-filters';
 import { AuditTable, type AuditTableRow } from '@/components/audit/audit-table';
-import { buildAuditPaginationLinks } from './_lib/pagination-links';
+import { buildAuditPaginationLinks, type AuditPaginationLinks } from './_lib/pagination-links';
 import {
   invalidAuditFilterField,
   invalidRangeField,
@@ -253,22 +253,8 @@ export default async function AuditLogPage({
   const exportQuery = exportParams.toString();
   const exportHref = `/api/admin/audit/export.csv${exportQuery ? `?${exportQuery}` : ''}`;
 
-  const header = (
-    <PageHeader
-      title={t('title')}
-      subtitle={t('subtitle')}
-      actions={
-        result.ok ? (
-          <a href={exportHref} download className={buttonClass({ variant: 'secondary' })}>
-            <Icon name={<DownloadIcon />} size={16} />
-            {t('export')}
-          </a>
-        ) : undefined
-      }
-    />
-  );
-
   if (!result.ok) {
+    const header = <PageHeader title={t('title')} subtitle={t('subtitle')} />;
     return (
       <TableContainer>
         {header}
@@ -324,6 +310,44 @@ export default async function AuditLogPage({
     nextCursor: result.value.nextCursor,
   });
 
+  return renderAuditListView({
+    rows,
+    timeZone: tz,
+    exportHref,
+    links: { firstHref, showFirst, prevHref, nextHref },
+  });
+}
+
+/**
+ * The loaded audit page (header with Export CSV, the list card), shared with
+ * the AURA preview harness (spec 122 US10b, T1018) so it renders this markup
+ * with fixture rows.
+ */
+export async function renderAuditListView({
+  rows,
+  timeZone,
+  exportHref,
+  links: { firstHref, showFirst, prevHref, nextHref },
+}: {
+  readonly rows: readonly AuditTableRow[];
+  readonly timeZone: string;
+  readonly exportHref: string;
+  readonly links: AuditPaginationLinks;
+}): Promise<React.JSX.Element> {
+  const t = await getTranslations('admin.audit');
+  const tz = timeZone;
+  const header = (
+    <PageHeader
+      title={t('title')}
+      subtitle={t('subtitle')}
+      actions={
+        <a href={exportHref} download className={buttonClass({ variant: 'secondary' })}>
+          <Icon name={<DownloadIcon />} size={16} />
+          {t('export')}
+        </a>
+      }
+    />
+  );
   return (
     <TableContainer>
       {header}

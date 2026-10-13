@@ -130,7 +130,6 @@ export default async function ErasureLogPage({
   await requirePagePermission('members.erasure_log_read');
 
   const params = await searchParams;
-  const t = await getTranslations('admin.compliance.erasureLog');
   const locale = await getLocale();
   const tenant = resolveTenantFromRequest();
   const status = parseStatus(str(params.status));
@@ -158,9 +157,31 @@ export default async function ErasureLogPage({
     timeZone: env.tenant.timezone, // canonical tenant TZ (matches the F9 audit page); closes the latent multi-tenant gap
   });
 
-  // Breach / all-clear banners are ONLY meaningful on the unfiltered, unsearched
-  // 'all' view — a filtered/searched subset can look "all clear" or "all overdue"
-  // by construction of the filter itself, which would mislead the DPO.
+  return renderErasureLogView({ status, q, result, memberPrefix, fmt: dateFmt, now });
+}
+
+/**
+ * The loaded erasure log (header, status tabs + search, the banners, the
+ * evidence cards or the empty state), shared with the AURA preview harness
+ * (spec 122 US10b, T1018) so it renders this markup with fixture rows.
+ */
+export async function renderErasureLogView({
+  status,
+  q,
+  result,
+  memberPrefix,
+  fmt,
+  now,
+}: {
+  readonly status: ErasureStatusFilter;
+  readonly q: string;
+  readonly result: Awaited<ReturnType<typeof getErasureEvidenceLog>>;
+  readonly memberPrefix: string;
+  readonly fmt: Intl.DateTimeFormat;
+  readonly now: Date;
+}): Promise<React.JSX.Element> {
+  const t = await getTranslations('admin.compliance.erasureLog');
+  const dateFmt = fmt;
   const unfiltered = status === 'all' && q === '';
   const topBannerPresent = unfiltered && result.summary.overdue > 0;
   // `!result.capped`: a capped read only shows the newest `displayCap` rows, so
