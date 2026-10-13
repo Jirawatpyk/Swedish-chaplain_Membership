@@ -380,6 +380,7 @@
       "export": "Exportera CSV",
       "resultCount": "{count, plural, =0 {Inga revisionshändelser} one {# revisionshändelse} other {# revisionshändelser}}",
       "loadFailed": "Det gick inte att ladda granskningsloggen. Försök igen.",
+      "retentionNote": "Granskningsposter sparas i minst 5 år; poster som rör skattedokument och betalningar i minst 10 år.",
       "invalidRange": {
         "title": "Ogiltigt filter",
         "body": "Kontrollera datumintervallet och filtren och försök igen.",
@@ -398,9 +399,18 @@
         "eventTypeAll": "Alla händelsetyper",
         "actor": "Utförande användare",
         "target": "Målpost",
-        "from": "Från",
-        "to": "Till",
-        "reset": "Återställ",
+        "date": "Datum",
+        "chip": "{label}: {value}",
+        "clear": "Rensa filter",
+        "removeChip": "Ta bort filter: {label}",
+        "dateFrom": "från {from}",
+        "dateTo": "till och med {to}",
+        "moreFilters": "Fler filter",
+        "presets": {
+          "last7": "Senaste 7 dagarna",
+          "last30": "Senaste 30 dagarna",
+          "thisMonth": "Den här månaden"
+        },
         "groups": {
           "dashboard": "Instrumentpanel & granskning",
           "authentication": "Autentisering",
@@ -423,7 +433,9 @@
         "empty": "Inga revisionshändelser matchar dessa filter.",
         "none": "Ingen",
         "emptyTitle": "Inga revisionshändelser",
-        "utcLabel": "UTC"
+        "utcLabel": "UTC",
+        "cardTarget": "Mål: {target}",
+        "cardBy": "av {actor}"
       },
       "pagination": {
         "label": "Granskningsloggens sidor",
@@ -447,8 +459,6 @@
         "search": {
           "label": "Sök på medlemsnummer",
           "placeholder": "t.ex. SCCM-0042",
-          "submit": "Sök",
-          "clear": "Rensa sökning",
           "empty": "Ingen radering matchar {ref}."
         },
         "breachAlert": "{count, plural, one {# radering} other {# raderingar}} har passerat den lagstadgade 30-dagarsfristen — detta kan vara ett rapporteringspliktigt intrång. Granska nu.",
@@ -6175,6 +6185,7 @@
     "editTemplate": "Redigera mall",
     "compliance": "Efterlevnad",
     "erasureLog": "Raderingslogg",
+    "audit": "Granskningslogg",
     "marketing": "Marknadsföring",
     "audience": "Målgrupp",
     "memberBenefits": "Förmåner",

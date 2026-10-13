@@ -320,8 +320,11 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
     // treats as domain-invalid (non-positive) → the search always yields zero
     // matches, deterministically, regardless of what else is seeded in the
     // live tenant.
-    await fillField(page.getByLabel(/search by member number/i), 'SCCM-0000');
-    await page.getByRole('button', { name: /^search$/i }).click();
+    // Spec 122 US10b: no Search button — the box searches as you type, and
+    // Enter searches at once.
+    const search = page.getByRole('searchbox', { name: /search by member number/i });
+    await fillField(search, 'SCCM-0000');
+    await search.press('Enter');
 
     await expect(page).toHaveURL(/[?&]q=SCCM-0000/i);
     await expect(page.getByTestId('erasure-log-empty')).toBeVisible();
@@ -451,13 +454,14 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
       await expect(
         card.getByRole('heading', { name: REQUESTED_SECTION_RE[locale], level: 3 }),
       ).toBeVisible();
-      // Target the status BADGE specifically (`data-slot="badge"`). In Swedish
-      // the status word "Slutförd" (Complete) is byte-identical to the
-      // "Completed" date-field label (`fields.completedAt`), so a bare
-      // `getByText` would strict-mode-violate on two elements — scope to the
-      // badge slot, which the field-label <dt> is not.
+      // Target the status PILL specifically (spec 122 US10b: an AURA StatusPill
+      // in the card's summary, carrying `data-tone`). In Swedish the status
+      // word "Slutförd" (Complete) is byte-identical to the "Completed"
+      // date-field label (`fields.completedAt`), so a bare `getByText` would
+      // strict-mode-violate on two elements — scope to the pill, which the
+      // field-label <dt> is not.
       await expect(
-        card.locator('[data-slot="badge"]').filter({ hasText: COMPLETE_STATUS_RE[locale] }),
+        card.locator('summary [data-tone]').filter({ hasText: COMPLETE_STATUS_RE[locale] }),
       ).toBeVisible();
 
       // No raw i18n-key leaks for the page namespace, nav, or audit labels.

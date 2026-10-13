@@ -11,10 +11,15 @@
  * (exposed accessibility state, no manual `aria-expanded`) — see MDN
  * disclosure widget notes. The marker is hidden cross-browser and replaced
  * with a chevron that rotates on open, guarded by `motion-reduce`.
+ *
+ * Spec 122 US10b (T1016; boards `Admin-erasure-log`, `Admin-state-erasure-breach`):
+ * on AURA — the card, a `StatusPill` for the state (overdue `blocked`, half-run
+ * `progress`, complete `ready`), the half-run note as an `Alert`, the tax
+ * document kind on a `Badge`. The chevron leads the summary, as the board
+ * draws it, and an overdue card takes the danger border.
  */
 import { useTranslations } from 'next-intl';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Alert, Badge, Card, StatusPill, type StatusTone } from '@jirawatpyk/aura-react/server';
 import { ShieldCheckIcon, ChevronDownIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatMemberNumber, asMemberNumber } from '@/modules/members';
@@ -36,7 +41,7 @@ function elapsed(from: Date, now: Date, t: (k: string, v?: Record<string, string
 function Field({ label, children }: { label: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
+      <dt className="aura-text-caption text-[var(--aura-fg-secondary)]">{label}</dt>
       <dd className="text-sm">{children}</dd>
     </div>
   );
@@ -58,8 +63,7 @@ export function EvidenceCard({
   const fmtBool = (b: boolean | null) => (b === null ? DASH : b ? t('value.yes') : t('value.no'));
   const fmtText = (s: string | null) => (s && s.trim() !== '' ? s : DASH);
 
-  const statusVariant: 'destructive' | 'outline' | 'secondary' = row.isOverdue
-    ? 'destructive' : row.halfRun ? 'outline' : 'secondary';
+  const statusTone: StatusTone = row.isOverdue ? 'blocked' : row.halfRun ? 'progress' : 'ready';
   const statusLabel = row.isOverdue ? t('status.overdue') : row.halfRun ? t('status.halfRun') : t('status.complete');
   // Defensive: `member_number` is DB-CHECK-guarded (> 0), so `asMemberNumber`
   // should never throw here — but this card renders inside the page's RSC
@@ -72,58 +76,44 @@ export function EvidenceCard({
       : String(row.memberNumber);
 
   return (
-    <Card
-      className={cn(
-        'p-0', // details owns padding
-        row.isOverdue && 'border-l-2 border-l-destructive',
-        row.halfRun && !row.isOverdue && 'border-l-2 border-l-warning',
-      )}
-    >
+    <Card className={cn('overflow-hidden p-0', row.isOverdue && 'border-[var(--aura-border-danger)]')}>
       <details data-evidence open={!isComplete} className="group">
-        <summary className="flex cursor-pointer list-none flex-wrap items-start justify-between gap-3 border-b px-6 py-4 [&::-webkit-details-marker]:hidden [&::marker]:content-['']">
-          <div className="flex flex-col gap-1">
-            <h2 id={headingId} className="font-heading text-base font-medium leading-snug">
-              {t('memberNumber', { ref })}
-            </h2>
-            <p className="text-sm text-muted-foreground">{t('erasedAt', { at: fmtDate(row.erasedAt) })}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge
-              variant={statusVariant}
-              className={cn('h-6 px-2.5 text-xs',
-                row.halfRun && !row.isOverdue && 'border-warning/60 bg-warning-surface text-warning')}
-            >
-              {statusLabel}
-            </Badge>
+        <summary className="flex cursor-pointer list-none items-start justify-between gap-[var(--aura-space-3)] px-[var(--aura-space-5)] py-[var(--aura-space-4)] group-open:border-b group-open:border-[var(--aura-border-default)] [&::-webkit-details-marker]:hidden [&::marker]:content-['']">
+          <div className="flex min-w-0 items-start gap-[var(--aura-space-3)]">
             <ChevronDownIcon
               aria-hidden
-              className="size-4 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none"
+              className="mt-1 size-4 shrink-0 -rotate-90 text-[var(--aura-fg-secondary)] transition-transform group-open:rotate-0 motion-reduce:transition-none"
             />
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-[var(--aura-space-3)] gap-y-1">
+              <h2 id={headingId} className="aura-text-h3 font-semibold">
+                {t('memberNumber', { ref })}
+              </h2>
+              <p className="text-sm text-[var(--aura-fg-secondary)]">{t('erasedAt', { at: fmtDate(row.erasedAt) })}</p>
+            </div>
           </div>
+          <StatusPill tone={statusTone} data-tone={statusTone} className="shrink-0">
+            {statusLabel}
+          </StatusPill>
         </summary>
 
-        <CardContent className="flex flex-col gap-6 pt-6 pb-6">
+        {/* Board `Admin-erasure-log`: the sections are ruled off from one another. */}
+        <div className="flex flex-col gap-[var(--aura-space-4)] px-[var(--aura-space-5)] py-[var(--aura-space-5)] [&>section+section]:border-t [&>section+section]:border-[var(--aura-border-default)] [&>section+section]:pt-[var(--aura-space-4)]">
           {/* Half-run note — elapsed time + reconciler escalation guidance. */}
           {row.halfRun && row.requestedAt ? (
-            <p
-              className={cn(
-                'rounded-md border p-3 text-sm',
-                row.isOverdue
-                  ? 'border-destructive/40 bg-destructive-surface text-destructive'
-                  : 'border-warning/40 bg-warning-surface text-warning',
-              )}
+            <Alert
+              tone={row.isOverdue ? 'danger' : 'warning'}
               role={row.isOverdue && !topBannerPresent ? 'alert' : 'status'}
             >
               {row.isOverdue
                 ? t('halfRunNote.overdue', { elapsed: elapsed(row.requestedAt, now, t) })
                 : t('halfRunNote.pending', { elapsed: elapsed(row.requestedAt, now, t) })}
-            </p>
+            </Alert>
           ) : null}
 
           {/* Requested + Art.12 attestation block. */}
           <section aria-label={t('sections.requested')} className="flex flex-col gap-2">
             <h3 className="text-sm font-semibold">{t('sections.requested')}</h3>
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field label={t('fields.requestedAt')}>{fmtDate(row.requestedAt)}</Field>
               <Field label={t('fields.reason')}>{fmtText(row.reason)}</Field>
               <Field label={t('fields.identityVerified')}>{fmtBool(row.identityVerified)}</Field>
@@ -135,7 +125,7 @@ export function EvidenceCard({
           {/* Completion block — cascade counts + the re-drive caveat. */}
           <section aria-label={t('sections.completion')} className="flex flex-col gap-2">
             <h3 className="text-sm font-semibold">{t('sections.completion')}</h3>
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field label={t('fields.completedAt')}>{fmtDate(row.completedAt)}</Field>
               <Field label={t('fields.sessionsRevoked')}>
                 {row.sessionsRevokedTotal ?? DASH}
@@ -145,7 +135,7 @@ export function EvidenceCard({
               </Field>
             </dl>
             {row.reDrive === true ? (
-              <p className="text-xs text-muted-foreground" role="note">
+              <p className="text-xs text-[var(--aura-fg-secondary)]" role="note">
                 {t('reDriveNote')}
               </p>
             ) : null}
@@ -158,13 +148,13 @@ export function EvidenceCard({
               <ul className="flex flex-col gap-1 text-sm">
                 {row.userErasedProofs.map((p, i) => (
                   <li key={`${row.memberId}-cred-${i}`} className="flex items-center gap-2">
-                    <ShieldCheckIcon className="size-4 text-muted-foreground" aria-hidden />
+                    <ShieldCheckIcon className="size-4 text-[var(--aura-fg-secondary)]" aria-hidden />
                     <span>{t('credentialErasedAt', { at: fmt.format(p.occurredAt) })}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">{t('credentialNone')}</p>
+              <p className="text-sm text-[var(--aura-fg-secondary)]">{t('credentialNone')}</p>
             )}
           </section>
 
@@ -175,19 +165,19 @@ export function EvidenceCard({
               <ul className="flex flex-col gap-1 text-sm">
                 {row.taxRedactions.map((r, i) => (
                   <li key={`${row.memberId}-tax-${i}`} className="flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
+                    <Badge variant="outline" tone="neutral">
                       {r.documentKind === 'invoice'
                         ? t('documentKind.invoice')
                         : r.documentKind === 'credit_note'
                           ? t('documentKind.creditNote')
                           : r.documentKind}
                     </Badge>
-                    <span className="text-muted-foreground">{fmt.format(r.occurredAt)}</span>
+                    <span className="text-[var(--aura-fg-secondary)]">{fmt.format(r.occurredAt)}</span>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="text-sm text-muted-foreground">{t('taxRedactionsNone')}</p>
+              <p className="text-sm text-[var(--aura-fg-secondary)]">{t('taxRedactionsNone')}</p>
             )}
           </section>
 
@@ -248,15 +238,15 @@ export function EvidenceCard({
                 (`only-dlitems` — a <dl> may directly contain only dt/dd groups,
                 div, script, template). It is the same note, one element out.
               */}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-[var(--aura-fg-secondary)]">
                 {t('fields.countsNote')}
               </p>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">{t('subprocessorNone')}</p>
+              <p className="text-sm text-[var(--aura-fg-secondary)]">{t('subprocessorNone')}</p>
             )}
           </section>
-        </CardContent>
+        </div>
       </details>
     </Card>
   );

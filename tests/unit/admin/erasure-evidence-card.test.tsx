@@ -56,4 +56,56 @@ describe('EvidenceCard', () => {
     expect(() => renderCard(baseRow({ memberNumber: 0 }))).not.toThrow();
     expect(screen.getByText('Member 0')).toBeInTheDocument();
   });
+
+  // Spec 122 US10b (T1016; boards `Admin-erasure-log`, `Admin-state-erasure-breach`):
+  // on AURA Card, StatusPill, Alert and Badge; the disclosure stays.
+  describe('on AURA', () => {
+    const e = enMessages.admin.compliance.erasureLog;
+
+    it('is an AURA card holding the evidence disclosure', () => {
+      const { container } = renderCard(baseRow());
+      expect(container.querySelector('details[data-evidence]')!.closest('.aura-card')).not.toBeNull();
+    });
+
+    it.each([
+      ['complete', baseRow(), e.status.complete, 'ready'],
+      ['in progress', baseRow({ halfRun: true, completedAt: null }), e.status.halfRun, 'progress'],
+      ['overdue', baseRow({ halfRun: true, isOverdue: true, completedAt: null }), e.status.overdue, 'blocked'],
+    ])('a %s erasure shows a status pill toned by state', (_name, row, label, tone) => {
+      renderCard(row);
+      expect(screen.getByText(label)).toHaveAttribute('data-tone', tone);
+    });
+
+    it('the half-run note is an AURA alert: a status line, or an alert when overdue with no page banner', () => {
+      const { rerender } = renderCard(baseRow({ halfRun: true, completedAt: null }));
+      const pending = screen.getByRole('status');
+      expect(pending).toHaveClass('aura-alert');
+      rerender(
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <EvidenceCard
+            row={baseRow({ halfRun: true, isOverdue: true, completedAt: null })}
+            memberPrefix="SCCM"
+            fmt={fmt}
+            now={NOW}
+            topBannerPresent={false}
+          />
+        </NextIntlClientProvider>,
+      );
+      expect(screen.getByRole('alert')).toHaveClass('aura-alert');
+    });
+
+    it('names a redacted tax document’s kind on an AURA badge', () => {
+      renderCard(baseRow({ taxRedactions: [{ documentKind: 'invoice', occurredAt: new Date('2026-06-19T01:00:00Z') }] }));
+      expect(screen.getByText(e.documentKind.invoice).closest('.aura-badge')).not.toBeNull();
+    });
+
+    it('lays the evidence out as the board does: a bold title, three-up fields on wide screens, ruled sections', () => {
+      const { container } = renderCard(baseRow({ halfRun: true, completedAt: null }));
+      expect(container.querySelector('summary h2')).toHaveClass('font-semibold');
+      const request = screen.getByRole('region', { name: e.sections.requested });
+      expect(request.querySelector('dl')).toHaveClass('lg:grid-cols-3');
+      expect(screen.getByRole('region', { name: e.sections.completion }).querySelector('dl')).toHaveClass('lg:grid-cols-3');
+      expect(request.parentElement).toHaveClass('[&>section+section]:border-t');
+    });
+  });
 });

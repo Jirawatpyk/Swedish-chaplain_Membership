@@ -48,4 +48,15 @@ describe('ErasureFilterTabs', () => {
     );
     expect(screen.queryByTestId('overdue-warning')).not.toBeInTheDocument();
   });
+
+  // Spec 122 US10b (T1014) — AURA link Tabs (board `Admin-erasure-log`), each
+  // tab named by its label then its count in words (WCAG 2.5.3: the name
+  // starts with the visible label).
+  it('is AURA link tabs, each named by its label and count', () => {
+    renderTabs();
+    const nav = screen.getByRole('navigation', { name: /filter erasures by status/i });
+    expect(nav).toHaveClass('aura-tabs', 'aura-tabs--links');
+    expect(within(nav).getByRole('link', { name: 'Overdue, 1 erasure' })).toBeInTheDocument();
+    expect(within(nav).getByRole('link', { name: 'All, 17 erasures' })).toBeInTheDocument();
+  });
 });

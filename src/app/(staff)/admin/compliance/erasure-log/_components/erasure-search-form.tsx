@@ -1,24 +1,34 @@
+'use client';
+
 /**
  * Erasure-log UX enhancement — Task 5: `ErasureSearchForm`.
  *
- * A plain `<form method="get">` beside `ErasureFilterTabs` that searches the
- * erasure log by member number — NO client JS. Submitting navigates to
- * `/admin/compliance/erasure-log?q=…` (plus the current `status`, preserved
- * via a hidden field), which the page re-renders server-side. Mirrors the
- * "no `'use client'` needed" pattern established by `erasure-filter-tabs.tsx`.
+ * Searches the erasure log by member number, beside `ErasureFilterTabs`. A
+ * search writes `/admin/compliance/erasure-log?q=…` (plus the current
+ * `status`), which the page re-renders server-side. `status=all` and an empty
+ * search are left out of the URL.
  *
- * The hidden `status` field only renders when `status !== 'all'` so a fresh
- * search from the "All" tab doesn't add a redundant `?status=all` to the URL.
- * The clear-search link only renders when `q !== ''` and returns to the base
- * path (preserving `status` the same way).
+ * Spec 122 US10b (T1015; maintainer, 13 Oct): the search looks and behaves
+ * like every other list's — the AURA `FilterBar` search, its name read out
+ * but not shown above the box, the hint inside it, its own × to clear, and no
+ * Search button. It searches 300 ms after typing stops and at once on Enter.
+ * The bar's region keeps AURA's own name ("Filters"), so the search's name is
+ * read once (R43).
  */
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SearchIcon, XIcon } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
+import { FilterBar } from '@jirawatpyk/aura-react';
 
 const BASE = '/admin/compliance/erasure-log';
+
+/** The log's URL for a status and a search, `status=all` and an empty search left out. */
+function searchHref(status: string, q: string): string {
+  const params = new URLSearchParams();
+  if (status !== 'all') params.set('status', status);
+  if (q !== '') params.set('q', q);
+  const query = params.toString();
+  return query ? `${BASE}?${query}` : BASE;
+}
 
 export function ErasureSearchForm({
   status,
@@ -28,36 +38,15 @@ export function ErasureSearchForm({
   readonly q: string;
 }): React.JSX.Element {
   const t = useTranslations('admin.compliance.erasureLog');
-  const clearHref = status !== 'all' ? `${BASE}?status=${status}` : BASE;
+  const router = useRouter();
 
   return (
-    <form method="get" action={BASE} className="flex flex-wrap items-center gap-2">
-      {status !== 'all' ? <input type="hidden" name="status" value={status} /> : null}
-      <label htmlFor="erasure-q" className="sr-only">
-        {t('search.label')}
-      </label>
-      <Input
-        id="erasure-q"
-        name="q"
-        type="search"
-        defaultValue={q}
-        placeholder={t('search.placeholder')}
-        className="h-9 w-full min-w-0 sm:w-44 [&::-webkit-search-cancel-button]:appearance-none"
-        inputMode="search"
-      />
-      <Button type="submit" variant="outline" size="sm" className="h-9">
-        <SearchIcon className="size-4" aria-hidden />
-        <span>{t('search.submit')}</span>
-      </Button>
-      {q !== '' ? (
-        <Link
-          href={clearHref}
-          className="inline-flex items-center gap-1 text-sm font-medium text-primary underline-offset-4 hover:underline"
-        >
-          <XIcon className="size-3.5" aria-hidden />
-          {t('search.clear')}
-        </Link>
-      ) : null}
-    </form>
+    <FilterBar
+      search={q}
+      onSearchChange={(value) => router.replace(searchHref(status, value.trim()), { scroll: false })}
+      searchLabel={t('search.label')}
+      searchPlaceholder={t('search.placeholder')}
+      className="w-full sm:w-72"
+    />
   );
 }

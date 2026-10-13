@@ -461,6 +461,13 @@ export const MIGRATED_PATHS = [
   'src/components/auth/change-role-dialog.tsx',
   'src/components/auth/invite-user-dialog.tsx',
   'src/components/members/member-picker.tsx',
+  // US10b — the audit log (filters, table, skeleton) and the compliance
+  // erasure log (with the /admin/compliance redirect).
+  'src/app/(staff)/admin/audit/**',
+  'src/components/audit/audit-filters.tsx',
+  'src/components/audit/audit-table.tsx',
+  'src/components/audit/audit-table-skeleton.tsx',
+  'src/app/(staff)/admin/compliance/**',
 ];
 
 /**

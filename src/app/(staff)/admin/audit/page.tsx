@@ -20,18 +20,17 @@ import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
 import { getTranslations, getLocale } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
+import { DownloadIcon } from 'lucide-react';
+import { Alert, buttonClass, Card, Icon } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
-import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { EmptyState } from '@/components/shell/empty-state';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
 import { ErrorCardActions } from '@/components/shell/error-card-actions';
 import { ShieldAlertIcon } from 'lucide-react';
 import { AuditFilters } from '@/components/audit/audit-filters';
 import { AuditTable, type AuditTableRow } from '@/components/audit/audit-table';
-import { buildAuditPaginationLinks } from './_lib/pagination-links';
+import { buildAuditPaginationLinks, type AuditPaginationLinks } from './_lib/pagination-links';
 import {
   invalidAuditFilterField,
   invalidRangeField,
@@ -165,14 +164,18 @@ export default async function AuditLogPage({
         return t('invalidRange.body');
     }
   };
+  // Board `Admin-state-audit-invalid`: the filters and the message share the
+  // list card. The filter bar's chips and "Clear filters" are the way out (a
+  // retry would reload the same URL).
   const invalidFilterState = (field: AuditInvalidFilterField | null) => (
-    <>
-      <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
-      <DashboardErrorState
-        title={t('invalidRange.title')}
-        description={invalidFilterDescription(field)}
-      />
-    </>
+    <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
+        <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} timeZone={tz} />
+        <Alert tone="danger" role="alert" title={t('invalidRange.title')} data-testid="invalid-filter">
+          {invalidFilterDescription(field)}
+        </Alert>
+      </div>
+    </Card>
   );
   const invalidField = invalidAuditFilterField(filterParams, ALL_AUDIT_EVENT_TYPES);
   if (invalidField !== null) {
@@ -253,21 +256,8 @@ export default async function AuditLogPage({
   const exportQuery = exportParams.toString();
   const exportHref = `/api/admin/audit/export.csv${exportQuery ? `?${exportQuery}` : ''}`;
 
-  const header = (
-    <PageHeader
-      title={t('title')}
-      subtitle={t('subtitle')}
-      actions={
-        result.ok ? (
-          <a href={exportHref} download className={buttonVariants({ variant: 'outline' })}>
-            {t('export')}
-          </a>
-        ) : undefined
-      }
-    />
-  );
-
   if (!result.ok) {
+    const header = <PageHeader title={t('title')} subtitle={t('subtitle')} />;
     return (
       <TableContainer>
         {header}
@@ -323,18 +313,56 @@ export default async function AuditLogPage({
     nextCursor: result.value.nextCursor,
   });
 
+  return renderAuditListView({
+    rows,
+    timeZone: tz,
+    exportHref,
+    links: { firstHref, showFirst, prevHref, nextHref },
+  });
+}
+
+/**
+ * The loaded audit page (header with Export CSV, the list card), shared with
+ * the AURA preview harness (spec 122 US10b, T1018) so it renders this markup
+ * with fixture rows.
+ */
+export async function renderAuditListView({
+  rows,
+  timeZone,
+  exportHref,
+  links: { firstHref, showFirst, prevHref, nextHref },
+}: {
+  readonly rows: readonly AuditTableRow[];
+  readonly timeZone: string;
+  readonly exportHref: string;
+  readonly links: AuditPaginationLinks;
+}): Promise<React.JSX.Element> {
+  const t = await getTranslations('admin.audit');
+  const tz = timeZone;
+  const header = (
+    <PageHeader
+      title={t('title')}
+      subtitle={t('subtitle')}
+      actions={
+        <a href={exportHref} download className={buttonClass({ variant: 'secondary', touchHeight: true })}>
+          <Icon name={<DownloadIcon />} size={16} />
+          {t('export')}
+        </a>
+      }
+    />
+  );
   return (
     <TableContainer>
       {header}
 
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} />
-
-          {/* SR result-count announcement — re-rendered on every filter navigation. */}
-          <p role="status" className="sr-only">
-            {t('resultCount', { count: rows.length })}
-          </p>
+      {/* Spec 122 US10b (T1013; board `Admin-audit`): one AURA card holds the
+          filters, the list (edge to edge) and the retention line; below 640px
+          the card drops its frame and the rows become cards of their own. The
+          count sits at the end of the filter row, in its live region. */}
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+        {/* AURA wraps the children of a Card in its body, so the spacing lives on this wrapper. */}
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          <AuditFilters eventTypeOptions={EVENT_TYPE_OPTIONS} timeZone={tz} resultCount={rows.length} />
 
           <AuditTable
             rows={rows}
@@ -350,28 +378,28 @@ export default async function AuditLogPage({
               empty: t('table.empty'),
               none: t('table.none'),
               utcLabel: t('table.utcLabel'),
+              // The card fills these per row; the placeholder passes through.
+              cardTarget: t('table.cardTarget', { target: '{target}' }),
+              cardBy: t('table.cardBy', { actor: '{actor}' }),
             }}
           />
 
           {showFirst || prevHref || nextHref ? (
-            <nav
-              aria-label={t('pagination.label')}
-              className="flex flex-wrap items-center justify-between gap-2"
-            >
+            <nav aria-label={t('pagination.label')} className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex gap-2">
                 {showFirst ? (
-                  <a href={firstHref} className={buttonVariants({ variant: 'outline' })}>
+                  <a href={firstHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
                     {t('pagination.first')}
                   </a>
                 ) : null}
                 {prevHref ? (
-                  <a href={prevHref} className={buttonVariants({ variant: 'outline' })}>
+                  <a href={prevHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
                     {t('pagination.previous')}
                   </a>
                 ) : null}
               </div>
               {nextHref ? (
-                <a href={nextHref} className={buttonVariants({ variant: 'outline' })}>
+                <a href={nextHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
                   {t('pagination.next')}
                 </a>
               ) : (
@@ -379,7 +407,9 @@ export default async function AuditLogPage({
               )}
             </nav>
           ) : null}
-        </CardContent>
+
+          <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('retentionNote')}</p>
+        </div>
       </Card>
     </TableContainer>
   );

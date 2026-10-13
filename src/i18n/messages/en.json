@@ -380,6 +380,7 @@
       "export": "Export CSV",
       "resultCount": "{count, plural, =0 {No audit events} one {# audit event} other {# audit events}}",
       "loadFailed": "Couldn't load the audit log. Please try again.",
+      "retentionNote": "Audit records are kept for at least 5 years; tax-document and payment records for at least 10 years.",
       "invalidRange": {
         "title": "Invalid filter",
         "body": "Check the date range and filters, then try again.",
@@ -398,9 +399,18 @@
         "eventTypeAll": "All event types",
         "actor": "Acting user",
         "target": "Target record",
-        "from": "From",
-        "to": "To",
-        "reset": "Reset",
+        "date": "Date",
+        "chip": "{label}: {value}",
+        "clear": "Clear filters",
+        "removeChip": "Remove filter: {label}",
+        "dateFrom": "from {from}",
+        "dateTo": "to {to} (incl.)",
+        "moreFilters": "More filters",
+        "presets": {
+          "last7": "Last 7 days",
+          "last30": "Last 30 days",
+          "thisMonth": "This month"
+        },
         "groups": {
           "dashboard": "Dashboard & audit",
           "authentication": "Authentication",
@@ -423,7 +433,9 @@
         "empty": "No audit events match these filters.",
         "none": "None",
         "emptyTitle": "No audit events",
-        "utcLabel": "UTC"
+        "utcLabel": "UTC",
+        "cardTarget": "Target: {target}",
+        "cardBy": "by {actor}"
       },
       "pagination": {
         "label": "Audit log pages",
@@ -447,8 +459,6 @@
         "search": {
           "label": "Search by member number",
           "placeholder": "e.g. SCCM-0042",
-          "submit": "Search",
-          "clear": "Clear search",
           "empty": "No erasure matches {ref}."
         },
         "breachAlert": "{count, plural, one {# erasure is} other {# erasures are}} past the 30-day statutory window — this may be a reportable breach. Review now.",
@@ -6175,6 +6185,7 @@
     "editTemplate": "Edit Template",
     "compliance": "Compliance",
     "erasureLog": "Erasure log",
+    "audit": "Audit log",
     "marketing": "Marketing",
     "audience": "Audience",
     "memberBenefits": "Benefits",

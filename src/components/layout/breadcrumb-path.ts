@@ -293,6 +293,9 @@ const STATIC_LABEL_KEYS = {
   // "compliance / erasure-log" (incident 2026-07-18, PR #223 follow-up).
   compliance: 'compliance',
   'erasure-log': 'erasureLog',
+  // Spec 122 US10b — `/admin/audit` showed its raw slug in the trail (board
+  // `Admin-audit` reads "Audit log").
+  audit: 'audit',
   // 108 PR-D — `/admin/marketing/audience`. `marketing` is an organisational
   // segment with no page of its own (NON_ROUTE_BY_PARENT under `admin`
   // above, like `compliance`); `audience` is the page itself.
