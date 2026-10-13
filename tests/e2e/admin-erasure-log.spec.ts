@@ -320,8 +320,11 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
     // treats as domain-invalid (non-positive) → the search always yields zero
     // matches, deterministically, regardless of what else is seeded in the
     // live tenant.
-    await fillField(page.getByLabel(/search by member number/i), 'SCCM-0000');
-    await page.getByRole('button', { name: /^search$/i }).click();
+    // Spec 122 US10b: no Search button — the box searches as you type, and
+    // Enter searches at once.
+    const search = page.getByLabel(/search by member number/i);
+    await fillField(search, 'SCCM-0000');
+    await search.press('Enter');
 
     await expect(page).toHaveURL(/[?&]q=SCCM-0000/i);
     await expect(page.getByTestId('erasure-log-empty')).toBeVisible();
