@@ -85,7 +85,7 @@ export function EvidenceCard({
               className="mt-1 size-4 shrink-0 -rotate-90 text-[var(--aura-fg-secondary)] transition-transform group-open:rotate-0 motion-reduce:transition-none"
             />
             <div className="flex min-w-0 flex-wrap items-baseline gap-x-[var(--aura-space-3)] gap-y-1">
-              <h2 id={headingId} className="aura-text-h3">
+              <h2 id={headingId} className="aura-text-h3 font-semibold">
                 {t('memberNumber', { ref })}
               </h2>
               <p className="text-sm text-[var(--aura-fg-secondary)]">{t('erasedAt', { at: fmtDate(row.erasedAt) })}</p>
@@ -96,7 +96,8 @@ export function EvidenceCard({
           </StatusPill>
         </summary>
 
-        <div className="flex flex-col gap-[var(--aura-space-5)] px-[var(--aura-space-5)] py-[var(--aura-space-5)]">
+        {/* Board `Admin-erasure-log`: the sections are ruled off from one another. */}
+        <div className="flex flex-col gap-[var(--aura-space-4)] px-[var(--aura-space-5)] py-[var(--aura-space-5)] [&>section+section]:border-t [&>section+section]:border-[var(--aura-border-default)] [&>section+section]:pt-[var(--aura-space-4)]">
           {/* Half-run note — elapsed time + reconciler escalation guidance. */}
           {row.halfRun && row.requestedAt ? (
             <Alert
@@ -112,7 +113,7 @@ export function EvidenceCard({
           {/* Requested + Art.12 attestation block. */}
           <section aria-label={t('sections.requested')} className="flex flex-col gap-2">
             <h3 className="text-sm font-semibold">{t('sections.requested')}</h3>
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field label={t('fields.requestedAt')}>{fmtDate(row.requestedAt)}</Field>
               <Field label={t('fields.reason')}>{fmtText(row.reason)}</Field>
               <Field label={t('fields.identityVerified')}>{fmtBool(row.identityVerified)}</Field>
@@ -124,7 +125,7 @@ export function EvidenceCard({
           {/* Completion block — cascade counts + the re-drive caveat. */}
           <section aria-label={t('sections.completion')} className="flex flex-col gap-2">
             <h3 className="text-sm font-semibold">{t('sections.completion')}</h3>
-            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field label={t('fields.completedAt')}>{fmtDate(row.completedAt)}</Field>
               <Field label={t('fields.sessionsRevoked')}>
                 {row.sessionsRevokedTotal ?? DASH}
