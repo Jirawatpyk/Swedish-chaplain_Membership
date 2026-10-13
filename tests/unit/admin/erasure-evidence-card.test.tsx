@@ -70,7 +70,7 @@ describe('EvidenceCard', () => {
     it.each([
       ['complete', baseRow(), e.status.complete, 'ready'],
       ['in progress', baseRow({ halfRun: true, completedAt: null }), e.status.halfRun, 'progress'],
-      ['overdue', baseRow({ halfRun: true, isOverdue: true, completedAt: null }), e.status.overdue, 'danger'],
+      ['overdue', baseRow({ halfRun: true, isOverdue: true, completedAt: null }), e.status.overdue, 'blocked'],
     ])('a %s erasure shows a status pill toned by state', (_name, row, label, tone) => {
       renderCard(row);
       expect(screen.getByText(label)).toHaveAttribute('data-tone', tone);
