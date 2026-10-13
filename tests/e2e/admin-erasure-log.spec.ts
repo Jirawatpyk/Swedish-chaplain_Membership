@@ -322,7 +322,7 @@ test.describe('COMP-1 US3-D — erasure-evidence log (admin DPO) @a11y @i18n', (
     // live tenant.
     // Spec 122 US10b: no Search button — the box searches as you type, and
     // Enter searches at once.
-    const search = page.getByLabel(/search by member number/i);
+    const search = page.getByRole('searchbox', { name: /search by member number/i });
     await fillField(search, 'SCCM-0000');
     await search.press('Enter');
 
