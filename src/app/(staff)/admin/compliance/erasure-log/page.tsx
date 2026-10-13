@@ -198,7 +198,7 @@ export async function renderErasureLogView({
       {/* Spec 122 US10b (T1017; boards `Admin-erasure-log`, `Admin-state-erasure-breach`):
           the status tabs and the member-number search share a row on a wide
           screen, the breach banner and the all-clear notice are AURA alerts. */}
-      <div className="flex flex-col gap-[var(--aura-space-3)] sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-[var(--aura-space-3)] sm:flex-row sm:items-center sm:justify-between">
         <ErasureFilterTabs active={status} summary={result.summary} q={q} />
         <ErasureSearchForm status={status} q={q} />
       </div>

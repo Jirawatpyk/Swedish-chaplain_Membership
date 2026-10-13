@@ -459,7 +459,6 @@
         "search": {
           "label": "Search by member number",
           "placeholder": "e.g. SCCM-0042",
-          "clear": "Clear search",
           "empty": "No erasure matches {ref}."
         },
         "breachAlert": "{count, plural, one {# erasure is} other {# erasures are}} past the 30-day statutory window — this may be a reportable breach. Review now.",

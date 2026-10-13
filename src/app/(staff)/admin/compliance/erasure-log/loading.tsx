@@ -11,8 +11,8 @@
  * definition grids for the minority of cards that render open.
  *
  * Spec 122 US10b (T1017): on AURA — the page skeleton shell, AURA cards and
- * the AURA pulse skeleton, the search with its visible label as the page now
- * draws it.
+ * the AURA pulse skeleton, and the FilterBar search box (no visible label) as
+ * the page now draws it.
  */
 import { getTranslations } from 'next-intl/server';
 import { Card } from '@jirawatpyk/aura-react/server';
@@ -78,16 +78,11 @@ export default async function Loading(): Promise<React.JSX.Element> {
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
         <div
-          className="flex flex-col gap-[var(--aura-space-3)] sm:flex-row sm:items-end sm:justify-between"
+          className="flex flex-col gap-[var(--aura-space-3)] sm:flex-row sm:items-center sm:justify-between"
           aria-hidden
         >
           <SkeletonBlock className="h-10 w-80 max-w-full" />
-          <div className="flex flex-col gap-1">
-            <SkeletonBlock className="h-4 w-40" />
-            <div className="flex gap-[var(--aura-space-2)]">
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-72 max-w-full max-sm:h-11 max-sm:flex-1" />
-            </div>
-          </div>
+          <SkeletonBlock className="h-[var(--aura-input-height)] w-full max-sm:h-11 sm:w-72" />
         </div>
 
         <div className="flex flex-col gap-[var(--page-section-gap)]" aria-hidden>

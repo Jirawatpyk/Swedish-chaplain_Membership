@@ -459,7 +459,6 @@
         "search": {
           "label": "Sök på medlemsnummer",
           "placeholder": "t.ex. SCCM-0042",
-          "clear": "Rensa sökning",
           "empty": "Ingen radering matchar {ref}."
         },
         "breachAlert": "{count, plural, one {# radering} other {# raderingar}} har passerat den lagstadgade 30-dagarsfristen — detta kan vara ett rapporteringspliktigt intrång. Granska nu.",
