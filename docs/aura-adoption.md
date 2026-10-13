@@ -176,6 +176,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | #141 | Addendum 44 (US10a): `Combobox` has no `touchHeight`, unlike TextField and Select (#135): 44px on a coarse pointer, 36px below 640px with a mouse beside 44px fields | None: the invite dialog's member picker (and the event and relink pickers) |
 | #142 | Addendum 45 (US10a): `DataTable` rows take no `data-*` or `id` of their own | None: `/admin/users` uses static `Table`, whose `Tr` keeps the `data-user-*` the session e2e reads. Low priority |
 | #143 | Addendum 46 (US10b): `Tabs` has no `touchHeight`: link tabs are 44px on a coarse pointer, 36px below 640px with a mouse beside 44px fields; also asks that `<FilterBar touchHeight>` reach `FilterDateRange` | None: the erasure log's status tabs and the renewals tabs |
+| #144 | Addendum 47 (US10b, R43): the `FilterBar` search has no `touchHeight`: its input is 42px on a coarse pointer at 390, beside 44px controls — on every list that uses the bar's search | None: every list page's search (audit Target record, erasure log, Members, Invoices, …) |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
