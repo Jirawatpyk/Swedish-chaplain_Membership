@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Card, Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { StaffShell } from '@/components/layout/staff-shell';
 import { AuraDensity } from '@/components/providers/aura-bridge';
 import type { PlanOption } from '@/components/members/directory-filters';
@@ -122,7 +122,6 @@ import { DetailContainer } from '@/components/layout';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { renderAuditListView } from '@/app/(staff)/admin/audit/page';
 import { AuditFilters } from '@/components/audit/audit-filters';
-import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { renderErasureLogView } from '@/app/(staff)/admin/compliance/erasure-log/page';
 import type { GroupedEvidence } from '@/modules/insights';
 
@@ -1727,8 +1726,15 @@ export default async function AuraAdminPreviewPage({
         <StaffFrame path="/admin/audit">
           <TableContainer>
             <PageHeader title={t('title')} subtitle={t('subtitle')} />
-            <AuditFilters eventTypeOptions={eventTypes} timeZone={tz} />
-            <DashboardErrorState title={t('invalidRange.title')} description={t('invalidRange.field.range')} />
+            {/* Mirrors the page's invalid-filter state (filters and alert in the list card). */}
+            <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+              <div className="flex flex-col gap-[var(--aura-space-4)]">
+                <AuditFilters eventTypeOptions={eventTypes} timeZone={tz} />
+                <Alert tone="danger" role="alert" title={t('invalidRange.title')}>
+                  {t('invalidRange.field.range')}
+                </Alert>
+              </div>
+            </Card>
           </TableContainer>
         </StaffFrame>
       );

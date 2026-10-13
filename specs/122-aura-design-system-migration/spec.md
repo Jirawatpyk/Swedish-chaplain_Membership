@@ -489,6 +489,13 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **Kept against the board:**
   - The evidence card's half-run note stays an AURA `Alert` (warning, or danger when overdue); the board draws plain text. Its `role` is unchanged. It is a reportable-breach line on a compliance surface, so the emphasis stays unless the maintainer decides otherwise.
   - The evidence card keeps the login-credential and tax-document sections when they are empty (the board leaves them out): a DPO answering a request needs "none recorded" stated.
+- **UX review (2026-10-13), fixed in this PR:**
+  - A hand-typed bad date (`?from=2026-02-30`) still gets a chip and "Clear filters". The chips used to read only valid dates, so the invalid view had no way out but a retry of the same URL.
+  - The acting-user field is no longer remounted by its own commit, so it keeps focus and a trailing space. Only a chip × or Clear resets it.
+  - The invalid-filter state follows board `Admin-state-audit-invalid`: the filters and a danger alert (same title and field-naming text, `role="alert"`) share the list card, and the "Try again" button is gone because it reloaded the same URL.
+  - A from-after-to range shows its two days rather than one reversed range.
+  - The erasure "Clear search" link is 44px on phones, and the erasure loading skeleton matches the 44px field and the three-up grid.
+- **UX review, not done here:** after "Clear filters" the filter bar remounts, so its live count is not announced (L4). AURA's FilterBar has no way to reset only its search draft; this goes to the AURA handoff list.
 - **AURA gaps (handoff):** in 5.31 the erasure status `Tabs` links and the FilterBar's `FilterSelect` / `FilterDateRange` are 36px with a mouse; on a touch screen they already measure 44px. The load-error card's "Try again" (shared `DashboardErrorState`, not in this PR) is 32px on phones.
 
 ## User Scenarios & Testing *(mandatory)*
