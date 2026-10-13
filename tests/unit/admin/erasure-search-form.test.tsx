@@ -1,7 +1,10 @@
-import { describe, expect, it, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
+const replace = vi.fn();
+vi.mock('next/navigation', () => ({ useRouter: () => ({ replace, push: vi.fn(), refresh: vi.fn() }) }));
+
 import { ErasureSearchForm } from '@/app/(staff)/admin/compliance/erasure-log/_components/erasure-search-form';
 
 function renderForm(status = 'all', q = '') {
@@ -11,7 +14,14 @@ function renderForm(status = 'all', q = '') {
     </NextIntlClientProvider>,
   );
 }
-afterEach(cleanup);
+beforeEach(() => {
+  replace.mockClear();
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 describe('ErasureSearchForm', () => {
   it('is a GET form with a member-number input and a hidden status field', () => {
@@ -56,12 +66,33 @@ describe('ErasureSearchForm', () => {
     expect(input.closest('.aura-field')).not.toBeNull();
     const label = container.querySelector(`label[for="${input.id}"]`)!;
     expect(label).not.toHaveClass('sr-only');
-    expect(screen.getByRole('button', { name: /^search$/i })).toHaveClass('aura-btn');
   });
 
-  it('the Search button is text only, as board Admin-erasure-log draws it (maintainer, parity comment 13 Oct)', () => {
+  it('has no Search button: it searches as you type, like every other list (maintainer, 13 Oct)', () => {
     renderForm();
-    expect(screen.getByRole('button', { name: /^search$/i }).querySelector('svg')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^search$/i })).toBeNull();
+  });
+
+  it('after a pause in typing, replaces the URL with q (trimmed) and keeps the status', () => {
+    renderForm('overdue');
+    fireEvent.change(screen.getByLabelText(/search by member number/i), { target: { value: ' SCCM-0017 ' } });
+    expect(replace).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(350));
+    expect(replace).toHaveBeenLastCalledWith('/admin/compliance/erasure-log?status=overdue&q=SCCM-0017', { scroll: false });
+  });
+
+  it('emptying the box drops q (and a status of "all" adds nothing)', () => {
+    renderForm('all', '42');
+    fireEvent.change(screen.getByLabelText(/search by member number/i), { target: { value: '' } });
+    act(() => vi.advanceTimersByTime(350));
+    expect(replace).toHaveBeenLastCalledWith('/admin/compliance/erasure-log', { scroll: false });
+  });
+
+  it('Enter searches at once, without waiting for the pause', () => {
+    const { container } = renderForm();
+    fireEvent.change(screen.getByLabelText(/search by member number/i), { target: { value: '17' } });
+    fireEvent.submit(container.querySelector('form')!);
+    expect(replace).toHaveBeenLastCalledWith('/admin/compliance/erasure-log?q=17', { scroll: false });
   });
 });
 
