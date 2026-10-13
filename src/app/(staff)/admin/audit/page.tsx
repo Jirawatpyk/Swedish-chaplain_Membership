@@ -341,7 +341,7 @@ export async function renderAuditListView({
       title={t('title')}
       subtitle={t('subtitle')}
       actions={
-        <a href={exportHref} download className={buttonClass({ variant: 'secondary' })}>
+        <a href={exportHref} download className={buttonClass({ variant: 'secondary', touchHeight: true })}>
           <Icon name={<DownloadIcon />} size={16} />
           {t('export')}
         </a>
@@ -382,18 +382,18 @@ export async function renderAuditListView({
             <nav aria-label={t('pagination.label')} className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex gap-2">
                 {showFirst ? (
-                  <a href={firstHref} className={buttonClass({ variant: 'secondary' })}>
+                  <a href={firstHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
                     {t('pagination.first')}
                   </a>
                 ) : null}
                 {prevHref ? (
-                  <a href={prevHref} className={buttonClass({ variant: 'secondary' })}>
+                  <a href={prevHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
                     {t('pagination.previous')}
                   </a>
                 ) : null}
               </div>
               {nextHref ? (
-                <a href={nextHref} className={buttonClass({ variant: 'secondary' })}>
+                <a href={nextHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
                   {t('pagination.next')}
                 </a>
               ) : (

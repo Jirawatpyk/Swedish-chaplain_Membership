@@ -242,7 +242,7 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
           placement="bottom-end"
           width={320}
           trigger={
-            <Button variant="secondary" size="sm" icon="filter">
+            <Button variant="secondary" size="sm" icon="filter" touchHeight>
               {moreLabel}
             </Button>
           }
