@@ -9,6 +9,9 @@
  * and the pending count the switch-off confirmation names; a repo failure
  * reaches the error boundary rather than rendering a switch that asserts
  * "off" about a setting we could not read.
+ *
+ * Spec 122 US10c (T1024; board `Admin-settings-member-changes`): one AURA
+ * card titled "Approval requirement" (h2) holding the switch.
  */
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
@@ -16,13 +19,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { buildChangeRequestDeps } from '@/lib/members-change-request-deps';
@@ -62,20 +59,14 @@ export default async function MemberChangesSettingsPage(): Promise<React.ReactEl
   if (!pending.ok) fail('pending_count_failed', pending.error.message);
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('title')}</CardTitle>
-          <CardDescription>{t('cardDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ApprovalSwitch
-            // no row yet = the new-tenant default (off, FR-031)
-            initialEnabled={row.value?.memberChangeApprovalEnabled === true}
-            pendingCount={pending.value.count}
-          />
-        </CardContent>
+      <Card title={t('title')} description={t('cardDescription')} headingLevel={2}>
+        <ApprovalSwitch
+          // no row yet = the new-tenant default (off, FR-031)
+          initialEnabled={row.value?.memberChangeApprovalEnabled === true}
+          pendingCount={pending.value.count}
+        />
       </Card>
     </FormContainer>
   );

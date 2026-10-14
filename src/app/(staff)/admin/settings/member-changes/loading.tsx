@@ -1,11 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -20,6 +14,8 @@ import {
  * § 2.1). The description block reserves FOUR lines — the SV copy wraps to
  * four at the form width, and under-reserving shifts the state line on swap
  * (UX M4).
+ *
+ * Spec 122 US10c (T1024): the AURA card and the AURA pulse skeleton.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.settings.memberChanges');
@@ -27,30 +23,24 @@ export default async function Loading() {
 
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer>
+      <FormContainer align="start" aria-busy="true">
         <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('title')}</CardTitle>
-            <CardDescription>{t('cardDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4">
-              {/* Switch + label/description block — mirrors the control anatomy. */}
-              <div className="flex items-start gap-3">
-                <SkeletonBlock className="mt-0.5 h-[18px] w-8 shrink-0 rounded-full" />
-                <div className="grid w-full gap-2">
-                  <SkeletonBlock className="h-4 w-56 max-w-full" />
-                  <SkeletonBlock className="h-3 w-full" />
-                  <SkeletonBlock className="h-3 w-full" />
-                  <SkeletonBlock className="h-3 w-full" />
-                  <SkeletonBlock className="h-3 w-3/4" />
-                </div>
+        <Card title={t('title')} description={t('cardDescription')} headingLevel={2}>
+          <div aria-hidden className="grid gap-[var(--aura-space-4)]">
+            {/* Switch + label/description block — mirrors AURA's switch row. */}
+            <div className="flex items-start gap-[var(--aura-space-3)]">
+              <SkeletonBlock className="mt-0.5 h-5 w-9 shrink-0 rounded-full" />
+              <div className="grid w-full gap-[var(--aura-space-2)]">
+                <SkeletonBlock className="h-4 w-56 max-w-full" />
+                <SkeletonBlock className="h-3 w-full" />
+                <SkeletonBlock className="h-3 w-full" />
+                <SkeletonBlock className="h-3 w-full" />
+                <SkeletonBlock className="h-3 w-3/4" />
               </div>
-              {/* State line */}
-              <SkeletonBlock className="h-4 w-2/3" />
             </div>
-          </CardContent>
+            {/* State line */}
+            <SkeletonBlock className="h-4 w-2/3" />
+          </div>
         </Card>
       </FormContainer>
     </PageSkeletonShell>
