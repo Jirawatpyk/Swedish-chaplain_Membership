@@ -22,6 +22,10 @@
  *     password's rule hint and puts its "Forgot your password?" link beside
  *     the button (`secondaryAction`); the staff page keeps the plain form
  *     its `Admin-account` board draws.
+ *   - Spec 122 US10c (maintainer, 14 Oct): no required asterisks (every
+ *     field is required, as on the other password forms); the button is full
+ *     width on phones and keeps its own width from sm up, at the end of the
+ *     form on the staff page.
  */
 export interface ChangePasswordFormProps {
   /** Show "At least 12 characters…" under the new password. */
@@ -229,7 +233,9 @@ export function ChangePasswordForm({ showPasswordHint = false, secondaryAction }
           <div className="self-center sm:self-auto">{secondaryAction}</div>
         </div>
       ) : (
-        <div className="flex flex-col pt-2">
+        // Full width on phones; from sm up the button keeps its own width at
+        // the end of the form (board `Admin-account`, spec 122 US10c).
+        <div className="flex flex-col pt-2 sm:flex-row sm:justify-end">
           <Button type="submit" variant="primary" loading={submitting}>
             {t('submit')}
           </Button>
