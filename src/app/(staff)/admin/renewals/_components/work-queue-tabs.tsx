@@ -80,7 +80,7 @@ export function WorkQueueTabs({
 
   return (
     <div className="relative">
-      <Tabs label={t('label')} tabs={tabs} variant="segmented" defaultValue={defaultLens} />
+      <Tabs touchHeight label={t('label')} tabs={tabs} variant="segmented" defaultValue={defaultLens} />
       {/* The help sits at the end of the toggle row (the tablist is as wide
           as its two tabs, so the corner is free). */}
       <div className="absolute end-0 top-0">

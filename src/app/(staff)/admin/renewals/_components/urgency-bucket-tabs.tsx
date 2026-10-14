@@ -109,6 +109,7 @@ export function UrgencyBucketTabs({
       ) : null}
       <div className="flex min-w-0 items-center gap-[var(--aura-space-2)] max-sm:hidden">
         <Tabs
+          touchHeight
           label={t('aria_label')}
           tabs={tabs}
           linkComponent={NoScrollLink}

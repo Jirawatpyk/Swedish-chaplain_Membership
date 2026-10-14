@@ -174,6 +174,7 @@ export function MemberPicker({ label, hint, value, onChange, disabled = false, i
 
   return (
     <Combobox
+      touchHeight
       {...(id !== undefined ? { id } : {})}
       label={label}
       {...(hint !== undefined ? { hint } : {})}

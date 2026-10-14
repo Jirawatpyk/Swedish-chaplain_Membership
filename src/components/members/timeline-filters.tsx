@@ -80,7 +80,7 @@ export function TimelineFilters(): React.JSX.Element {
   // disclosure share the row from 640px, where their wrapper is `contents`,
   // so they take the same equal share; the buttons keep their own width.
   return (
-    <FilterBar label={t('title')} controlsLayout="fill">
+    <FilterBar touchHeight label={t('title')} controlsLayout="fill">
       <Select
         name="source"
         label={t('source')}

@@ -317,6 +317,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
       >
         <div className="min-w-0 flex-1">
           <Combobox
+            touchHeight
             label={props.label}
             // Board order: the filename suggestion straight under the field,
             // then the help text. Both sit in the field's hint, so the field

@@ -66,7 +66,7 @@ export function ErasureFilterTabs({
 
   return (
     <div className="min-w-0 overflow-x-auto">
-      <Tabs label={t('filter.navLabel')} tabs={tabs} value={active} />
+      <Tabs touchHeight label={t('filter.navLabel')} tabs={tabs} value={active} />
     </div>
   );
 }

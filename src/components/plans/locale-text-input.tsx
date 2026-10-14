@@ -121,6 +121,7 @@ export function LocaleTextInput({
 
   return (
     <Tabs
+      touchHeight
       label={t('localeTabsLabel', { field: label })}
       tabs={tabs}
       value={active}

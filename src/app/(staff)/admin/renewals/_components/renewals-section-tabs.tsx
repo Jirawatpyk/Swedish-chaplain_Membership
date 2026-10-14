@@ -196,6 +196,7 @@ export function RenewalsSectionTabs({
   return (
     <>
       <Tabs
+        touchHeight
         label={t('tabs.ariaLabel')}
         tabs={tabs}
         value={current}

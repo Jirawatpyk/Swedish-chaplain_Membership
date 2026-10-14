@@ -440,6 +440,7 @@ export function RelinkRegistrationDialog(props: RelinkRegistrationDialogProps) {
         }
       >
         <Combobox
+          touchHeight
           label={t('searchSrLabel')}
           placeholder={t('searchPlaceholder')}
           options={options}

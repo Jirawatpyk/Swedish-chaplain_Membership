@@ -229,6 +229,7 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
   return (
     <AuraProvider strings={barStrings}>
       <FilterBar
+        touchHeight
         key={searchResetKey}
         ref={barRef}
         label={t('legend')}
