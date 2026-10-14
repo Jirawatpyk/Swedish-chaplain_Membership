@@ -652,6 +652,7 @@ export function InvoiceFilters({
   return (
     <AuraProvider strings={barStrings}>
       <FilterBar
+        touchHeight
         key={searchResetKey}
         ref={barRef}
         label={t('filters.groupLabel')}

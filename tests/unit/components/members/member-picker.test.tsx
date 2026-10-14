@@ -116,4 +116,11 @@ describe('<MemberPicker> on AURA Combobox', () => {
     await flush();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  // AURA 5.38 (handoff #141): 44px box and inner buttons below 640px or on
+  // touch, level with the invite dialog's other fields.
+  it("takes AURA's touch height", () => {
+    renderPicker();
+    expect(box().closest('.aura-field')).toHaveClass('is-touch');
+  });
 });

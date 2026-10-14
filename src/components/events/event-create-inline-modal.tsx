@@ -313,6 +313,7 @@ export function EventCreateInlineModal(
             name="startDate"
             render={({ field }) => (
               <DatePicker
+                touchHeight
                 id={`${formId}-start-date`}
                 name={field.name}
                 ref={field.ref}
@@ -329,6 +330,7 @@ export function EventCreateInlineModal(
             name="startTime"
             render={({ field }) => (
               <TimePicker
+                touchHeight
                 id={`${formId}-start-time`}
                 name={field.name}
                 ref={field.ref}

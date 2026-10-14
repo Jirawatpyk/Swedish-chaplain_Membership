@@ -107,6 +107,7 @@ export function MethodTabs({
   return (
     <div data-testid="pay-sheet-method-tabs">
       <Tabs
+        touchHeight
         label={t('groupLabel')}
         value={activeMethod}
         onChange={(id) => {

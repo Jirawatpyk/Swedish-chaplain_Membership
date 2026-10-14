@@ -77,6 +77,7 @@ export function SectionLinks({ label, links }: { readonly label: string; readonl
       onClick={onClick}
     >
       <Tabs
+        touchHeight
         label={label}
         value={current}
         current="location"

@@ -103,4 +103,11 @@ describe('<UsersFilters> on AURA', () => {
     render(tree(148));
     expect(document.querySelector('[aria-live="polite"]')).toHaveTextContent('148 users');
   });
+
+  // AURA 5.38 (handoff #140, #144): the bar's search and selects are 44px below
+  // 640px or on touch, level with the 44px buttons beside them.
+  it("gives the bar AURA's touch height", () => {
+    render(tree());
+    expect(screen.getByRole('region', { name: f.groupLabel }).closest('.aura-filterbar')).toHaveClass('is-touch');
+  });
 });

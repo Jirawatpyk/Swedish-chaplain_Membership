@@ -622,6 +622,7 @@ export function ScheduleEditor({
         </Alert>
       ) : null}
       <Tabs
+        touchHeight
         label={t('tierTabsLabel')}
         tabs={tabs}
         value={activeBucket}

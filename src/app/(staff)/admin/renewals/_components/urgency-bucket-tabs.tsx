@@ -109,6 +109,7 @@ export function UrgencyBucketTabs({
       ) : null}
       <div className="flex min-w-0 items-center gap-[var(--aura-space-2)] max-sm:hidden">
         <Tabs
+          touchHeight
           label={t('aria_label')}
           tabs={tabs}
           linkComponent={NoScrollLink}
@@ -127,6 +128,7 @@ export function UrgencyBucketTabs({
       {/* The phone board draws the stages as a select. */}
       <div className="sm:hidden">
         <Select
+          touchHeight
           label={tTable('columns.urgency')}
           value={current ?? ''}
           placeholder={monthLensActive ? t('monthLensBadge') : undefined}

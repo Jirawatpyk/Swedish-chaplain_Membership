@@ -355,3 +355,10 @@ describe('<RenewalsSectionTabs> AURA link tabs and the phone select', () => {
     expect(push).toHaveBeenCalledWith(href(/pending review/i));
   });
 });
+
+describe('<RenewalsSectionTabs> phone select touch height (R45)', () => {
+  it("takes AURA's touch height, like the tabs it stands in for", () => {
+    renderTabs();
+    expect(screen.getByRole('combobox', { name: 'Section' }).closest('.aura-field')).toHaveClass('is-touch');
+  });
+});

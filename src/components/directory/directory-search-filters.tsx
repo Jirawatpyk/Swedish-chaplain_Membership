@@ -81,6 +81,7 @@ export function DirectorySearchFilters(): React.JSX.Element {
     >
       <AuraProvider strings={barStrings}>
         <FilterBar
+          touchHeight
           key={barKey}
           label={t('label')}
           // The search fills the row beside "Listed only", as on the board.

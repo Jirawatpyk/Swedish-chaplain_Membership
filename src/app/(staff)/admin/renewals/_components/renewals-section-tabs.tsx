@@ -196,6 +196,7 @@ export function RenewalsSectionTabs({
   return (
     <>
       <Tabs
+        touchHeight
         label={t('tabs.ariaLabel')}
         tabs={tabs}
         value={current}
@@ -206,6 +207,7 @@ export function RenewalsSectionTabs({
           count as the tab does ("Tier upgrades (2)"). */}
       <div className="sm:hidden">
         <Select
+          touchHeight
           label={t('tabs.selectLabel')}
           value={current}
           options={tabs.map((tab) => ({

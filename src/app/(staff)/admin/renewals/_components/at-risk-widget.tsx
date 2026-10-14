@@ -326,6 +326,7 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
         </p>
       </div>
       <Tabs
+        touchHeight
         label={t('bandTabs.label')}
         tabs={tabs}
         value={activeBand}

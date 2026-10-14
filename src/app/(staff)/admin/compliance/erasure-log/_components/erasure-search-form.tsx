@@ -42,6 +42,7 @@ export function ErasureSearchForm({
 
   return (
     <FilterBar
+      touchHeight
       search={q}
       onSearchChange={(value) => router.replace(searchHref(status, value.trim()), { scroll: false })}
       searchLabel={t('search.label')}

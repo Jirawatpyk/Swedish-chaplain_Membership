@@ -90,7 +90,7 @@ export function BenefitsTabs(props: BenefitsTabsProps): React.ReactElement {
     // On phones and tablets the tabs share the width, as `Benefits-mobile`
     // draws them (AURA `fullWidth="below-lg"`, #90).
     <div aria-busy={isPending || undefined}>
-      <Tabs tabs={tabs} label={t('ariaLabel')} value={active} onChange={onValueChange} fullWidth="below-lg" />
+      <Tabs touchHeight tabs={tabs} label={t('ariaLabel')} value={active} onChange={onValueChange} fullWidth="below-lg" />
     </div>
   );
 }

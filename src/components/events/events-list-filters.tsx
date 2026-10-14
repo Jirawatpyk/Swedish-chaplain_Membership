@@ -84,6 +84,7 @@ export function EventsListFilters({
     <div aria-busy={isPending}>
     <AuraProvider strings={barStrings}>
       <FilterBar
+        touchHeight
         ref={barRef}
         label={t('filters.groupLabel')}
         searchGrow

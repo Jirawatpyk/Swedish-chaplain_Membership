@@ -164,3 +164,10 @@ describe('<UrgencyBucketTabs> phone select (board Admin-renewals-mobile)', () =>
     );
   });
 });
+
+describe('<UrgencyBucketTabs> phone select touch height (R45)', () => {
+  it("takes AURA's touch height, like the filter bars beside it", () => {
+    renderTabs('t-30');
+    expect(screen.getByRole('combobox', { name: 'Urgency' }).closest('.aura-field')).toHaveClass('is-touch');
+  });
+});

@@ -70,10 +70,10 @@ export function TierFilterSelect({ current }: TierFilterSelectProps) {
   return (
     <>
       <div className="w-full sm:hidden">
-        <Select label={label} value={current} options={options} onChange={onChange} />
+        <Select touchHeight label={label} value={current} options={options} onChange={onChange} />
       </div>
       <div className="hidden sm:block sm:w-[14rem]">
-        <Select aria-label={label} value={current} options={options} onChange={onChange} />
+        <Select touchHeight aria-label={label} value={current} options={options} onChange={onChange} />
       </div>
     </>
   );

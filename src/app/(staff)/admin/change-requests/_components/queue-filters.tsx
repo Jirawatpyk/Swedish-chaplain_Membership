@@ -218,6 +218,7 @@ export function ChangeRequestQueueFilters({ resultCount, hasMore, timeZone, memb
     <div data-testid="queue-filters" aria-busy={pending}>
       <AuraProvider strings={barStrings}>
         <FilterBar
+          touchHeight
           label={tFilters('label')}
           filters={activeFilters}
           ref={barRef}

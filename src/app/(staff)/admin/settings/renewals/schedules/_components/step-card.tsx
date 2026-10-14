@@ -378,6 +378,7 @@ export function StepCard({
       {showCustomTiming ? (
         <div className="grid grid-cols-1 gap-[var(--aura-space-3)] sm:grid-cols-2 sm:items-start">
           <NumberField
+            touchHeight
             id={`custom-days-${idPrefix}`}
             label={t('stepCard.timing.customDaysLabel')}
             min={0}
@@ -410,6 +411,7 @@ export function StepCard({
               types exist, so a typed type is kept (`allowCustomValue`), and
               the hint says so. */}
           <Combobox
+            touchHeight
             id={`task-type-${idPrefix}`}
             label={t('stepCard.taskType.label')}
             hint={t('stepCard.taskType.hint')}
