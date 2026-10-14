@@ -39,7 +39,7 @@ export async function renderStaffAccountView({
 }): Promise<React.ReactElement> {
   const t = await getTranslations('auth.changePassword');
   const tShell = await getTranslations('shell.roleBadge');
-  const { tone, variant } = ROLE_BADGE_STYLE[role];
+  const { tone, variant, shield } = ROLE_BADGE_STYLE[role];
 
   return (
     <FormContainer align="start">
@@ -52,8 +52,7 @@ export async function renderStaffAccountView({
           <Badge
             tone={tone}
             variant={variant}
-            // rbac-presentation-only-ok: picks a badge icon
-            icon={role === 'super_admin' ? <ShieldCheckIcon aria-hidden /> : undefined}
+            icon={shield ? <ShieldCheckIcon aria-hidden /> : undefined}
           >
             {tShell(role)}
           </Badge>
