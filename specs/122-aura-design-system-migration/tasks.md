@@ -673,7 +673,16 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 
 ### US10c — Settings hub, member changes, account (PR 22)
 
-- [ ] T1020 [US10] Settings hub, member-change approval settings and the staff account page (tasks written when US10c starts).
+- [x] T1020 [US10] Spec session "2026-10-14 (US10c start)" and these tasks.
+- [x] T1021 [US10] Settings hub on AURA cards: one card per visible category, the whole card one link named by its title (icon tile, description, chevron), two up from md; the empty state in a card. The `CATEGORIES` / `canPerform` / flag map are unchanged. RED: `tests/unit/app/admin/settings/settings-hub.test.tsx`.
+- [x] T1022 [US10] Hub loading skeleton in the same grid (AURA cards, pulse skeleton, `PageSkeletonShell`).
+- [x] T1023 [US10] Approval switch on AURA `Switch` (own label and description) and `Alert` (pending note `role="note"`, errors `role="alert"`); the row is `aria-busy` while in flight, the switch never `disabled`; request, toasts and confirm unchanged. RED: `approval-switch.test.tsx`.
+- [x] T1024 [US10] Member-changes page frame: one AURA card titled "Approval requirement" (h2) holding the switch; loading on AURA; `error.tsx` on `RouteErrorPanel`. RED: `member-changes-page.test.tsx`.
+- [x] T1025 [US10] Staff account page: the role as an AURA badge styled as on the users list (shared `ROLE_BADGE_STYLE`), the form in one AURA card under its explanation with no second heading; loading on AURA. RED: `tests/unit/app/admin/account-page.test.tsx`.
+- [ ] T1026 [US10] Ratchet: `MIGRATED_PATHS` gains the hub, member-changes and account; the four US10c legacy controls move to US12 files.
+- [ ] T1027 [US10] Preview views (settings, member-changes states and confirm, account) and loading routes; first budgets for `/admin/settings`, `/admin/settings/member-changes`, `/admin/account`.
+- [ ] T1028 [US10] e2e selectors where the swap breaks them (`change-requests` settings tests, `change-password`).
+- [ ] T1029 [US10] Exit: gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; UX review with fixes RED first; draft PR; relay R44.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
