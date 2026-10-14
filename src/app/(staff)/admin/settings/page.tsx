@@ -144,6 +144,11 @@ export default async function SettingsIndexPage() {
   return renderSettingsHubView(visible);
 }
 
+/** The id of a card's description, read when its link takes focus (UX review L3). */
+function descriptionId(href: string): string {
+  return `settings-card${href.replaceAll('/', '-')}-description`;
+}
+
 /**
  * The hub for a list of categories the viewer may open, shared with the
  * /test-fixtures/aura-admin preview (spec 122 US10c).
@@ -175,7 +180,7 @@ export async function renderSettingsHubView(
             key={href}
             as="li"
             interactive
-            className="relative has-[a:focus-visible]:outline-2 has-[a:focus-visible]:outline-offset-2 has-[a:focus-visible]:outline-[var(--aura-focus-ring)]"
+            className="relative has-[a:focus-visible]:outline-[length:var(--aura-focus-ring-width)] has-[a:focus-visible]:outline-offset-[var(--aura-focus-ring-offset)] has-[a:focus-visible]:outline-[var(--aura-focus-ring)] has-[a:focus-visible]:outline-solid"
           >
             <div className="flex items-start gap-[var(--aura-space-4)]">
               <span
@@ -188,12 +193,15 @@ export async function renderSettingsHubView(
                 <h2 className="aura-text-body font-semibold text-[var(--aura-fg-primary)]">
                   <Link
                     href={href}
-                    className="outline-none after:absolute after:inset-0 after:rounded-[inherit] after:content-['']"
+                    aria-describedby={descriptionId(href)}
+                    className="outline-none after:absolute after:inset-0 after:rounded-[var(--aura-card-radius)] after:content-['']"
                   >
                     {t(titleKey)}
                   </Link>
                 </h2>
-                <p className="aura-text-sm text-[var(--aura-fg-secondary)]">{t(descriptionKey)}</p>
+                <p id={descriptionId(href)} className="aura-text-sm text-[var(--aura-fg-secondary)]">
+                  {t(descriptionKey)}
+                </p>
               </div>
               <ChevronRightIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--aura-fg-secondary)]" />
             </div>

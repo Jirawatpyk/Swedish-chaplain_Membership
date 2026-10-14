@@ -7,7 +7,8 @@
  * (page+loading both use the same variant) holds.
  *
  * Spec 122 US10c (T1022): AURA cards and the AURA pulse skeleton, in the
- * page's own grid — icon tile, title, two description lines, chevron.
+ * page's own grid — icon tile, title, two description lines, chevron. Four
+ * cards, not six: most roles see fewer, so the swap shifts less (UX review M2).
  * `PageSkeletonShell` announces the loading state; the blocks are hidden
  * from assistive tech.
  */
@@ -25,7 +26,7 @@ export default async function SettingsIndexLoading() {
       <DetailContainer aria-busy="true">
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <ul aria-hidden className="grid gap-[var(--aura-space-4)] md:grid-cols-2">
-          {[0, 1, 2, 3, 4, 5].map((i) => (
+          {[0, 1, 2, 3].map((i) => (
             <Card key={i} as="li">
               <div className="flex items-start gap-[var(--aura-space-4)]">
                 <SkeletonBlock className="size-10 shrink-0 rounded-[var(--aura-radius-md)]" />
