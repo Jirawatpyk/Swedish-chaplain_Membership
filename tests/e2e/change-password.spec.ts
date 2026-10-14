@@ -67,7 +67,7 @@ test.describe('change-password happy path (T150, SC-021)', () => {
           r.url().includes('/api/auth/change-password') && r.request().method() === 'POST',
         { timeout: 15_000 },
       ),
-      page.getByRole('button', { name: /change|update|save/i }).first().click(),
+      page.getByRole('main').getByRole('button', { name: /^change password$/i }).click(),
     ]);
 
     // Success toast
@@ -92,7 +92,7 @@ test.describe('change-password happy path (T150, SC-021)', () => {
     if (await confirm.count()) {
       await fillField(confirm.first(), E2E_CHANGE_PW_PASSWORD);
     }
-    await page.getByRole('button', { name: /change|update|save/i }).first().click();
+    await page.getByRole('main').getByRole('button', { name: /^change password$/i }).click();
     await page.waitForResponse(
       (r) => r.url().includes('/api/auth/change-password'),
       { timeout: 15_000 },

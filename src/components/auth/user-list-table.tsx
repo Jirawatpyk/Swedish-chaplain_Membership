@@ -37,6 +37,7 @@ import {
 } from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { ChangeRoleDialog, CHANGE_ROLE_OPTIONS } from '@/components/auth/change-role-dialog';
+import { ROLE_BADGE_STYLE } from '@/components/auth/role-badge-style';
 // The deep path (rather than the `@/modules/auth` barrel) matches the
 // convention the other client components here follow: `role.ts` is pure Domain
 // (no framework imports) and safe in the client bundle, whereas the barrel
@@ -104,19 +105,11 @@ type PendingAction =
   | null;
 
 // Spec 122 US10a — board `Admin-users`: status as a pill (Active → ready,
-// Pending → progress, Disabled → neutral), role as a badge.
+// Pending → progress, Disabled → neutral), role as a badge (ROLE_BADGE_STYLE).
 const statusTone = { active: 'ready', pending: 'progress', disabled: 'neutral' } as const satisfies Record<
   Status,
   'ready' | 'progress' | 'neutral'
 >;
-
-const roleBadge = {
-  super_admin: { tone: 'neutral', variant: 'solid' },
-  admin: { tone: 'accent', variant: 'soft' },
-  manager: { tone: 'neutral', variant: 'soft' },
-  marketing: { tone: 'success', variant: 'soft' },
-  member: { tone: 'neutral', variant: 'outline' },
-} as const satisfies Record<Role, { tone: 'neutral' | 'accent' | 'success'; variant: 'solid' | 'soft' | 'outline' }>;
 
 // The server renders both layouts (CSS shows one); once on the client only the
 // one for this width is mounted, so no action is in the page twice.
@@ -469,7 +462,7 @@ export function UserListTable({
   }
 
   function roleBadgeFor(user: UserRow): ReactNode {
-    const { tone, variant } = roleBadge[user.role];
+    const { tone, variant } = ROLE_BADGE_STYLE[user.role];
     return (
       <Badge
         tone={tone}

@@ -188,6 +188,11 @@
  *   budgeted for the first time on the branch build:
  *     /admin/audit                                      865.9 KB measured → ≤  970 KB
  *     /admin/compliance/erasure-log                     783.6 KB measured → ≤  890 KB
+ *   122 US10c (settings hub, member-change approval, staff account on AURA,
+ *   2026-10-14) — budgeted for the first time on the branch build:
+ *     /admin/settings                                   772.3 KB measured → ≤  880 KB
+ *     /admin/settings/member-changes                    782.4 KB measured → ≤  890 KB
+ *     /admin/account                                    873.8 KB measured → ≤  980 KB
  *
  * Run as a post-build step:
  *
@@ -292,6 +297,10 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // --- Spec 122 US10b audit log + erasure evidence log (AURA) — see docblock ---
   { route: '/admin/audit', maxKb: 970 },
   { route: '/admin/compliance/erasure-log', maxKb: 890 },
+  // --- Spec 122 US10c settings hub, member-change approval, staff account (AURA) — see docblock ---
+  { route: '/admin/settings', maxKb: 880 },
+  { route: '/admin/settings/member-changes', maxKb: 890 },
+  { route: '/admin/account', maxKb: 980 },
 ];
 
 const NEXT_DIR = join(process.cwd(), '.next');

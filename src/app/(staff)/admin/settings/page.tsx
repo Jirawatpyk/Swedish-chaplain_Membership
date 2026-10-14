@@ -17,6 +17,11 @@
  * any nested setting page would 404 when clicked. Same for the
  * "renewals" segment under it (no page.tsx) — the breadcrumb-path
  * util rewrites that to `/admin/settings` via NON_ROUTE_BY_PARENT.
+ *
+ * Spec 122 US10c (T1021; boards `Admin-settings`, `-mobile`,
+ * `Admin-state-settings-none`): one AURA card per category, two up from md.
+ * The whole card is the target: its title link stretches over it, so each
+ * card is one tab stop named by its title. The empty state sits in a card.
  */
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -28,20 +33,15 @@ import {
   Settings2Icon,
   PaletteIcon,
   PlugZapIcon,
+  ChevronRightIcon,
+  SettingsIcon,
 } from 'lucide-react';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { env } from '@/lib/env';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requirePagePermission, canPerform } from '@/lib/rbac';
 import { EmptyState } from '@/components/shell/empty-state';
-import { SettingsIcon } from 'lucide-react';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.settings.index');
@@ -60,7 +60,7 @@ export async function generateMetadata(): Promise<Metadata> {
  * a user who did nothing wrong. Exactly the dead-link class the parity tests
  * exist to kill, on the one surface those tests did not cover.
  */
-const CATEGORIES = [
+export const CATEGORIES = [
   {
     titleKey: 'categories.invoicing.title',
     descriptionKey: 'categories.invoicing.description',
@@ -129,7 +129,6 @@ const CATEGORIES = [
 
 export default async function SettingsIndexPage() {
   const { user } = await requirePagePermission('dashboard.view');
-  const t = await getTranslations('admin.settings.index');
   // Same flag names the staff shell resolves for the sidebar (layout.tsx).
   const flags = {
     broadcastsEnabled: env.features.f7Broadcasts,
@@ -142,6 +141,22 @@ export default async function SettingsIndexPage() {
       canPerform(user.role, c.permission),
   );
 
+  return renderSettingsHubView(visible);
+}
+
+/** The id of a card's description, read when its link takes focus (UX review L3). */
+function descriptionId(href: string): string {
+  return `settings-card${href.replaceAll('/', '-')}-description`;
+}
+
+/**
+ * The hub for a list of categories the viewer may open, shared with the
+ * /test-fixtures/aura-admin preview (spec 122 US10c).
+ */
+export async function renderSettingsHubView(
+  visible: readonly (typeof CATEGORIES)[number][],
+): Promise<React.JSX.Element> {
+  const t = await getTranslations('admin.settings.index');
   // Every card gone: the viewer holds `dashboard.view` (so the index itself
   // opens) but no settings surface. Better than an empty grid, which reads as a
   // loading failure.
@@ -149,7 +164,9 @@ export default async function SettingsIndexPage() {
     return (
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        <EmptyState icon={SettingsIcon} title={t('empty')} />
+        <Card>
+          <EmptyState icon={SettingsIcon} title={t('empty')} bordered={false} />
+        </Card>
       </DetailContainer>
     );
   }
@@ -157,26 +174,40 @@ export default async function SettingsIndexPage() {
   return (
     <DetailContainer>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
-      <div className="grid gap-4 sm:grid-cols-2">
+      <ul className="grid gap-[var(--aura-space-4)] md:grid-cols-2">
         {visible.map(({ titleKey, descriptionKey, href, icon: Icon }) => (
-          <Link
+          <Card
             key={href}
-            href={href}
-            className="group rounded-lg outline-none focus-visible:ring-3 focus-visible:ring-ring"
+            as="li"
+            interactive
+            className="relative has-[a:focus-visible]:outline-[length:var(--aura-focus-ring-width)] has-[a:focus-visible]:outline-offset-[var(--aura-focus-ring-offset)] has-[a:focus-visible]:outline-[var(--aura-focus-ring)] has-[a:focus-visible]:outline-solid"
           >
-            <Card className="h-full transition-colors hover:border-primary/40">
-              <CardHeader className="flex flex-row items-start gap-3 space-y-0">
-                <Icon className="size-5 shrink-0 text-muted-foreground" aria-hidden />
-                <div className="flex flex-col gap-1">
-                  <CardTitle className="text-base">{t(titleKey)}</CardTitle>
-                  <CardDescription>{t(descriptionKey)}</CardDescription>
-                </div>
-              </CardHeader>
-              <CardContent />
-            </Card>
-          </Link>
+            <div className="flex items-start gap-[var(--aura-space-4)]">
+              <span
+                aria-hidden
+                className="grid size-10 shrink-0 place-items-center rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] text-[var(--aura-fg-secondary)]"
+              >
+                <Icon className="size-5" />
+              </span>
+              <div className="flex min-w-0 flex-1 flex-col gap-[var(--aura-space-1)]">
+                <h2 className="aura-text-body font-semibold text-[var(--aura-fg-primary)]">
+                  <Link
+                    href={href}
+                    aria-describedby={descriptionId(href)}
+                    className="outline-none after:absolute after:inset-0 after:rounded-[var(--aura-card-radius)] after:content-['']"
+                  >
+                    {t(titleKey)}
+                  </Link>
+                </h2>
+                <p id={descriptionId(href)} className="aura-text-sm text-[var(--aura-fg-secondary)]">
+                  {t(descriptionKey)}
+                </p>
+              </div>
+              <ChevronRightIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-[var(--aura-fg-secondary)]" />
+            </div>
+          </Card>
         ))}
-      </div>
+      </ul>
     </DetailContainer>
   );
 }

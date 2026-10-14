@@ -123,6 +123,10 @@ import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { renderAuditListView } from '@/app/(staff)/admin/audit/page';
 import { AuditFilters } from '@/components/audit/audit-filters';
 import { renderErasureLogView } from '@/app/(staff)/admin/compliance/erasure-log/page';
+import { CATEGORIES as SETTINGS_CATEGORIES, renderSettingsHubView } from '@/app/(staff)/admin/settings/page';
+import { renderMemberChangesView } from '@/app/(staff)/admin/settings/member-changes/page';
+import { renderStaffAccountView } from '@/app/(staff)/admin/account/page';
+import { OpenSwitchOffDialog, ShowReadOnlyRefusal } from './settings-previews';
 import type { GroupedEvidence } from '@/modules/insights';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
@@ -167,6 +171,8 @@ export const dynamic = 'force-dynamic';
  *   ?view=import&state=idle|preview|remap|error|mismatch|result · &dialog=create (US9b-2)
  *   ?view=import-history&state=default|empty|running
  *   ?view=eventcreate&state=fresh|reveal|configured|grace|empty · &dialog=rotate (US9c)
+ *   ?view=settings&state=default|none · ?view=account&state=super-admin|admin   (US10c)
+ *   ?view=member-changes&state=on|off|idle|readonly · &dialog=off
  *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|
  *         credit-notes|credit-note|registers|invoice-settings|events|event|…
  *
@@ -457,6 +463,12 @@ const LOADING_ROUTES = {
     path: '/admin/compliance/erasure-log',
     load: async () => (await import('@/app/(staff)/admin/compliance/erasure-log/loading')).default(),
   },
+  settings: { path: '/admin/settings', load: async () => (await import('@/app/(staff)/admin/settings/loading')).default() },
+  'member-changes': {
+    path: '/admin/settings/member-changes',
+    load: async () => (await import('@/app/(staff)/admin/settings/member-changes/loading')).default(),
+  },
+  account: { path: '/admin/account', load: async () => (await import('@/app/(staff)/admin/account/loading')).default() },
   'invoice-settings': {
     path: '/admin/settings/invoicing',
     load: async () => (await import('@/app/(staff)/admin/settings/invoicing/loading')).default(),
@@ -1682,6 +1694,51 @@ export default async function AuraAdminPreviewPage({
   // 122 US10b (T1018) — the audit log (boards Admin-audit, -mobile,
   // Admin-state-audit-invalid): default | empty (a filter with no match) |
   // invalid (a From after To).
+  // 122 US10c (T1027) — the settings hub (boards Admin-settings, -mobile,
+  // Admin-state-settings-none): every category, or none for a role without one.
+  if (view === 'settings') {
+    return (
+      <StaffFrame path="/admin/settings">
+        {await renderSettingsHubView(state === 'none' ? [] : SETTINGS_CATEGORIES)}
+      </StaffFrame>
+    );
+  }
+
+  // 122 US10c (T1027) — member-change approval (boards
+  // Admin-settings-member-changes, -mobile, -off): on with 3 waiting (default),
+  // off with 3 waiting, idle (on, nothing waiting), readonly (a refused PATCH);
+  // &dialog=off opens the switch-off confirmation.
+  if (view === 'member-changes') {
+    const { dialog } = await searchParams;
+    const body = await renderMemberChangesView({
+      initialEnabled: state !== 'off',
+      pendingCount: state === 'idle' || state === 'readonly' ? 0 : 3,
+    });
+    return (
+      <StaffFrame path="/admin/settings/member-changes">
+        {dialog === 'off' ? (
+          <OpenSwitchOffDialog>{body}</OpenSwitchOffDialog>
+        ) : state === 'readonly' ? (
+          <ShowReadOnlyRefusal>{body}</ShowReadOnlyRefusal>
+        ) : (
+          body
+        )}
+      </StaffFrame>
+    );
+  }
+
+  // 122 US10c (T1027) — the staff account page (boards Admin-account, -mobile).
+  if (view === 'account') {
+    return (
+      <StaffFrame path="/admin/account">
+        {await renderStaffAccountView({
+          email: 'malin.berg@swecham.example',
+          role: state === 'admin' ? 'admin' : 'super_admin',
+        })}
+      </StaffFrame>
+    );
+  }
+
   if (view === 'audit') {
     const t = await getTranslations('admin.audit');
     const tz = 'Asia/Bangkok';

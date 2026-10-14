@@ -188,8 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the settings hub keeps the legacy kit until US10c', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/loading.tsx')).toEqual([]);
+    it('control: the broadcast settings keep the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/broadcasts/loading.tsx')).toEqual([]);
     });
   });
 
@@ -370,8 +370,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the settings hub keeps the legacy kit until US10', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/page.tsx')).toEqual([]);
+    it('control: the broadcast settings keep the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/broadcasts/page.tsx')).toEqual([]);
     });
   });
 
@@ -448,8 +448,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the settings hub keeps the legacy kit until US10c', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/page.tsx')).toEqual([]);
+    it('control: the broadcast settings keep the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/broadcasts/error.tsx')).toEqual([]);
     });
   });
 
@@ -474,8 +474,30 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the account page keeps the legacy kit until US10c', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/account/page.tsx')).toEqual([]);
+    it('control: the E-Blast brand page keeps the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/broadcasts/brand/loading.tsx')).toEqual([]);
+    });
+  });
+
+  describe('the US10c settings hub, member-change approval and account pages are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/settings/page.tsx',
+      'src/app/(staff)/admin/settings/loading.tsx',
+      'src/app/(staff)/admin/settings/member-changes/page.tsx',
+      'src/app/(staff)/admin/settings/member-changes/loading.tsx',
+      'src/app/(staff)/admin/settings/member-changes/error.tsx',
+      'src/app/(staff)/admin/settings/member-changes/_components/approval-switch.tsx',
+      'src/app/(staff)/admin/account/page.tsx',
+      'src/app/(staff)/admin/account/loading.tsx',
+      'src/components/auth/role-badge-style.ts',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the broadcast settings keep the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/broadcasts/page.tsx')).toEqual([]);
     });
   });
 

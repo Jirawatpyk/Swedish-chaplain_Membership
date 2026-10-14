@@ -1,22 +1,23 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { ShieldCheckIcon } from 'lucide-react';
+import { Badge, Card } from '@jirawatpyk/aura-react/server';
 import { ChangePasswordForm } from '@/components/auth/change-password-form';
+import { ROLE_BADGE_STYLE } from '@/components/auth/role-badge-style';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requirePagePermission } from '@/lib/rbac';
+import type { Role } from '@/modules/auth/domain/role';
 /**
  * Staff account settings page (T154) at URL `/admin/account`.
  *
  * For F1 the only setting is password change. Future phases will
  * add profile, notification preferences, language selection, etc.
+ *
+ * Spec 122 US10c (T1025; boards `Admin-account`, `-mobile`): the role is an
+ * AURA badge styled as on the users list, and the form sits in one AURA card
+ * under its explanation. The board draws no second "Change password" heading
+ * in the card: the page h1 already says it.
  */
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('auth.changePassword');
@@ -25,27 +26,44 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function StaffAccountPage() {
   const { user } = await requirePagePermission('dashboard.view');
+  return renderStaffAccountView({ email: user.email, role: user.role });
+}
+
+/** The page body, shared with the /test-fixtures/aura-admin preview (spec 122 US10c). */
+export async function renderStaffAccountView({
+  email,
+  role,
+}: {
+  readonly email: string;
+  readonly role: Role;
+}): Promise<React.ReactElement> {
   const t = await getTranslations('auth.changePassword');
   const tShell = await getTranslations('shell.roleBadge');
+  const { tone, variant, shield } = ROLE_BADGE_STYLE[role];
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader
         title={t('title')}
-        subtitle={user.email}
-        badge={<Badge variant="secondary">{tShell(user.role)}</Badge>}
+        // An address has no break opportunity: at 200% text it pushed the page
+        // sideways until it could break anywhere (WCAG 1.4.10).
+        subtitle={<span className="[overflow-wrap:anywhere]">{email}</span>}
+        badge={
+          <Badge
+            tone={tone}
+            variant={variant}
+            icon={shield ? <ShieldCheckIcon aria-hidden /> : undefined}
+          >
+            {tShell(role)}
+          </Badge>
+        }
       />
 
       <Card>
-        <CardHeader>
-          <CardTitle>{t('title')}</CardTitle>
-          <CardDescription>
-            {t('description')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          <p className="aura-text-sm text-[var(--aura-fg-secondary)]">{t('description')}</p>
           <ChangePasswordForm />
-        </CardContent>
+        </div>
       </Card>
     </FormContainer>
   );

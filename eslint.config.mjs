@@ -468,6 +468,13 @@ export const MIGRATED_PATHS = [
   'src/components/audit/audit-table.tsx',
   'src/components/audit/audit-table-skeleton.tsx',
   'src/app/(staff)/admin/compliance/**',
+  // US10c — the settings hub (not its broadcast pages, US12), member-change
+  // approval, and the staff account page with the shared role badge style.
+  'src/app/(staff)/admin/settings/page.tsx',
+  'src/app/(staff)/admin/settings/loading.tsx',
+  'src/app/(staff)/admin/settings/member-changes/**',
+  'src/app/(staff)/admin/account/**',
+  'src/components/auth/role-badge-style.ts',
 ];
 
 /**

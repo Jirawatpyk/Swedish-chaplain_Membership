@@ -9,11 +9,8 @@
  *     the visible state line follows — it is NOT a live region (UX M3: the
  *     toast already announces; two polite regions read the same news twice);
  *   - the `role="switch"` element itself carries the accessible name via
- *     `aria-labelledby` (Base UI puts the caller `id` on its hidden checkbox
- *     on purpose — `useLabelableId` — so the visible `<label for>` is the
- *     POINTER path: clicking the label text toggles the switch, UX M1
- *     re-read against the primitive; the house idiom of
- *     `renewal-reminders-toggle.tsx`);
+ *     `aria-labelledby` to its visible label, and clicking the label text
+ *     toggles the switch (UX M1; AURA's switch since spec 122 US10c);
  *   - switching OFF with requests waiting → the platform confirmation
  *     dialog (plain tier, not destructive) whose confirm button is the short
  *     count-bearing "Switch off (3)" (UX H1: the full consequence sentence is
@@ -118,24 +115,39 @@ describe('ApprovalSwitch (F114 US6)', () => {
     expect(screen.queryByRole('note')).toBeNull();
   });
 
+  // Spec 122 US10c (T1023): AURA's switch names itself by its own visible
+  // label (aria-labelledby) and points the label's `for` at the switch, so a
+  // click on the label text still toggles it (UX M1).
   it('the switch element itself is named through aria-labelledby, and clicking the visible label toggles it (UX M1)', async () => {
     const fetchFn = stubFetch(200, { approvalEnabled: true, changedAt: '2026-09-15T10:00:00.000Z' });
-    const { container } = renderSwitch({ initialEnabled: false, pendingCount: 0 });
+    renderSwitch({ initialEnabled: false, pendingCount: 0 });
     const sw = screen.getByRole('switch', { name: t.switchLabel });
+    expect(sw).toHaveClass('aura-switch');
     const labelId = sw.getAttribute('aria-labelledby');
     expect(labelId).toBeTruthy();
     const label = document.getElementById(labelId!)!;
     expect(label).toHaveTextContent(t.switchLabel);
-    expect(label.closest('[aria-hidden="true"]')).toBeNull();
-    // The `for` target is Base UI's hidden checkbox (by design) — the pointer
-    // path: a click on the label text activates it and the switch toggles.
-    const forId = label.getAttribute('for');
-    expect(forId).toBeTruthy();
-    const target = container.querySelector(`#${CSS.escape(forId!)}`);
-    expect(target).toBeInstanceOf(HTMLInputElement);
+    expect(label.getAttribute('for')).toBe(sw.id);
     fireEvent.click(label);
     await waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
     expect(JSON.parse(String(calls(fetchFn)[0]!.init.body))).toEqual({ approvalEnabled: true });
+  });
+
+  it('the switch is described by the explanation under its label', () => {
+    renderSwitch({ initialEnabled: false, pendingCount: 0 });
+    expect(screen.getByRole('switch', { name: t.switchLabel })).toHaveAccessibleDescription(t.description);
+  });
+
+  it('while the request is in flight the row is aria-busy and the switch is never disabled', async () => {
+    let release: (r: Response) => void = () => {};
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => { release = r; })));
+    renderSwitch({ initialEnabled: false, pendingCount: 0 });
+    const sw = screen.getByRole('switch', { name: t.switchLabel });
+    fireEvent.click(sw);
+    await waitFor(() => expect(sw.closest('[aria-busy="true"]')).not.toBeNull());
+    expect(sw).not.toBeDisabled();
+    release(new Response(JSON.stringify({ approvalEnabled: true, changedAt: '2026-09-15T10:00:00.000Z' }), { status: 200 }));
+    await waitFor(() => expect(sw.closest('[aria-busy="true"]')).toBeNull());
   });
 
   it('switching OFF with 3 waiting → the confirmation names the count; Cancel sends nothing', async () => {

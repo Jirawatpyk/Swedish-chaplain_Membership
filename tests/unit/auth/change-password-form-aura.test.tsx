@@ -99,4 +99,27 @@ describe('ChangePasswordForm on AURA (spec 122 US2)', () => {
     expect(submit).toHaveClass('aura-btn');
     expect(submit).toHaveAttribute('type', 'submit');
   });
+
+  // Spec 122 US10c (maintainer, parity 14 Oct; boards `Admin-account`,
+  // `Portal-account`): full width on phones; from sm up the button keeps its
+  // own width — at the end of the form on its own (staff account), at the
+  // start beside "Forgot your password?" (portal account).
+  it('keeps the button full width on phones and end-aligned at its own width from sm up', () => {
+    renderForm();
+    const row = screen.getByRole('button', { name: en.auth.changePassword.submit }).parentElement!;
+    expect(row.className).toMatch(/\bflex-col\b/);
+    expect(row.className).toMatch(/\bsm:flex-row\b/);
+    expect(row.className).toMatch(/\bsm:justify-end\b/);
+  });
+
+  it('starts the row with the button when a secondary action sits beside it', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ChangePasswordForm secondaryAction={<a href="/forgot-password">Forgot</a>} />
+      </NextIntlClientProvider>,
+    );
+    const row = screen.getByRole('button', { name: en.auth.changePassword.submit }).parentElement!;
+    expect(row.className).toMatch(/\bsm:flex-row\b/);
+    expect(row.className).not.toMatch(/\bsm:justify-end\b/);
+  });
 });
