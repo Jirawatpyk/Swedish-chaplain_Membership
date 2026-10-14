@@ -78,4 +78,13 @@ describe('staff account page on AURA', () => {
     expect(card!.querySelector('[data-testid="change-password-form"]')).not.toBeNull();
     expect(card!.querySelector('h2, h3')).toBeNull();
   });
+
+  // 200% text at 390: an address has no break opportunity, so it pushed the
+  // page 39px sideways until it was allowed to break anywhere (WCAG 1.4.10).
+  it('lets the email under the title break anywhere', async () => {
+    const root = await renderPage();
+    const email = [...root.querySelectorAll('span')].find((e) => e.textContent === 'malin.berg@swecham.example');
+    expect(email).toBeDefined();
+    expect(email!.className).toMatch(/\[overflow-wrap:anywhere\]/);
+  });
 });
