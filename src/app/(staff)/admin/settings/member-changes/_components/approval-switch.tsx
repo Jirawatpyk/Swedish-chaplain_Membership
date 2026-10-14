@@ -5,14 +5,10 @@
  * approval for member changes" switch on `/admin/settings/member-changes`.
  *
  * Behaviour:
- *   - the control is a Base UI `Switch` named through `aria-labelledby` →
- *     the visible `<Label>` (the house idiom — `renewal-reminders-toggle.tsx`):
- *     Base UI puts the caller `id` on its hidden `<input type=checkbox>`
- *     (`useLabelableId`), so the `<Label htmlFor>` still toggles the switch on
- *     a pointer click through the native label activation, while
- *     `aria-labelledby` names the `role=switch` element for AT on first paint
- *     (UX M1 re-read against the primitive: the `for` is for the mouse, the
- *     `aria-labelledby` for AT).
+ *   - the control is AURA's `Switch` (spec 122 US10c), named through
+ *     `aria-labelledby` → its own visible label and described by the text
+ *     under it; the label's `for` points at the switch, so a click on the
+ *     label text toggles it (UX M1).
  *     No optimistic
  *     flip — the switch shows the server truth, so `aria-checked` never lies
  *     on a refusal; the visible state line is plain text, not a live region
@@ -27,7 +23,7 @@
  *     — the sentence overflowed the 320 px footer, UX H1); Cancel sends
  *     nothing;
  *   - `PATCH /api/admin/settings/member-changes { approvalEnabled }`, same
- *     origin; while in flight the switch is `aria-busy` + dimmed, never
+ *     origin; while in flight the switch row is `aria-busy` + dimmed, never
  *     `disabled` (a disabled control drops focus to `<body>`);
  *   - success → state line, and a toast ONLY when the value actually
  *     transitioned (`changedAt` non-null; R-L5 — an unchanged no-op writes no
@@ -40,15 +36,13 @@
  *     value, so inventing one it never read would announce "Approval is off"
  *     about a tenant the server had just switched on.
  */
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
-import { InlineAlert } from '@/components/ui/inline-alert';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
+import { Alert, Switch } from '@jirawatpyk/aura-react';
 
 /**
  * The 200 body this card can act on. Read off an `unknown` (C2): `res.json()`
@@ -73,9 +67,6 @@ export function ApprovalSwitch({
   readonly pendingCount: number;
 }): React.ReactElement {
   const t = useTranslations('admin.settings.memberChanges');
-  const switchId = useId();
-  const labelId = useId();
-  const descriptionId = useId();
   const [enabled, setEnabled] = useState(initialEnabled);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,16 +117,18 @@ export function ApprovalSwitch({
   }
 
   return (
-    <div className="grid gap-4">
-      <div className="flex items-start gap-3">
+    <div className="grid gap-[var(--aura-space-4)]">
+      {/* Spec 122 US10c: AURA's switch carries its own visible label and
+          description (aria-labelledby / aria-describedby). It shows the
+          server's value only — `checked` follows `enabled`, never the click.
+          While a request is in flight the row is `aria-busy` and dimmed, but
+          the switch is never `disabled`, so focus stays on it. */}
+      <div aria-busy={busy || undefined} className="aria-busy:opacity-70">
         <Switch
-          id={switchId}
           checked={enabled}
-          aria-labelledby={labelId}
-          aria-describedby={descriptionId}
-          aria-busy={busy || undefined}
-          className="mt-0.5 aria-busy:opacity-70"
-          onCheckedChange={(next) => {
+          label={t('switchLabel')}
+          description={t('description')}
+          onChange={(next) => {
             if (busy) return;
             if (!next && pendingCount > 0) {
               setConfirmOpen(true);
@@ -144,45 +137,37 @@ export function ApprovalSwitch({
             void send(next);
           }}
         />
-        {/* `mb-0`: the primitive's `mb-[var(--field-label-gap)]` doubled the gap
-            inside this `grid gap-1` (UX L7). */}
-        <div className="grid gap-1">
-          <Label id={labelId} htmlFor={switchId} className="mb-0">
-            {t('switchLabel')}
-          </Label>
-          <p id={descriptionId} className="text-sm text-muted-foreground">
-            {t('description')}
-          </p>
-        </div>
       </div>
 
       {/* Plain text on purpose: the toast already announces the change; a
           second polite region read the same news twice (UX M3). */}
-      <p className="text-sm font-medium">{enabled ? t('state.on') : t('state.off')}</p>
+      <p className="aura-text-sm font-medium text-[var(--aura-fg-primary)]">
+        {enabled ? t('state.on') : t('state.off')}
+      </p>
 
       {pendingCount > 0 ? (
-        <InlineAlert tone="info" role="note">
+        <Alert tone="info" role="note">
           {t.rich(enabled ? 'pending.on' : 'pending.off', {
             count: pendingCount,
             // Persistent underline — an in-paragraph link's only non-colour
             // affordance (WCAG 1.4.1; the ledger's M5 rule). The alert's own
-            // `text-info` colour is kept — never muted on a link.
+            // text colour is kept — never muted on a link.
             link: (chunks) => (
               <Link
                 href="/admin/change-requests"
-                className="rounded-xs font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="rounded-[var(--aura-radius-xs)] font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
               >
                 {chunks}
               </Link>
             ),
           })}
-        </InlineAlert>
+        </Alert>
       ) : null}
 
       {error !== null ? (
-        <InlineAlert tone="destructive" role="alert">
+        <Alert tone="danger" role="alert">
           {error}
-        </InlineAlert>
+        </Alert>
       ) : null}
 
       <ConfirmationDialog
