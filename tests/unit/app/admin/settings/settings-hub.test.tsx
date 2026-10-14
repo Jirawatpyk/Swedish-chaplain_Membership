@@ -98,4 +98,13 @@ describe('settings hub on AURA', () => {
     expect(card).not.toBeNull();
     expect(card!.textContent).toContain(t.empty);
   });
+
+  // UX review L3: focus on a card reads its description, not only its title.
+  it('describes each card link by its description', async () => {
+    const root = await renderHub();
+    const link = [...root.querySelectorAll('a')].find((a) => a.textContent?.trim() === t.categories.memberChanges.title)!;
+    const id = link.getAttribute('aria-describedby');
+    expect(id).toBeTruthy();
+    expect(root.querySelector(`[id="${id}"]`)?.textContent).toBe(t.categories.memberChanges.description);
+  });
 });
