@@ -128,6 +128,7 @@ export function UrgencyBucketTabs({
       {/* The phone board draws the stages as a select. */}
       <div className="sm:hidden">
         <Select
+          touchHeight
           label={tTable('columns.urgency')}
           value={current ?? ''}
           placeholder={monthLensActive ? t('monthLensBadge') : undefined}

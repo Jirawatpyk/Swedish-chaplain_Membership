@@ -207,6 +207,7 @@ export function RenewalsSectionTabs({
           count as the tab does ("Tier upgrades (2)"). */}
       <div className="sm:hidden">
         <Select
+          touchHeight
           label={t('tabs.selectLabel')}
           value={current}
           options={tabs.map((tab) => ({
