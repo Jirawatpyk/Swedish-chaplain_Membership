@@ -80,3 +80,12 @@ describe('<TierFilterSelect> on AURA', () => {
     );
   });
 });
+
+describe('<TierFilterSelect> touch height (R45)', () => {
+  it("both selects take AURA's touch height", () => {
+    renderSelect();
+    for (const select of screen.getAllByRole('combobox', { name: 'Tier' })) {
+      expect(select.closest('.aura-field')).toHaveClass('is-touch');
+    }
+  });
+});
