@@ -7,6 +7,7 @@ import { ROLE_BADGE_STYLE } from '@/components/auth/role-badge-style';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { requirePagePermission } from '@/lib/rbac';
+import type { Role } from '@/modules/auth/domain/role';
 /**
  * Staff account settings page (T154) at URL `/admin/account`.
  *
@@ -25,23 +26,34 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function StaffAccountPage() {
   const { user } = await requirePagePermission('dashboard.view');
+  return renderStaffAccountView({ email: user.email, role: user.role });
+}
+
+/** The page body, shared with the /test-fixtures/aura-admin preview (spec 122 US10c). */
+export async function renderStaffAccountView({
+  email,
+  role,
+}: {
+  readonly email: string;
+  readonly role: Role;
+}): Promise<React.ReactElement> {
   const t = await getTranslations('auth.changePassword');
   const tShell = await getTranslations('shell.roleBadge');
-  const { tone, variant } = ROLE_BADGE_STYLE[user.role];
+  const { tone, variant } = ROLE_BADGE_STYLE[role];
 
   return (
     <FormContainer align="start">
       <PageHeader
         title={t('title')}
-        subtitle={user.email}
+        subtitle={email}
         badge={
           <Badge
             tone={tone}
             variant={variant}
             // rbac-presentation-only-ok: picks a badge icon
-            icon={user.role === 'super_admin' ? <ShieldCheckIcon aria-hidden /> : undefined}
+            icon={role === 'super_admin' ? <ShieldCheckIcon aria-hidden /> : undefined}
           >
-            {tShell(user.role)}
+            {tShell(role)}
           </Badge>
         }
       />

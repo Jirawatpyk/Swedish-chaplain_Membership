@@ -60,7 +60,7 @@ export async function generateMetadata(): Promise<Metadata> {
  * a user who did nothing wrong. Exactly the dead-link class the parity tests
  * exist to kill, on the one surface those tests did not cover.
  */
-const CATEGORIES = [
+export const CATEGORIES = [
   {
     titleKey: 'categories.invoicing.title',
     descriptionKey: 'categories.invoicing.description',
@@ -129,7 +129,6 @@ const CATEGORIES = [
 
 export default async function SettingsIndexPage() {
   const { user } = await requirePagePermission('dashboard.view');
-  const t = await getTranslations('admin.settings.index');
   // Same flag names the staff shell resolves for the sidebar (layout.tsx).
   const flags = {
     broadcastsEnabled: env.features.f7Broadcasts,
@@ -142,6 +141,17 @@ export default async function SettingsIndexPage() {
       canPerform(user.role, c.permission),
   );
 
+  return renderSettingsHubView(visible);
+}
+
+/**
+ * The hub for a list of categories the viewer may open, shared with the
+ * /test-fixtures/aura-admin preview (spec 122 US10c).
+ */
+export async function renderSettingsHubView(
+  visible: readonly (typeof CATEGORIES)[number][],
+): Promise<React.JSX.Element> {
+  const t = await getTranslations('admin.settings.index');
   // Every card gone: the viewer holds `dashboard.view` (so the index itself
   // opens) but no settings surface. Better than an empty grid, which reads as a
   // loading failure.

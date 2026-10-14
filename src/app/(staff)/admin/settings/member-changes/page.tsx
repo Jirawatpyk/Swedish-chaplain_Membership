@@ -41,8 +41,6 @@ export default async function MemberChangesSettingsPage(): Promise<React.ReactEl
   const tenant = resolveTenantFromHeaders(h);
   const requestId = requestIdFromHeaders(h);
   const deps = buildChangeRequestDeps(tenant);
-  const t = await getTranslations('admin.settings.memberChanges');
-
   // A read failure must reach the error boundary — a switch rendered from a
   // row we could not read would assert "off" about a tenant that may be on.
   const fail: (arm: string, code: string) => never = (arm, code) => {
@@ -58,15 +56,27 @@ export default async function MemberChangesSettingsPage(): Promise<React.ReactEl
   const pending = await countPendingChangeRequests(deps);
   if (!pending.ok) fail('pending_count_failed', pending.error.message);
 
+  return renderMemberChangesView({
+    // no row yet = the new-tenant default (off, FR-031)
+    initialEnabled: row.value?.memberChangeApprovalEnabled === true,
+    pendingCount: pending.value.count,
+  });
+}
+
+/** The page body, shared with the /test-fixtures/aura-admin preview (spec 122 US10c). */
+export async function renderMemberChangesView({
+  initialEnabled,
+  pendingCount,
+}: {
+  readonly initialEnabled: boolean;
+  readonly pendingCount: number;
+}): Promise<React.ReactElement> {
+  const t = await getTranslations('admin.settings.memberChanges');
   return (
     <FormContainer align="start">
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
       <Card title={t('title')} description={t('cardDescription')} headingLevel={2}>
-        <ApprovalSwitch
-          // no row yet = the new-tenant default (off, FR-031)
-          initialEnabled={row.value?.memberChangeApprovalEnabled === true}
-          pendingCount={pending.value.count}
-        />
+        <ApprovalSwitch initialEnabled={initialEnabled} pendingCount={pendingCount} />
       </Card>
     </FormContainer>
   );
