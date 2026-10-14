@@ -59,4 +59,10 @@ describe('ErasureFilterTabs', () => {
     expect(within(nav).getByRole('link', { name: 'Overdue, 1 erasure' })).toBeInTheDocument();
     expect(within(nav).getByRole('link', { name: 'All, 17 erasures' })).toBeInTheDocument();
   });
+
+  // AURA 5.39 (handoff #143): 44px tabs below 640px or on touch.
+  it("gives the tabs AURA's touch height", () => {
+    renderTabs();
+    expect(document.querySelector('.aura-tabs')).toHaveClass('is-touch');
+  });
 });
