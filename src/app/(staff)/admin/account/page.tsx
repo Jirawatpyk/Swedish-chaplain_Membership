@@ -45,7 +45,9 @@ export async function renderStaffAccountView({
     <FormContainer align="start">
       <PageHeader
         title={t('title')}
-        subtitle={email}
+        // An address has no break opportunity: at 200% text it pushed the page
+        // sideways until it could break anywhere (WCAG 1.4.10).
+        subtitle={<span className="[overflow-wrap:anywhere]">{email}</span>}
         badge={
           <Badge
             tone={tone}
