@@ -6,7 +6,9 @@
  *     trip the 5/15-min sign-in limit on the dedicated test users.
  *  2. Warms `/admin/sign-in`, `/admin`, `/portal/sign-in` and `/portal` so a cold
  *     Turbopack compile does not land inside a test's `beforeEach` — see
- *     `warmAdminRoutes` for why that was fatal rather than merely slow.
+ *     `warmAdminRoutes` for why that was fatal rather than merely slow. Also
+ *     sends one anonymous POST to each route in its `postRoutes` list (today the
+ *     relink route), so a POST's first compile doesn't land inside a test either.
  *  3. Resets the F5 issued-invoice fixture row (E2E_ISSUED_INVOICE_ID)
  *     back to status='issued' so the Pay-now button renders again after
  *     a happy-path run flipped it to `paid`. Cascades through child
@@ -60,6 +62,31 @@ async function warmAdminRoutes(): Promise<void> {
       console.log(`[e2e global setup] warmed ${route} (${res.status})`);
     } catch (error) {
       console.warn(`[e2e global setup] warm ${route} failed:`, String(error));
+    }
+  }
+
+  // POST routes a test waits on with a short assertion budget. Warming the
+  // pages above never compiles them, so the first POST after a server start
+  // paid the compile inside the test: relink-attendee AS1 waited 10s for the
+  // "Relinked" toast while `POST …/relink` was still compiling (R45b,
+  // 2026-10-14: run 1 failed on branch and base alike, runs 2–5 passed).
+  // Sent with no session, so the route's admin guard answers 404 before it
+  // reads the ids or the body, and writes no audit row (no actor to attribute);
+  // the Origin header gets it past the proxy's CSRF allow-list.
+  const nilId = '00000000-0000-0000-0000-000000000000';
+  const postRoutes = [`/api/admin/events/${nilId}/registrations/${nilId}/relink`];
+  for (const route of postRoutes) {
+    try {
+      const res = await fetch(`${base}${route}`, {
+        method: 'POST',
+        headers: { Origin: base, 'Content-Type': 'application/json' },
+        body: '{}',
+        redirect: 'manual',
+        signal: AbortSignal.timeout(120_000),
+      });
+      console.log(`[e2e global setup] warmed POST ${route} (${res.status})`);
+    } catch (error) {
+      console.warn(`[e2e global setup] warm POST ${route} failed:`, String(error));
     }
   }
 }
