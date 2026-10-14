@@ -479,6 +479,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 
 - **AURA 5.39.0 → 5.41.0, its own PR** (maintainer, 14 Oct). 5.40 ships #145: AURA's type follows the browser's default font size (`max(<px>, <rem>)`), identical at the default 16px. 5.41 is additive (PageHeader `titleHideBelow`, `data-aura-hide-menubutton`, "opens in a new tab" on menu links, open menu triggers keep their hover fill); nothing in Chamber-OS uses those yet. The brand theme regenerates unchanged.
 - **The mobile "Filters (n)" sheet is asked of AURA first** (maintainer, 14 Oct): no released `FilterBar` folds its filters on phones, so it is filed as #146 (Addendum 49) — below 640px the search, applied chips, count and "Clear all" stay in the bar, the other filters move into a sheet behind a "Filters (n)" button. No stand-in: the mobile Filters PR adopts it on every list once it ships, and phones keep the stacked bar until then.
+- **Found adopting 5.41, filed as #147:** at a 32px browser default the `FilterBar` search overflows a 390px phone by 79px (its flex box keeps `min-width: auto` while the input's 20 characters now grow with the font). The adoption PR stays a draft until AURA ships the fix; at the default size nothing changes.
 
 ### Session 2026-10-14 (AURA 5.39 adoption, between US10 and US11)
 

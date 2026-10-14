@@ -179,6 +179,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #146 | Addendum 49 (AURA 5.41 adoption): `FilterBar` has no way to fold its filters on phones; the maintainer wants a "Filters (n)" button opening a sheet of the bar's filters below 640px, with the search and the applied chips staying in the bar, on every list | None: phones keep the stacked bar until AURA ships it; the mobile Filters PR waits for it |
+| #147 | Addendum 49 (found adopting 5.41): at a 32px browser default the `FilterBar` search is wider than a 390px phone (453px, the page scrolls 79px sideways on every list with a search) — `.aura-filterbar__search` keeps `min-width: auto` while its `<input size=20>` now grows with the font (5.40); `min-width: 0` on it fixes it | None: the 5.41 PR stays a draft until AURA ships the fix |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
