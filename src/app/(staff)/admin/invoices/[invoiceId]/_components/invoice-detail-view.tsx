@@ -68,6 +68,24 @@ function headingKey(
   return 'title';
 }
 
+/**
+ * The heading with its document number held together. The number's hyphens
+ * are line-break opportunities, so at 320px "Invoice SC-2026-900001" broke as
+ * "Invoice SC-2026-" / "900001" (R48). The number now wraps only as a whole;
+ * the words around it, in whatever order the locale puts them, still break.
+ */
+function headingWithNumber(heading: string, number: string): ReactNode {
+  const at = heading.indexOf(number);
+  if (at < 0) return heading;
+  return (
+    <>
+      {heading.slice(0, at)}
+      <span className="whitespace-nowrap">{number}</span>
+      {heading.slice(at + number.length)}
+    </>
+  );
+}
+
 /** A labelled value in a card's field grid. */
 function Field({ label, children, wide = false }: { readonly label: ReactNode; readonly children: ReactNode; readonly wide?: boolean }) {
   return (
@@ -210,10 +228,10 @@ export async function renderInvoiceDetailView({
   // something to hold: a manager on a draft, or a void bill with no PDF, has
   // no action and no summary line, and an empty fixed bar is a stray strip.
   const hasMenu = !isDraft && (Boolean(invoice.pdf) || hasReceiptPdf || (invoice.status === 'issued' && isAdmin));
-  const hasActions =
+  const hasMainAction =
     (isAdmin && (isDraft || invoice.status === 'issued' || invoice.status === 'paid' || invoice.status === 'partially_credited')) ||
-    refund !== null ||
-    hasMenu;
+    refund !== null;
+  const hasActions = hasMainAction || hasMenu;
   const showActionBar = hasActions || phoneSummary !== null;
 
   return (
@@ -224,11 +242,11 @@ export async function renderInvoiceDetailView({
         // bill number for a real 088 bill (paid or unpaid, never "Draft
         // invoice"); a paid bill's RC §86/4 tax receipt is surfaced in the
         // "Receipt No." field below.
-        title={number !== null ? t(headingKey(invoice.pdfDocKind, taxDocKind), { number }) : t('draftTitle')}
+        title={number !== null ? headingWithNumber(t(headingKey(invoice.pdfDocKind, taxDocKind), { number }), number) : t('draftTitle')}
         badge={<StatusPill tone={invoiceStatusTone(displayStatus)}>{tStatus(displayStatus)}</StatusPill>}
         actions={
           showActionBar ? (
-          <InvoiceActionBar summary={phoneSummary}>
+          <InvoiceActionBar summary={phoneSummary} menu={!hasMenu ? 'none' : hasMainAction ? 'beside' : 'only'}>
             {isDraft && isAdmin && (
               <>
                 <a
