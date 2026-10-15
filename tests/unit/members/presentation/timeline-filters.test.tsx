@@ -87,10 +87,12 @@ describe('TimelineFilters on AURA (spec 122 US3)', () => {
   });
 
   // Maintainer (15 Oct): with no search beside it, the phone Filters button
-  // fills the bar's row instead of sitting alone at the end.
-  it('stretches the phone Filters button across the row (no search beside it)', () => {
+  // fills the bar's row instead of sitting alone at the end. AURA 5.43 (#148)
+  // does that for a bar with no search, so the app adds no class of its own.
+  it('leaves the phone Filters button to AURA, which fills the row when there is no search', () => {
     renderFilters();
     const bar = screen.getByRole('region', { name: copy.title });
-    expect(bar.className).toContain('max-sm:[&_.aura-filterbar\\_\\_more]:flex-1');
+    expect(bar.className).not.toMatch(/filterbar(\\_\\_|__)more/);
+    expect(bar.querySelector('.aura-filterbar__lead')).toHaveClass('is-alone');
   });
 });
