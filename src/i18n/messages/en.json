@@ -8182,8 +8182,7 @@
       "results": "{count, plural, =0 {No entries} one {# entry} other {# entries}}",
       "groupToday": "Today",
       "groupThisMonth": "This month",
-      "caption": "Showing the latest {count} · times in Bangkok time · Thai shows dates in the Buddhist Era",
-      "captionMoreFilters": "More filters: actor, from date, to date."
+      "caption": "Showing the latest {count} · times in Bangkok time · Thai shows dates in the Buddhist Era"
     },
     "filters": {
       "title": "Filters",

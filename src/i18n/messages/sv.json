@@ -8182,8 +8182,7 @@
       "results": "{count, plural, =0 {Inga poster} one {# post} other {# poster}}",
       "groupToday": "Idag",
       "groupThisMonth": "Denna månad",
-      "caption": "Visar de senaste {count} · tider i Bangkoktid · thailändska visar datum i buddhistisk tideräkning",
-      "captionMoreFilters": "Fler filter: aktör, från datum, till datum."
+      "caption": "Visar de senaste {count} · tider i Bangkoktid · thailändska visar datum i buddhistisk tideräkning"
     },
     "filters": {
       "title": "Filter",
