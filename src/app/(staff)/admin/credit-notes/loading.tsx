@@ -33,9 +33,10 @@ export default async function Loading() {
         <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
           <div className="flex flex-col gap-[var(--aura-space-4)]" aria-hidden>
             {/* The filter row — search, then the fiscal year. */}
-            <div className="flex flex-wrap gap-[var(--aura-space-2)]">
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:flex-1" />
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-36" />
+            <div aria-hidden data-skeleton="filters" className="flex flex-wrap gap-[var(--aura-space-2)]">
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:flex-1 max-sm:h-11 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1 max-sm:basis-0" data-skeleton="search" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-28 max-sm:h-11 sm:hidden" data-skeleton="filters-button" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-36 max-sm:hidden" />
             </div>
             <DataTableSkeleton label={t('tableCaption')} columns={columns} rows={8} />
             <div className="flex justify-between">

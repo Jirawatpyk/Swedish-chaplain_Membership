@@ -27,11 +27,12 @@ export default async function Loading() {
           <div className="flex flex-col gap-4">
             {/* Filter bar — matches DirectoryFilters: search + status, plan and
                 risk-band selects. */}
-            <div className="flex flex-wrap items-center gap-3" aria-hidden>
-              <SkeletonBlock className="h-9 min-w-[12rem] flex-1 max-lg:basis-full" />
-              <SkeletonBlock className="h-9 w-40" />
-              <SkeletonBlock className="h-9 w-56" />
-              <SkeletonBlock className="h-9 w-44" />
+            <div className="flex flex-wrap items-center gap-3" aria-hidden data-skeleton="filters">
+              <SkeletonBlock className="h-9 min-w-[12rem] flex-1 max-lg:basis-full max-sm:h-11 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1 max-sm:basis-0" data-skeleton="search" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-28 max-sm:h-11 sm:hidden" data-skeleton="filters-button" />
+              <SkeletonBlock className="h-9 w-40 max-sm:hidden" />
+              <SkeletonBlock className="h-9 w-56 max-sm:hidden" />
+              <SkeletonBlock className="h-9 w-44 max-sm:hidden" />
             </div>
             <MembersTableSkeleton />
           </div>

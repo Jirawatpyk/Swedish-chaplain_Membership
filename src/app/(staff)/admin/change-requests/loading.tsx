@@ -27,8 +27,9 @@ export default async function Loading() {
             {/* the filter row (the filter pattern): the Status and Submitted
                 faces, the count at the end; Outcome exists only under Decided */}
             <div className="flex flex-wrap items-center gap-2" aria-hidden="true" data-skeleton="filters">
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-36" data-skeleton="filter-face" />
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-44" data-skeleton="filter-face" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-28 max-sm:h-11 sm:hidden" data-skeleton="filters-button" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-36 max-sm:hidden" data-skeleton="filter-face" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-44 max-sm:hidden" data-skeleton="filter-face" />
               <SkeletonBlock className="ml-auto h-4 w-32" data-skeleton="result-count" />
             </div>
             {/* AURA's table with the queue's heads, edge to edge inside the card. */}
