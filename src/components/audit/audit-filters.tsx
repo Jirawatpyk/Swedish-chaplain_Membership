@@ -289,6 +289,8 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
         searchLabel={t('target')}
         searchPlaceholder={t('target')}
         filters={activeFilters}
+        // The search stays in the bar, so the phone "Filters (n)" button leaves it out.
+        filterCount={activeFilters.filter((f) => f.id !== 'targetRef').length}
         {...(activeFilters.length > 0 ? { onClearAll: clearAll } : {})}
         {...(resultCount !== undefined ? { resultCount: tAudit('resultCount', { count: resultCount }) } : {})}
       >

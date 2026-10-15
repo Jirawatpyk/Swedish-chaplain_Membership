@@ -22,6 +22,7 @@
 import { useMemo, useRef, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { filterSheetDoneButton } from '@/lib/filter-sheet-focus';
 import { AuraProvider, Button, FilterBar, Tag } from '@jirawatpyk/aura-react';
 
 type ToggleKey = 'partnerBenefitOnly' | 'culturalEventOnly' | 'includeArchived';
@@ -72,9 +73,11 @@ export function EventsListFilters({
   const anyChip = partnerBenefitOnly || culturalEventOnly || includeArchived || hasCategory;
 
   function clearAll() {
+    const done = filterSheetDoneButton();
     write({ q: null, partnerBenefitOnly: null, culturalEventOnly: null, includeArchived: null, categoryFilter: null });
-    // The pressed control unmounts; the search keeps focus in the row.
-    queueMicrotask(() => barRef.current?.querySelector<HTMLElement>('input[type="search"]')?.focus());
+    // The pressed control unmounts; the search keeps focus in the row (in the
+    // phone Filters sheet, its Done).
+    queueMicrotask(() => (done ?? barRef.current?.querySelector<HTMLElement>('input[type="search"]'))?.focus());
   }
 
   const barStrings = useMemo(() => ({ clearFilters: t('filters.clearAll') }), [t]);

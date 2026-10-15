@@ -36,6 +36,7 @@
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { useTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import { filterSheetDoneButton } from '@/lib/filter-sheet-focus';
 import { Copy, Eraser, SearchX } from 'lucide-react';
 import {
   AuraProvider,
@@ -339,12 +340,15 @@ export function AttendeeTable({
   const hasAnyFilter = FILTER_PARAM_KEYS.some((k) => searchParams.has(k));
   const clearAllFilters = useCallback(
     (announce: boolean) => {
+      const done = filterSheetDoneButton();
       writeUrl(Object.fromEntries(FILTER_PARAM_KEYS.map((k) => [k, null])));
       // R4-U2 — the empty state's CTA announces "Filters cleared" before
       // focus moves to the search; the bar's own Clear needs no toast (the
       // count it carries is announced).
       if (announce) toast.success(t('filtersCleared'));
-      focusSearch();
+      // In the phone Filters sheet the search is behind it: its Done instead.
+      if (done) queueMicrotask(() => done.focus());
+      else focusSearch();
     },
     [writeUrl, t, focusSearch],
   );
@@ -521,8 +525,9 @@ export function AttendeeTable({
           searchPlaceholder={t('searchPlaceholder')}
           onSearchChange={(value: string) => writeUrl({ q: value.trim() || null })}
           filters={activeFilters}
-          // The phone "Filters (n)" button also counts the toggle, which has no chip.
-          filterCount={activeFilters.length + (unmatchedOnly ? 1 : 0)}
+          // The phone "Filters (n)" button counts what is in the sheet: the
+          // toggle (no chip), not the search (it stays in the bar).
+          filterCount={activeFilters.filter((f) => f.id !== 'q').length + (unmatchedOnly ? 1 : 0)}
           {...(activeFilters.length > 0 ? { onClearAll: () => clearAllFilters(false) } : {})}
           resultCount={t('resultCount', { count: totalCount ?? rows.length })}
         >

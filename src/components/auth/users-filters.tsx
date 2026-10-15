@@ -163,6 +163,8 @@ export function UsersFilters({ resultCount }: UsersFiltersProps = {}) {
         searchLabel={t('searchSrLabel')}
         searchPlaceholder={t('searchPlaceholder')}
         filters={activeFilters}
+        // The search stays in the bar, so the phone "Filters (n)" button leaves it out.
+        filterCount={activeFilters.filter((f) => f.id !== 'q').length}
         {...(activeFilters.length > 0 ? { onClearAll: clearAll } : {})}
         {...(resultCount !== undefined ? { resultCount: t('count', { count: resultCount }) } : {})}
       >

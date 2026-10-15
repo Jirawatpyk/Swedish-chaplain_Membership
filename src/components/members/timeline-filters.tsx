@@ -21,6 +21,8 @@ import { useCallback, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button, DatePicker, FilterBar, Select, type ISODate } from '@jirawatpyk/aura-react';
+import { cn } from '@/lib/utils';
+import { filterSheetDoneButton } from '@/lib/filter-sheet-focus';
 import {
   TIMELINE_SOURCES,
   TIMELINE_ACTOR_KINDS,
@@ -112,13 +114,19 @@ export function TimelineFilters(): React.JSX.Element {
         value={(currentTo || null) as ISODate | null}
         onChange={(iso) => pushUrl({ to: iso })}
       />
-      {/* Always there, disabled until something is filtered. */}
+      {/* From 640px always there, disabled until something is filtered; on a
+          phone (in the Filters sheet) only when it can act. */}
       <Button
         type="button"
         variant="secondary"
-        className="self-end sm:flex-none"
+        className={cn('self-end sm:flex-none', !hasAnyFilter && 'max-sm:hidden')}
         disabled={!hasAnyFilter}
-        onClick={() => pushUrl({ source: null, actorKind: null, from: null, to: null })}
+        onClick={() => {
+          // It hides once nothing is filtered; in the sheet, focus goes to Done.
+          const done = filterSheetDoneButton();
+          pushUrl({ source: null, actorKind: null, from: null, to: null });
+          if (done) queueMicrotask(() => done.focus());
+        }}
       >
         {t('clear')}
       </Button>

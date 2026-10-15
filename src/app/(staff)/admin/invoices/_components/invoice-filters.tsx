@@ -714,9 +714,12 @@ export function InvoiceFilters({
         searchLabel={t('searchLabel')}
         searchPlaceholder={t('searchPlaceholder')}
         filters={activeFilters}
-        // Paid online is a chip only in the tax view; elsewhere the phone
-        // "Filters (n)" button counts it on top of the chips.
-        filterCount={activeFilters.length + (paidOnlineActive && !collapseSecondary ? 1 : 0)}
+        // The phone "Filters (n)" button counts what is in the sheet: not the
+        // search (it stays in the bar), plus Paid online outside the tax view
+        // (a chip only there).
+        filterCount={
+          activeFilters.filter((f) => f.id !== 'q').length + (paidOnlineActive && !collapseSecondary ? 1 : 0)
+        }
         {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
         {...(resultCount !== undefined ? { resultCount } : {})}
       >
