@@ -16,10 +16,34 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useBelowSm } from '@/hooks/use-below-sm';
 import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
+import { cn } from '@/lib/utils';
 
 export const INVOICE_ACTION_BAR_HEIGHT_VAR = '--invoice-action-bar-height';
 
-export function InvoiceActionBar({ summary, children }: { readonly summary: string | null; readonly children: ReactNode }) {
+/**
+ * Where the ⋯ menu sits among the actions; it decides the phone layout.
+ * - `beside`: the main actions and the ⋯ share ONE row (the board's "main one
+ *   growing to fill the row beside the ⋯"). The actions may shrink and wrap
+ *   their label onto a second line inside the button, instead of the row
+ *   wrapping and stranding the ⋯ on a line of its own (R48: a 145px bar at 393
+ *   wide). Labels never ellipsize: "Issue cred…" beside "Issue ref…" is
+ *   ambiguous on a money action.
+ * - `only`: no main action (a manager on a paid invoice), so the ⋯ sits on
+ *   the total's own row, at the right, not alone on a row below it.
+ * - `none`: a draft's Preview / Delete / Issue keep the plain wrap; there is no
+ *   ⋯ to strand.
+ */
+export type InvoiceActionBarMenu = 'none' | 'beside' | 'only';
+
+export function InvoiceActionBar({
+  summary,
+  menu,
+  children,
+}: {
+  readonly summary: string | null;
+  readonly menu: InvoiceActionBarMenu;
+  readonly children: ReactNode;
+}) {
   const ref = useRef<HTMLDivElement | null>(null);
   const isPhone = useBelowSm();
   const [measured, setMeasured] = useState(0);
@@ -49,11 +73,31 @@ export function InvoiceActionBar({ summary, children }: { readonly summary: stri
     <div
       ref={ref}
       data-slot="invoice-action-bar"
-      className="flex flex-col gap-2 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-[var(--aura-z-bar)] max-sm:border-t max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:px-[var(--aura-space-4)] max-sm:pt-[var(--aura-space-3)] max-sm:pb-[max(var(--aura-space-3),env(safe-area-inset-bottom,0px))]"
+      className={cn(
+        'flex flex-col gap-2 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-0 max-sm:z-[var(--aura-z-bar)] max-sm:border-t max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:px-[var(--aura-space-4)] max-sm:pt-[var(--aura-space-3)] max-sm:pb-[max(var(--aura-space-3),env(safe-area-inset-bottom,0px))]',
+        menu === 'only' && 'max-sm:flex-row max-sm:items-center max-sm:justify-between',
+      )}
     >
-      {summary ? <p className="text-xs tabular-nums text-[var(--aura-fg-secondary)] sm:hidden">{summary}</p> : null}
-      {/* The actions share the row; the ⋯ menu keeps its own width. */}
-      <div className="flex flex-wrap items-center gap-2 max-sm:[&>*]:flex-1 max-sm:[&>[data-slot=invoice-more-menu]]:flex-none">{children}</div>
+      {summary ? (
+        <p className={cn('text-xs tabular-nums text-[var(--aura-fg-secondary)] sm:hidden', menu === 'only' && 'min-w-0 flex-1')}>
+          {summary}
+        </p>
+      ) : null}
+      {/* The actions share the row; the ⋯ menu keeps its own width and, on a
+          phone, a 1px boundary so it reads as a button beside the outlined
+          actions (UX review). Element and data-slot selectors only: AURA's
+          classes are not its API (aura-internal-class-ratchet). */}
+      <div
+        className={cn(
+          'flex flex-wrap items-center gap-2 max-sm:[&>*]:flex-1 max-sm:[&>[data-slot=invoice-more-menu]]:flex-none',
+          'max-sm:[&>[data-slot=invoice-more-menu]_button]:border max-sm:[&>[data-slot=invoice-more-menu]_button]:border-[var(--aura-border-strong)]',
+          menu === 'beside' &&
+            'max-sm:flex-nowrap max-sm:items-stretch max-sm:[&>*]:min-w-0 max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:h-auto max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:min-h-11 max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:whitespace-normal max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:text-center max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:leading-tight max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:[overflow-wrap:anywhere]',
+          menu === 'only' && 'max-sm:flex-none',
+        )}
+      >
+        {children}
+      </div>
     </div>
   );
 }

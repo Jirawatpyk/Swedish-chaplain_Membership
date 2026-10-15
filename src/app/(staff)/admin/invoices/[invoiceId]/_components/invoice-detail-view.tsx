@@ -210,10 +210,10 @@ export async function renderInvoiceDetailView({
   // something to hold: a manager on a draft, or a void bill with no PDF, has
   // no action and no summary line, and an empty fixed bar is a stray strip.
   const hasMenu = !isDraft && (Boolean(invoice.pdf) || hasReceiptPdf || (invoice.status === 'issued' && isAdmin));
-  const hasActions =
+  const hasMainAction =
     (isAdmin && (isDraft || invoice.status === 'issued' || invoice.status === 'paid' || invoice.status === 'partially_credited')) ||
-    refund !== null ||
-    hasMenu;
+    refund !== null;
+  const hasActions = hasMainAction || hasMenu;
   const showActionBar = hasActions || phoneSummary !== null;
 
   return (
@@ -228,7 +228,7 @@ export async function renderInvoiceDetailView({
         badge={<StatusPill tone={invoiceStatusTone(displayStatus)}>{tStatus(displayStatus)}</StatusPill>}
         actions={
           showActionBar ? (
-          <InvoiceActionBar summary={phoneSummary}>
+          <InvoiceActionBar summary={phoneSummary} menu={!hasMenu ? 'none' : hasMainAction ? 'beside' : 'only'}>
             {isDraft && isAdmin && (
               <>
                 <a
