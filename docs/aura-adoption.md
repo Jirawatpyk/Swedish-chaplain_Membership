@@ -181,6 +181,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #151 | `PageHeader` lacks what the app's own header does: a body-size subtitle beside `meta`, a title addon (badge), an eyebrow of chips, portal title sizes (`hero` / `hero-lg`), focusing the heading on arrival, top-aligned actions (Addendum 53) | Chamber-OS keeps its own `src/components/layout/page-header.tsx`; once #151 ships it is rebuilt on `PageHeader` with the same props, and #149 reaches every page |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
