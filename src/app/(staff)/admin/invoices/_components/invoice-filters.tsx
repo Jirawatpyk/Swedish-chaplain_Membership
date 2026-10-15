@@ -51,6 +51,7 @@ import {
   Select,
   Tag,
   Tooltip,
+  useBreakpoint,
 } from '@jirawatpyk/aura-react';
 import { originFilterPatch } from './queue-view';
 
@@ -518,6 +519,24 @@ export function InvoiceFilters({
   );
 
   // --- Collapsed layout only: the "More filters" popover ---------------------
+  // 088 T065b (FR-031) — the three admin-only tax-document filters.
+  const documentTypeOptions = [
+    { value: 'all', label: t('filters.documentType.all') },
+    { value: 'sc', label: t('filters.documentType.sc') },
+    { value: 'rc', label: t('filters.documentType.rc') },
+    { value: 're', label: t('filters.documentType.re') },
+    { value: 'cn', label: t('filters.documentType.cn') },
+  ];
+  const taxPointOptions = [
+    { value: 'all', label: t('filters.taxPoint.all') },
+    { value: 'pre_payment', label: t('filters.taxPoint.prePayment') },
+    { value: 'at_payment', label: t('filters.taxPoint.atPayment') },
+  ];
+  const vatTreatmentOptions = [
+    { value: 'all', label: t('filters.vatTreatment.all') },
+    { value: 'standard', label: t('filters.vatTreatment.standard') },
+    { value: 'zero_rated_80_1_5', label: t('filters.vatTreatment.zeroRated') },
+  ];
   const field = (label: string, control: React.ReactNode) => (
     <div className="grid gap-1.5">
       <span className="text-xs font-medium text-[var(--aura-fg-primary)]">{label}</span>
@@ -577,13 +596,7 @@ export function InvoiceFilters({
             className="w-full"
             value={currentDocType}
             onChange={(e) => pushUrl({ docType: e.target.value !== 'all' ? e.target.value : null })}
-            options={[
-              { value: 'all', label: t('filters.documentType.all') },
-              { value: 'sc', label: t('filters.documentType.sc') },
-              { value: 'rc', label: t('filters.documentType.rc') },
-              { value: 're', label: t('filters.documentType.re') },
-              { value: 'cn', label: t('filters.documentType.cn') },
-            ]}
+            options={documentTypeOptions}
           />,
         )}
         {field(
@@ -594,11 +607,7 @@ export function InvoiceFilters({
             className="w-full"
             value={currentTaxPoint}
             onChange={(e) => pushUrl({ taxPoint: e.target.value !== 'all' ? e.target.value : null })}
-            options={[
-              { value: 'all', label: t('filters.taxPoint.all') },
-              { value: 'pre_payment', label: t('filters.taxPoint.prePayment') },
-              { value: 'at_payment', label: t('filters.taxPoint.atPayment') },
-            ]}
+            options={taxPointOptions}
           />,
         )}
         {field(
@@ -609,11 +618,7 @@ export function InvoiceFilters({
             className="w-full"
             value={currentVat}
             onChange={(e) => pushUrl({ vat: e.target.value !== 'all' ? e.target.value : null })}
-            options={[
-              { value: 'all', label: t('filters.vatTreatment.all') },
-              { value: 'standard', label: t('filters.vatTreatment.standard') },
-              { value: 'zero_rated_80_1_5', label: t('filters.vatTreatment.zeroRated') },
-            ]}
+            options={vatTreatmentOptions}
           />,
         )}
         {/* Paid-online toggle — self-labelled, no field label. */}
@@ -644,14 +649,58 @@ export function InvoiceFilters({
     </Popover>
   ) : null;
 
+  // Phones (spec 122, 2026-10-15, AURA #146): the popover's filters are the
+  // bar's own children, so AURA's Filters sheet lists them with the others,
+  // each a labelled field. The due-before filter keeps its chip in the bar.
+  // `lg` on the server, so the server HTML keeps the popover.
+  const onPhone = useBreakpoint() === 'base';
+  const secondaryOnPhone = (
+    <>
+      <FilterSelect
+        label={t('filters.subject.label')}
+        allLabel={t('filters.allShort')}
+        data-testid="invoice-subject-filter"
+        value={currentSubject}
+        onChange={onSubject}
+        options={subjectOptions}
+      />
+      <FilterSelect
+        label={t('filters.documentType.label')}
+        allLabel={t('filters.allShort')}
+        data-testid="invoice-document-type-filter"
+        value={currentDocType}
+        onChange={(v) => pushUrl({ docType: v !== 'all' ? v : null })}
+        options={documentTypeOptions}
+      />
+      <FilterSelect
+        label={t('filters.taxPoint.label')}
+        allLabel={t('filters.allShort')}
+        data-testid="invoice-tax-point-filter"
+        value={currentTaxPoint}
+        onChange={(v) => pushUrl({ taxPoint: v !== 'all' ? v : null })}
+        options={taxPointOptions}
+      />
+      <FilterSelect
+        label={t('filters.vatTreatment.label')}
+        allLabel={t('filters.allShort')}
+        data-testid="invoice-vat-treatment-filter"
+        value={currentVat}
+        onChange={(v) => pushUrl({ vat: v !== 'all' ? v : null })}
+        options={vatTreatmentOptions}
+      />
+      {paidOnlineToggle}
+    </>
+  );
+
   // The filter pattern: one FilterBar row — search (growing), Status, Origin,
   // then Subject and Paid online in the row (portal / flag-off admin) or the
   // "More filters" popover (admin tax view); the count at the end; the
-  // applied filters as chips below. On a phone the controls wrap (AURA's own
-  // breakpoint), as on Members.
+  // applied filters as chips below. Below 640px the controls fold into AURA's
+  // Filters sheet, as on every list.
   return (
     <AuraProvider strings={barStrings}>
       <FilterBar
+        collapseBelow="sm"
         touchHeight
         key={searchResetKey}
         ref={barRef}
@@ -665,12 +714,20 @@ export function InvoiceFilters({
         searchLabel={t('searchLabel')}
         searchPlaceholder={t('searchPlaceholder')}
         filters={activeFilters}
+        // The phone "Filters (n)" button counts what is in the sheet: not the
+        // search (it stays in the bar), plus Paid online outside the tax view
+        // (a chip only there).
+        filterCount={
+          activeFilters.filter((f) => f.id !== 'q').length + (paidOnlineActive && !collapseSecondary ? 1 : 0)
+        }
         {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
         {...(resultCount !== undefined ? { resultCount } : {})}
       >
         {statusSelect}
         {originSelect}
-        {collapseSecondary ? (
+        {collapseSecondary && onPhone ? (
+          secondaryOnPhone
+        ) : collapseSecondary ? (
           morePopover
         ) : (
           <>

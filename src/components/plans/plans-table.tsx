@@ -30,6 +30,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { filterSheetDoneButton } from '@/lib/filter-sheet-focus';
 import { CopyIcon, PlusIcon, SearchXIcon } from 'lucide-react';
 import {
   AuraProvider,
@@ -190,7 +191,10 @@ export function PlansTable({
   }, [focusRequest]);
 
   function clearFilters() {
-    focusBar();
+    // In the phone Filters sheet the bar is behind it: focus its Done instead.
+    const done = filterSheetDoneButton();
+    if (done) queueMicrotask(() => done.focus());
+    else focusBar();
     setCategory(null);
     setQ('');
     setActiveOnly(false);
@@ -246,6 +250,7 @@ export function PlansTable({
           end, a chip per applied value. */}
       <AuraProvider strings={barStrings}>
         <FilterBar
+          collapseBelow="sm"
           touchHeight
           ref={barRef}
           label={t('filters.groupLabel')}
@@ -262,6 +267,9 @@ export function PlansTable({
                 },
               })}
           filters={chips}
+          // The phone "Filters (n)" button counts what is in the sheet: the
+          // toggles (no chip), not the search (it stays in the bar).
+          filterCount={chips.filter((c) => c.id !== 'q').length + (activeOnly ? 1 : 0) + (showDeleted ? 1 : 0)}
           {...(chips.length > 0 ? { onClearAll: clearFilters } : {})}
           // No "0 results" beside "No plans for this year" (UX review L2).
           {...(yearEmpty ? {} : { resultCount: sorted.length })}

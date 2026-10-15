@@ -234,6 +234,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount, resultCount }:
     >
       <AuraProvider strings={barStrings}>
         <FilterBar
+          collapseBelow="sm"
           touchHeight
           key={barKey}
           ref={barRef}
@@ -249,6 +250,9 @@ export function DirectoryFilters({ plans = [], portalInviteCount, resultCount }:
           // The full hint is cut off in a phone-width box; the board's short one fits.
           searchPlaceholder={isPhone ? t('searchPlaceholderShort') : t('searchPlaceholder')}
           filters={activeChips}
+          // The phone "Filters (n)" button counts what is in the sheet: the
+          // toggle (no chip), not the search (it stays in the bar).
+          filterCount={activeChips.filter((c) => c.id !== 'q').length + (portalActive ? 1 : 0)}
           {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
           // The filter pattern: the result count at the end of the row
           // (AURA words and announces it).

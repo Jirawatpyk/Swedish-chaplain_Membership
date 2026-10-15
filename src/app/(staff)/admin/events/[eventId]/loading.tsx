@@ -82,9 +82,10 @@ export default async function EventDetailLoading() {
             {/* The card's "Attendees" heading. */}
             <SkeletonBlock aria-hidden className="h-6 w-32" />
             <div aria-hidden data-skeleton="filters" className="flex flex-wrap items-center gap-2">
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1" />
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-44" data-skeleton="select" />
-              <SkeletonBlock className="h-8 w-48 rounded-full" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1 max-sm:h-11 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1 max-sm:basis-0" data-skeleton="search" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-28 max-sm:h-11 sm:hidden" data-skeleton="filters-button" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-44 max-sm:hidden" data-skeleton="select" />
+              <SkeletonBlock className="h-8 w-48 rounded-full max-sm:hidden" data-skeleton="toggle-chip" />
               <SkeletonBlock className="ml-auto h-4 w-20" data-skeleton="result-count" />
             </div>
             <DataTableSkeleton label={t('attendees.tableCaption')} columns={columns} rows={10} />

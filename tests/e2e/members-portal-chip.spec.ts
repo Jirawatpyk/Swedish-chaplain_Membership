@@ -38,6 +38,7 @@
  */
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { openFilters } from './helpers/filters-sheet';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -67,7 +68,9 @@ test.describe('members directory — needs-invite chip', () => {
     await page.goto('/admin/members');
     await page.waitForLoadState('networkidle');
 
-    const chip = page.getByRole('button', { name: /needs portal invite/i });
+    // On a phone the chip and its Clear sit in the Filters sheet (spec 122).
+    const filters = await openFilters(page);
+    const chip = filters.getByRole('button', { name: /needs portal invite/i });
     test.skip(!(await chip.isVisible()), 'no members need an invite in this environment');
 
     await chip.click();
@@ -77,7 +80,7 @@ test.describe('members directory — needs-invite chip', () => {
     // The chip must still be present while the filter is on, even at zero.
     await expect(chip).toBeVisible();
 
-    await page.getByRole('button', { name: /clear/i }).click();
+    await filters.getByRole('button', { name: /clear/i }).click();
     await expect(page).not.toHaveURL(/portal=/);
   });
 });

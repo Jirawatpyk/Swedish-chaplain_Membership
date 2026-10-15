@@ -2,10 +2,10 @@
  * Spec 122 US3 — the activity timeline as on the Portal-timeline boards:
  * events under "Today" / "This month" / month headings, a caption saying how
  * many are shown, rows of title · detail over "actor · time" with an outline
- * source badge, and on phones Source plus a "More filters" button.
+ * source badge, and on phones every filter in AURA's Filters sheet.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { TimelineStream } from '@/components/members/timeline-stream';
@@ -51,6 +51,13 @@ describe('the timeline on the Portal-timeline boards (spec 122 US3)', () => {
     expect(screen.getByText(/Showing the latest 4/)).toBeInTheDocument();
   });
 
+  // Spec 122 (2026-10-15): the phone "More filters" toggle is gone, so the
+  // caption no longer points at it.
+  it('the caption names no "More filters" on phones', () => {
+    wrap(<TimelineStream fetchPath="/api/portal/timeline" initialEvents={EVENTS} initialCursor={null} emptyLabel="" listLabel="Activity timeline" />);
+    expect(screen.getByText(/Showing the latest 4/)).not.toHaveTextContent(/more filters/i);
+  });
+
   it('reads each row as title · detail over actor · time, with an outline source badge', () => {
     wrap(<TimelineStream fetchPath="/api/portal/timeline" initialEvents={EVENTS} initialCursor={null} emptyLabel="" listLabel="Activity timeline" />);
     const list = screen.getByRole('list', { name: 'Activity timeline' });
@@ -65,22 +72,17 @@ describe('the timeline on the Portal-timeline boards (spec 122 US3)', () => {
     expect(receipt).toHaveTextContent(/Somchai P\. · 22 Sept?, 14:10/);
   });
 
-  it('on phones shows Source and a More filters button that opens the rest', () => {
-    wrap(<TimelineFilters />);
-    const more = screen.getByRole('button', { name: en.timeline.filters.moreFilters });
-    expect(more).toHaveClass('sm:hidden');
-    expect(more).toHaveAttribute('aria-expanded', 'false');
-    const rest = document.getElementById(more.getAttribute('aria-controls')!)!;
-    expect(rest).toHaveClass('max-sm:hidden');
-    expect(rest.querySelector('select[name="actorKind"]')).not.toBeNull();
-    fireEvent.click(more);
-    expect(more).toHaveAttribute('aria-expanded', 'true');
-    expect(rest).not.toHaveClass('max-sm:hidden');
-  });
-
-  it('opens More filters on load when one of its filters is set', () => {
+  // Spec 122 (2026-10-15, AURA #146; maintainer): the timeline's own phone
+  // "More filters" toggle gives way to AURA's Filters sheet, like every list.
+  it('on phones folds every filter into AURA\'s Filters sheet, with no toggle of its own', () => {
     search = new URLSearchParams('actorKind=staff');
-    wrap(<TimelineFilters />);
-    expect(screen.getByRole('button', { name: en.timeline.filters.moreFilters })).toHaveAttribute('aria-expanded', 'true');
+    const { container } = wrap(<TimelineFilters />);
+    expect(screen.queryByRole('button', { name: /more filters/i })).toBeNull();
+    const controls = container.querySelector('.aura-filterbar__controls')!;
+    for (const name of ['source', 'actorKind', 'from', 'to']) {
+      const field = controls.querySelector(`[name="${name}"]`)!.closest('.aura-field')!;
+      expect(field.parentElement).toBe(controls);
+    }
+    expect(screen.getByRole('button', { name: /^Filters/ })).toHaveAttribute('aria-haspopup', 'dialog');
   });
 });

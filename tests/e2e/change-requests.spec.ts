@@ -27,6 +27,7 @@ import { fillField } from './fixtures';
 import { runAxeScan } from './helpers/axe-scan';
 import { signInAsAdmin, signInAsSuperAdmin } from './helpers/admin-session';
 import { signInAsManager } from './helpers/manager-session';
+import { closeFilters, openFilters } from './helpers/filters-sheet';
 import {
   ensureApprovalSetting,
   readContactPhone,
@@ -54,9 +55,9 @@ const copy = en.portal.changeRequests;
 const adminCopy = en.admin.changeRequests;
 
 /**
- * The filter pattern (spec 122): the queue's filters are one FilterBar row on
- * every width (no phone toggle). The queue streams in behind `loading.tsx`,
- * so wait for the bar before reading it.
+ * The filter pattern (spec 122): the queue's filters are one FilterBar row
+ * from 640px; below it they sit in AURA's Filters sheet (`openFilters`). The
+ * queue streams in behind `loading.tsx`, so wait for the bar before reading it.
  */
 async function waitForQueueFilters(page: Page): Promise<void> {
   await expect(page.getByRole('region', { name: adminCopy.filters.label })).toBeVisible();
@@ -598,9 +599,10 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     await page.goto('/admin/change-requests?state=decided');
     await waitForQueueFilters(page);
     // each FilterSelect is named by its filter's label (AURA's own name; the
-    // unit tests pin it too)
-    await expect(page.getByRole('combobox', { name: adminCopy.filters.state })).toHaveAccessibleName(adminCopy.filters.state);
-    await expect(page.getByRole('combobox', { name: adminCopy.filters.outcome })).toHaveAccessibleName(adminCopy.filters.outcome);
+    // unit tests pin it too) — in the Filters sheet at this 320px width
+    let filters = await openFilters(page);
+    await expect(filters.getByRole('combobox', { name: adminCopy.filters.state })).toHaveAccessibleName(adminCopy.filters.state);
+    await expect(filters.getByRole('combobox', { name: adminCopy.filters.outcome })).toHaveAccessibleName(adminCopy.filters.outcome);
     await page.goto('/admin/change-requests');
     // Wait for exactly ONE table: while React swaps the streamed content in
     // for the Suspense fallback the DOM briefly holds two, and a strict-mode
@@ -620,12 +622,16 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     await waitForQueueFilters(page);
     // Filtering is a same-page navigation as you pick: focus stays on Status —
     // the bar is never remounted on a filter change (UX re-review N1 / R2).
-    const status = page.getByRole('combobox', { name: adminCopy.filters.state });
+    // The sheet stays open after the pick, so focus stays on Status in it.
+    filters = await openFilters(page);
+    const status = filters.getByRole('combobox', { name: adminCopy.filters.state });
     await status.click();
     await page.getByRole('option', { name: en.admin.changeRequests.review.state.decided }).click();
     await expect(page).toHaveURL(/[?&]state=decided/);
     await page.waitForLoadState('networkidle');
     await expect(status).toBeFocused();
+    // Done before the scan, so it reads the page rather than a scrim over it.
+    await closeFilters(page);
     await runAxeScan(page, testInfo, { include: 'main' });
     await page.goto(`/admin/members/${member!.memberId}`);
     await expect(page.getByTestId('member-change-requests-section')).toBeVisible();

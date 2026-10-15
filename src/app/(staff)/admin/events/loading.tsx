@@ -31,10 +31,11 @@ export default async function EventsListLoading() {
           <div className="flex flex-col gap-[var(--aura-space-4)]">
             {/* The filter row: the search, three toggle chips, the count. */}
             <div aria-hidden data-skeleton="filters" className="flex flex-wrap items-center gap-2">
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1" />
-              <SkeletonBlock className="h-8 w-44 rounded-full" data-skeleton="toggle-chip" />
-              <SkeletonBlock className="h-8 w-44 rounded-full" data-skeleton="toggle-chip" />
-              <SkeletonBlock className="h-8 w-40 rounded-full" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1 max-sm:h-11 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1 max-sm:basis-0" data-skeleton="search" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-28 max-sm:h-11 sm:hidden" data-skeleton="filters-button" />
+              <SkeletonBlock className="h-8 w-44 rounded-full max-sm:hidden" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="h-8 w-44 rounded-full max-sm:hidden" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="h-8 w-40 rounded-full max-sm:hidden" data-skeleton="toggle-chip" />
               <SkeletonBlock className="ml-auto h-4 w-20" data-skeleton="result-count" />
             </div>
             <DataTableSkeleton label={t('tableCaption')} columns={columns} rows={8} />

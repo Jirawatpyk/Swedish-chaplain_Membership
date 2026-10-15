@@ -81,6 +81,7 @@ export function DirectorySearchFilters(): React.JSX.Element {
     >
       <AuraProvider strings={barStrings}>
         <FilterBar
+          collapseBelow="sm"
           touchHeight
           key={barKey}
           label={t('label')}
@@ -94,6 +95,8 @@ export function DirectorySearchFilters(): React.JSX.Element {
           searchDelay={DEBOUNCE_MS}
           searchLabel={t('label')}
           searchPlaceholder={t('placeholder')}
+          // No chips here: the phone "Filters (n)" button counts "Listed only".
+          filterCount={listedOnly ? 1 : 0}
         >
           <Checkbox
             checked={listedOnly}

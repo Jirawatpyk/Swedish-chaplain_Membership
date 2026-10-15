@@ -75,4 +75,22 @@ describe('TimelineFilters on AURA (spec 122 US3)', () => {
     fireEvent.click(clear);
     expect(replace).toHaveBeenCalledWith('/portal/timeline');
   });
+
+  // UX review (2026-10-15): on phones Clear shows only once it can act.
+  it('hides Clear below 640px until a filter is set', () => {
+    const { unmount } = renderFilters();
+    expect(screen.getByRole('button', { name: copy.clear })).toHaveClass('max-sm:hidden');
+    unmount();
+    search = new URLSearchParams('source=audit');
+    renderFilters();
+    expect(screen.getByRole('button', { name: copy.clear })).not.toHaveClass('max-sm:hidden');
+  });
+
+  // Maintainer (15 Oct): with no search beside it, the phone Filters button
+  // fills the bar's row instead of sitting alone at the end.
+  it('stretches the phone Filters button across the row (no search beside it)', () => {
+    renderFilters();
+    const bar = screen.getByRole('region', { name: copy.title });
+    expect(bar.className).toContain('max-sm:[&_.aura-filterbar\\_\\_more]:flex-1');
+  });
 });

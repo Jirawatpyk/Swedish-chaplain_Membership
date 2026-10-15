@@ -6,7 +6,7 @@
  * each change replaces `?eventType/actorUserId/targetRef/from/to`, drops the
  * keyset `cursor` and keeps the scroll.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -198,5 +198,44 @@ describe('<AuditFilters> on AURA', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  // Spec 122 (2026-10-15, AURA #146; maintainer: "lay them out flat in the
+  // sheet"): below 640px the acting-user field is one of the bar's own
+  // filters, so it lists in the Filters sheet; from 640px it stays in the
+  // "More filters" popover.
+  describe('on phones', () => {
+    const width = window.innerWidth;
+    beforeEach(() => {
+      window.innerWidth = 390;
+    });
+    afterEach(() => {
+      window.innerWidth = width;
+    });
+
+    it('the acting user is a filter of the bar itself, with no "More filters" popover', () => {
+      render(tree());
+      const bar = screen.getByRole('region', { name: f.legend });
+      expect(within(bar).queryByRole('button', { name: new RegExp(`^${f.moreFilters}`) })).toBeNull();
+      const actor = within(bar).getByRole('textbox', { name: f.actor });
+      expect(actor.closest('.aura-filterbar__controls')).not.toBeNull();
+      expect(within(bar).getByRole('button', { name: /^Filters/ })).toHaveAttribute('aria-haspopup', 'dialog');
+    });
+
+    it('a half-typed acting user survives the move into the Filters sheet, then commits', () => {
+      render(tree());
+      fireEvent.change(screen.getByRole('textbox', { name: f.actor }), { target: { value: 'Joh' } });
+      fireEvent.click(screen.getByRole('button', { name: /^Filters/ }));
+      const sheet = screen.getByRole('dialog', { name: 'Filters' });
+      expect(within(sheet).getByRole('textbox', { name: f.actor })).toHaveValue('Joh');
+      act(() => vi.advanceTimersByTime(350));
+      expect(replace).toHaveBeenLastCalledWith('/admin/audit?actorUserId=Joh', { scroll: false });
+    });
+  });
+
+  it('from 640px keeps the acting user in the "More filters" popover', () => {
+    render(tree());
+    expect(screen.queryByRole('textbox', { name: f.actor })).toBeNull();
+    expect(screen.getByRole('button', { name: new RegExp(`^${f.moreFilters}`) })).toBeInTheDocument();
   });
 });

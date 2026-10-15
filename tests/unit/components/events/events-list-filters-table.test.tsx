@@ -50,6 +50,13 @@ beforeEach(() => {
 });
 
 describe('events list filters (AURA FilterBar)', () => {
+  // Spec 122 (2026-10-15, AURA #146): the toggle chips are the bar's only
+  // filters and it shows no chips, so the Filters button counts the ones on.
+  it('on phones counts the toggles that are on on its "Filters" button', () => {
+    renderFilters({ partnerBenefitOnly: true, includeArchived: true });
+    expect(screen.getByRole('button', { name: 'Filters, 2 applied' })).toHaveAttribute('aria-haspopup', 'dialog');
+  });
+
   it('writes each toggle chip to its URL parameter, keeping the others and dropping the page', () => {
     nav.search.current = new URLSearchParams('q=mid&page=3');
     renderFilters({ search: 'mid' });

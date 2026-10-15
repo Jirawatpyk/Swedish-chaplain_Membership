@@ -138,11 +138,9 @@ export function TimelineStream({
 
   return (
     <div className="flex flex-col gap-2 sm:gap-3">
-      {/* the Portal-timeline boards' caption: how many rows, and whose clock —
-          on phones also which filters sit behind "More filters" */}
+      {/* the Portal-timeline boards' caption: how many rows, and whose clock */}
       <p className="aura-text-table-cell text-[var(--aura-fg-secondary)] max-sm:text-xs">
         {t('caption', { count: events.length })}
-        <span className="sm:hidden">. {t('captionMoreFilters')}</span>
       </p>
       {events.length > VIRTUALIZE_THRESHOLD ? (
         <VirtualizedList

@@ -38,13 +38,14 @@ export default async function Loading() {
                 the Year and Category faces, the two toggle chips and the
                 count at the end (the filter pattern). */}
             <div aria-hidden data-skeleton="filters" className="flex flex-wrap items-center gap-2">
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1" />
-              <span data-skeleton="year-select" className="contents">
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-full sm:w-auto sm:min-w-60 sm:flex-1 max-sm:h-11 max-sm:w-auto max-sm:min-w-0 max-sm:flex-1 max-sm:basis-0" data-skeleton="search" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-28 max-sm:h-11 sm:hidden" data-skeleton="filters-button" />
+              <span data-skeleton="year-select" className="contents max-sm:hidden">
                 <SkeletonBlock className="h-[var(--aura-input-height)] w-28" data-skeleton="filter-face" />
               </span>
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-36" data-skeleton="filter-face" />
-              <SkeletonBlock className="h-8 w-24 rounded-full" data-skeleton="toggle-chip" />
-              <SkeletonBlock className="h-8 w-28 rounded-full" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-36 max-sm:hidden" data-skeleton="filter-face" />
+              <SkeletonBlock className="h-8 w-24 rounded-full max-sm:hidden" data-skeleton="toggle-chip" />
+              <SkeletonBlock className="h-8 w-28 rounded-full max-sm:hidden" data-skeleton="toggle-chip" />
               <SkeletonBlock className="ml-auto h-4 w-20" data-skeleton="result-count" />
             </div>
             {/* AURA's table with the real heads, edge to edge inside the card. */}

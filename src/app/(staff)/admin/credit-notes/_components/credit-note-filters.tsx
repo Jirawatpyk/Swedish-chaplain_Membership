@@ -89,6 +89,7 @@ export function CreditNoteFilters({ resultCount }: { readonly resultCount?: numb
 
   return (
     <FilterBar
+      collapseBelow="sm"
       touchHeight
       key={searchResetKey}
       label={t('groupLabel')}
@@ -98,6 +99,8 @@ export function CreditNoteFilters({ resultCount }: { readonly resultCount?: numb
       searchLabel={t('search')}
       searchPlaceholder={t('search')}
       filters={chips}
+      // The search stays in the bar, so the phone "Filters (n)" button leaves it out.
+      filterCount={chips.filter((c) => c.id !== 'q').length}
       {...(chips.length > 0 ? { onClearAll: clearAll } : {})}
       {...(resultCount !== undefined ? { resultCount } : {})}
     >

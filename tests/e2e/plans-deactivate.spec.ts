@@ -17,6 +17,7 @@
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { closeFilters, openFilters } from './helpers/filters-sheet';
 import { openSeedClient } from './helpers/open-seed-client';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
@@ -164,8 +165,10 @@ test.describe('plans deactivate / delete / undelete — US4', () => {
     // Row hidden from default list
     await expect(page.locator(`[data-plan-id="${PLAN_ID}"]`)).toHaveCount(0);
 
-    // 3. Show-deleted toggle reveals row again
-    await page.getByRole('button', { name: /show deleted/i }).click();
+    // 3. Show-deleted toggle reveals row again (in the Filters sheet on a phone)
+    const filters = await openFilters(page);
+    await filters.getByRole('button', { name: /show deleted/i }).click();
+    await closeFilters(page);
     await expect(page.locator(`[data-plan-id="${PLAN_ID}"]`)).toBeVisible();
 
     // 4. Undelete

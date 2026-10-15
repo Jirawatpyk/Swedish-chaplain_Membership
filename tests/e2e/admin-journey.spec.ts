@@ -20,6 +20,7 @@ import { expect, test } from './fixtures';
 // superAdminOnly, so it signs in as super_admin. Post-Migration-C every human
 // admin IS a super_admin, so this is also the realistic operator persona.
 import { signInAsSuperAdmin } from './helpers/admin-session';
+import { closeFilters, onPhone, openFilters } from './helpers/filters-sheet';
 
 const ADMIN_EMAIL = process.env.E2E_SUPER_ADMIN_EMAIL;
 const F5 = process.env.FEATURE_F5_ONLINE_PAYMENT === 'true';
@@ -95,6 +96,17 @@ test.describe('Journey — admin golden path across module seams @journey', () =
       // `?paidOnline=1` was HONOURED. The trigger's count badge reads the number
       // of active secondary filters, so "1" proves the URL filter is applied
       // without opening anything.
+      //
+      // Below 640px there is no "More filters" popover: the chip is a direct
+      // control in the Filters sheet (spec 122, AURA #146), so open that.
+      if (onPhone(page)) {
+        const filters = await openFilters(page);
+        const chip = filters.getByTestId('paid-online-filter-chip');
+        await expect(chip).toBeVisible({ timeout: 10_000 });
+        await expect(chip).toHaveAttribute('aria-pressed', 'true');
+        await closeFilters(page);
+        return;
+      }
       const moreFilters = page.getByTestId('invoice-more-filters-trigger');
       await expect(moreFilters).toBeVisible({ timeout: 10_000 });
       await expect(page.getByTestId('invoice-more-filters-count')).toHaveText('1');
