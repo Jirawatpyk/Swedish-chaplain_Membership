@@ -27,6 +27,26 @@ const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const F8_RENEWALS_ENABLED = process.env.FEATURE_F8_RENEWALS === 'true';
 
 type Page = import('@playwright/test').Page;
+type Locator = import('@playwright/test').Locator;
+
+/**
+ * Opens an AURA Select, retrying until its trigger reports `aria-expanded`.
+ * Before hydration the Select is a server-rendered native `<select>` that the
+ * trigger button replaces on mount; a click that lands on the native control
+ * opens nothing, and from AURA 5.42 (whose fields fill their box, #147) that
+ * control is actionable early enough for Playwright to pick it and then wait
+ * out the test timeout behind the trigger (R47, 2026-10-15). Each retry
+ * re-resolves the locator, so it lands on the trigger once hydration is done
+ * — the same pattern as `pickFirstOption` in `helpers/member-form.ts`.
+ */
+async function openSelect(trigger: Locator): Promise<void> {
+  await expect(async () => {
+    if ((await trigger.getAttribute('aria-expanded')) !== 'true') {
+      await trigger.click({ timeout: 2_000 });
+    }
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true', { timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
+}
 
 /**
  * 122 US7a — below `sm` (640px) the urgency stages are an AURA select
@@ -50,7 +70,7 @@ async function expectEightStages(page: Page): Promise<void> {
     await expect(urgencyControl(page).getByRole('link')).toHaveCount(8, { timeout: 10_000 });
     return;
   }
-  await urgencyControl(page).click();
+  await openSelect(urgencyControl(page));
   await expect(page.getByRole('option')).toHaveCount(8, { timeout: 10_000 });
   await page.keyboard.press('Escape');
 }
@@ -61,7 +81,7 @@ async function chooseStage(page: Page, name: RegExp): Promise<void> {
     await urgencyControl(page).getByRole('link', { name }).click();
     return;
   }
-  await urgencyControl(page).click();
+  await openSelect(urgencyControl(page));
   const option = page.getByRole('option', { name });
   await option.waitFor({ state: 'visible', timeout: 5_000 });
   await option.click();
@@ -135,7 +155,7 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     ).toBeVisible({ timeout: 10_000 });
 
     // Open the tier select (122 US7a: an AURA select labelled "Tier").
-    await page.getByRole('combobox', { name: /^tier$/i }).click();
+    await openSelect(page.getByRole('combobox', { name: /^tier$/i }));
     // Wait for the listbox to render before clicking: the options exist
     // only while the list is open.
     const premiumOption = page.getByRole('option', { name: /^premium$/i });
