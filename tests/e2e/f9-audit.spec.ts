@@ -82,7 +82,11 @@ test.describe('F9 — audit-log viewer (US2) @f9', () => {
     const filters = await openFilters(page);
     const eventFilter = filters.getByRole('combobox', { name: /^event type/i }).first();
     await expect(eventFilter).toBeVisible();
-    const nativeSelect = filters.locator('.aura-select', { has: eventFilter }).locator('select');
+    // `has:` resolves inside `.aura-select`, so it takes an unscoped locator
+    // (one built from `filters` would look for the sheet inside the select).
+    const nativeSelect = filters
+      .locator('.aura-select', { has: page.getByRole('combobox', { name: /^event type/i }) })
+      .locator('select');
     // Index 0 is "All event types"; index 1 is the first concrete event type.
     await nativeSelect.selectOption({ index: 1 });
     await page.waitForURL(/eventType=/, { timeout: 15_000 });
