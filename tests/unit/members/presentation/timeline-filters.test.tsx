@@ -85,4 +85,12 @@ describe('TimelineFilters on AURA (spec 122 US3)', () => {
     renderFilters();
     expect(screen.getByRole('button', { name: copy.clear })).not.toHaveClass('max-sm:hidden');
   });
+
+  // Maintainer (15 Oct): with no search beside it, the phone Filters button
+  // fills the bar's row instead of sitting alone at the end.
+  it('stretches the phone Filters button across the row (no search beside it)', () => {
+    renderFilters();
+    const bar = screen.getByRole('region', { name: copy.title });
+    expect(bar.className).toMatch(/max-sm:\[&_\.aura-filterbar__more\]:flex-1/);
+  });
 });
