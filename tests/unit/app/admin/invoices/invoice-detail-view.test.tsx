@@ -176,6 +176,16 @@ describe('invoice detail — header', () => {
     expect(pill).toHaveTextContent(/^Issued$/);
   });
 
+  // R48: at 320px the heading broke INSIDE the number ("Invoice SC-2026-" /
+  // "900001") at its hyphen. The number wraps as one piece; only the words
+  // around it may break.
+  it('keeps the document number on one line, breaking only between the words around it', async () => {
+    await view(props());
+    const h1 = screen.getByRole('heading', { level: 1 });
+    expect(within(h1).getByText('SC-2026-000130')).toHaveClass('whitespace-nowrap');
+    expect(h1).toHaveTextContent(/^Invoice SC-2026-000130$/);
+  });
+
   it('reads "Draft invoice" for a draft, with a neutral pill', async () => {
     const inv = invoice({ status: 'draft', billDocumentNumberRaw: null, issueDate: null, dueDate: null, pdf: null });
     await view(props({ invoice: inv, displayStatus: 'draft', headerNumber: null, taxDocKind: 'none' }));
