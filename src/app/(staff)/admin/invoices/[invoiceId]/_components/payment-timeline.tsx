@@ -454,16 +454,18 @@ export async function PaymentTimeline({
           <Badge
             variant="outline"
             data-testid="processor-charge-id"
-            // R2-fix N4 (2026-04-26): on 320px viewports the 27-char
-            // pi_/ch_ ids overflow the Badge horizontally even with
-            // flex-wrap. `break-all` lets the value wrap mid-token
-            // so the chip stays inside the row container.
-            className="font-mono text-xs select-text break-all"
+            // On 320px the label plus the 27-char pi_/ch_ id overflow the
+            // chip; in SV ("Transaktions-id:") the chip was 300px and the
+            // page laid out 345 wide (R48). AURA's Badge is `nowrap`, so
+            // the R2-fix `break-all` alone never wrapped anything: the chip
+            // now wraps (label line, then id) and stays within the row;
+            // the id breaks mid-token only when it alone is too wide.
+            className="font-mono text-xs select-text max-w-full min-w-0 flex-wrap whitespace-normal py-0.5 leading-snug"
           >
-            <span className="me-1 text-[var(--aura-fg-secondary)]">
+            <span className="me-1 whitespace-nowrap text-[var(--aura-fg-secondary)]">
               {tCharge('label')}:
             </span>
-            {processorRef}
+            <span className="min-w-0 break-all">{processorRef}</span>
           </Badge>
           {/* Verify-fix S10 (2026-04-26): test-mode chip surfaces test
               vs live unambiguously to admins reconciling on prod. */}

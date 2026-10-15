@@ -181,6 +181,8 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #149 | `PageHeader` `actionsFullWidthBelow`: actions keep `min-width: max-content`, so beside two full-width actions an `IconButton` wraps onto a row of its own; ask is shrinking actions whose labels wrap inside the button, an `IconButton` that keeps its width at the row's end, and optionally a bordered `IconButton` (Addendum 51) | The invoice page's phone action bar (`invoice-action-bar.tsx`) lays this out itself with element and `data-slot` selectors (no AURA classes), and draws the ⋯ border. Shipped in 5.44.0 for AURA's `PageHeader`, which Chamber-OS does not render yet, so it stays open until the invoice page moves to it with #150 |
+| #150 | `PageHeader` `actionsBarBelow` + `actionsStatus`: below a breakpoint the header's actions render ONCE in an `ActionBar` at the page end with a status line (the invoice total), with #149's one-row rules inside the bar and a lone ⋯ on the status row (Addendum 52) | `invoice-action-bar.tsx`, a hand-written fixed bar with its own height variable and `scroll-padding-bottom`; deleted when the invoice page moves to AURA's `PageHeader` |
 | #151 | `PageHeader` lacks what the app's own header does: a body-size subtitle beside `meta`, a title addon (badge), an eyebrow of chips, portal title sizes (`hero` / `hero-lg`), focusing the heading on arrival, top-aligned actions (Addendum 53) | Chamber-OS keeps its own `src/components/layout/page-header.tsx`; once #151 ships it is rebuilt on `PageHeader` with the same props, and #149 reaches every page |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
