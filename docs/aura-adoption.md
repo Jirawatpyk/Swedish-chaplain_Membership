@@ -180,6 +180,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #148 | `FilterBar` `collapseBelow`: a bar with no search leaves the "Filters" button alone at the end of an empty row (Addendum 50) | The timeline (portal and staff) stretches the button with `max-sm:[&_.aura-filterbar__more]:flex-1` (`timeline-filters.tsx`) |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

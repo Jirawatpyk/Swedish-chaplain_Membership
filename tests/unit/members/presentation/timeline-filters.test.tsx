@@ -91,6 +91,6 @@ describe('TimelineFilters on AURA (spec 122 US3)', () => {
   it('stretches the phone Filters button across the row (no search beside it)', () => {
     renderFilters();
     const bar = screen.getByRole('region', { name: copy.title });
-    expect(bar.className).toMatch(/max-sm:\[&_\.aura-filterbar__more\]:flex-1/);
+    expect(bar.className).toContain('max-sm:[&_.aura-filterbar\\_\\_more]:flex-1');
   });
 });

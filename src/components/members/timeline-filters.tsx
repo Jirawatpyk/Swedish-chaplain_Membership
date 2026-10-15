@@ -73,9 +73,13 @@ export function TimelineFilters(): React.JSX.Element {
   // (AURA `controlsLayout="fill"`, #92). Below 640px they move into AURA's
   // Filters sheet, stacked at full width; the button counts the set filters.
   return (
+    // stand-in until AURA #148: with no search beside it, the phone Filters
+    // button fills the row instead of sitting alone at the end (maintainer,
+    // 15 Oct). `\_` keeps Tailwind from reading the underscores as spaces.
     <FilterBar
       touchHeight
       collapseBelow="sm"
+      className="max-sm:[&_.aura-filterbar\_\_more]:flex-1"
       label={t('title')}
       controlsLayout="fill"
       filterCount={[currentSource !== ALL, currentActor !== ALL, Boolean(currentFrom), Boolean(currentTo)].filter(Boolean).length}
