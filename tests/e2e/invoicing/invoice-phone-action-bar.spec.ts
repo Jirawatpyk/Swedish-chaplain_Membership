@@ -57,6 +57,11 @@ async function openInvoiceAt(page: Page, width: number): Promise<NonNullable<Awa
   await page.waitForLoadState('networkidle');
   const m = await measureBar(page);
   expect(m, 'the phone action bar renders').not.toBeNull();
+  // A phone browser WIDENS its layout viewport to fit content wider than the
+  // screen (and scales the page down), so `scrollWidth - innerWidth` stays 0
+  // and an overflow hides: in SV at 320 the page laid out 345 wide and the
+  // fixed bar sat below the visible screen (R48). Compare to the set width.
+  expect(m!.viewport, `${width}px: the page lays out at the screen's width`).toBe(width);
   return m!;
 }
 
