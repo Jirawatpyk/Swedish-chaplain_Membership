@@ -51,6 +51,13 @@ describe('the timeline on the Portal-timeline boards (spec 122 US3)', () => {
     expect(screen.getByText(/Showing the latest 4/)).toBeInTheDocument();
   });
 
+  // Spec 122 (2026-10-15): the phone "More filters" toggle is gone, so the
+  // caption no longer points at it.
+  it('the caption names no "More filters" on phones', () => {
+    wrap(<TimelineStream fetchPath="/api/portal/timeline" initialEvents={EVENTS} initialCursor={null} emptyLabel="" listLabel="Activity timeline" />);
+    expect(screen.getByText(/Showing the latest 4/)).not.toHaveTextContent(/more filters/i);
+  });
+
   it('reads each row as title · detail over actor · time, with an outline source badge', () => {
     wrap(<TimelineStream fetchPath="/api/portal/timeline" initialEvents={EVENTS} initialCursor={null} emptyLabel="" listLabel="Activity timeline" />);
     const list = screen.getByRole('list', { name: 'Activity timeline' });
