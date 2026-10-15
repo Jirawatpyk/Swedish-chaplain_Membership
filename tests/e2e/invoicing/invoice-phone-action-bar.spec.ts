@@ -72,7 +72,12 @@ test.describe('invoice detail — phone action bar layout @a11y', () => {
       const m = await openInvoiceAt(page, width);
       expect(m.actions.length, `${width}px: the paid invoice offers its main actions`).toBeGreaterThan(0);
       const first = m.actions[0]!;
-      expect(Math.abs(m.menu!.top - first.top), `${width}px: ⋯ top vs first action top`).toBeLessThanOrEqual(1);
+      // Centred on the first action, not top-aligned: beside a two-line label
+      // a top-aligned ⋯ hangs off the row's top edge (decided with the
+      // maintainer and asked of AURA in #150, 15 Oct).
+      const menuMid = (m.menu!.top + m.menu!.bottom) / 2;
+      const firstMid = (first.top + first.bottom) / 2;
+      expect(Math.abs(menuMid - firstMid), `${width}px: ⋯ centre vs first action centre`).toBeLessThanOrEqual(1);
       expect(m.menu!.right, `${width}px: ⋯ ends the row`).toBeGreaterThanOrEqual(Math.max(...m.actions.map((a) => a.right)));
       expect(m.bar.height, `${width}px: bar height`).toBeLessThanOrEqual(124);
       for (const a of m.actions) expect(a.clipped, `${width}px: "${a.text}" is clipped`).toBe(false);
