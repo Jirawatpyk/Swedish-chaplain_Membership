@@ -521,6 +521,8 @@ export function AttendeeTable({
           searchPlaceholder={t('searchPlaceholder')}
           onSearchChange={(value: string) => writeUrl({ q: value.trim() || null })}
           filters={activeFilters}
+          // The phone "Filters (n)" button also counts the toggle, which has no chip.
+          filterCount={activeFilters.length + (unmatchedOnly ? 1 : 0)}
           {...(activeFilters.length > 0 ? { onClearAll: () => clearAllFilters(false) } : {})}
           resultCount={t('resultCount', { count: totalCount ?? rows.length })}
         >

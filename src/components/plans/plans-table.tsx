@@ -263,6 +263,8 @@ export function PlansTable({
                 },
               })}
           filters={chips}
+          // The phone "Filters (n)" button also counts the toggles, which have no chip.
+          filterCount={chips.length + (activeOnly ? 1 : 0) + (showDeleted ? 1 : 0)}
           {...(chips.length > 0 ? { onClearAll: clearFilters } : {})}
           // No "0 results" beside "No plans for this year" (UX review L2).
           {...(yearEmpty ? {} : { resultCount: sorted.length })}
