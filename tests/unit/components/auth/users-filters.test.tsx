@@ -110,4 +110,15 @@ describe('<UsersFilters> on AURA', () => {
     render(tree());
     expect(screen.getByRole('region', { name: f.groupLabel }).closest('.aura-filterbar')).toHaveClass('is-touch');
   });
+
+  // Spec 122 (2026-10-15, AURA #146): on phones the filters fold behind one
+  // "Filters" button that opens a sheet; the search and chips stay in the bar.
+  it('folds its filters behind a "Filters" sheet button on phones', () => {
+    searchParamsStub = new URLSearchParams('role=admin');
+    render(tree());
+    const bar = screen.getByRole('region', { name: f.groupLabel });
+    expect(bar).toHaveClass('aura-filterbar--collapse-sm');
+    const more = within(bar).getByRole('button', { name: 'Filters, 1 applied' });
+    expect(more).toHaveAttribute('aria-haspopup', 'dialog');
+  });
 });

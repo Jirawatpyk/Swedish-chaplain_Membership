@@ -19,7 +19,7 @@
  * `<select>` behind its combobox, and AURA's Popover opens from the trigger
  * click under jsdom, so the real components are driven directly.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -261,5 +261,33 @@ describe('<InvoiceFilters> — dueBefore chip (Task 3)', () => {
         name: 'Remove filter: Due before 2026-01-01',
       }),
     ).toBeInTheDocument();
+  });
+});
+
+// Spec 122 (2026-10-15, AURA #146; maintainer: "lay them out flat in the
+// sheet"): below 640px the secondary filters are the bar's own children, so
+// AURA's Filters sheet lists them; the popover is for wider screens.
+describe('<InvoiceFilters> — admin-tax secondary filters on phones', () => {
+  const width = window.innerWidth;
+  beforeEach(() => {
+    window.innerWidth = 390;
+  });
+  afterEach(() => {
+    window.innerWidth = width;
+  });
+
+  it('renders the secondary filters as children of the bar, with no "More filters" popover', () => {
+    renderAdminTax();
+    expect(screen.queryByTestId('invoice-more-filters-trigger')).toBeNull();
+    for (const id of [
+      'invoice-subject-filter',
+      'invoice-document-type-filter',
+      'invoice-tax-point-filter',
+      'invoice-vat-treatment-filter',
+      'paid-online-filter-chip',
+    ]) {
+      expect(screen.getByTestId(id).closest('.aura-filterbar__controls')).not.toBeNull();
+    }
+    expect(screen.getByRole('button', { name: /^Filters/ })).toHaveAttribute('aria-haspopup', 'dialog');
   });
 });
