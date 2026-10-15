@@ -16,6 +16,11 @@
  * From–To one FilterDateRange. Every applied value is a removable chip that
  * brings the bar's own "Clear filters", and the count sits at the end of the
  * row. The URL contract is unchanged.
+ *
+ * Spec 122 (2026-10-15, AURA #146): below 640px the bar's filters fold into
+ * AURA's Filters sheet, and the acting user leaves "More filters" to list
+ * there with the others. The sheet remounts the fields it moves, so the
+ * acting user's draft and its debounce live here, not in the field.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -29,6 +34,7 @@ import {
   Popover,
   TextField,
   todayIn,
+  useBreakpoint,
   type DateRangePreset,
   type ISODate,
 } from '@jirawatpyk/aura-react';
@@ -128,10 +134,37 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
     if (searchResetKey > 0) focusEventType();
   }, [searchResetKey]);
   const resetSearch = () => setSearchResetKey((k) => k + 1);
-  // Bumped only by a chip × or Clear, never by the field's own commit, so
-  // typing keeps its focus and its trailing space.
-  const [actorResetKey, setActorResetKey] = useState(0);
-  const resetActor = () => setActorResetKey((k) => k + 1);
+  // The acting user's draft: commits trimmed after the debounce. Kept here so
+  // it survives the field remounting (the Filters sheet, the popover).
+  const [actorDraft, setActorDraft] = useState(currentActor);
+  // The value waiting on the debounce; null when nothing is pending.
+  const [actorPending, setActorPending] = useState<string | null>(null);
+  useEffect(() => {
+    if (actorPending === null) return;
+    const timer = setTimeout(() => {
+      setActorPending(null);
+      pushUrl({ actorUserId: actorPending.trim() || null });
+    }, DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [actorPending, pushUrl]);
+  // The URL moved to another actor (back/forward): show it. Never while the
+  // field has focus — a commit landing late would overwrite what is being
+  // typed, and its own commit would drop a trailing space.
+  const [actorFocused, setActorFocused] = useState(false);
+  const [seenActor, setSeenActor] = useState(currentActor);
+  if (seenActor !== currentActor) {
+    setSeenActor(currentActor);
+    if (!actorFocused && actorDraft.trim() !== currentActor) setActorDraft(currentActor);
+  }
+  const onActorChange = (value: string) => {
+    setActorDraft(value);
+    setActorPending(value);
+  };
+  // A chip × or Clear: drop a pending write and empty the field.
+  const resetActor = () => {
+    setActorPending(null);
+    setActorDraft('');
+  };
 
   // Calendar days (UTC-anchored ISO dates), so no timezone shifts them.
   const day = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium', timeZone: 'UTC' });
@@ -225,10 +258,24 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
   );
 
   const moreLabel = currentActor.trim() !== '' ? `${t('moreFilters')} (1)` : t('moreFilters');
+  // Phones list the acting user in the Filters sheet with the other filters
+  // (`lg` on the server, so the server HTML keeps the popover).
+  const onPhone = useBreakpoint() === 'base';
+  const actorField = (
+    <TextField
+      label={t('actor')}
+      value={actorDraft}
+      autoComplete="off"
+      onFocus={() => setActorFocused(true)}
+      onBlur={() => setActorFocused(false)}
+      onChange={(e) => onActorChange(e.target.value)}
+    />
+  );
 
   return (
     <AuraProvider strings={barStrings}>
       <FilterBar
+        collapseBelow="sm"
         touchHeight
         key={searchResetKey}
         ref={barRef}
@@ -270,67 +317,23 @@ export function AuditFilters({ eventTypeOptions, timeZone, resultCount }: AuditF
           // start day — so the URL only ever gets a whole range.
           onChange={(r) => pushUrl({ from: r.start, to: r.end })}
         />
-        <Popover
-          title={t('moreFilters')}
-          placement="bottom-end"
-          width={320}
-          trigger={
-            <Button variant="secondary" size="sm" icon="filter" touchHeight>
-              {moreLabel}
-            </Button>
-          }
-        >
-          {/* Remounts on a chip × or Clear, which drops a pending write. */}
-          <ActorField
-            key={`actor-${actorResetKey}`}
-            label={t('actor')}
-            initial={currentActor}
-            onCommit={(v) => pushUrl({ actorUserId: v || null })}
-          />
-        </Popover>
+        {onPhone ? (
+          actorField
+        ) : (
+          <Popover
+            title={t('moreFilters')}
+            placement="bottom-end"
+            width={320}
+            trigger={
+              <Button variant="secondary" size="sm" icon="filter" touchHeight>
+                {moreLabel}
+              </Button>
+            }
+          >
+            {actorField}
+          </Popover>
+        )}
       </FilterBar>
     </AuraProvider>
-  );
-}
-
-/** The acting-user field: commits the trimmed value after the debounce; unmounting drops a pending commit. */
-function ActorField({
-  label,
-  initial,
-  onCommit,
-}: {
-  readonly label: string;
-  readonly initial: string;
-  readonly onCommit: (value: string) => void;
-}): React.JSX.Element {
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
-  // The URL moved to another actor (a chip ×, Clear, back/forward): show it.
-  // Never while the field has focus — a commit landing late would overwrite
-  // what is being typed.
-  useEffect(() => {
-    const input = box.current?.querySelector('input');
-    if (!input || document.activeElement === input) return;
-    if (input.value.trim() !== initial) input.value = initial;
-  }, [initial]);
-  return (
-    <div ref={box}>
-      <TextField
-        label={label}
-        defaultValue={initial}
-        autoComplete="off"
-        onChange={(e) => {
-          const value = e.target.value;
-          if (timer.current) clearTimeout(timer.current);
-          timer.current = setTimeout(() => onCommit(value.trim()), DEBOUNCE_MS);
-        }}
-      />
-    </div>
   );
 }

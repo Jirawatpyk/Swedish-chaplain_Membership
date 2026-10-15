@@ -81,6 +81,7 @@ export function DirectorySearchFilters(): React.JSX.Element {
     >
       <AuraProvider strings={barStrings}>
         <FilterBar
+          collapseBelow="sm"
           touchHeight
           key={barKey}
           label={t('label')}

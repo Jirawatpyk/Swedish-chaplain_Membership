@@ -13,15 +13,14 @@
  * Selects with visible labels and AURA DatePickers (typed or picked; the
  * provider shows Buddhist-era years in Thai — display only, the URL keeps
  * ISO dates), in four equal columns with Clear at the end — always there,
- * disabled until something is filtered. On phones only Source shows, with a
- * "More filters" toggle for the rest. Shared with the staff member timeline.
+ * disabled until something is filtered. On phones the filters fold into
+ * AURA's "Filters" sheet, as on every list (spec 122, 2026-10-15). Shared with
+ * the staff member timeline.
  */
-import { useCallback, useId, useState, useTransition } from 'react';
+import { useCallback, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SlidersHorizontalIcon } from 'lucide-react';
 import { Button, DatePicker, FilterBar, Select, type ISODate } from '@jirawatpyk/aura-react';
-import { cn } from '@/lib/utils';
 import {
   TIMELINE_SOURCES,
   TIMELINE_ACTOR_KINDS,
@@ -44,13 +43,6 @@ export function TimelineFilters(): React.JSX.Element {
   const currentActor = searchParams.get('actorKind') ?? ALL;
   const currentFrom = searchParams.get('from') ?? '';
   const currentTo = searchParams.get('to') ?? '';
-  // Phones (the Portal-timeline-mobile board): Source, then "More filters"
-  // opens Actor and the dates — open from the start when one of them is set.
-  const [moreOpen, setMoreOpen] = useState(
-    currentActor !== ALL || Boolean(currentFrom) || Boolean(currentTo),
-  );
-  const moreId = useId();
-
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
       const params = new URLSearchParams(searchParams.toString());
@@ -76,15 +68,19 @@ export function TimelineFilters(): React.JSX.Element {
     Boolean(currentTo);
 
   // Four equal filter columns with Clear at the end, as the boards draw them
-  // (AURA `controlsLayout="fill"`, #92). The three fields in the phone
-  // disclosure share the row from 640px, where their wrapper is `contents`,
-  // so they take the same equal share; the buttons keep their own width.
+  // (AURA `controlsLayout="fill"`, #92). Below 640px they move into AURA's
+  // Filters sheet, stacked at full width; the button counts the set filters.
   return (
-    <FilterBar touchHeight label={t('title')} controlsLayout="fill">
+    <FilterBar
+      touchHeight
+      collapseBelow="sm"
+      label={t('title')}
+      controlsLayout="fill"
+      filterCount={[currentSource !== ALL, currentActor !== ALL, Boolean(currentFrom), Boolean(currentTo)].filter(Boolean).length}
+    >
       <Select
         name="source"
         label={t('source')}
-        className="max-sm:min-w-0 max-sm:flex-1"
         value={currentSource}
         onChange={(e) => pushUrl({ source: e.target.value === ALL ? null : e.target.value })}
         options={[
@@ -92,56 +88,35 @@ export function TimelineFilters(): React.JSX.Element {
           ...TIMELINE_SOURCES.map((s) => ({ value: s, label: tSource(s as TimelineSource) })),
         ]}
       />
+      <Select
+        name="actorKind"
+        label={t('actor')}
+        value={currentActor}
+        onChange={(e) => pushUrl({ actorKind: e.target.value === ALL ? null : e.target.value })}
+        options={[
+          { value: ALL, label: t('all') },
+          ...TIMELINE_ACTOR_KINDS.map((k) => ({ value: k, label: tActor(k as TimelineActorKind) })),
+        ]}
+      />
+      <DatePicker
+        name="from"
+        label={t('from')}
+        timeZone="Asia/Bangkok"
+        value={(currentFrom || null) as ISODate | null}
+        onChange={(iso) => pushUrl({ from: iso })}
+      />
+      <DatePicker
+        name="to"
+        label={t('to')}
+        timeZone="Asia/Bangkok"
+        value={(currentTo || null) as ISODate | null}
+        onChange={(iso) => pushUrl({ to: iso })}
+      />
+      {/* Always there, disabled until something is filtered. */}
       <Button
         type="button"
         variant="secondary"
-        className="flex-none self-end sm:hidden"
-        icon={<SlidersHorizontalIcon aria-hidden />}
-        aria-expanded={moreOpen}
-        aria-controls={moreId}
-        onClick={() => setMoreOpen((open) => !open)}
-      >
-        {t('moreFilters')}
-      </Button>
-      <div
-        id={moreId}
-        className={cn(
-          'flex basis-full flex-col gap-3 sm:contents sm:[&>*]:min-w-30 sm:[&>*]:flex-1',
-          !moreOpen && 'max-sm:hidden',
-        )}
-      >
-        <Select
-          name="actorKind"
-          label={t('actor')}
-          value={currentActor}
-          onChange={(e) => pushUrl({ actorKind: e.target.value === ALL ? null : e.target.value })}
-          options={[
-            { value: ALL, label: t('all') },
-            ...TIMELINE_ACTOR_KINDS.map((k) => ({ value: k, label: tActor(k as TimelineActorKind) })),
-          ]}
-        />
-        <DatePicker
-          name="from"
-          label={t('from')}
-          timeZone="Asia/Bangkok"
-          value={(currentFrom || null) as ISODate | null}
-          onChange={(iso) => pushUrl({ from: iso })}
-        />
-        <DatePicker
-          name="to"
-          label={t('to')}
-          timeZone="Asia/Bangkok"
-          value={(currentTo || null) as ISODate | null}
-          onChange={(iso) => pushUrl({ to: iso })}
-        />
-      </div>
-
-      {/* From 640px always there, disabled until something is filtered; on a
-          phone only when it can act, on its own row after the filters. */}
-      <Button
-        type="button"
-        variant="secondary"
-        className={cn('self-end max-sm:order-last max-sm:basis-full sm:flex-none', !hasAnyFilter && 'max-sm:hidden')}
+        className="self-end sm:flex-none"
         disabled={!hasAnyFilter}
         onClick={() => pushUrl({ source: null, actorKind: null, from: null, to: null })}
       >

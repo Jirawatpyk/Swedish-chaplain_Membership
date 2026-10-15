@@ -42,6 +42,7 @@ export function ErasureSearchForm({
 
   return (
     <FilterBar
+      collapseBelow="sm"
       touchHeight
       search={q}
       onSearchChange={(value) => router.replace(searchHref(status, value.trim()), { scroll: false })}

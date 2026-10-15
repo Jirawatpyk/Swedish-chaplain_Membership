@@ -84,10 +84,13 @@ export function EventsListFilters({
     <div aria-busy={isPending}>
     <AuraProvider strings={barStrings}>
       <FilterBar
+        collapseBelow="sm"
         touchHeight
         ref={barRef}
         label={t('filters.groupLabel')}
         searchGrow
+        // No chips here, so the phone "Filters (n)" button counts the toggles that are on.
+        filterCount={[partnerBenefitOnly, culturalEventOnly, includeArchived].filter(Boolean).length}
         search={search}
         searchLabel={t('searchLabel')}
         searchPlaceholder={t('searchPlaceholder')}

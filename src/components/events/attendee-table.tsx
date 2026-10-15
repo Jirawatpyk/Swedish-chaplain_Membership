@@ -511,6 +511,7 @@ export function AttendeeTable({
     <div className="flex flex-col gap-[var(--aura-space-4)]" aria-busy={isPending}>
       <AuraProvider strings={barStrings}>
         <FilterBar
+          collapseBelow="sm"
           touchHeight
           ref={barRef}
           label={t('heading')}

@@ -89,6 +89,7 @@ export function CreditNoteFilters({ resultCount }: { readonly resultCount?: numb
 
   return (
     <FilterBar
+      collapseBelow="sm"
       touchHeight
       key={searchResetKey}
       label={t('groupLabel')}

@@ -2,10 +2,10 @@
  * Spec 122 US3 — the activity timeline as on the Portal-timeline boards:
  * events under "Today" / "This month" / month headings, a caption saying how
  * many are shown, rows of title · detail over "actor · time" with an outline
- * source badge, and on phones Source plus a "More filters" button.
+ * source badge, and on phones every filter in AURA's Filters sheet.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { TimelineStream } from '@/components/members/timeline-stream';
@@ -70,7 +70,7 @@ describe('the timeline on the Portal-timeline boards (spec 122 US3)', () => {
   it('on phones folds every filter into AURA\'s Filters sheet, with no toggle of its own', () => {
     search = new URLSearchParams('actorKind=staff');
     const { container } = wrap(<TimelineFilters />);
-    expect(screen.queryByRole('button', { name: en.timeline.filters.moreFilters })).toBeNull();
+    expect(screen.queryByRole('button', { name: /more filters/i })).toBeNull();
     const controls = container.querySelector('.aura-filterbar__controls')!;
     for (const name of ['source', 'actorKind', 'from', 'to']) {
       const field = controls.querySelector(`[name="${name}"]`)!.closest('.aura-field')!;

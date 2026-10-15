@@ -234,6 +234,7 @@ export function DirectoryFilters({ plans = [], portalInviteCount, resultCount }:
     >
       <AuraProvider strings={barStrings}>
         <FilterBar
+          collapseBelow="sm"
           touchHeight
           key={barKey}
           ref={barRef}

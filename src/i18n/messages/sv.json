@@ -8192,8 +8192,7 @@
       "from": "Från datum",
       "to": "Till datum",
       "all": "Alla",
-      "clear": "Rensa filter",
-      "moreFilters": "Fler filter"
+      "clear": "Rensa filter"
     },
     "source": {
       "audit": "Profil / Granskning",

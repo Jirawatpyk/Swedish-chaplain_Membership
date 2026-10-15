@@ -246,6 +246,7 @@ export function PlansTable({
           end, a chip per applied value. */}
       <AuraProvider strings={barStrings}>
         <FilterBar
+          collapseBelow="sm"
           touchHeight
           ref={barRef}
           label={t('filters.groupLabel')}

@@ -8192,8 +8192,7 @@
       "from": "From date",
       "to": "To date",
       "all": "All",
-      "clear": "Clear filters",
-      "moreFilters": "More filters"
+      "clear": "Clear filters"
     },
     "source": {
       "audit": "Profile / Audit",

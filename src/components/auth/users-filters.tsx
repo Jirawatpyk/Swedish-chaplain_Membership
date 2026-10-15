@@ -149,6 +149,7 @@ export function UsersFilters({ resultCount }: UsersFiltersProps = {}) {
   return (
     <AuraProvider strings={barStrings}>
       <FilterBar
+        collapseBelow="sm"
         touchHeight
         key={searchResetKey}
         ref={barRef}
