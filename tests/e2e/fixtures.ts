@@ -112,6 +112,12 @@ export const test = base.extend<{
   // lint rule (which mistakes Playwright's `use(value)` for React's
   // `use()` hook).
   page: async ({ page }, runTest, testInfo) => {
+    // `next dev` draws its dev-tools badge (`<nextjs-portal>`) at the bottom
+    // left, over whatever the page puts there — on a phone the invoice action
+    // bar's lone ⋯ for a manager (R48), whose click it took for 60 s. It
+    // exists in dev only, never in the build this ships, so hide it for every
+    // e2e page. A thrown client error still fails the test via `pageerror`.
+    await page.addInitScript(hideNextDevTools);
     const errors: Error[] = [];
     const errorAt: number[] = [];
     const cancelledRscAt: number[] = [];
@@ -245,6 +251,22 @@ export { expect } from '@playwright/test';
 //
 // All sign-in and form-input specs should use `fillField(...)`
 // instead of `locator.fill(...)` directly.
+
+/**
+ * Init script (runs in the page, before its own scripts, on every document):
+ * hides `next dev`'s dev-tools portal. The app's CSP allows inline styles
+ * (`style-src 'unsafe-inline'`), so a plain `<style>` element is enough.
+ */
+function hideNextDevTools(): void {
+  const add = (): void => {
+    const style = document.createElement('style');
+    style.dataset.e2e = 'hide-next-dev-tools';
+    style.textContent = 'nextjs-portal { display: none !important; }';
+    document.head.appendChild(style);
+  };
+  if (document.head) add();
+  else document.addEventListener('DOMContentLoaded', add, { once: true });
+}
 
 /**
  * Resolve the engine name of the browser that owns this page.
