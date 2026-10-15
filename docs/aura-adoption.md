@@ -91,7 +91,7 @@ A server component that needs a static AURA component imports it from **`@jirawa
 - **On/off filters:** a toggle chip (`Tag` with `selected` and `touchHeight`), like Members' "Needs portal invite".
 - **More than four filters:** the rest go behind a "More filters" popover.
 - **Always:** the result count through `FilterBar`'s `resultCount`, and "Clear all" while a filter is set.
-- **On a phone:** the chips wrap, as on Members.
+- **On a phone** (15 Oct, AURA #146): every bar passes `collapseBelow="sm"`, so below 640px the filter controls fold into a "Filters (n)" sheet and the search, chips, Clear all, count and actions stay in the bar. A "More filters" popover lays its fields out flat in the sheet (render them as bar children when `useBreakpoint() === 'base'`). Keep every filter controlled (`value` + `onChange`): the sheet remounts what it moves. A toggle that is not a chip is added to `filterCount`.
 - **Not covered:** a report form, which is a query someone runs on purpose (Tax registers' "View register"), keeps its labelled fields and button.
 - **Where it changes:**
   - Members already follows it.
@@ -173,7 +173,7 @@ The AURA handoff doc (a Claude Doc titled "AURA v4.9 handoff — Chamber-OS requ
 | 143 | 5.39.0: `Tabs` `touchHeight` for link and button tabs in both variants; `FilterDateRange` `touchHeight` (and the bar's reaches it) | `touchHeight` on every `Tabs` (renewals, erasure log, member detail sections, schedules, benefits, pay sheet, plan locale) |
 | 144 | Not a gap (AURA status, 13 Oct): the search box is 44px on touch; the 42px measured was the `<input>` inside its 1px border, as in every AURA text box. Below 640px with a mouse the bar's `touchHeight` (#140) makes it 44px | As #140; measure the box (`.aura-filterbar__search`), not the `searchbox` |
 | 145 | 5.40.0: type follows the browser's default font size (`max(<px>, <rem>)` for every font size and px line height; Badge, small SegmentedControl options, the calendar title and the DataTable footer grow with their text) | Nothing to change in code: identical at the default 16px, and text scales at a larger default size (checked at 32px, 390 wide) |
-| 146 | 5.42.0: `FilterBar` `collapseBelow` — below the breakpoint the children move behind a "Filters (n)" button opening a sheet (one labelled row each, Clear all + Done); search, chips, count and actions stay in the bar | Adopted on every list in the mobile Filters PR (after this one) |
+| 146 | 5.42.0: `FilterBar` `collapseBelow` — below the breakpoint the children move behind a "Filters (n)" button opening a sheet (one labelled row each, Clear all + Done); search, chips, count and actions stay in the bar | `collapseBelow="sm"` on all 12 AURA `FilterBar`s (an architecture test keeps it); the invoices and audit "More filters" fields are bar children below 640px so the sheet lists them flat; the timeline's own phone toggle goes; bars with toggles that are not chips pass `filterCount`; the audit acting user is controlled |
 | 147 | 5.42.0: `.aura-input` has `min-width: 0` and its control a percentage width, so no text box widens a phone at a large default size (FilterBar search, fields in grids and row Stacks) | Nothing to change: at 32px / 390 no list scrolls sideways any more |
 
 Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.test.ts` reads this table; a new gap goes here as `| #N | … |`):
