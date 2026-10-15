@@ -70,23 +70,33 @@ async function warmAdminRoutes(): Promise<void> {
   // paid the compile inside the test: relink-attendee AS1 waited 10s for the
   // "Relinked" toast while `POST …/relink` was still compiling (R45b,
   // 2026-10-14: run 1 failed on branch and base alike, runs 2–5 passed).
-  // Sent with no session, so the route's admin guard answers 404 before it
-  // reads the ids or the body, and writes no audit row (no actor to attribute);
-  // the Origin header gets it past the proxy's CSRF allow-list.
+  // The plans lifecycle routes did the same to plans-deactivate (R48c,
+  // 2026-10-15): each step's first call compiled its route — deactivate
+  // 15.4 s, DELETE 12.3 s, undelete 15.6 s — so whichever step came first
+  // overran its budget, and widening one budget only moved the failure on.
+  // Sent with no session, so each route's guard answers before it reads the
+  // ids or the body and writes no audit row (no actor to attribute) — 404 from
+  // the relink admin guard, 401 from `requireApiPermission` on the plans
+  // routes; the Origin header gets them past the proxy's CSRF allow-list.
   const nilId = '00000000-0000-0000-0000-000000000000';
-  const postRoutes = [`/api/admin/events/${nilId}/registrations/${nilId}/relink`];
-  for (const route of postRoutes) {
+  const writeRoutes: ReadonlyArray<{ method: 'POST' | 'DELETE'; route: string }> = [
+    { method: 'POST', route: `/api/admin/events/${nilId}/registrations/${nilId}/relink` },
+    { method: 'POST', route: '/api/plans/2029/warm-up/deactivate' },
+    { method: 'DELETE', route: '/api/plans/2029/warm-up' },
+    { method: 'POST', route: '/api/plans/2029/warm-up/undelete' },
+  ];
+  for (const { method, route } of writeRoutes) {
     try {
       const res = await fetch(`${base}${route}`, {
-        method: 'POST',
+        method,
         headers: { Origin: base, 'Content-Type': 'application/json' },
         body: '{}',
         redirect: 'manual',
         signal: AbortSignal.timeout(120_000),
       });
-      console.log(`[e2e global setup] warmed POST ${route} (${res.status})`);
+      console.log(`[e2e global setup] warmed ${method} ${route} (${res.status})`);
     } catch (error) {
-      console.warn(`[e2e global setup] warm POST ${route} failed:`, String(error));
+      console.warn(`[e2e global setup] warm ${method} ${route} failed:`, String(error));
     }
   }
 }
