@@ -27,6 +27,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsSuperAdmin } from './helpers/admin-session';
+import { closeFilters, openFilters } from './helpers/filters-sheet';
 import { signInAsManager } from './helpers/manager-session';
 import { signInAsMember } from './helpers/member-session';
 
@@ -76,13 +77,16 @@ test.describe('F9 — audit-log viewer (US2) @f9', () => {
     // Event-type filter (FR-009): pick the first real type (options show the
     // LOCALISED label, not the raw code), expect it to commit to the URL.
     // Spec 122 US10b: an AURA FilterSelect — a native <select> (grouped by
-    // category) under the face that names it "Event type …".
-    const eventFilter = page.getByRole('combobox', { name: /^event type/i }).first();
+    // category) under the face that names it "Event type …". On a phone it
+    // sits in the Filters sheet (spec 122, AURA #146).
+    const filters = await openFilters(page);
+    const eventFilter = filters.getByRole('combobox', { name: /^event type/i }).first();
     await expect(eventFilter).toBeVisible();
-    const nativeSelect = page.locator('.aura-select', { has: eventFilter }).locator('select');
+    const nativeSelect = filters.locator('.aura-select', { has: eventFilter }).locator('select');
     // Index 0 is "All event types"; index 1 is the first concrete event type.
     await nativeSelect.selectOption({ index: 1 });
     await page.waitForURL(/eventType=/, { timeout: 15_000 });
+    await closeFilters(page);
     // The filtered view re-renders without crashing — either a results table or
     // the empty-state copy (the chosen type may have no rows in this tenant).
     await expect(

@@ -16,6 +16,7 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { closeFilters, openFilters } from './helpers/filters-sheet';
 import { goodStandingMemberCredentials, signInAsMember } from './helpers/member-session';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -53,12 +54,11 @@ test.describe('F9 — unified multi-source timeline (US3) @f9', () => {
     ).toBeVisible();
 
     // Filter bar (FR-015): source + actor comboboxes present. On a phone
-    // Actor and the dates sit behind "More filters" (spec 122 US3 board).
-    const sourceFilter = page.getByRole('combobox', { name: /source/i });
-    const actorFilter = page.getByRole('combobox', { name: /actor/i });
+    // they sit in the Filters sheet (spec 122, AURA #146).
+    const filters = await openFilters(page);
+    const sourceFilter = filters.getByRole('combobox', { name: /source/i });
+    const actorFilter = filters.getByRole('combobox', { name: /actor/i });
     await expect(sourceFilter).toBeVisible();
-    const moreFilters = page.getByRole('button', { name: /more filters/i });
-    if (await moreFilters.isVisible()) await moreFilters.click();
     await expect(actorFilter).toBeVisible();
 
     // The source filter commits to the URL and the view re-renders (a stream
@@ -67,6 +67,7 @@ test.describe('F9 — unified multi-source timeline (US3) @f9', () => {
     // nth(0) = "All"; nth(1) = the first concrete source.
     await page.getByRole('option').nth(1).click();
     await page.waitForURL(/source=/, { timeout: 15_000 });
+    await closeFilters(page);
     // Scope to the timeline list by its accessible name ("Timeline") — a bare
     // getByRole('list') also matches the breadcrumb <ol> (strict-mode clash).
     await expect(
@@ -89,7 +90,9 @@ test.describe('F9 — unified multi-source timeline (US3) @f9', () => {
       page.getByRole('heading', { name: 'Activity timeline', level: 1 }),
     ).toBeVisible();
     // Filter bar present; the member can only ever see their own history.
-    await expect(page.getByRole('combobox', { name: /source/i })).toBeVisible();
+    const filters = await openFilters(page);
+    await expect(filters.getByRole('combobox', { name: /source/i })).toBeVisible();
+    await closeFilters(page);
     // Either an entry stream or a friendly empty state — both are valid.
     // Scope to the timeline list by its accessible name ("Activity timeline",
     // = the page's t('title')) — a bare getByRole('list') also matches the

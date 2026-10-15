@@ -20,6 +20,7 @@
  */
 import { expect, test } from './fixtures';
 import { signInAsAdmin } from './helpers/admin-session';
+import { openFilters } from './helpers/filters-sheet';
 import en from '../../src/i18n/messages/en.json';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -163,7 +164,9 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     await page.waitForURL(/\/admin\/events\/[^/]+$/);
 
     // Toggle button — accessible name "Show unmatched only" or similar.
-    const toggle = page.getByRole('button', {
+    // On a phone it sits in the Filters sheet (spec 122).
+    const filters = await openFilters(page);
+    const toggle = filters.getByRole('button', {
       name: /show unmatched only|unmatched/i,
     });
     await expect(toggle).toBeVisible();
@@ -249,7 +252,9 @@ test.describe('F6 events list and detail — US2 AS1-AS5 @workers=1', () => {
     // Available as a filter chip on the list page.
     await page.goto('/admin/events');
     await page.waitForLoadState('domcontentloaded');
-    const archivedToggle = page.getByRole('button', {
+    // On a phone the toggle sits in the Filters sheet (spec 122).
+    const filters = await openFilters(page);
+    const archivedToggle = filters.getByRole('button', {
       name: /show archived|include archived/i,
     });
     // Toggle may not be visible when no archived events exist —

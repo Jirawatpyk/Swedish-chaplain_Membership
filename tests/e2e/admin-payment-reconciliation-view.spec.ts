@@ -65,6 +65,7 @@
  */
 import { test, expect } from './fixtures';
 import { fillField } from './fixtures';
+import { openFilters } from './helpers/filters-sheet';
 import { seedPaidOnlinePayments } from './helpers/paid-online-payment-seed';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -144,7 +145,10 @@ test.describe('admin payment reconciliation view — @payment @e2e (T095, US3)',
     // inline only on the pre-088 layout. This case asserted the inline chip and
     // failed on every project on 2026-09-10 (chip never in the DOM). Open the
     // popover when it exists; the chip's testid is the same in both slots.
+    // Below 640px there is no popover: the chip is a direct control in the
+    // Filters sheet (spec 122, AURA #146), which `openFilters` opens.
     const openSecondaryFilters = async (): Promise<void> => {
+      await openFilters(page);
       const trigger = page.getByTestId('invoice-more-filters-trigger');
       if (await trigger.isVisible()) await trigger.click();
     };
