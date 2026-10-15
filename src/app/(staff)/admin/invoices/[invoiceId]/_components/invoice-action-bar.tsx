@@ -83,13 +83,17 @@ export function InvoiceActionBar({
           {summary}
         </p>
       ) : null}
-      {/* The actions share the row; the ⋯ menu keeps its own width and, on a
-          phone, a 1px boundary so it reads as a button beside the outlined
-          actions (UX review). Element and data-slot selectors only: AURA's
-          classes are not its API (aura-internal-class-ratchet). */}
+      {/* The actions share the row; the ⋯ menu keeps its own width, centred on
+          the actions, and on a phone a 1px boundary so it reads as a button
+          beside the outlined actions (UX review). Element and data-slot
+          selectors only: AURA's classes are not its API
+          (aura-internal-class-ratchet). The whole bar is a
+          stand-in until AURA #150 (PageHeader hands its actions to an
+          ActionBar below a breakpoint); then the page moves to AURA's
+          PageHeader and this file goes. */}
       <div
         className={cn(
-          'flex flex-wrap items-center gap-2 max-sm:[&>*]:flex-1 max-sm:[&>[data-slot=invoice-more-menu]]:flex-none',
+          'flex flex-wrap items-center gap-2 max-sm:[&>*]:flex-1 max-sm:[&>[data-slot=invoice-more-menu]]:flex-none max-sm:[&>[data-slot=invoice-more-menu]]:self-center',
           'max-sm:[&>[data-slot=invoice-more-menu]_button]:border max-sm:[&>[data-slot=invoice-more-menu]_button]:border-[var(--aura-border-strong)]',
           menu === 'beside' &&
             'max-sm:flex-nowrap max-sm:items-stretch max-sm:[&>*]:min-w-0 max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:h-auto max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:min-h-11 max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:whitespace-normal max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:text-center max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:leading-tight max-sm:[&_:is(a,button):not([data-slot=invoice-more-menu]_*)]:[overflow-wrap:anywhere]',
