@@ -185,6 +185,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #155 | The #154 short-screen thresholds are CSS px (`480px` / `480.02px`), so a phone at a 32px default font is never "short": the `actionsBarBelow` bar there is about 230px tall on 390×844 (WCAG 1.4.4 room for content); ask is the same thresholds in `rem` (30rem), which follow the browser's text size (Addendum 56) | None: every fixed bar, not a blocker; taken with the bump |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
