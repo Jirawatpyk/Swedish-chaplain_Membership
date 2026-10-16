@@ -554,6 +554,23 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - "Clear filters" no longer remounts the filter bar, so its live count stays mounted and announces the new count (L4). AURA's own Clear button already drops the search draft and its pending debounce.
 - **AURA gaps (handoff #143, #144):** in 5.31 the erasure status `Tabs` links and the FilterBar's `FilterSelect` / `FilterDateRange` are 36px with a mouse; on a touch screen they already measure 44px. The FilterBar's own search input is 42px even on a touch screen (R43; every list that uses it). The load-error card's "Try again" (shared `DashboardErrorState`, not in this PR) is 32px on phones.
 
+### Session 2026-10-16 (US11 start: the staff dashboard)
+
+- **One PR** (maintainer, 16 Oct). Boards: `Admin-dashboard`, `Admin-dashboard-mobile`.
+- **KPI tiles are AURA `Stat`s** with the board's icons (users, circle-check, triangle-alert, trending-up) and captions. The animated count (`CountUp`, with its single screen-reader copy) is the tile's value. `KpiCard` goes. The grid rules are unchanged: four up with finance, three without.
+- **Needs attention counts are pills** (maintainer, 16 Oct, as the board draws them): an AURA badge beside each row link. The numbers and links are unchanged. The unavailable row is an AURA danger alert, keeping its `role="status"` and test id.
+- **The charts keep recharts** (this spec's assumption: the charting library stays) behind a dashboard-local chart frame that replaces the legacy `ui/chart`. The colours move off the token bridge onto AURA's chart tokens:
+  - bars, areas and lines: `--aura-chart-1` (the brand theme sets it to the brand blue in both themes);
+  - grid and reference lines: `--aura-chart-grid`;
+  - axis text: `--aura-chart-axis`;
+  - the invoice donut: semantic tones for paid, unpaid and overdue (`--aura-fg-positive`, `--aura-alert-warning-fg`, `--aura-fg-danger`), with the cell gap in the card colour;
+  - the delta chip: positive and danger tones instead of Tailwind emerald and red.
+
+  A unit test keeps the bridge names (`--primary`, `--chart-N`, `--success`, `--warning`, `--destructive`, `--border`, `--card`) out of the dashboard components, so nothing silently depends on the bridge that US13 removes.
+- **Not drawn: the board's per-insight "View" link.** An insight carries no target (`{ key, count, scopeRef? }`), so a link would be new behaviour (FR-011). Dismiss stays as it is.
+- **Unchanged (FR-011):** the guards and flags, the five loaders, every server- and client-side format, every href, the optimistic insight dismiss and its toasts, the activity refresh, the screen-reader chart tables, the reduced-motion handling, and the client-only chart loading.
+- `DashboardErrorState` stays shared; the E-Blast portal panel (US12) also uses it.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
