@@ -74,16 +74,21 @@ async function warmAdminRoutes(): Promise<void> {
   // 2026-10-15): each step's first call compiled its route — deactivate
   // 15.4 s, DELETE 12.3 s, undelete 15.6 s — so whichever step came first
   // overran its budget, and widening one budget only moved the failure on.
+  // And members-archive-undelete (R50, 2026-10-16): its Restore click POSTs
+  // `/api/members/[id]/undelete` and the choose-a-primary dialog opens only on
+  // that 409, which first compiled the route — 10.6 s (9.6 s of it compiling)
+  // against the test's 10 s wait for the dialog.
   // Sent with no session, so each route's guard answers before it reads the
   // ids or the body and writes no audit row (no actor to attribute) — 404 from
-  // the relink admin guard, 401 from `requireApiPermission` on the plans
-  // routes; the Origin header gets them past the proxy's CSRF allow-list.
+  // the relink admin guard, 401 from `requireApiPermission` on the plans and
+  // members routes; the Origin header gets them past the proxy's CSRF list.
   const nilId = '00000000-0000-0000-0000-000000000000';
   const writeRoutes: ReadonlyArray<{ method: 'POST' | 'DELETE'; route: string }> = [
     { method: 'POST', route: `/api/admin/events/${nilId}/registrations/${nilId}/relink` },
     { method: 'POST', route: '/api/plans/2029/warm-up/deactivate' },
     { method: 'DELETE', route: '/api/plans/2029/warm-up' },
     { method: 'POST', route: '/api/plans/2029/warm-up/undelete' },
+    { method: 'POST', route: `/api/members/${nilId}/undelete` },
   ];
   for (const { method, route } of writeRoutes) {
     try {
