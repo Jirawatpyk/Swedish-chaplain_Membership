@@ -1,22 +1,22 @@
 /**
- * `<PageHeader>` — the title column keeps a minimum width beside the actions.
+ * `<PageHeader>` — the title keeps the app's type scale.
  *
- * From 640px the header is one wrapping row. The title column is `flex-1
- * min-w-0` (a zero basis), so without a minimum the actions never wrap: they
- * squeeze the title instead. At 700px the member detail page's four actions
- * left its h1 a few characters wide, cut mid-word ("Sia / m / Nor / dic").
- * A minimum width on the title column makes the actions drop under it when
- * the row is too narrow for both (jsdom has no layout, so the class is the
- * contract).
+ * AURA's title defaults to 28 / 36px; the boards draw 26 / 32px (hero 30, and
+ * 36 from 1024px), which globals.css keeps in `--font-size-h1` per
+ * `data-size`. AURA reads `--aura-page-header-title-size` / `-line-height`
+ * (#151), so the stylesheet points those at our scale for every header.
+ * jsdom has no cascade from globals.css, so the rule itself is the contract.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
-import { PageHeader } from '@/components/layout/page-header';
 
-describe('<PageHeader>', () => {
-  it('gives the title column a minimum width, so the actions wrap under it instead of squeezing it', () => {
-    const { container } = render(<PageHeader title="Siam Nordic Trading Co., Ltd." actions={<button type="button">Edit</button>} />);
-    const titleColumn = container.querySelector('[data-slot="page-header-title"]')?.closest('[data-slot="page-header"] > div');
-    expect(titleColumn?.className).toContain('sm:min-w-[min(100%,18rem)]');
+const css = readFileSync(join(__dirname, '../../../../src/app/globals.css'), 'utf8').replace(/\r/g, '');
+
+describe('<PageHeader> title size', () => {
+  it('globals.css points AURA’s title size at the app’s h1 scale on every page header', () => {
+    const rule = css.match(/\[data-slot='page-header'\]\s*\{([^}]*)\}/);
+    expect(rule?.[1]).toMatch(/--aura-page-header-title-size:\s*var\(--font-size-h1\)/);
+    expect(rule?.[1]).toMatch(/--aura-page-header-title-line-height:\s*1\.2/);
   });
 });
