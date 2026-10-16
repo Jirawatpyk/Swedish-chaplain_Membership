@@ -204,7 +204,7 @@ describe('InvoiceStatusChart', () => {
     const matches = screen.getAllByText('Invoice value by status');
     expect(matches).toHaveLength(2);
     expect(
-      screen.getByText('Invoice value by status', { selector: '[data-slot="card-title"]' }),
+      screen.getByText('Invoice value by status', { selector: 'h2.aura-card__title' }),
     ).toBeInTheDocument();
     const table = screen.getByRole('table');
     expect(within(table).getByText('Invoice value by status')).toBeInTheDocument();

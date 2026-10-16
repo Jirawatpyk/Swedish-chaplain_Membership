@@ -151,7 +151,7 @@ describe('MembershipTierChart', () => {
     // <caption> (ChartDataTable's `caption` prop) share the same title text.
     const matches = screen.getAllByText('Membership by tier');
     expect(matches).toHaveLength(2);
-    expect(screen.getByText('Membership by tier', { selector: '[data-slot="card-title"]' })).toBeInTheDocument();
+    expect(screen.getByText('Membership by tier', { selector: 'h2.aura-card__title' })).toBeInTheDocument();
     const table = screen.getByRole('table');
     expect(within(table).getByText('Membership by tier')).toBeInTheDocument();
   });

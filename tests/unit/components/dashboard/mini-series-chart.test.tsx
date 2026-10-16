@@ -229,7 +229,8 @@ describe('MiniSeriesChart', () => {
         points={points}
       />,
     );
-    expect(screen.getByText(/▲\s*\+10 this year/)).toBeInTheDocument();
+    // Spec 122 US11: AURA's positive tone, not a Tailwind palette colour.
+    expect(screen.getByText(/▲\s*\+10 this year/)).toHaveClass('text-[var(--aura-fg-positive)]');
   });
 
   it('renders a down delta chip with a ▼ glyph + label (not colour-only)', () => {
@@ -243,6 +244,16 @@ describe('MiniSeriesChart', () => {
         points={points}
       />,
     );
-    expect(screen.getByText(/▼\s*-10 this year/)).toBeInTheDocument();
+    expect(screen.getByText(/▼\s*-10 this year/)).toHaveClass('text-[var(--aura-fg-danger)]');
+  });
+
+  it('sits in an AURA card titled at h2 with its caption as the description (spec 122 US11)', () => {
+    const { container } = render(
+      <MiniSeriesChart {...BASE} caption="Per month" points={[pt('2026-01', 10, '10')]} />,
+    );
+    const card = container.querySelector('section.aura-card');
+    expect(card).not.toBeNull();
+    expect(card!.querySelector('h2.aura-card__title')).toHaveTextContent('Revenue trend');
+    expect(card!.querySelector('.aura-card__desc')).toHaveTextContent('Per month');
   });
 });
