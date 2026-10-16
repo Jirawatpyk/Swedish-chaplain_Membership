@@ -46,6 +46,21 @@ describe('<PageHeader> on AURA PageHeader', () => {
     expect(root(container)).toHaveClass('aura-page-header--actions-full-below-sm');
   });
 
+  it('a detail page can turn its actions into AURA\'s phone bar, with a status line (#150)', () => {
+    const { container } = render(
+      <PageHeader
+        title="Invoice SC-2026-000130"
+        actions={<button type="button">Record payment</button>}
+        actionsBarBelow="sm"
+        actionsStatus="Total 107,000.00 THB incl. VAT"
+      />,
+    );
+    expect(root(container)).toHaveClass('aura-page-header--actions-bar-below-sm');
+    // The bar replaces the full-width row; the two never apply together.
+    expect(root(container)).not.toHaveClass('aura-page-header--actions-full-below-sm');
+    expect(screen.getByText('Total 107,000.00 THB incl. VAT').closest('.aura-page-header__status')).not.toBeNull();
+  });
+
   it('an eyebrow of chips is a div row, not a paragraph', () => {
     render(<PageHeader title="Siam Nordic" eyebrow={<span data-testid="pill">Active</span>} />);
     const eyebrow = screen.getByTestId('pill').closest('.aura-page-header__eyebrow');

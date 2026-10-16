@@ -38,4 +38,38 @@ test.describe('invoice detail — reflow at 320px in every locale @a11y', () => 
       expect(m.chipRight, `${locale}: the transaction-id chip stays on screen`).toBeLessThanOrEqual(320);
     }
   });
+
+  // R50 (2026-10-16): at a 32px default font the title's no-wrap document
+  // number was 419px wide, so the page laid out 435px wide at 390 and the
+  // fixed action bar slid partly off screen (WCAG 1.4.4 / 1.4.10).
+  test('at a 32px default font the page still fits 390px wide', async ({ page, baseURL }) => {
+    await signInAsAdmin(page);
+    await page.setViewportSize({ width: 390, height: 844 });
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Page.setFontSizes', { fontSizes: { standard: 32, fixed: 32 } });
+    for (const locale of LOCALES) {
+      await page.context().addCookies([{ name: 'NEXT_LOCALE', value: locale, url: baseURL! }]);
+      await page.goto(`/admin/invoices/${INVOICE_ID}`);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+      await page.waitForLoadState('networkidle');
+      const m = await page.evaluate(() => ({ innerWidth, scrollWidth: document.documentElement.scrollWidth }));
+      expect(m.innerWidth, `${locale}: the page lays out at the screen's width`).toBe(390);
+      expect(m.scrollWidth, `${locale}: nothing scrolls sideways`).toBeLessThanOrEqual(390);
+    }
+  });
+
+  // R48 still holds: at the default size the number is never split at its
+  // hyphens — it sits on one line, the line after "Invoice".
+  test('at 320px and the default font the document number stays on one line', async ({ page }) => {
+    await signInAsAdmin(page);
+    await page.setViewportSize({ width: 320, height: 727 });
+    await page.goto(`/admin/invoices/${INVOICE_ID}`);
+    const h1 = page.getByRole('heading', { level: 1 });
+    await expect(h1).toBeVisible();
+    const lines = await h1.evaluate((el) => {
+      const span = [...el.querySelectorAll('span')].find((s) => /^[A-Z]{2}-\d{4}-\d+$/.test(s.textContent ?? ''));
+      return span ? span.getClientRects().length : -1;
+    });
+    expect(lines, 'the number is one box on one line').toBe(1);
+  });
 });
