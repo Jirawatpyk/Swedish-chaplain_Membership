@@ -59,17 +59,21 @@ test.describe('invoice detail — reflow at 320px in every locale @a11y', () => 
   });
 
   // R48 still holds: at the default size the number is never split at its
-  // hyphens — it sits on one line, the line after "Invoice".
+  // hyphens — it sits on one line, the line after "Invoice". The number is an
+  // inline box, which reports ONE client rect however many lines it wraps to,
+  // so the check is its height against one line of the heading.
   test('at 320px and the default font the document number stays on one line', async ({ page }) => {
     await signInAsAdmin(page);
     await page.setViewportSize({ width: 320, height: 727 });
     await page.goto(`/admin/invoices/${INVOICE_ID}`);
     const h1 = page.getByRole('heading', { level: 1 });
     await expect(h1).toBeVisible();
-    const lines = await h1.evaluate((el) => {
+    const m = await h1.evaluate((el) => {
       const span = [...el.querySelectorAll('span')].find((s) => /^[A-Z]{2}-\d{4}-\d+$/.test(s.textContent ?? ''));
-      return span ? span.getClientRects().length : -1;
+      if (!span) return null;
+      return { height: span.getBoundingClientRect().height, line: parseFloat(getComputedStyle(el).lineHeight) };
     });
-    expect(lines, 'the number is one box on one line').toBe(1);
+    expect(m, 'the heading holds the document number in its own element').not.toBeNull();
+    expect(m!.height, 'the number is one line tall').toBeLessThanOrEqual(m!.line * 1.2);
   });
 });

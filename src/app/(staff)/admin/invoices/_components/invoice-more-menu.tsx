@@ -338,19 +338,11 @@ export function InvoiceMoreMenu({
   return (
     // The menu is the header actions' own child and the ⋯ its child, so
     // AURA's phone bar (PageHeader actionsBarBelow, #150) finds the
-    // IconButton and keeps it at its own width beside the actions. On a phone
-    // it is outlined like them; from 640px it stays plain.
+    // IconButton and keeps it at its own width beside the actions. It is
+    // AURA's plain IconButton, as the board and every other ⋯ in the app.
     <DropdownMenu
       label={menuName}
-      trigger={
-        <IconButton
-          icon="ellipsis"
-          label={menuName}
-          touchHeight
-          variant={isPhone ? 'outline' : undefined}
-          data-slot="invoice-more-menu"
-        />
-      }
+      trigger={<IconButton icon="ellipsis" label={menuName} touchHeight data-slot="invoice-more-menu" />}
       items={items}
     />
   );
