@@ -30,7 +30,8 @@ type PageHeaderProps = {
   /**
    * AURA #150 — below this breakpoint a detail page's own actions become a
    * bar fixed to the bottom of the screen, with `actionsStatus` as its line
-   * (the invoice page). Replaces the full-width action row.
+   * (the invoice page). On a screen 480px tall or less (AURA 5.48, #154) the
+   * actions stay in the full-width row instead.
    */
   actionsBarBelow?: 'sm' | 'md';
   actionsStatus?: ReactNode;
@@ -76,7 +77,7 @@ export function PageHeader({
       meta={meta}
       eyebrow={eyebrow}
       actions={actions}
-      actionsFullWidthBelow={actionsBarBelow ? undefined : 'sm'}
+      actionsFullWidthBelow="sm"
       actionsBarBelow={actionsBarBelow}
       actionsStatus={actionsStatus}
       actionsAlign={portal ? 'start' : 'end'}
