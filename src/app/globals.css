@@ -645,19 +645,6 @@ summary,
        portal header sets 72px. */
     --shell-bar-height: var(--aura-shell-bar-height, 56px);
   }
-  /* Spec 122 (AURA #151): the page header is AURA's PageHeader; its title
-     takes the app's h1 scale (26 / 32px, hero 30, 36 from 1024px) through
-     AURA's own custom properties, as the boards draw it. */
-  [data-slot='page-header'] {
-    --aura-page-header-title-size: var(--font-size-h1);
-    --aura-page-header-title-line-height: 1.2;
-  }
-  [data-slot='page-header'][data-size='hero'] {
-    --font-size-h1: 1.875rem;
-  }
-  .chamber-portal [data-slot='layout-container']:has(> [data-slot='page-header'][data-size='hero']) {
-    --page-padding-y: 1.5rem;
-  }
   .chamber-portal {
     --page-padding-y: 20px;
   }
@@ -683,11 +670,9 @@ summary,
       --page-padding-y: 2rem;
       --page-padding-bottom: 4rem;
     }
-    [data-slot='page-header']:is([data-size='hero'], [data-size='hero-lg']) {
-      --font-size-h1: 2.25rem;
-    }
+    /* A hero page's sections sit further apart (the portal home and Benefits
+       boards). The title size and the room above it are AURA's (size). */
     .chamber-portal [data-slot='layout-container']:has(> [data-slot='page-header']:is([data-size='hero'], [data-size='hero-lg'])) {
-      --page-padding-y: 2.5rem;
       --page-section-gap: 1.5rem;
     }
   }

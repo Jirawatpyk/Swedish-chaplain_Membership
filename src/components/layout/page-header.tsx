@@ -24,9 +24,7 @@ type PageHeaderProps = {
   /**
    * Spec 122 — `hero` is the larger page the portal home and edit boards
    * draw: a 30 / 36px title and more room above it; `hero-lg` is the Benefits
-   * board's, larger from 1024px only (26 / 36px). Every other page uses the
-   * default 26 / 32px. globals.css sizes the title and the page padding off
-   * `data-size`.
+   * board's, larger from 1024px only. AURA sizes both (`size`).
    */
   size?: 'default' | 'hero' | 'hero-lg';
 };
@@ -40,10 +38,9 @@ type PageHeaderProps = {
  * - Staff boards align the actions with the bottom of the text; the portal
  *   boards with its top. The portal renders under `density="comfortable"`
  *   (`AuraDensity` in its layout), so that is the signal.
- * - `size` is not handed to AURA: the title size (`--font-size-h1` per
- *   `data-size`, which globals.css points AURA's title at) and the room above
- *   a hero page (the portal container's padding) stay the app's, as the
- *   boards draw them.
+ * - `size` is AURA's: the title sizes and the room above a hero page are
+ *   its defaults (spec 122 parity rule). `data-size` stays on the root for
+ *   the portal's hero section gap in globals.css.
  */
 export function PageHeader({
   title,
@@ -61,6 +58,7 @@ export function PageHeader({
     <AuraPageHeader
       data-slot="page-header"
       data-size={size}
+      size={size}
       title={title}
       subtitle={subtitle}
       titleAddon={badge}

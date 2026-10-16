@@ -30,7 +30,10 @@ describe('<PageHeader> sizes are AURA’s', () => {
 
   it('globals.css does not override AURA’s title size or pad a hero page itself', () => {
     expect(css).not.toMatch(/--aura-page-header-title-(size|line-height)/);
-    expect(css).not.toMatch(/\[data-slot='page-header'\]\[data-size=/);
-    expect(css).not.toMatch(/\[data-slot='page-header'\]:is\(\[data-size=/);
+    // Any rule keyed on a hero header may space sections apart, but sets
+    // neither the title size nor the page's top padding.
+    for (const m of css.matchAll(/[^{}]*data-size='hero[^{}]*\{([^}]*)\}/g)) {
+      expect(m[1]).not.toMatch(/--font-size-h1|--page-padding-y/);
+    }
   });
 });
