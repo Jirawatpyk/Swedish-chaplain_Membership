@@ -645,6 +645,13 @@ summary,
        portal header sets 72px. */
     --shell-bar-height: var(--aura-shell-bar-height, 56px);
   }
+  /* Spec 122 (AURA #151): the page header is AURA's PageHeader; its title
+     takes the app's h1 scale (26 / 32px, hero 30, 36 from 1024px) through
+     AURA's own custom properties, as the boards draw it. */
+  [data-slot='page-header'] {
+    --aura-page-header-title-size: var(--font-size-h1);
+    --aura-page-header-title-line-height: 1.2;
+  }
   [data-slot='page-header'][data-size='hero'] {
     --font-size-h1: 1.875rem;
   }
