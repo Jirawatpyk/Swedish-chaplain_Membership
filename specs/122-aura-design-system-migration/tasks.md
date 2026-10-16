@@ -686,13 +686,13 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 
 ## Phase 13: User Story 11 — Staff dashboard (Priority: P3) — PR 23 (US11)
 
-- [ ] T1101 [US11] Spec session "2026-10-16 (US11 start)" and these tasks.
-- [ ] T1102 [US11] A dashboard chart frame replaces the legacy `ui/chart` (`ChartContainer`/`ChartTooltip`) for the three recharts canvases: a `ResponsiveContainer` wrapper keeping `data-slot="chart"` and `aria-hidden`, with a token tooltip. RED: the canvas tests.
-- [ ] T1103 [US11] Chart colours on AURA tokens (`--aura-chart-1`, `-grid`, `-axis`; semantic tones for the donut and the delta chip). RED: a unit test that no bridge colour name appears in `src/components/dashboard/**`.
-- [ ] T1104 [US11] KPI tiles on AURA `Stat` (board icons and captions, `CountUp` as the value); `KpiCard` deleted. RED: the page test reads AURA stat tiles in "Key metrics".
-- [ ] T1105 [US11] Needs attention (count pills, the unavailable row as an AURA alert) and Smart insights (AURA card, dismiss as AURA `IconButton`). RED: `needs-attention-change-requests.test.tsx`, `insights-panel.test.tsx`.
-- [ ] T1106 [US11] Chart cards (revenue, growth, tier, invoice status) on AURA `Card`; the chart skeleton on AURA. RED: the tier and invoice-status chart tests.
-- [ ] T1107 [US11] Activity feed on AURA (card, ghost refresh button); `loading.tsx` on AURA for both flag branches; the flag-off card on AURA. RED: `activity-feed.test.tsx` and a loading test.
+- [x] T1101 [US11] Spec session "2026-10-16 (US11 start)" and these tasks.
+- [x] T1102 [US11] A dashboard chart frame replaces the legacy `ui/chart` (`ChartContainer`/`ChartTooltip`) for the three recharts canvases: a `ResponsiveContainer` wrapper keeping `data-slot="chart"` and `aria-hidden`, with a token tooltip. RED: the canvas tests.
+- [x] T1103 [US11] Chart colours on AURA tokens (`--aura-chart-1`, `-grid`, `-axis`; semantic tones for the donut and the delta chip). RED: a unit test that no bridge colour name appears in `src/components/dashboard/**`.
+- [x] T1104 [US11] KPI tiles on AURA `Stat` (board icons and captions, `CountUp` as the value); `KpiCard` deleted. RED: the page test reads AURA stat tiles in "Key metrics".
+- [x] T1105 [US11] Needs attention (count pills, the unavailable row as an AURA alert) and Smart insights (AURA card, dismiss as AURA `IconButton`). RED: `needs-attention-change-requests.test.tsx`, `insights-panel.test.tsx`.
+- [x] T1106 [US11] Chart cards (revenue, growth, tier, invoice status) on AURA `Card`; the chart skeleton on AURA. RED: the tier and invoice-status chart tests.
+- [x] T1107 [US11] Activity feed on AURA (card, ghost refresh button); `loading.tsx` on AURA for both flag branches; the flag-off card on AURA. RED: `activity-feed.test.tsx` and a loading test.
 - [ ] T1108 [US11] The page's render moves to `_components/dashboard-view.tsx` (the page keeps loaders and guards); preview `?view=dashboard` states and the loading route; `MIGRATED_PATHS` and a US11 ratchet block; `/admin` budget re-measured.
 - [ ] T1109 [US11] Exit: e2e selectors where the swap breaks them; gates; build and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; dark-mode contrast of every series; the same figures as main for the same data; UX and reporting reviews; draft PR; relay R53.
 

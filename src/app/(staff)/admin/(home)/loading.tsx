@@ -65,7 +65,12 @@ export default async function Loading() {
               AURA Stat tiles with their value skeleton (spec 122 US11). */}
           <div aria-hidden className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Stat key={i} label={<SkeletonBlock className="h-4 w-28" />} loading />
+              <Stat
+                key={i}
+                label={<SkeletonBlock className="h-4 w-28" />}
+                caption={<SkeletonBlock className="h-3 w-24" />}
+                loading
+              />
             ))}
           </div>
 

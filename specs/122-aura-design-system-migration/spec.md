@@ -570,6 +570,8 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **Not drawn: the board's per-insight "View" link.** An insight carries no target (`{ key, count, scopeRef? }`), so a link would be new behaviour (FR-011). Dismiss stays as it is.
 - **Unchanged (FR-011):** the guards and flags, the five loaders, every server- and client-side format, every href, the optimistic insight dismiss and its toasts, the activity refresh, the screen-reader chart tables, the reduced-motion handling, and the client-only chart loading.
 - `DashboardErrorState` stays shared; the E-Blast portal panel (US12) also uses it.
+- **Card titles are headings now.** Each panel and chart card is an AURA card titled at h2 (the legacy card title was a `div`). They take AURA's card-title size, so the SC-010 typography e2e treats an AURA card title as AURA-owned instead of asking for the FR-017 `text-h2` step.
+- **Refresh uses AURA's `loading`.** While the feed refreshes, the button shows AURA's spinner, sets `aria-busy` and ignores clicks, so there is still one refresh at a time. It is not `disabled`, so focus stays on it.
 
 ## User Scenarios & Testing *(mandatory)*
 
