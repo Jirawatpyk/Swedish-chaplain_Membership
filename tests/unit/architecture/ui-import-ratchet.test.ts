@@ -501,6 +501,28 @@ describe('UI import ratchet (spec 122)', () => {
     });
   });
 
+  describe('the US11 staff dashboard is on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+
+    it.each([
+      'src/app/(staff)/admin/(home)/page.tsx',
+      'src/app/(staff)/admin/(home)/loading.tsx',
+      'src/app/(staff)/admin/(home)/_components/dashboard-view.tsx',
+      'src/components/dashboard/chart-frame.tsx',
+      'src/components/dashboard/needs-attention-list.tsx',
+      'src/components/dashboard/insights-panel.tsx',
+      'src/components/dashboard/activity-feed.tsx',
+      'src/components/dashboard/invoice-status-chart.tsx',
+      'src/components/dashboard/dashboard-error-state.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the E-Blast queue keeps the legacy kit until US12', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/page.tsx')).toEqual([]);
+    });
+  });
+
   describe('the US8b invoice detail, its dialogs, void and new credit note are on AURA (the real MIGRATED_PATHS)', () => {
     const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
 
