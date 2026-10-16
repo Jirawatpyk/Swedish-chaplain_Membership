@@ -476,7 +476,7 @@ export async function renderInvoiceDetailView({
           <dl
             data-slot="invoice-totals"
             aria-label={t('totalsLabel')}
-            className="ms-auto grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-sm sm:max-w-sm sm:gap-x-8"
+            className="ms-auto grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-sm sm:max-w-sm sm:gap-x-8 [&>dt]:[overflow-wrap:anywhere]"
           >
             <dt className="text-[var(--aura-fg-secondary)]">{t('fields.subtotal')}</dt>
             <dd className="text-end tabular-nums">{formatSatangAmount(totals.subtotalSatang)} THB</dd>
