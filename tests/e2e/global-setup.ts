@@ -99,6 +99,39 @@ async function warmAdminRoutes(): Promise<void> {
       console.warn(`[e2e global setup] warm ${method} ${route} failed:`, String(error));
     }
   }
+
+  // `/admin/renewals`, SIGNED IN: the pipeline spec's AS1 times the page load
+  // against a 5s perf smoke. On a cold server its first load took 15.1s
+  // (2026-10-16; 13.0 / 9.3s in R47b): ~4.9s compiling the route, and ~6s more
+  // in application code on the first AUTHENTICATED render of the process. An
+  // anonymous GET only reaches the layout's redirect, so it pays the compile
+  // but not the rest (AS1 still read 8.1 / 8.8s). The cost is once per server
+  // process, not per session: a second admin session and a super admin both
+  // load it in ~2s. One E2E-admin sign-in (one `sign_in_success` audit row, as
+  // every spec writes) then a GET with that cookie; the rate-limit buckets are
+  // cleared after this. Only statuses are logged, never the credentials.
+  const email = process.env.E2E_ADMIN_EMAIL;
+  const password = process.env.E2E_ADMIN_PASSWORD;
+  if (email && password) {
+    try {
+      const signIn = await fetch(`${base}/api/auth/sign-in`, {
+        method: 'POST',
+        headers: { Origin: base, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, portal: 'staff' }),
+        redirect: 'manual',
+        signal: AbortSignal.timeout(120_000),
+      });
+      const cookie = signIn.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+      const res = await fetch(`${base}/admin/renewals`, {
+        headers: { cookie },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(120_000),
+      });
+      console.log(`[e2e global setup] warmed /admin/renewals signed in (sign-in ${signIn.status}, page ${res.status})`);
+    } catch (error) {
+      console.warn('[e2e global setup] signed-in warm of /admin/renewals failed:', String(error));
+    }
+  }
 }
 
 async function resetF5IssuedInvoice(): Promise<void> {
