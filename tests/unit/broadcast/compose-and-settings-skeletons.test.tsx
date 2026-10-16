@@ -76,7 +76,7 @@ describe('U12 — the compose, templates and brand skeletons match their pages',
 
   it('templates: the button in the header, the three filter pills above the table', async () => {
     const { container } = render((await TemplatesLoading()) as React.ReactElement);
-    expect(container.querySelector('[data-slot="page-header-actions"] [data-slot="skeleton-block"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="page-header"] .aura-page-header__actions [data-slot="skeleton-block"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-slot="skeleton-block"].h-9')).toHaveLength(1 + 3);
     expect(container.querySelectorAll('[data-skeleton="template-filter-pill"]')).toHaveLength(3);
   });

@@ -86,7 +86,7 @@ describe('renderMemberBenefitsView (T558)', () => {
       }),
     );
     const h1 = screen.getByRole('heading', { level: 1, name: BN.title });
-    expect(h1.closest('header')).toHaveTextContent('Siam Nordic Trading Co., Ltd.');
+    expect(h1.closest('[data-slot="page-header"]')).toHaveTextContent('Siam Nordic Trading Co., Ltd.');
     expect(screen.getByRole('link', { name: BN.backToDetail })).toHaveAttribute('href', '/admin/members/m-1');
     expect(screen.queryByRole('link', { name: BN.staffActions.sendReminder })).toBeNull();
   });

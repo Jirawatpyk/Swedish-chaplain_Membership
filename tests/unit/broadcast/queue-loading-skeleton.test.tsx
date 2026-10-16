@@ -89,7 +89,7 @@ describe('the queue loading skeleton mirrors the page (T086a V3)', () => {
 
   it('reserves the header actions the page renders — Templates only while its flag is on', async () => {
     const { container } = await renderSkeleton();
-    const actions = container.querySelector('[data-slot="page-header-actions"]');
+    const actions = container.querySelector('[data-slot="page-header"] .aura-page-header__actions');
     expect(actions?.querySelectorAll('[data-skeleton="header-action"]')).toHaveLength(2);
 
     cleanupRender();
