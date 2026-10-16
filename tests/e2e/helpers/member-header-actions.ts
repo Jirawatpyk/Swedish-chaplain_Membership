@@ -9,7 +9,8 @@ import { expect, type Page } from '@playwright/test';
 const MORE = /^(More actions|การดำเนินการเพิ่มเติม|Fler åtgärder)$/;
 
 function header(page: Page) {
-  return page.locator('[data-slot="page-header-actions"]');
+  // AURA PageHeader (spec 122, #151): the actions row is AURA's.
+  return page.locator('[data-slot="page-header"] .aura-page-header__actions');
 }
 
 /** Waits for the header, then says whether this width has the ⋯ menu. */

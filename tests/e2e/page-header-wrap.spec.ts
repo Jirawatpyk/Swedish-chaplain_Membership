@@ -1,5 +1,9 @@
 /**
  * T031 — E2E: F4 US2 PageHeader action wrap below 640px.
+ *
+ * Spec 122 (#151): the header is AURA's PageHeader with
+ * `actionsFullWidthBelow="sm"`. Below 640px the actions take the whole row
+ * under the text; once the row fits they sit at the end of the header's row.
  */
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
@@ -14,7 +18,7 @@ test.describe('F4 US2 — page header action wrap @layout', () => {
     await clearE2ERateLimits();
   });
 
-  test('actions wrap at 639px, inline at 641px (640 breakpoint)', async ({ page }) => {
+  test('actions take their own row at 639px, stay contained at 641px, sit at the end of the row at 700px', async ({ page }) => {
     await page.goto('/admin/sign-in');
     await page.getByLabel(/email/i).fill(ADMIN_EMAIL!);
     await page.getByRole('textbox', { name: /^password$/i }).fill(ADMIN_PASSWORD!);
@@ -23,37 +27,40 @@ test.describe('F4 US2 — page header action wrap @layout', () => {
 
     await page.goto('/admin/plans');
 
+    const header = page.locator('[data-slot="page-header"]').first();
+    const actions = header.locator('.aura-page-header__actions');
     // Actions may be rendered as <a> (Link asChild) or <button>.
-    const actionLocator = page
-      .locator('[data-slot="page-header-actions"]')
-      .locator(':is(a, button)')
-      .first();
-    await expect(actionLocator, 'header must render at least one action').toBeVisible();
+    await expect(actions.locator(':is(a, button)').first(), 'header must render at least one action').toBeVisible();
 
-    // What this test is named for is the 640px breakpoint, so assert the
-    // breakpoint: the header stacks below it and becomes a row above it.
-    //
-    // It used to compare the action's `offsetTop` with the h1's and allow 8px.
-    // That measured the OUTCOME at one width, which the header is not obliged
-    // to produce: above 640 it is `flex-row flex-wrap`, so a title, a subtitle
-    // and two buttons that do not fit in 641px wrap by design — and 122 US3
-    // made the row `items-end`, which moves the action's top by a subtitle's
-    // height even when it has not wrapped. Both of those broke an assertion
-    // about the breakpoint for reasons that have nothing to do with it.
-    const headerDirection = async () =>
-      page
-        .locator('[data-slot="page-header"]')
-        .first()
-        .evaluate((el) => getComputedStyle(el).flexDirection);
+    const boxes = async () => {
+      const h = await header.boundingBox();
+      const a = await actions.boundingBox();
+      const t = await header.locator('.aura-page-header__text').boundingBox();
+      if (!h || !a || !t) throw new Error('header, text or actions has no box');
+      return { h, a, t };
+    };
 
     await page.setViewportSize({ width: 639, height: 900 });
-    expect(await headerDirection(), 'at 639px the header stacks').toBe('column');
+    let { h, a, t } = await boxes();
+    expect(a.y, 'at 639px the actions sit under the text').toBeGreaterThanOrEqual(t.y + t.height - 1);
+    expect(a.width, 'at 639px the actions span the header').toBeGreaterThan(h.width - 2);
 
+    // From 640px to about 654px AURA's 320px text basis plus the gap and
+    // the two actions overflow the header, so the actions wrap under the
+    // text at their natural width (AURA's default; spec 122 parity rule).
+    // There only containment must hold.
     await page.setViewportSize({ width: 641, height: 900 });
-    expect(await headerDirection(), 'at 641px the header is a row').toBe('row');
+    ({ h, a, t } = await boxes());
+    expect(a.x, 'at 641px the actions stay inside the header').toBeGreaterThanOrEqual(h.x - 1);
+    expect(a.x + a.width, 'at 641px the actions stay inside the header').toBeLessThanOrEqual(h.x + h.width + 1);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
+      'at 641px the page does not scroll sideways',
+    ).toBeLessThanOrEqual(0);
 
-    // And the actions stay inside the header at both widths — the wrap must be
-    // a wrap, not an overflow out of the frame.
-    await expect(actionLocator).toBeVisible();
+    await page.setViewportSize({ width: 700, height: 900 });
+    ({ h, a, t } = await boxes());
+    expect(a.x, 'at 700px the actions sit beside the text').toBeGreaterThan(t.x + 1);
+    expect(a.x + a.width, 'the actions end at the header’s end').toBeCloseTo(h.x + h.width, 0);
   });
 });

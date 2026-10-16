@@ -142,8 +142,8 @@ describe('renderMemberDetailView — header (T553)', () => {
   it('puts the status, the member number and the auto-invoice badge above the company name', async () => {
     await renderView();
     const h1 = screen.getByRole('heading', { level: 1, name: member.companyName });
-    const header = h1.closest('header')!;
-    const eyebrow = header.querySelector('[data-slot="page-header-eyebrow"]')!;
+    const header = h1.closest<HTMLElement>('[data-slot="page-header"]')!;
+    const eyebrow = header.querySelector('.aura-page-header__eyebrow')!;
     expect(eyebrow).toHaveTextContent('Active');
     expect(eyebrow).toHaveTextContent('TSCC-0003');
     expect(eyebrow).toHaveTextContent(enMessages.admin.members.detail.autoInvoiceEnrolledBadge);
@@ -154,7 +154,7 @@ describe('renderMemberDetailView — header (T553)', () => {
 
   it('a writer gets Benefits, Erase, Archive and Edit, in that order', async () => {
     await renderView();
-    const header = screen.getByRole('heading', { level: 1 }).closest('header')!;
+    const header = screen.getByRole('heading', { level: 1 }).closest<HTMLElement>('[data-slot="page-header"]')!;
     const actions = [...header.querySelectorAll('a, button')].filter((a) => a.textContent?.trim());
     expect(actions.map((a) => a.textContent?.trim())).toEqual([
       enMessages.admin.members.detail.sections.benefits,
@@ -170,7 +170,7 @@ describe('renderMemberDetailView — header (T553)', () => {
   it('on a phone, Erase and Archive move into a ⋯ menu', async () => {
     await renderView();
     const D = enMessages.admin.members;
-    const header = screen.getByRole('heading', { level: 1 }).closest('header')!;
+    const header = screen.getByRole('heading', { level: 1 }).closest<HTMLElement>('[data-slot="page-header"]')!;
     expect(within(header).getByText('Erase (GDPR/PDPA)…').closest('[class*="max-sm:hidden"]')).not.toBeNull();
     const more = within(header).getByRole('button', { name: D.detail.headerMoreActions });
     expect(more.closest('[class*="sm:hidden"]')).not.toBeNull();
@@ -196,7 +196,7 @@ describe('renderMemberDetailView — header (T553)', () => {
 
   it('an archived member keeps Erase but loses Archive and Edit', async () => {
     await renderView({ member: { ...member, status: 'archived' } as Member });
-    const header = screen.getByRole('heading', { level: 1 }).closest('header')!;
+    const header = screen.getByRole('heading', { level: 1 }).closest<HTMLElement>('[data-slot="page-header"]')!;
     expect(within(header).getByText('Erase (GDPR/PDPA)…')).toBeInTheDocument();
     expect(within(header).queryByText('Archive member')).toBeNull();
     expect(within(header).queryByRole('link', { name: enMessages.admin.members.detail.editCta })).toBeNull();
@@ -204,12 +204,12 @@ describe('renderMemberDetailView — header (T553)', () => {
 
   it('an erased member, or a read-only viewer, gets Benefits only', async () => {
     await renderView({ erasure: { erasedAt: new Date('2026-09-01T00:00:00Z'), completed: true } });
-    let header = screen.getByRole('heading', { level: 1 }).closest('header')!;
+    let header = screen.getByRole('heading', { level: 1 }).closest<HTMLElement>('[data-slot="page-header"]')!;
     expect(within(header).queryByText('Erase (GDPR/PDPA)…')).toBeNull();
     expect(within(header).queryByText('Archive member')).toBeNull();
     document.body.innerHTML = '';
     await renderView({ can: { write: false, marketing: false } });
-    header = screen.getByRole('heading', { level: 1 }).closest('header')!;
+    header = screen.getByRole('heading', { level: 1 }).closest<HTMLElement>('[data-slot="page-header"]')!;
     expect(within(header).getAllByRole('link').map((a) => a.textContent?.trim())).toEqual([
       enMessages.admin.members.detail.sections.benefits,
     ]);

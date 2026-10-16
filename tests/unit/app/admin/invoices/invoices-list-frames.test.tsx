@@ -52,7 +52,7 @@ describe('/admin/invoices loading (T806)', () => {
     expect(html).not.toContain('data-slot="table-skeleton"');
     // Only "New invoice" is reserved in the header: a manager, or a tenant
     // without the registers flag, gets fewer buttons, never more.
-    expect(d.querySelector('[data-slot="page-header-actions"]')?.children).toHaveLength(1);
+    expect(d.querySelector('[data-slot="page-header"] .aura-page-header__actions')?.children).toHaveLength(1);
     // AURA's input height, not the legacy kit's token.
     expect(html).not.toContain('--input-height');
     expect(html).not.toContain('MISSING_KEY');

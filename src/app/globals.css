@@ -645,14 +645,13 @@ summary,
        portal header sets 72px. */
     --shell-bar-height: var(--aura-shell-bar-height, 56px);
   }
-  [data-slot='page-header'][data-size='hero'] {
-    --font-size-h1: 1.875rem;
-  }
-  .chamber-portal [data-slot='layout-container']:has(> [data-slot='page-header'][data-size='hero']) {
-    --page-padding-y: 1.5rem;
-  }
   .chamber-portal {
     --page-padding-y: 20px;
+    /* AURA #152: the room AURA adds above a hero title, on top of the page
+       padding, so a hero page sits 24px down on a phone (20 + 4) and 40px from
+       1024px (32 + 8), as the portal Main / Edit / Benefits boards draw it.
+       Change it with the portal padding above. */
+    --aura-page-header-hero-space: 4px;
   }
   /* The side gutter takes AURA Container's steps and values (--aura-space-4 /
      -6 / -8 at 640 and 1024; maintainer, 2 Oct 2026), so the containers' own
@@ -675,12 +674,11 @@ summary,
     .chamber-portal {
       --page-padding-y: 2rem;
       --page-padding-bottom: 4rem;
+      --aura-page-header-hero-space: 8px;
     }
-    [data-slot='page-header']:is([data-size='hero'], [data-size='hero-lg']) {
-      --font-size-h1: 2.25rem;
-    }
+    /* A hero page's sections sit further apart (the portal home and Benefits
+       boards). The title size and the room above it are AURA's (size). */
     .chamber-portal [data-slot='layout-container']:has(> [data-slot='page-header']:is([data-size='hero'], [data-size='hero-lg'])) {
-      --page-padding-y: 2.5rem;
       --page-section-gap: 1.5rem;
     }
   }

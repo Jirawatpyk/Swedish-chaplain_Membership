@@ -11,7 +11,8 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 // step (`--font-size-h1`: 26px on phones, 32px from 640px, #435), and a hero
 // header overrides the token again (globals.css). FR-017's 1.875rem holds for
 // h2–h4 only. So each h1 is read against the token in force at that h1, which
-// still fails if a title stops using `.text-h1`.
+// still fails if a title stops following the token (AURA's PageHeader title
+// reads it through `--aura-page-header-title-size`, spec 122 #151).
 const EXPECTED_H2_PX = 24; // 1.5rem
 const EXPECTED_H3_PX = 20; // 1.25rem
 const EXPECTED_H4_PX = 18; // 1.125rem

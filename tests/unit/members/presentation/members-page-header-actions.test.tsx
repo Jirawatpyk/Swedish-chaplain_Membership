@@ -45,7 +45,7 @@ describe('/admin/members header actions', () => {
     const actions = findPageHeaderActions(tree);
     render(<PageHeader title="Members" actions={actions} />);
 
-    const row = document.querySelector('[data-slot="page-header-actions"]');
+    const row = document.querySelector('[data-slot="page-header"] .aura-page-header__actions');
     expect(screen.getByRole('link', { name: /addMember/ }).parentElement).toBe(row);
     expect(screen.getByRole('button', { name: 'exportBackup' }).parentElement).toBe(row);
   });

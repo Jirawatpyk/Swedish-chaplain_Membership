@@ -1,98 +1,75 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+/**
+ * Spec 122 (2026-10-16, AURA #151) — `<PageHeader>` is a thin wrapper over
+ * AURA's `PageHeader`: the same props for every call site, AURA's markup.
+ * The root keeps `data-slot="page-header"` and `data-size`, which the page
+ * padding and title-size rules in globals.css read.
+ */
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { AuraProvider } from '@jirawatpyk/aura-react';
 
 import { PageHeader } from '@/components/layout/page-header';
 
-describe('<PageHeader>', () => {
-  it('renders title only', () => {
+afterEach(cleanup);
+
+const root = (container: HTMLElement) => container.querySelector('[data-slot="page-header"]');
+
+describe('<PageHeader> on AURA PageHeader', () => {
+  it('renders AURA’s header, keeping the data-slot and size the stylesheet reads', () => {
+    const { container, rerender } = render(<PageHeader title="Members" />);
+    expect(root(container)).toHaveClass('aura-page-header');
+    expect(root(container)).toHaveAttribute('data-size', 'default');
+    rerender(<PageHeader title="Hi Anna" size="hero" />);
+    expect(root(container)).toHaveAttribute('data-size', 'hero');
+  });
+
+  it('the title is AURA’s level-1 heading', () => {
     render(<PageHeader title="Users" />);
-    const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1.textContent).toBe('Users');
+    const h1 = screen.getByRole('heading', { level: 1, name: 'Users' });
+    expect(h1).toHaveClass('aura-page-header__title');
   });
 
-  it('renders title + subtitle', () => {
-    render(<PageHeader title="Users" subtitle="42 accounts total" />);
-    expect(screen.getByText('42 accounts total')).toBeDefined();
-  });
-
-  it('renders title + actions slot', () => {
-    render(
-      <PageHeader
-        title="Plans"
-        actions={<button type="button">New plan</button>}
-      />,
-    );
-    expect(screen.getByRole('button', { name: 'New plan' })).toBeDefined();
-  });
-
-  it('renders title + subtitle + actions + badge', () => {
-    render(
+  it('subtitle, badge, meta and actions land in AURA’s slots', () => {
+    const { container } = render(
       <PageHeader
         title="Plans"
         subtitle="2026 catalogue"
-        actions={<button type="button">New</button>}
         badge={<span data-testid="status">Active</span>}
+        meta={<span data-testid="chips">TSCC-0042</span>}
+        actions={<button type="button">New plan</button>}
       />,
     );
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Plans');
-    expect(screen.getByText('2026 catalogue')).toBeDefined();
-    expect(screen.getByRole('button', { name: 'New' })).toBeDefined();
-    expect(screen.getByTestId('status')).toBeDefined();
+    expect(screen.getByText('2026 catalogue').closest('.aura-page-header__subtitle')).not.toBeNull();
+    expect(screen.getByTestId('status').closest('.aura-page-header__title-addon')).not.toBeNull();
+    expect(screen.getByTestId('chips').closest('.aura-page-header__meta')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'New plan' }).closest('.aura-page-header__actions')).not.toBeNull();
+    expect(root(container)).toHaveClass('aura-page-header--actions-full-below-sm');
   });
 
-  it('actions container has flex-wrap so buttons wrap below 640px', () => {
-    const { container } = render(
-      <PageHeader
-        title="Plans"
-        actions={<button type="button">New</button>}
-      />,
+  it('an eyebrow of chips is a div row, not a paragraph', () => {
+    render(<PageHeader title="Siam Nordic" eyebrow={<span data-testid="pill">Active</span>} />);
+    const eyebrow = screen.getByTestId('pill').closest('.aura-page-header__eyebrow');
+    expect(eyebrow?.tagName).toBe('DIV');
+  });
+
+  it('autoFocusTitle focuses the heading when the header mounts', () => {
+    render(<PageHeader title="Renewal confirmed" autoFocusTitle />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveFocus();
+  });
+
+  it('staff pages align the actions with the bottom of the text; the portal with its top', () => {
+    const staff = render(
+      <AuraProvider density="compact">
+        <PageHeader title="Members" actions={<button type="button">New</button>} />
+      </AuraProvider>,
     );
-    const actionsWrapper = container.querySelector('[data-slot="page-header-actions"]');
-    expect(actionsWrapper).toBeTruthy();
-    expect(actionsWrapper?.className).toMatch(/flex/);
-    expect(actionsWrapper?.className).toMatch(/flex-wrap/);
-  });
-
-  it('badge row has min-w-0 and flex-wrap for 320px reflow (WCAG 1.4.10)', () => {
-    const { container } = render(
-      <PageHeader
-        title="A Very Long Company Name That Could Overflow"
-        badge={<span>ACTIVE</span>}
-      />,
+    expect(root(staff.container)).not.toHaveClass('aura-page-header--actions-start');
+    staff.unmount();
+    const portal = render(
+      <AuraProvider density="comfortable">
+        <PageHeader title="Hi Anna" actions={<button type="button">Edit</button>} />
+      </AuraProvider>,
     );
-    // The inner row wrapping h1 + badge slot
-    const titleWrapper = container.querySelector('[data-slot="page-header-title"]')?.parentElement;
-    expect(titleWrapper?.className).toMatch(/min-w-0/);
-    expect(titleWrapper?.className).toMatch(/flex-wrap/);
-  });
-
-  it('h1 has min-w-0 and break-words for 320px reflow (WCAG 1.4.10)', () => {
-    render(<PageHeader title="VeryLongUnbreakableName" />);
-    const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1.className).toMatch(/min-w-0/);
-    expect(h1.className).toMatch(/break-words/);
-  });
-
-  it('h1 uses .text-h1 semantic class (not direct Tailwind size)', () => {
-    render(<PageHeader title="X" />);
-    const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1.className).toMatch(/\btext-h1\b/);
-    expect(h1.className).not.toMatch(/\btext-(?:xl|2xl|3xl)\b/);
-  });
-
-  it('marks the size for the stylesheet: default, or hero for the larger portal pages (spec 122)', () => {
-    const { container, rerender } = render(<PageHeader title="Members" />);
-    const header = () => container.querySelector('[data-slot="page-header"]');
-    expect(header()).toHaveAttribute('data-size', 'default');
-    rerender(<PageHeader title="Hi Anna" size="hero" />);
-    expect(header()).toHaveAttribute('data-size', 'hero');
-  });
-
-  it('keeps the subtitle at the body size in both sizes (tailwind-merge must not drop text-body)', () => {
-    const { container, rerender } = render(<PageHeader title="Members" subtitle="Member companies" />);
-    const sub = () => container.querySelector('[data-slot="page-header-subtitle"]');
-    expect(sub()?.className).toMatch(/\btext-body\b/);
-    rerender(<PageHeader title="Hi Anna" subtitle="Nordic Trading" size="hero" />);
-    expect(sub()?.className).toMatch(/\btext-body\b/);
+    expect(root(portal.container)).toHaveClass('aura-page-header--actions-start');
   });
 });
