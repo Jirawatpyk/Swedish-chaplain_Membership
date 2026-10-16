@@ -29,6 +29,7 @@ import { formatCalendarYear, formatLocalisedDate } from '@/lib/format-date-local
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { DOCUMENT_NUMBER_SLOT, DocumentNumberHeading } from '@/components/layout/document-number-heading';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
@@ -65,27 +66,6 @@ function headingKey(
   if (pdfDocKind === 'receipt_combined') return 'titleTaxInvoiceReceipt';
   if (pdfDocKind === 'receipt_separate') return 'titleReceipt';
   return 'title';
-}
-
-/**
- * The heading with its document number held together. The number's hyphens
- * are line-break opportunities, so at 320px "Invoice SC-2026-900001" broke as
- * "Invoice SC-2026-" / "900001" (R48). As an inline box the number moves to
- * its own line as a whole; the words around it, in whatever order the locale
- * puts them, still break. Only when the number alone is wider than the line
- * (a 32px default font, R50) does it break inside, instead of widening the
- * page — the credit note's title does the same.
- */
-function headingWithNumber(heading: string, number: string): ReactNode {
-  const at = heading.indexOf(number);
-  if (at < 0) return heading;
-  return (
-    <>
-      {heading.slice(0, at)}
-      <span className="inline-block max-w-full [overflow-wrap:anywhere]">{number}</span>
-      {heading.slice(at + number.length)}
-    </>
-  );
 }
 
 /** A labelled value in a card's field grid. */
@@ -244,7 +224,13 @@ export async function renderInvoiceDetailView({
         // bill number for a real 088 bill (paid or unpaid, never "Draft
         // invoice"); a paid bill's RC §86/4 tax receipt is surfaced in the
         // "Receipt No." field below.
-        title={number !== null ? headingWithNumber(t(headingKey(invoice.pdfDocKind, taxDocKind), { number }), number) : t('draftTitle')}
+        title={
+          number !== null ? (
+            <DocumentNumberHeading template={t(headingKey(invoice.pdfDocKind, taxDocKind), { number: DOCUMENT_NUMBER_SLOT })} number={number} />
+          ) : (
+            t('draftTitle')
+          )
+        }
         badge={<StatusPill tone={invoiceStatusTone(displayStatus)}>{tStatus(displayStatus)}</StatusPill>}
         actionsBarBelow="sm"
         actionsStatus={phoneSummary ?? undefined}
