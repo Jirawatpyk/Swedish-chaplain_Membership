@@ -58,7 +58,7 @@ describe('MembershipTierCanvas', () => {
     const rects = container.querySelectorAll('.recharts-bar-rectangle path');
     expect(rects.length).toBe(3);
     rects.forEach((rect) => {
-      expect(rect).toHaveAttribute('fill', 'var(--chart-1)');
+      expect(rect).toHaveAttribute('fill', 'var(--aura-chart-1)');
     });
     // End-of-bar "count (pct%)" labels (design doc: "count + % end-labels").
     const labelTexts = Array.from(container.querySelectorAll('.recharts-label-list text')).map(

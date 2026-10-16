@@ -65,7 +65,7 @@ describe('InvoiceStatusCanvas', () => {
     const fills = Array.from(container.querySelectorAll('.recharts-pie-sector path')).map((p) =>
       p.getAttribute('fill'),
     );
-    expect(fills).toEqual(['var(--success)', 'var(--warning)', 'var(--destructive)']);
+    expect(fills).toEqual(['var(--aura-fg-positive)', 'var(--aura-alert-warning-fg)', 'var(--aura-fg-danger)']);
   });
 
   it('renders a Recharts responsive container (the real migrated donut, not a hand-rolled <svg>)', () => {

@@ -43,6 +43,14 @@ describe('MiniSeriesCanvas', () => {
     // ancestor must be aria-hidden (the accessible table lives one level up,
     // in `_mini-series-chart.tsx`, outside this component entirely).
     expect(canvas?.closest('[aria-hidden="true"]')).toBeInTheDocument();
+    // Spec 122 US11: the dashboard's own chart frame, on AURA's chart tokens.
+    expect(canvas?.closest('[data-slot="chart"]')).toBeInTheDocument();
+    for (const rect of container.querySelectorAll('.recharts-bar-rectangle path')) {
+      expect(rect).toHaveAttribute('fill', 'var(--aura-chart-1)');
+    }
+    for (const line of container.querySelectorAll('.recharts-reference-line line')) {
+      expect(line).toHaveAttribute('stroke', 'var(--aura-chart-grid)');
+    }
   });
 
   it('renders a Recharts AREA canvas for variant="line" (filled area under the curve, never a Bar)', () => {
@@ -60,7 +68,7 @@ describe('MiniSeriesCanvas', () => {
     // carries the fill colour + reduced opacity, matching `fill-primary/15`.
     const fillPath = container.querySelector('.recharts-area-area');
     expect(fillPath).toBeInTheDocument();
-    expect(fillPath).toHaveAttribute('fill', 'var(--color-value)');
+    expect(fillPath).toHaveAttribute('fill', 'var(--aura-chart-1)');
     expect(fillPath).toHaveAttribute('fill-opacity', '0.15');
     // Per-point dots — original LineSvg comment: "a dot per month … with the
     // latest point emphasised" (r=3 for the last point, r=1.5 otherwise).
