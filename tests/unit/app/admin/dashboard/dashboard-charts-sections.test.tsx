@@ -191,6 +191,20 @@ async function renderPage(): Promise<string> {
   );
 }
 
+describe('StaffHomePage — KPI tiles on AURA Stat (spec 122 US11)', () => {
+  it('draws each key metric as an AURA stat tile with its board icon and one screen-reader value', async () => {
+    const html = await renderPage();
+    const section = html.match(
+      new RegExp(`<section aria-label="${en.admin.dashboard.kpi.sectionLabel}"[\\s\\S]*?</section>`),
+    )?.[0];
+    expect(section).toBeDefined();
+    expect(section!.match(/class="aura-stat(?: [^"]*)?"/g)).toHaveLength(4);
+    expect(section!.match(/aura-stat__icon/g)).toHaveLength(4);
+    expect(section).not.toContain('data-slot="card"');
+    expect(section).toContain(en.admin.dashboard.kpi.totalCaption);
+  });
+});
+
 describe('StaffHomePage — Trends + Breakdown chart sections (Task 12)', () => {
   it('renders both landmark sections with the correct aria-labels', async () => {
     const html = await renderPage();
