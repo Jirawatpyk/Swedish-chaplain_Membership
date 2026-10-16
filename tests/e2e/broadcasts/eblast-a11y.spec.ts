@@ -661,9 +661,12 @@ test.describe('@a11y F119 T086a — the approval screens PR-2 builds (320 px)', 
     await expectNoHorizontalScroll(page);
     // The member's original beside the working copy.
     await expect(page.locator('[data-testid="eblast-member-original"]:visible')).toBeVisible();
-    const frames = await page.locator('iframe[srcdoc]:visible').count();
-    expect(frames, 'the format surface renders at least one sandboxed preview').toBeGreaterThan(0);
-    await expectFramesTitled(page, frames);
+    // Two sandboxed previews: the member's original (server-rendered) and the
+    // working copy's live preview, which only mounts its frame once its fetch
+    // to /api/admin/broadcasts/preview lands. Counting the frames and then
+    // asserting that count raced that fetch (R50: counted 1, then saw 2), and
+    // a screen whose live preview never rendered would have passed on 1.
+    await expectFramesTitled(page, 2);
   });
 
   test('T086a — portal sign-off view /portal/broadcasts/[id] in awaiting_member_approval', async ({
