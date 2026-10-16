@@ -158,10 +158,24 @@ describe('InvoiceMoreMenu — Void… on a phone (the action bar)', () => {
   });
 });
 
-describe('InvoiceMoreMenu — its own slot for the phone bar', () => {
-  it('wraps the menu in data-slot="invoice-more-menu", so the bar can keep it at its own width', () => {
+describe('InvoiceMoreMenu — inside AURA\'s phone action bar (#150)', () => {
+  it('the ⋯ is a grandchild of the actions at most, so AURA keeps it at its own width', () => {
+    // AURA's PageHeader bar finds an IconButton as a child or grandchild of
+    // its actions; the menu itself is the child, so the ⋯ must be its child.
     const { container } = render(<InvoiceMoreMenu {...BASE} showDownload />);
-    expect(container.firstElementChild).toHaveAttribute('data-slot', 'invoice-more-menu');
+    const trigger = container.querySelector('button[data-slot="invoice-more-menu"]');
+    expect(trigger).not.toBeNull();
+    expect(trigger?.parentElement?.parentElement).toBe(container);
+  });
+
+  it('the ⋯ is AURA\'s plain IconButton at every width, as every other ⋯ in the app', () => {
+    // Maintainer, 16 Oct: the board draws a plain ⋯ and no other ⋯ is outlined.
+    for (const phone of [true, false]) {
+      setPhone(phone);
+      const r = render(<InvoiceMoreMenu {...BASE} showDownload />);
+      expect(r.container.querySelector('button[data-slot="invoice-more-menu"]')).not.toHaveClass('aura-icon-btn--outline');
+      r.unmount();
+    }
   });
 });
 

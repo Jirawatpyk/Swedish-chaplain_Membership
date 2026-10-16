@@ -336,14 +336,14 @@ export function InvoiceMoreMenu({
   // invoice (the RC names only the receipt actions).
   const menuName = t('actions.moreAria', { number: mainDownloadNumber });
   return (
-    // Our own slot, so the phone action bar can keep the menu at its own
-    // width while the actions fill the row.
-    <span data-slot="invoice-more-menu" className="inline-flex">
-      <DropdownMenu
-        label={menuName}
-        trigger={<IconButton icon="ellipsis" label={menuName} touchHeight className="flex-none!" />}
-        items={items}
-      />
-    </span>
+    // The menu is the header actions' own child and the ⋯ its child, so
+    // AURA's phone bar (PageHeader actionsBarBelow, #150) finds the
+    // IconButton and keeps it at its own width beside the actions. It is
+    // AURA's plain IconButton, as the board and every other ⋯ in the app.
+    <DropdownMenu
+      label={menuName}
+      trigger={<IconButton icon="ellipsis" label={menuName} touchHeight data-slot="invoice-more-menu" />}
+      items={items}
+    />
   );
 }

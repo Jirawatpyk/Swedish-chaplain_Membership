@@ -41,10 +41,13 @@ vi.mock('@/app/(staff)/admin/invoices/_components/record-payment-dialog', () => 
   RecordPaymentDialog: () => <button type="button" data-testid="record-payment-trigger">Record payment…</button>,
 }));
 vi.mock('@/app/(staff)/admin/invoices/_components/invoice-more-menu', () => ({
+  // AURA's DropdownMenu DOM: the menu root, then the ⋯ IconButton.
   InvoiceMoreMenu: (p: { showVoid?: boolean }) => (
-    <button type="button" data-show-void={p.showVoid ? 'true' : 'false'}>
-      More
-    </button>
+    <div className="aura-dropdown">
+      <button type="button" className="aura-icon-btn" data-slot="invoice-more-menu" data-show-void={p.showVoid ? 'true' : 'false'}>
+        More
+      </button>
+    </div>
   ),
 }));
 vi.mock('@/app/(staff)/admin/invoices/_components/email-failure-alert', () => ({
@@ -177,12 +180,15 @@ describe('invoice detail — header', () => {
   });
 
   // R48: at 320px the heading broke INSIDE the number ("Invoice SC-2026-" /
-  // "900001") at its hyphen. The number wraps as one piece; only the words
-  // around it may break.
-  it('keeps the document number on one line, breaking only between the words around it', async () => {
+  // "900001") at its hyphen, so the number moves to its own line as one piece.
+  // R50: a no-wrap number widened the page at a 32px default font (435px at
+  // 390), so it breaks inside only when it alone is wider than the line.
+  it('keeps the document number whole, breaking inside it only when it alone is wider than the line', async () => {
     await view(props());
     const h1 = screen.getByRole('heading', { level: 1 });
-    expect(within(h1).getByText('SC-2026-000130')).toHaveClass('whitespace-nowrap');
+    const num = within(h1).getByText('SC-2026-000130');
+    expect(num).toHaveClass('inline-block', 'max-w-full', '[overflow-wrap:anywhere]');
+    expect(num).not.toHaveClass('whitespace-nowrap');
     expect(h1).toHaveTextContent(/^Invoice SC-2026-000130$/);
   });
 
@@ -247,6 +253,15 @@ describe('invoice detail — the Details card', () => {
     const totals = document.querySelector('[data-slot="invoice-totals"]') as HTMLElement;
     expect(totals).toHaveClass('grid-cols-[minmax(0,1fr)_auto]', 'gap-x-4', 'sm:gap-x-8');
     expect(totals).not.toHaveClass('grid-cols-[1fr_auto]', 'gap-x-8');
+  });
+
+  // UX review (#565): in SV a draft's "(förhandsgranskning)" is one long word,
+  // so at a 32px default font it pushed the page to 404px at 393. The labels
+  // may break inside a word when a word alone is wider than their column.
+  it('lets a long label word break inside the totals column (SV draft at a 32px default font)', async () => {
+    await view(props());
+    const totals = document.querySelector('[data-slot="invoice-totals"]') as HTMLElement;
+    expect(totals).toHaveClass('[&>dt]:[overflow-wrap:anywhere]');
   });
 
   it('labels a draft\'s total as a preview', async () => {
@@ -375,20 +390,28 @@ describe('invoice detail — the alerts sit above the Details card', () => {
 // Spec Session 2026-10-02 US8b — below 640px the header's own actions become
 // a bar at the bottom of the screen, with the total and due date above them;
 // they are drawn once, so every action keeps one trigger and its test id.
-describe('invoice detail — the phone action bar', () => {
-  it('lets the actions fill the row while the ⋯ menu keeps its own width (board Admin-invoice-issued-mobile)', async () => {
+describe('invoice detail — the phone action bar (AURA PageHeader actionsBarBelow, #150)', () => {
+  const header = () => document.querySelector('[data-slot="page-header"]') as HTMLElement;
+  const actions = () => header().querySelector(':scope > .aura-page-header__actions') as HTMLElement | null;
+
+  it('below 640px the header\'s own actions become AURA\'s bar, with the total (incl. VAT) and due date as its status', async () => {
     await view(props());
-    const row = document.querySelector('[data-slot="invoice-action-bar"] > div:last-child')!;
-    expect(row.className).toContain('max-sm:[&>[data-slot=invoice-more-menu]]:flex-none');
+    expect(header()).toHaveClass('aura-page-header--actions-bar-below-sm');
+    // On a short screen (AURA #154) the actions fall back to the full-width row.
+    expect(header()).toHaveClass('aura-page-header--actions-full-below-sm');
+    expect(actions()!.querySelector('.aura-page-header__status')).toHaveTextContent('Total 107,000.00 THB incl. VAT · due 22 Oct 2026');
+    expect(document.querySelector('[data-slot="invoice-action-bar"]')).toBeNull();
   });
 
-  it('wraps the actions once, with the total (incl. VAT) and due date for a phone', async () => {
+  it('draws each action once, inside the bar', async () => {
     await view(props());
-    const bar = document.querySelector('[data-slot="invoice-action-bar"]') as HTMLElement;
-    expect(bar).not.toBeNull();
-    expect(within(bar).getAllByTestId('record-payment-trigger')).toHaveLength(1);
     expect(screen.getAllByTestId('record-payment-trigger')).toHaveLength(1);
-    expect(within(bar).getByText('Total 107,000.00 THB incl. VAT · due 22 Oct 2026')).toHaveClass('sm:hidden');
+    expect(within(actions()!).getByTestId('record-payment-trigger')).toBeInTheDocument();
+  });
+
+  it('the ⋯ is a grandchild of the actions, so AURA keeps it at its own width beside them (board Admin-invoice-issued-mobile)', async () => {
+    await view(props());
+    expect(actions()!.querySelector(':scope > * > .aura-icon-btn[data-slot="invoice-more-menu"]')).not.toBeNull();
   });
 
   it('gives the ⋯ menu Void… for a phone on an issued invoice the admin can void, hiding the header\'s Void there', async () => {
@@ -405,14 +428,14 @@ describe('invoice detail — the phone action bar', () => {
 
   it('draws no bar when there is nothing to put in it (a manager on a draft, a void bill with no PDF)', async () => {
     await view(props({ isAdmin: false, invoice: invoice({ status: 'draft', billDocumentNumberRaw: null }), displayStatus: 'draft', headerNumber: null }));
-    expect(document.querySelector('[data-slot="invoice-action-bar"]')).toBeNull();
+    expect(actions()).toBeNull();
     document.body.innerHTML = '';
     await view(props({ isAdmin: false, invoice: invoice({ status: 'void', pdf: null }), displayStatus: 'void' }));
-    expect(document.querySelector('[data-slot="invoice-action-bar"]')).toBeNull();
+    expect(actions()).toBeNull();
   });
 
-  it('leaves room at the page end for the bar', async () => {
+  it('leaves the page end to AURA: no spacer of its own', async () => {
     await view(props());
-    expect(document.querySelector('[data-slot="invoice-action-bar-spacer"]')).toHaveClass('sm:hidden');
+    expect(document.querySelector('[data-slot="invoice-action-bar-spacer"]')).toBeNull();
   });
 });

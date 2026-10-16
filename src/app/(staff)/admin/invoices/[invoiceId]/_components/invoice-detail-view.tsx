@@ -29,6 +29,7 @@ import { formatCalendarYear, formatLocalisedDate } from '@/lib/format-date-local
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { DOCUMENT_NUMBER_SLOT, DocumentNumberHeading } from '@/components/layout/document-number-heading';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
@@ -44,7 +45,6 @@ import { EmailFailureAlert } from '../../_components/email-failure-alert';
 import { AutoRefundFailedAlert } from '../../_components/auto-refund-failed-alert';
 import { RefundDialog } from './refund-dialog';
 import { IssueCreditNoteAction } from './issue-credit-note-action';
-import { InvoiceActionBar } from './invoice-action-bar';
 import type { PaymentDetailsView } from '../_lib/payment-details';
 
 // F5 UX D2 — the out-of-band-refund reconciliation runbook (repo-relative doc
@@ -66,24 +66,6 @@ function headingKey(
   if (pdfDocKind === 'receipt_combined') return 'titleTaxInvoiceReceipt';
   if (pdfDocKind === 'receipt_separate') return 'titleReceipt';
   return 'title';
-}
-
-/**
- * The heading with its document number held together. The number's hyphens
- * are line-break opportunities, so at 320px "Invoice SC-2026-900001" broke as
- * "Invoice SC-2026-" / "900001" (R48). The number now wraps only as a whole;
- * the words around it, in whatever order the locale puts them, still break.
- */
-function headingWithNumber(heading: string, number: string): ReactNode {
-  const at = heading.indexOf(number);
-  if (at < 0) return heading;
-  return (
-    <>
-      {heading.slice(0, at)}
-      <span className="whitespace-nowrap">{number}</span>
-      {heading.slice(at + number.length)}
-    </>
-  );
 }
 
 /** A labelled value in a card's field grid. */
@@ -224,15 +206,15 @@ export async function renderInvoiceDetailView({
         ? t('phoneBar.totalDue', { total: totalText, date: formatLocalisedDate(invoice.dueDate, userLocale, dateOnly) })
         : t('phoneBar.total', { total: totalText });
 
-  // The bar (and, from 640px, the header's action row) only when it has
-  // something to hold: a manager on a draft, or a void bill with no PDF, has
-  // no action and no summary line, and an empty fixed bar is a stray strip.
+  // The actions (a bar below 640px, AURA PageHeader actionsBarBelow) only
+  // when there is one to hold: a manager on a draft, or a void bill with no
+  // PDF, has none, and an empty fixed bar is a stray strip. The total line
+  // is the bar's status, so it rides with the actions.
   const hasMenu = !isDraft && (Boolean(invoice.pdf) || hasReceiptPdf || (invoice.status === 'issued' && isAdmin));
   const hasMainAction =
     (isAdmin && (isDraft || invoice.status === 'issued' || invoice.status === 'paid' || invoice.status === 'partially_credited')) ||
     refund !== null;
   const hasActions = hasMainAction || hasMenu;
-  const showActionBar = hasActions || phoneSummary !== null;
 
   return (
     <DetailContainer>
@@ -242,11 +224,19 @@ export async function renderInvoiceDetailView({
         // bill number for a real 088 bill (paid or unpaid, never "Draft
         // invoice"); a paid bill's RC §86/4 tax receipt is surfaced in the
         // "Receipt No." field below.
-        title={number !== null ? headingWithNumber(t(headingKey(invoice.pdfDocKind, taxDocKind), { number }), number) : t('draftTitle')}
+        title={
+          number !== null ? (
+            <DocumentNumberHeading template={t(headingKey(invoice.pdfDocKind, taxDocKind), { number: DOCUMENT_NUMBER_SLOT })} number={number} />
+          ) : (
+            t('draftTitle')
+          )
+        }
         badge={<StatusPill tone={invoiceStatusTone(displayStatus)}>{tStatus(displayStatus)}</StatusPill>}
+        actionsBarBelow="sm"
+        actionsStatus={phoneSummary ?? undefined}
         actions={
-          showActionBar ? (
-          <InvoiceActionBar summary={phoneSummary} menu={!hasMenu ? 'none' : hasMainAction ? 'beside' : 'only'}>
+          hasActions ? (
+          <>
             {isDraft && isAdmin && (
               <>
                 <a
@@ -375,7 +365,7 @@ export async function renderInvoiceDetailView({
                 }
               />
             )}
-          </InvoiceActionBar>
+          </>
           ) : undefined
         }
       />
@@ -472,7 +462,7 @@ export async function renderInvoiceDetailView({
           <dl
             data-slot="invoice-totals"
             aria-label={t('totalsLabel')}
-            className="ms-auto grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-sm sm:max-w-sm sm:gap-x-8"
+            className="ms-auto grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 text-sm sm:max-w-sm sm:gap-x-8 [&>dt]:[overflow-wrap:anywhere]"
           >
             <dt className="text-[var(--aura-fg-secondary)]">{t('fields.subtotal')}</dt>
             <dd className="text-end tabular-nums">{formatSatangAmount(totals.subtotalSatang)} THB</dd>
@@ -677,12 +667,6 @@ export async function renderInvoiceDetailView({
       </Card>
 
       {paymentActivity}
-      {/* Room for the phone action bar, so the page's end scrolls clear of it. */}
-      <div
-        data-slot="invoice-action-bar-spacer"
-        aria-hidden="true"
-        className="h-[var(--invoice-action-bar-height,0px)] sm:hidden"
-      />
     </DetailContainer>
   );
 }

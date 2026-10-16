@@ -17,6 +17,7 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import type { CreditNoteOriginalDocuments } from '@/modules/invoicing';
 import { PageHeader } from '@/components/layout/page-header';
+import { DOCUMENT_NUMBER_SLOT, DocumentNumberHeading } from '@/components/layout/document-number-heading';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { formatTaxDocDate } from '@/lib/format-tax-doc-date';
 import {
@@ -75,27 +76,6 @@ export interface CreditNoteDetailViewProps {
 }
 
 
-/** Stands in for the number while the title is translated, then is split on. */
-const NUMBER_SLOT = '\u0000';
-
-/**
- * The title with the document number kept whole: "CN-2026-000014" would
- * otherwise break at a hyphen on a phone. As an inline-block it moves to its
- * own line when it fits there, and breaks inside only when it is wider than
- * the column on its own (a phone at 200% text, WCAG 1.4.4). Splitting the
- * translated string keeps each locale's own word order.
- */
-function documentTitle(translated: string, number: string) {
-  const [before = '', after = ''] = translated.split(NUMBER_SLOT);
-  return (
-    <>
-      {before}
-      <span className="inline-block max-w-full [overflow-wrap:anywhere]">{number}</span>
-      {after}
-    </>
-  );
-}
-
 export async function renderCreditNoteDetailView(p: CreditNoteDetailViewProps) {
   const t = await getTranslations('admin.creditNotes.detail');
   const locale = await getLocale();
@@ -105,7 +85,7 @@ export async function renderCreditNoteDetailView(p: CreditNoteDetailViewProps) {
       {/* The breadcrumb reads the CN number in place of the raw id segment. */}
       <PlanBreadcrumbLabel segment={p.creditNoteId} label={p.documentNumber} />
       <PageHeader
-        title={documentTitle(t('title', { number: NUMBER_SLOT }), p.documentNumber)}
+        title={<DocumentNumberHeading template={t('title', { number: DOCUMENT_NUMBER_SLOT })} number={p.documentNumber} />}
         {...(p.isRefund ? { badge: <CreditNoteRefundBadge /> } : {})}
         subtitle={t('subtitle')}
         actions={<CreditNoteActions creditNoteId={p.creditNoteId} documentNumber={p.documentNumber} />}

@@ -509,7 +509,6 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(staff)/admin/invoices/[invoiceId]/loading.tsx',
       'src/app/(staff)/admin/invoices/[invoiceId]/not-found.tsx',
       'src/app/(staff)/admin/invoices/[invoiceId]/_components/invoice-detail-view.tsx',
-      'src/app/(staff)/admin/invoices/[invoiceId]/_components/invoice-action-bar.tsx',
       'src/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline.tsx',
       'src/app/(staff)/admin/invoices/[invoiceId]/_components/payment-timeline-skeleton.tsx',
       'src/app/(staff)/admin/invoices/[invoiceId]/_components/copy-charge-id-button.tsx',
