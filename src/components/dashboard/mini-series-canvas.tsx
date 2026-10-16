@@ -20,8 +20,8 @@
  */
 'use client';
 
-import { Area, AreaChart, Bar, BarChart, ReferenceLine, XAxis, YAxis } from 'recharts';
-import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
+import { Area, AreaChart, Bar, BarChart, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
+import { CHART_GRID, CHART_SERIES, ChartFrame, ChartTooltipCard, ChartTooltipLine } from './chart-frame';
 import type { MiniSeriesPoint } from './_mini-series-chart';
 
 interface SeriesTooltipPayloadEntry {
@@ -30,9 +30,7 @@ interface SeriesTooltipPayloadEntry {
 
 /** Custom tooltip content — reads the ORIGINAL `MiniSeriesPoint` off the
  * hovered payload entry directly (its pre-formatted `label`/`valueLabel`),
- * rather than fighting shadcn's config/nameKey-driven `ChartTooltipContent`,
- * which is built for multi-series/legend charts, not this single-series
- * sparkline. Never the sole way to read a value — see the a11y note in
+ * in the dashboard's token tooltip card (spec 122 US11). Never the sole way to read a value — see the a11y note in
  * `_mini-series-chart.tsx`'s docblock. */
 function SeriesTooltipContent({
   active,
@@ -45,10 +43,9 @@ function SeriesTooltipContent({
   const point = payload[0]?.payload;
   if (!point) return null;
   return (
-    <div className="grid gap-0.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
-      <span className="font-medium text-foreground">{point.label}</span>
-      <span className="text-muted-foreground">{point.valueLabel}</span>
-    </div>
+    <ChartTooltipCard title={point.label}>
+      <ChartTooltipLine>{point.valueLabel}</ChartTooltipLine>
+    </ChartTooltipCard>
   );
 }
 
@@ -61,7 +58,7 @@ function renderMaxReferenceLabel(maxLabel: string) {
   return function MaxReferenceLabel({ viewBox }: { viewBox?: { x: number; y: number } }) {
     if (!viewBox) return null;
     return (
-      <text x={viewBox.x} y={viewBox.y + 11} className="fill-muted-foreground" fontSize={10}>
+      <text x={viewBox.x} y={viewBox.y + 11} fill="var(--aura-chart-axis)" fontSize={10}>
         {maxLabel}
       </text>
     );
@@ -91,7 +88,7 @@ function makeSeriesDot(lastIndex: number) {
         cx={cx}
         cy={cy}
         r={index === lastIndex ? 3 : 1.5}
-        fill="var(--color-value)"
+        fill={CHART_SERIES}
         strokeWidth={0}
       />
     );
@@ -109,14 +106,11 @@ export interface MiniSeriesCanvasProps {
 }
 
 export function MiniSeriesCanvas({ points, max, maxLabel, variant, allowMotion }: MiniSeriesCanvasProps) {
-  const chartConfig = {
-    value: { color: 'var(--primary)' },
-  } satisfies ChartConfig;
   const maxReferenceLineProps = maxLabel ? { label: renderMaxReferenceLabel(maxLabel) } : {};
 
   return (
     <div aria-hidden="true" data-chart-variant={variant}>
-      <ChartContainer config={chartConfig} className="aspect-auto h-28 w-full">
+      <ChartFrame className="h-28 w-full">
         {variant === 'bar' ? (
           // Revenue trend — the original `BarSvg` drew a `<rect>` per month;
           // preserve that as a Recharts `<Bar>` (NOT a Line — a bar series
@@ -124,12 +118,12 @@ export function MiniSeriesCanvas({ points, max, maxLabel, variant, allowMotion }
           <BarChart accessibilityLayer={false} data={points} margin={CHART_MARGIN}>
             <YAxis hide domain={[0, max]} />
             <XAxis dataKey="key" hide />
-            <ReferenceLine y={0} stroke="var(--border)" />
-            <ReferenceLine y={max} stroke="var(--border)" strokeDasharray="3 3" {...maxReferenceLineProps} />
-            <ChartTooltip cursor={false} content={<SeriesTooltipContent />} />
+            <ReferenceLine y={0} stroke={CHART_GRID} />
+            <ReferenceLine y={max} stroke={CHART_GRID} strokeDasharray="3 3" {...maxReferenceLineProps} />
+            <Tooltip cursor={false} content={<SeriesTooltipContent />} />
             <Bar
               dataKey="value"
-              fill="var(--color-value)"
+              fill={CHART_SERIES}
               radius={[2, 2, 0, 0]}
               maxBarSize={28}
               minPointSize={3}
@@ -138,21 +132,21 @@ export function MiniSeriesCanvas({ points, max, maxLabel, variant, allowMotion }
           </BarChart>
         ) : (
           // Member growth — the original `LineSvg` drew a filled area
-          // (`fill-primary/15`) UNDER a stroked polyline, not a bare line;
+          // (15% of the series colour) UNDER a stroked polyline, not a bare line;
           // an `<Area>` (fill + stroke) is required, or the blue fill under
           // the curve is a visual regression.
           <AreaChart accessibilityLayer={false} data={points} margin={CHART_MARGIN}>
             <YAxis hide domain={[0, max]} />
             <XAxis dataKey="key" hide />
-            <ReferenceLine y={0} stroke="var(--border)" />
-            <ReferenceLine y={max} stroke="var(--border)" strokeDasharray="3 3" {...maxReferenceLineProps} />
-            <ChartTooltip cursor={false} content={<SeriesTooltipContent />} />
+            <ReferenceLine y={0} stroke={CHART_GRID} />
+            <ReferenceLine y={max} stroke={CHART_GRID} strokeDasharray="3 3" {...maxReferenceLineProps} />
+            <Tooltip cursor={false} content={<SeriesTooltipContent />} />
             <Area
               dataKey="value"
               type="monotone"
-              stroke="var(--color-value)"
+              stroke={CHART_SERIES}
               strokeWidth={2}
-              fill="var(--color-value)"
+              fill={CHART_SERIES}
               fillOpacity={0.15}
               dot={makeSeriesDot(points.length - 1)}
               activeDot={{ r: 4 }}
@@ -160,7 +154,7 @@ export function MiniSeriesCanvas({ points, max, maxLabel, variant, allowMotion }
             />
           </AreaChart>
         )}
-      </ChartContainer>
+      </ChartFrame>
     </div>
   );
 }

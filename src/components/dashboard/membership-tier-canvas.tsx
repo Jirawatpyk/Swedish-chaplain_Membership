@@ -16,8 +16,8 @@
  */
 'use client';
 
-import { Bar, BarChart, LabelList, XAxis, YAxis } from 'recharts';
-import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
+import { Bar, BarChart, LabelList, Tooltip, XAxis, YAxis } from 'recharts';
+import { CHART_SERIES, ChartFrame, ChartTooltipCard, ChartTooltipLine } from './chart-frame';
 
 /** Row shape fed to Recharts — `displayLabel` is the (possibly translated)
  * text shown on the Y axis + tooltip; `barLabel` is the pre-formatted
@@ -52,10 +52,9 @@ function TierTooltipContent({
   const row = payload[0]?.payload;
   if (!row) return null;
   return (
-    <div className="grid gap-0.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
-      <span className="font-medium text-foreground">{row.displayLabel}</span>
-      <span className="text-muted-foreground">{row.barLabel}</span>
-    </div>
+    <ChartTooltipCard title={row.displayLabel}>
+      <ChartTooltipLine>{row.barLabel}</ChartTooltipLine>
+    </ChartTooltipCard>
   );
 }
 
@@ -65,20 +64,11 @@ export interface MembershipTierCanvasProps {
   readonly rows: readonly TierRow[];
   readonly max: number;
   readonly allowMotion: boolean;
-  /** Translated "Members" column header — the ChartConfig `count` series
-   * label. Not rendered anywhere visible today (no shadcn default tooltip/
-   * legend is used — see `TierTooltipContent` above), kept only to satisfy
-   * `ChartContainer`'s required `config` prop faithfully. */
-  readonly countColumnHeader: string;
 }
 
-export function MembershipTierCanvas({ rows, max, allowMotion, countColumnHeader }: MembershipTierCanvasProps) {
-  const chartConfig = {
-    count: { label: countColumnHeader },
-  } satisfies ChartConfig;
-
+export function MembershipTierCanvas({ rows, max, allowMotion }: MembershipTierCanvasProps) {
   return (
-    <ChartContainer config={chartConfig} className="aspect-auto h-full w-full">
+    <ChartFrame className="h-full w-full">
       <BarChart layout="vertical" accessibilityLayer={false} data={rows} margin={CHART_MARGIN}>
         <YAxis
           type="category"
@@ -89,21 +79,21 @@ export function MembershipTierCanvas({ rows, max, allowMotion, countColumnHeader
           tick={{ fontSize: 12 }}
         />
         <XAxis type="number" hide domain={[0, max]} />
-        <ChartTooltip cursor={false} content={<TierTooltipContent />} />
+        <Tooltip cursor={false} content={<TierTooltipContent />} />
         {/* Single colour, single <Bar> — never one <Cell>/colour per
             slice (the design doc rejects per-tier hue: only 5 chart
             tokens across 2 lightness clusters can't distinguish up
             to 9 tiers, a CVD fail). */}
         <Bar
           dataKey="count"
-          fill="var(--chart-1)"
+          fill={CHART_SERIES}
           radius={[0, 4, 4, 0]}
           minPointSize={2}
           isAnimationActive={allowMotion}
         >
-          <LabelList dataKey="barLabel" position="right" className="fill-foreground" fontSize={12} />
+          <LabelList dataKey="barLabel" position="right" fill="var(--aura-fg-primary)" fontSize={12} />
         </Bar>
       </BarChart>
-    </ChartContainer>
+    </ChartFrame>
   );
 }

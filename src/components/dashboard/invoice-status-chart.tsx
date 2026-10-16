@@ -41,13 +41,13 @@
  * sibling `<div>`/`<p>` markup, visually overlaid via CSS position, not
  * Recharts geometry.
  *
- * Colour is never the sole signal (design doc): `--success`/`--warning`/
- * `--destructive` are near-equal-luminance in this theme (confirmed by
+ * Colour is never the sole signal (design doc): the positive / warning /
+ * danger tones are near-equal-luminance in this theme (confirmed by
  * running the dataviz skill's `validate_palette.js` on the resolved hex
  * triplet in both themes — it FAILS the CVD-separation check, as the design
  * doc already anticipated), so every bucket also carries a direct text
  * label (the hidden table's row header + the tooltip), and each `<Cell>`
- * gets a `stroke="var(--card)"` (the classic Recharts "gap" technique — the
+ * gets a stroke in the card colour (`--aura-bg-surface`; the classic Recharts "gap" technique — the
  * stroke matches the surrounding card background so adjacent slices read as
  * visually separated rather than blending into a single near-equiluminant
  * ring) plus `paddingAngle={2}` for an explicit angular gap on top.
@@ -106,9 +106,9 @@ type Bucket = (typeof BUCKET_ORDER)[number];
  * docblock for why this import direction — canvas importing FROM the eager
  * chart file — is the bundle-safe one). */
 export const BUCKET_FILL: Record<Bucket, string> = {
-  paid: 'var(--success)',
-  unpaid: 'var(--warning)',
-  overdue: 'var(--destructive)',
+  paid: 'var(--aura-fg-positive)',
+  unpaid: 'var(--aura-alert-warning-fg)',
+  overdue: 'var(--aura-fg-danger)',
 };
 
 /** Row shape fed to Recharts — `satangNumber` is the Pie's arc-sizing value

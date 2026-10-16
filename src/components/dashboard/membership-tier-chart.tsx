@@ -178,7 +178,6 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
                 rows={rows}
                 max={max}
                 allowMotion={allowMotion}
-                countColumnHeader={t('countColumnHeader')}
               />
             </div>
             {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole

@@ -46,7 +46,7 @@ describe('MembershipTierCanvas', () => {
   it('renders a single, single-colour <Bar> — not one <Cell>/colour per slice', () => {
     const rows = [GOLD, SILVER, UNASSIGNED];
     const { container } = render(
-      <MembershipTierCanvas rows={rows} max={6} allowMotion={false} countColumnHeader="Members" />,
+      <MembershipTierCanvas rows={rows} max={6} allowMotion={false} />,
     );
     const bars = container.querySelectorAll('.recharts-bar');
     expect(bars).toHaveLength(1);
@@ -69,7 +69,7 @@ describe('MembershipTierCanvas', () => {
 
   it('renders a Recharts responsive container (the real migrated chart, not a hand-rolled <svg>)', () => {
     const { container } = render(
-      <MembershipTierCanvas rows={[GOLD]} max={6} allowMotion={false} countColumnHeader="Members" />,
+      <MembershipTierCanvas rows={[GOLD]} max={6} allowMotion={false} />,
     );
     expect(container.querySelector('.recharts-responsive-container')).toBeInTheDocument();
   });
