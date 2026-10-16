@@ -74,10 +74,10 @@ test.describe('F5 manual-QA automation @qa', () => {
         const nodes = await page
           .locator(
             // The page-header subtitle is excluded: it is a full-width <div> by
-            // design (page-header.tsx:121-129, a ReactNode slot), so a 62-char
+            // design (AURA PageHeader's subtitle, a ReactNode slot), so a 62-char
             // one-line subtitle reported the container's entire width and
             // scored 171 chars/line. It is not prose and never wraps.
-            '[data-slot="layout-container"] p:not([data-slot="page-header-subtitle"] *), [data-slot="layout-container"] label, [data-slot="layout-container"] .text-body:not([data-slot="page-header-subtitle"]):not([data-slot="page-header-subtitle"] *)',
+            '[data-slot="layout-container"] p:not(.aura-page-header__subtitle *), [data-slot="layout-container"] label, [data-slot="layout-container"] .text-body:not(.aura-page-header__subtitle):not(.aura-page-header__subtitle *)',
           )
           .all();
         let n = 0;
@@ -123,10 +123,10 @@ test.describe('F5 manual-QA automation @qa', () => {
         const nodes = await memberPage
           .locator(
             // The page-header subtitle is excluded: it is a full-width <div> by
-            // design (page-header.tsx:121-129, a ReactNode slot), so a 62-char
+            // design (AURA PageHeader's subtitle, a ReactNode slot), so a 62-char
             // one-line subtitle reported the container's entire width and
             // scored 171 chars/line. It is not prose and never wraps.
-            '[data-slot="layout-container"] p:not([data-slot="page-header-subtitle"] *), [data-slot="layout-container"] label, [data-slot="layout-container"] .text-body:not([data-slot="page-header-subtitle"]):not([data-slot="page-header-subtitle"] *)',
+            '[data-slot="layout-container"] p:not(.aura-page-header__subtitle *), [data-slot="layout-container"] label, [data-slot="layout-container"] .text-body:not(.aura-page-header__subtitle):not(.aura-page-header__subtitle *)',
           )
           .all();
         let n = 0;

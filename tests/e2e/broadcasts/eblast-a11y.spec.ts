@@ -327,7 +327,7 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
 
       // …and the two header actions are on separate rows rather than one
       // overflowing line: the wrap is the mechanism, not a side effect.
-      const actions = page.locator('[data-slot="page-header-actions"]:visible');
+      const actions = page.locator('[data-slot="page-header"] .aura-page-header__actions:visible');
       await expect(actions).toBeVisible();
       const actionBox = await actions.boundingBox();
       expect(actionBox).not.toBeNull();
