@@ -38,9 +38,11 @@ type PageHeaderProps = {
  * - Staff boards align the actions with the bottom of the text; the portal
  *   boards with its top. The portal renders under `density="comfortable"`
  *   (`AuraDensity` in its layout), so that is the signal.
- * - `size` is AURA's: the title sizes and the room above a hero page are
- *   its defaults (spec 122 parity rule). `data-size` stays on the root for
- *   the portal's hero section gap in globals.css.
+ * - Sizes are AURA's (#152): an ordinary page takes `size="compact"`, the
+ *   boards' 26 / 32px title; `hero` and `hero-lg` pass through. The portal
+ *   sets the room above a hero title through `--aura-page-header-hero-space`
+ *   (globals.css). `data-size` stays on the root for the portal's hero
+ *   section gap.
  */
 export function PageHeader({
   title,
@@ -58,7 +60,7 @@ export function PageHeader({
     <AuraPageHeader
       data-slot="page-header"
       data-size={size}
-      size={size}
+      size={size === 'default' ? 'compact' : size}
       title={title}
       subtitle={subtitle}
       titleAddon={badge}
