@@ -127,6 +127,7 @@ import { CATEGORIES as SETTINGS_CATEGORIES, renderSettingsHubView } from '@/app/
 import { renderMemberChangesView } from '@/app/(staff)/admin/settings/member-changes/page';
 import { renderStaffAccountView } from '@/app/(staff)/admin/account/page';
 import { OpenSwitchOffDialog, ShowReadOnlyRefusal } from './settings-previews';
+import { renderDashboardPreview } from './dashboard-previews';
 import type { GroupedEvidence } from '@/modules/insights';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
@@ -469,6 +470,7 @@ const LOADING_ROUTES = {
     load: async () => (await import('@/app/(staff)/admin/settings/member-changes/loading')).default(),
   },
   account: { path: '/admin/account', load: async () => (await import('@/app/(staff)/admin/account/loading')).default() },
+  dashboard: { path: '/admin', load: async () => (await import('@/app/(staff)/admin/(home)/loading')).default() },
   'invoice-settings': {
     path: '/admin/settings/invoicing',
     load: async () => (await import('@/app/(staff)/admin/settings/invoicing/loading')).default(),
@@ -1694,6 +1696,13 @@ export default async function AuraAdminPreviewPage({
   // 122 US10b (T1018) — the audit log (boards Admin-audit, -mobile,
   // Admin-state-audit-invalid): default | empty (a filter with no match) |
   // invalid (a From after To).
+  // 122 US11 (T1108) — the staff dashboard (boards Admin-dashboard, -mobile):
+  // default | engagement | empty-charts | attention-unavailable |
+  // insights-empty | forbidden | error | flag-off.
+  if (view === 'dashboard') {
+    return <StaffFrame path="/admin">{await renderDashboardPreview(state)}</StaffFrame>;
+  }
+
   // 122 US10c (T1027) — the settings hub (boards Admin-settings, -mobile,
   // Admin-state-settings-none): every category, or none for a role without one.
   if (view === 'settings') {

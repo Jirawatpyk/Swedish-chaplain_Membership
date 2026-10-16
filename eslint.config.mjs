@@ -475,6 +475,9 @@ export const MIGRATED_PATHS = [
   'src/app/(staff)/admin/settings/member-changes/**',
   'src/app/(staff)/admin/account/**',
   'src/components/auth/role-badge-style.ts',
+  // US11 — the staff dashboard (the `(home)` route group) and its components.
+  'src/app/(staff)/admin/(home)/**',
+  'src/components/dashboard/**',
 ];
 
 /**
