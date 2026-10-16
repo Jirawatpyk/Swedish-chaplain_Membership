@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { KpiCard } from '@/components/dashboard/kpi-card';
+import { Stat, type IconName } from '@jirawatpyk/aura-react/server';
 import { CountUp } from '@/components/dashboard/count-up';
 import {
   NeedsAttentionList,
@@ -274,6 +274,8 @@ export default async function StaffHomePage() {
     caption: string;
     rawValue: number;
     variant: 'integer' | 'thb';
+    /** AURA icon name (registered once in `@/lib/aura-server-icons`), per board. */
+    icon: IconName;
   }> = [
     // Each caption states the tile's basis: `total` counts every status
     // (active + inactive + archived, per computeDashboardSnapshot), which the
@@ -286,6 +288,7 @@ export default async function StaffHomePage() {
       caption: t('kpi.totalCaption'),
       rawValue: metrics.counts.total,
       variant: 'integer',
+      icon: 'users',
     },
     {
       key: 'active',
@@ -293,6 +296,7 @@ export default async function StaffHomePage() {
       caption: t('kpi.activeCaption'),
       rawValue: metrics.counts.active,
       variant: 'integer',
+      icon: 'circle-check',
     },
     {
       key: 'atRisk',
@@ -300,6 +304,7 @@ export default async function StaffHomePage() {
       caption: t('kpi.atRiskCaption'),
       rawValue: metrics.counts.atRisk,
       variant: 'integer',
+      icon: 'triangle-alert',
     },
     // FR-007 + 016 T054: revenue is visible to every staff role that holds
     // `insights.finance` — admin, super_admin, and the "read-only on finance"
@@ -316,6 +321,7 @@ export default async function StaffHomePage() {
             caption: t('kpi.revenueCaption'),
             rawValue: Number(finance.ytdPaidRevenueSatang) / 100,
             variant: 'thb',
+            icon: 'trending-up',
           },
         ] as const)
       : []),
@@ -545,10 +551,11 @@ export default async function StaffHomePage() {
         }
       >
         {kpis.map((kpi) => (
-          <KpiCard
+          <Stat
             key={kpi.key}
             label={kpi.label}
             caption={kpi.caption}
+            icon={kpi.icon}
             value={<CountUp value={kpi.rawValue} locale={locale} variant={kpi.variant} />}
           />
         ))}
