@@ -1,11 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, Stat } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -67,30 +61,23 @@ export default async function Loading() {
         <DetailContainer>
           <PageHeader title={t('title')} subtitle={<SkeletonBlock className="h-4 w-56" />} />
 
-          {/* KPI grid — matches `grid gap-4 sm:grid-cols-2 lg:grid-cols-4`. */}
+          {/* KPI grid — matches `grid gap-4 sm:grid-cols-2 lg:grid-cols-4`;
+              AURA Stat tiles with their value skeleton (spec 122 US11). */}
           <div aria-hidden className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i}>
-                <CardHeader className="pb-2">
-                  <SkeletonBlock className="h-4 w-28" />
-                  <SkeletonBlock className="mt-2 h-9 w-20" />
-                </CardHeader>
-              </Card>
+              <Stat key={i} label={<SkeletonBlock className="h-4 w-28" />} loading />
             ))}
           </div>
 
           {/* Needs-attention + insights — two equal cards. */}
           <div aria-hidden className="grid gap-4 lg:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
-              <Card key={i}>
-                <CardHeader>
-                  <SkeletonBlock className="h-5 w-40" />
-                </CardHeader>
-                <CardContent className="grid gap-2">
+              <Card key={i} header={<SkeletonBlock className="h-5 w-40" />}>
+                <div className="grid gap-2">
                   {Array.from({ length: 3 }).map((_, j) => (
                     <SkeletonBlock key={j} className="h-5 w-full" />
                   ))}
-                </CardContent>
+                </div>
               </Card>
             ))}
           </div>
@@ -99,14 +86,9 @@ export default async function Loading() {
               the real chart row so the activity feed below doesn't shift (CLS). */}
           <div aria-hidden className="grid gap-4 lg:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
-              <Card key={i}>
-                <CardHeader className="pb-2">
-                  <SkeletonBlock className="h-5 w-44" />
-                </CardHeader>
-                <CardContent>
-                  <SkeletonBlock className="h-7 w-28" />
-                  <SkeletonBlock className="mt-3 h-24 w-full" />
-                </CardContent>
+              <Card key={i} header={<SkeletonBlock className="h-5 w-44" />}>
+                <SkeletonBlock className="h-8 w-28" />
+                <SkeletonBlock className="mt-3 h-28 w-full" />
               </Card>
             ))}
           </div>
@@ -117,52 +99,44 @@ export default async function Loading() {
               reads as "two different chart types" rather than two identical
               placeholders, matching the real Breakdown section below. */}
           <div aria-hidden className="grid gap-4 lg:grid-cols-2">
-            <Card>
-              <CardHeader className="pb-2">
-                <SkeletonBlock className="h-5 w-40" />
-              </CardHeader>
-              <CardContent>
-                {/* Headline row (text-3xl active total + right-aligned caption)
-                    — mirrors MembershipTierChart's summary row so the
-                    skeleton→real swap doesn't insert a new line and push the
-                    bars (and the activity feed below) down (CLS). */}
-                <div className="flex items-baseline justify-between gap-2">
-                  <SkeletonBlock className="h-8 w-16" />
-                  <SkeletonBlock className="h-3 w-24" />
-                </div>
-                {/* Bar area reserves MembershipTierChart's MIN_CHART_HEIGHT_PX
-                    (120px). The real canvas grows 36px per tier above 3 tiers,
-                    so many-tier tenants expand DOWNWARD from here — a skeleton
-                    cannot know the tier count before the snapshot resolves. */}
-                <SkeletonBlock className="mt-3 h-[120px] w-full" />
-              </CardContent>
+            <Card header={<SkeletonBlock className="h-5 w-40" />}>
+              {/* Headline row (active total + right-aligned caption) —
+                  mirrors MembershipTierChart's summary row so the
+                  skeleton→real swap doesn't insert a new line and push the
+                  bars (and the activity feed below) down (CLS). */}
+              <div className="flex items-baseline justify-between gap-2">
+                <SkeletonBlock className="h-8 w-16" />
+                <SkeletonBlock className="h-3 w-24" />
+              </div>
+              {/* Bar area reserves MembershipTierChart's MIN_CHART_HEIGHT_PX
+                  (120px). The real canvas grows 36px per tier above 3 tiers,
+                  so many-tier tenants expand DOWNWARD from here — a skeleton
+                  cannot know the tier count before the snapshot resolves. */}
+              <SkeletonBlock className="mt-3 h-[120px] w-full" />
             </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <SkeletonBlock className="h-5 w-40" />
-              </CardHeader>
-              <CardContent className="flex flex-col items-center gap-3">
+            <Card header={<SkeletonBlock className="h-5 w-40" />}>
+              <div className="flex flex-col items-center gap-3">
                 <SkeletonBlock className="h-40 w-40 rounded-full" />
                 {/* Reserves the visible legend row's height (WCAG 1.4.1 —
                     the real donut always renders a paid/unpaid/overdue
                     legend below the canvas). */}
                 <SkeletonBlock className="h-4 w-56" />
-              </CardContent>
+              </div>
             </Card>
           </div>
 
           {/* Activity feed — full-width card. Header mirrors the real
-              ActivityFeed (title + right-aligned Refresh button) to avoid CLS. */}
-          <Card aria-hidden>
-            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-              <SkeletonBlock className="h-5 w-40" />
-              <SkeletonBlock className="h-8 w-20 rounded-md" />
-            </CardHeader>
-            <CardContent className="grid gap-2">
+              ActivityFeed (title + Refresh in the card's actions) to avoid CLS. */}
+          <Card
+            aria-hidden
+            header={<SkeletonBlock className="h-5 w-40" />}
+            actions={<SkeletonBlock className="h-8 w-20" />}
+          >
+            <div className="grid gap-2">
               {Array.from({ length: 5 }).map((_, i) => (
                 <SkeletonBlock key={i} className="h-5 w-full" />
               ))}
-            </CardContent>
+            </div>
           </Card>
         </DetailContainer>
       </PageSkeletonShell>
@@ -179,21 +153,15 @@ export default async function Loading() {
           title={tShell('welcome')}
           subtitle={<SkeletonBlock className="h-4 w-56" />}
         />
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('cardTitle')}</CardTitle>
-            <CardDescription>{t('cardDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="grid gap-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <li key={i} className="flex items-start gap-3">
-                  <SkeletonBlock className="size-6 shrink-0 rounded-full" />
-                  <SkeletonBlock className="h-5 w-64" />
-                </li>
-              ))}
-            </ul>
-          </CardContent>
+        <Card title={t('cardTitle')} description={t('cardDescription')} headingLevel={2}>
+          <ul className="grid gap-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <li key={i} className="flex items-start gap-3">
+                <SkeletonBlock className="size-6 shrink-0 rounded-full" />
+                <SkeletonBlock className="h-5 w-64" />
+              </li>
+            ))}
+          </ul>
         </Card>
       </DetailContainer>
     </PageSkeletonShell>

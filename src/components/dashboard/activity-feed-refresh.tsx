@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { RotateCwIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 
 export function ActivityFeedRefresh({
   refreshLabel,
@@ -45,17 +45,17 @@ export function ActivityFeedRefresh({
 
   return (
     <>
+      {/* Spec 122 US11: AURA ghost button. \`loading\` sets aria-busy, shows
+          AURA's spinner and swallows clicks while the refresh is in flight
+          (one refresh at a time, as before), and keeps focus on the button. */}
       <Button
         variant="ghost"
         size="sm"
-        disabled={isPending}
-        aria-busy={isPending}
+        touchHeight
+        icon={<RotateCwIcon />}
+        loading={isPending}
         onClick={onRefresh}
       >
-        <RotateCwIcon
-          className={isPending ? 'motion-safe:animate-spin' : undefined}
-          aria-hidden="true"
-        />
         {refreshLabel}
       </Button>
       <span role="status" aria-live="polite" className="sr-only">

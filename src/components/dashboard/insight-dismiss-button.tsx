@@ -1,3 +1,5 @@
+'use client';
+
 /**
  * F9 (FR-004) — per-insight dismiss control (icon-only trigger). The owning
  * `InsightsPanel` handles the optimistic hide + POST + toast + `router.refresh()`

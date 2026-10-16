@@ -2,16 +2,9 @@ import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
 import { headers } from 'next/headers';
 import { getTranslations, getLocale } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Stat, type IconName } from '@jirawatpyk/aura-react/server';
+import { Card, Stat, type IconName } from '@jirawatpyk/aura-react/server';
 import { CountUp } from '@/components/dashboard/count-up';
 import {
   NeedsAttentionList,
@@ -86,25 +79,19 @@ export default async function StaffHomePage() {
           }
           subtitle={tHome('subtitle', { role: user.role })}
         />
-        <Card>
-          <CardHeader>
-            <CardTitle>{tHome('cardTitle')}</CardTitle>
-            <CardDescription>{tHome('cardDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="grid gap-3 text-body">
-              {ROADMAP_PHASES.map((phase) => (
-                <li key={phase} className="flex items-start gap-3">
-                  <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">
-                    {phase}
-                  </span>
-                  <span>
-                    {tHome(`roadmap.${phase.toLowerCase() as 'f3' | 'f4' | 'f5' | 'f6'}`)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
+        <Card title={tHome('cardTitle')} description={tHome('cardDescription')} headingLevel={2}>
+          <ul className="grid gap-3 aura-text-body">
+            {ROADMAP_PHASES.map((phase) => (
+              <li key={phase} className="flex items-start gap-3">
+                <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--aura-bg-canvas)] aura-text-caption font-medium text-[var(--aura-fg-primary)]">
+                  {phase}
+                </span>
+                <span>
+                  {tHome(`roadmap.${phase.toLowerCase() as 'f3' | 'f4' | 'f5' | 'f6'}`)}
+                </span>
+              </li>
+            ))}
+          </ul>
         </Card>
       </DetailContainer>
     );
