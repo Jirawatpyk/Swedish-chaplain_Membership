@@ -76,7 +76,7 @@
 import dynamic from 'next/dynamic';
 import { useTranslations, useLocale } from 'next-intl';
 import { useSyncExternalStore } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react';
 import type { InvoiceStatusBucket, InvoiceStatusDistribution } from '@/modules/insights';
 import { ChartDataTable } from './chart-data-table';
 import { ChartSkeleton } from './chart-skeleton';
@@ -244,115 +244,110 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
 
   const draftCaption =
     draftCount > 0 ? (
-      <p className="mt-2 text-center text-caption text-muted-foreground">
+      <p className="mt-[var(--aura-space-2)] text-center aura-text-caption text-[var(--aura-fg-secondary)]">
         {t('draftCaption', { count: draftCount })}
       </p>
     ) : null;
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle>{t('title')}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {!hasData ? (
-          <>
-            <p className="text-body text-muted-foreground">{t('empty')}</p>
-            {draftCaption}
-          </>
-        ) : (
-          <>
-            <div className="relative">
-              {/* `relative z-10` gives this wrapper its OWN stacking context
-                  (position + explicit z-index) so everything painted inside
-                  it — the arcs AND, critically, the Recharts hover tooltip —
-                  stacks ABOVE the centre-total overlay below (z-0). Before
-                  this fix both divs were plain siblings with the centre-total
-                  positioned (`absolute`) and this canvas wrapper `static`: a
-                  positioned box ALWAYS paints above a non-positioned one
-                  regardless of DOM order, so the total silently won every
-                  time — hiding the tooltip on hover (bug) and, wherever the
-                  total's text ran wider than the hole, drawing over the arcs
-                  too (bug). The hole stays transparent outside the ring, so
-                  the total still shows through at rest — this only changes
-                  who wins where the two would otherwise collide. */}
-              <div aria-hidden="true" className="relative z-10">
-                <InvoiceStatusCanvas rows={rows} allowMotion={allowMotion} />
-              </div>
-              {/* Real DOM (design doc: "real DOM, not SVG-only") — a sibling
-                  of the aria-hidden canvas div, NOT inside it, so screen
-                  readers reach it in normal reading order. Visually overlaid
-                  on the donut hole via CSS position, not Recharts geometry.
-                  Label BEFORE value (not value-then-label) so SR/reading
-                  order says "Total invoiced. THB 10K." rather than the
-                  bare amount followed by an unattached caption.
-                  `z-0` pairs with the canvas's `z-10` above; `px-6` + the
-                  compact `compactTotalLabel` (vs. the full `totalLabel`)
-                  keep this comfortably inside the donut hole
-                  (`innerRadius="65%"` in `invoice-status-canvas.tsx`)
-                  instead of spilling onto the ring — the exact amount is
-                  never lost, it's still the tooltip/legend/table's value. */}
-              <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center gap-0.5 px-6 text-center">
-                <span className="text-caption text-muted-foreground">{t('totalLabel')}</span>
-                <span className="text-xl font-semibold leading-tight tabular-nums">
-                  {compactTotalLabel}
-                </span>
-              </div>
+    <Card title={t('title')} headingLevel={2}>
+      {!hasData ? (
+        <>
+          <p className="aura-text-body text-[var(--aura-fg-secondary)]">{t('empty')}</p>
+          {draftCaption}
+        </>
+      ) : (
+        <>
+          <div className="relative">
+            {/* `relative z-10` gives this wrapper its OWN stacking context
+                (position + explicit z-index) so everything painted inside
+                it — the arcs AND, critically, the Recharts hover tooltip —
+                stacks ABOVE the centre-total overlay below (z-0). Before
+                this fix both divs were plain siblings with the centre-total
+                positioned (`absolute`) and this canvas wrapper `static`: a
+                positioned box ALWAYS paints above a non-positioned one
+                regardless of DOM order, so the total silently won every
+                time — hiding the tooltip on hover (bug) and, wherever the
+                total's text ran wider than the hole, drawing over the arcs
+                too (bug). The hole stays transparent outside the ring, so
+                the total still shows through at rest — this only changes
+                who wins where the two would otherwise collide. */}
+            <div aria-hidden="true" className="relative z-10">
+              <InvoiceStatusCanvas rows={rows} allowMotion={allowMotion} />
             </div>
-            {/* Persistent, VISIBLE legend (WCAG 1.4.1 — colour is never the
-                sole signal): the donut's semantic success/warning/destructive
-                fills fail CVD separation (near-equal luminance in this
-                theme), and without this row the only text labels live in the
-                sr-only table + the hover-only tooltip, leaving a sighted
-                colour-blind user unable to tell paid/unpaid/overdue apart.
-                `aria-hidden` because its data 100% duplicates the sr-only
-                `<ChartDataTable>` below — same double-announce rationale as
-                the aria-hidden canvas. */}
-            <ul
-              aria-hidden="true"
-              className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-caption text-muted-foreground"
-            >
-              {rows.map((r) => (
-                <li key={r.bucket} className="flex items-center gap-1.5">
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: BUCKET_FILL[r.bucket] }}
-                  />
-                  {r.label} · {r.pctLabel}
-                </li>
-              ))}
-            </ul>
-            {draftCaption}
-            {/* States this chart's measurement basis, which differs from every
-                other money figure on the page: all-time (the port is never
-                given a fiscal year) and VAT-INCLUSIVE (`total_satang` less
-                credits), where the revenue KPI and the trend sparkline are
-                fiscal-year/rolling-window and ex-VAT. Two honest numbers on
-                one screen that don't tie out read as a broken system unless
-                each says what it measures. */}
-            <p className="mt-1 text-center text-caption text-muted-foreground">
-              {t('basisCaption')}
-            </p>
-            {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
-                SR/no-JS data path; visually hidden when data is present, the
-                empty-state paragraph above is the SR equivalent otherwise.
-                Always ends in a "Total" row (design doc requirement). */}
-            <ChartDataTable
-              caption={t('title')}
-              columns={[
-                t('statusColumnHeader'),
-                t('amountColumnHeader'),
-                t('countColumnHeader'),
-                t('pctColumnHeader'),
-              ]}
-              rows={[
-                ...rows.map((r) => [r.label, r.amountLabel, r.count, r.pctLabel] as const),
-                [t('totalRowLabel'), totalLabel, totalCount, '100%'] as const,
-              ]}
-            />
-          </>
-        )}
-      </CardContent>
+            {/* Real DOM (design doc: "real DOM, not SVG-only") — a sibling
+                of the aria-hidden canvas div, NOT inside it, so screen
+                readers reach it in normal reading order. Visually overlaid
+                on the donut hole via CSS position, not Recharts geometry.
+                Label BEFORE value (not value-then-label) so SR/reading
+                order says "Total invoiced. THB 10K." rather than the
+                bare amount followed by an unattached caption.
+                `z-0` pairs with the canvas's `z-10` above; `px-6` + the
+                compact `compactTotalLabel` (vs. the full `totalLabel`)
+                keep this comfortably inside the donut hole
+                (`innerRadius="65%"` in `invoice-status-canvas.tsx`)
+                instead of spilling onto the ring — the exact amount is
+                never lost, it's still the tooltip/legend/table's value. */}
+            <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center gap-0.5 px-6 text-center">
+              <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('totalLabel')}</span>
+              <span className="text-xl font-semibold leading-tight tabular-nums text-[var(--aura-fg-primary)]">
+                {compactTotalLabel}
+              </span>
+            </div>
+          </div>
+          {/* Persistent, VISIBLE legend (WCAG 1.4.1 — colour is never the
+              sole signal): the donut's semantic success/warning/destructive
+              fills fail CVD separation (near-equal luminance in this
+              theme), and without this row the only text labels live in the
+              sr-only table + the hover-only tooltip, leaving a sighted
+              colour-blind user unable to tell paid/unpaid/overdue apart.
+              `aria-hidden` because its data 100% duplicates the sr-only
+              `<ChartDataTable>` below — same double-announce rationale as
+              the aria-hidden canvas. */}
+          <ul
+            aria-hidden="true"
+            className="mt-[var(--aura-space-3)] flex flex-wrap justify-center gap-x-4 gap-y-1 aura-text-caption text-[var(--aura-fg-secondary)]"
+          >
+            {rows.map((r) => (
+              <li key={r.bucket} className="flex items-center gap-1.5">
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: BUCKET_FILL[r.bucket] }}
+                />
+                {r.label} · {r.pctLabel}
+              </li>
+            ))}
+          </ul>
+          {draftCaption}
+          {/* States this chart's measurement basis, which differs from every
+              other money figure on the page: all-time (the port is never
+              given a fiscal year) and VAT-INCLUSIVE (`total_satang` less
+              credits), where the revenue KPI and the trend sparkline are
+              fiscal-year/rolling-window and ex-VAT. Two honest numbers on
+              one screen that don't tie out read as a broken system unless
+              each says what it measures. */}
+          <p className="mt-[var(--aura-space-1)] text-center aura-text-caption text-[var(--aura-fg-secondary)]">
+            {t('basisCaption')}
+          </p>
+          {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
+              SR/no-JS data path; visually hidden when data is present, the
+              empty-state paragraph above is the SR equivalent otherwise.
+              Always ends in a "Total" row (design doc requirement). */}
+          <ChartDataTable
+            caption={t('title')}
+            columns={[
+              t('statusColumnHeader'),
+              t('amountColumnHeader'),
+              t('countColumnHeader'),
+              t('pctColumnHeader'),
+            ]}
+            rows={[
+              ...rows.map((r) => [r.label, r.amountLabel, r.count, r.pctLabel] as const),
+              [t('totalRowLabel'), totalLabel, totalCount, '100%'] as const,
+            ]}
+          />
+        </>
+      )}
     </Card>
   );
 }

@@ -1,5 +1,5 @@
 /**
- * F9 (067-dashboard-interactive-charts) Task 12 — shared shimmer loading
+ * F9 (067-dashboard-interactive-charts) Task 12 — shared loading
  * fallback for every chart's `next/dynamic(..., { ssr: false })` canvas
  * boundary (mini-series sparkline / membership-tier bar / invoice-status
  * donut). Recharts must never ship in the `/admin` first-load JS bundle
@@ -25,9 +25,9 @@
  * (e.g. a future route-level `loading.tsx`) or, as today, from inside a
  * `'use client'` chart file's `dynamic(..., { loading: () => <ChartSkeleton/> })`.
  */
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { cn } from '@/lib/utils';
 
 export function ChartSkeleton({ className }: { readonly className?: string }) {
-  return <Skeleton aria-hidden="true" className={cn('w-full', className)} />;
+  return <SkeletonBlock aria-hidden="true" className={cn('w-full', className)} />;
 }

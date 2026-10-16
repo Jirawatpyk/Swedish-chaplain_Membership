@@ -46,7 +46,8 @@
 import dynamic from 'next/dynamic';
 import { useTranslations, useLocale } from 'next-intl';
 import { useSyncExternalStore } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react';
+import { CHART_HERO_VALUE } from './chart-card-type';
 import type { TierDistributionSlice } from '@/modules/insights';
 import { ChartDataTable } from './chart-data-table';
 import { ChartSkeleton } from './chart-skeleton';
@@ -145,56 +146,49 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
       : null;
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle>{t('title')}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {!hasData ? (
-          <p className="text-body text-muted-foreground">{t('empty')}</p>
-        ) : (
-          <>
-            {/* Headline stat (enterprise-detail parity with the sparklines'
-                KPI-sized summary stat) — the active-member total the bars
-                sum to, at the SAME `text-3xl` "dashboard hero number" scale
-                as `KpiCard`/`MiniSeriesChart`'s summary (ux-standards.md's
-                type-scale table), plus the top tier as a secondary chip —
-                mirrors the summary+chip+label layout used there. */}
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="flex items-baseline gap-2">
-                <span className="text-3xl tabular-nums">{numberFmt.format(total)}</span>
-                {topTierChipLabel ? (
-                  <span className="text-caption font-medium text-muted-foreground">
-                    {topTierChipLabel}
-                  </span>
-                ) : null}
-              </span>
-              <span className="text-right text-caption text-muted-foreground">
-                {t('activeMembersLabel')}
-              </span>
-            </div>
-            <div aria-hidden="true" className="mt-3" style={{ height: chartHeightPx }}>
-              <MembershipTierCanvas
-                rows={rows}
-                max={max}
-                allowMotion={allowMotion}
-              />
-            </div>
-            {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
-                SR/no-JS data path; visually hidden when data is present, the
-                empty-state paragraph above is the SR equivalent otherwise.
-                Always ends in a "Total" row (design doc requirement). */}
-            <ChartDataTable
-              caption={t('title')}
-              columns={[t('tierColumnHeader'), t('countColumnHeader'), t('pctColumnHeader')]}
-              rows={[
-                ...rows.map((r) => [r.displayLabel, r.count, r.pctLabel] as const),
-                [t('totalRowLabel'), total, '100%'] as const,
-              ]}
+    <Card title={t('title')} headingLevel={2}>
+      {!hasData ? (
+        <p className="aura-text-body text-[var(--aura-fg-secondary)]">{t('empty')}</p>
+      ) : (
+        <>
+          {/* Headline stat: the active-member total the bars sum to, at the
+              KPI tiles' scale (`CHART_HERO_VALUE`), plus the top tier as a
+              secondary chip — the same summary+chip+label layout as
+              `MiniSeriesChart`. */}
+          <div className="flex items-baseline justify-between gap-[var(--aura-space-2)]">
+            <span className="flex items-baseline gap-[var(--aura-space-2)]">
+              <span className={CHART_HERO_VALUE}>{numberFmt.format(total)}</span>
+              {topTierChipLabel ? (
+                <span className="aura-text-caption font-medium text-[var(--aura-fg-secondary)]">
+                  {topTierChipLabel}
+                </span>
+              ) : null}
+            </span>
+            <span className="text-right aura-text-caption text-[var(--aura-fg-secondary)]">
+              {t('activeMembersLabel')}
+            </span>
+          </div>
+          <div aria-hidden="true" className="mt-[var(--aura-space-3)]" style={{ height: chartHeightPx }}>
+            <MembershipTierCanvas
+              rows={rows}
+              max={max}
+              allowMotion={allowMotion}
             />
-          </>
-        )}
-      </CardContent>
+          </div>
+          {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
+              SR/no-JS data path; visually hidden when data is present, the
+              empty-state paragraph above is the SR equivalent otherwise.
+              Always ends in a "Total" row (design doc requirement). */}
+          <ChartDataTable
+            caption={t('title')}
+            columns={[t('tierColumnHeader'), t('countColumnHeader'), t('pctColumnHeader')]}
+            rows={[
+              ...rows.map((r) => [r.displayLabel, r.count, r.pctLabel] as const),
+              [t('totalRowLabel'), total, '100%'] as const,
+            ]}
+          />
+        </>
+      )}
     </Card>
   );
 }
