@@ -60,6 +60,20 @@ describe('RefundDialog — payment line', () => {
     );
   });
 
+  // R50 class (#565): a no-wrap chunk widens a phone at a 32px default font.
+  // Each chunk (invoice number, receipt, amount + date) stays whole as an
+  // inline box, and breaks inside only when it alone is wider than the line.
+  it('keeps each chunk whole without no-wrap, so a large default font cannot widen the dialog', () => {
+    renderDialog({ receipt: 'RC-2026-000088' });
+    const line = screen.getByTestId('refund-dialog-payment');
+    const chunks = [...line.querySelectorAll(':scope > span')];
+    expect(chunks.length).toBe(3);
+    for (const c of chunks) {
+      expect(c).toHaveClass('inline-block', 'max-w-full', '[overflow-wrap:anywhere]');
+      expect(c).not.toHaveClass('whitespace-nowrap');
+    }
+  });
+
   it('Thai shows the Buddhist-Era date', () => {
     renderDialog({ receipt: 'RC-2026-000088', locale: 'th' });
     expect(screen.getByTestId('refund-dialog-payment')).toHaveTextContent(/2569$/);

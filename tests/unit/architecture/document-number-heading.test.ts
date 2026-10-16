@@ -48,8 +48,10 @@ describe('document-number page titles', () => {
     expect(read(f)).toMatch(/from ['"]@\/components\/layout\/document-number-heading['"]/);
   });
 
-  it('no document page wraps a number in a no-wrap span of its own', () => {
-    const offenders = titled.filter((f) => NOWRAP_NUMBER.test(read(f))).map((f) => relative(ROOT, f));
+  // Anywhere in the app, not only titles: a no-wrap document number widens a
+  // dialog the same way (the refund dialog's payment line, found by this guard).
+  it('no source file wraps a document number in a no-wrap span', () => {
+    const offenders = files.filter((f) => NOWRAP_NUMBER.test(read(f))).map((f) => relative(ROOT, f));
     expect(offenders).toEqual([]);
   });
 });
