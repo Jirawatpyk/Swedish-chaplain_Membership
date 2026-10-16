@@ -397,7 +397,8 @@ describe('invoice detail — the phone action bar (AURA PageHeader actionsBarBel
   it('below 640px the header\'s own actions become AURA\'s bar, with the total (incl. VAT) and due date as its status', async () => {
     await view(props());
     expect(header()).toHaveClass('aura-page-header--actions-bar-below-sm');
-    expect(header()).not.toHaveClass('aura-page-header--actions-full-below-sm');
+    // On a short screen (AURA #154) the actions fall back to the full-width row.
+    expect(header()).toHaveClass('aura-page-header--actions-full-below-sm');
     expect(actions()!.querySelector('.aura-page-header__status')).toHaveTextContent('Total 107,000.00 THB incl. VAT · due 22 Oct 2026');
     expect(document.querySelector('[data-slot="invoice-action-bar"]')).toBeNull();
   });

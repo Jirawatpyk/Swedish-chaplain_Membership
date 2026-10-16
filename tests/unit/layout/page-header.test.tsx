@@ -56,8 +56,10 @@ describe('<PageHeader> on AURA PageHeader', () => {
       />,
     );
     expect(root(container)).toHaveClass('aura-page-header--actions-bar-below-sm');
-    // The bar replaces the full-width row; the two never apply together.
-    expect(root(container)).not.toHaveClass('aura-page-header--actions-full-below-sm');
+    // AURA 5.48 (#154): on a screen 480px tall or less the bar gives way to
+    // the header's own row, laid out by actionsFullWidthBelow, so both are
+    // passed (the bar's rules win at a normal height).
+    expect(root(container)).toHaveClass('aura-page-header--actions-full-below-sm');
     expect(screen.getByText('Total 107,000.00 THB incl. VAT').closest('.aura-page-header__status')).not.toBeNull();
   });
 
