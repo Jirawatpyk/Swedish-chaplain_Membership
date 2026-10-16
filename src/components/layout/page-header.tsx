@@ -27,6 +27,13 @@ type PageHeaderProps = {
    * board's, larger from 1024px only. AURA sizes both (`size`).
    */
   size?: 'default' | 'hero' | 'hero-lg';
+  /**
+   * AURA #150 — below this breakpoint a detail page's own actions become a
+   * bar fixed to the bottom of the screen, with `actionsStatus` as its line
+   * (the invoice page). Replaces the full-width action row.
+   */
+  actionsBarBelow?: 'sm' | 'md';
+  actionsStatus?: ReactNode;
 };
 
 /**
@@ -54,6 +61,8 @@ export function PageHeader({
   className,
   autoFocusTitle = false,
   size = 'default',
+  actionsBarBelow,
+  actionsStatus,
 }: PageHeaderProps) {
   const portal = useDensity() === 'comfortable';
   return (
@@ -67,7 +76,9 @@ export function PageHeader({
       meta={meta}
       eyebrow={eyebrow}
       actions={actions}
-      actionsFullWidthBelow="sm"
+      actionsFullWidthBelow={actionsBarBelow ? undefined : 'sm'}
+      actionsBarBelow={actionsBarBelow}
+      actionsStatus={actionsStatus}
       actionsAlign={portal ? 'start' : 'end'}
       focusTitleOnMount={autoFocusTitle}
       className={className}

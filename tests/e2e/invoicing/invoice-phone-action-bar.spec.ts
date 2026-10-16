@@ -9,6 +9,9 @@
  * 145px bar), and a manager's lone ⋯ sat bare at the left under the total (a
  * 93px bar). These cases pin the layout the UX review asked for, by geometry:
  * a class name cannot show where a flex row wraps.
+ *
+ * Since #150 the bar is AURA's: the header's own actions
+ * (`PageHeader actionsBarBelow="sm"`), with the total as the bar's status.
  */
 import type { Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
@@ -30,13 +33,13 @@ async function measureBar(page: Page) {
       const r = e.getBoundingClientRect();
       return r.width > 0 && r.height > 0;
     };
-    const bar = document.querySelector('[data-slot="invoice-action-bar"]');
+    const bar = document.querySelector('[data-slot="page-header"] > .aura-page-header__actions');
     if (!bar) return null;
-    const menu = bar.querySelector('[data-slot="invoice-more-menu"] button');
-    const summary = bar.querySelector('p');
+    const menu = bar.querySelector('button[data-slot="invoice-more-menu"]');
+    const summary = bar.querySelector('.aura-page-header__status');
     // The actions: every visible button-like control in the bar except the ⋯.
     const actions = Array.from(bar.querySelectorAll('a, button'))
-      .filter((e) => shown(e) && !e.closest('[data-slot="invoice-more-menu"]'))
+      .filter((e) => shown(e) && e !== menu)
       .map((e) => ({ ...box(e), clipped: e.scrollWidth > e.clientWidth + 1, text: (e.textContent ?? '').trim() }));
     return {
       viewport: innerWidth,
@@ -52,7 +55,7 @@ async function measureBar(page: Page) {
 async function openInvoiceAt(page: Page, width: number): Promise<NonNullable<Awaited<ReturnType<typeof measureBar>>>> {
   await page.setViewportSize({ width, height: 727 });
   await page.goto(`/admin/invoices/${INVOICE_ID}`);
-  await expect(page.locator('[data-slot="invoice-action-bar"]')).toBeVisible();
+  await expect(page.locator('[data-slot="page-header"] > .aura-page-header__actions')).toBeVisible();
   // The bar is laid out by the client (its fixed position follows hydration).
   await page.waitForLoadState('networkidle');
   const m = await measureBar(page);
@@ -98,7 +101,8 @@ test.describe('invoice detail — phone action bar layout @a11y', () => {
       const menuMid = (m.menu!.top + m.menu!.bottom) / 2;
       const summaryMid = (m.summary!.top + m.summary!.bottom) / 2;
       expect(Math.abs(menuMid - summaryMid), `${width}px: ⋯ on the total's row`).toBeLessThanOrEqual(4);
-      expect(m.viewport - m.menu!.right, `${width}px: ⋯ at the right edge`).toBeLessThanOrEqual(16);
+      // AURA's bar is inset from the screen edges; the ⋯ ends at its padding.
+      expect(m.bar.right - m.menu!.right, `${width}px: ⋯ at the bar's right edge`).toBeLessThanOrEqual(16);
       expect(m.menu!.borderTop, `${width}px: ⋯ has a visible boundary`).toBeGreaterThanOrEqual(1);
       expect(m.bar.height, `${width}px: bar height`).toBeLessThanOrEqual(76);
       expect(m.pageOverflow, `${width}px: page scrolls sideways`).toBeLessThanOrEqual(0);
