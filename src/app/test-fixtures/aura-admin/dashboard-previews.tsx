@@ -6,6 +6,7 @@
  * count could not be read) · insights-empty · forbidden · error · flag-off.
  */
 import { getLocale, getTranslations } from 'next-intl/server';
+import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import type { InvoiceStatusDistribution, TierDistributionSlice } from '@/modules/insights';
@@ -82,7 +83,7 @@ export async function renderDashboardPreview(state: string | undefined) {
   const empty = state === 'empty-charts';
   const numberFmt = new Intl.NumberFormat(locale);
   const thbFmt = new Intl.NumberFormat(locale, { style: 'currency', currency: 'THB', maximumFractionDigits: 0 });
-  const monthFmt = new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric' });
+  const monthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short', year: 'numeric' });
   const monthLabel = (key: string) =>
     monthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
 
