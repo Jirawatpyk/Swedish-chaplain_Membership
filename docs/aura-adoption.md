@@ -184,6 +184,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #153 | `PageHeader` `actionsBarBelow` draws a floating card (inset 16px, radius, overlay shadow) where its doc promises ActionBar's look; ActionBar and the board are a full-width strip with a top border (Addendum 55) | None: the invoice page ships AURA's card until the fix lands |
+| #154 | Fixed bottom bars (`actionsBarBelow` and viewport `ActionBar`) stay fixed on a short viewport: at 400% zoom (320×256 CSS px) the bar leaves about 17px for content and its `scroll-padding-bottom` exceeds the viewport (WCAG 1.4.10 / 2.4.11); ask is a static bar below a height threshold (Addendum 55) | None: pre-existing, every fixed bar in the app; taken with the bump |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
