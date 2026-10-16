@@ -554,9 +554,12 @@ export async function PaymentTimeline({
                   className={`mt-0.5 size-4 shrink-0 ${visual.cls}`}
                   aria-hidden="true"
                 />
-                <div className="flex-1 text-sm">
+                {/* min-w-0 + overflow-wrap: the actor is an email, one
+                    unbreakable token; at a 32px default font it set the
+                    column's min-content width and widened the page (R51). */}
+                <div className="min-w-0 flex-1 text-sm">
                   <div className="font-medium">{tEvents(event.type)}</div>
-                  <div className="text-xs tabular-nums text-[var(--aura-fg-secondary)]">
+                  <div className="text-xs tabular-nums text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">
                     {formatTimestamp(event.timestamp, userLocale)} ·{' '}
                     {resolveActor(event.actorUserId)}
                   </div>
