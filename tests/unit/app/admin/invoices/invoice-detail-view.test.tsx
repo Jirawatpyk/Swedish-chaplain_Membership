@@ -255,6 +255,15 @@ describe('invoice detail — the Details card', () => {
     expect(totals).not.toHaveClass('grid-cols-[1fr_auto]', 'gap-x-8');
   });
 
+  // UX review (#565): in SV a draft's "(förhandsgranskning)" is one long word,
+  // so at a 32px default font it pushed the page to 404px at 393. The labels
+  // may break inside a word when a word alone is wider than their column.
+  it('lets a long label word break inside the totals column (SV draft at a 32px default font)', async () => {
+    await view(props());
+    const totals = document.querySelector('[data-slot="invoice-totals"]') as HTMLElement;
+    expect(totals).toHaveClass('[&>dt]:[overflow-wrap:anywhere]');
+  });
+
   it('labels a draft\'s total as a preview', async () => {
     const inv = invoice({ status: 'draft', billDocumentNumberRaw: null, pdf: null });
     await view(props({ invoice: inv, displayStatus: 'draft', headerNumber: null, taxDocKind: 'none' }));
