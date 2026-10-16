@@ -45,7 +45,7 @@ describe('erase page view (board Admin-event-erase-page)', () => {
   it('puts the hint under the title and the actions under it, with no card', async () => {
     await show(renderErasePageBody({ eventId: EVENT, registrationId: REG, attendeeName: 'Ploy Rattanakul' }));
     const heading = screen.getByRole('heading', { level: 1, name: e.pageTitle.replace('{attendeeName}', 'Ploy Rattanakul') });
-    expect(heading.closest('[data-slot="page-header"]')).toHaveTextContent(e.pageHint);
+    expect(heading.closest<HTMLElement>('[data-slot="page-header"]')).toHaveTextContent(e.pageHint);
     expect(screen.getByTestId(`erase-pii-button-${REG}`)).toBeInTheDocument();
     expect(document.querySelector('.aura-card')).toBeNull();
     const back = screen.getByRole('link', { name: e.pageBackToEventLabel });
