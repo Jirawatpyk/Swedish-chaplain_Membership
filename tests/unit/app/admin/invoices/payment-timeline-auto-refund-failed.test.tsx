@@ -138,3 +138,15 @@ describe('PaymentTimeline — failed auto-refund', () => {
     expect(html).not.toContain('timeline-event-auto_refund_failed');
   });
 });
+
+// R51 (2026-10-16): at a 32px default font a row's actor (an email, one
+// unbreakable token) set the text column's min-content width, and the page
+// laid out 405px wide at 390. The column may shrink and the line may break.
+describe('PaymentTimeline — a row fits a phone at a large default font', () => {
+  it('the text column can shrink and the time · actor line breaks inside a long token', async () => {
+    const html = await renderTimeline(false);
+    const row = rowFor(html, 'auto_refunded')!;
+    expect(row).toMatch(/<div class="[^"]*\bflex-1\b[^"]*\bmin-w-0\b[^"]*"/);
+    expect(row).toMatch(/<div class="[^"]*\btext-xs\b[^"]*\[overflow-wrap:anywhere\][^"]*"/);
+  });
+});
