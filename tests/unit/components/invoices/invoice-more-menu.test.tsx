@@ -168,14 +168,14 @@ describe('InvoiceMoreMenu — inside AURA\'s phone action bar (#150)', () => {
     expect(trigger?.parentElement?.parentElement).toBe(container);
   });
 
-  it('the ⋯ is outlined on a phone, beside the outlined actions, and plain from 640px', () => {
-    setPhone(true);
-    const phone = render(<InvoiceMoreMenu {...BASE} showDownload />);
-    expect(phone.container.querySelector('button[data-slot="invoice-more-menu"]')).toHaveClass('aura-icon-btn--outline');
-    phone.unmount();
-    setPhone(false);
-    const desktop = render(<InvoiceMoreMenu {...BASE} showDownload />);
-    expect(desktop.container.querySelector('button[data-slot="invoice-more-menu"]')).not.toHaveClass('aura-icon-btn--outline');
+  it('the ⋯ is AURA\'s plain IconButton at every width, as every other ⋯ in the app', () => {
+    // Maintainer, 16 Oct: the board draws a plain ⋯ and no other ⋯ is outlined.
+    for (const phone of [true, false]) {
+      setPhone(phone);
+      const r = render(<InvoiceMoreMenu {...BASE} showDownload />);
+      expect(r.container.querySelector('button[data-slot="invoice-more-menu"]')).not.toHaveClass('aura-icon-btn--outline');
+      r.unmount();
+    }
   });
 });
 
