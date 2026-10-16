@@ -17,7 +17,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/toast';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react';
 import { InsightDismissButton } from './insight-dismiss-button';
 
 export interface InsightLine {
@@ -92,31 +92,26 @@ export function InsightsPanel({
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {visible.length === 0 ? (
-          <p role="status" className="text-body text-muted-foreground">
-            {emptyLabel}
-          </p>
-        ) : (
-          <ul className="grid gap-2 text-body">
-            {visible.map((line) => (
-              <li key={line.key} className="flex items-center justify-between gap-2">
-                <span>{line.text}</span>
-                <InsightDismissButton
-                  // Compose a UNIQUE accessible name per insight (WCAG 2.4.6 /
-                  // voice-control): "Dismiss insight: <the insight text>".
-                  label={`${dismissLabel}: ${line.text}`}
-                  onClick={() => onDismiss(line)}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
+    <Card title={title} headingLevel={2}>
+      {visible.length === 0 ? (
+        <p role="status" className="aura-text-body text-[var(--aura-fg-secondary)]">
+          {emptyLabel}
+        </p>
+      ) : (
+        <ul className="grid gap-[var(--aura-space-1)] aura-text-body">
+          {visible.map((line) => (
+            <li key={line.key} className="flex items-center justify-between gap-[var(--aura-space-2)]">
+              <span className="min-w-0">{line.text}</span>
+              <InsightDismissButton
+                // Compose a UNIQUE accessible name per insight (WCAG 2.4.6 /
+                // voice-control): "Dismiss insight: <the insight text>".
+                label={`${dismissLabel}: ${line.text}`}
+                onClick={() => onDismiss(line)}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }
