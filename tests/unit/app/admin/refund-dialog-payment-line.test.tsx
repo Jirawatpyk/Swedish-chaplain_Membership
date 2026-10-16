@@ -66,7 +66,7 @@ describe('RefundDialog — payment line', () => {
   it('keeps each chunk whole without no-wrap, so a large default font cannot widen the dialog', () => {
     renderDialog({ receipt: 'RC-2026-000088' });
     const line = screen.getByTestId('refund-dialog-payment');
-    const chunks = [...line.querySelectorAll(':scope > span')];
+    const chunks = [...line.querySelectorAll(':scope > span:not([aria-hidden])')];
     expect(chunks.length).toBe(3);
     for (const c of chunks) {
       expect(c).toHaveClass('inline-block', 'max-w-full', '[overflow-wrap:anywhere]');

@@ -133,23 +133,25 @@ export function RefundDialog({
   // §87 cross-reference — the payment this refund returns, on one line:
   // invoice · receipt · amount paid, date paid. Combined-mode rows have a NULL
   // receiptDocumentNumberRaw → the invoice number is the receipt, marked
-  // "(combined)". Only document numbers are set in mono.
+  // "(combined)". Only document numbers are set in mono. Each chunk is an
+  // inline box: whole on its line, broken inside only when it alone is wider
+  // than the dialog (a 32px default font), never no-wrap (R50 class).
   const mono = (chunks: ReactNode) => <span className="font-mono tabular-nums">{chunks}</span>;
   const receiptNumber = receiptDocumentNumberRaw ?? invoiceDocumentNumber ?? null;
   const paymentLine: ReactNode[] = [
     invoiceDocumentNumber ? (
-      <span key="invoice" className="whitespace-nowrap font-mono tabular-nums">
+      <span key="invoice" className="inline-block max-w-full font-mono tabular-nums [overflow-wrap:anywhere]">
         {invoiceDocumentNumber}
       </span>
     ) : null,
     receiptNumber ? (
-      <span key="receipt" className="whitespace-nowrap">
+      <span key="receipt" className="inline-block max-w-full [overflow-wrap:anywhere]">
         {tDialog.rich('paymentReceipt', { number: receiptNumber, num: mono })}
         {receiptDocumentNumberRaw ? null : ` (${tDialog('refsCombinedHint')})`}
       </span>
     ) : null,
     paidAmountSatang !== null ? (
-      <span key="paid" className="whitespace-nowrap tabular-nums">
+      <span key="paid" className="inline-block max-w-full tabular-nums [overflow-wrap:anywhere]">
         {paidAt
           ? tDialog('paymentPaid', {
               amount: formatSatangThb(paidAmountSatang, locale, currencyCode),
