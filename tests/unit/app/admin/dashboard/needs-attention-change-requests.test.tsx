@@ -155,7 +155,8 @@ describe('StaffHomePage — Needs attention: change requests (F114 US6)', () => 
     const html = await renderPage();
     expect(html).toContain('href="/admin/change-requests"');
     expect(html).toContain('Change requests waiting (oldest 3 days)');
-    expect(html).toContain('<span class="tabular-nums font-medium">3</span>');
+    // Spec 122 US11: the count is an AURA badge (pill) beside the row link.
+    expect(html).toContain('<span class="aura-badge aura-badge--accent">3</span>');
     expect(html).not.toContain(en.admin.dashboard.needsAttention.empty);
     expect(h.count).toHaveBeenCalledTimes(1);
   });
@@ -209,9 +210,11 @@ describe('StaffHomePage — Needs attention: change requests (F114 US6)', () => 
     // queue nobody can see is ageing against the FR-037 clock
     expect(html).not.toContain(en.admin.dashboard.needsAttention.empty);
     expect(html).toContain(en.admin.dashboard.needsAttention.changeRequestsUnavailable);
-    expect(html).toContain('data-testid="needs-attention-change-requests-unavailable"');
-    // `status`, not `alert`: the page rendered, one item did not (UX I9)
-    expect(html).toContain('role="status"');
+    // Spec 122 US11: an AURA danger alert. `status`, not `alert`: the page
+    // rendered, one item did not (UX I9).
+    const unavailable = html.match(/<div[^>]*data-testid="needs-attention-change-requests-unavailable"[^>]*>/)?.[0] ?? '';
+    expect(unavailable).toMatch(/class="aura-alert aura-alert--danger"/);
+    expect(unavailable).toContain('role="status"');
     expect(h.logError).toHaveBeenCalledTimes(1);
     expect(h.logError.mock.calls[0]![0]).toMatchObject({ errorId: 'M114.dashboard.pending_count_failed' });
   });
