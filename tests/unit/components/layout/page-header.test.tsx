@@ -1,22 +1,36 @@
 /**
- * `<PageHeader>` — the title keeps the app's type scale.
+ * `<PageHeader>` — the title and the room above a hero page are AURA's.
  *
- * AURA's title defaults to 28 / 36px; the boards draw 26 / 32px (hero 30, and
- * 36 from 1024px), which globals.css keeps in `--font-size-h1` per
- * `data-size`. AURA reads `--aura-page-header-title-size` / `-line-height`
- * (#151), so the stylesheet points those at our scale for every header.
- * jsdom has no cascade from globals.css, so the rule itself is the contract.
+ * Spec 122's parity rule: AURA's defaults win on sizes and spacing; a board
+ * value that is better goes to the AURA handoff, never into an override. So
+ * the wrapper hands `size` to AURA (its hero sizes and the 16px above), and
+ * globals.css neither re-sizes AURA's title nor pads a hero page itself.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render } from '@testing-library/react';
+
+import { PageHeader } from '@/components/layout/page-header';
+
+afterEach(cleanup);
 
 const css = readFileSync(join(__dirname, '../../../../src/app/globals.css'), 'utf8').replace(/\r/g, '');
 
-describe('<PageHeader> title size', () => {
-  it('globals.css points AURA’s title size at the app’s h1 scale on every page header', () => {
-    const rule = css.match(/\[data-slot='page-header'\]\s*\{([^}]*)\}/);
-    expect(rule?.[1]).toMatch(/--aura-page-header-title-size:\s*var\(--font-size-h1\)/);
-    expect(rule?.[1]).toMatch(/--aura-page-header-title-line-height:\s*1\.2/);
+describe('<PageHeader> sizes are AURA’s', () => {
+  it('hands size to AURA', () => {
+    const { container, rerender } = render(<PageHeader title="Hi Anna" size="hero" />);
+    const root = () => container.querySelector('[data-slot="page-header"]');
+    expect(root()).toHaveClass('aura-page-header--hero');
+    rerender(<PageHeader title="Benefits" size="hero-lg" />);
+    expect(root()).toHaveClass('aura-page-header--hero-lg');
+    rerender(<PageHeader title="Members" />);
+    expect(root()?.className).not.toMatch(/aura-page-header--hero/);
+  });
+
+  it('globals.css does not override AURA’s title size or pad a hero page itself', () => {
+    expect(css).not.toMatch(/--aura-page-header-title-(size|line-height)/);
+    expect(css).not.toMatch(/\[data-slot='page-header'\]\[data-size=/);
+    expect(css).not.toMatch(/\[data-slot='page-header'\]:is\(\[data-size=/);
   });
 });
