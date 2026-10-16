@@ -85,20 +85,20 @@ async function expectNoAxeViolations(page: Page, surface: string): Promise<void>
   expect(seriousOrWorse, `${surface}: serious/critical axe violations`).toHaveLength(0);
 }
 
-/** Scopes to the `<Card>` whose `CardTitle` renders the given chart title
- * (`data-slot="card"` — shadcn's convention, see `ui/card.tsx`). Every 067
- * chart title is a self-contained-i18n string unique across the dashboard. */
+/** Scopes to the AURA card whose title heading is the given chart title
+ * (`section.aura-card`, spec 122 US11). Every 067 chart title is a
+ * self-contained-i18n string unique across the dashboard. */
 function chartCard(page: Page, title: string): Locator {
   return page
-    .locator('[data-slot="card"]')
-    .filter({ has: page.getByText(title, { exact: true }) })
+    .locator('section.aura-card')
+    .filter({ has: page.getByRole('heading', { name: title, exact: true }) })
     .first();
 }
 
 /**
  * Waits for the chart's lazy `next/dynamic(..., { ssr: false })` canvas to
- * mount (`data-slot="chart"` — the shadcn `ChartContainer` wrapper, see
- * `ui/chart.tsx`). Returns `null` if it never attaches within the timeout —
+ * mount (`data-slot="chart"` — the dashboard chart frame, see
+ * `components/dashboard/chart-frame.tsx`). Returns `null` if it never attaches within the timeout —
  * the caller must treat that as the chart's EMPTY-STATE branch (no
  * `hasData`), not a failure: an empty chart never mounts a canvas at all
  * (see e.g. `membership-tier-chart.tsx`'s `!hasData` early return), so
@@ -296,13 +296,13 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
   }) => {
     await gotoDashboard(page);
 
-    // KPI numbers (Key metrics landmark) — 4 cards, each a non-empty
+    // KPI numbers (Key metrics landmark) — 4 AURA stat tiles, each a non-empty
     // digit-bearing value (every KPI now renders via <CountUp>, Task 15;
     // its sr-only final-value span always carries the real formatted
     // number regardless of animation state).
     const kpiSection = page.locator('section[aria-label="Key metrics"]');
     await expect(kpiSection).toBeVisible();
-    const kpiValues = kpiSection.locator('[data-slot="card-title"]');
+    const kpiValues = kpiSection.locator('.aura-stat__value');
     await expect(kpiValues).toHaveCount(4);
     for (let i = 0; i < 4; i++) {
       await expect(kpiValues.nth(i)).toContainText(/\d/);
