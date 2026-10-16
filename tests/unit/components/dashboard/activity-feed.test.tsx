@@ -100,4 +100,18 @@ describe('ActivityFeed', () => {
     render(<ActivityFeed {...PROPS} items={items} />);
     expect(screen.getByRole('listitem')).toHaveClass('min-w-0');
   });
+
+  it('is an AURA card titled at h2, with Refresh as an AURA ghost button in its actions (spec 122 US11)', () => {
+    const { container } = render(<ActivityFeed {...PROPS} items={[]} />);
+    const card = container.querySelector('section.aura-card');
+    expect(card).not.toBeNull();
+    expect(card!.querySelector('h2.aura-card__title')).toHaveTextContent('Recent activity');
+    const refresh = screen.getByRole('button', { name: 'Refresh' });
+    expect(refresh.closest('.aura-card__actions')).not.toBeNull();
+    expect(refresh).toHaveClass('aura-btn');
+    // AURA's `loading`: aria-busy only while the refresh is in flight.
+    expect(refresh).not.toHaveAttribute('aria-busy');
+    expect(screen.getByText('No recent activity')).toBeInTheDocument();
+  });
 });
+
