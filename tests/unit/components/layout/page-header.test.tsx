@@ -1,10 +1,12 @@
 /**
- * `<PageHeader>` — the title and the room above a hero page are AURA's.
+ * `<PageHeader>` — the title and the room above a hero page come from AURA.
  *
- * Spec 122's parity rule: AURA's defaults win on sizes and spacing; a board
- * value that is better goes to the AURA handoff, never into an override. So
- * the wrapper hands `size` to AURA (its hero sizes and the 16px above), and
- * globals.css neither re-sizes AURA's title nor pads a hero page itself.
+ * AURA 5.47 (#152) ships the boards' sizes as options: `size="compact"` is
+ * the 26 / 32px title every ordinary page uses, `hero` grows to 36px from
+ * 1024px, and `--aura-page-header-hero-space` sets the room above a hero
+ * title. So the wrapper picks AURA's size, the portal sets AURA's hero-space
+ * property to land the boards' 24 / 40px, and globals.css neither re-sizes
+ * AURA's title nor pads a hero page itself.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -18,14 +20,20 @@ afterEach(cleanup);
 const css = readFileSync(join(__dirname, '../../../../src/app/globals.css'), 'utf8').replace(/\r/g, '');
 
 describe('<PageHeader> sizes are AURA’s', () => {
-  it('hands size to AURA', () => {
-    const { container, rerender } = render(<PageHeader title="Hi Anna" size="hero" />);
+  it('an ordinary page takes AURA’s compact title; hero sizes pass through', () => {
+    const { container, rerender } = render(<PageHeader title="Members" />);
     const root = () => container.querySelector('[data-slot="page-header"]');
+    expect(root()).toHaveClass('aura-page-header--compact');
+    rerender(<PageHeader title="Hi Anna" size="hero" />);
     expect(root()).toHaveClass('aura-page-header--hero');
     rerender(<PageHeader title="Benefits" size="hero-lg" />);
     expect(root()).toHaveClass('aura-page-header--hero-lg');
-    rerender(<PageHeader title="Members" />);
-    expect(root()?.className).not.toMatch(/aura-page-header--hero/);
+  });
+
+  it('the portal lands the boards’ room above a hero title through AURA’s property (24px, 40px from 1024px)', () => {
+    // The portal pads its pages 20px, 2rem from 1024px; AURA adds the property.
+    expect(css).toMatch(/\.chamber-portal\s*\{[^}]*--aura-page-header-hero-space:\s*4px/);
+    expect(css).toMatch(/@media \(min-width: 1024px\)\s*\{[\s\S]*?\.chamber-portal\s*\{[^}]*--aura-page-header-hero-space:\s*8px/);
   });
 
   it('globals.css does not override AURA’s title size or pad a hero page itself', () => {
