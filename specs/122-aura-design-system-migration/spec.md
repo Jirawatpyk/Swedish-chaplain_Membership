@@ -592,6 +592,11 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
     - The headline is read as value then label, the same order as every other hero figure on the page.
     - The empty state gets no new link to the invoice list, since that would be new behaviour (FR-011).
     - The description runs to two lines on phones (three to four at 200% text).
+- Dashboard polish (maintainer, 17 Oct; same PR as invoice status). Layout and typography only, no figure or copy meaning changes:
+  - Smart insights rows sit between dividers with a decorative dot, as Needs attention and the board draw them; each row is ≥ 44px.
+  - Recent activity lines wrap instead of ending in an ellipsis, so a phone shows the whole line.
+  - The trend cards' summary label ("Cumulative members", "12-month total …") takes its own line below 640px.
+  - "ex-VAT" (EN, non-breaking hyphen) and "exkl. moms" (SV, no-break space) never split across lines.
 
 ## User Scenarios & Testing *(mandatory)*
 
