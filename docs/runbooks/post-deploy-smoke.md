@@ -105,3 +105,7 @@ The workflow retries the whole set 3 times, 20 s apart, so a red run is not alia
 - **Only successful Production deployments trigger it** (`deployment_status.state == 'success'` and `deployment.environment == 'Production'`); a preview deployment never does. `tests/unit/architecture/post-deploy-smoke-workflow.test.ts` pins the filter, the permissions and the no-injection rule.
 - **`PROD_BASE_URL` is a repo variable, not hardcoded**, because the docs name more than one domain. Update it when the canonical domain changes.
 - `/api/health` caches its result for 10 s per instance (from settle), never holds more than two hung connections, and answers only one of two fixed bodies; keep it that way (no version, environment, tenant, hostname or error text). Its contract is `tests/contract/api-health.test.ts`.
+
+## Drills
+
+A manual run against a bad URL (`gh workflow run post-deploy-smoke.yml -f base_url=https://invalid.example`) opens a real `prod-smoke` issue. Comment on it that it was a drill, and say what it checked, before a plain run closes it. The first drill was #583 (spec 123 post-merge check (b)).

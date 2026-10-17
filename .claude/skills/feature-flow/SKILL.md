@@ -74,7 +74,8 @@ Fill in `.github/pull_request_template.md`:
 - the Done-when lines with their evidence;
 - the Definition of Done checklist, ticked only where the evidence exists;
 - every review finding and how it was closed;
-- the unflagged behaviours, if a flag is involved.
+- the unflagged behaviours, if a flag is involved;
+- for an L slice, set this slice's row in the `plan.md` Slices table to the PR number and `done` in this PR, before it merges.
 
 The diff itself carries the `docs/changelog.md` line (Definition of Done).
 

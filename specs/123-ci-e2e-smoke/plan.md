@@ -279,5 +279,5 @@ Filled in at Verify, one block per slice.
   - [run 39061797720](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39061797720), against `PROD_BASE_URL`, passed. It commented "Recovered…" and **closed #583**.
 - **(c)** Preview deployments of this branch fired `deployment_status`, and the job was **skipped** each time (for example https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39057302987).
 - **(d)** Not proven: DW-4's "names the deployment URL" holds only for a real failing `deployment_status` run. Manual runs print "none (manual run)". Accepted.
-- **Process note:** D-020 says the slice's own PR sets its Slices row to `done` before merging. #582 missed that, so this follow-up sets it. Retro: none needed; the row is the only gap.
+- **Process note:** D-020 says the slice's own PR sets its Slices row to `done` before merging. #582 missed that, so this follow-up sets it. Cause: step 8 (PR), the DoD and the PR template had no line for it, only step 9 assumed it was "already" set. Guard: a DoD line and a PR-template line; retro logged.
 
