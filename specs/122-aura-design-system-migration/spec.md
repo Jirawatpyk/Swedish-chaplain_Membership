@@ -572,6 +572,8 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - `DashboardErrorState` stays shared; the E-Blast portal panel (US12) also uses it.
 - **Card titles are headings now.** Each panel and chart card is an AURA card titled at h2 (the legacy card title was a `div`). They take AURA's card-title size, so the SC-010 typography e2e treats an AURA card title as AURA-owned instead of asking for the FR-017 `text-h2` step.
 - **Refresh uses AURA's `loading`.** While the feed refreshes, the button shows AURA's spinner, sets `aria-busy` and ignores clicks, so there is still one refresh at a time. It is not `disabled`, so focus stays on it.
+- **Needs attention rows follow the board** (maintainer, parity page, 17 Oct). Each row is one link: the destination's nav icon, the label, the count pill and a chevron, between AURA dividers, and at least 44px tall. The overdue-invoices pill is a solid danger badge. Labels, counts and links are unchanged.
+- **Kept, not drawn from the board (parity page, 17 Oct):** no chevron on phone insights, because an insight has no destination. The chart types also stay: the revenue bars have no axis grid, and invoice status stays a donut. The board's stacked bar with an amounts table, plus the grid lines, is its own PR after US11, with a figures review, because it adds amounts the page does not show today.
 
 ## User Scenarios & Testing *(mandatory)*
 
