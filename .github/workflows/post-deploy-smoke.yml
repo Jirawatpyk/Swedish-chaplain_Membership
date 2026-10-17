@@ -1,0 +1,155 @@
+# Post-deploy smoke — checks production right after Vercel reports a
+# successful PRODUCTION deployment (spec 123 US1, DW-1…DW-4).
+#
+# WHY THIS EXISTS
+# Every merge to `main` deploys to production, and until now the only signal
+# was the deployment reaching READY. Nothing checked that the live site
+# answers and can still reach its database. This job does, within minutes.
+#
+# WHAT IT CHECKS (scripts/post-deploy-smoke.ts — public, read-only, no sign-in)
+#   GET /admin/sign-in   200 + a password input
+#   GET /portal/sign-in  200 + a password input
+#   GET /api/health      200 + {"status":"ok"}  (select 1, 3 s limit)
+#
+# TARGET: `vars.PROD_BASE_URL` (the live domain, set by the maintainer in the
+# repo variables), never the per-deployment URL, which can sit behind Vercel
+# deployment protection. A manual run may pass `base_url` instead.
+#
+# ON FAILURE it opens a `prod-smoke` issue, or comments on the newest open one,
+# with the base URL, the commit, the deployment URL and the FAIL lines only.
+# ON SUCCESS against PROD_BASE_URL it comments "Recovered" on every open
+# prod-smoke issue and closes it. It never rolls back:
+# docs/runbooks/post-deploy-smoke.md says how.
+#
+# SECURITY
+#   - No secrets: every checked URL is public. Only the automatic token, to
+#     write the issue.
+#   - Every event/input value reaches the shell through `env:` and is quoted;
+#     none is expanded inside `run:` (tests/unit/architecture/
+#     post-deploy-smoke-workflow.test.ts asserts it).
+#   - The issue body holds only the script's FAIL lines, never a response body
+#     (the repo is public).
+#
+# `deployment_status` runs the copy of this file AT THE DEPLOYED COMMIT, not
+# the one on `main`: every Vercel deployment, preview branches included,
+# starts a run of that branch's version. The job `if:` below is the guard
+# that skips everything but a successful Production deployment, so keep it
+# on every branch. A manual run (`workflow_dispatch`) uses the chosen ref.
+name: Post-deploy smoke
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Base URL to check (default: the PROD_BASE_URL repo variable)'
+        required: false
+        type: string
+
+permissions: {}
+
+# A running smoke is never cancelled (it may be about to open an issue). GitHub
+# keeps only ONE pending run per group, so a third rapid deploy replaces the
+# queued second one; the latest deploy is still the one checked.
+# Vercel posts several deployment_status events per deploy (pending, success,
+# …) and every preview posts its own. Only a successful Production event (and a
+# manual run) gets a SHARED group; every other event gets a group of its own
+# (its run id), so it can never take the single pending slot from a real run.
+concurrency:
+  group: post-deploy-smoke-${{ github.event_name == 'workflow_dispatch' && 'manual' || (github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production') && 'production' || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Production smoke
+    if: github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    env:
+      BASE_URL: ${{ inputs.base_url || vars.PROD_BASE_URL }}
+      DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
+      COMMIT_SHA: ${{ github.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require a base URL
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "FAIL config no-base-url" > smoke-output.txt
+            echo "::error::No base URL. Set the PROD_BASE_URL repository variable, or pass base_url to a manual run."
+            exit 1
+          fi
+
+      # The script has zero dependencies and only erasable TypeScript, so Node 22
+      # runs it directly. The flag makes stripping explicit, so an older 22.x
+      # (>= 22.6) from the runner's toolcache still works; no
+      # package manager, no install, no cache.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Smoke the production site
+        id: smoke
+        run: |
+          set -o pipefail
+          node --experimental-strip-types scripts/post-deploy-smoke.ts "$BASE_URL" | tee smoke-output.txt
+
+      - name: Open or update the prod-smoke issue
+        if: failure()
+        # The token reaches only this step: nothing else needs to write.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          {
+            echo "The post-deploy smoke failed on production."
+            echo
+            echo "- Base URL: ${BASE_URL:-not set}"
+            echo "- Commit: $COMMIT_SHA"
+            echo "- Deployment: ${DEPLOYMENT_URL:-none (manual run)}"
+            echo "- Run: $RUN_URL"
+            echo
+            echo "Failed checks:"
+            echo
+            echo '```'
+            grep '^FAIL ' smoke-output.txt 2>/dev/null || echo "(no FAIL line captured; see the run log)"
+            echo '```'
+            echo
+            echo "Runbook: docs/runbooks/post-deploy-smoke.md"
+          } > issue-body.md
+          gh label create prod-smoke --color B60205 --description "Post-deploy production smoke failed" 2>/dev/null || true
+          existing="$(gh issue list --label prod-smoke --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file issue-body.md
+          else
+            gh issue create --title "Post-deploy smoke failed on production" --label prod-smoke --body-file issue-body.md
+          fi
+
+      - name: Close the prod-smoke issue as recovered
+        if: success()
+        # The token reaches only this step and the failure step.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROD_BASE_URL: ${{ vars.PROD_BASE_URL }}
+        run: |
+          # A manual run against another URL proves nothing about production.
+          if [ "$BASE_URL" != "$PROD_BASE_URL" ]; then
+            echo "Base URL is not PROD_BASE_URL; leaving any prod-smoke issue open."
+            exit 0
+          fi
+          open="$(gh issue list --label prod-smoke --state open --json number --jq '.[].number')"
+          if [ -z "$open" ]; then
+            echo "No open prod-smoke issue."
+            exit 0
+          fi
+          echo "Recovered: smoke passed at $COMMIT_SHA ($RUN_URL)" > recovered-body.md
+          for n in $open; do
+            gh issue comment "$n" --body-file recovered-body.md
+            gh issue close "$n"
+          done
