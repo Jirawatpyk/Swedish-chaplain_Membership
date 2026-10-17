@@ -138,13 +138,15 @@ export function DashboardView({
           split-screen desktop window.
           Both class strings are written out in full: Tailwind scans source
           text, so an interpolated `lg:grid-cols-${n}` would never be
-          generated. */}
+          generated.
+          Phones lay the tiles out two up, as board `Admin-dashboard-mobile`
+          draws them; with three tiles the third spans the row. */}
       <section
         aria-label={t('kpi.sectionLabel')}
         className={
           finance
-            ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4'
-            : 'grid gap-4 sm:grid-cols-3'
+            ? 'grid grid-cols-2 gap-4 lg:grid-cols-4'
+            : 'grid grid-cols-2 gap-4 sm:grid-cols-3 max-sm:[&>*:last-child]:col-span-2'
         }
       >
         {kpis.map((kpi) => (

@@ -61,9 +61,9 @@ export default async function Loading() {
         <DetailContainer>
           <PageHeader title={t('title')} subtitle={<SkeletonBlock className="h-4 w-56" />} />
 
-          {/* KPI grid — matches `grid gap-4 sm:grid-cols-2 lg:grid-cols-4`;
+          {/* KPI grid — matches `grid grid-cols-2 gap-4 lg:grid-cols-4`;
               AURA Stat tiles with their value skeleton (spec 122 US11). */}
-          <div aria-hidden className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div aria-hidden className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <Stat
                 key={i}
