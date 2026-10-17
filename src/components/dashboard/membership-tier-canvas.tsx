@@ -94,7 +94,15 @@ export function MembershipTierCanvas({ rows, max, allowMotion }: MembershipTierC
           minPointSize={2}
           isAnimationActive={allowMotion}
         >
-          <LabelList dataKey="barLabel" position="right" fill="var(--aura-fg-primary)" fontSize={12} />
+          {/* A no-break space keeps "46 (37%)" on one line: recharts' <Text>
+              wraps at ordinary spaces once a width applies. */}
+          <LabelList
+            dataKey="barLabel"
+            position="right"
+            fill="var(--aura-fg-primary)"
+            fontSize={12}
+            formatter={(v: unknown) => String(v).replace(' ', '\u00a0')}
+          />
         </Bar>
       </BarChart>
     </ChartFrame>

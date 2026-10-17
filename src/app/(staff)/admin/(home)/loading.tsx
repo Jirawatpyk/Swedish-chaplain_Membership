@@ -68,7 +68,7 @@ export default async function Loading() {
               <Stat
                 key={i}
                 label={<SkeletonBlock className="h-4 w-28" />}
-                caption={<SkeletonBlock className="h-[1.125rem] w-24" />}
+                caption={<SkeletonBlock className="h-[1.375rem] w-24" />}
                 loading
               />
             ))}
@@ -78,9 +78,10 @@ export default async function Loading() {
           <div aria-hidden className="grid gap-4 lg:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
               <Card key={i} header={<SkeletonBlock className="h-5 w-40" />}>
-                {/* Rows at the real list's 36px row height and 4px gap. */}
+                {/* Four rows (a finance viewer's attention list) at the real
+                    list's 36px row height and 4px gap. */}
                 <div className="grid gap-[var(--aura-space-1)]">
-                  {Array.from({ length: 3 }).map((_, j) => (
+                  {Array.from({ length: 4 }).map((_, j) => (
                     <SkeletonBlock key={j} className="h-9 w-full" />
                   ))}
                 </div>
@@ -155,7 +156,7 @@ export default async function Loading() {
           >
             <div className="grid gap-2">
               {Array.from({ length: 5 }).map((_, i) => (
-                <SkeletonBlock key={i} className="h-5 w-full" />
+                <SkeletonBlock key={i} className="h-6 w-full" />
               ))}
             </div>
           </Card>

@@ -64,7 +64,9 @@ describe('MembershipTierCanvas', () => {
     const labelTexts = Array.from(container.querySelectorAll('.recharts-label-list text')).map(
       (n) => n.textContent,
     );
-    expect(labelTexts).toEqual(['6 (60%)', '3 (30%)', '1 (10%)']);
+    // Joined by a no-break space so a label never wraps onto two lines
+    // (UX review L1); the visible text is the same.
+    expect(labelTexts).toEqual(['6\u00a0(60%)', '3\u00a0(30%)', '1\u00a0(10%)']);
   });
 
   it('renders a Recharts responsive container (the real migrated chart, not a hand-rolled <svg>)', () => {
