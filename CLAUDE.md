@@ -21,6 +21,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `.claude/rules/ui-aura.md` | when touching UI, messages or e2e | AURA migration, i18n, UX playbook, e2e conventions |
 | `.claude/skills/review-and-ship/` | on demand | which agent reviews what, `/code-review`, Workflows, Spec Kit gates, merge flow |
 | `.claude/skills/feature-flow/` + `docs/workflow.md` | on demand | the change lifecycle, Definition of Done, decisions, retros |
+| `.claude/skills/run-chamber-os/` | on demand | how to run a branch on :3400 for verification (personas, Playwright attach, UI probes) |
+| `.claude/settings.json` `permissions.deny` | always enforced | commands Claude may not run (format, stash, `db:generate`, prod scripts) |
 
 A fact that matters only for one module goes in that module's rule, not here. Keep this file under 200 lines.
 

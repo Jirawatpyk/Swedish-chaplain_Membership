@@ -13,5 +13,19 @@
     "superpowers@claude-plugins-official": true,
     "remember@claude-plugins-official": true,
     "firecrawl@claude-plugins-official": true
+  },
+  "permissions": {
+    "deny": [
+      "Bash(pnpm format:*)",
+      "Bash(prettier --write:*)",
+      "Bash(npx prettier --write:*)",
+      "Bash(pnpm exec prettier --write:*)",
+      "Bash(git stash:*)",
+      "Bash(pnpm db:generate:*)",
+      "Bash(pnpm db:push:*)",
+      "Bash(pnpm db:migrate:prod:*)",
+      "Bash(pnpm db:verify:prod:*)",
+      "Bash(pnpm seed:system-actors:prod:*)"
+    ]
   }
 }

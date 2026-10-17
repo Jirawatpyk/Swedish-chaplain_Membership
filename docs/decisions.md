@@ -55,3 +55,13 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Context*: a 44.7 KB `CLAUDE.md` loaded into every session and had gone stale.
 - *Decision*: `CLAUDE.md` (identity, commands, precedence) + `.claude/rules/rules.md` load every session; architecture and per-module rules are path-scoped; review and workflow procedures are skills; changing state lives in `docs/operational-state.md`.
 - *Consequence*: a fact that matters for one module goes in that module's rule; `CLAUDE.md` stays under 200 lines.
+
+**D-011 — Hard bans are enforced by settings; DoD hooks wait for evidence** (2026-10-17)
+- *Context*: CLAUDE.md is advisory, and a few commands had already caused damage when run (prettier across unrelated files, a shared `git stash`, `db:generate` diffs, prod scripts).
+- *Decision*: `.claude/settings.json` `permissions.deny` blocks `pnpm format`, `prettier --write`, `git stash`, `pnpm db:generate`, `pnpm db:push` and the `:prod` scripts. A DoD line becomes a hook only after a retro shows it being skipped.
+- *Consequence*: the user runs a denied command themselves when it is genuinely needed. A new ban is added here and to the deny list together.
+
+**D-012 — The run recipe is a skill named `run-chamber-os`, not `verify`** (2026-10-17)
+- *Context*: Claude Code runs a project skill named `verify` before every commit, and a cold dev server here takes minutes; without a recipe, `/verify` guesses the launch and gets the port, the database or the personas wrong.
+- *Decision*: record the recipe as `run-chamber-os` (worktree, :3400, dev branch, personas, `playwright.attach.config.ts`, UI probes). `/verify` and `feature-flow` step 7 follow it.
+- *Consequence*: verification never touches the maintainer's :3100 server or the prod database.

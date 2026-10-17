@@ -58,7 +58,7 @@ Fix every High, with no waivers. Fix every Medium, or write the reason down for 
 
 ## 7. Verify
 
-Watch the change work in the running app, not only in tests:
+Watch the change work in the running app, not only in tests. The `run-chamber-os` skill is the recipe for starting it: worktree, :3400, cold `.next`, personas, Playwright attached, and the UI probes.
 - Start a dev server in the worktree on **:3400** after `rm -rf .next`. The user's :3100 is never started or killed.
 - Use `/verify` or the Browser pane to drive every changed screen, route or cron, including one wrong-input probe.
 - Run the touched e2e specs on chromium and mobile-chrome with `--workers=1 --retries=0`. A red that also fails on `main` is reported as pre-existing, with the evidence.
