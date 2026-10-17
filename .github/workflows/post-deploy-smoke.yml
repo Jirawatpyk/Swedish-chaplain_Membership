@@ -86,7 +86,8 @@ jobs:
           fi
 
       # The script has zero dependencies and only erasable TypeScript, so Node 22
-      # runs it directly (type stripping is on by default from 22.18): no
+      # runs it directly. The flag makes stripping explicit, so an older 22.x
+      # (>= 22.6) from the runner's toolcache still works; no
       # package manager, no install, no cache.
       - uses: actions/setup-node@v4
         with:
@@ -96,7 +97,7 @@ jobs:
         id: smoke
         run: |
           set -o pipefail
-          node scripts/post-deploy-smoke.ts "$BASE_URL" | tee smoke-output.txt
+          node --experimental-strip-types scripts/post-deploy-smoke.ts "$BASE_URL" | tee smoke-output.txt
 
       - name: Open or update the prod-smoke issue
         if: failure()
