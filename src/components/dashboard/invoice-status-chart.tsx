@@ -236,7 +236,7 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
                 key={r.bucket}
                 className="flex flex-wrap items-center gap-x-[var(--aura-space-3)] py-[var(--aura-space-2)]"
               >
-                <span className="flex min-w-0 flex-1 items-center gap-[var(--aura-space-2)] text-[var(--aura-fg-primary)]">
+                <span className="flex flex-1 items-center gap-[var(--aura-space-2)] text-[var(--aura-fg-primary)]">
                   <span
                     className="size-2.5 shrink-0 rounded-full"
                     style={{ backgroundColor: BUCKET_FILL[r.bucket] }}
