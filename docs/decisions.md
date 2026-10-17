@@ -41,7 +41,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Decision*: add a feature flag only when ready to redeploy immediately; new flags default OFF.
 - *Consequence*: `docs/operational-state.md` records the observed state of each flag.
 
-**D-008 — The built-in `/code-review` runs at the `high` level by default** (2026-10-17)
+**D-008 — The built-in `/code-review` runs at the `high` level by default** (2026-10-17) — *refined by D-022: always with a target*
 - *Context*: with no level given, `/code-review` reuses the last level typed.
 - *Decision*: always run `/code-review high`. `xhigh` / `max` are opt-in, and `/code-review ultra` (cloud, billed) is the user's call. Large or high-stakes branches use the `review-branch` Workflow.
 - *Consequence*: `review-and-ship` § 1.

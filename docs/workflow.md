@@ -43,7 +43,7 @@ The main session holds the conversation, the agreements and the plan; subagents 
 | Frame, Plan | **Main session**; an `Explore` subagent may survey the code first | Needs the user and the agreements |
 | Build, size S / M | **Main session** | A tight TDD loop that needs the conversation's context |
 | Build, size L | **One subagent per slice, in order** (`superpowers:subagent-driven-development`, or `software-engineer`), with the main session checking each slice against the plan | A long build would fill and compact the main context, and a failure is easier to trace to one slice |
-| Review | **Subagents, always** (`/code-review high`, the surface reviewers and, for M / L, `spec-compliance-auditor`) | The writer is never the reviewer, and never the one who confirms its own evidence |
+| Review | **Subagents, always** (`/code-review high <pr#>`, the surface reviewers and, for M / L, `spec-compliance-auditor`) | The writer is never the reviewer, and never the one who confirms its own evidence |
 | Verify | The main session, or a subagent for a long probe run | Evidence from the running app |
 | Fixes after review, PR, merge | **Main session** | Judgment, and the user's word for the merge |
 
@@ -58,7 +58,7 @@ A **slice** is a vertical cut through one user story: the thinnest DB → use ca
 - **Build one slice at a time.** It goes red, then green, and `pnpm check` passes before the next slice starts. Never build an L change in one pass.
 - **No plan mode per slice.** The slices were planned once in `plan.md`. Only a slice that has to leave the plan (a new migration, a changed design) goes back into plan mode, updates `plan.md` and is approved again.
 - **Review in two layers:**
-  - **Every slice:** `/code-review high` on that slice's diff, plus the surface reviewers for what the slice touches (e.g. `drizzle-migration-reviewer` for a slice with a migration), plus `spec-compliance-auditor` on that slice's Done-when lines against their entries in `plan.md` § Evidence. Findings are fixed before the next slice builds on them.
+  - **Every slice:** `/code-review high <pr#>` on that slice's PR (a target is required: with none, a pushed branch reviews nothing), plus the surface reviewers for what the slice touches (e.g. `drizzle-migration-reviewer` for a slice with a migration), plus `spec-compliance-auditor` on that slice's Done-when lines against their entries in `plan.md` § Evidence. Findings are fixed before the next slice builds on them.
   - **Evidence accumulates** in the one `plan.md` § Evidence, a block per slice, so the auditor of slice *k* sees exactly what slice *k* claims.
   - **Slices sharing one long-lived branch:** `whole-branch-reviewer` on the whole branch against `origin/main` at the end, for the seams between slices. One PR per slice needs no extra pass: `/code-review high <pr#>` already reads the PR's whole diff (D-022).
 - **One PR per slice where possible.** Each PR must be safe to deploy on its own; use a default-OFF flag when it isn't user-ready yet. Slices share one long-lived branch only when a slice cannot deploy safely on its own even behind a flag (an expand/contract migration usually removes the need); record why in `plan.md` § Complexity Tracking. That shared branch is the plain `<nnn>-<short-name>`.
