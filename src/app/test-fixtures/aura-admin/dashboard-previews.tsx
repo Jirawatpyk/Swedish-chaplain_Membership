@@ -86,6 +86,9 @@ export async function renderDashboardPreview(state: string | undefined) {
   const monthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short', year: 'numeric' });
   const monthLabel = (key: string) =>
     monthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
+  const axisMonthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short' });
+  const axisMonthLabel = (key: string) =>
+    axisMonthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
 
   const kpis: DashboardKpi[] = [
     { key: 'total', label: t('kpi.total'), caption: t('kpi.totalCaption'), rawValue: empty ? 0 : 148, variant: 'integer', icon: 'users' },
@@ -98,11 +101,11 @@ export async function renderDashboardPreview(state: string | undefined) {
 
   const revenueTrendPoints = MONTHS.map((month, i) => {
     const satang = empty ? 0 : REVENUE_SATANG[i]!;
-    return { key: month, label: monthLabel(month), value: satang, valueLabel: thbFmt.format(satang / 100) };
+    return { key: month, label: monthLabel(month), axisLabel: axisMonthLabel(month), value: satang, valueLabel: thbFmt.format(satang / 100) };
   });
   const memberGrowthPoints = MONTHS.map((month, i) => {
     const n = empty ? 0 : MEMBER_CUMULATIVE[i]!;
-    return { key: month, label: monthLabel(month), value: n, valueLabel: numberFmt.format(n) };
+    return { key: month, label: monthLabel(month), axisLabel: axisMonthLabel(month), value: n, valueLabel: numberFmt.format(n) };
   });
   const revenueTotal = revenueTrendPoints.reduce((s, p) => s + p.value, 0);
   const netNew = empty ? 0 : MEMBER_CUMULATIVE.at(-1)! - MEMBER_CUMULATIVE[0]!;

@@ -192,6 +192,7 @@ export function DashboardView({
             className="grid gap-4 lg:grid-cols-2"
           >
             <RevenueTrendChart
+              locale={locale}
               title={t('revenueTrend.title')}
               caption={t('revenueTrend.perMonth')}
               emptyLabel={t('revenueTrend.empty')}
@@ -202,6 +203,7 @@ export function DashboardView({
               points={finance.revenueTrendPoints}
             />
             <MemberGrowthChart
+              locale={locale}
               title={t('memberGrowth.title')}
               caption={t('memberGrowth.cumulative')}
               emptyLabel={t('memberGrowth.empty')}
@@ -234,6 +236,7 @@ export function DashboardView({
           className="grid gap-4 lg:grid-cols-2"
         >
           <MemberGrowthChart
+              locale={locale}
             title={t('memberGrowth.title')}
             caption={t('memberGrowth.cumulative')}
             emptyLabel={t('memberGrowth.empty')}

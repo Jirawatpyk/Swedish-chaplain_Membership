@@ -57,6 +57,7 @@ function pt(key: string, value: number, valueLabel: string): MiniSeriesPoint {
 }
 
 const BASE = {
+  locale: 'en',
   title: 'Revenue trend',
   emptyLabel: 'No paid revenue recorded yet.',
   labelHeader: 'Month',
@@ -127,12 +128,11 @@ describe('MiniSeriesChart', () => {
     expect(table).toBeInTheDocument();
     // header row + 12 data rows = 13.
     expect(within(table).getAllByRole('row')).toHaveLength(13);
-    // Scope to the table — the max-value label may also appear on the
-    // Recharts reference-line inside the (separately asserted) aria-hidden canvas.
     expect(within(table).getByText('THB 1200')).toBeInTheDocument();
-    // First→last range labels (also appear as table-row headers → ≥1 match).
-    expect(screen.getAllByText('2026-01').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('2026-12').length).toBeGreaterThan(0);
+    // Month labels are the table's row headers (the canvas has its own
+    // month axis since spec 122 US11).
+    expect(within(table).getByText('2026-01')).toBeInTheDocument();
+    expect(within(table).getByText('2026-12')).toBeInTheDocument();
   });
 
   it('shows the sparse hint when fewer than 3 months carry data', () => {

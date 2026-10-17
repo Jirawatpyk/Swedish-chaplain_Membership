@@ -30,7 +30,7 @@ describe('MiniSeriesCanvas', () => {
   it('renders a Recharts BAR canvas for variant="bar" (migrated off the hand-rolled SVG), wrapped in aria-hidden', () => {
     const points = [pt('2026-01', 100, 'THB 100'), pt('2026-02', 200, 'THB 200')];
     const { container } = render(
-      <MiniSeriesCanvas points={points} max={200} maxLabel="THB 200" variant="bar" allowMotion={false} />,
+      <MiniSeriesCanvas points={points} max={200} variant="bar" allowMotion={false} locale="en" />,
     );
     // Recharts-specific marker classes — proves the canvas is the real
     // migrated chart, not a hand-rolled <svg> (which carried no such class),
@@ -56,7 +56,7 @@ describe('MiniSeriesCanvas', () => {
   it('renders a Recharts AREA canvas for variant="line" (filled area under the curve, never a Bar)', () => {
     const points = [pt('2026-01', 5, '5'), pt('2026-02', 8, '8')];
     const { container } = render(
-      <MiniSeriesCanvas points={points} max={8} maxLabel="8" variant="line" allowMotion={false} />,
+      <MiniSeriesCanvas points={points} max={8} variant="line" allowMotion={false} locale="en" />,
     );
     // The original LineSvg drew a filled `fill-primary/15` area UNDER the
     // stroked polyline — a bare Recharts <Line> would drop that fill, so
@@ -81,7 +81,7 @@ describe('MiniSeriesCanvas', () => {
   it('renders the line variant with a single data point without crashing', () => {
     const points = [pt('2026-06', 42, '42')];
     const { container } = render(
-      <MiniSeriesCanvas points={points} max={42} maxLabel="42" variant="line" allowMotion={false} />,
+      <MiniSeriesCanvas points={points} max={42} variant="line" allowMotion={false} locale="en" />,
     );
     expect(container.querySelector('.recharts-area')).toBeInTheDocument();
   });
@@ -89,7 +89,7 @@ describe('MiniSeriesCanvas', () => {
   it('renders the bar variant with a single data point without crashing (Recharts fixes the old polyline gap)', () => {
     const points = [pt('2026-06', 900, 'THB 900')];
     const { container } = render(
-      <MiniSeriesCanvas points={points} max={900} maxLabel="THB 900" variant="bar" allowMotion={false} />,
+      <MiniSeriesCanvas points={points} max={900} variant="bar" allowMotion={false} locale="en" />,
     );
     expect(container.querySelector('.recharts-bar')).toBeInTheDocument();
   });
@@ -105,7 +105,7 @@ describe('MiniSeriesCanvas', () => {
       pt('2026-03', 0, 'THB 0'),
     ];
     const { container } = render(
-      <MiniSeriesCanvas points={points} max={150} maxLabel="THB 150" variant="bar" allowMotion={false} />,
+      <MiniSeriesCanvas points={points} max={150} variant="bar" allowMotion={false} locale="en" />,
     );
     // Recharts renders a .recharts-bar-rectangle per data point; zero-value
     // rectangles must be present and visible (via minPointSize={3}).
@@ -116,7 +116,7 @@ describe('MiniSeriesCanvas', () => {
   it('renders no reference-line label when maxLabel is null', () => {
     const points = [pt('2026-01', 0, 'THB 0'), pt('2026-02', 0, 'THB 0')];
     const { container } = render(
-      <MiniSeriesCanvas points={points} max={0} maxLabel={null} variant="bar" allowMotion={false} />,
+      <MiniSeriesCanvas points={points} max={0} variant="bar" allowMotion={false} locale="en" />,
     );
     expect(container.querySelector('.recharts-responsive-container')).toBeInTheDocument();
   });
@@ -134,7 +134,7 @@ describe('MiniSeriesCanvas', () => {
       const { container } = render(
         <MiniSeriesCanvas points={revenue} max={12_840_000} variant="bar" allowMotion={false} locale="en" valueDivisor={100} />,
       );
-      const yTicks = Array.from(container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value')).map((t) => t.textContent);
+      const yTicks = Array.from(container.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value')).map((t) => t.textContent);
       expect(yTicks).toEqual(['0', '50K', '100K', '150K']);
       expect(container.querySelector('.recharts-cartesian-grid-horizontal')).not.toBeNull();
       expect(container.querySelector('.recharts-cartesian-grid-vertical')).toBeNull();
@@ -144,7 +144,7 @@ describe('MiniSeriesCanvas', () => {
       const { container } = render(
         <MiniSeriesCanvas points={revenue} max={12_840_000} variant="bar" allowMotion={false} locale="en" valueDivisor={100} />,
       );
-      const xTicks = Array.from(container.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick-value')).map((t) => t.textContent);
+      const xTicks = Array.from(container.querySelectorAll('.recharts-xAxis-tick-labels .recharts-cartesian-axis-tick-value')).map((t) => t.textContent);
       expect(xTicks).toEqual(['Jan', 'Feb']);
     });
 
@@ -165,7 +165,7 @@ describe('MiniSeriesCanvas', () => {
       const { container } = render(
         <MiniSeriesCanvas points={growth} max={131} variant="line" allowMotion={false} locale="en" />,
       );
-      const yTicks = Array.from(container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value')).map((t) => t.textContent);
+      const yTicks = Array.from(container.querySelectorAll('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value')).map((t) => t.textContent);
       expect(yTicks).toEqual(['0', '50', '100', '150']);
     });
   });

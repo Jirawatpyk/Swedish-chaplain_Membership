@@ -14,10 +14,10 @@
  * props (no data fetching here).
  *
  * Readability: a prominent `summary` stat (sized to match the KPI tiles) + a
- * per-chart `caption` (per-month vs cumulative) + first→last month range
- * labels give at-a-glance meaning even when the sparkline is sparse; a
- * dashed max-value reference line + baseline keep the 12-month frame
- * legible. Hovering/focusing a point shows a tooltip (month + value) — a
+ * per-chart `caption` (per-month vs cumulative) give at-a-glance meaning;
+ * since spec 122 US11 (parity, 17 Oct) the canvas carries the board's value
+ * axis from zero, horizontal grid lines and a month axis, in place of the
+ * old max-value line and first→last range labels. Hovering/focusing a point shows a tooltip (month + value) — a
  * bonus, never the only way to read the data (see Accessibility below).
  *
  * Accessibility (WCAG 1.1.1 / 1.3.1 / 1.4.1 — canvas is decorative, never
@@ -36,16 +36,16 @@
  * `prefers-reduced-motion: no-preference` post-mount — same
  * `useSyncExternalStore` idiom as `components/plans/plan-list-skeleton.tsx`.
  * The subscribe/snapshot triad lives in the shared `./use-motion-preference`
- * (Task 10 — extracted so `membership-tier-chart.tsx` doesn't duplicate it).
+ * (Task 10).
  *
  * **Lazy canvas boundary (Task 12 — bundle-budget constraint):** the actual
  * Recharts rendering (`<BarChart>`/`<AreaChart>` + their tooltip/label/dot
  * helpers) lives in `./mini-series-canvas` and is mounted here via
  * `next/dynamic(..., { ssr: false })`, so recharts never lands in `/admin`'s
- * first-load JS. Everything in THIS file (summary stat, delta chip, range
- * labels, sparse hint, empty state, `<ChartDataTable>`) renders eagerly —
+ * first-load JS. Everything in THIS file (summary stat, delta chip, sparse
+ * hint, empty state, `<ChartDataTable>`) renders eagerly —
  * only the decorative canvas is deferred, and its `loading` fallback
- * (`<ChartSkeleton className="h-28" />`) matches the canvas's own `h-28`
+ * (`<ChartSkeleton className="h-48" />`) matches the canvas's own `h-48`
  * height exactly, so swapping the skeleton for the real chart causes no
  * layout shift.
  */
@@ -66,14 +66,16 @@ import {
 
 const MiniSeriesCanvas = dynamic(
   () => import('./mini-series-canvas').then((m) => m.MiniSeriesCanvas),
-  { ssr: false, loading: () => <ChartSkeleton className="h-28" /> },
+  { ssr: false, loading: () => <ChartSkeleton className="h-48" /> },
 );
 
 export interface MiniSeriesPoint {
   /** Stable key (e.g. 'YYYY-MM'). */
   readonly key: string;
-  /** Localised axis/row label (e.g. 'Jun 2026'). */
+  /** Localised row label (e.g. 'Jun 2026'). */
   readonly label: string;
+  /** Short month for the chart's month axis (e.g. 'Jun'); falls back to `label`. */
+  readonly axisLabel?: string;
   /** Numeric magnitude for the chart geometry. */
   readonly value: number;
   /** Display-ready value for the table cell + tooltip (e.g. '฿1,200'). */
@@ -111,6 +113,8 @@ export function MiniSeriesChart({
   summary,
   delta,
   points,
+  locale,
+  valueDivisor,
 }: {
   readonly title: string;
   /** Per-chart semantic caption (e.g. 'Per month' / 'Cumulative') — disambiguates the series. */
@@ -124,6 +128,10 @@ export function MiniSeriesChart({
   readonly summary: MiniSeriesSummary;
   readonly delta?: MiniSeriesDelta;
   readonly points: readonly MiniSeriesPoint[];
+  /** Formats the value-axis ticks. */
+  readonly locale: string;
+  /** Points are in a minor unit (satang = 100): axis ticks show the major unit. */
+  readonly valueDivisor?: number;
 }) {
   const allowMotion = useSyncExternalStore(
     subscribeMotionPreference,
@@ -134,10 +142,6 @@ export function MiniSeriesChart({
   const dataMonths = points.reduce((n, p) => (p.value > 0 ? n + 1 : n), 0);
   const isSparse = hasData && dataMonths < SPARSE_THRESHOLD;
   const max = points.reduce((m, p) => Math.max(m, p.value), 0);
-  const maxPoint = points.find((p) => p.value === max && max > 0);
-  const maxLabel = maxPoint ? maxPoint.valueLabel : null;
-  const first = points[0];
-  const last = points.at(-1);
   return (
     <Card title={title} description={caption} headingLevel={2}>
       {!hasData ? (
@@ -168,17 +172,12 @@ export function MiniSeriesChart({
             <MiniSeriesCanvas
               points={points}
               max={max}
-              maxLabel={maxLabel}
               variant={variant}
               allowMotion={allowMotion}
+              locale={locale}
+              {...(valueDivisor !== undefined ? { valueDivisor } : {})}
             />
           </div>
-          {first && last ? (
-            <div className="mt-[var(--aura-space-1)] flex justify-between aura-text-caption text-[var(--aura-fg-secondary)] tabular-nums">
-              <span>{first.label}</span>
-              <span>{last.label}</span>
-            </div>
-          ) : null}
           {isSparse && sparseLabel ? (
             <p className="mt-[var(--aura-space-2)] aura-text-caption text-[var(--aura-fg-secondary)]">{sparseLabel}</p>
           ) : null}

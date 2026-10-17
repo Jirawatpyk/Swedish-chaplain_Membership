@@ -4,7 +4,7 @@
  * graph sits entirely behind a `next/dynamic(..., { ssr: false })` boundary
  * (bundle-budget constraint — recharts must never ship in `/admin`'s
  * first-load JS). `_mini-series-chart.tsx` still owns the summary stat,
- * delta chip, range labels, sparse hint, empty state, and the accessible
+ * delta chip, sparse hint, empty state, and the accessible
  * `<ChartDataTable>` — all of which render eagerly/server-side; only the
  * decorative canvas below is lazy.
  *
@@ -20,7 +20,7 @@
  */
 'use client';
 
-import { Area, AreaChart, Bar, BarChart, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Tooltip, XAxis, YAxis } from 'recharts';
 import { CHART_GRID, CHART_SERIES, ChartFrame, ChartTooltipCard, ChartTooltipLine } from './chart-frame';
 import type { MiniSeriesPoint } from './_mini-series-chart';
 
@@ -49,20 +49,16 @@ function SeriesTooltipContent({
   );
 }
 
-/** Renders the max-gridline's label as a plain SVG `<text>` (not Recharts'
- * canvas-measuring `Text` component) — left-aligned at the reference line's
- * position so it never collides with the peak point (these trends peak at
- * the most-recent, right-most point), matching the original hand-rolled
- * `MaxGridline` annotation 1:1. */
-function renderMaxReferenceLabel(maxLabel: string) {
-  return function MaxReferenceLabel({ viewBox }: { viewBox?: { x: number; y: number } }) {
-    if (!viewBox) return null;
-    return (
-      <text x={viewBox.x} y={viewBox.y + 11} fill="var(--aura-chart-axis)" fontSize={10}>
-        {maxLabel}
-      </text>
-    );
-  };
+/** Spec 122 US11 (parity, 17 Oct) — the board's value axis: four ticks from
+ * zero on a "nice" step (1, 2, 2.5 or 5 × a power of ten), so the top tick
+ * sits just above the largest value. The baseline stays at zero for both
+ * charts, so bar heights and the filled area stay proportional. */
+function niceTicks(max: number): number[] {
+  if (max <= 0) return [0];
+  const raw = max / 3;
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s * 3 >= max) ?? 10 * pow;
+  return [0, step, step * 2, step * 3];
 }
 
 /** Custom per-point dot for the `line`/`Area` variant — mirrors the original
@@ -95,32 +91,69 @@ function makeSeriesDot(lastIndex: number) {
   };
 }
 
-const CHART_MARGIN = { top: 12, right: 8, bottom: 4, left: 8 };
+const CHART_MARGIN = { top: 8, right: 8, bottom: 0, left: 0 };
+// Same type as the axis ticks AURA's own charts use; colour is the AA axis token.
+const AXIS_TICK = { fontSize: 11, fill: 'var(--aura-chart-axis)' };
 
 export interface MiniSeriesCanvasProps {
   readonly points: readonly MiniSeriesPoint[];
   readonly max: number;
-  readonly maxLabel: string | null;
   readonly variant: 'bar' | 'line';
   readonly allowMotion: boolean;
+  /** Formats the value-axis ticks (compact: "150K"). */
+  readonly locale: string;
+  /** Points are in a minor unit (satang = 100): ticks show the major unit. */
+  readonly valueDivisor?: number;
 }
 
-export function MiniSeriesCanvas({ points, max, maxLabel, variant, allowMotion }: MiniSeriesCanvasProps) {
-  const maxReferenceLineProps = maxLabel ? { label: renderMaxReferenceLabel(maxLabel) } : {};
+export function MiniSeriesCanvas({
+  points,
+  max,
+  variant,
+  allowMotion,
+  locale,
+  valueDivisor = 1,
+}: MiniSeriesCanvasProps) {
+  const ticks = niceTicks(max);
+  const top = ticks.at(-1) ?? 0;
+  const tickFmt = new Intl.NumberFormat(locale, { notation: 'compact', maximumFractionDigits: 1 });
+  const formatTick = (v: number) => tickFmt.format(v / valueDivisor);
+  // The month axis reads the short label when the caller gives one.
+  const data = points.map((p) => ({ ...p, axisLabel: p.axisLabel ?? p.label }));
+  const lastIndex = points.length - 1;
+  const axes = (
+    <>
+      <CartesianGrid vertical={false} stroke={CHART_GRID} />
+      <YAxis
+        domain={[0, top]}
+        ticks={ticks}
+        tickFormatter={formatTick}
+        tick={AXIS_TICK}
+        tickLine={false}
+        axisLine={false}
+        width={40}
+      />
+      <XAxis
+        dataKey="axisLabel"
+        tick={AXIS_TICK}
+        tickLine={false}
+        axisLine={false}
+        interval="preserveStartEnd"
+        minTickGap={8}
+      />
+      <Tooltip cursor={false} content={<SeriesTooltipContent />} />
+    </>
+  );
 
   return (
     <div aria-hidden="true" data-chart-variant={variant}>
-      <ChartFrame className="h-28 w-full">
+      <ChartFrame className="h-48 w-full">
         {variant === 'bar' ? (
           // Revenue trend — the original `BarSvg` drew a `<rect>` per month;
           // preserve that as a Recharts `<Bar>` (NOT a Line — a bar series
           // rendered as a line would be a visual regression).
-          <BarChart accessibilityLayer={false} data={points} margin={CHART_MARGIN}>
-            <YAxis hide domain={[0, max]} />
-            <XAxis dataKey="key" hide />
-            <ReferenceLine y={0} stroke={CHART_GRID} />
-            <ReferenceLine y={max} stroke={CHART_GRID} strokeDasharray="3 3" {...maxReferenceLineProps} />
-            <Tooltip cursor={false} content={<SeriesTooltipContent />} />
+          <BarChart accessibilityLayer={false} data={data} margin={CHART_MARGIN}>
+            {axes}
             <Bar
               dataKey="value"
               fill={CHART_SERIES}
@@ -128,19 +161,21 @@ export function MiniSeriesCanvas({ points, max, maxLabel, variant, allowMotion }
               maxBarSize={28}
               minPointSize={3}
               isAnimationActive={allowMotion}
-            />
+            >
+              {/* The last month is still in progress (the card's caption
+                  says so), so it is drawn lighter, as the board does. */}
+              {data.map((p, i) => (
+                <Cell key={p.key} fillOpacity={i === lastIndex ? 0.45 : 1} />
+              ))}
+            </Bar>
           </BarChart>
         ) : (
           // Member growth — the original `LineSvg` drew a filled area
           // (15% of the series colour) UNDER a stroked polyline, not a bare line;
           // an `<Area>` (fill + stroke) is required, or the blue fill under
           // the curve is a visual regression.
-          <AreaChart accessibilityLayer={false} data={points} margin={CHART_MARGIN}>
-            <YAxis hide domain={[0, max]} />
-            <XAxis dataKey="key" hide />
-            <ReferenceLine y={0} stroke={CHART_GRID} />
-            <ReferenceLine y={max} stroke={CHART_GRID} strokeDasharray="3 3" {...maxReferenceLineProps} />
-            <Tooltip cursor={false} content={<SeriesTooltipContent />} />
+          <AreaChart accessibilityLayer={false} data={data} margin={CHART_MARGIN}>
+            {axes}
             <Area
               dataKey="value"
               type="monotone"
@@ -148,7 +183,7 @@ export function MiniSeriesCanvas({ points, max, maxLabel, variant, allowMotion }
               strokeWidth={2}
               fill={CHART_SERIES}
               fillOpacity={0.15}
-              dot={makeSeriesDot(points.length - 1)}
+              dot={makeSeriesDot(lastIndex)}
               activeDot={{ r: 4 }}
               isAnimationActive={allowMotion}
             />

@@ -442,15 +442,21 @@ export default async function StaffHomePage() {
   const monthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short', year: 'numeric' });
   const monthLabel = (key: string): string =>
     monthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
+  // Spec 122 US11 — the trend charts' month axis shows the short month only.
+  const axisMonthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short' });
+  const axisMonthLabel = (key: string): string =>
+    axisMonthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
   const revenueTrendPoints = (finance?.revenueTrend ?? []).map((p) => ({
     key: p.month,
     label: monthLabel(p.month),
+    axisLabel: axisMonthLabel(p.month),
     value: Number(p.satang),
     valueLabel: thbFmt.format(Number(p.satang) / 100),
   }));
   const memberGrowthPoints = metrics.memberGrowth.map((p) => ({
     key: p.month,
     label: monthLabel(p.month),
+    axisLabel: axisMonthLabel(p.month),
     value: p.cumulative,
     valueLabel: numberFmt.format(p.cumulative),
   }));

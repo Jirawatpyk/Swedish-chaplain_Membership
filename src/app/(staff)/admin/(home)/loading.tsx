@@ -102,14 +102,10 @@ export default async function Loading() {
                   </div>
                 }
               >
-                {/* Headline figure, the h-28 canvas, then the first/last
-                    month row, as MiniSeriesChart draws them. */}
+                {/* Headline figure, then the h-48 canvas (its value and
+                    month axes included), as MiniSeriesChart draws them. */}
                 <SkeletonBlock className="h-[34px] w-28" />
-                <SkeletonBlock className="mt-3 h-28 w-full" />
-                <div data-slot="trend-months" className="mt-1 flex justify-between">
-                  <SkeletonBlock className="h-4 w-16" />
-                  <SkeletonBlock className="h-4 w-16" />
-                </div>
+                <SkeletonBlock className="mt-3 h-48 w-full" />
               </Card>
             ))}
           </div>
