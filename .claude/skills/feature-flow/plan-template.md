@@ -14,6 +14,14 @@ The files to create or change, grouped by module. Name the `.claude/rules/module
 
 Tables, columns, enums, RLS policies, triggers and indexes. The migration number and what it does; whether it is unflagged on deploy; how it rolls back. Write `n/a` if there are none.
 
+## Slices (L only)
+
+In build order. Each slice is the thinnest DB → use case → API → UI path that works and can be demoed on its own.
+
+| # | Slice | Done-when lines it covers | Surface reviewers | PR |
+|---|---|---|---|---|
+| 1 | … | … | … | … |
+
 ## Test plan
 
 One row per Done-when line. This is the build's task list: one behaviour per row, never one row per test file.

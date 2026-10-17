@@ -17,7 +17,7 @@ The constitution's § Development Workflow still names the Spec Kit gates. It wi
 |---|---|---|
 | **S** | One surface, the diff fits in one sentence (a bug fix, a copy change, a guard) | No spec file; the PR states the Done-when lines |
 | **M** | A few files across one module, or one new screen | `specs/<nnn-name>/spec.md` with Done-when lines; agree the plan in plan mode before coding |
-| **L** | Several modules, a migration, money / tax / tenancy / PII / auth, or more than a day of work | M, plus the `spec-review-panel` Workflow on the spec, and one PR per user story where possible |
+| **L** | Several modules, a migration, money / tax / tenancy / PII / auth, or more than a day of work | M, plus the `spec-review-panel` Workflow on the spec, the plan cut into **slices**, and one PR per slice where possible |
 
 When unsure, size up. Anything touching money, tax, tenant isolation, PII, auth or a migration is never **S**.
 
@@ -44,7 +44,7 @@ The main session holds the conversation, the agreements and the plan; subagents 
 |---|---|---|
 | Frame, Plan | **Main session**; an `Explore` subagent may survey the code first | Needs the user and the agreements |
 | Build, size S / M | **Main session** | A tight TDD loop that needs the conversation's context |
-| Build, size L | **One subagent per user story, in order** (`superpowers:subagent-driven-development`, or `software-engineer`), with the main session checking each story against the plan | A long build would fill and compact the main context |
+| Build, size L | **One subagent per slice, in order** (`superpowers:subagent-driven-development`, or `software-engineer`), with the main session checking each slice against the plan | A long build would fill and compact the main context, and a failure is easier to trace to one slice |
 | Review | **Subagents, always** (`/code-review high` and the surface reviewers) | The writer is never the reviewer |
 | Verify | The main session, or a subagent for a long probe run | Evidence from the running app |
 | Fixes after review, PR, merge | **Main session** | Judgment, and the user's word for the merge |
@@ -52,6 +52,16 @@ The main session holds the conversation, the agreements and the plan; subagents 
 - Subagents that edit files run one at a time, because they share the working tree.
 - Read-only subagents may run in parallel.
 - Use Opus for review and risky work, and Sonnet for bounded mechanical tasks.
+
+## Slices (size L)
+
+A **slice** is a vertical cut through one user story: the thinnest DB → use case → API → UI path that works, can be tested and can be demoed on its own. "An admin issues a full credit note" is a slice; "all the schema" is not. The plan lists the slices in build order. A story too big for one slice is split, and every slice names its Done-when lines.
+
+- **Build one slice at a time.** It goes red, then green, and `pnpm check` passes before the next slice starts. Never build an L change in one pass.
+- **Review in two layers:**
+  - **Every slice:** `/code-review high` on that slice's diff, plus the surface reviewers for what the slice touches (e.g. `drizzle-migration-reviewer` for a slice with a migration). Findings are fixed before the next slice builds on them.
+  - **Once, at the end:** `whole-branch-reviewer` on the whole branch, for the seams between slices that per-slice review cannot see.
+- **One PR per slice where possible.** Each PR must be safe to deploy on its own; use a default-OFF flag when it isn't user-ready yet.
 
 ## Definition of Done
 

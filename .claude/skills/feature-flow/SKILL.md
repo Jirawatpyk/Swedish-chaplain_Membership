@@ -32,6 +32,7 @@ Draft in plan mode (`superpowers:writing-plans` helps), then save it as `specs/<
 - the approach and the alternatives not taken;
 - the files to touch and the module rules that apply;
 - the data model and migration;
+- for L, the **slices** in build order, each a thin vertical path with its own Done-when lines;
 - the **test plan** — for every Done-when line, the test that goes red first: one row per behaviour, never one per file;
 - the Constitution Check across all 10 principles, and Complexity Tracking for any deviation;
 - rollout and risks.
@@ -40,7 +41,7 @@ For **L**, have `chamber-os-architect` and the surface reviewers for what the pl
 
 ## 4. Build
 
-- **Who**: the main session builds S and M. For L, use one subagent per user story, in order (`superpowers:subagent-driven-development`, or `software-engineer`), and check each story against the plan before starting the next. Subagents that edit files run one at a time.
+- **Who**: the main session builds S and M. For L, build **one slice at a time** (`docs/workflow.md` § Slices) with one subagent per slice, in order (`superpowers:subagent-driven-development`, or `software-engineer`). Check each slice against the plan, and run its per-slice review, before starting the next. Subagents that edit files run one at a time.
 - RED commit, then GREEN commit, per row of the test plan (`superpowers:test-driven-development`). A guard whose test never went red has not been exercised.
 - For a migration, use the `new-migration` skill. For a new audit event type, use `add-audit-event`. For a bug, use `superpowers:systematic-debugging` before changing code.
 - Use the module's rule (`.claude/rules/modules/*.md`) for its traps. A tenant-scoped repo threads `tx` from `runInTenant`.

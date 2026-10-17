@@ -68,5 +68,5 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 
 **D-013 — M / L changes keep a written plan; reviews never run in the writer's context** (2026-10-17)
 - *Context*: a plan made only in plan mode lives in one conversation, so it is lost on compaction or hand-off, and a later reviewer has nothing to compare the code against. Here, a plan has mandated a defect that surfaced only at review round 7.
-- *Decision*: M / L changes save `specs/<nnn-name>/plan.md` (template in the `feature-flow` skill), including a test plan that replaces Spec Kit's `tasks.md`; for L, `chamber-os-architect` and the surface reviewers read it before the user agrees. The main session builds S / M; L is built one subagent per user story, in order. Review always runs in subagents.
+- *Decision*: M / L changes save `specs/<nnn-name>/plan.md` (template in the `feature-flow` skill), including a test plan that replaces Spec Kit's `tasks.md`; for L, `chamber-os-architect` and the surface reviewers read it before the user agrees. The main session builds S / M; L is cut into vertical slices, built one subagent per slice in order, each reviewed before the next (`whole-branch-reviewer` once at the end). Review always runs in subagents.
 - *Consequence*: `docs/workflow.md` § Who does what; DoD and PR template lines for the plan.
