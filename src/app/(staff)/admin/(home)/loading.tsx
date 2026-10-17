@@ -129,11 +129,15 @@ export default async function Loading() {
                 <SkeletonBlock className="h-[34px] w-16" />
                 <SkeletonBlock className="h-3 w-24" />
               </div>
-              {/* Bar area reserves MembershipTierChart's MIN_CHART_HEIGHT_PX
-                  (120px). The real canvas grows 36px per tier above 3 tiers,
-                  so many-tier tenants expand DOWNWARD from here — a skeleton
-                  cannot know the tier count before the snapshot resolves. */}
-              <SkeletonBlock className="mt-3 h-[120px] w-full" />
+              {/* Four tier rows (label, track, count) at the real rows' line
+                  height; a tenant with more tiers grows DOWNWARD from here —
+                  a skeleton cannot know the tier count before the snapshot
+                  resolves. */}
+              <div className="mt-[var(--aura-space-4)] grid gap-[var(--aura-space-3)]">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <SkeletonBlock key={i} className="h-6 w-full" />
+                ))}
+              </div>
             </Card>
             <Card header={<SkeletonBlock className="h-5 w-40" />}>
               {/* The donut canvas's own box (`aspect-square max-h-64`), then
