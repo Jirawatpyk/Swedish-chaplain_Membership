@@ -53,7 +53,7 @@ Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, o
 | 4. Defence in depth | DB- or platform-level enforcement (RLS, constraints, triggers) for every invariant that can live there |
 | 5. Post-remediation verification | the reviewer that raised a finding re-runs on its fix in a new subagent; the writer never self-attests |
 
-**Security sign-off**: the `security-engineer` agent, part of the staff review, signs the security checklist, with `/security-review` run on the diff; record the result in the PR. The maintainer does not co-sign.
+**Security sign-off** is the `security-engineer` report in the staff review — one security pass, not a separate step. Record its verdict in the PR as the sign-off; the maintainer does not co-sign. The built-in `/security-review` is optional, for a quick generic second look; it does not replace that report.
 
 ## 3. Spec Kit gates (an accepted way to run the steps)
 

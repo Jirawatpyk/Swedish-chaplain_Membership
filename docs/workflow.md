@@ -5,7 +5,7 @@ How a change goes from an idea to production on Chamber-OS, and how the process 
 **Status: adopted.** This file owns the development process; the constitution (v2.0.0) keeps only the principles and no longer prescribes gates or reviewer counts (D-018). The Spec Kit commands remain usable for a step. What the process keeps, by choice:
 - the Constitution Check;
 - TDD, with the test going red first;
-- independent review, and on sensitive surfaces ≥2 reviewers — for a solo maintainer, the solo-maintainer review in `review-and-ship` § 2 — with the security checklist signed by `security-engineer` + `/security-review`;
+- independent review, and on sensitive surfaces ≥2 reviewers — for a solo maintainer, the solo-maintainer review in `review-and-ship` § 2 — with the security sign-off given by the `security-engineer` report in the staff review;
 - the cross-tenant integration test;
 - `plan.md` § Complexity Tracking for any deviation.
 
