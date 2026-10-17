@@ -9,7 +9,7 @@ description: How to review a change and get it merged on Chamber-OS — which pr
 
 | Diff | Review |
 |---|---|
-| Small (one surface, roughly < 40 files / 5k lines) | The built-in **`/code-review`**: it reviews the current diff for bugs in a fresh subagent and returns the findings here. Then dispatch the surface reviewers from § 2 for the surfaces the diff touches. |
+| Small (one surface, roughly < 40 files / 5k lines) | The built-in **`/code-review high`** (or `/code-review high <pr#>` for a PR). It reviews the diff for correctness bugs and returns the findings here. Always pass `high`: with no level the command reuses the last level typed, and `xhigh` / `max` are not the default here. Then dispatch the surface reviewers from § 2 for the surfaces the diff touches. |
 | Large, or any money / tenant / migration / auth branch | The **`review-branch`** Workflow (`.claude/workflows/`). An inline `/code-review` scopes itself down on a big diff: on the F5 refund branch (123 files) it produced 6 findings, 5 of them misreads, while the fan-out found 3 real bugs it never reached. |
 | Before the PR opens or merges, always | **`whole-branch-reviewer`**: the seam between commits that per-surface reviewers cannot see. |
 | A defect class found once that must be closed everywhere | The **`sweep-class`** Workflow, with the known instances as `examples`. |
