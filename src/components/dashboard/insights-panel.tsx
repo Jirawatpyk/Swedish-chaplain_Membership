@@ -14,7 +14,7 @@
  * panel stays mounted for the whole request. The server re-render remains the
  * source of truth; the local keys only bridge the refresh gap.
  */
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from '@/lib/toast';
 import { Card } from '@jirawatpyk/aura-react';
@@ -26,6 +26,9 @@ export interface InsightLine {
   /** Member/segment ref the insight referenced; threaded into the dismissal key. */
   readonly scopeRef?: string;
 }
+
+/** Focus target meaning "the panel title" (no insight left to land on). */
+const TITLE_TARGET = '\u0000title';
 
 /** Composite identity (matches the dismissal's (insightKey, scopeRef) tuple). */
 function lineKey(line: InsightLine): string {
@@ -52,8 +55,39 @@ export function InsightsPanel({
     () => new Set<string>(),
   );
   const visible = lines.filter((line) => !dismissedKeys.has(lineKey(line)));
+  // WCAG 2.4.3: the dismissed row's button unmounts with it, which would drop
+  // focus to <body>. Focus moves to the next insight's button, else the
+  // previous one, else the panel title. A failed POST brings the row back and
+  // returns focus to its button, unless the user has moved focus since.
+  const titleId = useId();
+  const listRef = useRef<HTMLUListElement>(null);
+  const focusAfterHide = useRef<string | null>(null);
+  const movedFocusTo = useRef<Element | null>(null);
+
+  useEffect(() => {
+    const target = focusAfterHide.current;
+    if (target === null) return;
+    focusAfterHide.current = null;
+    if (target === TITLE_TARGET) {
+      const heading = document.getElementById(titleId);
+      heading?.setAttribute('tabindex', '-1');
+      heading?.focus();
+      movedFocusTo.current = heading;
+      return;
+    }
+    const row = Array.from(listRef.current?.querySelectorAll<HTMLLIElement>('li[data-insight-key]') ?? []).find(
+      (li) => li.dataset.insightKey === target,
+    );
+    const button = row?.querySelector<HTMLButtonElement>('button') ?? null;
+    button?.focus();
+    movedFocusTo.current = button;
+  }, [dismissedKeys, titleId]);
 
   function rollback(k: string): void {
+    const active = document.activeElement;
+    if (active === null || active === document.body || active === movedFocusTo.current) {
+      focusAfterHide.current = k;
+    }
     setDismissedKeys((prev) => {
       const next = new Set(prev);
       next.delete(k);
@@ -63,6 +97,9 @@ export function InsightsPanel({
 
   function onDismiss(line: InsightLine): void {
     const k = lineKey(line);
+    const at = visible.findIndex((l) => lineKey(l) === k);
+    const neighbour = visible[at + 1] ?? visible[at - 1];
+    focusAfterHide.current = neighbour ? lineKey(neighbour) : TITLE_TARGET;
     // Optimistic hide on the same tick as the click.
     setDismissedKeys((prev) => new Set(prev).add(k));
     void (async () => {
@@ -92,15 +129,15 @@ export function InsightsPanel({
   }
 
   return (
-    <Card title={title} headingLevel={2}>
+    <Card title={title} titleId={titleId} headingLevel={2}>
       {visible.length === 0 ? (
         <p role="status" className="aura-text-body text-[var(--aura-fg-secondary)]">
           {emptyLabel}
         </p>
       ) : (
-        <ul className="grid gap-[var(--aura-space-1)] aura-text-body">
+        <ul ref={listRef} className="grid gap-[var(--aura-space-1)] aura-text-body">
           {visible.map((line) => (
-            <li key={line.key} className="flex items-center justify-between gap-[var(--aura-space-2)]">
+            <li key={line.key} data-insight-key={lineKey(line)} className="flex items-center justify-between gap-[var(--aura-space-2)]">
               <span className="min-w-0">{line.text}</span>
               <InsightDismissButton
                 // Compose a UNIQUE accessible name per insight (WCAG 2.4.6 /
