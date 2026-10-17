@@ -9,7 +9,7 @@ This skill only starts the app. **What** to check comes from the change's Done-w
 
 ## Rules
 
-- **Never start, stop or reuse :3100.** That is the maintainer's own `pnpm dev`. Verification runs on **:3400** from a worktree of the branch under test.
+- **Verify the branch's own code.** :3100 is the main checkout's `pnpm dev` (Claude may start it and open it in the built-in browser), so it serves `main`, not the branch. A branch is verified on **:3400** from its own worktree. Don't kill a :3100 server the user is using.
 - The database is the Neon **`dev`** branch, through `.env.local`. Never use prod. Prod reads are refused here; don't route around that.
 - Don't `rm -rf .next` in the main checkout; only in the worktree.
 - At most two heavy jobs at once (a dev server counts as one, and so does an e2e run).

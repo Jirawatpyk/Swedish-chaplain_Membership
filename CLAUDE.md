@@ -61,7 +61,7 @@ When the `advisor` tool is available, call it at these three points:
 
 ## Commands
 
-**Use `pnpm`, not `npm`.** Dev and start run on **port 3100**. Integration tests hit the live Neon **`dev`** branch via `.env.local`, never prod.
+**Use `pnpm`, not `npm`.** Dev and start run on **port 3100**; Claude may start it (Browser pane `preview_start` / the launch config) and open it in the built-in browser, but doesn't kill a :3100 server the user is using. Integration tests hit the live Neon **`dev`** branch via `.env.local`, never prod.
 
 ```bash
 pnpm install
@@ -71,7 +71,7 @@ pnpm typecheck                 # tsc --noEmit under strict (NOT in pre-push — 
 pnpm test                      # Vitest run  (watch: pnpm test:watch)
 pnpm test:coverage             # with Vitest coverage thresholds (what CI enforces)
 pnpm test:integration <path>   # live Neon DEV branch; pass file PATHS — a `-- <pattern>` runs all ~40 min
-pnpm test:e2e                  # Playwright against the maintainer's :3100 — not from a worktree (use run-chamber-os)
+pnpm test:e2e                  # Playwright against :3100 (the main checkout's code); for a branch use run-chamber-os
 pnpm test:e2e --grep "@a11y"   # axe-core WCAG 2.1 AA scan only
 pnpm check:i18n                # fails on missing EN keys
 pnpm db:migrate                # apply to the DEV branch; prod auto-migrates on deploy (vercel-build)

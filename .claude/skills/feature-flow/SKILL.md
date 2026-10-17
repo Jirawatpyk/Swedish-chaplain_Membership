@@ -63,7 +63,7 @@ Reviews run in subagents; the writer never reviews its own code. Take findings w
 ## 7. Verify
 
 Watch the change work in the running app, not only in tests. The `run-chamber-os` skill is the recipe for starting it: worktree, :3400, cold `.next`, personas, Playwright attached, and the UI probes.
-- Start a dev server in the worktree on **:3400** after `rm -rf .next`. The user's :3100 is never started or killed.
+- Start a dev server in the worktree on **:3400** after `rm -rf .next`. :3100 serves the main checkout, not the branch.
 - Drive every changed screen, route or cron with `/run` or the Browser pane, including one wrong-input probe. `/verify` runs only when the user invokes it.
 - Run the touched e2e specs on chromium and mobile-chrome with `--workers=1 --retries=0`. A red that also fails on `main` is reported as pre-existing, with the evidence.
 - UI also gets: 320 px, a 32 px default font, dark mode, and TH and SV.

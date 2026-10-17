@@ -64,7 +64,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 **D-012 — The run recipe is a skill named `run-chamber-os`, not `verify`** (2026-10-17)
 - *Context*: Claude Code runs a project skill named `verify` before every commit, and a cold dev server here takes minutes; without a recipe, `/verify` guesses the launch and gets the port, the database or the personas wrong.
 - *Decision*: record the recipe as `run-chamber-os` (worktree, :3400, dev branch, personas, `playwright.attach.config.ts`, UI probes). `/verify` and `feature-flow` step 7 follow it.
-- *Consequence*: verification never touches the maintainer's :3100 server or the prod database.
+- *Consequence*: a branch is verified against its own code on :3400, never against :3100 (which serves the main checkout) or the prod database. Claude may still start :3100 and open it in the built-in browser to look at `main`.
 
 **D-013 — M / L changes keep a written plan; reviews never run in the writer's context** (2026-10-17)
 - *Context*: a plan made only in plan mode lives in one conversation, so it is lost on compaction or hand-off, and a later reviewer has nothing to compare the code against. Here, a plan has mandated a defect that surfaced only at review round 7.
