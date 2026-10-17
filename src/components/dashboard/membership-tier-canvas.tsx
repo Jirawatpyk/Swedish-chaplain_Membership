@@ -58,7 +58,8 @@ function TierTooltipContent({
   );
 }
 
-const CHART_MARGIN = { top: 4, right: 44, bottom: 4, left: 4 };
+// Right margin fits the widest end label ("100 (100%)") on one line.
+const CHART_MARGIN = { top: 4, right: 68, bottom: 4, left: 4 };
 
 export interface MembershipTierCanvasProps {
   readonly rows: readonly TierRow[];
@@ -76,7 +77,9 @@ export function MembershipTierCanvas({ rows, max, allowMotion }: MembershipTierC
           width={110}
           tickLine={false}
           axisLine={false}
-          tick={{ fontSize: 12 }}
+          // Recharts paints tick text `#666` itself (3.09:1 on the dark card);
+          // the AURA axis token is AA on both themes (UX review H1).
+          tick={{ fontSize: 12, fill: 'var(--aura-chart-axis)' }}
         />
         <XAxis type="number" hide domain={[0, max]} />
         <Tooltip cursor={false} content={<TierTooltipContent />} />

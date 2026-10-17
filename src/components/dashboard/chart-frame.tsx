@@ -37,7 +37,7 @@ export function ChartFrame({
     <div
       data-slot="chart"
       className={cn(
-        'flex justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-[var(--aura-chart-axis)] [&_.recharts-layer]:outline-hidden [&_.recharts-sector]:outline-hidden [&_.recharts-surface]:outline-hidden',
+        'flex justify-center text-xs [&_.recharts-cartesian-axis-tick-value]:fill-[var(--aura-chart-axis)] [&_.recharts-layer]:outline-hidden [&_.recharts-sector]:outline-hidden [&_.recharts-surface]:outline-hidden',
         className,
       )}
     >
