@@ -49,8 +49,10 @@ describe('staff dashboard loading', () => {
     const block = (cls: string) => host.querySelectorAll(`[data-slot="skeleton-block"].${cls}`);
     // attention + insights rows at the real 36px row height
     expect(block('h-9').length).toBeGreaterThanOrEqual(6);
-    // the donut reserves the canvas's square, capped at 256px
-    expect(block('max-h-64')).toHaveLength(1);
+    // invoice status reserves its stacked bar (spec 122 US11 follow-up; the
+    // donut and its square box are gone)
+    expect(block('max-h-64')).toHaveLength(0);
+    expect(host.querySelectorAll('[data-slot="status-bar-skeleton"]')).toHaveLength(1);
     // each trend card reserves the canvas with its axes (spec 122 US11, 17 Oct)
     expect(block('h-48')).toHaveLength(2);
   });

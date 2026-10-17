@@ -85,11 +85,12 @@ describe('InvoiceStatusChart', () => {
     expect(within(table).getByRole('rowheader', { name: 'Unpaid' })).toBeInTheDocument();
     expect(within(table).getByRole('rowheader', { name: 'Overdue' })).toBeInTheDocument();
     expect(within(table).getByRole('rowheader', { name: 'Total' })).toBeInTheDocument();
-    // THB amounts (satang -> THB, no decimals, dashboard convention).
-    expect(within(table).getByText('THB 5,000')).toBeInTheDocument();
-    expect(within(table).getByText('THB 3,000')).toBeInTheDocument();
-    expect(within(table).getByText('THB 2,000')).toBeInTheDocument();
-    expect(within(table).getByText('THB 10,000')).toBeInTheDocument(); // Total row
+    // THB amounts to two decimals in this card (spec 122 US11 follow-up,
+    // financial review 17 Oct): rows then always add up to the total.
+    expect(within(table).getByText('THB 5,000.00')).toBeInTheDocument();
+    expect(within(table).getByText('THB 3,000.00')).toBeInTheDocument();
+    expect(within(table).getByText('THB 2,000.00')).toBeInTheDocument();
+    expect(within(table).getByText('THB 10,000.00')).toBeInTheDocument(); // Total row
     // Counts.
     expect(within(table).getByText('5')).toBeInTheDocument();
     expect(within(table).getByText('3')).toBeInTheDocument();
@@ -111,34 +112,6 @@ describe('InvoiceStatusChart', () => {
     expect(rowHeaders).toEqual(['Paid', 'Unpaid', 'Overdue', 'Total']);
   });
 
-  it('renders the centre total as REAL DOM text (compact format), outside the aria-hidden canvas', () => {
-    renderChart(FULL);
-    // Compact ("THB 10K"), not the full "THB 10,000" — the centre overlay
-    // must fit the donut hole at any locale's currency-string length; the
-    // FULL exact amount stays in the hidden table's Total row (asserted in
-    // the first test above) and the tooltip.
-    const total = screen.getByText('THB 10K', { selector: 'span' });
-    expect(total).toBeInTheDocument();
-    expect(total.closest('[aria-hidden="true"]')).not.toBeInTheDocument();
-  });
-
-  // Bug fix: the centre-total overlay used to be a plain (non-positioned)
-  // sibling next to the aria-hidden canvas wrapper, so the browser's default
-  // stacking rules (a POSITIONED box always paints above a non-positioned
-  // one, regardless of DOM order) made the total win every time — hiding
-  // the Recharts hover tooltip behind it, and spilling over the arcs
-  // whenever the total's text ran wider than the hole. The fix promotes the
-  // canvas wrapper to its own higher-z-index stacking context so the arcs
-  // AND the tooltip painted inside it always win over the total underneath.
-  it('stacks the canvas wrapper ABOVE the centre-total overlay (z-index) so the hover tooltip is never hidden behind it', () => {
-    const { container } = renderChart(FULL);
-    const canvasWrapper = container.querySelector('[aria-hidden="true"]');
-    expect(canvasWrapper).toHaveClass('relative', 'z-10');
-    const total = screen.getByText('THB 10K', { selector: 'span' });
-    const totalWrapper = total.closest('div');
-    expect(totalWrapper).toHaveClass('absolute', 'z-0');
-  });
-
   it('renders the draftCount caption as real DOM text when draftCount > 0', () => {
     renderChart(FULL);
     const caption = screen.getByText('4 draft invoices not shown');
@@ -148,22 +121,6 @@ describe('InvoiceStatusChart', () => {
   it('renders no draftCount caption when draftCount is 0', () => {
     renderChart({ buckets: [PAID, UNPAID, OVERDUE], draftCount: 0 });
     expect(screen.queryByText(/draft invoice/)).not.toBeInTheDocument();
-  });
-
-  // The Recharts-primitive "one <Cell>/sector per bucket with 3 distinct
-  // semantic fills" assertion moved to `invoice-status-canvas.test.tsx`
-  // (Task 12 dynamic(ssr:false) split — a synchronous render here only ever
-  // sees the `loading` fallback). The "colour is never the sole signal —
-  // every bucket also has a text label" guarantee stays pinned by the
-  // rowheader assertions already in the first test above.
-
-  it('wraps the (lazy-loaded) canvas slot in aria-hidden, and the table is never aria-hidden', () => {
-    // This test keeps the chart-level guarantee: the wrapper div that will
-    // eventually hold the canvas is ALREADY `aria-hidden="true"` from the
-    // very first paint, and the accessible table is never hidden either way.
-    const { container } = renderChart(FULL);
-    expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
-    expect(screen.getByRole('table')).not.toHaveAttribute('aria-hidden');
   });
 
   it('renders the empty-state text (no chart, no table) when there are no buckets', () => {
@@ -220,38 +177,14 @@ describe('InvoiceStatusChart', () => {
     // fiscal-year + ex-VAT. The basis caption is what stops two legitimately
     // different totals from reading as a broken system, so it must render
     // whenever the chart has data.
+    // Since the board redesign it is the card description, and it says the
+    // figure is net of credit notes and refunds (financial review, 17 Oct).
     renderChart(FULL);
-    expect(screen.getByText('All fiscal years · includes VAT')).toBeInTheDocument();
-  });
-
-  // WCAG 1.4.1 (Use of Color) — the donut's success/warning/destructive
-  // fills are near-equal luminance (fail CVD separation), and until now the
-  // only text labels were in the sr-only table + hover-only tooltip: a
-  // sighted colour-blind user saw three indistinguishable slices with no
-  // persistent on-screen label. Fix: a visible legend row (swatch + label +
-  // %) below the donut, `aria-hidden` because it duplicates the sr-only
-  // table's data (same double-announce rationale as the aria-hidden canvas).
-  it('renders a persistent, visible legend (swatch + label + %) per bucket, hidden from SR', () => {
-    const { container } = renderChart(FULL);
-    const legend = container.querySelector('ul[aria-hidden="true"]');
-    expect(legend).toBeInTheDocument();
-    const items = legend?.querySelectorAll('li') ?? [];
-    expect(items).toHaveLength(3);
-    const texts = Array.from(items).map((li) => li.textContent);
-    expect(texts[0]).toContain('Paid');
-    expect(texts[0]).toContain('50%');
-    expect(texts[1]).toContain('Unpaid');
-    expect(texts[1]).toContain('30%');
-    expect(texts[2]).toContain('Overdue');
-    expect(texts[2]).toContain('20%');
-    // Every entry carries its own colour swatch (never colour-only, but the
-    // swatch is present alongside the text label).
-    items.forEach((li) => {
-      expect(li.querySelector('span[style]')).toBeInTheDocument();
-    });
-    // The sr-only <ChartDataTable> (which already carries this data) must
-    // NOT be aria-hidden — only the new visible legend duplicate is.
-    expect(screen.getByRole('table')).not.toHaveAttribute('aria-hidden');
+    expect(
+      screen.getByText('All fiscal years · includes VAT · net of credit notes and refunds', {
+        selector: '.aura-card__desc',
+      }),
+    ).toBeInTheDocument();
   });
 
   // Track B — `allocatePercentages` had no negative contract. `total <= 0`
@@ -314,12 +247,90 @@ describe('InvoiceStatusChart', () => {
     expect(within(table).getAllByText('33%')).toHaveLength(2);
     expect(within(table).getByText('100%')).toBeInTheDocument(); // Total row
     expect(34 + 33 + 33).toBe(100);
-    // The visible legend (Minor fix) shares the SAME computed `pctLabel` —
-    // must also read 34/33/33, never an independently-rounded 33/33/33.
-    const legend = container.querySelector('ul[aria-hidden="true"]');
-    const legendTexts = Array.from(legend?.querySelectorAll('li') ?? []).map((li) => li.textContent);
-    expect(legendTexts[0]).toContain('34%');
-    expect(legendTexts[1]).toContain('33%');
-    expect(legendTexts[2]).toContain('33%');
+    // The visible rows share the SAME computed `pctLabel` — 34/33/33, never
+    // an independently-rounded 33/33/33.
+    const rowTexts = Array.from(
+      container.querySelectorAll('[data-slot="status-rows"] li'),
+    ).map((li) => li.textContent);
+    expect(rowTexts[0]).toContain('34%');
+    expect(rowTexts[1]).toContain('33%');
+    expect(rowTexts[2]).toContain('33%');
+  });
+
+  // Spec 122 US11 follow-up (maintainer, 17 Oct): the card follows board
+  // `Admin-dashboard` — the exact total, one stacked bar and three rows.
+  describe('board layout', () => {
+    it('shows the exact total (two decimals) with its label; no compact figure', () => {
+      renderChart(FULL);
+      const total = screen.getByText('THB 10,000.00', { selector: '[data-slot="status-total"]' });
+      expect(total.closest('[aria-hidden="true"]')).toBeNull();
+      expect(screen.getByText('Total invoiced')).toBeInTheDocument();
+      expect(screen.queryByText('THB 10K')).toBeNull();
+    });
+
+    it('draws one stacked bar, segments sized by the exact amount share, in paid/unpaid/overdue order', () => {
+      const { container } = renderChart(FULL);
+      const bar = container.querySelector('[data-slot="status-bar"]');
+      expect(bar?.getAttribute('aria-hidden')).toBe('true');
+      const segs = Array.from(bar?.querySelectorAll<HTMLElement>('[data-bucket]') ?? []);
+      expect(segs.map((s) => s.dataset.bucket)).toEqual(['paid', 'unpaid', 'overdue']);
+      expect(segs.map((s) => s.style.flexGrow)).toEqual(['50', '30', '20']);
+      expect(segs[0]!.style.backgroundColor).toBe('var(--aura-fg-positive)');
+    });
+
+    it('a zero bucket draws no segment', () => {
+      const { container } = renderChart({ buckets: [PAID, UNPAID], draftCount: 0 });
+      const segs = container.querySelectorAll('[data-slot="status-bar"] [data-bucket]');
+      expect(segs).toHaveLength(2);
+    });
+
+    it('lists each bucket with its label, amount and percent, hidden from screen readers', () => {
+      const { container } = renderChart(FULL);
+      const list = container.querySelector('[data-slot="status-rows"]');
+      expect(list?.getAttribute('aria-hidden')).toBe('true');
+      const rows = Array.from(list?.querySelectorAll('li') ?? []).map((li) => li.textContent ?? '');
+      expect(rows).toHaveLength(3);
+      expect(rows[0]).toContain('Paid');
+      expect(rows[0]).toContain('THB 5,000.00');
+      expect(rows[0]).toContain('50%');
+      expect(rows[2]).toContain('Overdue');
+      expect(rows[2]).toContain('THB 2,000.00');
+    });
+
+    it('rows add up to the total, even where whole-baht rounding would not', () => {
+      const { container } = renderChart({
+        buckets: [
+          { bucket: 'paid', satang: '1234550', count: 1 },
+          { bucket: 'unpaid', satang: '98750', count: 1 },
+          { bucket: 'overdue', satang: '4350', count: 1 },
+        ],
+        draftCount: 0,
+      });
+      const rows = Array.from(container.querySelectorAll('[data-slot="status-rows"] li')).map((li) => li.textContent ?? '');
+      expect(rows[0]).toContain('THB 12,345.50');
+      expect(rows[1]).toContain('THB 987.50');
+      expect(rows[2]).toContain('THB 43.50');
+      expect(screen.getByText('THB 13,376.50', { selector: '[data-slot="status-total"]' })).toBeInTheDocument();
+    });
+
+    it('a non-zero bucket that rounds to 0% reads "<1%"', () => {
+      const { container } = renderChart({
+        buckets: [
+          { bucket: 'paid', satang: '100000000', count: 1 },
+          { bucket: 'unpaid', satang: '0', count: 0 },
+          { bucket: 'overdue', satang: '10000', count: 1 },
+        ],
+        draftCount: 0,
+      });
+      const rows = Array.from(container.querySelectorAll('[data-slot="status-rows"] li')).map((li) => li.textContent ?? '');
+      expect(rows[2]).toContain('<1%');
+      expect(within(screen.getByRole('table')).getByText('<1%')).toBeInTheDocument();
+    });
+
+    it('mounts no chart canvas', () => {
+      const { container } = renderChart(FULL);
+      expect(container.querySelector('[data-slot="chart"]')).toBeNull();
+    });
   });
 });
+
