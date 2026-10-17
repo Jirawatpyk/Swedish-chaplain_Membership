@@ -92,8 +92,9 @@ function makeSeriesDot(lastIndex: number) {
 }
 
 const CHART_MARGIN = { top: 8, right: 8, bottom: 0, left: 0 };
-// Same type as the axis ticks AURA's own charts use; colour is the AA axis token.
-const AXIS_TICK = { fontSize: 11, fill: 'var(--aura-chart-axis)' };
+// 11px at the default size, in rem so it grows with the browser text size
+// (UX review M5); colour is the AA axis token.
+const AXIS_TICK = { fontSize: '0.6875rem', fill: 'var(--aura-chart-axis)' };
 
 export interface MiniSeriesCanvasProps {
   readonly points: readonly MiniSeriesPoint[];
@@ -163,10 +164,17 @@ export function MiniSeriesCanvas({
               isAnimationActive={allowMotion}
             >
               {/* The last month is still in progress (the card's caption
-                  says so), so it is drawn lighter, as the board does. */}
-              {data.map((p, i) => (
-                <Cell key={p.key} fillOpacity={i === lastIndex ? 0.45 : 1} />
-              ))}
+                  says so), so it is drawn lighter, as the board does: 0.6
+                  keeps the blended fill at 3:1 on the card in both themes
+                  (WCAG 1.4.11; 0.45 measured 2.25:1), and a solid dashed
+                  outline marks the bar as partial. */}
+              {data.map((p, i) =>
+                i === lastIndex ? (
+                  <Cell key={p.key} fillOpacity={0.6} stroke={CHART_SERIES} strokeDasharray="3 2" />
+                ) : (
+                  <Cell key={p.key} />
+                ),
+              )}
             </Bar>
           </BarChart>
         ) : (

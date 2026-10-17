@@ -149,24 +149,30 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
           <ol
             aria-hidden="true"
             data-slot="tier-rows"
-            className="mt-[var(--aura-space-4)] grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)_auto] items-center gap-[var(--aura-space-3)] aura-text-body"
+            className="mt-[var(--aura-space-4)] grid gap-[var(--aura-space-3)] aura-text-body sm:grid-flow-row-dense sm:grid-cols-[minmax(0,min(9rem,35%))_minmax(3rem,1fr)_auto] sm:items-center"
           >
-            {/* One grid for every row (`contents` rows), so all tracks share
-                the same start and end whatever each count label's width. */}
+            {/* From 640px every row shares the list's grid (`sm:contents`),
+                so all tracks start and end together; `dense` puts each track
+                back in its row's middle column. On phones each row is its
+                own grid with the track full width under the label and count,
+                so enlarged text never squeezes the bar away. */}
             {rows.map((r) => (
-              <li key={r.tierKey} className="contents">
-                <span className="min-w-0 text-[var(--aura-fg-primary)] [overflow-wrap:anywhere]">
+              <li
+                key={r.tierKey}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-[var(--aura-space-3)] gap-y-[var(--aura-space-1)] sm:contents"
+              >
+                <span className="min-w-0 text-[var(--aura-fg-primary)] [overflow-wrap:anywhere] sm:col-start-1">
                   {r.displayLabel}
                 </span>
-                <span className="h-2 overflow-hidden rounded-full bg-[var(--aura-bg-canvas)]">
+                <span className="whitespace-nowrap text-right tabular-nums text-[var(--aura-fg-primary)] sm:col-start-3">
+                  {r.barLabel}
+                </span>
+                <span className="col-span-2 h-2 overflow-hidden rounded-full bg-[var(--aura-border-default)] sm:col-span-1 sm:col-start-2">
                   <span
                     data-slot="tier-bar"
                     className="block h-full min-w-0.5 rounded-full bg-[var(--aura-chart-1)]"
                     style={{ width: `${max > 0 ? Math.round((r.count / max) * 100) : 0}%` }}
                   />
-                </span>
-                <span className="whitespace-nowrap text-right tabular-nums text-[var(--aura-fg-primary)]">
-                  {r.barLabel}
                 </span>
               </li>
             ))}

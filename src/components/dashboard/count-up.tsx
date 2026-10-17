@@ -225,8 +225,10 @@ export function CountUp({
     <span className={cn('tabular-nums', className)}>
       {animated}
       <span className="sr-only">{finalDisplay}</span>
+      {/* Ordinary spaces (Intl joins with a no-break space), so a long
+          locale form such as Swedish "381 tn THB" wraps in a narrow tile. */}
       <span aria-hidden="true" className="sm:hidden">
-        {buildCompactFormatter(locale).format(value)}
+        {buildCompactFormatter(locale).format(value).replace(/\u00a0|\u202f/g, ' ')}
       </span>
     </span>
   );

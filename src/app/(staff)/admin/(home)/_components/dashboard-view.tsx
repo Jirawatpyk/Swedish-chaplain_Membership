@@ -140,13 +140,15 @@ export function DashboardView({
           text, so an interpolated `lg:grid-cols-${n}` would never be
           generated.
           Phones lay the tiles out two up, as board `Admin-dashboard-mobile`
-          draws them; with three tiles the third spans the row. */}
+          draws them, while a 9rem tile fits; with enlarged text (200%) they
+          fall back to one column instead of scrolling sideways. With three
+          tiles the third spans the row either way. */}
       <section
         aria-label={t('kpi.sectionLabel')}
         className={
           finance
-            ? 'grid grid-cols-2 gap-4 lg:grid-cols-4'
-            : 'grid grid-cols-2 gap-4 sm:grid-cols-3 max-sm:[&>*:last-child]:col-span-2'
+            ? 'grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4 sm:grid-cols-2 lg:grid-cols-4'
+            : 'grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4 sm:grid-cols-3 max-sm:[&>*:last-child]:col-[1/-1]'
         }
       >
         {kpis.map((kpi) => (
@@ -236,7 +238,7 @@ export function DashboardView({
           className="grid gap-4 lg:grid-cols-2"
         >
           <MemberGrowthChart
-              locale={locale}
+            locale={locale}
             title={t('memberGrowth.title')}
             caption={t('memberGrowth.cumulative')}
             emptyLabel={t('memberGrowth.empty')}
