@@ -50,7 +50,7 @@ The workflow retries the whole set 3 times, 20 s apart, so a red run is not alia
 2. **Reproduce from your machine** (read-only, public URLs only):
 
    ```bash
-   pnpm exec tsx scripts/post-deploy-smoke.ts https://<domain>
+   node scripts/post-deploy-smoke.ts https://<domain>   # Node 22.18+; or: pnpm exec tsx …
    curl -sS -i https://<domain>/api/health
    ```
 
@@ -60,7 +60,8 @@ The workflow retries the whole set 3 times, 20 s apart, so a red run is not alia
    - Vercel → Logs for the deployment → search `health.degraded` and read its `probe` field (search by `probe`, not by the `err` class name, which a build can minify; the field is not called `reason` because the logger redacts that key):
      - `timeout`: `select 1` did not answer within 3 s — a saturated pool or an unreachable compute.
      - `query-error`: the driver threw — bad credentials, the compute refused or dropped the connection. `err` is the error class only.
-     - `still-pending`: an earlier `select 1` on that instance has not settled yet, so no new query was started (the probe never holds more than one connection). A run of these means the database is hanging, not just slow.
+     - `still-pending`: an earlier `select 1` on that instance has not settled yet, so no new query was started. It is sticky for up to 60 s per instance: a query still unsettled after 60 s is abandoned (not cancelled) and ONE fresh probe runs, so at most two hung connections per instance. A run of these means the database is hanging, not just slow.
+   - The log fires only when the outcome CHANGES per instance (no repeat every 10 s), and `health.recovered` (info) marks the instance answering ok again — so read the first `health.degraded` and the `health.recovered` after it, not a count of lines.
    - Neon console → the production branch: is the compute running, are connections near the limit?
    - `vercel env ls production`: is `DATABASE_URL` present and unchanged?
 
@@ -94,7 +95,7 @@ The workflow retries the whole set 3 times, 20 s apart, so a red run is not alia
    A promote does not re-run migrations. If the bad deploy applied a migration, check the previous build still works against the new schema before relying on the rollback: read that migration and confirm the previous code does not depend on what it changed.
 
 2. **Re-run the smoke** (Triage step 6) and confirm it is green.
-3. **Comment on the `prod-smoke` issue** with the cause and the action taken, then close it. The workflow comments on the newest OPEN `prod-smoke` issue, so a closed issue means the next failure opens a fresh one.
+3. **Add the cause and the action taken to the `prod-smoke` issue.** A passing run against `PROD_BASE_URL` (the next deploy, or a manual run with `base_url` empty) comments "Recovered: smoke passed at <commit> (<run url>)" on every open `prod-smoke` issue and closes it. A manual run against any other `base_url` leaves the issue open. The failure step comments on the newest OPEN issue, so once it is closed the next failure opens a fresh one.
 
 ---
 
@@ -103,4 +104,4 @@ The workflow retries the whole set 3 times, 20 s apart, so a red run is not alia
 - **The workflow file must be on `main`.** GitHub fires `deployment_status` only for workflows on the default branch, so a change to `.github/workflows/post-deploy-smoke.yml` takes effect only once merged. Test an edit with *Run workflow* (`workflow_dispatch`) on the branch.
 - **Only successful Production deployments trigger it** (`deployment_status.state == 'success'` and `deployment.environment == 'Production'`); a preview deployment never does. `tests/unit/architecture/post-deploy-smoke-workflow.test.ts` pins the filter, the permissions and the no-injection rule.
 - **`PROD_BASE_URL` is a repo variable, not hardcoded**, because the docs name more than one domain. Update it when the canonical domain changes.
-- `/api/health` caches its result for 10 s per instance and answers only one of two fixed bodies; keep it that way (no version, environment, tenant, hostname or error text). Its contract is `tests/contract/api-health.test.ts`.
+- `/api/health` caches its result for 10 s per instance (from settle), never holds more than two hung connections, and answers only one of two fixed bodies; keep it that way (no version, environment, tenant, hostname or error text). Its contract is `tests/contract/api-health.test.ts`.

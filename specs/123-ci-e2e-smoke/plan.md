@@ -271,3 +271,9 @@ Filled in at Verify, one block per slice.
   - Renamed to `probe`. The live log now reads `probe: "timeout"`, `route: "api.health"`, `err: "HealthProbeTimeoutError"`.
   - Guarded by a test against the real `REDACT_PATHS` (RED `49af5e060`).
 
+**Post-merge (pending):**
+- (a) Link to the `deployment_status` run of the merge deploy: green, 3 PASS lines.
+- (b) Link to `gh workflow run post-deploy-smoke.yml -f base_url=https://invalid.example` opening a new `prod-smoke` issue (#), a second run commenting on the same issue, then a normal run closing it as recovered.
+- (c) Link to a preview deployment's run with the job skipped.
+- (d) Note: DW-4's "names the deployment URL" is only proven by a real failing `deployment_status` run.
+

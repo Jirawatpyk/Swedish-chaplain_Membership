@@ -1,8 +1,8 @@
 /**
  * Post-deploy smoke (spec 123 US1, DW-2).
  *
- *   pnpm exec tsx scripts/post-deploy-smoke.ts https://<production-domain>
- *   BASE_URL=http://localhost:3400 pnpm exec tsx scripts/post-deploy-smoke.ts
+ *   node scripts/post-deploy-smoke.ts https://<production-domain>
+ *   BASE_URL=http://localhost:3400 node scripts/post-deploy-smoke.ts
  *
  * Checks, all public and read-only:
  *   admin-sign-in   GET /admin/sign-in  → 200 and the HTML holds a password input
@@ -17,7 +17,9 @@
  * `FAIL`, so the workflow can grep `^FAIL ` for the issue body.
  *
  * Zero dependencies (plain `fetch`), no `@/` imports, so it runs under plain
- * tsx. Runbook: docs/runbooks/post-deploy-smoke.md.
+ * Node 22.18+ (type stripping is on by default; keep the TypeScript erasable — no
+ * enums, no parameter properties, no namespaces). `pnpm exec tsx` also works.
+ * Runbook: docs/runbooks/post-deploy-smoke.md.
  */
 import { fileURLToPath } from 'node:url';
 

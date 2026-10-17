@@ -2650,19 +2650,23 @@ keeps appearing after the freeze was meant to end is the signal that `READ_ONLY_
 against a 3 s Node timer (the Neon pooler drops `statement_timeout`), answering 200
 `{"status":"ok"}` or 503 `{"status":"degraded"}` with `Cache-Control: no-store`. The result is
 cached 10 s per instance from when the probe settles, and no second `select 1` starts while an
-earlier one is still unsettled, so the probe never holds more than one pooled connection.
+earlier one is still unsettled. `still-pending` is therefore sticky up to 60 s per instance; after
+that the unsettled query is abandoned (not cancelled) and one fresh probe runs, so the probe holds at
+most two hung connections per instance.
 
 | Log message | Level | Fields | Meaning |
 |---|---|---|---|
 | `health.degraded` | warn | `probe` (`timeout` \| `query-error` \| `still-pending`), `err` (error class only, absent for `still-pending`), `route` (`api.health`) | One degraded probe result. `timeout`: no answer in 3 s. `query-error`: the driver threw. `still-pending`: an earlier `select 1` on this instance has not settled, so none was started. Search by `probe` — class names can be minified. Not named `reason`: the logger redacts every top-level `reason` (F5 gateway defence). Never carries `e.message`, a host or a tenant |
+| `health.recovered` | info | `route` (`api.health`) | The instance answered ok after a `health.degraded`. Logged once per recovery |
 
-At most one line per instance per 10 s, because results are cached; a `health.degraded` storm is
-therefore a fleet of instances, not one caller.
+Logged only when the outcome CHANGES per instance (entering degraded, or a different `probe`
+value), never once per 10 s window; a `health.degraded` storm is therefore a fleet of instances, not
+one caller. Read an incident as the first `health.degraded` and the `health.recovered` after it.
 
 **Post-deploy smoke.** `.github/workflows/post-deploy-smoke.yml` runs
 `scripts/post-deploy-smoke.ts` after every successful Production deployment (and on
 `workflow_dispatch`) against the `PROD_BASE_URL` repo variable: both sign-in pages must answer 200
 with a password input and `/api/health` must answer 200 `{"status":"ok"}`, 3 attempts 20 s apart.
 A failure opens or comments on a GitHub issue labelled `prod-smoke` with the FAIL lines only — that
-issue is the alert; there is no metric and no automatic rollback. Runbook:
+issue is the alert; a later passing run against `PROD_BASE_URL` comments "Recovered" and closes it; there is no metric and no automatic rollback. Runbook:
 `docs/runbooks/post-deploy-smoke.md`.
