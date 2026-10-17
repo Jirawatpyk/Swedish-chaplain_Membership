@@ -573,7 +573,12 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **Card titles are headings now.** Each panel and chart card is an AURA card titled at h2 (the legacy card title was a `div`). They take AURA's card-title size, so the SC-010 typography e2e treats an AURA card title as AURA-owned instead of asking for the FR-017 `text-h2` step.
 - **Refresh uses AURA's `loading`.** While the feed refreshes, the button shows AURA's spinner, sets `aria-busy` and ignores clicks, so there is still one refresh at a time. It is not `disabled`, so focus stays on it.
 - **Needs attention rows follow the board** (maintainer, parity page, 17 Oct). Each row is one link: the destination's nav icon, the label, the count pill and a chevron, between AURA dividers, and at least 44px tall. The overdue-invoices pill is a solid danger badge. Labels, counts and links are unchanged.
-- **Kept, not drawn from the board (parity page, 17 Oct):** no chevron on phone insights, because an insight has no destination. The chart types also stay: the revenue bars have no axis grid, and invoice status stays a donut. The board's stacked bar with an amounts table, plus the grid lines, is its own PR after US11, with a figures review, because it adds amounts the page does not show today.
+- **More board parity (maintainer, parity page, 17 Oct):**
+  - **KPI tiles two up on phones**, as the mobile board draws them; with three tiles (no finance) the third spans the row.
+  - **The phone revenue tile shows a compact amount** ("THB 381K", three significant digits, as the board), because the half-width tile cannot fit the full amount (16px over at 390, 31px at 360). Screen readers and every width from 640px keep the exact amount.
+  - **The trend charts carry the board's axes**: taller canvas, a value axis from zero with compact ticks, horizontal grid lines, short month labels, and the current month's bar drawn lighter. The old max line and first/last month row go. The baseline stays at zero on member growth (the board starts at 90), so the filled area stays proportional.
+  - **Membership by tier follows the board as plain rows**: label, a track with the bar, then "count (pct)". No canvas and no hover tooltip on this card (the values are printed). The headline total and the percent stay (FR-011).
+- **Kept, not drawn from the board (parity page, 17 Oct):** no chevron on phone insights, because an insight has no destination. Invoice status stays a donut; the board's stacked bar with an amounts table is its own PR after US11, with a figures review, because it adds amounts the page does not show today.
 
 ## User Scenarios & Testing *(mandatory)*
 
