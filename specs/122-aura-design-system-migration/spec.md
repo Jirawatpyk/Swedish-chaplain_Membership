@@ -578,7 +578,11 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - **The phone revenue tile shows a compact amount** ("THB 381K", three significant digits, as the board), because the half-width tile cannot fit the full amount (16px over at 390, 31px at 360). Screen readers and every width from 640px keep the exact amount.
   - **The trend charts carry the board's axes**: taller canvas, a value axis from zero with compact ticks, horizontal grid lines, short month labels, and the current month's bar drawn lighter. The old max line and first/last month row go. The baseline stays at zero on member growth (the board starts at 90), so the filled area stays proportional.
   - **Membership by tier follows the board as plain rows**: label, a track with the bar, then "count (pct)". No canvas and no hover tooltip on this card (the values are printed). The headline total and the percent stay (FR-011).
-- **Kept, not drawn from the board (parity page, 17 Oct):** no chevron on phone insights, because an insight has no destination. Invoice status stays a donut; the board's stacked bar with an amounts table is its own PR after US11, with a figures review, because it adds amounts the page does not show today.
+- **Kept, not drawn from the board (parity page, 17 Oct):** no chevron on phone insights, because an insight has no destination.
+- **Invoice status follows the board, in its own PR after US11** (maintainer, 17 Oct). The card shows the exact total, one stacked bar sized by each bucket's satang share, and a row per bucket with its amount and percent. The recharts donut goes. Every figure was already computed for the hidden table and the old tooltip.
+  - The figures review (financial-reporting-analyst) found that whole-baht rounding can leave the rows ฿1 off the total. The maintainer chose two decimals for this card only; money is never redistributed to make it add up.
+  - A non-zero bucket under 1% reads "<1%".
+  - The description now says the figure is net of credit notes and refunds (EN/TH/SV); the "Total invoiced" label stays.
 
 ## User Scenarios & Testing *(mandatory)*
 
