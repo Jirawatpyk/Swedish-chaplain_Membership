@@ -149,13 +149,12 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
           <ol
             aria-hidden="true"
             data-slot="tier-rows"
-            className="mt-[var(--aura-space-4)] grid gap-[var(--aura-space-3)] aura-text-body"
+            className="mt-[var(--aura-space-4)] grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)_auto] items-center gap-[var(--aura-space-3)] aura-text-body"
           >
+            {/* One grid for every row (`contents` rows), so all tracks share
+                the same start and end whatever each count label's width. */}
             {rows.map((r) => (
-              <li
-                key={r.tierKey}
-                className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)_auto] items-center gap-[var(--aura-space-3)]"
-              >
+              <li key={r.tierKey} className="contents">
                 <span className="min-w-0 text-[var(--aura-fg-primary)] [overflow-wrap:anywhere]">
                   {r.displayLabel}
                 </span>
