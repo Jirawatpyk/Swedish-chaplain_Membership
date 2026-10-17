@@ -42,7 +42,15 @@ Dispatch the project agents in `.claude/agents/`, not `general-purpose`. File-mu
 | Does the code satisfy every acceptance scenario in the spec? | `spec-compliance-auditor` |
 | An architecture decision or module boundary | `chamber-os-architect` |
 
-Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, one of whom signs the security checklist (`specs/001-auth-rbac/security.md` § 5 for F1). Other PRs need ≥1. With no second human reviewer, the constitution's solo-maintainer substitute applies.
+Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, one of whom signs the security checklist (`specs/001-auth-rbac/security.md` § 5 for F1). Other PRs need ≥1. With no second human reviewer, the constitution's solo-maintainer substitute applies: all five of its checks, enumerated in `plan.md` § Complexity Tracking, with the maintainer co-signing the security checklist. On a `feature-flow` feature (D-014), checks 1, 2 and 5 map as follows:
+
+| Constitution check | `feature-flow` equivalent |
+|---|---|
+| 1. ≥ 3 `/speckit.review` passes, decreasing severity | ≥ 3 review rounds: `/code-review high` + the § 2 surface reviewers, then re-runs on the fixes, until a round finds no High |
+| 2. ≥ 1 `/speckit.staff-review` round (correctness, security, tests) | `whole-branch-reviewer`, with `security-engineer` and `senior-tester` on the same diff; a second round when any BLOCKER / HIGH is found |
+| 5. Post-remediation verification by a fresh agent | the reviewer that raised a finding re-runs on its fix in a new subagent; the writer never self-attests |
+
+Checks 3 (coverage + real-infrastructure integration tests) and 4 (DB- or platform-level defence in depth) are unchanged.
 
 ## 3. Spec Kit gates (features not on the `feature-flow` pilot, D-009)
 
