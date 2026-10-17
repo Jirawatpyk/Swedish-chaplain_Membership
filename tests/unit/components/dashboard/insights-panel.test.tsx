@@ -126,3 +126,47 @@ describe('InsightsPanel — on AURA (spec 122 US11)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('All clear.');
   });
 });
+
+describe('InsightsPanel — keyboard focus after a dismiss (WCAG 2.4.3)', () => {
+  const THREE: readonly InsightLine[] = [
+    ...LINES,
+    { key: 'underused_event_tickets', text: '12 members have under-used event tickets' },
+  ];
+  const name = (text: string) => ({ name: `Dismiss insight: ${text}` });
+
+  beforeEach(() => {
+    // The POST never resolves: focus is decided by the optimistic hide alone.
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+  });
+
+  it('moves focus to the next insight’s dismiss button', () => {
+    render(<InsightsPanel {...PANEL_PROPS} lines={THREE} />);
+    const middle = screen.getByRole('button', name('50 members have unused E-Blast quota'));
+    middle.focus();
+    fireEvent.click(middle);
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', name('12 members have under-used event tickets')),
+    );
+  });
+
+  it('moves focus to the previous one when the last insight is dismissed', () => {
+    render(<InsightsPanel {...PANEL_PROPS} lines={THREE} />);
+    const last = screen.getByRole('button', name('12 members have under-used event tickets'));
+    last.focus();
+    fireEvent.click(last);
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', name('50 members have unused E-Blast quota')),
+    );
+  });
+
+  it('moves focus to the panel title when the only insight is dismissed', () => {
+    render(<InsightsPanel {...PANEL_PROPS} lines={[LINES[0]!]} />);
+    const only = screen.getByRole('button', name('5 at-risk members need follow-up'));
+    only.focus();
+    fireEvent.click(only);
+    const title = screen.getByRole('heading', { level: 2, name: 'Smart insights' });
+    expect(document.activeElement).toBe(title);
+    expect(title).toHaveAttribute('tabindex', '-1');
+  });
+});
+
