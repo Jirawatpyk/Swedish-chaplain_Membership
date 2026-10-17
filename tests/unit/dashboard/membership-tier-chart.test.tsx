@@ -199,7 +199,18 @@ describe('MembershipTierChart', () => {
       const { container } = renderChart([GOLD, SILVER]);
       const { list, rows } = visualRows(container);
       expect(list.className).toContain('grid-cols-');
-      rows.forEach((li) => expect(li.className).toContain('contents'));
+      rows.forEach((li) => expect(li.className).toContain('sm:contents'));
+    });
+
+    it('on phones the track runs full width under the label and count', () => {
+      const { container } = renderChart([GOLD]);
+      const { rows } = visualRows(container);
+      const li = rows[0]!;
+      expect(li.className).toContain('grid-cols-[minmax(0,1fr)_auto]');
+      const track = li.lastElementChild as HTMLElement;
+      expect(track.querySelector('[data-slot="tier-bar"]')).not.toBeNull();
+      expect(track.className).toContain('col-span-2');
+      expect(track.className).toContain('bg-[var(--aura-border-default)]');
     });
 
     it('mounts no chart canvas', () => {

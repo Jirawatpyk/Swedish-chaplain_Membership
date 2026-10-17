@@ -267,7 +267,8 @@ describe('CountUp', () => {
       const { container } = render(<CountUp value={381450} locale="en" variant="thb" compactBelowSm />);
       const compact = container.querySelector('span.sm\\:hidden');
       expect(compact?.getAttribute('aria-hidden')).toBe('true');
-      expect(compact?.textContent?.replace(/\s/g, ' ')).toBe('THB 381K');
+      // ordinary spaces, so a long locale form ("381 tn THB") can wrap
+      expect(compact?.textContent).toBe('THB 381K');
       expect(container.querySelector('span.max-sm\\:hidden')).not.toBeNull();
       expect(getSrOnly(container)?.textContent?.replace(/\s/g, ' ')).toBe('THB 381,450');
       // Never inside the phone-hidden box, or phones would announce nothing.

@@ -140,6 +140,14 @@ describe('MiniSeriesCanvas', () => {
       expect(container.querySelector('.recharts-cartesian-grid-vertical')).toBeNull();
     });
 
+    it('axis text is sized in rem, so it grows with the browser text size', () => {
+      const { container } = render(
+        <MiniSeriesCanvas points={revenue} max={12_840_000} variant="bar" allowMotion={false} locale="en" valueDivisor={100} />,
+      );
+      const tick = container.querySelector('.recharts-yAxis-tick-labels .recharts-cartesian-axis-tick-value');
+      expect(tick?.getAttribute('font-size')).toBe('0.6875rem');
+    });
+
     it('labels the months along the bottom with the short month', () => {
       const { container } = render(
         <MiniSeriesCanvas points={revenue} max={12_840_000} variant="bar" allowMotion={false} locale="en" valueDivisor={100} />,
@@ -153,8 +161,12 @@ describe('MiniSeriesCanvas', () => {
         <MiniSeriesCanvas points={revenue} max={12_840_000} variant="bar" allowMotion={false} locale="en" valueDivisor={100} />,
       );
       const bars = Array.from(container.querySelectorAll('.recharts-bar-rectangle path'));
-      expect(bars.at(-1)?.getAttribute('fill-opacity')).toBe('0.45');
-      expect(bars[0]?.getAttribute('fill-opacity')).not.toBe('0.45');
+      // 0.6 keeps the blended fill at 3:1 on the card in both themes
+      // (WCAG 1.4.11), and a solid dashed outline marks it as partial.
+      expect(bars.at(-1)?.getAttribute('fill-opacity')).toBe('0.6');
+      expect(bars.at(-1)?.getAttribute('stroke')).toBe('var(--aura-chart-1)');
+      expect(bars.at(-1)?.getAttribute('stroke-dasharray')).toBe('3 2');
+      expect(bars[0]?.getAttribute('fill-opacity')).not.toBe('0.6');
     });
 
     it('the area chart counts from zero with whole-number ticks', () => {
