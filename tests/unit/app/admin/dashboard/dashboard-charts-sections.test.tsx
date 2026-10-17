@@ -205,6 +205,13 @@ describe('StaffHomePage — KPI tiles on AURA Stat (spec 122 US11)', () => {
   });
 });
 
+describe('StaffHomePage — KPI grid on phones (spec 122 US11, board Admin-dashboard-mobile)', () => {
+  it('lays the four tiles out two up from the smallest width', async () => {
+    const html = await renderPage();
+    expect(html).toContain('grid grid-cols-2 gap-4 lg:grid-cols-4');
+  });
+});
+
 describe('StaffHomePage — Trends + Breakdown chart sections (Task 12)', () => {
   it('renders both landmark sections with the correct aria-labels', async () => {
     const html = await renderPage();
@@ -323,6 +330,12 @@ describe('StaffHomePage — engagement-only viewer (016 T054)', () => {
     // this fix moved the gap instead of closing it.
     expect(html).toContain('sm:grid-cols-3');
     expect(html).not.toContain('lg:grid-cols-4');
+  });
+
+  it('on phones the three tiles sit two up, the third spanning the row', async () => {
+    const html = await renderWithoutFinance();
+    expect(html).toContain('grid grid-cols-2 gap-4 sm:grid-cols-3');
+    expect(html).toContain('max-sm:[&amp;&gt;*:last-child]:col-span-2');
   });
 
   it('renders the two engagement charts as one 2-up row, not two full-width rows', async () => {
