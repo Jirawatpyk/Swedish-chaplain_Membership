@@ -2,6 +2,7 @@
 name: performance-slo-guardian
 description: "Use this agent when performance budgets or SLOs need to be validated, defended, or investigated in the Chamber-OS codebase. This includes: reviewing code changes that touch hot paths (DB queries, server actions, route handlers, `src/proxy.ts`), verifying p95/p99 latency budgets against `docs/observability.md` SLOs, checking that each SLO a change touches has a metric that measures it, investigating regressions in Vercel Analytics / Speed Insights or OTel traces, and ensuring the performance half of Principle 'Perf & Observability' before a review or ship gate. Adding or auditing logs, spans and metrics in general belongs to `observability-instrumentor`."
 model: inherit
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 color: orange
 memory: project
 ---

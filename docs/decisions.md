@@ -80,3 +80,13 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Context*: the first draft allowed a Medium to stay open with a reason in the PR.
 - *Decision*: every High and every Medium is fixed. A finding closes unfixed only when it is refuted with evidence (code, test, measurement) and the reviewer confirms that on a re-run; it is never waived. Lows are fixed or listed in the PR.
 - *Consequence*: `docs/workflow.md` step 6 and the DoD, the PR template, `review-and-ship` § 1 and the substitute mapping.
+
+**D-016 — Mechanical guards stay minimal: only what cannot be undone** (2026-10-17)
+- *Context*: the final setup audit found the "never" rules were prose only and reviewer subagents inherited every tool (mail, deploy). The maintainer wants Claude Code to work freely, with little blocking.
+- *Decision*: enforce only the irreversible. `.claude/hooks/guard.mjs` (PreToolUse) blocks a shell command that reads `.env*` (not `.env.example`), writing a `.env*` file, and editing a migration already on `origin/main`; `permissions.deny` adds `Read(.env*)` and the PII workbooks to the existing list. The ten review-only agents get `tools: Read, Grep, Glob, Bash, WebFetch, WebSearch` (memory still grants Write/Edit for their own memory). `git add -A`, killing a dev server, and merge/deploy commands stay advisory — no `ask` prompts. A fail-open `return _exhaustive` is caught by `tests/unit/architecture/no-return-exhaustive.test.ts`.
+- *Consequence*: adding a new block needs a retro showing the prose rule failed (D-011). The guard fails open on input it cannot parse.
+
+**D-017 — Agent memory is per machine** (2026-10-17)
+- *Context*: agents use `memory: project`, but `.claude/agent-memory/` is gitignored.
+- *Decision*: keep it that way. Agent memories quote incidents and data that should not be committed, and the maintainer works on one machine. Worktrees and cloud sessions start without them.
+- *Consequence*: an agent's durable lesson goes into the repo (a rule, a skill, a test), not only into its memory.

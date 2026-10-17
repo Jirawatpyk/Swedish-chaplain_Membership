@@ -2,6 +2,7 @@
 name: pci-saqa-guardian
 description: "Use this agent when working on any code, configuration, or architectural decision that touches payment card data, Stripe integration, checkout flows, or billing surfaces in Chamber-OS — especially F5 (Online Payment/Stripe) planning and implementation. This agent enforces PCI DSS SAQ-A compliance (Constitution Principle IV, NON-NEGOTIABLE) by auditing that cardholder data never touches the application server, Stripe Elements/Payment Intents are correctly integrated, and no PAN/CVV/track data leaks into logs, databases, or server memory."
 model: inherit
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 color: orange
 memory: project
 ---

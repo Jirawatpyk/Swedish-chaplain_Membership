@@ -25,7 +25,7 @@ Then provide `node_modules`. Pick one:
 - **Junction** to the main checkout (fast). Only valid when the main checkout's installed AURA version matches the branch's `package.json`. Check with `node -p "require('@jirawatpyk/aura-react/package.json').version"`.
 - **`pnpm install --frozen-lockfile`** in the worktree when the versions differ, or when the branch changes dependencies.
 
-Copy `.env.local` from the main checkout. It is gitignored, so never commit it and never print its values. Before you start, confirm it points at the dev host, not prod. `TEST_DB_HOST_BLOCKLIST` *names* the prod host, so grepping the whole file for the prod host gives a false match.
+Copy `.env.local` from the main checkout. It is gitignored, so never commit it and never print its values. Before you start, confirm it points at the dev host, not prod, by printing only the host: `node -e "console.log(new URL(require('fs').readFileSync('.env.local','utf8').match(/^DATABASE_URL=[\"']?([^\"'\\r\\n]+)/m)[1]).host)"`. Reading the file itself (`cat`, `grep`, `Get-Content`) is blocked by the repo guard, and `TEST_DB_HOST_BLOCKLIST` *names* the prod host, so a grep would give a false match anyway.
 
 ## 2. Start the server cold
 

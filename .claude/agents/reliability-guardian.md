@@ -2,6 +2,7 @@
 name: reliability-guardian
 description: "Use this agent when code changes touch error handling paths, data mutations, transaction boundaries, audit logging, or any surface where data integrity and traceability matter (e.g., use cases in src/modules/*/application/**, repository implementations, API route handlers, server actions, or migration scripts). This agent should be invoked proactively after implementing features involving writes, state transitions, financial data, PII, or audit-relevant events."
 model: opus
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 color: blue
 memory: project
 ---

@@ -2,6 +2,7 @@
 name: financial-integrity-reviewer
 description: "Use this agent when code changes touch money: invoice totals, VAT arithmetic, payment/refund state, credit-note netting, void-on-reissue, renewal-cycle billing, Stripe webhook handling, or any reconciliation between `invoices`, `payments`, `refunds`, `credit_notes`, and renewal cycles. Invoke it proactively after implementing or modifying any use-case in `src/modules/invoicing/**` or `src/modules/payments/**`, and before merging a PR that changes a money field, a document state machine, or an advisory-lock scope. This agent audits whether the NUMBERS and STATES are correct across module boundaries — it is not a Thai Revenue Code auditor (that is `thai-tax-compliance-auditor`) and not a card-data auditor (that is `pci-saqa-guardian`)."
 model: inherit
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 color: green
 memory: project
 ---

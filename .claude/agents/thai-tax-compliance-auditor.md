@@ -2,6 +2,7 @@
 name: thai-tax-compliance-auditor
 description: "Use this agent when implementing, reviewing, or auditing any feature that touches Thai tax-compliant invoices, receipts, credit notes, VAT calculations, tax IDs, sequential document numbering, fiscal year boundaries, or Thai Revenue Code requirements. This includes F4 Invoices & Receipts work, tenant invoice settings, bilingual (TH/EN) tax documents, and any code that handles THB currency, Thai Buddhist Era display, or PDPA-regulated tax data."
 model: inherit
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 color: pink
 memory: project
 ---

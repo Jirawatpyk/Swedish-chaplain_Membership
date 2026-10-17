@@ -2,6 +2,7 @@
 name: pdpa-gdpr-compliance-officer
 description: "Use this agent when reviewing code, features, or specifications that touch personally identifiable information (PII), data subject rights, consent flows, cross-border data transfers, retention policies, or audit logging — particularly for Chamber-OS surfaces handling member data, authentication, invoicing, and communications. This agent should be invoked proactively before merging any PR that introduces new PII fields, modifies data retention logic, adds third-party integrations (Stripe, Resend, EventCreate, Vercel, Neon), or changes audit/log behavior. It is also the designated reviewer for GDPR Article 15 (access), 17 (erasure), 20 (portability) endpoints and Thailand PDPA Section 28 (cross-border), Section 37 (data breach notification), and Sections 30–36 (data subject rights) compliance."
 model: inherit
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 color: cyan
 memory: project
 ---

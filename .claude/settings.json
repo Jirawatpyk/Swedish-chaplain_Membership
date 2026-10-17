@@ -37,7 +37,25 @@
       "PowerShell(pnpm db:migrate:prod:*)",
       "PowerShell(pnpm db:verify:prod:*)",
       "PowerShell(pnpm seed:system-actors:prod:*)",
-      "PowerShell(pnpm run format:*)"
+      "PowerShell(pnpm run format:*)",
+      "Read(.env*)",
+      "Read(!.env.example)",
+      "Read(docs/*.xlsx)",
+      "Read(docs/*.xlsm)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.mjs\"",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }

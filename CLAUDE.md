@@ -16,16 +16,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 |---|---|---|
 | `CLAUDE.md` (this file) | every session | identity, commands, stack, where to look |
 | `.claude/rules/rules.md` | every session | conventions, secrets, testing discipline, cross-cutting gotchas |
-| `.claude/rules/architecture.md` | when touching `src/`, `drizzle/`, `scripts/`, `tests/` | source layout, Clean Architecture, tenancy, advisory locks, audit log, migrations |
+| `.claude/rules/architecture.md` | when touching `src/` or `drizzle/` | source layout, Clean Architecture, tenancy, advisory locks, audit log, migrations |
 | `.claude/rules/modules/*.md` | when touching that module | per-module stack, tables, flags, traps (invoicing, payments, members, broadcasts, auth-rbac, events) |
 | `.claude/rules/ui-aura.md` | when touching UI, messages or e2e | AURA migration, i18n, UX playbook, e2e conventions |
 | `.claude/skills/review-and-ship/` | on demand | which agent reviews what, `/code-review`, Workflows, Spec Kit gates, merge flow |
 | `.claude/skills/feature-flow/` + `docs/workflow.md` | on demand | the change lifecycle, Definition of Done, decisions, retros |
 | `.claude/skills/new-migration/`, `add-audit-event/` | on demand | the fragile build steps: a hand-written migration; a new audit event type |
 | `.claude/skills/run-chamber-os/` | on demand | how to run a branch on :3400 for verification (personas, Playwright attach, UI probes) |
-| `.claude/settings.json` `permissions.deny` | always (blocks the usual spellings, not every form) | commands Claude may not run (format, stash, `db:generate`, `db:push`, prod scripts); the ban covers every other spelling too |
+| `.claude/settings.json` `permissions.deny` + the `.claude/hooks/guard.mjs` PreToolUse hook | always | kept small on purpose (D-016): no reading secrets (`.env*`, the PII workbooks), no editing a migration already on `main`, and the deny list (format, stash, `db:generate`, `db:push`, prod scripts) |
 
 A fact that matters only for one module goes in that module's rule, not here. Keep this file under 200 lines.
+
+**When compacting**, keep: the current branch and worktree, the files modified, the commands run with their results, open review findings, and any decision the user made in this session.
 
 ## Language for AI sessions
 

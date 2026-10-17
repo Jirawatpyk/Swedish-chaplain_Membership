@@ -2,13 +2,11 @@
 paths:
   - "src/**"
   - "drizzle/**"
-  - "scripts/**"
-  - "tests/**"
 ---
 
 # Architecture — source layout, layers, tenancy, migrations
 
-Loaded when Claude reads or edits code. The one-line summary stays in `CLAUDE.md`; the detail lives here.
+Loaded when Claude reads or edits `src/` or `drizzle/`. The one-line summary stays in `CLAUDE.md`; the detail lives here.
 
 ## Source layout (F1 skeleton — still accurate for F1–F9)
 

@@ -2,6 +2,7 @@
 name: mobile-a11y-ux-reviewer
 description: "Use this agent when reviewing or implementing UI changes to ensure mobile-first responsive design, WCAG 2.1 AA accessibility compliance, and UX/UI consistency with the design system. This agent should be invoked proactively after any frontend code changes (React components, Tailwind styling, AURA / legacy-kit usage, form flows, navigation, modals, toasts) and before merging UI-related PRs."
 model: inherit
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 color: blue
 memory: project
 ---

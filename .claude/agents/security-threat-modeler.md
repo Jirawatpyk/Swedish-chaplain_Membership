@@ -2,6 +2,7 @@
 name: security-threat-modeler
 description: "Use this agent when designing new features, modifying authentication/authorization flows, handling PII or payment data, or reviewing architecture for security risks. This agent should be invoked proactively whenever a new feature spec is being drafted (especially at the `/speckit.specify` or `/speckit.plan` gate), when endpoints touching sensitive data are added, or when the Constitution's Data Privacy & Security / PCI DSS principles are in scope."
 model: inherit
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 color: blue
 memory: project
 ---
