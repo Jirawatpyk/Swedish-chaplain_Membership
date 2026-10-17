@@ -365,6 +365,8 @@ export default async function StaffHomePage() {
       label: item.label,
       href: item.href,
       count: numberFmt.format(item.n),
+      // Spec 122 US11 — the board draws the overdue count as a danger pill.
+      ...(item.id === 'overdueInvoices' ? { tone: 'danger' as const } : {}),
     }));
 
   // Live-filter insights against current dismissals (T028) so a just-dismissed

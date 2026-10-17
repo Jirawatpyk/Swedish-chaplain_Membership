@@ -110,7 +110,7 @@ export async function renderDashboardPreview(state: string | undefined) {
   const attention = empty
     ? []
     : [
-        ...(finance ? [{ id: 'overdueInvoices', label: t('needsAttention.overdueInvoices'), href: '/admin/invoices?status=overdue', count: numberFmt.format(6) }] : []),
+        ...(finance ? [{ id: 'overdueInvoices', label: t('needsAttention.overdueInvoices'), href: '/admin/invoices?status=overdue', count: numberFmt.format(6), tone: 'danger' as const }] : []),
         { id: 'atRisk', label: t('needsAttention.atRisk'), href: '/admin/members?risk_band=critical,at-risk,warning', count: numberFmt.format(9) },
         { id: 'broadcasts', label: t('needsAttention.broadcasts'), href: '/admin/broadcasts', count: numberFmt.format(2) },
         ...(state === 'attention-unavailable'
