@@ -20,6 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `.claude/rules/modules/*.md` | when touching that module | per-module stack, tables, flags, traps (invoicing, payments, members, broadcasts, auth-rbac, events) |
 | `.claude/rules/ui-aura.md` | when touching UI, messages or e2e | AURA migration, i18n, UX playbook, e2e conventions |
 | `.claude/skills/review-and-ship/` | on demand | which agent reviews what, `/code-review`, Workflows, Spec Kit gates, merge flow |
+| `.claude/skills/feature-flow/` + `docs/workflow.md` | on demand | the change lifecycle, Definition of Done, decisions, retros |
 
 A fact that matters only for one module goes in that module's rule, not here. Keep this file under 200 lines.
 
@@ -76,10 +77,10 @@ pnpm build                     # production build
 # pnpm db:generate             # DO NOT USE — migrations are hand-written SQL (see .claude/rules/architecture.md)
 ```
 
-Full local gate before shipping anything non-trivial:
+`pnpm check` runs lint + typecheck + the static gates in one go. Full local gate before shipping anything non-trivial:
 
 ```bash
-pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n && pnpm check:layout && pnpm check:fixme && pnpm check:template-seed && pnpm check:money-recipient && pnpm test:integration && pnpm test:e2e
+pnpm check && pnpm test:coverage && pnpm vitest run tests/contract/ && pnpm test:integration <touched paths> && pnpm test:e2e <touched specs>
 ```
 
 `main`'s required checks and what the pre-push hook runs are in the `review-and-ship` skill. Other `check:*` gates not in pre-push: `check:strict-aria`, `check:audit-events`, `check:audit-counts`, `check:bundle-budgets`, `check:multi-tenant`, `check:portal-guard`, `check:plan-divergence`, `check:f71a-schema`, `check:f9-schema`.
@@ -88,9 +89,22 @@ One-off: bootstrap the first admin (refuses if any admin exists): `BOOTSTRAP_ADM
 
 Vercel: `vercel env pull .env.local` · `vercel logs <deployment-url>` · `vercel promote <old-deployment-url>` (rollback). **Emergency write freeze**: set `READ_ONLY_MODE=true` in Vercel env + redeploy — 503 `read-only-mode` on every state-changing `/api/**` route while sign-in and reads stay up; reversible in ~30 s.
 
+## Precedence
+
+When sources disagree, the higher one wins. If the conflict matters, stop and ask; don't pick silently.
+
+1. The user's instruction in this session
+2. `.specify/memory/constitution.md`
+3. `docs/decisions.md` — the newest decision wins
+4. The feature's spec (`specs/<nnn-name>/spec.md`)
+5. `CLAUDE.md` and `.claude/rules/`
+6. Existing code, comments and other docs
+
 ## Workflow
 
-- Feature work goes through the Spec Kit gates (`/speckit.specify` … `/speckit.ship`); the gate list, reviewer matrix and merge flow are in the `review-and-ship` skill.
+- `docs/workflow.md` is the lifecycle contract: sizes, the ten steps, the **Definition of Done**, **Decisions** and **Continuous improvement**. The `feature-flow` skill walks it; `review-and-ship` covers reviewers and merging.
+- Pilot (D-009): `feature-flow` replaces the `/speckit.*` gate commands for features that opt in; the constitution's gates still apply to the rest until it is amended.
+- When something goes wrong (red `main`, a new High after a fix round, a gate that checked nothing, the same correction twice), run the retro: one line in `docs/retro.md`, plus the change that stops it recurring.
 - Dispatch the project subagents in `.claude/agents/` for gate and review work, not `general-purpose`. Any UI-touching change also gets an `enterprise-ux-designer` pass.
 - Saved Workflows (`.claude/workflows/`: `review-branch`, `sweep-class`, `spec-review-panel`) run only on explicit opt-in ("use a workflow" / `ultracode`).
 - Merge only when the user asks. Every merge to `main` deploys to production.

@@ -44,7 +44,7 @@ Dispatch the project agents in `.claude/agents/`, not `general-purpose`. File-mu
 
 Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, one of whom signs the security checklist (`specs/001-auth-rbac/security.md` § 5 for F1). Other PRs need ≥1. With no second human reviewer, the constitution's solo-maintainer substitute applies.
 
-## 3. Spec Kit gates (the feature workflow)
+## 3. Spec Kit gates (features not on the `feature-flow` pilot, D-009)
 
 `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.checklist` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement` → `/speckit.verify` → `/speckit.review` → `/speckit.ship`
 
