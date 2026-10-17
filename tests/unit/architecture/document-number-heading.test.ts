@@ -8,7 +8,7 @@
  * two from drifting apart again.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '../../..');
@@ -22,8 +22,11 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+/** Repo-relative POSIX path, so the filters and names below hold on Windows too. */
+const rel = (f: string) => relative(ROOT, f).split(sep).join('/');
+
 // Skeletons draw a placeholder title, not a number.
-const files = sourceFiles(join(ROOT, 'src')).filter((f) => !f.includes('/test-fixtures/') && !f.endsWith('/loading.tsx'));
+const files = sourceFiles(join(ROOT, 'src')).filter((f) => !rel(f).includes('/test-fixtures/') && !rel(f).endsWith('/loading.tsx'));
 const read = (f: string) => readFileSync(f, 'utf8').replace(/\r/g, '');
 
 /** A PageHeader whose title mentions a document number. */
@@ -35,7 +38,7 @@ describe('document-number page titles', () => {
   const titled = files.filter((f) => NUMBER_TITLE.test(read(f)));
 
   it('finds the document pages (a guard that finds nothing checks nothing)', () => {
-    const names = titled.map((f) => relative(ROOT, f));
+    const names = titled.map(rel);
     expect(names).toEqual(
       expect.arrayContaining([
         'src/app/(staff)/admin/invoices/[invoiceId]/_components/invoice-detail-view.tsx',
@@ -44,14 +47,14 @@ describe('document-number page titles', () => {
     );
   });
 
-  it.each(titled.map((f) => [relative(ROOT, f), f]))('%s renders its title through DocumentNumberHeading', (_n, f) => {
+  it.each(titled.map((f) => [rel(f), f]))('%s renders its title through DocumentNumberHeading', (_n, f) => {
     expect(read(f)).toMatch(/from ['"]@\/components\/layout\/document-number-heading['"]/);
   });
 
   // Anywhere in the app, not only titles: a no-wrap document number widens a
   // dialog the same way (the refund dialog's payment line, found by this guard).
   it('no source file wraps a document number in a no-wrap span', () => {
-    const offenders = files.filter((f) => NOWRAP_NUMBER.test(read(f))).map((f) => relative(ROOT, f));
+    const offenders = files.filter((f) => NOWRAP_NUMBER.test(read(f))).map(rel);
     expect(offenders).toEqual([]);
   });
 });
