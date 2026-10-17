@@ -73,4 +73,13 @@ describe('MembershipTierCanvas', () => {
     );
     expect(container.querySelector('.recharts-responsive-container')).toBeInTheDocument();
   });
+
+  it('draws the tier names in the AURA axis colour (spec 122 US11, UX review H1)', () => {
+    const { container } = render(
+      <MembershipTierCanvas rows={[GOLD, SILVER]} max={6} allowMotion={false} />,
+    );
+    const ticks = container.querySelectorAll('.recharts-cartesian-axis-tick-value');
+    expect(ticks.length).toBe(2);
+    ticks.forEach((tick) => expect(tick).toHaveAttribute('fill', 'var(--aura-chart-axis)'));
+  });
 });
