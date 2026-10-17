@@ -77,14 +77,15 @@ Fill in `.github/pull_request_template.md`:
 - every review finding and how it was closed;
 - the unflagged behaviours, if a flag is involved.
 
+The diff itself carries the `docs/changelog.md` line (Definition of Done).
+
 Open with `gh pr create`, then bind the PR to the session.
 
 ## 9. Merge
 
 Only on the user's explicit word (D-006), by `review-and-ship` § 5. For an L slice, its row in the `plan.md` Slices table already carries the PR number and `done` (set in the slice's own PR before merging). After the merge:
 - confirm the production deployment is `READY`;
-- update `docs/operational-state.md` if a flag or cutover moved;
-- add the `docs/changelog.md` line if the PR didn't.
+- update `docs/operational-state.md` if a flag or cutover moved.
 
 ## 10. Improve
 

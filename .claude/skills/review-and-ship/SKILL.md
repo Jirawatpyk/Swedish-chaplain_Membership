@@ -72,7 +72,7 @@ These commands remain usable for the matching `docs/workflow.md` steps; the proc
 
 ## 5. Merging
 
-- `main` is protected. The required checks are `Lint · typecheck · static gates`, `Unit + contract (shard 1/2)`, `(shard 2/2)`, `Architecture governance tests`, `Integration smoke (tenant isolation + money invariants)` and `Unit + contract coverage vs pinned thresholds` (20–40 min). There are no required reviewers (solo-maintainer substitute); `enforce_admins: false` lets an admin override for a hotfix; force-push and branch deletion are blocked. Verify the live list with `gh api repos/Jirawatpyk/Swedish-chaplain_Membership/branches/main/protection --jq '.required_status_checks.contexts'`.
+- `main` is protected. The required checks are `Lint · typecheck · static gates`, `Unit + contract (shard 1/2)`, `(shard 2/2)`, `Architecture governance tests`, `Integration smoke (tenant isolation + money invariants)` and `Unit + contract coverage vs pinned thresholds` (20–40 min). There are no required reviewers (the solo-maintainer review, § 2); `enforce_admins: false` lets an admin override for a hotfix; force-push and branch deletion are blocked. Verify the live list with `gh api repos/Jirawatpyk/Swedish-chaplain_Membership/branches/main/protection --jq '.required_status_checks.contexts'`.
 - **Merge only when the user says so.**
 - Auto-merge is disabled on the repo (`gh pr merge --auto` is refused), and enabling it is a repo-setting change the user has not asked for.
 - To wait for the checks, watch them with a Monitor that polls `gh pr checks <n> --json name,bucket --jq …`. There is no `jq` binary on the workstation; use gh's built-in `--jq`.
