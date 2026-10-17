@@ -1,0 +1,186 @@
+/**
+ * `.github/workflows/post-deploy-smoke.yml` guard (spec 123 US1, DW-1 + DW-4).
+ *
+ * Read as TEXT — no YAML dependency (Constitution X). Lines are split on
+ * `\r?\n` so the gate is not inert on a Windows CRLF checkout.
+ *
+ * Asserts the trigger (a successful PRODUCTION deployment, or a manual run),
+ * the job's least privilege, and the script-injection rule: no `${{ }}` value
+ * from `github.event.*` or `inputs.*` is ever expanded inside a `run:` block —
+ * it reaches the shell only through `env:`. The parser carries its own
+ * positive control (a fixture it must flag) and fails if it finds zero steps
+ * or zero run blocks in the real file.
+ */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const WORKFLOW_PATH = join(process.cwd(), '.github', 'workflows', 'post-deploy-smoke.yml');
+
+interface RunBlock {
+  readonly line: number;
+  readonly text: string;
+}
+
+/** Comment-only lines removed, so prose in a comment cannot satisfy or trip a rule. */
+function codeLines(src: string): string[] {
+  return src.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
+}
+
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+/** Every `run:` value — a single line, or a `|` / `>` block scalar. */
+function runBlocks(src: string): RunBlock[] {
+  const lines = src.split(/\r?\n/);
+  const blocks: RunBlock[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = /^(\s*)(?:-\s+)?run:\s*(.*)$/.exec(lines[i]!);
+    if (m === null) continue;
+    const keyIndent = m[1]!.length + (lines[i]!.trimStart().startsWith('-') ? 2 : 0);
+    const rest = m[2]!;
+    if (/^[|>][-+]?\s*$/.test(rest)) {
+      const body: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && (lines[j]!.trim() === '' || indentOf(lines[j]!) > keyIndent)) {
+        body.push(lines[j]!);
+        j += 1;
+      }
+      blocks.push({ line: i + 1, text: body.join('\n') });
+      i = j - 1;
+    } else {
+      blocks.push({ line: i + 1, text: rest });
+    }
+  }
+  return blocks;
+}
+
+function stepCount(src: string): number {
+  return codeLines(src).filter((l) => /^\s*-\s+(uses|name|run|id):/.test(l)).length;
+}
+
+const INJECTABLE = /\$\{\{\s*(github\.event\.|inputs\.)/;
+
+describe('post-deploy-smoke workflow parser (positive control)', () => {
+  const fixture = [
+    'jobs:',
+    '  a:',
+    '    steps:',
+    '      - name: safe',
+    '        env:',
+    '          URL: ${{ github.event.deployment_status.environment_url }}',
+    '        run: echo "$URL"',
+    '      - name: unsafe block',
+    '        run: |',
+    '          echo start',
+    '          echo "${{ inputs.base_url }}"',
+    '      - name: unsafe line',
+    '        run: echo ${{ github.event.deployment.ref }}',
+  ].join('\r\n');
+
+  it('finds both block and single-line run values, CRLF or not', () => {
+    expect(runBlocks(fixture)).toHaveLength(3);
+    expect(stepCount(fixture)).toBe(3);
+  });
+
+  it('flags an event/input expansion inside run, and not one inside env', () => {
+    const flagged = runBlocks(fixture).filter((b) => INJECTABLE.test(b.text));
+    expect(flagged.map((b) => b.line)).toEqual([9, 13]);
+  });
+});
+
+describe('.github/workflows/post-deploy-smoke.yml', () => {
+  const src = readFileSync(WORKFLOW_PATH, 'utf8');
+  const code = codeLines(src).join('\n');
+  const blocks = runBlocks(src);
+
+  it('the parse finds steps and run blocks (an empty parse checks nothing)', () => {
+    expect(stepCount(src)).toBeGreaterThan(0);
+    expect(blocks.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('triggers on deployment_status and on workflow_dispatch with an optional base_url', () => {
+    expect(code).toMatch(/^on:\s*$/m);
+    expect(code).toMatch(/^\s{2}deployment_status:\s*$/m);
+    expect(code).toMatch(/^\s{2}workflow_dispatch:\s*$/m);
+    expect(code).toMatch(/^\s+base_url:\s*$/m);
+    expect(code).toMatch(/^\s+required:\s*false\s*$/m);
+  });
+
+  it('runs the job only for a manual run or a successful Production deployment', () => {
+    const ifs = codeLines(src).filter((l) => /^\s{4}if:/.test(l));
+    expect(ifs).toHaveLength(1);
+    const cond = ifs[0]!;
+    expect(cond).toContain("github.event_name == 'workflow_dispatch'");
+    expect(cond).toContain("github.event.deployment_status.state == 'success'");
+    expect(cond).toContain("github.event.deployment.environment == 'Production'");
+    // The two deployment filters are AND-ed together, OR-ed with the manual run.
+    expect(cond).toMatch(
+      /workflow_dispatch'\s*\|\|\s*\(\s*github\.event\.deployment_status\.state == 'success'\s*&&\s*github\.event\.deployment\.environment == 'Production'\s*\)/,
+    );
+  });
+
+  it('is never triggered by pull_request_target', () => {
+    expect(code).not.toContain('pull_request_target');
+  });
+
+  it('grants the job contents: read and issues: write, and nothing at the top level', () => {
+    expect(code).toMatch(/^permissions:\s*\{\}\s*$/m);
+    expect(code).toMatch(/^\s{6}contents:\s*read\s*$/m);
+    expect(code).toMatch(/^\s{6}issues:\s*write\s*$/m);
+    expect(code).not.toMatch(/:\s*write-all/);
+  });
+
+  it('uses no secret except the automatic GITHUB_TOKEN', () => {
+    const secrets = [...code.matchAll(/secrets\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
+    expect(secrets.filter((s) => s !== 'GITHUB_TOKEN')).toEqual([]);
+  });
+
+  it('never expands github.event.* or inputs.* inside a run block', () => {
+    const offending = blocks.filter((b) => INJECTABLE.test(b.text)).map((b) => `line ${b.line}`);
+    expect(offending).toEqual([]);
+  });
+
+  it('resolves the base URL from the input, else the PROD_BASE_URL variable, and fails when empty', () => {
+    expect(code).toMatch(/BASE_URL:\s*\$\{\{\s*inputs\.base_url\s*\|\|\s*vars\.PROD_BASE_URL\s*\}\}/);
+    const guard = blocks.find((b) => /-z\s+"\$BASE_URL"/.test(b.text));
+    expect(guard).toBeDefined();
+    expect(guard!.text).toMatch(/exit 1/);
+  });
+
+  it('runs the smoke script with tsx, keeps its exit code through tee, and saves its output', () => {
+    const smoke = blocks.find((b) => b.text.includes('scripts/post-deploy-smoke.ts'));
+    expect(smoke).toBeDefined();
+    expect(smoke!.text).toMatch(/pnpm exec tsx scripts\/post-deploy-smoke\.ts "\$BASE_URL"/);
+    expect(smoke!.text).toContain('set -o pipefail');
+    expect(smoke!.text).toMatch(/\|\s*tee\s+\S+/);
+  });
+
+  it('sets up pnpm + node 22 exactly as quality-gates.yml does', () => {
+    expect(code).toContain('uses: actions/checkout@v4');
+    expect(code).toContain('uses: pnpm/action-setup@v4');
+    expect(code).toContain('uses: actions/setup-node@v4');
+    expect(code).toMatch(/node-version:\s*'22'/);
+    expect(code).toMatch(/cache:\s*'pnpm'/);
+    expect(code).toContain('pnpm install --frozen-lockfile');
+  });
+
+  it('on failure opens or comments on a prod-smoke issue with --body-file only', () => {
+    const issue = blocks.find((b) => b.text.includes('gh issue create'));
+    expect(issue).toBeDefined();
+    const t = issue!.text;
+    expect(t).toMatch(/gh label create prod-smoke[^\n]*\|\|\s*true/);
+    expect(t).toMatch(/gh issue list[^\n]*--label prod-smoke[^\n]*--state open/);
+    expect(t).toMatch(/gh issue comment[^\n]*--body-file/);
+    expect(t).toMatch(/gh issue create[^\n]*--label prod-smoke[^\n]*--body-file/);
+    expect(t).not.toMatch(/--body\s+["']/);
+    // Only the FAIL lines reach the issue — never a raw response.
+    expect(t).toMatch(/grep\s+'\^FAIL '/);
+    for (const field of ['$BASE_URL', '$COMMIT_SHA', '$DEPLOYMENT_URL']) {
+      expect(t).toContain(field);
+    }
+    const stepHeader = src.split(/\r?\n/).slice(0, issue!.line).reverse().find((l) => /^\s+if:/.test(l));
+    expect(stepHeader).toMatch(/if:\s*failure\(\)/);
+  });
+});
