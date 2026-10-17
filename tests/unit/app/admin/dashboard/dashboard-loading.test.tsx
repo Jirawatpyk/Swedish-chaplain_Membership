@@ -44,6 +44,17 @@ describe('staff dashboard loading', () => {
     expect(announced(host)).toHaveLength(1);
   });
 
+  it('F9 on: blocks sized like the real cards, so the swap does not shift the page (UX review M1)', async () => {
+    const host = await dom();
+    const block = (cls: string) => host.querySelectorAll(`[data-slot="skeleton-block"].${cls}`);
+    // attention + insights rows at the real 36px row height
+    expect(block('h-9').length).toBeGreaterThanOrEqual(6);
+    // the donut reserves the canvas's square, capped at 256px
+    expect(block('max-h-64')).toHaveLength(1);
+    // each trend card reserves its first/last month row under the canvas
+    expect(host.querySelectorAll('[data-slot="trend-months"]')).toHaveLength(2);
+  });
+
   it('F9 off: the roadmap card on AURA, announced once', async () => {
     h.features.f9Dashboard = false;
     const host = await dom();
