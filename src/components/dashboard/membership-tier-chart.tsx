@@ -47,7 +47,7 @@ import dynamic from 'next/dynamic';
 import { useTranslations, useLocale } from 'next-intl';
 import { useSyncExternalStore } from 'react';
 import { Card } from '@jirawatpyk/aura-react';
-import { CHART_HERO_VALUE } from './chart-card-type';
+import { CHART_HERO_GROUP, CHART_HERO_ROW, CHART_HERO_VALUE } from './chart-card-type';
 import type { TierDistributionSlice } from '@/modules/insights';
 import { ChartDataTable } from './chart-data-table';
 import { ChartSkeleton } from './chart-skeleton';
@@ -155,8 +155,8 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
               KPI tiles' scale (`CHART_HERO_VALUE`), plus the top tier as a
               secondary chip — the same summary+chip+label layout as
               `MiniSeriesChart`. */}
-          <div className="flex items-baseline justify-between gap-[var(--aura-space-2)]">
-            <span className="flex items-baseline gap-[var(--aura-space-2)]">
+          <div className={CHART_HERO_ROW}>
+            <span className={CHART_HERO_GROUP}>
               <span className={CHART_HERO_VALUE}>{numberFmt.format(total)}</span>
               {topTierChipLabel ? (
                 <span className="aura-text-caption font-medium text-[var(--aura-fg-secondary)]">

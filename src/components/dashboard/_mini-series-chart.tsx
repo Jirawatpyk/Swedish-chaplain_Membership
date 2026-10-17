@@ -55,7 +55,7 @@ import dynamic from 'next/dynamic';
 import { useSyncExternalStore } from 'react';
 import { Card } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
-import { CHART_HERO_VALUE } from './chart-card-type';
+import { CHART_HERO_GROUP, CHART_HERO_ROW, CHART_HERO_VALUE } from './chart-card-type';
 import { ChartDataTable } from './chart-data-table';
 import { ChartSkeleton } from './chart-skeleton';
 import {
@@ -144,8 +144,8 @@ export function MiniSeriesChart({
         <p className="aura-text-body text-[var(--aura-fg-secondary)]">{emptyLabel}</p>
       ) : (
         <>
-          <div className="flex items-baseline justify-between gap-[var(--aura-space-2)]">
-            <span className="flex items-baseline gap-[var(--aura-space-2)]">
+          <div className={CHART_HERO_ROW}>
+            <span className={CHART_HERO_GROUP}>
               <span className={CHART_HERO_VALUE}>{summary.value}</span>
               {delta ? (
                 <span
