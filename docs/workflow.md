@@ -9,7 +9,7 @@ How a change goes from an idea to production on Chamber-OS, and how the process 
 - the cross-tenant integration test;
 - `plan.md` § Complexity Tracking for any deviation.
 
-The constitution's § Development Workflow still names the Spec Kit gates. It will be amended in a separate PR, with a Sync Impact Report, once the pilot has run on a real feature (D-009 in `decisions.md`).
+The constitution's § Development Workflow still names the Spec Kit gates. It will be amended in a separate PR, with a Sync Impact Report, once the pilot has run on a real feature (D-009; until then D-014 records the deviation in each pilot `plan.md`).
 
 ## Sizes
 
