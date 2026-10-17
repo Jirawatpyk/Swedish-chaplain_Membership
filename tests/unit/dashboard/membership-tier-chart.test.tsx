@@ -181,4 +181,36 @@ describe('MembershipTierChart', () => {
     // The EN-only plan falls back to its EN name (never blank, never the key).
     expect(within(table).getByRole('rowheader', { name: 'Start-up' })).toBeInTheDocument();
   });
+
+  // Spec 122 US11 (parity, 17 Oct): the rows follow board `Admin-dashboard` —
+  // label column, a track with the bar, then "count (pct)" — drawn as plain
+  // rows, not a lazy chart canvas.
+  describe('board rows', () => {
+    function visualRows(container: HTMLElement) {
+      const list = container.querySelector('[data-slot="tier-rows"]');
+      expect(list).not.toBeNull();
+      return { list: list as HTMLElement, rows: Array.from(list!.querySelectorAll('li')) };
+    }
+
+    it('one aria-hidden row per tier with its label and "count (pct)"', () => {
+      const { container } = renderChart([GOLD, SILVER]);
+      const { list, rows } = visualRows(container);
+      expect(list.getAttribute('aria-hidden')).toBe('true');
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.textContent).toContain('Gold');
+      expect(rows[0]!.textContent).toContain('6 (67%)');
+      expect(rows[1]!.textContent).toContain('3 (33%)');
+    });
+
+    it('bar width is count over the largest tier, never over the total', () => {
+      const { container } = renderChart([GOLD, SILVER]);
+      const bars = Array.from(container.querySelectorAll<HTMLElement>('[data-slot="tier-bar"]'));
+      expect(bars.map((b) => b.style.width)).toEqual(['100%', '50%']);
+    });
+
+    it('mounts no chart canvas', () => {
+      const { container } = renderChart([GOLD, SILVER]);
+      expect(container.querySelector('[data-slot="chart"]')).toBeNull();
+    });
+  });
 });
