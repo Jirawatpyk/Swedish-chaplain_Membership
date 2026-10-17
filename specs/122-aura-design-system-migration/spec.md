@@ -583,6 +583,15 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The figures review (financial-reporting-analyst) found that whole-baht rounding can leave the rows ฿1 off the total. The maintainer chose two decimals for this card only; money is never redistributed to make it add up.
   - A non-zero bucket under 1% reads "<1%".
   - The description now says the figure is net of credit notes and refunds (EN/TH/SV); the "Total invoiced" label stays.
+  - UX review (17 Oct), fixed:
+    - the loading card reserves the title, the description (two lines on phones) and the two-line phone headline;
+    - the headline breaks only at the currency space or after a thousands group, never inside a number;
+    - each row keeps its amount and percent together.
+  - UX review, kept on purpose:
+    - Segment colours stay on the semantic positive / warning / danger tokens with a 2px gap. AURA defaults win on component colours; each segment measures ≥ 6.4:1 against the card; the rows carry text labels (WCAG 1.4.1).
+    - The headline is read as value then label, the same order as every other hero figure on the page.
+    - The empty state gets no new link to the invoice list, since that would be new behaviour (FR-011).
+    - The description runs to two lines on phones (three to four at 200% text).
 
 ## User Scenarios & Testing *(mandatory)*
 

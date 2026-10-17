@@ -80,6 +80,7 @@
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { cn } from '@/lib/utils';
+import { formatWrapping } from './format-wrapping';
 import {
   getAllowMotion,
   getServerAllowMotion,
@@ -109,19 +110,6 @@ function buildFormatter(locale: string, variant: CountUpVariant): Intl.NumberFor
     });
   }
   return new Intl.NumberFormat(locale);
-}
-
-/** The visible copies may wrap between the currency and the amount: Intl
- * joins them with a no-break space, which pushed "THB 381,450" out of a
- * 4-up desktop tile at 200% text (UX review, 17 Oct). Only the `literal`
- * parts change; a no-break thousands separator (`group`, e.g. Swedish)
- * stays, so a number never splits inside. The sr-only copy keeps Intl's
- * own string. */
-function formatWrapping(fmt: Intl.NumberFormat, n: number): string {
-  return fmt
-    .formatToParts(n)
-    .map((p) => (p.type === 'literal' ? p.value.replace(/\u00a0|\u202f/g, ' ') : p.value))
-    .join('');
 }
 
 /** Spec 122 US11 (maintainer, 17 Oct) — the phone revenue tile's compact

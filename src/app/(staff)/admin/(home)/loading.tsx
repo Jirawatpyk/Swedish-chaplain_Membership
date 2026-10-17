@@ -138,6 +138,8 @@ export default async function Loading() {
                 <div data-slot="status-header-skeleton" className="grid gap-1">
                   <SkeletonBlock className="h-6 w-44" />
                   <SkeletonBlock className="h-4 w-56" />
+                  {/* The description wraps to a second line on phones. */}
+                  <SkeletonBlock className="h-4 w-40 sm:hidden" />
                 </div>
               }
             >

@@ -54,7 +54,8 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
     await expect(metrics.getByText('At-risk members')).toBeVisible();
     await expect(metrics.getByText('Paid revenue')).toBeVisible();
     // The basis caption keeps the short "Paid revenue" label honest — the
-    // figure is fiscal-year + ex-VAT, unlike the VAT-inclusive/all-time donut.
+    // figure is fiscal-year + ex-VAT, unlike the VAT-inclusive/all-time
+    // invoice-status card.
     await expect(metrics.getByText('Fiscal year to date · ex-VAT')).toBeVisible();
     // Admin sees the real THB revenue figure (not redacted).
     await expect(

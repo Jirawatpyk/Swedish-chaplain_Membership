@@ -34,7 +34,8 @@ import { Fragment, type ReactNode } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { Card } from '@jirawatpyk/aura-react';
 import type { InvoiceStatusBucket, InvoiceStatusDistribution } from '@/modules/insights';
-import { CHART_HERO_GROUP, CHART_HERO_ROW, CHART_HERO_VALUE } from './chart-card-type';
+import { CHART_HERO_GROUP, CHART_HERO_ROW, CHART_HERO_VALUE_NOWRAP } from './chart-card-type';
+import { formatWrapping } from './format-wrapping';
 import { ChartDataTable } from './chart-data-table';
 
 export interface InvoiceStatusChartProps {
@@ -65,15 +66,6 @@ interface BucketRow {
   readonly visibleAmount: string;
   readonly count: number;
   readonly pctLabel: string;
-}
-
-/** Joins Intl's currency parts with ordinary spaces so a long amount wraps
- * between currency and number at 200% text (the KPI tile does the same). */
-function formatWrapping(fmt: Intl.NumberFormat, n: number): string {
-  return fmt
-    .formatToParts(n)
-    .map((p) => (p.type === 'literal' ? p.value.replace(/\u00a0|\u202f/g, ' ') : p.value))
-    .join('');
 }
 
 /** The headline amount with its only break points: the space before or
@@ -208,12 +200,9 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
         <>
           <div className={CHART_HERO_ROW}>
             <span className={CHART_HERO_GROUP}>
-              {/* `anywhere` dropped from the hero class: the <wbr>s give the
-                  only places this amount may break. */}
-              <span
-                data-slot="status-total"
-                className={CHART_HERO_VALUE.replace('[overflow-wrap:anywhere] ', '')}
-              >
+              {/* No `anywhere` here: the <wbr>s give the only places this
+                  amount may break. */}
+              <span data-slot="status-total" className={CHART_HERO_VALUE_NOWRAP}>
                 {formatHeadline(thbFmt, totalSatangNumber / 100)}
               </span>
               <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('totalLabel')}</span>
