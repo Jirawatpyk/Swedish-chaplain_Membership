@@ -68,7 +68,7 @@ export default async function Loading() {
               <Stat
                 key={i}
                 label={<SkeletonBlock className="h-4 w-28" />}
-                caption={<SkeletonBlock className="h-3 w-24" />}
+                caption={<SkeletonBlock className="h-[1.125rem] w-24" />}
                 loading
               />
             ))}
@@ -78,9 +78,10 @@ export default async function Loading() {
           <div aria-hidden className="grid gap-4 lg:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
               <Card key={i} header={<SkeletonBlock className="h-5 w-40" />}>
-                <div className="grid gap-2">
+                {/* Rows at the real list's 36px row height and 4px gap. */}
+                <div className="grid gap-[var(--aura-space-1)]">
                   {Array.from({ length: 3 }).map((_, j) => (
-                    <SkeletonBlock key={j} className="h-5 w-full" />
+                    <SkeletonBlock key={j} className="h-9 w-full" />
                   ))}
                 </div>
               </Card>
@@ -91,9 +92,23 @@ export default async function Loading() {
               the real chart row so the activity feed below doesn't shift (CLS). */}
           <div aria-hidden className="grid gap-4 lg:grid-cols-2">
             {Array.from({ length: 2 }).map((_, i) => (
-              <Card key={i} header={<SkeletonBlock className="h-5 w-44" />}>
-                <SkeletonBlock className="h-8 w-28" />
+              <Card
+                key={i}
+                header={
+                  <div className="grid gap-1">
+                    <SkeletonBlock className="h-6 w-44" />
+                    <SkeletonBlock className="h-4 w-56" />
+                  </div>
+                }
+              >
+                {/* Headline figure, the h-28 canvas, then the first/last
+                    month row, as MiniSeriesChart draws them. */}
+                <SkeletonBlock className="h-[34px] w-28" />
                 <SkeletonBlock className="mt-3 h-28 w-full" />
+                <div data-slot="trend-months" className="mt-1 flex justify-between">
+                  <SkeletonBlock className="h-4 w-16" />
+                  <SkeletonBlock className="h-4 w-16" />
+                </div>
               </Card>
             ))}
           </div>
@@ -110,7 +125,7 @@ export default async function Loading() {
                   skeleton→real swap doesn't insert a new line and push the
                   bars (and the activity feed below) down (CLS). */}
               <div className="flex items-baseline justify-between gap-2">
-                <SkeletonBlock className="h-8 w-16" />
+                <SkeletonBlock className="h-[34px] w-16" />
                 <SkeletonBlock className="h-3 w-24" />
               </div>
               {/* Bar area reserves MembershipTierChart's MIN_CHART_HEIGHT_PX
@@ -120,12 +135,13 @@ export default async function Loading() {
               <SkeletonBlock className="mt-3 h-[120px] w-full" />
             </Card>
             <Card header={<SkeletonBlock className="h-5 w-40" />}>
-              <div className="flex flex-col items-center gap-3">
-                <SkeletonBlock className="h-40 w-40 rounded-full" />
-                {/* Reserves the visible legend row's height (WCAG 1.4.1 —
-                    the real donut always renders a paid/unpaid/overdue
-                    legend below the canvas). */}
-                <SkeletonBlock className="h-4 w-56" />
+              {/* The donut canvas's own box (`aspect-square max-h-64`), then
+                  the legend row (WCAG 1.4.1 — always drawn) and the basis
+                  caption under it. */}
+              <div className="flex flex-col items-center">
+                <SkeletonBlock className="mx-auto aspect-square max-h-64 w-full max-w-64 rounded-full" />
+                <SkeletonBlock className="mt-3 h-4 w-56" />
+                <SkeletonBlock className="mt-1 h-4 w-40" />
               </div>
             </Card>
           </div>
