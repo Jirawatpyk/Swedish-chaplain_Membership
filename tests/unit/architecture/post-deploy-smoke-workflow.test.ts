@@ -132,20 +132,31 @@ describe('.github/workflows/post-deploy-smoke.yml', () => {
     expect(code).not.toMatch(/:\s*write-all/);
   });
 
-  it('hands the token only to the issue step, and checkout keeps no credentials', () => {
+  /** [first, end) line range of the step whose `- name:` line matches. */
+  function stepRange(name: RegExp): { start: number; end: number } {
     const lines = src.split(/\r?\n/);
-    const start = lines.findIndex((l) => /^\s+- name: Open or update the prod-smoke issue\s*$/.test(l));
-    expect(start).toBeGreaterThan(0);
+    const start = lines.findIndex((l) => name.test(l));
+    expect(start, String(name)).toBeGreaterThan(0);
     const stepIndent = indentOf(lines[start]!);
     let end = start + 1;
     while (end < lines.length && !(indentOf(lines[end]!) <= stepIndent && lines[end]!.trim() !== '')) end += 1;
-    const envAt = lines.findIndex((l, i) => i > start && i < end && /^\s+env:\s*$/.test(l));
-    expect(envAt).toBeGreaterThan(start);
+    return { start, end };
+  }
+
+  const FAIL_STEP = /^\s+- name: Open or update the prod-smoke issue\s*$/;
+  const RECOVER_STEP = /^\s+- name: Close the prod-smoke issue as recovered\s*$/;
+
+  it('hands the token only to the two issue steps, and checkout keeps no credentials', () => {
+    const lines = src.split(/\r?\n/);
+    const ranges = [stepRange(FAIL_STEP), stepRange(RECOVER_STEP)];
     for (const key of ['GH_TOKEN', 'GH_REPO']) {
       const at = lines.flatMap((l, i) => (new RegExp(`^\\s+${key}:`).test(l) ? [i] : []));
-      expect(at, key).toHaveLength(1);
-      expect(at[0]!, key).toBeGreaterThan(envAt);
-      expect(at[0]!, key).toBeLessThan(end);
+      expect(at, key).toHaveLength(2);
+      for (const r of ranges) {
+        const envAt = lines.findIndex((l, i) => i > r.start && i < r.end && /^\s+env:\s*$/.test(l));
+        expect(envAt, key).toBeGreaterThan(r.start);
+        expect(at.some((i) => i > envAt && i < r.end), key).toBe(true);
+      }
     }
     expect(code).toMatch(/uses: actions\/checkout@v4\n\s+with:\n\s+persist-credentials:\s*false/);
   });
@@ -160,6 +171,18 @@ describe('.github/workflows/post-deploy-smoke.yml', () => {
     expect(offending).toEqual([]);
   });
 
+  it('expands no ${{ }} expression of any kind inside a run block', () => {
+    const offending = blocks.filter((b) => b.text.includes('${{')).map((b) => `line ${b.line}`);
+    expect(offending).toEqual([]);
+  });
+
+  it('keys concurrency so only successful Production events share the queued slot', () => {
+    expect(code).toMatch(
+      /^\s{2}group: post-deploy-smoke-\$\{\{ github\.event_name == 'workflow_dispatch' && 'manual' \|\| \(github\.event\.deployment_status\.state == 'success' && github\.event\.deployment\.environment == 'Production'\) && 'production' \|\| github\.run_id \}\}\s*$/m,
+    );
+    expect(code).toMatch(/^\s{2}cancel-in-progress:\s*false\s*$/m);
+  });
+
   it('resolves the base URL from the input, else the PROD_BASE_URL variable, and fails when empty', () => {
     expect(code).toMatch(/BASE_URL:\s*\$\{\{\s*inputs\.base_url\s*\|\|\s*vars\.PROD_BASE_URL\s*\}\}/);
     const guard = blocks.find((b) => /-z\s+"\$BASE_URL"/.test(b.text));
@@ -167,21 +190,21 @@ describe('.github/workflows/post-deploy-smoke.yml', () => {
     expect(guard!.text).toMatch(/exit 1/);
   });
 
-  it('runs the smoke script with tsx, keeps its exit code through tee, and saves its output', () => {
+  it('runs the smoke script with plain node, keeps its exit code through tee, and saves its output', () => {
     const smoke = blocks.find((b) => b.text.includes('scripts/post-deploy-smoke.ts'));
     expect(smoke).toBeDefined();
-    expect(smoke!.text).toMatch(/pnpm exec tsx scripts\/post-deploy-smoke\.ts "\$BASE_URL"/);
+    expect(smoke!.text).toMatch(/(^|\s)node scripts\/post-deploy-smoke\.ts "\$BASE_URL"/);
+    expect(smoke!.text).not.toContain('tsx');
     expect(smoke!.text).toContain('set -o pipefail');
     expect(smoke!.text).toMatch(/\|\s*tee\s+\S+/);
   });
 
-  it('sets up pnpm + node 22 exactly as quality-gates.yml does', () => {
+  it('sets up node 22 only: no pnpm, no dependency install, no cache', () => {
     expect(code).toContain('uses: actions/checkout@v4');
-    expect(code).toContain('uses: pnpm/action-setup@v4');
     expect(code).toContain('uses: actions/setup-node@v4');
     expect(code).toMatch(/node-version:\s*'22'/);
-    expect(code).toMatch(/cache:\s*'pnpm'/);
-    expect(code).toContain('pnpm install --frozen-lockfile');
+    expect(code).not.toContain('pnpm');
+    expect(code).not.toMatch(/^\s+cache:/m);
   });
 
   it('on failure opens or comments on a prod-smoke issue with --body-file only', () => {
@@ -198,7 +221,26 @@ describe('.github/workflows/post-deploy-smoke.yml', () => {
     for (const field of ['BASE_URL', 'COMMIT_SHA', 'DEPLOYMENT_URL']) {
       expect(t).toMatch(new RegExp(`\\$\\{?${field}\\b`));
     }
-    const stepHeader = src.split(/\r?\n/).slice(0, issue!.line).reverse().find((l) => /^\s+if:/.test(l));
-    expect(stepHeader).toMatch(/if:\s*failure\(\)/);
+    const lines = src.split(/\r?\n/);
+    const r = stepRange(FAIL_STEP);
+    expect(lines.slice(r.start, r.end).some((l) => /^\s+if:\s*failure\(\)\s*$/.test(l))).toBe(true);
+  });
+
+  it('on success comments "Recovered" on every open prod-smoke issue and closes it', () => {
+    const lines = src.split(/\r?\n/);
+    const r = stepRange(RECOVER_STEP);
+    expect(lines.slice(r.start, r.end).some((l) => /^\s+if:\s*success\(\)\s*$/.test(l))).toBe(true);
+    const block = blocks.find((b) => b.line - 1 > r.start && b.line - 1 < r.end);
+    expect(block).toBeDefined();
+    const t = block!.text;
+    expect(t).toContain('Recovered: smoke passed at');
+    expect(t).toMatch(/\$\{?COMMIT_SHA\b/);
+    expect(t).toMatch(/\$\{?RUN_URL\b/);
+    expect(t).toMatch(/gh issue list[^\n]*--label prod-smoke[^\n]*--state open/);
+    expect(t).toMatch(/gh issue comment[^\n]*--body-file/);
+    expect(t).toMatch(/gh issue close/);
+    expect(t).not.toMatch(/--body\s+["']/);
+    // A manual run against another URL must never close a production alarm.
+    expect(t).toMatch(/"\$BASE_URL"\s*!=\s*"\$PROD_BASE_URL"/);
   });
 });
