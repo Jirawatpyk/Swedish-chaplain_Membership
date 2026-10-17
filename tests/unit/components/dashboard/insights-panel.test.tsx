@@ -168,5 +168,39 @@ describe('InsightsPanel — keyboard focus after a dismiss (WCAG 2.4.3)', () => 
     expect(document.activeElement).toBe(title);
     expect(title).toHaveAttribute('tabindex', '-1');
   });
-});
 
+  it('returns focus to the restored insight’s dismiss button when the POST fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 500 })));
+    render(<InsightsPanel {...PANEL_PROPS} lines={THREE} />);
+    const middle = screen.getByRole('button', name('50 members have unused E-Blast quota'));
+    middle.focus();
+    fireEvent.click(middle);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', name('50 members have unused E-Blast quota')),
+      );
+    });
+  });
+
+  it('leaves focus alone on a failed POST once the user has moved it elsewhere', async () => {
+    let fail!: () => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>((resolve) => { fail = () => resolve(new Response(null, { status: 500 })); })),
+    );
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <InsightsPanel {...PANEL_PROPS} lines={THREE} />
+      </>,
+    );
+    fireEvent.click(screen.getByRole('button', name('50 members have unused E-Blast quota')));
+    const elsewhere = screen.getByRole('button', { name: 'Elsewhere' });
+    elsewhere.focus();
+    fail();
+    await waitFor(() => {
+      expect(screen.getByRole('button', name('50 members have unused E-Blast quota'))).toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(elsewhere);
+  });
+});
