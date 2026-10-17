@@ -57,10 +57,12 @@ export function InsightsPanel({
   const visible = lines.filter((line) => !dismissedKeys.has(lineKey(line)));
   // WCAG 2.4.3: the dismissed row's button unmounts with it, which would drop
   // focus to <body>. Focus moves to the next insight's button, else the
-  // previous one, else the panel title.
+  // previous one, else the panel title. A failed POST brings the row back and
+  // returns focus to its button, unless the user has moved focus since.
   const titleId = useId();
   const listRef = useRef<HTMLUListElement>(null);
   const focusAfterHide = useRef<string | null>(null);
+  const movedFocusTo = useRef<Element | null>(null);
 
   useEffect(() => {
     const target = focusAfterHide.current;
@@ -70,15 +72,22 @@ export function InsightsPanel({
       const heading = document.getElementById(titleId);
       heading?.setAttribute('tabindex', '-1');
       heading?.focus();
+      movedFocusTo.current = heading;
       return;
     }
     const row = Array.from(listRef.current?.querySelectorAll<HTMLLIElement>('li[data-insight-key]') ?? []).find(
       (li) => li.dataset.insightKey === target,
     );
-    row?.querySelector<HTMLButtonElement>('button')?.focus();
+    const button = row?.querySelector<HTMLButtonElement>('button') ?? null;
+    button?.focus();
+    movedFocusTo.current = button;
   }, [dismissedKeys, titleId]);
 
   function rollback(k: string): void {
+    const active = document.activeElement;
+    if (active === null || active === document.body || active === movedFocusTo.current) {
+      focusAfterHide.current = k;
+    }
     setDismissedKeys((prev) => {
       const next = new Set(prev);
       next.delete(k);
