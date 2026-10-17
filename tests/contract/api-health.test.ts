@@ -208,6 +208,39 @@ describe('GET /api/health', () => {
     expect(executeMock).toHaveBeenCalledTimes(2);
   });
 
+  it('no key of a health.degraded payload is redacted by the production logger', async () => {
+    // The logger is mocked above, so a redacted key would pass every other
+    // test and read "[REDACTED]" in production. Check the payloads against the
+    // REAL redact list, with pino's top-level semantics: a path names a
+    // top-level key when it is that key exactly, or the bare wildcard `*`.
+    const { REDACT_PATHS } = await vi.importActual<typeof import('@/lib/logger')>('@/lib/logger');
+    const topLevel = new Set(REDACT_PATHS.filter((p) => !p.includes('.') && !p.includes('[')));
+
+    // query-error
+    executeMock.mockRejectedValueOnce(new Error('down'));
+    let GET = await loadGet();
+    await GET();
+
+    // timeout, then still-pending, on a fresh module
+    vi.resetModules();
+    executeMock.mockReturnValue(new Promise(() => {}));
+    GET = await loadGet();
+    const first = GET();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await first;
+    await vi.advanceTimersByTimeAsync(10_001);
+    await GET();
+
+    const payloads = warnMock.mock.calls.map((c) => c[0] as Record<string, unknown>);
+    expect(payloads).toHaveLength(3);
+    const values = payloads.flatMap((p) => Object.values(p));
+    for (const v of ['timeout', 'query-error', 'still-pending']) expect(values).toContain(v);
+
+    const keys = [...new Set(payloads.flatMap((p) => Object.keys(p)))];
+    const redacted = keys.filter((k) => topLevel.has(k) || topLevel.has('*'));
+    expect(redacted).toEqual([]);
+  });
+
   it('N concurrent requests run one query (single-flight)', async () => {
     let resolveQuery: (v: unknown) => void = () => {};
     executeMock.mockReturnValueOnce(
