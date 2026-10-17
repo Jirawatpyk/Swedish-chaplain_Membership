@@ -53,6 +53,9 @@ describe('staff dashboard loading', () => {
     // donut and its square box are gone)
     expect(block('max-h-64')).toHaveLength(0);
     expect(host.querySelectorAll('[data-slot="status-bar-skeleton"]')).toHaveLength(1);
+    // its header reserves the title AND the description line (UX review,
+    // 17 Oct: the description moved into the card header)
+    expect(host.querySelectorAll('[data-slot="status-header-skeleton"] [data-slot="skeleton-block"]')).toHaveLength(2);
     // each trend card reserves the canvas with its axes (spec 122 US11, 17 Oct)
     expect(block('h-48')).toHaveLength(2);
   });

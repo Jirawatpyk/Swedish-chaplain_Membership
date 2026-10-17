@@ -328,5 +328,25 @@ describe('InvoiceStatusChart', () => {
       expect(container.querySelector('[data-slot="chart"]')).toBeNull();
     });
   });
+
+  // UX review (17 Oct): at 200% text on a phone the headline split inside the
+  // number ("฿4,977,30 / 0.00" read as another amount), and the percent fell
+  // away from its amount.
+  describe('200% text', () => {
+    it('the headline may break only after a thousands group, never inside one', () => {
+      renderChart(FULL);
+      const total = screen.getByText((_, el) => el?.getAttribute('data-slot') === 'status-total');
+      expect(total.querySelectorAll('wbr')).toHaveLength(1); // THB 10,<wbr>000.00
+      expect(total.className).not.toContain('overflow-wrap:anywhere');
+    });
+
+    it('a row keeps its amount and percent together as one unit', () => {
+      const { container } = renderChart(FULL);
+      const li = container.querySelector('[data-slot="status-rows"] li')!;
+      const figures = li.querySelector('[data-slot="status-figures"]');
+      expect(figures?.textContent).toContain('THB 5,000.00');
+      expect(figures?.textContent).toContain('50%');
+    });
+  });
 });
 
