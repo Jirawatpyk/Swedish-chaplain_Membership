@@ -6,7 +6,7 @@ Named, reusable scripts for the Claude Code **Workflow** tool: deterministic orc
 
 | Workflow | When | Agents (typical) |
 |---|---|---|
-| `review-branch` | A branch diff too large for one context to read line-by-line (> ~40 files or > ~5k lines), or any money / tenant / migration / auth branch before the PR opens. For a small diff, dispatch `whole-branch-reviewer` alone. Round 2 after fixes: pass `seen: [...prev.confirmed, ...prev.refuted]` and only NEW classes come back. | ~20 (1 scope + ≤6 finders + ≤3 skeptics × ≤10 candidates + 1 seam pass) |
+| `review-branch` | A branch diff too large for one context to read line-by-line (> ~40 files or > ~5k lines), or any money / tenant / migration / auth branch before the PR opens. For a small diff, run `/code-review high` instead (D-022). Round 2 after fixes: pass `seen: [...prev.confirmed, ...prev.refuted]` and only NEW classes come back. | ~20 (1 scope + ≤6 finders + ≤3 skeptics × ≤10 candidates + 1 seam pass) |
 | `sweep-class` | A defect class was found once and must be closed EVERYWHERE — audit-truth literals, fail-open `default` arms, a widened union, a renamed port. Pass the known instances as `examples`; they are the positive control. Not for one known file — grep that yourself. | ~15–25 (3 form modalities + 1 buckets + finders × rounds + 1 critic × rounds + skeptics on every `exempt`) |
 | `spec-review-panel` | A spec touching money, tax, tenant isolation, PII, auth or a migration — after `/speckit.clarify`, before `/speckit.plan` or `/speckit.tasks`. Not a `/speckit-*` skill and not a replacement for `/speckit.critique-run` (two lenses, one context, run by Claude itself). | ~8–25 (1 scope + 4–10 lenses + 1 skeptic × ≤12 findings, 2 for a blocker + 1 synthesis) |
 
