@@ -18,6 +18,7 @@ description: How to review a change and get it merged on Chamber-OS — which pr
 - **`/code-review ultra`** (or `/code-review ultra <PR#>`) is a multi-agent **cloud** review of the branch. The user triggers it and it is billed, so Claude never launches it; suggest it for a large, high-stakes branch.
 - A Workflow runs only on explicit opt-in ("use a workflow" / `ultracode`), never on Claude's own initiative. Otherwise, describe what it would do and roughly what it costs, and ask. If the user declines, review per module: `/code-review high <path>` for each touched module, the § 2 surface reviewers, then `whole-branch-reviewer`.
 - No High or Medium finding may remain at merge (D-015): fix it, or refute it with evidence and have the reviewer confirm on a re-run.
+- **Rounds:** a normal change gets one review round, then the raising reviewer re-checks each fix. A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) gets ≥ 2 rounds plus the staff review (§ 2). Review runs after Verify, so the reviewed code is the code that works.
 - Tell every reviewer to report only gaps that affect correctness or the stated requirements. A reviewer asked to find gaps always finds some, and chasing every one over-engineers.
 
 ## 2. Which project subagent reviews which surface
@@ -59,7 +60,7 @@ Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, o
 
 `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.checklist` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement` → `/speckit.verify` → `/speckit.review` → `/speckit.ship`
 
-These commands remain usable for the matching `docs/workflow.md` steps; the process rules are the workflow's, not the commands'. Every plan runs the Constitution Check against the 10 principles (`.specify/memory/constitution.md`); a deviation needs a `plan.md` § Complexity Tracking entry with the rejected simpler alternative. `/speckit-*` skills may dispatch project subagents while executing a gate.
+These commands remain usable for the matching `docs/workflow.md` steps; the process rules are the workflow's, not the commands'. Every plan runs the Constitution Check against the 10 principles (`.specify/memory/constitution.md`); a deviation needs a `plan.md` § Complexity Tracking entry with the rejected simpler alternative. The `speckit-*` skills are user-invoked only (D-019): run one by name when you want it; Claude does not pick them.
 
 ## 4. Before pushing
 

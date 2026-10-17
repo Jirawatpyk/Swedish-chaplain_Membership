@@ -28,7 +28,7 @@ A worktree from an up-to-date `origin/main` at a short path (e.g. `%TEMP%\fNN`),
 
 ## 3. Plan (M / L)
 
-Draft in plan mode (`superpowers:writing-plans` helps), then save it as `specs/<nnn-name>/plan.md` from `plan-template.md` in this skill's folder. It covers:
+Ask to enter plan mode (the EnterPlanMode tool; the user approves — or the user switches to Plan mode themselves). Draft in plan mode (`superpowers:writing-plans` helps), present the plan for approval when leaving plan mode, then save it as `specs/<nnn-name>/plan.md` from `plan-template.md` in this skill's folder. It covers:
 - the approach and the alternatives not taken;
 - the files to touch and the module rules that apply;
 - the data model and migration;
@@ -45,22 +45,13 @@ For **L**, have `chamber-os-architect` and the surface reviewers for what the pl
 - RED commit, then GREEN commit, per row of the test plan (`superpowers:test-driven-development`). A guard whose test never went red has not been exercised.
 - For a migration, use the `new-migration` skill. For a new audit event type, use `add-audit-event`. For a bug, use `superpowers:systematic-debugging` before changing code.
 - Use the module's rule (`.claude/rules/modules/*.md`) for its traps. A tenant-scoped repo threads `tx` from `runInTenant`.
-- When the build is complete, run `/simplify` on the diff (reuse, simplification, efficiency), then go to Check.
+- When the build is complete, run `/simplify` on the diff (reuse, simplification, efficiency), then go to Check. For L, don't re-enter plan mode per slice; only a slice that has to leave the plan goes back to plan mode, updates `plan.md` and is approved again.
 
 ## 5. Check
 
 `pnpm check` → `pnpm test:coverage` → `pnpm vitest run tests/contract/` → the touched integration suites by path. Report each command's result. A failure is reported with its output, never summarised as "mostly green".
 
-## 6. Review
-
-Follow `review-and-ship` §§ 1–2:
-1. `/code-review high` on the diff, or the `review-branch` Workflow when it applies.
-2. The surface reviewers for what the diff touches.
-3. `whole-branch-reviewer` last.
-
-Reviews run in subagents; the writer never reviews its own code. Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it. **No High and no Medium finding may remain: fix every one, with no waivers.** A finding you believe is wrong is refuted with evidence (the code, a test, a measurement) and the reviewer re-runs on it; that is the only way one closes unfixed. Low findings are fixed or listed in the PR. After substantial fixes to a reviewer's findings, run that reviewer again on the fixes.
-
-## 7. Verify
+## 6. Verify
 
 Watch the change work in the running app, not only in tests. The `run-chamber-os` skill is the recipe for starting it: worktree, :3400, cold `.next`, personas, Playwright attached, and the UI probes.
 - Start a dev server in the worktree on **:3400** after `rm -rf .next`. :3100 serves the main checkout, not the branch.
@@ -68,6 +59,15 @@ Watch the change work in the running app, not only in tests. The `run-chamber-os
 - Run the touched e2e specs on chromium and mobile-chrome with `--workers=1 --retries=0`. A red that also fails on `main` is reported as pre-existing, with the evidence.
 - UI also gets: 320 px, a 32 px default font, dark mode, and TH and SV.
 - Evidence (numbers, screenshots) goes against each Done-when line.
+
+## 7. Review
+
+Review the change as built **and verified**, so a fix found in Verify is reviewed too. Follow `review-and-ship` §§ 1–2:
+1. `/code-review high` on the diff, or the `review-branch` Workflow when it applies.
+2. The surface reviewers for what the diff touches.
+3. `whole-branch-reviewer` last.
+
+Reviews run in subagents; the writer never reviews its own code. Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it. **No High and no Medium finding may remain: fix every one, with no waivers.** A finding you believe is wrong is refuted with evidence (the code, a test, a measurement) and the reviewer re-runs on it; that is the only way one closes unfixed. Low findings are fixed or listed in the PR. Rounds: a normal change gets one round, then the raising reviewer re-checks each fix; a sensitive surface gets ≥ 2 rounds plus the staff review. Any code change after review goes back through review.
 
 ## 8. PR
 

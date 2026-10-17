@@ -1,6 +1,7 @@
 ---
 name: speckit-speckit-superpowers-bridge-execute
 description: Execute Spec Kit tasks.md through the Superpowers bridge
+disable-model-invocation: true
 compatibility: Requires spec-kit project structure with .specify/ directory
 metadata:
   author: github-spec-kit

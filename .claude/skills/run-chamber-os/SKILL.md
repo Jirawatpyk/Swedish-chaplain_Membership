@@ -1,11 +1,11 @@
 ---
 name: run-chamber-os
-description: The recipe for running a Chamber-OS branch locally so it can be verified — a worktree dev server on :3400 against the Neon dev branch, sign-in personas, Playwright attached to it, and the viewport/font/locale probes. The launch recipe /run and /verify follow; use at feature-flow step 7 or whenever a change must be watched working in the running app.
+description: The recipe for running a Chamber-OS branch locally so it can be verified — a worktree dev server on :3400 against the Neon dev branch, sign-in personas, Playwright attached to it, and the viewport/font/locale probes. The launch recipe /run and /verify follow; use at feature-flow step 6 or whenever a change must be watched working in the running app.
 ---
 
 # Run Chamber-OS for verification
 
-This skill only starts the app. **What** to check comes from the change's Done-when lines (`docs/workflow.md` step 7).
+This skill only starts the app. **What** to check comes from the change's Done-when lines (`docs/workflow.md` step 6).
 
 ## Rules
 

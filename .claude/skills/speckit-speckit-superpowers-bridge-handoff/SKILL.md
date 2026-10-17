@@ -1,6 +1,7 @@
 ---
 name: speckit-speckit-superpowers-bridge-handoff
 description: Create or update the Superpowers implementation handoff state
+disable-model-invocation: true
 compatibility: Requires spec-kit project structure with .specify/ directory
 metadata:
   author: github-spec-kit
