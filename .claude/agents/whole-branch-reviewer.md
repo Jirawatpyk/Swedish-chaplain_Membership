@@ -1,6 +1,6 @@
 ---
 name: whole-branch-reviewer
-description: "Fresh-eyes review of the WHOLE branch diff against origin/main before a PR opens or merges — reads, never edits; verifies every claim against the code; reports BLOCKER/HIGH/MEDIUM/LOW with file:line and a MERGEABLE verdict. Its unique job is the SEAM: a defect that is invisible in any single commit or any single surface, and only appears when the whole branch is read at once. Use it last only when the review was split - the review-branch Workflow, a per-module review, or slices sharing one long-lived branch - to read the parts together; a normal PR skips it because /code-review high already reads the whole diff (D-022)."
+description: "Fresh-eyes review of the WHOLE branch diff against origin/main before a PR opens or merges — reads, never edits; verifies every claim against the code; reports BLOCKER/HIGH/MEDIUM/LOW with file:line and a MERGEABLE verdict. Its unique job is the SEAM: a defect that is invisible in any single commit or any single surface, and only appears when the whole branch is read at once. Use it last only when the review was split - the review-branch Workflow, a per-module review, or slices sharing one long-lived branch - to read the parts together; a normal PR skips it because /code-review high run with the PR as its target already reads the whole diff (D-022)."
 model: inherit
 color: red
 memory: project
