@@ -19,7 +19,9 @@ function run(toolName: string, toolInput: Record<string, unknown>) {
   const res = spawnSync(process.execPath, [HOOK], {
     input: JSON.stringify({ hook_event_name: 'PreToolUse', cwd: ROOT, tool_name: toolName, tool_input: toolInput }),
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_PROJECT_DIR: ROOT },
+    // HEAD stands in for main: a CI checkout has no origin/main ref, and the
+    // migration cases only need a committed file vs an uncommitted one.
+    env: { ...process.env, CLAUDE_PROJECT_DIR: ROOT, CLAUDE_GUARD_MAIN_REF: 'HEAD' },
   });
   return { code: res.status, stderr: res.stderr };
 }

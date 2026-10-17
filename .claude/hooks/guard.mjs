@@ -23,13 +23,20 @@ function isSecretPath(p) {
   return /^\.env(\..+)?$/.test(name) && name !== '.env.example';
 }
 
-function onMain(relPath) {
-  try {
-    execFileSync('git', ['cat-file', '-e', `origin/main:${relPath}`], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
+// The ref that stands for "applied in production". CLAUDE_GUARD_MAIN_REF
+// overrides it (the tests pin it, because a CI checkout has no origin/main).
+const MAIN_REFS = process.env.CLAUDE_GUARD_MAIN_REF ? [process.env.CLAUDE_GUARD_MAIN_REF] : ['origin/main', 'main'];
+
+function onMain(relPath, cwd) {
+  for (const ref of MAIN_REFS) {
+    try {
+      execFileSync('git', ['cat-file', '-e', `${ref}:${relPath}`], { stdio: 'ignore', cwd });
+      return true;
+    } catch {
+      // try the next ref; none found means "not on main" (fail open)
+    }
   }
+  return false;
 }
 
 let input = '';
@@ -61,7 +68,7 @@ process.stdin.on('end', () => {
     if (isSecretPath(file)) block(`${basename(file)} holds secrets; the user edits it.`);
     const root = process.env.CLAUDE_PROJECT_DIR || call.cwd || process.cwd();
     const rel = relative(resolve(root), resolve(file)).split('\\').join('/');
-    if (/^drizzle\/migrations\/\d{4}_[^/]+\.sql$/.test(rel) && onMain(rel)) {
+    if (/^drizzle\/migrations\/\d{4}_[^/]+\.sql$/.test(rel) && onMain(rel, root)) {
       block(`${rel} is already on main and applied in production. Write a new migration (the new-migration skill) instead of editing it.`);
     }
     process.exit(0);
