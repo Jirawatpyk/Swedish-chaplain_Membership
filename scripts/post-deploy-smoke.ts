@@ -62,7 +62,11 @@ const CHECKS: readonly Check[] = [
   },
 ];
 
-/** An http(s) origin (optionally with a path) and no credentials, else null. */
+/**
+ * An http(s) URL with no credentials, else null. Only its ORIGIN is used:
+ * `new URL('/api/health', base)` drops any path on the base, so pass the
+ * origin (`PROD_BASE_URL` is documented as origin-only).
+ */
 function parseBaseUrl(raw: string): URL | null {
   let url: URL;
   try {
@@ -144,5 +148,9 @@ const invokedDirectly =
   process.argv[1]?.endsWith('post-deploy-smoke.js') === true;
 
 if (invokedDirectly) {
-  void main();
+  main().catch(() => {
+    // Never print the error: it can carry a URL or a response fragment.
+    console.log('FAIL smoke internal-error');
+    process.exitCode = 1;
+  });
 }
