@@ -135,10 +135,22 @@ export function InsightsPanel({
           {emptyLabel}
         </p>
       ) : (
-        <ul ref={listRef} className="grid gap-[var(--aura-space-1)] aura-text-body">
+        <ul
+          ref={listRef}
+          className="divide-y divide-[var(--aura-border-default)] border-t border-[var(--aura-border-default)] aura-text-body"
+        >
           {visible.map((line) => (
-            <li key={line.key} data-insight-key={lineKey(line)} className="flex items-center justify-between gap-[var(--aura-space-2)]">
-              <span className="min-w-0">{line.text}</span>
+            <li
+              key={line.key}
+              data-insight-key={lineKey(line)}
+              className="flex min-h-11 items-center gap-[var(--aura-space-3)] px-[var(--aura-space-1)] py-[var(--aura-space-1)]"
+            >
+              <span
+                data-slot="insight-dot"
+                aria-hidden="true"
+                className="size-1.5 shrink-0 rounded-full bg-[var(--aura-chart-1)]"
+              />
+              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{line.text}</span>
               <InsightDismissButton
                 // Compose a UNIQUE accessible name per insight (WCAG 2.4.6 /
                 // voice-control): "Dismiss insight: <the insight text>".
