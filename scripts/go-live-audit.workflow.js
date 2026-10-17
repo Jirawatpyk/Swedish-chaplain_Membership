@@ -55,7 +55,7 @@ const UNITS = [
 const DIMENSIONS = [
   { key: 'correctness', agentType: 'reliability-guardian', focus: 'logic bugs, Result<T,E> misuse, transaction boundaries, race conditions, error handling, idempotency' },
   { key: 'security', agentType: 'security-threat-modeler', focus: 'tenant isolation (Principle I; tx-from-runInTenant not global db), authz/IDOR, PII leaks, audit-trail completeness, secrets in logs' },
-  { key: 'ui', agentType: 'ui-design-specialist', focus: 'design-token adherence (no hardcoded colors / arbitrary values), light/dark parity, brand consistency, empty/loading/error visuals, responsive' },
+  { key: 'ui', agentType: 'enterprise-ux-designer', focus: 'design-token adherence (no hardcoded colors / arbitrary values), light/dark parity, brand consistency, empty/loading/error visuals, responsive' },
   { key: 'ux', agentType: 'enterprise-ux-designer', focus: 'flow completeness, feedback (toast/skeleton/confirm), error recovery, a11y WCAG 2.1 AA, i18n EN/TH/SV parity, keyboard/focus' },
   { key: 'perf', agentType: 'performance-slo-guardian', focus: 'N+1 queries, missing indexes, SLO budgets (docs/observability.md), bundle budgets' },
   { key: 'scope', agentType: 'business-pm', focus: 'MISSING specced FRs / table-stakes flows; EXCESS dead code / demo leftovers / unused features (vs specs + membership-benefits-analysis + market baseline)' },

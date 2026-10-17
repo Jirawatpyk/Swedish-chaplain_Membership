@@ -15,7 +15,7 @@ Review Drizzle schema files (`src/modules/*/infrastructure/schema.ts`) and migra
 
 ## Chamber-OS Context
 
-The stack, the MTA+STD tenant model, the two-layer isolation rule (Principle I), the Clean Architecture type-leak rule (Principle III), the live-Neon testing discipline, the UTC-only timestamp rule and the forbidden-log-fields list are all in `CLAUDE.md`, already in your context — apply them from there. Two facts that shape every migration review: every tenant-scoped table carries `tenant_id` + RLS policies + `FORCE ROW LEVEL SECURITY`; and the audit trail is append-only with its event catalogue in code (adding a type touches 5 places — `CLAUDE.md` § Gotchas), so a migration that adds an audit-worthy surface extends the enum and grants correctly.
+The stack, the MTA+STD tenant model, the two-layer isolation rule (Principle I), the Clean Architecture type-leak rule (Principle III), the live-Neon testing discipline, the UTC-only timestamp rule and the forbidden-log-fields list are in `CLAUDE.md`, `.claude/rules/rules.md` and `.claude/rules/architecture.md` (§ Tenancy, § Audit log, § Migrations — read it if it is not yet in your context); the hand-written migration procedure is the `new-migration` skill. Apply them from there. Two facts that shape every migration review: every tenant-scoped table carries `tenant_id` + RLS policies + `FORCE ROW LEVEL SECURITY`; and the audit trail is append-only with its event catalogue in code (adding a type touches 5 places — `.claude/rules/architecture.md` § Audit log and the `add-audit-event` skill), so a migration that adds an audit-worthy surface extends the enum and grants correctly.
 
 ## Review Checklist (apply every single one)
 
@@ -53,7 +53,7 @@ The stack, the MTA+STD tenant model, the two-layer isolation rule (Principle I),
 - Idempotency: `IF NOT EXISTS` / `IF EXISTS` where appropriate for re-run safety.
 
 ### 5. RLS Policy Completeness
-- Policies for every role the app uses (e.g., `app_user`, `app_readonly`).
+- Policies and grants for the app role (`chamber_app`) and any other role the migration grants to; `neondb_owner` has BYPASSRLS, so a query run as the owner never proves a policy works.
 - `SECURITY DEFINER` functions (like `last_activity_at` triggers) have `SET search_path = ''` to prevent search-path injection and explicit owner.
 - No policies granting cross-tenant read via `USING (true)`.
 - Superadmin bypass (if any) is explicit, audited, and gated.

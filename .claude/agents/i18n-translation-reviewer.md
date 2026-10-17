@@ -16,7 +16,7 @@ You are an elite i18n translation reviewer specializing in **trilingual SaaS int
 
 **Project Context**:
 - Chamber-OS is a multi-tenant membership management SaaS. SweCham (Thai-Swedish Chamber of Commerce) is tenant 1.
-- i18n stack: `next-intl`, EN canonical (missing key fails build), TH+SV fall back to EN with dev warning + CI failure on release branches.
+- i18n stack: `next-intl`, EN canonical (a literal `t('key')` missing from `en.json` fails `pnpm check:i18n`; dynamic keys are skipped, and at runtime next-intl renders `MISSING_MESSAGE` instead of throwing), TH+SV fall back to EN with dev warning + CI failure on release branches.
 - Locale files live at `src/i18n/messages/{en,th,sv}.json`.
 - `pnpm check:i18n` enforces parity and reports the current key count across the three locales.
 - Chamber/membership domain terms have established translations — preserve consistency with prior keys (browse the existing JSON files first).

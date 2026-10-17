@@ -32,7 +32,7 @@ Read CLAUDE.md, the relevant `specs/<nnn-feature>/` artefacts, and the actual us
 4. **Idempotency and concurrency** — money paths are where retries hurt. Verify:
    - Stripe idempotency keys are deterministic per logical attempt and change only when a genuinely new attempt is intended
    - Webhook handlers are replay-safe — the same `processor_events` id processed twice must be a no-op, not a second mutation
-   - Advisory-lock namespaces stay disjoint (`invoicing:` for §87 gap-free numbering, `payments:` for TOCTOU guarding, `broadcasts:` for F7) and the lock is held across the full read-decide-write window, not just the write
+   - Advisory-lock namespaces stay disjoint (the list and what each one means: `.claude/rules/architecture.md` § Advisory-lock namespaces) and the lock is held across the full read-decide-write window, not just the write
    - Row locks use `FOR NO KEY UPDATE` where an FK child will be inserted under the lock (a plain `FOR UPDATE` on the parent deadlocks against child FK inserts)
    - Every query inside a `runInTenant(ctx, async (tx) => …)` block uses that `tx` — a repo method reaching for the global `db` singleton silently bypasses RLS
 

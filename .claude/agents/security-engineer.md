@@ -24,9 +24,9 @@ By default, review ONLY the recently written or modified code (the current diff 
 4. **PII & data privacy (PDPA + GDPR dual)** — member PII must never be logged or committed. Forbidden in logs: plaintext passwords, session IDs, reset/invitation/unsubscribe tokens, `Authorization` headers, raw email bodies. Verify PII export surfaces (GDPR Art. 15/20) are authorized and audited. Tax-document audit events use 10-year retention; default is 5.
 5. **Secrets & config** — no secrets in git; all env vars validated by `src/lib/env.ts` (zod) at boot. New secrets must be ≥ required entropy and distinct (e.g. `UNSUBSCRIBE_TOKEN_SECRET` ≠ `AUTH_COOKIE_SIGNING_SECRET`). Never propose committing `.env` or `docs/*.xls*`.
 6. **Injection & input validation** — zod at every system boundary; parameterised Drizzle queries (no string-built SQL); HTML sanitiser allowlists (e.g. F7 broadcasts: no `<img>`, scheme allowlist http/https/mailto); size caps on user input.
-7. **Audit completeness** — adding an audit event type touches 5 places (domain const + drizzle pgEnum + the two test counts + i18n ×3 — `CLAUDE.md` § Gotchas). Verify security-relevant actions emit append-only audit entries.
+7. **Audit completeness** — adding an audit event type touches 5 places (domain const + drizzle pgEnum + the two test counts + i18n ×3 — `.claude/rules/architecture.md` § Audit log). Verify security-relevant actions emit append-only audit entries.
 8. **Clean Architecture as a security boundary (Principle III)** — Domain has zero framework imports; Drizzle-inferred types must not leak past Infrastructure; cross-context imports go through public barrels (ESLint `no-restricted-imports`). Layer violations weaken trust boundaries.
-9. **Rate limiting & DoS** — sign-in/reset/change-password brute-force protection (Upstash), argon2id DoS limits, recipient caps (e.g. 5,000/broadcast).
+9. **Rate limiting & DoS** — sign-in/reset/change-password brute-force protection (Upstash), argon2id DoS limits, broadcast throughput caps (`DELIVERABLE_RECIPIENTS_PER_TICK` — `.claude/rules/modules/broadcasts.md`).
 10. **Timestamps & integrity** — storage is ISO 8601 UTC; Buddhist Era is display-only (storing BE is a ship blocker, not a security bug but flag it).
 
 ## Method

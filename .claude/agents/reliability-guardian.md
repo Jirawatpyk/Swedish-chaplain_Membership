@@ -37,7 +37,7 @@ Verify every code path:
 ## Pillar 3 — Audit Trail
 
 1. **Append-only**: the `audit_log` table is append-only. No `UPDATE`/`DELETE` grants — flag any migration that adds them.
-2. **Event coverage**: Every state transition on auth, RBAC, plans, fees, PII, invoices, payments, GDPR surfaces emits an audit event. The canonical catalogue lives in code (each module's audit port, e.g. `src/modules/broadcasts/application/ports/audit-port.ts`), never in this file. New features register new event types (5 places — `CLAUDE.md` § Gotchas), not reuse generic ones.
+2. **Event coverage**: Every state transition on auth, RBAC, plans, fees, PII, invoices, payments, GDPR surfaces emits an audit event. The canonical catalogue lives in code (each module's audit port, e.g. `src/modules/broadcasts/application/ports/audit-port.ts`), never in this file. New features register new event types (5 places — `.claude/rules/architecture.md` § Audit log), not reuse generic ones.
 3. **Event payload**: Must capture actor (user ID, hashed where needed), tenant_id, target entity, before/after diff for updates, IP + user agent for auth events, correlation ID, ISO 8601 UTC timestamp. No PII in free-text; no secrets.
 4. **Write path**: Audit event write belongs in the same transaction as the state change. Flag fire-and-forget audit writes that can silently drop on error.
 5. **Failure behaviour**: If audit write fails, the whole operation must fail (audit-before-success). Flag catch-and-swallow around audit.

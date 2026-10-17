@@ -33,12 +33,12 @@ Dispatch the project agents in `.claude/agents/`, not `general-purpose`. File-mu
 | PII, retention, erasure, DSAR / GDPR export, a new processor | `pdpa-gdpr-compliance-officer` |
 | A migration, schema, RLS policy, index or trigger | `drizzle-migration-reviewer` |
 | Writes, transactions, audit events, error paths | `reliability-guardian` |
-| **Any user-facing UI** (always, on top of the code review) | `enterprise-ux-designer`; add `mobile-a11y-ux-reviewer` for responsive / a11y depth |
+| **Any user-facing UI** (always, on top of the code review) | `enterprise-ux-designer` (pass `focus: visual` or `focus: smart-features` to deepen a lens); add `mobile-a11y-ux-reviewer` for responsive / a11y depth |
 | `src/i18n/messages/*.json` or new user-facing text | `i18n-translation-reviewer` |
 | Hot paths, SLO budgets | `performance-slo-guardian` |
 | Logs, spans, metrics, alerts | `observability-instrumentor` |
 | A financial figure shown to a human (KPIs, exports) | `financial-reporting-analyst` |
-| Test quality and coverage gaps | `senior-tester` |
+| Test quality, coverage gaps, edge-case hunt, ship-readiness verdict | `senior-tester` |
 | Does the code satisfy every acceptance scenario in the spec? | `spec-compliance-auditor` |
 | An architecture decision or module boundary | `chamber-os-architect` |
 
