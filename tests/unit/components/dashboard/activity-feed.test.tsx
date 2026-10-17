@@ -113,5 +113,14 @@ describe('ActivityFeed', () => {
     expect(refresh).not.toHaveAttribute('aria-busy');
     expect(screen.getByText('No recent activity')).toBeInTheDocument();
   });
-});
 
+  it('wraps a long line instead of cutting it off with an ellipsis', () => {
+    const items: readonly ActivityFeedEntry[] = [
+      { id: 'a1', actor: 'Anna Lindqvist', label: 'Payment recorded', occurredAt: '2026-07-10T22:00:00.000Z', timeLabel: '8 minutes ago' },
+    ];
+    render(<ActivityFeed {...PROPS} items={items} />);
+    const line = screen.getByText('Anna Lindqvist').parentElement as HTMLElement;
+    expect(line.className).not.toContain('truncate');
+    expect(line.className).toContain('[overflow-wrap:anywhere]');
+  });
+});

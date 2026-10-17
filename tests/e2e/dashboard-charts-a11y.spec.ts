@@ -1,7 +1,7 @@
 /**
  * Task 14 (067-dashboard-interactive-charts) — interaction-level `@a11y`
  * axe-core scan of the four dashboard charts (revenue-trend sparkline,
- * member-growth sparkline, membership-by-tier bar, invoice-status donut).
+ * member-growth sparkline, membership-by-tier rows, invoice-status bar).
  *
  * Why this exists on top of `f9-a11y.spec.ts`'s existing static `/admin`
  * scan: every Recharts canvas in this feature is rendered inside an
@@ -141,36 +141,6 @@ async function hoverCartesianCanvas(page: Page, chartSlot: Locator): Promise<voi
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 }
 
-/**
- * The invoice-status donut has no "track anywhere" tooltip behaviour —
- * Recharts only fires the tooltip when the pointer is directly over an
- * individual `<Sector>` path. Rather than guess the exact angle the first
- * (paid) bucket's slice starts at, scan a ring of points between the
- * donut's `innerRadius` (65%) and `outerRadius` (94%) — see
- * `invoice-status-canvas.tsx` — until the tooltip actually appears.
- */
-async function hoverDonutUntilTooltipVisible(page: Page, chartSlot: Locator): Promise<boolean> {
-  const svg = chartSlot.locator('svg').first();
-  await svg.scrollIntoViewIfNeeded(); // see hoverCartesianCanvas
-  const box = await svg.boundingBox();
-  if (!box) throw new Error('Donut <svg> has no bounding box — did it actually mount?');
-  const cx = box.x + box.width / 2;
-  const cy = box.y + box.height / 2;
-  const radius = (Math.min(box.width, box.height) / 2) * 0.8; // inside the 65-94% band
-  // Scoped to this chart's own ChartContainer — see the cartesian-chart
-  // hover check above for why a page-global `.first()` is the wrong tool
-  // once more than one chart's tooltip wrapper exists in the DOM.
-  const tooltip = chartSlot.locator('.recharts-tooltip-wrapper').first();
-  for (let deg = 0; deg < 360; deg += 20) {
-    const rad = (deg * Math.PI) / 180;
-    await page.mouse.move(cx + radius * Math.cos(rad), cy + radius * Math.sin(rad));
-    // Give Recharts' React state update a tick to paint before checking.
-    await page.waitForTimeout(50);
-    if (await tooltip.isVisible().catch(() => false)) return true;
-  }
-  return false;
-}
-
 async function gotoDashboard(page: Page): Promise<void> {
   await signInAsAdmin(page);
   await page.goto('/admin');
@@ -235,23 +205,6 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
       await page.mouse.move(0, 0);
     }
 
-    // Donut needs its own ring-scan hover technique (see helper docblock).
-    const invoiceCard = chartCard(page, CHART_TITLES.invoiceStatus);
-    await expect(invoiceCard).toBeVisible();
-    const invoiceChartSlot = await waitForChartCanvas(invoiceCard);
-    if (!invoiceChartSlot) {
-      test.info().annotations.push({
-        type: 'skip-reason',
-        description: `${CHART_TITLES.invoiceStatus}: no canvas mounted (empty-state branch) — hover check skipped`,
-      });
-    } else {
-      const revealed = await hoverDonutUntilTooltipVisible(page, invoiceChartSlot);
-      expect(
-        revealed,
-        `${CHART_TITLES.invoiceStatus}: scanning the donut ring should surface a Recharts tooltip`,
-      ).toBe(true);
-      await expectNoAxeViolations(page, `/admin (dashboard) — ${CHART_TITLES.invoiceStatus} tooltip open`);
-    }
   });
 
   test('the decorative chart canvas never becomes keyboard-focusable (aria-hidden regression guard)', async ({
@@ -285,7 +238,7 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
     }
   });
 
-  test('accessible equivalents are present: hidden ChartDataTables, donut centre-total, KPI numbers', async ({
+  test('accessible equivalents are present: hidden ChartDataTables, invoice total, KPI numbers', async ({
     page,
   }) => {
     await gotoDashboard(page);
@@ -302,10 +255,9 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
       await expect(kpiValues.nth(i)).toContainText(/\d/);
     }
 
-    // Donut centre-total — REAL DOM text, deliberately NOT aria-hidden (see
-    // invoice-status-chart.tsx's docblock: "real DOM, not SVG-only").
-    // Only present when the donut has data — matches the empty-state
-    // skip pattern used above.
+    // Invoice status headline total — REAL DOM text, deliberately NOT
+    // aria-hidden (see invoice-status-chart.tsx's docblock). Only present
+    // when the card has data — matches the empty-state skip pattern above.
     const totalInvoiced = page.getByText('Total invoiced');
     if (await totalInvoiced.isVisible().catch(() => false)) {
       await expect(totalInvoiced).toBeVisible();
@@ -354,8 +306,9 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await gotoDashboard(page);
 
-    // Membership by tier has no canvas since spec 122 US11 (plain rows).
-    for (const title of Object.values(CHART_TITLES).filter((t) => t !== CHART_TITLES.membershipTier)) {
+    // Membership by tier and invoice status have no canvas since spec 122
+    // US11 (plain rows).
+    for (const title of [CHART_TITLES.revenueTrend, CHART_TITLES.memberGrowth] as const) {
       const card = chartCard(page, title);
       await expect(card).toBeVisible();
       const chartSlot = await waitForChartCanvas(card);

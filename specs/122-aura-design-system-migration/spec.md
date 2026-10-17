@@ -578,7 +578,25 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - **The phone revenue tile shows a compact amount** ("THB 381K", three significant digits, as the board), because the half-width tile cannot fit the full amount (16px over at 390, 31px at 360). Screen readers and every width from 640px keep the exact amount.
   - **The trend charts carry the board's axes**: taller canvas, a value axis from zero with compact ticks, horizontal grid lines, short month labels, and the current month's bar drawn lighter. The old max line and first/last month row go. The baseline stays at zero on member growth (the board starts at 90), so the filled area stays proportional.
   - **Membership by tier follows the board as plain rows**: label, a track with the bar, then "count (pct)". No canvas and no hover tooltip on this card (the values are printed). The headline total and the percent stay (FR-011).
-- **Kept, not drawn from the board (parity page, 17 Oct):** no chevron on phone insights, because an insight has no destination. Invoice status stays a donut; the board's stacked bar with an amounts table is its own PR after US11, with a figures review, because it adds amounts the page does not show today.
+- **Kept, not drawn from the board (parity page, 17 Oct):** no chevron on phone insights, because an insight has no destination.
+- **Invoice status follows the board, in its own PR after US11** (maintainer, 17 Oct). The card shows the exact total, one stacked bar sized by each bucket's satang share, and a row per bucket with its amount and percent. The recharts donut goes. Every figure was already computed for the hidden table and the old tooltip.
+  - The figures review (financial-reporting-analyst) found that whole-baht rounding can leave the rows ฿1 off the total. The maintainer chose two decimals for this card only; money is never redistributed to make it add up.
+  - A non-zero bucket under 1% reads "<1%".
+  - The description now says the figure is net of credit notes and refunds (EN/TH/SV); the "Total invoiced" label stays.
+  - UX review (17 Oct), fixed:
+    - the loading card reserves the title, the description (two lines on phones) and the two-line phone headline;
+    - the headline breaks only at the currency space or after a thousands group, never inside a number;
+    - each row keeps its amount and percent together.
+  - UX review, kept on purpose:
+    - Segment colours stay on the semantic positive / warning / danger tokens with a 2px gap. AURA defaults win on component colours (confirmed by the maintainer, 17 Oct, over the board's lime/blue/red); each segment measures ≥ 6.4:1 against the card; the rows carry text labels (WCAG 1.4.1).
+    - The headline is read as value then label, the same order as every other hero figure on the page.
+    - The empty state gets no new link to the invoice list, since that would be new behaviour (FR-011).
+    - The description runs to two lines on phones (three to four at 200% text).
+- Dashboard polish (maintainer, 17 Oct; same PR as invoice status). Layout and typography only, no figure or copy meaning changes:
+  - Smart insights rows sit between dividers with a decorative dot, as Needs attention and the board draw them; each row is ≥ 44px.
+  - Recent activity lines wrap instead of ending in an ellipsis, so a phone shows the whole line.
+  - The trend cards' summary label ("Cumulative members", "12-month total …") takes its own line below 640px.
+  - "ex-VAT" (EN, non-breaking hyphen) and "exkl. moms" (SV, no-break space) never split across lines.
 
 ## User Scenarios & Testing *(mandatory)*
 

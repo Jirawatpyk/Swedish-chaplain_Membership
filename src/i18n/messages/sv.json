@@ -548,7 +548,7 @@
         "atRisk": "Medlemmar i riskzonen",
         "atRiskCaption": "Efter förnyelserisk",
         "revenue": "Betalda intäkter",
-        "revenueCaption": "Räkenskapsår hittills · exkl. moms"
+        "revenueCaption": "Räkenskapsår hittills · exkl. moms"
       },
       "needsAttention": {
         "title": "Kräver åtgärd",
@@ -600,7 +600,7 @@
         "title": "Fakturavärde efter status",
         "empty": "Inga utfärdade fakturor ännu.",
         "totalLabel": "Totalt fakturerat",
-        "basisCaption": "Alla räkenskapsår · inkl. moms",
+        "basisCaption": "Alla räkenskapsår · inkl. moms · minus kreditnotor och återbetalningar",
         "draftCaption": "{count, plural, one {# utkastfaktura visas inte} other {# utkastfakturor visas inte}}",
         "statusColumnHeader": "Status",
         "amountColumnHeader": "Belopp",

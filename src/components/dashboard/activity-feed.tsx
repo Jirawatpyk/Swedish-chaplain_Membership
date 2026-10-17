@@ -54,10 +54,11 @@ export function ActivityFeed({
         <ul className="grid gap-[var(--aura-space-2)] aura-text-body">
           {items.map((item) => (
             // min-w-0: a grid item defaults to min-width:auto, so without
-            // it the column grows to the row's no-wrap width, the label
-            // never truncates and the time is pushed past the card edge.
+            // it the column grows to the row's no-wrap width and the time
+            // is pushed past the card edge. The label wraps (never an
+            // ellipsis) so a phone shows the whole line.
             <li key={item.id} className="flex min-w-0 items-baseline justify-between gap-[var(--aura-space-3)]">
-              <span className="min-w-0 truncate">
+              <span className="min-w-0 [overflow-wrap:anywhere]">
                 {item.actor ? (
                   <>
                     <span className="font-medium">{item.actor}</span>

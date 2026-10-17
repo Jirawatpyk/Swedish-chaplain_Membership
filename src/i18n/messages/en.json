@@ -548,7 +548,7 @@
         "atRisk": "At-risk members",
         "atRiskCaption": "By renewal risk",
         "revenue": "Paid revenue",
-        "revenueCaption": "Fiscal year to date · ex-VAT"
+        "revenueCaption": "Fiscal year to date · ex‑VAT"
       },
       "needsAttention": {
         "title": "Needs attention",
@@ -600,7 +600,7 @@
         "title": "Invoice value by status",
         "empty": "No issued invoices yet.",
         "totalLabel": "Total invoiced",
-        "basisCaption": "All fiscal years · includes VAT",
+        "basisCaption": "All fiscal years · incl. VAT · net of credit notes and refunds",
         "draftCaption": "{count, plural, one {# draft invoice not shown} other {# draft invoices not shown}}",
         "statusColumnHeader": "Status",
         "amountColumnHeader": "Amount",

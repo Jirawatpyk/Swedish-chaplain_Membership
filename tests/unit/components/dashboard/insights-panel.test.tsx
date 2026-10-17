@@ -125,6 +125,17 @@ describe('InsightsPanel — on AURA (spec 122 US11)', () => {
     render(<InsightsPanel {...PANEL_PROPS} lines={[]} />);
     expect(screen.getByRole('status')).toHaveTextContent('All clear.');
   });
+
+  it('draws the rows between dividers, each with a decorative dot, as Needs attention does', () => {
+    render(<InsightsPanel {...PANEL_PROPS} lines={LINES} />);
+    const list = screen.getByRole('list');
+    expect(list.className).toContain('divide-y');
+    const rows = screen.getAllByRole('listitem');
+    for (const row of rows) {
+      expect(row.querySelectorAll('[data-slot="insight-dot"][aria-hidden="true"]')).toHaveLength(1);
+      expect(row.className).toContain('min-h-11');
+    }
+  });
 });
 
 describe('InsightsPanel — keyboard focus after a dismiss (WCAG 2.4.3)', () => {
