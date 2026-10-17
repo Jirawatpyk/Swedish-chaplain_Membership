@@ -256,4 +256,12 @@ describe('MiniSeriesChart', () => {
     expect(card!.querySelector('h2.aura-card__title')).toHaveTextContent('Revenue trend');
     expect(card!.querySelector('.aura-card__desc')).toHaveTextContent('Per month');
   });
+
+  it('lets the summary figure wrap at 200% text instead of widening the page (UX review M2)', () => {
+    render(<MiniSeriesChart {...BASE} points={[pt('2026-01', 10, '10')]} />);
+    const value = screen.getByText('THB 1,200');
+    expect(value).toHaveClass('min-w-0', '[overflow-wrap:anywhere]');
+    expect(value.parentElement).toHaveClass('min-w-0', 'flex-wrap');
+    expect(value.parentElement!.parentElement).toHaveClass('flex-wrap');
+  });
 });
