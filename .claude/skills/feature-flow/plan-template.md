@@ -42,6 +42,10 @@ Each of the 10 principles in `.specify/memory/constitution.md`: pass, or the dev
 |---|---|---|
 | Solo-maintainer review (sensitive surfaces only) — the five checks in `review-and-ship` § 2 and where each is evidenced | No second human reviewer | — |
 
+## Evidence
+
+Filled in at Verify, one line per Done-when line: the test name, command output, number or screenshot that proves it. For L, one block per slice. `spec-compliance-auditor` checks it at Review, and the PR body copies it.
+
 ## Rollout
 
 Feature flag (default OFF, added only when ready to deploy); what goes live unflagged on merge; deploy and migration order; how to roll back.
