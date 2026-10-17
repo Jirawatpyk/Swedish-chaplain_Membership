@@ -166,7 +166,7 @@ export function MiniSeriesChart({
                 </span>
               ) : null}
             </span>
-            <span className="text-right aura-text-caption text-[var(--aura-fg-secondary)]">{summary.label}</span>
+            <span className="basis-full text-left aura-text-caption text-[var(--aura-fg-secondary)] sm:basis-auto sm:text-right">{summary.label}</span>
           </div>
           <div className="mt-[var(--aura-space-3)]">
             <MiniSeriesCanvas

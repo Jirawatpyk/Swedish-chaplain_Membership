@@ -91,7 +91,7 @@ export default async function StaffHomePage() {
 
   // 016 T054/T056 — the page guard above only proves `dashboard.view`. Finance
   // is a SECOND permission: `insights.finance` decides whether the revenue KPI,
-  // the revenue trend, the receivables donut and the overdue-invoice attention
+  // the revenue trend, the invoice-status card and the overdue-invoice attention
   // row exist AT ALL. It is resolved here and passed into the use case so the
   // numbers never leave the server for a viewer without it — hiding the widgets
   // client-side would still ship the figures in the RSC payload.
@@ -228,7 +228,7 @@ export default async function StaffHomePage() {
     // Each caption states the tile's basis: `total` counts every status
     // (active + inactive + archived, per computeDashboardSnapshot), which the
     // bare "Total members" label does not convey; `revenue` is fiscal-year and
-    // ex-VAT, distinct from the VAT-inclusive/all-time invoice-status donut and
+    // ex-VAT, distinct from the VAT-inclusive/all-time invoice-status card and
     // the rolling-12-month trend on the same screen.
     {
       key: 'total',

@@ -9,8 +9,15 @@
  * a no-break space, so at 200% text the figure is one token wider than a
  * phone; it may break inside rather than widen the page (WCAG 1.4.10).
  */
-export const CHART_HERO_VALUE =
-  'min-w-0 [overflow-wrap:anywhere] text-[max(28px,1.75rem)] leading-[1.2] font-semibold tracking-[-0.01em] tabular-nums text-[var(--aura-fg-primary)]';
+const CHART_HERO_TYPE =
+  'text-[max(28px,1.75rem)] leading-[1.2] font-semibold tracking-[-0.01em] tabular-nums text-[var(--aura-fg-primary)]';
+
+export const CHART_HERO_VALUE = `min-w-0 [overflow-wrap:anywhere] ${CHART_HERO_TYPE}`;
+
+/** The same figure for an amount that marks its own break points (`<wbr>`
+ * after each thousands group, as the invoice-status total does), so it never
+ * breaks inside a number. */
+export const CHART_HERO_VALUE_NOWRAP = `min-w-0 ${CHART_HERO_TYPE}`;
 
 /** The headline row: the figure group, then its label; both wrap when tight. */
 export const CHART_HERO_ROW = 'flex flex-wrap items-baseline justify-between gap-[var(--aura-space-2)]';

@@ -264,4 +264,12 @@ describe('MiniSeriesChart', () => {
     expect(value.parentElement).toHaveClass('min-w-0', 'flex-wrap');
     expect(value.parentElement!.parentElement).toHaveClass('flex-wrap');
   });
+
+  it('puts the summary label on its own line below 640px and beside the value from 640px', () => {
+    const points = [pt('2026-01', 100, 'THB 100'), pt('2026-02', 200, 'THB 200')];
+    render(<MiniSeriesChart {...BASE} points={points} />);
+    const label = screen.getByText(BASE.summary.label);
+    expect(label.className).toContain('basis-full');
+    expect(label.className).toContain('sm:basis-auto');
+  });
 });
