@@ -284,6 +284,15 @@ describe('InvoiceStatusChart', () => {
       expect(rows[2]).toContain('THB 2,000.00');
     });
 
+    it('a row label keeps its width, so a long amount drops to the next line instead of covering it', () => {
+      const { container } = renderChart(FULL);
+      const li = container.querySelector('[data-slot="status-rows"] li')!;
+      expect(li.className).toContain('flex-wrap');
+      const label = li.firstElementChild as HTMLElement;
+      expect(label.textContent).toContain('Paid');
+      expect(label.className).not.toContain('min-w-0');
+    });
+
     it('rows add up to the total, even where whole-baht rounding would not', () => {
       const { container } = renderChart({
         buckets: [
