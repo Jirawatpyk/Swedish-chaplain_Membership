@@ -53,21 +53,20 @@ For **L**, have `chamber-os-architect` and the surface reviewers for what the pl
 
 ## 6. Verify
 
-Watch the change work in the running app, not only in tests. The `run-chamber-os` skill is the recipe for starting it: worktree, :3400, cold `.next`, personas, Playwright attached, and the UI probes.
-- Start a dev server in the worktree on **:3400** after `rm -rf .next`. :3100 serves the main checkout, not the branch.
-- Drive every changed screen, route or cron with `/run` or the Browser pane, including one wrong-input probe. `/verify` runs only when the user invokes it.
-- Run the touched e2e specs on chromium and mobile-chrome with `--workers=1 --retries=0`. A red that also fails on `main` is reported as pre-existing, with the evidence.
-- UI also gets: 320 px, a 32 px default font, dark mode, and TH and SV.
-- Evidence (numbers, screenshots) goes against each Done-when line.
+Meet `docs/workflow.md` step 6 (the contract: what to drive, which e2e projects, the UI probes, evidence per Done-when line) with the `run-chamber-os` skill as the recipe: worktree, :3400 after `rm -rf .next`, personas, Playwright attached.
+- Drive the change with `/run` or the Browser pane. `/verify` runs only when the user invokes it.
+- A red that also fails on `main` is reported as pre-existing, with the evidence.
+- Write the evidence against each Done-when line now. For M / L, append it to `plan.md` under `## Evidence`, one line per Done-when line; Review checks it there and the PR body copies it.
 
 ## 7. Review
 
-Review the change as built **and verified**, so a fix found in Verify is reviewed too. Follow `review-and-ship` §§ 1–2:
+Review the change as built **and verified**, so a fix found in Verify is reviewed too. In this order:
 1. `/code-review high` on the diff, or the `review-branch` Workflow when it applies.
 2. The surface reviewers for what the diff touches.
-3. `whole-branch-reviewer` last.
+3. For M / L, `spec-compliance-auditor` with `spec.md` and the Verify evidence: each Done-when line is checked against the code and against the evidence that claims it.
+4. `whole-branch-reviewer` last.
 
-Reviews run in subagents; the writer never reviews its own code. Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it. **No High and no Medium finding may remain: fix every one, with no waivers.** A finding you believe is wrong is refuted with evidence (the code, a test, a measurement) and the reviewer re-runs on it; that is the only way one closes unfixed. Low findings are fixed or listed in the PR. Rounds: a normal change gets one round, then the raising reviewer re-checks each fix; a sensitive surface gets ≥ 2 rounds plus the staff review. Any code change after review goes back through review.
+Reviews run in subagents; the writer never reviews its own code. How findings close, the rounds by risk, and the staff review on sensitive surfaces are in `review-and-ship` §§ 1–2. **No High and no Medium finding may remain.**
 
 ## 8. PR
 

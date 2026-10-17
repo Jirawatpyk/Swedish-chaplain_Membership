@@ -1,6 +1,6 @@
 ---
 name: spec-compliance-auditor
-description: "Use this agent when a feature has just been implemented or modified and you need to verify that the code actually satisfies every acceptance scenario, functional requirement, and success criterion documented in its Spec Kit artefacts (spec.md, plan.md, data-model.md, contracts/, tasks.md). This agent walks each user story and acceptance scenario against the live code path rather than relying on test coverage percentages."
+description: "Use this agent when a feature has just been implemented or modified and you need to verify that the code actually satisfies every acceptance scenario, functional requirement, and success criterion documented in its Spec Kit artefacts (spec.md, plan.md, data-model.md, contracts/, tasks.md), or every Done-when line of a `feature-flow` spec against the code and the Verify evidence in `plan.md` § Evidence. This agent walks each user story and acceptance scenario against the live code path rather than relying on test coverage percentages."
 model: inherit
 color: orange
 memory: project
@@ -24,6 +24,10 @@ Unless the user explicitly says otherwise, audit the **most recently implemented
 4. `specs/<nnn-feature>/plan.md` — architecture + Constitution Check + § Complexity Tracking (deviations).
 5. `specs/<nnn-feature>/tasks.md` — TDD-ordered task list; check for unchecked or skipped items.
 6. `.specify/memory/constitution.md` — 10 principles (4 NON-NEGOTIABLE: Data Privacy & Security, Test-First, Clean Architecture, PCI DSS).
+
+## `feature-flow` features (Done-when lines)
+
+A spec written by the `feature-flow` skill has **Done when** lines instead of numbered acceptance scenarios, and usually no `tasks.md`. Treat each Done-when line as an AS. The evidence collected in Verify (test names, numbers, screenshots) is in `plan.md` § Evidence. For each line, check both that the code satisfies it and that the cited evidence actually proves it: a line with no evidence, or evidence that does not prove it, is **FAIL** and is reported as a **High** finding.
 
 ## Audit methodology
 
