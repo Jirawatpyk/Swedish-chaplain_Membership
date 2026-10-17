@@ -120,4 +120,54 @@ describe('MiniSeriesCanvas', () => {
     );
     expect(container.querySelector('.recharts-responsive-container')).toBeInTheDocument();
   });
+
+  // Spec 122 US11 (maintainer, parity 17 Oct): the trend charts follow board
+  // `Admin-dashboard` — a value axis with compact ticks from zero, horizontal
+  // grid lines, and month labels along the bottom.
+  describe('board axes', () => {
+    const revenue = [
+      { key: '2026-01', label: 'Jan 2026', axisLabel: 'Jan', value: 12_840_000, valueLabel: 'THB 128,400' },
+      { key: '2026-02', label: 'Feb 2026', axisLabel: 'Feb', value: 5_350_000, valueLabel: 'THB 53,500' },
+    ];
+
+    it('draws compact value ticks from zero (satang shown in baht) and horizontal grid lines', () => {
+      const { container } = render(
+        <MiniSeriesCanvas points={revenue} max={12_840_000} variant="bar" allowMotion={false} locale="en" valueDivisor={100} />,
+      );
+      const yTicks = Array.from(container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value')).map((t) => t.textContent);
+      expect(yTicks).toEqual(['0', '50K', '100K', '150K']);
+      expect(container.querySelector('.recharts-cartesian-grid-horizontal')).not.toBeNull();
+      expect(container.querySelector('.recharts-cartesian-grid-vertical')).toBeNull();
+    });
+
+    it('labels the months along the bottom with the short month', () => {
+      const { container } = render(
+        <MiniSeriesCanvas points={revenue} max={12_840_000} variant="bar" allowMotion={false} locale="en" valueDivisor={100} />,
+      );
+      const xTicks = Array.from(container.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick-value')).map((t) => t.textContent);
+      expect(xTicks).toEqual(['Jan', 'Feb']);
+    });
+
+    it('draws the current (last) month lighter, as it is still in progress', () => {
+      const { container } = render(
+        <MiniSeriesCanvas points={revenue} max={12_840_000} variant="bar" allowMotion={false} locale="en" valueDivisor={100} />,
+      );
+      const bars = Array.from(container.querySelectorAll('.recharts-bar-rectangle path'));
+      expect(bars.at(-1)?.getAttribute('fill-opacity')).toBe('0.45');
+      expect(bars[0]?.getAttribute('fill-opacity')).not.toBe('0.45');
+    });
+
+    it('the area chart counts from zero with whole-number ticks', () => {
+      const growth = [
+        { key: '2026-01', label: 'Jan 2026', axisLabel: 'Jan', value: 112, valueLabel: '112' },
+        { key: '2026-02', label: 'Feb 2026', axisLabel: 'Feb', value: 131, valueLabel: '131' },
+      ];
+      const { container } = render(
+        <MiniSeriesCanvas points={growth} max={131} variant="line" allowMotion={false} locale="en" />,
+      );
+      const yTicks = Array.from(container.querySelectorAll('.recharts-yAxis .recharts-cartesian-axis-tick-value')).map((t) => t.textContent);
+      expect(yTicks).toEqual(['0', '50', '100', '150']);
+    });
+  });
 });
+
