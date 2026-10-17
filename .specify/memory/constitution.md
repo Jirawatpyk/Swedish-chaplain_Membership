@@ -1,6 +1,26 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.4.2 → 2.0.0  (MAJOR: process moves out of the constitution.
+                The ten Spec Kit gates (§ Development Workflow & Quality
+                Gates) and Principle IX's review mechanics — the ≥2-reviewer
+                rule, the five-check solo-maintainer substitute, the
+                co-sign footer template, the direct-push exemption — are
+                removed from this file. The lifecycle is now defined by
+                `docs/workflow.md` (+ `docs/decisions.md`, the
+                `feature-flow` and `review-and-ship` skills), which follows
+                current Claude Code practice and evolves without an
+                amendment. Principle IX keeps its code-quality rules and
+                now requires only that review stays independent and that
+                auth / RBAC / payment / PII / audit-log / GDPR changes get
+                a security sign-off. Principles I–VIII and X are unchanged.
+                Amendment approval: the sole maintainer's PR approval
+                (the five-check substitute for amendments is removed).
+                MAJOR because a mandatory rule set is removed; no code
+                becomes non-compliant — the same checks now live in
+                docs/workflow.md (D-018).
+                Approved by the sole maintainer, 2026-10-17.)
+
 Version change: 1.4.1 → 1.4.2  (PATCH: add canonical
                 "structured markdown co-sign footer template" pattern as
                 a Principle IX solo-maintainer-substitute precedent.
@@ -579,115 +599,17 @@ The codebase MUST maintain strict, automated quality gates.
   Formatter (Prettier or equivalent) MUST match across editors via a committed config.
 - **Conventional Commits** enforced by commit-msg hook. Commit messages are part of the
   product history, not noise.
-- Every change requires ≥1 reviewer. Security-sensitive areas (auth, RBAC, payment,
-  PII, audit log) require **≥2 reviewers**, one of whom MUST sign off on the security
-  checklist.
-- **Solo-maintainer substitute clause**: If and only if the project has a single
-  maintainer and no second human reviewer is available, the ≥2-reviewers requirement
-  on security-sensitive areas MAY be substituted by a stack of FIVE independent
-  automated checks, ALL of which MUST be present for the substitute to be valid:
-  1. **Multiple automated Spec Kit review passes** (`/speckit.review` — minimum 3 passes,
-     showing progressively decreasing severity in finding counts).
-  2. **At least one `/speckit.staff-review` round** using 3 independent review
-     agents (correctness, security, tests) that triangulate findings. A second
-     post-remediation round is STRONGLY recommended and MUST be run if any
-     BLOCKER or CRITICAL is found in the first round.
-  3. **Test coverage meeting Principle II targets** (business logic ≥80% line /
-     branch; security-critical paths 100% branch) plus integration tests against
-     the real infrastructure (not mocks) for every security-critical use case.
-  4. **DB-level or platform-level defence-in-depth** for every invariant that can
-     be expressed at a layer below the application — so the invariant holds even
-     if application code is buggy or bypassed.
-  5. **Post-remediation verification** of every finding by a fresh agent run —
-     NOT self-attestation. The remediation MUST be independently re-reviewed.
-  When substituting, the solo maintainer MUST document the deviation in `plan.md`
-  § Complexity Tracking with the 5 substitute checks explicitly enumerated and
-  MUST co-sign the feature's security checklist alongside the staff-review agent.
-  The substitute is **reversible**: as soon as a second maintainer is available,
-  the feature reverts to the default ≥2-reviewers rule. The substitute applies
-  per-feature — it is NOT a blanket repo-wide waiver.
-- Direct pushes to `main` are forbidden by default; all changes arrive via PR with
-  passing CI. **Solo-maintainer exemption**: when the solo-maintainer substitute
-  clause above applies (single-maintainer project, no second human reviewer
-  available), direct pushes to `main` are PERMITTED for the same reasons the
-  ≥2-reviewers rule is substituted — the PR + self-merge cycle adds zero
-  independent oversight in a solo-dev workflow and creates pointless friction.
-  CI gates (lint, typecheck, tests, Vercel preview/production build) MUST still
-  pass before any direct push, and the post-deploy log is the canonical record.
-  This exemption is **per-repo, not per-commit**: a solo-dev project may push
-  directly throughout, but a multi-maintainer project must use PRs for every
-  change. Reverts to the default rule when a second maintainer joins.
-
-**Co-sign footer template** (v1.4.2 canonical precedent for solo-maintainer
-substitute documentation): when a solo maintainer co-signs a feature's quality
-checklist (security / reliability / UX / observability / integration), the co-sign
-MUST be appended as a **structured markdown footer** at the bottom of the
-checklist file using this structure (verbatim field order; field values per-
-checklist). The format is markdown bullets with bold-labelled keys — chosen for
-human readability inside the markdown checklist file. It is NOT machine-parseable
-YAML; if CI aggregation of co-sign status is needed later, the template MAY be
-extended with a YAML frontmatter block (separate from the markdown body) per the
-`retrospective.md` precedent without changing the field semantics defined here.
-
-```yaml
-## Co-Sign Footer
-
-**T{nnn} Operator Gate — {Checklist Name} Co-Sign**
-
-- **Co-signer**: {AI maintainer identity or human name}
-- **Date**: YYYY-MM-DD
-- **Branch**: {git branch}
-- **Branch HEAD at co-sign**: `{git sha}` ({commit subject})
-- **Verification method**: {how each item was verified — e.g., read-only
-  category-by-category audit via Explore agent, automated gate, manual probe}
-- **Result**: **N/N PASS** · M DEFERRED · K N/A (+ rationale line per non-PASS)
-- **Key evidence per category**: bulleted list, one per category, each citing
-  file:line OR §FR-xxx OR commit SHA
-- **Constitution v1.4.x**: per-principle PASS/PARTIAL/N/A with 1-line rationale
-
-**Co-sign verdict**: {Checklist Name} (CHK{nnn}-CHK{mmm}) is **CO-SIGNED** [with
-N documented deferrals to F6.2 / next feature].
-
-— Signed in good faith based on {verification-method-summary}. Any future
-{class-of-regression} surfaced post-co-sign requires new round + re-sign.
-```
-
-This template enables retroactive audit of every co-sign decision: a future
-maintainer (or compliance reviewer) reading the footer can verify (a) what was
-checked, (b) how it was checked, (c) what the branch state was at co-sign time,
-(d) which Constitution principles were satisfied. The "Verification method"
-field is load-bearing — it distinguishes between "bulk sed [X] without spot-check"
-(insufficient) vs "category-by-category audit via Explore agent" (sufficient).
-
-Precedents (all F6 R10 cycle, commits `5bf7aef0` + `1add8c47` + `a51917cd`):
-- **T150** — `checklists/security.md` 38/38 PASS
-- **T151** — `checklists/reliability.md` 35/35 PASS
-- **T151** — `checklists/ux.md` 40/40 PASS
-- **T151** — `checklists/observability.md` 39/39 PASS (1 deferred → closed in same commit)
-- **T151** — `checklists/integration.md` 35/35 PASS
-
-The template is MANDATORY for any solo-maintainer-substitute co-sign of a
-quality checklist. Where ≥2 human maintainers are available, the conventional
-PR review-approval chain replaces the co-sign footer; no template is required
-in that case.
+- **Review, merge and release are process, not principle.** Reviewer counts, the
+  solo-maintainer review, the security sign-off and how changes reach `main` are
+  defined in `docs/workflow.md` and the `review-and-ship` skill, so they can follow
+  current practice without amending this constitution. They MUST keep an
+  independent review (never the author grading its own work) and a security
+  sign-off on auth, RBAC, payment, PII, audit-log and GDPR changes.
 
 **Rationale**: Automated gates catch what humans miss and keep the bar constant as the
-team grows. For solo-dev projects the default ≥2-reviewers rule creates a
-chicken-and-egg: there is no reviewer #2, so auth-sensitive work cannot ship under the
-letter of the rule even when it is well-built. The substitute clause provides a
-high-bar alternative that is auditable (every agent run produces a committed report),
-reproducible (re-run any `/speckit.*` command), and independent from the maintainer's
-own judgement at critical decision points. Field-tested on F1: see
-`specs/001-auth-rbac/plan.md` § Complexity Tracking entry #3 and the substitution
-evidence in `specs/001-auth-rbac/reviews/` + `specs/001-auth-rbac/retrospective.md`.
-
-The v1.3.1 PATCH expanded the substitute to cover the direct-push rule after the
-post-ship retrospective addendum work demonstrated that creating a PR + branch +
-self-merge cycle for a docs-only commit added zero oversight (no second reviewer,
-same CI, same git history) while wasting ~5 minutes of cycle time per commit. The
-retrospective.md "Post-Ship Addendum" was first committed to a `docs/f1-post-ship-findings`
-branch + PR #2 → realised the ceremony was pointless → closed PR, cherry-picked to
-main, pushed direct, amended the constitution.
+team grows. The review mechanics that apply those gates changed twice with the tooling
+(Spec Kit commands, then Claude Code subagents); keeping them in `docs/workflow.md`
+stops this document from going stale each time.
 
 ### X. Simplicity (YAGNI)
 
@@ -762,74 +684,20 @@ The following stack-level and regulatory constraints apply to every feature:
 - **Secrets**: Managed via a secret store (e.g., platform env vars / vault); never
   committed to git; rotated on personnel changes and on any suspected compromise.
 
-## Development Workflow & Quality Gates
+## Development Process
 
-All work MUST flow through the full Spec Kit pipeline:
+The lifecycle — sizing, spec, plan, test-first build, checks, review, verification,
+merge and retrospective — is defined in `docs/workflow.md`, with its decisions in
+`docs/decisions.md`. It follows current practice and evolves without amending this
+constitution. Every step applies the principles above; in particular each feature's
+`plan.md` runs the Constitution Check against Principles I–X and records any deviation
+in Complexity Tracking with the rejected simpler alternative.
 
-**Spec → Clarify → Plan → Checklist → Tasks → Analyze → Implement → Verify → Review → Release**
+Standing rules:
 
-Each gate MUST pass before the next begins. Skipping a gate requires explicit
-justification in `plan.md` Complexity Tracking and ≥2 maintainer approvals.
-
-1. **Spec Gate** (`/speckit.specify`): user stories prioritized (P1/P2/P3),
-   acceptance scenarios present, measurable success criteria, edge cases listed,
-   assumptions and dependencies surfaced.
-2. **Clarify Gate** (`/speckit.clarify`): every `[NEEDS CLARIFICATION]` marker in
-   the spec MUST be resolved with the product/domain owner before planning. Open
-   questions MUST NOT leak into Plan phase.
-3. **Plan Gate** (`/speckit.plan`): Constitution Check MUST be executed and pass
-   against all 10 principles. Any violation goes into Complexity Tracking with
-   justification and a rejected simpler alternative. Technical Context, project
-   structure, and Phase 0/1 outputs (research, data-model, contracts, quickstart)
-   MUST be filled in. An unjustified violation blocks progress.
-4. **Checklist Gate** (`/speckit.checklist`): domain-specific quality checklists
-   produced (security, a11y, i18n, privacy, performance, payment where applicable).
-   Each item is binary (pass/fail) and traceable to a principle or requirement.
-5. **Tasks Gate** (`/speckit.tasks`): tasks grouped by user story so each story
-   is independently deliverable. **TDD ordering enforced** — test tasks precede
-   implementation tasks for the same unit. Cross-story dependencies called out.
-   Parallelizable `[P]` tasks marked.
-6. **Analyze Gate** (`/speckit.analyze`): static and cross-artifact analysis
-   performed — spec ↔ plan ↔ tasks consistency check, missing coverage flagged,
-   risks and Constitution drift highlighted. Findings MUST be addressed or
-   accepted with rationale before implementation starts.
-7. **Implementation Gate** (`/speckit.implement`): CI green, ESLint clean,
-   TypeScript compiles under `strict`, test coverage thresholds met
-   (≥80% business logic, 100% security-critical paths), Conventional Commit
-   messages on every commit. No work on `main` directly.
-8. **Verify Gate** (`/speckit.verify`): implementation validated against the
-   spec's acceptance scenarios and success criteria end-to-end. Automated QA
-   (`/speckit.qa`) run where applicable. Any gap against the spec is either
-   fixed or explicitly deferred with a tracked follow-up.
-9. **Review Gate** (`/speckit.review` / `/speckit.staff-review`): ≥1 reviewer on
-   normal code; **≥2 reviewers** on security-sensitive changes (auth, RBAC,
-   payment, PII, audit log, GDPR surfaces). A security reviewer MUST sign the
-   security checklist from Gate 4 for sensitive areas. Review covers correctness,
-   security, performance, a11y, and constitutional compliance.
-   Solo-maintainer projects MAY substitute the ≥2-reviewers rule with the
-   5-check automated stack defined in Principle IX's solo-maintainer substitute
-   clause, provided the deviation is documented in `plan.md` Complexity Tracking
-   and the security checklist is co-signed by the staff-review agent AND the
-   solo maintainer.
-10. **Release Gate** (`/speckit.ship`): rollback plan documented, feature flags
-    in place for risky rollouts, observability dashboards and alerts updated,
-    on-call informed, changelog generated, PR merged, deployment executed.
-    Post-release smoke tests MUST pass; a retrospective
-    (`/speckit.retrospective`) is strongly encouraged after each release.
-
-Additional rules (apply across all gates):
-
-- No direct commits to `main` (default). **Solo-maintainer exemption**: see
-  Principle IX direct-push line — single-maintainer projects MAY commit + push
-  directly to `main` provided CI gates still pass. The exemption applies
-  per-repo, not per-commit.
-- PRs MUST reference the spec/feature branch they implement.
-- A failing test on `main` stops all other work until resolved.
-- Secrets or PII accidentally committed MUST trigger immediate rotation and a
-  postmortem, regardless of which gate detected the leak.
-- Amendments to this constitution itself MUST also pass the Review Gate
-  (≥2 maintainers by default; the solo-maintainer substitute clause in
-  § Governance > Amendment procedure applies to single-maintainer repos).
+- A failing test on `main` stops other work until it is fixed.
+- Secrets or PII committed by accident trigger immediate rotation and a postmortem.
+- Amendments to this constitution arrive as a PR (§ Governance).
 
 ## Governance
 
@@ -844,22 +712,12 @@ Swedish law).
 2. PR description MUST include: (a) the rationale, (b) the intended version bump
    (MAJOR / MINOR / PATCH), (c) a migration or remediation plan for any existing code
    that becomes non-compliant.
-3. Requires approval from **≥2 maintainers**, one of whom was not the author.
-4. **Solo-maintainer substitute for constitution amendments**: If and only if the
-   project has a single maintainer, the "≥2 maintainers" approval requirement on
-   this procedure MAY be substituted by the same 5-check automated stack defined
-   in Principle IX's solo-maintainer substitute clause, plus an explicit record
-   of the deviation in the Sync Impact Report at the top of this file. The
-   maintainer MUST self-attest (name + date) alongside the staff-review agent's
-   approval. This substitute exists to prevent a chicken-and-egg lockout where
-   a solo-dev project can never amend its own governance rules — but it is NOT
-   a blanket waiver: amendments that introduce MAJOR backwards-incompatible
-   changes SHOULD wait for a second maintainer when practical, and the Sync
-   Impact Report MUST explain why a MAJOR amendment is being self-approved if
-   the substitute is used for one.
-5. On merge, the Sync Impact Report at the top of this file MUST be updated and any
-   dependent templates (`plan-template.md`, `spec-template.md`, `tasks-template.md`)
-   MUST be reviewed and updated in the same PR or a linked follow-up.
+3. Requires approval from the maintainers. While the project has a single
+   maintainer, that maintainer's approval of the PR suffices; the Sync Impact
+   Report records who approved and when.
+4. On merge, the Sync Impact Report at the top of this file MUST be updated and any
+   dependent files (`docs/workflow.md`, the `feature-flow` plan template) MUST be
+   reviewed and updated in the same PR or a linked follow-up.
 
 **Versioning policy** (semver):
 
@@ -872,12 +730,13 @@ Swedish law).
 **Compliance review expectations**:
 
 - Every PR review MUST cross-check the change against the principles it touches.
-- `/speckit.plan` Constitution Check gate MUST be re-run whenever the constitution is
-  amended against any in-flight feature.
+- The Constitution Check in each in-flight feature's `plan.md` MUST be re-run
+  whenever the constitution is amended.
 - Quarterly, maintainers MUST review the constitution against reality: is anything
   being routinely violated? Either fix the code or amend the constitution — drift is
   forbidden.
-- Runtime development guidance for agents lives in `CLAUDE.md` (and equivalent agent
-  files). Those files are subordinate to this constitution.
+- Runtime guidance for agents lives in `CLAUDE.md`, `.claude/rules/` and the skills;
+  the development process lives in `docs/workflow.md`. They are subordinate to this
+  constitution's principles, and they — not this file — define the process.
 
-**Version**: 1.4.2 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-05-18
+**Version**: 2.0.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-10-17

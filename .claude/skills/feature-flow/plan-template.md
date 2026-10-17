@@ -40,8 +40,7 @@ Each of the 10 principles in `.specify/memory/constitution.md`: pass, or the dev
 
 | Deviation | Why it is needed | Simpler alternative rejected, and why |
 |---|---|---|
-| Spec Kit gate commands replaced by `docs/workflow.md` (D-014) — approved by the maintainer on <date> | Pilot of the native workflow (D-009); gates covered by the workflow's steps | Running both flows — doubles the artefacts for no extra check |
-| Solo-maintainer substitute (sensitive surfaces only) — list the five checks and where each is evidenced | No second human reviewer | — |
+| Solo-maintainer review (sensitive surfaces only) — the five checks in `review-and-ship` § 2 and where each is evidenced | No second human reviewer | — |
 
 ## Rollout
 

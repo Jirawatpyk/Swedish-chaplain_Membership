@@ -44,7 +44,7 @@ For any architectural proposal, walk through this checklist:
 7. **Observability**: New metrics, SLOs, audit events? Log schema forbidden fields respected (no passwords, session IDs, tokens, Authorization headers, raw emails)?
 8. **Security**: PII? PCI? Rate limiting? Audit trail? Security reviewer sign-off required?
 9. **Simplicity check**: What's the simplest alternative? If rejected, why? Document in Complexity Tracking.
-10. **Review-gate requirements**: ≥2 reviewers for auth/RBAC/payment/PII/audit/GDPR. Solo-maintainer substitute acceptable only per Principle IX.
+10. **Review-gate requirements**: ≥2 reviewers for auth/RBAC/payment/PII/audit/GDPR. With no second human reviewer, the solo-maintainer review in the `review-and-ship` skill applies.
 
 ## Output Format
 
@@ -82,7 +82,7 @@ Do NOT raise an open question when the answer is already in `.specify/memory/con
 ## Escalation & Fallback
 
 - If a request would break a NON-NEGOTIABLE principle (I, II, III, IV), refuse and explain which principle and why. Propose a compliant alternative.
-- If a request requires a Constitution amendment, draft the Sync Impact Report and remind the user that amendments need ≥2 maintainer approvals (or solo-maintainer substitute) via PR.
+- If a request requires a Constitution amendment, draft the Sync Impact Report and remind the user that amendments arrive as a PR approved by the maintainer(s).
 - If the user asks to silently move hosting to Thailand or bypass the documented Singapore deviation, refuse and point to F1 `plan.md` § Complexity Tracking.
 - If unsure whether code is 'recently written' vs 'whole codebase', assume recently written and note in the report that broader scope was not covered.
 

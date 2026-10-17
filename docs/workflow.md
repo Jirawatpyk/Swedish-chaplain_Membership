@@ -2,14 +2,12 @@
 
 How a change goes from an idea to production on Chamber-OS, and how the process improves itself. This file is the contract. The `feature-flow` skill (`.claude/skills/feature-flow/`) is the procedure Claude follows to meet it. Reviewer choice and the merge mechanics live in the `review-and-ship` skill.
 
-**Status: pilot.** This flow replaces the ten `/speckit.*` gate commands for features that opt in. It keeps the following from the constitution:
+**Status: adopted.** This file owns the development process; the constitution (v2.0.0) keeps only the principles and no longer prescribes gates or reviewer counts (D-018). The Spec Kit commands remain usable for a step. What the process keeps, by choice:
 - the Constitution Check;
 - TDD, with the test going red first;
-- ≥2 reviewers plus the security sign-off on sensitive surfaces;
+- independent review, and on sensitive surfaces ≥2 reviewers — for a solo maintainer, the solo-maintainer review in `review-and-ship` § 2 — with the security checklist signed by `security-engineer` + `/security-review`;
 - the cross-tenant integration test;
 - `plan.md` § Complexity Tracking for any deviation.
-
-The constitution's § Development Workflow still names the Spec Kit gates. It will be amended in a separate PR, with a Sync Impact Report, once the pilot has run on a real feature (D-009; until then D-014 records the deviation in each pilot `plan.md`).
 
 ## Sizes
 

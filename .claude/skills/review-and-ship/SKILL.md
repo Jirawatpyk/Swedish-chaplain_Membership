@@ -43,21 +43,23 @@ Dispatch the project agents in `.claude/agents/`, not `general-purpose`. File-mu
 | Does the code satisfy every acceptance scenario in the spec? | `spec-compliance-auditor` |
 | An architecture decision or module boundary | `chamber-os-architect` |
 
-Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, one of whom signs the security checklist (`specs/001-auth-rbac/security.md` § 5 for F1). Other PRs need ≥1. With no second human reviewer, the constitution's solo-maintainer substitute applies: all five of its checks, enumerated in `plan.md` § Complexity Tracking, with the maintainer co-signing the security checklist. On a `feature-flow` feature (D-014), checks 1, 2 and 5 map as follows:
+Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, one of whom signs the security checklist (`specs/001-auth-rbac/security.md` § 5 for F1). Other PRs need ≥1. With no second human reviewer, the **solo-maintainer review** below replaces the second reviewer (this skill owns the rule; constitution v2.0.0 leaves review mechanics to the process). Enumerate its five checks in `plan.md` § Complexity Tracking:
 
-| Constitution check | `feature-flow` equivalent |
+| Check | How |
 |---|---|
-| 1. ≥ 3 `/speckit.review` passes, decreasing severity | ≥ 3 review rounds: `/code-review high` + the § 2 surface reviewers, then re-runs on the fixes, until a round finds no High or Medium |
-| 2. ≥ 1 `/speckit.staff-review` round (correctness, security, tests) | `whole-branch-reviewer`, with `security-engineer` and `senior-tester` on the same diff; a second round when any BLOCKER / HIGH is found |
-| 5. Post-remediation verification by a fresh agent | the reviewer that raised a finding re-runs on its fix in a new subagent; the writer never self-attests |
+| 1. Repeated independent review rounds | ≥ 2 rounds of `/code-review high` + the § 2 surface reviewers, each in fresh subagents, until the latest round finds no High or Medium; record the finding counts per round in the PR |
+| 2. Staff review (correctness, security, tests) | `whole-branch-reviewer` + `security-engineer` + `senior-tester` on the same diff; a second round when any BLOCKER / CRITICAL / HIGH is found |
+| 3. Coverage + real-infrastructure tests | the pinned coverage thresholds, and integration tests on Neon for every security-critical use case |
+| 4. Defence in depth | DB- or platform-level enforcement (RLS, constraints, triggers) for every invariant that can live there |
+| 5. Post-remediation verification | the reviewer that raised a finding re-runs on its fix in a new subagent; the writer never self-attests |
 
-Checks 3 (coverage + real-infrastructure integration tests) and 4 (DB- or platform-level defence in depth) are unchanged.
+**Security sign-off**: the `security-engineer` agent, part of the staff review, signs the security checklist, with `/security-review` run on the diff; record the result in the PR. The maintainer does not co-sign.
 
-## 3. Spec Kit gates (features not on the `feature-flow` pilot, D-009)
+## 3. Spec Kit gates (an accepted way to run the steps)
 
 `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.checklist` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement` → `/speckit.verify` → `/speckit.review` → `/speckit.ship`
 
-Each gate blocks the next until its exit criteria pass. Every `/speckit.plan` runs a Constitution Check against all 10 principles (`.specify/memory/constitution.md`); a deviation needs a `plan.md` § Complexity Tracking entry with the rejected simpler alternative. Skipping a gate needs that entry **and** ≥2 maintainer approvals. `/speckit-*` skills may dispatch project subagents while executing a gate.
+These commands remain usable for the matching `docs/workflow.md` steps; the process rules are the workflow's, not the commands'. Every plan runs the Constitution Check against the 10 principles (`.specify/memory/constitution.md`); a deviation needs a `plan.md` § Complexity Tracking entry with the rejected simpler alternative. `/speckit-*` skills may dispatch project subagents while executing a gate.
 
 ## 4. Before pushing
 

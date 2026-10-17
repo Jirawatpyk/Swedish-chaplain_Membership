@@ -11,7 +11,7 @@ description: Drive a Chamber-OS change from idea to production through docs/work
 
 - Read `docs/decisions.md`. If the request contradicts a decision, or two sources disagree, stop and ask (`CLAUDE.md` § Precedence). Never pick one silently.
 - **Size it** (S / M / L, per `docs/workflow.md` § Sizes) and say the size and why in one line. When unsure, size up. Money, tax, tenancy, PII, auth and migrations are never S.
-- Say which flow the change uses: this one, or the Spec Kit gates (D-009, pilot). On this one, ask the user once, at the plan step, to approve the gate deviation, and record the approval in `plan.md` § Complexity Tracking, with the solo-maintainer substitute for a sensitive surface (D-014).
+- A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) uses the solo-maintainer review: record its five checks in `plan.md` § Complexity Tracking (`review-and-ship` § 2).
 
 ## 1. Frame
 
