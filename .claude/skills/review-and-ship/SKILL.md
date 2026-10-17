@@ -11,13 +11,18 @@ description: How to review a change and get it merged on Chamber-OS — which pr
 |---|---|
 | A small diff (one surface, roughly < 40 files / 5k lines) | The built-in **`/code-review high`** (or `/code-review high <pr#>` for a PR). It reviews the diff for correctness bugs and returns the findings here. Always pass `high`: with no level the command reuses the last level typed, and `xhigh` / `max` are not the default here. Then dispatch the surface reviewers from § 2 for the surfaces the diff touches. |
 | A large diff, or any money / tax / tenancy / PII / auth / migration branch | The **`review-branch`** Workflow (`.claude/workflows/`). An inline `/code-review` scopes itself down on a big diff: on the F5 refund branch (123 files) it produced 6 findings, 5 of them misreads, while the fan-out found 3 real bugs it never reached. |
+| A size M / L change, always | **`spec-compliance-auditor`**, given `spec.md` and the Verify evidence in `plan.md` § Evidence. It checks each Done-when line against the code and against the evidence that claims it. A line with no evidence, or evidence that does not prove it, is a **High** finding. |
 | Before the PR opens or merges, always | **`whole-branch-reviewer`**: the seam between commits that per-surface reviewers cannot see. |
 | A defect class found once that must be closed everywhere | The **`sweep-class`** Workflow, with the known instances as `examples`. |
 | A spec touching money, tax, tenancy, PII, auth or a migration | The **`spec-review-panel`** Workflow, after clarify and before plan. |
 
 - **`/code-review ultra`** (or `/code-review ultra <PR#>`) is a multi-agent **cloud** review of the branch. The user triggers it and it is billed, so Claude never launches it; suggest it for a large, high-stakes branch.
 - A Workflow runs only on explicit opt-in ("use a workflow" / `ultracode`), never on Claude's own initiative. Otherwise, describe what it would do and roughly what it costs, and ask. If the user declines, review per module: `/code-review high <path>` for each touched module, the § 2 surface reviewers, then `whole-branch-reviewer`.
-- No High or Medium finding may remain at merge (D-015): fix it, or refute it with evidence and have the reviewer confirm on a re-run.
+These rules are the single source for how review works; `docs/workflow.md` step 7 and `feature-flow` § 7 point here.
+- No High or Medium finding may remain at merge (D-015): fix it, or refute it with evidence and have the reviewer confirm on a re-run. There are no waivers.
+- Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it.
+- Low findings are fixed or listed in the PR.
+- Any code change after review goes back through review.
 - **Rounds:** a normal change gets one review round, then the raising reviewer re-checks each fix. A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) gets ≥ 2 rounds plus the staff review (§ 2). Review runs after Verify, so the reviewed code is the code that works.
 - Tell every reviewer to report only gaps that affect correctness or the stated requirements. A reviewer asked to find gaps always finds some, and chasing every one over-engineers.
 
@@ -60,7 +65,7 @@ Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, o
 
 `/speckit.specify` → `/speckit.clarify` → `/speckit.plan` → `/speckit.checklist` → `/speckit.tasks` → `/speckit.analyze` → `/speckit.implement` → `/speckit.verify` → `/speckit.review` → `/speckit.ship`
 
-These commands remain usable for the matching `docs/workflow.md` steps; the process rules are the workflow's, not the commands'. Every plan runs the Constitution Check against the 10 principles (`.specify/memory/constitution.md`); a deviation needs a `plan.md` § Complexity Tracking entry with the rejected simpler alternative. The `speckit-*` skills are user-invoked only (D-019): run one by name when you want it; Claude does not pick them.
+These commands remain usable for the matching `docs/workflow.md` steps; the process rules are the workflow's, not the commands'. A Spec Kit `tasks.md` has one task per behaviour the spec states, each naming the test that must go RED first — never one task per test file, and never the shape of the previous feature's tasks.md (template: `.specify/templates/tasks-template.md`). Every plan runs the Constitution Check against the 10 principles (`.specify/memory/constitution.md`); a deviation needs a `plan.md` § Complexity Tracking entry with the rejected simpler alternative. The `speckit-*` skills are user-invoked only (D-019): run one by name when you want it; Claude does not pick them.
 
 ## 4. Before pushing
 

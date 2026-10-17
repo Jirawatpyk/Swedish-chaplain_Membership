@@ -23,7 +23,6 @@ Loaded every session (no `paths:`). Module-specific facts live in `.claude/rules
 
 - **TDD**: failing test → commit red → implement → commit green. Every user story in a spec MUST have ≥1 acceptance test authored before implementation starts. RED is the evidence that the test measures behaviour rather than the mock — a guard whose test never went red has never been exercised.
 - **Test scope**: commit only the tests the task asks for or that this repo already keeps for that kind of change — roughly one focused test per stated behaviour, sized like the neighbouring test files. Scratch checks and quick scripts stay out of the repo (the unit+contract suite is ~4 min, integration ~40 min, and CI runs the live-Neon suites ~7× slower than a workstation).
-- **tasks.md shape**: one task per behaviour the spec states, each naming the test that must go RED first — never one task per test file, and never the shape of the previous feature's tasks.md. Template: `.specify/templates/tasks-template.md`.
 - **Contract tests** at every external and inter-module boundary (`tests/contract/`).
 - **Integration tests hit real Postgres** (local: the live Neon `dev` branch via `.env.local`; CI: disposable Neon branches), not mocks. Integration tests refuse to run against prod (`TEST_DB_HOST_BLOCKLIST` in `tests/integration-setup.ts`).
 - **`pnpm test:integration -- <pattern>` runs the WHOLE suite (~40 min).** Pass the file PATH positionally: `pnpm test:integration tests/integration/renewals/foo.test.ts`. A whole 80-file folder dies around "Worker exited" — batch it.

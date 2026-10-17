@@ -60,6 +60,8 @@ E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright
 - Read `error-context.md` before the next run wipes it.
 - A red is real only if it also fails solo, on a cold server. If it is also red on `main`, report it as pre-existing, with that evidence.
 
+**Drive every changed screen, route or cron** in the browser, including one wrong-input probe (an invalid value, a missing field, a role that must be refused).
+
 **A one-off probe:** write a throwaway spec in the scratchpad, copy it into `tests/e2e/` for the run, delete it afterwards, and never commit it. Have it print one JSON line (`console.log('PROBE ' + JSON.stringify(out))`) and parse that line.
 
 ## 5. UI probes (every UI change)
