@@ -81,6 +81,7 @@ As the maintainer, I see a PR break a critical user path in CI, without running 
 
 1. **Blob storage in CI:** a separate Vercel Blob store for CI. The maintainer creates it and stores its token as a GitHub secret. The invoice and PDF paths can then be in `@critical`, and CI never touches the production store.
 2. **Redis in CI:** a separate Upstash database for CI, stored as GitHub secrets, so the payment path, rate limits and idempotency keys run for real.
-3. **App mode:** `next build` + `next start` in CI. It is closer to production, catches build-only bugs, and has no per-route cold compile.
+3. **App mode:** the PR run uses `next build` + `next start`. It is closer to production, catches build-only bugs, and has no per-route cold compile. `next start` runs with `NODE_ENV=production`, and `src/lib/env.ts:922` deliberately refuses `E2E_X_TENANT_HEADER_ENABLED` there. So the 8 specs that need a throwaway tenant stay out of `@critical`, and the critical set uses the seeded `swecham` tenant only. The nightly full run uses `next dev`, so those 8 specs still run every night. The production guard is not loosened.
+4. **Tenant data:** the CI Neon branch holds no `swecham` data. Slice 2 starts with one ordered seed entry point that calls the existing scripts (system actors, plans, invoice and payment settings, personas, portal invoices, F4/F5 fixtures) against a fresh branch.
 
 Infrastructure the maintainer provides before slice 2 runs: the CI Blob store token, the CI Upstash URL and token, and confirmation that `NEON_API_KEY` may create branches. Claude never sees or prints their values.
