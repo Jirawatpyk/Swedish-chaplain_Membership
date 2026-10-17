@@ -24,7 +24,7 @@ When unsure, size up. Anything touching money, tax, tenant isolation, PII, auth 
 | Step | What happens | Tool |
 |---|---|---|
 | **1. Frame** | Say what changes for whom and why. For M / L, Claude interviews the user with `AskUserQuestion` (edge cases, trade-offs, what is out of scope) and writes `specs/<nnn-name>/spec.md`: user stories, **Done when** lines (each one observable and checkable), Out of scope, open questions. Check the premises against the code before writing them down. | `feature-flow` |
-| **2. Branch** | `<nnn>-<short-name>` from an up-to-date `origin/main`, in a worktree under a short Temp path (`node_modules` per `run-chamber-os` § 1). Migrations take the next free number; merge any other open branch's migration first. | `git worktree` |
+| **2. Branch** | `<nnn>-<short-name>` (for an L slice, `<nnn>-<short-name>-s<k>`) from an up-to-date `origin/main`, in a worktree under a short Temp path (`node_modules` per `run-chamber-os` § 1). Migrations take the next free number; merge any other open branch's migration first. | `git worktree` |
 | **3. Plan** | Read the spec, `docs/decisions.md` and the module rules. M / L: Claude asks to enter plan mode (the user approves; the user can also switch to Plan mode themselves), drafts the plan, and presents it for approval on exit; then saves it as `specs/<nnn-name>/plan.md` from `.claude/skills/feature-flow/plan-template.md`. It covers the approach, files, data model, **test plan** (each Done-when line → the test that goes red first), Constitution Check, Complexity Tracking, rollout and risks. For L, `chamber-os-architect` and the surface reviewers read the plan before the user agrees it. No code is written before the user agrees. If the plan changes during build, update `plan.md` in the same commit. | plan mode, `superpowers:writing-plans` |
 | **4. Build** | Small commits, test first: commit RED, then GREEN, following the plan's test plan. A migration goes through the `new-migration` skill, and a new audit event type through `add-audit-event`. Debug with `superpowers:systematic-debugging`. Stop and ask on any conflict between sources (see Decisions). Finish with `/simplify` on the diff (reuse, simplification, efficiency) before Check. | `superpowers:test-driven-development`, `new-migration`, `add-audit-event`, `/simplify` |
 | **5. Check** | `pnpm check` green locally (lint, typecheck, the static gates). Then `pnpm test:coverage` (the pins CI enforces), `pnpm vitest run tests/contract/`, and the touched integration suites by path. | `pnpm check` |
@@ -60,7 +60,9 @@ A **slice** is a vertical cut through one user story: the thinnest DB → use ca
 - **Review in two layers:**
   - **Every slice:** `/code-review high` on that slice's diff, plus the surface reviewers for what the slice touches (e.g. `drizzle-migration-reviewer` for a slice with a migration). Findings are fixed before the next slice builds on them.
   - **Before each slice PR merges:** `whole-branch-reviewer` on that PR's full diff against `origin/main` (every merge deploys). When slices share a long-lived branch instead, run it once more at the end for the seams between slices.
-- **One PR per slice where possible.** Each PR must be safe to deploy on its own; use a default-OFF flag when it isn't user-ready yet.
+- **One PR per slice where possible.** Each PR must be safe to deploy on its own; use a default-OFF flag when it isn't user-ready yet. Slices share one long-lived branch only when a slice cannot deploy safely on its own even behind a flag (an expand/contract migration usually removes the need); record why in `plan.md` § Complexity Tracking. That shared branch is the plain `<nnn>-<short-name>`.
+- **Name and track every slice.** Slice *k* builds on its own branch, `<nnn>-<short-name>-s<k>`, cut from `origin/main` after slice *k − 1* has merged. Before its PR merges, the slice's own row in the `plan.md` Slices table gets the PR number and `done`, so the table on `main` always shows which slices have shipped.
+- **"Start slice N" names its feature.** When the user does not name it, read the Slices tables under `specs/*/plan.md`: if exactly one feature has slices not yet `done`, continue it; if several do, ask which.
 
 ## Definition of Done
 
@@ -75,7 +77,7 @@ A change is done when every line below that applies is true and its evidence is 
 - [ ] The touched e2e specs are green on chromium and mobile-chrome.
 - [ ] Review is complete: no High or Medium left (each fixed, or refuted with evidence and confirmed by the reviewer's re-run), Lows fixed or listed, and `whole-branch-reviewer` done.
 - [ ] UI changes have had an `enterprise-ux-designer` pass. EN / TH / SV keys exist and are reviewed. 320 px reflow and a 32 px font have been checked.
-- [ ] Sensitive surfaces (auth, RBAC, payment, PII, audit log, GDPR) have two reviewers, and the security checklist is signed.
+- [ ] Sensitive surfaces (auth, RBAC, payment, PII, audit log, GDPR) have ≥2 reviewers — for a solo maintainer, the solo-maintainer review in `review-and-ship` § 2 — and the security checklist is signed.
 - [ ] Docs are updated: a `docs/changelog.md` line; `docs/operational-state.md` if a flag moved; the module's `.claude/rules/modules/*.md` if the module gained a trap or a dependency; `docs/decisions.md` if a decision was made.
 - [ ] A new feature flag is OFF and added only when the user is ready to deploy. Every unflagged behaviour is listed in the PR.
 - [ ] No `test.fixme` or bare `test.skip` was added, and no secret, PII workbook or `.env*` file is in the diff.

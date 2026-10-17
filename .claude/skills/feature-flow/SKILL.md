@@ -24,7 +24,7 @@ description: Drive a Chamber-OS change from idea to production through docs/work
 
 ## 2. Branch
 
-A worktree from an up-to-date `origin/main` at a short path (e.g. `%TEMP%\fNN`), with `node_modules` provided as `run-chamber-os` § 1 says (a junction only when the AURA versions match). The branch is `<nnn>-<short-name>`. Never work on the user's main checkout, and never `git stash`.
+A worktree from an up-to-date `origin/main` at a short path (e.g. `%TEMP%\fNN`), with `node_modules` provided as `run-chamber-os` § 1 says (a junction only when the AURA versions match). The branch is `<nnn>-<short-name>`; for an L slice it is `<nnn>-<short-name>-s<k>`, cut from `origin/main` after the previous slice merged. Never work on the user's main checkout, and never `git stash`.
 
 ## 3. Plan (M / L)
 
@@ -41,7 +41,7 @@ For **L**, have `chamber-os-architect` and the surface reviewers for what the pl
 
 ## 4. Build
 
-- **Who**: the main session builds S and M. For L, build **one slice at a time** (`docs/workflow.md` § Slices) with one subagent per slice, in order (`superpowers:subagent-driven-development`, or `software-engineer`). Check each slice against the plan, and run its per-slice review, before starting the next. Subagents that edit files run one at a time.
+- **Who**: the main session builds S and M. For L, build **one slice at a time** (`docs/workflow.md` § Slices) with one subagent per slice, in order (`superpowers:subagent-driven-development`, or `software-engineer`). Check each slice against the plan, and run its per-slice review, before starting the next. When the user says "start slice N" without naming the feature, find it from the Slices tables in `specs/*/plan.md` (one feature with open slices: continue it; several: ask). Before a slice starts, read `spec.md`, the slice's row and Done-when lines in `plan.md`, and the merged diff of the previous slice (`gh pr diff <PR>`), and hand all three to its subagent. Subagents that edit files run one at a time.
 - RED commit, then GREEN commit, per row of the test plan (`superpowers:test-driven-development`). A guard whose test never went red has not been exercised.
 - For a migration, use the `new-migration` skill. For a new audit event type, use `add-audit-event`. For a bug, use `superpowers:systematic-debugging` before changing code.
 - Use the module's rule (`.claude/rules/modules/*.md`) for its traps. A tenant-scoped repo threads `tx` from `runInTenant`.
@@ -77,14 +77,15 @@ Fill in `.github/pull_request_template.md`:
 - every review finding and how it was closed;
 - the unflagged behaviours, if a flag is involved.
 
+The diff itself carries the `docs/changelog.md` line (Definition of Done).
+
 Open with `gh pr create`, then bind the PR to the session.
 
 ## 9. Merge
 
-Only on the user's explicit word (D-006), by `review-and-ship` § 5. After the merge:
+Only on the user's explicit word (D-006), by `review-and-ship` § 5. For an L slice, its row in the `plan.md` Slices table already carries the PR number and `done` (set in the slice's own PR before merging). After the merge:
 - confirm the production deployment is `READY`;
-- update `docs/operational-state.md` if a flag or cutover moved;
-- add the `docs/changelog.md` line if the PR didn't.
+- update `docs/operational-state.md` if a flag or cutover moved.
 
 ## 10. Improve
 
