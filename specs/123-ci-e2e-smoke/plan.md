@@ -231,6 +231,10 @@ Claude never reads or prints any of these values.
   - Run the app on :3400 and `curl` `/api/health`: 200 ok, and 503 within about 3 s with a bad `DATABASE_URL` in a scratch env.
   - Run `node scripts/post-deploy-smoke.ts http://localhost:3400` (passes), then against production (read-only).
   - After merge, run the workflow with `workflow_dispatch` and confirm a deliberate bad `base_url` opens a `prod-smoke` issue.
+  - Post-merge checks:
+    - (a) the `deployment_status` run of the merge deploy is green;
+    - (b) `gh workflow run post-deploy-smoke.yml -f base_url=https://invalid.example` opens a `prod-smoke` issue, and a second such run comments on that issue instead of opening another;
+    - (c) a preview deployment's run is skipped (the job `if:` is false).
 - **Slice 2:**
   - The PR's `e2e-critical` run is green on both projects within 25 min, and its Neon branch is gone afterwards (Neon API list).
   - Run the nightly by `workflow_dispatch` once after merge.

@@ -31,19 +31,21 @@ The workflow retries the whole set 3 times, 20 s apart, so a red run is not alia
 
 | Line | Meaning | Most likely cause |
 |---|---|---|
-| `FAIL health 503` | `/api/health` ran `select 1` and it threw or took longer than 3 s | Neon down or suspended, `DATABASE_URL` wrong in the new deploy, pool exhausted, a migration holding locks |
+| `FAIL health 503` | `/api/health` ran `select 1` and it threw or took longer than 3 s, or an earlier `select 1` on that instance is still unsettled | the connection pool is exhausted; the Neon compute is suspended, down or unreachable; `DATABASE_URL` wrong in the new deploy; a hung earlier probe (`reason: still-pending`). `select 1` takes no table locks, so a migration's locks do not cause it |
 | `FAIL health 200-unexpected-body` | 200, but the body was not exactly `{"status":"ok"}` | something in front of the app (a Vercel challenge page, a domain pointed elsewhere) is answering |
 | `FAIL admin-sign-in <status>` / `FAIL portal-sign-in <status>` | the sign-in page did not answer 200 | 5xx: the app or a server component crashes at render, often a missing or invalid env var (`src/lib/env.ts` refuses to boot). 3xx: a redirect, so the base URL is not the canonical domain or the proxy now redirects anonymous users. 401/403: deployment protection or the Vercel firewall |
 | `FAIL admin-sign-in 200-no-password-input` (or portal) | the page answered 200 without a password field | an error boundary or a maintenance page rendered instead of the form; or the sign-in form changed shape (then fix the script, not prod) |
 | `FAIL <check> network-error` | no HTTP answer within 15 s (DNS, TLS, timeout) | the domain or its certificate, or a Vercel incident |
 | `FAIL config no-base-url` | the workflow had no URL to check | the `PROD_BASE_URL` repo variable is not set (see Triage step 1) |
 | `FAIL base-url invalid` | the base URL is not an `http(s)` URL, or carries credentials | a wrong `PROD_BASE_URL` value or `base_url` input |
+| `FAIL smoke internal-error` | the script itself threw outside a check | a bug in `scripts/post-deploy-smoke.ts` or the runner's Node; not a production signal until reproduced (Triage step 2) |
+| `(no FAIL line captured; see the run log)` | the job failed before the smoke printed anything | a CI-side failure: checkout, `pnpm install`, the runner. Not a production incident; re-run the workflow |
 
 ---
 
 ## Triage steps (in order)
 
-1. **Confirm the target.** GitHub → Settings → Secrets and variables → Actions → *Variables* → `PROD_BASE_URL` must be the live domain the members use (origin only, e.g. `https://<domain>`, no trailing path). A manual run's `base_url` input overrides it. If the value is wrong, fix it and re-run (step 6); it is not a production incident.
+1. **Confirm the target.** GitHub → Settings → Secrets and variables → Actions → *Variables* → `PROD_BASE_URL` must be the FINAL origin the members land on: `https://<domain>` with no path (the script uses only the origin) and no redirect behind it. The script does not follow redirects, so an apex that 308s to `www`, or `http` that redirects to `https`, fails every check with a 3xx. A manual run's `base_url` input overrides it. If the value is wrong, fix it and re-run (step 6); it is not a production incident.
 
 2. **Reproduce from your machine** (read-only, public URLs only):
 
@@ -55,9 +57,11 @@ The workflow retries the whole set 3 times, 20 s apart, so a red run is not alia
    If both are green now, the failure was transient: note it on the issue, watch the next deploy, and close it.
 
 3. **`health` failed** → the database path.
-   - Vercel → Logs for the deployment → search `health.degraded`. The `err` field is the error class only (e.g. `PostgresError`, `HealthProbeTimeoutError`); a timeout class means `select 1` did not answer in 3 s.
+   - Vercel → Logs for the deployment → search `health.degraded` and read its `reason` (search by `reason`, not by the `err` class name, which a build can minify):
+     - `timeout`: `select 1` did not answer within 3 s — a saturated pool or an unreachable compute.
+     - `query-error`: the driver threw — bad credentials, the compute refused or dropped the connection. `err` is the error class only.
+     - `still-pending`: an earlier `select 1` on that instance has not settled yet, so no new query was started (the probe never holds more than one connection). A run of these means the database is hanging, not just slow.
    - Neon console → the production branch: is the compute running, are connections near the limit?
-   - Did this deploy carry a migration (`drizzle/migrations/`)? Prod migrates during `vercel-build`; a long lock can starve every query.
    - `vercel env ls production`: is `DATABASE_URL` present and unchanged?
 
 4. **A sign-in check failed** → the render path.

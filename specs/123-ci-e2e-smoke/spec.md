@@ -23,7 +23,7 @@
 As the maintainer, I learn within minutes when a production deploy leaves the site down or cut off from its database, so I can roll back before members notice.
 
 **Done when**
-- DW-1: When Vercel reports a **production** deployment as successful, the `post-deploy-smoke` GitHub workflow runs against that deployment's production URL. A preview deployment never triggers it.
+- DW-1: When Vercel reports a **production** deployment as successful, the `post-deploy-smoke` GitHub workflow runs against the production domain (the `vars.PROD_BASE_URL` repo variable), not the per-deployment URL, which can sit behind deployment protection. A preview deployment never triggers it.
 - DW-2: The workflow passes only if `GET /admin/sign-in` and `GET /portal/sign-in` return 200 with a sign-in form, and `GET /api/health` returns 200 with body `{"status":"ok"}`.
 - DW-3: `GET /api/health` runs `select 1` against the database with a 3-second limit. If that fails or times out, it returns 503 with `{"status":"degraded"}`. The body never holds a version, an environment name, a tenant, a hostname or error text. The response carries `Cache-Control: no-store` and needs no session.
 - DW-4: A failed run opens a GitHub issue labelled `prod-smoke`, or comments on the open one. The issue names the deployment URL, the commit and every failed check.
@@ -49,6 +49,7 @@ As the maintainer, I see a PR break a critical user path in CI, without running 
 - Making `e2e-critical` a required check (a later decision, after the two weeks).
 - Firefox, WebKit and mobile-safari in CI.
 - Fixing the existing flaky specs, beyond what the `@critical` set needs.
+- Risk accepted (slice 1): the production domain alias may lag the deployment by a few seconds. The 3 × 20 s retries cover a check that FAILS during that lag; a stale-but-healthy alias still serving the previous deployment passes, so the smoke can certify the old build in that window.
 
 ## Premises checked against the code
 

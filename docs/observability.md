@@ -2643,3 +2643,26 @@ the operator watches the incident: `stale-pending-count`, `unprocessed-events-co
 `broadcasts-gauges`, `recompute-match-rate`, `plan-change-divergence`. The exemptions and their
 reasons live in `tests/unit/architecture/cron-read-only-guard-coverage.test.ts`. A skip line that
 keeps appearing after the freeze was meant to end is the signal that `READ_ONLY_MODE` was left on.
+
+## 31. Production health probe and post-deploy smoke (spec 123)
+
+`GET /api/health` (`src/app/api/health/route.ts`) is a public liveness probe: `select 1` raced
+against a 3 s Node timer (the Neon pooler drops `statement_timeout`), answering 200
+`{"status":"ok"}` or 503 `{"status":"degraded"}` with `Cache-Control: no-store`. The result is
+cached 10 s per instance from when the probe settles, and no second `select 1` starts while an
+earlier one is still unsettled, so the probe never holds more than one pooled connection.
+
+| Log message | Level | Fields | Meaning |
+|---|---|---|---|
+| `health.degraded` | warn | `reason` (`timeout` \| `query-error` \| `still-pending`), `err` (error class only, absent for `still-pending`), `route` (`api.health`) | One degraded probe result. `timeout`: no answer in 3 s. `query-error`: the driver threw. `still-pending`: an earlier `select 1` on this instance has not settled, so none was started. Search by `reason` — class names can be minified. Never carries `e.message`, a host or a tenant |
+
+At most one line per instance per 10 s, because results are cached; a `health.degraded` storm is
+therefore a fleet of instances, not one caller.
+
+**Post-deploy smoke.** `.github/workflows/post-deploy-smoke.yml` runs
+`scripts/post-deploy-smoke.ts` after every successful Production deployment (and on
+`workflow_dispatch`) against the `PROD_BASE_URL` repo variable: both sign-in pages must answer 200
+with a password input and `/api/health` must answer 200 `{"status":"ok"}`, 3 attempts 20 s apart.
+A failure opens or comments on a GitHub issue labelled `prod-smoke` with the FAIL lines only — that
+issue is the alert; there is no metric and no automatic rollback. Runbook:
+`docs/runbooks/post-deploy-smoke.md`.
