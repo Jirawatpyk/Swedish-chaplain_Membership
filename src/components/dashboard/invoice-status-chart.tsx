@@ -266,7 +266,7 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
                 {/* Amount and percent move as one unit when the row wraps. */}
                 <span
                   data-slot="status-figures"
-                  className="ml-auto flex items-baseline gap-x-[var(--aura-space-3)]"
+                  className="ml-auto flex flex-wrap items-baseline justify-end gap-x-[var(--aura-space-3)]"
                 >
                   <span className="whitespace-nowrap text-right tabular-nums text-[var(--aura-fg-primary)]">
                     {r.visibleAmount}
