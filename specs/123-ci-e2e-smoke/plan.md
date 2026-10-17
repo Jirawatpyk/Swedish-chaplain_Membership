@@ -263,3 +263,11 @@ Filled in at Verify, one block per slice.
   - Variables `PROD_BASE_URL`, `NEON_CI_PROJECT_ID` and `NEON_CI_PARENT_BRANCH` are set.
   - Secrets `NEON_CI_API_KEY`, `CI_BLOB_READ_WRITE_TOKEN`, `CI_BLOB_PRIVATE_READ_WRITE_TOKEN`, `CI_UPSTASH_REDIS_REST_URL` and `CI_UPSTASH_REDIS_REST_TOKEN` are set; names were checked, values never read.
 
+**Re-verified after review round 1** (head `04b766dd8`, cold `next dev` :3400):
+- **OK path:** 200 `{"status":"ok"}`. The smoke run passed all 3 checks, with one retry because the first `/admin/sign-in` hit compiled for 15 s.
+- **Unreachable DB:** 3 concurrent calls after the cache expired all returned 503 in 2.9-3.05 s, and the log has one `health.degraded` line for them, so they shared one probe.
+- **Log redaction found and fixed:**
+  - The live log showed `reason: "[REDACTED]"`, because `src/lib/logger.ts` redacts every `reason` key. The mocked-logger tests had hidden this.
+  - Renamed to `probe`. The live log now reads `probe: "timeout"`, `route: "api.health"`, `err: "HealthProbeTimeoutError"`.
+  - Guarded by a test against the real `REDACT_PATHS` (RED `49af5e060`).
+
