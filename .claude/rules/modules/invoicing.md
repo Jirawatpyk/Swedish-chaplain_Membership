@@ -7,6 +7,9 @@ paths:
   - "src/app/*/portal/invoices/**"
   - "src/app/*/portal/credit-notes/**"
   - "src/components/invoices/**"
+  - "src/app/api/invoices/**"
+  - "src/app/api/credit-notes/**"
+  - "src/app/api/tenant-invoice-settings/**"
   - "tests/**/invoicing/**"
   - "tests/**/invoices/**"
 ---

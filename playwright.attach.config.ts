@@ -6,7 +6,7 @@
  * runs a branch's server in its own worktree on another port (the
  * `run-chamber-os` skill uses :3400), so it must never start or reuse :3100.
  *
- *   E2E_BASE_URL=http://localhost:3400 npx playwright test --config=playwright.attach.config.ts <spec>
+ *   E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright.attach.config.ts <spec>
  */
 import base from './playwright.config';
 

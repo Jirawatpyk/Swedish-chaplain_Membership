@@ -1,11 +1,11 @@
 ---
 name: feature-flow
-description: Drive a Chamber-OS change from idea to production through docs/workflow.md — size it, interview and write the spec, plan, build test-first, check, review, verify in the running app, open the PR, merge on the user's word, and run the retro. Use when the user starts a feature, a fix bigger than one sentence, or asks what the next step of a change is.
+description: Drive a Chamber-OS change from idea to production through docs/workflow.md — size it, interview and write the spec, plan, build test-first, check, review, verify in the running app, open the PR, merge on the user's word, and run the retro. Use when the user starts a feature or a fix of any size (S included — its Done-when lines go in the PR), or asks what the next step of a change is.
 ---
 
 # Feature flow
 
-`docs/workflow.md` is the contract: the lifecycle, the Definition of Done, Decisions and Continuous improvement. This skill is how Claude walks it. Read that file first if this session hasn't. Reviewer choice and merge mechanics are in the `review-and-ship` skill.
+`docs/workflow.md` is the contract: the lifecycle, who does what, the Definition of Done, Decisions and Continuous improvement. This skill is how Claude walks it. Read that file first if this session hasn't. Reviewer choice and merge mechanics are in the `review-and-ship` skill.
 
 ## 0. Before anything
 
@@ -24,24 +24,27 @@ description: Drive a Chamber-OS change from idea to production through docs/work
 
 ## 2. Branch
 
-A worktree from an up-to-date `origin/main` at a short path (e.g. `%TEMP%\fNN`), with `node_modules` as a junction to the main checkout. The branch is `<nnn>-<short-name>`. Never work on the user's main checkout, and never `git stash`.
+A worktree from an up-to-date `origin/main` at a short path (e.g. `%TEMP%\fNN`), with `node_modules` provided as `run-chamber-os` § 1 says (a junction only when the AURA versions match). The branch is `<nnn>-<short-name>`. Never work on the user's main checkout, and never `git stash`.
 
 ## 3. Plan (M / L)
 
-Enter plan mode. The plan names:
-- the files to touch, and the module rules that apply;
+Draft in plan mode (`superpowers:writing-plans` helps), then save it as `specs/<nnn-name>/plan.md` from `plan-template.md` in this skill's folder. It covers:
+- the approach and the alternatives not taken;
+- the files to touch and the module rules that apply;
 - the data model and migration;
-- the Constitution Check across all 10 principles;
-- for every Done-when line, **the test that goes red first**: one test per behaviour, never one task per file.
+- the **test plan** — for every Done-when line, the test that goes red first: one row per behaviour, never one per file;
+- the Constitution Check across all 10 principles, and Complexity Tracking for any deviation;
+- rollout and risks.
 
-A deviation goes in `plan.md` § Complexity Tracking with the rejected simpler alternative. Get the user's agreement before writing code.
+For **L**, have `chamber-os-architect` and the surface reviewers for what the plan touches read it before the user does. These are read-only subagents and may run in parallel. Get the user's agreement before writing code. If the plan changes during build, update `plan.md` in the same commit.
 
 ## 4. Build
 
-- RED commit, then GREEN commit, per behaviour. A guard whose test never went red has not been exercised.
-- Schema: hand-written SQL, `pnpm db:migrate` (the dev branch), DDL confirmed via `information_schema`, then the touched integration suites run by path.
+- **Who**: the main session builds S and M. For L, use one subagent per user story, in order (`superpowers:subagent-driven-development`, or `software-engineer`), and check each story against the plan before starting the next. Subagents that edit files run one at a time.
+- RED commit, then GREEN commit, per row of the test plan (`superpowers:test-driven-development`). A guard whose test never went red has not been exercised.
+- For a migration, use the `new-migration` skill. For a new audit event type, use `add-audit-event`. For a bug, use `superpowers:systematic-debugging` before changing code.
 - Use the module's rule (`.claude/rules/modules/*.md`) for its traps. A tenant-scoped repo threads `tx` from `runInTenant`.
-- Dispatch file-mutating subagents one at a time.
+- When the build is complete, run `/simplify` on the diff (reuse, simplification, efficiency), then go to Check.
 
 ## 5. Check
 
@@ -54,13 +57,13 @@ Follow `review-and-ship` §§ 1–2:
 2. The surface reviewers for what the diff touches.
 3. `whole-branch-reviewer` last.
 
-Fix every High, with no waivers. Fix every Medium, or write the reason down for the PR. After substantial fixes to a reviewer's findings, run that reviewer again on the fixes.
+Reviews run in subagents; the writer never reviews its own code. Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it. Fix every High, with no waivers. Fix every Medium, or write the reason down for the PR. After substantial fixes to a reviewer's findings, run that reviewer again on the fixes.
 
 ## 7. Verify
 
 Watch the change work in the running app, not only in tests. The `run-chamber-os` skill is the recipe for starting it: worktree, :3400, cold `.next`, personas, Playwright attached, and the UI probes.
 - Start a dev server in the worktree on **:3400** after `rm -rf .next`. The user's :3100 is never started or killed.
-- Use `/verify` or the Browser pane to drive every changed screen, route or cron, including one wrong-input probe.
+- Drive every changed screen, route or cron with `/run` or the Browser pane, including one wrong-input probe. `/verify` runs only when the user invokes it.
 - Run the touched e2e specs on chromium and mobile-chrome with `--workers=1 --retries=0`. A red that also fails on `main` is reported as pre-existing, with the evidence.
 - UI also gets: 320 px, a 32 px default font, dark mode, and TH and SV.
 - Evidence (numbers, screenshots) goes against each Done-when line.

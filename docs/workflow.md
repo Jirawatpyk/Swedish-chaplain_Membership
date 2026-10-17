@@ -26,21 +26,39 @@ When unsure, size up. Anything touching money, tax, tenant isolation, PII, auth 
 | Step | What happens | Tool |
 |---|---|---|
 | **1. Frame** | Say what changes for whom and why. For M / L, Claude interviews the user with `AskUserQuestion` (edge cases, trade-offs, what is out of scope) and writes `specs/<nnn-name>/spec.md`: user stories, **Done when** lines (each one observable and checkable), Out of scope, open questions. Check the premises against the code before writing them down. | `feature-flow` |
-| **2. Branch** | `<nnn>-<short-name>` from an up-to-date `origin/main`, in a worktree under a short Temp path (`node_modules` as a junction to the main checkout). Migrations take the next free number; merge any other open branch's migration first. | `git worktree` |
-| **3. Plan** | Read the spec, `docs/decisions.md` and the module rules. M / L: write the plan in plan mode and agree it before coding. It covers the files, the data model, the Constitution Check against all 10 principles, and the test that goes red first for each Done-when line. A deviation goes in `plan.md` § Complexity Tracking with the rejected simpler alternative. | plan mode |
-| **4. Build** | Small commits, test first: commit RED, then GREEN. Schema changes are hand-written SQL applied to the `dev` branch (`pnpm db:migrate`), confirmed via `information_schema`, then the touched integration suites run. Stop and ask on any conflict between sources (see Decisions). | TDD |
+| **2. Branch** | `<nnn>-<short-name>` from an up-to-date `origin/main`, in a worktree under a short Temp path (`node_modules` per `run-chamber-os` § 1). Migrations take the next free number; merge any other open branch's migration first. | `git worktree` |
+| **3. Plan** | Read the spec, `docs/decisions.md` and the module rules. M / L: draft in plan mode, then save it as `specs/<nnn-name>/plan.md` from `.claude/skills/feature-flow/plan-template.md`. It covers the approach, files, data model, **test plan** (each Done-when line → the test that goes red first), Constitution Check, Complexity Tracking, rollout and risks. For L, `chamber-os-architect` and the surface reviewers read the plan before the user agrees it. No code is written before the user agrees. If the plan changes during build, update `plan.md` in the same commit. | plan mode, `superpowers:writing-plans` |
+| **4. Build** | Small commits, test first: commit RED, then GREEN, following the plan's test plan. A migration goes through the `new-migration` skill, and a new audit event type through `add-audit-event`. Debug with `superpowers:systematic-debugging`. Stop and ask on any conflict between sources (see Decisions). Finish with `/simplify` on the diff (reuse, simplification, efficiency) before Check. | `superpowers:test-driven-development`, `new-migration`, `add-audit-event`, `/simplify` |
 | **5. Check** | `pnpm check` green locally (lint, typecheck, the static gates). Then `pnpm test:coverage` (the pins CI enforces), `pnpm vitest run tests/contract/`, and the touched integration suites by path. | `pnpm check` |
-| **6. Review** | `/code-review high` on the diff, or the `review-branch` Workflow for a large or high-stakes branch, then the surface reviewers from `review-and-ship` § 2. **Fix every High, with no waivers. Fix every Medium, or give the reason in the PR.** After substantial fixes to a reviewer's findings, run that reviewer again on the fixes. `whole-branch-reviewer` goes last. | `review-and-ship` |
-| **7. Verify** | Run the app and watch the change work. Use a worktree dev server on **:3400**, started with `rm -rf .next` (never the user's :3100). Drive every changed screen, route or cron in the browser, including one wrong-input probe. Run the touched e2e specs on **chromium and mobile-chrome** (`--workers=1 --retries=0`). For UI, also check 320 px, a 32 px default font, dark mode and TH/SV. Collect evidence (numbers, screenshots) for every Done-when line. | `run-chamber-os`, `/verify`, Browser pane, Playwright |
+| **6. Review** | `/code-review high` on the diff, or the `review-branch` Workflow for a large or high-stakes branch, then the surface reviewers from `review-and-ship` § 2. Take findings with `superpowers:receiving-code-review`: verify each one before acting on it. **Fix every High, with no waivers. Fix every Medium, or give the reason in the PR.** After substantial fixes to a reviewer's findings, run that reviewer again on the fixes. `whole-branch-reviewer` goes last. | `review-and-ship` |
+| **7. Verify** | Run the app and watch the change work. Use a worktree dev server on **:3400**, started with `rm -rf .next` (never the user's :3100). Drive every changed screen, route or cron in the browser, including one wrong-input probe. Run the touched e2e specs on **chromium and mobile-chrome** (`--workers=1 --retries=0`). For UI, also check 320 px, a 32 px default font, dark mode and TH/SV. Collect evidence (numbers, screenshots) for every Done-when line. | `run-chamber-os`, `/run`, Browser pane, Playwright (the user may also run `/verify`) |
 | **8. PR** | The PR template: Done-when lines, each with its evidence; the DoD checklist; review findings and how each was closed. The Vercel preview and its Neon branch come with the PR. All six required checks must be green. | GitHub |
 | **9. Merge** | **Only when the user says so.** Squash and delete the branch (`review-and-ship` § 5). The merge deploys to production, and prod migrates inside that deploy. Then confirm the production deployment is `READY`, and update `docs/operational-state.md` if a flag or cutover moved. | `gh`, Vercel |
 | **10. Improve** | The retro (below): what went wrong or slow, and the change that stops it happening again. Add one line to `docs/retro.md`. Skip it when nothing went wrong. | `docs/retro.md` |
+
+## Who does what
+
+The main session holds the conversation, the agreements and the plan; subagents get a fresh context. A reviewer never grades its own code: Claude Code's best practices note that a fresh context improves code review.
+
+| Step | Who | Why |
+|---|---|---|
+| Frame, Plan | **Main session**; an `Explore` subagent may survey the code first | Needs the user and the agreements |
+| Build, size S / M | **Main session** | A tight TDD loop that needs the conversation's context |
+| Build, size L | **One subagent per user story, in order** (`superpowers:subagent-driven-development`, or `software-engineer`), with the main session checking each story against the plan | A long build would fill and compact the main context |
+| Review | **Subagents, always** (`/code-review high` and the surface reviewers) | The writer is never the reviewer |
+| Verify | The main session, or a subagent for a long probe run | Evidence from the running app |
+| Fixes after review, PR, merge | **Main session** | Judgment, and the user's word for the merge |
+
+- Subagents that edit files run one at a time, because they share the working tree.
+- Read-only subagents may run in parallel.
+- Use Opus for review and risky work, and Sonnet for bounded mechanical tasks.
 
 ## Definition of Done
 
 A change is done when every line below that applies is true and its evidence is in the PR.
 
 - [ ] Every Done-when line in the spec (or the PR, for size S) is met, with evidence: test names, numbers, screenshots.
+- [ ] M / L: `plan.md` exists, the user agreed it before build, and it matches what was built.
 - [ ] Each behaviour has a test that went red before the code that made it pass.
 - [ ] `pnpm check` is green; `pnpm test:coverage` is green (not just `pnpm test`); `pnpm vitest run tests/contract/` is green.
 - [ ] The touched integration suites are green, run by path against the `dev` branch. A tenant-scoped surface has a cross-tenant test.

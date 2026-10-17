@@ -5,7 +5,7 @@ Loaded every session (no `paths:`). Module-specific facts live in `.claude/rules
 ## Conventions
 
 - **Package manager**: pnpm (NOT npm). Lockfile `pnpm-lock.yaml`.
-- **Commits**: Conventional Commits, enforced by the commit-msg hook; commitlint caps the header at 100 characters (count with `wc -m`). `[Spec Kit]` prefix on commits that move a feature through a gate.
+- **Commits**: Conventional Commits, enforced by the commit-msg hook; commitlint caps the header at 100 characters (count with `wc -m`). `[Spec Kit]` prefix on commits that move a Spec Kit feature through a gate (not used on `feature-flow` pilot features).
 - **Branches**: one feature per branch (`nnn-feature-name`); the spec directory name matches exactly (e.g. `001-auth-rbac`).
 - **Timestamps**: always store **ISO 8601 UTC (Gregorian)**. Thai Buddhist Era (BE = CE + 543) is **display-only** for `th-TH` surfaces. Storing BE anywhere is a ship blocker (off-by-543-years class).
 - **Primary currency THB**; SEK/EUR/USD presentable where applicable. Thai tax invoices need VAT 7%, tax IDs on both parties, TH language, sequential tax-receipt numbering.
@@ -35,7 +35,7 @@ Loaded every session (no `paths:`). Module-specific facts live in `.claude/rules
 ## Cross-cutting gotchas
 
 - **`pnpm typecheck` is not in pre-push** (CI runs it). Run it locally as the final step after the last edit, before committing — and run full `pnpm lint` too, it catches errors typecheck + vitest miss.
-- **All cron triggers are native Vercel Cron** (`vercel.json`, 40+ jobs): **UTC-only** (Asia/Bangkok schedules are −7 h) and invoked with **GET**, so POST handlers need `export const GET = POST`. cron-job.org is a paused standby. See `docs/runbooks/cron-jobs.md`.
+- **All cron triggers are native Vercel Cron** (`vercel.json` `crons`): **UTC-only** (Asia/Bangkok schedules are −7 h) and invoked with **GET**, so POST handlers need `export const GET = POST`. cron-job.org is a paused standby. See `docs/runbooks/cron-jobs.md`.
 - **DB is Neon-branched**: `.env.local` → the `dev` branch; `pnpm db:migrate` never touches prod. Prod + preview migrate on Vercel deploy. Map: `docs/runbooks/db-environment-branching.md`.
 - **`default: { return _exhaustive }` is FAIL-OPEN** — it returns the value at runtime, so an unknown variant is silently ACCEPTED. Write `void _exhaustive; return <safe>`. `rg -n "^\s*return _exhaustive" src` should print nothing.
 - **A source-scanning gate whose regex anchors on `\n` is INERT on every Windows checkout** (`core.autocrlf=true` → `;\r\n`), and CI (Linux, LF) can never catch it. Match `;\r?\n`, and give every source-parsing gate a **positive control** that fails when its own parse yields zero members (#351).

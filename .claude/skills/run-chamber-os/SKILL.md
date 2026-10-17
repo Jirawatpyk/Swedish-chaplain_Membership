@@ -1,6 +1,6 @@
 ---
 name: run-chamber-os
-description: The recipe for running a Chamber-OS branch locally so it can be verified — a worktree dev server on :3400 against the Neon dev branch, sign-in personas, Playwright attached to it, and the viewport/font/locale probes. Use with /verify, at feature-flow step 7, or whenever a change must be watched working in the running app.
+description: The recipe for running a Chamber-OS branch locally so it can be verified — a worktree dev server on :3400 against the Neon dev branch, sign-in personas, Playwright attached to it, and the viewport/font/locale probes. The launch recipe /run and /verify follow; use at feature-flow step 7 or whenever a change must be watched working in the running app.
 ---
 
 # Run Chamber-OS for verification
@@ -51,11 +51,11 @@ curl -s -o /dev/null -w '%{http_code}\n' --max-time 180 http://localhost:3400/ad
 
 ## 4. Drive it
 
-**Browser:** the Browser pane (`mcp__Claude_Browser__*`) or `/verify`, at `http://localhost:3400`. Prefer `read_page` / `get_page_text` over screenshots for reading. Take a screenshot as evidence.
+**Browser:** `/run` or the Browser pane (`mcp__Claude_Browser__*`), at `http://localhost:3400`. `/verify` runs only when the user invokes it. Prefer `read_page` / `get_page_text` over screenshots for reading. Take a screenshot as evidence.
 
 **e2e against the running server:**
 ```bash
-E2E_BASE_URL=http://localhost:3400 npx playwright test --config=playwright.attach.config.ts tests/e2e/<spec>.spec.ts \
+E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright.attach.config.ts tests/e2e/<spec>.spec.ts \
   --project=chromium --workers=1 --retries=0 --reporter=list
 ```
 - Run one spec file and one project per process, on both `chromium` and `mobile-chrome`.

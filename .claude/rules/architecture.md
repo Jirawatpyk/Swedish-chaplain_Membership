@@ -30,14 +30,14 @@ src/
 │   ├── ui/                            # legacy shadcn/ui on Base UI — deleted at spec 122 US13 (AURA replaces it)
 │   ├── auth/                          # sign-in-form, reset-password-form, idle-warning-dialog, …
 │   ├── shell/                         # user-menu, theme-toggle, skip-to-content, empty-state, error-state
-│   └── layout/                        # staff-shell, staff-top-bar, member-shell, page-header
+│   └── layout/                        # staff-shell, staff-top-bar, member-header, member-nav, page-header
 ├── i18n/
 │   ├── config.ts, request.ts          # next-intl
 │   └── messages/{en,th,sv}.json       # en.json is canonical
 ├── lib/
 │   ├── db.ts                          # Drizzle client singleton + runInTenant
 │   ├── logger.ts                      # pino structured logger (forbidden fields: password, session id, tokens, Authorization)
-│   ├── otel.ts                        # @vercel/otel setup
+│   ├── otel-tracer.ts                 # tracer helper; @vercel/otel is registered in root instrumentation.ts
 │   ├── env.ts                         # zod-validated process.env, runs at boot
 │   └── result.ts                      # Result<T,E> helper for explicit error handling
 └── proxy.ts                           # Next.js 16 renamed middleware→proxy — there is NO src/middleware.ts.
@@ -81,10 +81,10 @@ specs/<nnn-feature>/                   # Spec Kit artefacts — one dir per feat
 
 ## Audit log
 
-- Per-feature counts: F2 +10 · F3 +23 · F4 +16 · F5 +17 · F7 69 live (`F7_AUDIT_EVENT_TYPES`, static-asserted). The canonical list lives in code, never here — e.g. `src/modules/broadcasts/application/ports/audit-port.ts`.
+- The canonical lists and their counts live in code, never here — e.g. `F7_AUDIT_EVENT_TYPES` (static-asserted) in `src/modules/broadcasts/application/ports/audit-port.ts`.
 - `audit_log.retention_years` is `SMALLINT NOT NULL DEFAULT 5` with CHECK `IN (5,10)`; six F4 tax-document types are backfilled to 10 years per Thai RD §87/3 + GDPR Art. 6(1)(c) (migration 0039).
 - **Adding an audit event type touches five places**:
-  1. `AUDIT_EVENT_TYPES` in `src/modules/auth/domain/audit-event.ts`, or `DB_ONLY_AUDIT_EVENT_TYPES` for module events;
+  1. `AUDIT_EVENT_TYPES` in `src/modules/auth/domain/audit-event.ts`, or, for module events, `DB_ONLY_AUDIT_EVENT_TYPES` in `src/modules/auth/infrastructure/db/schema.ts`;
   2. `auditEventTypeEnum` in `src/modules/auth/infrastructure/db/schema.ts`;
   3. the count in `tests/unit/auth/domain/audit-event.test.ts`;
   4. the count in `tests/integration/audit/completeness.test.ts` (pre-push does NOT run this folder for another module's event);

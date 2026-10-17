@@ -25,7 +25,19 @@
       "Bash(pnpm db:push:*)",
       "Bash(pnpm db:migrate:prod:*)",
       "Bash(pnpm db:verify:prod:*)",
-      "Bash(pnpm seed:system-actors:prod:*)"
+      "Bash(pnpm seed:system-actors:prod:*)",
+      "Bash(pnpm run format:*)",
+      "PowerShell(pnpm format:*)",
+      "PowerShell(prettier --write:*)",
+      "PowerShell(npx prettier --write:*)",
+      "PowerShell(pnpm exec prettier --write:*)",
+      "PowerShell(git stash:*)",
+      "PowerShell(pnpm db:generate:*)",
+      "PowerShell(pnpm db:push:*)",
+      "PowerShell(pnpm db:migrate:prod:*)",
+      "PowerShell(pnpm db:verify:prod:*)",
+      "PowerShell(pnpm seed:system-actors:prod:*)",
+      "PowerShell(pnpm run format:*)"
     ]
   }
 }

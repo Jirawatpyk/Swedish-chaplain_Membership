@@ -8,6 +8,8 @@ paths:
   - "src/app/*/portal/contacts/**"
   - "src/app/*/portal/change-requests/**"
   - "src/components/members/**"
+  - "src/app/*/admin/settings/member-changes/**"
+  - "src/app/api/members/**"
   - "tests/**/members/**"
 ---
 

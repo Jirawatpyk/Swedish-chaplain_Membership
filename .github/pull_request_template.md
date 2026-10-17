@@ -12,6 +12,7 @@
 
 <!-- Tick only what has evidence; strike through lines that don't apply. -->
 
+- [ ] M / L: `plan.md` agreed before build, and matching what was built
 - [ ] Each behaviour has a test that went red before the code that made it pass
 - [ ] `pnpm check` · `pnpm test:coverage` · `pnpm vitest run tests/contract/` green
 - [ ] Touched integration suites green (by path, `dev` branch); cross-tenant test for a tenant-scoped surface

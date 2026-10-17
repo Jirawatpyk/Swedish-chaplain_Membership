@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Folder name caveat**: the directory is historically `Swedish chaplain_membership` — "chaplain" is a typo for "chamber". Call the product **Chamber-OS** (platform) or **SweCham / TSCC** (tenant), never "chaplain".
 
-**Where things are**: modules `src/modules/{auth,tenants,plans,members,invoicing,payments,events,broadcasts,renewals,insights}/**`; staff UI `src/app/(staff)/admin/**`; member UI `src/app/(member)/portal/**`. Latest migration: `ls drizzle/migrations | tail -1`. Feature history and PR provenance: `docs/changelog.md`. Production flag state: `docs/operational-state.md`.
+**Where things are**: modules `src/modules/{auth,tenants,plans,members,invoicing,payments,events,broadcasts,renewals,insights}/**`; staff UI `src/app/(staff)/admin/**`; member UI `src/app/(member)/portal/**`. Latest migration: `ls drizzle/migrations/*.sql | tail -1`. Feature history and PR provenance: `docs/changelog.md`. Production flag state: `docs/operational-state.md`.
 
 ## How the instructions are split
 
@@ -21,8 +21,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `.claude/rules/ui-aura.md` | when touching UI, messages or e2e | AURA migration, i18n, UX playbook, e2e conventions |
 | `.claude/skills/review-and-ship/` | on demand | which agent reviews what, `/code-review`, Workflows, Spec Kit gates, merge flow |
 | `.claude/skills/feature-flow/` + `docs/workflow.md` | on demand | the change lifecycle, Definition of Done, decisions, retros |
+| `.claude/skills/new-migration/`, `add-audit-event/` | on demand | the fragile build steps: a hand-written migration; a new audit event type |
 | `.claude/skills/run-chamber-os/` | on demand | how to run a branch on :3400 for verification (personas, Playwright attach, UI probes) |
-| `.claude/settings.json` `permissions.deny` | always enforced | commands Claude may not run (format, stash, `db:generate`, prod scripts) |
+| `.claude/settings.json` `permissions.deny` | always (blocks the usual spellings, not every form) | commands Claude may not run (format, stash, `db:generate`, prod scripts); the ban covers every other spelling too |
 
 A fact that matters only for one module goes in that module's rule, not here. Keep this file under 200 lines.
 
@@ -46,7 +47,7 @@ When the `advisor` tool is available, call it at these three points:
 
 ## Tech stack
 
-- **Next.js 16** App Router + Cache Components + Turbopack · React 19 · **TypeScript 5.7+ strict** (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) · Node 22 LTS
+- **Next.js 16** App Router + Turbopack (`cacheComponents` was tried and reverted — data caching uses `unstable_cache`; see `next.config.ts`) · React 19 · **TypeScript 5.7+ strict** (`strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) · Node 22 LTS
 - **Neon Postgres + Drizzle ORM** · Upstash Redis (rate limits) — both Singapore
 - **Auth**: custom session-based (Lucia v3 guide pattern), argon2id via `@node-rs/argon2`
 - **UI**: AURA (`@jirawatpyk/aura-react` + `@jirawatpyk/aura-tokens`, exact-pinned) replacing the legacy shadcn/Base UI kit (spec 122) · Tailwind CSS v4 · lucide-react · toasts only via `@/lib/toast`
@@ -70,11 +71,11 @@ pnpm typecheck                 # tsc --noEmit under strict (NOT in pre-push — 
 pnpm test                      # Vitest run  (watch: pnpm test:watch)
 pnpm test:coverage             # with Vitest coverage thresholds (what CI enforces)
 pnpm test:integration <path>   # live Neon DEV branch; pass file PATHS — a `-- <pattern>` runs all ~40 min
-pnpm test:e2e                  # Playwright, all suites (local-only; no CI job)
+pnpm test:e2e                  # Playwright against the maintainer's :3100 — not from a worktree (use run-chamber-os)
 pnpm test:e2e --grep "@a11y"   # axe-core WCAG 2.1 AA scan only
 pnpm check:i18n                # fails on missing EN keys
 pnpm db:migrate                # apply to the DEV branch; prod auto-migrates on deploy (vercel-build)
-pnpm db:verify                 # assert the live schema matches expectations (prod: pnpm db:verify:prod)
+pnpm db:verify                 # assert the live schema matches expectations (prod: the user runs pnpm db:verify:prod — denied for Claude)
 pnpm build                     # production build
 # pnpm db:generate             # DO NOT USE — migrations are hand-written SQL (see .claude/rules/architecture.md)
 ```
@@ -82,10 +83,12 @@ pnpm build                     # production build
 `pnpm check` runs lint + typecheck + the static gates in one go. Full local gate before shipping anything non-trivial:
 
 ```bash
-pnpm check && pnpm test:coverage && pnpm vitest run tests/contract/ && pnpm test:integration <touched paths> && pnpm test:e2e <touched specs>
+pnpm check && pnpm test:coverage && pnpm vitest run tests/contract/ && pnpm test:integration <touched paths>
 ```
 
-`main`'s required checks and what the pre-push hook runs are in the `review-and-ship` skill. Other `check:*` gates not in pre-push: `check:strict-aria`, `check:audit-events`, `check:audit-counts`, `check:bundle-budgets`, `check:multi-tenant`, `check:portal-guard`, `check:plan-divergence`, `check:f71a-schema`, `check:f9-schema`.
+Then run the touched e2e specs against the branch's own :3400 server: `E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright.attach.config.ts <spec>` (the `run-chamber-os` skill).
+
+`main`'s required checks and what the pre-push hook runs are in the `review-and-ship` skill. Other `check:*` gates not in pre-push: `check:strict-aria`, `check:audit-events`, `check:audit-counts`, `check:bundle-budgets`, `check:multi-tenant`, `check:portal-guard`, `check:plan-divergence`, `check:f71a-schema`, `check:f9-schema` (`check:i18n` runs in `pnpm check` and CI).
 
 One-off: bootstrap the first admin (refuses if any admin exists): `BOOTSTRAP_ADMIN_EMAIL=first.admin@swecham.example pnpm db:seed-admin`.
 
@@ -106,7 +109,7 @@ When sources disagree, the higher one wins. If the conflict matters, stop and as
 
 - `docs/workflow.md` is the lifecycle contract: sizes, the ten steps, the **Definition of Done**, **Decisions** and **Continuous improvement**. The `feature-flow` skill walks it; `review-and-ship` covers reviewers and merging.
 - Pilot (D-009): `feature-flow` replaces the `/speckit.*` gate commands for features that opt in; the constitution's gates still apply to the rest until it is amended.
-- When something goes wrong (red `main`, a new High after a fix round, a gate that checked nothing, the same correction twice), run the retro: one line in `docs/retro.md`, plus the change that stops it recurring.
+- When a retro trigger in `docs/workflow.md` § Continuous improvement fires, run the retro: one line in `docs/retro.md`, plus the change that stops it recurring.
 - Dispatch the project subagents in `.claude/agents/` for gate and review work, not `general-purpose`. Any UI-touching change also gets an `enterprise-ux-designer` pass.
 - Saved Workflows (`.claude/workflows/`: `review-branch`, `sweep-class`, `spec-review-panel`) run only on explicit opt-in ("use a workflow" / `ultracode`).
 - Merge only when the user asks. Every merge to `main` deploys to production.

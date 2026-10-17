@@ -58,10 +58,15 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 
 **D-011 — Hard bans are enforced by settings; DoD hooks wait for evidence** (2026-10-17)
 - *Context*: CLAUDE.md is advisory, and a few commands had already caused damage when run (prettier across unrelated files, a shared `git stash`, `db:generate` diffs, prod scripts).
-- *Decision*: `.claude/settings.json` `permissions.deny` blocks `pnpm format`, `prettier --write`, `git stash`, `pnpm db:generate`, `pnpm db:push` and the `:prod` scripts. A DoD line becomes a hook only after a retro shows it being skipped.
+- *Decision*: `.claude/settings.json` `permissions.deny` blocks the usual spellings of `pnpm format`, `prettier --write`, `git stash`, `pnpm db:generate`, `pnpm db:push` and the `:prod` scripts, for both the Bash and the PowerShell tool. A deny rule matches command text, not the program, so the ban still covers every other spelling. A DoD line becomes a hook only after a retro shows it being skipped.
 - *Consequence*: the user runs a denied command themselves when it is genuinely needed. A new ban is added here and to the deny list together.
 
 **D-012 — The run recipe is a skill named `run-chamber-os`, not `verify`** (2026-10-17)
 - *Context*: Claude Code runs a project skill named `verify` before every commit, and a cold dev server here takes minutes; without a recipe, `/verify` guesses the launch and gets the port, the database or the personas wrong.
 - *Decision*: record the recipe as `run-chamber-os` (worktree, :3400, dev branch, personas, `playwright.attach.config.ts`, UI probes). `/verify` and `feature-flow` step 7 follow it.
 - *Consequence*: verification never touches the maintainer's :3100 server or the prod database.
+
+**D-013 — M / L changes keep a written plan; reviews never run in the writer's context** (2026-10-17)
+- *Context*: a plan made only in plan mode lives in one conversation, so it is lost on compaction or hand-off, and a later reviewer has nothing to compare the code against. Here, a plan has mandated a defect that surfaced only at review round 7.
+- *Decision*: M / L changes save `specs/<nnn-name>/plan.md` (template in the `feature-flow` skill), including a test plan that replaces Spec Kit's `tasks.md`; for L, `chamber-os-architect` and the surface reviewers read it before the user agrees. The main session builds S / M; L is built one subagent per user story, in order. Review always runs in subagents.
+- *Consequence*: `docs/workflow.md` § Who does what; DoD and PR template lines for the plan.
