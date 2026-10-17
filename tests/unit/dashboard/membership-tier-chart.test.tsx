@@ -14,14 +14,8 @@
  * convention, so a dangling `t()` key reference surfaces as a real
  * `MISSING_MESSAGE` failure rather than silently rendering the raw key.
  *
- * **Task 12 split**: the actual `<BarChart>` rendering was extracted into
- * `./membership-tier-canvas.tsx` and is now mounted here via
- * `next/dynamic(..., { ssr: false })`, so recharts stays out of `/admin`'s
- * first-load JS. A synchronous RTL `render()` therefore sees the `loading`
- * fallback, never the resolved Recharts markup — the Recharts-primitive
- * assertions moved to `membership-tier-canvas.test.tsx`, which renders
- * `<MembershipTierCanvas>` directly. The table + empty-state assertions
- * below are unaffected (they render outside the dynamic boundary).
+ * Spec 122 US11 (parity, 17 Oct): the bars are plain grid rows (no recharts
+ * canvas, no `next/dynamic` boundary), so a synchronous render sees them.
  *
  * jsdom workarounds (identical to `mini-series-chart.test.tsx`):
  *   - `window.matchMedia` — jsdom has no implementation at all; every test
@@ -118,15 +112,8 @@ describe('MembershipTierChart', () => {
     expect(screen.getByRole('rowheader', { name: 'Gold' })).toBeInTheDocument();
   });
 
-  it('wraps the (lazy-loaded) canvas slot in aria-hidden, and the table is never aria-hidden', () => {
-    // The Recharts-primitive "wraps the canvas in aria-hidden" assertion
-    // (querying `.recharts-responsive-container`) moved to
-    // `membership-tier-canvas.test.tsx` — a synchronous render here only
-    // ever sees the `loading` fallback (Task 12 dynamic(ssr:false) split).
-    // This test keeps the chart-level guarantee: the definite-height
-    // wrapper div that will eventually hold the canvas is ALREADY
-    // `aria-hidden="true"` from the very first paint, and the accessible
-    // table is never hidden either way.
+  it('keeps the visual rows aria-hidden, and the table is never aria-hidden', () => {
+    // The visual rows are decorative; the accessible table is never hidden.
     const { container } = renderChart([GOLD]);
     expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
     expect(screen.getByRole('table')).not.toHaveAttribute('aria-hidden');

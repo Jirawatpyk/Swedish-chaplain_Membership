@@ -116,16 +116,11 @@ async function waitForChartCanvas(card: Locator, timeout = 30_000): Promise<Loca
 /**
  * Bar/line/area (Cartesian) charts. Two techniques, depending on shape:
  *
- * - **Bar charts** (revenue-trend AND the horizontal membership-tier bar)
- *   hover an actual `.recharts-bar-rectangle` element directly. Naively
- *   hovering the whole `<svg>`'s bounding-box CENTER is unreliable for the
- *   horizontal tier bar specifically: its `YAxis` reserves a 110px category-
- *   label gutter on the left (`membership-tier-canvas.tsx`), so the
- *   geometric center of the full SVG can land inside that label gutter
- *   rather than the actual plotting/bar area, and Recharts only fires the
- *   tooltip when the pointer is within the tracked plot rectangle.
- *   Hovering a real bar element (Playwright computes ITS OWN bounding box)
- *   sidesteps that gutter-math entirely.
+ * - **Bar charts** (revenue trend) hover an actual `.recharts-bar-rectangle`
+ *   element directly: Recharts only fires the tooltip when the pointer is
+ *   inside the tracked plot rectangle, and a real bar's own bounding box is
+ *   always inside it. (Membership by tier is plain rows since spec 122 US11,
+ *   with every value printed, so it has no canvas or tooltip to hover.)
  * - **Area/line charts** (member growth) have no discrete per-point shape
  *   to target — Recharts tracks the pointer across the WHOLE plotting
  *   rectangle for these, so the SVG's own bounding-box center is reliable
@@ -198,7 +193,7 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
 
   test('static scan: /admin dashboard has zero serious/critical axe violations', async ({ page }) => {
     await gotoDashboard(page);
-    // Let all four lazy canvases resolve past their skeletons before the
+    // Let all three lazy canvases resolve past their skeletons before the
     // static baseline scan, so this reflects the settled page, not a
     // mid-load state (the hover test below re-scans per-chart anyway).
     await page.waitForTimeout(1_000);
@@ -211,7 +206,6 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
     for (const title of [
       CHART_TITLES.revenueTrend,
       CHART_TITLES.memberGrowth,
-      CHART_TITLES.membershipTier,
     ] as const) {
       const card = chartCard(page, title);
       await expect(card).toBeVisible();

@@ -1,8 +1,7 @@
 /**
  * F9 (067-dashboard-interactive-charts) Task 12 — shared loading
  * fallback for every chart's `next/dynamic(..., { ssr: false })` canvas
- * boundary (mini-series sparkline / membership-tier bar / invoice-status
- * donut). Recharts must never ship in the `/admin` first-load JS bundle
+ * boundary (mini-series sparkline / invoice-status donut). Recharts must never ship in the `/admin` first-load JS bundle
  * (`check:bundle-budgets` — see `scripts/check-bundle-budgets.ts`'s 067
  * baseline note); the boundary that enforces this lives in each
  * `*-chart.tsx` file, which mounts this component as the dynamic import's

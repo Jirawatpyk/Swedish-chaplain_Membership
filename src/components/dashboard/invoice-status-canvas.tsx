@@ -35,7 +35,7 @@ interface BucketTooltipPayloadEntry {
 
 /** Custom tooltip — reads the ORIGINAL `BucketRow` off the hovered payload
  * entry directly (its resolved `label`/`amountLabel`/`countLabel`/
- * `pctLabel`), mirroring `membership-tier-canvas.tsx`'s `TierTooltipContent`:
+ * `pctLabel`), as `_mini-series-chart.tsx`'s `SeriesTooltipContent` does:
  * shadcn's config/nameKey-driven `ChartTooltipContent` is built for multi-
  * series/legend charts, not this single-series donut. Never the sole way to
  * read a value — the hidden `<ChartDataTable>` (in the caller) is. */
