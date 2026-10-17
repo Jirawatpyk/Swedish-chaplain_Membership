@@ -588,7 +588,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
     - the headline breaks only at the currency space or after a thousands group, never inside a number;
     - each row keeps its amount and percent together.
   - UX review, kept on purpose:
-    - Segment colours stay on the semantic positive / warning / danger tokens with a 2px gap. AURA defaults win on component colours; each segment measures ≥ 6.4:1 against the card; the rows carry text labels (WCAG 1.4.1).
+    - Segment colours stay on the semantic positive / warning / danger tokens with a 2px gap. AURA defaults win on component colours (confirmed by the maintainer, 17 Oct, over the board's lime/blue/red); each segment measures ≥ 6.4:1 against the card; the rows carry text labels (WCAG 1.4.1).
     - The headline is read as value then label, the same order as every other hero figure on the page.
     - The empty state gets no new link to the invoice list, since that would be new behaviour (FR-011).
     - The description runs to two lines on phones (three to four at 200% text).
