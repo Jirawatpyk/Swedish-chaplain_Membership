@@ -105,7 +105,7 @@ Examples of what to record:
 - Metric naming patterns and which features own which metrics
 - Known gaps or TODOs in `docs/observability.md` per feature
 - OTel span attribute conventions adopted in specific modules
-- Audit event type catalogues per feature (F1: 16 events, F2: 10 events, F3: 23 events, F4: 16 events)
+- Audit event type catalogues per feature (per feature, as registered in code)
 - SLO targets by user story (e.g., F3 SC-002 p95 < 500ms @ 5k rows)
 - Common anti-patterns seen in PRs (e.g., logging raw tokens, missing tenantId)
 - Forbidden-field incidents and their remediation

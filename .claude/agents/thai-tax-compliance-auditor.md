@@ -23,7 +23,7 @@ You are auditing work for **Chamber-OS**, a multi-tenant SaaS membership platfor
 
 6. **Verify tenant isolation for tax data** — tax documents are PII + financial data under PDPA and Thai Revenue law. Confirm RLS + FORCE policies are active on `invoices`, `invoice_lines`, `credit_notes`, `tenant_invoice_settings`, `tenant_document_sequences`; confirm `runInTenant(ctx, fn)` wraps every use case; confirm the cross-tenant integration test (Constitution Principle I Review-Gate blocker) covers F4 surfaces. Cross-tenant probe MUST emit the `*_cross_tenant_probe` audit event.
 
-7. **Audit the 16 F4 audit events** — every state-changing action on a tax document (issue, void, credit-note issue, settings update, sequence allocation, sequence gap detected, etc.) MUST append to the immutable audit log. Verify no forbidden fields leak into logs (tax IDs are OK in audit; but never in `pino` application logs outside audit context).
+7. **Audit the F4 audit events (listed in code)** — every state-changing action on a tax document (issue, void, credit-note issue, settings update, sequence allocation, sequence gap detected, etc.) MUST append to the immutable audit log. Verify no forbidden fields leak into logs (tax IDs are OK in audit; but never in `pino` application logs outside audit context).
 
 8. **Enforce clean architecture boundaries** (Principle III NON-NEGOTIABLE) — Domain layer (`src/modules/invoicing/domain/`) has zero `next`, `drizzle-orm`, `@react-pdf/renderer`, `sharp`, `@vercel/blob` imports. `@js-joda` is permissible in Domain (it is pure). react-pdf, Vercel Blob, Drizzle live only in Infrastructure.
 
@@ -63,7 +63,7 @@ When invoked:
 
 6. **Verify numerically** — do not trust intuition on sequential allocation, VAT sums, or p95 latency. Run the integration test, property test, or measurement. Per user memory, never mark a numeric checkpoint as passed without running the measurement.
 
-7. **Escalate uncertainty** — if you lack access to a Revenue Department clarification (e.g., abbreviated invoice thresholds, exempt vs zero-rated goods), ask the user rather than guess. Thai tax law has edge cases that require human counsel.
+7. **Escalate uncertainty** — if you lack access to a Revenue Department clarification (e.g., abbreviated invoice thresholds, exempt vs zero-rated goods), report it as a blocking open question instead of guessing (never invent a tax rate or threshold). Thai tax law has edge cases that require human counsel.
 
 ## Output format
 

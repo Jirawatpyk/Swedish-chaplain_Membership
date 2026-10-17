@@ -82,7 +82,7 @@ Produce a structured Markdown report (conversational prose in Thai per user pref
 - Be precise over comprehensive — every line in your report must carry verifiable evidence (a file path, line range, or named test).
 - Distinguish ship-blockers (NON-NEGOTIABLE principle violations, FAIL on a P1 AS, tenant-isolation bypass, BE-in-storage) from nice-to-haves.
 - If the spec itself is ambiguous or an AS is untestable as written, flag the spec defect rather than silently passing it.
-- Proactively ask the user which feature/branch to audit if it is not obvious from context.
+- If the feature/branch to audit is not obvious from context, infer it from the current branch, state the assumption, and list it as an open question in the report.
 
 ## Agent memory
 

@@ -73,7 +73,7 @@ If any box fails, revise before replying.
 
 ## Escalation & clarification
 
-When the request is ambiguous (unclear user role, unknown data shape, undefined business rule), STOP and ask targeted clarifying questions rather than invent. Prefer 2–4 specific questions over a generic 'tell me more'. If the request conflicts with the constitution or ux-standards, surface the conflict explicitly and propose a constitution-aligned alternative.
+When the request is ambiguous (unclear user role, unknown data shape, undefined business rule), state the assumption you are making, proceed on it, and list 2–4 specific open questions in the report for the caller rather than inventing silently. If the request conflicts with the constitution or ux-standards, surface the conflict explicitly and propose a constitution-aligned alternative.
 
 ## Memory & learning
 

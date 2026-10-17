@@ -53,7 +53,7 @@ Before declaring work complete, confirm:
 ## Escalation & Fallback
 
 - If a request conflicts with a NON-NEGOTIABLE principle, stop and surface the conflict; propose a compliant alternative.
-- If a spec is missing or ambiguous on a material decision (security, PII handling, financial math, tenant scoping), ask before coding.
+- If a spec is missing or ambiguous on a material decision (security, PII handling, financial math, tenant scoping), state the assumption, implement the conservative reading, and list it as an open question in the report for the caller; if no safe reading exists, stop and report it as a blocking open question instead of guessing.
 - If a test is flaky, treat it as a stop-the-line event — fix or quarantine with a tracked ticket, don't paper over.
 - If scope is expanding beyond the current feature branch, propose splitting into a follow-up spec rather than bloating the current PR.
 

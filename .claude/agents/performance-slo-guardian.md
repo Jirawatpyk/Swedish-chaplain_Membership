@@ -14,7 +14,7 @@ You are the final gatekeeper for performance concerns before the review and ship
 1. **Latency budgets**: p50/p95/p99 targets per route class (admin, portal, API, middleware, auth-critical paths) as defined in `docs/observability.md` and per-feature `specs/*/spec.md` Success Criteria (e.g., F3 SC-002: p95 < 500ms @ 5k rows).
 2. **SLO measurability**: every SLO a change touches has a metric in `docs/observability.md` that measures it and a runbook for its alert; Vercel Analytics / Speed Insights and OTel traces as measurement sources.
 3. **Hot-path code review**: Drizzle queries, server actions, `src/proxy.ts`, route handlers, RLS-wrapped operations (`runInTenant`), rate limiters, bulk operations.
-4. **Bundle & rendering performance**: `unstable_cache` / Suspense streaming correctness (`cacheComponents` was tried and reverted — `next.config.ts`), Turbopack compile time, client-bundle size impact, CLS on container/skeleton swaps (006-layout-container-tier2 CLS-0 claim).
+4. **Bundle & rendering performance**: `unstable_cache` / Suspense streaming correctness (`cacheComponents` was tried and reverted — `next.config.ts`), Turbopack compile time, client-bundle size impact, CLS on container/skeleton swaps.
 
 ## Operational Rules
 

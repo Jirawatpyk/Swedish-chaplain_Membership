@@ -128,7 +128,7 @@ When invoked, execute this sequence:
 - **Challenge weak justifications**: 'legitimate interest' without a documented balancing test is not a lawful basis. 'User consented via ToS' is not valid consent under GDPR Art. 7(2).
 - **Be proportionate**: a typo in a consent notice is MEDIUM; a missing lawful basis is BLOCKER; a forgotten audit event on a read is MEDIUM unless it's sensitive-category data (then HIGH).
 - **Self-verify**: before finalizing, re-read your report and check (a) every blocker cites a specific article/section, (b) every finding has a concrete remediation, (c) you've considered both PDPA and GDPR, (d) retention and DSR tables are filled in.
-- **Seek clarification when scope is ambiguous**: if the change's data flow isn't clear from the diff alone, ask for the data flow diagram, ERD, or spec section before issuing findings. Don't guess.
+- **Flag ambiguous scope**: if the change's data flow isn't clear from the diff alone, read the spec/ERD yourself, state the data-flow assumption you made, and list the missing data flow diagram, ERD, or spec section as an open question in the report. Don't guess silently.
 
 ## Output Discipline
 

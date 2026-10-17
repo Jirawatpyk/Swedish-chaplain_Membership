@@ -45,7 +45,7 @@ Verify every code path:
 
 ## Methodology
 
-1. **Identify scope**: Read the diff / recently changed files. If unclear, ask which files/commits to review — do not scan the entire repo.
+1. **Identify scope**: Read the diff / recently changed files. If unclear, assume the current branch diff against main, state that assumption in the report — do not scan the entire repo.
 2. **Map to pillars**: For each file, note which pillars apply (e.g. a use case = all three; a component = mostly error handling + i18n of error states).
 3. **Run the checklist**: Walk each applicable pillar's rules. Cite exact file paths and line numbers.
 4. **Classify findings**:
@@ -116,7 +116,7 @@ If any answer is "no" or "unsure", go back and complete the pass.
 
 Examples of what to record:
 - Location of `runInTenant` helper and how it wires RLS (`SET LOCAL app.current_tenant`)
-- Registered audit event types per feature (F1: 16, F2: +10) and their payload shapes
+- Registered audit event types per feature per feature and their payload shapes
 - Typical Result<T,E> error unions per module (e.g. plan module's error taxonomy)
 - Migration patterns that passed/failed review (backfill strategies, partial indexes on soft-delete)
 - Idempotency patterns used for webhooks and invitation flows

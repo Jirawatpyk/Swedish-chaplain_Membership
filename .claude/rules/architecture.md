@@ -70,7 +70,7 @@ specs/<nnn-feature>/                   # Spec Kit artefacts — one dir per feat
 ## Tenancy (F2+)
 
 - `runInTenant(ctx, fn)` + Postgres RLS (`SET LOCAL app.current_tenant`) is the isolation pattern. `src/modules/tenants/` is a Domain-only module hosting the `TenantContext` branded type. `DEBUG_RLS_STATE` is a dev-only tenant-context assertion.
-- **Tenant-scoped repos MUST thread `tx` from `runInTenant`, never the global `db` singleton.** A repo method on a `tenant_id`-scoped table that reaches for the pool-global `db` gets a fresh connection without `SET LOCAL app.current_tenant`, silently bypassing RLS (it can read/write across tenants and the RLS+FORCE policies won't save you). (F7.1a US2 incident, 2026-05-20.)
+- **Tenant-scoped repos MUST thread `tx` from `runInTenant`, never the global `db` singleton.** A repo method on a `tenant_id`-scoped table that reaches for the pool-global `db` gets a fresh connection without `SET LOCAL app.current_tenant`, silently bypassing RLS (it can read/write across tenants and the RLS+FORCE policies won't save you).
 - `err()` returned inside `runInTenant` **commits** the transaction — put refusal guards above the first write.
 - `neondb_owner` has `BYPASSRLS`: an ad-hoc SELECT as the owner sees every tenant, so a cross-tenant leak can never be reproduced from a psql session.
 - Principle I requires a cross-tenant integration test for every tenant-scoped surface (Review-Gate blocker).
@@ -98,7 +98,7 @@ specs/<nnn-feature>/                   # Spec Kit artefacts — one dir per feat
 
 - **`db:generate` is abandoned — migrations 0019+ are HAND-WRITTEN SQL.** Drizzle snapshots stop at `0018`, so `drizzle-kit generate` cannot produce a correct diff (it also blocks on a TTY prompt). Write the `.sql` file by hand and register it in `drizzle/migrations/meta/_journal.json`; apply with `pnpm db:migrate` (`scripts/run-migrations.ts`).
 - **A duplicate `when` timestamp makes `db:migrate` a silent no-op** — it prints "✓ applied" while applying nothing. Verify the DDL landed via `information_schema`, then bump `when` by +100000 ms. When two branches add migrations in parallel, merge the other branch first and renumber yours.
-- **Apply the migration + run integration tests before committing schema changes.** When a commit adds a migration *and* code that references the new enum/column, run `pnpm db:migrate` then the touched integration suites first. Unit-test mocks hide the schema gap. (F4 R8 incident, 2026-05-15.)
+- **Apply the migration + run integration tests before committing schema changes.** When a commit adds a migration *and* code that references the new enum/column, run `pnpm db:migrate` then the touched integration suites first. Unit-test mocks hide the schema gap.
 - Before writing defensive code around a constraint, query `pg_indexes` / `information_schema` to see whether it exists.
 - A migration pre-check `DO` block has no tenant filter. It must pass on the shared `dev` branch and the persistent CI Neon branch, both full of leftover `test-*` tenants, not only on prod. Measure the whole branch before writing the predicate.
 - `db:migrate` targets the `dev` Neon branch; prod + preview migrate on Vercel deploy (`vercel-build`). Map: `docs/runbooks/db-environment-branching.md`.

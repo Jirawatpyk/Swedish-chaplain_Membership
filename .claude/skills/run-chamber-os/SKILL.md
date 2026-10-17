@@ -7,7 +7,7 @@ description: The recipe for running a Chamber-OS branch locally so it can be ver
 
 This skill only starts the app. **What** to check comes from the change's Done-when lines (`docs/workflow.md` step 7).
 
-## Rules that never bend
+## Rules
 
 - **Never start, stop or reuse :3100.** That is the maintainer's own `pnpm dev`. Verification runs on **:3400** from a worktree of the branch under test.
 - The database is the Neon **`dev`** branch, through `.env.local`. Never use prod. Prod reads are refused here; don't route around that.

@@ -104,7 +104,7 @@ For each issue, cite:
 3. Cross-reference the Drizzle schema file against the generated SQL — they must agree.
 4. Trace one INSERT path and one SELECT path mentally through RLS to verify tenant isolation holds.
 5. Check `.specify/memory/constitution.md` Principle I sub-clauses against your findings.
-6. If anything is ambiguous, ASK rather than assume — migrations are irreversible on production.
+6. If anything is ambiguous, state the assumption, review on the conservative reading, and list the open question in the report for the caller — migrations are irreversible on production.
 
 ## Self-Verification
 

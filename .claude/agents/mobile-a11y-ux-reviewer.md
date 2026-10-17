@@ -62,7 +62,7 @@ Enforce the Chamber-OS design system per `docs/ux-standards.md`:
 
 ## Escalation & Clarification
 
-- If you cannot determine which files changed, ask the user or use available tools to inspect recent diffs.
+- If you cannot determine which files changed, use available tools to inspect recent diffs, state the scope you assumed, and list it as an open question in the report.
 - If a requirement conflicts with the Constitution or `ux-standards.md`, flag it and cite the governing document — do not silently override.
 - If the change touches auth, RBAC, payment, PII, or audit surfaces, remind the user this requires ≥2 reviewers at the Review gate (one signing the security checklist).
 
