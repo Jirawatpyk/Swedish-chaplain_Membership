@@ -60,7 +60,7 @@ A **slice** is a vertical cut through one user story: the thinnest DB → use ca
 - **Review in two layers:**
   - **Every slice:** `/code-review high` on that slice's diff, plus the surface reviewers for what the slice touches (e.g. `drizzle-migration-reviewer` for a slice with a migration). Findings are fixed before the next slice builds on them.
   - **Before each slice PR merges:** `whole-branch-reviewer` on that PR's full diff against `origin/main` (every merge deploys). When slices share a long-lived branch instead, run it once more at the end for the seams between slices.
-- **One PR per slice where possible.** Each PR must be safe to deploy on its own; use a default-OFF flag when it isn't user-ready yet.
+- **One PR per slice where possible.** Each PR must be safe to deploy on its own; use a default-OFF flag when it isn't user-ready yet. Slices share one long-lived branch only when a slice cannot deploy safely on its own even behind a flag (an expand/contract migration usually removes the need); record why in `plan.md` § Complexity Tracking.
 - **Name and track every slice.** Slice *k* builds on its own branch, `<nnn>-<short-name>-s<k>`, cut from `origin/main` after slice *k − 1* has merged. Before its PR merges, the slice's own row in the `plan.md` Slices table gets the PR number and `done`, so the table on `main` always shows which slices have shipped.
 - **"Start slice N" names its feature.** When the user does not name it, read the Slices tables under `specs/*/plan.md`: if exactly one feature has slices not yet `done`, continue it; if several do, ask which.
 
