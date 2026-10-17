@@ -195,6 +195,13 @@ describe('MembershipTierChart', () => {
       expect(bars.map((b) => b.style.width)).toEqual(['100%', '50%']);
     });
 
+    it('every row shares one grid, so the tracks line up', () => {
+      const { container } = renderChart([GOLD, SILVER]);
+      const { list, rows } = visualRows(container);
+      expect(list.className).toContain('grid-cols-');
+      rows.forEach((li) => expect(li.className).toContain('contents'));
+    });
+
     it('mounts no chart canvas', () => {
       const { container } = renderChart([GOLD, SILVER]);
       expect(container.querySelector('[data-slot="chart"]')).toBeNull();
