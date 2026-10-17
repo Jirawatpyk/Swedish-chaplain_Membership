@@ -346,6 +346,8 @@ describe('InvoiceStatusChart', () => {
       const figures = li.querySelector('[data-slot="status-figures"]');
       expect(figures?.textContent).toContain('THB 5,000.00');
       expect(figures?.textContent).toContain('50%');
+      // ...and may still wrap inside, so the pair is never wider than the card
+      expect(figures?.className).toContain('flex-wrap');
     });
   });
 });
