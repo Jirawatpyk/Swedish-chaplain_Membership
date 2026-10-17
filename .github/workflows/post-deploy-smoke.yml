@@ -28,8 +28,11 @@
 #   - The issue body holds only the script's FAIL lines, never a response body
 #     (the repo is public).
 #
-# `deployment_status` fires only for a workflow file that is on the default
-# branch, so this does nothing until it is merged to `main`.
+# `deployment_status` runs the copy of this file AT THE DEPLOYED COMMIT, not
+# the one on `main`: every Vercel deployment, preview branches included,
+# starts a run of that branch's version. The job `if:` below is the guard
+# that skips everything but a successful Production deployment, so keep it
+# on every branch. A manual run (`workflow_dispatch`) uses the chosen ref.
 name: Post-deploy smoke
 
 on:
@@ -43,10 +46,13 @@ on:
 
 permissions: {}
 
-# One run per deployment; a second deploy queues behind the first, it never
-# cancels a run that may be about to open an issue.
+# A running smoke is never cancelled (it may be about to open an issue). GitHub
+# keeps only ONE pending run per group, so a third rapid deploy replaces the
+# queued second one; the latest deploy is still the one checked. The group is
+# keyed by environment so the skipped run of a preview deployment can never
+# replace a pending Production run.
 concurrency:
-  group: post-deploy-smoke
+  group: post-deploy-smoke-${{ github.event.deployment.environment || 'manual' }}
   cancel-in-progress: false
 
 jobs:
@@ -63,10 +69,10 @@ jobs:
       DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url || github.event.deployment_status.target_url }}
       COMMIT_SHA: ${{ github.sha }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Require a base URL
         run: |
           if [ -z "$BASE_URL" ]; then
@@ -92,6 +98,10 @@ jobs:
 
       - name: Open or update the prod-smoke issue
         if: failure()
+        # The token reaches only this step: nothing else needs to write.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           {
             echo "The post-deploy smoke failed on production."
