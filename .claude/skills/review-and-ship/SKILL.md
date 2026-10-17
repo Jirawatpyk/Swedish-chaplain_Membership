@@ -7,6 +7,8 @@ description: How to review a change and get it merged on Chamber-OS — which pr
 
 ## 1. Pick the review by diff size
 
+This section is the single source for how review works; `docs/workflow.md` step 7 and `feature-flow` § 7 point here.
+
 | Diff | Review |
 |---|---|
 | A small diff (one surface, roughly < 40 files / 5k lines) | The built-in **`/code-review high`** (or `/code-review high <pr#>` for a PR). It reviews the diff for correctness bugs and returns the findings here. Always pass `high`: with no level the command reuses the last level typed, and `xhigh` / `max` are not the default here. Then dispatch the surface reviewers from § 2 for the surfaces the diff touches. |
@@ -18,7 +20,6 @@ description: How to review a change and get it merged on Chamber-OS — which pr
 
 - **`/code-review ultra`** (or `/code-review ultra <PR#>`) is a multi-agent **cloud** review of the branch. The user triggers it and it is billed, so Claude never launches it; suggest it for a large, high-stakes branch.
 - A Workflow runs only on explicit opt-in ("use a workflow" / `ultracode`), never on Claude's own initiative. Otherwise, describe what it would do and roughly what it costs, and ask. If the user declines, review per module: `/code-review high <path>` for each touched module, the § 2 surface reviewers, then `whole-branch-reviewer`.
-These rules are the single source for how review works; `docs/workflow.md` step 7 and `feature-flow` § 7 point here.
 - No High or Medium finding may remain at merge (D-015): fix it, or refute it with evidence and have the reviewer confirm on a re-run. There are no waivers.
 - Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it.
 - Low findings are fixed or listed in the PR.
@@ -46,7 +47,7 @@ Dispatch the project agents in `.claude/agents/`, not `general-purpose`. File-mu
 | Logs, spans, metrics, alerts | `observability-instrumentor` |
 | A financial figure shown to a human (KPIs, exports) | `financial-reporting-analyst` |
 | Test quality, coverage gaps, edge-case hunt, ship-readiness verdict | `senior-tester` |
-| Does the code satisfy every acceptance scenario in the spec? | `spec-compliance-auditor` |
+| Does the code satisfy every acceptance scenario or Done-when line in the spec? | `spec-compliance-auditor` (mandatory for M / L, § 1) |
 | An architecture decision or module boundary | `chamber-os-architect` |
 
 Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, one of whom signs the security checklist (`specs/001-auth-rbac/security.md` § 5 for F1). Other PRs need ≥1. With no second human reviewer, the **solo-maintainer review** below replaces the second reviewer (this skill owns the rule; constitution v2.0.0 leaves review mechanics to the process). Enumerate its five checks in `plan.md` § Complexity Tracking:

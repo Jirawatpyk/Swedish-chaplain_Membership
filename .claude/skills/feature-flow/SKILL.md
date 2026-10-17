@@ -63,7 +63,7 @@ Meet `docs/workflow.md` step 6 (the contract: what to drive, which e2e projects,
 Review the change as built **and verified**, so a fix found in Verify is reviewed too. In this order:
 1. `/code-review high` on the diff, or the `review-branch` Workflow when it applies.
 2. The surface reviewers for what the diff touches.
-3. For M / L, `spec-compliance-auditor` with `spec.md` and the Verify evidence: each Done-when line is checked against the code and against the evidence that claims it.
+3. For M / L, `spec-compliance-auditor` with `spec.md` and the Verify evidence in `plan.md` § Evidence (for an L slice, that slice's block): each Done-when line is checked against the code and against the evidence that claims it.
 4. `whole-branch-reviewer` last.
 
 Reviews run in subagents; the writer never reviews its own code. How findings close, the rounds by risk, and the staff review on sensitive surfaces are in `review-and-ship` §§ 1–2. **No High and no Medium finding may remain.**
