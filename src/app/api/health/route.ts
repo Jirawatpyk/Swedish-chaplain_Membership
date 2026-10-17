@@ -16,15 +16,17 @@
  *     costs at most one `select 1` per instance per window.
  *   - A CEILING, not just a rate: while the raw query is still unsettled (it
  *     holds a pooled connection), no second query starts — the probe answers
- *     degraded at once with reason `still-pending`. A hung database plus a
+ *     degraded at once with probe `still-pending`. A hung database plus a
  *     steady caller therefore pins one connection, never the whole pool.
  *
  * The 3 s limit is a Node timer, not `statement_timeout`: the Neon pooler drops
  * that parameter, so a wedged connection would otherwise hang the request.
  *
- * Log: `health.degraded` with `reason` (timeout | query-error | still-pending —
+ * Log: `health.degraded` with `probe` (timeout | query-error | still-pending —
  * constant strings, safe to search on) and `err` (the error class only, never
- * `e.message`; class names can be minified, so search by `reason`).
+ * `e.message`; class names can be minified, so search by `probe`). The field is
+ * NOT named `reason`: `src/lib/logger.ts` redacts every top-level `reason` (the
+ * F5 gateway defence), which would turn it into "[REDACTED]".
  *
  * Calls `db` directly without a use case — a liveness probe has no domain
  * logic (spec 123 plan § Complexity Tracking, the cron-route precedent).
@@ -51,7 +53,7 @@ let inFlight: Promise<unknown> | null = null;
 
 async function probe(): Promise<HealthStatus> {
   if (inFlight !== null) {
-    logger.warn({ reason: 'still-pending', route: 'api.health' }, 'health.degraded');
+    logger.warn({ probe: 'still-pending', route: 'api.health' }, 'health.degraded');
     return 'degraded';
   }
 
@@ -72,8 +74,8 @@ async function probe(): Promise<HealthStatus> {
     await Promise.race([query, timeout]);
     return 'ok';
   } catch (e) {
-    const reason = e instanceof HealthProbeTimeoutError ? 'timeout' : 'query-error';
-    logger.warn({ err: errKind(e), reason, route: 'api.health' }, 'health.degraded');
+    const outcome = e instanceof HealthProbeTimeoutError ? 'timeout' : 'query-error';
+    logger.warn({ err: errKind(e), probe: outcome, route: 'api.health' }, 'health.degraded');
     return 'degraded';
   } finally {
     clearTimeout(timer);

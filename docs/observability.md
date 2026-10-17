@@ -2654,7 +2654,7 @@ earlier one is still unsettled, so the probe never holds more than one pooled co
 
 | Log message | Level | Fields | Meaning |
 |---|---|---|---|
-| `health.degraded` | warn | `reason` (`timeout` \| `query-error` \| `still-pending`), `err` (error class only, absent for `still-pending`), `route` (`api.health`) | One degraded probe result. `timeout`: no answer in 3 s. `query-error`: the driver threw. `still-pending`: an earlier `select 1` on this instance has not settled, so none was started. Search by `reason` — class names can be minified. Never carries `e.message`, a host or a tenant |
+| `health.degraded` | warn | `probe` (`timeout` \| `query-error` \| `still-pending`), `err` (error class only, absent for `still-pending`), `route` (`api.health`) | One degraded probe result. `timeout`: no answer in 3 s. `query-error`: the driver threw. `still-pending`: an earlier `select 1` on this instance has not settled, so none was started. Search by `probe` — class names can be minified. Not named `reason`: the logger redacts every top-level `reason` (F5 gateway defence). Never carries `e.message`, a host or a tenant |
 
 At most one line per instance per 10 s, because results are cached; a `health.degraded` storm is
 therefore a fleet of instances, not one caller.

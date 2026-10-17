@@ -31,7 +31,7 @@ The workflow retries the whole set 3 times, 20 s apart, so a red run is not alia
 
 | Line | Meaning | Most likely cause |
 |---|---|---|
-| `FAIL health 503` | `/api/health` ran `select 1` and it threw or took longer than 3 s, or an earlier `select 1` on that instance is still unsettled | the connection pool is exhausted; the Neon compute is suspended, down or unreachable; `DATABASE_URL` wrong in the new deploy; a hung earlier probe (`reason: still-pending`). `select 1` takes no table locks, so a migration's locks do not cause it |
+| `FAIL health 503` | `/api/health` ran `select 1` and it threw or took longer than 3 s, or an earlier `select 1` on that instance is still unsettled | the connection pool is exhausted; the Neon compute is suspended, down or unreachable; `DATABASE_URL` wrong in the new deploy; a hung earlier probe (`probe: still-pending`). `select 1` takes no table locks, so a migration's locks do not cause it |
 | `FAIL health 200-unexpected-body` | 200, but the body was not exactly `{"status":"ok"}` | something in front of the app (a Vercel challenge page, a domain pointed elsewhere) is answering |
 | `FAIL admin-sign-in <status>` / `FAIL portal-sign-in <status>` | the sign-in page did not answer 200 | 5xx: the app or a server component crashes at render, often a missing or invalid env var (`src/lib/env.ts` refuses to boot). 3xx: a redirect, so the base URL is not the canonical domain or the proxy now redirects anonymous users. 401/403: deployment protection or the Vercel firewall |
 | `FAIL admin-sign-in 200-no-password-input` (or portal) | the page answered 200 without a password field | an error boundary or a maintenance page rendered instead of the form; or the sign-in form changed shape (then fix the script, not prod) |
@@ -57,7 +57,7 @@ The workflow retries the whole set 3 times, 20 s apart, so a red run is not alia
    If both are green now, the failure was transient: note it on the issue, watch the next deploy, and close it.
 
 3. **`health` failed** → the database path.
-   - Vercel → Logs for the deployment → search `health.degraded` and read its `reason` (search by `reason`, not by the `err` class name, which a build can minify):
+   - Vercel → Logs for the deployment → search `health.degraded` and read its `probe` field (search by `probe`, not by the `err` class name, which a build can minify; the field is not called `reason` because the logger redacts that key):
      - `timeout`: `select 1` did not answer within 3 s — a saturated pool or an unreachable compute.
      - `query-error`: the driver threw — bad credentials, the compute refused or dropped the connection. `err` is the error class only.
      - `still-pending`: an earlier `select 1` on that instance has not settled yet, so no new query was started (the probe never holds more than one connection). A run of these means the database is hanging, not just slow.

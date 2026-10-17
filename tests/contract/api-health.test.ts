@@ -9,7 +9,8 @@
  *   - the probe PROMISE is cached for 10 s (ok and degraded alike), so N
  *     concurrent requests and a flood within the window cost one query
  *   - a degraded result is logged by error CLASS only, never `e.message`, with
- *     a constant reason: timeout | query-error | still-pending
+ *     a constant `probe` field: timeout | query-error | still-pending (not
+ *     `reason`, which the production logger redacts)
  *   - while a query is still unsettled no second one starts (a pool ceiling)
  *   - the 10 s window counts from when the probe SETTLES
  */
@@ -78,7 +79,7 @@ describe('GET /api/health', () => {
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(await res.text()).toBe(DEGRADED_BODY);
     expect(warnMock).toHaveBeenCalledWith(
-      { err: 'Error', reason: 'query-error', route: 'api.health' },
+      { err: 'Error', probe: 'query-error', route: 'api.health' },
       'health.degraded',
     );
     expect(JSON.stringify(warnMock.mock.calls)).not.toContain('secret-message-xyz');
@@ -116,7 +117,7 @@ describe('GET /api/health', () => {
     expect(await res.text()).toBe(DEGRADED_BODY);
     expect(warnMock).toHaveBeenCalledTimes(1);
     expect(warnMock).toHaveBeenCalledWith(
-      { err: 'HealthProbeTimeoutError', reason: 'timeout', route: 'api.health' },
+      { err: 'HealthProbeTimeoutError', probe: 'timeout', route: 'api.health' },
       'health.degraded',
     );
   });
@@ -183,7 +184,7 @@ describe('GET /api/health', () => {
     expect([second.status, third.status]).toEqual([503, 503]);
     expect(await third.text()).toBe(DEGRADED_BODY);
     expect(warnMock).toHaveBeenCalledWith(
-      { reason: 'still-pending', route: 'api.health' },
+      { probe: 'still-pending', route: 'api.health' },
       'health.degraded',
     );
   });
