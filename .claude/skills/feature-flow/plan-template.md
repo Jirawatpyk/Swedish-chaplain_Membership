@@ -16,11 +16,11 @@ Tables, columns, enums, RLS policies, triggers and indexes. The migration number
 
 ## Slices (L only)
 
-In build order. Each slice is the thinnest DB → use case → API → UI path that works and can be demoed on its own.
+In build order. Each slice is the thinnest DB → use case → API → UI path that works and can be demoed on its own. Slice *k* builds on branch `<nnn>-<short-name>-s<k>`; its PR sets its own row to the PR number and `done` before it merges.
 
-| # | Slice | Done-when lines it covers | Surface reviewers | PR |
-|---|---|---|---|---|
-| 1 | … | … | … | … |
+| # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
+|---|---|---|---|---|---|
+| 1 | … | … | … | `<nnn>-<short-name>-s1` | — · open |
 
 ## Test plan
 
