@@ -1,0 +1,9 @@
+# Current operational state
+
+Present-tense state of production flags and cutovers. Hand-curated and updated in the PR that changes the state. History and narrative live in `docs/changelog.md`. Moved out of `CLAUDE.md` on 2026-10-17, because a state line that loads into every session goes stale without anyone noticing.
+
+- **Member change approval (F114)**: all three PRs are merged (#360, #366, #367 on 2026-09-16). The flag `FEATURE_MEMBER_CHANGE_APPROVAL` was observed live on 2026-09-16, and the RoPA update merged as #369. The approval path is **live for SweCham**. The rollback matrix and the "unflagged on merge" list are in `specs/114-member-change-approval/quickstart.md` § 3. Watch `members_change_request_oldest_age_seconds` (7 d warning / 14 d page).
+- **Contact marketing recipients (108)**: code is merged; `FEATURE_CONTACT_MARKETING_RECIPIENTS` is OFF and absent from Vercel. Nine changes in that PR are unflagged and live. The list and the rollback consequences are in `specs/108-contact-recipient-rules/quickstart.md` § Rollback matrix row C; rolling any of them back is a code revert, not a flag flip. The flip waits on SweCham's secondary-contact import and the operator decision (Issues #362/#363/#364).
+- **E-Blast member approval (F119)**: merged; `FEATURE_EBLAST_MEMBER_APPROVAL` stays OFF. The unflagged list is in `specs/119-eblast-approval-workflow/quickstart.md` § 3.
+- **Broadcast audience ceiling**: 500 recipients per tick unless `FEATURE_F7_IMPORT_AUDIENCE` is ON. The Resend account is on the Free plan (1,000 contacts, 3 segments), so at most two broadcasts can be in flight.
+- **AURA migration (spec 122)**: in progress, one PR per phase. The pinned version is in `package.json`; the ledger and open handoff items are in `docs/aura-adoption.md`.

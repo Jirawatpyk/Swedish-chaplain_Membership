@@ -122,7 +122,7 @@ ORDER BY distinct_targets DESC;
 
 A probe attributed to a system/service actor means an internal call is threading the wrong
 `TenantContext` — most often a repo method reaching for the pool-global `db` singleton
-instead of the `tx` from `runInTenant` (see CLAUDE.md § Gotchas; this bypasses
+instead of the `tx` from `runInTenant` (see `.claude/rules/architecture.md` § Tenancy; this bypasses
 `SET LOCAL app.current_tenant` and RLS will not save you).
 
 1. Use `request_id` to find the call path in the logs.
