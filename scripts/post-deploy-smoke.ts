@@ -92,7 +92,11 @@ async function runCheck(base: URL, check: Check, fetchImpl: typeof fetch): Promi
   } catch {
     return `FAIL ${check.name} network-error`;
   }
-  if (res.status !== 200) return `FAIL ${check.name} ${res.status}`;
+  if (res.status !== 200) {
+    // Release the connection: an unread body keeps the socket busy until GC.
+    await res.body?.cancel().catch(() => {});
+    return `FAIL ${check.name} ${res.status}`;
+  }
   let body: string;
   try {
     body = await res.text();
