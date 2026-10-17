@@ -75,7 +75,7 @@ Fill in `.github/pull_request_template.md`:
 - the Definition of Done checklist, ticked only where the evidence exists;
 - every review finding and how it was closed;
 - the unflagged behaviours, if a flag is involved;
-- for an L slice, set this slice's row in the `plan.md` Slices table to the PR number and `done` in this PR, before it merges.
+- for an L slice, right after `gh pr create`, commit this slice's row in the `plan.md` Slices table with the new PR number and `done`, before review round 1 (so the commit rides the first CI run).
 
 The diff itself carries the `docs/changelog.md` line (Definition of Done).
 
