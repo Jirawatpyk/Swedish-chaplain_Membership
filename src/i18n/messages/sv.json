@@ -600,7 +600,7 @@
         "title": "Fakturavärde efter status",
         "empty": "Inga utfärdade fakturor ännu.",
         "totalLabel": "Totalt fakturerat",
-        "basisCaption": "Alla räkenskapsår · inkl. moms",
+        "basisCaption": "Alla räkenskapsår · inkl. moms · netto efter kreditnotor och återbetalningar",
         "draftCaption": "{count, plural, one {# utkastfaktura visas inte} other {# utkastfakturor visas inte}}",
         "statusColumnHeader": "Status",
         "amountColumnHeader": "Belopp",

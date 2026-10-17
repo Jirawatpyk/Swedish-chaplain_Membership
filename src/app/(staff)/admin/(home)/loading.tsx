@@ -110,11 +110,9 @@ export default async function Loading() {
             ))}
           </div>
 
-          {/* Breakdown charts (Task 12) — membership-by-tier bar + invoice-
-              status donut. Distinct shapes (rectangular bar block vs. a
-              circular donut block + a reserved legend line) so the skeleton
-              reads as "two different chart types" rather than two identical
-              placeholders, matching the real Breakdown section below. */}
+          {/* Breakdown charts (Task 12) — membership-by-tier rows + the
+              invoice-status bar and rows, matching the real Breakdown
+              section below. */}
           <div aria-hidden className="grid gap-4 lg:grid-cols-2">
             <Card header={<SkeletonBlock className="h-5 w-40" />}>
               {/* Headline row (active total + right-aligned caption) —
@@ -136,13 +134,16 @@ export default async function Loading() {
               </div>
             </Card>
             <Card header={<SkeletonBlock className="h-5 w-40" />}>
-              {/* The donut canvas's own box (`aspect-square max-h-64`), then
-                  the legend row (WCAG 1.4.1 — always drawn) and the basis
-                  caption under it. */}
-              <div className="flex flex-col items-center">
-                <SkeletonBlock className="mx-auto aspect-square max-h-64 w-full max-w-64 rounded-full" />
-                <SkeletonBlock className="mt-3 h-4 w-56" />
-                <SkeletonBlock className="mt-1 h-4 w-40" />
+              {/* Headline total, the stacked bar, then a row per bucket, as
+                  InvoiceStatusChart draws them. */}
+              <SkeletonBlock className="h-[34px] w-40" />
+              <div data-slot="status-bar-skeleton" className="mt-4">
+                <SkeletonBlock className="h-2.5 w-full rounded-full" />
+              </div>
+              <div className="mt-3 grid gap-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <SkeletonBlock key={i} className="h-9 w-full" />
+                ))}
               </div>
             </Card>
           </div>

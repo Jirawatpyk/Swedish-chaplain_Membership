@@ -218,12 +218,11 @@ export function DashboardView({
             />
           </section>
 
-          {/* Breakdown / composition charts (Task 12) — membership-by-tier bar +
-              invoice-status donut. Both are self-contained i18n (no title/label
-              props — see each component's own docblock) and both lazy-load their
-              recharts canvas internally (`next/dynamic(..., { ssr: false })`),
-              so this section, like Trends above, SSRs its accessible
-              `<ChartDataTable>` even though the decorative canvas is client-lazy. */}
+          {/* Breakdown / composition cards (Task 12) — membership-by-tier rows +
+              invoice status (stacked bar and rows). Both are self-contained i18n
+              (no title/label props — see each component's own docblock) and,
+              since spec 122 US11, plain markup with no recharts canvas, so this
+              section SSRs whole, its accessible `<ChartDataTable>` included. */}
           <section
             aria-label={t('breakdown.sectionLabel')}
             className="grid gap-4 lg:grid-cols-2"

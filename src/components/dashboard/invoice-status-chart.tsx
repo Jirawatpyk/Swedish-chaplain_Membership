@@ -1,95 +1,40 @@
 /**
- * F9 (067-dashboard-interactive-charts) Task 11 — Invoice-Status donut.
+ * F9 (067-dashboard-interactive-charts) Task 11 — Invoice value by status.
  * Renders the dashboard snapshot's `invoiceStatus` distribution (paid /
  * unpaid / overdue buckets + `draftCount`, already computed net-of-credit,
  * VAT-inclusive per the design doc — this component does no money math of
- * its own beyond satang→THB display formatting) as a Recharts donut, always
- * ordered **paid → unpaid → overdue** (CVD spacing: amber sits between
- * green/red, never adjacent-same-hue).
+ * its own beyond satang→THB display formatting), always ordered
+ * **paid → unpaid → overdue** (CVD spacing: amber sits between green/red).
  *
- * Self-contained i18n: takes ONLY the `distribution` data prop — no title/
- * label props — and resolves all of its own microcopy via `useTranslations`
- * + `useLocale`, the same pattern shipped in `membership-tier-chart.tsx`
- * (Task 10). Safe everywhere (incl. this component's own `next/dynamic`
- * boundary, Task 12) because the root layout wraps the whole app in a
- * single `NextIntlClientProvider` with the full message tree.
- *
- * Title makes the VALUE (not count) basis explicit ("Receivables by
- * value" — design doc requirement #1) — the Pie's numeric value is the
- * satang amount (net-of-credit outstanding balance), never invoice count.
+ * Spec 122 US11 follow-up (maintainer, 17 Oct): the card follows board
+ * `Admin-dashboard` — the exact total as the headline, one stacked bar, and
+ * a row per bucket with its amount and percent. It replaces the recharts
+ * donut, its compact centre total and its legend. Every figure is one the
+ * card already computed for its hidden table and the old tooltip.
  *
  * Money: `satang` on each bucket is a decimal-free integer string
  * (`bigint.toString()` from `compute-dashboard-snapshot.ts`). `Number(...)`
  * is safe here — THB amounts are far below `Number.MAX_SAFE_INTEGER` (the
  * same reasoning `satangToProcessorAmount` documents in `src/lib/money.ts`).
- * Display formatting mirrors the dashboard's own convention (`page.tsx`'s
- * `thbFmt`: `Intl.NumberFormat(locale, { style: 'currency', currency: 'THB',
- * maximumFractionDigits: 0 })`) for visual consistency with the KPI cards
- * and the revenue-trend/member-growth sparklines on the same page — NOT
- * `formatSatangThb` (the F4/F5/portal suffix-style "1,234.56 THB" formatter,
- * a different visual convention for invoice/receipt line items).
+ * This card prints amounts to TWO decimals (financial review, 17 Oct): with
+ * whole baht the three rows could miss the headline by ฿1 (12,345.50 +
+ * 987.50 + 43.50 shows ฿13,378 against a ฿13,377 total). The other cards on
+ * the page keep whole baht; money is never redistributed to make it add up.
  *
  * A11y (WCAG 1.1.1 / 1.3.1 / 1.4.1 — the same model shared by every 067
- * chart, see `chart-data-table.tsx`'s docblock): the Recharts canvas sits in
- * an `aria-hidden="true"` wrapper with `accessibilityLayer={false}`; the
- * hidden `<ChartDataTable>` is the sole SR/no-JS data path, always ending in
- * a "Total" row. UNLIKE the tier bar / sparklines, this donut ALSO needs its
- * centre total + draftCount caption as **real DOM text outside the
- * aria-hidden wrapper** (design doc: "real DOM, not SVG-only") — an SVG
- * `<Label>` centred in the donut hole would be invisible to screen readers
- * since its containing canvas is aria-hidden, so both are rendered as plain
- * sibling `<div>`/`<p>` markup, visually overlaid via CSS position, not
- * Recharts geometry.
- *
- * Colour is never the sole signal (design doc): the positive / warning /
- * danger tones are near-equal-luminance in this theme (confirmed by
- * running the dataviz skill's `validate_palette.js` on the resolved hex
- * triplet in both themes — it FAILS the CVD-separation check, as the design
- * doc already anticipated), so every bucket also carries a direct text
- * label (the hidden table's row header + the tooltip), and each `<Cell>`
- * gets a stroke in the card colour (`--aura-bg-surface`; the classic Recharts "gap" technique — the
- * stroke matches the surrounding card background so adjacent slices read as
- * visually separated rather than blending into a single near-equiluminant
- * ring) plus `paddingAngle={2}` for an explicit angular gap on top.
- *
- * Reduced motion: shares `./use-motion-preference` (Task 10) — identical
- * `useSyncExternalStore` triad, explicit boolean `isAnimationActive` (NOT
- * Recharts 3.9's built-in `"auto"` Pie default) so every 067 chart is gated
- * by the SAME app-level media-query subscription.
- *
- * **Lazy canvas boundary (Task 12 — bundle-budget constraint):** the actual
- * `<PieChart>` rendering lives in `./invoice-status-canvas` and is mounted
- * here via `next/dynamic(..., { ssr: false })`, so recharts never lands in
- * `/admin`'s first-load JS. This file still computes `rows` (needed for the
- * canvas, the centre total, the visible legend, AND the accessible table)
- * and renders everything except the donut itself eagerly. `BUCKET_FILL` is
- * declared HERE (not in the canvas) because the eager legend below also
- * needs it as a real runtime value for its swatch colours — see
- * `invoice-status-canvas.tsx`'s docblock for why that import direction is
- * bundle-safe. The donut's aspect is fixed (not data-dependent, unlike the
- * tier bar), so the `loading` skeleton just reuses the same
- * `mx-auto aspect-square max-h-64 w-full` className as the real canvas —
- * no wrapper-height gymnastics needed (contrast `membership-tier-chart.tsx`).
+ * chart, see `chart-data-table.tsx`'s docblock): the bar and the rows are
+ * `aria-hidden`; the hidden `<ChartDataTable>` is the SR/no-JS data path,
+ * always ending in a "Total" row. The headline total and the draft caption
+ * are real DOM text. Colour is never the sole signal: every row and table
+ * row carries the bucket's label.
  */
 'use client';
 
-import dynamic from 'next/dynamic';
 import { useTranslations, useLocale } from 'next-intl';
-import { useSyncExternalStore } from 'react';
 import { Card } from '@jirawatpyk/aura-react';
 import type { InvoiceStatusBucket, InvoiceStatusDistribution } from '@/modules/insights';
+import { CHART_HERO_GROUP, CHART_HERO_ROW, CHART_HERO_VALUE } from './chart-card-type';
 import { ChartDataTable } from './chart-data-table';
-import { ChartSkeleton } from './chart-skeleton';
-import {
-  getAllowMotion,
-  getServerAllowMotion,
-  subscribeMotionPreference,
-} from './use-motion-preference';
-
-const InvoiceStatusCanvas = dynamic(
-  () => import('./invoice-status-canvas').then((m) => m.InvoiceStatusCanvas),
-  { ssr: false, loading: () => <ChartSkeleton className="mx-auto aspect-square max-h-64 w-full" /> },
-);
 
 export interface InvoiceStatusChartProps {
   readonly distribution: InvoiceStatusDistribution;
@@ -115,14 +60,24 @@ export const BUCKET_FILL: Record<Bucket, string> = {
  * (VALUE basis, never count); every other field is display-ready text so
  * the tooltip/table need no further formatting. Exported as a type-only
  * dependency for `./invoice-status-canvas` (erased at compile time). */
-export interface BucketRow {
+interface BucketRow {
   readonly bucket: Bucket;
   readonly label: string;
   readonly satangNumber: number;
   readonly amountLabel: string;
+  /** `amountLabel` with ordinary spaces, for the visible row. */
+  readonly visibleAmount: string;
   readonly count: number;
-  readonly countLabel: string;
   readonly pctLabel: string;
+}
+
+/** Joins Intl's currency parts with ordinary spaces so a long amount wraps
+ * between currency and number at 200% text (the KPI tile does the same). */
+function formatWrapping(fmt: Intl.NumberFormat, n: number): string {
+  return fmt
+    .formatToParts(n)
+    .map((p) => (p.type === 'literal' ? p.value.replace(/\u00a0|\u202f/g, ' ') : p.value))
+    .join('');
 }
 
 function zeroBucket(bucket: Bucket): InvoiceStatusBucket {
@@ -174,40 +129,14 @@ function allocatePercentages(values: readonly number[]): number[] {
 export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
   const t = useTranslations('admin.dashboard.invoiceStatus');
   const locale = useLocale();
-  const allowMotion = useSyncExternalStore(
-    subscribeMotionPreference,
-    getAllowMotion,
-    getServerAllowMotion,
-  );
 
-  // Dashboard's own THB convention (page.tsx's `thbFmt`) — NOT the F4/F5
-  // suffix-style `formatSatangThb` (a different visual convention for
-  // invoice/receipt line items). Visual parity with the KPI cards + the
-  // revenue-trend/member-growth sparklines on the same page.
+  // Two decimals in this card only (see the docblock): rows always add up to
+  // the headline, and both tie to the register to the satang.
   const thbFmt = new Intl.NumberFormat(locale, {
     style: 'currency',
     currency: 'THB',
-    maximumFractionDigits: 0,
-  });
-
-  // Centre-total ONLY: a compact "฿2.0M"-scale display so the headline
-  // number fits the donut hole at any locale/currency-string length (bug:
-  // en-US/sv-SE THB has no native "฿" glyph, so the FULL string is
-  // "THB 2,000,000" — wide enough to spill past the hole onto the arcs).
-  // `minimumFractionDigits: 0` is required alongside `maximumFractionDigits:
-  // 1` — currency style otherwise resolves BOTH to the currency's native
-  // fraction digits (2 for THB), which get clamped down to
-  // `maximumFractionDigits` and render a spurious ".0" even on whole numbers
-  // below the compact threshold (e.g. "฿500.0" instead of "฿500"). The FULL
-  // exact amount stays everywhere else — the tooltip, the visible legend,
-  // and the hidden `<ChartDataTable>`'s Total row — this compacting is
-  // cosmetic to the centre overlay alone.
-  const compactThbFmt = new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'THB',
-    notation: 'compact',
-    maximumFractionDigits: 1,
-    minimumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 
   const byBucket = new Map(distribution.buckets.map((b) => [b.bucket, b] as const));
@@ -221,6 +150,9 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
   // displayed bucket %s always sum to exactly 100 — keeping the hard-coded
   // Total row's "100%" honest.
   const pctAllocations = allocatePercentages(satangNumbers);
+  // False when the allocation refused its input (a negative bucket) and
+  // returned all zeros: then "0%" is the honest reading, never "<1%".
+  const allocated = pctAllocations.some((p) => p > 0);
 
   const rows: BucketRow[] = BUCKET_ORDER.map((key, i) => {
     const b = bucketsInOrder[i] ?? zeroBucket(key);
@@ -231,26 +163,27 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
       label: t(`bucket.${key}`),
       satangNumber,
       amountLabel: thbFmt.format(satangNumber / 100),
+      visibleAmount: formatWrapping(thbFmt, satangNumber / 100),
       count: b.count,
-      countLabel: t('invoiceCountLabel', { count: b.count }),
-      pctLabel: `${pct}%`,
+      // A real amount that rounds to 0% reads "<1%", never a bare "0%"
+      // beside a non-zero amount (financial review, 17 Oct).
+      pctLabel: allocated && pct === 0 && satangNumber > 0 ? '<1%' : `${pct}%`,
     };
   });
 
   const totalLabel = thbFmt.format(totalSatangNumber / 100);
-  const compactTotalLabel = compactThbFmt.format(totalSatangNumber / 100);
   const totalCount = rows.reduce((sum, r) => sum + r.count, 0);
   const draftCount = distribution.draftCount;
 
   const draftCaption =
     draftCount > 0 ? (
-      <p className="mt-[var(--aura-space-2)] text-center aura-text-caption text-[var(--aura-fg-secondary)]">
+      <p className="mt-[var(--aura-space-2)] aura-text-caption text-[var(--aura-fg-secondary)]">
         {t('draftCaption', { count: draftCount })}
       </p>
     ) : null;
 
   return (
-    <Card title={t('title')} headingLevel={2}>
+    <Card title={t('title')} {...(hasData ? { description: t('basisCaption') } : {})} headingLevel={2}>
       {!hasData ? (
         <>
           <p className="aura-text-body text-[var(--aura-fg-secondary)]">{t('empty')}</p>
@@ -258,81 +191,71 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
         </>
       ) : (
         <>
-          <div className="relative">
-            {/* `relative z-10` gives this wrapper its OWN stacking context
-                (position + explicit z-index) so everything painted inside
-                it — the arcs AND, critically, the Recharts hover tooltip —
-                stacks ABOVE the centre-total overlay below (z-0). Before
-                this fix both divs were plain siblings with the centre-total
-                positioned (`absolute`) and this canvas wrapper `static`: a
-                positioned box ALWAYS paints above a non-positioned one
-                regardless of DOM order, so the total silently won every
-                time — hiding the tooltip on hover (bug) and, wherever the
-                total's text ran wider than the hole, drawing over the arcs
-                too (bug). The hole stays transparent outside the ring, so
-                the total still shows through at rest — this only changes
-                who wins where the two would otherwise collide. */}
-            <div aria-hidden="true" className="relative z-10">
-              <InvoiceStatusCanvas rows={rows} allowMotion={allowMotion} />
-            </div>
-            {/* Real DOM (design doc: "real DOM, not SVG-only") — a sibling
-                of the aria-hidden canvas div, NOT inside it, so screen
-                readers reach it in normal reading order. Visually overlaid
-                on the donut hole via CSS position, not Recharts geometry.
-                Label BEFORE value (not value-then-label) so SR/reading
-                order says "Total invoiced. THB 10K." rather than the
-                bare amount followed by an unattached caption.
-                `z-0` pairs with the canvas's `z-10` above; `px-6` + the
-                compact `compactTotalLabel` (vs. the full `totalLabel`)
-                keep this comfortably inside the donut hole
-                (`innerRadius="65%"` in `invoice-status-canvas.tsx`)
-                instead of spilling onto the ring — the exact amount is
-                never lost, it's still the tooltip/legend/table's value. */}
-            <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center gap-0.5 px-6 text-center">
-              <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('totalLabel')}</span>
-              <span className="text-xl font-semibold leading-tight tabular-nums text-[var(--aura-fg-primary)]">
-                {compactTotalLabel}
+          <div className={CHART_HERO_ROW}>
+            <span className={CHART_HERO_GROUP}>
+              <span data-slot="status-total" className={CHART_HERO_VALUE}>
+                {formatWrapping(thbFmt, totalSatangNumber / 100)}
               </span>
-            </div>
+              <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('totalLabel')}</span>
+            </span>
           </div>
-          {/* Persistent, VISIBLE legend (WCAG 1.4.1 — colour is never the
-              sole signal): the donut's semantic success/warning/destructive
-              fills fail CVD separation (near-equal luminance in this
-              theme), and without this row the only text labels live in the
-              sr-only table + the hover-only tooltip, leaving a sighted
-              colour-blind user unable to tell paid/unpaid/overdue apart.
-              `aria-hidden` because its data 100% duplicates the sr-only
-              `<ChartDataTable>` below — same double-announce rationale as
-              the aria-hidden canvas. */}
+          {/* One stacked bar; each segment grows by its exact satang share
+              (not the rounded %), and a non-zero bucket keeps 2px while the
+              others shrink, so the bar never runs past its track. */}
+          <div
+            aria-hidden="true"
+            data-slot="status-bar"
+            className="mt-[var(--aura-space-4)] flex h-2.5 gap-0.5 overflow-hidden rounded-full"
+          >
+            {rows
+              .filter((r) => r.satangNumber > 0)
+              .map((r) => (
+                <span
+                  key={r.bucket}
+                  data-bucket={r.bucket}
+                  className="h-full first:rounded-l-full last:rounded-r-full"
+                  style={{
+                    flexGrow: (r.satangNumber / totalSatangNumber) * 100,
+                    flexShrink: 1,
+                    flexBasis: 0,
+                    minWidth: 2,
+                    backgroundColor: BUCKET_FILL[r.bucket],
+                  }}
+                />
+              ))}
+          </div>
+          {/* A row per bucket (WCAG 1.4.1 — colour is never the sole
+              signal). `aria-hidden` because it duplicates the hidden table. */}
           <ul
             aria-hidden="true"
-            className="mt-[var(--aura-space-3)] flex flex-wrap justify-center gap-x-4 gap-y-1 aura-text-caption text-[var(--aura-fg-secondary)]"
+            data-slot="status-rows"
+            className="mt-[var(--aura-space-3)] divide-y divide-[var(--aura-border-default)] border-t border-[var(--aura-border-default)] aura-text-body"
           >
             {rows.map((r) => (
-              <li key={r.bucket} className="flex items-center gap-1.5">
-                <span
-                  className="h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: BUCKET_FILL[r.bucket] }}
-                />
-                {r.label} · {r.pctLabel}
+              <li
+                key={r.bucket}
+                className="flex flex-wrap items-center gap-x-[var(--aura-space-3)] py-[var(--aura-space-2)]"
+              >
+                <span className="flex min-w-0 flex-1 items-center gap-[var(--aura-space-2)] text-[var(--aura-fg-primary)]">
+                  <span
+                    className="size-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: BUCKET_FILL[r.bucket] }}
+                  />
+                  {r.label}
+                </span>
+                <span className="ml-auto whitespace-nowrap text-right tabular-nums text-[var(--aura-fg-primary)]">
+                  {r.visibleAmount}
+                </span>
+                <span className="w-10 text-right aura-text-caption tabular-nums text-[var(--aura-fg-secondary)]">
+                  {r.pctLabel}
+                </span>
               </li>
             ))}
           </ul>
           {draftCaption}
-          {/* States this chart's measurement basis, which differs from every
-              other money figure on the page: all-time (the port is never
-              given a fiscal year) and VAT-INCLUSIVE (`total_satang` less
-              credits), where the revenue KPI and the trend sparkline are
-              fiscal-year/rolling-window and ex-VAT. Two honest numbers on
-              one screen that don't tie out read as a broken system unless
-              each says what it measures. */}
-          <p className="mt-[var(--aura-space-1)] text-center aura-text-caption text-[var(--aura-fg-secondary)]">
-            {t('basisCaption')}
-          </p>
           {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
-              SR/no-JS data path; visually hidden when data is present, the
-              empty-state paragraph above is the SR equivalent otherwise.
-              Always ends in a "Total" row (design doc requirement). */}
+              SR/no-JS data path for the bar and rows; always ends in a
+              "Total" row (design doc requirement). */}
           <ChartDataTable
             caption={t('title')}
             columns={[

@@ -3,13 +3,9 @@
  * test.
  *
  * A11y model (shared with every 067 chart, see `chart-data-table.tsx`): the
- * Recharts canvas sits in an `aria-hidden="true"` wrapper; the shared
- * `<ChartDataTable>` is the sole SR/no-JS data path — a bucket row per
- * paid/unpaid/overdue + a "Total" row (design doc: "hidden table: bucket →
- * THB, count, %"). ADDITIONALLY (design doc's donut-specific requirement):
- * the donut's centre total and the draftCount caption must be **real DOM**
- * text, OUTSIDE the aria-hidden canvas — not an SVG `<Label>` — or SR users
- * lose them entirely (unlike the table, which is merely visually hidden).
+ * visual bar and rows are `aria-hidden`; the shared `<ChartDataTable>` is
+ * the SR/no-JS data path — a bucket row per paid/unpaid/overdue + a "Total"
+ * row. The headline total and the draftCount caption are real DOM text.
  *
  * This component is self-contained i18n (`useTranslations` +  `useLocale`,
  * no title/label props — same pattern as `membership-tier-chart.tsx`, Task
@@ -17,18 +13,9 @@
  * `en.json` (not a stub) so a dangling `t()` key reference surfaces as a
  * real `MISSING_MESSAGE` failure rather than silently rendering the raw key.
  *
- * **Task 12 split**: the actual `<PieChart>` rendering was extracted into
- * `./invoice-status-canvas.tsx` and is now mounted here via
- * `next/dynamic(..., { ssr: false })`, so recharts stays out of `/admin`'s
- * first-load JS. A synchronous RTL `render()` therefore sees the `loading`
- * fallback, never the resolved Recharts markup — the Recharts-primitive
- * sector/fill assertions moved to `invoice-status-canvas.test.tsx`, which
- * renders `<InvoiceStatusCanvas>` directly. The table, centre-total,
- * legend, draft-caption, and empty-state assertions below are unaffected
- * (they all render outside the dynamic boundary).
- *
- * jsdom workarounds (identical to `membership-tier-chart.test.tsx`):
- *   - `window.matchMedia` stub for `useSyncExternalStore(subscribeMotionPreference, …)`.
+ * Spec 122 US11 follow-up (17 Oct): the donut, its canvas and its lazy
+ * boundary are gone; the card draws the exact total, a stacked bar and a row
+ * per bucket as plain markup, so a synchronous render sees all of it.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
