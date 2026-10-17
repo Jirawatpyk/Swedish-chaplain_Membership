@@ -13,11 +13,17 @@
  *     `reason`, which the production logger redacts)
  *   - while a query is still unsettled no second one starts (a pool ceiling)
  *   - the 10 s window counts from when the probe SETTLES
+ *   - an unsettled query is abandoned (not cancelled) after 60 s so ONE fresh
+ *     probe may run — at most two hung connections per instance
+ *   - health.degraded is logged only when the outcome changes, and
+ *     health.recovered once on the way back to ok
+ *   - probe() is total: a throwing logger cannot wedge the cache
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const executeMock = vi.fn();
 const warnMock = vi.fn();
+const infoMock = vi.fn();
 
 vi.mock('@/lib/db', () => ({
   db: { execute: (...args: unknown[]) => executeMock(...args) },
@@ -25,7 +31,7 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/logger', () => ({
   logger: {
-    info: vi.fn(),
+    info: (...args: unknown[]) => infoMock(...args),
     warn: (...args: unknown[]) => warnMock(...args),
     error: vi.fn(),
   },
@@ -45,6 +51,7 @@ describe('GET /api/health', () => {
     vi.useFakeTimers();
     executeMock.mockReset();
     warnMock.mockReset();
+    infoMock.mockReset();
   });
 
   afterEach(() => {
@@ -240,6 +247,84 @@ describe('GET /api/health', () => {
     const keys = [...new Set(payloads.flatMap((p) => Object.keys(p)))];
     const redacted = keys.filter((k) => topLevel.has(k) || topLevel.has('*'));
     expect(redacted).toEqual([]);
+  });
+
+  it('abandons an unsettled query after 60 s and starts ONE fresh probe, never a third', async () => {
+    executeMock.mockReturnValue(new Promise(() => {}));
+    const GET = await loadGet();
+
+    const first = GET();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect((await first).status).toBe(503);
+
+    // t = 53 s: the first query is 53 s old — still the ceiling, no new query.
+    await vi.advanceTimersByTimeAsync(50_000);
+    expect((await GET()).status).toBe(503);
+    expect(executeMock).toHaveBeenCalledTimes(1);
+
+    // t = 63 s: abandoned (>= 60 s), so one fresh probe runs.
+    await vi.advanceTimersByTimeAsync(10_000);
+    const second = GET();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect((await second).status).toBe(503);
+    expect(executeMock).toHaveBeenCalledTimes(2);
+
+    // Both hung: the second is never abandoned while the first is unsettled.
+    for (let i = 0; i < 8; i += 1) {
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect((await GET()).status).toBe(503);
+    }
+    expect(executeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('logs health.degraded only when the outcome changes, and health.recovered once', async () => {
+    executeMock
+      .mockRejectedValueOnce(new Error('a'))
+      .mockRejectedValueOnce(new Error('b'))
+      .mockResolvedValueOnce([{ '?column?': 1 }])
+      .mockResolvedValueOnce([{ '?column?': 1 }])
+      .mockRejectedValueOnce(new Error('c'));
+    const GET = await loadGet();
+
+    for (let i = 0; i < 5; i += 1) {
+      await GET();
+      await vi.advanceTimersByTimeAsync(10_000);
+    }
+
+    expect(executeMock).toHaveBeenCalledTimes(5);
+    // error, error (same outcome: silent), ok (recovered), ok (silent), error
+    expect(warnMock).toHaveBeenCalledTimes(2);
+    expect(infoMock).toHaveBeenCalledTimes(1);
+    expect(infoMock).toHaveBeenCalledWith({ route: 'api.health' }, 'health.recovered');
+  });
+
+  it('logs again when the degraded outcome changes kind', async () => {
+    executeMock.mockRejectedValueOnce(new Error('a')).mockReturnValueOnce(new Promise(() => {}));
+    const GET = await loadGet();
+
+    await GET();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const second = GET();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await second;
+
+    expect(warnMock.mock.calls.map((c) => (c[0] as { probe: string }).probe)).toEqual([
+      'query-error',
+      'timeout',
+    ]);
+  });
+
+  it('a throwing logger cannot wedge the cache: the next window probes again', async () => {
+    warnMock.mockImplementationOnce(() => {
+      throw new Error('logger down');
+    });
+    executeMock.mockRejectedValueOnce(new Error('a')).mockResolvedValue([{ '?column?': 1 }]);
+    const GET = await loadGet();
+
+    expect((await GET()).status).toBe(503);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect((await GET()).status).toBe(200);
+    expect(executeMock).toHaveBeenCalledTimes(2);
   });
 
   it('N concurrent requests run one query (single-flight)', async () => {
