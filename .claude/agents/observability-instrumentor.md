@@ -84,7 +84,7 @@ Structure your response as:
 - Never silently widen log levels — `error` is reserved for actionable oncall events.
 - When unsure whether a field is PII, assume it is and exclude it.
 - If the feature is security-sensitive (auth, RBAC, payments, PII, audit, GDPR surfaces), remind the user that the ≥2-reviewer security gate applies and one reviewer must sign the security checklist.
-- Respect the solo-maintainer substitute clause (Principle IX) — do not block on reviewer count, but flag when it applies.
+- Reviewer counts and the solo-maintainer review are process (`review-and-ship` skill) — do not block on reviewer count, but flag when the solo-maintainer review applies.
 - If adding observability would violate Clean Architecture (e.g., importing pino into `domain/`), redesign via a port in Application and an adapter in Infrastructure. Domain stays framework-free.
 
 ## Escalation

@@ -5,7 +5,7 @@ Loaded every session (no `paths:`). Module-specific facts live in `.claude/rules
 ## Conventions
 
 - **Package manager**: pnpm (NOT npm). Lockfile `pnpm-lock.yaml`.
-- **Commits**: Conventional Commits, enforced by the commit-msg hook; commitlint caps the header at 100 characters (count with `wc -m`). `[Spec Kit]` prefix on commits that move a Spec Kit feature through a gate (not used on `feature-flow` pilot features).
+- **Commits**: Conventional Commits, enforced by the commit-msg hook; commitlint caps the header at 100 characters (count with `wc -m`). `[Spec Kit]` prefix on commits that move a Spec Kit feature through a gate (not used on `feature-flow` features).
 - **Branches**: one feature per branch (`nnn-feature-name`); the spec directory name matches exactly (e.g. `001-auth-rbac`).
 - **Timestamps**: always store **ISO 8601 UTC (Gregorian)**. Thai Buddhist Era (BE = CE + 543) is **display-only** for `th-TH` surfaces. Storing BE anywhere is a ship blocker (off-by-543-years class).
 - **Primary currency THB**; SEK/EUR/USD presentable where applicable. Thai tax invoices need VAT 7%, tax IDs on both parties, TH language, sequential tax-receipt numbering.

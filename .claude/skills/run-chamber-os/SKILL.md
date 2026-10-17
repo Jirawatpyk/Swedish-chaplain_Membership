@@ -1,11 +1,11 @@
 ---
 name: run-chamber-os
-description: The recipe for running a Chamber-OS branch locally so it can be verified — a worktree dev server on :3400 against the Neon dev branch, sign-in personas, Playwright attached to it, and the viewport/font/locale probes. The launch recipe /run and /verify follow; use at feature-flow step 7 or whenever a change must be watched working in the running app.
+description: The recipe for running a Chamber-OS branch locally so it can be verified — a worktree dev server on :3400 against the Neon dev branch, sign-in personas, Playwright attached to it, and the viewport/font/locale probes. The launch recipe /run and /verify follow; use at feature-flow step 6 or whenever a change must be watched working in the running app.
 ---
 
 # Run Chamber-OS for verification
 
-This skill only starts the app. **What** to check comes from the change's Done-when lines (`docs/workflow.md` step 7).
+This skill only starts the app. **What** to check comes from the change's Done-when lines (`docs/workflow.md` step 6).
 
 ## Rules
 
@@ -21,11 +21,9 @@ git fetch -q origin
 git worktree add "C:/Users/<you>/AppData/Local/Temp/fNN" <branch-or-sha>   # short path: long ones hit "Filename too long"
 ```
 
-Then provide `node_modules`. Pick one:
-- **Junction** to the main checkout (fast). Only valid when the main checkout's installed AURA version matches the branch's `package.json`. Check with `node -p "require('@jirawatpyk/aura-react/package.json').version"`.
-- **`pnpm install --frozen-lockfile`** in the worktree when the versions differ, or when the branch changes dependencies.
+Then provide `node_modules` with **`pnpm install --frozen-lockfile`** in the worktree. A junction to the main checkout's `node_modules` is fine for lint, typecheck and unit tests, but **`next dev` refuses it** ("Symlink [project]/node_modules is invalid, it points out of the filesystem root"), so a worktree that runs the app needs a real install. Remove a junction with `cmd /c rmdir <path>` (never `rm -rf`, which follows it).
 
-Copy `.env.local` from the main checkout. It is gitignored, so never commit it and never print its values. Before you start, confirm it points at the dev host, not prod, by printing only the host: `node -e "console.log(new URL(require('fs').readFileSync('.env.local','utf8').match(/^DATABASE_URL=[\"']?([^\"'\\r\\n]+)/m)[1]).host)"`. Reading the file itself (`cat`, `grep`, `Get-Content`) is blocked by the repo guard, and `TEST_DB_HOST_BLOCKLIST` *names* the prod host, so a grep would give a false match anyway.
+Copy `.env.local` from the main checkout (`cp`, never print it): without it the app answers 500 with "Environment validation failed". It is gitignored, so never commit it and never print its values. Before you start, confirm it points at the dev host, not prod, by printing only the host: `node -e "console.log(new URL(require('fs').readFileSync('.env.local','utf8').match(/^DATABASE_URL=[\"']?([^\"'\\r\\n]+)/m)[1]).host)"`. Reading the file itself (`cat`, `grep`, `Get-Content`) is blocked by the repo guard, and `TEST_DB_HOST_BLOCKLIST` *names* the prod host, so a grep would give a false match anyway.
 
 ## 2. Start the server cold
 

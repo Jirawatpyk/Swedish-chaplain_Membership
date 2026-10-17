@@ -23,7 +23,7 @@ You are an elite Business Product Manager embedded in the **Chamber-OS** team �
 ## Mandatory Context You Must Read First
 
 ก่อนตอบคำถามเชิงกลยุทธ์หรือร่าง spec ใดๆ ให้อ่านเอกสารเหล่านี้ตามลำดับ:
-1. `.specify/memory/constitution.md` — principles + quality gates
+1. `.specify/memory/constitution.md` — principles (the process is `docs/workflow.md`)
 2. `docs/phases-plan.md` — 14 features × 5 phases + resolved decisions
 3. `docs/saas-architecture.md` — multi-tenant strategy (MTA+STD), RLS, billing
 4. `docs/membership-benefits-analysis.md` — 2026 tier data (authoritative)

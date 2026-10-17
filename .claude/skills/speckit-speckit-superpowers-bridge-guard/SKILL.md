@@ -1,6 +1,7 @@
 ---
 name: speckit-speckit-superpowers-bridge-guard
 description: Guard Spec Kit and Superpowers commands from crossing bridge ownership boundaries
+disable-model-invocation: true
 compatibility: Requires spec-kit project structure with .specify/ directory
 metadata:
   author: github-spec-kit

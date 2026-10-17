@@ -46,7 +46,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Decision*: always run `/code-review high`. `xhigh` / `max` are opt-in, and `/code-review ultra` (cloud, billed) is the user's call. Large or high-stakes branches use the `review-branch` Workflow.
 - *Consequence*: `review-and-ship` § 1.
 
-**D-009 — Pilot a native Claude Code workflow in place of the Spec Kit gate commands** (2026-10-17)
+**D-009 — Pilot a native Claude Code workflow in place of the Spec Kit gate commands** (2026-10-17) — *superseded by D-018*
 - *Context*: the user prefers to move off Spec Kit: ten gates, heavy artefacts, and broken scripts on this install.
 - *Decision*: `docs/workflow.md` + the `feature-flow` skill, piloted on the next feature. It keeps the constitution's substance (Constitution Check, TDD red-first, reviewer counts, cross-tenant test, Complexity Tracking).
 - *Consequence*: the constitution's § Development Workflow still names the Spec Kit gates. Amend it in a separate PR, with a Sync Impact Report, after the pilot. Until then a feature may use either flow, and its PR says which.
@@ -63,7 +63,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 
 **D-012 — The run recipe is a skill named `run-chamber-os`, not `verify`** (2026-10-17)
 - *Context*: Claude Code runs a project skill named `verify` before every commit, and a cold dev server here takes minutes; without a recipe, `/verify` guesses the launch and gets the port, the database or the personas wrong.
-- *Decision*: record the recipe as `run-chamber-os` (worktree, :3400, dev branch, personas, `playwright.attach.config.ts`, UI probes). `/verify` and `feature-flow` step 7 follow it.
+- *Decision*: record the recipe as `run-chamber-os` (worktree, :3400, dev branch, personas, `playwright.attach.config.ts`, UI probes). `/verify` and `feature-flow` step 6 follow it.
 - *Consequence*: a branch is verified against its own code on :3400, never against :3100 (which serves the main checkout) or the prod database. Claude may still start :3100 and open it in the built-in browser to look at `main`.
 
 **D-013 — M / L changes keep a written plan; reviews never run in the writer's context** (2026-10-17)
@@ -71,7 +71,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Decision*: M / L changes save `specs/<nnn-name>/plan.md` (template in the `feature-flow` skill), including a test plan that replaces Spec Kit's `tasks.md`; for L, `chamber-os-architect` and the surface reviewers read it before the user agrees. The main session builds S / M; L is cut into vertical slices, built one subagent per slice in order, each reviewed before the next; `whole-branch-reviewer` runs before every slice PR merges, plus a final seam pass when slices share a branch. Review always runs in subagents.
 - *Consequence*: `docs/workflow.md` § Who does what; DoD and PR template lines for the plan.
 
-**D-014 — Pilot features record the Spec Kit gate deviation in `plan.md`** (2026-10-17)
+**D-014 — Pilot features record the Spec Kit gate deviation in `plan.md`** (2026-10-17) — *superseded by D-018*
 - *Context*: the constitution's § Development Workflow requires every feature to pass the Spec Kit gates, and its solo-maintainer substitute names `/speckit.review` and `/speckit.staff-review`. By `CLAUDE.md` § Precedence the constitution outranks D-009.
 - *Decision*: until the constitution is amended, a `feature-flow` feature records in `plan.md` § Complexity Tracking that it replaces the Spec Kit gate commands with `docs/workflow.md`, **with the maintainer's explicit approval of that deviation, given in the session and recorded in the row** (the user's instruction is precedence #1). The constitution's substitute clause covers reviews and pushes, not gate skips, so the approval is per feature. The substitute's review checks map as in `review-and-ship` § 2: ≥ 3 rounds of `/code-review high` + surface reviewers; `whole-branch-reviewer` + `security-engineer` + `senior-tester` for the staff review; the raising reviewer re-runs on each fix.
 - *Consequence*: on each pilot feature Claude asks once, at the plan step, for that approval, and records it. The amendment PR (with its Sync Impact Report) follows the first pilot feature.
@@ -79,7 +79,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 **D-015 — No High or Medium review finding may remain at merge** (2026-10-17)
 - *Context*: the first draft allowed a Medium to stay open with a reason in the PR.
 - *Decision*: every High and every Medium is fixed. A finding closes unfixed only when it is refuted with evidence (code, test, measurement) and the reviewer confirms that on a re-run; it is never waived. Lows are fixed or listed in the PR.
-- *Consequence*: `docs/workflow.md` step 6 and the DoD, the PR template, `review-and-ship` § 1 and the substitute mapping.
+- *Consequence*: `docs/workflow.md` step 7 (Review) and the DoD, the PR template, `review-and-ship` § 1 and the substitute mapping.
 
 **D-016 — Mechanical guards stay minimal: only what cannot be undone** (2026-10-17)
 - *Context*: the final setup audit found the "never" rules were prose only and reviewer subagents inherited every tool (mail, deploy). The maintainer wants Claude Code to work freely, with little blocking.
@@ -90,3 +90,13 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Context*: agents use `memory: project`, but `.claude/agent-memory/` is gitignored.
 - *Decision*: keep it that way. Agent memories quote incidents and data that should not be committed, and the maintainer works on one machine. Worktrees and cloud sessions start without them.
 - *Consequence*: an agent's durable lesson goes into the repo (a rule, a skill, a test), not only into its memory.
+
+**D-018 — Constitution v2.0.0: principles only; the process lives in `docs/workflow.md`** (2026-10-17)
+- *Context*: the constitution prescribed the ten Spec Kit gates and the review mechanics (≥2 reviewers, a five-check substitute naming `/speckit.review` ×3 and `/speckit.staff-review`, a co-sign footer), so every `feature-flow` feature needed a per-feature deviation (D-014). The maintainer judged that process outdated and asked for current best practice instead.
+- *Decision*: amend to v2.0.0 (MAJOR). Remove § Development Workflow & Quality Gates and Principle IX's review mechanics; Principle IX keeps code-quality rules and requires only independent review and a security sign-off on sensitive surfaces. `docs/workflow.md` + the `review-and-ship` skill own the process: on sensitive surfaces ≥2 reviewers, or for a solo maintainer the solo-maintainer review (≥ 2 fresh-subagent review rounds until no High/Medium; staff review by `whole-branch-reviewer` + `security-engineer` + `senior-tester`; coverage + real-infrastructure tests; defence in depth; the raising reviewer re-checks each fix). The security sign-off is the `security-engineer` report in the staff review (one pass; `/security-review` is optional); the maintainer does not co-sign. Amendments need only the sole maintainer's PR approval.
+- *Consequence*: D-009 and D-014 are superseded. Principles I–VIII and X are unchanged; `CLAUDE.md` § Precedence puts the constitution first on principles and `docs/workflow.md` first on process.
+
+**D-019 — Verify before Review; review rounds by risk; plan mode is asked for; Spec Kit skills off** (2026-10-17)
+- *Context*: a self-review of the workflow found that a bug fixed during Verify skipped review; "≥ 2 rounds" read as applying to every change; nothing said who opens plan mode; and ~57 `speckit-*` skills competed with `feature-flow`.
+- *Decision*: the order is Check → **Verify → Review**, and any change after review goes back through it. A normal change gets one review round plus re-checks of each fix; a sensitive surface gets ≥ 2 rounds plus the staff review. At step 3 Claude asks to enter plan mode (the user approves, or switches modes themselves) and presents the plan for approval; L slices don't re-enter plan mode unless a slice leaves the plan. Every `speckit-*` skill is set to `disable-model-invocation: true`: the user can still run one by name, but Claude doesn't pick them.
+- *Consequence*: steps 6 and 7 swap numbers in `docs/workflow.md` and the `feature-flow` skill.
