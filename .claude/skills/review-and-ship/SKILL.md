@@ -24,7 +24,7 @@ This section is the single source for how review works; `docs/workflow.md` step 
 - Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it.
 - Low findings are fixed or listed in the PR.
 - Any code change after review goes back through review.
-- **Rounds:** a normal change gets one review round, then the raising reviewer re-checks each fix. A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) gets ≥ 2 rounds plus the staff review (§ 2). Review runs after Verify, so the reviewed code is the code that works.
+- **Rounds:** a normal change gets one review round, then the raising reviewer re-checks each fix. Run another `/code-review` round only when the last one had a High or Medium that changed code; stop once the latest round finds only Lows. The command is told to surface at least 5 findings, so re-running it to chase Lows never converges. A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) gets ≥ 2 rounds plus the staff review (§ 2). Review runs after Verify, so the reviewed code is the code that works.
 - Tell every reviewer to report only gaps that affect correctness or the stated requirements. A reviewer asked to find gaps always finds some, and chasing every one over-engineers.
 
 ## 2. Which project subagent reviews which surface
