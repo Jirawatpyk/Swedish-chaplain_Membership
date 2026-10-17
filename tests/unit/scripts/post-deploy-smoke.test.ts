@@ -92,6 +92,17 @@ describe('runSmoke', () => {
     expect(result.lines.join('\n')).not.toContain('secret');
   });
 
+  it('cancels the unread body of a non-200 response, so the socket is released', async () => {
+    const cancel = vi.fn(() => Promise.resolve());
+    const fetchImpl = vi.fn(async () => ({ status: 500, body: { cancel }, text: vi.fn() }) as unknown as Response);
+
+    const result = await runSmoke('https://swecham.example', opts(fetchImpl as unknown as typeof fetch));
+
+    expect(result.ok).toBe(false);
+    expect(result.lines).toContain('FAIL health 500');
+    expect(cancel).toHaveBeenCalledTimes(3);
+  });
+
   it('fails when a sign-in page has no password input', async () => {
     const { fetchImpl } = stubFetch({
       ...healthy,
