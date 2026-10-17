@@ -193,7 +193,7 @@ describe('.github/workflows/post-deploy-smoke.yml', () => {
   it('runs the smoke script with plain node, keeps its exit code through tee, and saves its output', () => {
     const smoke = blocks.find((b) => b.text.includes('scripts/post-deploy-smoke.ts'));
     expect(smoke).toBeDefined();
-    expect(smoke!.text).toMatch(/(^|\s)node scripts\/post-deploy-smoke\.ts "\$BASE_URL"/);
+    expect(smoke!.text).toMatch(/(^|\s)node --experimental-strip-types scripts\/post-deploy-smoke\.ts "\$BASE_URL"/);
     expect(smoke!.text).not.toContain('tsx');
     expect(smoke!.text).toContain('set -o pipefail');
     expect(smoke!.text).toMatch(/\|\s*tee\s+\S+/);
