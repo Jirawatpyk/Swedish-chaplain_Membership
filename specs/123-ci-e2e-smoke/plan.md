@@ -240,3 +240,22 @@ Claude never reads or prints any of these values.
 ## Evidence
 
 Filled in at Verify, one block per slice.
+
+### Slice 1 (head `6d66f48ed`, verified 2026-10-18 on a cold `next dev` :3400 in worktree f49)
+
+- **DW-3 ok:** `GET /api/health` → `200 {"status":"ok"}`, `Cache-Control: no-store`. Cold call 6.2 s (route compile); repeat within 10 s 0.03 s (cache).
+- **DW-3 degraded:** with `DATABASE_URL` pointed at an unroutable host → `503 {"status":"degraded"}`. An uncached call took **3.04 s** (`application-code: 3.0s`). The log line is `WARN health.degraded route="api.health" err="HealthProbeTimeoutError"`, with no message text.
+- **DW-3 tests:** `tests/contract/api-health.test.ts` 8/8, including single-flight N→1 and the exact 3 s timeout. Mutation-checked: M1 (no single-flight) and M2 (30 s timer) each turn one test red.
+- **DW-2:**
+  - `scripts/post-deploy-smoke.ts http://localhost:3400` → PASS admin-sign-in 200, PASS portal-sign-in 200, PASS health 200, EXIT 0.
+  - Against `https://swecham.dxtspace.com`, before deploy, both sign-ins PASS and `FAIL health 404`, after 3 attempts 20 s apart. That is expected: the route isn't deployed yet.
+  - Unit tests 14/14.
+- **DW-1, DW-4:**
+  - Workflow text guard 13/13. Mutation M3, `${{ inputs.base_url }}` in `run:`, turns two tests red.
+  - The real `deployment_status` run and the `workflow_dispatch` issue check happen after merge (the file must be on `main`).
+- **DW-5:** `docs/runbooks/post-deploy-smoke.md`.
+- **Gates:** `pnpm typecheck` 0, `pnpm lint` 0, `api-route-exhaustiveness` 8/8, `check:api-route-guard` OK.
+- **Repo setup:**
+  - Variables `PROD_BASE_URL`, `NEON_CI_PROJECT_ID` and `NEON_CI_PARENT_BRANCH` are set.
+  - Secrets `NEON_CI_API_KEY`, `CI_BLOB_READ_WRITE_TOKEN`, `CI_BLOB_PRIVATE_READ_WRITE_TOKEN`, `CI_UPSTASH_REDIS_REST_URL` and `CI_UPSTASH_REDIS_REST_TOKEN` are set; names were checked, values never read.
+
