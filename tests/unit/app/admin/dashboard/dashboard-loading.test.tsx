@@ -51,8 +51,8 @@ describe('staff dashboard loading', () => {
     expect(block('h-9').length).toBeGreaterThanOrEqual(6);
     // the donut reserves the canvas's square, capped at 256px
     expect(block('max-h-64')).toHaveLength(1);
-    // each trend card reserves its first/last month row under the canvas
-    expect(host.querySelectorAll('[data-slot="trend-months"]')).toHaveLength(2);
+    // each trend card reserves the canvas with its axes (spec 122 US11, 17 Oct)
+    expect(block('h-48')).toHaveLength(2);
   });
 
   it('F9 off: the roadmap card on AURA, announced once', async () => {
