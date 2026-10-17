@@ -256,4 +256,29 @@ describe('CountUp', () => {
 
     expect(getVisible(container)?.textContent).toBe(new Intl.NumberFormat('en').format(500));
   });
+
+  // Spec 122 US11 (maintainer, 17 Oct): on phones the revenue tile is half
+  // the width and the full amount does not fit, so it shows a compact copy
+  // ("THB 381K", as board Admin-dashboard-mobile). Screen readers and every
+  // width from 640px keep the exact amount.
+  describe('compactBelowSm', () => {
+    it('adds a static compact copy shown only below 640px; the exact amount stays for screen readers', () => {
+      stubMatchMedia(false);
+      const { container } = render(<CountUp value={381450} locale="en" variant="thb" compactBelowSm />);
+      const compact = container.querySelector('span.sm\\:hidden');
+      expect(compact?.getAttribute('aria-hidden')).toBe('true');
+      expect(compact?.textContent?.replace(/\s/g, ' ')).toBe('THB 381K');
+      expect(container.querySelector('span.max-sm\\:hidden')).not.toBeNull();
+      expect(getSrOnly(container)?.textContent?.replace(/\s/g, ' ')).toBe('THB 381,450');
+      // Never inside the phone-hidden box, or phones would announce nothing.
+      expect(getSrOnly(container)?.closest('.max-sm\\:hidden')).toBeNull();
+    });
+
+    it('is off by default', () => {
+      stubMatchMedia(false);
+      const { container } = render(<CountUp value={381450} locale="en" variant="thb" />);
+      expect(container.querySelector('span.sm\\:hidden')).toBeNull();
+    });
+  });
 });
+

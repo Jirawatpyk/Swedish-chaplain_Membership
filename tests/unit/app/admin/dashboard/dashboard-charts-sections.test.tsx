@@ -210,6 +210,11 @@ describe('StaffHomePage — KPI grid on phones (spec 122 US11, board Admin-dashb
     const html = await renderPage();
     expect(html).toContain('grid grid-cols-2 gap-4 lg:grid-cols-4');
   });
+
+  it('only the revenue tile carries a compact phone copy', async () => {
+    const html = await renderPage();
+    expect(html.match(/class="sm:hidden"/g) ?? []).toHaveLength(1);
+  });
 });
 
 describe('StaffHomePage — Trends + Breakdown chart sections (Task 12)', () => {
