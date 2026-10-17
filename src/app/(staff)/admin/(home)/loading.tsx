@@ -133,10 +133,18 @@ export default async function Loading() {
                 ))}
               </div>
             </Card>
-            <Card header={<SkeletonBlock className="h-5 w-40" />}>
-              {/* Headline total, the stacked bar, then a row per bucket, as
-                  InvoiceStatusChart draws them. */}
-              <SkeletonBlock className="h-[34px] w-40" />
+            <Card
+              header={
+                <div data-slot="status-header-skeleton" className="grid gap-1">
+                  <SkeletonBlock className="h-6 w-44" />
+                  <SkeletonBlock className="h-4 w-56" />
+                </div>
+              }
+            >
+              {/* Title + description, the headline total (two lines on a
+                  phone, where its label wraps under it), the stacked bar,
+                  then a row per bucket, as InvoiceStatusChart draws them. */}
+              <SkeletonBlock className="h-[60px] w-40 sm:h-[34px]" />
               <div data-slot="status-bar-skeleton" className="mt-4">
                 <SkeletonBlock className="h-2.5 w-full rounded-full" />
               </div>

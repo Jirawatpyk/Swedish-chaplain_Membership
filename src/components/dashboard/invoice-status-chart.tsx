@@ -30,6 +30,7 @@
  */
 'use client';
 
+import { Fragment, type ReactNode } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { Card } from '@jirawatpyk/aura-react';
 import type { InvoiceStatusBucket, InvoiceStatusDistribution } from '@/modules/insights';
@@ -46,20 +47,15 @@ const BUCKET_ORDER = ['paid', 'unpaid', 'overdue'] as const;
 type Bucket = (typeof BUCKET_ORDER)[number];
 
 /** Semantic (not categorical) colour — the bucket IS a state, not an
- * arbitrary series identity. Exported: the lazy `./invoice-status-canvas`
- * needs this as a real value for its `<Cell fill=…>`s (see that file's
- * docblock for why this import direction — canvas importing FROM the eager
- * chart file — is the bundle-safe one). */
-export const BUCKET_FILL: Record<Bucket, string> = {
+ * arbitrary series identity. Fills the bar segments and the row dots. */
+const BUCKET_FILL: Record<Bucket, string> = {
   paid: 'var(--aura-fg-positive)',
   unpaid: 'var(--aura-alert-warning-fg)',
   overdue: 'var(--aura-fg-danger)',
 };
 
-/** Row shape fed to Recharts — `satangNumber` is the Pie's arc-sizing value
- * (VALUE basis, never count); every other field is display-ready text so
- * the tooltip/table need no further formatting. Exported as a type-only
- * dependency for `./invoice-status-canvas` (erased at compile time). */
+/** One bucket — `satangNumber` sizes its bar segment (VALUE basis, never
+ * count); every other field is display-ready text for the row and table. */
 interface BucketRow {
   readonly bucket: Bucket;
   readonly label: string;
@@ -78,6 +74,25 @@ function formatWrapping(fmt: Intl.NumberFormat, n: number): string {
     .formatToParts(n)
     .map((p) => (p.type === 'literal' ? p.value.replace(/\u00a0|\u202f/g, ' ') : p.value))
     .join('');
+}
+
+/** The headline amount with its only break points: the space before or
+ * after the currency, and a `<wbr>` after each thousands group. A long
+ * amount at 200% text then wraps as "THB 4,977,<wbr>300.00", never inside
+ * a group, which would read as another amount (UX review, 17 Oct). */
+function formatHeadline(fmt: Intl.NumberFormat, n: number): ReactNode {
+  return fmt.formatToParts(n).map((p, i) =>
+    p.type === 'literal' ? (
+      <Fragment key={i}>{p.value.replace(/\u00a0|\u202f/g, ' ')}</Fragment>
+    ) : p.type === 'group' ? (
+      <Fragment key={i}>
+        {p.value}
+        <wbr />
+      </Fragment>
+    ) : (
+      <Fragment key={i}>{p.value}</Fragment>
+    ),
+  );
 }
 
 function zeroBucket(bucket: Bucket): InvoiceStatusBucket {
@@ -193,8 +208,13 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
         <>
           <div className={CHART_HERO_ROW}>
             <span className={CHART_HERO_GROUP}>
-              <span data-slot="status-total" className={CHART_HERO_VALUE}>
-                {formatWrapping(thbFmt, totalSatangNumber / 100)}
+              {/* `anywhere` dropped from the hero class: the <wbr>s give the
+                  only places this amount may break. */}
+              <span
+                data-slot="status-total"
+                className={CHART_HERO_VALUE.replace('[overflow-wrap:anywhere] ', '')}
+              >
+                {formatHeadline(thbFmt, totalSatangNumber / 100)}
               </span>
               <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('totalLabel')}</span>
             </span>
@@ -243,11 +263,17 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
                   />
                   {r.label}
                 </span>
-                <span className="ml-auto whitespace-nowrap text-right tabular-nums text-[var(--aura-fg-primary)]">
-                  {r.visibleAmount}
-                </span>
-                <span className="w-10 text-right aura-text-caption tabular-nums text-[var(--aura-fg-secondary)]">
-                  {r.pctLabel}
+                {/* Amount and percent move as one unit when the row wraps. */}
+                <span
+                  data-slot="status-figures"
+                  className="ml-auto flex items-baseline gap-x-[var(--aura-space-3)]"
+                >
+                  <span className="whitespace-nowrap text-right tabular-nums text-[var(--aura-fg-primary)]">
+                    {r.visibleAmount}
+                  </span>
+                  <span className="w-10 text-right aura-text-caption tabular-nums text-[var(--aura-fg-secondary)]">
+                    {r.pctLabel}
+                  </span>
                 </span>
               </li>
             ))}
