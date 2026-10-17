@@ -75,3 +75,8 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Context*: the constitution's § Development Workflow requires every feature to pass the Spec Kit gates, and its solo-maintainer substitute names `/speckit.review` and `/speckit.staff-review`. By `CLAUDE.md` § Precedence the constitution outranks D-009.
 - *Decision*: until the constitution is amended, a `feature-flow` feature records in `plan.md` § Complexity Tracking that it replaces the Spec Kit gate commands with `docs/workflow.md`, under the solo-maintainer substitute in place of ≥ 2 maintainer approvals. The substitute's review checks map as in `review-and-ship` § 2: ≥ 3 rounds of `/code-review high` + surface reviewers; `whole-branch-reviewer` + `security-engineer` + `senior-tester` for the staff review; the raising reviewer re-runs on each fix.
 - *Consequence*: the pilot runs without stopping to ask on each feature. The amendment PR (with its Sync Impact Report) follows the first pilot feature.
+
+**D-015 — No High or Medium review finding may remain at merge** (2026-10-17)
+- *Context*: the first draft allowed a Medium to stay open with a reason in the PR.
+- *Decision*: every High and every Medium is fixed. A finding closes unfixed only when it is refuted with evidence (code, test, measurement) and the reviewer confirms that on a re-run; it is never waived. Lows are fixed or listed in the PR.
+- *Consequence*: `docs/workflow.md` step 6 and the DoD, the PR template, `review-and-ship` § 1 and the substitute mapping.

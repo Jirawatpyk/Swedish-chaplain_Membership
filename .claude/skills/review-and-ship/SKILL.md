@@ -17,6 +17,7 @@ description: How to review a change and get it merged on Chamber-OS — which pr
 
 - **`/code-review ultra`** (or `/code-review ultra <PR#>`) is a multi-agent **cloud** review of the branch. The user triggers it and it is billed, so Claude never launches it; suggest it for a large, high-stakes branch.
 - A Workflow runs only on explicit opt-in ("use a workflow" / `ultracode`), never on Claude's own initiative. Otherwise, describe what it would do and roughly what it costs, and ask. If the user declines, review per module: `/code-review high <path>` for each touched module, the § 2 surface reviewers, then `whole-branch-reviewer`.
+- No High or Medium finding may remain at merge (D-015): fix it, or refute it with evidence and have the reviewer confirm on a re-run.
 - Tell every reviewer to report only gaps that affect correctness or the stated requirements. A reviewer asked to find gaps always finds some, and chasing every one over-engineers.
 
 ## 2. Which project subagent reviews which surface
@@ -46,7 +47,7 @@ Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, o
 
 | Constitution check | `feature-flow` equivalent |
 |---|---|
-| 1. ≥ 3 `/speckit.review` passes, decreasing severity | ≥ 3 review rounds: `/code-review high` + the § 2 surface reviewers, then re-runs on the fixes, until a round finds no High |
+| 1. ≥ 3 `/speckit.review` passes, decreasing severity | ≥ 3 review rounds: `/code-review high` + the § 2 surface reviewers, then re-runs on the fixes, until a round finds no High or Medium |
 | 2. ≥ 1 `/speckit.staff-review` round (correctness, security, tests) | `whole-branch-reviewer`, with `security-engineer` and `senior-tester` on the same diff; a second round when any BLOCKER / HIGH is found |
 | 5. Post-remediation verification by a fresh agent | the reviewer that raised a finding re-runs on its fix in a new subagent; the writer never self-attests |
 

@@ -58,7 +58,7 @@ Follow `review-and-ship` §§ 1–2:
 2. The surface reviewers for what the diff touches.
 3. `whole-branch-reviewer` last.
 
-Reviews run in subagents; the writer never reviews its own code. Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it. Fix every High, with no waivers. Fix every Medium, or write the reason down for the PR. After substantial fixes to a reviewer's findings, run that reviewer again on the fixes.
+Reviews run in subagents; the writer never reviews its own code. Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it. **No High and no Medium finding may remain: fix every one, with no waivers.** A finding you believe is wrong is refuted with evidence (the code, a test, a measurement) and the reviewer re-runs on it; that is the only way one closes unfixed. Low findings are fixed or listed in the PR. After substantial fixes to a reviewer's findings, run that reviewer again on the fixes.
 
 ## 7. Verify
 
