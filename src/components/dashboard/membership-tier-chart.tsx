@@ -3,8 +3,8 @@
  * horizontal bar. Renders the dashboard snapshot's `tierDistribution` slices
  * (already sorted count-desc with `unassigned` forced last by
  * `groupActiveMembersByTier` — this component does NOT re-sort) as a
- * single-colour (`--chart-1` navy) Recharts horizontal bar, with an
- * end-of-bar count+% label and a hover tooltip.
+ * single-colour (`--aura-chart-1`) horizontal bar list, with an end-of-row
+ * count+% label.
  *
  * Self-contained i18n: takes ONLY the `slices` data prop — no title/label
  * props — and resolves all of its own microcopy via `useTranslations`, the
@@ -20,47 +20,35 @@
  * tier labels are tenant data, not translatable strings).
  *
  * A11y (WCAG 1.1.1 / 1.3.1 / 1.4.1 — the same model shared by every 067
- * chart, see `chart-data-table.tsx`'s docblock): the Recharts canvas sits in
- * an `aria-hidden="true"` wrapper with `accessibilityLayer={false}`; the real
- * data path is the shared `<ChartDataTable>`, which always includes a
- * "Total" row (design doc: "hidden table: tier → count, % (+ total row)").
+ * chart, see `chart-data-table.tsx`'s docblock): the visual rows are
+ * `aria-hidden="true"`; the real data path is the shared `<ChartDataTable>`,
+ * which always includes a "Total" row (design doc: "hidden table: tier →
+ * count, % (+ total row)").
  *
- * Reduced motion: shares `./use-motion-preference` with `_mini-series-chart`
- * (same SSR-safe `useSyncExternalStore` triad, extracted in this task so
- * neither chart file duplicates the `matchMedia` idiom).
- *
- * **Lazy canvas boundary (Task 12 — bundle-budget constraint):** the actual
- * `<BarChart>` rendering lives in `./membership-tier-canvas` and is mounted
- * here via `next/dynamic(..., { ssr: false })`, so recharts never lands in
- * `/admin`'s first-load JS. This file still computes `rows` (needed for
- * both the canvas AND the accessible table below) and renders the table +
- * empty state eagerly. CLS: the canvas's height is DATA-DEPENDENT (scales
- * with tier count), so the definite-height wrapper div lives HERE (computed
- * synchronously from `rows.length`, known before the dynamic import ever
- * resolves) — both the `loading` skeleton and the resolved canvas simply
- * fill `h-full w-full` of that wrapper, so the height never changes across
- * the swap.
+ * Spec 122 US11 (parity, 17 Oct): the rows follow board `Admin-dashboard` —
+ * a label column, a track holding the bar, then "count (pct)" in a fixed end
+ * column — drawn as plain grid rows rather than a recharts canvas. The bars
+ * are still horizontal and single-colour, the count and percent are printed
+ * on every row (so the old hover tooltip carried nothing extra), and the
+ * card no longer loads recharts at all.
  */
 'use client';
 
-import dynamic from 'next/dynamic';
 import { useTranslations, useLocale } from 'next-intl';
-import { useSyncExternalStore } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react';
+import { CHART_HERO_GROUP, CHART_HERO_ROW, CHART_HERO_VALUE } from './chart-card-type';
 import type { TierDistributionSlice } from '@/modules/insights';
 import { ChartDataTable } from './chart-data-table';
-import { ChartSkeleton } from './chart-skeleton';
-import type { TierRow } from './membership-tier-canvas';
-import {
-  getAllowMotion,
-  getServerAllowMotion,
-  subscribeMotionPreference,
-} from './use-motion-preference';
 
-const MembershipTierCanvas = dynamic(
-  () => import('./membership-tier-canvas').then((m) => m.MembershipTierCanvas),
-  { ssr: false, loading: () => <ChartSkeleton className="h-full" /> },
-);
+/** One visual row: `displayLabel` is the (possibly translated) tier name,
+ * `barLabel` the pre-formatted "count (pct%)" end label. */
+interface TierRow {
+  readonly tierKey: string;
+  readonly displayLabel: string;
+  readonly count: number;
+  readonly pctLabel: string;
+  readonly barLabel: string;
+}
 
 export interface MembershipTierChartProps {
   /** Already sorted count-desc with `unassigned` forced last (Task 3's
@@ -76,19 +64,9 @@ function formatPct(count: number, total: number): string {
   return `${Math.round((count / total) * 100)}%`;
 }
 
-/** Per-row plot height (px) — a horizontal bar list scales with the number of
- * tiers (up to ~9 per the design doc), unlike the sparklines' fixed height. */
-const ROW_HEIGHT_PX = 36;
-const MIN_CHART_HEIGHT_PX = 120;
-
 export function MembershipTierChart({ slices }: MembershipTierChartProps) {
   const t = useTranslations('admin.dashboard.membershipTier');
   const locale = useLocale();
-  const allowMotion = useSyncExternalStore(
-    subscribeMotionPreference,
-    getAllowMotion,
-    getServerAllowMotion,
-  );
 
   const total = slices.reduce((sum, s) => sum + s.count, 0);
   const hasData = slices.length > 0 && total > 0;
@@ -125,8 +103,9 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
     };
   });
 
+  // Bar length is relative to the LARGEST tier (the longest bar fills the
+  // track); the printed percent stays of the active total (`formatPct`).
   const max = rows.reduce((m, r) => Math.max(m, r.count), 0);
-  const chartHeightPx = Math.max(MIN_CHART_HEIGHT_PX, rows.length * ROW_HEIGHT_PX);
 
   // Headline stat (enterprise-detail parity with the sparklines' KPI-sized
   // summary stat — see `_mini-series-chart.tsx`) — locale-aware count, the
@@ -145,57 +124,73 @@ export function MembershipTierChart({ slices }: MembershipTierChartProps) {
       : null;
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle>{t('title')}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {!hasData ? (
-          <p className="text-body text-muted-foreground">{t('empty')}</p>
-        ) : (
-          <>
-            {/* Headline stat (enterprise-detail parity with the sparklines'
-                KPI-sized summary stat) — the active-member total the bars
-                sum to, at the SAME `text-3xl` "dashboard hero number" scale
-                as `KpiCard`/`MiniSeriesChart`'s summary (ux-standards.md's
-                type-scale table), plus the top tier as a secondary chip —
-                mirrors the summary+chip+label layout used there. */}
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="flex items-baseline gap-2">
-                <span className="text-3xl tabular-nums">{numberFmt.format(total)}</span>
-                {topTierChipLabel ? (
-                  <span className="text-caption font-medium text-muted-foreground">
-                    {topTierChipLabel}
-                  </span>
-                ) : null}
-              </span>
-              <span className="text-right text-caption text-muted-foreground">
-                {t('activeMembersLabel')}
-              </span>
-            </div>
-            <div aria-hidden="true" className="mt-3" style={{ height: chartHeightPx }}>
-              <MembershipTierCanvas
-                rows={rows}
-                max={max}
-                allowMotion={allowMotion}
-                countColumnHeader={t('countColumnHeader')}
-              />
-            </div>
-            {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
-                SR/no-JS data path; visually hidden when data is present, the
-                empty-state paragraph above is the SR equivalent otherwise.
-                Always ends in a "Total" row (design doc requirement). */}
-            <ChartDataTable
-              caption={t('title')}
-              columns={[t('tierColumnHeader'), t('countColumnHeader'), t('pctColumnHeader')]}
-              rows={[
-                ...rows.map((r) => [r.displayLabel, r.count, r.pctLabel] as const),
-                [t('totalRowLabel'), total, '100%'] as const,
-              ]}
-            />
-          </>
-        )}
-      </CardContent>
+    <Card title={t('title')} headingLevel={2}>
+      {!hasData ? (
+        <p className="aura-text-body text-[var(--aura-fg-secondary)]">{t('empty')}</p>
+      ) : (
+        <>
+          {/* Headline stat: the active-member total the bars sum to, at the
+              KPI tiles' scale (`CHART_HERO_VALUE`), plus the top tier as a
+              secondary chip — the same summary+chip+label layout as
+              `MiniSeriesChart`. */}
+          <div className={CHART_HERO_ROW}>
+            <span className={CHART_HERO_GROUP}>
+              <span className={CHART_HERO_VALUE}>{numberFmt.format(total)}</span>
+              {topTierChipLabel ? (
+                <span className="aura-text-caption font-medium text-[var(--aura-fg-secondary)]">
+                  {topTierChipLabel}
+                </span>
+              ) : null}
+            </span>
+            <span className="text-right aura-text-caption text-[var(--aura-fg-secondary)]">
+              {t('activeMembersLabel')}
+            </span>
+          </div>
+          <ol
+            aria-hidden="true"
+            data-slot="tier-rows"
+            className="mt-[var(--aura-space-4)] grid gap-[var(--aura-space-3)] aura-text-body sm:grid-flow-row-dense sm:grid-cols-[minmax(0,min(9rem,35%))_minmax(3rem,1fr)_auto] sm:items-center"
+          >
+            {/* From 640px every row shares the list's grid (`sm:contents`),
+                so all tracks start and end together; `dense` puts each track
+                back in its row's middle column. On phones each row is its
+                own grid with the track full width under the label and count,
+                so enlarged text never squeezes the bar away. */}
+            {rows.map((r) => (
+              <li
+                key={r.tierKey}
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-[var(--aura-space-3)] gap-y-[var(--aura-space-1)] sm:contents"
+              >
+                <span className="min-w-0 text-[var(--aura-fg-primary)] [overflow-wrap:anywhere] sm:col-start-1">
+                  {r.displayLabel}
+                </span>
+                <span className="whitespace-nowrap text-right tabular-nums text-[var(--aura-fg-primary)] sm:col-start-3">
+                  {r.barLabel}
+                </span>
+                <span className="col-span-2 h-2 overflow-hidden rounded-full bg-[var(--aura-border-default)] sm:col-span-1 sm:col-start-2">
+                  <span
+                    data-slot="tier-bar"
+                    className="block h-full min-w-0.5 rounded-full bg-[var(--aura-chart-1)]"
+                    style={{ width: `${max > 0 ? Math.round((r.count / max) * 100) : 0}%` }}
+                  />
+                </span>
+              </li>
+            ))}
+          </ol>
+          {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
+              SR/no-JS data path; visually hidden when data is present, the
+              empty-state paragraph above is the SR equivalent otherwise.
+              Always ends in a "Total" row (design doc requirement). */}
+          <ChartDataTable
+            caption={t('title')}
+            columns={[t('tierColumnHeader'), t('countColumnHeader'), t('pctColumnHeader')]}
+            rows={[
+              ...rows.map((r) => [r.displayLabel, r.count, r.pctLabel] as const),
+              [t('totalRowLabel'), total, '100%'] as const,
+            ]}
+          />
+        </>
+      )}
     </Card>
   );
 }

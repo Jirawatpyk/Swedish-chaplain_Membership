@@ -4,7 +4,7 @@
  * SVG to Recharts — `variant="bar"` (revenue trend) renders a Recharts
  * `<BarChart><Bar/></BarChart>`; `variant="line"` (member growth) renders a
  * Recharts `<AreaChart><Area/></AreaChart>` (NOT a bare `<Line>` — the
- * original `LineSvg` drew a filled `fill-primary/15` area under the curve
+ * original `LineSvg` drew a 15%-tinted filled area under the curve
  * PLUS the stroked polyline on top, so the Recharts replacement must be an
  * `<Area>` with both `fill`+`fillOpacity` and `stroke` set, or the blue fill
  * is a visual regression). This preserves each caller's original chart
@@ -13,11 +13,11 @@
  * so this can't stay a server component; callers still pass display-ready
  * props (no data fetching here).
  *
- * Readability: a prominent `summary` stat (sized to match `KpiCard`) + a
- * per-chart `caption` (per-month vs cumulative) + first→last month range
- * labels give at-a-glance meaning even when the sparkline is sparse; a
- * dashed max-value reference line + baseline keep the 12-month frame
- * legible. Hovering/focusing a point shows a tooltip (month + value) — a
+ * Readability: a prominent `summary` stat (sized to match the KPI tiles) + a
+ * per-chart `caption` (per-month vs cumulative) give at-a-glance meaning;
+ * since spec 122 US11 (parity, 17 Oct) the canvas carries the board's value
+ * axis from zero, horizontal grid lines and a month axis, in place of the
+ * old max-value line and first→last range labels. Hovering/focusing a point shows a tooltip (month + value) — a
  * bonus, never the only way to read the data (see Accessibility below).
  *
  * Accessibility (WCAG 1.1.1 / 1.3.1 / 1.4.1 — canvas is decorative, never
@@ -36,16 +36,16 @@
  * `prefers-reduced-motion: no-preference` post-mount — same
  * `useSyncExternalStore` idiom as `components/plans/plan-list-skeleton.tsx`.
  * The subscribe/snapshot triad lives in the shared `./use-motion-preference`
- * (Task 10 — extracted so `membership-tier-chart.tsx` doesn't duplicate it).
+ * (Task 10).
  *
  * **Lazy canvas boundary (Task 12 — bundle-budget constraint):** the actual
  * Recharts rendering (`<BarChart>`/`<AreaChart>` + their tooltip/label/dot
  * helpers) lives in `./mini-series-canvas` and is mounted here via
  * `next/dynamic(..., { ssr: false })`, so recharts never lands in `/admin`'s
- * first-load JS. Everything in THIS file (summary stat, delta chip, range
- * labels, sparse hint, empty state, `<ChartDataTable>`) renders eagerly —
+ * first-load JS. Everything in THIS file (summary stat, delta chip, sparse
+ * hint, empty state, `<ChartDataTable>`) renders eagerly —
  * only the decorative canvas is deferred, and its `loading` fallback
- * (`<ChartSkeleton className="h-28" />`) matches the canvas's own `h-28`
+ * (`<ChartSkeleton className="h-48" />`) matches the canvas's own `h-48`
  * height exactly, so swapping the skeleton for the real chart causes no
  * layout shift.
  */
@@ -53,14 +53,9 @@
 
 import dynamic from 'next/dynamic';
 import { useSyncExternalStore } from 'react';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
+import { CHART_HERO_GROUP, CHART_HERO_ROW, CHART_HERO_VALUE } from './chart-card-type';
 import { ChartDataTable } from './chart-data-table';
 import { ChartSkeleton } from './chart-skeleton';
 import {
@@ -71,14 +66,16 @@ import {
 
 const MiniSeriesCanvas = dynamic(
   () => import('./mini-series-canvas').then((m) => m.MiniSeriesCanvas),
-  { ssr: false, loading: () => <ChartSkeleton className="h-28" /> },
+  { ssr: false, loading: () => <ChartSkeleton className="h-48" /> },
 );
 
 export interface MiniSeriesPoint {
   /** Stable key (e.g. 'YYYY-MM'). */
   readonly key: string;
-  /** Localised axis/row label (e.g. 'Jun 2026'). */
+  /** Localised row label (e.g. 'Jun 2026'). */
   readonly label: string;
+  /** Short month for the chart's month axis (e.g. 'Jun'); falls back to `label`. */
+  readonly axisLabel?: string;
   /** Numeric magnitude for the chart geometry. */
   readonly value: number;
   /** Display-ready value for the table cell + tooltip (e.g. '฿1,200'). */
@@ -116,6 +113,8 @@ export function MiniSeriesChart({
   summary,
   delta,
   points,
+  locale,
+  valueDivisor,
 }: {
   readonly title: string;
   /** Per-chart semantic caption (e.g. 'Per month' / 'Cumulative') — disambiguates the series. */
@@ -129,6 +128,10 @@ export function MiniSeriesChart({
   readonly summary: MiniSeriesSummary;
   readonly delta?: MiniSeriesDelta;
   readonly points: readonly MiniSeriesPoint[];
+  /** Formats the value-axis ticks. */
+  readonly locale: string;
+  /** Points are in a minor unit (satang = 100): axis ticks show the major unit. */
+  readonly valueDivisor?: number;
 }) {
   const allowMotion = useSyncExternalStore(
     subscribeMotionPreference,
@@ -139,75 +142,55 @@ export function MiniSeriesChart({
   const dataMonths = points.reduce((n, p) => (p.value > 0 ? n + 1 : n), 0);
   const isSparse = hasData && dataMonths < SPARSE_THRESHOLD;
   const max = points.reduce((m, p) => Math.max(m, p.value), 0);
-  const maxPoint = points.find((p) => p.value === max && max > 0);
-  const maxLabel = maxPoint ? maxPoint.valueLabel : null;
-  const first = points[0];
-  const last = points.at(-1);
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle>{title}</CardTitle>
-        {caption ? <CardDescription>{caption}</CardDescription> : null}
-      </CardHeader>
-      <CardContent>
-        {!hasData ? (
-          <p className="text-body text-muted-foreground">{emptyLabel}</p>
-        ) : (
-          <>
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="flex items-baseline gap-2">
-                <span className="text-3xl tabular-nums">{summary.value}</span>
-                {delta ? (
-                  <span
-                    className={cn(
-                      'text-caption font-medium tabular-nums',
-                      // AA-safe delta colours at 14px (QA TC-019). Up =
-                      // emerald-700 (~5.5:1 on white) / emerald-400 on dark.
-                      // The down delta only renders when data trends down, so
-                      // the data-dependent axe scan never exercised it — pin
-                      // explicit red-700 (~5.9:1 on white) / red-400 on dark
-                      // rather than the `text-destructive` token, whose
-                      // contrast isn't guaranteed ≥4.5:1 for text.
-                      delta.direction === 'up'
-                        ? 'text-emerald-700 dark:text-emerald-400'
-                        : 'text-red-700 dark:text-red-400',
-                    )}
-                  >
-                    {delta.direction === 'up' ? '▲' : '▼'} {delta.label}
-                  </span>
-                ) : null}
-              </span>
-              <span className="text-right text-caption text-muted-foreground">{summary.label}</span>
-            </div>
-            <div className="mt-3">
-              <MiniSeriesCanvas
-                points={points}
-                max={max}
-                maxLabel={maxLabel}
-                variant={variant}
-                allowMotion={allowMotion}
-              />
-            </div>
-            {first && last ? (
-              <div className="mt-1 flex justify-between text-caption text-muted-foreground tabular-nums">
-                <span>{first.label}</span>
-                <span>{last.label}</span>
-              </div>
-            ) : null}
-            {isSparse && sparseLabel ? (
-              <p className="mt-2 text-caption text-muted-foreground">{sparseLabel}</p>
-            ) : null}
-            {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
-                SR/no-JS data path; visually hidden when data is present, the
-                empty-state paragraph above is the SR equivalent otherwise. */}
-            <ChartDataTable
-              caption={title}
-              columns={[labelHeader, valueHeader]}
-              rows={points.map((p) => [p.label, p.valueLabel])}
+    <Card title={title} description={caption} headingLevel={2}>
+      {!hasData ? (
+        <p className="aura-text-body text-[var(--aura-fg-secondary)]">{emptyLabel}</p>
+      ) : (
+        <>
+          <div className={CHART_HERO_ROW}>
+            <span className={CHART_HERO_GROUP}>
+              <span className={CHART_HERO_VALUE}>{summary.value}</span>
+              {delta ? (
+                <span
+                  className={cn(
+                    'aura-text-caption font-medium tabular-nums',
+                    // AURA's semantic text tones, AA on the card in both
+                    // themes; the ▲/▼ glyph keeps it from being colour-only.
+                    delta.direction === 'up'
+                      ? 'text-[var(--aura-fg-positive)]'
+                      : 'text-[var(--aura-fg-danger)]',
+                  )}
+                >
+                  {delta.direction === 'up' ? '▲' : '▼'} {delta.label}
+                </span>
+              ) : null}
+            </span>
+            <span className="text-right aura-text-caption text-[var(--aura-fg-secondary)]">{summary.label}</span>
+          </div>
+          <div className="mt-[var(--aura-space-3)]">
+            <MiniSeriesCanvas
+              points={points}
+              max={max}
+              variant={variant}
+              allowMotion={allowMotion}
+              locale={locale}
+              {...(valueDivisor !== undefined ? { valueDivisor } : {})}
             />
-          </>
-        )}
-      </CardContent>
+          </div>
+          {isSparse && sparseLabel ? (
+            <p className="mt-[var(--aura-space-2)] aura-text-caption text-[var(--aura-fg-secondary)]">{sparseLabel}</p>
+          ) : null}
+          {/* Accessible equivalent (WCAG 1.1.1 / 1.3.1 / 1.4.1) — the sole
+              SR/no-JS data path; visually hidden when data is present, the
+              empty-state paragraph above is the SR equivalent otherwise. */}
+          <ChartDataTable
+            caption={title}
+            columns={[labelHeader, valueHeader]}
+            rows={points.map((p) => [p.label, p.valueLabel])}
+          />
+        </>
+      )}
     </Card>
   );
 }

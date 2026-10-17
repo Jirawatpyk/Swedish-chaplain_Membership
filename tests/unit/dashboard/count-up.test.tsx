@@ -256,4 +256,42 @@ describe('CountUp', () => {
 
     expect(getVisible(container)?.textContent).toBe(new Intl.NumberFormat('en').format(500));
   });
+
+  // Spec 122 US11 (maintainer, 17 Oct): on phones the revenue tile is half
+  // the width and the full amount does not fit, so it shows a compact copy
+  // ("THB 381K", as board Admin-dashboard-mobile). Screen readers and every
+  // width from 640px keep the exact amount.
+  describe('compactBelowSm', () => {
+    it('adds a static compact copy shown only below 640px; the exact amount stays for screen readers', () => {
+      stubMatchMedia(false);
+      const { container } = render(<CountUp value={381450} locale="en" variant="thb" compactBelowSm />);
+      const compact = container.querySelector('span.sm\\:hidden');
+      expect(compact?.getAttribute('aria-hidden')).toBe('true');
+      // ordinary spaces, so a long locale form ("381 tn THB") can wrap
+      expect(compact?.textContent).toBe('THB 381K');
+      expect(container.querySelector('span.max-sm\\:hidden')).not.toBeNull();
+      expect(getSrOnly(container)?.textContent?.replace(/\s/g, ' ')).toBe('THB 381,450');
+      // Never inside the phone-hidden box, or phones would announce nothing.
+      expect(getSrOnly(container)?.closest('.max-sm\\:hidden')).toBeNull();
+    });
+
+    it('is off by default', () => {
+      stubMatchMedia(false);
+      const { container } = render(<CountUp value={381450} locale="en" variant="thb" />);
+      expect(container.querySelector('span.sm\\:hidden')).toBeNull();
+    });
+  });
+
+  // UX review (17 Oct): at 200% text a 4-up desktop tile is narrower than
+  // "THB 381,450"; Intl joins symbol and amount with a no-break space, so the
+  // visible copies use an ordinary space and may wrap inside the tile.
+  it('visible THB copies wrap at the space and stay inside the tile', () => {
+    stubMatchMedia(true);
+    const { container } = render(<CountUp value={381450} locale="en" variant="thb" />);
+    const sizer = container.querySelector('span.invisible');
+    expect(sizer?.textContent).toBe('THB 381,450');
+    expect(getVisible(container)?.textContent).toBe('THB 381,450');
+    expect(sizer?.parentElement?.className).toContain('max-w-full');
+  });
 });
+

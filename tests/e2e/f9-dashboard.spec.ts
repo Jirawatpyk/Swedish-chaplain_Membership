@@ -75,7 +75,9 @@ test.describe('F9 — admin operations dashboard (US1) @f9', () => {
     }
     const atRiskLink = page.getByRole('link', { name: /at-risk members/i });
     if ((await atRiskLink.count()) > 0) {
-      await expect(atRiskLink).toHaveAttribute('href', '/admin/members?risk_band=at-risk');
+      // The count sums all three at-risk bands, so the link filters to all three
+      // (S1-P1-6, page.tsx) — `risk_band=at-risk` alone was this test going stale.
+      await expect(atRiskLink).toHaveAttribute('href', '/admin/members?risk_band=critical,at-risk,warning');
     }
 
     // Smart insights + live activity feed sections.

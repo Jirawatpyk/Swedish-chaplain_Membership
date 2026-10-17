@@ -57,6 +57,7 @@ function pt(key: string, value: number, valueLabel: string): MiniSeriesPoint {
 }
 
 const BASE = {
+  locale: 'en',
   title: 'Revenue trend',
   emptyLabel: 'No paid revenue recorded yet.',
   labelHeader: 'Month',
@@ -127,12 +128,11 @@ describe('MiniSeriesChart', () => {
     expect(table).toBeInTheDocument();
     // header row + 12 data rows = 13.
     expect(within(table).getAllByRole('row')).toHaveLength(13);
-    // Scope to the table — the max-value label may also appear on the
-    // Recharts reference-line inside the (separately asserted) aria-hidden canvas.
     expect(within(table).getByText('THB 1200')).toBeInTheDocument();
-    // First→last range labels (also appear as table-row headers → ≥1 match).
-    expect(screen.getAllByText('2026-01').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('2026-12').length).toBeGreaterThan(0);
+    // Month labels are the table's row headers (the canvas has its own
+    // month axis since spec 122 US11).
+    expect(within(table).getByText('2026-01')).toBeInTheDocument();
+    expect(within(table).getByText('2026-12')).toBeInTheDocument();
   });
 
   it('shows the sparse hint when fewer than 3 months carry data', () => {
@@ -229,7 +229,8 @@ describe('MiniSeriesChart', () => {
         points={points}
       />,
     );
-    expect(screen.getByText(/▲\s*\+10 this year/)).toBeInTheDocument();
+    // Spec 122 US11: AURA's positive tone, not a Tailwind palette colour.
+    expect(screen.getByText(/▲\s*\+10 this year/)).toHaveClass('text-[var(--aura-fg-positive)]');
   });
 
   it('renders a down delta chip with a ▼ glyph + label (not colour-only)', () => {
@@ -243,6 +244,24 @@ describe('MiniSeriesChart', () => {
         points={points}
       />,
     );
-    expect(screen.getByText(/▼\s*-10 this year/)).toBeInTheDocument();
+    expect(screen.getByText(/▼\s*-10 this year/)).toHaveClass('text-[var(--aura-fg-danger)]');
+  });
+
+  it('sits in an AURA card titled at h2 with its caption as the description (spec 122 US11)', () => {
+    const { container } = render(
+      <MiniSeriesChart {...BASE} caption="Per month" points={[pt('2026-01', 10, '10')]} />,
+    );
+    const card = container.querySelector('section.aura-card');
+    expect(card).not.toBeNull();
+    expect(card!.querySelector('h2.aura-card__title')).toHaveTextContent('Revenue trend');
+    expect(card!.querySelector('.aura-card__desc')).toHaveTextContent('Per month');
+  });
+
+  it('lets the summary figure wrap at 200% text instead of widening the page (UX review M2)', () => {
+    render(<MiniSeriesChart {...BASE} points={[pt('2026-01', 10, '10')]} />);
+    const value = screen.getByText('THB 1,200');
+    expect(value).toHaveClass('min-w-0', '[overflow-wrap:anywhere]');
+    expect(value.parentElement).toHaveClass('min-w-0', 'flex-wrap');
+    expect(value.parentElement!.parentElement).toHaveClass('flex-wrap');
   });
 });

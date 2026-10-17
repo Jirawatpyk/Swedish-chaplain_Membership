@@ -684,9 +684,20 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1028 [US10] e2e selectors where the swap breaks them (`change-requests` settings tests held; `change-password` now submits through its own button — its first "Change…" match had become the language menu, red on main too, R44).
 - [x] T1029 [US10] Exit: gates; `next build` and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; UX review with fixes RED first; draft PR; relay R44.
 
+## Phase 13: User Story 11 — Staff dashboard (Priority: P3) — PR 23 (US11)
+
+- [x] T1101 [US11] Spec session "2026-10-16 (US11 start)" and these tasks.
+- [x] T1102 [US11] A dashboard chart frame replaces the legacy `ui/chart` (`ChartContainer`/`ChartTooltip`) for the three recharts canvases: a `ResponsiveContainer` wrapper keeping `data-slot="chart"` and `aria-hidden`, with a token tooltip. RED: the canvas tests.
+- [x] T1103 [US11] Chart colours on AURA tokens (`--aura-chart-1`, `-grid`, `-axis`; semantic tones for the donut and the delta chip). RED: a unit test that no bridge colour name appears in `src/components/dashboard/**`.
+- [x] T1104 [US11] KPI tiles on AURA `Stat` (board icons and captions, `CountUp` as the value); `KpiCard` deleted. RED: the page test reads AURA stat tiles in "Key metrics".
+- [x] T1105 [US11] Needs attention (count pills, the unavailable row as an AURA alert) and Smart insights (AURA card, dismiss as AURA `IconButton`). RED: `needs-attention-change-requests.test.tsx`, `insights-panel.test.tsx`.
+- [x] T1106 [US11] Chart cards (revenue, growth, tier, invoice status) on AURA `Card`; the chart skeleton on AURA. RED: the tier and invoice-status chart tests.
+- [x] T1107 [US11] Activity feed on AURA (card, ghost refresh button); `loading.tsx` on AURA for both flag branches; the flag-off card on AURA. RED: `activity-feed.test.tsx` and a loading test.
+- [ ] T1108 [US11] The page's render moves to `_components/dashboard-view.tsx` (the page keeps loaders and guards); preview `?view=dashboard` states and the loading route; `MIGRATED_PATHS` and a US11 ratchet block; `/admin` budget re-measured.
+- [ ] T1109 [US11] Exit: e2e selectors where the swap breaks them; gates; build and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; dark-mode contrast of every series; the same figures as main for the same data; UX and reporting reviews; draft PR; relay R53.
+
 ## Later phases (one PR each; tasks written when the phase starts)
 
-- [ ] T1100 [US11] Dashboard: Stat tiles; recharts recoloured with `--aura-chart-*`.
 - [ ] T1200 [US12] E-Blast: queue DataTable (item 52, or a local selection column), workspace, schedule dialog, member sign-off.
 - [ ] T1300 [US13] Exit: delete `src/components/ui`; uninstall `@base-ui/react`, `tw-animate-css`, `shadcn`; drop the TanStack table UI; make the old-kit ban global; remove the token bridge; check the facade decision; confirm the date is within 10 weeks of the US0 merge.
   - DONE — `tests/e2e/invoicing/issue-invoice-zero-rate-a11y.spec.ts` «200% text zoom» on mobile-chrome no longer carries a `test.fail`. Its 67px was the staff top bar not wrapping plus the invoice detail totals behind the dialog (the dialog contributed 0); #530 fixed both, the `test.fail` then reported "Expected to fail, but passed", and it was removed. `invoice-settings-a11y.spec.ts` «200% text zoom» on mobile-chrome passes for the same reason.

@@ -554,6 +554,32 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - "Clear filters" no longer remounts the filter bar, so its live count stays mounted and announces the new count (L4). AURA's own Clear button already drops the search draft and its pending debounce.
 - **AURA gaps (handoff #143, #144):** in 5.31 the erasure status `Tabs` links and the FilterBar's `FilterSelect` / `FilterDateRange` are 36px with a mouse; on a touch screen they already measure 44px. The FilterBar's own search input is 42px even on a touch screen (R43; every list that uses it). The load-error card's "Try again" (shared `DashboardErrorState`, not in this PR) is 32px on phones.
 
+### Session 2026-10-16 (US11 start: the staff dashboard)
+
+- **One PR** (maintainer, 16 Oct). Boards: `Admin-dashboard`, `Admin-dashboard-mobile`.
+- **KPI tiles are AURA `Stat`s** with the board's icons (users, circle-check, triangle-alert, trending-up) and captions. The animated count (`CountUp`, with its single screen-reader copy) is the tile's value. `KpiCard` goes. The grid rules are unchanged: four up with finance, three without.
+- **Needs attention counts are pills** (maintainer, 16 Oct, as the board draws them): an AURA badge beside each row link. The numbers and links are unchanged. The unavailable row is an AURA danger alert, keeping its `role="status"` and test id.
+- **The charts keep recharts** (this spec's assumption: the charting library stays) behind a dashboard-local chart frame that replaces the legacy `ui/chart`. The colours move off the token bridge onto AURA's chart tokens:
+  - bars, areas and lines: `--aura-chart-1` (the brand theme sets it to the brand blue in both themes);
+  - grid and reference lines: `--aura-chart-grid`;
+  - axis text: `--aura-chart-axis`;
+  - the invoice donut: semantic tones for paid, unpaid and overdue (`--aura-fg-positive`, `--aura-alert-warning-fg`, `--aura-fg-danger`), with the cell gap in the card colour;
+  - the delta chip: positive and danger tones instead of Tailwind emerald and red.
+
+  A unit test keeps the bridge names (`--primary`, `--chart-N`, `--success`, `--warning`, `--destructive`, `--border`, `--card`) out of the dashboard components, so nothing silently depends on the bridge that US13 removes.
+- **Not drawn: the board's per-insight "View" link.** An insight carries no target (`{ key, count, scopeRef? }`), so a link would be new behaviour (FR-011). Dismiss stays as it is.
+- **Unchanged (FR-011):** the guards and flags, the five loaders, every server- and client-side format, every href, the optimistic insight dismiss and its toasts, the activity refresh, the screen-reader chart tables, the reduced-motion handling, and the client-only chart loading.
+- `DashboardErrorState` stays shared; the E-Blast portal panel (US12) also uses it.
+- **Card titles are headings now.** Each panel and chart card is an AURA card titled at h2 (the legacy card title was a `div`). They take AURA's card-title size, so the SC-010 typography e2e treats an AURA card title as AURA-owned instead of asking for the FR-017 `text-h2` step.
+- **Refresh uses AURA's `loading`.** While the feed refreshes, the button shows AURA's spinner, sets `aria-busy` and ignores clicks, so there is still one refresh at a time. It is not `disabled`, so focus stays on it.
+- **Needs attention rows follow the board** (maintainer, parity page, 17 Oct). Each row is one link: the destination's nav icon, the label, the count pill and a chevron, between AURA dividers, and at least 44px tall. The overdue-invoices pill is a solid danger badge. Labels, counts and links are unchanged.
+- **More board parity (maintainer, parity page, 17 Oct):**
+  - **KPI tiles two up on phones**, as the mobile board draws them; with three tiles (no finance) the third spans the row.
+  - **The phone revenue tile shows a compact amount** ("THB 381K", three significant digits, as the board), because the half-width tile cannot fit the full amount (16px over at 390, 31px at 360). Screen readers and every width from 640px keep the exact amount.
+  - **The trend charts carry the board's axes**: taller canvas, a value axis from zero with compact ticks, horizontal grid lines, short month labels, and the current month's bar drawn lighter. The old max line and first/last month row go. The baseline stays at zero on member growth (the board starts at 90), so the filled area stays proportional.
+  - **Membership by tier follows the board as plain rows**: label, a track with the bar, then "count (pct)". No canvas and no hover tooltip on this card (the values are printed). The headline total and the percent stay (FR-011).
+- **Kept, not drawn from the board (parity page, 17 Oct):** no chevron on phone insights, because an insight has no destination. Invoice status stays a donut; the board's stacked bar with an amounts table is its own PR after US11, with a figures review, because it adds amounts the page does not show today.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

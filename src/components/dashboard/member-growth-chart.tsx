@@ -20,6 +20,7 @@ export function MemberGrowthChart({
   summary,
   delta,
   points,
+  locale,
 }: {
   readonly title: string;
   readonly caption?: string;
@@ -30,6 +31,8 @@ export function MemberGrowthChart({
   readonly summary: MiniSeriesSummary;
   readonly delta?: MiniSeriesDelta;
   readonly points: readonly MiniSeriesPoint[];
+  /** Formats the value-axis ticks. */
+  readonly locale: string;
 }) {
   return (
     <MiniSeriesChart
@@ -43,6 +46,7 @@ export function MemberGrowthChart({
       summary={summary}
       {...(delta !== undefined ? { delta } : {})}
       points={points}
+      locale={locale}
     />
   );
 }

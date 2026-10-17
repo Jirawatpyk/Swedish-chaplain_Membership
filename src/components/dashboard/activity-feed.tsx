@@ -5,7 +5,7 @@
  * never fire). The caller passes display-ready entries (`timeLabel` is
  * locale-formatted in the page).
  */
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { ActivityFeedRefresh } from './activity-feed-refresh';
 
 export interface ActivityFeedEntry {
@@ -41,52 +41,48 @@ export function ActivityFeed({
   readonly refreshedLabel: string;
   readonly items: readonly ActivityFeedEntry[];
 }) {
+  // Spec 122 US11: an AURA card; Refresh sits in its actions slot.
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-        <CardTitle>{title}</CardTitle>
-        <ActivityFeedRefresh refreshLabel={refreshLabel} refreshedLabel={refreshedLabel} />
-      </CardHeader>
-      <CardContent>
-        {items.length === 0 ? (
-          <p className="text-body text-muted-foreground">{emptyLabel}</p>
-        ) : (
-          <ul className="grid gap-2 text-body">
-            {items.map((item) => (
-              // min-w-0: a grid item defaults to min-width:auto, so without
-              // it the column grows to the row's no-wrap width, the label
-              // never truncates and the time is pushed past the card edge.
-              <li key={item.id} className="flex min-w-0 items-baseline justify-between gap-3">
-                <span className="min-w-0 truncate">
-                  {item.actor ? (
-                    <>
-                      <span className="font-medium">{item.actor}</span>
-                      <span className="text-muted-foreground"> · </span>
-                    </>
-                  ) : null}
-                  {item.href ? (
-                    <a
-                      href={item.href}
-                      className="rounded-xs underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {item.label}
-                    </a>
-                  ) : (
-                    item.label
-                  )}
-                </span>
-                <time
-                  dateTime={item.occurredAt}
-                  {...(item.absoluteLabel ? { title: item.absoluteLabel } : {})}
-                  className="shrink-0 text-caption text-muted-foreground tabular-nums"
-                >
-                  {item.timeLabel}
-                </time>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
+    <Card
+      title={title}
+      headingLevel={2}
+      actions={<ActivityFeedRefresh refreshLabel={refreshLabel} refreshedLabel={refreshedLabel} />}
+    >
+      {items.length === 0 ? (
+        <p className="aura-text-body text-[var(--aura-fg-secondary)]">{emptyLabel}</p>
+      ) : (
+        <ul className="grid gap-[var(--aura-space-2)] aura-text-body">
+          {items.map((item) => (
+            // min-w-0: a grid item defaults to min-width:auto, so without
+            // it the column grows to the row's no-wrap width, the label
+            // never truncates and the time is pushed past the card edge.
+            <li key={item.id} className="flex min-w-0 items-baseline justify-between gap-[var(--aura-space-3)]">
+              <span className="min-w-0 truncate">
+                {item.actor ? (
+                  <>
+                    <span className="font-medium">{item.actor}</span>
+                    <span className="text-[var(--aura-fg-secondary)]"> · </span>
+                  </>
+                ) : null}
+                {item.href ? (
+                  <a href={item.href} className="underline-offset-2 hover:underline">
+                    {item.label}
+                  </a>
+                ) : (
+                  item.label
+                )}
+              </span>
+              <time
+                dateTime={item.occurredAt}
+                {...(item.absoluteLabel ? { title: item.absoluteLabel } : {})}
+                className="shrink-0 aura-text-caption text-[var(--aura-fg-secondary)] tabular-nums"
+              >
+                {item.timeLabel}
+              </time>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }

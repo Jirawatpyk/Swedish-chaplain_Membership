@@ -191,6 +191,33 @@ async function renderPage(): Promise<string> {
   );
 }
 
+describe('StaffHomePage — KPI tiles on AURA Stat (spec 122 US11)', () => {
+  it('draws each key metric as an AURA stat tile with its board icon and one screen-reader value', async () => {
+    const html = await renderPage();
+    const section = html.match(
+      new RegExp(`<section aria-label="${en.admin.dashboard.kpi.sectionLabel}"[\\s\\S]*?</section>`),
+    )?.[0];
+    expect(section).toBeDefined();
+    expect(section!.match(/class="aura-stat(?: [^"]*)?"/g)).toHaveLength(4);
+    expect(section!.match(/aura-stat__icon/g)).toHaveLength(4);
+    expect(section).not.toContain('data-slot="card"');
+    expect(section).toContain(en.admin.dashboard.kpi.totalCaption);
+  });
+});
+
+describe('StaffHomePage — KPI grid on phones (spec 122 US11, board Admin-dashboard-mobile)', () => {
+  it('lays the four tiles out two up from the smallest width', async () => {
+    const html = await renderPage();
+    // two up while 9rem tiles fit, one column when text is enlarged (200%)
+    expect(html).toContain('grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4 sm:grid-cols-2 lg:grid-cols-4');
+  });
+
+  it('only the revenue tile carries a compact phone copy', async () => {
+    const html = await renderPage();
+    expect(html.match(/class="sm:hidden"/g) ?? []).toHaveLength(1);
+  });
+});
+
 describe('StaffHomePage — Trends + Breakdown chart sections (Task 12)', () => {
   it('renders both landmark sections with the correct aria-labels', async () => {
     const html = await renderPage();
@@ -309,6 +336,13 @@ describe('StaffHomePage — engagement-only viewer (016 T054)', () => {
     // this fix moved the gap instead of closing it.
     expect(html).toContain('sm:grid-cols-3');
     expect(html).not.toContain('lg:grid-cols-4');
+  });
+
+  it('on phones the three tiles sit two up, the third spanning the row', async () => {
+    const html = await renderWithoutFinance();
+    expect(html).toContain('grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4 sm:grid-cols-3');
+    // spans the full row whether the phone grid has one column or two
+    expect(html).toContain('max-sm:[&amp;&gt;*:last-child]:col-[1/-1]');
   });
 
   it('renders the two engagement charts as one 2-up row, not two full-width rows', async () => {

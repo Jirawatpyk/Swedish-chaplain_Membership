@@ -14,14 +14,8 @@
  * convention, so a dangling `t()` key reference surfaces as a real
  * `MISSING_MESSAGE` failure rather than silently rendering the raw key.
  *
- * **Task 12 split**: the actual `<BarChart>` rendering was extracted into
- * `./membership-tier-canvas.tsx` and is now mounted here via
- * `next/dynamic(..., { ssr: false })`, so recharts stays out of `/admin`'s
- * first-load JS. A synchronous RTL `render()` therefore sees the `loading`
- * fallback, never the resolved Recharts markup — the Recharts-primitive
- * assertions moved to `membership-tier-canvas.test.tsx`, which renders
- * `<MembershipTierCanvas>` directly. The table + empty-state assertions
- * below are unaffected (they render outside the dynamic boundary).
+ * Spec 122 US11 (parity, 17 Oct): the bars are plain grid rows (no recharts
+ * canvas, no `next/dynamic` boundary), so a synchronous render sees them.
  *
  * jsdom workarounds (identical to `mini-series-chart.test.tsx`):
  *   - `window.matchMedia` — jsdom has no implementation at all; every test
@@ -118,15 +112,8 @@ describe('MembershipTierChart', () => {
     expect(screen.getByRole('rowheader', { name: 'Gold' })).toBeInTheDocument();
   });
 
-  it('wraps the (lazy-loaded) canvas slot in aria-hidden, and the table is never aria-hidden', () => {
-    // The Recharts-primitive "wraps the canvas in aria-hidden" assertion
-    // (querying `.recharts-responsive-container`) moved to
-    // `membership-tier-canvas.test.tsx` — a synchronous render here only
-    // ever sees the `loading` fallback (Task 12 dynamic(ssr:false) split).
-    // This test keeps the chart-level guarantee: the definite-height
-    // wrapper div that will eventually hold the canvas is ALREADY
-    // `aria-hidden="true"` from the very first paint, and the accessible
-    // table is never hidden either way.
+  it('keeps the visual rows aria-hidden, and the table is never aria-hidden', () => {
+    // The visual rows are decorative; the accessible table is never hidden.
     const { container } = renderChart([GOLD]);
     expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
     expect(screen.getByRole('table')).not.toHaveAttribute('aria-hidden');
@@ -151,7 +138,7 @@ describe('MembershipTierChart', () => {
     // <caption> (ChartDataTable's `caption` prop) share the same title text.
     const matches = screen.getAllByText('Membership by tier');
     expect(matches).toHaveLength(2);
-    expect(screen.getByText('Membership by tier', { selector: '[data-slot="card-title"]' })).toBeInTheDocument();
+    expect(screen.getByText('Membership by tier', { selector: 'h2.aura-card__title' })).toBeInTheDocument();
     const table = screen.getByRole('table');
     expect(within(table).getByText('Membership by tier')).toBeInTheDocument();
   });
@@ -180,5 +167,55 @@ describe('MembershipTierChart', () => {
     expect(within(table).queryByRole('rowheader', { name: 'Regular Corporate' })).not.toBeInTheDocument();
     // The EN-only plan falls back to its EN name (never blank, never the key).
     expect(within(table).getByRole('rowheader', { name: 'Start-up' })).toBeInTheDocument();
+  });
+
+  // Spec 122 US11 (parity, 17 Oct): the rows follow board `Admin-dashboard` —
+  // label column, a track with the bar, then "count (pct)" — drawn as plain
+  // rows, not a lazy chart canvas.
+  describe('board rows', () => {
+    function visualRows(container: HTMLElement) {
+      const list = container.querySelector('[data-slot="tier-rows"]');
+      expect(list).not.toBeNull();
+      return { list: list as HTMLElement, rows: Array.from(list!.querySelectorAll('li')) };
+    }
+
+    it('one aria-hidden row per tier with its label and "count (pct)"', () => {
+      const { container } = renderChart([GOLD, SILVER]);
+      const { list, rows } = visualRows(container);
+      expect(list.getAttribute('aria-hidden')).toBe('true');
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.textContent).toContain('Gold');
+      expect(rows[0]!.textContent).toContain('6 (67%)');
+      expect(rows[1]!.textContent).toContain('3 (33%)');
+    });
+
+    it('bar width is count over the largest tier, never over the total', () => {
+      const { container } = renderChart([GOLD, SILVER]);
+      const bars = Array.from(container.querySelectorAll<HTMLElement>('[data-slot="tier-bar"]'));
+      expect(bars.map((b) => b.style.width)).toEqual(['100%', '50%']);
+    });
+
+    it('every row shares one grid, so the tracks line up', () => {
+      const { container } = renderChart([GOLD, SILVER]);
+      const { list, rows } = visualRows(container);
+      expect(list.className).toContain('grid-cols-');
+      rows.forEach((li) => expect(li.className).toContain('sm:contents'));
+    });
+
+    it('on phones the track runs full width under the label and count', () => {
+      const { container } = renderChart([GOLD]);
+      const { rows } = visualRows(container);
+      const li = rows[0]!;
+      expect(li.className).toContain('grid-cols-[minmax(0,1fr)_auto]');
+      const track = li.lastElementChild as HTMLElement;
+      expect(track.querySelector('[data-slot="tier-bar"]')).not.toBeNull();
+      expect(track.className).toContain('col-span-2');
+      expect(track.className).toContain('bg-[var(--aura-border-default)]');
+    });
+
+    it('mounts no chart canvas', () => {
+      const { container } = renderChart([GOLD, SILVER]);
+      expect(container.querySelector('[data-slot="chart"]')).toBeNull();
+    });
   });
 });

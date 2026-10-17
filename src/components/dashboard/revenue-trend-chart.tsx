@@ -19,6 +19,7 @@ export function RevenueTrendChart({
   amountHeader,
   summary,
   points,
+  locale,
 }: {
   readonly title: string;
   readonly caption?: string;
@@ -28,6 +29,8 @@ export function RevenueTrendChart({
   readonly amountHeader: string;
   readonly summary: MiniSeriesSummary;
   readonly points: readonly MiniSeriesPoint[];
+  /** Formats the value-axis ticks. */
+  readonly locale: string;
 }) {
   return (
     <MiniSeriesChart
@@ -40,6 +43,8 @@ export function RevenueTrendChart({
       variant="bar"
       summary={summary}
       points={points}
+      locale={locale}
+      valueDivisor={100}
     />
   );
 }

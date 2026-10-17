@@ -2,35 +2,21 @@ import type { Metadata } from 'next';
 import { randomUUID } from 'node:crypto';
 import { headers } from 'next/headers';
 import { getTranslations, getLocale } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { KpiCard } from '@/components/dashboard/kpi-card';
-import { CountUp } from '@/components/dashboard/count-up';
-import {
-  NeedsAttentionList,
-  type NeedsAttentionItem,
-  type NeedsAttentionUnavailable,
+import type {
+  NeedsAttentionItem,
+  NeedsAttentionUnavailable,
 } from '@/components/dashboard/needs-attention-list';
-import { InsightsPanel, type InsightLine } from '@/components/dashboard/insights-panel';
+import type { InsightLine } from '@/components/dashboard/insights-panel';
+import type { ActivityFeedEntry } from '@/components/dashboard/activity-feed';
 import {
-  ActivityFeed,
-  type ActivityFeedEntry,
-} from '@/components/dashboard/activity-feed';
+  DashboardRoadmap,
+  DashboardUnavailable,
+  DashboardView,
+  type DashboardKpi,
+} from './_components/dashboard-view';
 import { activityTimeLabels } from '@/components/dashboard/activity-time';
-import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
-import { RevenueTrendChart } from '@/components/dashboard/revenue-trend-chart';
-import { MemberGrowthChart } from '@/components/dashboard/member-growth-chart';
-import { MembershipTierChart } from '@/components/dashboard/membership-tier-chart';
-import { InvoiceStatusChart } from '@/components/dashboard/invoice-status-chart';
-import { EmptyState } from '@/components/shell/empty-state';
-import { ShieldAlertIcon } from 'lucide-react';
 import { requirePagePermission, canPerform } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
@@ -68,8 +54,6 @@ export const metadata: Metadata = {
   title: 'Staff home',
 };
 
-const ROADMAP_PHASES = ['F3', 'F4', 'F5', 'F6'] as const;
-
 export default async function StaffHomePage() {
   const { user } = await requirePagePermission('dashboard.view');
 
@@ -86,26 +70,7 @@ export default async function StaffHomePage() {
           }
           subtitle={tHome('subtitle', { role: user.role })}
         />
-        <Card>
-          <CardHeader>
-            <CardTitle>{tHome('cardTitle')}</CardTitle>
-            <CardDescription>{tHome('cardDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ul className="grid gap-3 text-body">
-              {ROADMAP_PHASES.map((phase) => (
-                <li key={phase} className="flex items-start gap-3">
-                  <span className="mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-caption font-medium">
-                    {phase}
-                  </span>
-                  <span>
-                    {tHome(`roadmap.${phase.toLowerCase() as 'f3' | 'f4' | 'f5' | 'f6'}`)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
+        <DashboardRoadmap tHome={tHome} />
       </DetailContainer>
     );
   }
@@ -211,16 +176,7 @@ export default async function StaffHomePage() {
   // affordance on failure (FR-006), not a dead-end "empty" message.
   if (!dashResult || !dashResult.ok) {
     const forbidden = dashResult?.ok === false && dashResult.error === 'forbidden';
-    return (
-      <DetailContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        {forbidden ? (
-          <EmptyState icon={ShieldAlertIcon} title={t('forbidden')} />
-        ) : (
-          <DashboardErrorState title={t('error.title')} description={t('error.body')} />
-        )}
-      </DetailContainer>
-    );
+    return <DashboardUnavailable t={t} forbidden={forbidden} />;
   }
 
   const { metrics, computedAt } = dashResult.value;
@@ -268,13 +224,7 @@ export default async function StaffHomePage() {
   // `numberFmt`/`thbFmt` exactly (see count-up.tsx's `buildFormatter`), so
   // the FINAL displayed string is byte-identical to before this change
   // (FR: "do NOT change what the final displayed strings look like").
-  const kpis: ReadonlyArray<{
-    key: string;
-    label: string;
-    caption: string;
-    rawValue: number;
-    variant: 'integer' | 'thb';
-  }> = [
+  const kpis: readonly DashboardKpi[] = [
     // Each caption states the tile's basis: `total` counts every status
     // (active + inactive + archived, per computeDashboardSnapshot), which the
     // bare "Total members" label does not convey; `revenue` is fiscal-year and
@@ -286,6 +236,7 @@ export default async function StaffHomePage() {
       caption: t('kpi.totalCaption'),
       rawValue: metrics.counts.total,
       variant: 'integer',
+      icon: 'users',
     },
     {
       key: 'active',
@@ -293,6 +244,7 @@ export default async function StaffHomePage() {
       caption: t('kpi.activeCaption'),
       rawValue: metrics.counts.active,
       variant: 'integer',
+      icon: 'circle-check',
     },
     {
       key: 'atRisk',
@@ -300,6 +252,7 @@ export default async function StaffHomePage() {
       caption: t('kpi.atRiskCaption'),
       rawValue: metrics.counts.atRisk,
       variant: 'integer',
+      icon: 'triangle-alert',
     },
     // FR-007 + 016 T054: revenue is visible to every staff role that holds
     // `insights.finance` — admin, super_admin, and the "read-only on finance"
@@ -316,6 +269,7 @@ export default async function StaffHomePage() {
             caption: t('kpi.revenueCaption'),
             rawValue: Number(finance.ytdPaidRevenueSatang) / 100,
             variant: 'thb',
+            icon: 'trending-up',
           },
         ] as const)
       : []),
@@ -411,6 +365,8 @@ export default async function StaffHomePage() {
       label: item.label,
       href: item.href,
       count: numberFmt.format(item.n),
+      // Spec 122 US11 — the board draws the overdue count as a danger pill.
+      ...(item.id === 'overdueInvoices' ? { tone: 'danger' as const } : {}),
     }));
 
   // Live-filter insights against current dismissals (T028) so a just-dismissed
@@ -486,15 +442,21 @@ export default async function StaffHomePage() {
   const monthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short', year: 'numeric' });
   const monthLabel = (key: string): string =>
     monthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
+  // Spec 122 US11 — the trend charts' month axis shows the short month only.
+  const axisMonthFmt = new Intl.DateTimeFormat(getDateFormatLocale(locale), { month: 'short' });
+  const axisMonthLabel = (key: string): string =>
+    axisMonthFmt.format(new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, 1));
   const revenueTrendPoints = (finance?.revenueTrend ?? []).map((p) => ({
     key: p.month,
     label: monthLabel(p.month),
+    axisLabel: axisMonthLabel(p.month),
     value: Number(p.satang),
     valueLabel: thbFmt.format(Number(p.satang) / 100),
   }));
   const memberGrowthPoints = metrics.memberGrowth.map((p) => ({
     key: p.month,
     label: monthLabel(p.month),
+    axisLabel: axisMonthLabel(p.month),
     value: p.cumulative,
     valueLabel: numberFmt.format(p.cumulative),
   }));
@@ -511,7 +473,6 @@ export default async function StaffHomePage() {
     value: numberFmt.format(metrics.memberGrowth.at(-1)?.cumulative ?? 0),
     label: t('memberGrowth.total'),
   };
-  const revenueTrendEmpty = t('revenueTrend.empty');
   // Net-new members over the window (cumulative is monotonic) → an "▲ +N"
   // growth chip, only when there's actual growth (avoids a flat/▼ noise chip).
   const memberNetNew =
@@ -522,133 +483,24 @@ export default async function StaffHomePage() {
       : undefined;
 
   return (
-    <DetailContainer>
-      <PageHeader title={t('title')} subtitle={t('asOf', { time: asOf })} />
-
-      {/* 3 tiles without `insights.finance`, 4 with — the column count follows
-          so an engagement-only viewer gets an evenly-filled row rather than a
-          gap where the revenue tile used to be.
-          The 3-tile variant goes straight to `sm:grid-cols-3`. Keeping
-          `sm:grid-cols-2` moved the gap rather than closing it: 4 tiles fill a
-          2×2 exactly, but 3 tiles leave a half-width hole on the second row for
-          every viewport from 640px to 1023px — iPad portrait and any
-          split-screen desktop window.
-          Both class strings are written out in full: Tailwind scans source
-          text, so an interpolated `lg:grid-cols-${n}` would never be
-          generated. */}
-      <section
-        aria-label={t('kpi.sectionLabel')}
-        className={
-          finance
-            ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-4'
-            : 'grid gap-4 sm:grid-cols-3'
-        }
-      >
-        {kpis.map((kpi) => (
-          <KpiCard
-            key={kpi.key}
-            label={kpi.label}
-            caption={kpi.caption}
-            value={<CountUp value={kpi.rawValue} locale={locale} variant={kpi.variant} />}
-          />
-        ))}
-      </section>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <NeedsAttentionList
-          title={t('needsAttention.title')}
-          emptyLabel={t('needsAttention.empty')}
-          items={needsAttentionItems}
-          unavailable={needsAttentionUnavailable}
-        />
-        <InsightsPanel
-          title={t('insights.title')}
-          emptyLabel={t('insights.empty')}
-          dismissLabel={t('insights.dismiss')}
-          dismissedLabel={t('insights.dismissed')}
-          dismissErrorLabel={t('insights.dismissError')}
-          lines={insightLines}
-        />
-      </div>
-
-      {/* With finance: Trends (revenue + growth) and Breakdown (tier + AR) are
-          two separate 2-up rows, as before.
-          Without it, both rows would collapse to ONE card each and the page
-          would read as leftovers stacked in a column — a 12-point sparkline
-          stretched across the full detail width looks like a bar, not a chart.
-          So the two survivors are merged into a single 2-up "Engagement charts"
-          row instead, which keeps the finance dashboard's rhythm and halves the
-          skeleton mismatch documented in loading.tsx. */}
-      {finance ? (
-        <>
-          <section
-            aria-label={t('trends.sectionLabel')}
-            className="grid gap-4 lg:grid-cols-2"
-          >
-            <RevenueTrendChart
-              title={t('revenueTrend.title')}
-              caption={t('revenueTrend.perMonth')}
-              emptyLabel={revenueTrendEmpty}
-              sparseLabel={t('revenueTrend.sparse')}
-              monthHeader={t('revenueTrend.month')}
-              amountHeader={t('revenueTrend.amount')}
-              summary={revenueSummary}
-              points={revenueTrendPoints}
-            />
-            <MemberGrowthChart
-              title={t('memberGrowth.title')}
-              caption={t('memberGrowth.cumulative')}
-              emptyLabel={t('memberGrowth.empty')}
-              sparseLabel={t('memberGrowth.sparse')}
-              monthHeader={t('memberGrowth.month')}
-              countHeader={t('memberGrowth.count')}
-              summary={memberGrowthSummary}
-              {...(memberDelta ? { delta: memberDelta } : {})}
-              points={memberGrowthPoints}
-            />
-          </section>
-
-          {/* Breakdown / composition charts (Task 12) — membership-by-tier bar +
-              invoice-status donut. Both are self-contained i18n (no title/label
-              props — see each component's own docblock) and both lazy-load their
-              recharts canvas internally (`next/dynamic(..., { ssr: false })`),
-              so this section, like Trends above, SSRs its accessible
-              `<ChartDataTable>` even though the decorative canvas is client-lazy. */}
-          <section
-            aria-label={t('breakdown.sectionLabel')}
-            className="grid gap-4 lg:grid-cols-2"
-          >
-            <MembershipTierChart slices={metrics.tierDistribution} />
-            <InvoiceStatusChart distribution={finance.invoiceStatus} />
-          </section>
-        </>
-      ) : (
-        <section
-          aria-label={t('engagement.sectionLabel')}
-          className="grid gap-4 lg:grid-cols-2"
-        >
-          <MemberGrowthChart
-            title={t('memberGrowth.title')}
-            caption={t('memberGrowth.cumulative')}
-            emptyLabel={t('memberGrowth.empty')}
-            sparseLabel={t('memberGrowth.sparse')}
-            monthHeader={t('memberGrowth.month')}
-            countHeader={t('memberGrowth.count')}
-            summary={memberGrowthSummary}
-            {...(memberDelta ? { delta: memberDelta } : {})}
-            points={memberGrowthPoints}
-          />
-          <MembershipTierChart slices={metrics.tierDistribution} />
-        </section>
-      )}
-
-      <ActivityFeed
-        title={t('activity.title')}
-        emptyLabel={t('activity.empty')}
-        refreshLabel={t('activity.refresh')}
-        refreshedLabel={t('activity.refreshed')}
-        items={activityItems}
-      />
-    </DetailContainer>
+    <DashboardView
+      t={t}
+      locale={locale}
+      asOf={asOf}
+      kpis={kpis}
+      needsAttentionItems={needsAttentionItems}
+      needsAttentionUnavailable={needsAttentionUnavailable}
+      insightLines={insightLines}
+      finance={
+        finance
+          ? { revenueTrendPoints, revenueSummary, invoiceStatus: finance.invoiceStatus }
+          : null
+      }
+      memberGrowthPoints={memberGrowthPoints}
+      memberGrowthSummary={memberGrowthSummary}
+      memberDelta={memberDelta}
+      tierDistribution={metrics.tierDistribution}
+      activityItems={activityItems}
+    />
   );
 }

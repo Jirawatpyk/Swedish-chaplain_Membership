@@ -70,7 +70,7 @@
  * replacement — so the animation never visibly played in `pnpm dev` or
  * Playwright (production is unaffected; StrictMode double-invoke is
  * dev-only). The effect below has no such guard: it depends on
- * `[value, allowMotion, durationMs, finalDisplay]` and simply (re)schedules
+ * `[value, allowMotion, durationMs, finalVisible]` and simply (re)schedules
  * an rAF loop every time it runs. StrictMode's mount→cleanup→remount is safe
  * because the cleanup (`cancelAnimationFrame`) is symmetric with the effect
  * (`requestAnimationFrame`) — the cancelled first frame never fires, and the
@@ -111,12 +111,39 @@ function buildFormatter(locale: string, variant: CountUpVariant): Intl.NumberFor
   return new Intl.NumberFormat(locale);
 }
 
+/** The visible copies may wrap between the currency and the amount: Intl
+ * joins them with a no-break space, which pushed "THB 381,450" out of a
+ * 4-up desktop tile at 200% text (UX review, 17 Oct). Only the `literal`
+ * parts change; a no-break thousands separator (`group`, e.g. Swedish)
+ * stays, so a number never splits inside. The sr-only copy keeps Intl's
+ * own string. */
+function formatWrapping(fmt: Intl.NumberFormat, n: number): string {
+  return fmt
+    .formatToParts(n)
+    .map((p) => (p.type === 'literal' ? p.value.replace(/\u00a0|\u202f/g, ' ') : p.value))
+    .join('');
+}
+
+/** Spec 122 US11 (maintainer, 17 Oct) — the phone revenue tile's compact
+ * amount, three significant digits as board `Admin-dashboard-mobile` draws
+ * it ("THB 381K", "THB 2.91M"). Display only: the exact amount stays in the
+ * sr-only copy and on every width from 640px. */
+function buildCompactFormatter(locale: string): Intl.NumberFormat {
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'THB',
+    notation: 'compact',
+    maximumSignificantDigits: 3,
+  });
+}
+
 export function CountUp({
   value,
   locale,
   variant,
   durationMs = 800,
   className,
+  compactBelowSm = false,
 }: {
   /** Display-unit number (an integer count, OR THB baht — NEVER satang). */
   readonly value: number;
@@ -124,6 +151,9 @@ export function CountUp({
   readonly variant: CountUpVariant;
   readonly durationMs?: number;
   readonly className?: string;
+  /** Below 640px show a static compact copy instead of the animated amount
+   * (the half-width phone tile cannot fit "THB 381,450"). */
+  readonly compactBelowSm?: boolean;
 }) {
   const allowMotion = useSyncExternalStore(
     subscribeMotionPreference,
@@ -136,18 +166,19 @@ export function CountUp({
   // one Intl.NumberFormat#format call) so it's never stale relative to
   // `value`/`formatter`.
   const finalDisplay = formatter.format(value);
+  const finalVisible = formatWrapping(formatter, value);
 
   // SSR AND the first client render both show the START value (0) — see the
   // docblock above ("Fixing the final→0 flash bug"): this is what guarantees
   // the visible number only ever counts UP, never flashes the final value
   // first.
-  const [display, setDisplay] = useState(() => formatter.format(0));
+  const [display, setDisplay] = useState(() => formatWrapping(formatter, 0));
 
   useEffect(() => {
     if (!allowMotion) {
       // Reduced motion: no animation — jump straight to the final value in
       // one synchronous set. Schedule nothing.
-      setDisplay(finalDisplay);
+      setDisplay(finalVisible);
       return;
     }
 
@@ -162,10 +193,10 @@ export function CountUp({
         // Land exactly on the final string — avoids a rounding/float-epsilon
         // near-miss on the final frame instead of trusting
         // `value * easeOutCubic(1)`.
-        setDisplay(finalDisplay);
+        setDisplay(finalVisible);
         return;
       }
-      setDisplay(formatter.format(Math.round(value * easeOutCubic(progress))));
+      setDisplay(formatWrapping(formatter, Math.round(value * easeOutCubic(progress))));
       rafId = requestAnimationFrame(step);
     };
     rafId = requestAnimationFrame(step);
@@ -175,10 +206,10 @@ export function CountUp({
     // effect re-runs and reschedules whenever its inputs change, which is
     // also what makes it StrictMode-safe.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, allowMotion, durationMs, finalDisplay]);
+  }, [value, allowMotion, durationMs, finalVisible]);
 
-  return (
-    <span className={cn('relative inline-block tabular-nums', className)}>
+  const animated = (
+    <span className={cn('relative inline-block max-w-full tabular-nums', compactBelowSm ? 'max-sm:hidden' : className)}>
       {/* Width sizer (CLS guard): reserves the box width the FINAL string
           needs, in normal flow, so the KPI card never reflows as the
           animated digits grow (e.g. `0` → `67`, `฿0` → `฿2,000,000`).
@@ -186,7 +217,7 @@ export function CountUp({
           layout placeholder for the absolutely-positioned animated number
           below. */}
       <span aria-hidden="true" className="invisible">
-        {finalDisplay}
+        {finalVisible}
       </span>
       {/* The animated, visual copy — always starts at 0 and counts up on the
           client (see docblock). aria-hidden because screen readers get the
@@ -197,8 +228,22 @@ export function CountUp({
         {display}
       </span>
       {/* The accessible copy: always the FINAL value, server-rendered, never
-          animates. */}
+          animates. Outside the phone-hidden box in compact mode, so phones
+          announce the exact amount too. */}
+      {compactBelowSm ? null : <span className="sr-only">{finalDisplay}</span>}
+    </span>
+  );
+
+  if (!compactBelowSm) return animated;
+  return (
+    <span className={cn('tabular-nums', className)}>
+      {animated}
       <span className="sr-only">{finalDisplay}</span>
+      {/* Ordinary spaces between the parts, so a long locale form such as
+          Swedish "381 tn THB" wraps in a narrow tile. */}
+      <span aria-hidden="true" className="sm:hidden">
+        {formatWrapping(buildCompactFormatter(locale), value)}
+      </span>
     </span>
   );
 }

@@ -110,3 +110,19 @@ describe('InsightsPanel — optimistic dismiss', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('InsightsPanel — on AURA (spec 122 US11)', () => {
+  it('is an AURA card titled at h2, with each dismiss an AURA icon button', () => {
+    const { container } = render(<InsightsPanel {...PANEL_PROPS} lines={LINES} />);
+    const card = container.querySelector('section.aura-card');
+    expect(card).not.toBeNull();
+    expect(card!.querySelector('h2.aura-card__title')).toHaveTextContent('Smart insights');
+    const dismiss = screen.getByRole('button', { name: DISMISS_50 });
+    expect(dismiss).toHaveClass('aura-icon-btn', 'aura-icon-btn--touch');
+  });
+
+  it('keeps the empty state as a status line', () => {
+    render(<InsightsPanel {...PANEL_PROPS} lines={[]} />);
+    expect(screen.getByRole('status')).toHaveTextContent('All clear.');
+  });
+});

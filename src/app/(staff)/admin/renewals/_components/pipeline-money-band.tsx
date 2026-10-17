@@ -15,8 +15,8 @@
  * success / warning tone on them), each value one string ("500.00 THB",
  * the unit the localised `money.currency` word), the linked tiles marked by
  * AURA's arrow icon and linked through their label (`linkArea="label"`), so
- * the prior-years line under Past due stays its own link in the tile. The
- * shared dashboard `KpiCard` stays for US11.
+ * the prior-years line under Past due stays its own link in the tile. (The
+ * dashboard's `KpiCard` went too, at US11: its tiles are AURA `Stat`s now.)
  *
  * Every KPI carries its own `basis` caption again (spec § 5) — the strip's
  * single shared `stripBasis` caption is gone (removed from all 3 locales);

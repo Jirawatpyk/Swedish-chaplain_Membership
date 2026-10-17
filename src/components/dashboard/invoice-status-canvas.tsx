@@ -25,8 +25,8 @@
  */
 'use client';
 
-import { Cell, Pie, PieChart } from 'recharts';
-import { ChartContainer, ChartTooltip, type ChartConfig } from '@/components/ui/chart';
+import { Cell, Pie, PieChart, Tooltip } from 'recharts';
+import { ChartFrame, ChartTooltipCard, ChartTooltipLine } from './chart-frame';
 import { BUCKET_FILL, type BucketRow } from './invoice-status-chart';
 
 interface BucketTooltipPayloadEntry {
@@ -35,7 +35,7 @@ interface BucketTooltipPayloadEntry {
 
 /** Custom tooltip — reads the ORIGINAL `BucketRow` off the hovered payload
  * entry directly (its resolved `label`/`amountLabel`/`countLabel`/
- * `pctLabel`), mirroring `membership-tier-canvas.tsx`'s `TierTooltipContent`:
+ * `pctLabel`), as `_mini-series-chart.tsx`'s `SeriesTooltipContent` does:
  * shadcn's config/nameKey-driven `ChartTooltipContent` is built for multi-
  * series/legend charts, not this single-series donut. Never the sole way to
  * read a value — the hidden `<ChartDataTable>` (in the caller) is. */
@@ -50,13 +50,12 @@ function BucketTooltipContent({
   const row = payload[0]?.payload;
   if (!row) return null;
   return (
-    <div className="grid gap-0.5 rounded-lg border border-border/50 bg-background px-2.5 py-1.5 text-xs shadow-xl">
-      <span className="font-medium text-foreground">{row.label}</span>
-      <span className="text-muted-foreground">{row.amountLabel}</span>
-      <span className="text-muted-foreground">
+    <ChartTooltipCard title={row.label}>
+      <ChartTooltipLine>{row.amountLabel}</ChartTooltipLine>
+      <ChartTooltipLine>
         {row.countLabel} · {row.pctLabel}
-      </span>
-    </div>
+      </ChartTooltipLine>
+    </ChartTooltipCard>
   );
 }
 
@@ -66,14 +65,10 @@ export interface InvoiceStatusCanvasProps {
 }
 
 export function InvoiceStatusCanvas({ rows, allowMotion }: InvoiceStatusCanvasProps) {
-  const chartConfig = Object.fromEntries(
-    rows.map((r) => [r.bucket, { label: r.label }]),
-  ) as ChartConfig;
-
   return (
-    <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-64 w-full">
+    <ChartFrame className="mx-auto aspect-square max-h-64 w-full">
       <PieChart accessibilityLayer={false}>
-        <ChartTooltip cursor={false} content={<BucketTooltipContent />} />
+        <Tooltip cursor={false} content={<BucketTooltipContent />} />
         <Pie
           data={rows}
           dataKey="satangNumber"
@@ -105,10 +100,10 @@ export function InvoiceStatusCanvas({ rows, allowMotion }: InvoiceStatusCanvasPr
           rootTabIndex={-1}
         >
           {rows.map((r) => (
-            <Cell key={r.bucket} fill={BUCKET_FILL[r.bucket]} stroke="var(--card)" strokeWidth={3} />
+            <Cell key={r.bucket} fill={BUCKET_FILL[r.bucket]} stroke="var(--aura-bg-surface)" strokeWidth={3} />
           ))}
         </Pie>
       </PieChart>
-    </ChartContainer>
+    </ChartFrame>
   );
 }

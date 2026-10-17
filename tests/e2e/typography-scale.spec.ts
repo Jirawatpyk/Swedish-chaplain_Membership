@@ -83,6 +83,9 @@ test.describe('F4 SC-010 — typography scale @layout', () => {
             };
           });
           if (inPortal || isSrOnly) continue;
+          // Spec 122: an AURA card title takes AURA's own type scale (the
+          // parity rule: AURA defaults win on sizes), not the FR-017 token.
+          if (className.includes('aura-card__title')) continue;
           const hasHeadingToken = className.includes(`text-h${level}`);
           const hasCaptionOptOut = className.includes('text-caption');
           expect(

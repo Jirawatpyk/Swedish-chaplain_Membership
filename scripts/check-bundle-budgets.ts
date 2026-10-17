@@ -262,9 +262,10 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // is deliberately kept well under 367 KB.
   { route: '/admin/members/new', maxKb: 1110 },
   { route: '/admin/members/[memberId]/edit', maxKb: 1130 },
-  // --- 067 dashboard-interactive-charts (Task 14 post-chart re-baseline) -
-  // 1004.8 KB measured with all four charts wired — see docblock above.
-  { route: '/admin', maxKb: 1110 },
+  // --- Spec 122 US11 dashboard (AURA) re-baseline ------------------------
+  // 815.4 KB measured on AURA (was 1004.8 KB on the legacy kit at the 067
+  // re-baseline); recharts stays behind the canvases' `next/dynamic`.
+  { route: '/admin', maxKb: 920 },
   // --- Spec 122 US6 plans (AURA) — see docblock -------------------------
   { route: '/admin/plans', maxKb: 1030 },
   { route: '/admin/plans/[year]/[planId]', maxKb: 870 },
