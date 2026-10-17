@@ -11,10 +11,10 @@ This section is the single source for how review works; `docs/workflow.md` step 
 
 | Diff | Review |
 |---|---|
-| A small diff (one surface, roughly < 40 files / 5k lines) | The built-in **`/code-review high`** (or `/code-review high <pr#>` for a PR). It reviews the diff for correctness bugs and returns the findings here. Always pass `high`: with no level the command reuses the last level typed, and `xhigh` / `max` are not the default here. Then dispatch the surface reviewers from § 2 for the surfaces the diff touches. |
+| A small diff (one surface, roughly < 40 files / 5k lines) | The built-in **`/code-review high`** (or `/code-review high <pr#>` for a PR). Claude runs it itself through the Skill tool and **always names the target**: `skill: "code-review", args: "high <pr#>"`, or `args: "high origin/main...HEAD"` before the PR exists. Prefer `<pr#>` whenever a PR exists: it diffs against the PR's own base, which is right for a stacked branch too. With no target it diffs against the branch's upstream, which is empty once the branch is pushed, so it would review nothing. It reviews the diff for correctness bugs and returns the findings here. Always pass `high`: with no level the command reuses the last level typed, and `xhigh` / `max` are not the default here. Then dispatch the surface reviewers from § 2 for the surfaces the diff touches. |
 | A large diff, or any money / tax / tenancy / PII / auth / migration branch | The **`review-branch`** Workflow (`.claude/workflows/`). An inline `/code-review` scopes itself down on a big diff: on the F5 refund branch (123 files) it produced 6 findings, 5 of them misreads, while the fan-out found 3 real bugs it never reached. |
 | A size M / L change, always | **`spec-compliance-auditor`**, given `spec.md` and the Verify evidence in `plan.md` § Evidence. It checks each Done-when line against the code and against the evidence that claims it. A line with no evidence, or evidence that does not prove it, is a **High** finding. |
-| Before the PR opens or merges, always | **`whole-branch-reviewer`**: the seam between commits that per-surface reviewers cannot see. |
+| The review was split: the `review-branch` Workflow, a per-module review, or slices sharing one long-lived branch | **`whole-branch-reviewer`** last: the seams between the parts that no single reviewer read together. A normal PR skips it, because `/code-review high` with the PR as its target already reads the whole diff against `origin/main` (D-022). |
 | A defect class found once that must be closed everywhere | The **`sweep-class`** Workflow, with the known instances as `examples`. |
 | A spec touching money, tax, tenancy, PII, auth or a migration | The **`spec-review-panel`** Workflow, after clarify and before plan. |
 
@@ -24,7 +24,7 @@ This section is the single source for how review works; `docs/workflow.md` step 
 - Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it.
 - Low findings are fixed or listed in the PR.
 - Any code change after review goes back through review.
-- **Rounds:** a normal change gets one review round, then the raising reviewer re-checks each fix. A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) gets ≥ 2 rounds plus the staff review (§ 2). Review runs after Verify, so the reviewed code is the code that works.
+- **Rounds:** a normal change gets one review round, then the raising reviewer re-checks each fix. Run another `/code-review` round only when the last one had a High or Medium that changed code; stop once the latest round finds only Lows. The command is told to surface at least 5 findings, so re-running it to chase Lows never converges. A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) gets ≥ 2 rounds plus the staff review (§ 2). Review runs after Verify, so the reviewed code is the code that works.
 - Tell every reviewer to report only gaps that affect correctness or the stated requirements. A reviewer asked to find gaps always finds some, and chasing every one over-engineers.
 
 ## 2. Which project subagent reviews which surface
@@ -54,7 +54,7 @@ Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, o
 
 | Check | How |
 |---|---|
-| 1. Repeated independent review rounds | ≥ 2 rounds of `/code-review high` + the § 2 surface reviewers, each in fresh subagents, until the latest round finds no High or Medium; record the finding counts per round in the PR |
+| 1. Repeated independent review rounds | ≥ 2 rounds of `/code-review high <pr#>` + the § 2 surface reviewers, each in fresh subagents, until the latest round finds no High or Medium; record the finding counts per round in the PR |
 | 2. Staff review (correctness, security, tests) | `whole-branch-reviewer` + `security-engineer` + `senior-tester` on the same diff; a second round when any BLOCKER / CRITICAL / HIGH is found |
 | 3. Coverage + real-infrastructure tests | the pinned coverage thresholds, and integration tests on Neon for every security-critical use case |
 | 4. Defence in depth | DB- or platform-level enforcement (RLS, constraints, triggers) for every invariant that can live there |

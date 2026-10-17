@@ -41,7 +41,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Decision*: add a feature flag only when ready to redeploy immediately; new flags default OFF.
 - *Consequence*: `docs/operational-state.md` records the observed state of each flag.
 
-**D-008 — The built-in `/code-review` runs at the `high` level by default** (2026-10-17)
+**D-008 — The built-in `/code-review` runs at the `high` level by default** (2026-10-17) — *refined by D-022: always with a target*
 - *Context*: with no level given, `/code-review` reuses the last level typed.
 - *Decision*: always run `/code-review high`. `xhigh` / `max` are opt-in, and `/code-review ultra` (cloud, billed) is the user's call. Large or high-stakes branches use the `review-branch` Workflow.
 - *Consequence*: `review-and-ship` § 1.
@@ -110,3 +110,8 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Context*: the main session collected the Done-when evidence and ticked the DoD itself, so no reviewer checked that the evidence proves each line, which breaks "the writer is never the reviewer". The review rules were also written out three times (`docs/workflow.md` step 7, `feature-flow` § 7, `review-and-ship` § 1), and Verify twice.
 - *Decision*: every M / L review runs `spec-compliance-auditor` with `spec.md` and the Verify evidence. A Done-when line with no evidence, or evidence that does not prove it, is a High finding. The Verify evidence is written to `plan.md` § Evidence, one line per Done-when line, so every review round reads the same record. `review-and-ship` § 1 is the single source for how review works; the workflow keeps the contract and `feature-flow` the order. Verify's recipe is `run-chamber-os`. The Spec Kit-only `tasks.md` rule moves from the always-loaded `rules.md` to `review-and-ship` § 3.
 - *Consequence*: the `spec-compliance-auditor` agent learns to read Done-when lines; the DoD's evidence line names it.
+
+**D-022 — `whole-branch-reviewer` runs only when the review was split** (2026-10-18)
+- *Context*: `whole-branch-reviewer` was added as a seam pass after per-module reviews. When `/code-review high` is given the PR (or `origin/main...HEAD`) as its target, it reads the PR's whole diff, so on a normal PR the seam pass read the same diff twice. With no target the command diffs against the branch's upstream, and on a pushed branch that range is empty (measured on #581: 0 lines), so the target is part of the rule. Spec 123 slice 1 also showed that Claude did not know it can run `/code-review` itself.
+- *Decision*: run `whole-branch-reviewer` last only when the review was split: the `review-branch` Workflow, a per-module review, or slices sharing one long-lived branch (at the end, for the seams between slices). A normal PR, sliced or not, relies on `/code-review high`, the surface reviewers and, for M / L, `spec-compliance-auditor`. The staff review on sensitive surfaces keeps it unchanged (solo-maintainer review, check 2). Claude runs `/code-review high` itself through the Skill tool, always with a target (`high <pr#>`, or `high origin/main...HEAD` before the PR exists).
+- *Consequence*: `docs/workflow.md` step 7, § Slices and the DoD, `review-and-ship` § 1, `feature-flow` § 7 and the PR template say so.
