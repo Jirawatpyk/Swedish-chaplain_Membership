@@ -177,8 +177,8 @@ describe('.github/workflows/post-deploy-smoke.yml', () => {
     expect(t).not.toMatch(/--body\s+["']/);
     // Only the FAIL lines reach the issue — never a raw response.
     expect(t).toMatch(/grep\s+'\^FAIL '/);
-    for (const field of ['$BASE_URL', '$COMMIT_SHA', '$DEPLOYMENT_URL']) {
-      expect(t).toContain(field);
+    for (const field of ['BASE_URL', 'COMMIT_SHA', 'DEPLOYMENT_URL']) {
+      expect(t).toMatch(new RegExp(`\\$\\{?${field}\\b`));
     }
     const stepHeader = src.split(/\r?\n/).slice(0, issue!.line).reverse().find((l) => /^\s+if:/.test(l));
     expect(stepHeader).toMatch(/if:\s*failure\(\)/);
