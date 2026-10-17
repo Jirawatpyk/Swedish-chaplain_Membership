@@ -168,7 +168,7 @@ describe('InvoiceStatusChart', () => {
     // figure is net of credit notes and refunds (financial review, 17 Oct).
     renderChart(FULL);
     expect(
-      screen.getByText('All fiscal years · includes VAT · net of credit notes and refunds', {
+      screen.getByText('All fiscal years · incl. VAT · net of credit notes and refunds', {
         selector: '.aura-card__desc',
       }),
     ).toBeInTheDocument();
