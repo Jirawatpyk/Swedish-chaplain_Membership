@@ -155,7 +155,7 @@ export function DashboardView({
             label={kpi.label}
             caption={kpi.caption}
             icon={kpi.icon}
-            value={<CountUp value={kpi.rawValue} locale={locale} variant={kpi.variant} />}
+            value={<CountUp value={kpi.rawValue} locale={locale} variant={kpi.variant} compactBelowSm={kpi.variant === 'thb'} />}
           />
         ))}
       </section>

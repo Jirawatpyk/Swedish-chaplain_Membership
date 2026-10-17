@@ -111,12 +111,26 @@ function buildFormatter(locale: string, variant: CountUpVariant): Intl.NumberFor
   return new Intl.NumberFormat(locale);
 }
 
+/** Spec 122 US11 (maintainer, 17 Oct) — the phone revenue tile's compact
+ * amount, three significant digits as board `Admin-dashboard-mobile` draws
+ * it ("THB 381K", "THB 2.91M"). Display only: the exact amount stays in the
+ * sr-only copy and on every width from 640px. */
+function buildCompactFormatter(locale: string): Intl.NumberFormat {
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: 'THB',
+    notation: 'compact',
+    maximumSignificantDigits: 3,
+  });
+}
+
 export function CountUp({
   value,
   locale,
   variant,
   durationMs = 800,
   className,
+  compactBelowSm = false,
 }: {
   /** Display-unit number (an integer count, OR THB baht — NEVER satang). */
   readonly value: number;
@@ -124,6 +138,9 @@ export function CountUp({
   readonly variant: CountUpVariant;
   readonly durationMs?: number;
   readonly className?: string;
+  /** Below 640px show a static compact copy instead of the animated amount
+   * (the half-width phone tile cannot fit "THB 381,450"). */
+  readonly compactBelowSm?: boolean;
 }) {
   const allowMotion = useSyncExternalStore(
     subscribeMotionPreference,
@@ -177,8 +194,8 @@ export function CountUp({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, allowMotion, durationMs, finalDisplay]);
 
-  return (
-    <span className={cn('relative inline-block tabular-nums', className)}>
+  const animated = (
+    <span className={cn('relative inline-block tabular-nums', compactBelowSm ? 'max-sm:hidden' : className)}>
       {/* Width sizer (CLS guard): reserves the box width the FINAL string
           needs, in normal flow, so the KPI card never reflows as the
           animated digits grow (e.g. `0` → `67`, `฿0` → `฿2,000,000`).
@@ -197,8 +214,20 @@ export function CountUp({
         {display}
       </span>
       {/* The accessible copy: always the FINAL value, server-rendered, never
-          animates. */}
+          animates. Outside the phone-hidden box in compact mode, so phones
+          announce the exact amount too. */}
+      {compactBelowSm ? null : <span className="sr-only">{finalDisplay}</span>}
+    </span>
+  );
+
+  if (!compactBelowSm) return animated;
+  return (
+    <span className={cn('tabular-nums', className)}>
+      {animated}
       <span className="sr-only">{finalDisplay}</span>
+      <span aria-hidden="true" className="sm:hidden">
+        {buildCompactFormatter(locale).format(value)}
+      </span>
     </span>
   );
 }
