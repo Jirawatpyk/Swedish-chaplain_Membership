@@ -17,7 +17,9 @@
 #
 # ON FAILURE it opens a `prod-smoke` issue, or comments on the newest open one,
 # with the base URL, the commit, the deployment URL and the FAIL lines only.
-# It never rolls back: docs/runbooks/post-deploy-smoke.md says how.
+# ON SUCCESS against PROD_BASE_URL it comments "Recovered" on every open
+# prod-smoke issue and closes it. It never rolls back:
+# docs/runbooks/post-deploy-smoke.md says how.
 #
 # SECURITY
 #   - No secrets: every checked URL is public. Only the automatic token, to
@@ -48,11 +50,13 @@ permissions: {}
 
 # A running smoke is never cancelled (it may be about to open an issue). GitHub
 # keeps only ONE pending run per group, so a third rapid deploy replaces the
-# queued second one; the latest deploy is still the one checked. The group is
-# keyed by environment so the skipped run of a preview deployment can never
-# replace a pending Production run.
+# queued second one; the latest deploy is still the one checked.
+# Vercel posts several deployment_status events per deploy (pending, success,
+# …) and every preview posts its own. Only a successful Production event (and a
+# manual run) gets a SHARED group; every other event gets a group of its own
+# (its run id), so it can never take the single pending slot from a real run.
 concurrency:
-  group: post-deploy-smoke-${{ github.event.deployment.environment || 'manual' }}
+  group: post-deploy-smoke-${{ github.event_name == 'workflow_dispatch' && 'manual' || (github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production') && 'production' || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -81,20 +85,18 @@ jobs:
             exit 1
           fi
 
-      # No `version:` — pnpm/action-setup reads `packageManager` in
-      # package.json, as quality-gates.yml does.
-      - uses: pnpm/action-setup@v4
+      # The script has zero dependencies and only erasable TypeScript, so Node 22
+      # runs it directly (type stripping is on by default from 22.18): no
+      # package manager, no install, no cache.
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
 
       - name: Smoke the production site
         id: smoke
         run: |
           set -o pipefail
-          pnpm exec tsx scripts/post-deploy-smoke.ts "$BASE_URL" | tee smoke-output.txt
+          node scripts/post-deploy-smoke.ts "$BASE_URL" | tee smoke-output.txt
 
       - name: Open or update the prod-smoke issue
         if: failure()
@@ -126,3 +128,27 @@ jobs:
           else
             gh issue create --title "Post-deploy smoke failed on production" --label prod-smoke --body-file issue-body.md
           fi
+
+      - name: Close the prod-smoke issue as recovered
+        if: success()
+        # The token reaches only this step and the failure step.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PROD_BASE_URL: ${{ vars.PROD_BASE_URL }}
+        run: |
+          # A manual run against another URL proves nothing about production.
+          if [ "$BASE_URL" != "$PROD_BASE_URL" ]; then
+            echo "Base URL is not PROD_BASE_URL; leaving any prod-smoke issue open."
+            exit 0
+          fi
+          open="$(gh issue list --label prod-smoke --state open --json number --jq '.[].number')"
+          if [ -z "$open" ]; then
+            echo "No open prod-smoke issue."
+            exit 0
+          fi
+          echo "Recovered: smoke passed at $COMMIT_SHA ($RUN_URL)" > recovered-body.md
+          for n in $open; do
+            gh issue comment "$n" --body-file recovered-body.md
+            gh issue close "$n"
+          done
