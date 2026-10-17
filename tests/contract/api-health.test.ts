@@ -8,7 +8,10 @@
  *   - `Cache-Control: no-store`, and the body is one of those two fixed strings
  *   - the probe PROMISE is cached for 10 s (ok and degraded alike), so N
  *     concurrent requests and a flood within the window cost one query
- *   - a degraded result is logged by error CLASS only, never `e.message`
+ *   - a degraded result is logged by error CLASS only, never `e.message`, with
+ *     a constant reason: timeout | query-error | still-pending
+ *   - while a query is still unsettled no second one starts (a pool ceiling)
+ *   - the 10 s window counts from when the probe SETTLES
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -74,7 +77,10 @@ describe('GET /api/health', () => {
     expect(res.status).toBe(503);
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(await res.text()).toBe(DEGRADED_BODY);
-    expect(warnMock).toHaveBeenCalledWith({ err: 'Error', route: 'api.health' }, 'health.degraded');
+    expect(warnMock).toHaveBeenCalledWith(
+      { err: 'Error', reason: 'query-error', route: 'api.health' },
+      'health.degraded',
+    );
     expect(JSON.stringify(warnMock.mock.calls)).not.toContain('secret-message-xyz');
   });
 
@@ -109,6 +115,10 @@ describe('GET /api/health', () => {
     expect(res.headers.get('cache-control')).toBe('no-store');
     expect(await res.text()).toBe(DEGRADED_BODY);
     expect(warnMock).toHaveBeenCalledTimes(1);
+    expect(warnMock).toHaveBeenCalledWith(
+      { err: 'HealthProbeTimeoutError', reason: 'timeout', route: 'api.health' },
+      'health.degraded',
+    );
   });
 
   it('reuses the result for 10 s, then probes again', async () => {
@@ -120,7 +130,8 @@ describe('GET /api/health', () => {
     expect((await GET()).status).toBe(200);
     expect(executeMock).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(2);
+    // The window is [settle, settle + 10 s): at exactly 10 s it has expired.
+    await vi.advanceTimersByTimeAsync(1);
     expect((await GET()).status).toBe(200);
     expect(executeMock).toHaveBeenCalledTimes(2);
   });
@@ -136,6 +147,63 @@ describe('GET /api/health', () => {
     expect(warnMock).toHaveBeenCalledTimes(1);
 
     await vi.advanceTimersByTimeAsync(10_001);
+    expect((await GET()).status).toBe(200);
+    expect(executeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts the 10 s from when the probe settles, so a timeout is served the full window', async () => {
+    executeMock.mockReturnValueOnce(new Promise(() => {}));
+    executeMock.mockResolvedValue([{ '?column?': 1 }]);
+    const GET = await loadGet();
+
+    const first = GET();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect((await first).status).toBe(503);
+
+    // 12.999 s after the start, 9.999 s after the timeout settled: still cached.
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect((await GET()).status).toBe(503);
+    expect(executeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('never starts a second query while the first is still pending (a ceiling, not a rate)', async () => {
+    executeMock.mockReturnValue(new Promise(() => {}));
+    const GET = await loadGet();
+
+    const first = GET();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect((await first).status).toBe(503);
+
+    await vi.advanceTimersByTimeAsync(10_001);
+    const second = await GET();
+    await vi.advanceTimersByTimeAsync(10_001);
+    const third = await GET();
+
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    expect([second.status, third.status]).toEqual([503, 503]);
+    expect(await third.text()).toBe(DEGRADED_BODY);
+    expect(warnMock).toHaveBeenCalledWith(
+      { reason: 'still-pending', route: 'api.health' },
+      'health.degraded',
+    );
+  });
+
+  it('probes again once the hung query finally settles', async () => {
+    let release: (v: unknown) => void = () => {};
+    executeMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    executeMock.mockResolvedValue([{ '?column?': 1 }]);
+    const GET = await loadGet();
+
+    const first = GET();
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect((await first).status).toBe(503);
+
+    release([{ '?column?': 1 }]);
+    await vi.advanceTimersByTimeAsync(10_000);
     expect((await GET()).status).toBe(200);
     expect(executeMock).toHaveBeenCalledTimes(2);
   });
