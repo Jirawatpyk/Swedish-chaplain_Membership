@@ -146,6 +146,9 @@ const PUBLIC_ROUTES: readonly string[] = [
   // RFC 8058 one-click unsubscribe (proxy rewrite of POST /unsubscribe/[token]);
   // the signed token is the credential.
   '/api/unsubscribe/[token]',
+  // Spec 123 liveness probe for the post-deploy smoke: GET only, `select 1`,
+  // body is one of two fixed strings, result cached 10 s per instance.
+  '/api/health',
 ];
 
 function classify(h: Handler): ExpectedClass | null {
