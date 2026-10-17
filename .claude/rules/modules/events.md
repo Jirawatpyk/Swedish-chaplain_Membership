@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/modules/events/**"
-  - "src/app/(staff)/admin/events/**"
+  - "src/app/*/admin/events/**"
   - "src/app/api/webhooks/eventcreate/**"
   - "tests/**/events/**"
 ---

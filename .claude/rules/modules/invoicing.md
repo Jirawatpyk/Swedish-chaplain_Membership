@@ -1,11 +1,11 @@
 ---
 paths:
   - "src/modules/invoicing/**"
-  - "src/app/(staff)/admin/invoices/**"
-  - "src/app/(staff)/admin/credit-notes/**"
-  - "src/app/(staff)/admin/settings/invoicing/**"
-  - "src/app/(member)/portal/invoices/**"
-  - "src/app/(member)/portal/credit-notes/**"
+  - "src/app/*/admin/invoices/**"
+  - "src/app/*/admin/credit-notes/**"
+  - "src/app/*/admin/settings/invoicing/**"
+  - "src/app/*/portal/invoices/**"
+  - "src/app/*/portal/credit-notes/**"
   - "src/components/invoices/**"
   - "tests/**/invoicing/**"
   - "tests/**/invoices/**"

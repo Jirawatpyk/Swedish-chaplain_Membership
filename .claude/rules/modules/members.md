@@ -1,12 +1,12 @@
 ---
 paths:
   - "src/modules/members/**"
-  - "src/app/(staff)/admin/members/**"
-  - "src/app/(staff)/admin/change-requests/**"
-  - "src/app/(staff)/admin/directory/**"
-  - "src/app/(member)/portal/profile/**"
-  - "src/app/(member)/portal/contacts/**"
-  - "src/app/(member)/portal/change-requests/**"
+  - "src/app/*/admin/members/**"
+  - "src/app/*/admin/change-requests/**"
+  - "src/app/*/admin/directory/**"
+  - "src/app/*/portal/profile/**"
+  - "src/app/*/portal/contacts/**"
+  - "src/app/*/portal/change-requests/**"
   - "src/components/members/**"
   - "tests/**/members/**"
 ---

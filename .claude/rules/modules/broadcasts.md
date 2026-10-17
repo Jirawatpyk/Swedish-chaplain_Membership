@@ -1,9 +1,9 @@
 ---
 paths:
   - "src/modules/broadcasts/**"
-  - "src/app/(staff)/admin/broadcasts/**"
-  - "src/app/(staff)/admin/marketing/**"
-  - "src/app/(member)/portal/broadcasts/**"
+  - "src/app/*/admin/broadcasts/**"
+  - "src/app/*/admin/marketing/**"
+  - "src/app/*/portal/broadcasts/**"
   - "src/app/api/webhooks/resend-broadcasts/**"
   - "src/components/broadcast/**"
   - "tests/**/broadcasts/**"
