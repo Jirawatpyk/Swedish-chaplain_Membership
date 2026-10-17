@@ -354,7 +354,8 @@ test.describe('@a11y dashboard interactive charts — Task 14 (067-dashboard-int
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await gotoDashboard(page);
 
-    for (const title of Object.values(CHART_TITLES)) {
+    // Membership by tier has no canvas since spec 122 US11 (plain rows).
+    for (const title of Object.values(CHART_TITLES).filter((t) => t !== CHART_TITLES.membershipTier)) {
       const card = chartCard(page, title);
       await expect(card).toBeVisible();
       const chartSlot = await waitForChartCanvas(card);
