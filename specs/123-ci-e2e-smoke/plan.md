@@ -209,7 +209,7 @@ Claude never reads or prints any of these values.
 | Deviation | Why it is needed | Simpler alternative rejected, and why |
 |---|---|---|
 | `/api/health` calls `db` without a use case | A liveness probe has no domain logic | A `health` module with a port and a use case: ceremony with no behaviour behind it |
-| Solo-maintainer review (security surface: a public route, `NEON_API_KEY` in a PR workflow) | No second human reviewer | — |
+| Solo-maintainer review, **slice 2 only** (`NEON_CI_API_KEY` and CI secrets in a PR workflow). Slice 1's public `GET /api/health` returns no data and is not one of the six sensitive surfaces, so it gets the normal review with `security-engineer` as its surface reviewer (D-022) | No second human reviewer | — |
 
 ## Rollout and risks
 
@@ -239,7 +239,7 @@ Claude never reads or prints any of these values.
   - The PR's `e2e-critical` run is green on both projects within 25 min, and its Neon branch is gone afterwards (Neon API list).
   - Run the nightly by `workflow_dispatch` once after merge.
   - Evidence goes in `plan.md` § Evidence.
-- **Review per slice:** `/code-review high`, the surface reviewers, `spec-compliance-auditor`, then `whole-branch-reviewer`.
+- **Review per slice:** `/code-review high <pr#>`, the surface reviewers and `spec-compliance-auditor`. `whole-branch-reviewer` runs only in slice 2's staff review (solo-maintainer review), per D-022.
 
 ## Evidence
 
