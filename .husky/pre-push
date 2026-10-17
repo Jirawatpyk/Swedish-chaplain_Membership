@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Pre-push guards — ~35-40 sec total (6 static checks + the 24 s
+# Pre-push guards — ~50 sec total (12 static checks + the 24 s
 # architecture suite) so the dev loop stays tight. Heavier suites
 # (full contract, lint, typecheck) run in CI on every PR + push to
 # main — see .github/workflows/quality-gates.yml; e2e + coverage stay

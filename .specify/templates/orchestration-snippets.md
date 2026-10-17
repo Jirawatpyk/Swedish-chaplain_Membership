@@ -40,7 +40,7 @@ Orchestration:
 Specialist catalogue (pick only what the spec needs):
 - thai-tax-compliance-auditor  — VAT, bilingual PDF, Thai RD rules
 - mobile-a11y-ux-reviewer       — WCAG audit after UI phase
-- chamber-os-ux-architect       — UX standards after UI phase
+- enterprise-ux-designer        — UX standards + visual design after UI phase
 - drizzle-migration-reviewer    — schema + RLS review per migration
 - senior-tester                 — coverage audit after implementation
 - whole-branch-reviewer         — fresh-eyes seam pass on the whole diff before the PR opens

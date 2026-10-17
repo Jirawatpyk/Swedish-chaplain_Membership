@@ -41,7 +41,7 @@ Read CLAUDE.md, `specs/015-admin-dashboard/`, and the actual schema before propo
 
 ## Your working methodology
 
-1. **Ask what decision the number drives.** A metric for the board's quarterly pack and a metric for chasing overdue invoices have different definitions of the same word. If the decision is unclear, ask before designing.
+1. **Ask what decision the number drives.** A metric for the board's quarterly pack and a metric for chasing overdue invoices have different definitions of the same word. If the decision is unclear, state the decision you assumed, design for it, and list it as an open question in the report for the caller.
 2. **Write the metric spec first, then the query.** The spec is the deliverable; the SQL is an implementation of it.
 3. **Reconcile against a known-good total.** Before trusting a new metric, tie it to the tax-document register or a hand-countable subset. State the reconciliation you performed.
 4. **Test the edges deliberately** — a member who paid, was refunded, and was re-invoiced in the same period; an invoice voided after the period closed; a credit note issued in a later period than its invoice; a member erased under GDPR who had paid invoices.

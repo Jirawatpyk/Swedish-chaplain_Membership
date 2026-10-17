@@ -13,5 +13,49 @@
     "superpowers@claude-plugins-official": true,
     "remember@claude-plugins-official": true,
     "firecrawl@claude-plugins-official": true
+  },
+  "permissions": {
+    "deny": [
+      "Bash(pnpm format:*)",
+      "Bash(prettier --write:*)",
+      "Bash(npx prettier --write:*)",
+      "Bash(pnpm exec prettier --write:*)",
+      "Bash(git stash:*)",
+      "Bash(pnpm db:generate:*)",
+      "Bash(pnpm db:push:*)",
+      "Bash(pnpm db:migrate:prod:*)",
+      "Bash(pnpm db:verify:prod:*)",
+      "Bash(pnpm seed:system-actors:prod:*)",
+      "Bash(pnpm run format:*)",
+      "PowerShell(pnpm format:*)",
+      "PowerShell(prettier --write:*)",
+      "PowerShell(npx prettier --write:*)",
+      "PowerShell(pnpm exec prettier --write:*)",
+      "PowerShell(git stash:*)",
+      "PowerShell(pnpm db:generate:*)",
+      "PowerShell(pnpm db:push:*)",
+      "PowerShell(pnpm db:migrate:prod:*)",
+      "PowerShell(pnpm db:verify:prod:*)",
+      "PowerShell(pnpm seed:system-actors:prod:*)",
+      "PowerShell(pnpm run format:*)",
+      "Read(.env*)",
+      "Read(!.env.example)",
+      "Read(docs/*.xlsx)",
+      "Read(docs/*.xlsm)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.mjs\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
   }
 }

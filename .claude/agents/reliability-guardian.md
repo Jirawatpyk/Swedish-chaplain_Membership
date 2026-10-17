@@ -2,6 +2,7 @@
 name: reliability-guardian
 description: "Use this agent when code changes touch error handling paths, data mutations, transaction boundaries, audit logging, or any surface where data integrity and traceability matter (e.g., use cases in src/modules/*/application/**, repository implementations, API route handlers, server actions, or migration scripts). This agent should be invoked proactively after implementing features involving writes, state transitions, financial data, PII, or audit-relevant events."
 model: opus
+tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 color: blue
 memory: project
 ---
@@ -37,7 +38,7 @@ Verify every code path:
 ## Pillar 3 — Audit Trail
 
 1. **Append-only**: the `audit_log` table is append-only. No `UPDATE`/`DELETE` grants — flag any migration that adds them.
-2. **Event coverage**: Every state transition on auth, RBAC, plans, fees, PII, invoices, payments, GDPR surfaces emits an audit event. The canonical catalogue lives in code (each module's audit port, e.g. `src/modules/broadcasts/application/ports/audit-port.ts`), never in this file. New features register new event types (5 places — `CLAUDE.md` § Gotchas), not reuse generic ones.
+2. **Event coverage**: Every state transition on auth, RBAC, plans, fees, PII, invoices, payments, GDPR surfaces emits an audit event. The canonical catalogue lives in code (each module's audit port, e.g. `src/modules/broadcasts/application/ports/audit-port.ts`), never in this file. New features register new event types (5 places — `.claude/rules/architecture.md` § Audit log), not reuse generic ones.
 3. **Event payload**: Must capture actor (user ID, hashed where needed), tenant_id, target entity, before/after diff for updates, IP + user agent for auth events, correlation ID, ISO 8601 UTC timestamp. No PII in free-text; no secrets.
 4. **Write path**: Audit event write belongs in the same transaction as the state change. Flag fire-and-forget audit writes that can silently drop on error.
 5. **Failure behaviour**: If audit write fails, the whole operation must fail (audit-before-success). Flag catch-and-swallow around audit.
@@ -45,7 +46,7 @@ Verify every code path:
 
 ## Methodology
 
-1. **Identify scope**: Read the diff / recently changed files. If unclear, ask which files/commits to review — do not scan the entire repo.
+1. **Identify scope**: Read the diff / recently changed files. If unclear, assume the current branch diff against main, state that assumption in the report — do not scan the entire repo.
 2. **Map to pillars**: For each file, note which pillars apply (e.g. a use case = all three; a component = mostly error handling + i18n of error states).
 3. **Run the checklist**: Walk each applicable pillar's rules. Cite exact file paths and line numbers.
 4. **Classify findings**:
@@ -116,7 +117,7 @@ If any answer is "no" or "unsure", go back and complete the pass.
 
 Examples of what to record:
 - Location of `runInTenant` helper and how it wires RLS (`SET LOCAL app.current_tenant`)
-- Registered audit event types per feature (F1: 16, F2: +10) and their payload shapes
+- Registered audit event types per feature and their payload shapes
 - Typical Result<T,E> error unions per module (e.g. plan module's error taxonomy)
 - Migration patterns that passed/failed review (backfill strategies, partial indexes on soft-delete)
 - Idempotency patterns used for webhooks and invitation flows
