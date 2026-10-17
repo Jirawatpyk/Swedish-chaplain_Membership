@@ -45,7 +45,7 @@ For each hot path, check:
 ### Measurement (when reachable — a measured number beats a reasoned one every time)
 - Prefer `pnpm test:integration` timings against live Neon Singapore for realistic p95.
 - Use `EXPLAIN (ANALYZE, BUFFERS)` recommendations for new queries (write the exact SQL to run).
-- For E2E: recommend `pnpm test:e2e --workers=1 --grep "<scope>"`.
+- For E2E: recommend `E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright.attach.config.ts --workers=1 --grep "<scope>"` against the branch server (the `run-chamber-os` skill).
 - For bundle analysis: `pnpm build:analyse` (sets `ANALYZE=true`; output under `.next/analyze/`) and `pnpm check:bundle-budgets`.
 - If you cannot run it yourself, write the exact reproducible command and mark the claim UNVERIFIED until the user confirms.
 

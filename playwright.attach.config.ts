@@ -11,6 +11,9 @@
 import base from './playwright.config';
 
 const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:3400';
+// global-setup.ts reads E2E_BASE_URL (default :3100) for its warm-ups and
+// sign-in, so pin it here too: otherwise they would hit the maintainer's :3100.
+process.env.E2E_BASE_URL = baseURL;
 
 const attachConfig = {
   ...base,

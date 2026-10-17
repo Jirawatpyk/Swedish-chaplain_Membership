@@ -33,7 +33,7 @@ Copy `.env.local` from the main checkout. It is gitignored, so never commit it a
 cd <worktree>
 rm -rf .next                                                   # a stale Turbopack cache panics after a kill
 ALLOW_TEST_ROUTES=1 pnpm exec next dev --turbopack --port 3400 > <scratch>/dev.log 2>&1 &
-until grep -q "Ready in" <scratch>/dev.log; do sleep 2; done
+# wait for "Ready in" in dev.log with a background until-loop or a Monitor, never a foreground sleep
 curl -s -o /dev/null -w '%{http_code}\n' --max-time 180 http://localhost:3400/admin/sign-in   # expect 200
 ```
 

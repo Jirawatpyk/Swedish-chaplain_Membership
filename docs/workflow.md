@@ -17,7 +17,7 @@ The constitution's § Development Workflow still names the Spec Kit gates. It wi
 |---|---|---|
 | **S** | One surface, the diff fits in one sentence (a bug fix, a copy change, a guard) | No spec file; the PR states the Done-when lines |
 | **M** | A few files across one module, or one new screen | `specs/<nnn-name>/spec.md` with Done-when lines; agree the plan in plan mode before coding |
-| **L** | Several modules, a migration, money / tax / tenancy / PII / auth, or more than a day of work | M, plus the `spec-review-panel` Workflow on the spec, the plan cut into **slices**, and one PR per slice where possible |
+| **L** | Several modules, a migration, money / tax / tenancy / PII / auth, or more than a day of work | M, plus the `spec-review-panel` Workflow suggested on the spec (it runs on the user's opt-in), the plan cut into **slices**, and one PR per slice where possible |
 
 When unsure, size up. Anything touching money, tax, tenant isolation, PII, auth or a migration is never **S**.
 
@@ -60,7 +60,7 @@ A **slice** is a vertical cut through one user story: the thinnest DB → use ca
 - **Build one slice at a time.** It goes red, then green, and `pnpm check` passes before the next slice starts. Never build an L change in one pass.
 - **Review in two layers:**
   - **Every slice:** `/code-review high` on that slice's diff, plus the surface reviewers for what the slice touches (e.g. `drizzle-migration-reviewer` for a slice with a migration). Findings are fixed before the next slice builds on them.
-  - **Once, at the end:** `whole-branch-reviewer` on the whole branch, for the seams between slices that per-slice review cannot see.
+  - **Before each slice PR merges:** `whole-branch-reviewer` on that PR's full diff against `origin/main` (every merge deploys). When slices share a long-lived branch instead, run it once more at the end for the seams between slices.
 - **One PR per slice where possible.** Each PR must be safe to deploy on its own; use a default-OFF flag when it isn't user-ready yet.
 
 ## Definition of Done

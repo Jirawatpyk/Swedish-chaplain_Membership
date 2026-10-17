@@ -9,16 +9,18 @@ Every audit event type lives in several places that must agree. Missing one has 
 
 ## 1. Decide where it is declared
 
-- **An F1 / auth-level event**: add it to `AUDIT_EVENT_TYPES` in `src/modules/auth/domain/audit-event.ts`.
-- **A module event** (events, broadcasts, renewals, …): add it to `DB_ONLY_AUDIT_EVENT_TYPES` in `src/modules/auth/infrastructure/db/schema.ts`, and to the module's own list if it has one (e.g. `F7_AUDIT_EVENT_TYPES` in `src/modules/broadcasts/application/ports/audit-port.ts`, which is static-asserted).
-- `ALL_AUDIT_EVENT_TYPES` is the tuple ∪ `DB_ONLY_AUDIT_EVENT_TYPES`, and it must equal the live enum.
+- **Every new value** goes into the `auditEventTypeEnum` pgEnum tuple in `src/modules/auth/infrastructure/db/schema.ts`. A value missing there shows as TS2769 "no overload" on every typed insert.
+- **The module's own taxonomy**, when it has one: e.g. `F7_AUDIT_EVENT_TYPES` in `src/modules/broadcasts/application/ports/audit-port.ts` (static-asserted), or the F5 / F8 / F9 lists. The comments beside each tuple block in `schema.ts` say which list to keep in lockstep.
+- **An F1 audit-taxonomy event** (auth, members' F1-level events such as F114's) also goes into `AUDIT_EVENT_TYPES` in `src/modules/auth/domain/audit-event.ts`.
+- `DB_ONLY_AUDIT_EVENT_TYPES` is **legacy**: values that older migrations added without syncing the tuple. Don't add new values there.
+- `ALL_AUDIT_EVENT_TYPES` (the tuple ∪ `DB_ONLY_`) must equal the live enum.
 
 ## 2. The places to change
 
-1. The list chosen in step 1.
-2. `auditEventTypeEnum` in `src/modules/auth/infrastructure/db/schema.ts`, if the value belongs to the tuple. A missing value shows as TS2769 "no overload" on every insert.
-3. The count in `tests/unit/auth/domain/audit-event.test.ts` (`toHaveLength(N)`), if the tuple grew.
-4. The count in `tests/integration/audit/completeness.test.ts` (`AUDIT_EVENT_TYPES.length` and the `describe` title), if the tuple grew.
+1. `auditEventTypeEnum` in `schema.ts`.
+2. The module's taxonomy list and its count test, if it has one; and `AUDIT_EVENT_TYPES` for an F1 audit-taxonomy event.
+3. The count in `tests/unit/auth/domain/audit-event.test.ts` (`toHaveLength(N)`), if `AUDIT_EVENT_TYPES` grew.
+4. The count in `tests/integration/audit/completeness.test.ts` (`AUDIT_EVENT_TYPES.length` and the `describe` title), if `AUDIT_EVENT_TYPES` grew.
 5. The label `audit.eventType.<value>` in `src/i18n/messages/en.json`, `th.json` and `sv.json`. `tests/unit/insights/audit-event-label-coverage.test.ts` enforces it, and the F9 audit viewer shows the raw value without it.
 
 Before running anything, grep `tests/` for the **old** count (`toHaveLength(` and `length).toBe(`) to find every assertion that must move.

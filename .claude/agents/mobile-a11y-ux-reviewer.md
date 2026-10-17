@@ -31,7 +31,7 @@ Audit against all Level A + AA success criteria relevant to the change:
 - **Forms**: every input has an associated `<label>` (or `aria-labelledby`); error messages linked via `aria-describedby`; `aria-invalid` on invalid fields; fieldsets + legends for grouped inputs.
 - **Dialogs/Modals**: `role="dialog"` + `aria-modal="true"` + `aria-labelledby`; focus trapped while open; focus returns to trigger on close; `Esc` closes.
 - **Images**: meaningful images have descriptive `alt`; decorative images have `alt=""`; icon-only buttons have `aria-label` or visually-hidden text.
-- **Run axe-core** expectations — flag issues that `pnpm test:e2e --grep "@a11y"` would catch.
+- **Run axe-core** expectations — flag issues that the `@a11y` e2e scan would catch.
 
 ### 3. UX/UI Consistency
 Enforce the Chamber-OS design system per `docs/ux-standards.md`:
@@ -57,7 +57,7 @@ Enforce the Chamber-OS design system per `docs/ux-standards.md`:
    - **⚠️ Warnings**: concerns that should be fixed but are not ship-blockers
    - **💡 Suggestions**: polish opportunities
    - For each issue: **file:line**, **what's wrong**, **why it matters** (cite WCAG SC or ux-standards § number), **concrete fix** (code snippet preferred)
-5. **Verify with test commands** when applicable: suggest running `pnpm test:e2e --grep "@a11y"`, `pnpm check:i18n`, or manual checks at specific viewports.
+5. **Verify with test commands** when applicable: suggest running `E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright.attach.config.ts --workers=1 --grep "@a11y"` against the branch server (the `run-chamber-os` skill), `pnpm check:i18n`, or manual checks at specific viewports.
 6. **Self-verification**: before finalizing, re-scan your report for: did I check touch targets? color contrast? keyboard nav? focus management? i18n coverage? theming? all three responsive breakpoints? If any were skipped without justification, revisit.
 
 ## Escalation & Clarification
@@ -91,7 +91,7 @@ Structure every review as:
 …
 
 ### ✔️ Verification steps
-- `pnpm exec playwright test --config=playwright.attach.config.ts --grep "@a11y" --workers=1` against the branch server on :3400 (the `run-chamber-os` skill)
+- `E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright.attach.config.ts --workers=1 --grep "@a11y"` against the branch server (the `run-chamber-os` skill)
 - Manual: test at 320px / 768px / 1440px
 - Manual: keyboard-only navigation end-to-end
 - Manual: screen reader pass (VoiceOver/NVDA) on <critical flow>

@@ -29,7 +29,7 @@
     "verify:clamav": "node --env-file=.env.local --import tsx scripts/verify-clamav-connectivity.ts",
     "test:e2e": "playwright test --workers=1",
     "test:e2e:ui": "playwright test --ui",
-    "check": "pnpm lint && pnpm typecheck && pnpm check:i18n && pnpm check:layout && pnpm check:fixme && pnpm check:dates && pnpm check:env-example && pnpm check:env-boot && pnpm check:template-seed && pnpm check:money-recipient && pnpm check:staff-page-guard && pnpm check:api-route-guard && pnpm check:authorization-role-reads && pnpm check:actor-role-truth && pnpm check:f8-error-id",
+    "check": "pnpm lint && pnpm exec next typegen && pnpm typecheck && pnpm check:i18n && pnpm check:layout && pnpm check:fixme && pnpm check:dates && pnpm check:env-example && pnpm check:env-boot && pnpm check:template-seed && pnpm check:money-recipient && pnpm check:staff-page-guard && pnpm check:api-route-guard && pnpm check:authorization-role-reads && pnpm check:actor-role-truth && pnpm check:f8-error-id",
     "check:i18n": "tsx scripts/check-i18n-coverage.ts",
     "check:strict-aria": "tsx scripts/check-i18n-coverage.ts --strict-aria",
     "check:layout": "tsx scripts/check-layout-container-usage.ts",

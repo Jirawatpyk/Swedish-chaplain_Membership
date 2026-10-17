@@ -84,13 +84,13 @@ specs/<nnn-feature>/                   # Spec Kit artefacts — one dir per feat
 - The canonical lists and their counts live in code, never here — e.g. `F7_AUDIT_EVENT_TYPES` (static-asserted) in `src/modules/broadcasts/application/ports/audit-port.ts`.
 - `audit_log.retention_years` is `SMALLINT NOT NULL DEFAULT 5` with CHECK `IN (5,10)`; six F4 tax-document types are backfilled to 10 years per Thai RD §87/3 + GDPR Art. 6(1)(c) (migration 0039).
 - **Adding an audit event type touches five places**:
-  1. `AUDIT_EVENT_TYPES` in `src/modules/auth/domain/audit-event.ts`, or, for module events, `DB_ONLY_AUDIT_EVENT_TYPES` in `src/modules/auth/infrastructure/db/schema.ts`;
-  2. `auditEventTypeEnum` in `src/modules/auth/infrastructure/db/schema.ts`;
-  3. the count in `tests/unit/auth/domain/audit-event.test.ts`;
-  4. the count in `tests/integration/audit/completeness.test.ts` (pre-push does NOT run this folder for another module's event);
+  1. `auditEventTypeEnum` in `src/modules/auth/infrastructure/db/schema.ts` (every new value);
+  2. the module's own taxonomy list (F5 / F7 / F8 / F9), or `AUDIT_EVENT_TYPES` in `src/modules/auth/domain/audit-event.ts` for an F1 audit-taxonomy event;
+  3. the count in `tests/unit/auth/domain/audit-event.test.ts` when `AUDIT_EVENT_TYPES` grew (or the module's count test);
+  4. the count in `tests/integration/audit/completeness.test.ts` when `AUDIT_EVENT_TYPES` grew (pre-push does NOT run this folder for another module's event);
   5. `audit.eventType.<value>` in all three locale files, which `tests/unit/insights/audit-event-label-coverage.test.ts` enforces.
 
-  Add the value with an idempotent `ALTER TYPE … ADD VALUE` migration. The TS tuple is not the whole enum: `ALL_AUDIT_EVENT_TYPES = tuple ∪ DB_ONLY_AUDIT_EVENT_TYPES`, and three values contain a hyphen, so parse enum values with `'([^']+)'`, never `[a-z0-9_]+`.
+  Add the value with an idempotent `ALTER TYPE … ADD VALUE` migration. The TS tuple is not the whole enum: `ALL_AUDIT_EVENT_TYPES = tuple ∪ DB_ONLY_AUDIT_EVENT_TYPES` (`DB_ONLY_` is legacy drift; never add to it), and three values contain a hyphen, so parse enum values with `'([^']+)'`, never `[a-z0-9_]+`.
 - **Audit-truth invariant**: no `audit_log` row states a role its actor did not hold — record `?? null`, never `?? 'admin'`; `pnpm check:actor-role-truth` (pre-push) guards it.
 - Audit payloads carry snake_case `member_id` — the `last_activity_at` trigger reads only that key.
 

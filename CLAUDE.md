@@ -23,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `.claude/skills/feature-flow/` + `docs/workflow.md` | on demand | the change lifecycle, Definition of Done, decisions, retros |
 | `.claude/skills/new-migration/`, `add-audit-event/` | on demand | the fragile build steps: a hand-written migration; a new audit event type |
 | `.claude/skills/run-chamber-os/` | on demand | how to run a branch on :3400 for verification (personas, Playwright attach, UI probes) |
-| `.claude/settings.json` `permissions.deny` | always (blocks the usual spellings, not every form) | commands Claude may not run (format, stash, `db:generate`, prod scripts); the ban covers every other spelling too |
+| `.claude/settings.json` `permissions.deny` | always (blocks the usual spellings, not every form) | commands Claude may not run (format, stash, `db:generate`, `db:push`, prod scripts); the ban covers every other spelling too |
 
 A fact that matters only for one module goes in that module's rule, not here. Keep this file under 200 lines.
 
@@ -80,7 +80,7 @@ pnpm build                     # production build
 # pnpm db:generate             # DO NOT USE — migrations are hand-written SQL (see .claude/rules/architecture.md)
 ```
 
-`pnpm check` runs lint + typecheck + the static gates in one go. Full local gate before shipping anything non-trivial:
+`pnpm check` runs lint + `next typegen` + typecheck + the static gates in one go, as CI does. Full local gate before shipping anything non-trivial:
 
 ```bash
 pnpm check && pnpm test:coverage && pnpm vitest run tests/contract/ && pnpm test:integration <touched paths>

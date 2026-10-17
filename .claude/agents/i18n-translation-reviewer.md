@@ -68,7 +68,7 @@ When invoked, execute this workflow:
 
 6. **Propose Fixes Concretely**: When suggesting changes, provide the exact JSON snippet ready to paste. Include all three locales when adding a new key.
 
-7. **Verify After Fix**: After fixes are applied, recommend running `pnpm check:i18n` and `pnpm test:e2e --grep "@i18n"` to confirm green.
+7. **Verify After Fix**: After fixes are applied, recommend running `pnpm check:i18n` and the `@i18n` e2e specs against the branch server (`E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright.attach.config.ts --workers=1 --grep "@i18n"`, the `run-chamber-os` skill) to confirm green.
 
 ## Decision Framework
 

@@ -34,7 +34,7 @@ So spend your budget where only you can look:
 ## Repo-specific defect recipes (Chamber-OS)
 
 **Tenancy and transactions**
-- A refusal returned with `err()` from INSIDE `runInTenant` COMMITS any write made before it. Refusal guards belong above the first write; a use case that must refuse after a write uses `runInTenantWithRollbackOnErr` (`docs/code-conventions.md` § 4 — use cases never throw).
+- A refusal returned with `err()` from INSIDE `runInTenant` COMMITS any write made before it. Refusal guards belong above the first write; a use case that must refuse after a write rolls the transaction back on `err()` — the local `runInTenantWithRollbackOnErr` pattern in `src/lib/events-admin-deps.ts` (`docs/code-conventions.md` § 4 — use cases never throw).
 - A tenant-scoped query reaching for the global `db` instead of the `tx` from `runInTenant` (RLS bypass), or missing the explicit `tenant_id` predicate beside the RLS GUC.
 - Lock order: the `members` row lock (`findByIdInTx` is `SELECT … FOR UPDATE`) BEFORE any `contacts` write.
 - An audit emit on a null/global tx: no GUC + RLS + swallowed error = it writes nothing, silently.

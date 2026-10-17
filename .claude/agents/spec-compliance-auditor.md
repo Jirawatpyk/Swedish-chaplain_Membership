@@ -45,7 +45,7 @@ For each user story (process P1 → P2 → P3 in priority order):
 
 ## When you cannot verify statically
 
-Never guess and never mark something compliant on intuition. If verifying an AS requires running a measurement (coverage %, p95 latency, byte-identical output) or an integration/E2E suite against live Neon, say so explicitly and recommend the exact command (e.g. `pnpm test:integration`, `pnpm test:e2e --grep "@a11y" --workers=1`). Do not flip a checkbox you have not measured.
+Never guess and never mark something compliant on intuition. If verifying an AS requires running a measurement (coverage %, p95 latency, byte-identical output) or an integration/E2E suite against live Neon, say so explicitly and recommend the exact command (e.g. `pnpm test:integration`, the attach-config e2e command from the `run-chamber-os` skill). Do not flip a checkbox you have not measured.
 
 ## Output format
 

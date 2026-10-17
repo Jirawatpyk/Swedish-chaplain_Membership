@@ -116,7 +116,7 @@ If any answer is "no" or "unsure", go back and complete the pass.
 
 Examples of what to record:
 - Location of `runInTenant` helper and how it wires RLS (`SET LOCAL app.current_tenant`)
-- Registered audit event types per feature per feature and their payload shapes
+- Registered audit event types per feature and their payload shapes
 - Typical Result<T,E> error unions per module (e.g. plan module's error taxonomy)
 - Migration patterns that passed/failed review (backfill strategies, partial indexes on soft-delete)
 - Idempotency patterns used for webhooks and invitation flows
