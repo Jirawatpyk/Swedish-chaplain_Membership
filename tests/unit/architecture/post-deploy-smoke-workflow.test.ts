@@ -132,6 +132,24 @@ describe('.github/workflows/post-deploy-smoke.yml', () => {
     expect(code).not.toMatch(/:\s*write-all/);
   });
 
+  it('hands the token only to the issue step, and checkout keeps no credentials', () => {
+    const lines = src.split(/\r?\n/);
+    const start = lines.findIndex((l) => /^\s+- name: Open or update the prod-smoke issue\s*$/.test(l));
+    expect(start).toBeGreaterThan(0);
+    const stepIndent = indentOf(lines[start]!);
+    let end = start + 1;
+    while (end < lines.length && !(indentOf(lines[end]!) <= stepIndent && lines[end]!.trim() !== '')) end += 1;
+    const envAt = lines.findIndex((l, i) => i > start && i < end && /^\s+env:\s*$/.test(l));
+    expect(envAt).toBeGreaterThan(start);
+    for (const key of ['GH_TOKEN', 'GH_REPO']) {
+      const at = lines.flatMap((l, i) => (new RegExp(`^\\s+${key}:`).test(l) ? [i] : []));
+      expect(at, key).toHaveLength(1);
+      expect(at[0]!, key).toBeGreaterThan(envAt);
+      expect(at[0]!, key).toBeLessThan(end);
+    }
+    expect(code).toMatch(/uses: actions\/checkout@v4\n\s+with:\n\s+persist-credentials:\s*false/);
+  });
+
   it('uses no secret except the automatic GITHUB_TOKEN', () => {
     const secrets = [...code.matchAll(/secrets\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
     expect(secrets.filter((s) => s !== 'GITHUB_TOKEN')).toEqual([]);
