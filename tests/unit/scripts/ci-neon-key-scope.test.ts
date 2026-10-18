@@ -40,6 +40,13 @@ describe('keyScopeVerdict', () => {
     expect(keyScopeVerdict(res(200, { nope: true }), ownProject, CI).ok).toBe(false);
   });
 
+  it.each([500, 429, 503, 401, 302])(
+    'refuses a listing that answers %i: only 404 (or 403) means a project-scoped key',
+    (status) => {
+      expect(keyScopeVerdict(res(status, {}), ownProject, CI).ok).toBe(false);
+    },
+  );
+
   it('refuses a wrong key: the CI project does not open (leg ii)', () => {
     expect(keyScopeVerdict(res(404, {}), res(404, {}), CI).ok).toBe(false);
     expect(keyScopeVerdict(res(401, {}), res(401, {}), CI).ok).toBe(false);
@@ -56,9 +63,9 @@ describe('keyScopeVerdict', () => {
 
 describe('checkKeyScope', () => {
   function fakeFetch(routes: Record<string, ScopeResponse>) {
-    const calls: Array<{ url: string; auth: string | null }> = [];
-    const fetchImpl = async (url: string, init?: { headers?: Record<string, string> }) => {
-      calls.push({ url, auth: init?.headers?.Authorization ?? null });
+    const calls: Array<{ url: string; auth: string | null; signal: unknown }> = [];
+    const fetchImpl = async (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => {
+      calls.push({ url, auth: init?.headers?.Authorization ?? null, signal: init?.signal });
       const r = routes[url] ?? res(500, {});
       return { status: r.status, json: async () => r.body };
     };
@@ -75,6 +82,8 @@ describe('checkKeyScope', () => {
     expect(ok).toBe(true);
     expect(calls.map((c) => c.url)).toEqual([LIST, ONE]);
     expect(calls.every((c) => c.auth === `Bearer ${KEY}`)).toBe(true);
+    // Each request is bounded: a hung Neon API must not hang the job.
+    expect(calls.every((c) => c.signal instanceof AbortSignal)).toBe(true);
     expect(lines.join('\n')).not.toContain(KEY);
     expect(lines.join('\n')).toMatch(/ok/);
   });
@@ -105,5 +114,14 @@ describe('checkKeyScope', () => {
     expect(await checkKeyScope({ apiKey: '', projectId: CI, fetchImpl, log: () => {} })).toBe(false);
     expect(await checkKeyScope({ apiKey: KEY, projectId: '', fetchImpl, log: () => {} })).toBe(false);
     expect(calls).toEqual([]);
+  });
+
+  it('fails closed when a request times out', async () => {
+    const fetchImpl = async () => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    };
+    const lines: string[] = [];
+    expect(await checkKeyScope({ apiKey: KEY, projectId: CI, fetchImpl, log: (l) => lines.push(l) })).toBe(false);
+    expect(lines.join('\n')).toMatch(/TimeoutError/);
   });
 });
