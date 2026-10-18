@@ -118,7 +118,8 @@ describe('.github/workflows/ci-e2e-parent-refresh.yml', () => {
   });
 
   it('migrates through the shared ci-neon-env action, after the guard, with the prod blocklist', () => {
-    const migrate = step(src, /uses: \.\/\.github\/actions\/ci-neon-env/);
+    const migrate = step(src, /- name: Migrate the CI parent branch/);
+    expect(migrate).toMatch(/uses: \.\/\.github\/actions\/ci-neon-env/);
     expect(migrate).toMatch(/database-url: \$\{\{ steps\.parent\.outputs\.db_url \}\}/);
     expect(migrate).toMatch(/blocklist: \$\{\{ vars\.TEST_DB_HOST_BLOCKLIST \}\}/);
     expect(migrate).toMatch(/migrate: 'true'/);

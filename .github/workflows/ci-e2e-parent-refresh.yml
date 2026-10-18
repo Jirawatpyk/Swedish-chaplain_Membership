@@ -1,0 +1,126 @@
+# Keep the CI Neon project's parent branch migrated (spec 123 slice 2).
+#
+# WHY
+#   Every PR's e2e-critical run branches `ci-e2e/<run>` from
+#   `vars.NEON_CI_PARENT_BRANCH`. With an empty parent each run migrated the
+#   whole chain from zero: 520 s of the 25-minute budget (run 39095428106).
+#   This job migrates the parent after every merge, so a PR branch applies only
+#   the migrations its own PR adds.
+#
+#   First run on an empty parent: `scripts/run-migrations.ts` takes its
+#   fresh-DB mode (one transaction per journal entry). Every later run: the
+#   normal path, only the migrations new on main, all-or-nothing.
+#   From-zero coverage moves to the nightly, which resets the schema on its own
+#   `ci-e2e/` branch before migrating (plan.md § Slice 2).
+#
+# SECURITY (the repo is PUBLIC)
+#   - push to main + manual dispatch only; no pull_request trigger, so no PR
+#     code runs with the key.
+#   - The key is the CI project's `NEON_CI_API_KEY`, never the project-wide
+#     `NEON_API_KEY` (which can reach production).
+#   - The resolve step refuses unless the branch Neon returns is exactly
+#     `vars.NEON_CI_PARENT_BRANCH` in project `vars.NEON_CI_PROJECT_ID`; the
+#     shared ci-neon-env action then refuses any blocklisted (production) host.
+#   - The connection string and its password are masked before they leave the
+#     step; no `${{ }}` is expanded inside `run:`.
+#   - `tests/unit/architecture/ci-e2e-parent-refresh-workflow.test.ts` asserts
+#     all of this.
+#
+# CONCURRENCY
+#   One group, queued, never cancelled: cancelling a migration half-way leaves
+#   the parent in a state the next run has to recover from. A PR branch cut
+#   while the FIRST (from-zero) refresh is running can see a part-migrated
+#   parent; its own migrate step then applies the rest.
+name: CI e2e parent refresh
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-e2e-parent-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Migrate the CI parent branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      # US runner, Singapore-class latency (see e2e-critical.yml).
+      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      - name: Resolve the CI parent branch (refuse anything else)
+        id: parent
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_CI_API_KEY }}
+          PROJECT_ID: ${{ vars.NEON_CI_PROJECT_ID }}
+          PARENT_BRANCH_ID: ${{ vars.NEON_CI_PARENT_BRANCH }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NEON_API_KEY" ] || [ -z "$PROJECT_ID" ] || [ -z "$PARENT_BRANCH_ID" ]; then
+            echo "::error title=CI parent refresh not configured::NEON_CI_API_KEY, NEON_CI_PROJECT_ID and NEON_CI_PARENT_BRANCH are all required."
+            exit 1
+          fi
+          api="https://console.neon.tech/api/v2/projects/$PROJECT_ID"
+          neon() { curl -fsS -H "Authorization: Bearer $NEON_API_KEY" -H 'Accept: application/json' "$api$1"; }
+
+          branch="$(neon "/branches/$PARENT_BRANCH_ID")"
+          got_branch="$(jq -r '.branch.id' <<< "$branch")"
+          got_project="$(jq -r '.branch.project_id' <<< "$branch")"
+          if [ "$got_branch" != "$PARENT_BRANCH_ID" ]; then
+            echo "::error title=Refusing to migrate::Neon returned branch \"$got_branch\", not NEON_CI_PARENT_BRANCH."
+            exit 1
+          fi
+          if [ "$got_project" != "$PROJECT_ID" ]; then
+            echo "::error title=Refusing to migrate::The branch belongs to project \"$got_project\", not NEON_CI_PROJECT_ID."
+            exit 1
+          fi
+
+          # Exactly one application database; its owner is the role to connect as.
+          databases="$(neon "/branches/$PARENT_BRANCH_ID/databases")"
+          count="$(jq '.databases | length' <<< "$databases")"
+          if [ "$count" != "1" ]; then
+            echo "::error title=Refusing to migrate::Expected one database on the CI parent branch, found $count."
+            exit 1
+          fi
+          db_name="$(jq -r '.databases[0].name' <<< "$databases")"
+          role_name="$(jq -r '.databases[0].owner_name' <<< "$databases")"
+
+          query="branch_id=$PARENT_BRANCH_ID&database_name=$db_name&role_name=$role_name&pooled=false"
+          DB_URL="$(neon "/connection_uri?$query" | jq -r '.uri')"
+          DB_PASSWORD="$(node -e 'process.stdout.write(decodeURIComponent(new URL(process.argv[1]).password))' "$DB_URL")"
+          echo "::add-mask::$DB_PASSWORD"
+          echo "::add-mask::$DB_URL"
+          echo "db_url=$DB_URL" >> "$GITHUB_OUTPUT"
+          echo "Resolved $got_branch in $got_project (database $db_name)."
+
+      - name: Start the migration timer
+        run: echo "MIGRATE_T0=$(date +%s)" >> "$GITHUB_ENV"
+
+      # The direct (unpooled) URL carries the DDL.
+      - name: Migrate the CI parent branch
+        uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ steps.parent.outputs.db_url }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+          migrate: 'true'
+
+      - name: Record the migration time
+        if: always() && env.MIGRATE_T0 != ''
+        run: echo "CI parent migrate took $(( $(date +%s) - MIGRATE_T0 )) s" | tee -a "$GITHUB_STEP_SUMMARY"

@@ -14,7 +14,9 @@
 #      starts with `ci-e2e/`, the action created it (it silently REUSES a
 #      same-named branch), the connection hosts equal the hosts Neon returned,
 #      and the host is not in TEST_DB_HOST_BLOCKLIST or a placeholder.
-#   3. Migrate from zero (the CI parent is empty), then seed personas and
+#   3. Migrate (only this PR's new migrations once ci-e2e-parent-refresh.yml
+#      has migrated the parent on main; the whole chain while the parent is
+#      still empty), then seed personas and
 #      fixtures (`scripts/seed-ci-e2e.ts`), then the production-boot env
 #      (`.github/ci/e2e.env` + the CI Blob / Upstash secrets).
 #   4. `next build`, `next start` on :3100, readiness on `/api/health` (app up
@@ -121,9 +123,11 @@ jobs:
       - name: Start the migration timer
         run: echo "MIGRATE_T0=$(date +%s)" >> "$GITHUB_ENV"
 
-      # The CI parent is empty, so this applies the whole chain from zero. The
-      # direct (unpooled) URL carries the DDL.
-      - name: Migrate the branch from zero
+      # ci-e2e-parent-refresh.yml keeps the CI parent migrated to main, so this
+      # applies only the PR's own migrations (normal path). On an empty parent
+      # it applies the whole chain (fresh-DB mode, ~520 s). The direct
+      # (unpooled) URL carries the DDL.
+      - name: Migrate the branch
         uses: ./.github/actions/ci-neon-env
         with:
           database-url: ${{ steps.branch.outputs.db_url }}
