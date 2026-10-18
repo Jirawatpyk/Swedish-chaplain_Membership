@@ -47,7 +47,7 @@ import {
 } from '@/components/ui/inline-alert';
 import { isReadOnlyCode, isReadOnlyRefusal, retryAfterMinutes } from '@/lib/http/read-only-refusal';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
-import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
+import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { SegmentPicker, type SegmentPickerValue } from './segment-picker';
 import { CustomListInput, parseLines } from './custom-list-input';
 import { SchedulePicker } from './schedule-picker';

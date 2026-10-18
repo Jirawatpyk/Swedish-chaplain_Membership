@@ -33,7 +33,7 @@ vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), warni
 vi.mock('@/components/shell/unsaved-changes-guard', () => ({ UnsavedChangesGuard: () => null }));
 vi.mock('@/components/broadcast/preview-pane', () => ({ PreviewPane: () => null }));
 vi.mock('@/components/broadcast/use-preview-html', () => ({ PreviewSurface: () => <div data-testid="preview-surface" /> }));
-vi.mock('@/components/ui/tiptap-loader', () => ({
+vi.mock('@/components/shell/tiptap-loader', () => ({
   loadTiptapEditor: () =>
     function TiptapStub(props: {
       initialHtml: string;

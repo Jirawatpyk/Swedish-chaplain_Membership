@@ -236,6 +236,14 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/admin/broadcasts/[id]', maxKb: 2030 },
   { route: '/portal/benefits/e-blasts', maxKb: 1050 },
   { route: '/unsubscribe/[token]', maxKb: 690 },
+  // Spec 122 US12a first budgets (AURA templates, broadcast settings, the
+  // marketing audience), measured on the US12a build: ceil(kb/10)*10+100.
+  { route: '/admin/broadcasts/templates', maxKb: 950 }, // 841.4 KB
+  { route: '/admin/broadcasts/templates/new', maxKb: 960 }, // 857.7 KB
+  { route: '/admin/broadcasts/templates/[id]/edit', maxKb: 960 }, // 859.4 KB
+  { route: '/admin/settings/broadcasts', maxKb: 920 }, // 816.7 KB
+  { route: '/admin/settings/broadcasts/brand', maxKb: 930 }, // 824.1 KB
+  { route: '/admin/marketing/audience', maxKb: 960 }, // 850.9 KB
   // --- F8 renewals (Phase 9 / T255) ------------------------------------
   // Spec 122 US7a re-baseline (AURA pipeline) — see docblock.
   { route: '/admin/renewals', maxKb: 1160 },

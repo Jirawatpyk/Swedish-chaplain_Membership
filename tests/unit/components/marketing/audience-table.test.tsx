@@ -15,7 +15,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 
@@ -55,10 +55,19 @@ function renderTable(canMarketing = false) {
 afterEach(() => cleanup());
 
 describe('AudienceTable — structure (cycle 11)', () => {
-  it('names the scrollable region in the viewer locale, never "Data table"', () => {
+  it('names the table in the viewer locale, never "Data table"', () => {
     renderTable();
-    expect(screen.getByRole('region', { name: t.tableCaption })).toBeInTheDocument();
+    // AURA names its scroll region only once the table overflows (no layout
+    // in jsdom); the table itself carries the caption name either way.
+    expect(screen.getByRole('table', { name: t.tableCaption })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Data table' })).toBeNull();
+  });
+
+  it('spec 122 US12a: the table and its badges are AURA', () => {
+    renderTable();
+    expect(screen.getByRole('table')).toHaveClass('aura-tbl');
+    expect(within(screen.getByRole('table')).getByText(t.kind.secondary)).toHaveClass('aura-badge');
+    expect(within(screen.getByRole('table')).getByText(t.memberStatus.active)).toHaveClass('aura-badge');
   });
 
   it('pins column widths with table-fixed + a colgroup (6 cols read-only, 7 with the switch)', () => {
@@ -79,9 +88,9 @@ describe('AudienceTable — structure (cycle 11)', () => {
 
   it('the member link is visibly a link at rest; the email wraps anywhere', () => {
     renderTable();
-    const link = screen.getByRole('link', { name: 'Acme AB' });
-    expect(link.className).toContain('text-primary');
-    const email = screen.getByText('jane.doe@example.com');
+    const link = within(screen.getByRole('table')).getByRole('link', { name: 'Acme AB' });
+    expect(link.className).toContain('text-[var(--aura-fg-accent)]');
+    const email = within(screen.getByRole('table')).getByText('jane.doe@example.com');
     expect(email.className).not.toContain('break-all');
     expect(email.className).toContain('[overflow-wrap:anywhere]');
   });
@@ -100,12 +109,12 @@ describe('AudienceTable — read-only viewer (cycle 15, FR-034/FR-035)', () => {
   it('canMarketing=false → the state badge, and NO switch anywhere', () => {
     renderTable(false);
     expect(screen.queryByRole('switch')).toBeNull();
-    expect(screen.getByText(en.shared.marketing.state.off_by_staff)).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText(en.shared.marketing.state.off_by_staff)).toBeInTheDocument();
   });
 
   it('canMarketing=true → exactly one switch for the row', () => {
     renderTable(true);
-    expect(screen.getAllByRole('switch')).toHaveLength(1);
+    expect(within(screen.getByRole('table')).getAllByRole('switch')).toHaveLength(1);
   });
 });
 
@@ -138,6 +147,38 @@ function contentWidthAt(viewport: number): number {
   return viewport - sidebarWidth - 2 * pagePadding - 2 * cardPadding - SCROLLBAR;
 }
 
+describe('AudienceTable — phone cards follow board Admin-marketing-audience-mobile', () => {
+  it('below 640 px a list of contact cards replaces the table (table is sm-up only)', () => {
+    renderTable(true);
+    const table = screen.getByRole('table');
+    expect(table.closest('[data-audience-table-wrap]')).toHaveClass('max-sm:hidden');
+    const list = screen.getByRole('list', { name: t.tableCaption });
+    expect(list).toHaveClass('sm:hidden');
+    expect(list.querySelectorAll(':scope > li')).toHaveLength(1);
+  });
+
+  it('a card reads: name with the role pill, email, member link, state, last change, then the switch row', () => {
+    renderTable(true);
+    const card = screen.getByRole('list', { name: t.tableCaption }).querySelector<HTMLElement>(':scope > li')!;
+    expect(card).toHaveAttribute('data-card-contact-id', row.contactId);
+    expect(within(card).getByText('Jane Doe')).toBeInTheDocument();
+    expect(within(card).getByText(t.kind.secondary)).toHaveClass('aura-badge');
+    expect(within(card).getByRole('link', { name: row.companyName })).toBeInTheDocument();
+    expect(within(card).getByText(`${t.columns.lastChange}: Staff Member · 6 Sep 2026, 10:00`)).toBeInTheDocument();
+    expect(within(card).getByText(t.card.receives)).toBeInTheDocument();
+    expect(within(card).getByRole('switch')).toBeInTheDocument();
+    // The active member status is not repeated on the card (the board drops it).
+    expect(within(card).queryByText(t.memberStatus.active)).toBeNull();
+  });
+
+  it('a read-only viewer gets no switch row on the card', () => {
+    renderTable(false);
+    const card = screen.getByRole('list', { name: t.tableCaption }).querySelector<HTMLElement>(':scope > li')!;
+    expect(within(card).queryByRole('switch')).toBeNull();
+    expect(within(card).queryByText(t.card.receives)).toBeNull();
+  });
+});
+
 describe('AudienceTable — fits the staff content area at 1440 px', () => {
   it('the budget is read from real tokens (positive control)', () => {
     // 1440 − 256 sidebar − 2×24 page − 2×24 card − 16 scrollbar.
@@ -147,7 +188,7 @@ describe('AudienceTable — fits the staff content area at 1440 px', () => {
   it.each([true, false])('canMarketing=%s → min-width fits without horizontal scroll', (canMarketing) => {
     const { container } = renderTable(canMarketing);
     const table = container.querySelector<HTMLElement>('table');
-    const minWidth = Number.parseFloat(table?.style.minWidth ?? '');
+    const minWidth = Number.parseFloat(table?.style.getPropertyValue('--audience-min-w') ?? '');
     expect(Number.isFinite(minWidth)).toBe(true);
     expect(minWidth).toBeLessThanOrEqual(contentWidthAt(1440));
   });
@@ -163,17 +204,17 @@ describe('AudienceTable — fits the staff content area at 1440 px', () => {
     const { container } = renderTable(true);
     const headers = Array.from(container.querySelectorAll('th')).map((th) => th.textContent);
     expect(headers).toContain(t.columns.lastChange);
-    const cell = screen.getByText('Staff Member').closest('td');
+    const cell = within(screen.getByRole('table')).getByText('Staff Member').closest('td');
     expect(cell).not.toBeNull();
     expect(cell).toHaveTextContent('6 Sep 2026, 10:00');
   });
 
   it('Member and the reason lines wrap instead of widening the column', () => {
     const { container } = renderTable();
-    const memberCell = screen.getByRole('link', { name: 'Acme AB' }).closest('td');
+    const memberCell = within(screen.getByRole('table')).getByRole('link', { name: 'Acme AB' }).closest('td');
     expect(memberCell?.className).toContain('whitespace-normal');
-    expect(screen.getByRole('link', { name: 'Acme AB' }).className).toContain('[overflow-wrap:anywhere]');
-    expect(container.querySelector('ul')?.className).toContain('[overflow-wrap:anywhere]');
+    expect(within(screen.getByRole('table')).getByRole('link', { name: 'Acme AB' }).className).toContain('[overflow-wrap:anywhere]');
+    expect(container.querySelector('table ul')?.className).toContain('[overflow-wrap:anywhere]');
   });
 });
 
@@ -185,7 +226,7 @@ describe('AudienceTable — switch column never renders empty', () => {
       </NextIntlClientProvider>,
     );
     expect(screen.queryByRole('switch')).toBeNull();
-    const note = screen.getByText(en.shared.marketing.switch.readOnly.contact);
+    const note = within(screen.getByRole('table')).getByText(en.shared.marketing.switch.readOnly.contact);
     // The primitive's cell is `whitespace-nowrap`: without the override the
     // note ran straight across the Member column.
     expect(note.closest('td')?.className).toContain('whitespace-normal');

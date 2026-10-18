@@ -19,7 +19,7 @@
  * ```tsx
  * // src/app/(member)/portal/broadcasts/new/_components/compose-form.tsx
  * 'use client';
- * import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
+ * import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
  *
  * const TiptapEditor = loadTiptapEditor(() => import('./tiptap-editor'));
  *
@@ -35,10 +35,10 @@
  *
  * **Accessibility**: the loading skeleton uses ARIA-live polite via
  * `role="status"` + `aria-live="polite"` so screen readers announce the
- * load state without interrupting other content. Per `docs/ux-standards.md`
- * § 2.1 shimmer-skeleton convention.
+ * load state without interrupting other content. The blocks are the shared
+ * `SkeletonBlock` (spec 122 US12a moved this loader out of the legacy kit).
  *
- * **Reduced-motion**: the shimmer animation is CSS-driven (see
+ * **Reduced-motion**: the skeleton animation is CSS-driven (see
  * `skeleton-shimmer` class in globals.css); `prefers-reduced-motion: reduce`
  * media query disables the animation per WCAG 2.3.3.
  */
@@ -46,7 +46,7 @@
 import dynamic from 'next/dynamic';
 import type { ComponentType } from 'react';
 import { useTranslations } from 'next-intl';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
 /**
  * Dynamic-loader factory for any Tiptap-based editor component. Returns
@@ -81,8 +81,8 @@ function TiptapLoadingSkeleton(): React.ReactElement {
       data-testid="tiptap-loading"
       className="space-y-3"
     >
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-60 w-full" />
+      <SkeletonBlock className="h-10 w-full" />
+      <SkeletonBlock className="h-60 w-full" />
     </div>
   );
 }

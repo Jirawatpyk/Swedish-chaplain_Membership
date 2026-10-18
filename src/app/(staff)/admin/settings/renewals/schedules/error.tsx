@@ -27,7 +27,7 @@ export default function SchedulesError({
   }, [error]);
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={t('generic')} />
       <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </FormContainer>

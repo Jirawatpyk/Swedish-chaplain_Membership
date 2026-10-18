@@ -598,6 +598,42 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The trend cards' summary label ("Cumulative members", "12-month total …") takes its own line below 640px.
   - "ex-VAT" (EN, non-breaking hyphen) and "exkl. moms" (SV, no-break space) never split across lines.
 
+### Session 2026-10-18 (US12 start: E-Blast)
+
+- **Four PRs** (maintainer, 18 Oct). E-Blast is about 25k lines across about 110 legacy files, so it ships in slices. A component the member portal shares moves together with both of its callers.
+  - **US12a:** broadcast settings (image allowlist, brand), templates, and the marketing audience.
+  - **US12b:** the review queue, plus the shared reason-confirmation and typed-phrase dialogs (members and renewals use them too).
+  - **US12c:** the approval-round detail, plus the portal detail and sign-off.
+  - **US12d:** compose (staff proxy and portal), plus the benefits page's E-Blast tab.
+- **Queue selection uses AURA's own per-row predicate** (maintainer, 18 Oct). DataTable's `isRowSelectable` / `rowSelectDisabledLabel` shipped in 5.6 (handoff 52), so only rows awaiting marketing review get a checkbox (acceptance 1). The fallback in acceptance 1, a local selection column, is dropped.
+- **The Tiptap loader moves to the shell.** `ui/tiptap-loader` is a `next/dynamic` wrapper, not a kit component. It moves to `src/components/shell/tiptap-loader.tsx` and draws its loading state with the shared skeleton blocks. Its importers and test mocks follow, as `RelativeTime` did in US3. The status role, label and test id are unchanged.
+- **Template filter pills are AURA `Tag`s.** A selectable `Tag` is a `<button aria-pressed>` with a check when selected, as the board draws the pills. The fieldset legend and the separate polite count stay.
+- **The marketing audience takes the global filter pattern** (the § Filters rule): search in the bar, contact role / marketing state / member eligibility as `FilterSelect`s, chips and Clear all, collapsing into the Filters sheet on phones. The board's four labelled fields are not drawn, for the same reason as the audit log (US10b). The count line stays the page's own `#audience-count`, not the bar's `resultCount`, because it is the focus target when the last row leaves a filtered view.
+- **`ui/filter-bar` loses its last importer** with the audience page. It is deleted with the rest of `src/components/ui` at US13.
+- **The marketing area's error boundary** (`marketing/error.tsx`, which also covers the audience page) moves to the shared `RouteErrorPanel`.
+- **Unchanged (FR-011):** every guard and its order (the brand page checks permission before the flag; the allowlist page checks the flag first); every request body and response branch; toasts and error-code maps; the audience URL contract, debounce and preflight preset; no audience CSV; the starter-edit banner; the unsaved-changes guard; the allowlist remove dialog's final focus.
+- `tests/unit/components/marketing/audience-table.test.tsx` reads `src/components/ui/sidebar.tsx` for its width budget. US13 must re-home that read when it deletes the folder.
+- **Board content not drawn in US12a** (FR-011; each would be new copy or behaviour):
+  - the phone templates board's "Custom" badge on admin-authored rows and its "Show 11 more" button (every row stays listed);
+  - the brand board's "How it looks in an E-Blast" preview (the form has no preview today);
+  - the audience board's four labelled filter fields (the global filter pattern instead, above).
+- **The audience page's presentation moves to `_components/audience-view.tsx`** (`AudienceFrame`, `AudienceResults`) so the preview harness can render it; the page keeps the guards, parsing and reads, and its own `TableContainer` (check:layout).
+- **UX review (enterprise-ux-designer: ship with follow-ups, no HIGH), applied in US12a:**
+  - **Audience rows become cards on phones** (maintainer, 18 Oct). Below 640 px each contact is an AURA stacked card (contact as the title, the switch as the action, every other column a labelled field), as the board draws it. From 640 px it is the table as before; its fixed layout and min-width apply from `sm` up only. This amends spec 108 FR-035c, and e2e test 6 now asserts that nothing scrolls sideways at 320 px.
+  - Templates: the subject wraps on phone cards instead of being cut; the visible count sits beside the pills (aria-hidden, the polite status stays the one announcement); the Starter badge's fuller name is sr-only text, not an `aria-label` on a span; the loading skeleton draws cards below 640 px.
+  - Brand: the colour field and its swatch stay side by side at every width; the swatch uses `--aura-border-control`; Save is full width on phones.
+  - The label offset that sets a control level with an AURA field's box is one shared constant (`src/components/shell/field-box-offset.ts`).
+  - The invalid colour gets AURA's danger border from `aria-invalid`, not from AURA's `error` prop, which would replace the field's hint id with its own (maintainer, 18 Oct). It is a stand-in until AURA #156 (Addendum 57: an invalid state without a message).
+- **Every staff form page starts at the content's left edge** (maintainer, 18 Oct): `<FormContainer align="start">`, as the plan, invoice-void, credit-note, account and import forms already did. This PR adds it to the template new/edit, broadcast settings and brand pages, and to the two older admin forms still centred (new invoice, reminder schedules). `tests/unit/architecture/admin-form-align.test.ts` keeps every future staff form on it. Member portal forms stay centred.
+- **Parity comments (maintainer, 18 Oct):**
+  - Templates on phones: the outer card frame and its padding drop away (AURA `flushBelow`), and each card ends in a full-width outline Edit button, as board `Admin-broadcast-templates-mobile` draws it; desktop keeps the ghost Edit link.
+  - Template new/edit: Cancel (outline) and Save sit in the pinned phone action bar the member and plan forms use (`.template-form-actions`); the board's "Unsaved changes" status line is not drawn, as on those forms.
+  - Marketing audience on phones: a list of contact cards replaces the table (board `Admin-marketing-audience-mobile`): name with the role pill, email, member link, state with reasons and "Broadcasts halted"/"Erased", the last change, then a "Receives E-Blasts" row with the switch (new copy in EN/TH/SV). The active member status is not repeated. The outer frame drops away below 640 px. This replaces the AURA stacked-table cards from earlier the same day.
+  - Templates on phones: the Starter badge sits at the right end of each card's title row, as the board draws it (maintainer, parity comments 18 Oct); in the table it still follows the name. The board's "Custom" badge for admin-authored templates is not added.
+  - Template form action bar: no "Unsaved changes" line (maintainer, parity comments 18 Oct: "decide, keep it consistent"). No other form with the pinned action bar shows one. The template form has no leave-page prompt, before or after this PR; adding one would be new behaviour.
+  - Brand page: the board's "How it looks in an E-Blast" card is added in this PR at the maintainer's request (18 Oct). It sits in the colour card and follows the typed colour and address before Save. The header and footer are the real e-mail's: the logo, or the chamber name (`resolveTenantDisplayName`, the name the e-mail carries) when there is none; then the footer lines from the same `email.broadcastFooter` strings, with the address, or "Sent by …" when there is none. The privacy-inbox line is left out, as on the board. It uses the e-mail's fixed light colours in both themes, except the footer grey: #6b6b6b (5.3:1) instead of the e-mail's #888 (3.5:1), because text on this page must meet AA. New EN/TH/SV strings `admin.settings.broadcasts.brand.colour.preview.*`. Presentation only: no new request.
+  - The new-template card no longer repeats the page title and subtitle, and the edit-template card no longer repeats the subtitle under the template name (maintainer, 18 Oct). The board draws the repeat; the page header already says it.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

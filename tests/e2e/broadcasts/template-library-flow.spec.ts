@@ -167,8 +167,10 @@ test.describe('F7.1a US7 template library flow @template-library', () => {
 
     await page.goto('/admin/broadcasts/templates/new');
 
-    await page.getByLabel(/^Name$/).fill('E2E Test Template');
-    await page.getByLabel(/^Subject$/).fill('Test {{chamber_name}}');
+    // AURA fields show a required " *" inside the <label> (aria-hidden), so
+    // the label TEXT is "Name *" while the accessible name stays "Name".
+    await page.getByRole('textbox', { name: /^Name$/ }).fill('E2E Test Template');
+    await page.getByRole('textbox', { name: /^Subject$/ }).fill('Test {{chamber_name}}');
 
     // Tiptap editor — fill via the editor's editable region.
     // labelledById="tpl-body-label" wires the Label as the accessible

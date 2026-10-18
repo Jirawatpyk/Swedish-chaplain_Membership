@@ -68,7 +68,7 @@ import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/compone
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
+import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 import { PreviewPane } from '@/components/broadcast/preview-pane';

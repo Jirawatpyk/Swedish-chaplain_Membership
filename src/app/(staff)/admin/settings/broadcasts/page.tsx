@@ -14,13 +14,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import {
   AdminImageAllowlistEditor,
   type AllowlistRow,
@@ -73,16 +67,10 @@ export default async function AdminBroadcastSettingsPage(): Promise<React.ReactE
   );
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
-      <Card>
-        <CardHeader>
-          <CardTitle>{tAllowlist('heading')}</CardTitle>
-          <CardDescription>{tAllowlist('description')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AdminImageAllowlistEditor initial={rows} />
-        </CardContent>
+      <Card title={tAllowlist('heading')} description={tAllowlist('description')} headingLevel={2}>
+        <AdminImageAllowlistEditor initial={rows} />
       </Card>
     </FormContainer>
   );

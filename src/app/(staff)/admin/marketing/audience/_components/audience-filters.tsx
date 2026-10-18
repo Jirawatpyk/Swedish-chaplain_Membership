@@ -7,32 +7,29 @@
  * resets `page`. Same shape as the members directory filters — including
  * the two lessons that file carries (review cycle 11, H1 / H2):
  *
- *   - the search box is a CONTROLLED input that re-syncs FROM the URL only
- *     when it is not focused (Clear-filters CTA, the pre-flight preset,
- *     browser back/forward) — never mid-type;
+ *   - the search box re-syncs FROM the URL only when it is not focused
+ *     (Clear-filters CTA, the pre-flight preset, browser back/forward) —
+ *     never mid-type;
  *   - "Clear filters" unmounts itself in the same commit as the navigation,
  *     so focus is moved to the always-present search input FIRST or it
  *     falls back to <body> (a focus-loss class axe never catches).
  *
- * Each select trigger names itself with its label AND its current value so
- * a screen reader hears "Contact role: Secondary only", not just the label
- * (a11y review 7); the triggers size to content (`min-w`) so a long SV/TH
- * value wraps instead of clipping (FR-035c, review M5).
+ * Each select names itself with its label AND its current value so a
+ * screen reader hears "Contact role: Secondary only", not just the label
+ * (a11y review 7).
+ *
+ * Spec 122 US12a — AURA `FilterBar` in the global filter pattern: the search
+ * in the bar, the three filters as `FilterSelect`s that move into the
+ * "Filters (n)" sheet on phones, and each applied value as a removable chip
+ * with "Clear filters". The chip labels reuse the "label: value" names, so
+ * no new copy. The count stays the page's own line (`#audience-count`), the
+ * focus target when the last row leaves a filtered view, so the bar gets no
+ * `resultCount`.
  */
-import { useCallback, useEffect, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { SearchIcon, XIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { FilterBar } from '@/components/ui/filter-bar';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { AuraProvider, Button, FilterBar, FilterSelect } from '@jirawatpyk/aura-react';
 import { MARKETING_AUDIENCE_STATE_PARAMS } from '@/lib/marketing-audience-filter';
 
 const DEBOUNCE_MS = 300;
@@ -41,28 +38,34 @@ type KindValue = 'all' | (typeof KIND_VALUES)[number];
 type StateValue = 'all' | (typeof MARKETING_AUDIENCE_STATE_PARAMS)[number];
 type EligibleValue = 'on' | 'off';
 
+type ChipId = 'q' | 'kind' | 'state' | 'eligible';
+/** The URL param each applied-filter chip clears. */
+const CHIP_CLEARS: Readonly<Record<ChipId, Record<string, null>>> = {
+  q: { q: null },
+  kind: { kind: null },
+  state: { state: null },
+  eligible: { eligible: null },
+};
+
 export function AudienceFilters() {
   const t = useTranslations('admin.marketing.audience.filters');
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  // A pending debounce must die with the component (review M-8): typing then
-  // clicking a member link within 300 ms used to `router.replace` the user
-  // straight back off the member page.
-  useEffect(
-    () => () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    },
-    [],
-  );
+  const barRef = useRef<HTMLDivElement>(null);
+  const searchInput = (): HTMLInputElement | null =>
+    barRef.current?.querySelector<HTMLInputElement>('input[type="search"]') ?? null;
+  // AURA's search box has no `enterKeyHint`; mobile keyboards should still
+  // label their key "Search" (cycle 11).
+  useEffect(() => {
+    searchInput()?.setAttribute('enterkeyhint', 'search');
+  });
 
   const currentQ = searchParams.get('q') ?? '';
   // NARROW, never cast (review M-3): the server parser drops unknown values,
   // so an unknown `?state=` / `?kind=` must read as "all" here too — a raw
-  // key would otherwise land in the trigger text AND its accessible name.
+  // key would otherwise land in the field text AND its accessible name.
   const rawKind = searchParams.get('kind');
   const currentKind: KindValue =
     rawKind !== null && (KIND_VALUES as readonly string[]).includes(rawKind)
@@ -77,16 +80,15 @@ export function AudienceFilters() {
   const currentEligible: EligibleValue =
     eligibleRaw === '0' || eligibleRaw === 'false' ? 'off' : 'on';
 
-  // Reconcile FROM the URL only when the input is NOT focused — the React
-  // "adjust state when a prop changes" pattern, during render (no effect,
-  // no key-remount). See directory-filters.tsx for the long version.
-  const [searchValue, setSearchValue] = useState(currentQ);
+  // AURA's FilterBar keeps the typed draft and debounces it (300 ms, and the
+  // timer dies with the bar); it rewrites the box from `search` only when
+  // `search` differs from what it last sent. While the box is focused we
+  // hand back exactly what it sent, so a lagging or trimmed URL can never
+  // revert what the admin is typing; unfocused, the URL wins.
+  const [sentQ, setSentQ] = useState(currentQ);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
-  const [syncedQ, setSyncedQ] = useState(currentQ);
-  if (currentQ !== syncedQ) {
-    setSyncedQ(currentQ);
-    if (!isSearchFocused) setSearchValue(currentQ);
-  }
+  const isSearchTarget = (el: EventTarget) =>
+    el instanceof HTMLInputElement && el.type === 'search';
 
   const pushUrl = useCallback(
     (updates: Record<string, string | null>) => {
@@ -105,11 +107,8 @@ export function AudienceFilters() {
   );
 
   const onSearchChange = (value: string) => {
-    setSearchValue(value);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      pushUrl({ q: value.trim() || null });
-    }, DEBOUNCE_MS);
+    setSentQ(value);
+    pushUrl({ q: value.trim() || null });
   };
 
   const hasAnyFilter =
@@ -120,11 +119,10 @@ export function AudienceFilters() {
     searchParams.has('member_id');
 
   const clearAll = () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    // The Clear button unmounts in the commit that processes this navigation
-    // — hand focus to the search input FIRST.
-    searchInputRef.current?.focus();
-    setSearchValue('');
+    // The Clear control unmounts in the commit that processes this
+    // navigation — hand focus to the search input FIRST.
+    searchInput()?.focus();
+    setSentQ('');
     pushUrl({ q: null, kind: null, state: null, eligible: null, member_id: null });
   };
 
@@ -132,93 +130,90 @@ export function AudienceFilters() {
   const stateLabel = (v: StateValue) => t(`state.${v}`);
   const eligibleLabel = (v: EligibleValue) => t(`eligible.${v}`);
 
+  // One chip per applied value, named "label: value"; removing one moves
+  // focus to the search input, since the chip unmounts with it.
+  const removeChip = (id: ChipId) => {
+    searchInput()?.focus();
+    if (id === 'q') setSentQ('');
+    pushUrl(CHIP_CLEARS[id]);
+  };
+  const chipDefs: Array<{ id: ChipId; label: string }> = [];
+  if (currentQ) chipDefs.push({ id: 'q', label: `${t('searchLabel')}: ${currentQ}` });
+  if (currentKind !== 'all') chipDefs.push({ id: 'kind', label: `${t('kindLabel')}: ${kindLabel(currentKind)}` });
+  if (currentState !== 'all') chipDefs.push({ id: 'state', label: `${t('stateLabel')}: ${stateLabel(currentState)}` });
+  if (currentEligible === 'off') {
+    chipDefs.push({ id: 'eligible', label: `${t('eligibleLabel')}: ${eligibleLabel(currentEligible)}` });
+  }
+  const chips = chipDefs.map((c) => ({ ...c, onRemove: () => removeChip(c.id) }));
+
+  const barStrings = useMemo(() => ({ clearFilters: t('clear') }), [t]);
+
   return (
-    <FilterBar>
-      <div className="relative min-w-0 sm:flex-1">
-        <SearchIcon
-          className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          aria-hidden
-        />
-        <Input
-          ref={searchInputRef}
-          type="search"
-          enterKeyHint="search"
-          value={searchValue}
-          onChange={(e) => onSearchChange(e.target.value)}
-          onFocus={() => setIsSearchFocused(true)}
-          onBlur={() => setIsSearchFocused(false)}
-          placeholder={t('searchPlaceholder')}
-          aria-label={t('searchLabel')}
-          autoComplete="off"
-          className="pl-9"
-        />
-      </div>
-
-      <Select value={currentKind} onValueChange={(v) => pushUrl({ kind: v === 'all' ? null : v })}>
-        <SelectTrigger
-          className="sm:min-w-44"
-          aria-label={`${t('kindLabel')}: ${kindLabel(currentKind)}`}
+    <div
+      onFocus={(e) => {
+        if (isSearchTarget(e.target)) setIsSearchFocused(true);
+      }}
+      onBlur={(e) => {
+        if (isSearchTarget(e.target)) setIsSearchFocused(false);
+      }}
+    >
+      <AuraProvider strings={barStrings}>
+        <FilterBar
+          ref={barRef}
+          collapseBelow="sm"
+          touchHeight
+          searchGrow
+          search={isSearchFocused ? sentQ : currentQ}
+          onSearchChange={onSearchChange}
+          searchDelay={DEBOUNCE_MS}
+          searchLabel={t('searchLabel')}
+          searchPlaceholder={t('searchPlaceholder')}
+          filters={chips}
+          // The phone "Filters (n)" button counts what is in the sheet, not
+          // the search (it stays in the bar).
+          filterCount={chips.length - (currentQ ? 1 : 0)}
+          {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
         >
-          <TranslatedSelectValue
-            placeholder={t('kindLabel')}
-            translate={(v) => kindLabel((v || 'all') as KindValue)}
+          <FilterSelect
+            label={t('kindLabel')}
+            aria-label={`${t('kindLabel')}: ${kindLabel(currentKind)}`}
+            value={currentKind}
+            onChange={(v) => pushUrl({ kind: v === 'all' ? null : v })}
+            options={[
+              { value: 'all', label: t('kind.all') },
+              ...KIND_VALUES.map((k) => ({ value: k, label: t(`kind.${k}`) })),
+            ]}
           />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t('kind.all')}</SelectItem>
-          {KIND_VALUES.map((k) => (
-            <SelectItem key={k} value={k}>
-              {t(`kind.${k}`)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select value={currentState} onValueChange={(v) => pushUrl({ state: v === 'all' ? null : v })}>
-        <SelectTrigger
-          className="sm:min-w-48"
-          aria-label={`${t('stateLabel')}: ${stateLabel(currentState)}`}
-        >
-          <TranslatedSelectValue
-            placeholder={t('stateLabel')}
-            translate={(v) => stateLabel((v || 'all') as StateValue)}
+          <FilterSelect
+            label={t('stateLabel')}
+            aria-label={`${t('stateLabel')}: ${stateLabel(currentState)}`}
+            value={currentState}
+            onChange={(v) => pushUrl({ state: v === 'all' ? null : v })}
+            options={[
+              { value: 'all', label: t('state.all') },
+              ...MARKETING_AUDIENCE_STATE_PARAMS.map((s) => ({ value: s, label: t(`state.${s}`) })),
+            ]}
           />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">{t('state.all')}</SelectItem>
-          {MARKETING_AUDIENCE_STATE_PARAMS.map((s) => (
-            <SelectItem key={s} value={s}>
-              {t(`state.${s}`)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Select
-        value={currentEligible}
-        onValueChange={(v) => pushUrl({ eligible: v === 'off' ? '0' : null })}
-      >
-        <SelectTrigger
-          className="sm:min-w-52"
-          aria-label={`${t('eligibleLabel')}: ${eligibleLabel(currentEligible)}`}
-        >
-          <TranslatedSelectValue
-            placeholder={t('eligibleLabel')}
-            translate={(v) => eligibleLabel((v || 'on') as EligibleValue)}
+          <FilterSelect
+            label={t('eligibleLabel')}
+            aria-label={`${t('eligibleLabel')}: ${eligibleLabel(currentEligible)}`}
+            value={currentEligible}
+            onChange={(v) => pushUrl({ eligible: v === 'off' ? '0' : null })}
+            options={[
+              { value: 'on', label: t('eligible.on') },
+              { value: 'off', label: t('eligible.off') },
+            ]}
           />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="on">{t('eligible.on')}</SelectItem>
-          <SelectItem value="off">{t('eligible.off')}</SelectItem>
-        </SelectContent>
-      </Select>
-
-      {hasAnyFilter && (
-        <Button type="button" variant="ghost" size="sm" onClick={clearAll}>
-          <XIcon className="size-4" aria-hidden />
-          {t('clear')}
-        </Button>
-      )}
-    </FilterBar>
+          {/* A member scope (`member_id`, from a member's page) has no chip,
+              so when it is the only filter the bar's own "Clear filters" is
+              absent: offer it here. */}
+          {hasAnyFilter && chips.length === 0 ? (
+            <Button variant="ghost" icon="x" touchHeight onClick={clearAll}>
+              {t('clear')}
+            </Button>
+          ) : null}
+        </FilterBar>
+      </AuraProvider>
+    </div>
   );
 }

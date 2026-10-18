@@ -17,18 +17,8 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
-import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
+import { ActionBar, Button, Select, TextField } from '@jirawatpyk/aura-react';
+import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { toast } from '@/lib/toast';
 // R5 Final 2 hotfix — deep-import constants instead of the broadcasts
 // public barrel. The barrel re-exports `submitBroadcast`, which pulls
@@ -226,73 +216,46 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
 
   return (
     <form
-      className="space-y-6"
+      className="flex flex-col gap-[var(--aura-space-6)]"
       onSubmit={(e) => {
         e.preventDefault();
         setSubmitAttempted(true);
         if (name.trim() && subject.trim() && bodyHtml.trim()) submit();
       }}
     >
-      <div className="space-y-2">
-        <Label htmlFor="tpl-name">{t('fields.name')}</Label>
-        <Input
-          id="tpl-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={TEMPLATE_MAX_NAME_LENGTH}
-          required
-          disabled={isPending}
-          aria-invalid={isNameInvalid}
-          aria-describedby={
-            isNameInvalid ? 'tpl-name-help tpl-name-error' : 'tpl-name-help'
-          }
-        />
-        <p id="tpl-name-help" className="text-caption">
-          {t('fields.nameHelp')}
-        </p>
-        {isNameInvalid ? (
-          <p
-            id="tpl-name-error"
-            role="alert"
-            className="text-caption text-destructive"
-          >
-            {t('errors.field_required')}
-          </p>
-        ) : null}
-      </div>
+      {/* AURA fields own the label, hint and error wiring (spec 122 US12a):
+          the hint is replaced by the error once the first submit finds the
+          field empty, and the field sets aria-invalid itself. */}
+      <TextField
+        id="tpl-name"
+        label={t('fields.name')}
+        hint={t('fields.nameHelp')}
+        error={isNameInvalid ? t('errors.field_required') : undefined}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        maxLength={TEMPLATE_MAX_NAME_LENGTH}
+        required
+        disabled={isPending}
+        touchHeight
+      />
 
-      <div className="space-y-2">
-        <Label htmlFor="tpl-subject">{t('fields.subject')}</Label>
-        <Input
-          id="tpl-subject"
-          value={subject}
-          onChange={(e) => setSubject(e.target.value)}
-          maxLength={TEMPLATE_MAX_SUBJECT_LENGTH}
-          required
-          disabled={isPending}
-          aria-invalid={isSubjectInvalid}
-          aria-describedby={
-            isSubjectInvalid
-              ? 'tpl-subject-help tpl-subject-error'
-              : 'tpl-subject-help'
-          }
-        />
-        <p id="tpl-subject-help" className="text-caption">
-          {t('fields.subjectHelp')}
-        </p>
-        {isSubjectInvalid ? (
-          <p
-            id="tpl-subject-error"
-            role="alert"
-            className="text-caption text-destructive"
-          >
-            {t('errors.field_required')}
-          </p>
-        ) : null}
-      </div>
+      <TextField
+        id="tpl-subject"
+        label={t('fields.subject')}
+        hint={t('fields.subjectHelp')}
+        error={isSubjectInvalid ? t('errors.field_required') : undefined}
+        value={subject}
+        onChange={(e) => setSubject(e.target.value)}
+        maxLength={TEMPLATE_MAX_SUBJECT_LENGTH}
+        required
+        disabled={isPending}
+        touchHeight
+      />
 
-      <div className="space-y-2">
-        <Label id="tpl-body-label">{t('fields.bodyHtml')}</Label>
+      <div className="flex flex-col gap-[var(--aura-space-2)]">
+        <span id="tpl-body-label" className="aura-text-label">
+          {t('fields.bodyHtml')}
+        </span>
         {/* R3.5 M-13 — describedById + invalid forwarded into the
             contenteditable (not on the wrapper) so SR users get
             associated help + error + invalid state on focus. */}
@@ -313,7 +276,7 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
               }
             : { imagesEnabled: false })}
         />
-        <p id="tpl-body-help" className="text-caption">
+        <p id="tpl-body-help" className="aura-text-caption text-[var(--aura-fg-secondary)]">
           {t('fields.bodyHtmlHelp')}
         </p>
         {/* F119 T108 (FR-046a) — a template may carry every block the tool
@@ -322,7 +285,7 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
             template being created for the first time has none yet, and says so
             rather than showing a control that cannot work. */}
         {templateId === undefined ? (
-          <p className="text-caption text-muted-foreground">
+          <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
             {t('fields.imagesAfterSaveHint')}
           </p>
         ) : null}
@@ -330,7 +293,7 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
           <p
             id="tpl-body-error"
             role="alert"
-            className="text-caption text-destructive"
+            className="aura-text-caption text-[var(--aura-fg-danger)]"
           >
             {t('errors.field_required')}
           </p>
@@ -338,65 +301,50 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
       </div>
 
       {mode === 'new' ? (
-        <div className="space-y-2">
-          <Label htmlFor="tpl-locale">{t('fields.localeLabel')}</Label>
-          <Select
-            value={locale}
-            onValueChange={(v) => setLocale(v as Locale)}
-            disabled={isPending}
-          >
-            <SelectTrigger
-              id="tpl-locale"
-              aria-label={t('fields.localeLabel')}
-              className="w-full"
-            >
-              <TranslatedSelectValue
-                translate={(value) => tLang(`languageOptions.${value as 'en' | 'th' | 'sv'}`)}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="en">{tLang('languageOptions.en')}</SelectItem>
-              <SelectItem value="th">{tLang('languageOptions.th')}</SelectItem>
-              <SelectItem value="sv">{tLang('languageOptions.sv')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        <Select
+          id="tpl-locale"
+          label={t('fields.localeLabel')}
+          value={locale}
+          onChange={(e) => setLocale(e.target.value as Locale)}
+          disabled={isPending}
+          touchHeight
+          options={[
+            { value: 'en', label: tLang('languageOptions.en') },
+            { value: 'th', label: tLang('languageOptions.th') },
+            { value: 'sv', label: tLang('languageOptions.sv') },
+          ]}
+        />
       ) : null}
 
       {error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="aura-text-body text-[var(--aura-fg-danger)]">
           {error}
         </p>
       ) : null}
 
-      <div className="flex items-center justify-end gap-3">
+      {/* Cancel before the primary action; pinned to the bottom of a phone
+          as the boards draw it (globals.css `.template-form-actions`, the
+          member and plan forms' bar). */}
+      <ActionBar className="chamber-viewport-actionbar template-form-actions">
         <Button
           type="button"
-          variant="ghost"
+          variant="secondary"
           disabled={isPending}
+          touchHeight
           onClick={() => router.push('/admin/broadcasts/templates')}
         >
           {t('cancelButton')}
         </Button>
         <Button
           type="submit"
-          disabled={
-            isPending || !name.trim() || !subject.trim() || !bodyHtml.trim()
-          }
+          variant="primary"
+          loading={isPending}
+          touchHeight
+          disabled={!isPending && (!name.trim() || !subject.trim() || !bodyHtml.trim())}
         >
-          {isPending ? (
-            <>
-              <Loader2
-                className="mr-2 size-4 motion-safe:animate-spin"
-                aria-hidden="true"
-              />
-              {t('savingButton')}
-            </>
-          ) : (
-            t('saveButton')
-          )}
+          {isPending ? t('savingButton') : t('saveButton')}
         </Button>
-      </div>
+      </ActionBar>
     </form>
   );
 }

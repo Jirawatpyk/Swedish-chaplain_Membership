@@ -24,43 +24,30 @@
  */
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { SearchXIcon, UsersIcon } from 'lucide-react';
+import { SearchXIcon } from 'lucide-react';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMarketingAudienceDeps } from '@/lib/contact-marketing-deps';
 import { env } from '@/lib/env';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import {
-  AUDIENCE_COUNT_ID,
-  MARKETING_AUDIENCE_PREFLIGHT_QUERY,
   parseMarketingAudienceParams,
   type MarketingAudienceSearchParams,
 } from '@/lib/marketing-audience-filter';
-import { cn } from '@/lib/utils';
 import { listMarketingAudience } from '@/modules/members';
 import { resolveActorIdentities } from '@/modules/auth';
 import { TableContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { TablePagination } from '@/components/layout/table-pagination';
 import { EmptyState } from '@/components/shell/empty-state';
-import { ReadOnlyBanner } from '@/components/shell/read-only-banner';
-import { Card, CardContent } from '@/components/ui/card';
-import { FilterBar } from '@/components/ui/filter-bar';
-import { Skeleton } from '@/components/ui/skeleton';
-import { buttonVariants } from '@/components/ui/button';
-import { AudienceFilters } from './_components/audience-filters';
-import { AudienceTable, type AudienceTableRow } from './_components/audience-table';
+import { type AudienceTableRow } from './_components/audience-table';
 import { AudienceTableSkeleton } from './_components/audience-table-skeleton';
+import { AudienceFrame, AudienceResults } from './_components/audience-view';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.marketing.audience');
   return { title: t('title') };
 }
-
-const AUDIENCE_HREF = '/admin/marketing/audience';
 
 export default async function MarketingAudiencePage({
   searchParams,
@@ -73,7 +60,6 @@ export default async function MarketingAudiencePage({
   // — same convention as /admin/events (review M-11).
   if (!env.features.f7Broadcasts) notFound();
   const query = await searchParams;
-  const t = await getTranslations('admin.marketing.audience');
   const canMarketing = canPerform(user.role, 'contacts.marketing');
   const { filter } = parseMarketingAudienceParams(query);
   const presetActive =
@@ -81,50 +67,11 @@ export default async function MarketingAudiencePage({
 
   return (
     <TableContainer>
-      <PageHeader
-        title={t('title')}
-        subtitle={t('subtitle')}
-        actions={
-          <Link
-            href={`${AUDIENCE_HREF}?${MARKETING_AUDIENCE_PREFLIGHT_QUERY}`}
-            // A header action carrying a TRANSLATED label must be allowed to
-            // wrap: `buttonVariants` is `whitespace-nowrap`, and the SV string
-            // is wider than a 320-px content box (FR-035c / FR-050a).
-            className={cn(
-              buttonVariants({ variant: 'outline' }),
-              'h-auto min-h-9 whitespace-normal text-center',
-            )}
-            aria-current={presetActive ? 'page' : undefined}
-            data-testid="audience-preflight-preset"
-          >
-            {t('preflightPreset')}
-          </Link>
-        }
-      />
-      <Card>
-        <CardContent className="flex flex-col gap-4">
-          {!canMarketing && (
-            <ReadOnlyBanner data-testid="audience-read-only">{t('readOnly')}</ReadOnlyBanner>
-          )}
-          {/* `useSearchParams` in the filters needs a Suspense boundary so the
-              route keeps server rendering. */}
-          <Suspense
-            fallback={
-              <FilterBar aria-hidden>
-                <Skeleton className="h-9 sm:flex-1" />
-                <Skeleton className="h-9 sm:w-44" />
-                <Skeleton className="h-9 sm:w-48" />
-                <Skeleton className="h-9 sm:w-52" />
-              </FilterBar>
-            }
-          >
-            <AudienceFilters />
-          </Suspense>
-          <Suspense fallback={<AudienceTableSkeleton withSwitch={canMarketing} />}>
-            <AudienceBody query={query} canMarketing={canMarketing} />
-          </Suspense>
-        </CardContent>
-      </Card>
+      <AudienceFrame canMarketing={canMarketing} presetActive={presetActive}>
+        <Suspense fallback={<AudienceTableSkeleton withSwitch={canMarketing} />}>
+          <AudienceBody query={query} canMarketing={canMarketing} />
+        </Suspense>
+      </AudienceFrame>
     </TableContainer>
   );
 }
@@ -194,84 +141,17 @@ async function AudienceBody({
           }),
   }));
 
-  // A degraded read that found nothing is NOT "nothing matches" — the list
-  // could not be read (review M4): the panel below is the whole story.
-  const degradedEmpty = degraded && total === 0;
-  // A state-filtered view drops a row the moment its state changes (H4).
-  const leavesView = filter.state !== undefined;
-
   return (
-    <>
-      {/* FR-040-style honesty for the count: announced to AT on every filter
-          change — the ONE live region here (pagination is silenced, L2; the
-          degraded panel is a note; at ZERO the EmptyState is the one
-          announcement, so the count line stays visible but is not live —
-          M-14). Always rendered: it is the focus fallback when the LAST row
-          leaves a filtered view (H4) — at that moment total is 0. */}
-      {!degradedEmpty && (
-        <p
-          id={AUDIENCE_COUNT_ID}
-          tabIndex={-1}
-          className="text-sm text-muted-foreground outline-none"
-          {...(total > 0 ? { role: 'status', 'aria-live': 'polite' as const } : {})}
-          data-testid="audience-count"
-        >
-          {narrowed ? t('count', { count: total }) : t('countAll', { count: total })}
-        </p>
-      )}
-
-      {degraded && (
-        <div
-          role="note"
-          className="rounded-md border border-warning bg-warning-surface p-3 text-sm text-warning"
-          data-testid="audience-degraded"
-        >
-          <p className="font-medium">{t('empty.unavailable.title')}</p>
-          <p>{t('empty.unavailable.description')}</p>
-        </div>
-      )}
-
-      {degradedEmpty ? null : total === 0 ? (
-        narrowed ? (
-          <EmptyState
-            icon={SearchXIcon}
-            title={t('empty.filtered.title')}
-            description={t('empty.filtered.description')}
-            bordered={false}
-            data-testid="audience-empty-filtered"
-            action={
-              // Clearing must LIFT the default eligibility leg too, or a
-              // tenant whose members are all inactive lands back on the same
-              // empty page (review code M1).
-              <Link
-                href={`${AUDIENCE_HREF}?eligible=0`}
-                className={buttonVariants({ variant: 'outline', size: 'sm' })}
-              >
-                {t('empty.filtered.cta')}
-              </Link>
-            }
-          />
-        ) : (
-          <EmptyState
-            icon={UsersIcon}
-            title={t('empty.none.title')}
-            description={t('empty.none.description')}
-            bordered={false}
-            data-testid="audience-empty-none"
-          />
-        )
-      ) : (
-        <>
-          <AudienceTable rows={tableRows} canMarketing={canMarketing} leavesView={leavesView} />
-          <TablePagination
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            baseHref={AUDIENCE_HREF}
-            live={false}
-          />
-        </>
-      )}
-    </>
+    <AudienceResults
+      rows={tableRows}
+      total={total}
+      page={page}
+      pageSize={pageSize}
+      narrowed={narrowed}
+      degraded={degraded}
+      canMarketing={canMarketing}
+      // A state-filtered view drops a row the moment its state changes (H4).
+      leavesView={filter.state !== undefined}
+    />
   );
 }

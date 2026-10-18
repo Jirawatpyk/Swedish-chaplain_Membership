@@ -20,6 +20,7 @@ import { toast } from '@/lib/toast';
 import { errorResponse } from '@/lib/broadcasts-route-helpers';
 import { HOSTNAME_REGEX } from '@/modules/broadcasts/domain/value-objects/image-source-allowlist';
 import { AdminImageAllowlistEditor } from '@/components/broadcast/admin-image-allowlist-editor';
+import { FIELD_BOX_OFFSET_SM } from '@/components/shell/field-box-offset';
 
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -110,5 +111,30 @@ describe('allowlist editor — the route’s object-shaped error envelope', () =
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(tErrors.internal_error));
     expect(screen.getByLabelText(/hostname/i)).not.toHaveAttribute('aria-invalid', 'true');
+  });
+});
+
+describe('allowlist editor on AURA (spec 122 US12a)', () => {
+  it('uses an AURA field, an AURA table and an AURA confirm for Remove', async () => {
+    const user = userEvent.setup();
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <AdminImageAllowlistEditor
+          initial={[
+            { hostname: 'cdn.example.org', isDefault: true },
+            { hostname: 'img.example.org', isDefault: false },
+          ]}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByLabelText(/hostname/i).closest('.aura-input')).not.toBeNull();
+    expect(screen.getByRole('table')).toHaveClass('aura-tbl');
+    await user.click(screen.getByRole('button', { name: /remove img\.example\.org/i }));
+    expect(screen.getByRole('alertdialog')).toHaveClass('aura-dialog');
+  });
+
+  it('UX L7: the Add button drops by the shared field-box offset from sm up', () => {
+    renderEditor();
+    expect(screen.getByRole('button', { name: /^add/i }).className).toContain(FIELD_BOX_OFFSET_SM);
   });
 });
