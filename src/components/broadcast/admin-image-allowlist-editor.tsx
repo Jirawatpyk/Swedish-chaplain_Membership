@@ -16,41 +16,28 @@
  *     aria-live on <tbody> is not conformant; ATs ignore on
  *     structural table elements)
  *   - aria-label on per-row Remove button (i18n-keyed)
- *   - AlertDialog confirmation on Remove (PR-review fix UX-H1 —
+ *   - a confirmation on Remove (PR-review fix UX-H1 —
  *     destructive privileged-surface mutation requires confirm per
  *     docs/ux-standards.md). Add operation stays single-step because
  *     it's non-destructive.
  *   - T155 finding U4 — `finalFocus` on that confirm. A successful remove
  *     replaces `rows` with the server's new allowlist, so the row — and the
- *     Remove button Base UI would restore focus to — is gone; focus dropped
+ *     Remove button the dialog would restore focus to — is gone; focus dropped
  *     to `<body>`, and removing several hostnames meant re-Tabbing from the
  *     top of the page each time. The success close lands on the table, which
- *     survives; Cancel / ESC keep Base UI's default. WCAG 2.1 AA SC 2.4.3.
+ *     survives; Cancel / ESC keep the dialog's default. WCAG 2.1 AA SC 2.4.3.
+ *   - Spec 122 US12a: AURA field, button and table; the confirm is the
+ *     shell `ConfirmationDialog`, opened for the row being removed.
  */
 import { useRef, useState, useTransition } from 'react';
-import { Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { Button, Table, TBody, Td, Th, THead, Tr, TextField } from '@jirawatpyk/aura-react';
+import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { toast } from '@/lib/toast';
 import { useSurvivingTargetFinalFocus } from '@/components/broadcast/unmounting-trigger-final-focus';
 
 /** The list container — the element that outlives a removed row. */
 const ALLOWLIST_TABLE_ID = 'broadcast-image-allowlist-table';
-const HOSTNAME_HELP_ID = 'allowlist-hostname-help';
-const HOSTNAME_ERROR_ID = 'allowlist-hostname-error';
 
 /**
  * The route answers in TWO shapes: use-case refusals are `{ error: '<kind>' }`,
@@ -101,11 +88,13 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
   // A format refusal belongs ON the field (WCAG 3.3.1), not only in a toast
   // that disappears; cleared as soon as the value is edited.
   const [hostnameError, setHostnameError] = useState<string | null>(null);
-  // U4 — raised on the CONFIRM click, not on the 200. `AlertDialogAction`
-  // closes the dialog itself, so Base UI reads `finalFocus` synchronously with
-  // that click, long before the fetch settles: deciding on the response would
-  // always read `false`. The confirm click is the close that takes the trigger
-  // with it, so that is where the flag belongs. Reset when the dialog reopens,
+  // The row whose Remove opened the confirm; null while it is closed.
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
+  // U4 — raised on the CONFIRM click, not on the 200. The confirm closes as
+  // soon as its handler returns, long before the fetch settles, and reads
+  // `finalFocus` on that close: deciding on the response would always read
+  // `false`. The confirm click is the close that takes the trigger with it,
+  // so that is where the flag belongs. Reset when the dialog reopens,
   // because this component (unlike the row-scoped dialogs) survives.
   const closedViaSuccessRef = useRef<boolean>(false);
   const removeFinalFocus = useSurvivingTargetFinalFocus(
@@ -169,10 +158,13 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
   };
 
   return (
-    <div className="space-y-6">
-      {/* Label / [Input + Button row sm:items-stretch] / Help text — stretch keeps button height matched to input. */}
+    <div className="flex flex-col gap-[var(--aura-space-6)]">
+      {/* Field + Add on one row from 640px. The button drops by the field
+          label's line (AURA's `.aura-text-label`, 13px × 1.4) plus the
+          field's 6px label gap, so it sits level with the input box and
+          the hint or error below never moves it. */}
       <form
-        className="space-y-2"
+        className="flex flex-col gap-2 sm:flex-row sm:items-start"
         onSubmit={(e) => {
           e.preventDefault();
           // Hostnames are case-insensitive and the allowlist stores them
@@ -182,169 +174,119 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
           if (normalized) submit('add', normalized);
         }}
       >
-        <Label htmlFor="allowlist-hostname">{t('hostnameLabel')}</Label>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-          <Input
-            id="allowlist-hostname"
-            value={hostname}
-            onChange={(e) => {
-              setHostname(e.target.value);
-              setHostnameError(null);
-            }}
-            placeholder={t('hostnamePlaceholder')}
-            aria-invalid={hostnameError ? true : undefined}
-            aria-describedby={
-              hostnameError
-                ? `${HOSTNAME_ERROR_ID} ${HOSTNAME_HELP_ID}`
-                : HOSTNAME_HELP_ID
-            }
-            disabled={isPending}
-            autoComplete="off"
-            className="flex-1"
-          />
-          <Button
-            type="submit"
-            disabled={isPending || !hostname.trim()}
-            aria-busy={isPending}
-            className="shrink-0"
-          >
-            {isPending && (
-              <Loader2Icon className="mr-2 size-4 motion-safe:animate-spin" aria-hidden />
-            )}
-            {t('addButton')}
-          </Button>
-        </div>
-        {hostnameError ? (
-          <p id={HOSTNAME_ERROR_ID} className="text-caption text-destructive">
-            {hostnameError}
-          </p>
-        ) : null}
-        <p id={HOSTNAME_HELP_ID} className="text-caption">
-          {t('hostnameHelp')}
-        </p>
+        <TextField
+          id="allowlist-hostname"
+          className="min-w-0 flex-1"
+          label={t('hostnameLabel')}
+          hint={t('hostnameHelp')}
+          error={hostnameError ?? undefined}
+          value={hostname}
+          onChange={(e) => {
+            setHostname(e.target.value);
+            setHostnameError(null);
+          }}
+          placeholder={t('hostnamePlaceholder')}
+          disabled={isPending}
+          autoComplete="off"
+          touchHeight
+        />
+        <Button
+          type="submit"
+          variant="primary"
+          disabled={!hostname.trim()}
+          loading={isPending}
+          aria-busy={isPending}
+          touchHeight
+          className="shrink-0 sm:mt-[calc(max(13px,0.8125rem)*1.4+6px)]"
+        >
+          {t('addButton')}
+        </Button>
       </form>
 
       {/* U4 — `tabIndex={-1}` makes the list container focusable (not
           tabbable, so it adds no tab stop): it is where the Remove confirm
           lands focus once the row it was opened from is gone. */}
-      <table
+      <Table
         id={ALLOWLIST_TABLE_ID}
         tabIndex={-1}
-        className="w-full border-collapse focus-visible:outline-none"
+        caption={t('tableCaption')}
+        captionHidden
+        bordered={false}
+        align="middle"
+        className="focus-visible:outline-none"
       >
-        <caption className="sr-only">{t('tableCaption')}</caption>
-        <thead>
-          <tr>
-            <th scope="col" className="text-left py-2">
-              {t('colHostname')}
-            </th>
+        <THead>
+          <Tr>
+            <Th scope="col">{t('colHostname')}</Th>
             {/* PR-review fix 2026-05-20 UX-M1 — hide Source column at
                 <sm (320-639px). The badge moves inline next to the
                 hostname via the `(default)` parenthetical pattern below. */}
-            <th scope="col" className="hidden sm:table-cell text-left py-2">
+            <Th scope="col" className="max-sm:hidden">
               {t('colSource')}
-            </th>
-            <th scope="col" className="sr-only">
-              {t('colActions')}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
+            </Th>
+            <Th scope="col">
+              <span className="sr-only">{t('colActions')}</span>
+            </Th>
+          </Tr>
+        </THead>
+        <TBody>
           {rows.map((row) => (
-            <tr key={row.hostname} className="border-t">
-              {/* UX-M1 — break-all so long hostnames wrap on narrow viewports
-                  + inline `(default)` parenthetical visible only at <sm
-                  (replaces the hidden Source column at mobile width). */}
-              <td className="py-2 break-all">
+            <Tr key={row.hostname}>
+              {/* UX-M1 — long hostnames wrap on narrow viewports, and the
+                  inline `(default)` replaces the hidden Source column. */}
+              <Td mono className="[overflow-wrap:anywhere]">
                 {row.hostname}
                 {row.isDefault ? (
-                  <span className="sm:hidden text-caption text-muted-foreground ml-1">
+                  <span className="ml-1 aura-text-caption text-[var(--aura-fg-secondary)] sm:hidden">
                     {t('defaultBadgeInline')}
                   </span>
                 ) : null}
-              </td>
-              <td className="hidden sm:table-cell py-2">
-                <span className="text-caption">
-                  {row.isDefault ? t('defaultBadge') : t('customBadge')}
-                </span>
-              </td>
-              <td className="py-2 text-right">
-                {row.isDefault ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled
-                    aria-label={t('removeAria', { hostname: row.hostname })}
-                  >
-                    {t('removeButton')}
-                  </Button>
-                ) : (
-                  // PR-review fix 2026-05-20 UX-H1 — wrap destructive
-                  // Remove action in AlertDialog confirm. Add stays
-                  // single-step (non-destructive).
-                  <AlertDialog
-                    onOpenChange={(next: boolean) => {
-                      if (next) closedViaSuccessRef.current = false;
-                    }}
-                  >
-                    <AlertDialogTrigger
-                      render={
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={isPending}
-                          aria-label={t('removeAria', {
-                            hostname: row.hostname,
-                          })}
-                        >
-                          {t('removeButton')}
-                        </Button>
-                      }
-                    />
-                    <AlertDialogContent finalFocus={removeFinalFocus}>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>
-                          {t('removeConfirm.title', {
-                            hostname: row.hostname,
-                          })}
-                        </AlertDialogTitle>
-                        <AlertDialogDescription>
-                          {t('removeConfirm.body')}
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>
-                          {t('removeConfirm.cancel')}
-                        </AlertDialogCancel>
-                        <AlertDialogAction
-                          variant="destructive"
-                          // PR-review fix 2026-05-21 R4-M1 — block
-                          // double-click inside open dialog. Trigger's
-                          // own disabled={isPending} only blocks
-                          // RE-OPENING; without this prop a quick
-                          // second click on the confirm fires a
-                          // concurrent submit → second call hits a
-                          // hostname already removed → unexpected
-                          // error toast.
-                          disabled={isPending}
-                          onClick={() => {
-                            // Base UI closes on this click and reads
-                            // finalFocus synchronously — see the ref's note.
-                            closedViaSuccessRef.current = true;
-                            submit('remove', row.hostname);
-                          }}
-                        >
-                          {t('removeConfirm.confirm')}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-              </td>
-            </tr>
+              </Td>
+              <Td className="max-sm:hidden">
+                {row.isDefault ? t('defaultBadge') : t('customBadge')}
+              </Td>
+              <Td align="end">
+                <Button
+                  variant="ghost"
+                  touchHeight
+                  disabled={row.isDefault || isPending}
+                  aria-label={t('removeAria', { hostname: row.hostname })}
+                  onClick={() => {
+                    closedViaSuccessRef.current = false;
+                    setPendingRemove(row.hostname);
+                  }}
+                >
+                  {t('removeButton')}
+                </Button>
+              </Td>
+            </Tr>
           ))}
-        </tbody>
-      </table>
+        </TBody>
+      </Table>
+
+      {/* PR-review fix 2026-05-20 UX-H1 — the destructive Remove is
+          confirmed; Add stays single-step (non-destructive). */}
+      <ConfirmationDialog
+        open={pendingRemove !== null}
+        onOpenChange={(next) => {
+          if (!next) setPendingRemove(null);
+        }}
+        title={t('removeConfirm.title', { hostname: pendingRemove ?? '' })}
+        description={t('removeConfirm.body')}
+        cancelLabel={t('removeConfirm.cancel')}
+        confirmLabel={t('removeConfirm.confirm')}
+        destructive
+        // PR-review fix 2026-05-21 R4-M1 — no second submit while one runs.
+        confirmDisabled={isPending}
+        finalFocus={removeFinalFocus}
+        onConfirm={() => {
+          if (pendingRemove === null) return;
+          // The confirm closes as soon as this returns and reads
+          // finalFocus then — see the ref's note.
+          closedViaSuccessRef.current = true;
+          submit('remove', pendingRemove);
+        }}
+      />
 
       <span className="sr-only" role="status" aria-live="polite">
         {announcement}

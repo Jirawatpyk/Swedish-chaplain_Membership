@@ -112,3 +112,23 @@ describe('allowlist editor — the route’s object-shaped error envelope', () =
     expect(screen.getByLabelText(/hostname/i)).not.toHaveAttribute('aria-invalid', 'true');
   });
 });
+
+describe('allowlist editor on AURA (spec 122 US12a)', () => {
+  it('uses an AURA field, an AURA table and an AURA confirm for Remove', async () => {
+    const user = userEvent.setup();
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <AdminImageAllowlistEditor
+          initial={[
+            { hostname: 'cdn.example.org', isDefault: true },
+            { hostname: 'img.example.org', isDefault: false },
+          ]}
+        />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByLabelText(/hostname/i).closest('.aura-input')).not.toBeNull();
+    expect(screen.getByRole('table')).toHaveClass('aura-tbl');
+    await user.click(screen.getByRole('button', { name: /remove img\.example\.org/i }));
+    expect(screen.getByRole('alertdialog')).toHaveClass('aura-dialog');
+  });
+});

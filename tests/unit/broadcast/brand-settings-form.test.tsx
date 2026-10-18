@@ -386,3 +386,16 @@ describe('BrandSettingsForm — U16: the logo swatch uses the email light backin
     expect(backing.className).not.toMatch(/\bbg-card\b/);
   });
 });
+
+describe('BrandSettingsForm on AURA (spec 122 US12a)', () => {
+  it('draws three AURA cards with AURA fields, and the notices as AURA alerts', () => {
+    const { container } = renderForm({ postalAddress: null, addressMissing: true });
+    expect(container.querySelectorAll('.aura-card')).toHaveLength(3);
+    expect(screen.getByLabelText(enMessages.admin.settings.broadcasts.brand.colour.label).closest('.aura-input')).not.toBeNull();
+    expect(screen.getByLabelText(enMessages.admin.settings.broadcasts.brand.address.label).closest('.aura-field')).not.toBeNull();
+    const notice = screen.getByTestId('brand-address-missing');
+    expect(notice).toHaveClass('aura-alert');
+    expect(notice).toHaveAttribute('role', 'status');
+    expect(saveButton()).toHaveClass('aura-btn');
+  });
+});

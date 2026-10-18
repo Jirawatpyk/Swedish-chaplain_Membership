@@ -48,20 +48,8 @@ import Link from 'next/link';
 import { useId, useMemo, useState, useTransition } from 'react';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { useTranslations } from 'next-intl';
-import { InfoIcon } from 'lucide-react';
+import { Alert, Button, Card, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { InlineAlert, InlineAlertDescription } from '@/components/ui/inline-alert';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { TRANSPARENCY_CHECKER_STYLE } from '@/components/shell/transparency-checker';
 import {
   AA_MIN_CONTRAST,
@@ -199,67 +187,67 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
 
   return (
     <form
-      className="space-y-6"
+      className="flex flex-col gap-[var(--aura-space-6)]"
       onSubmit={(e) => {
         e.preventDefault();
         if (canSave) save();
       }}
     >
       <UnsavedChangesGuard armed={unsavedChanges} />
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('colour.heading')}</CardTitle>
-          <CardDescription>{t('colour.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-2">
-            <Label htmlFor={colourFieldId}>{t('colour.label')}</Label>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Input
-                id={colourFieldId}
-                value={colour}
-                onChange={(e) => setColour(e.target.value)}
-                placeholder={view.defaults.primaryColor}
-                spellCheck={false}
-                autoComplete="off"
-                inputMode="text"
-                aria-describedby={colourHintId}
-                aria-invalid={normalisedColour === null || !meetsAa}
-                className="sm:max-w-40 font-mono"
-              />
-              {/* Keyboard-operable colour picker beside the text field — the
-                  text field stays the source of truth so a screen-reader user
-                  never depends on the swatch. */}
-              <input
-                id={pickerFieldId}
-                type="color"
-                aria-label={t('colour.pickerLabel')}
-                value={normalisedColour ?? view.defaults.primaryColor}
-                onChange={(e) => setColour(e.target.value)}
-                className="h-9 w-14 shrink-0 cursor-pointer rounded-lg border border-input bg-transparent p-1 outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              />
-            </div>
-            <p id={colourHintId} className="text-sm text-muted-foreground">
-              {t('colour.hint')}
-            </p>
-            {typed === '' ? (
-              <p className="text-sm text-muted-foreground">
-                {t('colour.defaultHint', { color: view.defaults.primaryColor })}
-              </p>
-            ) : null}
+      <Card title={t('colour.heading')} description={t('colour.description')} headingLevel={2}>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <TextField
+              id={colourFieldId}
+              className="sm:max-w-40"
+              label={t('colour.label')}
+              value={colour}
+              onChange={(e) => setColour(e.target.value)}
+              placeholder={view.defaults.primaryColor}
+              spellCheck={false}
+              autoComplete="off"
+              inputMode="text"
+              aria-describedby={colourHintId}
+              aria-invalid={normalisedColour === null || !meetsAa}
+              touchHeight
+            />
+            {/* Keyboard-operable colour picker beside the text field — the
+                text field stays the source of truth so a screen-reader user
+                never depends on the swatch. It drops by the field label's
+                line (13px × 1.4) + 6px gap to sit level with the input. */}
+            <input
+              id={pickerFieldId}
+              type="color"
+              aria-label={t('colour.pickerLabel')}
+              value={normalisedColour ?? view.defaults.primaryColor}
+              onChange={(e) => setColour(e.target.value)}
+              className="h-11 w-14 shrink-0 cursor-pointer rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-transparent p-1 sm:mt-[calc(max(13px,0.8125rem)*1.4+6px)] sm:h-9"
+            />
           </div>
+          <p id={colourHintId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
+            {t('colour.hint')}
+          </p>
+          {typed === '' ? (
+            <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
+              {t('colour.defaultHint', { color: view.defaults.primaryColor })}
+            </p>
+          ) : null}
 
           {/* U17 — exactly ONE of these two renders, so they share the id the
               Save button points at when the colour is what blocks it. */}
           {normalisedColour === null ? (
-            <p id={colourReasonId} className="text-sm text-destructive">
+            <p id={colourReasonId} className="aura-text-body text-[var(--aura-fg-danger)]">
               {t('colour.invalid')}
             </p>
           ) : (
             <p
               id={colourReasonId}
               data-testid="brand-contrast-readout"
-              className={meetsAa ? 'text-sm text-success' : 'text-sm text-destructive'}
+              className={
+                meetsAa
+                  ? 'aura-text-body text-[var(--aura-fg-positive)]'
+                  : 'aura-text-body text-[var(--aura-fg-danger)]'
+              }
             >
               {meetsAa
                 ? t('colour.contrastPass', { ratio: ratio! })
@@ -267,32 +255,26 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
             </p>
           )}
           {normalisedColour !== null && !meetsAa ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
               {t('colour.contrastFailHelp', { required: AA_MIN_CONTRAST })}
             </p>
           ) : null}
           {serverContrast !== null ? (
-            <InlineAlert tone="destructive" data-testid="brand-contrast-server-error">
-              <InlineAlertDescription>
-                {t('errors.colourContrast', {
-                  ratio: serverContrast.ratio,
-                  required: serverContrast.required,
-                })}
-              </InlineAlertDescription>
-            </InlineAlert>
+            <Alert tone="danger" data-testid="brand-contrast-server-error">
+              {t('errors.colourContrast', {
+                ratio: serverContrast.ratio,
+                required: serverContrast.required,
+              })}
+            </Alert>
           ) : null}
-        </CardContent>
+        </div>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('address.heading')}</CardTitle>
-          <CardDescription>{t('address.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <Label htmlFor={addressFieldId}>{t('address.label')}</Label>
+      <Card title={t('address.heading')} description={t('address.description')} headingLevel={2}>
+        <div className="flex flex-col gap-2">
           <Textarea
             id={addressFieldId}
+            label={t('address.label')}
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             placeholder={t('address.placeholder')}
@@ -303,7 +285,11 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
           <p
             id={addressHintId}
             data-testid="brand-address-counter"
-            className={addressTooLong ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}
+            className={
+              addressTooLong
+                ? 'aura-text-caption text-[var(--aura-fg-danger)]'
+                : 'aura-text-caption text-[var(--aura-fg-secondary)]'
+            }
           >
             {t('address.counter', {
               count: normalisedAddress.length,
@@ -311,29 +297,24 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
             })}
           </p>
           {addressTooLong ? (
-            <p id={addressTooLongId} className="text-sm text-destructive">
+            <p id={addressTooLongId} className="aura-text-caption text-[var(--aura-fg-danger)]">
               {t('address.tooLong', { max: BRAND_POSTAL_ADDRESS_MAX })}
             </p>
           ) : null}
           {addressMissing ? (
             // A state of the world, not an invalid entry: polite live region,
             // and Save stays available.
-            <InlineAlert tone="warning" role="status" data-testid="brand-address-missing">
-              <InfoIcon aria-hidden />
-              <InlineAlertDescription>{t('address.missing')}</InlineAlertDescription>
-            </InlineAlert>
+            <Alert tone="warning" role="status" data-testid="brand-address-missing">
+              {t('address.missing')}
+            </Alert>
           ) : null}
-        </CardContent>
+        </div>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('logo.heading')}</CardTitle>
-          <CardDescription>{t('logo.description')}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <Card title={t('logo.heading')} description={t('logo.description')} headingLevel={2}>
+        <div className="flex flex-wrap items-center gap-[var(--aura-space-4)]">
           {view.logo.url === null ? (
-            <p className="text-sm text-muted-foreground">{t('logo.none')}</p>
+            <p className="aura-text-body text-[var(--aura-fg-secondary)]">{t('logo.none')}</p>
           ) : (
             /* The logo is a tenant-uploaded blob on an external host, and
                `next/image` would need every tenant's CDN in
@@ -344,11 +325,10 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
                is the fixed LIGHT checker: the logo shown the way the E-Blast
                shows it, on white (every mail client composites the email on
                white), with the check marking transparent pixels. A themed
-               checker (`bg-card` + `--color-muted`) hid dark logos in dark
-               mode. */
+               checker hid dark logos in dark mode. */
             <div
               data-testid="brand-logo-preview"
-              className="inline-block rounded-md border p-2"
+              className="inline-block rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-2"
               style={TRANSPARENCY_CHECKER_STYLE}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -359,23 +339,27 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
               />
             </div>
           )}
-          <p className="text-sm text-muted-foreground">{t('logo.source')}</p>
-          {view.logo.manageHref === null ? (
-            <p className="text-sm text-muted-foreground">{t('logo.askAdministrator')}</p>
-          ) : (
-            <Link
-              href={view.logo.manageHref}
-              className="text-sm font-medium text-primary underline underline-offset-4 outline-none focus-visible:ring-3 focus-visible:ring-ring"
-            >
-              {t('logo.manage')}
-            </Link>
-          )}
-        </CardContent>
+          <div className="flex flex-col gap-1">
+            <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('logo.source')}</p>
+            {view.logo.manageHref === null ? (
+              <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('logo.askAdministrator')}</p>
+            ) : (
+              <Link
+                href={view.logo.manageHref}
+                className="aura-text-body font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline max-sm:inline-flex max-sm:min-h-11 max-sm:items-center"
+              >
+                {t('logo.manage')}
+              </Link>
+            )}
+          </div>
+        </div>
       </Card>
 
       <div className="flex justify-end">
         <Button
           type="submit"
+          variant="primary"
+          touchHeight
           disabled={!canSave}
           {...(saveBlockedReasonIds !== ''
             ? { 'aria-describedby': saveBlockedReasonIds }
