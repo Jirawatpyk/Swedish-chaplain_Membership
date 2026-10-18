@@ -23,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `.claude/skills/feature-flow/` + `docs/workflow.md` | on demand | the change lifecycle, Definition of Done, decisions, retros |
 | `.claude/skills/new-migration/`, `add-audit-event/` | on demand | the fragile build steps: a hand-written migration; a new audit event type |
 | `.claude/skills/run-chamber-os/` | on demand | how to run a branch on :3400 for verification (personas, Playwright attach, UI probes) |
-| `.claude/settings.json` `permissions.deny` + the `.claude/hooks/guard.mjs` PreToolUse hook | always | kept small on purpose (D-016): no reading secrets (`.env*`, the PII workbooks), no editing a migration already on `main`, and the deny list (format, stash, `db:generate`, `db:push`, prod scripts) |
+| `.claude/settings.json` `permissions.deny` + the `.claude/hooks/guard.mjs` PreToolUse hook | always | kept small on purpose (D-016): no reading secrets (`.env*`, the PII workbooks), no editing a migration already on `main`, and the deny list (format, stash, `db:generate`, `db:push`, the prod write scripts: `db:migrate:prod`, `seed:system-actors:prod`) |
 
 A fact that matters only for one module goes in that module's rule, not here. Keep this file under 200 lines.
 
