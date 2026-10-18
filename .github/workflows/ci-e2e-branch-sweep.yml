@@ -95,6 +95,7 @@ jobs:
             exit 0
           fi
 
+          # delete-loop:start (the guard test runs this block with a stubbed HTTP client)
           would_delete=""
           failed=0
           while read -r id name; do
@@ -122,3 +123,4 @@ jobs:
           if [ -n "$would_delete" ]; then
             echo "::warning title=ci-e2e sweep (dry run)::would delete:$would_delete. Set CI_E2E_SWEEP_ENABLED=true to delete."
           fi
+          # delete-loop:end
