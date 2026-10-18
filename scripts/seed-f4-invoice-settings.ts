@@ -49,6 +49,7 @@ async function main(): Promise<void> {
     await db.execute(sql`
       INSERT INTO tenant_invoice_settings (
         tenant_id,
+        currency_code,
         vat_rate,
         registration_fee_satang,
         legal_name_th, legal_name_en,
@@ -65,6 +66,9 @@ async function main(): Promise<void> {
         tenant_logo_count
       ) VALUES (
         ${TENANT_SLUG},
+        -- NOT NULL with no DB default (0026); the Drizzle schema's 'THB'
+        -- default exists only in TypeScript.
+        'THB',
         0.0700,
         500000,
         ${'หอการค้าไทย-สวีเดน'},
