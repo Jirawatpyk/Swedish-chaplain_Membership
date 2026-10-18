@@ -1,0 +1,307 @@
+# e2e nightly: the FULL suite on chromium, against a fresh Neon branch migrated
+# from zero (spec 123 slice 2, DW-11).
+#
+# WHAT IT ADDS OVER e2e-critical.yml
+#   - Every spec, not only @critical; `next dev` through playwright.config.ts's
+#     own webServer, with E2E_X_TENANT_HEADER_ENABLED=1 so the throwaway-tenant
+#     specs run.
+#   - Migrate-from-zero coverage. PR runs branch from a pre-migrated parent
+#     (ci-e2e-parent-refresh.yml) and apply only their delta, so this job drops
+#     the schema on its own fresh branch and migrates the whole chain: the
+#     fresh-DB path of scripts/run-migrations.ts and the seeds' empty-DB path
+#     stay exercised every night (also the disaster-recovery path).
+#
+# SHARDS
+#   ~694 tests at the spike's ~18 s per test under `next start` is about 3.5 h;
+#   `next dev` compiles each route on first hit, so a single job could reach
+#   5-6 h with retries, against GitHub's 6 h job limit. Two shards, each on its
+#   own branch, keep each job near 2-3 h.
+#
+# SECURITY (the repo is PUBLIC)
+#   - schedule + workflow_dispatch only; no pull_request trigger.
+#   - The Neon key is the CI project's NEON_CI_API_KEY, never NEON_API_KEY, and
+#     it reaches only the create and delete steps.
+#   - The schema reset runs only after the DW-9 guard has proved the target is
+#     this run's own `ci-e2e/` branch, and re-checks the name, the created flag
+#     and the host itself before it drops anything.
+#   - Connection strings and the password are masked before any other step.
+#   - The GitHub token reaches only the two issue steps; the issue body lists
+#     failed spec file names only, never a response body or a log.
+#   - No `${{ }}` is expanded inside `run:`.
+#   - tests/unit/architecture/e2e-nightly-and-sweep-workflows.test.ts asserts it.
+name: e2e nightly
+
+on:
+  schedule:
+    # 19:00 UTC = 02:00 Bangkok.
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: e2e-nightly
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    name: e2e nightly (chromium, shard ${{ matrix.shard }}/2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      CI_E2E_BRANCH_NAME: ci-e2e/nightly-${{ github.run_id }}-${{ github.run_attempt }}-s${{ matrix.shard }}
+      TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
+      SHARD: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      - name: Branch expiry (8 h backstop)
+        id: expiry
+        run: echo "at=$(date -u --date '+8 hours' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Create this run's Neon branch
+        id: branch
+        uses: neondatabase/create-branch-action@v6
+        with:
+          project_id: ${{ vars.NEON_CI_PROJECT_ID }}
+          parent_branch: ${{ vars.NEON_CI_PARENT_BRANCH }}
+          branch_name: ${{ env.CI_E2E_BRANCH_NAME }}
+          expires_at: ${{ steps.expiry.outputs.at }}
+          api_key: ${{ secrets.NEON_CI_API_KEY }}
+
+      - name: Mask and export the branch connection
+        env:
+          DB_URL: ${{ steps.branch.outputs.db_url }}
+          DB_URL_POOLED: ${{ steps.branch.outputs.db_url_pooled }}
+          DB_PASSWORD: ${{ steps.branch.outputs.password }}
+          DB_HOST: ${{ steps.branch.outputs.db_host }}
+          DB_HOST_POOLED: ${{ steps.branch.outputs.db_host_pooled }}
+          CREATED: ${{ steps.branch.outputs.created }}
+        run: |
+          echo "::add-mask::$DB_PASSWORD"
+          echo "::add-mask::$DB_URL"
+          echo "::add-mask::$DB_URL_POOLED"
+          {
+            echo "DATABASE_URL=$DB_URL_POOLED"
+            echo "DATABASE_URL_UNPOOLED=$DB_URL"
+            echo "CI_E2E_EXPECTED_HOST=$DB_HOST_POOLED"
+            echo "CI_E2E_EXPECTED_DIRECT_HOST=$DB_HOST"
+            echo "CI_E2E_BRANCH_CREATED=$CREATED"
+          } >> "$GITHUB_ENV"
+
+      - name: Refuse any target but this run's ci-e2e branch (DW-9)
+        run: node --import tsx scripts/seed-ci-e2e.ts --guard-only
+
+      # Drops what the parent refresh migrated, so the next step migrates from
+      # zero. Re-checks the target on its own: it is the one destructive step.
+      - name: Reset the schema (this run's ci-e2e branch only)
+        run: |
+          set -euo pipefail
+          case "$CI_E2E_BRANCH_NAME" in
+            ci-e2e/*) ;;
+            *) echo "::error title=Refusing to reset::$CI_E2E_BRANCH_NAME is not a ci-e2e/ branch."; exit 1 ;;
+          esac
+          if [ "$CI_E2E_BRANCH_CREATED" != "true" ]; then
+            echo "::error title=Refusing to reset::this run did not create the branch."
+            exit 1
+          fi
+          case "$DATABASE_URL_UNPOOLED" in
+            *"@$CI_E2E_EXPECTED_DIRECT_HOST"*) ;;
+            *) echo "::error title=Refusing to reset::the connection host is not the one Neon returned for this branch."; exit 1 ;;
+          esac
+          psql "$DATABASE_URL_UNPOOLED" -v ON_ERROR_STOP=1 -q -c 'DROP SCHEMA public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public;'
+          echo "Schema reset on $CI_E2E_BRANCH_NAME."
+
+      - name: Start the migration timer
+        run: echo "MIGRATE_T0=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Migrate the branch from zero
+        uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ steps.branch.outputs.db_url }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+          migrate: 'true'
+
+      - name: Record the migration time
+        if: always() && env.MIGRATE_T0 != ''
+        run: echo "migrate $(( $(date +%s) - MIGRATE_T0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"
+
+      - name: Seed personas and fixtures
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.CI_BLOB_READ_WRITE_TOKEN }}
+        run: |
+          t0=$SECONDS
+          trap 'echo "seed $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
+          node --import tsx scripts/seed-ci-e2e.ts
+
+      - name: Apply the CI env (.github/ci/e2e.env + CI service secrets)
+        env:
+          CI_BLOB_READ_WRITE_TOKEN: ${{ secrets.CI_BLOB_READ_WRITE_TOKEN }}
+          CI_BLOB_PRIVATE_READ_WRITE_TOKEN: ${{ secrets.CI_BLOB_PRIVATE_READ_WRITE_TOKEN }}
+          CI_UPSTASH_REDIS_REST_URL: ${{ secrets.CI_UPSTASH_REDIS_REST_URL }}
+          CI_UPSTASH_REDIS_REST_TOKEN: ${{ secrets.CI_UPSTASH_REDIS_REST_TOKEN }}
+        run: |
+          for name in CI_BLOB_READ_WRITE_TOKEN CI_BLOB_PRIVATE_READ_WRITE_TOKEN CI_UPSTASH_REDIS_REST_URL CI_UPSTASH_REDIS_REST_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Missing CI secret::The repository secret $name is empty or unset."
+              exit 1
+            fi
+          done
+          grep -E '^[A-Z][A-Z0-9_]*=' .github/ci/e2e.env >> "$GITHUB_ENV"
+          {
+            echo "BLOB_READ_WRITE_TOKEN=$CI_BLOB_READ_WRITE_TOKEN"
+            echo "BLOB_PRIVATE_READ_WRITE_TOKEN=$CI_BLOB_PRIVATE_READ_WRITE_TOKEN"
+            echo "KV_REST_API_URL=$CI_UPSTASH_REDIS_REST_URL"
+            echo "KV_REST_API_TOKEN=$CI_UPSTASH_REDIS_REST_TOKEN"
+          } >> "$GITHUB_ENV"
+
+      - name: Install Chromium for Playwright
+        run: pnpm exec playwright install --with-deps chromium
+
+      # playwright.config.ts starts `pnpm dev --port 3100` itself (webServer).
+      - name: e2e full suite on chromium
+        id: e2e
+        env:
+          E2E_X_TENANT_HEADER_ENABLED: '1'
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-results/chromium.json
+        run: |
+          t0=$SECONDS
+          trap 'echo "e2e-chromium $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
+          pnpm exec playwright test --project=chromium --workers=1 --shard="$SHARD/2" --trace=retain-on-failure --reporter=list,html,json
+
+      # Spec FILE names only; the issue is public.
+      - name: List the failed specs
+        if: always()
+        env:
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
+        run: |
+          mkdir -p nightly-failed
+          if [ -f playwright-results/chromium.json ]; then
+            jq -r '[.suites[] | .. | objects | select(has("specs")) | .specs[] | select(any(.tests[]; .status == "unexpected")) | .file] | unique[]' playwright-results/chromium.json > "nightly-failed/shard-$SHARD.txt" || true
+          elif [ "$E2E_OUTCOME" != "success" ]; then
+            echo "(shard $SHARD failed before Playwright wrote results; see the run log)" > "nightly-failed/shard-$SHARD.txt"
+          fi
+          touch "nightly-failed/shard-$SHARD.txt"
+          {
+            echo "## e2e nightly shard $SHARD"
+            echo
+            echo "| Phase | Seconds |"
+            echo "|---|---|"
+            if [ -f "$RUNNER_TEMP/e2e-timings.txt" ]; then
+              while read -r phase secs; do echo "| $phase | $secs |"; done < "$RUNNER_TEMP/e2e-timings.txt"
+            fi
+            echo
+            echo "Failed spec files: $(grep -c . "nightly-failed/shard-$SHARD.txt" || true)"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the failed-spec list
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-nightly-failed-${{ matrix.shard }}
+          path: nightly-failed/
+          retention-days: 7
+
+      - name: Upload the Playwright report and traces (7 days, synthetic data only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-nightly-report-${{ github.run_id }}-${{ github.run_attempt }}-s${{ matrix.shard }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Delete this run's Neon branch
+        if: always() && steps.branch.outputs.created == 'true'
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_CI_PROJECT_ID }}
+          branch: ${{ steps.branch.outputs.branch_id }}
+          api_key: ${{ secrets.NEON_CI_API_KEY }}
+
+  report:
+    name: Report to the e2e-nightly issue
+    needs: e2e
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    env:
+      RESULT: ${{ needs.e2e.result }}
+      COMMIT_SHA: ${{ github.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      # A shard that never started uploads nothing; the issue still opens.
+      - name: Download the failed-spec lists
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: e2e-nightly-failed-*
+          path: nightly-failed
+          merge-multiple: true
+
+      - name: Open or update the e2e-nightly issue
+        if: env.RESULT != 'success'
+        # The token reaches only the two issue steps.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          {
+            echo "The e2e nightly failed (result: $RESULT)."
+            echo
+            echo "- Commit: $COMMIT_SHA"
+            echo "- Run: $RUN_URL (the HTML report and traces are attached to it for 7 days)"
+            echo
+            echo "Failed spec files:"
+            echo
+            echo '```'
+            cat nightly-failed/*.txt 2>/dev/null | sort -u | grep . || echo "(none listed; see the run log)"
+            echo '```'
+            echo
+            echo "Runbook: docs/runbooks/e2e-ci.md"
+          } > issue-body.md
+          gh label create e2e-nightly --color D93F0B --description "The e2e nightly failed" 2>/dev/null || true
+          existing="$(gh issue list --label e2e-nightly --state open --limit 1 --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file issue-body.md
+          else
+            gh issue create --title "e2e nightly failed" --label e2e-nightly --body-file issue-body.md
+          fi
+
+      - name: Close the e2e-nightly issue as recovered
+        if: env.RESULT == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          open="$(gh issue list --label e2e-nightly --state open --json number --jq '.[].number')"
+          if [ -z "$open" ]; then
+            echo "No open e2e-nightly issue."
+            exit 0
+          fi
+          echo "Recovered: the e2e nightly passed at $COMMIT_SHA ($RUN_URL)" > recovered-body.md
+          for n in $open; do
+            gh issue comment "$n" --body-file recovered-body.md
+            gh issue close "$n"
+          done

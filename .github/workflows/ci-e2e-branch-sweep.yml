@@ -1,0 +1,104 @@
+# Age-based sweep of leftover `ci-e2e/*` branches in the CI Neon project.
+# DRY RUN BY DEFAULT.
+#
+# WHY
+#   e2e-critical.yml and e2e-nightly.yml delete their branch in an `always()`
+#   step and give it an expiry, but a runner that dies, a cancelled job before
+#   the create step returned, or a Neon API error can still leave one behind.
+#   The CI project holds synthetic data only, so this is about the project's
+#   branch limit, not about PII.
+#
+# SAFETY (this workflow deletes branches)
+#   - The CI project only: NEON_CI_API_KEY + vars.NEON_CI_PROJECT_ID, never the
+#     project-wide NEON_API_KEY.
+#   - A candidate must be named `ci-e2e/…`, be a child of
+#     vars.NEON_CI_PARENT_BRANCH, and be older than 24 h.
+#   - A denylist (main / dev / ci / *backup*) and the parent itself are refused
+#     on top of that filter.
+#   - It deletes only while the repo variable CI_E2E_SWEEP_ENABLED is `true`;
+#     a manual run also needs `dry_run: false`. Otherwise it only reports.
+#   - tests/unit/architecture/e2e-nightly-and-sweep-workflows.test.ts asserts it.
+name: CI e2e branch sweep
+
+on:
+  schedule:
+    # 22:00 UTC = 05:00 Bangkok, after the nightly's start.
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Report only, delete nothing'
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: ci-e2e-branch-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Sweep stale ci-e2e branches
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - name: Sweep stale ci-e2e branches
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_CI_API_KEY }}
+          PROJECT_ID: ${{ vars.NEON_CI_PROJECT_ID }}
+          PARENT_BRANCH_ID: ${{ vars.NEON_CI_PARENT_BRANCH }}
+          SWEEP_ENABLED: ${{ vars.CI_E2E_SWEEP_ENABLED }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NEON_API_KEY" ] || [ -z "$PROJECT_ID" ] || [ -z "$PARENT_BRANCH_ID" ]; then
+            echo "::notice title=Sweep skipped::NEON_CI_API_KEY, NEON_CI_PROJECT_ID or NEON_CI_PARENT_BRANCH is not set." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Arming, in one place: the variable must be on, and a manual run must
+          # also ask for deletion.
+          DRY_RUN=true
+          if [ "$SWEEP_ENABLED" = "true" ]; then
+            if [ "$EVENT_NAME" = "schedule" ] || [ "$INPUT_DRY_RUN" = "false" ]; then
+              DRY_RUN=false
+            fi
+          fi
+
+          api="https://console.neon.tech/api/v2/projects/$PROJECT_ID"
+          cutoff=$(( $(date +%s) - 24 * 3600 ))
+          branches="$(curl -fsS -H "Authorization: Bearer $NEON_API_KEY" -H 'Accept: application/json' "$api/branches")"
+          candidates="$(jq -r --arg parent "$PARENT_BRANCH_ID" --argjson cutoff "$cutoff" '
+            .branches[]
+            | select(.name | startswith("ci-e2e/"))
+            | select(.parent_id == $parent)
+            | select((.created_at | sub("\\.[0-9]+"; "") | fromdateiso8601) < $cutoff)
+            | "\(.id) \(.name)"' <<< "$branches")"
+
+          {
+            echo "## ci-e2e branch sweep (dry run: $DRY_RUN)"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$candidates" ]; then
+            echo "No ci-e2e/ branch older than 24 h." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          while read -r id name; do
+            case "$name" in
+              main|dev|ci|*backup*) echo "keep $name (denylist)"; continue ;;
+            esac
+            if [ "$id" = "$PARENT_BRANCH_ID" ]; then
+              echo "keep $name (the CI parent)"
+              continue
+            fi
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "- would delete \`$name\`" | tee -a "$GITHUB_STEP_SUMMARY"
+            else
+              curl -fsS -X DELETE -H "Authorization: Bearer $NEON_API_KEY" -H 'Accept: application/json' "$api/branches/$id" > /dev/null
+              echo "- deleted \`$name\`" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+          done <<< "$candidates"
