@@ -425,9 +425,13 @@ TDD is mandatory. Code without a preceding failing test MUST NOT be merged.
 
 - Red → Green → Refactor: write the test, watch it fail, write the minimum code to pass,
   then refactor. Each step is a distinct commit or clearly separated change set.
-- For UI presentation (React components, styles and markup; never `route.ts` handlers or server actions), copy, and size-S changes that are not guards only, the failing test and the code may share one commit,
-  provided the failing run is recorded with its output (the test name and its failure line) (`plan.md` § Evidence, or the PR for size S).
-  This allowance is never money, tax, auth/RBAC, tenancy, PII, audit log, a migration, a guard or validation, or domain/application logic.
+- Allowance (2.1.0): for UI presentation (React components, styles and markup;
+  never `route.ts` handlers or server actions), copy, and size-S changes that are
+  not guards, the failing test and the code may share one commit, provided the
+  failing run is recorded with its output (the test name and its failure line) in
+  `plan.md` § Evidence, or in the PR for size S. The allowance never covers money,
+  tax, auth/RBAC, tenancy, PII, audit log, a migration, a guard or validation, or
+  domain/application logic.
 - Every user story in a spec MUST have at least one acceptance-level test before
   implementation starts.
 - Contract tests are mandatory at every external and inter-module boundary.
