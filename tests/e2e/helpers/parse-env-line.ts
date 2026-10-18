@@ -15,16 +15,20 @@
 export function parseEnvLine(rawLine: string): { key: string; value: string } | null {
   const line = rawLine.trim();
   if (!line || line.startsWith('#')) return null;
-  const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+  const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(\s*)(.*)$/.exec(line);
   if (!match) return null;
   const key = match[1]!;
-  const rest = match[2] ?? '';
+  const spaced = (match[2] ?? '') !== '';
+  const rest = match[3] ?? '';
 
   const quote = rest[0];
   if (quote === '"' || quote === "'") {
     const close = rest.indexOf(quote, 1);
     if (close > 0) return { key, value: rest.slice(1, close) };
   }
+  // A value that is only a comment (`KEY=   # c`): whitespace, then `#`.
+  // `COLOR=#fff` has no whitespace after `=`, so it keeps its value.
+  if (spaced && rest.startsWith('#')) return { key, value: '' };
   const comment = /\s#/.exec(rest);
   return { key, value: (comment === null ? rest : rest.slice(0, comment.index)).trim() };
 }
