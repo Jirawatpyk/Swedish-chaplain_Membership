@@ -325,6 +325,8 @@ describe('ci-e2e-branch-sweep.yml — review round 2 (PR #586)', () => {
     });
     expect(run.stdout).toMatch(/::warning title=ci-e2e sweep delete failed::ci-e2e\/1-1/);
     expect(readFileSync(summary, 'utf8')).toMatch(/deleted `ci-e2e\/2-1`/);
+    // A failed delete must not be reported as deleted.
+    expect(readFileSync(summary, 'utf8')).not.toMatch(/deleted `ci-e2e\/1-1`/);
     expect(run.status).toBe(1);
   });
 
