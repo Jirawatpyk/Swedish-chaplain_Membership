@@ -18,30 +18,54 @@ const SECRET_FILE = /(^|[\s'"=\/\\])\.env(\.(?!example\b)[\w.-]+)?(?=$|[\s'";|&)
 // here as read-only (D-024). `permissions.deny` matches by prefix, so
 // `pnpm run x:prod`, `pnpm -s x:prod` or `npm run x:prod` slipped past it (D-025).
 const READ_ONLY_PROD_SCRIPTS = new Set(['db:verify:prod']);
-const READ_ONLY_PROD_FILES = ['scripts/verify-schema.ts'];
+const READ_ONLY_PROD_FILE = /^scripts[\\/]verify-schema\.ts$/;
 const PACKAGE_MANAGER = /^(pnpm|npm|yarn|bun)(\.cmd|\.exe)?$/i;
-// `--env-file=<p>` / `--env-file <p>` naming a prod env file
-const PROD_ENV_FILE = /--env-file(?:=|\s+)["']?[^\s"']*(\.env\.production|\.env\.prod|\.bak\.prod)\b/i;
+// `--env-file[-if-exists]=<p>` / `… <p>` naming a prod env file
+const PROD_ENV_FILE = /--env-file(?:-if-exists)?(?:=|\s+)["']?[^\s"']*(\.env\.production|\.env\.prod|\.bak\.prod)\b/i;
+// Words that run the command after them: `timeout 600 pnpm …`, `env pnpm …`,
+// `bash -c "pnpm …"`, `cmd /c pnpm …`. Stripped before the first word is read.
+const WRAPPER = /^(?:timeout\s+\S+|env|nohup|time|exec|command|sudo|npx|corepack|(?:ba|z|da)?sh(?:\.exe)?(?:\s+-\w+)*|(?:pwsh|powershell)(?:\.exe)?(?:\s+-\w+)*|cmd(?:\.exe)?\s+\/[ck]|start-process)\s+/i;
+const EVAL_FLAG = /(^|\s)(-e|--eval|-p|--print)(\s|=|$)/;
 
-// The simple commands in a shell line: split on ; && || | & and newlines, and
-// drop leading `VAR=value` assignments and a PowerShell `&` call operator.
+// The simple commands in a shell line: split on ; && || | & ( ) { } ` and
+// newlines (so a subshell or `$( … )` is its own segment), then drop leading
+// `VAR=value` assignments, quotes and wrapper words.
 function segments(cmd) {
   return cmd
-    .split(/&&|\|\||[;|&\r\n]/)
-    .map((s) => s.trim().replace(/^(?:[A-Za-z_]\w*=\S*\s+)+/, ''))
+    .split(/&&|\|\||[;|&\r\n(){}`]/)
+    .map((s) => {
+      let seg = s.trim();
+      for (let prev = ''; prev !== seg; ) {
+        prev = seg;
+        seg = seg
+          .replace(/^\$/, '')
+          .replace(/^["']+/, '')
+          .replace(/^(?:[A-Za-z_]\w*=\S*\s+)+/, '')
+          .replace(WRAPPER, '')
+          .trim();
+      }
+      return seg;
+    })
     .filter(Boolean);
+}
+
+// Only `node … scripts/verify-schema.ts` with no other script and no eval.
+function runsOnlyVerifySchema(words, seg) {
+  const files = words.filter((w) => /\.(?:[cm]?[jt]s)$/i.test(w));
+  return files.length === 1 && READ_ONLY_PROD_FILE.test(files[0]) && !EVAL_FLAG.test(seg);
 }
 
 function prodWriteReason(cmd) {
   for (const seg of segments(cmd)) {
-    const words = seg.split(/\s+/).map((w) => w.replace(/^["']|["']$/g, ''));
-    if (PACKAGE_MANAGER.test(words[0] ?? '')) {
+    const words = seg.split(/\s+/).map((w) => w.replace(/^["']+|["']+$/g, ''));
+    const first = (words[0] ?? '').split(/[\\/]/).pop() ?? '';
+    if (PACKAGE_MANAGER.test(first)) {
       const script = words.slice(1).find((w) => /^[\w.-]+(:[\w.-]+)*:prod$/.test(w));
       if (script && !READ_ONLY_PROD_SCRIPTS.has(script)) {
         return `\`${script}\` writes to production. The user runs it; Claude may run only the read-only ${[...READ_ONLY_PROD_SCRIPTS].join(', ')}.`;
       }
     }
-    if (PROD_ENV_FILE.test(seg) && !READ_ONLY_PROD_FILES.some((f) => seg.includes(f))) {
+    if (PROD_ENV_FILE.test(seg) && !runsOnlyVerifySchema(words, seg)) {
       return 'this command runs a script with the production env file, which can write to production. The user runs it; Claude may run only the read-only `pnpm db:verify:prod`.';
     }
   }
