@@ -260,6 +260,12 @@ describe('e2e-critical.yml — review round 1 (PR #586)', () => {
     expect(scope).toMatch(/https:\/\/console\.neon\.tech\/api\/v2\/projects/);
     expect(scope).toMatch(/\.projects \| length/);
     expect(scope).toMatch(/\.projects\[0\]\.id/);
+    // A project-scoped key cannot list projects: Neon answers 404 (run
+    // 39107806086). Then the key must open exactly the CI project.
+    expect(scope).toMatch(/-w '%\{http_code\}'/);
+    expect(scope).toMatch(/404\|403\)/);
+    expect(scope).toMatch(/api\/v2\/projects\/\$PROJECT_ID/);
+    expect(scope).toMatch(/\.project\.id/);
     expect(scope).toMatch(/exit 1/);
     expect(scope).not.toMatch(/echo "\$projects"|cat .*projects|set -x/);
     expect(lineOf(src, /- name: Prove the CI key reaches only the CI project/)).toBeLessThan(
