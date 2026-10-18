@@ -332,3 +332,33 @@ Filled in at Verify, one block per slice.
   - Likely cause: CI's `.env.local` is a copy of `.env.example`, which carries inline comments (`CLAMAV_TIMEOUT_MS="300000"           # 5-minute …`). The minimal loader in `playwright.config.ts` strips quotes only when the value ends in a quote, so the comment stays in the value. Developers' `.env.local` comes from `vercel env pull` and has no inline comments.
 - **Per-spec table:** empty, because no test ran. **Delete branch:** ran.
 
+### Slice 2 — spike 4 ([run 39097994635](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39097994635), head `e121c57da`, cancelled)
+
+- Superseded mid-run by the push of `32709716c` (concurrency `cancel-in-progress`). It carried no fix for spike 3's failure, so nothing was lost.
+
+### Slice 2 — spike 5 ([run 39098373802](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39098373802), head `32709716c`, **success**)
+
+- Fix since spike 3: `parseEnvLine` (RED `a1d1c4e99`, GREEN `32709716c`). `playwright.config.ts` now drops inline `# comments` and reads quoted values up to the matching quote.
+- **Job wall time:** 20 min 59 s. The CI parent was still empty, so migrate ran from zero; that is the last PR run to do so once the parent refresh has run on `main`.
+
+| Phase | Seconds |
+|---|---|
+| migrate (fresh-DB mode: `applied 308` in 515.9 s) | 519 |
+| seed (all nine ok) | 152 |
+| build | 144 |
+| ready | 6 |
+| e2e-chromium | 195 |
+| e2e-mobile-chrome | 187 |
+
+| Project | Spec | Seconds | Retries | Passed | Flaky | Failed | Skipped |
+|---|---|---|---|---|---|---|---|
+| chromium | payment-promptpay-happy-path.spec.ts | 37 | 0 | 2 | 0 | 0 | 0 |
+| chromium | portal-invoices.spec.ts | 98 | 0 | 6 | 0 | 0 | 0 |
+| chromium | staff-sign-in.spec.ts | 14 | 0 | 3 | 0 | 0 | 0 |
+| mobile-chrome | payment-promptpay-happy-path.spec.ts | 36 | 0 | 2 | 0 | 0 | 0 |
+| mobile-chrome | portal-invoices.spec.ts | 98 | 0 | 6 | 0 | 0 | 0 |
+| mobile-chrome | staff-sign-in.spec.ts | 12 | 0 | 3 | 0 | 0 | 0 |
+
+- **11 passed** on each project (3.2 min and 3.1 min), with no retries, no flakes and no skips. The artifact upload was skipped because nothing failed. **Delete branch:** ran.
+- **Budget:** without the 519 s migrate, the run is about 12 min. That leaves about 13 min of the 25-minute budget for the rest of the `@critical` set, at roughly 1 min per spec file per project.
+
