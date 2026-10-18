@@ -245,6 +245,7 @@ jobs:
       # Per spec file: wall time over every attempt, retries, and outcomes.
       # A skipped test is not a pass, so skips get their own column.
       - name: Timing and per-spec summary
+        id: summary
         if: always()
         run: |
           {
@@ -289,6 +290,7 @@ jobs:
             flaky="$(jq -r '[.suites[] | .. | objects | select(has("specs")) | .specs[] | select(any(.tests[]; .status == "flaky")) | .file] | unique[]' "$f")"
             for spec in $flaky; do
               echo "::warning title=Flaky @critical spec::$project: $spec passed only on a retry."
+              echo "flaky=true" >> "$GITHUB_OUTPUT"
             done
             skipped="$(jq '[.suites[] | .. | objects | select(has("specs")) | .specs[].tests[] | select(.status == "skipped")] | length' "$f")"
             if [ "$skipped" != "0" ]; then
@@ -301,7 +303,9 @@ jobs:
           fi
 
       - name: Upload the Playwright report and traces (7 days, synthetic data only)
-        if: failure() || cancelled()
+        # Also on a flaky pass: the failed attempts' traces are the only
+        # evidence of what went wrong (run 39121468131).
+        if: failure() || cancelled() || steps.summary.outputs.flaky == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: e2e-critical-${{ github.run_id }}-${{ github.run_attempt }}
