@@ -61,7 +61,7 @@ function makeRow(id: string): EnrichedQueueRow {
     segmentLabel: 'All members',
     recipientCount: 42,
     ageBadge: null,
-    statusBadgeVariant: 'secondary',
+    statusTone: 'progress',
     statusBadgeLabel: 'Awaiting review',
     actionable: true,
     whoseTurnLabel: 'Marketing',

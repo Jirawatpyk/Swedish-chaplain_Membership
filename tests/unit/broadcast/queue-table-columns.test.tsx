@@ -71,7 +71,7 @@ function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
     segmentLabel: 'All members',
     recipientCount: 42,
     ageBadge: null,
-    statusBadgeVariant: 'secondary',
+    statusTone: 'progress',
     statusBadgeLabel: 'Scheduled',
     actionable: false,
     whoseTurnLabel: null,
@@ -94,21 +94,21 @@ function table(props: Partial<QueueTableClientProps> & { rows: ReadonlyArray<Enr
 }
 
 const headers = () =>
-  within(screen.getByRole('table'))
+  within(screen.getByRole('grid'))
     .getAllByRole('columnheader')
     .map((th) => th.textContent?.trim() ?? '');
 
 const cellOf = (column: string) => {
   const index = headers().indexOf(column);
-  const firstRow = within(screen.getByRole('table')).getAllByRole('row')[1]!;
-  return within(firstRow).getAllByRole('cell')[index]!;
+  const firstRow = within(screen.getByRole('grid')).getAllByRole('row')[1]!;
+  return within(firstRow).getAllByRole('gridcell')[index]!;
 };
 
 describe('the eight columns (UX review M1)', () => {
   it('an admin sees selection + exactly Member · Subject · Stage · Whose turn · Time in stage · Send time · Audience · Actions', () => {
     render(table({ rows: [makeRow()] }));
     expect(headers()).toEqual([
-      '',
+      'Select rows',
       'Member',
       'Subject',
       'Stage',
@@ -172,7 +172,7 @@ describe('the eight columns (UX review M1)', () => {
     ['send_time', 'Send time', 'ascending', 'Sorted by send time'],
   ] as const)('order %s: `aria-sort` on %s (%s) and the visible hint', (order, column, direction, hint) => {
     render(table({ rows: [makeRow()], readOnly: true, order }));
-    const sorted = within(screen.getByRole('table'))
+    const sorted = within(screen.getByRole('grid'))
       .getAllByRole('columnheader')
       .filter((th) => th.hasAttribute('aria-sort'));
     expect(sorted).toHaveLength(1);
@@ -185,7 +185,7 @@ describe('the eight columns (UX review M1)', () => {
 describe('muted type is for labels only (UX review M6)', () => {
   it('the Audience value is not muted', () => {
     render(table({ rows: [makeRow()], readOnly: true }));
-    expect(within(cellOf('Audience')).getByText(/All members/).closest('.text-muted-foreground')).toBeNull();
+    expect(within(cellOf('Audience')).getByText(/All members/).closest('[class*="aura-fg-secondary"]')).toBeNull();
   });
 });
 

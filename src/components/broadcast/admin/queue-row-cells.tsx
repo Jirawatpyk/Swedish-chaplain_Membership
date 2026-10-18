@@ -6,14 +6,12 @@
  * (the `ageBadge` struct's own rule, one level up). `SendTime` is table-only:
  * below `md` the send times live on the detail page (FR-026).
  */
-import { AlertCircle, Clock } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { cn } from '@/lib/utils';
+import { Badge } from '@jirawatpyk/aura-react';
 import type { EnrichedQueueRow } from './queue-table-client';
 
-/** The empty-value sentinel "—" — the one place a new FR-026 cell uses `muted-foreground`. */
+/** The empty-value sentinel "—" — the one place a new FR-026 cell uses the secondary ink. */
 export function EmptySentinel(): React.JSX.Element {
-  return <span className="text-muted-foreground">—</span>;
+  return <span className="text-[var(--aura-fg-secondary)]">—</span>;
 }
 
 /**
@@ -31,28 +29,21 @@ export function TimeInStage({
   readonly row: Pick<EnrichedQueueRow, 'ageBadge' | 'timeInStageLabel'>;
 }): React.JSX.Element {
   if (row.ageBadge !== null) {
+    // Spec 122 US12b — the AURA badge, danger when stalled and warning on the
+    // amber pre-warning, each with its own icon (UX-R2-7: never colour alone).
+    const stalled = row.ageBadge.variant === 'red';
     return (
       <Badge
-        variant="outline"
-        className={cn(
-          'inline-flex items-center gap-1 self-start align-middle text-xs',
-          row.ageBadge.variant === 'red'
-            ? 'border-destructive/40 bg-destructive-surface text-destructive'
-            : 'border-warning/40 bg-warning-surface text-warning',
-        )}
+        tone={stalled ? 'danger' : 'warning'}
+        icon={stalled ? 'circle-alert' : 'clock'}
+        className="self-start align-middle"
       >
-        {/* UX-R2-7 (round-3) — non-color signal for color-blind users */}
-        {row.ageBadge.variant === 'red' ? (
-          <AlertCircle className="h-3 w-3" aria-hidden="true" />
-        ) : (
-          <Clock className="h-3 w-3" aria-hidden="true" />
-        )}
         {row.ageBadge.label}
       </Badge>
     );
   }
   if (row.timeInStageLabel === null) return <EmptySentinel />;
-  return <span className="tabular-nums text-foreground">{row.timeInStageLabel}</span>;
+  return <span className="tabular-nums">{row.timeInStageLabel}</span>;
 }
 
 /**
@@ -77,7 +68,7 @@ export function SendTime({
     return (
       <div className="flex flex-col gap-1">
         <span className="whitespace-nowrap tabular-nums">{proposed}</span>
-        <span className="text-xs text-muted-foreground">{proposedLabel}</span>
+        <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{proposedLabel}</span>
       </div>
     );
   }
@@ -85,8 +76,8 @@ export function SendTime({
     <div className="flex flex-col gap-1">
       <span className="whitespace-nowrap tabular-nums">{confirmed}</span>
       {proposed !== null && proposed !== confirmed ? (
-        <span className="text-xs">
-          <span className="text-muted-foreground">{proposedLabel}</span>{' '}
+        <span className="aura-text-caption">
+          <span className="text-[var(--aura-fg-secondary)]">{proposedLabel}</span>{' '}
           <span className="whitespace-nowrap tabular-nums">{proposed}</span>
         </span>
       ) : null}

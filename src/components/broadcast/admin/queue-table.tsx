@@ -20,7 +20,7 @@ import type { EnrichedQueueRow, QueueOrder } from './queue-table-client';
 import { QueueWithBulk } from './queue-with-bulk';
 import { SLA_RED_HOURS, stageAgeOf } from '@/modules/broadcasts';
 import type { AdminQueueItem } from '@/lib/admin-broadcast-queue';
-import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
+import { getBroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
 
@@ -109,7 +109,6 @@ export async function QueueTable({
           ? t('timeInStage.hours', { hours: age.hours })
           : t('timeInStage.days', { days });
 
-    const style = getBroadcastStatusBadgeProps(row.status);
     const enriched: EnrichedQueueRow = {
       broadcastId: row.broadcastId,
       subject: row.subject,
@@ -121,7 +120,7 @@ export async function QueueTable({
       segmentLabel: tSegment(row.segmentType as Parameters<typeof tSegment>[0]),
       recipientCount: row.estimatedRecipientCount,
       ageBadge,
-      statusBadgeVariant: style.variant,
+      statusTone: getBroadcastStatusTone(row.status),
       statusBadgeLabel: tStatus(row.status),
       actionable: row.status === 'submitted',
       whoseTurnLabel:
@@ -145,9 +144,6 @@ export async function QueueTable({
               complained: row.delivery.complained,
             }),
     };
-    if (style.className !== undefined) {
-      return { ...enriched, statusBadgeClassName: style.className };
-    }
     return enriched;
   });
 

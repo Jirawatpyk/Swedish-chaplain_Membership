@@ -3518,6 +3518,8 @@
         },
         "bulk": {
           "selectAria": "Välj utskick",
+          "selectRowAria": "Välj {subject}",
+          "rowNotSelectable": "{subject} väntar inte på granskning",
           "selected": "{count, plural, one {# markerad} other {# markerade}}",
           "toolbarLabel": "Massåtgärder för valda utskick",
           "selectedCount": "{count, plural, one {# markerad} other {# markerade}}",
@@ -3558,10 +3560,12 @@
           }
         },
         "card": {
-          "actionsLabel": "Åtgärder",
           "statusLabel": "Steg",
           "whoseTurnLabel": "Vems tur",
-          "timeInStageLabel": "Tid i steget"
+          "timeInStageLabel": "Tid i steget",
+          "review": "Granska",
+          "reviewAria": "Granska {subject}",
+          "recipients": "{count, plural, one {# mottagare} other {# mottagare}}"
         },
         "filters": {
           "formAriaLabel": "Filter för utskickskö",

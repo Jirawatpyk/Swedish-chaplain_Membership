@@ -3518,6 +3518,8 @@
         },
         "bulk": {
           "selectAria": "เลือก E-Blast",
+          "selectRowAria": "เลือก {subject}",
+          "rowNotSelectable": "{subject} ไม่ได้รอการตรวจทาน",
           "selected": "{count, plural, other {เลือกแล้ว # รายการ}}",
           "toolbarLabel": "การดำเนินการแบบกลุ่มสำหรับ E-Blast ที่เลือก",
           "selectedCount": "{count, plural, other {เลือกแล้ว # รายการ}}",
@@ -3558,10 +3560,12 @@
           }
         },
         "card": {
-          "actionsLabel": "การดำเนินการ",
           "statusLabel": "ขั้นตอน",
           "whoseTurnLabel": "ถึงคิวใคร",
-          "timeInStageLabel": "อยู่ในขั้นตอนนี้"
+          "timeInStageLabel": "อยู่ในขั้นตอนนี้",
+          "review": "ตรวจทาน",
+          "reviewAria": "ตรวจทาน {subject}",
+          "recipients": "{count, plural, other {ผู้รับ # ราย}}"
         },
         "filters": {
           "formAriaLabel": "ตัวกรองคิวตรวจสอบ E-Blast",

@@ -94,7 +94,7 @@ async function renderRows(rows: QueueRow[]) {
   );
 }
 
-const table = () => within(screen.getByRole('table'));
+const table = () => within(screen.getByRole('grid'));
 
 describe('the stalled flag (T111, FR-027)', () => {
   it("the accessible name reads 'Stalled — 3 days'; the icon is `aria-hidden`; no `aria-label` on a role-less span", async () => {
@@ -152,7 +152,7 @@ describe('the stalled flag (T111, FR-027)', () => {
       segmentLabel: 'All members',
       recipientCount: 10,
       ageBadge,
-      statusBadgeVariant: 'secondary',
+      statusTone: 'progress',
       statusBadgeLabel: 'In design',
       actionable: false,
       whoseTurnLabel: 'Marketing',

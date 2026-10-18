@@ -3518,6 +3518,8 @@
         },
         "bulk": {
           "selectAria": "Select broadcast",
+          "selectRowAria": "Select {subject}",
+          "rowNotSelectable": "{subject} is not awaiting review",
           "selected": "{count, plural, one {# selected} other {# selected}}",
           "toolbarLabel": "Bulk actions for selected broadcasts",
           "selectedCount": "{count, plural, one {# selected} other {# selected}}",
@@ -3558,10 +3560,12 @@
           }
         },
         "card": {
-          "actionsLabel": "Actions",
           "statusLabel": "Stage",
           "whoseTurnLabel": "Whose turn",
-          "timeInStageLabel": "Time in stage"
+          "timeInStageLabel": "Time in stage",
+          "review": "Review",
+          "reviewAria": "Review {subject}",
+          "recipients": "{count, plural, one {# recipient} other {# recipients}}"
         },
         "filters": {
           "formAriaLabel": "Broadcast queue filters",

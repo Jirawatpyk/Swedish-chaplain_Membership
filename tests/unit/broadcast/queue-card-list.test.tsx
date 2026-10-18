@@ -1,65 +1,23 @@
 /**
- * Task 4 (2026-08-01-broadcast-review-queue-pr2) — `<QueueCardList>` mobile
- * card-stack unit tests.
+ * `<QueueCardList>` — the admin review queue below `md`, drawn as board
+ * `Admin-broadcasts-mobile` (spec 122 US12b, maintainer 18 Oct): one card per
+ * row with a single full-width "Review" link to the detail page. No checkbox
+ * (bulk approval lives on tablet and desktop) and no inline Approve / Reject
+ * (they are one tap away on the detail page).
  *
- * `QueueCardList` is handed the SAME `useReactTable` instance
- * `queue-table-client.tsx` builds for the desktop `<table>` — the harness
- * below constructs a real TanStack table with the identical config shape
- * (`getRowId: row => row.broadcastId`, `enableRowSelection`,
- * `onRowSelectionChange`) so this file exercises the ACTUAL row API the
- * card list consumes (`row.getIsSelected()` / `row.toggleSelected()`), not
- * a stub. `columns: []` is deliberate — `QueueCardList` never calls
- * `flexRender`/`row.getVisibleCells()`, it reads `row.original` directly,
- * so no column defs are needed for this harness to be faithful. Precedent:
- * `tests/unit/renewals/pipeline-card-list.test.tsx`.
- *
- * `next/navigation` is mocked — the reused `ReviewActions` mounts
- * `ApproveDialog`/`RejectDialog` (closed) which call `useRouter()`
- * unconditionally.
- *
- * `vi.useRealTimers()` in `beforeEach` — shared test setup installs fake
- * timers globally, under which `fireEvent`-driven state updates can spin
- * `@testing-library/react` internals to the 30s test timeout. Precedent:
- * reference_component_test_harness_fake_timers memory.
- *
- * Base UI's `Checkbox` dispatches via `PointerEvent`, which jsdom does not
- * implement — minimal polyfill copied from `pipeline-card-list.test.tsx`.
+ * The phone-width field set (FR-026) is pinned in
+ * `queue-card-list-columns.test.tsx`.
  */
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
-import { useState } from 'react';
-import {
-  useReactTable,
-  getCoreRowModel,
-  type RowSelectionState,
-} from '@tanstack/react-table';
 import en from '@/i18n/messages/en.json';
 import { QueueCardList } from '@/components/broadcast/admin/queue-card-list';
 import type { EnrichedQueueRow } from '@/components/broadcast/admin/queue-table-client';
 
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
-}));
-
-beforeAll(() => {
-  if (typeof globalThis.PointerEvent === 'undefined') {
-    // @ts-expect-error — minimal polyfill for jsdom
-    globalThis.PointerEvent = class PointerEvent extends MouseEvent {
-      readonly pointerId: number;
-      constructor(type: string, params?: PointerEventInit) {
-        super(type, params);
-        this.pointerId = params?.pointerId ?? 0;
-      }
-    };
-  }
-});
-
 beforeEach(() => {
   vi.useRealTimers();
 });
-
-const COLUMN_LABELS = { select: 'Select broadcast' };
 
 function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
   return {
@@ -70,7 +28,7 @@ function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
     segmentLabel: 'All members',
     recipientCount: 42,
     ageBadge: null,
-    statusBadgeVariant: 'secondary',
+    statusTone: 'progress',
     statusBadgeLabel: 'Awaiting review',
     actionable: true,
     whoseTurnLabel: 'Marketing',
@@ -84,178 +42,64 @@ function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
   };
 }
 
-/**
- * Harness building the SAME `useReactTable` config `queue-table-client.tsx`
- * uses (minus `columns`, which this list never touches — see the module
- * docstring for why an empty `columns` array is faithful here).
- */
-function Harness({
-  rows,
-  readOnly = false,
-}: {
-  readonly rows: ReadonlyArray<EnrichedQueueRow>;
-  readonly readOnly?: boolean;
-}) {
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const table = useReactTable({
-    data: rows as EnrichedQueueRow[],
-    columns: [],
-    getCoreRowModel: getCoreRowModel(),
-    enableRowSelection: (r) => r.original.actionable,
-    onRowSelectionChange: setRowSelection,
-    state: { rowSelection },
-    getRowId: (r) => r.broadcastId,
-  });
-  return (
+function renderList(rows: ReadonlyArray<EnrichedQueueRow>, className?: string) {
+  return render(
     <NextIntlClientProvider locale="en" messages={en}>
-      <QueueCardList table={table} readOnly={readOnly} columnLabels={COLUMN_LABELS} />
-    </NextIntlClientProvider>
+      <QueueCardList rows={rows} {...(className ? { className } : {})} />
+    </NextIntlClientProvider>,
   );
 }
 
 describe('<QueueCardList>', () => {
-  // F119 UX review M7 — Audience / Recipients / Submitted left the card (the
-  // phone-width field set is pinned exactly in `queue-card-list-columns.test.tsx`).
-  it('renders one card per row with the subject and the member', () => {
-    render(<Harness rows={[makeRow({ broadcastId: 'b1', subject: 'Q3 Newsletter' })]} />);
-
-    const list = screen.getByTestId('queue-card-list');
-    expect(within(list).getByText('Q3 Newsletter')).toBeInTheDocument();
-    // Fix round 1 (Important, desktop/mobile parity) — WHO submitted the
-    // broadcast must be visible on the card, mirroring the desktop
-    // `member` column. `makeRow()` defaults `actorRoleLabel` to null, so
-    // just the bare member name renders (no " · role" suffix).
-    expect(within(list).getByText('Acme Co')).toBeInTheDocument();
-
-    expect(within(list).getAllByRole('group')).toHaveLength(1);
+  it('renders one card per row, named by its subject, inside a list', () => {
+    renderList([
+      makeRow({ broadcastId: 'b1', subject: 'First' }),
+      makeRow({ broadcastId: 'b2', subject: 'Second' }),
+    ]);
+    const list = within(screen.getByTestId('queue-card-list'));
+    expect(list.getByRole('list')).toBeInTheDocument();
+    expect(list.getAllByRole('listitem')).toHaveLength(2);
+    expect(list.getByRole('group', { name: 'First' })).toBeInTheDocument();
+    expect(list.getByRole('group', { name: 'Second' })).toBeInTheDocument();
   });
 
-  it('renders the member name with the actor role suffix when set', () => {
-    render(
-      <Harness
-        rows={[makeRow({ memberDisplayName: 'Bob Lee', actorRoleLabel: 'Manager' })]}
-      />,
-    );
-    expect(screen.getByText('Bob Lee · Manager')).toBeInTheDocument();
+  it('each card has one full-width Review link to the detail page, named for its subject', () => {
+    renderList([makeRow({ broadcastId: 'b7', subject: 'Hello' })]);
+    const card = within(screen.getByRole('group', { name: 'Hello' }));
+    const links = card.getAllByRole('link');
+    expect(links).toHaveLength(1);
+    const review = card.getByRole('link', { name: 'Review Hello' });
+    expect(review).toHaveAttribute('href', '/admin/broadcasts/b7');
+    expect(review).toHaveTextContent('Review');
+    expect(review).toHaveClass('aura-btn', 'aura-btn--secondary', 'aura-btn--full', 'aura-btn--touch');
   });
 
-  it('renders one role="group" card per row for multiple rows', () => {
-    render(
-      <Harness
-        rows={[
-          makeRow({ broadcastId: 'b1', subject: 'First' }),
-          makeRow({ broadcastId: 'b2', subject: 'Second' }),
-        ]}
-      />,
-    );
-    const list = screen.getByTestId('queue-card-list');
-    expect(within(list).getAllByRole('group')).toHaveLength(2);
-    expect(within(list).getByText('First')).toBeInTheDocument();
-    expect(within(list).getByText('Second')).toBeInTheDocument();
+  it('has no checkbox and no inline Approve / Reject, even on an actionable row', () => {
+    renderList([makeRow({ actionable: true })]);
+    const list = within(screen.getByTestId('queue-card-list'));
+    expect(list.queryByRole('checkbox')).toBeNull();
+    expect(list.queryByRole('button')).toBeNull();
   });
 
-  it('renders the subject as a link to the broadcast detail page', () => {
-    render(<Harness rows={[makeRow({ broadcastId: 'b7', subject: 'Hello' })]} />);
-    const link = screen.getByRole('link', { name: 'Hello' });
-    expect(link).toHaveAttribute('href', '/admin/broadcasts/b7');
+  it('shows the member with the actor role when set', () => {
+    renderList([makeRow({ memberDisplayName: 'Bob Lee', actorRoleLabel: 'Admin (proxy)' })]);
+    expect(screen.getByText('Bob Lee · Admin (proxy)')).toBeInTheDocument();
   });
 
-  it('renders the status badge label', () => {
-    render(<Harness rows={[makeRow({ statusBadgeLabel: 'Awaiting review' })]} />);
-    const list = screen.getByTestId('queue-card-list');
-    expect(within(list).getByText('Awaiting review')).toBeInTheDocument();
+  it('shows the stage as an AURA status pill in the row tone', () => {
+    renderList([makeRow({ statusTone: 'blocked', statusBadgeLabel: 'Rejected' })]);
+    const pill = screen.getByText('Rejected').closest('.aura-pill');
+    expect(pill).not.toBeNull();
+    expect(pill).toHaveClass('aura-pill--blocked');
   });
 
-  it('renders the age badge label when present', () => {
-    render(
-      <Harness
-        rows={[
-          makeRow({
-            ageBadge: { label: 'Waiting 30h', variant: 'amber' },
-          }),
-        ]}
-      />,
-    );
-    expect(screen.getByText('Waiting 30h')).toBeInTheDocument();
-  });
-
-  it('renders the select checkbox for an actionable row when not read-only, wired to the shared row API', () => {
-    render(<Harness rows={[makeRow({ actionable: true })]} />);
-    const checkbox = screen.getByRole('checkbox', { name: 'Select broadcast' });
-    expect(checkbox).toHaveAttribute('aria-checked', 'false');
-  });
-
-  // Fix round 1 (Minor) — behavioral, not just initial-state: clicking the
-  // card's checkbox must flip `row.toggleSelected()` on the SAME TanStack
-  // row the table would see — the one property this whole task guarantees.
-  // The harness's real `useReactTable` (with `state.rowSelection` +
-  // `onRowSelectionChange`) round-trips this exactly as `queue-table-
-  // client.tsx`'s own selection column does.
-  it('toggles the shared row selection state when the checkbox is clicked', () => {
-    render(<Harness rows={[makeRow({ broadcastId: 'b1', actionable: true })]} />);
-    const checkbox = screen.getByRole('checkbox', { name: 'Select broadcast' });
-    expect(checkbox).toHaveAttribute('aria-checked', 'false');
-
-    fireEvent.click(checkbox);
-
-    expect(checkbox).toHaveAttribute('aria-checked', 'true');
-    // The card's `data-state="selected"` styling hook (Card root) also
-    // flips, confirming the row API — not just the checkbox's own local
-    // visual state — drove the change.
-    expect(screen.getByRole('group')).toHaveAttribute('data-state', 'selected');
-  });
-
-  it('does not render a select checkbox when readOnly is true', () => {
-    render(<Harness rows={[makeRow({ actionable: true })]} readOnly />);
-    expect(screen.queryByRole('checkbox')).toBeNull();
-  });
-
-  it('does not render a select checkbox for a non-actionable row', () => {
-    render(<Harness rows={[makeRow({ actionable: false })]} />);
-    expect(screen.queryByRole('checkbox')).toBeNull();
-  });
-
-  it('renders ReviewActions (Approve/Reject) for an actionable row when not read-only', () => {
-    render(<Harness rows={[makeRow({ actionable: true })]} />);
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reject' })).toBeInTheDocument();
-  });
-
-  it('does not render ReviewActions when read-only', () => {
-    render(<Harness rows={[makeRow({ actionable: true })]} readOnly />);
-    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
-  });
-
-  it('does not render ReviewActions for a non-actionable row', () => {
-    render(<Harness rows={[makeRow({ actionable: false })]} />);
-    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+  it('shows the SLA chip when the row is aging', () => {
+    renderList([makeRow({ ageBadge: { label: '30 h waiting', variant: 'amber' } })]);
+    expect(screen.getByText('30 h waiting')).toBeInTheDocument();
   });
 
   it('forwards className to the root element', () => {
-    function ClassNameHarness() {
-      // eslint-disable-next-line react-hooks/incompatible-library
-      const table = useReactTable({
-        data: [makeRow()],
-        columns: [],
-        getCoreRowModel: getCoreRowModel(),
-        enableRowSelection: (r) => r.original.actionable,
-        getRowId: (r) => r.broadcastId,
-      });
-      return (
-        <QueueCardList
-          table={table}
-          readOnly={false}
-          columnLabels={COLUMN_LABELS}
-          className="md:hidden"
-        />
-      );
-    }
-    render(
-      <NextIntlClientProvider locale="en" messages={en}>
-        <ClassNameHarness />
-      </NextIntlClientProvider>,
-    );
+    renderList([makeRow()], 'md:hidden');
     expect(screen.getByTestId('queue-card-list')).toHaveClass('md:hidden');
   });
 });
