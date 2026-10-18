@@ -69,7 +69,7 @@ vi.mock('@/components/broadcast/member-picker', () => ({
   ),
 }));
 
-vi.mock('@/components/ui/tiptap-loader', () => ({
+vi.mock('@/components/shell/tiptap-loader', () => ({
   loadTiptapEditor: () =>
     function TiptapStub(props: {
       initialHtml: string;

@@ -598,6 +598,22 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The trend cards' summary label ("Cumulative members", "12-month total …") takes its own line below 640px.
   - "ex-VAT" (EN, non-breaking hyphen) and "exkl. moms" (SV, no-break space) never split across lines.
 
+### Session 2026-10-18 (US12 start: E-Blast)
+
+- **Four PRs** (maintainer, 18 Oct). E-Blast is about 25k lines across about 110 legacy files, so it ships in slices. A component the member portal shares moves together with both of its callers.
+  - **US12a:** broadcast settings (image allowlist, brand), templates, and the marketing audience.
+  - **US12b:** the review queue, plus the shared reason-confirmation and typed-phrase dialogs (members and renewals use them too).
+  - **US12c:** the approval-round detail, plus the portal detail and sign-off.
+  - **US12d:** compose (staff proxy and portal), plus the benefits page's E-Blast tab.
+- **Queue selection uses AURA's own per-row predicate** (maintainer, 18 Oct). DataTable's `isRowSelectable` / `rowSelectDisabledLabel` shipped in 5.6 (handoff 52), so only rows awaiting marketing review get a checkbox (acceptance 1). The fallback in acceptance 1, a local selection column, is dropped.
+- **The Tiptap loader moves to the shell.** `ui/tiptap-loader` is a `next/dynamic` wrapper, not a kit component. It moves to `src/components/shell/tiptap-loader.tsx` and draws its loading state with the shared skeleton blocks. Its importers and test mocks follow, as `RelativeTime` did in US3. The status role, label and test id are unchanged.
+- **Template filter pills are AURA `Tag`s.** A selectable `Tag` is a `<button aria-pressed>` with a check when selected, as the board draws the pills. The fieldset legend and the separate polite count stay.
+- **The marketing audience takes the global filter pattern** (the § Filters rule): search in the bar, contact role / marketing state / member eligibility as `FilterSelect`s, chips and Clear all, collapsing into the Filters sheet on phones. The board's four labelled fields are not drawn, for the same reason as the audit log (US10b). The count line stays the page's own `#audience-count`, not the bar's `resultCount`, because it is the focus target when the last row leaves a filtered view.
+- **`ui/filter-bar` loses its last importer** with the audience page. It is deleted with the rest of `src/components/ui` at US13.
+- **The marketing area's error boundary** (`marketing/error.tsx`, which also covers the audience page) moves to the shared `RouteErrorPanel`.
+- **Unchanged (FR-011):** every guard and its order (the brand page checks permission before the flag; the allowlist page checks the flag first); every request body and response branch; toasts and error-code maps; the audience URL contract, debounce and preflight preset; no audience CSV; the starter-edit banner; the unsaved-changes guard; the allowlist remove dialog's final focus.
+- `tests/unit/components/marketing/audience-table.test.tsx` reads `src/components/ui/sidebar.tsx` for its width budget. US13 must re-home that read when it deletes the folder.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

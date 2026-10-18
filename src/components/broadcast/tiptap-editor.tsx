@@ -4,7 +4,7 @@
  * T082 — Tiptap rich-text editor for F7 broadcast compose surface.
  *
  * Browser-only — MUST be loaded via `loadTiptapEditor()` from
- * `@/components/ui/tiptap-loader` so SSR is disabled.
+ * `@/components/shell/tiptap-loader` so SSR is disabled.
  *
  * Configuration:
  *   - Extensions come from the ONE shared factory

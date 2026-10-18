@@ -71,7 +71,7 @@ vi.mock('@/components/broadcast/compose/template-picker', () => ({
  * double exposes the props the form hands it so "re-seeded in place" is
  * observable, and a textarea so the body can be typed into.
  */
-vi.mock('@/components/ui/tiptap-loader', () => ({
+vi.mock('@/components/shell/tiptap-loader', () => ({
   loadTiptapEditor: () =>
     function TiptapStub(props: {
       initialHtml: string;
