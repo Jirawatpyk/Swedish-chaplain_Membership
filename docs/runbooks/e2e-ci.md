@@ -37,7 +37,7 @@
 
 ## DW-12: making `e2e-critical` required
 
-It stays advisory for two weeks from #586's merge. Record each red that was not the PR's fault (a flake) on the `e2e-nightly` issue or in a dedicated issue. After two clean weeks, add `e2e @critical (chromium + mobile-chrome)` to `main`'s required status checks, and update `docs/operational-state.md`.
+It stays advisory for two weeks from #586's merge. Record each red that was not the PR's fault (a flake) on the `e2e-nightly` issue or in a dedicated issue. After two weeks with a flake rate of 2% or less (DW-12), add `e2e @critical (chromium + mobile-chrome)` to `main`'s required status checks, and update `docs/operational-state.md`.
 
 ## The CI parent refresh
 

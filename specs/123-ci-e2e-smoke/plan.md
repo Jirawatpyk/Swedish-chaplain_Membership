@@ -123,6 +123,33 @@ e2e never runs in CI, so every PR needs a manual local verification round to cat
 | DW-6, DW-7, DW-10 the real run | the PR's own `e2e-critical` run: duration ≤ 25 min, both projects green, artifact present on a forced failure | CI evidence |
 | DW-11, DW-12 | the nightly `workflow_dispatch` after merge; the operational-state line | CI evidence |
 
+## Critical set
+
+The specs tagged `@critical` and run by `e2e-critical.yml` on every PR (DW-7). The list is pinned by `tests/unit/architecture/e2e-critical-set.test.ts`, which also refuses a tagged spec that imports the throwaway tenant or `/test-fixtures`. Every spec runs on the seeded `swecham` tenant of the run's own `ci-e2e/` branch.
+
+| Spec | DW-7 item it covers |
+|---|---|
+| `staff-sign-in.spec.ts` | admin sign-in |
+| `f9-dashboard.spec.ts` | the dashboard (admin, manager and member views) |
+| `members-directory-search.spec.ts` | the members directory |
+| `critical-invoice-issue.spec.ts` | issuing an invoice: a draft from the member page, the issue call, the issued status and number on the detail page |
+| `portal-invoices.spec.ts` | viewing invoices in the member portal |
+| `payment-promptpay-happy-path.spec.ts` | the payment flow, with Stripe stubbed |
+| `member-sign-in.spec.ts` | member sign-in and the portal home |
+| `critical-member-profile.spec.ts` | the member's own profile (read only) |
+| `admin-journey.spec.ts` | the cross-module admin path (plans → members → invoices → dashboard → audit → renewals) |
+
+**Candidates dropped, and why:**
+
+| Candidate | Reason |
+|---|---|
+| `invoice-draft-issue.spec.ts` | Uses the throwaway tenant, which needs `E2E_X_TENANT_HEADER_ENABLED` and a production boot does not set it. `critical-invoice-issue.spec.ts` covers its AS1/AS3 path on the seed instead. |
+| `member-nav.spec.ts` | One test needs F7 (`/portal/broadcasts/**`), which is off in CI; it is now gated on `FEATURE_F7_BROADCASTS`. It also cost 202 s per project. |
+| `renewal-pipeline-dashboard.spec.ts` | AS1 hit its 5 s wall-clock bound from a US runner (5.7 s); the bound is now an env var, CI 15 s. It cost 118 / 168 s per project. |
+| `invoicing/invoice-detail-reflow.spec.ts` | Mobile only: it skips on chromium, and a skip fails the job. |
+| `portal-layout.spec.ts` | One test, and `critical-member-profile` and `portal-invoices` already render the portal shell. |
+| `payment-card-decline.spec.ts` | It does not use `payment-intent-stub.ts`. Its initiate call is short-circuited only by the in-page fetch override in `helpers/stripe-mock.ts`, and the review rule admits this spec only with the shared stub. PromptPay already covers the payment seam. |
+
 ## Fixes from the plan reviews (architect + security, 2026-10-18)
 
 These are binding for the build. They correct the slice-2 steps above where they disagree.
@@ -368,6 +395,11 @@ Filled in at Verify, one block per slice.
 - **Results:** 31 passed and 2 failed on each project. Both failures were deterministic, failing all three attempts.
   - `member-nav.spec.ts:66`, "mobile Benefits tab stays active on /portal/broadcasts/**": the member tab bar was not found on `/portal/broadcasts/new`. In CI `FEATURE_F7_BROADCASTS=false` (`.github/ci/e2e.env`), so the broadcasts route is not live.
   - `renewal-pipeline-dashboard.spec.ts:107`, AS1: its 5 s wall-clock smoke read 5.7 s from a US runner to the Singapore database.
+- **DW-10 evidence:** the failure uploaded the artifact `e2e-critical-39100353012-1` (64.4 MB, the HTML reports and traces of both projects). It is kept for 7 days and expires 2026-10-25T06:03:22Z.
+- **Fixed after review round 1:**
+  - `member-nav` now skips its broadcasts test when F7 is off, with a named reason.
+  - The AS1 bound now comes from `E2E_RENEWALS_AS1_BUDGET_MS`, which CI sets to 15 s.
+  - Both specs stay out of `@critical` for budget.
 - **Budget:** without the from-zero migrate the job projects to about 30 min, over DW-7's 25. The two slowest additions were dropped, and they are the two failing specs: `member-nav` at 202 s per project and `renewal-pipeline-dashboard` at 118 s / 168 s (RED `df8eecda1`, GREEN `488d28f32`).
   - Both still run nightly, where the same two failures are expected until F7 has a CI inbox and the AS1 latency bound accounts for the runner region. **Open items.**
 
