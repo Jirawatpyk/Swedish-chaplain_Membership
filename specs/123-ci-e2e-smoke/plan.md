@@ -492,4 +492,9 @@ Filled in at Verify, one block per slice.
 - **M3: two-sided and fail-closed.**
   - The check is in `scripts/ci-neon-key-scope.ts`: (i) `GET /projects` answers non-200, or 200 with exactly the CI project; and (ii) `GET /projects/{NEON_CI_PROJECT_ID}` answers 200 with that id.
   - Each leg is unit-tested, including an org-wide key and a wrong key. RED `8ad7a97cf`, GREEN `0d82d347e`.
+- **Head `ef64f5985`:** every check is green.
+  - Integration smoke ([run 39121468147](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39121468147)) logged "✓ Migrations applied" with Phase 4 passing. The Vercel preview deployed.
+  - e2e-critical ([run 39121468131](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39121468131)) logged "CI key scope: ok (cannot list projects (HTTP 404): a project-scoped key; opens the CI project)".
+  - Phase times: migrate 564 s (from zero), seed 164, build 139, ready 6, e2e-chromium 572, e2e-mobile-chrome 519.
+  - mobile-chrome 23 passed. chromium 22 passed and **1 flaky**, and the M1 warning fired: `critical-invoice-issue` did not find the member page's create-invoice link on two attempts and passed on the third. **Open: this flake has to be fixed before DW-12 starts counting.**
 
