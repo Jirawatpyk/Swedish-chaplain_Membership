@@ -30,8 +30,12 @@
 #     secrets, so it skips with a notice instead of a confusing red.
 #   - The Neon key is the CI project's own `NEON_CI_API_KEY`. The project-wide
 #     `NEON_API_KEY` (which can branch production) is never used here.
-#   - The key reaches only the create and delete steps; the Blob and Upstash
-#     tokens are the CI stores', never production's.
+#   - The key reaches only the scope check, the create step and the delete
+#     step. The scope check runs first and refuses a key that can see any
+#     project but the CI project. Both Neon actions are pinned by commit SHA.
+#   - The Blob and Upstash tokens are the CI stores', never production's, and
+#     each run uses its own rate-limit key prefix.
+#   - A skipped @critical test fails the job; a flaky one is named in a warning.
 #   - Every connection string and the password are masked before any other
 #     step runs; the seed masks each exported value before it is written.
 #   - No `${{ }}` is expanded inside `run:`; values reach the shell via `env:`.
@@ -72,6 +76,9 @@ jobs:
       # US runner, Singapore-class latency: give each address 1 s to connect
       # (see integration-smoke.yml for the AggregateError ETIMEDOUT it avoids).
       NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
+      # Own Upstash buckets per run: the CI store and the persona emails are
+      # shared with other runs (M2; RATE_LIMIT_KEY_PREFIX, default swecham).
+      RATE_LIMIT_KEY_PREFIX: swecham-ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,13 +90,32 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
 
+      # M3 (the security sign-off condition): the key must see exactly ONE
+      # project, the CI project. A key that can list another project (the
+      # production one) is refused before it is used for anything.
+      - name: Prove the CI key reaches only the CI project
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_CI_API_KEY }}
+          PROJECT_ID: ${{ vars.NEON_CI_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          projects="$(curl -fsS -H "Authorization: Bearer $NEON_API_KEY" -H 'Accept: application/json' 'https://console.neon.tech/api/v2/projects')"
+          count="$(jq '.projects | length' <<< "$projects")"
+          first="$(jq -r '.projects[0].id // ""' <<< "$projects")"
+          echo "The CI key sees $count project(s)."
+          if [ "$count" != "1" ] || [ "$first" != "$PROJECT_ID" ]; then
+            echo "::error title=CI key scope::fail: NEON_CI_API_KEY must see exactly one project, NEON_CI_PROJECT_ID."
+            exit 1
+          fi
+          echo "CI key scope: ok"
+
       - name: Branch expiry (2 h backstop)
         id: expiry
         run: echo "at=$(date -u --date '+2 hours' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Create this run's Neon branch
         id: branch
-        uses: neondatabase/create-branch-action@v6
+        uses: neondatabase/create-branch-action@fb620d43d4c565abaf088b848a4e28e5c4ea4d9c # v6
         with:
           project_id: ${{ vars.NEON_CI_PROJECT_ID }}
           parent_branch: ${{ vars.NEON_CI_PARENT_BRANCH }}
@@ -204,16 +230,18 @@ jobs:
       # test-results/ and overwrites the HTML report at the start of a run.
       - name: e2e @critical on chromium
         id: chromium
+        timeout-minutes: 15
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/chromium
           PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-results/chromium.json
         run: |
           t0=$SECONDS
           trap 'echo "e2e-chromium $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
-          pnpm exec playwright test --config=playwright.attach.config.ts --grep @critical --project=chromium --workers=1 --trace=retain-on-failure --reporter=list,html,json --output=test-results/chromium
+          pnpm exec playwright test --config=playwright.attach.config.ts --grep @critical --project=chromium --workers=1 --max-failures=5 --trace=retain-on-failure --reporter=list,html,json --output=test-results/chromium
 
       - name: e2e @critical on mobile-chrome
         id: mobile-chrome
+        timeout-minutes: 15
         if: ${{ !cancelled() && steps.server.outcome == 'success' }}
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/mobile-chrome
@@ -221,7 +249,7 @@ jobs:
         run: |
           t0=$SECONDS
           trap 'echo "e2e-mobile-chrome $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
-          pnpm exec playwright test --config=playwright.attach.config.ts --grep @critical --project=mobile-chrome --workers=1 --trace=retain-on-failure --reporter=list,html,json --output=test-results/mobile-chrome
+          pnpm exec playwright test --config=playwright.attach.config.ts --grep @critical --project=mobile-chrome --workers=1 --max-failures=5 --trace=retain-on-failure --reporter=list,html,json --output=test-results/mobile-chrome
 
       # Per spec file: wall time over every attempt, retries, and outcomes.
       # A skipped test is not a pass, so skips get their own column.
@@ -260,8 +288,29 @@ jobs:
             done
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
+          # A skip is not a pass (H2): an @critical test that skipped means its
+          # persona or fixture was missing, so the job fails. A flaky spec
+          # passed only on a retry; name it so it is not hidden (M1).
+          status=0
+          for f in playwright-results/*.json; do
+            [ -f "$f" ] || continue
+            project="$(basename "$f" .json)"
+            flaky="$(jq -r '[.suites[] | .. | objects | select(has("specs")) | .specs[] | select(any(.tests[]; .status == "flaky")) | .file] | unique[]' "$f")"
+            for spec in $flaky; do
+              echo "::warning title=Flaky @critical spec::$project: $spec passed only on a retry."
+            done
+            skipped="$(jq '[.suites[] | .. | objects | select(has("specs")) | .specs[].tests[] | select(.status == "skipped")] | length' "$f")"
+            if [ "$skipped" != "0" ]; then
+              echo "::error title=Skipped @critical tests::$project skipped ${skipped:-an unknown number of} test(s); a skip is not a pass."
+              status=1
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Upload the Playwright report and traces (7 days, synthetic data only)
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-critical-${{ github.run_id }}-${{ github.run_attempt }}
@@ -275,7 +324,7 @@ jobs:
       # one was refused by the guard and is left to the expiry and the sweep.
       - name: Delete this run's Neon branch
         if: always() && steps.branch.outputs.created == 'true'
-        uses: neondatabase/delete-branch-action@v3
+        uses: neondatabase/delete-branch-action@4468d825d5a88ef4012f1705a82f02ec3072f776 # v3
         with:
           project_id: ${{ vars.NEON_CI_PROJECT_ID }}
           branch: ${{ steps.branch.outputs.branch_id }}
