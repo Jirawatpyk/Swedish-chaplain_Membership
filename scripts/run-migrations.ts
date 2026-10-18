@@ -28,10 +28,19 @@
  *   Phase 3 then asserts the code-required values actually exist and exits
  *   non-zero if not, so a half-applied enum can never silently ship again.
  *   See scripts/lib/enum-migration-guard.ts for the full rationale.
+ *
+ * ── FRESH-DB MODE (spec 123 slice 2) ──────────────────────────────────────────
+ *   When `drizzle.__drizzle_migrations` is missing or empty, Phases 1–2 are
+ *   replaced by one transaction per journal entry (scripts/lib/migrate-fresh.ts):
+ *   from zero, drizzle's single transaction hits 55P04 at 0021 and the global
+ *   pre-pass is inert (no type exists yet). Any DB with at least one recorded
+ *   migration takes the unchanged path above, so a dev/prod deploy stays
+ *   all-or-nothing. Phase 3 runs after either.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import {
@@ -39,6 +48,15 @@ import {
   findMissingEnumValues,
   formatMissingEnumValuesError,
 } from './lib/enum-migration-guard';
+import {
+  applyFreshMigrations,
+  attachJournalTags,
+  decideMigrationMode,
+  isAlreadyExists,
+  isUndefinedType,
+  type MigrationSqlClient,
+  type MigrationSqlRunner,
+} from './lib/migrate-fresh';
 
 // Local convenience: load `.env.local` if present (covers direct `tsx`
 // invocations alongside the `--env-file=.env.local` flag in `pnpm db:migrate`).
@@ -66,29 +84,6 @@ if (!url) {
 const MIGRATIONS_DIR = join(process.cwd(), 'drizzle', 'migrations');
 
 type Sql = ReturnType<typeof postgres>;
-
-/**
- * True when a driver error means the enum value is already present (`IF NOT
- * EXISTS` no-op, or the older bare form re-applied → 42710 duplicate_object).
- */
-function isAlreadyExists(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  const message = error instanceof Error ? error.message : String(error);
-  return code === '42710' || message.includes('already exists');
-}
-
-/**
- * True when a driver error means the target enum TYPE does not exist yet. On a
- * fresh database the type is created by a later migration, and the transactional
- * migrate() adds the value safely in the same transaction that creates the type
- * (PostgreSQL allows using a new value of a same-transaction-created enum). So
- * we simply skip the autocommit pre-pass for a not-yet-created type.
- */
-function isUndefinedType(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  const message = error instanceof Error ? error.message : String(error);
-  return code === '42704' || message.includes('does not exist');
-}
 
 /**
  * Phase 1 — apply every `ALTER TYPE … ADD VALUE` found across the migration
@@ -162,6 +157,45 @@ async function findMissingRequiredEnums(client: Sql) {
   return findMissingEnumValues(present);
 }
 
+/**
+ * Narrow the postgres-js client to the port scripts/lib/migrate-fresh.ts uses.
+ * `unsafe(q)` with no params runs on the simple protocol, exactly as drizzle's
+ * own migrate() executes each statement.
+ */
+function asMigrationClient(client: Sql): MigrationSqlClient {
+  const runner = (sql: Sql | postgres.TransactionSql): MigrationSqlRunner => ({
+    unsafe: async (query, params) =>
+      params === undefined
+        ? await sql.unsafe(query)
+        : await sql.unsafe(query, params as postgres.ParameterOrJSON<never>[]),
+  });
+  return {
+    ...runner(client),
+    begin: async <T>(fn: (tx: MigrationSqlRunner) => Promise<T>): Promise<T> =>
+      (await client.begin((tx) => fn(runner(tx)))) as T,
+  };
+}
+
+/** Fresh mode: apply the whole journal from zero, one transaction per file. */
+async function applyFreshFromZero(client: Sql): Promise<void> {
+  const journal = JSON.parse(
+    readFileSync(join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf-8'),
+  ) as { entries: ReadonlyArray<{ tag: string }> };
+  const migrations = attachJournalTags(
+    readMigrationFiles({ migrationsFolder: './drizzle/migrations' }),
+    journal.entries,
+  );
+  const { applied, skipped, elapsedMs } = await applyFreshMigrations(
+    asMigrationClient(client),
+    migrations,
+  );
+  console.log(
+    `✓ Fresh-DB migrate: applied ${applied}, skipped ${skipped} (hash already recorded) in ${(
+      elapsedMs / 1000
+    ).toFixed(1)} s`,
+  );
+}
+
 async function main(): Promise<void> {
   const client = postgres(url!, {
     max: 1,
@@ -173,13 +207,21 @@ async function main(): Promise<void> {
   let failure: string | null = null;
   try {
     {
-      // Phase 1 — commit enum-adds in their own transaction (see header).
-      // (Phase 0, the 016 D7 promotion gate, was deleted in PR 5 with the
-      // cutover machinery it protected.)
-      await applyEnumAddsAutocommit(client);
-      // Phase 2 — normal transactional migrate (journal / __drizzle_migrations).
-      await migrate(db, { migrationsFolder: './drizzle/migrations' });
-      console.log('✓ Migrations applied');
+      if ((await decideMigrationMode(asMigrationClient(client))) === 'fresh') {
+        // Empty database (no / empty __drizzle_migrations): one transaction
+        // per journal entry, decided by hash — see scripts/lib/migrate-fresh.ts.
+        // drizzle's single-transaction migrate() hits 55P04 at 0021 here, and
+        // the global enum pre-pass is inert because no type exists yet.
+        await applyFreshFromZero(client);
+      } else {
+        // Phase 1 — commit enum-adds in their own transaction (see header).
+        // (Phase 0, the 016 D7 promotion gate, was deleted in PR 5 with the
+        // cutover machinery it protected.)
+        await applyEnumAddsAutocommit(client);
+        // Phase 2 — normal transactional migrate (journal / __drizzle_migrations).
+        await migrate(db, { migrationsFolder: './drizzle/migrations' });
+        console.log('✓ Migrations applied');
+      }
       // Phase 3 — fail loudly if a code-required enum value did not land.
       const missing = await findMissingRequiredEnums(client);
       if (missing.length > 0) {
