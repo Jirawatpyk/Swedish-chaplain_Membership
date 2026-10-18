@@ -266,8 +266,11 @@ describe('.github/workflows/ci-e2e-branch-sweep.yml', () => {
       .map((l) => l.replace(/^ {10}/, ''))
       .join('\n');
     const decide = (env: Record<string, string>) =>
-      spawnSync('bash', ['-c', `${block}\necho "$DRY_RUN"`], { env: { PATH: process.env.PATH ?? '', ...env }, encoding: 'utf8' })
-        .stdout.trim();
+      spawnSync('bash', ['-c', `${block}\necho "$DRY_RUN"`], {
+        // Only the three inputs and PATH: nothing from this machine's env leaks in.
+        env: { PATH: process.env.PATH ?? '', ...env } as unknown as NodeJS.ProcessEnv,
+        encoding: 'utf8',
+      }).stdout.trim();
     expect(decide({ SWEEP_ENABLED: '', EVENT_NAME: 'schedule', INPUT_DRY_RUN: '' })).toBe('true');
     expect(decide({ SWEEP_ENABLED: 'false', EVENT_NAME: 'schedule', INPUT_DRY_RUN: '' })).toBe('true');
     expect(decide({ SWEEP_ENABLED: 'true', EVENT_NAME: 'schedule', INPUT_DRY_RUN: '' })).toBe('false');
