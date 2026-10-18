@@ -1,11 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
@@ -17,7 +11,8 @@ import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skelet
  * the real card titles render from i18n (they do not depend on the read, so
  * skeletoning them only buys a title flicker on navigation); only the three
  * interactive regions are stubbed, in the same anatomy and the same order as
- * `<BrandSettingsForm />` — colour field + swatch + readout, textarea +
+ * `<BrandSettingsForm />` — colour field + swatch + readout + e-mail
+ * preview, textarea +
  * counter, logo preview + source + link — so the skeleton→content swap does
  * not shift layout.
  *
@@ -33,15 +28,11 @@ export default async function Loading() {
 
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer>
+      <FormContainer align="start">
         <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
         <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('colour.heading')}</CardTitle>
-              <CardDescription>{t('colour.description')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
+          <Card title={t('colour.heading')} description={t('colour.description')} headingLevel={2}>
+            <div className="flex flex-col gap-3">
               <div className="space-y-2">
                 <SkeletonBlock className="h-4 w-28" />
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -53,32 +44,26 @@ export default async function Loading() {
               </div>
               {/* Contrast readout. */}
               <SkeletonBlock className="h-4 w-56" />
-            </CardContent>
+              {/* The e-mail preview card: caption, then header, heading +
+                  button, footer. */}
+              <SkeletonBlock className="h-4 w-40" />
+              <SkeletonBlock className="h-64 w-full" />
+            </div>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('address.heading')}</CardTitle>
-              <CardDescription>{t('address.description')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
+          <Card title={t('address.heading')} description={t('address.description')} headingLevel={2}>
+            <div className="flex flex-col gap-2">
               <SkeletonBlock className="h-4 w-44" />
               <SkeletonBlock className="h-24 w-full" />
               {/* The counter (`text-sm`). */}
-              <SkeletonBlock className="h-4 w-32" />
-            </CardContent>
+              <SkeletonBlock className="h-4 w-32" />            </div>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>{t('logo.heading')}</CardTitle>
-              <CardDescription>{t('logo.description')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
+          <Card title={t('logo.heading')} description={t('logo.description')} headingLevel={2}>
+            <div className="flex flex-col gap-3">
               <SkeletonBlock className="h-16 w-40" />
               <SkeletonBlock className="h-3 w-40" />
-              <SkeletonBlock className="h-3 w-28" />
-            </CardContent>
+              <SkeletonBlock className="h-3 w-28" />            </div>
           </Card>
 
           <div className="flex justify-end">

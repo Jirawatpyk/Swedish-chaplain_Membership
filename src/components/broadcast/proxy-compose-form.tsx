@@ -61,7 +61,7 @@ import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { loadTiptapEditor } from '@/components/ui/tiptap-loader';
+import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { MemberPicker, type MemberPickerOption } from './member-picker';
 import {
   SegmentPicker,

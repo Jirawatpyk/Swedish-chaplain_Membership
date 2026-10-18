@@ -297,7 +297,7 @@ describe('US6 plans (parity-page comments)', () => {
   it('the phone form bar pads both ends alike (AURA pads its end 12px, its start 16px)', () => {
     expect(src('src/app/globals.css')).toMatch(
       // US7b-2 adds the schedule save bar to the same rule.
-      /:is\(\.member-form-actions, \.plan-form-actions(?:, \.schedule-actions)?\) > div \{\s*padding-inline: var\(--aura-space-4\);/,
+      /:is\(\.member-form-actions, \.plan-form-actions(?:, \.schedule-actions)?(?:, \.template-form-actions)?\) > div \{\s*padding-inline: var\(--aura-space-4\);/,
     );
   });
 

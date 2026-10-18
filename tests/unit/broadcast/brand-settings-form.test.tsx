@@ -12,12 +12,13 @@
  * (next-intl does not throw on a missing key).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { toast } from '@/lib/toast';
 import { BrandSettingsForm } from '@/components/broadcast/brand/brand-settings-form';
+import { FIELD_BOX_OFFSET } from '@/components/shell/field-box-offset';
 
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -64,7 +65,7 @@ const BASE: View = {
 function renderForm(overrides: Partial<View> = {}) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <BrandSettingsForm initial={{ ...BASE, ...overrides }} />
+      <BrandSettingsForm initial={{ ...BASE, ...overrides }} tenantDisplayName="SweCham" />
     </NextIntlClientProvider>,
   );
 }
@@ -134,6 +135,32 @@ describe('BrandSettingsForm — live contrast readout', () => {
 });
 
 describe('BrandSettingsForm — postal address', () => {
+  it('UX M4/M5: the swatch uses the control border and sits beside the field at every width', () => {
+    renderForm();
+    const picker = screen.getByLabelText(/pick a colour|colour picker/i, { selector: 'input[type="color"]' });
+    expect(picker).toHaveClass('border-[var(--aura-border-control)]');
+    expect(picker.className).toContain(FIELD_BOX_OFFSET);
+    expect(picker.className).not.toMatch(/(^|\s)sm:mt-/);
+    expect(picker.parentElement).toHaveClass('flex', 'items-start');
+    expect(picker.parentElement).not.toHaveClass('flex-col');
+  });
+
+  it('UX L4: an invalid colour gets the danger border without moving the hint Save points at', async () => {
+    renderForm();
+    const field = screen.getByLabelText(/primary colour/i);
+    fireEvent.change(field, { target: { value: '#f5f5f5' } });
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    const root = field.closest('.aura-field');
+    expect(root?.className).toContain('[&_div:has(>input[aria-invalid=true])]:border-[var(--aura-border-danger)]');
+    // No AURA `error`: the field keeps its own hint id in aria-describedby.
+    expect(root).not.toHaveClass('is-invalid');
+  });
+
+  it('UX L5: Save is full width on phones', () => {
+    renderForm();
+    expect(screen.getByRole('button', { name: /^save/i })).toHaveClass('max-sm:w-full');
+  });
+
   it('counts the characters against the 300 bound', () => {
     renderForm({ postalAddress: 'abc' });
     expect(screen.getByTestId('brand-address-counter')).toHaveTextContent('3');
@@ -384,5 +411,67 @@ describe('BrandSettingsForm — U16: the logo swatch uses the email light backin
     // A theme variable here is what made dark logos disappear in dark mode.
     expect(backing.style.backgroundImage).not.toContain('var(');
     expect(backing.className).not.toMatch(/\bbg-card\b/);
+  });
+});
+
+describe('BrandSettingsForm on AURA (spec 122 US12a)', () => {
+  it('draws three AURA cards with AURA fields, and the notices as AURA alerts', () => {
+    const { container } = renderForm({ postalAddress: null, addressMissing: true });
+    expect(container.querySelectorAll('.aura-card')).toHaveLength(3);
+    expect(screen.getByLabelText(enMessages.admin.settings.broadcasts.brand.colour.label).closest('.aura-input')).not.toBeNull();
+    expect(screen.getByLabelText(enMessages.admin.settings.broadcasts.brand.address.label).closest('.aura-field')).not.toBeNull();
+    const notice = screen.getByTestId('brand-address-missing');
+    expect(notice).toHaveClass('aura-alert');
+    expect(notice).toHaveAttribute('role', 'status');
+    expect(saveButton()).toHaveClass('aura-btn');
+  });
+});
+
+/**
+ * Board `Admin-settings-brand` — "How it looks in an E-Blast". The preview
+ * follows the form as it is typed (before Save), and its header and footer
+ * are the real e-mail's: logo or chamber name on top, then the footer lines
+ * from the same `email.broadcastFooter` strings `renderBroadcastHtml` uses.
+ */
+describe('BrandSettingsForm — the e-mail preview card (board)', () => {
+  const brand = enMessages.admin.settings.broadcasts.brand;
+  const footer = enMessages.email.broadcastFooter;
+  const preview = (): HTMLElement => screen.getByRole('figure', { name: brand.colour.preview.caption });
+
+  it('shows the logo, a heading and a button in the brand colour, then the e-mail footer', () => {
+    renderForm();
+    const fig = preview();
+    expect(within(fig).getByRole('img', { name: 'SweCham' })).toHaveAttribute('src', 'https://cdn.test/logo.png');
+    expect(within(fig).getByText(brand.colour.preview.heading)).toHaveStyle({ color: '#10487a' });
+    expect(within(fig).getByText(brand.colour.preview.button)).toHaveStyle({ backgroundColor: '#10487a' });
+    expect(fig).toHaveTextContent(footer.receivedBecause.replace('{tenantDisplayName}', 'SweCham'));
+    expect(fig).toHaveTextContent(`${footer.unsubscribeCta} ${footer.unsubscribeSuffix}`);
+    expect(fig).toHaveTextContent('349 Sukhumvit Road, Bangkok 10110');
+    // A sample, not a control: the button is not focusable.
+    expect(within(fig).queryByRole('button')).toBeNull();
+  });
+
+  it('follows the typed colour and address before Save', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const field = screen.getByLabelText(/primary colour/i);
+    await user.clear(field);
+    await user.type(field, '#7a1010');
+    expect(within(preview()).getByText(brand.colour.preview.button)).toHaveStyle({ backgroundColor: '#7a1010' });
+    const address = screen.getByLabelText(brand.address.label);
+    await user.clear(address);
+    await user.type(address, 'Box 1, Bangkok');
+    expect(preview()).toHaveTextContent('Box 1, Bangkok');
+  });
+
+  it('without an address the footer reads "Sent by …", as the e-mail does', () => {
+    renderForm({ postalAddress: null, addressMissing: true });
+    expect(preview()).toHaveTextContent(footer.physicalAddress.replace('{tenantDisplayName}', 'SweCham'));
+  });
+
+  it('without a logo the header is the chamber name', () => {
+    renderForm({ logo: { url: null, source: 'invoice_settings', manageHref: null } });
+    expect(within(preview()).queryByRole('img')).toBeNull();
+    expect(within(preview()).getByText('SweCham')).toBeInTheDocument();
   });
 });

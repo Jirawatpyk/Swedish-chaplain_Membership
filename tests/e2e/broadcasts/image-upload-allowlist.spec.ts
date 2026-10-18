@@ -60,11 +60,9 @@ test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
     await signIn(page, 'admin', ADMIN_EMAIL!, ADMIN_PASSWORD!);
     // Relocated 2026-05-20 to centralised-settings IA.
     await page.goto('/admin/settings/broadcasts');
-    // E2E selector fix 2026-05-21: the allowlist title is rendered by
-    // shadcn `<CardTitle>` → `<div data-slot="card-title">`, NOT an
-    // h-element. `getByRole('heading')` would not match. Use the
-    // text+test-id pattern instead. 30s expect-poll covers Turbopack
-    // cold-compile of this route on first request.
+    // Spec 122 US12a: the allowlist title is the AURA card's h2, so it is
+    // found by role. 30s expect-poll covers Turbopack cold-compile of this
+    // route on first request.
     //
     // `loading.tsx` draws the same card title. While the page streams in,
     // React holds the finished page in a hidden node beside the skeleton,
@@ -75,7 +73,7 @@ test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
       page.locator('[role="status"][aria-busy="true"]', { hasText: /loading form/i }),
     ).toHaveCount(0, { timeout: 30_000 });
     await expect(
-      page.locator('[data-slot="card-title"]', { hasText: /image source allowlist/i }),
+      page.getByRole('heading', { level: 2, name: /image source allowlist/i }),
     ).toBeVisible({ timeout: 30_000 });
 
     await runAxeScan(page, test.info());

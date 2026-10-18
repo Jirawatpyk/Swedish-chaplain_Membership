@@ -171,7 +171,7 @@ export default async function NewInvoiceDraftPage({
   }
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader
         title={t('title')}
         subtitle={t('description')}

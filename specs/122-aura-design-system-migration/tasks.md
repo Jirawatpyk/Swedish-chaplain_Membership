@@ -693,12 +693,31 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1105 [US11] Needs attention (count pills, the unavailable row as an AURA alert) and Smart insights (AURA card, dismiss as AURA `IconButton`). RED: `needs-attention-change-requests.test.tsx`, `insights-panel.test.tsx`.
 - [x] T1106 [US11] Chart cards (revenue, growth, tier, invoice status) on AURA `Card`; the chart skeleton on AURA. RED: the tier and invoice-status chart tests.
 - [x] T1107 [US11] Activity feed on AURA (card, ghost refresh button); `loading.tsx` on AURA for both flag branches; the flag-off card on AURA. RED: `activity-feed.test.tsx` and a loading test.
-- [ ] T1108 [US11] The page's render moves to `_components/dashboard-view.tsx` (the page keeps loaders and guards); preview `?view=dashboard` states and the loading route; `MIGRATED_PATHS` and a US11 ratchet block; `/admin` budget re-measured.
-- [ ] T1109 [US11] Exit: e2e selectors where the swap breaks them; gates; build and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; dark-mode contrast of every series; the same figures as main for the same data; UX and reporting reviews; draft PR; relay R53.
+- [x] T1108 [US11] The page's render moves to `_components/dashboard-view.tsx` (the page keeps loaders and guards); preview `?view=dashboard` states and the loading route; `MIGRATED_PATHS` and a US11 ratchet block; `/admin` budget re-measured.
+- [x] T1109 [US11] Exit: e2e selectors where the swap breaks them; gates; build and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; dark-mode contrast of every series; the same figures as main for the same data; UX and reporting reviews; draft PR; relay R53.
+
+## Phase 14: US12 — E-Blast (four PRs)
+
+### US12a — broadcast settings, templates, marketing audience (PR 1 of 4)
+
+- [x] T1201 [US12] Spec session "2026-10-18 (US12 start)"; T1201–T1209 written; `plan.md` § Evidence opened.
+- [x] T1202 [US12] The Tiptap loader moves to `src/components/shell/tiptap-loader.tsx` on the shared skeleton blocks; importers and mocks follow. Test: `tests/unit/components/shell/tiptap-loader.test.tsx`.
+- [x] T1203 [US12] Templates list on AURA: Card, static Table with phone cards, Starter badge, `Tag` filter pills (`aria-pressed`), `buttonClass` links, `EmptyState`. Test: `admin-template-library.test.tsx`.
+- [x] T1204 [US12] Template form and the new/edit pages on AURA fields and Card; requests, toasts and redirect unchanged. Test: a template-form test (fields, errors after first submit, request bodies).
+- [x] T1205 [US12] Image allowlist on AURA (TextField, Button, Table, the shell `ConfirmationDialog` with the surviving-target final focus). Test: `admin-image-allowlist-editor-errors.test.tsx`, `unmounting-trigger-final-focus.test.tsx`.
+- [x] T1206 [US12] Brand form on AURA cards, fields and alerts; testids, roles, PATCH and 429/422 branches unchanged. Test: `brand-settings-form.test.tsx`.
+- [x] T1207 [US12] Marketing audience on AURA (FilterBar in the global pattern, Table, skeleton; `marketing/error.tsx` on `RouteErrorPanel`). Test: `audience-filters.test.tsx`, `audience-table.test.tsx`.
+- [x] T1208 [US12] Loading and error frames; `MIGRATED_PATHS` and a US12a ratchet block (the five settings controls move to US12b–d files); preview views; first budgets.
+- [ ] T1209 [US12] Exit: e2e selectors (`[data-slot="card-title"]` in `image-upload-allowlist` and `admin-journey`); gates; build and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; UX and privacy reviews; draft PR; relay R56.
+
+### Later US12 PRs (tasks written when each starts)
+
+- [ ] T1210 [US12] US12b: review queue (DataTable with `isRowSelectable`), bulk bar, approve / reject / bulk-approve / clear-halt dialogs, and the shared reason-confirmation and typed-phrase dialogs.
+- [ ] T1220 [US12] US12c: approval-round detail (workspace, schedule dialog, start formatted version, version thread, cancel), plus the portal detail and member sign-off.
+- [ ] T1230 [US12] US12d: compose (staff proxy and portal), editor toolbar and dialogs, quota display, plus the benefits page's E-Blast tab.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
-- [ ] T1200 [US12] E-Blast: queue DataTable (item 52, or a local selection column), workspace, schedule dialog, member sign-off.
 - [ ] T1300 [US13] Exit: delete `src/components/ui`; uninstall `@base-ui/react`, `tw-animate-css`, `shadcn`; drop the TanStack table UI; make the old-kit ban global; remove the token bridge; check the facade decision; confirm the date is within 10 weeks of the US0 merge.
   - DONE — `tests/e2e/invoicing/issue-invoice-zero-rate-a11y.spec.ts` «200% text zoom» on mobile-chrome no longer carries a `test.fail`. Its 67px was the staff top bar not wrapping plus the invoice detail totals behind the dialog (the dialog contributed 0); #530 fixed both, the `test.fail` then reported "Expected to fail, but passed", and it was removed. `invoice-settings-a11y.spec.ts` «200% text zoom» on mobile-chrome passes for the same reason.
 

@@ -20,7 +20,7 @@ export default async function Loading() {
   const t = await getTranslations('admin.renewals.settings.schedules');
   return (
     <PageSkeletonShell ariaLabel={t('title')}>
-      <FormContainer aria-busy="true">
+      <FormContainer align="start" aria-busy="true">
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <div className="flex flex-col gap-[var(--aura-space-4)]" aria-hidden>
           {/* The five tier tabs. */}

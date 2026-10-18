@@ -80,7 +80,7 @@ export function OpenFirstMatchingButton({
       }
       const button = testId
         ? root.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)
-        : [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) => label && b.textContent?.trim().startsWith(label));
+        : [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) => label && !b.disabled && b.textContent?.trim().startsWith(label));
       button?.click();
     }, 100);
     return () => window.clearInterval(id);

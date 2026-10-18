@@ -136,7 +136,7 @@ vi.mock('@/components/broadcast/compose-form', () => ({
 }));
 
 // TiptapEditor dynamic loader — return a simple textarea stub.
-vi.mock('@/components/ui/tiptap-loader', () => ({
+vi.mock('@/components/shell/tiptap-loader', () => ({
   loadTiptapEditor: () => {
     const Stub = ({
       onChange,

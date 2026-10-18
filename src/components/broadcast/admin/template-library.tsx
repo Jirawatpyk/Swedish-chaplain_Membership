@@ -15,26 +15,28 @@
  * own work quickly without scrolling past 15 seeded rows.
  *
  * a11y:
- *   - <fieldset role="radiogroup"> with <legend> announces the
- *     filter purpose
+ *   - a <fieldset> with an sr-only <legend> names the filter group (the
+ *     pills are toggle buttons, not a radiogroup)
  *   - aria-pressed on each pill button
- *   - Live region announces the filtered row count after change
+ *   - Live region announces the filtered row count after change; the
+ *     visible count beside the pills is aria-hidden so it is said once
  */
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
-import { buttonVariants } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import {
+  Badge,
+  Card,
   Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  TBody,
+  Td,
+  Th,
+  THead,
+  Tr,
+  Tag,
+  buttonClass,
+} from '@jirawatpyk/aura-react';
 
 type FilterMode = 'all' | 'starter' | 'authored';
 
@@ -128,184 +130,154 @@ export function AdminTemplateLibrary({
     return null;
   }
 
-  // Inline pill renderer — React 19's `react-hooks/static-components`
-  // rule blocks defining a component inside another component, and
-  // pulling FilterPill to module-level would force threading `t` +
-  // `filter` + `setFilter` through props. The literal 3-button JSX
-  // below stays under 30 lines and keeps the parent function readable.
-  //
-  // Sizing: default (h-9 / 36px) matches the F4 project standard for
-  // touch-targets (WCAG 2.5.5 / 2.5.8) and Button height parity with
-  // form Inputs. Pre-fix used `size: 'sm'` (h-7 / 28px) which was
-  // smaller than every other admin filter row in the codebase.
-  const pillClass = (mode: FilterMode): string =>
-    filter === mode
-      ? buttonVariants()
-      : buttonVariants({ variant: 'outline' });
-
+  // The pills are AURA selectable tags (spec 122 US12a): each is a
+  // `<button aria-pressed>` that shows a check while it is on, as the
+  // board draws them. React 19's `react-hooks/static-components` rule keeps
+  // the three literal tags inline rather than in a nested component.
+  // Below 640px the rows are cards of their own, so the outer card's frame
+  // drops away (AURA `flushBelow`), as the phone board draws it.
   return (
-    <>
-      {/* flex-wrap keeps SV labels (~50 chars across 3 pills at
-          text-[0.8rem]) from overflowing horizontally on the 320px
-          Galaxy S8 baseline viewport. */}
-      {/* No `mb-4`: the page's <TableContainer> is a
-          `flex flex-col gap-[var(--page-section-gap)]`, so it already
-          spaces the filter row from the table card uniformly with every
-          other section. A local `mb-4` stacked ON TOP of that flex gap,
-          making the filter→table gap visibly larger than the rest (the
-          "ฟิลเตอร์ห่างกับตาราง" report 2026-05-22). `gap-2` (between the
-          pills) is kept. */}
-      <fieldset className="flex flex-wrap items-center gap-2">
-        <legend className="sr-only">{t('filterLegend')}</legend>
-        <button
-          type="button"
-          onClick={() => setFilter('all')}
-          aria-pressed={filter === 'all'}
-          className={pillClass('all')}
-        >
-          {t('filterPill.all')}
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('starter')}
-          aria-pressed={filter === 'starter'}
-          className={pillClass('starter')}
-        >
-          {t('filterPill.starter')}
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('authored')}
-          aria-pressed={filter === 'authored'}
-          className={pillClass('authored')}
-        >
-          {t('filterPill.authored')}
-        </button>
-      </fieldset>
-      {/* R4.3 M-3 — live-count announcement moved OUT of <fieldset>.
-          JAWS "forms-mode" semantics treat a fieldset as a form
-          container; status announcements nested INSIDE one can be
-          dropped on focus-mode toggle. The sibling placement keeps
-          the announcement audible across NVDA/JAWS/VoiceOver. */}
-      <span role="status" aria-live="polite" className="sr-only">
-        {t('filterCount', { count: liveCount })}
-      </span>
+    <Card flushBelow="sm" className="max-sm:p-0">
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
+        {/* flex-wrap keeps SV labels from overflowing on a 320px phone. */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <fieldset className="flex flex-wrap items-center gap-2">
+            <legend className="sr-only">{t('filterLegend')}</legend>
+            <Tag
+              selected={filter === 'all'}
+              onClick={() => setFilter('all')}
+              touchHeight
+            >
+              {t('filterPill.all')}
+            </Tag>
+            <Tag
+              selected={filter === 'starter'}
+              onClick={() => setFilter('starter')}
+              touchHeight
+            >
+              {t('filterPill.starter')}
+            </Tag>
+            <Tag
+              selected={filter === 'authored'}
+              onClick={() => setFilter('authored')}
+              touchHeight
+            >
+              {t('filterPill.authored')}
+            </Tag>
+          </fieldset>
+          {/* UX L1 — the count the eye reads; the debounced status below is
+              what a screen reader hears, so this one is hidden from it. */}
+          <span
+            data-slot="template-count"
+            aria-hidden="true"
+            className="aura-text-caption text-[var(--aura-fg-secondary)] sm:ml-auto"
+          >
+            {t('filterCount', { count: filtered.length })}
+          </span>
+        </div>
+        {/* R4.3 M-3 — the live count stays OUTSIDE the <fieldset>: JAWS
+            forms mode can drop a status nested inside one. */}
+        <span role="status" aria-live="polite" className="sr-only">
+          {t('filterCount', { count: liveCount })}
+        </span>
 
-      {/* `py-0` removes the Card's default vertical padding
-          (`py-[var(--card-padding)]`) so a full-bleed table sits flush
-          on all four sides. `CardContent p-0` alone only stripped the
-          HORIZONTAL padding, leaving a gap above the header row + below
-          the last row (the "หัวตาราง/ท้ายตาราง ซ้อนกัน" report
-          2026-05-22). The Card keeps `overflow-hidden` + rounded
-          corners, so the table edges clip cleanly to the card radius. */}
-      <Card className="py-0">
-        <CardContent className="p-0">
-          {/* Use the shadcn Table primitive for tokenised row-height,
-              consistent cell padding, sticky header, and overflow-x
-              wrapping — matching the F4 invoices / credit-notes /
-              events admin tables. The pre-fix raw `<table>` skipped
-              all of those design-system affordances. */}
-          <Table>
-            <TableCaption className="sr-only">{t('pageTitle')}</TableCaption>
-            <TableHeader>
-              <TableRow>
-                <TableHead scope="col">{t('columns.name')}</TableHead>
-                <TableHead
-                  scope="col"
-                  className="hidden lg:table-cell text-caption"
-                >
-                  {t('columns.subjectPreview')}
-                </TableHead>
-                <TableHead scope="col">{t('columns.locale')}</TableHead>
-                <TableHead
-                  scope="col"
-                  className="text-right hidden sm:table-cell"
-                  aria-label={t('columns.startedFromAria')}
-                >
-                  {t('columns.startedFrom')}
-                </TableHead>
-                <TableHead scope="col" className="hidden md:table-cell">
-                  {t('columns.updatedAt')}
-                </TableHead>
-                <TableHead scope="col" className="sr-only">
-                  {t('columns.actions')}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                // Filter matched nothing (e.g. "Admin-authored" when every
-                // template is a Starter). Without this row the table shows
-                // just a header + a floating horizontal scrollbar, which
-                // looks broken (report 2026-05-22). The page-level
-                // empty-state only covers "zero templates at all"; this
-                // covers "zero AFTER filtering".
-                <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="py-8 text-center text-muted-foreground"
-                  >
-                    {t('filterEmpty')}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filtered.map((tpl) => (
-                <TableRow key={tpl.id}>
-                  <TableCell>
-                    <span className="font-medium">{tpl.name}</span>
-                    {tpl.isSeeded ? (
-                      <span
-                        className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border border-warning bg-warning-surface text-warning"
-                        aria-label={t('starterBadgeAria')}
-                      >
-                        {t('starterBadge')}
-                      </span>
-                    ) : null}
-                  </TableCell>
-                  <TableCell className="hidden lg:table-cell text-caption text-muted-foreground">
-                    {/*
-                      M8 Round 2 fix 2026-05-21 (review finding
-                      enterprise-ux-designer M8): `truncate max-w-[24rem]`
-                      on `<td>` requires `table-layout: fixed` to take
-                      effect; shadcn `Table` uses `auto`. Wrap in a
-                      `block` span so the truncate works regardless of
-                      table layout. Matches the F4 portal/layout
-                      truncate pattern.
-                    */}
-                    <span className="block truncate max-w-[24rem]">
+        <Table
+          caption={t('pageTitle')}
+          captionHidden
+          stackBelow="sm"
+          stackStyle="cards"
+          align="middle"
+          bleed
+          bleedEnd
+        >
+          <THead>
+            <Tr>
+              <Th scope="col">{t('columns.name')}</Th>
+              <Th scope="col" className="max-lg:hidden">
+                {t('columns.subjectPreview')}
+              </Th>
+              <Th scope="col">{t('columns.locale')}</Th>
+              <Th scope="col" numeric aria-label={t('columns.startedFromAria')}>
+                {t('columns.startedFrom')}
+              </Th>
+              <Th scope="col">{t('columns.updatedAt')}</Th>
+              <Th scope="col">
+                <span className="sr-only">{t('columns.actions')}</span>
+              </Th>
+            </Tr>
+          </THead>
+          <TBody>
+            {filtered.length === 0 ? (
+              // Filter matched nothing (e.g. "Admin-authored" when every
+              // template is a Starter); the page-level empty state only
+              // covers "zero templates at all".
+              <Tr>
+                <Td colSpan={6} label="" align="center" className="py-8 text-[var(--aura-fg-secondary)]">
+                  {t('filterEmpty')}
+                </Td>
+              </Tr>
+            ) : (
+              filtered.map((tpl) => (
+                <Tr key={tpl.id}>
+                  <Td card="title">
+                    {/* Board parity: on a phone card the badge sits at the
+                        right end of the title row; in the table it follows
+                        the name. */}
+                    <span className="inline-flex flex-wrap items-center gap-2 max-sm:flex max-sm:w-full max-sm:flex-nowrap max-sm:items-start max-sm:justify-between">
+                      <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{tpl.name}</span>
+                      {tpl.isSeeded ? (
+                        // UX L3 — a span cannot carry an aria-label, so the
+                        // fuller name rides in sr-only text.
+                        <Badge tone="warning" className="shrink-0">
+                          <span aria-hidden="true">{t('starterBadge')}</span>
+                          <span className="sr-only">{t('starterBadgeAria')}</span>
+                        </Badge>
+                      ) : null}
+                    </span>
+                  </Td>
+                  <Td className="text-[var(--aura-fg-secondary)] sm:max-lg:hidden">
+                    {/* A block span so `truncate` works under the table's
+                        auto layout (M8 Round 2); on a phone card the subject
+                        wraps instead of being cut (UX M2). */}
+                    <span className="block max-sm:[overflow-wrap:anywhere] sm:max-w-[24rem] sm:truncate">
                       {tpl.subjectPreview ?? '—'}
                     </span>
-                  </TableCell>
-                  <TableCell className="text-caption text-muted-foreground">
+                  </Td>
+                  <Td className="text-[var(--aura-fg-secondary)]">
                     {tLang(`languageOptions.${tpl.locale}`)}
-                  </TableCell>
-                  <TableCell className="text-right hidden sm:table-cell tabular-nums">
-                    {tpl.startedFromCount}
-                  </TableCell>
-                  <TableCell className="text-caption text-muted-foreground hidden md:table-cell">
+                  </Td>
+                  <Td numeric>{tpl.startedFromCount}</Td>
+                  <Td className="text-[var(--aura-fg-secondary)]">
                     {formatUpdatedAt(tpl.updatedAtIso)}
-                  </TableCell>
-                  <TableCell className="text-right">
+                  </Td>
+                  {/* Board parity: on a phone card Edit is a full-width outline
+                      button at the foot (an unlabelled field spanning the
+                      card); from 640px it is the ghost link in the row. Only
+                      one of the two is ever displayed. */}
+                  <Td label="" align="end" className="max-sm:basis-full">
                     <Link
+                      data-edit="phone"
                       href={`/admin/broadcasts/templates/${tpl.id}/edit`}
-                      className={buttonVariants({
-                        variant: 'ghost',
-                        size: 'sm',
-                      })}
-                      aria-label={t('rowAction.editAria', {
-                        name: tpl.name,
-                      })}
+                      className={`${buttonClass({ variant: 'secondary', touchHeight: true })} w-full sm:hidden`}
+                      aria-label={t('rowAction.editAria', { name: tpl.name })}
                     >
                       {t('rowAction.edit')}
                     </Link>
-                  </TableCell>
-                </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-    </>
+                    <Link
+                      data-edit="desktop"
+                      href={`/admin/broadcasts/templates/${tpl.id}/edit`}
+                      className={`${buttonClass({ variant: 'ghost', touchHeight: true })} max-sm:hidden`}
+                      aria-label={t('rowAction.editAria', { name: tpl.name })}
+                    >
+                      {t('rowAction.edit')}
+                    </Link>
+                  </Td>
+                </Tr>
+              ))
+            )}
+          </TBody>
+        </Table>
+      </div>
+    </Card>
   );
 }

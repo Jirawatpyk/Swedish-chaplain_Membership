@@ -2201,7 +2201,12 @@
             "contrastPass": "Contrast with white text: {ratio}:1 — meets AA",
             "contrastFail": "Contrast with white text: {ratio}:1 — below {required}:1",
             "contrastFailHelp": "Saving is unavailable until the colour reaches {required}:1 with white text.",
-            "invalid": "Enter a colour as #RRGGBB."
+            "invalid": "Enter a colour as #RRGGBB.",
+            "preview": {
+              "caption": "How it looks in an E-Blast",
+              "heading": "Heading in an E-Blast",
+              "button": "Button"
+            }
           },
           "address": {
             "heading": "Postal address",
@@ -5976,6 +5981,9 @@
         "count": "{count, plural, =0 {No contacts match the current filters} one {# contact matches the current filters} other {# contacts match the current filters}}",
         "countAll": "{count, plural, =0 {No contacts yet} one {# contact} other {# contacts}}",
         "tableCaption": "Marketing audience — contacts and their marketing state",
+        "card": {
+          "receives": "Receives E-Blasts"
+        },
         "error": {
           "title": "The audience could not be loaded",
           "description": "Something went wrong reading contacts. Try again in a moment."

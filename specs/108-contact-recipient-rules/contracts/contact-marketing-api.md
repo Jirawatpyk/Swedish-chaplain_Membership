@@ -89,8 +89,9 @@ the existing `resolveContactSubscriptions` tri-state (degraded ⇒ "status unava
 Marketing role sees name + email + state only — no DoB, phone or other `pii_sensitive`
 fields (T057 fence).
 
-Responsive: same as the members directory — `overflow-x-auto` inside `TableContainer`, page never
-scrolls horizontally; name + state columns ordered first so they stay in view at 320 px (FR-035c).
+Responsive: page never scrolls horizontally. Below 640 px each contact is a card; from 640 px the
+table scrolls inside its own box only if it must, name + state columns first (FR-035c, amended by
+spec 122 US12a).
 
 Toggle interaction: `Switch` + optimistic local state (flips on click, rolls back on any
 refusal) + `fetch` + `startTransition(router.refresh)` with the switch disabled until the

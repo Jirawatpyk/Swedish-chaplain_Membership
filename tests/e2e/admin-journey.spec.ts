@@ -123,7 +123,7 @@ test.describe('Journey — admin golden path across module seams @journey @criti
     await gated('F7 broadcasts settings', F7, async () => {
       await page.goto('/admin/settings/broadcasts');
       await expect(
-        page.locator('[data-slot="card-title"]', { hasText: /image source allowlist/i }).first(),
+        page.getByRole('heading', { level: 2, name: /image source allowlist/i }),
       ).toBeVisible({ timeout: 10_000 });
     });
 

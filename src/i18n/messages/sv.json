@@ -2201,7 +2201,12 @@
             "contrastPass": "Kontrast mot vit text: {ratio}:1 — uppfyller AA",
             "contrastFail": "Kontrast mot vit text: {ratio}:1 — under {required}:1",
             "contrastFailHelp": "Går inte att spara förrän färgen når {required}:1 mot vit text.",
-            "invalid": "Ange en färg som #RRGGBB."
+            "invalid": "Ange en färg som #RRGGBB.",
+            "preview": {
+              "caption": "Så ser det ut i ett E-Blast",
+              "heading": "Rubrik i ett E-Blast",
+              "button": "Knapp"
+            }
           },
           "address": {
             "heading": "Postadress",
@@ -5976,6 +5981,9 @@
         "count": "{count, plural, =0 {Inga kontakter matchar de aktuella filtren} one {# kontakt matchar de aktuella filtren} other {# kontakter matchar de aktuella filtren}}",
         "countAll": "{count, plural, =0 {Inga kontakter ännu} one {# kontakt} other {# kontakter}}",
         "tableCaption": "Marknadsföringsmålgrupp — kontakter och deras marknadsföringsstatus",
+        "card": {
+          "receives": "Får E-Blasts"
+        },
         "error": {
           "title": "Målgruppen kunde inte läsas in",
           "description": "Något gick fel när kontakterna lästes. Försök igen om en stund."

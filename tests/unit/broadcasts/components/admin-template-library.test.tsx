@@ -136,10 +136,66 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
   it('Starter badge renders next to seeded row names', () => {
     renderLibrary();
     const tbody = within(screen.getByRole('table'));
-    // Seeded rows have a Starter badge labelled "Seeded by the platform"
+    // Seeded rows have a Starter badge; its sr-only text says
+    // "Seeded by the platform" (a span cannot carry an aria-label: L3).
+    expect(tbody.getAllByText(/seeded by the platform/i)).toHaveLength(3);
+    for (const badge of tbody.getAllByText('Starter')) {
+      expect(badge.closest('.aura-badge')).not.toHaveAttribute('aria-label');
+    }
+  });
+
+  it('UX M2: the subject wraps on phone cards and is cut only from sm up', () => {
+    renderLibrary();
+    const subject = screen.getByText('Q2 newsletter from your chamber');
+    expect(subject).not.toHaveClass('truncate');
+    expect(subject).toHaveClass('sm:truncate', 'sm:max-w-[24rem]', 'max-sm:[overflow-wrap:anywhere]');
+  });
+
+  it('board parity: on phone cards Edit is a full-width outline button at the foot; desktop keeps the ghost link', () => {
+    renderLibrary();
+    const row = within(screen.getByRole('table')).getAllByRole('row')[1]!;
+    const phone = row.querySelector<HTMLAnchorElement>('a[data-edit="phone"]');
+    const desktop = row.querySelector<HTMLAnchorElement>('a[data-edit="desktop"]');
+    expect(phone).toHaveClass('aura-btn--secondary', 'w-full', 'sm:hidden');
+    expect(desktop).toHaveClass('aura-btn--ghost', 'max-sm:hidden');
+    const cell = phone!.closest('td')!;
+    expect(cell).not.toHaveAttribute('data-card');
+    expect(cell).toHaveClass('max-sm:basis-full');
+  });
+
+  it('board parity: on a phone card the Starter badge sits at the right end of the title row', () => {
+    renderLibrary();
+    const row = within(screen.getByRole('table')).getAllByRole('row')[1]!;
+    const badge = row.querySelector<HTMLElement>('.aura-badge')!;
+    const titleRow = badge.parentElement!;
+    expect(titleRow).toHaveClass('max-sm:flex', 'max-sm:w-full', 'max-sm:justify-between', 'max-sm:flex-nowrap');
+    // The name may wrap; the badge never shrinks or breaks.
+    expect(badge).toHaveClass('shrink-0');
+  });
+
+  it('board parity: below 640 px the outer card frame drops away (the rows are cards of their own)', () => {
+    const { container } = renderLibrary();
+    expect(container.querySelector('.aura-card')).toHaveClass('aura-card--flush-below-sm', 'max-sm:p-0');
+  });
+
+  it('UX L1: the visible template count sits beside the pills, hidden from screen readers', () => {
+    renderLibrary();
+    const visible = screen.getByText('5 templates', { selector: '[data-slot="template-count"]' });
+    expect(visible).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  it('spec 122 US12a: the pills are AURA tags, the table and Starter badge are AURA', () => {
+    renderLibrary();
+    for (const name of [/^all$/i, /starter only/i, /admin-authored/i]) {
+      expect(screen.getByRole('button', { name })).toHaveClass('aura-tag');
+    }
+    const table = screen.getByRole('table');
+    expect(table).toHaveClass('aura-tbl');
+    const badges = within(table).getAllByText(/seeded by the platform/i);
+    for (const badge of badges) expect(badge.closest('.aura-badge')).not.toBeNull();
     expect(
-      tbody.getAllByLabelText(/seeded by the platform/i),
-    ).toHaveLength(3);
+      within(table).getAllByRole('link', { name: /edit/i })[0],
+    ).toHaveClass('aura-btn');
   });
 
   it('R3.4 M-3: filter pill click updates live-region count text after settle delay', async () => {
