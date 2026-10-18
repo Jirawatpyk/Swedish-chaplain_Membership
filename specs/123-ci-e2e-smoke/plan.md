@@ -15,7 +15,7 @@ e2e never runs in CI, so every PR needs a manual local verification round to cat
 
 | # | Slice | Done-when | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
-| 1 | Post-deploy smoke: `/api/health`, the smoke script, the workflow, the runbook | DW-1…5 | security-engineer, reliability-guardian, observability-instrumentor | `123-ci-e2e-smoke-s1` | — · open |
+| 1 | Post-deploy smoke: `/api/health`, the smoke script, the workflow, the runbook | DW-1…5 | security-engineer, reliability-guardian, observability-instrumentor | `123-ci-e2e-smoke-s1` | #582 · done |
 | 2 | e2e in CI: seed chain, `@critical` tags, the PR workflow, the nightly workflow, the sweep | DW-6…12 | security-engineer, senior-tester, reliability-guardian | `123-ci-e2e-smoke-s2` | — · open |
 
 ## Slice 1 — post-deploy smoke
@@ -271,9 +271,13 @@ Filled in at Verify, one block per slice.
   - Renamed to `probe`. The live log now reads `probe: "timeout"`, `route: "api.health"`, `err: "HealthProbeTimeoutError"`.
   - Guarded by a test against the real `REDACT_PATHS` (RED `49af5e060`).
 
-**Post-merge (pending):**
-- (a) Link to the `deployment_status` run of the merge deploy: green, 3 PASS lines.
-- (b) Link to `gh workflow run post-deploy-smoke.yml -f base_url=https://invalid.example` opening a new `prod-smoke` issue (#), a second run commenting on the same issue, then a normal run closing it as recovered.
-- (c) Link to a preview deployment's run with the job skipped.
-- (d) Note: DW-4's "names the deployment URL" is only proven by a real failing `deployment_status` run.
+**Post-merge (done 2026-10-18, merge commit `c4884db96`):**
+- **(a)** The `deployment_status` run of the production deploy was green, with all three lines `PASS admin-sign-in 200`, `PASS portal-sign-in 200` and `PASS health 200` against `https://swecham.dxtspace.com`. The recovery step logged "No open prod-smoke issue". Run: https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39061553065
+- **(b)** Two `workflow_dispatch` runs with `base_url=https://invalid.example`, then one plain run:
+  - [run 39061639414](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39061639414) failed and opened issue #583. The body holds the base URL, the commit, "Deployment: none (manual run)", the run URL and the three `FAIL … network-error` lines only.
+  - [run 39061718039](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39061718039) failed and **commented on #583**; no new issue was opened.
+  - [run 39061797720](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39061797720), against `PROD_BASE_URL`, passed. It commented "Recovered…" and **closed #583**.
+- **(c)** Preview deployments of this branch fired `deployment_status`, and the job was **skipped** each time (for example https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39057302987).
+- **(d)** Not proven: DW-4's "names the deployment URL" holds only for a real failing `deployment_status` run. Manual runs print "none (manual run)". Accepted.
+- **Process note:** D-020 says the slice's own PR sets its Slices row to `done` before merging. #582 missed that, so this follow-up sets it. Cause: step 8 (PR), the DoD and the PR template had no line for it, only step 9 assumed it was "already" set. Guard: a DoD line, a PR-template line and a `feature-flow` § 8 bullet; retro logged.
 

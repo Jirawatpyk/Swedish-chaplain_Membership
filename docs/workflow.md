@@ -71,6 +71,7 @@ A change is done when every line below that applies is true and its evidence is 
 
 - [ ] Every Done-when line in the spec (or the PR, for size S) is met, with evidence: test names, numbers, screenshots. For M / L, `spec-compliance-auditor` confirmed each line against its evidence.
 - [ ] M / L: `plan.md` exists, the user agreed it before build, and it matches what was built.
+- [ ] L slice: this PR sets its own row in the `plan.md` Slices table to its PR number and `done` (D-020).
 - [ ] Each behaviour has a test that went red before the code that made it pass.
 - [ ] `pnpm check` is green; `pnpm test:coverage` is green (not just `pnpm test`); `pnpm vitest run tests/contract/` is green.
 - [ ] The touched integration suites are green, run by path against the `dev` branch. A tenant-scoped surface has a cross-tenant test.
