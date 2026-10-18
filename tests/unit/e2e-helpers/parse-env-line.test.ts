@@ -62,5 +62,6 @@ describe('parseEnvLine', () => {
       value: '',
     });
     expect(parseEnvLine('EMPTY=')).toEqual({ key: 'EMPTY', value: '' });
+    expect(parseEnvLine('KEY=   # c')).toEqual({ key: 'KEY', value: '' });
   });
 });
