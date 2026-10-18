@@ -73,6 +73,20 @@ describe('Claude guard hook — prod write scripts', () => {
     ['Bash', 'node --env-file=../main/.env.local.bak.prod --import tsx scripts/run-migrations.ts'],
     ['Bash', 'pnpm exec tsx --env-file=.env.production scripts/run-migrations.ts'],
     ['PowerShell', 'node --env-file=.env.production --import tsx scripts/run-migrations.ts'],
+    // review round 1 (#590): wrappers, nested shells, subshells, -if-exists,
+    // and the verify-schema allowance used as a smuggling name
+    ['Bash', 'timeout 600 pnpm db:migrate:prod'],
+    ['Bash', 'env pnpm db:migrate:prod'],
+    ['Bash', 'nohup pnpm seed:system-actors:prod'],
+    ['Bash', 'bash -c "pnpm db:migrate:prod"'],
+    ['Bash', 'sh -lc \'pnpm run db:migrate:prod\''],
+    ['PowerShell', 'cmd /c pnpm db:migrate:prod'],
+    ['Bash', '(pnpm db:migrate:prod)'],
+    ['Bash', 'echo $(pnpm db:migrate:prod)'],
+    ['Bash', '/c/tools/pnpm.cmd db:migrate:prod'],
+    ['Bash', 'node --env-file-if-exists=.env.production --import tsx scripts/run-migrations.ts'],
+    ['Bash', 'node --env-file=.env.production --import tsx scripts/run-migrations.ts scripts/verify-schema.ts'],
+    ['Bash', 'node --env-file=.env.production -e "import(\'./scripts/run-migrations.ts\')" scripts/verify-schema.ts'],
   ])('blocks %s: %s', (tool, command) => {
     const r = run(tool, { command });
     expect(r.code, r.stderr).toBe(2);
@@ -83,6 +97,8 @@ describe('Claude guard hook — prod write scripts', () => {
     'pnpm db:verify:prod',
     'pnpm run db:verify:prod',
     'node --env-file=.env.production --import tsx scripts/verify-schema.ts',
+    'node --env-file=.env.production --import tsx scripts\\verify-schema.ts',
+    'timeout 280 pnpm exec vitest run tests/unit/architecture/claude-guard-hook.test.ts',
     'pnpm db:migrate',
     'pnpm db:verify',
     'node --env-file=.env.local --import tsx scripts/run-migrations.ts',
