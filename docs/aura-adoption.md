@@ -186,6 +186,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #156 | Addendum 57: `TextField` / `Textarea` turn red only through `error`, which also renders AURA's message and swaps `aria-describedby`; no invalid state without a message | Brand colour field (`src/components/broadcast/brand/brand-settings-form.tsx`): `aria-invalid` drives the danger border through a field-DOM selector on the field root |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

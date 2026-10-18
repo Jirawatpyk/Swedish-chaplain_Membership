@@ -209,9 +209,10 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
               autoComplete="off"
               inputMode="text"
               aria-describedby={colourHintId}
-              // UX L4 — the danger border follows aria-invalid (class above).
-              // AURA's `error` would replace this hint id with its own, and
-              // Save's aria-describedby points at the reason line below.
+              // UX L4 — the danger border follows aria-invalid (class above;
+              // stand-in until AURA #156). AURA's `error` would replace this
+              // hint id with its own, and Save's aria-describedby points at
+              // the reason line below.
               aria-invalid={normalisedColour === null || !meetsAa}
               touchHeight
             />
