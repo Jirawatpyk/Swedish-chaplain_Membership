@@ -87,7 +87,7 @@ async function chooseStage(page: Page, name: RegExp): Promise<void> {
   await option.click();
 }
 
-test.describe('F8 — /admin/renewals pipeline dashboard (US1) @critical', () => {
+test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
   // Constitution Principle VI: throw on missing prerequisites instead
   // of skipping so env-config gaps surface as hard failures and the
   // E2E genuinely exercises the page.
