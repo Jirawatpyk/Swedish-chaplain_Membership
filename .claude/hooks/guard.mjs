@@ -20,53 +20,101 @@ const SECRET_FILE = /(^|[\s'"=\/\\])\.env(\.(?!example\b)[\w.-]+)?(?=$|[\s'";|&)
 const READ_ONLY_PROD_SCRIPTS = new Set(['db:verify:prod']);
 const READ_ONLY_PROD_FILE = /^scripts[\\/]verify-schema\.ts$/;
 const PACKAGE_MANAGER = /^(pnpm|npm|yarn|bun)(\.cmd|\.exe)?$/i;
-// `--env-file[-if-exists]=<p>` / `… <p>` naming a prod env file
-const PROD_ENV_FILE = /--env-file(?:-if-exists)?(?:=|\s+)["']?[^\s"']*(\.env\.production|\.env\.prod|\.bak\.prod)\b/i;
-// Words that run the command after them: `timeout 600 pnpm …`, `env pnpm …`,
-// `bash -c "pnpm …"`, `cmd /c pnpm …`. Stripped before the first word is read.
-const WRAPPER = /^(?:timeout\s+\S+|env|nohup|time|exec|command|sudo|npx|corepack|(?:ba|z|da)?sh(?:\.exe)?(?:\s+-\w+)*|(?:pwsh|powershell)(?:\.exe)?(?:\s+-\w+)*|cmd(?:\.exe)?\s+\/[ck]|start-process)\s+/i;
-const EVAL_FLAG = /(^|\s)(-e|--eval|-p|--print)(\s|=|$)/;
+const NODE_RUNNER = /^(node|tsx|bun|deno)(\.cmd|\.exe)?$/i;
+// A prod env file named anywhere in a word: `.env.production`, `.env.prod*`,
+// the `*.bak.prod` backup.
+const PROD_ENV_NAME = /(^|[=\/\\])\.env\.prod|\.bak\.prod$/i;
+// Commands that run what follows them: `timeout -k 5 600 pnpm …`, `env -u X
+// pnpm …`, `bash -o pipefail -c "pnpm …"`, `cmd /d /c …`, `Start-Process
+// -FilePath pnpm …`. After one, the runner is the next pnpm / node word.
+const WRAPPERS = new Set(['timeout', 'env', 'nohup', 'nice', 'time', 'exec', 'command', 'sudo', 'npx', 'corepack', 'xargs', 'bash', 'sh', 'zsh', 'dash', 'pwsh', 'powershell', 'cmd', 'start-process', 'start']);
+// Commands that only carry text. A prod env file or script named in their
+// arguments (a commit message, an echo) runs nothing, so it is not blocked.
+const TEXT_ONLY = new Set(['git', 'gh', 'echo', 'printf', 'write-output', 'write-host']);
+// pnpm / npm flags that take a separate value word
+const PM_VALUE_FLAGS = new Set(['--dir', '-C', '--filter', '-F', '--prefix', '--workspace', '-w']);
+// node flags whose value is another module that runs (tsx itself is the loader)
+const NODE_MODULE_FLAGS = new Set(['--import', '-r', '--require', '--loader', '--experimental-loader']);
+const EVAL_FLAG = new Set(['-e', '--eval', '-p', '--print']);
+
+const base = (w) => (w.split(/[\\/]/).pop() ?? '').toLowerCase();
+const unquote = (w) => w.replace(/^["']+|["']+$/g, '');
+
+// A heredoc body is text for the command that reads it, so it is dropped,
+// unless a shell or node reads it, in which case it runs.
+function dropTextHeredocs(cmd) {
+  return cmd.replace(/^(.*?)<<-?\s*(['"]?)(\w+)\2[^\n]*\n[\s\S]*?\n\3[ \t]*(?=\r?\n|$)/gm, (all, head) => {
+    const first = base(unquote(head.trim().replace(/^(?:[A-Za-z_]\w*=\S*\s+)+/, '').split(/\s+/)[0] ?? ''));
+    return WRAPPERS.has(first) || NODE_RUNNER.test(first) ? all : head;
+  });
+}
 
 // The simple commands in a shell line: split on ; && || | & ( ) { } ` and
-// newlines (so a subshell or `$( … )` is its own segment), then drop leading
-// `VAR=value` assignments, quotes and wrapper words.
+// newlines, so a subshell or `$( … )` is its own segment.
 function segments(cmd) {
-  return cmd
+  return dropTextHeredocs(cmd)
     .split(/&&|\|\||[;|&\r\n(){}`]/)
-    .map((s) => {
-      let seg = s.trim();
-      for (let prev = ''; prev !== seg; ) {
-        prev = seg;
-        seg = seg
-          .replace(/^\$/, '')
-          .replace(/^["']+/, '')
-          .replace(/^(?:[A-Za-z_]\w*=\S*\s+)+/, '')
-          .replace(WRAPPER, '')
-          .trim();
-      }
-      return seg;
-    })
+    .map((s) => s.trim().replace(/^\$/, ''))
     .filter(Boolean);
 }
 
-// Only `node … scripts/verify-schema.ts` with no other script and no eval.
-function runsOnlyVerifySchema(words, seg) {
-  const files = words.filter((w) => /\.(?:[cm]?[jt]s)$/i.test(w));
-  return files.length === 1 && READ_ONLY_PROD_FILE.test(files[0]) && !EVAL_FLAG.test(seg);
+// The words from the command that actually runs: past `VAR=value`
+// assignments, and past a wrapper to the next pnpm / node word.
+function runnerWords(seg) {
+  const words = seg.split(/\s+/).map(unquote).filter(Boolean);
+  let i = 0;
+  while (i < words.length && /^[A-Za-z_]\w*=/.test(words[i])) i += 1;
+  if (WRAPPERS.has(base(words[i] ?? ''))) {
+    const j = words.findIndex((w, k) => k > i && (PACKAGE_MANAGER.test(base(w)) || NODE_RUNNER.test(base(w))));
+    if (j > i) i = j;
+  }
+  return words.slice(i);
+}
+
+// The script a package-manager call runs: the first non-flag word after it,
+// past `run` / `run-script` and the value of a flag that takes one.
+function packageScript(words) {
+  for (let k = 1; k < words.length; k += 1) {
+    const w = words[k];
+    if (PM_VALUE_FLAGS.has(w)) { k += 1; continue; }
+    if (w.startsWith('-')) continue;
+    if (w === 'run' || w === 'run-script') continue;
+    return w;
+  }
+  return null;
+}
+
+// Only `node … scripts/verify-schema.ts`: no other script (a positional file
+// or a module passed to --import / -r / --loader), and no eval.
+function runsOnlyVerifySchema(words) {
+  if (!NODE_RUNNER.test(base(words[0] ?? ''))) return false;
+  const modules = [];
+  for (let k = 1; k < words.length; k += 1) {
+    const [flag, inline] = words[k].split(/=(.*)/s);
+    if (EVAL_FLAG.has(flag)) return false;
+    if (NODE_MODULE_FLAGS.has(flag)) {
+      const value = inline ?? words[(k += 1)];
+      if (value && !/^tsx(\/|$)/.test(value)) modules.push(value);
+    } else if (/\.(?:[cm]?[jt]s)$/i.test(words[k])) {
+      modules.push(words[k]);
+    }
+  }
+  return modules.length === 1 && READ_ONLY_PROD_FILE.test(modules[0]);
 }
 
 function prodWriteReason(cmd) {
   for (const seg of segments(cmd)) {
-    const words = seg.split(/\s+/).map((w) => w.replace(/^["']+|["']+$/g, ''));
-    const first = (words[0] ?? '').split(/[\\/]/).pop() ?? '';
+    const words = runnerWords(seg);
+    const first = base(words[0] ?? '');
+    if (TEXT_ONLY.has(first)) continue;
     if (PACKAGE_MANAGER.test(first)) {
-      const script = words.slice(1).find((w) => /^[\w.-]+(:[\w.-]+)*:prod$/.test(w));
-      if (script && !READ_ONLY_PROD_SCRIPTS.has(script)) {
+      const script = packageScript(words);
+      if (script && /^[\w.-]+(:[\w.-]+)*:prod$/.test(script) && !READ_ONLY_PROD_SCRIPTS.has(script)) {
         return `\`${script}\` writes to production. The user runs it; Claude may run only the read-only ${[...READ_ONLY_PROD_SCRIPTS].join(', ')}.`;
       }
     }
-    if (PROD_ENV_FILE.test(seg) && !runsOnlyVerifySchema(words, seg)) {
-      return 'this command runs a script with the production env file, which can write to production. The user runs it; Claude may run only the read-only `pnpm db:verify:prod`.';
+    if (words.some((w) => PROD_ENV_NAME.test(w)) && !runsOnlyVerifySchema(words)) {
+      return 'this command loads or copies the production env file, which can write to production. The user runs it; Claude may run only the read-only `pnpm db:verify:prod`.';
     }
   }
   return null;
