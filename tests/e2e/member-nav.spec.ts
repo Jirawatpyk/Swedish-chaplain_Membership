@@ -67,6 +67,9 @@ test.describe('member nav shell — 057', () => {
     // `/portal/broadcasts/new` is not on the lapsed allowlist (only the
     // `<uuid>` sign-off page is), so this walks as the good-standing persona.
     test.skip(!GOOD_EMAIL || !GOOD_PASSWORD, 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
+    // The route exists only with F7 on; CI boots with F7 off (it needs a monitored
+    // privacy inbox in production), so there is nothing to assert there.
+    test.skip(process.env.FEATURE_F7_BROADCASTS !== 'true', 'FEATURE_F7_BROADCASTS is off: /portal/broadcasts/** is not served');
     await page.setViewportSize({ width: 375, height: 812 });
     await signIn(page, GOOD_EMAIL!, GOOD_PASSWORD!);
     await page.goto('/portal/broadcasts/new');
