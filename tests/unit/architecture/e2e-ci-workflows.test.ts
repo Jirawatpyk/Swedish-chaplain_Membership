@@ -96,11 +96,14 @@ describe('.github/workflows/e2e-critical.yml', () => {
     expect(code).toMatch(/uses: actions\/checkout@v4\n\s+with:\n\s+persist-credentials:\s*false/);
   });
 
-  it('never uses the project-wide NEON_API_KEY; the CI-project key reaches only create and delete', () => {
+  it('never uses the project-wide NEON_API_KEY; the CI-project key reaches only the scope check, create and delete', () => {
     expect(code).not.toMatch(/secrets\.NEON_API_KEY\b/);
     expect(code).not.toMatch(/vars\.NEON_PROJECT_ID\b/);
     const uses = [...code.matchAll(/secrets\.NEON_CI_API_KEY\b/g)];
-    expect(uses).toHaveLength(2);
+    expect(uses).toHaveLength(3);
+    expect(step(src, /- name: Prove the CI key reaches only the CI project/)).toMatch(
+      /NEON_API_KEY: \$\{\{ secrets\.NEON_CI_API_KEY \}\}/,
+    );
     expect(step(src, /- name: Create this run's Neon branch/)).toMatch(/api_key: \$\{\{ secrets\.NEON_CI_API_KEY \}\}/);
     expect(step(src, /- name: Delete this run's Neon branch/)).toMatch(/api_key: \$\{\{ secrets\.NEON_CI_API_KEY \}\}/);
   });
@@ -108,7 +111,7 @@ describe('.github/workflows/e2e-critical.yml', () => {
   it('creates a ci-e2e/ branch in the CI project from the CI parent, with an expiry backstop', () => {
     expect(code).toMatch(/^\s{6}CI_E2E_BRANCH_NAME: ci-e2e\/\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}\s*$/m);
     const create = step(src, /- name: Create this run's Neon branch/);
-    expect(create).toContain('uses: neondatabase/create-branch-action@v6');
+    expect(create).toContain('uses: neondatabase/create-branch-action@fb620d43d4c565abaf088b848a4e28e5c4ea4d9c # v6');
     expect(create).toMatch(/project_id: \$\{\{ vars\.NEON_CI_PROJECT_ID \}\}/);
     expect(create).toMatch(/parent_branch: \$\{\{ vars\.NEON_CI_PARENT_BRANCH \}\}/);
     expect(create).toMatch(/branch_name: \$\{\{ env\.CI_E2E_BRANCH_NAME \}\}/);
@@ -181,7 +184,7 @@ describe('.github/workflows/e2e-critical.yml', () => {
 
   it('on failure uploads only playwright-report/ and test-results/, for 7 days', () => {
     const upload = step(src, /- name: Upload the Playwright report/);
-    expect(upload).toMatch(/^\s+if: failure\(\)\s*$/m);
+    expect(upload).toMatch(/^\s+if: failure\(\) \|\| cancelled\(\)\s*$/m);
     expect(upload).toContain('uses: actions/upload-artifact@v4');
     expect(upload).toMatch(/retention-days: 7\s*$/m);
     const paths = /path: \|\n((?:\s{12}\S.*\n?)+)/.exec(upload)?.[1]?.split('\n').map((l) => l.trim()).filter(Boolean);
@@ -192,7 +195,7 @@ describe('.github/workflows/e2e-critical.yml', () => {
   it('deletes the branch it created in an always() step, last', () => {
     const del = step(src, /- name: Delete this run's Neon branch/);
     expect(del).toMatch(/^\s+if: always\(\) && steps\.branch\.outputs\.created == 'true'\s*$/m);
-    expect(del).toContain('uses: neondatabase/delete-branch-action@v3');
+    expect(del).toContain('uses: neondatabase/delete-branch-action@4468d825d5a88ef4012f1705a82f02ec3072f776 # v3');
     expect(del).toMatch(/project_id: \$\{\{ vars\.NEON_CI_PROJECT_ID \}\}/);
     expect(del).toMatch(/branch: \$\{\{ steps\.branch\.outputs\.branch_id \}\}/);
     expect(stepRange(src, /- name: Delete this run's Neon branch/)!.end).toBe(lines(src).length);
@@ -241,5 +244,60 @@ describe('.github/ci/e2e.env', () => {
   it('holds no service token, and no quotes ($GITHUB_ENV keeps them literally)', () => {
     for (const key of pairs.keys()) expect(key).not.toMatch(/^(BLOB_|KV_|UPSTASH_|STRIPE_SECRET|NEON_)/);
     for (const [key, value] of pairs) expect(value, key).not.toMatch(/^["']|["']$/);
+  });
+});
+
+describe('e2e-critical.yml — review round 1 (PR #586)', () => {
+  const src = read(WORKFLOW);
+  const code = codeLines(src).join('\n');
+  const blocks = runBlocks(src);
+  const testSteps = () =>
+    ['e2e @critical on chromium', 'e2e @critical on mobile-chrome'].map((name) => step(src, new RegExp(`- name: ${name}`)));
+
+  it('proves, before creating a branch, that the key sees exactly one project: the CI project (M3)', () => {
+    const scope = step(src, /- name: Prove the CI key reaches only the CI project/);
+    expect(scope).toMatch(/PROJECT_ID: \$\{\{ vars\.NEON_CI_PROJECT_ID \}\}/);
+    expect(scope).toMatch(/https:\/\/console\.neon\.tech\/api\/v2\/projects/);
+    expect(scope).toMatch(/\.projects \| length/);
+    expect(scope).toMatch(/\.projects\[0\]\.id/);
+    expect(scope).toMatch(/exit 1/);
+    expect(scope).not.toMatch(/echo "\$projects"|cat .*projects|set -x/);
+    expect(lineOf(src, /- name: Prove the CI key reaches only the CI project/)).toBeLessThan(
+      lineOf(src, /- name: Create this run's Neon branch/),
+    );
+  });
+
+  it('bounds each test step and stops a broken run early, keeping its trace (H3)', () => {
+    for (const body of testSteps()) {
+      expect(body).toMatch(/^\s+timeout-minutes: 15\s*$/m);
+      expect(body).toMatch(/--max-failures=5/);
+    }
+  });
+
+  it('cannot go green without running tests (H2)', () => {
+    expect(code).not.toMatch(/continue-on-error/);
+    for (const body of testSteps()) {
+      expect(body).not.toMatch(/\|\| true|--pass-with-no-tests/);
+    }
+    const summary = step(src, /- name: Timing and per-spec summary/);
+    expect(summary).toMatch(/status == "skipped"/);
+    expect(summary).toMatch(/::error title=Skipped @critical tests/);
+    expect(summary).toMatch(/exit 1/);
+  });
+
+  it('names every flaky spec in a warning (M1)', () => {
+    const summary = step(src, /- name: Timing and per-spec summary/);
+    expect(summary).toMatch(/status == "flaky"/);
+    expect(summary).toMatch(/::warning title=Flaky @critical spec/);
+  });
+
+  it('gives each run its own Upstash rate-limit prefix (M2)', () => {
+    expect(code).toMatch(
+      /^\s{6}RATE_LIMIT_KEY_PREFIX: swecham-ci-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}\s*$/m,
+    );
+  });
+
+  it('still expands no ${{ }} inside a run block after these steps', () => {
+    expect(blocks.filter((b) => b.text.includes('${{')).map((b) => `line ${b.line}`)).toEqual([]);
   });
 });

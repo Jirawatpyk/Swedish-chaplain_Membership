@@ -7,6 +7,7 @@
  * parser (no YAML dependency). Each file has a positive control: its parse must
  * find steps and run blocks, and the fixture below must be flagged.
  */
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -124,6 +125,47 @@ describe('.github/workflows/e2e-nightly.yml', () => {
     expect(del).toMatch(/if: always\(\) && steps\.branch\.outputs\.created == 'true'/);
   });
 
+  it('pins the Neon actions by commit SHA (they receive the key)', () => {
+    expect(step(src, /- name: Create this run's Neon branch/)).toContain(
+      'uses: neondatabase/create-branch-action@fb620d43d4c565abaf088b848a4e28e5c4ea4d9c # v6',
+    );
+    expect(step(src, /- name: Delete this run's Neon branch/)).toContain(
+      'uses: neondatabase/delete-branch-action@4468d825d5a88ef4012f1705a82f02ec3072f776 # v3',
+    );
+  });
+
+  it('runs every refusal of the reset step before the psql line, and refuses an empty expected host', () => {
+    const body = step(src, /- name: Reset the schema/).split('\n');
+    const psql = body.findIndex((l) => /psql /.test(l));
+    const exits = body.map((l, i) => (/exit 1/.test(l) ? i : -1)).filter((i) => i >= 0);
+    expect(psql).toBeGreaterThan(0);
+    expect(exits.length).toBeGreaterThanOrEqual(4);
+    expect(exits.every((i) => i < psql)).toBe(true);
+    expect(body.join('\n')).toMatch(/\[ -n "\$CI_E2E_EXPECTED_DIRECT_HOST" \]/);
+  });
+
+  it('fails on flaky tests and lists flaky specs in the issue; no `|| true` hides a parse failure (M1)', () => {
+    expect(step(src, /- name: e2e full suite on chromium/)).toMatch(/--fail-on-flaky-tests/);
+    const list = step(src, /- name: List the failed specs/);
+    expect(list).toMatch(/"flaky"/);
+    expect(list).not.toMatch(/\|\| true/);
+    expect(step(src, /- name: Open or update the e2e-nightly issue/)).toMatch(/[Ff]laky/);
+  });
+
+  it('uploads the report on failure or cancellation', () => {
+    expect(step(src, /- name: Upload the Playwright report/)).toMatch(/^\s+if: failure\(\) \|\| cancelled\(\)\s*$/m);
+  });
+
+  it('gives each shard its own Upstash rate-limit prefix (M2)', () => {
+    expect(code).toMatch(/RATE_LIMIT_KEY_PREFIX: swecham-nightly-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-s\$\{\{ matrix\.shard \}\}/);
+  });
+
+  it('grants the report job only issues: write', () => {
+    const report = code.slice(code.indexOf('\n  report:'));
+    const perms = /\n {4}permissions:\n((?: {6}\S.*\n)+)/.exec(report)?.[1]?.trim().split('\n').map((l) => l.trim());
+    expect(perms).toEqual(['issues: write']);
+  });
+
   it('resets the schema only after the DW-9 guard, re-checks the target, then migrates from zero', () => {
     const guard = lineOf(src, /- name: Refuse any target but this run's ci-e2e branch \(DW-9\)/);
     const reset = lineOf(src, /- name: Reset the schema/);
@@ -210,5 +252,31 @@ describe('.github/workflows/ci-e2e-branch-sweep.yml', () => {
     expect(body).toMatch(/SWEEP_ENABLED: \$\{\{ vars\.CI_E2E_SWEEP_ENABLED \}\}/);
     expect(body).toMatch(/\[ "\$SWEEP_ENABLED" = "true" \]/);
     expect(body).toMatch(/DRY_RUN=true/);
+  });
+
+  it('decides arming exactly as documented (the bash block, executed)', () => {
+    const body = sweep();
+    const start = body.indexOf('# arming:start');
+    const end = body.indexOf('# arming:end');
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const block = body
+      .slice(start, end)
+      .split('\n')
+      .map((l) => l.replace(/^ {10}/, ''))
+      .join('\n');
+    const decide = (env: Record<string, string>) =>
+      spawnSync('bash', ['-c', `${block}\necho "$DRY_RUN"`], { env: { PATH: process.env.PATH ?? '', ...env }, encoding: 'utf8' })
+        .stdout.trim();
+    expect(decide({ SWEEP_ENABLED: '', EVENT_NAME: 'schedule', INPUT_DRY_RUN: '' })).toBe('true');
+    expect(decide({ SWEEP_ENABLED: 'false', EVENT_NAME: 'schedule', INPUT_DRY_RUN: '' })).toBe('true');
+    expect(decide({ SWEEP_ENABLED: 'true', EVENT_NAME: 'schedule', INPUT_DRY_RUN: '' })).toBe('false');
+    expect(decide({ SWEEP_ENABLED: 'true', EVENT_NAME: 'workflow_dispatch', INPUT_DRY_RUN: 'true' })).toBe('true');
+    expect(decide({ SWEEP_ENABLED: 'true', EVENT_NAME: 'workflow_dispatch', INPUT_DRY_RUN: 'false' })).toBe('false');
+    expect(decide({ SWEEP_ENABLED: '', EVENT_NAME: 'workflow_dispatch', INPUT_DRY_RUN: 'false' })).toBe('true');
+  });
+
+  it('warns with the would-delete list while it is a dry run', () => {
+    expect(sweep()).toMatch(/::warning title=ci-e2e sweep \(dry run\)/);
   });
 });
