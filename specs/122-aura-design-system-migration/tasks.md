@@ -718,7 +718,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1213 [US12] Phone cards per board `Admin-broadcasts-mobile` (date + chip, subject, member, audience · recipients, full-width Review link; no checkbox, no inline Approve / Reject). Test: `queue-card-list`.
 - [x] T1214 [US12] Bulk bar on AURA `ActionBar` and the bulk-approve dialog on AURA `Dialog` + `RadioGroup`; requests, chunking, cap, toasts and undo unchanged. Test: `queue-bulk-action-bar`, `bulk-approve-confirm-dialog`, `queue-with-bulk`.
 - [x] T1215 [US12] Filters in the global pattern (AURA `FilterBar collapseBelow="sm"`, status Tags, member `FilterSelect`, `FilterDateRange`); hrefs unchanged. Test: `queue-filters-*`.
-- [ ] T1216 [US12] Review actions, approve, reject and clear-halt dialogs on AURA; bodies, toasts, undo and final focus unchanged. Test: `approve-dialog-*`, `reject-dialog`, `review-actions-halves`.
+- [x] T1216 [US12] Review actions, approve, reject and clear-halt dialogs on AURA; bodies, toasts, undo and final focus unchanged. Test: `approve-dialog-*`, `reject-dialog`, `review-actions-halves`.
 - [ ] T1217 [US12] Banners (SLA, overdue, halt, halt-unavailable, inline warning) as AURA `Alert`; page frame (PageHeader actions, Card), loading and error on AURA.
 - [x] T1218 [US12] The shared reason-confirmation dialog and typed-phrase field on AURA. Test: `tests/unit/components/shell/{reason-confirmation-dialog,typed-phrase-field}.test.tsx`.
 - [ ] T1219 [US12] Exit: `MIGRATED_PATHS` and a US12b ratchet block (controls move to US12c/d files); preview views; budgets; e2e selectors; gates; shots; UX and security reviews; relay R57.

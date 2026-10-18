@@ -3852,6 +3852,7 @@
           "sendNow": "Approve & send now",
           "schedule": "Approve & schedule"
         },
+        "decisionLabel": "When to send",
         "scheduleLabel": "Send at",
         "scheduleHelp": "At least 5 minutes from now. Time zone: Asia/Bangkok.",
         "schedulePreviewLabel": "Will be sent on:",

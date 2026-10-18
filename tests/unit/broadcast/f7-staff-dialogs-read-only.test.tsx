@@ -127,3 +127,21 @@ describe('an F7 staff dialog whose write the read-only proxy refused', () => {
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   });
 });
+
+describe('ClearHaltDialog — on AURA (spec 122 US12b)', () => {
+  it('opens from an AURA button; Confirm stays disabled until the member name is typed', async () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ClearHaltDialog memberId="22222222-2222-4222-8222-222222222222" memberDisplayName={COMPANY} />
+      </NextIntlClientProvider>,
+    );
+    const trigger = screen.getByRole('button', { name: B.haltBanner.clearAction });
+    expect(trigger).toHaveClass('aura-btn', 'aura-btn--touch');
+    fireEvent.click(trigger);
+    const dialog = await screen.findByRole('alertdialog');
+    const confirm = within(dialog).getByRole('button', { name: B.clearHaltDialog.confirm });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: COMPANY } });
+    expect(confirm).not.toBeDisabled();
+  });
+});

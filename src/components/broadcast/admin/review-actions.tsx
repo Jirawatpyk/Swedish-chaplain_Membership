@@ -12,8 +12,7 @@
  */
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { CheckCircle2, XCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { ApproveDialog } from './approve-dialog';
 import { RejectDialog } from './reject-dialog';
 
@@ -55,18 +54,18 @@ export function ReviewActions({
 
   return (
     // D3 UX hardening — Approve + Reject are primary decision actions
-    // (FR-011, FR-012); align to size="default" (h-9 / 36 px) per
-    // shadcn-customizations.md base + ux-standards § 19. Previously
-    // size="sm" (h-7) failed WCAG 2.5.5 minimum touch target on mobile.
+    // (FR-011, FR-012) at the default size, 44 px on touch (spec 122 US12b:
+    // AURA Buttons — Approve primary, Reject the danger outline).
     <div className="flex flex-wrap items-center gap-2">
       {showApprove ? (
         <>
           <Button
-            variant="default"
+            variant="primary"
+            touchHeight
+            icon="circle-check"
             ref={approveTriggerRef}
             onClick={() => setApproveOpen(true)}
           >
-            <CheckCircle2 className="mr-1 size-4" aria-hidden="true" />
             {t('confirm')}
           </Button>
           <ApproveDialog
@@ -81,11 +80,12 @@ export function ReviewActions({
       {showReject ? (
         <>
           <Button
-            variant="destructive-outline"
+            variant="danger-secondary"
+            touchHeight
+            icon="x"
             ref={rejectTriggerRef}
             onClick={() => setRejectOpen(true)}
           >
-            <XCircle className="mr-1 size-4" aria-hidden="true" />
             {tReject('confirm')}
           </Button>
           <RejectDialog

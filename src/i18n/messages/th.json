@@ -3852,6 +3852,7 @@
           "sendNow": "อนุมัติและส่งทันที",
           "schedule": "อนุมัติและนัดส่ง"
         },
+        "decisionLabel": "กำหนดเวลาส่ง",
         "scheduleLabel": "ส่งเวลา",
         "scheduleHelp": "อย่างน้อย 5 นาทีจากเวลาปัจจุบัน · เขตเวลา: Asia/Bangkok",
         "schedulePreviewLabel": "จะส่งในวันที่:",

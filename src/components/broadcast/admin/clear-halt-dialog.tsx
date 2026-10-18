@@ -25,18 +25,7 @@ import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
+import { Button, Dialog } from '@jirawatpyk/aura-react';
 import {
   TypedPhraseField,
   typedPhraseMatches,
@@ -120,53 +109,57 @@ export function ClearHaltDialog({
     });
   }
 
+  function onOpenChange(next: boolean): void {
+    if (!next) setReadOnlyRefusal(null);
+    setOpen(next);
+  }
+
+  // Board `Admin-broadcasts-clear-halt` (spec 122 US12b) — AURA `Dialog
+  // role="alertdialog"` opened from an AURA button, with the shared typed
+  // phrase. Focus on close follows `finalFocus` (the banner heading after a
+  // success; AURA's default, the trigger, otherwise).
   return (
-    <AlertDialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) setReadOnlyRefusal(null);
-        setOpen(next);
-      }}
-    >
-      <AlertDialogTrigger render={<Button variant="outline" size="sm" />}>
+    <>
+      <Button variant="secondary" size="sm" touchHeight onClick={() => setOpen(true)}>
         {tBanner('clearAction')}
-      </AlertDialogTrigger>
-      <AlertDialogContent finalFocus={finalFocus}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('title')}</AlertDialogTitle>
-          <AlertDialogDescription>{t('body')}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <TypedPhraseField
-          id="clear-halt-phrase"
-          label={t('phraseLabel', { phrase: memberDisplayName })}
-          phrase={memberDisplayName}
-          value={phrase}
-          onChange={setPhrase}
-          errorMessage={t('phraseError')}
-          disabled={pending}
-        />
-        {readOnlyRefusal !== null ? (
-          <InlineWarning
-            id={FORM_ERROR_ID}
-            title={tReadOnly('readOnlyMode')}
-            description={tReadOnly('readOnlyNothingChanged')}
+      </Button>
+      <Dialog
+        role="alertdialog"
+        open={open}
+        onClose={() => onOpenChange(false)}
+        finalFocus={() => finalFocus() || null}
+        title={t('title')}
+        description={t('body')}
+        footer={
+          <>
+            <Button variant="secondary" disabled={pending} onClick={() => onOpenChange(false)}>
+              {t('cancel')}
+            </Button>
+            <Button variant="primary" disabled={!phraseValid || pending} loading={pending} onClick={onConfirm}>
+              {t('confirm')}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          <TypedPhraseField
+            id="clear-halt-phrase"
+            label={t('phraseLabel', { phrase: memberDisplayName })}
+            phrase={memberDisplayName}
+            value={phrase}
+            onChange={setPhrase}
+            errorMessage={t('phraseError')}
+            disabled={pending}
           />
-        ) : null}
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>
-            {t('cancel')}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            disabled={!phraseValid || pending}
-            onClick={(e) => {
-              e.preventDefault();
-              onConfirm();
-            }}
-          >
-            {t('confirm')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          {readOnlyRefusal !== null ? (
+            <InlineWarning
+              id={FORM_ERROR_ID}
+              title={tReadOnly('readOnlyMode')}
+              description={tReadOnly('readOnlyNothingChanged')}
+            />
+          ) : null}
+        </div>
+      </Dialog>
+    </>
   );
 }

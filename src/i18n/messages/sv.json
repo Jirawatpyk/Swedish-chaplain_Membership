@@ -3852,6 +3852,7 @@
           "sendNow": "Godkänn och skicka nu",
           "schedule": "Godkänn och schemalägg"
         },
+        "decisionLabel": "När ska det skickas",
         "scheduleLabel": "Skicka",
         "scheduleHelp": "Minst 5 minuter från nu. Tidszon: Asia/Bangkok.",
         "schedulePreviewLabel": "Skickas:",
