@@ -106,14 +106,15 @@ describe('AudienceFilters — select triggers (cycle 11)', () => {
     expect(names).toContain(`${t.eligibleLabel}: ${t.eligible.on}`);
   });
 
-  it('the eligibility trigger sizes to content (min-w), never a fixed width', () => {
+  it('spec 122 US12a: the filters are AURA FilterSelects in a FilterBar that folds into a sheet on phones', () => {
+    // FR-035c (wrap, never clip) is AURA's FilterSelect sizing now; what is
+    // pinned here is that each value control is AURA's and the bar collapses.
     renderFilters();
-    const trigger = screen
-      .getAllByRole('combobox')
-      .find((el) => el.getAttribute('aria-label')?.startsWith(t.eligibleLabel));
-    expect(trigger).toBeDefined();
-    expect(trigger!.className).toContain('sm:min-w-52');
-    expect(trigger!.className).not.toMatch(/\bsm:w-52\b/);
+    const bar = screen.getByRole('region', { name: /filters/i });
+    expect(bar).toHaveClass('aura-filterbar');
+    for (const trigger of screen.getAllByRole('combobox')) {
+      expect(trigger.className).toContain('aura-filterselect');
+    }
   });
 });
 

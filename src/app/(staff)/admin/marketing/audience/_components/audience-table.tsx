@@ -11,8 +11,8 @@
  * column). No DoB, phone or any other `pii_sensitive` field, no download
  * (FR-035a).
  *
- * Responsive (FR-035c): the `Table` primitive scrolls horizontally inside
- * its own wrapper, `table-fixed` + an explicit <colgroup> pin the column
+ * Responsive (FR-035c): the AURA `Table` scrolls horizontally inside its own
+ * box (the `<table>`'s parent, which the e2e measures), `table-fixed` + an explicit <colgroup> pin the column
  * widths to the header (so the header does not shift every time a filter
  * changes the rows — same recipe as the members table; review M3), the
  * table's min-width is the column total (under `table-fixed` the browser
@@ -29,15 +29,7 @@
  */
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Badge } from '@/components/ui/badge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Badge, Table, TBody, Td, Th, THead, Tr } from '@jirawatpyk/aura-react';
 import { MarketingStateBadge } from '@/components/members/marketing-state-badge';
 import { MarketingSwitch } from '@/components/members/marketing-switch';
 import type { MarketingReason, MarketingState } from '@/modules/members';
@@ -116,12 +108,13 @@ export function AudienceTable({
 
   return (
     <Table
+      caption={t('tableCaption')}
+      captionHidden
       aria-label={t('tableCaption')}
       className="table-fixed"
       style={{ minWidth }}
       data-testid="marketing-audience-table"
     >
-      <caption className="sr-only">{t('tableCaption')}</caption>
       <colgroup>
         {columns.map((key) =>
           key === 'contact' ? (
@@ -131,79 +124,80 @@ export function AudienceTable({
           ),
         )}
       </colgroup>
-      <TableHeader>
-        <TableRow>
-          <TableHead scope="col" className="whitespace-normal">{t('columns.contact')}</TableHead>
-          <TableHead scope="col" className="whitespace-normal">{t('columns.state')}</TableHead>
-          {canMarketing && <TableHead scope="col" className="whitespace-normal">{t('columns.switch')}</TableHead>}
-          <TableHead scope="col" className="whitespace-normal">{t('columns.member')}</TableHead>
-          <TableHead scope="col" className="whitespace-normal">{t('columns.kind')}</TableHead>
-          <TableHead scope="col" className="whitespace-normal">{t('columns.memberStatus')}</TableHead>
-          <TableHead scope="col" className="whitespace-normal">{t('columns.lastChange')}</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
+      <THead>
+        <Tr>
+          <Th scope="col" className="whitespace-normal">{t('columns.contact')}</Th>
+          <Th scope="col" className="whitespace-normal">{t('columns.state')}</Th>
+          {canMarketing && <Th scope="col" className="whitespace-normal">{t('columns.switch')}</Th>}
+          <Th scope="col" className="whitespace-normal">{t('columns.member')}</Th>
+          <Th scope="col" className="whitespace-normal">{t('columns.kind')}</Th>
+          <Th scope="col" className="whitespace-normal">{t('columns.memberStatus')}</Th>
+          <Th scope="col" className="whitespace-normal">{t('columns.lastChange')}</Th>
+        </Tr>
+      </THead>
+      <TBody>
         {rows.map((row) => (
-          <TableRow key={row.contactId} data-contact-id={row.contactId} data-marketing-state={row.state}>
-            <TableCell className="whitespace-normal align-top">
+          <Tr key={row.contactId} data-contact-id={row.contactId} data-marketing-state={row.state}>
+            <Td className="whitespace-normal">
               <div className="font-medium">{row.contactName}</div>
-              <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{row.email}</div>
-            </TableCell>
-            <TableCell className="whitespace-normal align-top">
+              <div className="aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">{row.email}</div>
+            </Td>
+            <Td className="whitespace-normal">
               <div className="flex flex-col gap-1">
                 <MarketingStateBadge state={row.state} />
                 {row.reasons.length > 0 && (
                   // `role="list"` — Tailwind preflight strips list-style, and
                   // Safari/VoiceOver drop list semantics with it (a11y 12).
-                  <ul role="list" className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                  <ul role="list" className="aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">
                     {row.reasons.map((reason) => (
                       <li key={reason}>{tReason(reason)}</li>
                     ))}
                   </ul>
                 )}
               </div>
-            </TableCell>
+            </Td>
             {canMarketing && (
               // `whitespace-normal`: for a contact-owned opt-out the cell holds
               // a short note instead of a switch, and it must wrap.
-              <TableCell className="whitespace-normal align-top">
+              <Td className="whitespace-normal">
                 <MarketingSwitch
                   contactId={row.contactId}
                   contactName={row.contactName}
                   state={row.state}
                   leavesView={leavesView}
                 />
-              </TableCell>
+              </Td>
             )}
-            <TableCell className="whitespace-normal align-top">
+            <Td className="whitespace-normal">
               <Link
                 href={`/admin/members/${encodeURIComponent(row.memberId)}`}
-                className="font-medium text-primary underline-offset-4 [overflow-wrap:anywhere] hover:underline"
+                className="font-medium text-[var(--aura-fg-accent)] underline-offset-4 [overflow-wrap:anywhere] hover:underline"
               >
                 {row.companyName}
               </Link>
-            </TableCell>
-            <TableCell className="align-top">
-              <Badge variant={row.isPrimary ? 'default' : 'outline'}>
+            </Td>
+            <Td>
+              {/* The board's role pills: Primary solid, Secondary outline. */}
+              <Badge tone="neutral" variant={row.isPrimary ? 'solid' : 'outline'}>
                 {row.isPrimary ? t('kind.primary') : t('kind.secondary')}
               </Badge>
-            </TableCell>
-            <TableCell className="whitespace-normal align-top">
+            </Td>
+            <Td className="whitespace-normal">
               <div className="flex flex-wrap gap-1">
-                <Badge variant="outline">{t(`memberStatus.${row.memberStatus}`)}</Badge>
-                {row.memberHalted && <Badge variant="outline">{t('memberStatus.halted')}</Badge>}
-                {row.memberErased && <Badge variant="outline">{t('memberStatus.erased')}</Badge>}
+                <Badge tone="neutral" variant="outline">{t(`memberStatus.${row.memberStatus}`)}</Badge>
+                {row.memberHalted && <Badge tone="neutral" variant="outline">{t('memberStatus.halted')}</Badge>}
+                {row.memberErased && <Badge tone="neutral" variant="outline">{t('memberStatus.erased')}</Badge>}
               </div>
-            </TableCell>
-            <TableCell className="whitespace-normal align-top">
+            </Td>
+            <Td className="whitespace-normal">
               <div className="[overflow-wrap:anywhere]">{row.changedBy ?? '—'}</div>
               {row.changedAt !== null && (
-                <div className="text-xs text-muted-foreground">{row.changedAt}</div>
+                <div className="aura-text-caption text-[var(--aura-fg-secondary)]">{row.changedAt}</div>
               )}
-            </TableCell>
-          </TableRow>
+            </Td>
+          </Tr>
         ))}
-      </TableBody>
+      </TBody>
     </Table>
   );
 }

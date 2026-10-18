@@ -6,21 +6,14 @@
  * (e.g. a Neon read failure on the contacts ⋈ members join) renders a
  * recoverable, page-scoped error with a Retry CTA + the `error.digest` to
  * correlate with server logs — instead of the generic staff-shell boundary
- * (ux-standards § 4.3). Mirrors /admin/directory/error.tsx.
+ * (ux-standards § 4.3). Spec 122 US12a: the shared `RouteErrorPanel`, inside
+ * the same TableContainer as the audience page (check:layout).
  */
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertCircleIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { RouteErrorPanel } from '@/components/shell/route-error-panel';
 
 export default function MarketingError({
   error,
@@ -30,7 +23,6 @@ export default function MarketingError({
   reset: () => void;
 }): React.JSX.Element {
   const t = useTranslations('errors');
-  const tButtons = useTranslations('buttons');
 
   useEffect(() => {
     console.error('[marketing error boundary]', error);
@@ -39,20 +31,7 @@ export default function MarketingError({
   return (
     <TableContainer>
       <PageHeader title={t('generic')} />
-      <Card>
-        <CardHeader className="flex flex-row items-start gap-3">
-          <AlertCircleIcon className="size-6 text-destructive" aria-hidden />
-          <div>
-            <CardTitle>{t('generic')}</CardTitle>
-            <CardDescription>
-              {error.digest ? t('errorId', { id: error.digest }) : null}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Button onClick={reset}>{tButtons('retry')}</Button>
-        </CardContent>
-      </Card>
+      <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </TableContainer>
   );
 }

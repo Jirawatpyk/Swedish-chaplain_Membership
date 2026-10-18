@@ -7,12 +7,11 @@
  * preset action is sized for the REAL button, which wraps to two lines in SV.
  */
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent } from '@/components/ui/card';
-import { FilterBar } from '@/components/ui/filter-bar';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card } from '@jirawatpyk/aura-react/server';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { AudienceTableSkeleton } from './_components/audience-table-skeleton';
+import { AudienceFiltersSkeleton, AudienceTableSkeleton } from './_components/audience-table-skeleton';
 
 export default async function Loading() {
   const t = await getTranslations('admin.marketing.audience');
@@ -21,18 +20,13 @@ export default async function Loading() {
       <PageHeader
         title={t('title')}
         subtitle={t('subtitle')}
-        actions={<Skeleton className="h-auto min-h-9 w-72" />}
+        actions={<SkeletonBlock className="h-11 w-72 sm:h-9" />}
       />
       <Card>
-        <CardContent className="flex flex-col gap-4">
-          <FilterBar aria-hidden>
-            <Skeleton className="h-9 sm:flex-1" />
-            <Skeleton className="h-9 sm:w-44" />
-            <Skeleton className="h-9 sm:w-48" />
-            <Skeleton className="h-9 sm:w-52" />
-          </FilterBar>
+        <div className="flex flex-col gap-4">
+          <AudienceFiltersSkeleton />
           <AudienceTableSkeleton />
-        </CardContent>
+        </div>
       </Card>
     </TableContainer>
   );

@@ -55,10 +55,19 @@ function renderTable(canMarketing = false) {
 afterEach(() => cleanup());
 
 describe('AudienceTable — structure (cycle 11)', () => {
-  it('names the scrollable region in the viewer locale, never "Data table"', () => {
+  it('names the table in the viewer locale, never "Data table"', () => {
     renderTable();
-    expect(screen.getByRole('region', { name: t.tableCaption })).toBeInTheDocument();
+    // AURA names its scroll region only once the table overflows (no layout
+    // in jsdom); the table itself carries the caption name either way.
+    expect(screen.getByRole('table', { name: t.tableCaption })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Data table' })).toBeNull();
+  });
+
+  it('spec 122 US12a: the table and its badges are AURA', () => {
+    renderTable();
+    expect(screen.getByRole('table')).toHaveClass('aura-tbl');
+    expect(screen.getByText(t.kind.secondary)).toHaveClass('aura-badge');
+    expect(screen.getByText(t.memberStatus.active)).toHaveClass('aura-badge');
   });
 
   it('pins column widths with table-fixed + a colgroup (6 cols read-only, 7 with the switch)', () => {
@@ -80,7 +89,7 @@ describe('AudienceTable — structure (cycle 11)', () => {
   it('the member link is visibly a link at rest; the email wraps anywhere', () => {
     renderTable();
     const link = screen.getByRole('link', { name: 'Acme AB' });
-    expect(link.className).toContain('text-primary');
+    expect(link.className).toContain('text-[var(--aura-fg-accent)]');
     const email = screen.getByText('jane.doe@example.com');
     expect(email.className).not.toContain('break-all');
     expect(email.className).toContain('[overflow-wrap:anywhere]');

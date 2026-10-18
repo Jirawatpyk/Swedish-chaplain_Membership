@@ -7,8 +7,11 @@
  * widths mirroring `AudienceTable`'s <colgroup>, and the 7-column (switch)
  * layout BY DEFAULT — admin / super_admin / marketing are the common case;
  * the read-only manager (6 columns) is the exception and passes `false`.
+ *
+ * Spec 122 US12a: drawn with the shared `SkeletonBlock`, and the filter
+ * bar's placeholder lives here too, in the AURA bar's shape.
  */
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
 /**
  * px — mirrors `AUDIENCE_COLUMN_WIDTHS` in audience-table.tsx (a literal, not
@@ -30,7 +33,7 @@ export function AudienceTableSkeleton({
     .join(' ');
   return (
     <div className="flex flex-col gap-4" aria-hidden>
-      <Skeleton className="h-5 w-56" />
+      <SkeletonBlock className="h-5 w-56" />
       <div className="overflow-x-auto">
         <div
           data-slot="skeleton-body"
@@ -43,7 +46,7 @@ export function AudienceTableSkeleton({
             style={{ gridTemplateColumns }}
           >
             {widths.map((_, i) => (
-              <Skeleton key={`h-${i}`} className="h-3 w-20" />
+              <SkeletonBlock key={`h-${i}`} className="h-3 w-20" />
             ))}
           </div>
           {Array.from({ length: rows }, (_, r) => (
@@ -54,13 +57,29 @@ export function AudienceTableSkeleton({
               style={{ gridTemplateColumns }}
             >
               {widths.map((_, c) => (
-                <Skeleton key={`c-${r}-${c}`} className="h-5" />
+                <SkeletonBlock key={`c-${r}-${c}`} className="h-5" />
               ))}
             </div>
           ))}
         </div>
       </div>
-      <Skeleton className="h-9 w-72 self-end" />
+      <SkeletonBlock className="h-9 w-72 self-end" />
+    </div>
+  );
+}
+
+/**
+ * The AURA filter bar's shape while it loads: on a phone the search and the
+ * "Filters" button (44px); from 640px the search and the three filters (36px).
+ */
+export function AudienceFiltersSkeleton() {
+  return (
+    <div className="flex flex-wrap items-center gap-2" aria-hidden>
+      <SkeletonBlock className="h-11 min-w-0 flex-1 sm:h-9" />
+      <SkeletonBlock className="h-11 w-28 sm:hidden" />
+      <SkeletonBlock className="h-9 w-44 max-sm:hidden" />
+      <SkeletonBlock className="h-9 w-48 max-sm:hidden" />
+      <SkeletonBlock className="h-9 w-52 max-sm:hidden" />
     </div>
   );
 }

@@ -47,13 +47,10 @@ import { PageHeader } from '@/components/layout/page-header';
 import { TablePagination } from '@/components/layout/table-pagination';
 import { EmptyState } from '@/components/shell/empty-state';
 import { ReadOnlyBanner } from '@/components/shell/read-only-banner';
-import { Card, CardContent } from '@/components/ui/card';
-import { FilterBar } from '@/components/ui/filter-bar';
-import { Skeleton } from '@/components/ui/skeleton';
-import { buttonVariants } from '@/components/ui/button';
+import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { AudienceFilters } from './_components/audience-filters';
 import { AudienceTable, type AudienceTableRow } from './_components/audience-table';
-import { AudienceTableSkeleton } from './_components/audience-table-skeleton';
+import { AudienceFiltersSkeleton, AudienceTableSkeleton } from './_components/audience-table-skeleton';
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations('admin.marketing.audience');
@@ -88,11 +85,11 @@ export default async function MarketingAudiencePage({
           <Link
             href={`${AUDIENCE_HREF}?${MARKETING_AUDIENCE_PREFLIGHT_QUERY}`}
             // A header action carrying a TRANSLATED label must be allowed to
-            // wrap: `buttonVariants` is `whitespace-nowrap`, and the SV string
-            // is wider than a 320-px content box (FR-035c / FR-050a).
+            // wrap: the SV string is wider than a 320-px content box
+            // (FR-035c / FR-050a).
             className={cn(
-              buttonVariants({ variant: 'outline' }),
-              'h-auto min-h-9 whitespace-normal text-center',
+              buttonClass({ variant: 'secondary', touchHeight: true }),
+              'h-auto whitespace-normal text-center',
             )}
             aria-current={presetActive ? 'page' : undefined}
             data-testid="audience-preflight-preset"
@@ -102,28 +99,19 @@ export default async function MarketingAudiencePage({
         }
       />
       <Card>
-        <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
           {!canMarketing && (
             <ReadOnlyBanner data-testid="audience-read-only">{t('readOnly')}</ReadOnlyBanner>
           )}
           {/* `useSearchParams` in the filters needs a Suspense boundary so the
               route keeps server rendering. */}
-          <Suspense
-            fallback={
-              <FilterBar aria-hidden>
-                <Skeleton className="h-9 sm:flex-1" />
-                <Skeleton className="h-9 sm:w-44" />
-                <Skeleton className="h-9 sm:w-48" />
-                <Skeleton className="h-9 sm:w-52" />
-              </FilterBar>
-            }
-          >
+          <Suspense fallback={<AudienceFiltersSkeleton />}>
             <AudienceFilters />
           </Suspense>
           <Suspense fallback={<AudienceTableSkeleton withSwitch={canMarketing} />}>
             <AudienceBody query={query} canMarketing={canMarketing} />
           </Suspense>
-        </CardContent>
+        </div>
       </Card>
     </TableContainer>
   );
@@ -212,7 +200,7 @@ async function AudienceBody({
         <p
           id={AUDIENCE_COUNT_ID}
           tabIndex={-1}
-          className="text-sm text-muted-foreground outline-none"
+          className="aura-text-body text-[var(--aura-fg-secondary)] outline-none"
           {...(total > 0 ? { role: 'status', 'aria-live': 'polite' as const } : {})}
           data-testid="audience-count"
         >
@@ -221,14 +209,14 @@ async function AudienceBody({
       )}
 
       {degraded && (
-        <div
+        <Alert
+          tone="warning"
           role="note"
-          className="rounded-md border border-warning bg-warning-surface p-3 text-sm text-warning"
+          title={t('empty.unavailable.title')}
           data-testid="audience-degraded"
         >
-          <p className="font-medium">{t('empty.unavailable.title')}</p>
-          <p>{t('empty.unavailable.description')}</p>
-        </div>
+          {t('empty.unavailable.description')}
+        </Alert>
       )}
 
       {degradedEmpty ? null : total === 0 ? (
@@ -245,7 +233,7 @@ async function AudienceBody({
               // empty page (review code M1).
               <Link
                 href={`${AUDIENCE_HREF}?eligible=0`}
-                className={buttonVariants({ variant: 'outline', size: 'sm' })}
+                className={buttonClass({ variant: 'secondary', touchHeight: true })}
               >
                 {t('empty.filtered.cta')}
               </Link>
