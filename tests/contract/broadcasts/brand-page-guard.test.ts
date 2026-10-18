@@ -21,14 +21,19 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { features, requirePagePermission, getBrandSettings, makeBrandSettingsDeps } = vi.hoisted(
-  () => ({
-    features: { f7Broadcasts: true },
-    requirePagePermission: vi.fn(),
-    getBrandSettings: vi.fn(),
-    makeBrandSettingsDeps: vi.fn(),
-  }),
-);
+const {
+  features,
+  requirePagePermission,
+  getBrandSettings,
+  makeBrandSettingsDeps,
+  resolveTenantDisplayName,
+} = vi.hoisted(() => ({
+  features: { f7Broadcasts: true },
+  requirePagePermission: vi.fn(),
+  getBrandSettings: vi.fn(),
+  makeBrandSettingsDeps: vi.fn(),
+  resolveTenantDisplayName: vi.fn(),
+}));
 
 vi.mock('next/navigation', () => ({
   notFound: () => {
@@ -60,6 +65,11 @@ vi.mock('@/lib/tenant-context', () => ({
 vi.mock('@/lib/broadcast-brand-deps', () => ({
   makeBrandSettingsDeps: (...args: unknown[]) => makeBrandSettingsDeps(...args),
 }));
+// Spec 122 US12a — the e-mail preview card names the chamber the way the
+// e-mail does. A read too, so it must come after the gate like the brand read.
+vi.mock('@/lib/broadcasts-route-helpers', () => ({
+  resolveTenantDisplayName: (...args: unknown[]) => resolveTenantDisplayName(...args),
+}));
 vi.mock('@/modules/broadcasts', () => ({
   getBrandSettings: (...args: unknown[]) => getBrandSettings(...args),
 }));
@@ -81,6 +91,7 @@ beforeEach(() => {
   requirePagePermission.mockReset().mockResolvedValue({ user: { id: 'u-1', role: 'admin' } });
   makeBrandSettingsDeps.mockReset().mockReturnValue({ repo: {}, audit: {}, logoUrl: {} });
   getBrandSettings.mockReset().mockResolvedValue(VIEW);
+  resolveTenantDisplayName.mockReset().mockResolvedValue('Thai-Swedish Chamber of Commerce');
 });
 
 describe('F119 T028 — Brand page permission gate', () => {
@@ -102,12 +113,14 @@ describe('F119 T028 — Brand page permission gate', () => {
     expect(requirePagePermission).toHaveBeenCalledWith('settings.broadcasts');
     expect(getBrandSettings).not.toHaveBeenCalled();
     expect(makeBrandSettingsDeps).not.toHaveBeenCalled();
+    expect(resolveTenantDisplayName).not.toHaveBeenCalled();
   });
 
   it('FEATURE_F7_BROADCASTS off → notFound(), and no brand read', async () => {
     features.f7Broadcasts = false;
     await expect(BrandSettingsPage()).rejects.toThrow('NEXT_NOT_FOUND');
     expect(getBrandSettings).not.toHaveBeenCalled();
+    expect(resolveTenantDisplayName).not.toHaveBeenCalled();
   });
 
   it('admin → renders, and asks the use case for a NON-manageable logo href', async () => {
@@ -120,6 +133,7 @@ describe('F119 T028 — Brand page permission gate', () => {
       // "ask an administrator" hint, not a Manage link.
       canManageInvoiceSettings: false,
     });
+    expect(resolveTenantDisplayName).toHaveBeenCalledWith('tenant-a');
   });
 
   it('super_admin → the use case is told the logo IS manageable', async () => {
