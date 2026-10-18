@@ -73,7 +73,7 @@ describe('AudienceTable — structure (cycle 11)', () => {
   it('pins column widths with table-fixed + a colgroup (6 cols read-only, 7 with the switch)', () => {
     const { container, unmount } = renderTable(false);
     const table = container.querySelector('table');
-    expect(table?.className).toContain('table-fixed');
+    expect(table?.className).toContain('sm:table-fixed');
     expect(container.querySelectorAll('colgroup > col')).toHaveLength(6);
     unmount();
     const withSwitch = renderTable(true);
@@ -147,6 +147,25 @@ function contentWidthAt(viewport: number): number {
   return viewport - sidebarWidth - 2 * pagePadding - 2 * cardPadding - SCROLLBAR;
 }
 
+describe('AudienceTable — phone cards (spec 122 US12a, UX M3)', () => {
+  it('stacks into AURA cards below 640 px: contact is the title, the switch the action', () => {
+    renderTable(true);
+    const table = screen.getByRole('table');
+    expect(table).toHaveClass('aura-tbl--stack-sm');
+    const row = table.querySelector('[data-contact-id]');
+    expect(row?.querySelector('[data-card="title"]')).toHaveTextContent('Jane Doe');
+    expect(row?.querySelector('[data-card="action"]')?.querySelector('[role="switch"]')).not.toBeNull();
+  });
+
+  it('fixed layout and the min-width apply from sm up only, so a card never scrolls sideways', () => {
+    const { container } = renderTable(true);
+    const table = container.querySelector<HTMLElement>('table')!;
+    expect(table.style.minWidth).toBe('');
+    expect(table.className).not.toMatch(/(^|\s)table-fixed/);
+    expect(table.className).toContain('sm:min-w-[var(--audience-min-w)]');
+  });
+});
+
 describe('AudienceTable — fits the staff content area at 1440 px', () => {
   it('the budget is read from real tokens (positive control)', () => {
     // 1440 − 256 sidebar − 2×24 page − 2×24 card − 16 scrollbar.
@@ -156,7 +175,7 @@ describe('AudienceTable — fits the staff content area at 1440 px', () => {
   it.each([true, false])('canMarketing=%s → min-width fits without horizontal scroll', (canMarketing) => {
     const { container } = renderTable(canMarketing);
     const table = container.querySelector<HTMLElement>('table');
-    const minWidth = Number.parseFloat(table?.style.minWidth ?? '');
+    const minWidth = Number.parseFloat(table?.style.getPropertyValue('--audience-min-w') ?? '');
     expect(Number.isFinite(minWidth)).toBe(true);
     expect(minWidth).toBeLessThanOrEqual(contentWidthAt(1440));
   });

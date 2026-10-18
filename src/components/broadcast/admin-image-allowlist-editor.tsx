@@ -33,6 +33,7 @@ import { useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, Table, TBody, Td, Th, THead, Tr, TextField } from '@jirawatpyk/aura-react';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
+import { FIELD_BOX_OFFSET_SM } from '@/components/shell/field-box-offset';
 import { toast } from '@/lib/toast';
 import { useSurvivingTargetFinalFocus } from '@/components/broadcast/unmounting-trigger-final-focus';
 
@@ -160,9 +161,8 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
   return (
     <div className="flex flex-col gap-[var(--aura-space-6)]">
       {/* Field + Add on one row from 640px. The button drops by the field
-          label's line (AURA's `.aura-text-label`, 13px × 1.4) plus the
-          field's 6px label gap, so it sits level with the input box and
-          the hint or error below never moves it. */}
+          label's line (`FIELD_BOX_OFFSET_SM`), so it sits level with the
+          input box and the hint or error below never moves it. */}
       <form
         className="flex flex-col gap-2 sm:flex-row sm:items-start"
         onSubmit={(e) => {
@@ -197,7 +197,7 @@ export function AdminImageAllowlistEditor({ initial }: Props): React.ReactElemen
           loading={isPending}
           aria-busy={isPending}
           touchHeight
-          className="shrink-0 sm:mt-[calc(max(13px,0.8125rem)*1.4+6px)]"
+          className={`shrink-0 ${FIELD_BOX_OFFSET_SM}`}
         >
           {t('addButton')}
         </Button>

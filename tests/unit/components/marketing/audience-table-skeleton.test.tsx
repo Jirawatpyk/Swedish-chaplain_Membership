@@ -57,3 +57,20 @@ describe('AudienceTableSkeleton — matches the real table box (cycle 14)', () =
     expect(header!.style.gridTemplateColumns.startsWith('minmax(')).toBe(true);
   });
 });
+
+describe('AudienceTableSkeleton — phone cards (spec 122 US12a, UX M3 / L6)', () => {
+  it('below 640 px it draws contact cards; the table shape shows from sm up', () => {
+    const { container } = render(<AudienceTableSkeleton />);
+    const cards = container.querySelectorAll('[data-skeleton="audience-card"]');
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) expect(card.parentElement).toHaveClass('sm:hidden');
+    expect(container.querySelector('[data-slot="skeleton-body"]')?.parentElement).toHaveClass('max-sm:hidden');
+  });
+
+  it('rules use the AURA border token, not the legacy bridge colour', () => {
+    const { container } = render(<AudienceTableSkeleton />);
+    for (const el of container.querySelectorAll('[data-slot="skeleton-row"], [data-slot="skeleton-header"]')) {
+      expect(el).toHaveClass('border-[var(--aura-border-default)]');
+    }
+  });
+});

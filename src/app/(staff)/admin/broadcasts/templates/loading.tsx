@@ -15,7 +15,9 @@ import {
  * U12 (#400 PR-B) — matches `page.tsx` + `AdminTemplateLibrary`: the New
  * template button sits in the PageHeader's actions (the skeleton used to draw a
  * separate button row the page does not have), then the card with the three
- * filter pills and the table rows.
+ * filter pills and the table rows. Below 640 px the library stacks into
+ * cards (UX M1), so the skeleton draws card blocks there — title and badge,
+ * two pairs of field lines, Edit — and the rows from `sm` up.
  */
 export default async function Loading() {
   const t = await getTranslations('admin.broadcasts.templates');
@@ -38,7 +40,28 @@ export default async function Loading() {
               <SkeletonBlock data-skeleton="template-filter-pill" className="h-9 w-20" />
               <SkeletonBlock data-skeleton="template-filter-pill" className="h-9 w-32" />
             </div>
-            <div className="space-y-0">
+            <div className="flex flex-col gap-[var(--aura-space-3)] sm:hidden">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  data-skeleton="template-card"
+                  className="flex flex-col gap-3 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)]"
+                >
+                  <div className="flex items-center gap-2">
+                    <SkeletonBlock className="h-4 w-2/5" />
+                    <SkeletonBlock className="h-5 w-14" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                    <SkeletonBlock className="h-3 w-16" />
+                    <SkeletonBlock className="h-3 w-12" />
+                    <SkeletonBlock className="h-3 w-20" />
+                    <SkeletonBlock className="h-3 w-16" />
+                  </div>
+                  <SkeletonBlock className="h-11 w-full" />
+                </div>
+              ))}
+            </div>
+            <div data-skeleton="template-rows" className="space-y-0 max-sm:hidden">
               {[0, 1, 2, 3, 4].map((i) => (
                 <div
                   key={i}

@@ -618,6 +618,12 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - the brand board's "How it looks in an E-Blast" preview (the form has no preview today);
   - the audience board's four labelled filter fields (the global filter pattern instead, above).
 - **The audience page's presentation moves to `_components/audience-view.tsx`** (`AudienceFrame`, `AudienceResults`) so the preview harness can render it; the page keeps the guards, parsing and reads, and its own `TableContainer` (check:layout).
+- **UX review (enterprise-ux-designer: ship with follow-ups, no HIGH), applied in US12a:**
+  - **Audience rows become cards on phones** (maintainer, 18 Oct). Below 640 px each contact is an AURA stacked card (contact as the title, the switch as the action, every other column a labelled field), as the board draws it. From 640 px it is the table as before; its fixed layout and min-width apply from `sm` up only. This amends spec 108 FR-035c, and e2e test 6 now asserts that nothing scrolls sideways at 320 px.
+  - Templates: the subject wraps on phone cards instead of being cut; the visible count sits beside the pills (aria-hidden, the polite status stays the one announcement); the Starter badge's fuller name is sr-only text, not an `aria-label` on a span; the loading skeleton draws cards below 640 px.
+  - Brand: the colour field and its swatch stay side by side at every width; the swatch uses `--aura-border-control`; Save is full width on phones.
+  - The label offset that sets a control level with an AURA field's box is one shared constant (`src/components/shell/field-box-offset.ts`).
+  - Not changed: the invalid colour border (AURA's `error` would move the hint Save points at), and the duplicated page/card title on the settings pages (it predates this PR).
 
 ## User Scenarios & Testing *(mandatory)*
 

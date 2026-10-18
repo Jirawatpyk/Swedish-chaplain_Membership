@@ -12,8 +12,9 @@
  *   3. the FR-027a pre-flight preset lists only secondaries currently on;
  *   4. axe-core WCAG 2.1/2.2 AA on the page;
  *   5. EN / TH / SV render without key leaks;
- *   6. 320 px: the table scrolls inside its container, never the page, and
- *      the switch stays reachable at ≥ 24×24 px (FR-035c);
+ *   6. 320 px: each contact is a card (spec 122 US12a), so neither the page
+ *      nor the table box scrolls sideways, and the switch stays reachable at
+ *      ≥ 24×24 px (FR-035c);
  *   6b. 1440 px (staff sidebar expanded): the table fits its content box —
  *      no horizontal scroll in any locale;
  *   7. member detail: the primary badge descriptor, the state badge, and the
@@ -165,7 +166,7 @@ test.describe('108 PR-D — Marketing audience page @a11y @i18n', () => {
     });
   }
 
-  test('6. 320 px in EVERY locale: container scroll only, switch reachable at ≥ 24×24 px (FR-035c / FR-050a)', async ({ page, context }) => {
+  test('6. 320 px in EVERY locale: contact cards, no sideways scroll, switch reachable at ≥ 24×24 px (FR-035c / FR-050a)', async ({ page, context }) => {
     await page.setViewportSize({ width: 320, height: 720 });
     await signInAsMarketing(page);
     // The SV preset label is +28 % longer than EN — an EN-only reflow check
@@ -183,13 +184,16 @@ test.describe('108 PR-D — Marketing audience page @a11y @i18n', () => {
     await page.goto(`${PAGE}${FIXTURE_QUERY}`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByTestId('marketing-audience-table')).toBeVisible();
 
+    // Spec 122 US12a (maintainer, 18 Oct): below 640 px each contact is an
+    // AURA stacked card, so the table box no longer scrolls sideways either.
+    await expect(page.getByTestId('marketing-audience-table')).toHaveClass(/aura-tbl--stack-sm/);
     const containerScrolls = await page
       .getByTestId('marketing-audience-table')
       .evaluate((table) => {
         const wrapper = table.parentElement;
-        return wrapper !== null && wrapper.scrollWidth > wrapper.clientWidth;
+        return wrapper !== null && wrapper.scrollWidth > wrapper.clientWidth + 1;
       });
-    expect(containerScrolls, 'the table scrolls inside its own container').toBe(true);
+    expect(containerScrolls, 'a contact card never scrolls sideways').toBe(false);
 
     const sw = rowFor(page, F.secondaryOn.contactId).getByRole('switch');
     await sw.scrollIntoViewIfNeeded();

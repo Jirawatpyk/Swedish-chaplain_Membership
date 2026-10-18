@@ -11,13 +11,16 @@
  * column). No DoB, phone or any other `pii_sensitive` field, no download
  * (FR-035a).
  *
- * Responsive (FR-035c): the AURA `Table` scrolls horizontally inside its own
- * box (the `<table>`'s parent, which the e2e measures), `table-fixed` + an explicit <colgroup> pin the column
- * widths to the header (so the header does not shift every time a filter
- * changes the rows — same recipe as the members table; review M3), the
- * table's min-width is the column total (under `table-fixed` the browser
- * would otherwise SHRINK columns to fit), and contact + state (+ switch) are
- * the FIRST columns so they stay in view at 320 px. Long SV/TH labels wrap
+ * Responsive (FR-035c, amended by spec 122 US12a): below 640 px each contact
+ * is an AURA stacked card, as the board draws it — contact as the title, the
+ * switch as the action, every other column a labelled field — so nothing
+ * scrolls sideways on a phone. From 640 px it is the table: `table-fixed` + an
+ * explicit <colgroup> pin the column widths to the header (so the header does
+ * not shift every time a filter changes the rows — same recipe as the members
+ * table; review M3), the table's min-width is the column total (under
+ * `table-fixed` the browser would otherwise SHRINK columns to fit), and the
+ * box (the `<table>`'s parent, which the e2e measures) scrolls only if it
+ * must. Both apply from `sm` up only. Long SV/TH labels wrap
  * (`whitespace-normal`).
  *
  * Width budget: at a 1440-px viewport the staff content box is ~1,072 px
@@ -27,6 +30,7 @@
  * and Member, the reason lines and the last change wrap instead of widening
  * their columns.
  */
+import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Badge, Table, TBody, Td, Th, THead, Tr } from '@jirawatpyk/aura-react';
@@ -111,8 +115,10 @@ export function AudienceTable({
       caption={t('tableCaption')}
       captionHidden
       aria-label={t('tableCaption')}
-      className="table-fixed"
-      style={{ minWidth }}
+      stackBelow="sm"
+      stackStyle="cards"
+      className="sm:table-fixed sm:min-w-[var(--audience-min-w)]"
+      style={{ '--audience-min-w': `${minWidth}px` } as CSSProperties}
       data-testid="marketing-audience-table"
     >
       <colgroup>
@@ -138,7 +144,7 @@ export function AudienceTable({
       <TBody>
         {rows.map((row) => (
           <Tr key={row.contactId} data-contact-id={row.contactId} data-marketing-state={row.state}>
-            <Td className="whitespace-normal">
+            <Td card="title" className="whitespace-normal">
               <div className="font-medium">{row.contactName}</div>
               <div className="aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">{row.email}</div>
             </Td>
@@ -159,7 +165,7 @@ export function AudienceTable({
             {canMarketing && (
               // `whitespace-normal`: for a contact-owned opt-out the cell holds
               // a short note instead of a switch, and it must wrap.
-              <Td className="whitespace-normal">
+              <Td card="action" className="whitespace-normal">
                 <MarketingSwitch
                   contactId={row.contactId}
                   contactName={row.contactName}

@@ -18,6 +18,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { toast } from '@/lib/toast';
 import { BrandSettingsForm } from '@/components/broadcast/brand/brand-settings-form';
+import { FIELD_BOX_OFFSET } from '@/components/shell/field-box-offset';
 
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -134,6 +135,21 @@ describe('BrandSettingsForm — live contrast readout', () => {
 });
 
 describe('BrandSettingsForm — postal address', () => {
+  it('UX M4/M5: the swatch uses the control border and sits beside the field at every width', () => {
+    renderForm();
+    const picker = screen.getByLabelText(/pick a colour|colour picker/i, { selector: 'input[type="color"]' });
+    expect(picker).toHaveClass('border-[var(--aura-border-control)]');
+    expect(picker.className).toContain(FIELD_BOX_OFFSET);
+    expect(picker.className).not.toMatch(/(^|\s)sm:mt-/);
+    expect(picker.parentElement).toHaveClass('flex', 'items-start');
+    expect(picker.parentElement).not.toHaveClass('flex-col');
+  });
+
+  it('UX L5: Save is full width on phones', () => {
+    renderForm();
+    expect(screen.getByRole('button', { name: /^save/i })).toHaveClass('max-sm:w-full');
+  });
+
   it('counts the characters against the 300 bound', () => {
     renderForm({ postalAddress: 'abc' });
     expect(screen.getByTestId('brand-address-counter')).toHaveTextContent('3');

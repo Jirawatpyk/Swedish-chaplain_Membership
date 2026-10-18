@@ -49,6 +49,7 @@ import { useId, useMemo, useState, useTransition } from 'react';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { useTranslations } from 'next-intl';
 import { Alert, Button, Card, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { FIELD_BOX_OFFSET } from '@/components/shell/field-box-offset';
 import { toast } from '@/lib/toast';
 import { TRANSPARENCY_CHECKER_STYLE } from '@/components/shell/transparency-checker';
 import {
@@ -196,10 +197,10 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
       <UnsavedChangesGuard armed={unsavedChanges} />
       <Card title={t('colour.heading')} description={t('colour.description')} headingLevel={2}>
         <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+          <div className="flex items-start gap-2">
             <TextField
               id={colourFieldId}
-              className="sm:max-w-40"
+              className="min-w-0 flex-1 sm:max-w-40 sm:flex-none"
               label={t('colour.label')}
               value={colour}
               onChange={(e) => setColour(e.target.value)}
@@ -214,14 +215,15 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
             {/* Keyboard-operable colour picker beside the text field — the
                 text field stays the source of truth so a screen-reader user
                 never depends on the swatch. It drops by the field label's
-                line (13px × 1.4) + 6px gap to sit level with the input. */}
+                line to sit level with the input, beside it at every width
+                (UX M5). */}
             <input
               id={pickerFieldId}
               type="color"
               aria-label={t('colour.pickerLabel')}
               value={normalisedColour ?? view.defaults.primaryColor}
               onChange={(e) => setColour(e.target.value)}
-              className="h-11 w-14 shrink-0 cursor-pointer rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-transparent p-1 sm:mt-[calc(max(13px,0.8125rem)*1.4+6px)] sm:h-9"
+              className={`h-11 w-14 shrink-0 cursor-pointer rounded-[var(--aura-radius-md)] border border-[var(--aura-border-control)] bg-transparent p-1 sm:h-9 ${FIELD_BOX_OFFSET}`}
             />
           </div>
           <p id={colourHintId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
@@ -360,6 +362,7 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
           type="submit"
           variant="primary"
           touchHeight
+          className="max-sm:w-full"
           disabled={!canSave}
           {...(saveBlockedReasonIds !== ''
             ? { 'aria-describedby': saveBlockedReasonIds }

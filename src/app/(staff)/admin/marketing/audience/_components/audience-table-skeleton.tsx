@@ -9,7 +9,9 @@
  * the read-only manager (6 columns) is the exception and passes `false`.
  *
  * Spec 122 US12a: drawn with the shared `SkeletonBlock`, and the filter
- * bar's placeholder lives here too, in the AURA bar's shape.
+ * bar's placeholder lives here too, in the AURA bar's shape. Below 640 px the
+ * table stacks into contact cards (UX M3), so the skeleton draws cards there
+ * and the table shape from `sm` up; rules use the AURA border token (L6).
  */
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
@@ -34,7 +36,29 @@ export function AudienceTableSkeleton({
   return (
     <div className="flex flex-col gap-4" aria-hidden>
       <SkeletonBlock className="h-5 w-56" />
-      <div className="overflow-x-auto">
+      <div className="flex flex-col gap-[var(--aura-space-3)] sm:hidden">
+        {Array.from({ length: 5 }, (_, r) => (
+          <div
+            key={`card-${r}`}
+            data-skeleton="audience-card"
+            className="flex flex-col gap-3 rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)]"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <SkeletonBlock className="h-4 w-2/5" />
+                <SkeletonBlock className="h-3 w-3/5" />
+              </div>
+              {withSwitch ? <SkeletonBlock className="h-7 w-12" /> : null}
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+              {Array.from({ length: 6 }, (_, c) => (
+                <SkeletonBlock key={`card-${r}-${c}`} className="h-3 w-20" />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="overflow-x-auto max-sm:hidden">
         <div
           data-slot="skeleton-body"
           className="w-full"
@@ -42,7 +66,7 @@ export function AudienceTableSkeleton({
         >
           <div
             data-slot="skeleton-header"
-            className="grid h-[var(--table-row-height)] items-center gap-x-4 border-b"
+            className="grid h-[var(--table-row-height)] items-center gap-x-4 border-b border-[var(--aura-border-default)]"
             style={{ gridTemplateColumns }}
           >
             {widths.map((_, i) => (
@@ -53,7 +77,7 @@ export function AudienceTableSkeleton({
             <div
               key={`r-${r}`}
               data-slot="skeleton-row"
-              className="grid h-[var(--table-row-height)] items-center gap-x-4 border-b"
+              className="grid h-[var(--table-row-height)] items-center gap-x-4 border-b border-[var(--aura-border-default)]"
               style={{ gridTemplateColumns }}
             >
               {widths.map((_, c) => (

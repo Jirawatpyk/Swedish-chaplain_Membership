@@ -136,10 +136,25 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
   it('Starter badge renders next to seeded row names', () => {
     renderLibrary();
     const tbody = within(screen.getByRole('table'));
-    // Seeded rows have a Starter badge labelled "Seeded by the platform"
-    expect(
-      tbody.getAllByLabelText(/seeded by the platform/i),
-    ).toHaveLength(3);
+    // Seeded rows have a Starter badge; its sr-only text says
+    // "Seeded by the platform" (a span cannot carry an aria-label: L3).
+    expect(tbody.getAllByText(/seeded by the platform/i)).toHaveLength(3);
+    for (const badge of tbody.getAllByText('Starter')) {
+      expect(badge.closest('.aura-badge')).not.toHaveAttribute('aria-label');
+    }
+  });
+
+  it('UX M2: the subject wraps on phone cards and is cut only from sm up', () => {
+    renderLibrary();
+    const subject = screen.getByText('Q2 newsletter from your chamber');
+    expect(subject).not.toHaveClass('truncate');
+    expect(subject).toHaveClass('sm:truncate', 'sm:max-w-[24rem]', 'max-sm:[overflow-wrap:anywhere]');
+  });
+
+  it('UX L1: the visible template count sits beside the pills, hidden from screen readers', () => {
+    renderLibrary();
+    const visible = screen.getByText('5 templates', { selector: '[data-slot="template-count"]' });
+    expect(visible).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('spec 122 US12a: the pills are AURA tags, the table and Starter badge are AURA', () => {
@@ -149,8 +164,8 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
     }
     const table = screen.getByRole('table');
     expect(table).toHaveClass('aura-tbl');
-    const badges = within(table).getAllByLabelText(/seeded by the platform/i);
-    for (const badge of badges) expect(badge).toHaveClass('aura-badge');
+    const badges = within(table).getAllByText(/seeded by the platform/i);
+    for (const badge of badges) expect(badge.closest('.aura-badge')).not.toBeNull();
     expect(
       within(table).getAllByRole('link', { name: /edit/i })[0],
     ).toHaveClass('aura-btn');

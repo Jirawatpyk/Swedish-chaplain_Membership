@@ -81,6 +81,14 @@ describe('U12 — the compose, templates and brand skeletons match their pages',
     expect(container.querySelectorAll('[data-skeleton="template-filter-pill"]')).toHaveLength(3);
   });
 
+  it('templates (UX M1): phones get five card blocks, the table rows show from sm up', async () => {
+    const { container } = render((await TemplatesLoading()) as React.ReactElement);
+    const cards = container.querySelectorAll('[data-skeleton="template-card"]');
+    expect(cards).toHaveLength(5);
+    for (const card of cards) expect(card.parentElement).toHaveClass('sm:hidden');
+    expect(container.querySelector('[data-skeleton="template-rows"]')).toHaveClass('max-sm:hidden');
+  });
+
   it('brand settings (#400 U5): the SAVED state — no first-visit-only rows reserved', async () => {
     const { container } = render((await BrandLoading()) as React.ReactElement);
     expect(container.querySelector('[data-skeleton="colour-default-hint"]')).toBeNull();

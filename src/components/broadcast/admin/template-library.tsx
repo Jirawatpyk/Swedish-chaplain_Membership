@@ -15,10 +15,11 @@
  * own work quickly without scrolling past 15 seeded rows.
  *
  * a11y:
- *   - <fieldset role="radiogroup"> with <legend> announces the
- *     filter purpose
+ *   - a <fieldset> with an sr-only <legend> names the filter group (the
+ *     pills are toggle buttons, not a radiogroup)
  *   - aria-pressed on each pill button
- *   - Live region announces the filtered row count after change
+ *   - Live region announces the filtered row count after change; the
+ *     visible count beside the pills is aria-hidden so it is said once
  */
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -137,30 +138,41 @@ export function AdminTemplateLibrary({
     <Card>
       <div className="flex flex-col gap-[var(--aura-space-4)]">
         {/* flex-wrap keeps SV labels from overflowing on a 320px phone. */}
-        <fieldset className="flex flex-wrap items-center gap-2">
-          <legend className="sr-only">{t('filterLegend')}</legend>
-          <Tag
-            selected={filter === 'all'}
-            onClick={() => setFilter('all')}
-            touchHeight
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <fieldset className="flex flex-wrap items-center gap-2">
+            <legend className="sr-only">{t('filterLegend')}</legend>
+            <Tag
+              selected={filter === 'all'}
+              onClick={() => setFilter('all')}
+              touchHeight
+            >
+              {t('filterPill.all')}
+            </Tag>
+            <Tag
+              selected={filter === 'starter'}
+              onClick={() => setFilter('starter')}
+              touchHeight
+            >
+              {t('filterPill.starter')}
+            </Tag>
+            <Tag
+              selected={filter === 'authored'}
+              onClick={() => setFilter('authored')}
+              touchHeight
+            >
+              {t('filterPill.authored')}
+            </Tag>
+          </fieldset>
+          {/* UX L1 — the count the eye reads; the debounced status below is
+              what a screen reader hears, so this one is hidden from it. */}
+          <span
+            data-slot="template-count"
+            aria-hidden="true"
+            className="aura-text-caption text-[var(--aura-fg-secondary)] sm:ml-auto"
           >
-            {t('filterPill.all')}
-          </Tag>
-          <Tag
-            selected={filter === 'starter'}
-            onClick={() => setFilter('starter')}
-            touchHeight
-          >
-            {t('filterPill.starter')}
-          </Tag>
-          <Tag
-            selected={filter === 'authored'}
-            onClick={() => setFilter('authored')}
-            touchHeight
-          >
-            {t('filterPill.authored')}
-          </Tag>
-        </fieldset>
+            {t('filterCount', { count: filtered.length })}
+          </span>
+        </div>
         {/* R4.3 M-3 — the live count stays OUTSIDE the <fieldset>: JAWS
             forms mode can drop a status nested inside one. */}
         <span role="status" aria-live="polite" className="sr-only">
@@ -209,16 +221,20 @@ export function AdminTemplateLibrary({
                     <span className="inline-flex flex-wrap items-center gap-2">
                       <span className="font-medium">{tpl.name}</span>
                       {tpl.isSeeded ? (
-                        <Badge tone="warning" aria-label={t('starterBadgeAria')}>
-                          {t('starterBadge')}
+                        // UX L3 — a span cannot carry an aria-label, so the
+                        // fuller name rides in sr-only text.
+                        <Badge tone="warning">
+                          <span aria-hidden="true">{t('starterBadge')}</span>
+                          <span className="sr-only">{t('starterBadgeAria')}</span>
                         </Badge>
                       ) : null}
                     </span>
                   </Td>
                   <Td className="text-[var(--aura-fg-secondary)] sm:max-lg:hidden">
                     {/* A block span so `truncate` works under the table's
-                        auto layout (M8 Round 2). */}
-                    <span className="block max-w-[24rem] truncate">
+                        auto layout (M8 Round 2); on a phone card the subject
+                        wraps instead of being cut (UX M2). */}
+                    <span className="block max-sm:[overflow-wrap:anywhere] sm:max-w-[24rem] sm:truncate">
                       {tpl.subjectPreview ?? '—'}
                     </span>
                   </Td>
