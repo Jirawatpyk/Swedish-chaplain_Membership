@@ -254,20 +254,14 @@ describe('e2e-critical.yml — review round 1 (PR #586)', () => {
   const testSteps = () =>
     ['e2e @critical on chromium', 'e2e @critical on mobile-chrome'].map((name) => step(src, new RegExp(`- name: ${name}`)));
 
-  it('proves, before creating a branch, that the key sees exactly one project: the CI project (M3)', () => {
+  it('proves, before creating a branch, that the key reaches only the CI project (M3, two-sided)', () => {
     const scope = step(src, /- name: Prove the CI key reaches only the CI project/);
+    expect(scope).toMatch(/NEON_API_KEY: \$\{\{ secrets\.NEON_CI_API_KEY \}\}/);
     expect(scope).toMatch(/PROJECT_ID: \$\{\{ vars\.NEON_CI_PROJECT_ID \}\}/);
-    expect(scope).toMatch(/https:\/\/console\.neon\.tech\/api\/v2\/projects/);
-    expect(scope).toMatch(/\.projects \| length/);
-    expect(scope).toMatch(/\.projects\[0\]\.id/);
-    // A project-scoped key cannot list projects: Neon answers 404 (run
-    // 39107806086). Then the key must open exactly the CI project.
-    expect(scope).toMatch(/-w '%\{http_code\}'/);
-    expect(scope).toMatch(/404\|403\)/);
-    expect(scope).toMatch(/api\/v2\/projects\/\$PROJECT_ID/);
-    expect(scope).toMatch(/\.project\.id/);
-    expect(scope).toMatch(/exit 1/);
-    expect(scope).not.toMatch(/echo "\$projects"|cat .*projects|set -x/);
+    // Both legs and the verdict live in a unit-tested script
+    // (tests/unit/scripts/ci-neon-key-scope.test.ts); the step only runs it.
+    expect(scope).toMatch(/run: node --import tsx scripts\/ci-neon-key-scope\.ts\s*$/m);
+    expect(scope).not.toMatch(/curl|set -x|\|\| true/);
     expect(lineOf(src, /- name: Prove the CI key reaches only the CI project/)).toBeLessThan(
       lineOf(src, /- name: Create this run's Neon branch/),
     );
