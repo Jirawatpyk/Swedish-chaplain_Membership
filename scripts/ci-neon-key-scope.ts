@@ -3,9 +3,10 @@
  * e2e-critical.yml uses it to create a branch (PR #586 review M3, the
  * security sign-off condition). Two-sided and fail-closed:
  *
- *   (i)  GET /projects answers non-200 (a project-scoped key cannot list
+ *   (i)  GET /projects answers 404 or 403 (a project-scoped key cannot list
  *        projects; Neon answers 404, run 39107806086), OR 200 with exactly
- *        one project whose id is NEON_CI_PROJECT_ID;
+ *        one project whose id is NEON_CI_PROJECT_ID. Any other status (a 500,
+ *        429, 503 or 401) proves nothing about the key's scope, so it fails;
  *   (ii) GET /projects/{NEON_CI_PROJECT_ID} answers 200 with that id.
  *
  * Both legs always run; anything else fails, including a network error. An
@@ -24,10 +25,14 @@ export interface ScopeResponse {
 
 type FetchLike = (
   url: string,
-  init?: { headers?: Record<string, string> },
+  init?: { headers?: Record<string, string>; signal?: AbortSignal },
 ) => Promise<{ status: number; json: () => Promise<unknown> }>;
 
 const API = 'https://console.neon.tech/api/v2';
+/** Per request: a hung Neon API must not hang the job. */
+const REQUEST_TIMEOUT_MS = 15_000;
+/** The only listing refusals that mean "this key is scoped to one project". */
+const SCOPED_LISTING_STATUSES = new Set([404, 403]);
 
 function listedIds(body: unknown): string[] | null {
   const projects = (body as { projects?: unknown } | null)?.projects;
@@ -51,8 +56,10 @@ export function keyScopeVerdict(
       return { ok: false, reason: `GET /projects lists ${ids.length} project(s), not exactly the CI project` };
     }
     listLeg = 'lists exactly the CI project';
-  } else {
+  } else if (SCOPED_LISTING_STATUSES.has(list.status)) {
     listLeg = `cannot list projects (HTTP ${list.status}): a project-scoped key`;
+  } else {
+    return { ok: false, reason: `GET /projects answered HTTP ${list.status}, which proves nothing about the key's scope` };
   }
 
   // (ii) the CI project itself
@@ -66,6 +73,7 @@ export function keyScopeVerdict(
 async function get(fetchImpl: FetchLike, url: string, apiKey: string): Promise<ScopeResponse> {
   const response = await fetchImpl(url, {
     headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   let body: unknown = null;
   try {
@@ -99,7 +107,8 @@ export async function checkKeyScope(deps: {
     return true;
   } catch (error) {
     // The message could echo a URL or header; report only the kind.
-    log(`::error title=CI key scope::fail: request error (${error instanceof Error ? error.name : 'unknown'}).`);
+    const name = (error as { name?: unknown } | null)?.name;
+    log(`::error title=CI key scope::fail: request error (${typeof name === 'string' ? name : 'unknown'}).`);
     return false;
   }
 }
