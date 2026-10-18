@@ -20,9 +20,24 @@ async function main(): Promise<void> {
   }
 
   // The host only, never the URL: it names which branch was read.
-  console.log(`Target host: ${new URL(url).hostname}`);
+  // A TypeError from `new URL` carries the full URL (password included) in
+  // its `input` field, so a malformed value is reported by name only.
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    console.error('verify-schema: the database URL is not a valid URL');
+    process.exit(1);
+  }
+  console.log(`Target host: ${host}`);
 
-  const sql = postgres(url, { max: 1, ssl: 'require' });
+  // Read-only at the session level, not only by the queries below: the role
+  // can write and bypasses RLS.
+  const sql = postgres(url, {
+    max: 1,
+    ssl: 'require',
+    connection: { default_transaction_read_only: true },
+  });
 
   try {
     const tables = await sql<{ table_name: string }[]>`
@@ -228,6 +243,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error('verify-schema: crashed:', error);
+  // The message only: an error object can carry the connection string.
+  console.error('verify-schema: crashed:', error instanceof Error ? `${error.name}: ${error.message}` : 'non-Error thrown');
   process.exit(1);
 });
