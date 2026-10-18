@@ -21,7 +21,7 @@ export default async function Loading() {
 
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer>
+      <FormContainer align="start">
         <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
         <Card title={tAllowlist('heading')} description={tAllowlist('description')} headingLevel={2}>
           <div className="flex flex-col gap-3">

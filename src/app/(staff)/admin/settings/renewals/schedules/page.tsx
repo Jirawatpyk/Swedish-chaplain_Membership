@@ -56,7 +56,7 @@ export default async function RenewalSchedulesSettingsPage() {
 
   if (!env.features.f8Renewals) {
     return (
-      <FormContainer>
+      <FormContainer align="start">
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         {await renderSchedulesStateView({ kind: 'disabled' })}
       </FormContainer>
@@ -85,7 +85,7 @@ export default async function RenewalSchedulesSettingsPage() {
       'renewals schedule-settings page: loadSchedulePolicies failed',
     );
     return (
-      <FormContainer>
+      <FormContainer align="start">
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         {await renderSchedulesStateView({ kind: 'failed', correlationId })}
       </FormContainer>
@@ -101,7 +101,7 @@ export default async function RenewalSchedulesSettingsPage() {
   );
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
       {/*
         016 post-ship review finding #6 — `readOnly` was computed as

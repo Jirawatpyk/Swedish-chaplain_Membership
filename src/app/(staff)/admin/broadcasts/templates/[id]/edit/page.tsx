@@ -72,7 +72,7 @@ export default async function AdminBroadcastEditTemplatePage({
   }
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <DynamicBreadcrumbLabel segment={id} label={template.name} />
       <PageHeader
         title={t('editPageTitle')}

@@ -1232,7 +1232,7 @@ export default async function AuraAdminPreviewPage({
     const t = await getTranslations('admin.renewals.settings.schedules');
     return (
       <StaffFrame path="/admin/settings/renewals/schedules">
-        <FormContainer>
+        <FormContainer align="start">
           <PageHeader title={t('title')} subtitle={t('subtitle')} />
           {view === 'renewal-schedules-error' ? (
             await renderSchedulesStateView({ kind: 'failed', correlationId: '3f2a9c1e-preview' })
@@ -1295,7 +1295,7 @@ export default async function AuraAdminPreviewPage({
     const tNew = await getTranslations('admin.invoices.new');
     return (
       <StaffFrame path="/admin/invoices/new">
-        <FormContainer>
+        <FormContainer align="start">
           <PageHeader title={tNew('title')} subtitle={tNew('description')} />
           <InvoiceCreateSwitcher
             members={INVOICE_MEMBERS}

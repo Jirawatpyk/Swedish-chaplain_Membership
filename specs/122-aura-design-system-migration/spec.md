@@ -624,6 +624,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - Brand: the colour field and its swatch stay side by side at every width; the swatch uses `--aura-border-control`; Save is full width on phones.
   - The label offset that sets a control level with an AURA field's box is one shared constant (`src/components/shell/field-box-offset.ts`).
   - The invalid colour gets AURA's danger border from `aria-invalid`, not from AURA's `error` prop, which would replace the field's hint id with its own (maintainer, 18 Oct). It is a stand-in until AURA #156 (Addendum 57: an invalid state without a message).
+- **Every staff form page starts at the content's left edge** (maintainer, 18 Oct): `<FormContainer align="start">`, as the plan, invoice-void, credit-note, account and import forms already did. This PR adds it to the template new/edit, broadcast settings and brand pages, and to the two older admin forms still centred (new invoice, reminder schedules). `tests/unit/architecture/admin-form-align.test.ts` keeps every future staff form on it. Member portal forms stay centred.
   - The new-template card no longer repeats the page title and subtitle, and the edit-template card no longer repeats the subtitle under the template name (maintainer, 18 Oct). The board draws the repeat; the page header already says it.
 
 ## User Scenarios & Testing *(mandatory)*

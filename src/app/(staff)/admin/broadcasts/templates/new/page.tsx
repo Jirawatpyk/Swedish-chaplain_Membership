@@ -30,7 +30,7 @@ export default async function AdminBroadcastNewTemplatePage(): Promise<React.Rea
   const t = await getTranslations('admin.broadcasts.templates');
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader
         title={t('newPageTitle')}
         subtitle={t('newPageDescription')}

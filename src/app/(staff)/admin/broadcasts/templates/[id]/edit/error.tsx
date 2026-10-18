@@ -35,7 +35,7 @@ export default function BroadcastEditTemplateError({
   }, [error]);
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={tTemplates('editPageTitle')} />
       <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </FormContainer>

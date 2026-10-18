@@ -35,7 +35,7 @@ export default function BroadcastNewTemplateError({
   }, [error]);
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={tTemplates('newPageTitle')} />
       <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </FormContainer>

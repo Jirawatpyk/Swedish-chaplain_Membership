@@ -23,7 +23,7 @@ export default function BroadcastSettingsError({ error, reset }: { error: Error 
   }, [error]);
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={tSettings('pageTitle')} />
       <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </FormContainer>

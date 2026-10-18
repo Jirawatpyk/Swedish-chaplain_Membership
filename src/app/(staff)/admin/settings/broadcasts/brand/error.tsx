@@ -29,7 +29,7 @@ export default function BrandSettingsError({
   }, [error]);
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={tBrand('pageTitle')} />
       <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </FormContainer>

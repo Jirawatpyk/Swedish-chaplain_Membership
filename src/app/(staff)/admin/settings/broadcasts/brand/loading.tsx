@@ -27,7 +27,7 @@ export default async function Loading() {
 
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer>
+      <FormContainer align="start">
         <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
         <div className="space-y-6">
           <Card title={t('colour.heading')} description={t('colour.description')} headingLevel={2}>

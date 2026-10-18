@@ -67,7 +67,7 @@ export default async function AdminBroadcastSettingsPage(): Promise<React.ReactE
   );
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
       <Card title={tAllowlist('heading')} description={tAllowlist('description')} headingLevel={2}>
         <AdminImageAllowlistEditor initial={rows} />

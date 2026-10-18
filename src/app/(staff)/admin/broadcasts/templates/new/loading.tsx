@@ -13,7 +13,7 @@ export default async function Loading() {
 
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <FormContainer>
+      <FormContainer align="start">
         <PageHeader
           title={t('newPageTitle')}
           subtitle={t('newPageDescription')}

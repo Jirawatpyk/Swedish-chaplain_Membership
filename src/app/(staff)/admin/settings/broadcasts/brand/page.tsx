@@ -58,7 +58,7 @@ export default async function BrandSettingsPage(): Promise<React.ReactElement> {
   });
 
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
       <BrandSettingsForm initial={view} />
     </FormContainer>

@@ -64,7 +64,7 @@ export async function renderTemplateFormPreview(mode: 'new' | 'edit') {
   const t = await getTranslations('admin.broadcasts.templates');
   if (mode === 'new') {
     return (
-      <FormContainer>
+      <FormContainer align="start">
         <PageHeader title={t('newPageTitle')} subtitle={t('newPageDescription')} />
         <Card>
           <AdminTemplateForm mode="new" initial={{ name: '', subject: '', bodyHtml: '', locale: 'en' }} />
@@ -73,7 +73,7 @@ export async function renderTemplateFormPreview(mode: 'new' | 'edit') {
     );
   }
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={t('editPageTitle')} subtitle={t('editPageDescription')} />
       <AdminTemplateEditConfirmStarter templateId="t1" templateName="Monthly Newsletter" />
       <Card title="Monthly Newsletter" headingLevel={2}>
@@ -98,7 +98,7 @@ export async function renderBroadcastSettingsPreview() {
   const t = await getTranslations('admin.broadcasts.settings');
   const tAllowlist = await getTranslations('admin.broadcasts.settings.allowlist');
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
       <Card title={tAllowlist('heading')} description={tAllowlist('description')} headingLevel={2}>
         <AdminImageAllowlistEditor
@@ -134,7 +134,7 @@ export async function renderBrandPreview(state: string | undefined) {
           ? { ...BRAND_VIEW, logo: { ...BRAND_VIEW.logo, manageHref: null } }
           : BRAND_VIEW;
   return (
-    <FormContainer>
+    <FormContainer align="start">
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
       <BrandSettingsForm initial={view} />
     </FormContainer>
