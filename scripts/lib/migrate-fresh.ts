@@ -167,6 +167,13 @@ export async function findUnrecordedMigrations(
     .map((m) => ({ tag: m.tag, folderMillis: m.folderMillis }));
 }
 
+/** RED stub: today's behaviour, no allow-list. */
+export const LEGACY_UNRECORDED_TAGS: readonly string[] = [];
+
+export function disallowedUnrecorded<T extends { tag: string }>(unrecorded: readonly T[], _mode: MigrationMode): T[] {
+  return [...unrecorded];
+}
+
 /**
  * `readMigrationFiles` drops the tag; zip it back from the journal (same order —
  * it iterates `journal.entries`) so a failure can name the file.
