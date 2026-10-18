@@ -479,3 +479,17 @@ Filled in at Verify, one block per slice.
   - 0110–0112 are idempotent enum adds, and the Phase 3 enum check passes. 0113 changes `renewal_cycles.plan_id_at_cycle_start` to `text` and backfills it; whether that landed on prod is **not verified**.
   - **Open, for the maintainer:** Phase 4 as specified fails integration smoke, which is a required check, and every preview, and it would fail the production `vercel-build` on merge. Merging as is blocks every deploy. The decision is the maintainer's; it has not been softened here.
 
+### Slice 2 — maintainer decisions after review round 1 (2026-10-18)
+
+- **Phase 4: an explicit allow-list.**
+  - `LEGACY_UNRECORDED_TAGS` in `scripts/lib/migrate-fresh.ts` names exactly the four tags above, with no wildcard.
+  - In normal mode, the unrecorded entries must be a subset of it; in fresh mode it does not apply.
+  - Tests: RED `8c97e3d5f`, GREEN `96252832d`. A mutation that drops the fresh-mode branch turns the fresh-mode test red.
+  - Follow-up, in a separate PR: the maintainer verifies `renewal_cycles.plan_id_at_cycle_start` on prod, then the four rows are backfilled on prod and the list is deleted. Claude does not touch prod.
+- **DW-7 timing deferred to post-merge (projection 25.2 min).**
+  - No change in this PR. The first real run after the parent refresh is the measurement.
+  - If it is over 25 min, the remedy is to split chromium and mobile-chrome into parallel jobs. The `@critical` set is never trimmed for time.
+- **M3: two-sided and fail-closed.**
+  - The check is in `scripts/ci-neon-key-scope.ts`: (i) `GET /projects` answers non-200, or 200 with exactly the CI project; and (ii) `GET /projects/{NEON_CI_PROJECT_ID}` answers 200 with that id.
+  - Each leg is unit-tested, including an org-wide key and a wrong key. RED `8ad7a97cf`, GREEN `0d82d347e`.
+
