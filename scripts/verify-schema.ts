@@ -2,8 +2,10 @@
  * Quick schema verification against Neon. Lists tables + audit_log
  * triggers so the operator can confirm the migration landed.
  */
-// Loaded via `node --env-file=.env.local` from `pnpm db:verify`.
-process.loadEnvFile?.('.env.local');
+// The env file comes from the caller only: `pnpm db:verify` passes
+// --env-file=.env.local, `pnpm db:verify:prod` passes .env.production. A
+// second load of .env.local here used to fill any variable the prod file
+// lacks (e.g. DATABASE_URL_UNPOOLED) from DEV, so a "prod" run could read dev.
 
 import postgres from 'postgres';
 
@@ -17,7 +19,25 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const sql = postgres(url, { max: 1, ssl: 'require' });
+  // The host only, never the URL: it names which branch was read.
+  // A TypeError from `new URL` carries the full URL (password included) in
+  // its `input` field, so a malformed value is reported by name only.
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    console.error('verify-schema: the database URL is not a valid URL');
+    process.exit(1);
+  }
+  console.log(`Target host: ${host}`);
+
+  // Read-only at the session level, not only by the queries below: the role
+  // can write and bypasses RLS.
+  const sql = postgres(url, {
+    max: 1,
+    ssl: 'require',
+    connection: { default_transaction_read_only: true },
+  });
 
   try {
     const tables = await sql<{ table_name: string }[]>`
@@ -79,6 +99,18 @@ async function main(): Promise<void> {
       {
         name: 'audit_log_retention_default_for_f4_tax_docs trigger (mig 0055)',
         query: `SELECT 1 AS hit FROM information_schema.triggers WHERE event_object_table = 'audit_log' AND trigger_name = 'audit_log_retention_default_for_f4_tax_docs'`,
+      },
+      {
+        // 0110-0113 are in the journal but have no row in
+        // drizzle.__drizzle_migrations on prod, and the normal-mode migrator
+        // never revisits an entry older than the last recorded one — so these
+        // canaries are the only thing that proves their DDL landed (spec 123).
+        name: "audit_event_type carries the eight 0110-0112 values (migs 0110-0112)",
+        query: `SELECT 1 AS hit WHERE (SELECT count(*) FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel IN ('renewal_lapsed','at_risk_score_recomputed','at_risk_score_threshold_crossed','at_risk_snoozed','at_risk_outreach_recorded','at_risk_skipped_below_min_tenure','at_risk_compute_partial_failure','cron_bearer_auth_rejected')) = 8`,
+      },
+      {
+        name: 'renewal_cycles.plan_id_at_cycle_start is text (mig 0113)',
+        query: `SELECT 1 AS hit FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'renewal_cycles' AND column_name = 'plan_id_at_cycle_start' AND data_type = 'text'`,
       },
       // 064-event-invoice-paid-flow canaries (migs 0211-0214) — the
       // §105 as-paid path depends on all four; a partially-applied
@@ -211,6 +243,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error('verify-schema: crashed:', error);
+  // The message only: an error object can carry the connection string.
+  console.error('verify-schema: crashed:', error instanceof Error ? `${error.name}: ${error.message}` : 'non-Error thrown');
   process.exit(1);
 });
