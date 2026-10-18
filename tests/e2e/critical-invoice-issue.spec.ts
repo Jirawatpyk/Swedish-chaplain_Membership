@@ -83,7 +83,10 @@ test.describe('issue one invoice on the seeded tenant @f4 @critical', () => {
 
     // 4. The detail page shows it.
     await page.reload();
-    await expect(page.getByText(number!, { exact: false }).first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/^issued$/i).first()).toBeVisible({ timeout: 15_000 });
+    // The page heading, not `.first()` text: on a phone the first match is the
+    // hidden breadcrumb (run 39110905078).
+    const heading = page.getByRole('heading', { level: 1 });
+    await expect(heading).toContainText(number!, { timeout: 15_000 });
+    await expect(page.getByText(/^issued$/i).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 });
   });
 });
