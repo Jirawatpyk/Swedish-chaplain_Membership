@@ -430,8 +430,8 @@ TDD is mandatory. Code without a preceding failing test MUST NOT be merged.
   not guards, the failing test and the code may share one commit, provided the
   failing run is recorded with its output (the test name and its failure line) in
   `plan.md` § Evidence, or in the PR for size S. The allowance never covers money,
-  tax, auth/RBAC, tenancy, PII, audit log, a migration, a guard or validation, or
-  domain/application logic.
+  tax (including money computed for display), auth/RBAC, tenancy, PII, audit log,
+  a migration, a guard or validation, or domain/application logic.
 - Every user story in a spec MUST have at least one acceptance-level test before
   implementation starts.
 - Contract tests are mandatory at every external and inter-module boundary.
