@@ -634,6 +634,22 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - Brand page: the board's "How it looks in an E-Blast" card is added in this PR at the maintainer's request (18 Oct). It sits in the colour card and follows the typed colour and address before Save. The header and footer are the real e-mail's: the logo, or the chamber name (`resolveTenantDisplayName`, the name the e-mail carries) when there is none; then the footer lines from the same `email.broadcastFooter` strings, with the address, or "Sent by …" when there is none. The privacy-inbox line is left out, as on the board. It uses the e-mail's fixed light colours in both themes, except the footer grey: #6b6b6b (5.3:1) instead of the e-mail's #888 (3.5:1), because text on this page must meet AA. New EN/TH/SV strings `admin.settings.broadcasts.brand.colour.preview.*`. Presentation only: no new request.
   - The new-template card no longer repeats the page title and subtitle, and the edit-template card no longer repeats the subtitle under the template name (maintainer, 18 Oct). The board draws the repeat; the page header already says it.
 
+### Session 2026-10-18 (US12b start: the review queue)
+
+- **AURA 5.50 (#156, Addendum 57)** ships `invalid` on `TextField`, `Textarea` and `Field`: the danger look and `aria-invalid`, with no message and `aria-describedby` left alone. The brand colour field adopts it and its field-DOM selector stand-in goes. The pin is 5.50.0.
+- **Selection** moves from TanStack to AURA `DataTable` `selectable` + `isRowSelectable` (rows awaiting marketing review only, i.e. `status === 'submitted'`) + `rowSelectDisabledLabel`. The selection stays controlled by the queue, so clear-after-success, keep-only-the-failed-rows after a partial bulk failure, and the prune-on-refresh behave as before. Acceptance scenario 1's "local selection column" fallback is no longer needed.
+- **Phone cards follow board `Admin-broadcasts-mobile`** (maintainer, 18 Oct, "as recommended"). Each card shows the date with the waiting / overdue chip, the subject, the member, and audience · recipients, then ends in one full-width "Review" button that opens the E-Blast's detail page. Phone cards have no checkbox and no inline Approve / Reject: approve and reject stay on the detail page one tap away, and bulk approval is from 640 px up, as the board draws it.
+- **Columns:** the FR-026 fields stay on the row (member, subject, stage with round and delivery results, whose turn, time in stage, send time, audience and recipients, actions). The board's older column set does not drop any of them.
+- **Shared dialogs:** the reason-confirmation dialog and the typed-phrase field move to AURA in this PR. Their US12c callers (cancel, member sign-off) pick up the new look without changing. `useDialogFinalFocus` keeps its export, so the members and renewals importers are untouched.
+- **Unchanged (FR-011):**
+  - the guards (`broadcasts.read`; manager = no `broadcasts.write`);
+  - the URL contract (repeatable `status`, `status_all=1`, `memberId`, `fromDate`/`toDate`, `cursor` reset, Upcoming = `sort=scheduled_for&from=now`, 300 ms debounce, `router.replace`);
+  - the request bodies (approve `{decision}` or `{decision:'schedule', scheduledFor}` in Bangkok wall time; bulk per row, five at a time with `allSettled`, capped at `BULK_CAP`; reject `{rejectionReason}` ≤ 2000; clear halt `{}`; the send-now undo's cancel);
+  - every toast;
+  - the selection announcer and order hint;
+  - the halt, SLA and overdue banners;
+  - the typed-phrase normaliser (case-insensitive, unlike the refund gate).
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
@@ -802,7 +818,7 @@ The review queue (server-paged, stage chips, per-row selection), approval-round 
 
 **Acceptance Scenarios**:
 
-1. **Given** the review queue, **When** rows in different stages are shown, **Then** only rows awaiting marketing review can be selected for bulk approval (AURA handoff item 52, or a local selection column until it ships).
+1. **Given** the review queue, **When** rows in different stages are shown, **Then** only rows awaiting marketing review can be selected for bulk approval (AURA `DataTable` `isRowSelectable`, handoff item 52).
 
 ---
 
