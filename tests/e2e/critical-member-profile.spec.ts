@@ -5,13 +5,15 @@
  * The good-standing persona (`E2E_MEMBER_EMAIL_EMPTY`), not the default one:
  * global setup lapses the default member (renewals seed), and a lapsed scope
  * is refused before the page renders. seed-e2e-portal-invoices links that
- * persona to "E2E Echo Co" with the primary contact "E2E Echo".
+ * persona to "E2E Echo Co" with the primary contact "E2E Echo", listed as
+ * "E2E Echo (you)".
  */
 import { expect } from './fixtures';
 import { goodStandingMemberCredentials, goodStandingMemberTest as test } from './helpers/member-session';
 
 const COMPANY = 'E2E Echo Co';
-const CONTACT = 'E2E Echo';
+// The contacts card marks the signed-in member's own row "(you)" (run 39108085903).
+const OWN_CONTACT = 'E2E Echo (you)';
 
 test.describe('member reads their own profile @critical', () => {
   test.skip(!goodStandingMemberCredentials(), 'Set E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY');
@@ -21,6 +23,6 @@ test.describe('member reads their own profile @critical', () => {
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15_000 });
     const main = page.getByRole('main');
     await expect(main.getByText(COMPANY, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
-    await expect(main.getByText(CONTACT, { exact: true }).first()).toBeVisible();
+    await expect(main.getByText(OWN_CONTACT, { exact: true }).first()).toBeVisible();
   });
 });

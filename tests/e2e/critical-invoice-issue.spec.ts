@@ -47,7 +47,18 @@ test.describe('issue one invoice on the seeded tenant @f4 @critical', () => {
     const createDraft = page.getByRole('button', { name: /create draft/i });
     await expect(createDraft).toBeEnabled({ timeout: 15_000 });
     await createDraft.click();
-    await page.waitForURL(/\/admin\/invoices\/[0-9a-f-]{36}$/, { timeout: 20_000 });
+    // The seeded member already holds a 2026 invoice (the F4 fixtures), so the
+    // form asks before a second one (run 39108085903). Confirm it.
+    const draftUrl = /\/admin\/invoices\/[0-9a-f-]{36}$/;
+    const second = page.getByRole('alertdialog').getByRole('button', { name: /create a second invoice/i });
+    // Either the draft page or the confirm dialog, whichever comes first.
+    await expect
+      .poll(async () => draftUrl.test(page.url()) || (await second.isVisible()), { timeout: 20_000 })
+      .toBe(true);
+    if (!draftUrl.test(page.url())) {
+      await second.click();
+    }
+    await page.waitForURL(draftUrl, { timeout: 20_000 });
     const draftId = /\/admin\/invoices\/([0-9a-f-]{36})$/.exec(page.url())![1]!;
     await expect(page.getByText(/^draft$/i).first()).toBeVisible({ timeout: 15_000 });
 
