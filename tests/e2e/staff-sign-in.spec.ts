@@ -31,7 +31,7 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 // race into the per-email rate-limit bucket.
 test.describe.configure({ mode: 'serial' });
 
-test.describe('staff sign-in (happy path)', () => {
+test.describe('staff sign-in (happy path) @critical', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD to run E2E tests',

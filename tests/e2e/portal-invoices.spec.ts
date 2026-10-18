@@ -57,7 +57,7 @@ const MEMBER_EMAIL_EMPTY =
 const MEMBER_PASSWORD_EMPTY =
   process.env.E2E_MEMBER_PASSWORD_EMPTY ?? MEMBER_PASSWORD;
 
-test.describe('F4 portal /portal/invoices smoke (N9) @f4', () => {
+test.describe('F4 portal /portal/invoices smoke (N9) @f4 @critical', () => {
   test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_* not set');
 
   test('member can load /portal/invoices without error', async ({ page }) => {

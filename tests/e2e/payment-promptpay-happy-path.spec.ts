@@ -29,7 +29,7 @@ import { stubStripePromptPaySuccess } from './helpers/stripe-mock';
 
 const ISSUED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 
-test.describe('payment PromptPay happy path — @payment @e2e (T087)', () => {
+test.describe('payment PromptPay happy path — @payment @e2e @critical (T087)', () => {
   const isCi = process.env.CI === 'true' || process.env.CI === '1';
   if (!ISSUED_INVOICE_ID) {
     if (isCi) {
