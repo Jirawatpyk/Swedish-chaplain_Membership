@@ -16,7 +16,7 @@ const GOOD_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('member nav shell — 057', () => {
+test.describe('member nav shell — 057 @critical', () => {
   test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'Set E2E_MEMBER_EMAIL and E2E_MEMBER_PASSWORD');
 
   test.beforeAll(async () => {

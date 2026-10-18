@@ -23,7 +23,7 @@ const MANAGER_EMAIL = process.env.E2E_MANAGER_EMAIL;
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const F9_ENABLED = process.env.FEATURE_F9_DASHBOARD === 'true';
 
-test.describe('F9 — admin operations dashboard (US1) @f9', () => {
+test.describe('F9 — admin operations dashboard (US1) @f9 @critical', () => {
   test.beforeAll(() => {
     if (!ADMIN_EMAIL || !MANAGER_EMAIL || !MEMBER_EMAIL) {
       throw new Error(
