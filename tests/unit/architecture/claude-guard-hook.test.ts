@@ -53,6 +53,48 @@ describe('Claude guard hook — secrets in shell commands', () => {
   });
 });
 
+// D-016 + D-025: `permissions.deny` matches a command by prefix, so a prod
+// write script was still reachable by another spelling. The guard closes
+// those spellings; the read-only `db:verify:prod` (D-024) stays allowed.
+describe('Claude guard hook — prod write scripts', () => {
+  it.each([
+    ['Bash', 'pnpm db:migrate:prod'],
+    ['Bash', 'pnpm run db:migrate:prod'],
+    ['Bash', 'pnpm -s db:migrate:prod'],
+    ['Bash', 'pnpm --silent run seed:system-actors:prod'],
+    ['Bash', 'npm run db:migrate:prod'],
+    ['Bash', 'cd "/c/repo" && pnpm db:migrate:prod 2>&1 | tail -5'],
+    ['Bash', 'FOO=1 pnpm seed:system-actors:prod'],
+    ['PowerShell', 'Set-Location C:\\repo; pnpm run db:migrate:prod'],
+    ['PowerShell', '& pnpm db:migrate:prod'],
+    ['Bash', 'pnpm some-future-job:prod'],
+    ['Bash', 'node --env-file=.env.production --import tsx scripts/run-migrations.ts'],
+    ['Bash', 'node --env-file .env.production --import tsx scripts/seed-system-actors.ts'],
+    ['Bash', 'node --env-file=../main/.env.local.bak.prod --import tsx scripts/run-migrations.ts'],
+    ['Bash', 'pnpm exec tsx --env-file=.env.production scripts/run-migrations.ts'],
+    ['PowerShell', 'node --env-file=.env.production --import tsx scripts/run-migrations.ts'],
+  ])('blocks %s: %s', (tool, command) => {
+    const r = run(tool, { command });
+    expect(r.code, r.stderr).toBe(2);
+    expect(r.stderr).toMatch(/prod/i);
+  });
+
+  it.each([
+    'pnpm db:verify:prod',
+    'pnpm run db:verify:prod',
+    'node --env-file=.env.production --import tsx scripts/verify-schema.ts',
+    'pnpm db:migrate',
+    'pnpm db:verify',
+    'node --env-file=.env.local --import tsx scripts/run-migrations.ts',
+    'git commit -m "docs: never run pnpm db:migrate:prod by hand"',
+    'grep -n "db:migrate:prod" package.json',
+    'gh pr view 588 --json body',
+  ])('allows %s', (command) => {
+    const r = run('Bash', { command });
+    expect(r.code, r.stderr).toBe(0);
+  });
+});
+
 describe('Claude guard hook — file writes', () => {
   it.each([
     ['Write', '.env.local'],
