@@ -16,7 +16,7 @@ e2e never runs in CI, so every PR needs a manual local verification round to cat
 | # | Slice | Done-when | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
 | 1 | Post-deploy smoke: `/api/health`, the smoke script, the workflow, the runbook | DW-1…5 | security-engineer, reliability-guardian, observability-instrumentor | `123-ci-e2e-smoke-s1` | #582 · done |
-| 2 | e2e in CI: seed chain, `@critical` tags, the PR workflow, the nightly workflow, the sweep | DW-6…12 | security-engineer, senior-tester, reliability-guardian | `123-ci-e2e-smoke-s2` | — · open |
+| 2 | e2e in CI: seed chain, `@critical` tags, the PR workflow, the nightly workflow, the sweep | DW-6…12 | security-engineer, senior-tester, reliability-guardian | `123-ci-e2e-smoke-s2` | #586 · done |
 
 ## Slice 1 — post-deploy smoke
 
