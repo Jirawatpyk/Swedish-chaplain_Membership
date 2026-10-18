@@ -55,6 +55,7 @@ import {
   applyFreshMigrations,
   attachJournalTags,
   decideMigrationMode,
+  disallowedUnrecorded,
   findUnrecordedMigrations,
   isAlreadyExists,
   isUndefinedType,
@@ -221,7 +222,8 @@ async function main(): Promise<void> {
     // checks, in both modes (scripts/lib/migrate-fresh.ts § withMigrationLock).
     await withMigrationLock(port, async () => {
       const migrations = journalMigrations();
-      if ((await decideMigrationMode(port)) === 'fresh') {
+      const mode = await decideMigrationMode(port);
+      if (mode === 'fresh') {
         // Empty database, or a fresh run that stopped part-way (the marker):
         // one transaction per journal entry — see scripts/lib/migrate-fresh.ts.
         // drizzle's single-transaction migrate() hits 55P04 at 0021 here, and
@@ -244,8 +246,9 @@ async function main(): Promise<void> {
       }
       // Phase 4 — every journal entry must be recorded (by hash or by
       // created_at). drizzle's normal path skips an entry whose `when` is
-      // older than the newest applied one, and says nothing.
-      const unrecorded = await findUnrecordedMigrations(port, migrations);
+      // older than the newest applied one, and says nothing. In normal mode
+      // the four legacy F8 entries are tolerated (LEGACY_UNRECORDED_TAGS).
+      const unrecorded = disallowedUnrecorded(await findUnrecordedMigrations(port, migrations), mode);
       if (unrecorded.length > 0) {
         failure =
           `${unrecorded.length} journal entr${unrecorded.length === 1 ? 'y is' : 'ies are'} not recorded in ` +
