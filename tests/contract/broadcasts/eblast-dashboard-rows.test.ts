@@ -184,10 +184,11 @@ describe('`expired_no_member_response` is a closed stage (T110, /speckit.analyze
         createElement(QueueFilters, { memberOptions: [], stageCounts: null, approvalRoundEnabled: true }),
       ),
     );
+    // Spec 122 US12b — each stage is a pressed AURA Tag carrying `data-status`.
     const valuesIn = (name: RegExp) =>
       within(screen.getByRole('group', { name }))
-        .getAllByRole('checkbox')
-        .map((el) => (el as HTMLInputElement).value);
+        .getAllByRole('button')
+        .map((el) => el.getAttribute('data-status'));
     const inReview = valuesIn(/in review/i);
     const closed = valuesIn(/closed/i);
     expect(closed).toContain('expired_no_member_response');
