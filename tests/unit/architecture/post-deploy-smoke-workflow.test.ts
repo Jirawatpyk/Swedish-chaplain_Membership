@@ -14,53 +14,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { INJECTABLE, codeLines, runBlocks, stepCount, stepRange as findStep } from './workflow-yaml-text';
 
 const WORKFLOW_PATH = join(process.cwd(), '.github', 'workflows', 'post-deploy-smoke.yml');
-
-interface RunBlock {
-  readonly line: number;
-  readonly text: string;
-}
-
-/** Comment-only lines removed, so prose in a comment cannot satisfy or trip a rule. */
-function codeLines(src: string): string[] {
-  return src.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
-}
-
-function indentOf(line: string): number {
-  return line.length - line.trimStart().length;
-}
-
-/** Every `run:` value — a single line, or a `|` / `>` block scalar. */
-function runBlocks(src: string): RunBlock[] {
-  const lines = src.split(/\r?\n/);
-  const blocks: RunBlock[] = [];
-  for (let i = 0; i < lines.length; i += 1) {
-    const m = /^(\s*)(?:-\s+)?run:\s*(.*)$/.exec(lines[i]!);
-    if (m === null) continue;
-    const keyIndent = m[1]!.length + (lines[i]!.trimStart().startsWith('-') ? 2 : 0);
-    const rest = m[2]!;
-    if (/^[|>][-+]?\s*$/.test(rest)) {
-      const body: string[] = [];
-      let j = i + 1;
-      while (j < lines.length && (lines[j]!.trim() === '' || indentOf(lines[j]!) > keyIndent)) {
-        body.push(lines[j]!);
-        j += 1;
-      }
-      blocks.push({ line: i + 1, text: body.join('\n') });
-      i = j - 1;
-    } else {
-      blocks.push({ line: i + 1, text: rest });
-    }
-  }
-  return blocks;
-}
-
-function stepCount(src: string): number {
-  return codeLines(src).filter((l) => /^\s*-\s+(uses|name|run|id):/.test(l)).length;
-}
-
-const INJECTABLE = /\$\{\{\s*(github\.event\.|inputs\.)/;
 
 describe('post-deploy-smoke workflow parser (positive control)', () => {
   const fixture = [
@@ -134,13 +90,10 @@ describe('.github/workflows/post-deploy-smoke.yml', () => {
 
   /** [first, end) line range of the step whose `- name:` line matches. */
   function stepRange(name: RegExp): { start: number; end: number } {
-    const lines = src.split(/\r?\n/);
-    const start = lines.findIndex((l) => name.test(l));
-    expect(start, String(name)).toBeGreaterThan(0);
-    const stepIndent = indentOf(lines[start]!);
-    let end = start + 1;
-    while (end < lines.length && !(indentOf(lines[end]!) <= stepIndent && lines[end]!.trim() !== '')) end += 1;
-    return { start, end };
+    const r = findStep(src, name);
+    expect(r, String(name)).not.toBeNull();
+    expect(r!.start, String(name)).toBeGreaterThan(0);
+    return r!;
   }
 
   const FAIL_STEP = /^\s+- name: Open or update the prod-smoke issue\s*$/;
