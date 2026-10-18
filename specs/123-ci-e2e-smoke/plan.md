@@ -504,14 +504,14 @@ Filled in at Verify, one block per slice.
 - **Operational-state date (maintainer):** the merge follow-up fills the "advisory from" date in `docs/operational-state.md`.
 - **First parent refresh:** it runs on the merge push. The first PR run after it measures DW-7 without the from-zero migrate (see the maintainer decisions above).
 
-### Slice 2 — the `critical-invoice-issue` flake (fixed)
+### Slice 2 — the `critical-invoice-issue` flake (cause corrected 2026-10-18)
 
 - **No trace at first.** Run 39121468131 was green, so the upload step (`failure() || cancelled()`) skipped and the traces of the two failed attempts were lost. The report is now also uploaded when the summary sees a flaky spec (RED `25e80fbdd`, GREEN `b17100640`).
 - **The cause, from the traces of [run 39124301861](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39124301861)** (artifact `e2e-critical-39124301861-1`). It is **not** a hidden previous segment: each trace shows a single member link and a single "New invoice" link. The page was still rendering:
   - **chromium attempt 1:** on `/admin/members/<id>`, `<main>` held only the "Members" back link from 145.6 s to 160.6 s (the whole 15 s wait).
   - **mobile-chrome:** the URL changed to `/admin/invoices/<id>` at 182.7 s, and at 197.7 s the h1 was still the `loading.tsx` shimmer (`skeleton-shimmer h-8 w-64`). The URL updates when a client navigation starts, so `waitForURL` passed before the content streamed.
-  - The cause is a slow server render from the US runner to the Singapore database. On a passing attempt the member page took about 12 s.
-- **Fix (`a75769d29`):**
+  - **Correction (run 39136426864):** this trace showed two things, and only the second is the flake. A real first render of about 12 s, slower than the 15 s waits allowed. And a page stuck on its `loading.tsx`, which the 60 s wait then exposed: the same page stayed stuck for the full 60 s, so it was not slow. The flake is a **cancelled client navigation**, described below.
+- **First fix (`a75769d29`), kept:**
   - Every wait after a navigation gets `SERVER_RENDER_MS` = 60 s, which fits inside `test.slow()`.
   - Every post-navigation locator in both new specs is `.filter({ visible: true })` and strict; there is no `.first()` left.
   - The profile spec asserts the h1 company name and the visible "(you)" row.
@@ -520,4 +520,15 @@ Filled in at Verify, one block per slice.
   - `critical-invoice-issue`: 90 s on chromium and 95 s on mobile-chrome, 0 retries.
   - Phases: migrate 608 s, seed 169, build 95, ready 5, e2e 541 + 551. Job 33 min 36 s.
   - Integration smoke, Quality gates, Architecture guards, Coverage and the Vercel preview are all green.
+- **It came back on [run 39136426864](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39136426864)** (head `de1d49a10`). mobile-chrome was flaky on its first attempt. The new warnings fired as designed: "passed only on a retry", and "took 186 s, over 1.5x its 95 s baseline" (item 5).
+  - Trace (artifact `e2e-critical-39136426864-1`):
+    - 52.348 s: the click on the directory row.
+    - 52.395 s: the navigation's RSC fetch (`?_rsc`, no prefetch header) ends `ERR_ABORTED` after 6 ms. Nothing re-fetches it.
+    - For the next 60 s, `<main>` holds only the member route's `loading.tsx` back link while the URL already shows the member page.
+  - **Candidate ruled out:** AURA's FilterBar sends `onSearchChange` only from its typing debounce, never on mount (`aura-react` dist, `FilterBar` `send`/`type`). The directory's `router.replace` is therefore not the trigger. The trace does not show what aborted the fetch.
+  - **Test fix:** the spec opens the member page by `page.goto(href)`, taking the href from the visible directory link, so it still proves the search found the member. This spec's subject is issuing an invoice; `members-directory-search` covers the list.
+  - **Open (app-side, not fixed here):** an admin who clicks a directory row soon after the list loads may get a member page that never leaves its loading state.
+    - Evidence: an aborted navigation RSC fetch, never retried.
+    - Repro for a follow-up: load `/admin/members?q=…`, click a row at once, and assert that `<main>` renders the member page.
+    - The maintainer decides whether this becomes a follow-up spec.
 

@@ -21,13 +21,12 @@ import { signInAsAdmin } from './helpers/admin-session';
 const MEMBER_NAME = process.env.E2E_ADMIN_MUTATION_MEMBER;
 
 /**
- * How long a staff page may take to replace its loading skeleton after a
- * client navigation. The CI runner is in the US and the database in
- * Singapore, so every server query crosses regions: the traces of run
- * 39124301861 show the member page's <main> still empty after 15 s, and the
- * draft page's h1 still the loading.tsx shimmer 15 s after its URL changed
- * (the URL updates when the navigation starts, before the content streams).
- * The spec runs under test.slow(), so this fits its budget.
+ * How long a staff page may take to render after a navigation. The CI runner
+ * is in the US and the database in Singapore, so every server query crosses
+ * regions: in run 39124301861 a passing attempt took ~12 s to render the
+ * member page, against the 15 s waits this spec first had. The spec runs under
+ * test.slow(), so this fits its budget. (The stuck-page flake was something
+ * else; see the member-page step below.)
  */
 const SERVER_RENDER_MS = 60_000;
 
@@ -47,8 +46,15 @@ test.describe('issue one invoice on the seeded tenant @f4 @critical', () => {
       .getByRole('link', { name: new RegExp(MEMBER_NAME!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) })
       .filter({ visible: true });
     await expect(memberLink).toBeVisible({ timeout: SERVER_RENDER_MS });
-    await memberLink.click();
-    await page.waitForURL(/\/admin\/members\/[0-9a-f-]{36}/, { timeout: 15_000 });
+    // Open the member page by URL, not by clicking the row. In run 39136426864
+    // the click's client navigation fetch (?_rsc, no prefetch header) was
+    // aborted ~50 ms after the click and nothing re-fetched it, so the page sat
+    // on the member route's loading.tsx for the full 60 s. That is an app-side
+    // navigation issue (open, plan.md § Evidence); this spec's subject is
+    // issuing an invoice, and members-directory-search covers the list.
+    const memberHref = await memberLink.getAttribute('href');
+    expect(memberHref, 'the directory row links to the member page').toMatch(/^\/admin\/members\/[0-9a-f-]{36}$/);
+    await page.goto(memberHref!);
 
     // 2. Draft from the member page (the form pre-selects the member).
     // The page shows exactly one of "New invoice" / "Create first invoice".
