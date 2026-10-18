@@ -80,6 +80,18 @@ async function main(): Promise<void> {
         name: 'audit_log_retention_default_for_f4_tax_docs trigger (mig 0055)',
         query: `SELECT 1 AS hit FROM information_schema.triggers WHERE event_object_table = 'audit_log' AND trigger_name = 'audit_log_retention_default_for_f4_tax_docs'`,
       },
+      {
+        // 0110-0113 are in the journal but have no row in
+        // drizzle.__drizzle_migrations on prod, and the normal-mode migrator
+        // never revisits an entry older than the last recorded one — so these
+        // canaries are the only thing that proves their DDL landed (spec 123).
+        name: "audit_event_type carries the eight 0110-0112 values (migs 0110-0112)",
+        query: `SELECT 1 AS hit WHERE (SELECT count(*) FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel IN ('renewal_lapsed','at_risk_score_recomputed','at_risk_score_threshold_crossed','at_risk_snoozed','at_risk_outreach_recorded','at_risk_skipped_below_min_tenure','at_risk_compute_partial_failure','cron_bearer_auth_rejected')) = 8`,
+      },
+      {
+        name: 'renewal_cycles.plan_id_at_cycle_start is text (mig 0113)',
+        query: `SELECT 1 AS hit FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'renewal_cycles' AND column_name = 'plan_id_at_cycle_start' AND data_type = 'text'`,
+      },
       // 064-event-invoice-paid-flow canaries (migs 0211-0214) — the
       // §105 as-paid path depends on all four; a partially-applied
       // journal here corrupts tax-document invariants silently.

@@ -77,7 +77,7 @@ pnpm test:e2e                  # Playwright against :3100 (the main checkout's c
 pnpm test:e2e --grep "@a11y"   # axe-core WCAG 2.1 AA scan only
 pnpm check:i18n                # fails on missing EN keys
 pnpm db:migrate                # apply to the DEV branch; prod auto-migrates on deploy (vercel-build)
-pnpm db:verify                 # assert the live schema matches expectations (prod: the user runs pnpm db:verify:prod — denied for Claude)
+pnpm db:verify                 # assert the live schema matches expectations (prod: pnpm db:verify:prod — read-only, allowed for Claude since D-024)
 pnpm build                     # production build
 # pnpm db:generate             # DO NOT USE — migrations are hand-written SQL (see .claude/rules/architecture.md)
 ```
