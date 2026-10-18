@@ -195,7 +195,7 @@ Claude never reads or prints any of these values.
 | Principle | Result |
 |---|---|
 | I · Privacy | Pass. CI branches come from the CI branch, which has no real data; the PII-bearing preview branches are untouched; `/api/health` returns no data. |
-| II · Test-first | Pass, per the test plans above. |
+| II · Test-first | Pass, per the test plans above. Re-checked against constitution 2.1.0 (2026-10-18): CI workflows, scripts and a route are outside the UI / copy / non-guard size-S allowance, so slice 2 keeps separate RED commits. |
 | III · Clean Architecture | **Deviation:** `/api/health` imports `@/lib/db` directly, the same precedent as the cron routes. See Complexity Tracking. |
 | IV · PCI | Pass. Stripe stays stubbed in the browser; no keys are needed. |
 | V · i18n, VI · Inclusive UX | Not applicable. |

@@ -39,6 +39,7 @@ US1–US13 are specified here at phase level. Each gets its own detailed plan se
   - CSP unchanged.
   - Tenant isolation: N/A (no tenant-scoped data touched).
 - [x] **II. Test-First Development**
+  - Re-checked against constitution 2.1.0 (2026-10-18): component, style and markup phases may use the allowance (test and code in one commit, with the failing run's test name and failure line recorded). `route.ts`, server actions, guards and validation keep separate RED commits.
   - Each US0 behaviour has a RED-first test, listed in tasks.md:
     - the toast facade contract
     - the AuraBridge props
