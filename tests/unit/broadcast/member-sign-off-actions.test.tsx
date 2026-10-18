@@ -321,7 +321,7 @@ describe('F119 UX review — sign-off dialogs while busy and after a refusal', (
     expect(screen.getByTestId('eblast-request-changes').className.split(' ')).not.toContain('text-destructive');
     fireEvent.click(screen.getByTestId('eblast-request-changes'));
     const dialog = await screen.findByRole('alertdialog');
-    expect(within(dialog).getByRole('button', { name: t.requestChanges.confirm }).className).not.toContain('bg-destructive');
+    expect(within(dialog).getByRole('button', { name: t.requestChanges.confirm })).not.toHaveClass('aura-btn--danger');
     fireEvent.click(within(dialog).getByRole('button', { name: t.requestChanges.cancel }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     cleanup();
@@ -331,7 +331,7 @@ describe('F119 UX review — sign-off dialogs while busy and after a refusal', (
     expect(screen.getByTestId('eblast-withdraw-approval').className.split(' ')).toContain('text-destructive');
     fireEvent.click(screen.getByTestId('eblast-withdraw-approval'));
     const withdraw = await screen.findByRole('alertdialog');
-    expect(within(withdraw).getByRole('button', { name: t.withdrawApproval.confirm }).className).toContain('bg-destructive');
+    expect(within(withdraw).getByRole('button', { name: t.withdrawApproval.confirm })).toHaveClass('aura-btn--danger');
   });
 
   it('Approve: the note stays focusable (read-only) while busy, and a refusal is focused', async () => {

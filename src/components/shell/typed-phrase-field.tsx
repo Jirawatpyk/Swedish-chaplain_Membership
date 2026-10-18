@@ -14,10 +14,7 @@
  * which is deliberately case-SENSITIVE — a different rule, on purpose.
  */
 import { useEffect, useRef, useState } from 'react';
-import { CopyIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button, TextField } from '@jirawatpyk/aura-react';
 
 /** Emoji variation selectors (VS1–VS16, incl. U+FE0F) and zero-width characters. */
 const INVISIBLE = /[︀-️​-‍⁠﻿]/g;
@@ -140,39 +137,49 @@ export function TypedPhraseField({
     .filter(Boolean)
     .join(' ');
 
+  // Spec 122 US12b — an AURA `TextField` with the phrase (and its copy
+  // button) as the `labelAddon`, as the invoice typed confirmation does. The
+  // input keeps its own `aria-describedby` (phrase, help, error), so the addon
+  // box itself is not added to it.
   return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      {/* UX-C3 + U35: the WHOLE expected phrase as a copy target, wrapped in
-          body type (a mono face has no Thai glyphs to fall back on). A 200
-          character subject scrolls inside the cap; tabIndex keeps that
-          scroll region reachable by keyboard. */}
-      <p
-        id={phraseId}
-        tabIndex={0}
-        className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded bg-muted px-2 py-1 text-sm leading-relaxed"
-      >
-        {phrase}
-      </p>
-      {copy ? (
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            className="h-9"
-            onClick={() => void onCopy()}
-            disabled={disabled}
-          >
-            <CopyIcon className="size-3.5" aria-hidden />
-            {copy.label}
-          </Button>
-          <span role="status" aria-live="polite" className="text-xs text-muted-foreground">
-            {copied ? copy.copiedMessage : ''}
-          </span>
-        </div>
-      ) : null}
-      <Input
+    <div className="flex flex-col gap-[var(--aura-space-2)]">
+      <TextField
         id={id}
+        label={label}
+        touchHeight
+        labelAddonDescribes={false}
+        labelAddon={
+          <span className="flex flex-col gap-[var(--aura-space-2)]">
+            {/* UX-C3 + U35: the WHOLE expected phrase as a copy target, wrapped
+                in body type (a mono face has no Thai glyphs to fall back on). A
+                200 character subject scrolls inside the cap; tabIndex keeps
+                that scroll region reachable by keyboard. */}
+            <span
+              id={phraseId}
+              tabIndex={0}
+              className="block max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--aura-radius-sm)] bg-[var(--aura-bg-canvas)] px-[var(--aura-space-2)] py-[var(--aura-space-1)] aura-text-body"
+            >
+              {phrase}
+            </span>
+            {copy ? (
+              <span className="flex items-center gap-[var(--aura-space-2)]">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  touchHeight
+                  icon="copy"
+                  onClick={() => void onCopy()}
+                  disabled={disabled}
+                >
+                  {copy.label}
+                </Button>
+                <span role="status" aria-live="polite" className="aura-text-caption text-[var(--aura-fg-secondary)]">
+                  {copied ? copy.copiedMessage : ''}
+                </span>
+              </span>
+            ) : null}
+          </span>
+        }
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={() => setTouched(true)}
@@ -190,17 +197,17 @@ export function TypedPhraseField({
         autoCapitalize="off"
         autoCorrect="off"
         spellCheck={false}
-        aria-invalid={showError}
+        invalid={showError}
         aria-describedby={describedBy}
       />
       {/* ux-standards § 4.1 — the error sits immediately under its input. */}
       {showError ? (
-        <p id={errorId} className="text-xs text-destructive" role="alert">
+        <p id={errorId} className="aura-text-caption text-[var(--aura-fg-danger)]" role="alert">
           {errorMessage}
         </p>
       ) : null}
       {helpText ? (
-        <p id={helpId} className="text-xs text-muted-foreground">
+        <p id={helpId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
           {helpText}
         </p>
       ) : null}
