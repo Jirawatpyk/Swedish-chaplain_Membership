@@ -14,7 +14,7 @@
 
 - [ ] M / L: `plan.md` agreed before build, and matching what was built
 - [ ] L slice: this PR sets its own row in the `plan.md` Slices table to its PR number and `done` (D-020)
-- [ ] Each behaviour has a test that went red before the code that made it pass (RED commit, or for UI / copy / size-S the recorded failing run, D-023)
+- [ ] Each behaviour has a test that went red before the code that made it pass (RED commit; or, for UI / copy / non-guard size-S, paste the failing run's test name and failure line below, D-023)
 - [ ] `pnpm check` · `pnpm test:coverage` · `pnpm vitest run tests/contract/` green
 - [ ] Touched integration suites green (by path, `dev` branch); cross-tenant test for a tenant-scoped surface
 - [ ] Migration applied on `dev`, DDL confirmed in `information_schema`, unique `when` in `_journal.json`
