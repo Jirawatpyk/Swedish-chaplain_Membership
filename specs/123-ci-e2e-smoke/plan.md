@@ -434,3 +434,48 @@ Filled in at Verify, one block per slice.
   - The nightly runs only on schedule or dispatch, on `main`. Its schema reset (`psql`) and its `jq` filters have not run yet.
   - The sweep's `jq` date filter has not been run (no `jq` on the workstation).
 
+### Slice 2 — review round 1 (PR #586): fix runs
+
+- **[run 39107806086](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39107806086)** (head `93174cb43`), failed at the new M3 scope check. `GET /api/v2/projects` answers **404** for `NEON_CI_API_KEY`, which is project-scoped, so "exactly one project in the listing" can never pass. Fixed in `95124020b` (RED `71a221bd6`): a 200 listing must hold exactly the CI project; a 404/403 means a scoped key, and `GET /projects/$PROJECT_ID` must then return the CI project. The later runs log "The CI key cannot list projects (HTTP 404): a project-scoped key" and "CI key scope: ok".
+- **[run 39108085903](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39108085903)** (head `95124020b`), failed: 21 passed and 2 failed per project, both in the new specs.
+  - The seeded member already holds a 2026 invoice, so the "second invoice" confirm dialog appeared.
+  - The own contact row reads "E2E Echo (you)".
+  - Fixed in `25c6bfdb7`.
+- **[run 39110905078](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39110905078)** (head `25c6bfdb7`): chromium 23/23. On mobile-chrome, `getByText(number).first()` resolved to the hidden breadcrumb. Fixed in `ec90a7495`.
+- **[run 39113744658](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39113744658)** (head `ec90a7495`): `getByText(/^draft$/i)` found nothing; the badge is an icon plus text. Fixed in `06d791f9e`: both states are read from the visible h1.
+- **[run 39117062905](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39117062905)** (head `06d791f9e`), **success**: 23 passed on each project (9.3 min and 9.4 min), with no retries, flakes or skips.
+
+| Phase | Seconds |
+|---|---|
+| migrate (from zero: `applied 308` in fresh-DB mode) | 607 |
+| seed | 171 |
+| build | 157 |
+| ready | 7 |
+| e2e-chromium | 559 |
+| e2e-mobile-chrome | 562 |
+
+| Spec | chromium s | mobile-chrome s | Retries | Passed (each) | Flaky | Failed | Skipped |
+|---|---|---|---|---|---|---|---|
+| admin-journey.spec.ts | 77 | 77 | 0 | 1 | 0 | 0 | 0 |
+| critical-invoice-issue.spec.ts | 91 | 96 | 0 | 1 | 0 | 0 | 0 |
+| critical-member-profile.spec.ts | 19 | 18 | 0 | 1 | 0 | 0 | 0 |
+| f9-dashboard.spec.ts | 48 | 60 | 0 | 3 | 0 | 0 | 0 |
+| member-sign-in.spec.ts | 33 | 33 | 0 | 2 | 0 | 0 | 0 |
+| members-directory-search.spec.ts | 58 | 58 | 0 | 4 | 0 | 0 | 0 |
+| payment-promptpay-happy-path.spec.ts | 40 | 39 | 0 | 2 | 0 | 0 | 0 |
+| portal-invoices.spec.ts | 118 | 116 | 0 | 6 | 0 | 0 | 0 |
+| staff-sign-in.spec.ts | 17 | 16 | 0 | 3 | 0 | 0 | 0 |
+
+- **Budget:**
+  - Job wall time was 35 min 18 s (09:52:46 → 10:28:04). Without the 607 s from-zero migrate, which the parent refresh removes after merge, that is **about 25.2 min**: DW-7's 25 min, missed by about 12 s.
+  - Dropping `admin-journey` (77 s per project) would bring it to about 22.6 min. Not done here; it is the maintainer's call.
+- **Integration smoke and the Vercel preview are red on Phase 4, the new journal assertion. This is a finding about production's state, not a CI flake.**
+  - On the prod-derived branch they migrate, 4 journal entries are recorded neither by hash nor by `created_at = when`:
+    - `0110_f8_wave_k24_renewal_lapsed_enum` (when 1792224000001)
+    - `0111_f8_phase6_us4_audit_event_type_enum` (…002)
+    - `0112_f8_phase6_review_cron_bearer_auth_rejected` (…003)
+    - `0113_f8_t149_fix_plan_id_at_cycle_start_text` (…004)
+  - Since #24 (2026-05-11) git has changed nothing in these files or their `when` except whitespace, so the prod rows were most likely written by pre-final versions of these files. Before 2026-06-23, `db:migrate` targeted prod.
+  - 0110–0112 are idempotent enum adds, and the Phase 3 enum check passes. 0113 changes `renewal_cycles.plan_id_at_cycle_start` to `text` and backfills it; whether that landed on prod is **not verified**.
+  - **Open, for the maintainer:** Phase 4 as specified fails integration smoke, which is a required check, and every preview, and it would fail the production `vercel-build` on merge. Merging as is blocks every deploy. The decision is the maintainer's; it has not been softened here.
+
