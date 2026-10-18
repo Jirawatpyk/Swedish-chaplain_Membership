@@ -18,15 +18,20 @@
  * same file, which is 55P04 inside one transaction. Then the file's statements
  * and its `(hash, created_at = folderMillis)` row commit together.
  *
- * Applied-or-not is decided by HASH, never by `created_at`: the journal has two
- * non-increasing `when` pairs (0023→0024, 0029→0030), so a created_at
- * comparison would silently skip files. Hashes are sha256 of the file bytes on
- * this checkout (CRLF on Windows ≠ LF on Linux), so they are only ever compared
- * within one run's machine, never across checkouts.
+ * Applied-or-not is decided per entry — its hash is recorded, OR a row carries
+ * its exact `created_at = folderMillis` — never by drizzle's "newer than the
+ * latest created_at": the journal has two non-increasing `when` pairs
+ * (0023→0024, 0029→0030), and that comparison would silently skip files.
+ * Hashes are sha256 of the file bytes on the running checkout (CRLF on Windows
+ * ≠ LF on Linux), so a run resumed on the other OS matches by created_at. That
+ * is safe only while no two entries share a `when` (unit-tested on the real
+ * journal).
  *
- * NOT RESUMED: a fresh run that fails at file k leaves k−1 rows, so the next
- * run takes the NORMAL path (pre-pass + one drizzle transaction). A mid-fresh
- * failure is a genuine breakage; read the FIRST attempt's error.
+ * RESUMABLE: `drizzle.__fresh_migrate_in_progress` is created before the first
+ * file and dropped after the last. While it exists `decideMigrationMode` keeps
+ * answering `fresh`, so a retry after a failure at file k continues in fresh
+ * mode instead of falling into drizzle's single-transaction path. Production
+ * never has the marker.
  *
  * Kept free of postgres-js / drizzle imports so it unit-tests against a fake.
  */
@@ -62,6 +67,10 @@ export interface FreshMigrationResult {
 }
 
 const MIGRATIONS_TABLE = '"drizzle"."__drizzle_migrations"';
+const FRESH_MARKER = '"drizzle"."__fresh_migrate_in_progress"';
+
+/** One fixed key for every run-migrations process (advisory locks are per database). */
+const MIGRATION_LOCK_KEY = 7_123_002_001;
 
 /**
  * True when a driver error means the enum value is already present (`IF NOT
@@ -84,15 +93,78 @@ export function isUndefinedType(error: unknown): boolean {
   return code === '42704' || message.includes('does not exist');
 }
 
+async function relationExists(client: MigrationSqlRunner, name: string): Promise<boolean> {
+  const [row] = await client.unsafe(`select to_regclass('${name}') as t`);
+  return row?.t !== null && row?.t !== undefined;
+}
+
 /**
- * `fresh` when the migrations table is missing or has zero rows, else `normal`.
- * `to_regclass` first: counting a table that does not exist raises 42P01.
+ * `fresh` when the in-progress marker exists (a resume), or when the
+ * migrations table is missing or empty; otherwise `normal`. A missing or empty
+ * table next to existing app tables (`public.tenants`) is refused: that is a
+ * damaged or foreign database, and fresh mode would replay the whole chain
+ * over it. `to_regclass` first: counting a table that does not exist raises
+ * 42P01.
  */
 export async function decideMigrationMode(client: MigrationSqlClient): Promise<MigrationMode> {
-  const [reg] = await client.unsafe(`select to_regclass('drizzle.__drizzle_migrations') as t`);
-  if (reg?.t === null || reg?.t === undefined) return 'fresh';
-  const [count] = await client.unsafe(`select count(*)::int as n from ${MIGRATIONS_TABLE}`);
-  return Number(count?.n ?? 0) === 0 ? 'fresh' : 'normal';
+  if (await relationExists(client, 'drizzle.__fresh_migrate_in_progress')) return 'fresh';
+  let empty = true;
+  if (await relationExists(client, 'drizzle.__drizzle_migrations')) {
+    const [count] = await client.unsafe(`select count(*)::int as n from ${MIGRATIONS_TABLE}`);
+    empty = Number(count?.n ?? 0) === 0;
+  }
+  if (!empty) return 'normal';
+  if (await relationExists(client, 'public.tenants')) {
+    throw new Error(
+      'migrate: drizzle.__drizzle_migrations is missing or empty but public.tenants exists; ' +
+        'refusing to replay every migration over an existing schema.',
+    );
+  }
+  return 'fresh';
+}
+
+/**
+ * Run `fn` under one session advisory lock, so two run-migrations processes on
+ * the same database (the ci-neon-env retry, a parallel job) never interleave.
+ * `pg_try_advisory_lock`, not the blocking form: the client's 30 s
+ * statement_timeout would cancel a blocked wait as a confusing 57014.
+ */
+export async function withMigrationLock<T>(client: MigrationSqlClient, fn: () => Promise<T>): Promise<T> {
+  const [row] = await client.unsafe(`select pg_try_advisory_lock(${MIGRATION_LOCK_KEY}) as locked`);
+  if (row?.locked !== true) {
+    throw new Error('migrate: another run-migrations holds the lock on this database; refusing to run concurrently.');
+  }
+  try {
+    return await fn();
+  } finally {
+    await client.unsafe(`select pg_advisory_unlock(${MIGRATION_LOCK_KEY}) as unlocked`);
+  }
+}
+
+async function recordedMigrations(
+  client: MigrationSqlRunner,
+): Promise<{ hashes: Set<string>; createdAts: Set<number> }> {
+  const rows = await client.unsafe(`select hash, created_at from ${MIGRATIONS_TABLE}`);
+  return {
+    hashes: new Set(rows.map((row) => String(row.hash))),
+    createdAts: new Set(rows.map((row) => Number(row.created_at))),
+  };
+}
+
+/**
+ * Journal entries recorded neither by hash nor by `created_at`. Run after
+ * either mode: in the normal path it catches an entry drizzle skipped because
+ * its `when` is older than one already applied (a stale PR migration on the
+ * CI parent, or a `when` edited after apply).
+ */
+export async function findUnrecordedMigrations(
+  client: MigrationSqlClient,
+  migrations: readonly TaggedMigration[],
+): Promise<Array<{ tag: string; folderMillis: number }>> {
+  const { hashes, createdAts } = await recordedMigrations(client);
+  return migrations
+    .filter((m) => !hashes.has(m.hash) && !createdAts.has(m.folderMillis))
+    .map((m) => ({ tag: m.tag, folderMillis: m.folderMillis }));
 }
 
 /**
@@ -135,15 +207,14 @@ export async function applyFreshMigrations(
 				hash text NOT NULL,
 				created_at bigint
 			)`);
+  await client.unsafe(`CREATE TABLE IF NOT EXISTS ${FRESH_MARKER} (started_at timestamptz NOT NULL DEFAULT now())`);
 
-  const recorded = new Set(
-    (await client.unsafe(`select hash from ${MIGRATIONS_TABLE}`)).map((row) => String(row.hash)),
-  );
+  const { hashes, createdAts } = await recordedMigrations(client);
 
   let applied = 0;
   let skipped = 0;
   for (const [index, migration] of migrations.entries()) {
-    if (recorded.has(migration.hash)) {
+    if (hashes.has(migration.hash) || createdAts.has(migration.folderMillis)) {
       skipped += 1;
       continue;
     }
@@ -172,8 +243,10 @@ export async function applyFreshMigrations(
         { cause: error },
       );
     }
-    recorded.add(migration.hash);
+    hashes.add(migration.hash);
+    createdAts.add(migration.folderMillis);
     applied += 1;
   }
+  await client.unsafe(`DROP TABLE IF EXISTS ${FRESH_MARKER}`);
   return { applied, skipped, elapsedMs: now() - started };
 }

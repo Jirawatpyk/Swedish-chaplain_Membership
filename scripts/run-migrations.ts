@@ -35,7 +35,10 @@
  *   from zero, drizzle's single transaction hits 55P04 at 0021 and the global
  *   pre-pass is inert (no type exists yet). Any DB with at least one recorded
  *   migration takes the unchanged path above, so a dev/prod deploy stays
- *   all-or-nothing. Phase 3 runs after either.
+ *   all-or-nothing. A fresh run that stops part-way leaves a marker table, so
+ *   the retry resumes in fresh mode. Phase 3 (required enums) and Phase 4
+ *   (every journal entry recorded) run after either mode, all under one
+ *   session advisory lock.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -52,10 +55,13 @@ import {
   applyFreshMigrations,
   attachJournalTags,
   decideMigrationMode,
+  findUnrecordedMigrations,
   isAlreadyExists,
   isUndefinedType,
+  withMigrationLock,
   type MigrationSqlClient,
   type MigrationSqlRunner,
+  type TaggedMigration,
 } from './lib/migrate-fresh';
 
 // Local convenience: load `.env.local` if present (covers direct `tsx`
@@ -176,15 +182,19 @@ function asMigrationClient(client: Sql): MigrationSqlClient {
   };
 }
 
-/** Fresh mode: apply the whole journal from zero, one transaction per file. */
-async function applyFreshFromZero(client: Sql): Promise<void> {
+/** Every journal entry with its tag, in journal order. */
+function journalMigrations(): TaggedMigration[] {
   const journal = JSON.parse(
     readFileSync(join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf-8'),
   ) as { entries: ReadonlyArray<{ tag: string }> };
-  const migrations = attachJournalTags(
+  return attachJournalTags(
     readMigrationFiles({ migrationsFolder: './drizzle/migrations' }),
     journal.entries,
   );
+}
+
+/** Fresh mode: apply the whole journal, one transaction per file (resumable). */
+async function applyFreshFromZero(client: Sql, migrations: readonly TaggedMigration[]): Promise<void> {
   const { applied, skipped, elapsedMs } = await applyFreshMigrations(
     asMigrationClient(client),
     migrations,
@@ -205,14 +215,18 @@ async function main(): Promise<void> {
   const db = drizzle(client);
 
   let failure: string | null = null;
+  const port = asMigrationClient(client);
   try {
-    {
-      if ((await decideMigrationMode(asMigrationClient(client))) === 'fresh') {
-        // Empty database (no / empty __drizzle_migrations): one transaction
-        // per journal entry, decided by hash — see scripts/lib/migrate-fresh.ts.
+    // One session advisory lock around the mode decision, the apply and the
+    // checks, in both modes (scripts/lib/migrate-fresh.ts § withMigrationLock).
+    await withMigrationLock(port, async () => {
+      const migrations = journalMigrations();
+      if ((await decideMigrationMode(port)) === 'fresh') {
+        // Empty database, or a fresh run that stopped part-way (the marker):
+        // one transaction per journal entry — see scripts/lib/migrate-fresh.ts.
         // drizzle's single-transaction migrate() hits 55P04 at 0021 here, and
         // the global enum pre-pass is inert because no type exists yet.
-        await applyFreshFromZero(client);
+        await applyFreshFromZero(client, migrations);
       } else {
         // Phase 1 — commit enum-adds in their own transaction (see header).
         // (Phase 0, the 016 D7 promotion gate, was deleted in PR 5 with the
@@ -226,8 +240,19 @@ async function main(): Promise<void> {
       const missing = await findMissingRequiredEnums(client);
       if (missing.length > 0) {
         failure = formatMissingEnumValuesError(missing);
+        return;
       }
-    }
+      // Phase 4 — every journal entry must be recorded (by hash or by
+      // created_at). drizzle's normal path skips an entry whose `when` is
+      // older than the newest applied one, and says nothing.
+      const unrecorded = await findUnrecordedMigrations(port, migrations);
+      if (unrecorded.length > 0) {
+        failure =
+          `${unrecorded.length} journal entr${unrecorded.length === 1 ? 'y is' : 'ies are'} not recorded in ` +
+          `drizzle.__drizzle_migrations (neither its hash nor its created_at = when):\n` +
+          unrecorded.map((m) => `  - ${m.tag} (when ${m.folderMillis})`).join('\n');
+      }
+    });
   } catch (error) {
     failure = `Migration failed: ${
       error instanceof Error ? (error.stack ?? error.message) : String(error)
