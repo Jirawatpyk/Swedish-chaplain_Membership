@@ -86,7 +86,8 @@ export default async function AdminBroadcastEditTemplatePage({
         />
       ) : null}
 
-      <Card title={template.name} description={t('editPageDescription')} headingLevel={2}>
+      {/* The card names the template; the page subtitle is not repeated (UX L8). */}
+      <Card title={template.name} headingLevel={2}>
         <AdminTemplateForm
           mode="edit"
           initial={{

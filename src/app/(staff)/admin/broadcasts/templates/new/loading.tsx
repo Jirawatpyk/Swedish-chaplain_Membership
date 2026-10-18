@@ -18,7 +18,8 @@ export default async function Loading() {
           title={t('newPageTitle')}
           subtitle={t('newPageDescription')}
         />
-        <Card title={t('newPageTitle')} description={t('newPageDescription')} headingLevel={2}>
+        {/* The page header already names the page; the card does not repeat it (UX L8). */}
+        <Card>
           <div className="flex flex-col gap-3">
             <div className="space-y-6">
               {[0, 1, 2, 3].map((i) => (

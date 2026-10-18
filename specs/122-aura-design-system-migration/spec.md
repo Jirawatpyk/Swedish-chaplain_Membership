@@ -623,7 +623,8 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - Templates: the subject wraps on phone cards instead of being cut; the visible count sits beside the pills (aria-hidden, the polite status stays the one announcement); the Starter badge's fuller name is sr-only text, not an `aria-label` on a span; the loading skeleton draws cards below 640 px.
   - Brand: the colour field and its swatch stay side by side at every width; the swatch uses `--aura-border-control`; Save is full width on phones.
   - The label offset that sets a control level with an AURA field's box is one shared constant (`src/components/shell/field-box-offset.ts`).
-  - Not changed: the invalid colour border (AURA's `error` would move the hint Save points at), and the duplicated page/card title on the settings pages (it predates this PR).
+  - The invalid colour gets AURA's danger border from `aria-invalid`, not from AURA's `error` prop, which would replace the field's hint id with its own (maintainer, 18 Oct).
+  - The new-template card no longer repeats the page title and subtitle, and the edit-template card no longer repeats the subtitle under the template name (maintainer, 18 Oct). The board draws the repeat; the page header already says it.
 
 ## User Scenarios & Testing *(mandatory)*
 

@@ -35,7 +35,8 @@ export default async function AdminBroadcastNewTemplatePage(): Promise<React.Rea
         title={t('newPageTitle')}
         subtitle={t('newPageDescription')}
       />
-      <Card title={t('newPageTitle')} description={t('newPageDescription')} headingLevel={2}>
+      {/* The page header already names the page; the card does not repeat it (UX L8). */}
+      <Card>
         <AdminTemplateForm
           mode="new"
           initial={{ name: '', subject: '', bodyHtml: '', locale: 'en' }}

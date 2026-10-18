@@ -22,10 +22,7 @@ export default async function Loading() {
             (a block inside a heading would not be valid markup). */}
         <Card>
           <div className="flex flex-col gap-[var(--aura-space-6)]">
-            <div className="flex flex-col gap-1">
-              <SkeletonBlock className="h-6 w-1/2" />
-              <p className="aura-text-body text-[var(--aura-fg-secondary)]">{t('editPageDescription')}</p>
-            </div>
+            <SkeletonBlock className="h-6 w-1/2" />
             <div className="space-y-6">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="space-y-2">

@@ -66,7 +66,7 @@ export async function renderTemplateFormPreview(mode: 'new' | 'edit') {
     return (
       <FormContainer>
         <PageHeader title={t('newPageTitle')} subtitle={t('newPageDescription')} />
-        <Card title={t('newPageTitle')} description={t('newPageDescription')} headingLevel={2}>
+        <Card>
           <AdminTemplateForm mode="new" initial={{ name: '', subject: '', bodyHtml: '', locale: 'en' }} />
         </Card>
       </FormContainer>
@@ -76,7 +76,7 @@ export async function renderTemplateFormPreview(mode: 'new' | 'edit') {
     <FormContainer>
       <PageHeader title={t('editPageTitle')} subtitle={t('editPageDescription')} />
       <AdminTemplateEditConfirmStarter templateId="t1" templateName="Monthly Newsletter" />
-      <Card title="Monthly Newsletter" description={t('editPageDescription')} headingLevel={2}>
+      <Card title="Monthly Newsletter" headingLevel={2}>
         <AdminTemplateForm
           mode="edit"
           initial={{

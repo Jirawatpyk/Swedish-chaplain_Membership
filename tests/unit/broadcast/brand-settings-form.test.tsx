@@ -145,6 +145,17 @@ describe('BrandSettingsForm — postal address', () => {
     expect(picker.parentElement).not.toHaveClass('flex-col');
   });
 
+  it('UX L4: an invalid colour gets the danger border without moving the hint Save points at', async () => {
+    renderForm();
+    const field = screen.getByLabelText(/primary colour/i);
+    fireEvent.change(field, { target: { value: '#f5f5f5' } });
+    expect(field).toHaveAttribute('aria-invalid', 'true');
+    const root = field.closest('.aura-field');
+    expect(root?.className).toContain('[&_div:has(>input[aria-invalid=true])]:border-[var(--aura-border-danger)]');
+    // No AURA `error`: the field keeps its own hint id in aria-describedby.
+    expect(root).not.toHaveClass('is-invalid');
+  });
+
   it('UX L5: Save is full width on phones', () => {
     renderForm();
     expect(screen.getByRole('button', { name: /^save/i })).toHaveClass('max-sm:w-full');

@@ -40,6 +40,8 @@ import PortalComposeLoading from '@/app/(member)/portal/broadcasts/new/loading';
 import AdminComposeLoading from '@/app/(staff)/admin/broadcasts/new/loading';
 import TemplatesLoading from '@/app/(staff)/admin/broadcasts/templates/loading';
 import BrandLoading from '@/app/(staff)/admin/settings/broadcasts/brand/loading';
+import NewTemplateLoading from '@/app/(staff)/admin/broadcasts/templates/new/loading';
+import EditTemplateLoading from '@/app/(staff)/admin/broadcasts/templates/[id]/edit/loading';
 
 afterEach(() => {
   cleanup();
@@ -87,6 +89,17 @@ describe('U12 — the compose, templates and brand skeletons match their pages',
     expect(cards).toHaveLength(5);
     for (const card of cards) expect(card.parentElement).toHaveClass('sm:hidden');
     expect(container.querySelector('[data-skeleton="template-rows"]')).toHaveClass('max-sm:hidden');
+  });
+
+  it('UX L8: the new-template card does not repeat the page title or subtitle', async () => {
+    const { container } = render((await NewTemplateLoading()) as React.ReactElement);
+    expect(container.querySelectorAll('h2')).toHaveLength(0);
+    expect(container.textContent?.match(/newPageDescription/g)).toHaveLength(1);
+  });
+
+  it('UX L8: the edit-template card keeps the name block but not a second subtitle', async () => {
+    const { container } = render((await EditTemplateLoading()) as React.ReactElement);
+    expect(container.textContent?.match(/editPageDescription/g)).toHaveLength(1);
   });
 
   it('brand settings (#400 U5): the SAVED state — no first-visit-only rows reserved', async () => {
