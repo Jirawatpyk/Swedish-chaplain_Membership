@@ -478,6 +478,16 @@ export const MIGRATED_PATHS = [
   // US11 — the staff dashboard (the `(home)` route group) and its components.
   'src/app/(staff)/admin/(home)/**',
   'src/components/dashboard/**',
+  // US12a — E-Blast broadcast settings (image allowlist, brand), the template
+  // library and form, and the marketing audience (the whole marketing area,
+  // its error boundary included).
+  'src/app/(staff)/admin/settings/broadcasts/**',
+  'src/app/(staff)/admin/broadcasts/templates/**',
+  'src/components/broadcast/admin/template-library.tsx',
+  'src/components/broadcast/admin/template-form.tsx',
+  'src/components/broadcast/admin-image-allowlist-editor.tsx',
+  'src/components/broadcast/brand/brand-settings-form.tsx',
+  'src/app/(staff)/admin/marketing/**',
 ];
 
 /**

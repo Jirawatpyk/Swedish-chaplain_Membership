@@ -1,10 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -23,12 +18,14 @@ export default async function Loading() {
           title={t('editPageTitle')}
           subtitle={t('editPageDescription')}
         />
+        {/* The card's title is the template's name, so it is a block here
+            (a block inside a heading would not be valid markup). */}
         <Card>
-          <CardHeader>
-            <SkeletonBlock className="h-6 w-1/2" />
-            <CardDescription>{t('editPageDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
+          <div className="flex flex-col gap-[var(--aura-space-6)]">
+            <div className="flex flex-col gap-1">
+              <SkeletonBlock className="h-6 w-1/2" />
+              <p className="aura-text-body text-[var(--aura-fg-secondary)]">{t('editPageDescription')}</p>
+            </div>
             <div className="space-y-6">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="space-y-2">
@@ -42,7 +39,7 @@ export default async function Loading() {
                 <SkeletonBlock className="h-9 w-28" />
               </div>
             </div>
-          </CardContent>
+          </div>
         </Card>
       </FormContainer>
     </PageSkeletonShell>

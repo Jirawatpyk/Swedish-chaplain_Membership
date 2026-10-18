@@ -188,8 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the broadcast settings keep the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/broadcasts/loading.tsx')).toEqual([]);
+    it('control: the E-Blast queue filters keep the legacy kit until US12b', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/admin/queue-filters.tsx')).toEqual([]);
     });
   });
 
@@ -370,8 +370,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the broadcast settings keep the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/broadcasts/page.tsx')).toEqual([]);
+    it('control: the E-Blast detail keeps the legacy kit until US12c', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/[id]/page.tsx')).toEqual([]);
     });
   });
 
@@ -448,8 +448,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the broadcast settings keep the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/broadcasts/error.tsx')).toEqual([]);
+    it('control: the E-Blast schedule dialog keeps the legacy kit until US12c', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/approval/schedule-confirm-dialog.tsx')).toEqual([]);
     });
   });
 
@@ -474,8 +474,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast brand page keeps the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/broadcasts/brand/loading.tsx')).toEqual([]);
+    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/compose-form.tsx')).toEqual([]);
     });
   });
 
@@ -496,8 +496,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the broadcast settings keep the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/settings/broadcasts/page.tsx')).toEqual([]);
+    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/error.tsx')).toEqual([]);
     });
   });
 
@@ -673,6 +673,35 @@ describe('UI import ratchet (spec 122)', () => {
       'src/components/events/zapier-walkthrough.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+  });
+
+  describe('the US12a broadcast settings, templates and marketing audience are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+    it.each([
+      'src/app/(staff)/admin/settings/broadcasts/page.tsx',
+      'src/app/(staff)/admin/settings/broadcasts/loading.tsx',
+      'src/app/(staff)/admin/settings/broadcasts/error.tsx',
+      'src/app/(staff)/admin/settings/broadcasts/brand/page.tsx',
+      'src/app/(staff)/admin/settings/broadcasts/brand/loading.tsx',
+      'src/app/(staff)/admin/settings/broadcasts/brand/error.tsx',
+      'src/app/(staff)/admin/broadcasts/templates/page.tsx',
+      'src/app/(staff)/admin/broadcasts/templates/new/page.tsx',
+      'src/app/(staff)/admin/broadcasts/templates/[id]/edit/page.tsx',
+      'src/components/broadcast/admin/template-library.tsx',
+      'src/components/broadcast/admin/template-form.tsx',
+      'src/components/broadcast/admin-image-allowlist-editor.tsx',
+      'src/components/broadcast/brand/brand-settings-form.tsx',
+      'src/app/(staff)/admin/marketing/error.tsx',
+      'src/app/(staff)/admin/marketing/audience/page.tsx',
+      'src/app/(staff)/admin/marketing/audience/_components/audience-filters.tsx',
+      'src/components/shell/tiptap-loader.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the E-Blast queue keeps the legacy kit until US12b', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/admin/queue-table-client.tsx')).toEqual([]);
     });
   });
 });

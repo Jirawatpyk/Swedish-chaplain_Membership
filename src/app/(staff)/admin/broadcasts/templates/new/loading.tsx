@@ -1,11 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import {
@@ -24,12 +18,8 @@ export default async function Loading() {
           title={t('newPageTitle')}
           subtitle={t('newPageDescription')}
         />
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('newPageTitle')}</CardTitle>
-            <CardDescription>{t('newPageDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
+        <Card title={t('newPageTitle')} description={t('newPageDescription')} headingLevel={2}>
+          <div className="flex flex-col gap-3">
             <div className="space-y-6">
               {[0, 1, 2, 3].map((i) => (
                 <div key={i} className="space-y-2">
@@ -42,8 +32,7 @@ export default async function Loading() {
                 <SkeletonBlock className="h-9 w-20" />
                 <SkeletonBlock className="h-9 w-28" />
               </div>
-            </div>
-          </CardContent>
+            </div>          </div>
         </Card>
       </FormContainer>
     </PageSkeletonShell>
