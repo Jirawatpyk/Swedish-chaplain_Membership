@@ -1,10 +1,15 @@
+// @vitest-environment node
 /**
  * `scripts/ci-neon-key-scope.ts` — the M3 key-scope proof (PR #586 review,
  * the security sign-off condition), two-sided and fail-closed:
- *   (i)  GET /projects is non-200 (a project-scoped key cannot list), OR 200
+ *   (i)  GET /projects is 404 or 403 (a project-scoped key cannot list), OR 200
  *        with exactly one project whose id is NEON_CI_PROJECT_ID;
  *   (ii) GET /projects/{NEON_CI_PROJECT_ID} is 200 with that id.
  * Every other combination fails, and nothing printed carries the key.
+ *
+ * Node environment, not jsdom: the script runs under Node, and jsdom's own
+ * DOMException is not `instanceof` Node's Error, which made the timeout-name
+ * test of ba19c0f32 go RED for a realm reason rather than a behaviour one.
  */
 import { describe, expect, it } from 'vitest';
 import { checkKeyScope, keyScopeVerdict, type ScopeResponse } from '../../../scripts/ci-neon-key-scope';

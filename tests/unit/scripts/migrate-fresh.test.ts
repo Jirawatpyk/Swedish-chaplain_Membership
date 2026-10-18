@@ -300,6 +300,20 @@ describe('scripts/run-migrations.ts env loading', () => {
     };
     expect(pkg.scripts['db:migrate']).toMatch(/--env-file=\.env\.local .*scripts\/run-migrations\.ts/);
   });
+
+  it('passes the pooled flag, uninverted, from the target URL into withMigrationLock', () => {
+    const source = readFileSync(resolve(__dirname, '../../../scripts/run-migrations.ts'), 'utf-8');
+    const code = source
+      .split(/\r?\n/)
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join('\n');
+    // The one call: `withMigrationLock(port, async () => { ... }, { pooled: isPooledConnection(url!) })`.
+    // Dropping the options, inverting the flag (`!isPooledConnection`) or hard-coding it all fail here.
+    expect(code.match(/withMigrationLock\(/g) ?? []).toHaveLength(1);
+    const call = code.slice(code.indexOf('withMigrationLock('));
+    const options = /\}\s*,\s*\{\s*pooled:\s*([^}]*?)\s*\}\s*\)/.exec(call);
+    expect(options?.[1]).toBe('isPooledConnection(url!)');
+  });
 });
 
 describe('applyFreshMigrations', () => {

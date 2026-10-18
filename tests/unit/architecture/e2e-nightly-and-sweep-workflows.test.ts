@@ -8,7 +8,8 @@
  * find steps and run blocks, and the fixture below must be flagged.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { INJECTABLE, codeLines, lines, runBlocks, stepCount, stepRange } from './workflow-yaml-text';
@@ -294,12 +295,37 @@ describe('ci-e2e-branch-sweep.yml — review round 2 (PR #586)', () => {
     expect(curls.every((l) => /--max-time \d+/.test(l))).toBe(true);
   });
 
-  it('keeps going after a failed DELETE, reports each failure, and fails the step at the end', () => {
+  it('keeps going after a failed DELETE, reports each failure, and fails the step at the end (executed)', () => {
     const body = sweep();
-    expect(body).toMatch(/if ! curl [^\n]*-X DELETE/);
-    expect(body).toMatch(/::warning title=ci-e2e sweep delete failed/);
-    expect(body).toMatch(/failed=\$\(\( failed \+ 1 \)\)/);
-    expect(body).toMatch(/\[ "\$failed" -gt 0 \] && exit 1/);
+    const start = body.indexOf('# delete-loop:start');
+    const end = body.indexOf('# delete-loop:end');
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const loop = body
+      .slice(start, end)
+      .split('\n')
+      .map((l) => l.replace(/^ {10}/, ''))
+      .join('\n');
+    const summary = join(mkdtempSync(join(tmpdir(), 'sweep-')), 'summary.md');
+    // A fake curl: every DELETE of br-bad fails, every other call succeeds.
+    const script = [
+      'set -euo pipefail',
+      'curl() { for a in "$@"; do case "$a" in *br-bad*) return 22 ;; esac; done; return 0; }',
+      'DRY_RUN=false',
+      'PARENT_BRANCH_ID=br-parent',
+      'NEON_API_KEY=fake',
+      'api=https://neon.invalid/api/v2/projects/p',
+      `GITHUB_STEP_SUMMARY='${summary.replace(/\\/g, '/')}'`,
+      "candidates=$'br-bad ci-e2e/1-1\\nbr-ok ci-e2e/2-1'",
+      loop,
+    ].join('\n');
+    const run = spawnSync('bash', ['-c', script], {
+      env: { PATH: process.env.PATH ?? '' } as unknown as NodeJS.ProcessEnv,
+      encoding: 'utf8',
+    });
+    expect(run.stdout).toMatch(/::warning title=ci-e2e sweep delete failed::ci-e2e\/1-1/);
+    expect(readFileSync(summary, 'utf8')).toMatch(/deleted `ci-e2e\/2-1`/);
+    expect(run.status).toBe(1);
   });
 
   it('warns when Neon paginated the branch list instead of sweeping silently', () => {
