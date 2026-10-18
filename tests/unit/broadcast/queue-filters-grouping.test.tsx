@@ -16,7 +16,7 @@
  * since `QueueFilters` is a client component driven entirely by URL state.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
@@ -87,7 +87,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
    * this assertion by itself — the count is what went stale here, and it is the
    * only thing in the file that could.
    */
-  it('renders one checkbox per non-retired status across the two groups', () => {
+  it('renders one stage chip per non-retired status across the two groups', () => {
     render(
       <Provider>
         <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
@@ -99,7 +99,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
     // disagree with the real strip: the assertion tracked the component, and
     // nothing tracked the skeleton.
     const offered = OFFERED_BROADCAST_STATUSES;
-    expect(screen.getAllByRole('checkbox')).toHaveLength(offered.length);
+    expect(within(screen.getByRole('group', { name: /^stage$/i })).getAllByRole('button')).toHaveLength(offered.length);
 
     // Positive controls: the count alone passes if the strip renders the wrong
     // eight, and it also passes if a live status were retired by mistake.
@@ -132,7 +132,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
       </Provider>,
     );
 
-    expect(screen.getAllByRole('checkbox')).toHaveLength(
+    expect(within(screen.getByRole('group', { name: /^stage$/i })).getAllByRole('button')).toHaveLength(
       OFFERED_BROADCAST_STATUSES.length,
     );
     // Both halves named, so a change to either list has to be deliberate twice.

@@ -18,20 +18,11 @@
  * Findings closed by this file: D1, D2, D3 (filter buttons), A1, A2,
  * A3, H3 (see specs/010-email-broadcast review report).
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useTransition } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { CalendarClockIcon, CheckIcon, InboxIcon, XIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { CalendarClockIcon, InboxIcon } from 'lucide-react';
+import { Button, FilterBar, FilterSelect, Tag, TextField } from '@jirawatpyk/aura-react';
 // Import directly from the Domain value-object file (NOT the module
 // barrel) — the barrel re-exports infrastructure adapters that pull in
 // server-only Next.js APIs (`revalidateTag` via the F5 payments repo
@@ -43,7 +34,6 @@ import {
   type BroadcastStatus,
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { MARKETING_TURN_STATUSES } from '@/modules/broadcasts/domain/stage/whose-turn';
-import { cn } from '@/lib/utils';
 
 const DEBOUNCE_MS = 300;
 
@@ -193,6 +183,23 @@ export function QueueFilters({
   const currentMemberId = searchParams.get('memberId') ?? '';
   const currentFromDate = searchParams.get('fromDate') ?? '';
   const currentToDate = searchParams.get('toDate') ?? '';
+  // Spec 122 US12b — the date fields keep their typed value with the page
+  // (AURA moves the bar's controls into the phone "Filters" sheet and back, so
+  // an uncontrolled field would reset). Each re-syncs when the URL changes
+  // (navigation, Reset), with the render-time "adjust state when a prop
+  // changes" pattern; typing still commits to the URL after DEBOUNCE_MS.
+  const [fromInput, setFromInput] = useState(currentFromDate);
+  const [toInput, setToInput] = useState(currentToDate);
+  const [syncedFrom, setSyncedFrom] = useState(currentFromDate);
+  const [syncedTo, setSyncedTo] = useState(currentToDate);
+  if (currentFromDate !== syncedFrom) {
+    setSyncedFrom(currentFromDate);
+    setFromInput(currentFromDate);
+  }
+  if (currentToDate !== syncedTo) {
+    setSyncedTo(currentToDate);
+    setToInput(currentToDate);
+  }
   // FR-030 — the chip counts are per stage for the WHOLE tenant (the FR-025
   // backlog; R18 offers a chip by them), so they do not follow a member filter,
   // a date range or the Upcoming bound. With one of those on, the Stage group
@@ -389,7 +396,7 @@ export function QueueFilters({
 
   // UX review LOW — when the control that had focus unmounted with the URL
   // change it started, focus fell to `<body>` and a keyboard user had to Tab
-  // back from the top of the page. Hand it to the first Stage checkbox — only
+  // back from the top of the page. Hand it to the first Stage chip — only
   // then, and only if focus really was lost, so a URL change started anywhere
   // else never moves focus.
   useEffect(() => {
@@ -397,211 +404,162 @@ export function QueueFilters({
     restoreFocusRef.current = false;
     if (document.activeElement !== null && document.activeElement !== document.body) return;
     stageFieldsetRef.current
-      ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+      ?.querySelector<HTMLButtonElement>('button[aria-pressed]')
       ?.focus();
   }, [searchParams]);
 
   const renderChip = (s: BroadcastStatus): React.ReactElement => {
     const label = tStatus(s);
     const count = stageCounts === null ? null : stageCounts[s];
-    // T086a V4 (PR-1's U14) — the 44 px pill wears the focus ring (the
-    // Button's own tokens) while its checkbox has keyboard focus; the 16 px
-    // checkbox drops its outline so there is one ring, not two. The checkbox
-    // stays the focusable control: Tab, Space and its name are unchanged.
+    const checked = isStatusChecked(s);
+    // Spec 122 US12b — an AURA toggle chip (`aria-pressed`), as every list's
+    // filter chips; toggling writes the same URL the checkbox did.
     return (
-      <label
+      <Tag
         key={s}
-        className="flex min-h-[44px] max-w-full cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 py-2 text-xs transition-[color,box-shadow] hover:bg-muted/40 has-[:checked]:bg-primary/10 has-[:checked]:border-primary/40 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+        data-status={s}
+        selected={checked}
+        touchHeight
+        title={label}
+        className="max-w-full"
+        onClick={() => toggleStatus(s, !checked)}
       >
-        <input
-          type="checkbox"
-          name="status"
-          value={s}
-          checked={isStatusChecked(s)}
-          onChange={(e) => toggleStatus(s, e.target.checked)}
-          className="h-4 w-4 shrink-0 accent-primary focus-visible:outline-none"
-        />
         {/* SV runs up to +28 %: below `sm` the label truncates inside its chip
             (the full text in the tooltip) instead of reflowing the strip at
-            320 px. From `sm` up there is room for the whole label, so it is no
-            longer capped (UX review M4 — it truncated at every width). */}
-        <span className="min-w-0 max-w-[14rem] truncate sm:max-w-none" title={label}>
-          {label}
-        </span>
+            320 px; from `sm` up the whole label shows (UX review M4). */}
+        <span className="min-w-0 max-w-[14rem] truncate sm:max-w-none">{label}</span>
         {count !== null ? (
           <>
             {' '}
             {/* The number is visual; its words are in the accessible name. */}
-            <span
-              aria-hidden="true"
-              className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] leading-none tabular-nums"
-            >
+            <span aria-hidden="true" className="shrink-0 tabular-nums text-[var(--aura-fg-secondary)]">
               {count}
             </span>
             <span className="sr-only">{t('chipCount', { count })}</span>
           </>
         ) : null}
-      </label>
+      </Tag>
     );
   };
 
+  // The phone "Filters (n)" count: the bar has no chips of its own, so it is
+  // told how many filters are on (a preset is a stage filter).
+  const filterCount =
+    (urlStatus.length > 0 || currentStatusAll ? 1 : 0) +
+    (currentMemberId ? 1 : 0) +
+    (currentFromDate ? 1 : 0) +
+    (currentToDate ? 1 : 0);
+
+  // Spec 122 US12b — the global filter pattern: an AURA `FilterBar` whose
+  // controls fold into a "Filters (n)" sheet below 640 px. Reset (back to the
+  // default view, not "show everything") stays in the bar.
   return (
-    <div
-      role="search"
-      aria-label={t('formAriaLabel')}
-      className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/20 p-3"
+    <FilterBar
+      collapseBelow="sm"
+      touchHeight
+      label={t('formAriaLabel')}
+      filterCount={filterCount}
+      actions={
+        hasAnyFilter ? (
+          <Button variant="ghost" size="sm" touchHeight icon="x" onClick={clearAll}>
+            {t('reset')}
+          </Button>
+        ) : undefined
+      }
     >
       {/* UX review B1 — `min-w-0` on the fieldset AND on both group rows: a
           fieldset's default `min-inline-size: min-content` and a flex item's
           `min-width: auto` each pin a chip at its min-content width, so the
-          chip's `truncate` never engaged and the SV "member approved" chip ran
-          334 px wide at a 320 px viewport. Every link of the chain needs it. */}
+          chip's truncation never engaged at 320 px. */}
       <fieldset
         ref={stageFieldsetRef}
-        className="min-w-0 space-y-1"
+        className="m-0 flex min-w-0 basis-full flex-col gap-[var(--aura-space-2)] border-0 p-0"
         aria-describedby={countsCoverMoreThanView ? countsNoteId : undefined}
       >
-        <legend className="mb-[var(--field-label-gap)] text-[length:var(--font-size-body)] font-medium">
+        <legend className="mb-[var(--aura-space-1)] p-0 aura-text-body font-medium">
           {t('statusLabel')}
         </legend>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-[var(--aura-space-3)]">
           <div
             role="group"
             aria-label={tStatusGroup('inReview')}
-            className="flex min-w-0 flex-wrap gap-2"
+            className="flex min-w-0 flex-wrap gap-[var(--aura-space-2)]"
           >
             {IN_REVIEW_STATUSES.filter(isOffered).map(renderChip)}
           </div>
           <div
             role="group"
             aria-label={tStatusGroup('terminal')}
-            className="flex min-w-0 flex-wrap gap-2"
+            className="flex min-w-0 flex-wrap gap-[var(--aura-space-2)]"
           >
             {TERMINAL_STATUSES.filter(isOffered).map(renderChip)}
           </div>
         </div>
         {countsCoverMoreThanView ? (
-          <p id={countsNoteId} className="text-xs text-muted-foreground">
+          <p id={countsNoteId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
             {t('chipCountsScope')}
           </p>
         ) : null}
       </fieldset>
 
-      <div className="space-y-1">
-        <Label htmlFor="filter-member">{t('memberLabel')}</Label>
-        <Select
-          value={currentMemberId || 'all'}
-          onValueChange={(v) => pushUrl({ memberId: v === 'all' ? null : v })}
-        >
-          <SelectTrigger
-            id="filter-member"
-            className="w-56"
-            aria-label={t('memberLabel')}
-          >
-            <TranslatedSelectValue
-              placeholder={t('memberAll')}
-              translate={(v) => {
-                if (!v || v === 'all') return t('memberAll');
-                return (
-                  memberOptions.find((m) => m.memberId === v)?.displayName ?? v
-                );
-              }}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('memberAll')}</SelectItem>
-            {memberOptions.map((m) => (
-              <SelectItem key={m.memberId} value={m.memberId}>
-                {m.displayName}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <FilterSelect
+        label={t('memberLabel')}
+        allLabel={t('memberAll')}
+        value={currentMemberId}
+        onChange={(v) => pushUrl({ memberId: v || null })}
+        options={[
+          { value: '', label: t('memberAll') },
+          ...memberOptions.map((m) => ({ value: m.memberId, label: m.displayName })),
+        ]}
+      />
 
-      <div className="space-y-1">
-        <Label htmlFor="filter-from">{t('fromDate')}</Label>
-        <Input
-          id="filter-from"
-          type="date"
-          name="fromDate"
-          // `key` forces re-mount when URL value changes, ensuring the
-          // native input reflects URL-driven state after navigation.
-          key={`from-${currentFromDate}`}
-          defaultValue={currentFromDate}
-          onChange={(e) => onDateChange('fromDate', e.target.value)}
-          className="w-40"
-        />
-      </div>
+      <TextField
+        id="filter-from"
+        type="date"
+        name="fromDate"
+        touchHeight
+        label={t('fromDate')}
+        value={fromInput}
+        onChange={(e) => {
+          setFromInput(e.target.value);
+          onDateChange('fromDate', e.target.value);
+        }}
+      />
 
-      <div className="space-y-1">
-        <Label htmlFor="filter-to">{t('toDate')}</Label>
-        <Input
-          id="filter-to"
-          type="date"
-          name="toDate"
-          key={`to-${currentToDate}`}
-          defaultValue={currentToDate}
-          onChange={(e) => onDateChange('toDate', e.target.value)}
-          className="w-40"
-        />
-      </div>
+      <TextField
+        id="filter-to"
+        type="date"
+        name="toDate"
+        touchHeight
+        label={t('toDate')}
+        value={toInput}
+        onChange={(e) => {
+          setToInput(e.target.value);
+          onDateChange('toDate', e.target.value);
+        }}
+      />
 
-      {/* UX review H5 — the pressed state wears the stage chip's checked
-          style plus a check icon. The old `outline` -> `secondary` swap
-          changed the fill by 1.09:1 (light) / 1.31:1 (dark): state you could
-          not see. */}
-      <Button
-        type="button"
-        variant="outline"
-        aria-pressed={upcomingActive}
+      {/* UX review H5 — a pressed preset must look pressed: AURA's selected
+          chip, the same as a ticked stage. */}
+      <Tag
+        selected={upcomingActive}
+        touchHeight
+        icon={<CalendarClockIcon aria-hidden="true" />}
         onClick={toggleUpcoming}
-        className={cn(
-          'whitespace-nowrap',
-          upcomingActive && 'border-primary/40 bg-primary/10 hover:bg-primary/15',
-        )}
       >
-        {upcomingActive ? (
-          <CheckIcon className="size-4" aria-hidden="true" data-icon="pressed-check" />
-        ) : (
-          <CalendarClockIcon className="size-4" aria-hidden="true" />
-        )}
         {t('upcomingSends')}
-      </Button>
+      </Tag>
 
       {marketingPresetOffered && (
-        <Button
-          type="button"
-          variant="outline"
-          aria-pressed={marketingActive}
+        <Tag
+          selected={marketingActive}
+          touchHeight
+          icon={<InboxIcon aria-hidden="true" />}
           onClick={toggleMarketing}
-          className={cn(
-            'whitespace-nowrap',
-            marketingActive && 'border-primary/40 bg-primary/10 hover:bg-primary/15',
-          )}
         >
-          {marketingActive ? (
-            <CheckIcon className="size-4" aria-hidden="true" data-icon="pressed-check" />
-          ) : (
-            <InboxIcon className="size-4" aria-hidden="true" />
-          )}
           {t('waitingOnMarketing')}
-        </Button>
+        </Tag>
       )}
-
-      {/* UX review LOW — the default h-9, like the controls beside it (it
-          was `size="sm"`, h-7). */}
-      {hasAnyFilter && (
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={clearAll}
-          className="whitespace-nowrap"
-        >
-          <XIcon className="size-4" aria-hidden="true" />
-          {t('reset')}
-        </Button>
-      )}
-    </div>
+    </FilterBar>
   );
 }

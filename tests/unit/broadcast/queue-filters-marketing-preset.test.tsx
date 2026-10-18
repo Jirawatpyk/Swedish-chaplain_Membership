@@ -128,7 +128,7 @@ describe('the preset is offered only while the approval round is visible (#400 U
     expect(presetButton()).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('turning that preset off unmounts the toggle — focus goes to the first Stage checkbox, never <body>', () => {
+  it('turning that preset off unmounts the toggle — focus goes to the first Stage chip, never <body>', () => {
     nav.searchParams.current = new URL(MARKETING_TURN_QUEUE_HREF, 'http://x').searchParams;
     const { rerender } = render(filters({ approvalRoundEnabled: false }));
     presetButton().focus();
@@ -139,7 +139,7 @@ describe('the preset is offered only while the approval round is visible (#400 U
     expect(queryPreset()).toBeNull();
     const firstStage = screen
       .getByRole('group', { name: /stage/i })
-      .querySelector<HTMLInputElement>('input[type="checkbox"]');
+      .querySelector<HTMLButtonElement>('button[aria-pressed]');
     expect(document.activeElement).toBe(firstStage);
   });
 });
