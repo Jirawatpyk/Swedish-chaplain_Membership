@@ -283,3 +283,27 @@ describe('.github/workflows/ci-e2e-branch-sweep.yml', () => {
     expect(sweep()).toMatch(/::warning title=ci-e2e sweep \(dry run\)/);
   });
 });
+
+describe('ci-e2e-branch-sweep.yml — review round 2 (PR #586)', () => {
+  const src = read(SWEEP);
+  const sweep = () => step(src, /- name: Sweep stale ci-e2e branches/);
+
+  it('bounds every Neon call with --max-time', () => {
+    const curls = sweep().split('\n').filter((l) => /\bcurl\b/.test(l));
+    expect(curls.length).toBeGreaterThanOrEqual(2);
+    expect(curls.every((l) => /--max-time \d+/.test(l))).toBe(true);
+  });
+
+  it('keeps going after a failed DELETE, reports each failure, and fails the step at the end', () => {
+    const body = sweep();
+    expect(body).toMatch(/if ! curl [^\n]*-X DELETE/);
+    expect(body).toMatch(/::warning title=ci-e2e sweep delete failed/);
+    expect(body).toMatch(/failed=\$\(\( failed \+ 1 \)\)/);
+    expect(body).toMatch(/\[ "\$failed" -gt 0 \] && exit 1/);
+  });
+
+  it('warns when Neon paginated the branch list instead of sweeping silently', () => {
+    expect(sweep()).toMatch(/\.pagination\.next/);
+    expect(sweep()).toMatch(/::warning title=ci-e2e sweep paginated/);
+  });
+});

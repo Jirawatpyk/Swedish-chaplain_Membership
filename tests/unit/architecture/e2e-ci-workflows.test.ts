@@ -306,3 +306,34 @@ describe('e2e-critical.yml — review round 1 (PR #586)', () => {
     expect(blocks.filter((b) => b.text.includes('${{')).map((b) => `line ${b.line}`)).toEqual([]);
   });
 });
+
+describe('e2e-critical.yml — review round 2 (PR #586)', () => {
+  const src = read(WORKFLOW);
+  const BASELINES = join(process.cwd(), '.github', 'ci', 'e2e-critical-baselines.json');
+
+  it('warns when a spec runs over 1.5x its recorded baseline, read from one file', () => {
+    const summary = step(src, /- name: Timing and per-spec summary/);
+    expect(summary).toMatch(/\.github\/ci\/e2e-critical-baselines\.json/);
+    expect(summary).toMatch(/1\.5/);
+    expect(summary).toMatch(/::warning title=Slow @critical spec/);
+  });
+
+  it('keeps a positive baseline (seconds) for every @critical spec, and no other', () => {
+    const baselines = JSON.parse(read(BASELINES) || '{}') as Record<string, unknown>;
+    const names = Object.keys(baselines).filter((k) => !k.startsWith('_'));
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) expect(typeof baselines[name] === 'number' && (baselines[name] as number) > 0).toBe(true);
+    const tagged = lines(read(join(process.cwd(), 'tests', 'unit', 'architecture', 'e2e-critical-set.test.ts')))
+      .map((l) => /^\s+'([\w/-]+\.spec\.ts)',\s*$/.exec(l)?.[1])
+      .filter((n): n is string => n !== undefined);
+    expect(tagged.length).toBeGreaterThan(5);
+    expect(names.sort()).toEqual([...tagged].sort());
+  });
+
+  it('bounds the readiness wait by a real 3-minute deadline', () => {
+    const server = step(src, /- name: Start the app/);
+    expect(server).toMatch(/deadline=\$\(\( SECONDS \+ 180 \)\)/);
+    expect(server).toMatch(/while \[ "\$SECONDS" -lt "\$deadline" \]/);
+    expect(server).toMatch(/within 3 minutes/);
+  });
+});
