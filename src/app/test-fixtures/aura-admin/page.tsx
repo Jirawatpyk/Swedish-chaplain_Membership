@@ -108,6 +108,13 @@ import {
 import { ATTENDEE_ROWS, ERASURE_EMAIL, ERASURE_ROWS, EVENT_DETAIL, EVENT_ID, EVENT_ROWS, IMPORT_HISTORY_ROWS, IMPORT_PICKER_EVENTS, MEMBER_SEARCH_HITS } from './event-fixtures';
 import { ImportPreviewDriver, MemberSearchStub, OpenRotateDialog, OpenRowEraseMenu, RevealPreview } from './event-previews';
 import { MembersApiStub, PickRadioInDialog } from './user-previews';
+import {
+  renderAudiencePreview,
+  renderBrandPreview,
+  renderBroadcastSettingsPreview,
+  renderTemplateFormPreview,
+  renderTemplatesPreview,
+} from './eblast-previews';
 import { UsersListBody } from '@/app/(staff)/admin/users/_components/users-list-body';
 import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
 import { CsvMappingForm } from '@/components/events/csv-mapping-form';
@@ -474,6 +481,30 @@ const LOADING_ROUTES = {
   'invoice-settings': {
     path: '/admin/settings/invoicing',
     load: async () => (await import('@/app/(staff)/admin/settings/invoicing/loading')).default(),
+  },
+  templates: {
+    path: '/admin/broadcasts/templates',
+    load: async () => (await import('@/app/(staff)/admin/broadcasts/templates/loading')).default(),
+  },
+  'template-new': {
+    path: '/admin/broadcasts/templates/new',
+    load: async () => (await import('@/app/(staff)/admin/broadcasts/templates/new/loading')).default(),
+  },
+  'template-edit': {
+    path: '/admin/broadcasts/templates/t1/edit',
+    load: async () => (await import('@/app/(staff)/admin/broadcasts/templates/[id]/edit/loading')).default(),
+  },
+  'broadcast-settings': {
+    path: '/admin/settings/broadcasts',
+    load: async () => (await import('@/app/(staff)/admin/settings/broadcasts/loading')).default(),
+  },
+  brand: {
+    path: '/admin/settings/broadcasts/brand',
+    load: async () => (await import('@/app/(staff)/admin/settings/broadcasts/brand/loading')).default(),
+  },
+  audience: {
+    path: '/admin/marketing/audience',
+    load: async () => (await import('@/app/(staff)/admin/marketing/audience/loading')).default(),
   },
 } as const;
 
@@ -1879,6 +1910,35 @@ export default async function AuraAdminPreviewPage({
         })}
       </StaffFrame>
     );
+  }
+
+  // 122 US12a (T1208) — E-Blast settings, templates and the marketing
+  // audience (boards Admin-broadcast-templates*, Admin-settings-broadcasts*,
+  // Admin-settings-brand*, Admin-marketing-audience*, Admin-state-audience-*).
+  if (view === 'templates') {
+    return <StaffFrame path="/admin/broadcasts/templates">{await renderTemplatesPreview(state)}</StaffFrame>;
+  }
+  if (view === 'template-new' || view === 'template-edit') {
+    return (
+      <StaffFrame path={view === 'template-new' ? '/admin/broadcasts/templates/new' : '/admin/broadcasts/templates/t1/edit'}>
+        {await renderTemplateFormPreview(view === 'template-new' ? 'new' : 'edit')}
+      </StaffFrame>
+    );
+  }
+  if (view === 'broadcast-settings') {
+    const { dialog } = await searchParams;
+    const body = await renderBroadcastSettingsPreview();
+    return (
+      <StaffFrame path="/admin/settings/broadcasts">
+        {dialog === 'remove' ? <OpenFirstMatchingButton label="Remove">{body}</OpenFirstMatchingButton> : body}
+      </StaffFrame>
+    );
+  }
+  if (view === 'brand') {
+    return <StaffFrame path="/admin/settings/broadcasts/brand">{await renderBrandPreview(state)}</StaffFrame>;
+  }
+  if (view === 'audience') {
+    return <StaffFrame path="/admin/marketing/audience">{await renderAudiencePreview(state)}</StaffFrame>;
   }
 
   if (view === 'eventcreate') {
