@@ -1,0 +1,12 @@
+{
+  "_comment": "Seconds per spec file per project (all attempts) on a green e2e-critical run: the larger of chromium and mobile-chrome, runs 39117062905 and 39131190941. The summary step warns above 1.5x. Update a value in the PR that changes the spec. tests/unit/architecture/e2e-ci-workflows.test.ts keeps the keys equal to the @critical set.",
+  "admin-journey.spec.ts": 77,
+  "critical-invoice-issue.spec.ts": 95,
+  "critical-member-profile.spec.ts": 19,
+  "f9-dashboard.spec.ts": 60,
+  "member-sign-in.spec.ts": 33,
+  "members-directory-search.spec.ts": 58,
+  "payment-promptpay-happy-path.spec.ts": 40,
+  "portal-invoices.spec.ts": 118,
+  "staff-sign-in.spec.ts": 17
+}

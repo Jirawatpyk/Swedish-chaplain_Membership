@@ -201,14 +201,15 @@ jobs:
         run: |
           nohup pnpm exec next start --port 3100 > "$RUNNER_TEMP/next-start.log" 2>&1 &
           t0=$SECONDS
-          for _ in $(seq 1 90); do
+          deadline=$(( SECONDS + 180 ))
+          while [ "$SECONDS" -lt "$deadline" ]; do
             if curl -fsS --max-time 5 http://localhost:3100/api/health 2>/dev/null | grep -q '"status":"ok"'; then
               echo "ready $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"
               exit 0
             fi
             sleep 2
           done
-          echo "::error title=App not ready::GET /api/health did not answer {\"status\":\"ok\"} within about 3 minutes."
+          echo "::error title=App not ready::GET /api/health did not answer {\"status\":\"ok\"} within 3 minutes."
           tail -n 80 "$RUNNER_TEMP/next-start.log"
           exit 1
 
@@ -292,6 +293,19 @@ jobs:
               echo "::warning title=Flaky @critical spec::$project: $spec passed only on a retry."
               echo "flaky=true" >> "$GITHUB_OUTPUT"
             done
+            # A spec over 1.5x its baseline (.github/ci/e2e-critical-baselines.json)
+            # is a render regression the generous waits would otherwise hide.
+            slow="$(jq -r --slurpfile base .github/ci/e2e-critical-baselines.json '
+              [.suites[] | .. | objects | select(has("specs")) | .specs[]]
+              | group_by(.file)[]
+              | { file: .[0].file, secs: (([.[].tests[].results[].duration] | add // 0) / 1000 | floor) }
+              | ($base[0][.file] // 0) as $b
+              | select($b > 0 and .secs > ($b * 1.5))
+              | "\(.file) \(.secs) \($b)"' "$f")"
+            while read -r spec secs b; do
+              [ -n "$spec" ] || continue
+              echo "::warning title=Slow @critical spec::$project: $spec took $secs s, over 1.5x its $b s baseline."
+            done <<< "$slow"
             skipped="$(jq '[.suites[] | .. | objects | select(has("specs")) | .specs[].tests[] | select(.status == "skipped")] | length' "$f")"
             if [ "$skipped" != "0" ]; then
               echo "::error title=Skipped @critical tests::$project skipped ${skipped:-an unknown number of} test(s); a skip is not a pass."
