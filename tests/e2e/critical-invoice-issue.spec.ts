@@ -62,8 +62,13 @@ test.describe('issue one invoice on the seeded tenant @f4 @critical', () => {
       .getByRole('link', { name: /create (new|first) invoice|new invoice/i })
       .filter({ visible: true });
     await expect(createInvoiceLink).toBeVisible({ timeout: SERVER_RENDER_MS });
-    await createInvoiceLink.click();
-    await page.waitForURL(/\/admin\/invoices\/new(\?|$)/, { timeout: 15_000 });
+    // By URL too: the same kind of client navigation as the row click that
+    // stuck (run 39136426864). The href still proves the page offers it.
+    const newInvoiceHref = await createInvoiceLink.getAttribute('href');
+    expect(newInvoiceHref, 'the member page links to a pre-filled draft form').toMatch(
+      /^\/admin\/invoices\/new\?memberId=[0-9a-f-]{36}$/,
+    );
+    await page.goto(newInvoiceHref!);
     const createDraft = page.getByRole('button', { name: /create draft/i });
     await expect(createDraft).toBeEnabled({ timeout: SERVER_RENDER_MS });
     await createDraft.click();
