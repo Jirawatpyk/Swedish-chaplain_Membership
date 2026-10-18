@@ -74,11 +74,12 @@ runs:
       shell: bash
       env:
         DATABASE_URL: ${{ inputs.database-url }}
-      # `scripts/run-migrations.ts` takes no advisory lock, and since the smoke
-      # workflow left the repo-wide concurrency group two jobs can now reach
-      # this step at once. A collision there is transient — the loser sees a
-      # half-applied enum pre-pass or a busy journal row — so retry once before
-      # calling it a failure. A genuine breakage still fails on the second run.
+      # `scripts/run-migrations.ts` serialises concurrent runs on one database
+      # with a session advisory lock (it waits up to 5 min for another run; it
+      # skips the lock on a -pooler URL). The retry stays for transient
+      # failures (a dropped connection, a Neon compute waking up); a fresh run
+      # that stopped part-way resumes in fresh mode. A genuine breakage still
+      # fails on the second run.
       run: |
         pnpm db:migrate || {
           echo "::warning title=Migration retry::db:migrate failed; retrying once in 20 s in case another job was migrating the same branch."

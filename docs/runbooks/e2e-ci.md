@@ -25,7 +25,10 @@
    - *Seed personas and fixtures*: a seed broke on the CI data, often a NOT NULL column without a DB default (see `tests/unit/scripts/seed-insert-not-null-coverage.test.ts`).
    - *Build / Start the app*: the production build or the boot env failed. `next-start.log` is tailed in the step.
    - *e2e @critical on …*: a real test failure, or "0 tests" when a spec throws while being collected (an env var missing at import time). Read the list output, then the artifact.
-3. **The report and traces** are uploaded as `e2e-critical-<run>-<attempt>` for 7 days, on failure only. They hold synthetic data only. Open a trace with `pnpm exec playwright show-trace <zip>`.
+3. **The report and traces** are uploaded as `e2e-critical-<run>-<attempt>` for 7 days, on a failure, a cancel, or a flaky pass. Open a trace with `pnpm exec playwright show-trace <zip>`.
+   - **They contain the e2e persona passwords.** A trace records every action, including the passwords typed into the sign-in form, and the repo is public, so anyone can download them for 7 days.
+   - This is accepted for three reasons. The personas are synthetic and seeded per run. They exist only on the run's own `ci-e2e/` branch of the CI Neon project, and that branch is deleted at the end of the run. No E2E persona exists in production.
+   - Never point these workflows at a database with a real account.
 4. **To re-run:** use GitHub → *Re-run failed jobs*. It creates a fresh branch, because the attempt number is in the branch name. Re-running to make a red go away is not a fix. If the same test passes on a re-run, log it as a flake (see DW-12 below).
 5. **To reproduce locally:** follow the `run-chamber-os` skill, then run `E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright.attach.config.ts <spec> --workers=1`.
 
@@ -49,3 +52,8 @@ It stays advisory for two weeks from #586's merge. Record each red that was not 
 
 - `ci-e2e-branch-sweep.yml` runs daily at 22:00 UTC. It considers only branches named `ci-e2e/…` that are children of the CI parent and older than 24 h, and it refuses the denylist (main / dev / ci / *backup*) and the parent itself.
 - **It is a dry run** until the repo variable `CI_E2E_SWEEP_ENABLED` is `true`. Read one dry-run summary first, then set the variable. To disarm it, unset the variable; no code change is needed. A manual run also needs `dry_run: false` to delete.
+
+## Rotating the CI Neon key
+
+- Create the new key in the CI Neon project as a **project-scoped** key, then replace the repo secret `NEON_CI_API_KEY`, then revoke the old key.
+- **Known gap:** the e2e-critical scope check proves the key opens the CI project and cannot list others. A *personal* key whose account can see only the CI project would pass it too, but could reach any project added to that account later. Always use a project-scoped key.

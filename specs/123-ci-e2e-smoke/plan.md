@@ -134,7 +134,7 @@ The specs tagged `@critical` and run by `e2e-critical.yml` on every PR (DW-7). T
 | `members-directory-search.spec.ts` | the members directory |
 | `critical-invoice-issue.spec.ts` | issuing an invoice: a draft from the member page, the issue call, the issued status and number on the detail page |
 | `portal-invoices.spec.ts` | viewing invoices in the member portal |
-| `payment-promptpay-happy-path.spec.ts` | the payment flow, with Stripe stubbed |
+| `payment-promptpay-happy-path.spec.ts` | the payment flow, with Stripe stubbed: `helpers/stripe-mock.ts` fakes `window.Stripe` and short-circuits `/api/payments/initiate` in the page (lines 195-231), so no live Stripe call is made |
 | `member-sign-in.spec.ts` | member sign-in and the portal home |
 | `critical-member-profile.spec.ts` | the member's own profile (read only) |
 | `admin-journey.spec.ts` | the cross-module admin path (plans → members → invoices → dashboard → audit → renewals) |
@@ -148,7 +148,7 @@ The specs tagged `@critical` and run by `e2e-critical.yml` on every PR (DW-7). T
 | `renewal-pipeline-dashboard.spec.ts` | AS1 hit its 5 s wall-clock bound from a US runner (5.7 s); the bound is now an env var, CI 15 s. It cost 118 / 168 s per project. |
 | `invoicing/invoice-detail-reflow.spec.ts` | Mobile only: it skips on chromium, and a skip fails the job. |
 | `portal-layout.spec.ts` | One test, and `critical-member-profile` and `portal-invoices` already render the portal shell. |
-| `payment-card-decline.spec.ts` | It does not use `payment-intent-stub.ts`. Its initiate call is short-circuited only by the in-page fetch override in `helpers/stripe-mock.ts`, and the review rule admits this spec only with the shared stub. PromptPay already covers the payment seam. |
+| `payment-card-decline.spec.ts` | Breadth, not safety: it uses the same in-page fetch override of `/api/payments/initiate` in `helpers/stripe-mock.ts` (lines 195-231) as `payment-promptpay-happy-path`, so neither calls Stripe live. PromptPay already covers the payment seam, and a second payment spec would spend budget on depth. |
 
 ## Fixes from the plan reviews (architect + security, 2026-10-18)
 
@@ -497,6 +497,12 @@ Filled in at Verify, one block per slice.
   - e2e-critical ([run 39121468131](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39121468131)) logged "CI key scope: ok (cannot list projects (HTTP 404): a project-scoped key; opens the CI project)".
   - Phase times: migrate 564 s (from zero), seed 164, build 139, ready 6, e2e-chromium 572, e2e-mobile-chrome 519.
   - mobile-chrome 23 passed. chromium 22 passed and **1 flaky**, and the M1 warning fired: `critical-invoice-issue` did not find the member page's create-invoice link on two attempts and passed on the third. **Open: this flake has to be fixed before DW-12 starts counting.**
+
+### Slice 2 — post-merge steps (owners)
+
+- **DW-8, sweep arming (maintainer):** after the first scheduled `ci-e2e-branch-sweep.yml` run on `main`, read its dry-run summary and the "would delete" warning. If the list holds only stale `ci-e2e/` children of the CI parent, set the repo variable `CI_E2E_SWEEP_ENABLED=true`.
+- **Operational-state date (maintainer):** the merge follow-up fills the "advisory from" date in `docs/operational-state.md`.
+- **First parent refresh:** it runs on the merge push. The first PR run after it measures DW-7 without the from-zero migrate (see the maintainer decisions above).
 
 ### Slice 2 — the `critical-invoice-issue` flake (fixed)
 
