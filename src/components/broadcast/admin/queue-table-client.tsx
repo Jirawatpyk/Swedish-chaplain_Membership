@@ -215,10 +215,15 @@ export function QueueTableClient({
     // F119 T117 — the FR-026 fields, in the order a reviewer scans them: who
     // and what, where it stands and whose move it is, how long it has waited,
     // when it goes out and to whom. Every FR-026 field is on the row.
+    // Spec 122 US12b — each column states the minimum its content needs (AURA
+    // gives an unsized column 160 px, which pushed Actions off a 1,440 px
+    // screen); together they fit the 871 px a 1,280 px screen leaves for the
+    // columns, and the spare width on a wider one is shared out.
     const base: DataTableColumn<EnrichedQueueRow>[] = [
       {
         key: 'member',
         label: columnLabels.member,
+        minWidth: 112,
         render: (row) => (
           <span className="flex flex-col [overflow-wrap:anywhere]">
             <span className="font-medium">{row.memberDisplayName}</span>
@@ -231,7 +236,7 @@ export function QueueTableClient({
       {
         key: 'subject',
         label: columnLabels.subject,
-        minWidth: 200,
+        minWidth: 112,
         render: (row) => (
           <Link
             href={`/admin/broadcasts/${row.broadcastId}`}
@@ -244,8 +249,11 @@ export function QueueTableClient({
       {
         key: 'status',
         label: columnLabels.status,
+        minWidth: 120,
         render: (row) => (
-          <span className="flex flex-col items-start gap-1">
+          // A long stage name wraps inside its pill rather than running into
+          // the next column (stand-in until AURA #158: a StatusPill never wraps).
+          <span className="flex flex-col items-start gap-1 [&_.aura-pill]:whitespace-normal">
             <StatusPill tone={row.statusTone}>{row.statusBadgeLabel}</StatusPill>
             {/* FR-026 — the round: versions sent to the member so far. */}
             {row.round > 0 ? (
@@ -261,11 +269,13 @@ export function QueueTableClient({
       {
         key: 'whoseTurn',
         label: columnLabels.whoseTurn,
+        minWidth: 80,
         render: (row) => (row.whoseTurnLabel !== null ? <span>{row.whoseTurnLabel}</span> : <EmptySentinel />),
       },
       {
         key: 'timeInStage',
         label: columnLabels.timeInStage,
+        minWidth: 132,
         // FR-026 — last activity (`stage_entered_at`) is the "since" line.
         render: (row) => (
           <span className="flex flex-col items-start gap-1">
@@ -279,11 +289,13 @@ export function QueueTableClient({
       {
         key: 'sendTime',
         label: columnLabels.sendTime,
+        minWidth: 84,
         render: (row) => <SendTime row={row} proposedLabel={tQueue('row.proposed')} />,
       },
       {
         key: 'audience',
         label: columnLabels.audience,
+        minWidth: 100,
         // The label keeps its own element, so "All members" is still a whole
         // text node to find (admin-review-queue D2b, queue-table-segment).
         render: (row) => (
@@ -299,7 +311,8 @@ export function QueueTableClient({
       base.push({
         key: 'actions',
         label: columnLabels.actions,
-        width: 196,
+        // Approve above Reject: the two side by side need 230 px.
+        width: 128,
         render: (row) =>
           row.actionable ? (
             <ReviewActions broadcastId={row.broadcastId} recipientCount={row.recipientCount} />
@@ -308,6 +321,10 @@ export function QueueTableClient({
     }
     return base;
   }, [columnLabels, readOnly, tQueue]);
+
+  const rowMin = `calc(${columns.reduce((sum, c) => sum + (c.width ?? c.minWidth ?? 160), 0)}px + 2 * var(--aura-space-6)${
+    selectionEnabled ? ' + var(--aura-table-select-width)' : ''
+  })`;
 
   // UX review M1 — `aria-sort` on the column the order follows. AURA sets it
   // only on a sortable column, and this list's order is the page's, not a
@@ -399,7 +416,13 @@ export function QueueTableClient({
       <p className="aura-text-caption text-[var(--aura-fg-secondary)]" data-testid="queue-order-hint">
         {tQueue(ORDER_HINT_KEY[order])}
       </p>
-      <div ref={tableRef} className="max-md:hidden">
+      <div
+        ref={tableRef}
+        // The row minimum counts each column's own minimum (stand-in until AURA #159:
+        // DataTable counts 160 px for every flexible column).
+        className="max-md:hidden [&_.aura-table\_\_head]:min-w-[var(--queue-row-min)] [&_.aura-table\_\_row]:min-w-[var(--queue-row-min)]"
+        style={{ '--queue-row-min': rowMin } as React.CSSProperties}
+      >
         <DataTable<EnrichedQueueRow>
           label={columnLabels.tableAria}
           rows={rows}

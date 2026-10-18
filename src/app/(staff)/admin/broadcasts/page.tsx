@@ -405,54 +405,54 @@ export default async function AdminBroadcastsPage({
           on a phone (the cards stand on the page gutter), as every list. */}
       <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
         <div className="flex flex-col gap-[var(--aura-space-4)]">
-      <QueueFilters
-        memberOptions={memberOptions}
-        stageCounts={stageChips.kind === 'ok' ? stageChips.counts : null}
-        approvalRoundEnabled={stageChips.approvalRoundEnabled}
-      />
-      {/* Round 2 (UX M-1): the warning travels to the decision point — the
-          bulk-approve confirm dialog repeats it when the halt state is
-          unknown. A NEW prop, not `readOnly`: "manager cannot approve" and
-          "the halt read failed" are different facts. */}
-      <QueueTable
-        rows={rows}
-        readOnly={isReadOnlyManager}
-        haltUnknown={haltStateUnavailable}
-        order={queueOrderOf(sort)}
-        viewTotal={viewTotal}
-        viewKey={viewKey}
-        // T086a V10 — rendered by the queue between the list and the bulk
-        // toolbar: the toolbar is fixed to the bottom of the viewport, so it is
-        // visually last and must come last in Tab order too (it came first).
-        pagination={
-          nextPageHref !== null || firstPageHref !== null ? (
-            <nav
-              aria-label={t('pagination.label')}
-              className="flex flex-wrap items-center justify-between gap-3"
-            >
-              <p className="aura-text-body tabular-nums">
-                {/* On the first page only: keyset pages have no offset, so on page 2
-                    "Showing 50 of 132" would read as the same first 50. */}
-                {viewTotal !== null && firstPageHref === null
-                  ? t('pagination.summary', { shown: rows.length, total: viewTotal })
-                  : null}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {firstPageHref !== null ? (
-                  <Link href={firstPageHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
-                    {t('pagination.first')}
-                  </Link>
-                ) : null}
-                {nextPageHref !== null ? (
-                  <Link href={nextPageHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
-                    {t('pagination.next')}
-                  </Link>
-                ) : null}
-              </div>
-            </nav>
-          ) : null
-        }
-      />
+          <QueueFilters
+            memberOptions={memberOptions}
+            stageCounts={stageChips.kind === 'ok' ? stageChips.counts : null}
+            approvalRoundEnabled={stageChips.approvalRoundEnabled}
+          />
+          {/* Round 2 (UX M-1): the warning travels to the decision point — the
+              bulk-approve confirm dialog repeats it when the halt state is
+              unknown. A NEW prop, not `readOnly`: "manager cannot approve" and
+              "the halt read failed" are different facts. */}
+          <QueueTable
+            rows={rows}
+            readOnly={isReadOnlyManager}
+            haltUnknown={haltStateUnavailable}
+            order={queueOrderOf(sort)}
+            viewTotal={viewTotal}
+            viewKey={viewKey}
+            // T086a V10 — rendered by the queue between the list and the bulk
+            // toolbar: the toolbar is fixed to the bottom of the viewport, so it is
+            // visually last and must come last in Tab order too (it came first).
+            pagination={
+              nextPageHref !== null || firstPageHref !== null ? (
+                <nav
+                  aria-label={t('pagination.label')}
+                  className="flex flex-wrap items-center justify-between gap-3"
+                >
+                  <p className="aura-text-body tabular-nums">
+                    {/* On the first page only: keyset pages have no offset, so on page 2
+                        "Showing 50 of 132" would read as the same first 50. */}
+                    {viewTotal !== null && firstPageHref === null
+                      ? t('pagination.summary', { shown: rows.length, total: viewTotal })
+                      : null}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {firstPageHref !== null ? (
+                      <Link href={firstPageHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
+                        {t('pagination.first')}
+                      </Link>
+                    ) : null}
+                    {nextPageHref !== null ? (
+                      <Link href={nextPageHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
+                        {t('pagination.next')}
+                      </Link>
+                    ) : null}
+                  </div>
+                </nav>
+              ) : null
+            }
+          />
         </div>
       </Card>
     </TableContainer>

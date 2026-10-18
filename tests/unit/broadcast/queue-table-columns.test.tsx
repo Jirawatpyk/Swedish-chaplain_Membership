@@ -120,6 +120,38 @@ describe('the eight columns (UX review M1)', () => {
     ]);
   });
 
+  // Spec 122 US12b — AURA's DataTable gives an unsized column a 160 px
+  // minimum, so eight of them pushed Actions out of a 1,440 px screen. Each
+  // column now states the minimum its content needs. On a 1,280 px screen the
+  // grid is 959 px: 40 px of selection and 48 px of row gutters leave 871 px.
+  it('fits Actions on a 1,280 px screen: the column minimums add up to at most 871 px', () => {
+    render(table({ rows: [makeRow()] }));
+    const minimums = within(screen.getByRole('grid'))
+      .getAllByRole('columnheader')
+      .slice(1)
+      .map((th) => {
+        const style = th.getAttribute('style') ?? '';
+        const px = /--aura-cell-(?:min|w):\s*(\d+)px/.exec(style)?.[1];
+        return Number(px ?? 160);
+      });
+    expect(minimums.reduce((sum, px) => sum + px, 0)).toBeLessThanOrEqual(871);
+  });
+
+  it('the rows are only as wide as those minimums (stand-in until AURA #159)', () => {
+    render(table({ rows: [makeRow()] }));
+    const box = screen.getByRole('grid').closest<HTMLElement>('[style*="--queue-row-min"]');
+    expect(box).toHaveClass('[&_.aura-table\\_\\_row]:min-w-[var(--queue-row-min)]');
+    expect(box?.style.getPropertyValue('--queue-row-min')).toBe(
+      'calc(868px + 2 * var(--aura-space-6) + var(--aura-table-select-width))',
+    );
+  });
+
+  it('a long stage name wraps inside its pill instead of running into Whose turn (stand-in until AURA #158)', () => {
+    render(table({ rows: [makeRow()] }));
+    const pill = cellOf('Stage').querySelector('.aura-pill');
+    expect(pill?.parentElement).toHaveClass('[&_.aura-pill]:whitespace-normal');
+  });
+
   it('Stage carries the round; Time in stage carries the "since" date (last activity)', () => {
     render(table({ rows: [makeRow()], readOnly: true }));
     expect(within(cellOf('Stage')).getByText('Scheduled')).toBeInTheDocument();

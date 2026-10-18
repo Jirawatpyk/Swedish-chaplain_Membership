@@ -97,8 +97,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('except the reason dialog, which moves with the E-Blast review (US12)', async () => {
-      expect(await ratchetHits(legacy, 'src/components/shell/reason-confirmation-dialog.tsx')).toEqual([]);
+    it('control: the E-Blast detail keeps the legacy kit until US12c', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/approval/version-thread.tsx')).toEqual([]);
     });
   });
 
@@ -118,8 +118,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast queue keeps the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/admin/queue-table.tsx')).toEqual([]);
+    it('control: the E-Blast detail keeps the legacy kit until US12c', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/admin/status-badge.tsx')).toEqual([]);
     });
   });
 
@@ -188,8 +188,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast queue filters keep the legacy kit until US12b', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/admin/queue-filters.tsx')).toEqual([]);
+    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/page.tsx')).toEqual([]);
     });
   });
 
@@ -427,8 +427,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast queue keeps the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/admin/queue-table.tsx')).toEqual([]);
+    it('control: the E-Blast sign-off keeps the legacy kit until US12c', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/approval/member-sign-off-actions.tsx')).toEqual([]);
     });
   });
 
@@ -518,8 +518,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast queue keeps the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/page.tsx')).toEqual([]);
+    it('control: the E-Blast detail keeps the legacy kit until US12c', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/[id]/page.tsx')).toEqual([]);
     });
   });
 
@@ -700,8 +700,44 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast queue keeps the legacy kit until US12b', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/admin/queue-table-client.tsx')).toEqual([]);
+    it('control: the E-Blast schedule dialog keeps the legacy kit until US12c', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/approval/schedule-confirm-dialog.tsx')).toEqual([]);
+    });
+  });
+
+  describe('the US12b review queue and the shared reason / typed-phrase dialogs are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+    it.each([
+      'src/app/(staff)/admin/broadcasts/page.tsx',
+      'src/app/(staff)/admin/broadcasts/loading.tsx',
+      'src/app/(staff)/admin/broadcasts/error.tsx',
+      'src/components/broadcast/admin/queue-table.tsx',
+      'src/components/broadcast/admin/queue-table-client.tsx',
+      'src/components/broadcast/admin/queue-card-list.tsx',
+      'src/components/broadcast/admin/queue-row-cells.tsx',
+      'src/components/broadcast/admin/queue-with-bulk.tsx',
+      'src/components/broadcast/admin/queue-bulk-action-bar.tsx',
+      'src/components/broadcast/admin/bulk-approve-confirm-dialog.tsx',
+      'src/components/broadcast/admin/queue-filters.tsx',
+      'src/components/broadcast/admin/review-actions.tsx',
+      'src/components/broadcast/admin/approve-dialog.tsx',
+      'src/components/broadcast/admin/reject-dialog.tsx',
+      'src/components/broadcast/admin/clear-halt-dialog.tsx',
+      'src/components/broadcast/admin/halt-state-banner.tsx',
+      'src/components/broadcast/admin/halt-state-unavailable-banner.tsx',
+      'src/components/broadcast/admin/manager-readonly-banner.tsx',
+      'src/components/broadcast/admin/sla-banner.tsx',
+      'src/components/broadcast/admin/overdue-banner.tsx',
+      'src/components/broadcast/approval/inline-warning.tsx',
+      'src/components/broadcast/status-badge-mapping.ts',
+      'src/components/shell/reason-confirmation-dialog.tsx',
+      'src/components/shell/typed-phrase-field.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/proxy-compose-form.tsx')).toEqual([]);
     });
   });
 });

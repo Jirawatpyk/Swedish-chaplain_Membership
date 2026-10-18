@@ -1,6 +1,6 @@
 /**
  * 122 US12a (T1208) — preview bodies for the E-Blast settings, template and
- * marketing-audience screens, rendered with fixtures in the staff frame.
+ * marketing-audience screens (US12b, T1219: and the review queue), rendered with fixtures in the staff frame.
  * Each mirrors its page's markup around the real components; the pages keep
  * the guards and the reads.
  */
@@ -22,6 +22,16 @@ import { BrandSettingsForm } from '@/components/broadcast/brand/brand-settings-f
 import type { BrandSettingsView } from '@/modules/broadcasts';
 import type { AudienceTableRow } from '@/app/(staff)/admin/marketing/audience/_components/audience-table';
 import { AudienceFrame, AudienceResults } from '@/app/(staff)/admin/marketing/audience/_components/audience-view';
+import { keepTermTogether } from '@/components/broadcast/keep-term-together';
+import { QueueTable } from '@/components/broadcast/admin/queue-table';
+import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
+import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
+import { OverdueBanner } from '@/components/broadcast/admin/overdue-banner';
+import { HaltStateBanner } from '@/components/broadcast/admin/halt-state-banner';
+import { HaltStateUnavailableBanner } from '@/components/broadcast/admin/halt-state-unavailable-banner';
+import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
+import type { AdminQueueItem } from '@/lib/admin-broadcast-queue';
+import type { BroadcastStatus } from '@/modules/broadcasts';
 
 const TEMPLATE_ROWS: readonly TemplateLibraryRow[] = [
   { id: 't1', name: 'Monthly Newsletter', subjectPreview: '{{chamber_name}} Monthly Newsletter — [Month YYYY]', locale: 'en', startedFromCount: 11, isSeeded: true, updatedAtIso: '2026-03-02T03:00:00Z' },
@@ -169,6 +179,110 @@ export async function renderAudiencePreview(state: string | undefined) {
           leavesView={false}
         />
       </AudienceFrame>
+    </TableContainer>
+  );
+}
+
+/** 122 US12b (T1219) — the review queue's fixture rows, ages relative to now. */
+function queueRows(): readonly AdminQueueItem[] {
+  const HOUR = 3_600_000;
+  const ago = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
+  const row = (over: Partial<AdminQueueItem> & Pick<AdminQueueItem, 'broadcastId' | 'subject' | 'status'>): AdminQueueItem => ({
+    stage: 'awaiting_marketing_review',
+    whoseTurn: 'marketing',
+    requestedByMemberId: 'm1',
+    requestedByMemberDisplayName: 'Scandinavian Design Co., Ltd.',
+    actorRole: 'member_self_service',
+    segmentType: 'all_members',
+    estimatedRecipientCount: 412,
+    submittedAt: ago(3),
+    createdAt: ago(30),
+    stageEnteredAt: ago(3),
+    currentRound: 0,
+    proposedSendAt: null,
+    confirmedSendAt: null,
+    delivery: null,
+    ...over,
+  });
+  return [
+    row({ broadcastId: 'b1', subject: 'Midsommar networking evening — save the date', status: 'submitted', stageEnteredAt: ago(52), submittedAt: ago(52) }),
+    row({ broadcastId: 'b2', subject: 'New office in Chiang Mai: open house 14 November', status: 'submitted', requestedByMemberDisplayName: 'Nordic Timber (Thailand) Ltd.', segmentType: 'tier', estimatedRecipientCount: 88, stageEnteredAt: ago(30), submittedAt: ago(30) }),
+    row({ broadcastId: 'b3', subject: 'Sustainability seminar recap and slides', status: 'submitted', requestedByMemberDisplayName: 'Thai-Swedish Chamber of Commerce', actorRole: 'admin_proxy', estimatedRecipientCount: 1042, stageEnteredAt: ago(4), submittedAt: ago(4) }),
+    row({ broadcastId: 'b4', subject: 'Job opening: logistics coordinator, Bangkok', status: 'awaiting_member_approval', stage: 'awaiting_member_approval', whoseTurn: 'member', requestedByMemberDisplayName: 'Volvo Cars (Thailand) Co., Ltd.', segmentType: 'event_attendees_last_90d', estimatedRecipientCount: 156, stageEnteredAt: ago(20), currentRound: 1 }),
+    row({ broadcastId: 'b5', subject: 'Lucia concert tickets now on sale', status: 'approved', stage: 'scheduled', whoseTurn: null, estimatedRecipientCount: 980, stageEnteredAt: ago(10), confirmedSendAt: ago(-48) }),
+    row({ broadcastId: 'b6', subject: 'September member newsletter', status: 'sent', stage: 'sent', whoseTurn: null, estimatedRecipientCount: 40, stageEnteredAt: ago(200), delivery: { recipients: 40, delivered: 37, bounced: 2, complained: 1 } }),
+  ];
+}
+
+const QUEUE_MEMBERS = [
+  { memberId: 'm1', displayName: 'Nordic Timber (Thailand) Ltd.' },
+  { memberId: 'm2', displayName: 'Scandinavian Design Co., Ltd.' },
+  { memberId: 'm3', displayName: 'Volvo Cars (Thailand) Co., Ltd.' },
+];
+
+const QUEUE_STAGE_COUNTS = {
+  draft: 0, submitted: 3, approved: 1, sending: 0, sent: 12, rejected: 2, cancelled: 1,
+  failed_to_dispatch: 0, partially_sent: 0, partial_delivery_accepted: 0, in_design: 1,
+  awaiting_member_approval: 1, changes_requested: 0, member_approved: 0, expired_no_member_response: 0,
+} as const satisfies Record<BroadcastStatus, number>;
+
+/**
+ * `?view=broadcasts` — the review queue (boards `Admin-broadcasts` +
+ * `-mobile`). `state=empty` (`Admin-state-broadcasts-empty`), `manager`
+ * (`-manager`, read-only), `halted` (a halted member), `halt-unavailable`,
+ * `overdue` (the overdue count and a red SLA). Mirrors the page's markup
+ * around the real components; the page keeps the guards and the reads.
+ */
+export async function renderQueuePreview(state: string | undefined) {
+  const t = await getTranslations('admin.broadcasts.queue');
+  const tBroadcasts = await getTranslations('admin.broadcasts');
+  const readOnly = state === 'manager';
+  const rows = state === 'empty' ? [] : queueRows();
+  const overdue = state === 'overdue' ? 2 : 0;
+  const slaStats: SlaStats =
+    state === 'overdue'
+      ? { targetSlaHours: 48, medianTimeToDecisionHours: 31, p95TimeToDecisionHours: 61, decisionCount: 14, bannerSeverity: 'red' }
+      : { targetSlaHours: 48, medianTimeToDecisionHours: 9, p95TimeToDecisionHours: 30, decisionCount: 14, bannerSeverity: 'green' };
+  const halted =
+    state === 'halted'
+      ? [{ memberId: 'm2', displayName: 'Scandinavian Design Co., Ltd.', haltedSinceAt: new Date('2026-10-12T02:00:00Z') }]
+      : [];
+  const pending = rows.filter((r) => r.status === 'submitted').length;
+  return (
+    <TableContainer>
+      <PageHeader
+        title={keepTermTogether(t('title'))}
+        subtitle={pending > 0 ? `${t('subtitle')} · ${t('totalPending', { count: pending })}` : t('subtitle')}
+        actions={
+          <>
+            <Link href="/admin/broadcasts/templates" className={buttonClass({ variant: 'secondary', touchHeight: true })}>
+              {t('templatesEntryButton')}
+            </Link>
+            {!readOnly ? (
+              <Link href="/admin/broadcasts/new" className={buttonClass({ variant: 'primary', touchHeight: true })}>
+                {tBroadcasts('proxySubmitButton')}
+              </Link>
+            ) : null}
+          </>
+        }
+      />
+      <OverdueBanner count={overdue} />
+      <SlaBanner stats={slaStats} compact={overdue > 0} />
+      {state === 'halt-unavailable' ? <HaltStateUnavailableBanner /> : <HaltStateBanner halted={halted} readOnly={readOnly} />}
+      {readOnly ? <ManagerReadonlyBanner /> : null}
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          <QueueFilters memberOptions={QUEUE_MEMBERS} stageCounts={QUEUE_STAGE_COUNTS} approvalRoundEnabled />
+          <QueueTable
+            rows={rows}
+            readOnly={readOnly}
+            haltUnknown={state === 'halt-unavailable'}
+            order="longest_in_stage"
+            viewTotal={rows.length}
+            viewKey={state ?? 'default'}
+          />
+        </div>
+      </Card>
     </TableContainer>
   );
 }

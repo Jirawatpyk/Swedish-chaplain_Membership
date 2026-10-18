@@ -54,6 +54,7 @@ export function TimeInStage({
  * neither exists (a draft, or a row that predates the proposal column).
  *
  * The marker is a label, so it alone is muted (M6); the times are values.
+ * They wrap in the narrow column (spec 122 US12b) rather than overflow it.
  */
 export function SendTime({
   row,
@@ -67,18 +68,18 @@ export function SendTime({
   if (confirmed === null) {
     return (
       <div className="flex flex-col gap-1">
-        <span className="whitespace-nowrap tabular-nums">{proposed}</span>
+        <span className="tabular-nums">{proposed}</span>
         <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{proposedLabel}</span>
       </div>
     );
   }
   return (
     <div className="flex flex-col gap-1">
-      <span className="whitespace-nowrap tabular-nums">{confirmed}</span>
+      <span className="tabular-nums">{confirmed}</span>
       {proposed !== null && proposed !== confirmed ? (
         <span className="aura-text-caption">
           <span className="text-[var(--aura-fg-secondary)]">{proposedLabel}</span>{' '}
-          <span className="whitespace-nowrap tabular-nums">{proposed}</span>
+          <span className="tabular-nums">{proposed}</span>
         </span>
       ) : null}
     </div>
