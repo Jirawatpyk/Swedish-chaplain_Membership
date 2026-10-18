@@ -14,13 +14,7 @@ import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { DynamicBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { AdminTemplateForm } from '@/components/broadcast/admin/template-form';
 import { AdminTemplateEditConfirmStarter } from '@/components/broadcast/admin/template-edit-confirm-starter';
 import { isF71aUs7Enabled } from '@/modules/broadcasts';
@@ -92,24 +86,18 @@ export default async function AdminBroadcastEditTemplatePage({
         />
       ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{template.name}</CardTitle>
-          <CardDescription>{t('editPageDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AdminTemplateForm
-            mode="edit"
-            initial={{
-              templateId: template.id,
-              name: template.name,
-              subject: template.subject,
-              bodyHtml: template.bodyHtml,
-              locale: template.locale,
-              isSeeded: template.isSeeded,
-            }}
-          />
-        </CardContent>
+      <Card title={template.name} description={t('editPageDescription')} headingLevel={2}>
+        <AdminTemplateForm
+          mode="edit"
+          initial={{
+            templateId: template.id,
+            name: template.name,
+            subject: template.subject,
+            bodyHtml: template.bodyHtml,
+            locale: template.locale,
+            isSeeded: template.isSeeded,
+          }}
+        />
       </Card>
     </FormContainer>
   );

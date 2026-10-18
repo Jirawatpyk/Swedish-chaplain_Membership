@@ -159,3 +159,5 @@ Failing runs recorded under constitution 2.1.0 (D-023): for UI presentation the 
 | Task | Test | Failure against the old code | Commit |
 |---|---|---|---|
 | T1202 | `tests/unit/components/shell/tiptap-loader.test.tsx` › shows one labelled status with shared skeleton blocks while the editor loads | `AssertionError: expected  to have a length of 2 but got +0` (the legacy `Skeleton` blocks, run with the import pointed at `@/components/ui/tiptap-loader`) | (this commit) |
+| T1203 | `tests/unit/broadcasts/components/admin-template-library.test.tsx` › spec 122 US12a: the pills are AURA tags, the table and Starter badge are AURA | `Error: expect(element).toHaveClass("aura-tag")` | (this commit) |
+| T1204 | `tests/unit/broadcasts/components/admin-template-form.test.tsx` › renders the name, subject and locale as AURA fields | `AssertionError: expected null not to be null` (the other two cases, errors after first submit and the POST body, passed on the old form: behaviour kept) | (this commit) |

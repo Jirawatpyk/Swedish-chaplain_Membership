@@ -13,7 +13,7 @@ import { getTranslations } from 'next-intl/server';
 import { LayoutTemplate } from 'lucide-react';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import {
   AdminTemplateLibrary,
@@ -78,7 +78,7 @@ export default async function AdminBroadcastTemplatesPage(): Promise<React.React
         actions={
           <Link
             href="/admin/broadcasts/templates/new"
-            className={buttonVariants()}
+            className={buttonClass({ variant: 'primary' })}
           >
             {t('newTemplateButton')}
           </Link>
@@ -99,7 +99,7 @@ export default async function AdminBroadcastTemplatesPage(): Promise<React.React
           action={
             <Link
               href="/admin/broadcasts/templates/new"
-              className={buttonVariants()}
+              className={buttonClass({ variant: 'primary' })}
             >
               {t('emptyState.cta')}
             </Link>

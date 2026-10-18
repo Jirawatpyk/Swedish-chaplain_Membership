@@ -13,13 +13,7 @@ import { notFound } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { AdminTemplateForm } from '@/components/broadcast/admin/template-form';
 import { isF71aUs7Enabled } from '@/modules/broadcasts';
 import { requirePagePermission } from '@/lib/rbac';
@@ -41,17 +35,11 @@ export default async function AdminBroadcastNewTemplatePage(): Promise<React.Rea
         title={t('newPageTitle')}
         subtitle={t('newPageDescription')}
       />
-      <Card>
-        <CardHeader>
-          <CardTitle>{t('newPageTitle')}</CardTitle>
-          <CardDescription>{t('newPageDescription')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <AdminTemplateForm
-            mode="new"
-            initial={{ name: '', subject: '', bodyHtml: '', locale: 'en' }}
-          />
-        </CardContent>
+      <Card title={t('newPageTitle')} description={t('newPageDescription')} headingLevel={2}>
+        <AdminTemplateForm
+          mode="new"
+          initial={{ name: '', subject: '', bodyHtml: '', locale: 'en' }}
+        />
       </Card>
     </FormContainer>
   );

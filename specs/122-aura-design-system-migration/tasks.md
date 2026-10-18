@@ -702,8 +702,8 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 
 - [x] T1201 [US12] Spec session "2026-10-18 (US12 start)"; T1201–T1209 written; `plan.md` § Evidence opened.
 - [x] T1202 [US12] The Tiptap loader moves to `src/components/shell/tiptap-loader.tsx` on the shared skeleton blocks; importers and mocks follow. Test: `tests/unit/components/shell/tiptap-loader.test.tsx`.
-- [ ] T1203 [US12] Templates list on AURA: Card, static Table with phone cards, Starter badge, `Tag` filter pills (`aria-pressed`), `buttonClass` links, `EmptyState`. Test: `admin-template-library.test.tsx`.
-- [ ] T1204 [US12] Template form and the new/edit pages on AURA fields and Card; requests, toasts and redirect unchanged. Test: a template-form test (fields, errors after first submit, request bodies).
+- [x] T1203 [US12] Templates list on AURA: Card, static Table with phone cards, Starter badge, `Tag` filter pills (`aria-pressed`), `buttonClass` links, `EmptyState`. Test: `admin-template-library.test.tsx`.
+- [x] T1204 [US12] Template form and the new/edit pages on AURA fields and Card; requests, toasts and redirect unchanged. Test: a template-form test (fields, errors after first submit, request bodies).
 - [ ] T1205 [US12] Image allowlist on AURA (TextField, Button, Table, the shell `ConfirmationDialog` with the surviving-target final focus). Test: `admin-image-allowlist-editor-errors.test.tsx`, `unmounting-trigger-final-focus.test.tsx`.
 - [ ] T1206 [US12] Brand form on AURA cards, fields and alerts; testids, roles, PATCH and 429/422 branches unchanged. Test: `brand-settings-form.test.tsx`.
 - [ ] T1207 [US12] Marketing audience on AURA (FilterBar in the global pattern, Table, skeleton; `marketing/error.tsx` on `RouteErrorPanel`). Test: `audience-filters.test.tsx`, `audience-table.test.tsx`.

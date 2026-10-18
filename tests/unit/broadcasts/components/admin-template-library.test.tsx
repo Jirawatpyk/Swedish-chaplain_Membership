@@ -142,6 +142,20 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
     ).toHaveLength(3);
   });
 
+  it('spec 122 US12a: the pills are AURA tags, the table and Starter badge are AURA', () => {
+    renderLibrary();
+    for (const name of [/^all$/i, /starter only/i, /admin-authored/i]) {
+      expect(screen.getByRole('button', { name })).toHaveClass('aura-tag');
+    }
+    const table = screen.getByRole('table');
+    expect(table).toHaveClass('aura-tbl');
+    const badges = within(table).getAllByLabelText(/seeded by the platform/i);
+    for (const badge of badges) expect(badge).toHaveClass('aura-badge');
+    expect(
+      within(table).getAllByRole('link', { name: /edit/i })[0],
+    ).toHaveClass('aura-btn');
+  });
+
   it('R3.4 M-3: filter pill click updates live-region count text after settle delay', async () => {
     // Global Vitest fake timers (tests/setup.ts) break waitFor's
     // polling cadence; switch to real timers for this test only.
