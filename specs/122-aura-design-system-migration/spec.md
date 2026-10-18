@@ -613,6 +613,11 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **The marketing area's error boundary** (`marketing/error.tsx`, which also covers the audience page) moves to the shared `RouteErrorPanel`.
 - **Unchanged (FR-011):** every guard and its order (the brand page checks permission before the flag; the allowlist page checks the flag first); every request body and response branch; toasts and error-code maps; the audience URL contract, debounce and preflight preset; no audience CSV; the starter-edit banner; the unsaved-changes guard; the allowlist remove dialog's final focus.
 - `tests/unit/components/marketing/audience-table.test.tsx` reads `src/components/ui/sidebar.tsx` for its width budget. US13 must re-home that read when it deletes the folder.
+- **Board content not drawn in US12a** (FR-011; each would be new copy or behaviour):
+  - the phone templates board's "Custom" badge on admin-authored rows and its "Show 11 more" button (every row stays listed);
+  - the brand board's "How it looks in an E-Blast" preview (the form has no preview today);
+  - the audience board's four labelled filter fields (the global filter pattern instead, above).
+- **The audience page's presentation moves to `_components/audience-view.tsx`** (`AudienceFrame`, `AudienceResults`) so the preview harness can render it; the page keeps the guards, parsing and reads, and its own `TableContainer` (check:layout).
 
 ## User Scenarios & Testing *(mandatory)*
 

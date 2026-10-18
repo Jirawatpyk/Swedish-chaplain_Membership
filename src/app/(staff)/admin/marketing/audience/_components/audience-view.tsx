@@ -48,7 +48,7 @@ export async function AudienceFrame({
             // (FR-035c / FR-050a).
             className={cn(
               buttonClass({ variant: 'secondary', touchHeight: true }),
-              'h-auto whitespace-normal text-center',
+              'h-auto min-h-11 whitespace-normal py-2 text-center sm:min-h-9',
             )}
             aria-current={presetActive ? 'page' : undefined}
             data-testid="audience-preflight-preset"

@@ -707,7 +707,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1205 [US12] Image allowlist on AURA (TextField, Button, Table, the shell `ConfirmationDialog` with the surviving-target final focus). Test: `admin-image-allowlist-editor-errors.test.tsx`, `unmounting-trigger-final-focus.test.tsx`.
 - [x] T1206 [US12] Brand form on AURA cards, fields and alerts; testids, roles, PATCH and 429/422 branches unchanged. Test: `brand-settings-form.test.tsx`.
 - [x] T1207 [US12] Marketing audience on AURA (FilterBar in the global pattern, Table, skeleton; `marketing/error.tsx` on `RouteErrorPanel`). Test: `audience-filters.test.tsx`, `audience-table.test.tsx`.
-- [ ] T1208 [US12] Loading and error frames; `MIGRATED_PATHS` and a US12a ratchet block (the five settings controls move to US12b–d files); preview views; first budgets.
+- [x] T1208 [US12] Loading and error frames; `MIGRATED_PATHS` and a US12a ratchet block (the five settings controls move to US12b–d files); preview views; first budgets.
 - [ ] T1209 [US12] Exit: e2e selectors (`[data-slot="card-title"]` in `image-upload-allowlist` and `admin-journey`); gates; build and budgets; screenshots at 1440 and 390 in light and dark and at 200% text; UX and privacy reviews; draft PR; relay R56.
 
 ### Later US12 PRs (tasks written when each starts)
