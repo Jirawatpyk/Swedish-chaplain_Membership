@@ -253,9 +253,29 @@ export function planYearRefusal(years: readonly number[], now: Date): string | n
   );
 }
 
-function fail(message: string): never {
-  console.error(`::error title=seed-ci-e2e::${message}`);
-  process.exit(1);
+/**
+ * The keys the `@critical` specs and global setup read. A chain that leaves
+ * one unset is a failure, not a pass: the specs would `test.skip` on the
+ * missing persona and the job would go green having tested nothing.
+ */
+export const REQUIRED_EXPORTS: readonly string[] = [
+  'E2E_ADMIN_EMAIL',
+  'E2E_ADMIN_PASSWORD',
+  'E2E_SUPER_ADMIN_EMAIL',
+  'E2E_SUPER_ADMIN_PASSWORD',
+  'E2E_MANAGER_EMAIL',
+  'E2E_MANAGER_PASSWORD',
+  'E2E_MEMBER_EMAIL',
+  'E2E_MEMBER_PASSWORD',
+  'E2E_MEMBER_EMAIL_EMPTY',
+  'E2E_MEMBER_PASSWORD_EMPTY',
+  'E2E_MEMBER_HAS_INVOICES',
+  'E2E_ISSUED_INVOICE_ID',
+  'E2E_ADMIN_MUTATION_MEMBER',
+];
+
+export function missingRequiredExports(exported: Readonly<Record<string, string>>): string[] {
+  return REQUIRED_EXPORTS.filter((key) => (exported[key] ?? '') === '').sort();
 }
 
 async function planYears(databaseUrl: string): Promise<number[]> {
@@ -271,8 +291,47 @@ async function planYears(databaseUrl: string): Promise<number[]> {
   }
 }
 
-async function main(argv: readonly string[]): Promise<void> {
-  const env = process.env;
+/** The side effects `main()` needs, injectable so it can be unit-tested. */
+export interface SeedDeps {
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly exists: (path: string) => boolean;
+  readonly spawn: (
+    script: string,
+    env: Record<string, string | undefined>,
+    envFile: string,
+  ) => { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string };
+  readonly append: (path: string, text: string) => void;
+  readonly planYears: (databaseUrl: string) => Promise<number[]>;
+  readonly now: () => Date;
+  readonly log: (line: string) => void;
+  readonly logError: (text: string) => void;
+}
+
+function defaultDeps(): SeedDeps {
+  return {
+    env: process.env,
+    exists: existsSync,
+    spawn: (script, env, envFile) => {
+      const result = spawnSync(process.execPath, [`--env-file=${envFile}`, '--import', 'tsx', script], {
+        // NODE_ENV is removed on purpose; Next types it as required.
+        env: env as NodeJS.ProcessEnv,
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024 * 1024,
+        timeout: 10 * 60_000,
+      });
+      return { status: result.status, signal: result.signal, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+    },
+    append: appendFileSync,
+    planYears,
+    now: () => new Date(),
+    log: (line) => console.log(line),
+    logError: (text) => process.stderr.write(text),
+  };
+}
+
+/** Throws on every refusal or failure; the entry point turns it into ::error + exit 1. */
+export async function main(argv: readonly string[], deps: SeedDeps = defaultDeps()): Promise<void> {
+  const env = deps.env;
   const refusal = ciE2eTargetRefusal({
     databaseUrl: env.DATABASE_URL,
     unpooledUrl: env.DATABASE_URL_UNPOOLED,
@@ -283,46 +342,48 @@ async function main(argv: readonly string[]): Promise<void> {
     expectedDirectHost: env.CI_E2E_EXPECTED_DIRECT_HOST,
     created: env.CI_E2E_BRANCH_CREATED,
   });
-  if (refusal !== null) fail(refusal);
-  console.log(`target ok: ${env.CI_E2E_BRANCH_NAME}, created by this run, on its own host`);
+  if (refusal !== null) throw new Error(refusal);
+  deps.log(`target ok: ${env.CI_E2E_BRANCH_NAME}, created by this run, on its own host`);
   if (argv.includes('--guard-only')) return;
 
   const githubEnv = env.GITHUB_ENV;
-  if (!githubEnv) fail('GITHUB_ENV is not set; this script only runs inside the e2e-critical workflow.');
+  if (!githubEnv) throw new Error('GITHUB_ENV is not set; this script only runs inside the e2e-critical workflow.');
   const envFile = env.CI_E2E_ENV_FILE ?? '.env.local';
-  if (!existsSync(envFile)) fail(`${envFile} is missing; run .github/actions/ci-neon-env first.`);
+  if (!deps.exists(envFile)) throw new Error(`${envFile} is missing; run .github/actions/ci-neon-env first.`);
 
   const exported: Record<string, string> = {};
   for (const step of SEED_CHAIN) {
     const started = Date.now();
-    const result = spawnSync(process.execPath, [`--env-file=${envFile}`, '--import', 'tsx', step.script], {
-      // NODE_ENV is removed on purpose; Next types it as required.
-      env: childEnv(env, exported, step) as NodeJS.ProcessEnv,
-      encoding: 'utf8',
-      maxBuffer: 16 * 1024 * 1024,
-      timeout: 10 * 60_000,
-    });
-    const parsed = parseSeedExports(result.stdout ?? '');
+    const result = deps.spawn(step.script, childEnv(env, exported, step), envFile);
+    const parsed = parseSeedExports(result.stdout);
     const chunk = githubEnvChunk(parsed.exports);
     // Masks first: nothing this seed printed may reach the log before them.
-    for (const mask of chunk.masks) console.log(mask);
-    for (const line of parsed.otherLines) if (line.trim() !== '') console.log(`  ${line}`);
-    if (result.stderr) process.stderr.write(result.stderr);
+    for (const mask of chunk.masks) deps.log(mask);
+    for (const line of parsed.otherLines) if (line.trim() !== '') deps.log(`  ${line}`);
+    if (result.stderr) deps.logError(result.stderr);
     if (result.status !== 0) {
-      fail(`${step.script} failed (exit ${result.status ?? result.signal ?? 'unknown'}).`);
+      throw new Error(`${step.script} failed (exit ${result.status ?? result.signal ?? 'unknown'}).`);
     }
-    appendFileSync(githubEnv!, chunk.env);
+    deps.append(githubEnv, chunk.env);
     for (const { key, value } of parsed.exports) exported[key] = value;
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     const keys = parsed.exports.map((e) => e.key).join(', ') || 'none';
     const ignored = parsed.ignored.length > 0 ? `; ignored: ${parsed.ignored.join(', ')}` : '';
-    console.log(`ok ${step.script} in ${secs}s (exported: ${keys}${ignored})`);
+    deps.log(`ok ${step.script} in ${secs}s (exported: ${keys}${ignored})`);
 
     if (step.script === PLANS_SEED) {
-      const years = await planYears(env.DATABASE_URL!);
-      const yearRefusal = planYearRefusal(years, new Date());
-      if (yearRefusal !== null) fail(yearRefusal);
+      const years = await deps.planYears(env.DATABASE_URL!);
+      const yearRefusal = planYearRefusal(years, deps.now());
+      if (yearRefusal !== null) throw new Error(yearRefusal);
     }
+  }
+
+  const missing = missingRequiredExports(exported);
+  if (missing.length > 0) {
+    throw new Error(
+      `the seed chain finished without a required export: ${missing.join(', ')}. ` +
+        'The specs would skip on the missing persona or fixture and pass having tested nothing.',
+    );
   }
 }
 
@@ -332,6 +393,7 @@ const isMain =
 
 if (isMain) {
   main(process.argv.slice(2)).catch((error: unknown) => {
-    fail(error instanceof Error ? error.message : String(error));
+    console.error(`::error title=seed-ci-e2e::${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
   });
 }
