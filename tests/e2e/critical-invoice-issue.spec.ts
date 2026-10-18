@@ -20,6 +20,17 @@ import { signInAsAdmin } from './helpers/admin-session';
 
 const MEMBER_NAME = process.env.E2E_ADMIN_MUTATION_MEMBER;
 
+/**
+ * How long a staff page may take to replace its loading skeleton after a
+ * client navigation. The CI runner is in the US and the database in
+ * Singapore, so every server query crosses regions: the traces of run
+ * 39124301861 show the member page's <main> still empty after 15 s, and the
+ * draft page's h1 still the loading.tsx shimmer 15 s after its URL changed
+ * (the URL updates when the navigation starts, before the content streams).
+ * The spec runs under test.slow(), so this fits its budget.
+ */
+const SERVER_RENDER_MS = 60_000;
+
 test.describe('issue one invoice on the seeded tenant @f4 @critical', () => {
   test.skip(!MEMBER_NAME, 'E2E_ADMIN_MUTATION_MEMBER is exported by scripts/seed-f4-e2e-admin-fixtures.ts');
 
@@ -29,41 +40,47 @@ test.describe('issue one invoice on the seeded tenant @f4 @critical', () => {
 
     // 1. The seeded member, through the directory search.
     await page.goto(`/admin/members?q=${encodeURIComponent(MEMBER_NAME!)}`);
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: SERVER_RENDER_MS });
+    // Visible only, and strict (no `.first()`): Next keeps a previous segment's
+    // DOM hidden after a client navigation.
     const memberLink = page
       .getByRole('link', { name: new RegExp(MEMBER_NAME!.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) })
-      .first();
-    await expect(memberLink).toBeVisible({ timeout: 15_000 });
+      .filter({ visible: true });
+    await expect(memberLink).toBeVisible({ timeout: SERVER_RENDER_MS });
     await memberLink.click();
     await page.waitForURL(/\/admin\/members\/[0-9a-f-]{36}/, { timeout: 15_000 });
 
     // 2. Draft from the member page (the form pre-selects the member).
+    // The page shows exactly one of "New invoice" / "Create first invoice".
     const createInvoiceLink = page
       .getByRole('link', { name: /create (new|first) invoice|new invoice/i })
-      .first();
-    await expect(createInvoiceLink).toBeVisible({ timeout: 15_000 });
+      .filter({ visible: true });
+    await expect(createInvoiceLink).toBeVisible({ timeout: SERVER_RENDER_MS });
     await createInvoiceLink.click();
     await page.waitForURL(/\/admin\/invoices\/new(\?|$)/, { timeout: 15_000 });
     const createDraft = page.getByRole('button', { name: /create draft/i });
-    await expect(createDraft).toBeEnabled({ timeout: 15_000 });
+    await expect(createDraft).toBeEnabled({ timeout: SERVER_RENDER_MS });
     await createDraft.click();
     // The seeded member already holds a 2026 invoice (the F4 fixtures), so the
     // form asks before a second one (run 39108085903). Confirm it.
     const draftUrl = /\/admin\/invoices\/[0-9a-f-]{36}$/;
-    const second = page.getByRole('alertdialog').getByRole('button', { name: /create a second invoice/i });
+    const second = page
+      .getByRole('alertdialog')
+      .getByRole('button', { name: /create a second invoice/i })
+      .filter({ visible: true });
     // Either the draft page or the confirm dialog, whichever comes first.
     await expect
-      .poll(async () => draftUrl.test(page.url()) || (await second.isVisible()), { timeout: 20_000 })
+      .poll(async () => draftUrl.test(page.url()) || (await second.isVisible()), { timeout: SERVER_RENDER_MS })
       .toBe(true);
     if (!draftUrl.test(page.url())) {
       await second.click();
     }
-    await page.waitForURL(draftUrl, { timeout: 20_000 });
+    await page.waitForURL(draftUrl, { timeout: SERVER_RENDER_MS });
     const draftId = /\/admin\/invoices\/([0-9a-f-]{36})$/.exec(page.url())![1]!;
-    // The status badge is an icon + text, so assert on the page heading.
-    // Visible only: Next keeps the previous segment's DOM (the /new page's h1) hidden after a client nav.
+    // The status badge is an icon + text, so assert on the page heading, which
+    // holds the loading.tsx shimmer until the page streams in.
     await expect(page.getByRole('heading', { level: 1 }).filter({ visible: true })).toHaveText(/draft invoice/i, {
-      timeout: 15_000,
+      timeout: SERVER_RENDER_MS,
     });
 
     // 3. Issue.
@@ -90,7 +107,7 @@ test.describe('issue one invoice on the seeded tenant @f4 @critical', () => {
     // The page heading, not `.first()` text: on a phone the first match is the
     // hidden breadcrumb (run 39110905078).
     const heading = page.getByRole('heading', { level: 1 }).filter({ visible: true });
-    await expect(heading).toContainText(number!, { timeout: 15_000 });
+    await expect(heading).toContainText(number!, { timeout: SERVER_RENDER_MS });
     await expect(heading).not.toContainText(/draft/i);
   });
 });

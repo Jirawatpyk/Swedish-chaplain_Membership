@@ -20,9 +20,11 @@ test.describe('member reads their own profile @critical', () => {
 
   test('the portal profile shows the member’s own company and name', async ({ page }) => {
     await page.goto('/portal/profile');
-    await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15_000 });
-    const main = page.getByRole('main');
-    await expect(main.getByText(COMPANY, { exact: true }).first()).toBeVisible({ timeout: 15_000 });
-    await expect(main.getByText(OWN_CONTACT, { exact: true }).first()).toBeVisible();
+    // Visible-only and strict, no `.first()`: the company is the page's h1, and
+    // the member's own contact row is the one marked "(you)".
+    await expect(page.getByRole('heading', { level: 1, name: COMPANY }).filter({ visible: true })).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(page.getByRole('main').getByText(OWN_CONTACT, { exact: true }).filter({ visible: true })).toBeVisible();
   });
 });
