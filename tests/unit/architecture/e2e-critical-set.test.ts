@@ -19,6 +19,8 @@ const E2E_DIR = join(process.cwd(), 'tests', 'e2e');
 
 const CRITICAL_SET = [
   'admin-journey.spec.ts',
+  'critical-invoice-issue.spec.ts',
+  'critical-member-profile.spec.ts',
   'f9-dashboard.spec.ts',
   'member-sign-in.spec.ts',
   'members-directory-search.spec.ts',
@@ -69,6 +71,8 @@ describe('e2e @critical set scan (positive control)', () => {
   it('recognises a tag in a title and ignores one in a comment', () => {
     expect(isTagged("test.describe('staff sign-in @critical', () => {")).toBe(true);
     expect(isTagged("test('x @f4 @critical', async () => {")).toBe(true);
+    expect(isTagged("test('issue one', { tag: '@critical' }, async () => {")).toBe(true);
+    expect(isTagged("test.describe('x', { tag: ['@f4', '@critical'] }, () => {")).toBe(true);
     expect(isTagged('// @critical is a CI tag')).toBe(false);
   });
 });
