@@ -184,7 +184,12 @@ describe('.github/workflows/e2e-critical.yml', () => {
 
   it('on failure uploads only playwright-report/ and test-results/, for 7 days', () => {
     const upload = step(src, /- name: Upload the Playwright report/);
-    expect(upload).toMatch(/^\s+if: failure\(\) \|\| cancelled\(\)\s*$/m);
+    // A flaky spec passed on a retry, so the job is green; without the
+    // artifact its failed attempts' traces are lost (run 39121468131).
+    expect(upload).toMatch(/^\s+if: failure\(\) \|\| cancelled\(\) \|\| steps\.summary\.outputs\.flaky == 'true'\s*$/m);
+    const summary = step(src, /- name: Timing and per-spec summary/);
+    expect(summary).toMatch(/^\s+id: summary\s*$/m);
+    expect(summary).toMatch(/echo "flaky=true" >> "\$GITHUB_OUTPUT"/);
     expect(upload).toContain('uses: actions/upload-artifact@v4');
     expect(upload).toMatch(/retention-days: 7\s*$/m);
     const paths = /path: \|\n((?:\s{12}\S.*\n?)+)/.exec(upload)?.[1]?.split('\n').map((l) => l.trim()).filter(Boolean);
