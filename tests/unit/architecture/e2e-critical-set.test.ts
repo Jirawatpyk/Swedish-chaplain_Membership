@@ -44,9 +44,15 @@ function specFiles(dir: string): string[] {
   });
 }
 
-/** `@critical` in a test or describe title — not in a comment. */
+/** `@critical` in a test or describe title, or in its `{ tag }` option — not in a comment. */
 function isTagged(source: string): boolean {
-  return /(?:test|describe)(?:\.\w+)*\(\s*['"`][^'"`]*@critical\b/.test(source);
+  const code = source
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*(?:\/\/|\*|\/\*)/.test(line))
+    .join('\n');
+  const inTitle = /(?:test|describe)(?:\.\w+)*\(\s*['"`][^'"`]*@critical\b/;
+  const inTagOption = /\btag:\s*(?:\[[^\]]*)?['"`]@critical['"`]/;
+  return inTitle.test(code) || inTagOption.test(code);
 }
 
 /** The spec's source plus every relative module it imports, one level deep. */
