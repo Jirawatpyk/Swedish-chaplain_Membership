@@ -87,6 +87,22 @@ describe('Claude guard hook — prod write scripts', () => {
     ['Bash', 'node --env-file-if-exists=.env.production --import tsx scripts/run-migrations.ts'],
     ['Bash', 'node --env-file=.env.production --import tsx scripts/run-migrations.ts scripts/verify-schema.ts'],
     ['Bash', 'node --env-file=.env.production -e "import(\'./scripts/run-migrations.ts\')" scripts/verify-schema.ts'],
+    // security review (#590): env loaded without --env-file, flagged wrappers,
+    // and a second script smuggled in through --import / -r
+    ['Bash', 'set -a; . ./.env.production; set +a; node --import tsx scripts/run-migrations.ts'],
+    ['Bash', 'source .env.production && pnpm exec tsx scripts/seed-system-actors.ts'],
+    ['Bash', 'cp .env.production /tmp/p && node --env-file=/tmp/p --import tsx scripts/run-migrations.ts'],
+    ['Bash', 'timeout -k 5 600 pnpm db:migrate:prod'],
+    ['Bash', 'bash -o pipefail -c "pnpm db:migrate:prod"'],
+    ['PowerShell', 'pwsh -ExecutionPolicy Bypass -Command "pnpm db:migrate:prod"'],
+    ['PowerShell', 'cmd /d /c pnpm db:migrate:prod'],
+    ['PowerShell', "Start-Process -FilePath pnpm -ArgumentList 'db:migrate:prod'"],
+    ['Bash', 'env -u FOO pnpm db:migrate:prod'],
+    ['Bash', 'nice pnpm db:migrate:prod'],
+    ['Bash', 'pnpm --dir ../main db:migrate:prod'],
+    ['Bash', 'node --env-file=.env.production --import tsx --import ./scripts/run-migrations scripts/verify-schema.ts'],
+    ['Bash', 'node --env-file=.env.production -r ./scripts/run-migrations scripts/verify-schema.ts'],
+    ['Bash', "bash <<'EOF'\npnpm db:migrate:prod\nEOF"],
   ])('blocks %s: %s', (tool, command) => {
     const r = run(tool, { command });
     expect(r.code, r.stderr).toBe(2);
@@ -105,6 +121,11 @@ describe('Claude guard hook — prod write scripts', () => {
     'git commit -m "docs: never run pnpm db:migrate:prod by hand"',
     'grep -n "db:migrate:prod" package.json',
     'gh pr view 588 --json body',
+    // false positives the security review found (#590)
+    'git commit -m "docs: never pass --env-file=.env.production by hand"',
+    "git commit -q -F - <<'EOF'\nfix: x\n\npnpm run db:migrate:prod stays the user's\nEOF",
+    'pnpm exec vitest run -t "blocks pnpm db:migrate:prod"',
+    'pnpm run db:verify:prod',
   ])('allows %s', (command) => {
     const r = run('Bash', { command });
     expect(r.code, r.stderr).toBe(0);
