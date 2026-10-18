@@ -288,7 +288,7 @@ describe('PR #392 review C1 — a decision refused by the read-only proxy', () =
     const alert = await within(dialog).findByRole('alert');
     expect(alert).toHaveTextContent(enMessages.errors.readOnlyMode);
     expect(alert).toHaveTextContent(enMessages.errors.readOnlyNothingChanged);
-    expect(alert).toHaveAttribute('data-tone', 'warning');
+    expect(alert).toHaveClass('aura-alert--warning');
     await waitFor(() => expect(alert).toHaveFocus());
     expect(within(dialog).queryByText(t.errors.generic)).toBeNull();
     expect(toast.warning).not.toHaveBeenCalled();

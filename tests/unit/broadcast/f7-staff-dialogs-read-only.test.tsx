@@ -119,7 +119,7 @@ describe('an F7 staff dialog whose write the read-only proxy refused', () => {
     const alert = await within(dialog).findByRole('alert');
     expect(alert).toHaveTextContent(en.errors.readOnlyMode);
     expect(alert).toHaveTextContent(en.errors.readOnlyNothingChanged);
-    expect(alert).toHaveAttribute('data-tone', 'warning');
+    expect(alert).toHaveClass('aura-alert--warning');
     await waitFor(() => expect(alert).toHaveFocus());
     expect(toast.error, 'a freeze is not a failure a retry now can fix').not.toHaveBeenCalled();
     expect(toast.warning, 'the dialog is the one channel — a toast would sit behind the modal').not.toHaveBeenCalled();

@@ -55,10 +55,10 @@
  * CLS once data lands with zero selections.
  */
 import { getTranslations } from 'next-intl/server';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Card, CardContent } from '@/components/ui/card';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import {
   APPROVAL_ROUND_ONLY_STATUSES,
   OFFERED_BROADCAST_STATUSES,
@@ -71,6 +71,13 @@ const QUEUE_COLUMNS = 8;
 const TABLE_ROWS = 6;
 const CARDS = 4;
 
+/**
+ * Spec 122 US12b — mirrors the AURA page: the header actions, the banner, then
+ * one card holding the filter bar (below 640 px only the "Filters" button and
+ * Reset; from 640 px the stage chips, member, both dates and the two presets,
+ * each control with its label line), the order hint, the eight-column table
+ * from `md` and the board's phone cards below it.
+ */
 export default async function AdminBroadcastsLoading(): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.queue');
   const approvalRoundEnabled = isEblastMemberApprovalEnabled();
@@ -85,99 +92,96 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
         actions={
           <>
             {isF71aUs7Enabled() ? (
-              <Skeleton data-skeleton="header-action" className="h-9 w-36" aria-hidden="true" />
+              <SkeletonBlock data-skeleton="header-action" className="h-9 w-36 max-sm:h-11" aria-hidden="true" />
             ) : null}
-            <Skeleton data-skeleton="header-action" className="h-9 w-32" aria-hidden="true" />
+            <SkeletonBlock data-skeleton="header-action" className="h-9 w-32 max-sm:h-11" aria-hidden="true" />
           </>
         }
       />
       {/* SLA banner placeholder */}
-      <Skeleton className="h-16 w-full" aria-hidden="true" />
-      {/* Filter bar: one status chip per OFFERED status + member combobox + date×2 */}
-      <div
-        className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/20 p-3"
-        aria-hidden="true"
-      >
-        {/*
-          Round 4 D11 — each control gets its LABEL line too.
-          The real bar renders a `<legend>` above the chip row and a `<Label>`
-          above the member select and both date inputs; the skeleton had neither,
-          so the bar grew by about one label line the moment data landed and the
-          table below it jumped. The docblock on this file already claimed "layout
-          mirrors the real surface so CLS is minimal", which made the gap look
-          settled — the chip COUNT was fixed and the height was not.
-        */}
-        <div className="flex flex-col gap-1">
-          <Skeleton className="h-5 w-16" />
-          <div className="flex flex-wrap gap-2">
-            {Array.from({ length: chipCount }).map((_, i) => (
-              <Skeleton key={i} data-skeleton="stage-chip" className="h-11 w-24 rounded-full" />
-            ))}
+      <SkeletonBlock className="h-16 w-full" aria-hidden="true" />
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+        <div className="flex flex-col gap-[var(--aura-space-4)]" aria-hidden="true">
+          {/* Below 640 px the bar is the Filters button. */}
+          <SkeletonBlock data-skeleton="filters-button" className="h-11 w-28 sm:hidden" />
+          {/* Round 4 D11 — each control keeps its LABEL line, so the bar does
+              not grow by a line when the data lands. */}
+          <div data-skeleton="filters" className="flex flex-wrap items-end gap-[var(--aura-space-3)] max-sm:hidden">
+            <div className="flex basis-full flex-col gap-1">
+              <SkeletonBlock className="h-5 w-16" />
+              <div className="flex flex-wrap gap-2">
+                {Array.from({ length: chipCount }).map((_, i) => (
+                  <SkeletonBlock key={i} data-skeleton="stage-chip" className="h-8 w-24 rounded-full" />
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <SkeletonBlock className="h-4 w-20" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-56" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <SkeletonBlock className="h-4 w-20" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-40" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <SkeletonBlock className="h-4 w-20" />
+              <SkeletonBlock className="h-[var(--aura-input-height)] w-40" />
+            </div>
+            {/* The Upcoming sends chip — no label above it. */}
+            <SkeletonBlock data-skeleton="upcoming-sends" className="h-8 w-40 rounded-full" />
+            {/* #400 item 8 — the Waiting on marketing chip, withheld with the
+                round off like the round's stage chips (#400 U2). */}
+            {approvalRoundEnabled ? (
+              <SkeletonBlock data-skeleton="waiting-on-marketing" className="h-8 w-52 rounded-full" />
+            ) : null}
           </div>
-        </div>
-        <div className="flex flex-col gap-1">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-9 w-56" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-9 w-40" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Skeleton className="h-4 w-20" />
-          <Skeleton className="h-9 w-40" />
-        </div>
-        {/* The Upcoming sends button — no label above it. */}
-        <Skeleton data-skeleton="upcoming-sends" className="h-9 w-40" />
-        {/* #400 item 8 — the Waiting on marketing button beside it, as wide as
-            the button (U6). Withheld with the round off, like the round chips
-            above (#400 U2: the strip offers the toggle by R18). */}
-        {approvalRoundEnabled ? (
-          <Skeleton data-skeleton="waiting-on-marketing" className="h-9 w-52" />
-        ) : null}
-      </div>
-      {/* The order hint (`text-xs`) above the list. */}
-      <Skeleton data-skeleton="order-hint" className="h-4 w-48" aria-hidden="true" />
-      {/* From md: the eight-column table — an h-10 header row and two-line rows. */}
-      <div data-skeleton="queue-table" className="hidden md:block" aria-hidden="true">
-        <div className="grid grid-cols-8 gap-3 border-b px-2 py-3">
-          {Array.from({ length: QUEUE_COLUMNS }).map((_, i) => (
-            <Skeleton key={i} data-skeleton="queue-column" className="h-4 w-3/4" />
-          ))}
-        </div>
-        {Array.from({ length: TABLE_ROWS }).map((_, row) => (
-          <div key={row} data-skeleton="queue-row" className="grid grid-cols-8 gap-3 border-b px-2 py-3">
-            {Array.from({ length: QUEUE_COLUMNS }).map((_, i) => (
-              <div key={i} data-skeleton="queue-cell" className="space-y-1.5">
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-3 w-2/3" />
+          {/* The order hint above the list. */}
+          <SkeletonBlock data-skeleton="order-hint" className="h-4 w-48" />
+          {/* From md: the eight-column table — a header row and two-line rows. */}
+          <div data-skeleton="queue-table" className="hidden md:block">
+            <div className="grid grid-cols-8 gap-3 border-b border-[var(--aura-border-default)] px-2 py-3">
+              {Array.from({ length: QUEUE_COLUMNS }).map((_, i) => (
+                <SkeletonBlock key={i} data-skeleton="queue-column" className="h-4 w-3/4" />
+              ))}
+            </div>
+            {Array.from({ length: TABLE_ROWS }).map((_, row) => (
+              <div
+                key={row}
+                data-skeleton="queue-row"
+                className="grid grid-cols-8 gap-3 border-b border-[var(--aura-border-default)] px-2 py-3"
+              >
+                {Array.from({ length: QUEUE_COLUMNS }).map((_, i) => (
+                  <div key={i} data-skeleton="queue-cell" className="space-y-1.5">
+                    <SkeletonBlock className="h-4 w-full" />
+                    <SkeletonBlock className="h-3 w-2/3" />
+                  </div>
+                ))}
               </div>
             ))}
           </div>
-        ))}
-      </div>
-      {/* Below md: the card list — subject + member beside the stage badge,
-          the labelled rows, and the actions. */}
-      <div data-skeleton="queue-card-list" className="flex flex-col gap-3 md:hidden" aria-hidden="true">
-        {Array.from({ length: CARDS }).map((_, i) => (
-          <Card key={i}>
-            <CardContent className="flex flex-col gap-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-4 w-1/2" />
+          {/* Below md: the board's cards — date and chip, subject, member,
+              audience, the stage pill, then the full-width Review button. */}
+          <div data-skeleton="queue-card-list" className="flex flex-col gap-[var(--aura-space-3)] md:hidden">
+            {Array.from({ length: CARDS }).map((_, i) => (
+              <div
+                key={i}
+                data-skeleton="queue-card"
+                className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] p-[var(--aura-space-4)]"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <SkeletonBlock className="h-4 w-28" />
+                  <SkeletonBlock className="h-5 w-20 rounded-full" />
                 </div>
-                <Skeleton className="h-5 w-20 rounded-4xl" />
+                <SkeletonBlock className="h-5 w-3/4" />
+                <SkeletonBlock className="h-4 w-1/2" />
+                <SkeletonBlock className="h-4 w-2/3" />
+                <SkeletonBlock className="h-5 w-32 rounded-full" />
+                <SkeletonBlock className="mt-2 h-11 w-full" />
               </div>
-              <Skeleton className="h-4 w-2/3" />
-              <Skeleton className="h-4 w-1/2" />
-              <div className="flex justify-end">
-                <Skeleton className="h-9 w-40" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            ))}
+          </div>
+        </div>
+      </Card>
     </TableContainer>
   );
 }

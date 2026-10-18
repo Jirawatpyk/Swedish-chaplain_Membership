@@ -142,7 +142,7 @@ describe('an F119 staff approval write refused by the read-only proxy', () => {
       const alert = await within(dialog).findByRole('alert');
       expect(alert).toHaveTextContent(en.errors.readOnlyMode);
       expect(alert).toHaveTextContent(en.errors.readOnlyNothingChanged);
-      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveClass('aura-alert--warning');
       await waitFor(() => expect(alert).toHaveFocus());
       expect(toast.warning, 'the dialog is the one channel — a toast would sit behind the modal').not.toHaveBeenCalled();
     } else {
