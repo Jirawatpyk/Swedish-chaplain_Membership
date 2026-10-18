@@ -10,7 +10,9 @@
  * `queue-table-client.tsx` in the same change — this is now the only
  * bulk-action surface for the queue.
  *
- * Fixed-bottom `role="toolbar"` + measured-height `ResizeObserver` spacer,
+ * Spec 122 US12b — an AURA `ActionBar` (sticky, in the page flow, no
+ * spacer) named by `toolbarLabel`; its measured height feeds the page's
+ * scroll padding. Originally a fixed-bottom `role="toolbar"` + spacer,
  * mirroring `admin/members/_components/bulk-action-bar.tsx` (`:138-158` the
  * spacer effect, `:377-419` the bar shell + over-cap alert) and the
  * renewals `pipeline-bulk-action-bar.tsx`. Plain tab order — no
@@ -115,9 +117,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { XIcon } from 'lucide-react';
+import { ActionBar, Button } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
 import {
   BulkApproveConfirmDialog,
@@ -217,7 +218,9 @@ export function QueueBulkActionBar({
     }
   }, [executing]);
 
-  // Sticky-bar spacer — same shape as the members `bulk-action-bar.tsx`.
+  // The bar's measured height feeds the page's scroll padding below, so a
+  // focused row scrolls into view above the sticky bar — same shape as the
+  // members `bulk-action-bar.tsx`.
   const visible = !readOnly && selectedIds.length > 0;
   const barRef = useRef<HTMLDivElement | null>(null);
   const [barHeight, setBarHeight] = useState(64);
@@ -225,8 +228,8 @@ export function QueueBulkActionBar({
   useEffect(() => {
     const el = barRef.current;
     if (!el) return;
-    // Guard for jsdom/older browsers: without ResizeObserver the spacer
-    // keeps its last measured value rather than collapsing to 0.
+    // Guard for jsdom/older browsers: without ResizeObserver keep the last
+    // measured value rather than collapsing to 0.
     if (typeof ResizeObserver === 'undefined') {
       setBarHeight(el.offsetHeight);
       return;
@@ -241,7 +244,7 @@ export function QueueBulkActionBar({
     return () => ro.disconnect();
     // Re-observe on every hidden↔visible transition: the parent mounts this
     // bar with nothing selected, so a `[]`-deps effect ran against a null ref
-    // and the spacer stayed at its 64px default however tall the bar wrapped.
+    // and the padding stayed at its 64px default however tall the bar wrapped.
   }, [visible]);
 
   // WCAG 2.2 SC 2.4.11 — keep focus / scroll-into-view above the bar.
@@ -448,77 +451,64 @@ export function QueueBulkActionBar({
 
   return (
     <>
-      {/* Task 7 — announced in-flight status for the bulk-approve fan-out.
-          See the module docstring's Task 7 / Fix round 1 notes for why
-          this must be permanently mounted with toggling text rather than
-          conditionally mounted only while `executing`, and why
-          `BulkProgressIndicator` isn't reused. */}
-      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {progressAnnouncement}
-      </div>
-      <div
+      {/* Spec 122 US12b — AURA `ActionBar`, sticky at the foot of the queue
+          (in the page flow, so no spacer). Task 7 — its status line is the
+          announced in-flight status: a live region mounted with the bar, its
+          text toggling '' → "Approving…" → ''. The count sits in `start`, not
+          in the status: the queue's own announcer is the one live region for
+          the selection count (I-1, PR2 whole-branch review), so the bar's
+          `selected` / built-in Clear are not used. */}
+      <ActionBar
         ref={barRef}
-        // `pb-[env(safe-area-inset-bottom)]` keeps the action row clear of the
-        // iOS home indicator on a notched device — same as the members bar.
-        className="fixed bottom-0 left-0 right-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm shadow-lg"
-        role="toolbar"
-        aria-label={t('toolbarLabel')}
-      >
-        <div className="mx-auto flex max-w-screen-xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3">
-          <div className="flex items-center gap-2">
-            {/* No `aria-live` here — the permanent `role="status"` announcer in
-                `queue-table-client.tsx` (`selectionAnnouncement`) is the sole
-                live region for this count. Duplicating `aria-live` on this
-                visible span made screen readers announce every count change
-                TWICE (I-1, PR2 whole-branch review). */}
-            <span className="text-sm font-medium">
+        // The app's marker for a viewport ActionBar: globals.css keeps a
+        // focused field clear of it by this class, not AURA's modifier.
+        className="chamber-viewport-actionbar"
+        label={t('toolbarLabel')}
+        status={progressAnnouncement}
+        start={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="aura-text-body font-medium">
               {t('selectedCount', { count: selectedIds.length })}
             </span>
             {overCap && (
-              <div className="flex flex-col gap-0.5" role="alert">
-                {/* CF-4 (Task 5 review carry-forward) — bumped from `text-xs`
-                    to `text-sm` so the pre-send truncate-and-run warning
-                    can't be missed. PR2 keeps truncate-and-run (the button
-                    still runs the fan-out over `cappedIds`); PR3's confirm
+              <span className="flex flex-col gap-0.5" role="alert">
+                {/* CF-4 (Task 5 review carry-forward) — the pre-send
+                    truncate-and-run warning must not be missed. The button
+                    still runs the fan-out over `cappedIds`; the confirm
                     dialog is the hard guard. */}
-                <span className="text-sm font-medium text-destructive">
+                <span className="aura-text-body font-medium text-[var(--aura-fg-danger)]">
                   {t('overCap', { max: BULK_CAP })}
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="aura-text-caption text-[var(--aura-fg-secondary)]">
                   {t('overCapHelper', { count: selectedIds.length, max: BULK_CAP })}
                 </span>
-              </div>
+              </span>
             )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClearClick}
-              disabled={executing}
-              className="min-h-11"
-            >
-              <XIcon className="mr-1 h-4 w-4" />
-              {t('clear')}
-            </Button>
-            <Button
-              ref={approveBtnRef}
-              size="sm"
-              disabled={executing}
-              onClick={() => setConfirmOpen(true)}
-              className="min-h-11 whitespace-nowrap"
-            >
-              {t('approveSelected')}
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* Spacer — tracks the bar's MEASURED height (see barHeight above), so a
-          wrapped multi-row bar can never cover the last table row or the
-          pagination control. */}
-      <div data-testid="queue-bulk-spacer" style={{ height: barHeight }} aria-hidden="true" />
+          </span>
+        }
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          touchHeight
+          icon="x"
+          onClick={handleClearClick}
+          disabled={executing}
+        >
+          {t('clear')}
+        </Button>
+        <Button
+          ref={approveBtnRef}
+          variant="primary"
+          size="sm"
+          touchHeight
+          icon="circle-check"
+          disabled={executing}
+          onClick={() => setConfirmOpen(true)}
+        >
+          {t('approveSelected')}
+        </Button>
+      </ActionBar>
 
       <BulkApproveConfirmDialog
         open={confirmOpen}

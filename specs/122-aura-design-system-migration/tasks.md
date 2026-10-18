@@ -716,7 +716,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [ ] T1211 [US12] Adopt AURA 5.50: the brand colour field uses `invalid` (#156); docs. Test: `brand-settings-form.test.tsx` › UX L4.
 - [x] T1212 [US12] Queue table on AURA `DataTable` (`selectable`, `isRowSelectable`, controlled selection; clear / reselect / prune kept; announcer and order hint kept; no selection for managers). Test: `queue-table-client-a11y`, `-columns`, `-segment`.
 - [x] T1213 [US12] Phone cards per board `Admin-broadcasts-mobile` (date + chip, subject, member, audience · recipients, full-width Review link; no checkbox, no inline Approve / Reject). Test: `queue-card-list`.
-- [ ] T1214 [US12] Bulk bar on AURA `ActionBar` and the bulk-approve dialog on AURA `Dialog` + `RadioGroup`; requests, chunking, cap, toasts and undo unchanged. Test: `queue-bulk-action-bar`, `bulk-approve-confirm-dialog`, `queue-with-bulk`.
+- [x] T1214 [US12] Bulk bar on AURA `ActionBar` and the bulk-approve dialog on AURA `Dialog` + `RadioGroup`; requests, chunking, cap, toasts and undo unchanged. Test: `queue-bulk-action-bar`, `bulk-approve-confirm-dialog`, `queue-with-bulk`.
 - [ ] T1215 [US12] Filters in the global pattern (AURA `FilterBar collapseBelow="sm"`, status Tags, member `FilterSelect`, `FilterDateRange`); hrefs unchanged. Test: `queue-filters-*`.
 - [ ] T1216 [US12] Review actions, approve, reject and clear-halt dialogs on AURA; bodies, toasts, undo and final focus unchanged. Test: `approve-dialog-*`, `reject-dialog`, `review-actions-halves`.
 - [ ] T1217 [US12] Banners (SLA, overdue, halt, halt-unavailable, inline warning) as AURA `Alert`; page frame (PageHeader actions, Card), loading and error on AURA.

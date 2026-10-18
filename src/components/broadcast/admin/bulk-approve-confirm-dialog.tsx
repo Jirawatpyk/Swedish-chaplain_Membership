@@ -39,19 +39,8 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { SendIcon } from 'lucide-react';
+import { Alert, Button, Dialog, RadioGroup, TextField } from '@jirawatpyk/aura-react';
 import {
   bangkokInputToIso,
   bangkokMinInputAfterMinutes,
@@ -203,116 +192,102 @@ export function BulkApproveConfirmDialog(
     props.onOpenChange(false);
   }
 
+  function chooseDecision(v: string): void {
+    const next = v === 'schedule' ? 'schedule' : 'send_now';
+    setDecision(next);
+    setLeadTimeOk(
+      next === 'schedule' ? isFarEnoughAhead(bangkokInputToIso(scheduledInput)) : false,
+    );
+  }
+
+  // Spec 122 US12b — AURA `Dialog role="alertdialog"` (board
+  // `Admin-broadcasts-bulk-approve`): the decision is an AURA `RadioGroup`,
+  // the schedule an AURA `TextField` (`datetime-local`, as before), the
+  // over-cap and halt warnings AURA `Alert`s.
   return (
-    <AlertDialog open={props.open} onOpenChange={props.onOpenChange}>
-      <AlertDialogContent className="max-w-lg" finalFocus={finalFocus}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('title', { count: props.broadcastCount })}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {t('recipientTotal', {
-              recipients: props.totalRecipients,
-              count: props.broadcastCount,
-            })}
-            {props.selectedCount > props.cap ? (
-              <span className="mt-2 block text-destructive">
-                {t('overCapNote', { max: props.cap, selected: props.selectedCount })}
-              </span>
-            ) : null}
-            {props.haltUnknown === true ? (
-              <span className="mt-2 block font-medium text-destructive">
-                {t('haltUnknownWarning')}
-              </span>
-            ) : null}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <div className="space-y-3">
-          <RadioGroup
-            value={decision}
-            onValueChange={(v) => {
-              const next = v === 'schedule' ? 'schedule' : 'send_now';
-              setDecision(next);
-              setLeadTimeOk(
-                next === 'schedule'
-                  ? isFarEnoughAhead(bangkokInputToIso(scheduledInput))
-                  : false,
-              );
-            }}
-            aria-label={t('decisionLabel')}
-            className="space-y-2"
-          >
-            <div className="flex items-center gap-2">
-              <RadioGroupItem
-                id="bulk-approve-send-now"
-                value="send_now"
-                aria-label={t('sendNow')}
-              />
-              <Label htmlFor="bulk-approve-send-now" className="cursor-pointer">
-                {t('sendNow')}
-              </Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <RadioGroupItem
-                id="bulk-approve-schedule"
-                value="schedule"
-                aria-label={t('schedule')}
-              />
-              <Label htmlFor="bulk-approve-schedule" className="cursor-pointer">
-                {t('schedule')}
-              </Label>
-            </div>
-          </RadioGroup>
-
-          {decision === 'send_now' ? (
-            <p id="bulk-confirm-sendnow-warning" className="text-sm text-destructive">
-              {t('sendNowWarning')}
-            </p>
-          ) : (
-            <div className="ml-6 space-y-2">
-              <Label htmlFor="bulk-approve-scheduled-for">{t('scheduleLabel')}</Label>
-              <Input
-                id="bulk-approve-scheduled-for"
-                type="datetime-local"
-                value={scheduledInput}
-                min={minInput}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setScheduledInput(next);
-                  setLeadTimeOk(isFarEnoughAhead(bangkokInputToIso(next)));
-                }}
-                aria-describedby="bulk-approve-scheduled-for-help"
-              />
-              {schedulePreview !== null ? (
-                <p className="text-sm text-muted-foreground">
-                  {t('schedulePreviewLabel')} <span>{schedulePreview}</span>
-                </p>
-              ) : null}
-              <p
-                id="bulk-approve-scheduled-for-help"
-                className="text-xs text-muted-foreground"
-              >
-                {t('scheduleHelp')}
-              </p>
-            </div>
-          )}
-        </div>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
-          <AlertDialogAction
+    <Dialog
+      role="alertdialog"
+      open={props.open}
+      onClose={() => props.onOpenChange(false)}
+      finalFocus={() => finalFocus() || null}
+      title={t('title', { count: props.broadcastCount })}
+      description={t('recipientTotal', {
+        recipients: props.totalRecipients,
+        count: props.broadcastCount,
+      })}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => props.onOpenChange(false)}>
+            {t('cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            icon={decision === 'send_now' ? <SendIcon aria-hidden="true" /> : 'calendar'}
             disabled={!scheduleValid}
             aria-describedby={
               decision === 'send_now' ? 'bulk-confirm-sendnow-warning' : undefined
             }
-            onClick={(e) => {
-              e.preventDefault();
-              handleConfirm();
-            }}
+            onClick={handleConfirm}
           >
             {decision === 'send_now' ? t('confirmSendNow') : t('confirmSchedule')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
+        {props.selectedCount > props.cap ? (
+          <Alert tone="danger" role="status">
+            {t('overCapNote', { max: props.cap, selected: props.selectedCount })}
+          </Alert>
+        ) : null}
+        {props.haltUnknown === true ? (
+          <Alert tone="danger" role="status">
+            {t('haltUnknownWarning')}
+          </Alert>
+        ) : null}
+
+        <RadioGroup
+          touchHeight
+          label={t('decisionLabel')}
+          value={decision}
+          onChange={chooseDecision}
+          options={[
+            { value: 'send_now', label: t('sendNow') },
+            { value: 'schedule', label: t('schedule') },
+          ]}
+        />
+
+        {decision === 'send_now' ? (
+          <p
+            id="bulk-confirm-sendnow-warning"
+            className="aura-text-body text-[var(--aura-fg-danger)]"
+          >
+            {t('sendNowWarning')}
+          </p>
+        ) : (
+          <div className="flex flex-col gap-[var(--aura-space-2)]">
+            <TextField
+              id="bulk-approve-scheduled-for"
+              touchHeight
+              type="datetime-local"
+              label={t('scheduleLabel')}
+              hint={t('scheduleHelp')}
+              value={scheduledInput}
+              min={minInput}
+              onChange={(e) => {
+                const next = e.target.value;
+                setScheduledInput(next);
+                setLeadTimeOk(isFarEnoughAhead(bangkokInputToIso(next)));
+              }}
+            />
+            {schedulePreview !== null ? (
+              <p className="aura-text-body text-[var(--aura-fg-secondary)]">
+                {t('schedulePreviewLabel')} <span>{schedulePreview}</span>
+              </p>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </Dialog>
   );
 }

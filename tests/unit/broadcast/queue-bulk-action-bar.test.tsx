@@ -142,82 +142,66 @@ function fetchMockOf(
   return vi.fn(impl);
 }
 
-describe('QueueBulkActionBar — bar shell + count + spacer', () => {
-  it('renders a role=toolbar with the visible count (no aria-live — I-1 review fix) and a ResizeObserver spacer', () => {
-    const { container } = render(
-      <Provider>
-        <QueueBulkActionBar
-          selectedIds={['b1', 'b2']}
-          onClear={vi.fn()}
-          readOnly={false}
-          recipientByIdRows={[]}
-        />
-      </Provider>,
-    );
-    const bar = screen.getByRole('toolbar');
-    expect(bar).toHaveClass('fixed', 'bottom-0');
-    // I-1 (PR2 whole-branch review, both opus reviewers) — this span must NOT
-    // carry `aria-live`. The permanent `role="status"` announcer in
-    // `queue-table-client.tsx` is the sole live region for the selection
-    // count; duplicating it here caused a double announcement on every
-    // count change ("2 selected. 2 selected."). See
-    // `queue-table-client-a11y.test.tsx` for that announcer's own coverage.
-    const countSpan = within(bar).getByText('2 selected');
-    expect(countSpan).not.toHaveAttribute('aria-live');
+const BAR_NAME = 'Bulk actions for selected broadcasts';
 
-    act(() => roCb?.([{ borderBoxSize: [{ blockSize: 68 }] }]));
-    const spacer = container.querySelector('[aria-hidden="true"][data-testid="queue-bulk-spacer"]');
-    expect(spacer).toHaveStyle({ height: '68px' });
+function renderBar(selectedIds: string[] = ['b1']) {
+  return render(
+    <Provider>
+      <QueueBulkActionBar
+        selectedIds={selectedIds}
+        onClear={vi.fn()}
+        readOnly={false}
+        recipientByIdRows={[]}
+      />
+    </Provider>,
+  );
+}
+
+const scrollPadding = () => document.documentElement.style.scrollPaddingBottom;
+
+describe('QueueBulkActionBar — bar shell + count (AURA ActionBar)', () => {
+  it('is an AURA ActionBar named for the bulk actions, with the visible count outside any live region (I-1) and no spacer', () => {
+    const { container } = renderBar(['b1', 'b2']);
+    const bar = screen.getByRole('region', { name: BAR_NAME });
+    expect(bar).toHaveClass('aura-actionbar', 'chamber-viewport-actionbar');
+    // I-1 (PR2 whole-branch review) — the queue's own announcer is the sole
+    // live region for the selection count; a second one announced every
+    // change twice ("2 selected. 2 selected.").
+    const countSpan = within(bar).getByText('2 selected');
+    expect(countSpan.closest('[role="status"], [aria-live]')).toBeNull();
+    // Sticky in the page flow — the old measured spacer is gone.
+    expect(container.querySelector('[data-testid="queue-bulk-spacer"]')).toBeNull();
   });
 
-  it('rounds a fractional measured height UP', () => {
-    const { container } = render(
-      <Provider>
-        <QueueBulkActionBar
-          selectedIds={['b1']}
-          onClear={vi.fn()}
-          readOnly={false}
-          recipientByIdRows={[]}
-        />
-      </Provider>,
-    );
+  it('Clear and Approve selected are AURA buttons with the 44px touch height', () => {
+    renderBar();
+    const bar = within(screen.getByRole('region', { name: BAR_NAME }));
+    for (const name of ['Clear', 'Approve selected']) {
+      expect(bar.getByRole('button', { name })).toHaveClass('aura-btn', 'aura-btn--touch');
+    }
+  });
+
+  it('the measured height becomes the page scroll padding, rounded up (WCAG 2.4.11)', () => {
+    renderBar();
     act(() => roCb?.([{ borderBoxSize: [{ blockSize: 68.4 }] }]));
-    const spacer = container.querySelector('[data-testid="queue-bulk-spacer"]') as HTMLElement;
-    expect(spacer.style.height).toBe('69px');
+    expect(scrollPadding()).toBe('69px');
   });
 
   it('falls back to offsetHeight when the entry has no borderBoxSize', () => {
-    const { container } = render(
-      <Provider>
-        <QueueBulkActionBar
-          selectedIds={['b1']}
-          onClear={vi.fn()}
-          readOnly={false}
-          recipientByIdRows={[]}
-        />
-      </Provider>,
-    );
-    const bar = screen.getByRole('toolbar');
+    renderBar();
+    const bar = screen.getByRole('region', { name: BAR_NAME });
     Object.defineProperty(bar, 'offsetHeight', { value: 96, configurable: true });
     act(() => roCb?.([{}]));
-    const spacer = container.querySelector('[data-testid="queue-bulk-spacer"]') as HTMLElement;
-    expect(spacer.style.height).toBe('96px');
+    expect(scrollPadding()).toBe('96px');
   });
 
-  it('disconnects the observer on unmount', () => {
-    const { unmount } = render(
-      <Provider>
-        <QueueBulkActionBar
-          selectedIds={['b1']}
-          onClear={vi.fn()}
-          readOnly={false}
-          recipientByIdRows={[]}
-        />
-      </Provider>,
-    );
+  it('disconnects the observer and restores the padding on unmount', () => {
+    const { unmount } = renderBar();
+    act(() => roCb?.([{ borderBoxSize: [{ blockSize: 70 }] }]));
     expect(disconnectCount).toBe(0);
     unmount();
     expect(disconnectCount).toBe(1);
+    expect(scrollPadding()).toBe('');
   });
 });
 
@@ -268,7 +252,7 @@ describe('QueueBulkActionBar — recipientByIdRows', () => {
     );
     // The total is surfaced when the confirm dialog opens (Task 4) — here we
     // only assert the prop typechecks and the bar still renders the toolbar.
-    expect(screen.getByRole('toolbar')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: BAR_NAME })).toBeInTheDocument();
   });
 
   it('the confirm dialog shows the CORRECT sum over the capped set — 10 + 5 = 15 across 2 broadcasts', async () => {
@@ -294,7 +278,7 @@ describe('QueueBulkActionBar — recipientByIdRows', () => {
 
 describe('QueueBulkActionBar — hidden states', () => {
   it('renders nothing when selectedIds is empty', () => {
-    const { container } = render(
+    render(
       <Provider>
         <QueueBulkActionBar
           selectedIds={[]}
@@ -304,11 +288,11 @@ describe('QueueBulkActionBar — hidden states', () => {
         />
       </Provider>,
     );
-    expect(container.querySelector('[role="toolbar"]')).toBeNull();
+    expect(screen.queryByRole('region', { name: BAR_NAME })).toBeNull();
   });
 
   it('renders nothing when readOnly is true, even with a selection', () => {
-    const { container } = render(
+    render(
       <Provider>
         <QueueBulkActionBar
           selectedIds={['b1']}
@@ -318,7 +302,7 @@ describe('QueueBulkActionBar — hidden states', () => {
         />
       </Provider>,
     );
-    expect(container.querySelector('[role="toolbar"]')).toBeNull();
+    expect(screen.queryByRole('region', { name: BAR_NAME })).toBeNull();
   });
 });
 
@@ -597,8 +581,9 @@ describe('QueueBulkActionBar — in-flight progress announcement (Task 7, 2026-0
     );
 
     // Before the fan-out starts, the region already EXISTS (permanent —
-    // not conditionally mounted), but is silent (empty text).
-    const statusBefore = screen.getByRole('status');
+    // not conditionally mounted), but is silent (empty text). It is the
+    // ActionBar's own status line (spec 122 US12b).
+    const statusBefore = within(screen.getByRole('region', { name: BAR_NAME })).getByRole('status');
     expect(statusBefore.textContent).toBe('');
 
     await approveViaSendNowConfirm();
@@ -607,7 +592,7 @@ describe('QueueBulkActionBar — in-flight progress announcement (Task 7, 2026-0
     // node (not a newly-mounted one — `toBe` proves node identity) must now
     // carry the "Approving…" text, which is the mutation NVDA/JAWS actually
     // announce.
-    const statusDuring = screen.getByRole('status');
+    const statusDuring = within(screen.getByRole('region', { name: BAR_NAME })).getByRole('status');
     expect(statusDuring).toBe(statusBefore);
     await waitFor(() => expect(statusDuring.textContent).toBe('Approving…'));
     expect(statusDuring).toHaveTextContent('Approving…');
@@ -617,7 +602,7 @@ describe('QueueBulkActionBar — in-flight progress announcement (Task 7, 2026-0
     // it does NOT unmount.
     resolveFetch?.(jsonResponse({ ok: true }));
     await waitFor(() => expect(statusDuring.textContent).toBe(''));
-    expect(screen.getByRole('status')).toBe(statusBefore);
+    expect(within(screen.getByRole('region', { name: BAR_NAME })).getByRole('status')).toBe(statusBefore);
   });
 });
 
@@ -941,7 +926,7 @@ describe('QueueBulkActionBar — Clear focus fallback (T086a V2)', () => {
         </main>
       </Provider>,
     );
-    await user.click(within(screen.getByRole('toolbar')).getByRole('button', { name: /clear/i }));
+    await user.click(within(screen.getByRole('region', { name: BAR_NAME })).getByRole('button', { name: /clear/i }));
     expect(onClear).toHaveBeenCalledTimes(1);
     expect(document.activeElement).toBe(document.getElementById('main-content'));
   });
