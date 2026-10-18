@@ -43,7 +43,7 @@ When the `advisor` tool is available, call it at these three points:
 
 ## Governance
 
-- `.specify/memory/constitution.md` (**v2.0.0**) holds the **principles**: 10, of which 4 are NON-NEGOTIABLE — Data Privacy & Security, Test-First, Clean Architecture, PCI DSS — plus i18n, Inclusive UX, Perf & Observability, Reliability, Code Quality, Simplicity. Principle I requires **two-layer tenant isolation** (application + database) with a cross-tenant integration test. The **process** — lifecycle, reviews, merging — is not in the constitution; it lives in `docs/workflow.md` (D-018).
+- `.specify/memory/constitution.md` (**v2.1.0**) holds the **principles**: 10, of which 4 are NON-NEGOTIABLE — Data Privacy & Security, Test-First, Clean Architecture, PCI DSS — plus i18n, Inclusive UX, Perf & Observability, Reliability, Code Quality, Simplicity. Principle I requires **two-layer tenant isolation** (application + database) with a cross-tenant integration test. The **process** — lifecycle, reviews, merging — is not in the constitution; it lives in `docs/workflow.md` (D-018).
 - A deviation from a principle lives in the feature's `plan.md` § Complexity Tracking with the rejected simpler alternative.
 - Key docs: `docs/phases-plan.md` (features and resolved decisions) · `docs/saas-architecture.md` (read before designing any tenant-scoped feature) · `docs/membership-benefits-analysis.md` (authoritative tier data; supersedes the deleted Excel-derived `docs/database-analysis.md`) · `docs/smart-chamber-features.md` (the 21-feature catalogue) · `docs/event-integration-analysis.md` · `docs/email-broadcast-analysis.md` · `docs/ux-standards.md` + `docs/ux-patterns.md` · `docs/code-conventions.md` · `docs/observability.md` · `docs/go-live-readiness.md` · `docs/runbooks/` (~60 runbooks).
 
@@ -111,7 +111,7 @@ When sources disagree, the higher one wins. If the conflict matters, stop and as
 ## Workflow
 
 - `docs/workflow.md` is the lifecycle contract: sizes, the ten steps, the **Definition of Done**, **Decisions** and **Continuous improvement**. The `feature-flow` skill walks it; `review-and-ship` covers reviewers and merging.
-- The process follows current Claude Code practice and is owned by `docs/workflow.md`, not the constitution (v2.0.0, D-018); the `/speckit.*` commands remain usable for a step.
+- The process follows current Claude Code practice and is owned by `docs/workflow.md`, not the constitution (v2.1.0, D-018); the `/speckit.*` commands remain usable for a step.
 - When a retro trigger in `docs/workflow.md` § Continuous improvement fires, run the retro: one line in `docs/retro.md`, plus the change that stops it recurring.
 - Dispatch the project subagents in `.claude/agents/` for gate and review work, not `general-purpose`. Any UI-touching change also gets an `enterprise-ux-designer` pass.
 - Saved Workflows (`.claude/workflows/`: `review-branch`, `sweep-class`, `spec-review-panel`) run only on explicit opt-in ("use a workflow" / `ultracode`).

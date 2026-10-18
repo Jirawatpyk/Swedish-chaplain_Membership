@@ -50,7 +50,7 @@ Dispatch the project agents in `.claude/agents/`, not `general-purpose`. File-mu
 | Does the code satisfy every acceptance scenario or Done-when line in the spec? | `spec-compliance-auditor` (mandatory for M / L, § 1) |
 | An architecture decision or module boundary | `chamber-os-architect` |
 
-Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, one of whom signs the security checklist (`specs/001-auth-rbac/security.md` § 5 for F1). Other PRs need ≥1. With no second human reviewer, the **solo-maintainer review** below replaces the second reviewer (this skill owns the rule; constitution v2.0.0 leaves review mechanics to the process). Enumerate its five checks in `plan.md` § Complexity Tracking:
+Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, one of whom signs the security checklist (`specs/001-auth-rbac/security.md` § 5 for F1). Other PRs need ≥1. With no second human reviewer, the **solo-maintainer review** below replaces the second reviewer (this skill owns the rule; the constitution, since v2.0.0, leaves review mechanics to the process). Enumerate its five checks in `plan.md` § Complexity Tracking:
 
 | Check | How |
 |---|---|

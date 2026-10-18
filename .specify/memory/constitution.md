@@ -1,6 +1,21 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 2.0.0 → 2.1.0  (MINOR: Principle II gains one scoped
+                allowance. For UI presentation (React components, styles
+                and markup; never route handlers or server actions),
+                copy, and size-S changes that are not guards, the
+                failing test and the code may share a commit, provided
+                the failing run is recorded with its output (the test
+                name and its failure line) in plan.md § Evidence, or in
+                the PR for size S. Money, tax, auth/RBAC, tenancy, PII,
+                audit log, migrations, guards and validation, and
+                domain/application logic keep separate RED and GREEN
+                commits. "Watch it fail" is unchanged for every change.
+                No principle is added or removed (D-023).
+                Approval: the sole maintainer's merge of the PR that
+                carries this amendment.)
+
 Version change: 1.4.2 → 2.0.0  (MAJOR: process moves out of the constitution.
                 The ten Spec Kit gates (§ Development Workflow & Quality
                 Gates) and Principle IX's review mechanics — the ≥2-reviewer
@@ -410,6 +425,13 @@ TDD is mandatory. Code without a preceding failing test MUST NOT be merged.
 
 - Red → Green → Refactor: write the test, watch it fail, write the minimum code to pass,
   then refactor. Each step is a distinct commit or clearly separated change set.
+- Allowance (2.1.0): for UI presentation (React components, styles and markup;
+  never `route.ts` handlers or server actions), copy, and size-S changes that are
+  not guards, the failing test and the code may share one commit, provided the
+  failing run is recorded with its output (the test name and its failure line) in
+  `plan.md` § Evidence, or in the PR for size S. The allowance never covers money,
+  tax (including money computed for display), auth/RBAC, tenancy, PII, audit log,
+  a migration, a guard or validation, or domain/application logic.
 - Every user story in a spec MUST have at least one acceptance-level test before
   implementation starts.
 - Contract tests are mandatory at every external and inter-module boundary.
@@ -739,4 +761,4 @@ Swedish law).
   the development process lives in `docs/workflow.md`. They are subordinate to this
   constitution's principles, and they — not this file — define the process.
 
-**Version**: 2.0.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-10-17
+**Version**: 2.1.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-10-18
