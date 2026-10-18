@@ -212,4 +212,22 @@ describe('the global filter pattern (spec 122 US12b)', () => {
     // (Reset is "Reset filters" too, so the sheet button is found by its popup.)
     expect(bar.querySelector('button[aria-haspopup="dialog"]')).toHaveTextContent('Filters (3)');
   });
+
+  // US12b UX review M2 — the default view is one stage, and a phone user must
+  // see that the cards are filtered (board `Admin-broadcasts-mobile`).
+  it('the default view counts its stage, so the phone button reads "Filters (1)"', () => {
+    render(filters());
+    const bar = screen.getByRole('region', { name: 'Broadcast queue filters' });
+    expect(bar.querySelector('button[aria-haspopup="dialog"]')).toHaveTextContent('Filters (1)');
+  });
+
+  // US12b UX review M1 / L8 — from 640 px the whole stage name and its count
+  // show (AURA caps a Tag's text at 24ch outside its own chip row), and AURA's
+  // own tip is the only tooltip on a cut chip.
+  it('a stage chip lifts AURA\'s text cap from sm up and carries no title tooltip', () => {
+    render(filters(true));
+    const chip = stageChip(/changes requested/i);
+    expect(chip).toHaveClass('sm:[&_.aura-tag\\_\\_text]:max-w-none');
+    expect(chip).not.toHaveAttribute('title');
+  });
 });

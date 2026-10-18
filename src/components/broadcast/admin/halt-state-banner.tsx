@@ -68,14 +68,14 @@ export async function HaltStateBanner({
             {halted.map((m) => (
               <li
                 key={m.memberId}
-                className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)] rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface)] px-[var(--aura-space-3)] py-[var(--aura-space-2)]"
+                className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)] max-sm:flex-col max-sm:items-stretch rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface)] px-[var(--aura-space-3)] py-[var(--aura-space-2)]"
               >
                 <div>
                   {/* Smart-G3 (round-3) — deep-link to F3 member detail so admin
                       can investigate plan tier + activity before clearing halt. */}
                   <Link
                     href={`/admin/members/${m.memberId}`}
-                    className="aura-text-body font-medium text-[var(--aura-fg-primary)] hover:underline focus-visible:underline"
+                    className="inline-flex min-h-11 items-center aura-text-body font-medium text-[var(--aura-fg-accent)] hover:underline focus-visible:underline sm:min-h-0"
                   >
                     {m.displayName}
                   </Link>

@@ -120,12 +120,13 @@ export function ClearHaltDialog({
   // success; AURA's default, the trigger, otherwise).
   return (
     <>
-      <Button variant="secondary" size="sm" touchHeight onClick={() => setOpen(true)}>
+      <Button variant="secondary" size="sm" touchHeight className="max-sm:w-full" onClick={() => setOpen(true)}>
         {tBanner('clearAction')}
       </Button>
       <Dialog
         role="alertdialog"
         open={open}
+        dismissible={!pending}
         onClose={() => onOpenChange(false)}
         finalFocus={() => finalFocus() || null}
         title={t('title')}

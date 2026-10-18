@@ -190,6 +190,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | #157 | `DataTable` sets `aria-sort` only on a `sortable` column; no fixed sort indication for a list ordered by the page (Addendum 58) | the E-Blast review queue sets `aria-sort` on the header its order follows after each render, and tags the select-all checkbox for the bulk bar's focus return (`queue-table-client.tsx`) |
 | #158 | `StatusPill` never wraps (`white-space: nowrap`), so a long status word in a narrow table column runs into the next column (Addendum 59) | the E-Blast review queue lets the Stage pill wrap (`[&_.aura-pill]:whitespace-normal` in `queue-table-client.tsx`) |
 | #159 | `DataTable` counts 160 px toward the row minimum for every flexible column, whatever its `minWidth`, so a table of narrow flexible columns scrolls when it would fit (Addendum 59) | the E-Blast review queue sets the head and row minimum from its own column minimums (`--queue-row-min` in `queue-table-client.tsx`) |
+| #160 | `Tag` caps its text at 24ch except in FilterBar's own chip row, so a long toggle chip among the bar's children is cut, its count with it (Addendum 60) | the E-Blast queue's stage chips lift the cap from `sm` up (`sm:[&_.aura-tag\_\_text]:max-w-none` in `queue-filters.tsx`) |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

@@ -3587,7 +3587,7 @@
           "status": "Steg",
           "whoseTurn": "Vems tur",
           "timeInStage": "Tid i steget",
-          "sendTime": "Utskickstid",
+          "sendTime": "Sändtid",
           "actions": "Åtgärder"
         },
         "status": {

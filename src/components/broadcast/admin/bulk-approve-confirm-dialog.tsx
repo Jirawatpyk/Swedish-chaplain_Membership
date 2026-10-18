@@ -258,12 +258,9 @@ export function BulkApproveConfirmDialog(
         />
 
         {decision === 'send_now' ? (
-          <p
-            id="bulk-confirm-sendnow-warning"
-            className="aura-text-body text-[var(--aura-fg-danger)]"
-          >
+          <Alert id="bulk-confirm-sendnow-warning" tone="warning" role="note">
             {t('sendNowWarning')}
-          </p>
+          </Alert>
         ) : (
           <div className="flex flex-col gap-[var(--aura-space-2)]">
             <TextField

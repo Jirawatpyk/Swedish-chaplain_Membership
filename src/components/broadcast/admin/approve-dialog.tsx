@@ -291,6 +291,7 @@ export function ApproveDialog({
     <Dialog
       role="alertdialog"
       open={open}
+      dismissible={!pending}
       onClose={() => handleOpenChange(false)}
       finalFocus={() => finalFocus() || null}
       title={t('title')}
@@ -300,7 +301,7 @@ export function ApproveDialog({
           {/* a11y M1 — the recipient line is part of the announced
               description, not a sibling the dialog's describedby misses. */}
           {recipientCount !== undefined ? (
-            <span className="mt-[var(--aura-space-2)] block text-[var(--aura-fg-secondary)]">
+            <span className="mt-[var(--aura-space-2)] block font-medium text-[var(--aura-fg-primary)]">
               {t('recipientCount', { count: recipientCount })}
             </span>
           ) : null}

@@ -420,12 +420,13 @@ export function QueueFilters({
         data-status={s}
         selected={checked}
         touchHeight
-        title={label}
-        className="max-w-full"
+        // From `sm` up the whole stage name and its count show
+        // (stand-in until AURA #160: a Tag's text is capped at 24ch outside FilterBar's own chips).
+        className="max-w-full sm:[&_.aura-tag\_\_text]:max-w-none"
         onClick={() => toggleStatus(s, !checked)}
       >
         {/* SV runs up to +28 %: below `sm` the label truncates inside its chip
-            (the full text in the tooltip) instead of reflowing the strip at
+            (the full text in AURA's own tip) instead of reflowing the strip at
             320 px; from `sm` up the whole label shows (UX review M4). */}
         <span className="min-w-0 max-w-[14rem] truncate sm:max-w-none">{label}</span>
         {count !== null ? (
@@ -443,9 +444,10 @@ export function QueueFilters({
   };
 
   // The phone "Filters (n)" count: the bar has no chips of its own, so it is
-  // told how many filters are on (a preset is a stage filter).
+  // told how many filters are on (a preset is a stage filter). The default
+  // view's stage counts too, so a phone shows the cards are filtered (UX M2).
   const filterCount =
-    (urlStatus.length > 0 || currentStatusAll ? 1 : 0) +
+    (visualStatus.length > 0 || currentStatusAll ? 1 : 0) +
     (currentMemberId ? 1 : 0) +
     (currentFromDate ? 1 : 0) +
     (currentToDate ? 1 : 0);

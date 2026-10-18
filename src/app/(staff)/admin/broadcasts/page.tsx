@@ -6,6 +6,7 @@ import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { LayoutTemplate } from 'lucide-react';
 import { QueueTable } from '@/components/broadcast/admin/queue-table';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
@@ -374,6 +375,7 @@ export default async function AdminBroadcastsPage({
                 href="/admin/broadcasts/templates"
                 className={buttonClass({ variant: 'secondary', touchHeight: true })}
               >
+                <LayoutTemplate aria-hidden="true" className="size-4" />
                 {t('templatesEntryButton')}
               </Link>
             ) : null}

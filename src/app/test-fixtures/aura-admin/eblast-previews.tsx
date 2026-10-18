@@ -256,6 +256,7 @@ export async function renderQueuePreview(state: string | undefined) {
         actions={
           <>
             <Link href="/admin/broadcasts/templates" className={buttonClass({ variant: 'secondary', touchHeight: true })}>
+              <LayoutTemplate aria-hidden="true" className="size-4" />
               {t('templatesEntryButton')}
             </Link>
             {!readOnly ? (
