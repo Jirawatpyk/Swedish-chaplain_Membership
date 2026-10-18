@@ -362,3 +362,43 @@ Filled in at Verify, one block per slice.
 - **11 passed** on each project (3.2 min and 3.1 min), with no retries, no flakes and no skips. The artifact upload was skipped because nothing failed. **Delete branch:** ran.
 - **Budget:** without the 519 s migrate, the run is about 12 min. That leaves about 13 min of the 25-minute budget for the rest of the `@critical` set, at roughly 1 min per spec file per project.
 
+### Slice 2 — spike 6 ([run 39100353012](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39100353012), head `bf2aa3565`, failed): nine `@critical` specs
+
+- **Phases:** migrate 537 s, seed 156 s, build 135 s, ready 6 s, e2e-chromium **724 s**, e2e-mobile-chrome **772 s**.
+- **Results:** 31 passed and 2 failed on each project. Both failures were deterministic, failing all three attempts.
+  - `member-nav.spec.ts:66`, "mobile Benefits tab stays active on /portal/broadcasts/**": the member tab bar was not found on `/portal/broadcasts/new`. In CI `FEATURE_F7_BROADCASTS=false` (`.github/ci/e2e.env`), so the broadcasts route is not live.
+  - `renewal-pipeline-dashboard.spec.ts:107`, AS1: its 5 s wall-clock smoke read 5.7 s from a US runner to the Singapore database.
+- **Budget:** without the from-zero migrate the job projects to about 30 min, over DW-7's 25. The two slowest additions were dropped, and they are the two failing specs: `member-nav` at 202 s per project and `renewal-pipeline-dashboard` at 118 s / 168 s (RED `df8eecda1`, GREEN `488d28f32`).
+  - Both still run nightly, where the same two failures are expected until F7 has a CI inbox and the AS1 latency bound accounts for the runner region. **Open items.**
+
+### Slice 2 — final ([run 39102932905](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39102932905), head `488d28f32`, **success**): the seven-spec `@critical` set
+
+| Phase | Seconds |
+|---|---|
+| migrate (from zero; the CI parent is not migrated until the refresh runs on `main`) | 519 |
+| seed | 153 |
+| build | 138 |
+| ready | 6 |
+| e2e-chromium | 376 |
+| e2e-mobile-chrome | 380 |
+
+| Spec | chromium s | mobile-chrome s | Retries | Passed (each) | Flaky | Failed | Skipped |
+|---|---|---|---|---|---|---|---|
+| admin-journey.spec.ts | 65 | 66 | 0 | 1 | 0 | 0 | 0 |
+| f9-dashboard.spec.ts | 42 | 52 | 0 | 3 | 0 | 0 | 0 |
+| member-sign-in.spec.ts | 27 | 28 | 0 | 2 | 0 | 0 | 0 |
+| members-directory-search.spec.ts | 48 | 48 | 0 | 4 | 0 | 0 | 0 |
+| payment-promptpay-happy-path.spec.ts | 34 | 34 | 0 | 2 | 0 | 0 | 0 |
+| portal-invoices.spec.ts | 99 | 99 | 0 | 6 | 0 | 0 | 0 |
+| staff-sign-in.spec.ts | 13 | 12 | 0 | 3 | 0 | 0 | 0 |
+
+- **21 passed** on each project (6.2 min and 6.3 min), with no retries, flakes or skips.
+- **Job wall time:** 27 min 11 s. Without the 519 s from-zero migrate, which the parent refresh removes after merge, it projects to about **18.5 min**, within DW-7's 25 min.
+- **The `@critical` set is pinned** by `tests/unit/architecture/e2e-critical-set.test.ts`, which holds the allow-list and the no-throwaway-tenant / no-`/test-fixtures` rule. It was mutation-checked: tagging `invoice-draft-issue` turns both rules red.
+- **Nightly shard estimate:** about 694 `test(` calls. At this run's CI rate of about 18 s per test under `next start` (spike 6: about 22 s with retries), and slower under `next dev`'s first-hit compiles, one job lands at roughly 4-6 h against GitHub's 6 h limit. Two shards land at about 2-3 h each. This is not measured yet.
+- **Shared steps:** e2e-critical and the nightly duplicate their branch, guard, seed and env steps rather than sharing a composite action. The YAML guards read each workflow's key-bearing steps directly, and a composite action would hide `NEON_CI_API_KEY` behind an input.
+- **Not verifiable before merge:**
+  - `ci-e2e-parent-refresh.yml` and `ci-e2e-branch-sweep.yml` need the file on `main` before `workflow_dispatch` works.
+  - The nightly runs only on schedule or dispatch, on `main`. Its schema reset (`psql`) and its `jq` filters have not run yet.
+  - The sweep's `jq` date filter has not been run (no `jq` on the workstation).
+

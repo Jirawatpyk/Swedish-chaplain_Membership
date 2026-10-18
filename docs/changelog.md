@@ -8,7 +8,7 @@
 ## Recent Changes
 
 - 123-ci-e2e-smoke-s2 **e2e runs in CI, spec 123 slice 2, PR #586 (2026-10-18; no migration, zero new dependencies).**
-  - `e2e-critical.yml` runs the 9-spec `@critical` set on every PR (chromium + mobile-chrome) against a fresh `ci-e2e/` branch of a separate CI Neon project. It is advisory for two weeks (DW-12).
+  - `e2e-critical.yml` runs the 7-spec `@critical` set on every PR (chromium + mobile-chrome) against a fresh `ci-e2e/` branch of a separate CI Neon project. It is advisory for two weeks (DW-12).
   - Also added: `e2e-nightly.yml` (full suite, two shards, from zero), `ci-e2e-parent-refresh.yml` (keeps the CI parent migrated) and `ci-e2e-branch-sweep.yml` (dry run by default).
   - Bugs found by the first from-zero runs and fixed:
     - `scripts/run-migrations.ts` had never migrated an empty database: drizzle's single transaction hit 55P04 at 0021. It now has a fresh-DB mode, one transaction per journal entry, decided by hash.
