@@ -2,8 +2,10 @@
  * Quick schema verification against Neon. Lists tables + audit_log
  * triggers so the operator can confirm the migration landed.
  */
-// Loaded via `node --env-file=.env.local` from `pnpm db:verify`.
-process.loadEnvFile?.('.env.local');
+// The env file comes from the caller only: `pnpm db:verify` passes
+// --env-file=.env.local, `pnpm db:verify:prod` passes .env.production. A
+// second load of .env.local here used to fill any variable the prod file
+// lacks (e.g. DATABASE_URL_UNPOOLED) from DEV, so a "prod" run could read dev.
 
 import postgres from 'postgres';
 
@@ -16,6 +18,9 @@ async function main(): Promise<void> {
     console.error('verify-schema: DATABASE_URL is required');
     process.exit(1);
   }
+
+  // The host only, never the URL: it names which branch was read.
+  console.log(`Target host: ${new URL(url).hostname}`);
 
   const sql = postgres(url, { max: 1, ssl: 'require' });
 
