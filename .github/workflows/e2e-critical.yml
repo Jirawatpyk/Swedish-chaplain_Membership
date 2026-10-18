@@ -90,44 +90,15 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
 
-      # M3 (the security sign-off condition): the key must reach exactly ONE
-      # project, the CI project. An account or org key that can list projects
-      # must list only that one. A project-scoped key cannot list projects at
-      # all (Neon answers 404, run 39107806086); it must then open the CI
-      # project by id. Anything else is refused before the key is used.
+      # M3 (the security sign-off condition), two-sided and fail-closed: the
+      # listing is refused (a project-scoped key) or holds exactly the CI
+      # project, AND the CI project opens by id. Logic and tests:
+      # scripts/ci-neon-key-scope.ts. Prints statuses and ok/fail only.
       - name: Prove the CI key reaches only the CI project
         env:
           NEON_API_KEY: ${{ secrets.NEON_CI_API_KEY }}
           PROJECT_ID: ${{ vars.NEON_CI_PROJECT_ID }}
-        run: |
-          set -euo pipefail
-          body="$RUNNER_TEMP/neon-scope.json"
-          code="$(curl -sS -o "$body" -w '%{http_code}' -H "Authorization: Bearer $NEON_API_KEY" -H 'Accept: application/json' 'https://console.neon.tech/api/v2/projects')"
-          case "$code" in
-            200)
-              count="$(jq '.projects | length' "$body")"
-              first="$(jq -r '.projects[0].id // ""' "$body")"
-              echo "The CI key lists $count project(s)."
-              if [ "$count" != "1" ] || [ "$first" != "$PROJECT_ID" ]; then
-                echo "::error title=CI key scope::fail: NEON_CI_API_KEY must reach exactly one project, NEON_CI_PROJECT_ID."
-                exit 1
-              fi
-              ;;
-            404|403)
-              echo "The CI key cannot list projects (HTTP $code): a project-scoped key."
-              code="$(curl -sS -o "$body" -w '%{http_code}' -H "Authorization: Bearer $NEON_API_KEY" -H 'Accept: application/json' "https://console.neon.tech/api/v2/projects/$PROJECT_ID")"
-              if [ "$code" != "200" ] || [ "$(jq -r '.project.id // ""' "$body")" != "$PROJECT_ID" ]; then
-                echo "::error title=CI key scope::fail: the scoped key does not open NEON_CI_PROJECT_ID (HTTP $code)."
-                exit 1
-              fi
-              ;;
-            *)
-              echo "::error title=CI key scope::fail: GET /projects answered HTTP $code."
-              exit 1
-              ;;
-          esac
-          rm -f "$body"
-          echo "CI key scope: ok"
+        run: node --import tsx scripts/ci-neon-key-scope.ts
 
       - name: Branch expiry (2 h backstop)
         id: expiry
