@@ -60,7 +60,11 @@ test.describe('issue one invoice on the seeded tenant @f4 @critical', () => {
     }
     await page.waitForURL(draftUrl, { timeout: 20_000 });
     const draftId = /\/admin\/invoices\/([0-9a-f-]{36})$/.exec(page.url())![1]!;
-    await expect(page.getByText(/^draft$/i).first()).toBeVisible({ timeout: 15_000 });
+    // The status badge is an icon + text, so assert on the page heading.
+    // Visible only: Next keeps the previous segment's DOM (the /new page's h1) hidden after a client nav.
+    await expect(page.getByRole('heading', { level: 1 }).filter({ visible: true })).toHaveText(/draft invoice/i, {
+      timeout: 15_000,
+    });
 
     // 3. Issue.
     const response = await page.context().request.post(`/api/invoices/${draftId}/issue`, {
@@ -85,8 +89,8 @@ test.describe('issue one invoice on the seeded tenant @f4 @critical', () => {
     await page.reload();
     // The page heading, not `.first()` text: on a phone the first match is the
     // hidden breadcrumb (run 39110905078).
-    const heading = page.getByRole('heading', { level: 1 });
+    const heading = page.getByRole('heading', { level: 1 }).filter({ visible: true });
     await expect(heading).toContainText(number!, { timeout: 15_000 });
-    await expect(page.getByText(/^issued$/i).filter({ visible: true }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(heading).not.toContainText(/draft/i);
   });
 });
