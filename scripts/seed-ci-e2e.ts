@@ -296,7 +296,8 @@ async function main(argv: readonly string[]): Promise<void> {
   for (const step of SEED_CHAIN) {
     const started = Date.now();
     const result = spawnSync(process.execPath, [`--env-file=${envFile}`, '--import', 'tsx', step.script], {
-      env: childEnv(env, exported, step),
+      // NODE_ENV is removed on purpose; Next types it as required.
+      env: childEnv(env, exported, step) as NodeJS.ProcessEnv,
       encoding: 'utf8',
       maxBuffer: 16 * 1024 * 1024,
       timeout: 10 * 60_000,
