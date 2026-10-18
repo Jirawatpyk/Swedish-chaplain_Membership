@@ -7,7 +7,9 @@ import {
   decideMigrationMode,
   disallowedUnrecorded,
   findUnrecordedMigrations,
+  isPooledConnection,
   LEGACY_UNRECORDED_TAGS,
+  migrationTargetHost,
   withMigrationLock,
   type MigrationSqlClient,
   type TaggedMigration,
@@ -15,7 +17,7 @@ import {
 
 /**
  * A fake postgres-js client: the migrations table, the fresh-mode marker and
- * `public.tenants` (an app table) as separate relations; an event log of every
+ * `public.users` (created by 0000) as separate relations; an event log of every
  * statement with the scope it ran in (autocommit vs which transaction); rows
  * that only become visible when their transaction commits; and one advisory
  * lock slot.
@@ -27,6 +29,9 @@ interface FakeOptions {
   readonly rows?: ReadonlyArray<{ hash: string; created_at: number }>;
   readonly failOn?: string;
   readonly lockHeld?: boolean;
+  /** Another session holds the lock for this many failed polls, then releases it. */
+  readonly otherHoldsForPolls?: number;
+  readonly unlock?: 'ok' | 'throws' | 'false';
 }
 
 function fakeClient(options: FakeOptions = {}) {
@@ -35,6 +40,7 @@ function fakeClient(options: FakeOptions = {}) {
   const appTablesExist = options.appTablesExist ?? false;
   let failOn = options.failOn;
   let lockHeld = options.lockHeld ?? false;
+  let otherHolds = options.otherHoldsForPolls ?? 0;
   const rows: Array<{ hash: string; created_at: number }> = [...(options.rows ?? [])];
   const events: Array<{ scope: string; sql: string }> = [];
   let txCount = 0;
@@ -52,19 +58,24 @@ function fakeClient(options: FakeOptions = {}) {
           ? tableExists
           : name === 'drizzle.__fresh_migrate_in_progress'
             ? markerExists
-            : name === 'public.tenants'
+            : name === 'public.users'
               ? appTablesExist
               : false;
       return [{ t: exists ? name : null }];
     }
     if (/pg_try_advisory_lock/.test(query)) {
+      if (otherHolds > 0) {
+        otherHolds -= 1;
+        return [{ locked: false }];
+      }
       const got = !lockHeld;
       lockHeld = true;
       return [{ locked: got }];
     }
     if (/pg_advisory_unlock/.test(query)) {
+      if (options.unlock === 'throws') throw new Error('connection reset during unlock');
       lockHeld = false;
-      return [{ unlocked: true }];
+      return [{ unlocked: options.unlock !== 'false' }];
     }
     if (/^\s*CREATE TABLE IF NOT EXISTS "drizzle"\."__drizzle_migrations"/.test(query)) {
       tableExists = true;
@@ -148,10 +159,10 @@ describe('decideMigrationMode', () => {
 
   it('refuses an empty or missing migrations table when app tables already exist', async () => {
     await expect(decideMigrationMode(fakeClient({ tableExists: true, appTablesExist: true }).client)).rejects.toThrow(
-      /public\.tenants exists/,
+      /public\.users exists/,
     );
     await expect(decideMigrationMode(fakeClient({ tableExists: false, appTablesExist: true }).client)).rejects.toThrow(
-      /public\.tenants exists/,
+      /public\.users exists/,
     );
   });
 });
@@ -171,16 +182,123 @@ describe('withMigrationLock', () => {
     expect(fake.lockHeld()).toBe(false);
   });
 
-  it('refuses at once (no blocking wait) when another run holds the lock', async () => {
-    const fake = fakeClient({ lockHeld: true });
+  // A fake clock: sleep() advances now() instead of waiting.
+  function clock() {
+    let t = 0;
+    const sleeps: number[] = [];
+    return {
+      sleeps,
+      now: () => t,
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+        t += ms;
+      },
+    };
+  }
+
+  it('waits for a lock another deploy holds, polling every 2 s, then runs', async () => {
+    const fake = fakeClient({ otherHoldsForPolls: 3 });
+    const c = clock();
+    let ran = false;
+    await withMigrationLock(
+      fake.client,
+      async () => {
+        ran = true;
+      },
+      { sleep: c.sleep, now: c.now, warn: () => {} },
+    );
+    expect(ran).toBe(true);
+    expect(c.sleeps).toEqual([2_000, 2_000, 2_000]);
+    expect(fake.events.some((e) => /pg_advisory_lock\(/.test(e.sql))).toBe(false);
+  });
+
+  it('gives up after about 5 minutes with the original message, never running fn', async () => {
+    const fake = fakeClient({ otherHoldsForPolls: 10_000 });
+    const c = clock();
     let ran = false;
     await expect(
-      withMigrationLock(fake.client, async () => {
-        ran = true;
-      }),
+      withMigrationLock(
+        fake.client,
+        async () => {
+          ran = true;
+        },
+        { sleep: c.sleep, now: c.now, warn: () => {} },
+      ),
     ).rejects.toThrow(/another run-migrations holds the lock/);
     expect(ran).toBe(false);
-    expect(fake.events.some((e) => /pg_advisory_lock\(/.test(e.sql))).toBe(false);
+    expect(c.now()).toBeGreaterThanOrEqual(300_000);
+    expect(c.now()).toBeLessThan(310_000);
+  });
+
+  it('skips the lock on a pooled (PgBouncer) connection, warns, and runs as before', async () => {
+    const fake = fakeClient();
+    const warnings: string[] = [];
+    let ran = false;
+    await withMigrationLock(
+      fake.client,
+      async () => {
+        ran = true;
+      },
+      { pooled: true, warn: (w) => warnings.push(w) },
+    );
+    expect(ran).toBe(true);
+    expect(fake.events.some((e) => /advisory/.test(e.sql))).toBe(false);
+    expect(warnings.join('\n')).toMatch(/pooled.*without the advisory lock/i);
+  });
+
+  it.each(['throws', 'false'] as const)('an unlock that %s only warns and never masks the result', async (unlock) => {
+    const warnings: string[] = [];
+    const ok = fakeClient({ unlock });
+    await expect(withMigrationLock(ok.client, async () => 'done', { warn: (w) => warnings.push(w) })).resolves.toBe(
+      'done',
+    );
+    expect(warnings.join('\n')).toMatch(/unlock/i);
+    const failing = fakeClient({ unlock });
+    await expect(
+      withMigrationLock(
+        failing.client,
+        async () => {
+          throw new Error('the real migration error');
+        },
+        { warn: () => {} },
+      ),
+    ).rejects.toThrow('the real migration error');
+  });
+});
+
+describe('isPooledConnection', () => {
+  it('is true only for a Neon -pooler host', () => {
+    expect(isPooledConnection('postgresql://u:p@ep-x-123-pooler.c-3.ap-southeast-1.aws.neon.tech/db')).toBe(true);
+    expect(isPooledConnection('postgresql://u:p@ep-x-123.c-3.ap-southeast-1.aws.neon.tech/db')).toBe(false);
+    expect(isPooledConnection('not a url')).toBe(false);
+  });
+});
+
+describe('migrationTargetHost', () => {
+  it('gives the hostname only, never credentials, and a fixed message for a malformed URL', () => {
+    expect(migrationTargetHost('postgresql://user:s3cret@ep-x-123.aws.neon.tech/db?sslmode=require')).toEqual({
+      ok: true,
+      host: 'ep-x-123.aws.neon.tech',
+    });
+    const bad = migrationTargetHost('postgresql://user:s3cret@[bad');
+    expect(bad.ok).toBe(false);
+    expect(JSON.stringify(bad)).not.toContain('s3cret');
+  });
+});
+
+describe('scripts/run-migrations.ts env loading', () => {
+  it('loads no env file of its own: the caller passes --env-file (db:migrate) or the platform injects env', () => {
+    const source = readFileSync(resolve(__dirname, '../../../scripts/run-migrations.ts'), 'utf-8');
+    const code = source
+      .split(/\r?\n/)
+      .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+      .join('\n');
+    expect(code).not.toMatch(/loadEnvFile/);
+    expect(code).toMatch(/migrationTargetHost\(/);
+    const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../../package.json'), 'utf-8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['db:migrate']).toMatch(/--env-file=\.env\.local .*scripts\/run-migrations\.ts/);
   });
 });
 
