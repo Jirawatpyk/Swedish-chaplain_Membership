@@ -13,6 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { CRITICAL_SET } from './e2e-critical-set-list';
 import { INJECTABLE, codeLines, lines, runBlocks, stepCount, stepRange } from './workflow-yaml-text';
 
 const WORKFLOW = join(process.cwd(), '.github', 'workflows', 'e2e-critical.yml');
@@ -323,9 +324,7 @@ describe('e2e-critical.yml — review round 2 (PR #586)', () => {
     const names = Object.keys(baselines).filter((k) => !k.startsWith('_'));
     expect(names.length).toBeGreaterThan(0);
     for (const name of names) expect(typeof baselines[name] === 'number' && (baselines[name] as number) > 0).toBe(true);
-    const tagged = lines(read(join(process.cwd(), 'tests', 'unit', 'architecture', 'e2e-critical-set.test.ts')))
-      .map((l) => /^\s+'([\w/-]+\.spec\.ts)',\s*$/.exec(l)?.[1])
-      .filter((n): n is string => n !== undefined);
+    const tagged = [...CRITICAL_SET];
     expect(tagged.length).toBeGreaterThan(5);
     expect(names.sort()).toEqual([...tagged].sort());
   });
