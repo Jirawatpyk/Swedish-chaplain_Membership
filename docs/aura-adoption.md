@@ -187,6 +187,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #157 | `DataTable` sets `aria-sort` only on a `sortable` column; no fixed sort indication for a list ordered by the page (Addendum 58) | the E-Blast review queue sets `aria-sort` on the header its order follows after each render, and tags the select-all checkbox for the bulk bar's focus return (`queue-table-client.tsx`) |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
