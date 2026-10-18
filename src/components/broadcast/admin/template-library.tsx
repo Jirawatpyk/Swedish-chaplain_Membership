@@ -220,12 +220,15 @@ export function AdminTemplateLibrary({
               filtered.map((tpl) => (
                 <Tr key={tpl.id}>
                   <Td card="title">
-                    <span className="inline-flex flex-wrap items-center gap-2">
-                      <span className="font-medium">{tpl.name}</span>
+                    {/* Board parity: on a phone card the badge sits at the
+                        right end of the title row; in the table it follows
+                        the name. */}
+                    <span className="inline-flex flex-wrap items-center gap-2 max-sm:flex max-sm:w-full max-sm:flex-nowrap max-sm:items-start max-sm:justify-between">
+                      <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{tpl.name}</span>
                       {tpl.isSeeded ? (
                         // UX L3 — a span cannot carry an aria-label, so the
                         // fuller name rides in sr-only text.
-                        <Badge tone="warning">
+                        <Badge tone="warning" className="shrink-0">
                           <span aria-hidden="true">{t('starterBadge')}</span>
                           <span className="sr-only">{t('starterBadgeAria')}</span>
                         </Badge>

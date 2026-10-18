@@ -2201,7 +2201,12 @@
             "contrastPass": "ค่าความต่างสีกับตัวอักษรสีขาว: {ratio}:1 — ผ่านเกณฑ์ AA",
             "contrastFail": "ค่าความต่างสีกับตัวอักษรสีขาว: {ratio}:1 — ต่ำกว่า {required}:1",
             "contrastFailHelp": "บันทึกไม่ได้จนกว่าค่าความต่างสีกับตัวอักษรสีขาวจะถึง {required}:1",
-            "invalid": "กรอกรหัสสีในรูปแบบ #RRGGBB"
+            "invalid": "กรอกรหัสสีในรูปแบบ #RRGGBB",
+            "preview": {
+              "caption": "ตัวอย่างใน E-Blast",
+              "heading": "หัวข้อใน E-Blast",
+              "button": "ปุ่ม"
+            }
           },
           "address": {
             "heading": "ที่อยู่ทางไปรษณีย์",

@@ -12,7 +12,7 @@
  * (next-intl does not throw on a missing key).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -65,7 +65,7 @@ const BASE: View = {
 function renderForm(overrides: Partial<View> = {}) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <BrandSettingsForm initial={{ ...BASE, ...overrides }} />
+      <BrandSettingsForm initial={{ ...BASE, ...overrides }} tenantDisplayName="SweCham" />
     </NextIntlClientProvider>,
   );
 }
@@ -424,5 +424,54 @@ describe('BrandSettingsForm on AURA (spec 122 US12a)', () => {
     expect(notice).toHaveClass('aura-alert');
     expect(notice).toHaveAttribute('role', 'status');
     expect(saveButton()).toHaveClass('aura-btn');
+  });
+});
+
+/**
+ * Board `Admin-settings-brand` — "How it looks in an E-Blast". The preview
+ * follows the form as it is typed (before Save), and its header and footer
+ * are the real e-mail's: logo or chamber name on top, then the footer lines
+ * from the same `email.broadcastFooter` strings `renderBroadcastHtml` uses.
+ */
+describe('BrandSettingsForm — the e-mail preview card (board)', () => {
+  const brand = enMessages.admin.settings.broadcasts.brand;
+  const footer = enMessages.email.broadcastFooter;
+  const preview = (): HTMLElement => screen.getByRole('figure', { name: brand.colour.preview.caption });
+
+  it('shows the logo, a heading and a button in the brand colour, then the e-mail footer', () => {
+    renderForm();
+    const fig = preview();
+    expect(within(fig).getByRole('img', { name: 'SweCham' })).toHaveAttribute('src', 'https://cdn.test/logo.png');
+    expect(within(fig).getByText(brand.colour.preview.heading)).toHaveStyle({ color: '#10487a' });
+    expect(within(fig).getByText(brand.colour.preview.button)).toHaveStyle({ backgroundColor: '#10487a' });
+    expect(fig).toHaveTextContent(footer.receivedBecause.replace('{tenantDisplayName}', 'SweCham'));
+    expect(fig).toHaveTextContent(`${footer.unsubscribeCta} ${footer.unsubscribeSuffix}`);
+    expect(fig).toHaveTextContent('349 Sukhumvit Road, Bangkok 10110');
+    // A sample, not a control: the button is not focusable.
+    expect(within(fig).queryByRole('button')).toBeNull();
+  });
+
+  it('follows the typed colour and address before Save', async () => {
+    const user = userEvent.setup();
+    renderForm();
+    const field = screen.getByLabelText(/primary colour/i);
+    await user.clear(field);
+    await user.type(field, '#7a1010');
+    expect(within(preview()).getByText(brand.colour.preview.button)).toHaveStyle({ backgroundColor: '#7a1010' });
+    const address = screen.getByLabelText(brand.address.label);
+    await user.clear(address);
+    await user.type(address, 'Box 1, Bangkok');
+    expect(preview()).toHaveTextContent('Box 1, Bangkok');
+  });
+
+  it('without an address the footer reads "Sent by …", as the e-mail does', () => {
+    renderForm({ postalAddress: null, addressMissing: true });
+    expect(preview()).toHaveTextContent(footer.physicalAddress.replace('{tenantDisplayName}', 'SweCham'));
+  });
+
+  it('without a logo the header is the chamber name', () => {
+    renderForm({ logo: { url: null, source: 'invoice_settings', manageHref: null } });
+    expect(within(preview()).queryByRole('img')).toBeNull();
+    expect(within(preview()).getByText('SweCham')).toBeInTheDocument();
   });
 });

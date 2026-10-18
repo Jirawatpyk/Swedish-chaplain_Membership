@@ -2201,7 +2201,12 @@
             "contrastPass": "Kontrast mot vit text: {ratio}:1 — uppfyller AA",
             "contrastFail": "Kontrast mot vit text: {ratio}:1 — under {required}:1",
             "contrastFailHelp": "Går inte att spara förrän färgen når {required}:1 mot vit text.",
-            "invalid": "Ange en färg som #RRGGBB."
+            "invalid": "Ange en färg som #RRGGBB.",
+            "preview": {
+              "caption": "Så ser det ut i ett E-Blast",
+              "heading": "Rubrik i ett E-Blast",
+              "button": "Knapp"
+            }
           },
           "address": {
             "heading": "Postadress",

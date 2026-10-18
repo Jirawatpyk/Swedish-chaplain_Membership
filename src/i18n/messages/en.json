@@ -2201,7 +2201,12 @@
             "contrastPass": "Contrast with white text: {ratio}:1 — meets AA",
             "contrastFail": "Contrast with white text: {ratio}:1 — below {required}:1",
             "contrastFailHelp": "Saving is unavailable until the colour reaches {required}:1 with white text.",
-            "invalid": "Enter a colour as #RRGGBB."
+            "invalid": "Enter a colour as #RRGGBB.",
+            "preview": {
+              "caption": "How it looks in an E-Blast",
+              "heading": "Heading in an E-Blast",
+              "button": "Button"
+            }
           },
           "address": {
             "heading": "Postal address",

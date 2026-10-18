@@ -136,7 +136,7 @@ export async function renderBrandPreview(state: string | undefined) {
   return (
     <FormContainer align="start">
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
-      <BrandSettingsForm initial={view} />
+      <BrandSettingsForm initial={view} tenantDisplayName="Thai-Swedish Chamber of Commerce" />
     </FormContainer>
   );
 }

@@ -163,6 +163,16 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
     expect(cell).toHaveClass('max-sm:basis-full');
   });
 
+  it('board parity: on a phone card the Starter badge sits at the right end of the title row', () => {
+    renderLibrary();
+    const row = within(screen.getByRole('table')).getAllByRole('row')[1]!;
+    const badge = row.querySelector<HTMLElement>('.aura-badge')!;
+    const titleRow = badge.parentElement!;
+    expect(titleRow).toHaveClass('max-sm:flex', 'max-sm:w-full', 'max-sm:justify-between', 'max-sm:flex-nowrap');
+    // The name may wrap; the badge never shrinks or breaks.
+    expect(badge).toHaveClass('shrink-0');
+  });
+
   it('board parity: below 640 px the outer card frame drops away (the rows are cards of their own)', () => {
     const { container } = renderLibrary();
     expect(container.querySelector('.aura-card')).toHaveClass('aura-card--flush-below-sm', 'max-sm:p-0');

@@ -60,11 +60,14 @@ import {
   parseBrandPrimaryColor,
 } from '@/lib/brand-settings-client';
 import type { BrandSettingsView } from '@/modules/broadcasts';
+import { BrandEmailPreview } from './brand-email-preview';
 
 const BRAND_ENDPOINT = '/api/admin/broadcasts/brand';
 
 interface Props {
   readonly initial: BrandSettingsView;
+  /** The name the e-mail carries (`resolveTenantDisplayName`), for the preview. */
+  readonly tenantDisplayName: string;
 }
 
 interface ApiErrorBody {
@@ -79,7 +82,7 @@ function normaliseAddress(input: string): string {
   return input.replace(/\r\n?/g, '\n').trim();
 }
 
-export function BrandSettingsForm({ initial }: Props): React.ReactElement {
+export function BrandSettingsForm({ initial, tenantDisplayName }: Props): React.ReactElement {
   const t = useTranslations('admin.settings.broadcasts.brand');
   const colourFieldId = useId();
   const pickerFieldId = useId();
@@ -273,6 +276,12 @@ export function BrandSettingsForm({ initial }: Props): React.ReactElement {
               })}
             </Alert>
           ) : null}
+          <BrandEmailPreview
+            primaryColor={normalisedColour ?? view.defaults.primaryColor}
+            postalAddress={addressMissing ? null : normalisedAddress}
+            logoUrl={view.logo.url}
+            tenantDisplayName={tenantDisplayName}
+          />
         </div>
       </Card>
 

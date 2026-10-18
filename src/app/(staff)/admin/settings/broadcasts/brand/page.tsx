@@ -32,6 +32,7 @@ import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { BrandSettingsForm } from '@/components/broadcast/brand/brand-settings-form';
 import { makeBrandSettingsDeps } from '@/lib/broadcast-brand-deps';
+import { resolveTenantDisplayName } from '@/lib/broadcasts-route-helpers';
 import { env } from '@/lib/env';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -49,18 +50,23 @@ export default async function BrandSettingsPage(): Promise<React.ReactElement> {
   const tenantCtx = resolveTenantFromRequest();
   const t = await getTranslations('admin.settings.broadcasts.brand');
 
-  const view = await getBrandSettings(makeBrandSettingsDeps(), {
-    tenantId: tenantCtx.slug as never,
-    // rbac-subgate-ok: gates the `logo.manageHref` FIELD of a page the caller
-    // is already admitted to — admission is `settings.broadcasts` above. Same
-    // decision the route makes for the same field.
-    canManageInvoiceSettings: canPerform(user.role, 'settings.invoicing'),
-  });
+  // The preview card names the chamber the way the e-mail does (best-effort:
+  // the resolver falls back to the slug and never throws).
+  const [view, tenantDisplayName] = await Promise.all([
+    getBrandSettings(makeBrandSettingsDeps(), {
+      tenantId: tenantCtx.slug as never,
+      // rbac-subgate-ok: gates the `logo.manageHref` FIELD of a page the caller
+      // is already admitted to — admission is `settings.broadcasts` above. Same
+      // decision the route makes for the same field.
+      canManageInvoiceSettings: canPerform(user.role, 'settings.invoicing'),
+    }),
+    resolveTenantDisplayName(tenantCtx.slug),
+  ]);
 
   return (
     <FormContainer align="start">
       <PageHeader title={t('pageTitle')} subtitle={t('pageDescription')} />
-      <BrandSettingsForm initial={view} />
+      <BrandSettingsForm initial={view} tenantDisplayName={tenantDisplayName} />
     </FormContainer>
   );
 }

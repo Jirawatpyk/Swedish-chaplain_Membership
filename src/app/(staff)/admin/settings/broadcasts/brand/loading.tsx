@@ -11,7 +11,8 @@ import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skelet
  * the real card titles render from i18n (they do not depend on the read, so
  * skeletoning them only buys a title flicker on navigation); only the three
  * interactive regions are stubbed, in the same anatomy and the same order as
- * `<BrandSettingsForm />` — colour field + swatch + readout, textarea +
+ * `<BrandSettingsForm />` — colour field + swatch + readout + e-mail
+ * preview, textarea +
  * counter, logo preview + source + link — so the skeleton→content swap does
  * not shift layout.
  *
@@ -42,7 +43,12 @@ export default async function Loading() {
                 <SkeletonBlock className="h-4 w-2/3" />
               </div>
               {/* Contrast readout. */}
-              <SkeletonBlock className="h-4 w-56" />            </div>
+              <SkeletonBlock className="h-4 w-56" />
+              {/* The e-mail preview card: caption, then header, heading +
+                  button, footer. */}
+              <SkeletonBlock className="h-4 w-40" />
+              <SkeletonBlock className="h-64 w-full" />
+            </div>
           </Card>
 
           <Card title={t('address.heading')} description={t('address.description')} headingLevel={2}>
