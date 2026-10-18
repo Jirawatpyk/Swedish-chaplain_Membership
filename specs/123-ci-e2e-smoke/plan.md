@@ -53,6 +53,19 @@ e2e never runs in CI, so every PR needs a manual local verification round to cat
 **Step 0: a timing spike** (measure before choosing the set). The PR's own `e2e-critical` run first carries 3 candidate specs. It records build, seed and per-spec times, and the `@critical` list is sized to fit 25 minutes from those numbers. The times go in `plan.md` § Evidence.
 
 **Plan change 2026-10-18 (maintainer-approved):** fresh-DB mode in `scripts/run-migrations.ts`; fixes the never-tested migrate-from-zero path (also a DR bug). When `drizzle.__drizzle_migrations` is missing or empty, `scripts/lib/migrate-fresh.ts` applies the journal one entry per transaction, decided by hash; each file first commits its own `ALTER TYPE … ADD VALUE` lines in autocommit, because 0308 builds a partial index on a value it adds itself. Any database with a recorded migration keeps the old single-transaction path. Tests: `tests/unit/scripts/migrate-fresh.test.ts`.
+  - The per-file autocommit of each file's own `ADD VALUE` lines departs from the approved "skip the enum pre-pass in fresh mode". 0308 needs it: it builds a partial index on `'awaiting_member_approval'`, a value it adds itself. A scan of all 308 files found no other file that adds a value and uses it. The maintainer accepted it on 2026-10-18.
+
+**Plan change 2026-10-18 (maintainer-approved): a migrated CI parent.** Spike 2 measured 520 s to migrate from zero, above the 3-minute line, so the CI parent is pre-migrated:
+- `.github/workflows/ci-e2e-parent-refresh.yml` runs on push to `main` and `workflow_dispatch`, in one queued concurrency group that never cancels a run in progress.
+  - It resolves `vars.NEON_CI_PARENT_BRANCH` through the Neon API with `NEON_CI_API_KEY` and refuses unless the branch id and project id Neon returns equal `vars.NEON_CI_PARENT_BRANCH` and `vars.NEON_CI_PROJECT_ID`.
+  - It masks the URL and its password, then migrates through `ci-neon-env`, which applies the production blocklist.
+  - Its first run applies the whole chain in fresh-DB mode; later runs take the normal path.
+  - Guard: `tests/unit/architecture/ci-e2e-parent-refresh-workflow.test.ts`.
+- PR runs still branch from that parent. Their migrate step stays and records its time, and applies only the PR's own migrations.
+- The first refresh can run only after merge: `workflow_dispatch` needs the file on the default branch. Until then, PR runs still migrate from zero.
+- **The nightly keeps the from-zero coverage** (built later):
+  - On its fresh `ci-e2e/` branch, and only after the DW-9 guard has proved that it is a `ci-e2e/` branch of the CI project, it runs `DROP SCHEMA public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public;`.
+  - Then it migrates from zero, so fresh-DB mode and the seeds' empty-DB path are exercised every night.
 
 **Files**
 - `scripts/seed-ci-e2e.ts` (new orchestrator). It runs the existing seeds in this order, with `NODE_ENV` unset:
@@ -291,4 +304,31 @@ Filled in at Verify, one block per slice.
   - Nothing in this repo had ever migrated from zero: dev, CI and preview all branch from prod.
 - **Delete branch:** ran at the end (`always()`).
 - **Fix:** the fresh-DB mode above (plan change 2026-10-18).
+
+### Slice 2 — spike 2 ([run 39095428106](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39095428106), head `65a644aef`, failed)
+
+- **Create branch:** 2 s. **DW-9 guard:** ok.
+- **Migrate from zero:** passed on the first attempt, with no retry, in **523 s**. The log reads `✓ Fresh-DB migrate: applied 308, skipped 0 (hash already recorded) in 520.2 s`, and the enum post-checks passed.
+- **Seed:** failed after 13 s. `seed-system-actors` (3.3 s) and `seed-e2e-user` (6.8 s) were ok.
+  - `seed-f4-invoice-settings` failed with `null value in column "currency_code" of relation "tenant_invoice_settings" violates not-null constraint`.
+  - Cause: 0026 made the column NOT NULL with no DEFAULT. The Drizzle schema's `.default('THB')` exists only in TypeScript.
+  - Fixed in `a14295c1f` (RED `beaf27a97`). A scan of every Drizzle NOT NULL column with a SQL default against the migrations found no other default that exists only in TypeScript.
+- **Build, ready, e2e:** skipped. **Delete branch:** ran.
+- 520 s is above the 3-minute line, so the CI parent is now pre-migrated (plan change above).
+
+### Slice 2 — spike 3 ([run 39096465335](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39096465335), head `a14295c1f`, failed)
+
+| Phase | Seconds |
+|---|---|
+| migrate (from zero, fresh-DB mode: `applied 308` in 694.4 s) | 698 |
+| seed (all nine scripts ok; the plans seed alone took 60 s) | 183 |
+| build | 141 |
+| ready | 7 |
+| e2e-chromium | 41 |
+| e2e-mobile-chrome | 37 |
+
+- **The seed step passed on the empty database.**
+- **Both e2e projects ran 0 tests.** Playwright's collection threw `Environment validation failed (src/lib/env.ts): CLAMAV_TIMEOUT_MS: Expected number, received nan` at `tests/e2e/renewals/rolling-anchor.spec.ts:28`, which imports `@/lib/db`. Global setup's `seed-f4-e2e-admin-fixtures` top-up failed the same way.
+  - Likely cause: CI's `.env.local` is a copy of `.env.example`, which carries inline comments (`CLAMAV_TIMEOUT_MS="300000"           # 5-minute …`). The minimal loader in `playwright.config.ts` strips quotes only when the value ends in a quote, so the comment stays in the value. Developers' `.env.local` comes from `vercel env pull` and has no inline comments.
+- **Per-spec table:** empty, because no test ran. **Delete branch:** ran.
 
