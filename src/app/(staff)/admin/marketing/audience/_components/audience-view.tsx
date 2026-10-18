@@ -57,7 +57,9 @@ export async function AudienceFrame({
           </Link>
         }
       />
-      <Card>
+      {/* Below 640px the contacts are cards of their own, so the frame and
+          its padding drop away (AURA `flushBelow`), as the phone board draws it. */}
+      <Card flushBelow="sm" className="max-sm:p-0">
         <div className="flex flex-col gap-4">
           {!canMarketing && (
             <ReadOnlyBanner data-testid="audience-read-only">{t('readOnly')}</ReadOnlyBanner>

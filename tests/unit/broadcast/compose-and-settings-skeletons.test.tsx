@@ -89,6 +89,8 @@ describe('U12 — the compose, templates and brand skeletons match their pages',
     expect(cards).toHaveLength(5);
     for (const card of cards) expect(card.parentElement).toHaveClass('sm:hidden');
     expect(container.querySelector('[data-skeleton="template-rows"]')).toHaveClass('max-sm:hidden');
+    // Board parity: the outer card frame drops away on phones, as on the page.
+    expect(container.querySelector('.aura-card')).toHaveClass('aura-card--flush-below-sm');
   });
 
   it('UX L8: the new-template card does not repeat the page title or subtitle', async () => {

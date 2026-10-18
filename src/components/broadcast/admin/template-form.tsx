@@ -17,7 +17,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Button, Select, TextField } from '@jirawatpyk/aura-react';
+import { ActionBar, Button, Select, TextField } from '@jirawatpyk/aura-react';
 import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { toast } from '@/lib/toast';
 // R5 Final 2 hotfix — deep-import constants instead of the broadcasts
@@ -322,10 +322,13 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center justify-end gap-3">
+      {/* Cancel before the primary action; pinned to the bottom of a phone
+          as the boards draw it (globals.css `.template-form-actions`, the
+          member and plan forms' bar). */}
+      <ActionBar className="chamber-viewport-actionbar template-form-actions">
         <Button
           type="button"
-          variant="ghost"
+          variant="secondary"
           disabled={isPending}
           touchHeight
           onClick={() => router.push('/admin/broadcasts/templates')}
@@ -341,7 +344,7 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
         >
           {isPending ? t('savingButton') : t('saveButton')}
         </Button>
-      </div>
+      </ActionBar>
     </form>
   );
 }

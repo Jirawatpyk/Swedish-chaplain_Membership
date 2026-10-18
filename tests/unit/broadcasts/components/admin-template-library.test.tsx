@@ -151,6 +151,23 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
     expect(subject).toHaveClass('sm:truncate', 'sm:max-w-[24rem]', 'max-sm:[overflow-wrap:anywhere]');
   });
 
+  it('board parity: on phone cards Edit is a full-width outline button at the foot; desktop keeps the ghost link', () => {
+    renderLibrary();
+    const row = within(screen.getByRole('table')).getAllByRole('row')[1]!;
+    const phone = row.querySelector<HTMLAnchorElement>('a[data-edit="phone"]');
+    const desktop = row.querySelector<HTMLAnchorElement>('a[data-edit="desktop"]');
+    expect(phone).toHaveClass('aura-btn--secondary', 'w-full', 'sm:hidden');
+    expect(desktop).toHaveClass('aura-btn--ghost', 'max-sm:hidden');
+    const cell = phone!.closest('td')!;
+    expect(cell).not.toHaveAttribute('data-card');
+    expect(cell).toHaveClass('max-sm:basis-full');
+  });
+
+  it('board parity: below 640 px the outer card frame drops away (the rows are cards of their own)', () => {
+    const { container } = renderLibrary();
+    expect(container.querySelector('.aura-card')).toHaveClass('aura-card--flush-below-sm', 'max-sm:p-0');
+  });
+
   it('UX L1: the visible template count sits beside the pills, hidden from screen readers', () => {
     renderLibrary();
     const visible = screen.getByText('5 templates', { selector: '[data-slot="template-count"]' });

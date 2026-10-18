@@ -5976,6 +5976,9 @@
         "count": "{count, plural, =0 {No contacts match the current filters} one {# contact matches the current filters} other {# contacts match the current filters}}",
         "countAll": "{count, plural, =0 {No contacts yet} one {# contact} other {# contacts}}",
         "tableCaption": "Marketing audience — contacts and their marketing state",
+        "card": {
+          "receives": "Receives E-Blasts"
+        },
         "error": {
           "title": "The audience could not be loaded",
           "description": "Something went wrong reading contacts. Try again in a moment."

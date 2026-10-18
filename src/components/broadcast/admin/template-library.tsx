@@ -134,8 +134,10 @@ export function AdminTemplateLibrary({
   // `<button aria-pressed>` that shows a check while it is on, as the
   // board draws them. React 19's `react-hooks/static-components` rule keeps
   // the three literal tags inline rather than in a nested component.
+  // Below 640px the rows are cards of their own, so the outer card's frame
+  // drops away (AURA `flushBelow`), as the phone board draws it.
   return (
-    <Card>
+    <Card flushBelow="sm" className="max-sm:p-0">
       <div className="flex flex-col gap-[var(--aura-space-4)]">
         {/* flex-wrap keeps SV labels from overflowing on a 320px phone. */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -245,10 +247,23 @@ export function AdminTemplateLibrary({
                   <Td className="text-[var(--aura-fg-secondary)]">
                     {formatUpdatedAt(tpl.updatedAtIso)}
                   </Td>
-                  <Td card="action" align="end">
+                  {/* Board parity: on a phone card Edit is a full-width outline
+                      button at the foot (an unlabelled field spanning the
+                      card); from 640px it is the ghost link in the row. Only
+                      one of the two is ever displayed. */}
+                  <Td label="" align="end" className="max-sm:basis-full">
                     <Link
+                      data-edit="phone"
                       href={`/admin/broadcasts/templates/${tpl.id}/edit`}
-                      className={buttonClass({ variant: 'ghost', touchHeight: true })}
+                      className={`${buttonClass({ variant: 'secondary', touchHeight: true })} w-full sm:hidden`}
+                      aria-label={t('rowAction.editAria', { name: tpl.name })}
+                    >
+                      {t('rowAction.edit')}
+                    </Link>
+                    <Link
+                      data-edit="desktop"
+                      href={`/admin/broadcasts/templates/${tpl.id}/edit`}
+                      className={`${buttonClass({ variant: 'ghost', touchHeight: true })} max-sm:hidden`}
                       aria-label={t('rowAction.editAria', { name: tpl.name })}
                     >
                       {t('rowAction.edit')}

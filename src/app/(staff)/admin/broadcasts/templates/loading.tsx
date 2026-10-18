@@ -31,7 +31,7 @@ export default async function Loading() {
           subtitle={t('pageDescription')}
           actions={<SkeletonBlock className="h-9 w-32" />}
         />
-        <Card>
+        <Card flushBelow="sm" className="max-sm:p-0">
           <div className="flex flex-col gap-[var(--aura-space-4)]">
             {/* The All / Starter / Admin-authored filter pills, inside the
                 card as the page draws them (spec 122 US12a). */}

@@ -52,10 +52,11 @@ function problemKind(body: ProblemBody): string | null {
 
 /**
  * Where focus goes when this row is about to leave the view: the next
- * switch in the same table, else the count line, else the previous switch.
+ * switch in the same table (or the audience's phone card list), else the
+ * count line, else the previous switch.
  */
 function focusHandOffTarget(from: HTMLElement): HTMLElement | null {
-  const table = from.closest('table');
+  const table = from.closest('table, [data-audience-cards]');
   const switches = table
     ? Array.from(table.querySelectorAll<HTMLElement>('[role="switch"]'))
     : [];

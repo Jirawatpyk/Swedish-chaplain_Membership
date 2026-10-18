@@ -47,6 +47,17 @@ describe('<AdminTemplateForm> on AURA', () => {
     toastSuccess.mockReset();
   });
 
+  it('board parity: Cancel and Save sit in the pinned phone action bar, Cancel as an outline button', () => {
+    renderForm();
+    const save = screen.getByRole('button', { name: /save template/i });
+    const cancel = screen.getByRole('button', { name: /^cancel$/i });
+    const bar = save.closest('.template-form-actions');
+    expect(bar).not.toBeNull();
+    expect(bar).toHaveClass('chamber-viewport-actionbar');
+    expect(bar).toContainElement(cancel);
+    expect(cancel).toHaveClass('aura-btn--secondary');
+  });
+
   it('renders the name, subject and locale as AURA fields', () => {
     renderForm();
     for (const name of [/^name$/i, /^subject$/i]) {

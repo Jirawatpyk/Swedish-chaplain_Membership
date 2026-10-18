@@ -5976,6 +5976,9 @@
         "count": "{count, plural, =0 {Inga kontakter matchar de aktuella filtren} one {# kontakt matchar de aktuella filtren} other {# kontakter matchar de aktuella filtren}}",
         "countAll": "{count, plural, =0 {Inga kontakter ännu} one {# kontakt} other {# kontakter}}",
         "tableCaption": "Marknadsföringsmålgrupp — kontakter och deras marknadsföringsstatus",
+        "card": {
+          "receives": "Får E-Blasts"
+        },
         "error": {
           "title": "Målgruppen kunde inte läsas in",
           "description": "Något gick fel när kontakterna lästes. Försök igen om en stund."

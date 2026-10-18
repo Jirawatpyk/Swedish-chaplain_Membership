@@ -11,17 +11,17 @@
  * column). No DoB, phone or any other `pii_sensitive` field, no download
  * (FR-035a).
  *
- * Responsive (FR-035c, amended by spec 122 US12a): below 640 px each contact
- * is an AURA stacked card, as the board draws it — contact as the title, the
- * switch as the action, every other column a labelled field — so nothing
+ * Responsive (FR-035c, amended by spec 122 US12a): below 640 px a list of
+ * contact cards replaces the table, as board `Admin-marketing-audience-mobile`
+ * draws it — name with the role pill, email, member link, state and reason,
+ * the last change, then a "Receives E-Blasts" row with the switch — so nothing
  * scrolls sideways on a phone. From 640 px it is the table: `table-fixed` + an
  * explicit <colgroup> pin the column widths to the header (so the header does
  * not shift every time a filter changes the rows — same recipe as the members
  * table; review M3), the table's min-width is the column total (under
  * `table-fixed` the browser would otherwise SHRINK columns to fit), and the
  * box (the `<table>`'s parent, which the e2e measures) scrolls only if it
- * must. Both apply from `sm` up only. Long SV/TH labels wrap
- * (`whitespace-normal`).
+ * must. Long SV/TH labels wrap (`whitespace-normal`).
  *
  * Width budget: at a 1440-px viewport the staff content box is ~1,072 px
  * (256 sidebar, 2×24 page and 2×24 card gutters, a scrollbar). The old fixed
@@ -111,13 +111,14 @@ export function AudienceTable({
   const minWidth = canMarketing ? AUDIENCE_MIN_WIDTH.withSwitch : AUDIENCE_MIN_WIDTH.readOnly;
 
   return (
+    <>
+    <AudienceCards rows={rows} canMarketing={canMarketing} leavesView={leavesView} />
+    <div data-audience-table-wrap="" className="max-sm:hidden">
     <Table
       caption={t('tableCaption')}
       captionHidden
       aria-label={t('tableCaption')}
-      stackBelow="sm"
-      stackStyle="cards"
-      className="sm:table-fixed sm:min-w-[var(--audience-min-w)]"
+      className="table-fixed min-w-[var(--audience-min-w)]"
       style={{ '--audience-min-w': `${minWidth}px` } as CSSProperties}
       data-testid="marketing-audience-table"
     >
@@ -144,7 +145,7 @@ export function AudienceTable({
       <TBody>
         {rows.map((row) => (
           <Tr key={row.contactId} data-contact-id={row.contactId} data-marketing-state={row.state}>
-            <Td card="title" className="whitespace-normal">
+            <Td className="whitespace-normal">
               <div className="font-medium">{row.contactName}</div>
               <div className="aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">{row.email}</div>
             </Td>
@@ -165,7 +166,7 @@ export function AudienceTable({
             {canMarketing && (
               // `whitespace-normal`: for a contact-owned opt-out the cell holds
               // a short note instead of a switch, and it must wrap.
-              <Td card="action" className="whitespace-normal">
+              <Td className="whitespace-normal">
                 <MarketingSwitch
                   contactId={row.contactId}
                   contactName={row.contactName}
@@ -205,5 +206,91 @@ export function AudienceTable({
         ))}
       </TBody>
     </Table>
+    </div>
+    </>
+  );
+}
+
+/**
+ * The phone list (board `Admin-marketing-audience-mobile`): one card per
+ * contact. The same rows, badges, link and switch as the table; the active
+ * member status is not repeated (the board drops it), while "Broadcasts
+ * halted" and "Erased" still show beside the state.
+ */
+function AudienceCards({
+  rows,
+  canMarketing,
+  leavesView,
+}: {
+  readonly rows: readonly AudienceTableRow[];
+  readonly canMarketing: boolean;
+  readonly leavesView: boolean;
+}) {
+  const t = useTranslations('admin.marketing.audience');
+  const tReason = useTranslations('shared.marketing.reason');
+  return (
+    <ul
+      role="list"
+      aria-label={t('tableCaption')}
+      data-audience-cards=""
+      data-testid="marketing-audience-cards"
+      className="flex flex-col gap-[var(--aura-space-3)] sm:hidden"
+    >
+      {rows.map((row) => (
+        <li
+          key={row.contactId}
+          data-card-contact-id={row.contactId}
+          data-marketing-state={row.state}
+          className="flex flex-col gap-2 rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-[var(--aura-space-4)]"
+        >
+          <div className="flex items-start justify-between gap-3">
+            <span className="min-w-0 font-semibold [overflow-wrap:anywhere]">{row.contactName}</span>
+            <Badge tone="neutral" variant={row.isPrimary ? 'solid' : 'outline'}>
+              {row.isPrimary ? t('kind.primary') : t('kind.secondary')}
+            </Badge>
+          </div>
+          <span className="aura-text-body [overflow-wrap:anywhere]">{row.email}</span>
+          <Link
+            href={`/admin/members/${encodeURIComponent(row.memberId)}`}
+            className="text-[var(--aura-fg-accent)] underline-offset-4 [overflow-wrap:anywhere] hover:underline max-sm:inline-flex max-sm:min-h-11 max-sm:items-center"
+          >
+            {row.companyName}
+          </Link>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <MarketingStateBadge state={row.state} />
+            {row.memberHalted && <Badge tone="neutral" variant="outline">{t('memberStatus.halted')}</Badge>}
+            {row.memberErased && <Badge tone="neutral" variant="outline">{t('memberStatus.erased')}</Badge>}
+            {row.memberStatus !== 'active' && (
+              <Badge tone="neutral" variant="outline">{t(`memberStatus.${row.memberStatus}`)}</Badge>
+            )}
+          </div>
+          {row.reasons.length > 0 && (
+            <ul role="list" className="aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">
+              {row.reasons.map((reason) => (
+                <li key={reason}>{tReason(reason)}</li>
+              ))}
+            </ul>
+          )}
+          {row.changedBy !== null && (
+            <span className="aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">
+              {`${t('columns.lastChange')}: ${row.changedBy}${row.changedAt !== null ? ` · ${row.changedAt}` : ''}`}
+            </span>
+          )}
+          {canMarketing && (
+            <div className="mt-1 flex items-center justify-between gap-3 border-t border-[var(--aura-border-default)] pt-3">
+              {row.state !== 'off_by_contact' && row.state !== 'unsubscribed' && row.state !== 'unavailable' ? (
+                <span aria-hidden="true" className="aura-text-body">{t('card.receives')}</span>
+              ) : null}
+              <MarketingSwitch
+                contactId={row.contactId}
+                contactName={row.contactName}
+                state={row.state}
+                leavesView={leavesView}
+              />
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
