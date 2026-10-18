@@ -15,14 +15,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   BLOCKLIST_PLACEHOLDERS,
+  REQUIRED_EXPORTS,
   SEED_CHAIN,
   bangkokYear,
   childEnv,
   ciE2eTargetRefusal,
   githubEnvChunk,
+  main,
+  missingRequiredExports,
   parseSeedExports,
   planYearRefusal,
   type CiE2eTarget,
+  type SeedDeps,
 } from '../../../scripts/seed-ci-e2e';
 import { DB_HOST_BLOCKLIST_PLACEHOLDERS } from '../../helpers/db-host-guard';
 
@@ -257,5 +261,110 @@ describe('plan year', () => {
     const msg = planYearRefusal([2026], new Date('2026-12-31T17:00:00Z'));
     expect(msg).toMatch(/2027/);
     expect(planYearRefusal([], new Date('2026-10-18T03:00:00Z'))).toMatch(/2026/);
+  });
+});
+
+describe('required exports (a chain that exports nothing must not pass)', () => {
+  const all = Object.fromEntries(REQUIRED_EXPORTS.map((k) => [k, 'x'.repeat(8)]));
+
+  it('names the personas and fixtures the @critical specs read', () => {
+    for (const key of [
+      'E2E_ADMIN_EMAIL',
+      'E2E_ADMIN_PASSWORD',
+      'E2E_MEMBER_EMAIL',
+      'E2E_MEMBER_PASSWORD',
+      'E2E_ISSUED_INVOICE_ID',
+      'E2E_SUPER_ADMIN_EMAIL',
+      'E2E_MANAGER_EMAIL',
+      'E2E_MEMBER_EMAIL_EMPTY',
+      'E2E_ADMIN_MUTATION_MEMBER',
+    ]) {
+      expect(REQUIRED_EXPORTS).toContain(key);
+    }
+  });
+
+  it('reports nothing missing when every key has a value, and each missing or empty key otherwise', () => {
+    expect(missingRequiredExports(all)).toEqual([]);
+    const rest: Record<string, string> = { ...all };
+    delete rest.E2E_ISSUED_INVOICE_ID;
+    expect(missingRequiredExports({ ...rest, E2E_ADMIN_EMAIL: '' })).toEqual([
+      'E2E_ADMIN_EMAIL',
+      'E2E_ISSUED_INVOICE_ID',
+    ]);
+  });
+});
+
+describe('main()', () => {
+  const baseEnv = {
+    DATABASE_URL: `postgresql://neondb_owner:pw@${POOLED}/neondb?sslmode=require`,
+    DATABASE_URL_UNPOOLED: `postgresql://neondb_owner:pw@${DIRECT}/neondb?sslmode=require`,
+    TEST_DB_HOST_BLOCKLIST: 'ep-prod-real-777',
+    CI_E2E_BRANCH_NAME: 'ci-e2e/1-1',
+    CI_E2E_EXPECTED_HOST: POOLED,
+    CI_E2E_EXPECTED_DIRECT_HOST: DIRECT,
+    CI_E2E_BRANCH_CREATED: 'true',
+    GITHUB_ENV: '/tmp/github_env',
+  };
+
+  function deps(exportsByScript: Record<string, string>): SeedDeps & { appended: string[]; spawned: string[] } {
+    const appended: string[] = [];
+    const spawned: string[] = [];
+    return {
+      env: baseEnv,
+      appended,
+      spawned,
+      exists: () => true,
+      spawn: (script) => {
+        spawned.push(script);
+        return { status: 0, signal: null, stdout: exportsByScript[script] ?? '', stderr: '' };
+      },
+      append: (_path, text) => {
+        appended.push(text);
+      },
+      planYears: async () => [2026],
+      now: () => new Date('2026-10-18T03:00:00Z'),
+      log: () => {},
+      logError: () => {},
+    };
+  }
+
+  const everything = REQUIRED_EXPORTS.map((k) => `${k}=value-${k.toLowerCase()}`).join('\n');
+
+  it('runs the whole chain and writes the exports when every required key is exported', async () => {
+    const d = deps({ 'scripts/seed-e2e-user.ts': everything });
+    await expect(main([], d)).resolves.toBeUndefined();
+    expect(d.spawned).toEqual(SEED_CHAIN.map((s) => s.script));
+    expect(d.appended.join('')).toMatch(/E2E_ISSUED_INVOICE_ID=/);
+  });
+
+  it('fails after the chain when a required key was never exported, naming it', async () => {
+    const d = deps({ 'scripts/seed-e2e-user.ts': everything.replace(/^E2E_ISSUED_INVOICE_ID=.*$/m, '') });
+    await expect(main([], d)).rejects.toThrow(/E2E_ISSUED_INVOICE_ID/);
+    expect(d.spawned).toHaveLength(SEED_CHAIN.length);
+  });
+
+  it('fails when the whole chain exports nothing', async () => {
+    await expect(main([], deps({}))).rejects.toThrow(/required export/);
+  });
+
+  it('stops after the guard with --guard-only, running no seed', async () => {
+    const d = deps({});
+    await expect(main(['--guard-only'], d)).resolves.toBeUndefined();
+    expect(d.spawned).toEqual([]);
+  });
+
+  it('refuses a target the guard rejects, before any seed', async () => {
+    const d = deps({});
+    await expect(main([], { ...d, env: { ...baseEnv, CI_E2E_BRANCH_NAME: 'main' } })).rejects.toThrow(/ci-e2e\//);
+    expect(d.spawned).toEqual([]);
+  });
+
+  it('stops at a failing seed and names it', async () => {
+    const d = deps({});
+    const failing: SeedDeps = {
+      ...d,
+      spawn: (script) => ({ status: script.includes('plans') ? 1 : 0, signal: null, stdout: '', stderr: '' }),
+    };
+    await expect(main([], failing)).rejects.toThrow(/seed-swecham-2026-plans\.ts failed/);
   });
 });
