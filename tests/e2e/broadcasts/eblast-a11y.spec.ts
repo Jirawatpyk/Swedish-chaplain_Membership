@@ -54,6 +54,7 @@ import type { Page, TestInfo } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import { runAxeScan, type AxeScanOptions } from '../helpers/axe-scan';
 import { signInAsAdmin } from '../helpers/admin-session';
+import { openFilters } from '../helpers/filters-sheet';
 import {
   seedMemberDetailBroadcast,
   wipeE2EMemberBroadcasts,
@@ -63,6 +64,8 @@ import {
   startFormattedVersionAsMarketing,
 } from '../helpers/eblast-approval-flow';
 
+/** Spec 122 US12b — the queue's AURA FilterBar region (EN: the sign-in helper's locale). */
+const QUEUE_FILTERS = /broadcast queue filters/i;
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 /** The in-good-standing persona — see the persona note in the header. */
@@ -228,7 +231,7 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
       // loading skeleton carries the page's own header (title AND actions),
       // so the h1 is on screen before the queue is — the scan would read the
       // skeleton. The skeleton's filter bar is an `aria-hidden` box.
-      await scanScreen(page, testInfo, '/admin/broadcasts', (p) => p.getByRole('search'));
+      await scanScreen(page, testInfo, '/admin/broadcasts', (p) => p.getByRole('region', { name: QUEUE_FILTERS }));
     });
 
     test('screen 4 — staff compose-on-behalf /admin/broadcasts/new', async ({
@@ -315,7 +318,7 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
       await page.goto('/admin/broadcasts');
       // The settled queue, not its skeleton (see screen 3): both have the h1
       // and the header's action row, and the skeleton's is replaced mid-read.
-      await expect(page.getByRole('search')).toBeVisible({ timeout: 120_000 });
+      await expect(page.getByRole('region', { name: QUEUE_FILTERS })).toBeVisible({ timeout: 120_000 });
 
       const scrollWidth = await page.evaluate(
         () => document.documentElement.scrollWidth,
@@ -370,8 +373,11 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
 
       const announcer = page.locator('[data-testid="queue-selection-announcer"]:visible');
       await expect(announcer).toHaveCount(1);
-      const sent = page.locator('input[name="status"][value="sent"]:visible');
-      await expect(sent).not.toBeChecked();
+      // Spec 122 US12b — the stage chips are pressed buttons, in the Filters
+      // sheet below 640 px.
+      const scope = await openFilters(page);
+      const sent = scope.locator('button[data-status="sent"]:visible');
+      await expect(sent).toHaveAttribute('aria-pressed', 'false');
       // Element identity, not only text: a region REMOUNTED by the navigation
       // (a `loading.tsx` swap) would carry the same text but lose this mark —
       // and a freshly mounted live region is not reliably announced.
@@ -379,12 +385,12 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
         (el as HTMLElement).dataset['probe'] = 'kept';
       });
 
-      // The keyboard path: focus the chip's checkbox, press Space.
+      // The keyboard path: focus the chip, press Space.
       await sent.focus();
       await page.keyboard.press('Space');
 
       await expect(page).toHaveURL(/status=sent/, { timeout: 60_000 });
-      await expect(sent).toBeChecked();
+      await expect(sent).toHaveAttribute('aria-pressed', 'true');
       await expect(announcer).toHaveText(
         /(?:No E-Blasts|\d+ E-Blasts?) in this view/,
         { timeout: 60_000 },
@@ -395,7 +401,7 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
       expect(
         await page.evaluate(() => {
           const el = document.activeElement;
-          return el instanceof HTMLInputElement ? el.value : el?.tagName ?? null;
+          return el instanceof HTMLElement ? el.dataset['status'] ?? el.tagName : null;
         }),
       ).toBe('sent');
     });
@@ -417,9 +423,8 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
         });
         await expect(page.locator('html')).toHaveAttribute('lang', locale);
 
-        const chip = page.locator(
-          'input[name="status"][value="member_approved"]:visible',
-        );
+        const scope = await openFilters(page);
+        const chip = scope.locator('button[data-status="member_approved"]:visible');
         await expect(
           chip,
           'the member_approved chip is absent — is FEATURE_EBLAST_MEMBER_APPROVAL on for this server?',
@@ -435,16 +440,14 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
 
         // The strip itself, not only the document: an ancestor that clips
         // overflow would hide a chip that still runs off the edge.
-        const fieldset = page.locator('fieldset:visible').filter({
-          has: page.locator('input[name="status"]'),
+        const fieldset = scope.locator('fieldset:visible').filter({
+          has: page.locator('button[data-status]'),
         });
         const overflow = await fieldset.evaluate(
           (el) => el.scrollWidth - el.clientWidth,
         );
         expect(overflow, 'the Stage fieldset does not overflow').toBeLessThanOrEqual(0);
-        const chipBox = await chip
-          .locator('xpath=ancestor::label[1]')
-          .boundingBox();
+        const chipBox = await chip.boundingBox();
         expect(chipBox).not.toBeNull();
         expect(
           chipBox!.x + chipBox!.width,

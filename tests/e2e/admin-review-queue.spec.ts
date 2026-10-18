@@ -123,6 +123,11 @@ const RAW_SEGMENT_ENUMS = [
 ] as const;
 
 const SEEDED_SUBJECT = '[E2E SEED] AS2-AS6 fixture broadcast';
+// Spec 122 US12b — the filter bar and the bulk bar are AURA regions named in
+// the active locale (`admin.broadcasts.queue.filters.formAriaLabel`,
+// `admin.broadcasts.queue.bulk.toolbarLabel`).
+const QUEUE_FILTERS = /broadcast queue filters|ตัวกรองคิวตรวจสอบ|filter för utskickskö/i;
+const BULK_BAR = /bulk actions for selected broadcasts|การดำเนินการแบบกลุ่ม|massåtgärder för valda utskick/i;
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -296,7 +301,7 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     // forgiving fallback so the assertion survives DB state drift between
     // projects (chromium / mobile-chrome / mobile-safari).
     const tableOrEmpty = page
-      .getByRole('table')
+      .getByRole('grid')
       .or(page.getByText(/queue is clear|no broadcasts|no pending/i));
     await expect(tableOrEmpty.first()).toBeVisible({ timeout: 10_000 });
   });
@@ -310,11 +315,11 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
 
     await page.goto('/admin/broadcasts');
     await page.locator('h1').first().waitFor({ timeout: 10_000 });
-    // Filter bar uses `role="search"` landmark per WAI-ARIA Authoring
-    // Practices (D1 / A3 UX hardening).
-    await expect(page.getByRole('search').first()).toBeVisible();
-    // Member filter is a shadcn Select (combobox), no longer a native
-    // <select> (D2). Trigger has role="combobox".
+    // The filter bar is an AURA FilterBar region named for the queue
+    // (spec 122 US12b; it was a `role="search"` landmark).
+    await expect(page.getByRole('region', { name: QUEUE_FILTERS })).toBeVisible();
+    // Member filter is an AURA FilterSelect (spec 122 US12b): its trigger
+    // has role="combobox".
     await expect(
       page.getByRole('combobox', { name: /member/i }).first(),
     ).toBeVisible();
@@ -335,8 +340,8 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
 
     // Default visit: "submitted" checkbox is checked, URL has no status
     // params (server defaults to `['submitted']`).
-    const submittedCheckbox = page.locator('input[name="status"][value="submitted"]');
-    await expect(submittedCheckbox).toBeChecked();
+    const submittedCheckbox = page.locator('button[data-status="submitted"]');
+    await expect(submittedCheckbox).toHaveAttribute('aria-pressed', 'true');
 
     // Click submitted → React controlled-checkbox state update is
     // deferred via `useTransition` + `router.replace`. Playwright's
@@ -354,11 +359,11 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     // the user has an honest read of "no chip selected → seeing
     // everything"). See `queue-filters.tsx` visualStatus split.
     await expect(
-      page.locator('input[name="status"][value="submitted"]'),
-    ).not.toBeChecked();
+      page.locator('button[data-status="submitted"]'),
+    ).toHaveAttribute('aria-pressed', 'false');
     await expect(
-      page.locator('input[name="status"][value="approved"]'),
-    ).not.toBeChecked();
+      page.locator('button[data-status="approved"]'),
+    ).toHaveAttribute('aria-pressed', 'false');
 
     // Click "Reset filters" → URL goes back to pristine (no params), and
     // we're back to the default `['submitted']` view.
@@ -371,8 +376,8 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     });
     // Confirm submitted re-ticks as the default view.
     await expect(
-      page.locator('input[name="status"][value="submitted"]'),
-    ).toBeChecked();
+      page.locator('button[data-status="submitted"]'),
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 
   // ---------- D2: Audience column raw-enum leak ----------
@@ -392,9 +397,9 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     // from unrelated furniture, so only the Audience cell's exact
     // (whitespace-normalised) text content is checked, never a
     // substring of surrounding copy.
-    const tbody = page.locator('tbody');
+    const grid = page.getByRole('grid');
     for (const raw of RAW_SEGMENT_ENUMS) {
-      await expect(tbody.getByText(new RegExp(`^${raw}$`))).toHaveCount(0);
+      await expect(grid.getByText(new RegExp(`^${raw}$`))).toHaveCount(0);
     }
   });
 
@@ -418,7 +423,7 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     // localised label "All members" (admin.broadcasts.review.segmentType.
     // all_members), never the raw enum string.
     const seededRow = page
-      .locator('tbody tr')
+      .locator('[role="grid"] [role="row"]')
       .filter({ hasText: SEEDED_SUBJECT });
     await expect(seededRow).toBeVisible();
     await expect(seededRow.getByText('All members', { exact: true })).toBeVisible();
@@ -452,7 +457,7 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     await expect(liveRegion).toBeAttached();
 
     const seededRow = page
-      .locator('tbody tr')
+      .locator('[role="grid"] [role="row"]')
       .filter({ hasText: SEEDED_SUBJECT });
     // `check()` rather than `click()`, inside `toPass`: a click that lands
     // before React has attached the handler toggles nothing, and this case
@@ -476,7 +481,7 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     // failed on 2026-09-10 with "element(s) not found" — it was asserting the
     // duplicate the a11y design removed. The announcement is checked above;
     // here only the visible count.
-    const toolbar = page.getByRole('toolbar');
+    const toolbar = page.getByRole('region', { name: BULK_BAR });
     await expect(toolbar).toBeVisible();
     await expect(toolbar).toContainText(/1 selected/);
   });
@@ -753,7 +758,7 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     // Task 9 — at a desktop width (≥ the `md` breakpoint) the shared
     // `ui/table.tsx` primitive Task 3 adopted (`hidden md:block` wrapper)
     // must render, not a hand-rolled table.
-    await expect(page.locator('[data-slot="table"]')).toBeVisible();
+    await expect(page.getByRole('grid')).toBeVisible();
 
     // Covers the overdue banner (role="alert", when count>0), the
     // always-present SLA banner's severity-coloured token pill, filters,
@@ -791,7 +796,8 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     // must still be a CSS-hidden DOM node at this width (`hidden`), never
     // removed from the tree entirely, which would be a different
     // regression `toBeHidden()` alone can't distinguish from.
-    const desktopTable = page.locator('[data-slot="table"]');
+    // A CSS selector, not `getByRole`: the role query skips hidden nodes.
+    const desktopTable = page.locator('[role="grid"]');
     await expect(desktopTable).toBeAttached();
     await expect(desktopTable).toBeHidden();
 
@@ -825,7 +831,7 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     // of which the default-view scan above (0 rows selected) ever renders
     // into the accessibility tree.
     const seededRow = page
-      .locator('tbody tr')
+      .locator('[role="grid"] [role="row"]')
       .filter({ hasText: SEEDED_SUBJECT });
     // `check()` inside `toPass`, same as D3: a bare click that lands before
     // React has attached the handler toggles nothing and the bar never
@@ -834,7 +840,7 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
       await seededRow.getByRole('checkbox').check({ timeout: 2_000 });
     }).toPass({ timeout: 15_000 });
 
-    const toolbar = page.getByRole('toolbar');
+    const toolbar = page.getByRole('region', { name: BULK_BAR });
     await expect(toolbar).toBeVisible();
     // 2026-09-10 — the toolbar's count is visible text and deliberately NOT a
     // live region (the permanent queue announcer is; see D3). Asserting an
@@ -996,7 +1002,7 @@ test.describe(
       await page.goto('/admin/broadcasts');
       await page.locator('h1').first().waitFor({ timeout: 10_000 });
       for (const subject of bulkSeed!.subjects) {
-        const row = page.locator('tbody tr').filter({ hasText: subject });
+        const row = page.locator('[role="grid"] [role="row"]').filter({ hasText: subject });
         // `check()` inside `toPass`, same as D3: a click that lands before
         // React attached the handler toggles nothing (the last @bulk case read
         // "1 selected" for two clicks, 2026-09-10). `check()` throws when its
@@ -1005,7 +1011,7 @@ test.describe(
           await row.getByRole('checkbox').check({ timeout: 2_000 });
         }).toPass({ timeout: 15_000 });
       }
-      const toolbar = page.getByRole('toolbar');
+      const toolbar = page.getByRole('region', { name: BULK_BAR });
       await expect(toolbar).toBeVisible();
       // 2026-09-10 — the toolbar count is visible text, not a live region (see
       // D3); the permanent queue announcer carries the announcement.
@@ -1036,7 +1042,7 @@ test.describe(
 
       await openQueueAndSelectBoth(page);
       await page
-        .getByRole('toolbar')
+        .getByRole('region', { name: BULK_BAR })
         .getByRole('button', { name: /approve selected/i })
         .click();
 
@@ -1065,7 +1071,7 @@ test.describe(
 
       await openQueueAndSelectBoth(page);
       await page
-        .getByRole('toolbar')
+        .getByRole('region', { name: BULK_BAR })
         .getByRole('button', { name: /approve selected/i })
         .click();
 
@@ -1110,7 +1116,7 @@ test.describe(
 
       await openQueueAndSelectBoth(page);
       await page
-        .getByRole('toolbar')
+        .getByRole('region', { name: BULK_BAR })
         .getByRole('button', { name: /approve selected/i })
         .click();
 
@@ -1170,7 +1176,7 @@ test.describe(
 
       await openQueueAndSelectBoth(page);
       await page
-        .getByRole('toolbar')
+        .getByRole('region', { name: BULK_BAR })
         .getByRole('button', { name: /approve selected/i })
         .click();
 
@@ -1220,7 +1226,7 @@ test.describe(
 
       await openQueueAndSelectBoth(page);
       await page
-        .getByRole('toolbar')
+        .getByRole('region', { name: BULK_BAR })
         .getByRole('button', { name: /approve selected/i })
         .click();
 
