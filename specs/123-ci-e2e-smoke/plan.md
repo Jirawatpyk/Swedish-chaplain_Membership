@@ -498,3 +498,20 @@ Filled in at Verify, one block per slice.
   - Phase times: migrate 564 s (from zero), seed 164, build 139, ready 6, e2e-chromium 572, e2e-mobile-chrome 519.
   - mobile-chrome 23 passed. chromium 22 passed and **1 flaky**, and the M1 warning fired: `critical-invoice-issue` did not find the member page's create-invoice link on two attempts and passed on the third. **Open: this flake has to be fixed before DW-12 starts counting.**
 
+### Slice 2 — the `critical-invoice-issue` flake (fixed)
+
+- **No trace at first.** Run 39121468131 was green, so the upload step (`failure() || cancelled()`) skipped and the traces of the two failed attempts were lost. The report is now also uploaded when the summary sees a flaky spec (RED `25e80fbdd`, GREEN `b17100640`).
+- **The cause, from the traces of [run 39124301861](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39124301861)** (artifact `e2e-critical-39124301861-1`). It is **not** a hidden previous segment: each trace shows a single member link and a single "New invoice" link. The page was still rendering:
+  - **chromium attempt 1:** on `/admin/members/<id>`, `<main>` held only the "Members" back link from 145.6 s to 160.6 s (the whole 15 s wait).
+  - **mobile-chrome:** the URL changed to `/admin/invoices/<id>` at 182.7 s, and at 197.7 s the h1 was still the `loading.tsx` shimmer (`skeleton-shimmer h-8 w-64`). The URL updates when a client navigation starts, so `waitForURL` passed before the content streamed.
+  - The cause is a slow server render from the US runner to the Singapore database. On a passing attempt the member page took about 12 s.
+- **Fix (`a75769d29`):**
+  - Every wait after a navigation gets `SERVER_RENDER_MS` = 60 s, which fits inside `test.slow()`.
+  - Every post-navigation locator in both new specs is `.filter({ visible: true })` and strict; there is no `.first()` left.
+  - The profile spec asserts the h1 company name and the visible "(you)" row.
+- **Proof, on [run 39131190941](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39131190941)** (head `42e5ffd4b`, after merging `origin/main`):
+  - **success**: 23 passed on chromium (9.0 min) and 23 on mobile-chrome (9.2 min). There was no flaky warning, so no artifact was uploaded.
+  - `critical-invoice-issue`: 90 s on chromium and 95 s on mobile-chrome, 0 retries.
+  - Phases: migrate 608 s, seed 169, build 95, ready 5, e2e 541 + 551. Job 33 min 36 s.
+  - Integration smoke, Quality gates, Architecture guards, Coverage and the Vercel preview are all green.
+
