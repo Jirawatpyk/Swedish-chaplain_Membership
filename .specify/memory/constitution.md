@@ -1,6 +1,17 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 2.0.0 → 2.1.0  (MINOR: Principle II gains one scoped
+                allowance. For UI presentation, copy and size-S changes the
+                failing test and the code that passes it may share a
+                commit, provided the failing run is recorded (plan.md §
+                Evidence, or the PR for size S). Money, tax, auth/RBAC,
+                tenancy, PII, audit log, migrations and domain/application
+                logic keep separate RED and GREEN commits. "Watch it
+                fail" is unchanged for every change. No principle is
+                added or removed (D-023).
+                Approved by the sole maintainer, 2026-10-18.)
+
 Version change: 1.4.2 → 2.0.0  (MAJOR: process moves out of the constitution.
                 The ten Spec Kit gates (§ Development Workflow & Quality
                 Gates) and Principle IX's review mechanics — the ≥2-reviewer
@@ -410,6 +421,9 @@ TDD is mandatory. Code without a preceding failing test MUST NOT be merged.
 
 - Red → Green → Refactor: write the test, watch it fail, write the minimum code to pass,
   then refactor. Each step is a distinct commit or clearly separated change set.
+- For UI presentation, copy and size-S changes only, the failing test and the code may share one commit,
+  provided the failing run is recorded (`plan.md` § Evidence, or the PR for size S).
+  This allowance is never money, tax, auth/RBAC, tenancy, PII, audit log, a migration or domain/application logic.
 - Every user story in a spec MUST have at least one acceptance-level test before
   implementation starts.
 - Contract tests are mandatory at every external and inter-module boundary.
@@ -739,4 +753,4 @@ Swedish law).
   the development process lives in `docs/workflow.md`. They are subordinate to this
   constitution's principles, and they — not this file — define the process.
 
-**Version**: 2.0.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-10-17
+**Version**: 2.1.0 | **Ratified**: 2026-04-09 | **Last Amended**: 2026-10-18
