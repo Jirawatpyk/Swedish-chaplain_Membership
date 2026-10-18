@@ -101,7 +101,7 @@ async function relationExists(client: MigrationSqlRunner, name: string): Promise
 /**
  * `fresh` when the in-progress marker exists (a resume), or when the
  * migrations table is missing or empty; otherwise `normal`. A missing or empty
- * table next to existing app tables (`public.tenants`) is refused: that is a
+ * table next to existing app tables (`public.users`, created by 0000) is refused: that is a
  * damaged or foreign database, and fresh mode would replay the whole chain
  * over it. `to_regclass` first: counting a table that does not exist raises
  * 42P01.
@@ -114,30 +114,110 @@ export async function decideMigrationMode(client: MigrationSqlClient): Promise<M
     empty = Number(count?.n ?? 0) === 0;
   }
   if (!empty) return 'normal';
-  if (await relationExists(client, 'public.tenants')) {
+  // public.users is created by 0000, the first migration; no migration
+  // creates a public.tenants table.
+  if (await relationExists(client, 'public.users')) {
     throw new Error(
-      'migrate: drizzle.__drizzle_migrations is missing or empty but public.tenants exists; ' +
+      'migrate: drizzle.__drizzle_migrations is missing or empty but public.users exists; ' +
         'refusing to replay every migration over an existing schema.',
     );
   }
   return 'fresh';
 }
 
+export interface MigrationLockOptions {
+  /** A PgBouncer (`-pooler`) connection: session locks are unsafe there, so the lock is skipped. */
+  readonly pooled?: boolean;
+  /** How long to wait for another run's lock before failing (default 5 min). */
+  readonly waitMs?: number;
+  /** How often to retry `pg_try_advisory_lock` (default 2 s). */
+  readonly pollMs?: number;
+  readonly sleep?: (ms: number) => Promise<void>;
+  readonly now?: () => number;
+  readonly warn?: (message: string) => void;
+}
+
+const LOCK_WAIT_MS = 5 * 60_000;
+const LOCK_POLL_MS = 2_000;
+
+/** True when the URL's host is a Neon PgBouncer endpoint (`…-pooler.…`). */
+export function isPooledConnection(url: string): boolean {
+  try {
+    return new URL(url).hostname.includes('-pooler');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The host to print for the target database: the hostname only, never the URL.
+ * A TypeError from `new URL` carries the whole input (password included), so a
+ * malformed value is reported by a fixed message (the #588 rule).
+ */
+export function migrationTargetHost(url: string): { ok: true; host: string } | { ok: false; message: string } {
+  try {
+    return { ok: true, host: new URL(url).hostname };
+  } catch {
+    return { ok: false, message: 'the database URL is not a valid URL' };
+  }
+}
+
 /**
  * Run `fn` under one session advisory lock, so two run-migrations processes on
- * the same database (the ci-neon-env retry, a parallel job) never interleave.
- * `pg_try_advisory_lock`, not the blocking form: the client's 30 s
- * statement_timeout would cancel a blocked wait as a confusing 57014.
+ * the same database never interleave: the ci-neon-env retry, a parallel job,
+ * or two quick merges to `main` whose production builds overlap.
+ *
+ * - `pg_try_advisory_lock`, polled every 2 s for up to 5 min, not the blocking
+ *   form: the client's 30 s statement_timeout would cancel a blocked wait as a
+ *   confusing 57014. Waiting rather than failing at once means a second deploy
+ *   queues behind the first instead of being lost.
+ * - On a PgBouncer (`-pooler`) host a session lock can land on a pooled server
+ *   connection another client then inherits, so the lock is skipped with a
+ *   warning and the run proceeds as it did before the lock existed; a deploy
+ *   never fails for this.
+ * - The unlock is best effort: if it throws or returns false the session's end
+ *   releases the lock anyway, so it only warns, and never masks fn's own error.
  */
-export async function withMigrationLock<T>(client: MigrationSqlClient, fn: () => Promise<T>): Promise<T> {
-  const [row] = await client.unsafe(`select pg_try_advisory_lock(${MIGRATION_LOCK_KEY}) as locked`);
-  if (row?.locked !== true) {
-    throw new Error('migrate: another run-migrations holds the lock on this database; refusing to run concurrently.');
+export async function withMigrationLock<T>(
+  client: MigrationSqlClient,
+  fn: () => Promise<T>,
+  options: MigrationLockOptions = {},
+): Promise<T> {
+  const warn = options.warn ?? ((message: string) => console.warn(message));
+  if (options.pooled === true) {
+    warn(
+      'migrate: the connection is pooled (PgBouncer); running without the advisory lock. ' +
+        'Use the direct (unpooled) URL to serialise concurrent runs.',
+    );
+    return fn();
+  }
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((done) => setTimeout(done, ms)));
+  const now = options.now ?? Date.now;
+  const waitMs = options.waitMs ?? LOCK_WAIT_MS;
+  const pollMs = options.pollMs ?? LOCK_POLL_MS;
+  const started = now();
+  for (;;) {
+    const [row] = await client.unsafe(`select pg_try_advisory_lock(${MIGRATION_LOCK_KEY}) as locked`);
+    if (row?.locked === true) break;
+    if (now() - started >= waitMs) {
+      throw new Error('migrate: another run-migrations holds the lock on this database; refusing to run concurrently.');
+    }
+    await sleep(pollMs);
   }
   try {
     return await fn();
   } finally {
-    await client.unsafe(`select pg_advisory_unlock(${MIGRATION_LOCK_KEY}) as unlocked`);
+    try {
+      const [row] = await client.unsafe(`select pg_advisory_unlock(${MIGRATION_LOCK_KEY}) as unlocked`);
+      if (row?.unlocked !== true) {
+        warn('migrate: pg_advisory_unlock returned false; the session end releases the lock.');
+      }
+    } catch (error) {
+      warn(
+        `migrate: pg_advisory_unlock failed (${(error as { name?: unknown } | null)?.name ?? 'unknown'}); ` +
+          'the session end releases the lock.',
+      );
+    }
   }
 }
 

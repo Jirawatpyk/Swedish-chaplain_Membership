@@ -3,9 +3,14 @@
  *
  * Usage: `pnpm db:migrate`
  *
- * Reads `.env.local` so the same command works locally and in CI without
- * extra wrapper scripts. Uses the *unpooled* connection because pooled
- * Neon connections can interfere with schema-changing statements.
+ * The env comes from the caller only: `pnpm db:migrate` passes
+ * `--env-file=.env.local`, the prod script passes the prod file, and Vercel /
+ * CI inject `process.env`. This script loads no env file of its own: a second
+ * load of `.env.local` used to fill any variable the prod file lacks (e.g.
+ * DATABASE_URL_UNPOOLED, read first) from DEV, the defect #588 fixed in
+ * verify-schema.ts. A direct `tsx` run must pass `--env-file` itself. Uses the
+ * *unpooled* connection because pooled Neon connections can interfere with
+ * schema-changing statements (and with the session advisory lock).
  *
  * Migrations live in `drizzle/migrations/`. The Drizzle journal
  * (`drizzle/migrations/meta/_journal.json`) tracks which ones have been
@@ -58,23 +63,14 @@ import {
   disallowedUnrecorded,
   findUnrecordedMigrations,
   isAlreadyExists,
+  isPooledConnection,
   isUndefinedType,
+  migrationTargetHost,
   withMigrationLock,
   type MigrationSqlClient,
   type MigrationSqlRunner,
   type TaggedMigration,
 } from './lib/migrate-fresh';
-
-// Local convenience: load `.env.local` if present (covers direct `tsx`
-// invocations alongside the `--env-file=.env.local` flag in `pnpm db:migrate`).
-// On Vercel / CI there is no `.env.local` — env comes from the injected
-// `process.env` — so a missing file is NOT an error (`?.` only guards an
-// undefined function, not ENOENT; the try/catch covers the missing file).
-try {
-  process.loadEnvFile?.('.env.local');
-} catch {
-  // .env.local absent (Vercel build / CI) — use the ambient process.env.
-}
 
 const url =
   process.env.DATABASE_URL_UNPOOLED ??
@@ -87,6 +83,14 @@ if (!url) {
   );
   process.exit(1);
 }
+
+// The host only, never the URL: it names which branch is migrated.
+const target = migrationTargetHost(url);
+if (!target.ok) {
+  console.error(`scripts/run-migrations.ts: ${target.message}`);
+  process.exit(1);
+}
+console.log(`Target host: ${target.host}`);
 
 const MIGRATIONS_DIR = join(process.cwd(), 'drizzle', 'migrations');
 
@@ -255,7 +259,7 @@ async function main(): Promise<void> {
           `drizzle.__drizzle_migrations (neither its hash nor its created_at = when):\n` +
           unrecorded.map((m) => `  - ${m.tag} (when ${m.folderMillis})`).join('\n');
       }
-    });
+    }, { pooled: isPooledConnection(url!) });
   } catch (error) {
     failure = `Migration failed: ${
       error instanceof Error ? (error.stack ?? error.message) : String(error)
