@@ -16,7 +16,7 @@ e2e never runs in CI, so every PR needs a manual local verification round to cat
 | # | Slice | Done-when | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
 | 1 | Post-deploy smoke: `/api/health`, the smoke script, the workflow, the runbook | DW-1…5 | security-engineer, reliability-guardian, observability-instrumentor | `123-ci-e2e-smoke-s1` | #582 · done |
-| 2 | e2e in CI: seed chain, `@critical` tags, the PR workflow, the nightly workflow, the sweep | DW-6…12 | security-engineer, senior-tester, reliability-guardian | `123-ci-e2e-smoke-s2` | #586 · done |
+| 2 | e2e in CI: seed chain, `@critical` tags, the PR workflow, the nightly workflow, the sweep | DW-6…12 | security-engineer, senior-tester, reliability-guardian, drizzle-migration-reviewer | `123-ci-e2e-smoke-s2` | #586 · done |
 
 ## Slice 1 — post-deploy smoke
 
@@ -51,6 +51,8 @@ e2e never runs in CI, so every PR needs a manual local verification round to cat
 ## Slice 2 — e2e in CI
 
 **Step 0: a timing spike** (measure before choosing the set). The PR's own `e2e-critical` run first carries 3 candidate specs. It records build, seed and per-spec times, and the `@critical` list is sized to fit 25 minutes from those numbers. The times go in `plan.md` § Evidence.
+
+**Plan change 2026-10-18 (maintainer-approved):** fresh-DB mode in `scripts/run-migrations.ts`; fixes the never-tested migrate-from-zero path (also a DR bug). When `drizzle.__drizzle_migrations` is missing or empty, `scripts/lib/migrate-fresh.ts` applies the journal one entry per transaction, decided by hash; each file first commits its own `ALTER TYPE … ADD VALUE` lines in autocommit, because 0308 builds a partial index on a value it adds itself. Any database with a recorded migration keeps the old single-transaction path. Tests: `tests/unit/scripts/migrate-fresh.test.ts`.
 
 **Files**
 - `scripts/seed-ci-e2e.ts` (new orchestrator). It runs the existing seeds in this order, with `NODE_ENV` unset:
@@ -280,4 +282,13 @@ Filled in at Verify, one block per slice.
 - **(c)** Preview deployments of this branch fired `deployment_status`, and the job was **skipped** each time (for example https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39057302987).
 - **(d)** Not proven: DW-4's "names the deployment URL" holds only for a real failing `deployment_status` run. Manual runs print "none (manual run)". Accepted.
 - **Process note:** D-020 says the slice's own PR sets its Slices row to `done` before merging. #582 missed that, so this follow-up sets it. Cause: step 8 (PR), the DoD and the PR template had no line for it, only step 9 assumed it was "already" set. Guard: a DoD line, a PR-template line and a `feature-flow` § 8 bullet; retro logged.
+
+### Slice 2 — spike 1 ([run 39093568820](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39093568820), failed)
+
+- **Create branch:** 3 s. **DW-9 guard:** ok.
+- **Migrate from zero:** failed at 0021 on both attempts, about 291 s in total. `CREATE UNIQUE INDEX … audit_log_overdue_once_per_day … WHERE "event_type" = 'invoice_overdue_detected'` raised 55P04 (unsafe use of new enum value).
+  - Cause: drizzle-orm 0.45.2 `PgDialect.migrate` applies every pending migration in one transaction, so on an empty database 0020 adds the value and 0021 uses it in the same transaction. The enum pre-pass only acts on types that already exist; here it logged "applied 0, skipped 372".
+  - Nothing in this repo had ever migrated from zero: dev, CI and preview all branch from prod.
+- **Delete branch:** ran at the end (`always()`).
+- **Fix:** the fresh-DB mode above (plan change 2026-10-18).
 
