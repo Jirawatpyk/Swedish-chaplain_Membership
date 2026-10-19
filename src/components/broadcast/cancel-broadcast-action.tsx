@@ -28,8 +28,7 @@
  */
 import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Ban, type LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { CancelBroadcastDialog } from '@/components/broadcast/cancel-broadcast-dialog';
 
 export interface CancelBroadcastActionProps {
@@ -47,7 +46,6 @@ interface CancelActionConfig {
   readonly successToastKey: string;
   readonly labelNamespace: string;
   readonly labelKey: string;
-  readonly Icon: LucideIcon;
 }
 
 const ADMIN_CANCEL = {
@@ -58,7 +56,6 @@ const ADMIN_CANCEL = {
   successToastKey: 'cancelled',
   labelNamespace: 'admin.broadcasts.cancelDialog',
   labelKey: 'confirm',
-  Icon: Ban,
 } satisfies CancelActionConfig;
 
 const MEMBER_CANCEL = {
@@ -69,7 +66,6 @@ const MEMBER_CANCEL = {
   successToastKey: 'cancelled',
   labelNamespace: 'portal.broadcasts.detail',
   labelKey: 'cancelButton',
-  Icon: Ban,
 } satisfies CancelActionConfig;
 
 function resolveConfig(surface: 'admin' | 'member'): CancelActionConfig {
@@ -85,16 +81,12 @@ export function CancelBroadcastAction({
   const t = useTranslations(cfg.labelNamespace);
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const { Icon } = cfg;
 
   return (
     <>
-      <Button
-        variant="destructive-outline"
-        ref={triggerRef}
-        onClick={() => setOpen(true)}
-      >
-        <Icon className="mr-1 size-4" aria-hidden="true" />
+      {/* Spec 122 US12c-1 — AURA's danger outline button (boards
+          `Admin-broadcast-cancel`, `Portal-broadcast-cancel`). */}
+      <Button variant="danger-secondary" icon="ban" touchHeight ref={triggerRef} onClick={() => setOpen(true)}>
         {t(cfg.labelKey)}
       </Button>
       <CancelBroadcastDialog
