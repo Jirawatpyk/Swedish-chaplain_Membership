@@ -106,7 +106,9 @@ describe('plans list loading in the list card', () => {
     const table = container.querySelector('.aura-card .aura-bleed');
     expect(table).not.toBeNull();
     const heads = [...container.querySelectorAll('.aura-card th')].map((th) => th.textContent?.trim());
-    expect(heads).toEqual(['columns.name', 'columns.category', 'columns.annualFee', 'columns.memberType', 'columns.year', 'columns.status']);
+    // The admin's table, actions included (19 Oct: the skeleton drew six columns
+    // against the real table's seven, so every column landed in the wrong place).
+    expect(heads).toEqual(['columns.name', 'columns.category', 'columns.annualFee', 'columns.memberType', 'columns.year', 'columns.status', 'columns.actions']);
     expect(container.querySelector('[data-plan-list-skeleton] .border-b')).toBeNull();
   });
 });

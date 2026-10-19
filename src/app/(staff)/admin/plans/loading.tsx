@@ -58,6 +58,7 @@ export default async function Loading() {
                 t('columns.memberType'),
                 t('columns.year'),
                 t('columns.status'),
+                t('columns.actions'),
               ]}
             />
             {/* "Fees exclude {rate} VAT" note */}

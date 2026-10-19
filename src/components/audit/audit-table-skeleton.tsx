@@ -1,13 +1,15 @@
 /**
  * Skeleton for the read-only <AuditTable> (F9 US2).
  *
- * Spec 122 US10b (T1013): AURA's table skeleton with the real column names,
- * edge to edge in the list card and stacked cards below 640px, as the table
- * renders. The time, event, summary and payload cells are two lines tall
- * (dual timestamp, label + raw code, wrapping summary, payload pairs), so
- * they draw two bars and the shell does not shift when the rows land.
+ * The real table is AURA's static `Table`, which sizes its columns to the
+ * content, so the skeleton is the same `Table` with each column's share of the
+ * real one at a 1440px window (StaticTableSkeleton): the columns sit where
+ * the real ones land at any width, edge to edge in the card and stacked into
+ * cards below 640px. Time, event, actor and summary are two lines (dual
+ * timestamp, label + raw code, name + role, wrapping summary); the payload
+ * pairs three, so the shell does not shift when the rows land.
  */
-import { DataTableSkeleton } from '@/components/shell/data-table-skeleton';
+import { StaticTableSkeleton } from '@/components/shell/static-table-skeleton';
 
 export interface AuditTableSkeletonLabels {
   readonly caption: string;
@@ -21,16 +23,16 @@ export interface AuditTableSkeletonLabels {
 
 export function AuditTableSkeleton({ labels }: { readonly labels: AuditTableSkeletonLabels }): React.JSX.Element {
   return (
-    <DataTableSkeleton
-      label={labels.caption}
+    <StaticTableSkeleton
+      caption={labels.caption}
       rows={8}
       columns={[
-        { key: 'time', label: labels.time, skeletonLines: 2 },
-        { key: 'event', label: labels.event, skeletonLines: 2, card: 'title' },
-        { key: 'actor', label: labels.actor, skeletonLines: 2 },
-        { key: 'target', label: labels.target },
-        { key: 'summary', label: labels.summary, skeletonLines: 2 },
-        { key: 'payload', label: labels.payload, skeletonLines: 2 },
+        { label: labels.time, share: '19%', lines: 2 },
+        { label: labels.event, share: '22%', lines: 2, card: 'title' },
+        { label: labels.actor, share: '9%', lines: 2 },
+        { label: labels.target, share: '17%' },
+        { label: labels.summary, share: '17%', lines: 2 },
+        { label: labels.payload, share: '16%', lines: 3 },
       ]}
     />
   );
