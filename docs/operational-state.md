@@ -10,7 +10,7 @@ Present-tense state of production flags and cutovers. Hand-curated and updated i
 - **e2e in CI (spec 123 slice 2)**: lands with #586. Runbook: `docs/runbooks/e2e-ci.md`.
   - `e2e-critical.yml` runs the 9-spec `@critical` set on every same-repo PR, on chromium and mobile-chrome, against a fresh `ci-e2e/` Neon branch. It is **advisory**, not a required check, from the merge date of #586 (fill it in at merge).
   - **Becoming required (DW-12):** after two weeks with a flake rate of 2% or less, add `e2e @critical (chromium)` and `e2e @critical (mobile-chrome)` to `main`'s required checks. Until then, log each red that was not the change's fault in the e2e-nightly issue.
-  - `e2e-nightly.yml` runs the full suite on chromium at 19:00 UTC (02:00 Bangkok), in two shards. It migrates from zero, and a failure opens or comments on an `e2e-nightly` issue.
+  - `e2e-nightly.yml` runs the full suite on chromium at 19:00 UTC (02:00 Bangkok), in four shards with one retry. It migrates from zero, and a failure opens or comments on an `e2e-nightly` issue.
   - `ci-e2e-parent-refresh.yml` migrates the CI parent branch on every push to `main`. Its first run is the first push after #586 merges.
   - `ci-e2e-branch-sweep.yml` runs daily at 22:00 UTC and is a **dry run** until the repo variable `CI_E2E_SWEEP_ENABLED` is set to `true`.
 - **AURA migration (spec 122)**: in progress, one PR per phase. The pinned version is in `package.json`; the ledger and open handoff items are in `docs/aura-adoption.md`.
