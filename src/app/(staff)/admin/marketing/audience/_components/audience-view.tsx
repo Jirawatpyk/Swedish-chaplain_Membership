@@ -60,7 +60,13 @@ export async function AudienceFrame({
       {/* Below 640px the contacts are cards of their own, so the frame and
           its padding drop away (AURA `flushBelow`), as the phone board draws it. */}
       <Card flushBelow="sm" className="max-sm:p-0">
-        <div className="flex flex-col gap-4">
+        {/* From 640px the count (the results' own line, which streams in after
+            the filters) sits at the end of the filter row when it fits, as the
+            result count does on every list: the body wraps, the filters take
+            their one-row width as a basis, so the count joins their row on a
+            wide card and drops under them, never squeezing the bar, on a
+            narrower one; everything else takes a full row. */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:[&>*]:basis-full sm:[&>*]:min-w-0 sm:[&>[data-audience-filters]]:grow sm:[&>[data-audience-filters]]:basis-[max-content] sm:[&>#audience-count]:basis-auto sm:[&>#audience-count]:whitespace-nowrap">
           {!canMarketing && (
             <ReadOnlyBanner data-testid="audience-read-only">{t('readOnly')}</ReadOnlyBanner>
           )}

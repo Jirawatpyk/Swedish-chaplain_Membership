@@ -150,6 +150,7 @@ export function AudienceFilters() {
 
   return (
     <div
+      data-audience-filters=""
       onFocus={(e) => {
         if (isSearchTarget(e.target)) setIsSearchFocused(true);
       }}
