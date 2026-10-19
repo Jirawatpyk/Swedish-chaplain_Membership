@@ -6,8 +6,14 @@
 # mobile-chrome against a production build, on a database made for this run
 # alone. It REPORTS; it is not a required check yet (DW-12).
 #
-# SHAPE
-#   1. A Neon branch `ci-e2e/<run_id>-<attempt>` in the SEPARATE CI Neon
+# ONE JOB PER PROJECT (DW-7: at most 25 min). Run in series, the two projects
+# took 28.3 min (run 39182204895), so `e2e` is a matrix over
+# `project: [chromium, mobile-chrome]` and the two jobs run in parallel. Each
+# job does the whole chain below on its OWN Neon branch, rate-limit prefix and
+# artifact; `fail-fast: false` lets one project finish when the other fails.
+#
+# SHAPE (per matrix job)
+#   1. A Neon branch `ci-e2e/<run_id>-<attempt>-<project>` in the SEPARATE CI Neon
 #      project (synthetic data only), cut from `vars.NEON_CI_PARENT_BRANCH`,
 #      with a 2 h expiry as a backstop for a delete that never ran.
 #   2. DW-9 guard (`scripts/seed-ci-e2e.ts --guard-only`): the branch name
@@ -20,8 +26,8 @@
 #      fixtures (`scripts/seed-ci-e2e.ts`), then the production-boot env
 #      (`.github/ci/e2e.env` + the CI Blob / Upstash secrets).
 #   4. `next build`, `next start` on :3100, readiness on `/api/health` (app up
-#      AND database reachable), then Playwright attached to it, once per
-#      project, `--workers=1`.
+#      AND database reachable), then Playwright attached to it for this job's
+#      ONE project, `--workers=1`.
 #   5. On failure, the HTML report and traces (synthetic data only, 7 days).
 #      ALWAYS, the branch this run created is deleted.
 #
@@ -34,7 +40,7 @@
 #     step. The scope check runs first and refuses a key that can see any
 #     project but the CI project. Both Neon actions are pinned by commit SHA.
 #   - The Blob and Upstash tokens are the CI stores', never production's, and
-#     each run uses its own rate-limit key prefix.
+#     each run and project uses its own rate-limit key prefix.
 #   - A skipped @critical test fails the job; a flaky one is named in a warning.
 #   - Every connection string and the password are masked before any other
 #     step runs; the seed masks each exported value before it is written.
@@ -62,23 +68,31 @@ jobs:
         run: echo "::notice title=e2e critical skipped::A fork pull request gets no secrets, so this run cannot create its Neon branch or reach the CI Blob and Upstash stores. The hermetic quality gates still cover the change." | tee -a "$GITHUB_STEP_SUMMARY"
 
   e2e:
-    name: e2e @critical (chromium + mobile-chrome)
+    name: e2e @critical (${{ matrix.project }})
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    strategy:
+      # One project's red must not cancel the other: both reports are wanted.
+      fail-fast: false
+      matrix:
+        project: [chromium, mobile-chrome]
     # A kill switch, not a budget: DW-7's budget is 25 min, and the spike
     # measures where the job really lands.
     timeout-minutes: 45
     permissions:
       contents: read
     env:
-      CI_E2E_BRANCH_NAME: ci-e2e/${{ github.run_id }}-${{ github.run_attempt }}
+      # Per project: the two jobs of a run must not share (or reuse) a branch.
+      # The `ci-e2e/` prefix is what the DW-9 guard and the sweep key on.
+      CI_E2E_BRANCH_NAME: ci-e2e/${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.project }}
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
       # US runner, Singapore-class latency: give each address 1 s to connect
       # (see integration-smoke.yml for the AggregateError ETIMEDOUT it avoids).
       NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
       # Own Upstash buckets per run: the CI store and the persona emails are
-      # shared with other runs (M2; RATE_LIMIT_KEY_PREFIX, default swecham).
-      RATE_LIMIT_KEY_PREFIX: swecham-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      # shared with other runs and with the sibling project job (M2;
+      # RATE_LIMIT_KEY_PREFIX, default swecham; 1-64 of [a-z0-9-]).
+      RATE_LIMIT_KEY_PREFIX: swecham-ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.project }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -217,40 +231,31 @@ jobs:
       - name: Install Chromium for Playwright
         run: pnpm exec playwright install --with-deps chromium
 
-      # `retries` stays what playwright.config.ts sets under CI. Each project
-      # writes its own report, JSON and output dir: Playwright clears
-      # test-results/ and overwrites the HTML report at the start of a run.
-      - name: e2e @critical on chromium
-        id: chromium
+      # `retries` stays what playwright.config.ts sets under CI. The project
+      # arrives through env (no `${{ }}` inside `run:`); its report, JSON and
+      # output dir are named after it.
+      - name: e2e @critical on the matrix project
+        id: e2e
         timeout-minutes: 15
         env:
-          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/chromium
-          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-results/chromium.json
+          PROJECT: ${{ matrix.project }}
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/${{ matrix.project }}
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-results/${{ matrix.project }}.json
         run: |
           t0=$SECONDS
-          trap 'echo "e2e-chromium $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
-          pnpm exec playwright test --config=playwright.attach.config.ts --grep @critical --project=chromium --workers=1 --max-failures=5 --trace=retain-on-failure --reporter=list,html,json --output=test-results/chromium
-
-      - name: e2e @critical on mobile-chrome
-        id: mobile-chrome
-        timeout-minutes: 15
-        if: ${{ !cancelled() && steps.server.outcome == 'success' }}
-        env:
-          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/mobile-chrome
-          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-results/mobile-chrome.json
-        run: |
-          t0=$SECONDS
-          trap 'echo "e2e-mobile-chrome $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
-          pnpm exec playwright test --config=playwright.attach.config.ts --grep @critical --project=mobile-chrome --workers=1 --max-failures=5 --trace=retain-on-failure --reporter=list,html,json --output=test-results/mobile-chrome
+          trap 'echo "e2e-$PROJECT $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
+          pnpm exec playwright test --config=playwright.attach.config.ts --grep @critical --project="$PROJECT" --workers=1 --max-failures=5 --trace=retain-on-failure --reporter=list,html,json --output=test-results/"$PROJECT"
 
       # Per spec file: wall time over every attempt, retries, and outcomes.
       # A skipped test is not a pass, so skips get their own column.
       - name: Timing and per-spec summary
         id: summary
         if: always()
+        env:
+          PROJECT: ${{ matrix.project }}
         run: |
           {
-            echo "## e2e @critical: timings"
+            echo "## e2e @critical ($PROJECT): timings"
             echo
             echo "| Phase | Seconds |"
             echo "|---|---|"
@@ -322,7 +327,7 @@ jobs:
         if: failure() || cancelled() || steps.summary.outputs.flaky == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-critical-${{ github.run_id }}-${{ github.run_attempt }}
+          name: e2e-critical-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.project }}
           path: |
             playwright-report/
             test-results/
