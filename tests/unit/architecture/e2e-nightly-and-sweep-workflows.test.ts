@@ -187,6 +187,29 @@ describe('.github/workflows/e2e-nightly.yml', () => {
     expect(body).toMatch(/exit 1/);
   });
 
+  // #592: the first full nightly (39241857172) ran with F6 and F7 OFF (the PR
+  // job's `.github/ci/e2e.env` keeps them off for @critical), so every events,
+  // broadcasts and E-Blast approval spec failed on its first assertion. The
+  // nightly layers its own flags over that file; the PR job never reads them.
+  it('turns on F6, F7 and E-Blast member approval for the full suite only (#592)', () => {
+    const overlay = read(join(process.cwd(), '.github', 'ci', 'e2e-nightly.env'));
+    for (const flag of ['FEATURE_F6_EVENTCREATE', 'FEATURE_F7_BROADCASTS', 'FEATURE_EBLAST_MEMBER_APPROVAL']) {
+      expect(overlay, flag).toMatch(new RegExp(`^${flag}=true\\s*$`, 'm'));
+    }
+    // Flags only: nothing secret-shaped in a file a public repo publishes.
+    for (const line of overlay.split(/\r?\n/).filter((l) => /^[A-Z]/.test(l))) {
+      expect(line, 'only FEATURE_* flags').toMatch(/^FEATURE_[A-Z0-9_]+=(true|false)\s*$/);
+    }
+    const apply = step(src, /- name: Apply the CI env/);
+    const base = apply.indexOf('.github/ci/e2e.env');
+    const layer = apply.indexOf('.github/ci/e2e-nightly.env');
+    expect(base, 'applies the shared CI env').toBeGreaterThan(-1);
+    // Later $GITHUB_ENV lines win, so the overlay must come after the base.
+    expect(layer, 'applies the nightly overlay after it').toBeGreaterThan(base);
+    const critical = read(join(process.cwd(), '.github', 'workflows', 'e2e-critical.yml'));
+    expect(critical, 'the PR job keeps F6/F7 off').not.toMatch(/e2e-nightly\.env/);
+  });
+
   it('runs the full suite on chromium with one worker against next dev from the base config', () => {
     const run = step(src, /- name: e2e full suite on chromium/);
     expect(run).toMatch(/--project=chromium/);
