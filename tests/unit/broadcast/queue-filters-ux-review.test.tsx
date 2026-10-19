@@ -259,10 +259,11 @@ describe('the global filter pattern (spec 122 US12b)', () => {
   // US12b UX review M1 / L8 — from 640 px the whole stage name and its count
   // show (AURA caps a Tag's text at 24ch outside its own chip row), and AURA's
   // own tip is the only tooltip on a cut chip.
-  it('a stage chip lifts AURA\'s text cap from sm up and carries no title tooltip', () => {
+  // AURA 5.51 (#160) lifts the cap for a toggle Tag inside FilterBar itself.
+  it('a stage chip reaches into no AURA class for its text cap and carries no title tooltip', () => {
     render(filters(true));
     const chip = stageChip(/changes requested/i);
-    expect(chip).toHaveClass('sm:[&_.aura-tag\\_\\_text]:max-w-none');
+    expect(chip.className).not.toContain('[&_.aura-tag');
     expect(chip).not.toHaveAttribute('title');
   });
 });

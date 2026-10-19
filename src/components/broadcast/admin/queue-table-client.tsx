@@ -60,14 +60,10 @@ const SORTED_COLUMN: Readonly<
   send_time: { id: 'sendTime', direction: 'ascending' },
 };
 
-// The row minimum counts each column's own minimum (stand-in until AURA #159:
-// DataTable counts 160 px for every flexible column). `String.raw` keeps the
-// `\_` escapes Tailwind reads in this file.
-const QUEUE_TABLE_BOX = String.raw`max-md:hidden [&_.aura-table\_\_head]:min-w-[var(--queue-row-min)] [&_.aura-table\_\_row]:min-w-[var(--queue-row-min)]`;
-// Actions, the last column (the header cell before AURA's end gutter, the body
-// cell before its row break), takes two and a half shares of the spare width so Approve and
-// Reject sit side by side on a wide grid (stand-in until AURA #162: no column weight).
-const ACTIONS_COLUMN_SHARE = String.raw`[&_.aura-table\_\_th:has(+.aura-table\_\_gutter--end)]:grow-[2.5] [&_.aura-table\_\_td:has(+.aura-table\_\_break)]:grow-[2.5]`;
+// The table box is the grid from 768px; phones get the cards. AURA counts
+// each column's own minimum for the row width (5.51, #159), so the grid fits
+// a 1280px window without scrolling sideways.
+const QUEUE_TABLE_BOX = 'max-md:hidden';
 
 export type EnrichedQueueRow = {
   readonly broadcastId: string;
@@ -264,10 +260,11 @@ export function QueueTableClient({
         ...QUEUE_COLUMN_LAYOUT.status,
         render: (row) => (
           // A stage name too long for the column (SV) wraps inside its pill,
-          // which then reads as a rounded box: a finite radius, clamped to a
-          // full pill on one line (stand-in until AURA #158: a StatusPill never wraps).
-          <span className="flex flex-col items-start gap-1 [&_.aura-pill]:whitespace-normal [&_.aura-pill]:rounded-[var(--aura-radius-lg)]">
-            <StatusPill tone={row.statusTone}>{row.statusBadgeLabel}</StatusPill>
+          // which then reads as a rounded box (AURA `wrap`, 5.51, #158).
+          <span className="flex flex-col items-start gap-1">
+            <StatusPill tone={row.statusTone} wrap>
+              {row.statusBadgeLabel}
+            </StatusPill>
             {row.whoseTurnLabel !== null ? (
               <span className="aura-text-caption">
                 <span className="text-[var(--aura-fg-secondary)]">{columnLabels.whoseTurn}:</span> {row.whoseTurnLabel}
@@ -288,6 +285,9 @@ export function QueueTableClient({
         key: 'timeInStage',
         label: columnLabels.timeInStage,
         ...QUEUE_COLUMN_LAYOUT.timeInStage,
+        // UX review M1 — `aria-sort` on the column the page's order follows
+        // (AURA `sortDirection`, 5.51, #157: no button, the order is the page's).
+        ...(SORTED_COLUMN[order].id === 'timeInStage' ? { sortDirection: SORTED_COLUMN[order].direction } : {}),
         // FR-026 — last activity (`stage_entered_at`) is the "since" line.
         render: (row) => (
           <span className="flex flex-col items-start gap-1">
@@ -302,6 +302,7 @@ export function QueueTableClient({
         key: 'sendTime',
         label: columnLabels.sendTime,
         ...QUEUE_COLUMN_LAYOUT.sendTime,
+        ...(SORTED_COLUMN[order].id === 'sendTime' ? { sortDirection: SORTED_COLUMN[order].direction } : {}),
         render: (row) => <SendTime row={row} proposedLabel={tQueue('row.proposed')} />,
       },
       {
@@ -333,25 +334,9 @@ export function QueueTableClient({
       });
     }
     return base;
-  }, [columnLabels, readOnly, tQueue]);
+  }, [columnLabels, readOnly, tQueue, order]);
 
-  const rowMin = `calc(${columns.reduce((sum, c) => sum + (c.width ?? c.minWidth ?? 160), 0)}px + 2 * var(--aura-space-6)${
-    selectionEnabled ? ' + var(--aura-table-select-width)' : ''
-  })`;
-
-  // UX review M1 — `aria-sort` on the column the order follows. AURA sets it
-  // only on a sortable column, and this list's order is the page's, not a
-  // header button's (stand-in until AURA #157: a fixed sort indication on a
-  // column the user cannot sort).
   useEffect(() => {
-    const sortedLabel = columnLabels[SORTED_COLUMN[order].id];
-    tableRef.current?.querySelectorAll<HTMLElement>('[role="columnheader"]').forEach((th) => {
-      if (th.textContent?.trim() === sortedLabel) {
-        th.setAttribute('aria-sort', SORTED_COLUMN[order].direction);
-      } else if (th.getAttribute('aria-sort') !== 'none') {
-        th.removeAttribute('aria-sort');
-      }
-    });
     // V2 — the bulk bar's Clear returns focus to the select-all checkbox by
     // this test id (`queue-bulk-action-bar.tsx`); AURA's header checkbox has
     // no prop for it, so it is tagged here.
@@ -431,8 +416,7 @@ export function QueueTableClient({
       </p>
       <div
         ref={tableRef}
-        className={readOnly ? QUEUE_TABLE_BOX : `${QUEUE_TABLE_BOX} ${ACTIONS_COLUMN_SHARE}`}
-        style={{ '--queue-row-min': rowMin } as React.CSSProperties}
+        className={QUEUE_TABLE_BOX}
       >
         <DataTable<EnrichedQueueRow>
           label={columnLabels.tableAria}
@@ -441,6 +425,9 @@ export function QueueTableClient({
           rowKey="broadcastId"
           rowHeight="auto"
           bleed
+          // Approve, Reject and the row links are Tab stops, not cells reached
+          // only with the arrows (AURA 5.51, #161).
+          keyboard="tab"
           {...(selectionEnabled
             ? {
                 selectable: true,

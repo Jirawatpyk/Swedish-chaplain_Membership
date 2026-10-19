@@ -691,14 +691,6 @@ summary,
     --aura-mesh-from: #5b9bd5;
     --aura-mesh-to: #ffe27a;
   }
-  /* The mouse wheel over a table scrolls the page (maintainer, 19 Oct 2026).
-     AURA contains overscroll on both axes, so once the box scrolls sideways
-     (even by a fraction of a pixel) a vertical wheel stopped at the table.
-     Sideways stays contained, so a trackpad swipe inside a wide table never
-     goes back a page (stand-in until AURA #163). */
-  .aura-table__scroll {
-    overscroll-behavior-y: auto;
-  }
 }
 
 @layer base {

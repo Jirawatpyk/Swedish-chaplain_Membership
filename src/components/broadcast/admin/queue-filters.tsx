@@ -392,9 +392,9 @@ export function QueueFilters({
         data-status={s}
         selected={checked}
         touchHeight
-        // From `sm` up the whole stage name and its count show
-        // (stand-in until AURA #160: a Tag's text is capped at 24ch outside FilterBar's own chips).
-        className="max-w-full sm:[&_.aura-tag\_\_text]:max-w-none"
+        // From `sm` up the whole stage name and its count show: a toggle Tag
+        // in FilterBar is not capped there (AURA 5.51, #160).
+        className="max-w-full"
         onClick={() => toggleStatus(s, !checked)}
       >
         {/* SV runs up to +28 %: below `sm` the label truncates inside its chip

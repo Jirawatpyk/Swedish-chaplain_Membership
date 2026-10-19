@@ -126,7 +126,7 @@ describe('QueueTableClient on AURA DataTable — selection, a11y, ICU', () => {
     expect(within(grid).queryByRole('button', { name: 'Approve' })).toBeNull();
   });
 
-  it('marks the column the order follows with aria-sort (stand-in until AURA #157)', () => {
+  it('marks the column the order follows with aria-sort: AURA `sortDirection` (#157)', () => {
     const { rerender } = renderTable();
     const header = (name: string) => screen.getByRole('columnheader', { name });
     expect(header('Time in stage')).toHaveAttribute('aria-sort', 'descending');
@@ -139,6 +139,17 @@ describe('QueueTableClient on AURA DataTable — selection, a11y, ICU', () => {
     );
     expect(header('Send time')).toHaveAttribute('aria-sort', 'ascending');
     expect(header('Time in stage')).not.toHaveAttribute('aria-sort');
+  });
+
+  // AURA 5.51 #161 (`keyboard="tab"`): Approve, Reject and the row links are
+  // Tab stops, not cells reached only with the arrows.
+  it('every row action is a Tab stop (AURA keyboard="tab", #161)', () => {
+    renderTable();
+    const grid = screen.getByRole('grid');
+    for (const button of within(grid).getAllByRole('button', { name: /approve|reject/i })) {
+      expect(button).not.toHaveAttribute('tabindex', '-1');
+    }
+    for (const link of within(grid).getAllByRole('link')) expect(link).not.toHaveAttribute('tabindex', '-1');
   });
 
   it('wraps a long subject instead of forcing the row wider', () => {

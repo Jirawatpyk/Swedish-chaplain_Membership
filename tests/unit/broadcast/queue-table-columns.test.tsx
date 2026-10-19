@@ -138,52 +138,40 @@ describe('the columns (UX review M1; parity comments 19 Oct)', () => {
     expect(minimums.reduce((sum, px) => sum + px, 0)).toBeLessThanOrEqual(871);
   });
 
-  it('the rows are only as wide as those minimums (stand-in until AURA #159)', () => {
+  // AURA 5.51 closed the stand-ins: the row minimum counts each column's own
+  // minimum (#159), a StatusPill wraps (#158), a column takes a grow weight (#162).
+  it('the rows are only as wide as those minimums: AURA counts them (#159), no app min-width', () => {
     render(table({ rows: [makeRow()] }));
-    const box = screen.getByRole('grid').closest<HTMLElement>('[style*="--queue-row-min"]');
-    expect(box).toHaveClass('[&_.aura-table\\_\\_row]:min-w-[var(--queue-row-min)]');
-    expect(box?.style.getPropertyValue('--queue-row-min')).toBe(
-      'calc(868px + 2 * var(--aura-space-6) + var(--aura-table-select-width))',
-    );
+    expect(screen.getByRole('grid').closest('[style*="--queue-row-min"]')).toBeNull();
+    expect(document.querySelector('[class*="queue-row-min"]')).toBeNull();
   });
 
-  it('a long stage name wraps inside its pill instead of running into the next column (stand-in until AURA #158)', () => {
+  it('a long stage name wraps inside its pill, a rounded box: AURA StatusPill `wrap` (#158)', () => {
     render(table({ rows: [makeRow()] }));
     const pill = cellOf('Stage').querySelector('.aura-pill');
-    expect(pill?.parentElement).toHaveClass('[&_.aura-pill]:whitespace-normal');
+    expect(pill).toHaveClass('is-wrap');
+    expect(pill?.parentElement?.className ?? '').not.toContain('[&_.aura-pill]');
   });
 
-  it('Stage is wide enough for a one-line pill, and a pill that still wraps is a rounded box, not a blob', () => {
+  it('Stage is wide enough for a one-line pill', () => {
     render(table({ rows: [makeRow()] }));
     const stage = within(screen.getByRole('grid'))
       .getAllByRole('columnheader')
       .find((th) => th.textContent?.trim() === 'Stage')!;
     expect(stage.getAttribute('style')).toMatch(/--aura-cell-min:\s*200px/);
-    expect(cellOf('Stage').querySelector('.aura-pill')?.parentElement).toHaveClass(
-      '[&_.aura-pill]:rounded-[var(--aura-radius-lg)]',
-    );
   });
 
   // Maintainer (19 Oct): Approve and Reject side by side where the screen
   // allows (~214 px), stacked at 1,280 where the columns are at their minimums.
-  it('Actions has a minimum, not a fixed width, and takes a bigger share of spare width (stand-in until AURA #162)', () => {
+  it('Actions has a minimum, not a fixed width, and two and a half shares of spare width: AURA `grow` (#162)', () => {
     render(table({ rows: [makeRow()] }));
     const actions = within(screen.getByRole('grid'))
       .getAllByRole('columnheader')
       .find((th) => th.textContent?.trim() === 'Actions')!;
     expect(actions.getAttribute('style')).toMatch(/--aura-cell-min:\s*128px/);
+    expect(actions.getAttribute('style')).toMatch(/--aura-cell-flex:\s*2\.5 1 0/);
     expect(actions.getAttribute('style')).not.toMatch(/--aura-cell-w:/);
-    const box = screen.getByRole('grid').closest<HTMLElement>('[style*="--queue-row-min"]');
-    expect(box).toHaveClass(
-      '[&_.aura-table\\_\\_th:has(+.aura-table\\_\\_gutter--end)]:grow-[2.5]',
-      '[&_.aura-table\\_\\_td:has(+.aura-table\\_\\_break)]:grow-[2.5]',
-    );
-  });
-
-  it('a read-only table has no Actions column and gives no column the bigger share', () => {
-    render(table({ rows: [makeRow()], readOnly: true }));
-    const box = screen.getByRole('grid').closest<HTMLElement>('[style*="--queue-row-min"]');
-    expect(box?.className).not.toContain('grow-[2.5]');
+    expect(document.querySelector('[class*="grow-[2.5]"]')).toBeNull();
   });
 
   it('whose turn is a line under the Stage pill, named by its label; none when nobody is waiting', () => {
