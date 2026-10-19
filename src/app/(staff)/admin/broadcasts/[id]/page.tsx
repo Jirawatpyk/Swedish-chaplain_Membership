@@ -4,8 +4,7 @@ import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
-import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/components/ui/inline-alert';
+import { Alert, Card } from '@jirawatpyk/aura-react/server';
 import { RelativeTime } from '@/components/shell/relative-time';
 import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
@@ -51,8 +50,9 @@ import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { asMemberId } from '@/modules/members';
 
-/** `CardTitle`'s type on a real `<h2>` — the shadcn `CardTitle` is a `<div>`, outside the heading tree. */
-const CARD_HEADING = 'font-heading text-base leading-snug font-medium';
+/** A field's label and value on AURA's type (the label in the secondary tone, never the empty-sentinel dash). */
+const FIELD_LABEL = 'aura-text-caption text-[var(--aura-fg-secondary)]';
+const FIELD_VALUE = 'mt-1 text-sm break-words';
 
 /** Stages whose E-Blast carries version rows (or is about to) — the thread is read only for these. */
 const VERSIONED_STATUSES: ReadonlySet<BroadcastStatus> = new Set([
@@ -237,7 +237,7 @@ export default async function AdminBroadcastDetailPage({
     failureKey !== null && t.has(failureKey) ? t(failureKey) : t('failureReason.generic');
   // R6.7 — a standing refusal is a decision about the member (warning); any
   // other token is a delivery failure (destructive).
-  const failureTone = failureToken !== null && STANDING_FAILURE_TOKENS.has(failureToken) ? 'warning' : 'destructive';
+  const failureTone = failureToken !== null && STANDING_FAILURE_TOKENS.has(failureToken) ? 'warning' : 'danger';
 
   // F119 PR-A R1 — a due `approved` E-Blast the cron is HOLDING because the
   // member's membership is awaiting payment (the same decision the cron makes;
@@ -308,111 +308,80 @@ export default async function AdminBroadcastDetailPage({
           under the status it explains. A note, not a live region: it is page
           content, not an event. Body text, not the muted empty-sentinel tone. */}
       {status === 'failed_to_dispatch' ? (
-        <InlineAlert tone={failureTone} role="note" data-testid="eblast-failure-reason">
-          <InlineAlertTitle>{t('failureReasonTitle')}</InlineAlertTitle>
-          <InlineAlertDescription>
-            <span className="block break-words leading-relaxed text-foreground">{failureReasonText}</span>
-          </InlineAlertDescription>
-        </InlineAlert>
+        <Alert tone={failureTone} role="note" title={t('failureReasonTitle')} data-testid="eblast-failure-reason">
+          <span className="block break-words leading-relaxed">{failureReasonText}</span>
+        </Alert>
       ) : null}
       {/* F119 PR-A R1 — held, not failed: it sends by itself once the member
           pays, or fails if the membership ends. Info, not warning: nothing is
           wrong with the E-Blast and staff have nothing to fix. */}
       {dispatchHeld ? (
-        <InlineAlert tone="info" role="note" data-testid="eblast-dispatch-held">
-          <InlineAlertTitle>{t('dispatchHeldTitle')}</InlineAlertTitle>
-          <InlineAlertDescription>
-            <span className="block break-words leading-relaxed text-foreground">{t('dispatchHeldBody')}</span>
-          </InlineAlertDescription>
-        </InlineAlert>
+        <Alert tone="info" role="note" title={t('dispatchHeldTitle')} data-testid="eblast-dispatch-held">
+          <span className="block break-words leading-relaxed">{t('dispatchHeldBody')}</span>
+        </Alert>
       ) : null}
 
       {threadUnavailable ? (
-        <InlineAlert tone="destructive" data-testid="eblast-thread-unavailable">
-          <InlineAlertTitle>{tContent('threadUnavailableTitle')}</InlineAlertTitle>
-          <InlineAlertDescription>
-            {/* PR #392 review D7 — the working copy / original / formatting
-                claim holds only on a versioned stage; elsewhere (approved,
-                sent, closed) only the history is missing. */}
-            <span className="block">
-              {VERSIONED_STATUSES.has(status)
-                ? tContent('threadUnavailableBody')
-                : tContent('threadUnavailableHistoryBody')}
-            </span>
-            <span className="mt-2 block">
-              <RefreshPageButton label={tButtons('retry')} />
-            </span>
-          </InlineAlertDescription>
-        </InlineAlert>
+        <Alert
+          tone="danger"
+          title={tContent('threadUnavailableTitle')}
+          action={<RefreshPageButton label={tButtons('retry')} />}
+          data-testid="eblast-thread-unavailable"
+        >
+          {/* PR #392 review D7 — the working copy / original / formatting
+              claim holds only on a versioned stage; elsewhere (approved,
+              sent, closed) only the history is missing. */}
+          {VERSIONED_STATUSES.has(status)
+            ? tContent('threadUnavailableBody')
+            : tContent('threadUnavailableHistoryBody')}
+        </Alert>
       ) : null}
       {showNoPortalUser ? (
-        <InlineAlert tone="warning" role="note" data-testid="eblast-warning-no-portal-user">
-          <InlineAlertTitle>{tWarnings('noPortalUserTitle')}</InlineAlertTitle>
-          <InlineAlertDescription>
-            {tWarnings('noPortalUserBody', { company: memberDisplayName })}
-          </InlineAlertDescription>
-        </InlineAlert>
+        <Alert tone="warning" role="note" title={tWarnings('noPortalUserTitle')} data-testid="eblast-warning-no-portal-user">
+          {tWarnings('noPortalUserBody', { company: memberDisplayName })}
+        </Alert>
       ) : null}
       {unsafeImages.length > 0 ? (
-        <InlineAlert tone="warning" role="note" data-testid="eblast-warning-unsafe-images">
-          <InlineAlertTitle>{tWarnings('unsafeImagesTitle')}</InlineAlertTitle>
-          <InlineAlertDescription>
-            <span className="block">{tWarnings('unsafeImagesBody')}</span>
-            <ul className="mt-1 list-disc space-y-1 pl-5">
-              {unsafeImages.map((image) => (
-                <li key={image.src} className="break-all">
-                  <code className="text-xs">{image.src}</code>
-                  {' — '}
-                  {tWarnings(`reason.${image.reason}`)}
-                </li>
-              ))}
-            </ul>
-          </InlineAlertDescription>
-        </InlineAlert>
+        <Alert tone="warning" role="note" title={tWarnings('unsafeImagesTitle')} data-testid="eblast-warning-unsafe-images">
+          <span className="block">{tWarnings('unsafeImagesBody')}</span>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {unsafeImages.map((image) => (
+              <li key={image.src} className="break-all">
+                <code className="text-xs">{image.src}</code>
+                {' — '}
+                {tWarnings(`reason.${image.reason}`)}
+              </li>
+            ))}
+          </ul>
+        </Alert>
       ) : null}
 
       {/* F119 T063 — the stage header (contract § Page contracts; FR-026):
           whose turn, time in the stage, the round, and the member's proposed
           time beside the confirmed one (FR-016 — both, separately). The
           stage itself is the header badge above. */}
-      <section aria-labelledby="eblast-stage-title" data-stage={stageOf(status)}>
-        <Card>
-          <CardHeader>
-            <h2 id="eblast-stage-title" className={CARD_HEADING}>
-              {tHeader('title')}
-            </h2>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <Card titleId="eblast-stage-title" title={tHeader('title')} headingLevel={2} data-stage={stageOf(status)}>
+        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field
                 label={tHeader('turn')}
                 value={turn === null ? <EmptyValue label={tHeader('turnValue.none')} /> : tHeader(`turnValue.${turn}`)}
                 testId="eblast-whose-turn"
               />
               <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+                <dt className={FIELD_LABEL}>
                   {tHeader('timeInStage')}
                 </dt>
-                <dd className="mt-1 text-sm">
+                <dd className={FIELD_VALUE}>
                   <RelativeTime iso={broadcast.stageEnteredAt.toISOString()} title={fmt.format(broadcast.stageEnteredAt)} />
                 </dd>
               </div>
               {showRoundRow ? <Field label={tHeader('round')} value={roundValue} testId="eblast-round" /> : null}
               <Field label={tHeader('proposedSendAt')} value={formatDate(broadcast.proposedSendAt)} />
               <Field label={t('fields.scheduledFor')} value={formatDate(broadcast.scheduledFor)} />
-            </dl>
-          </CardContent>
-        </Card>
-      </section>
+        </dl>
+      </Card>
 
-      <section aria-labelledby="eblast-details-title">
-        <Card>
-          <CardHeader>
-            <h2 id="eblast-details-title" className={CARD_HEADING}>
-              {tHeader('detailsTitle')}
-            </h2>
-          </CardHeader>
-          <CardContent>
+      <Card titleId="eblast-details-title" title={tHeader('detailsTitle')} headingLevel={2}>
             {/* B1 UX hardening — `<dl>/<dt>/<dd>` so each label↔value pair is
                 announced as a unit (WCAG 1.3.1). */}
             <dl className="grid gap-3 sm:grid-cols-2">
@@ -425,17 +394,12 @@ export default async function AdminBroadcastDetailPage({
               />
               <Field label={t('fields.recipientCount')} value={String(broadcast.estimatedRecipientCount)} />
             </dl>
-          </CardContent>
-        </Card>
-      </section>
+      </Card>
 
       {memberFeedback !== null && feedbackTitle !== null ? (
-        <InlineAlert tone="info" role="note" data-testid="eblast-member-feedback">
-          <InlineAlertTitle>{feedbackTitle}</InlineAlertTitle>
-          <InlineAlertDescription>
-            <span className="block whitespace-pre-line break-words text-foreground">{memberFeedback.reason}</span>
-          </InlineAlertDescription>
-        </InlineAlert>
+        <Alert tone="info" role="note" title={feedbackTitle} data-testid="eblast-member-feedback">
+          <span className="block whitespace-pre-line break-words">{memberFeedback.reason}</span>
+        </Alert>
       ) : null}
 
       {showWorkspace && workingCopy !== null && original !== null && originalPreview !== null ? (
@@ -482,25 +446,15 @@ export default async function AdminBroadcastDetailPage({
           />
         </div>
       ) : (
-        <section aria-labelledby="eblast-body-title">
-          <Card>
-            <CardHeader>
-              <h2 id="eblast-body-title" className={CARD_HEADING}>
-                {t('fields.body')}
-              </h2>
-            </CardHeader>
-            <CardContent>
-              {bodyRenderFailed ? (
-                <div role="alert" className="rounded-md border border-destructive/40 bg-destructive-surface p-3 text-sm text-destructive">
-                  <p className="font-medium">{t('bodyRenderFailedTitle')}</p>
-                  <p className="text-xs">{t('bodyRenderFailedHint')}</p>
-                </div>
-              ) : (
-                <PreviewSurface state={previewState} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
-              )}
-            </CardContent>
-          </Card>
-        </section>
+        <Card titleId="eblast-body-title" title={t('fields.body')} headingLevel={2}>
+          {bodyRenderFailed ? (
+            <Alert tone="danger" role="alert" title={t('bodyRenderFailedTitle')}>
+              {t('bodyRenderFailedHint')}
+            </Alert>
+          ) : (
+            <PreviewSurface state={previewState} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
+          )}
+        </Card>
       )}
 
       {threadModel !== null && hasThreadHistory(threadModel) ? (
@@ -633,26 +587,18 @@ function ContentCard({
   readonly noteLabel?: string;
 }): React.ReactElement {
   return (
-    <section aria-labelledby={id} className="min-w-0">
-      <Card className="h-full">
-        <CardHeader>
-          <h2 id={id} className={CARD_HEADING}>
-            {title}
-          </h2>
-          {description !== undefined ? <CardDescription>{description}</CardDescription> : null}
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm font-medium break-words">{subject}</p>
-          {note !== undefined && note !== null && noteLabel !== undefined ? (
-            <p className="rounded-md bg-muted/50 px-3 py-2 text-sm">
-              <span className="block text-xs uppercase tracking-wide text-muted-foreground">{noteLabel}</span>
-              <span className="whitespace-pre-line">{note}</span>
-            </p>
-          ) : null}
-          <PreviewSurface state={preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
-        </CardContent>
-      </Card>
-    </section>
+    <Card titleId={id} title={title} headingLevel={2} description={description} className="h-full min-w-0">
+      <div className="space-y-2">
+        <p className="text-sm font-medium break-words">{subject}</p>
+        {note !== undefined && note !== null && noteLabel !== undefined ? (
+          <p className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] px-3 py-2 text-sm">
+            <span className={`block ${FIELD_LABEL}`}>{noteLabel}</span>
+            <span className="whitespace-pre-line">{note}</span>
+          </p>
+        ) : null}
+        <PreviewSurface state={preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
+      </div>
+    </Card>
   );
 }
 
@@ -660,7 +606,7 @@ function ContentCard({
 function EmptyValue({ label }: { readonly label: string }): React.ReactElement {
   return (
     <>
-      <span aria-hidden="true" className="text-muted-foreground">—</span>
+      <span aria-hidden="true" className="text-[var(--aura-fg-secondary)]">—</span>
       <span className="sr-only">{label}</span>
     </>
   );
@@ -679,10 +625,10 @@ function Field({
   // a `<dt>`/`<dd>` pair.
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">
+      <dt className={FIELD_LABEL}>
         {label}
       </dt>
-      <dd className="mt-1 text-sm" data-testid={testId}>
+      <dd className={FIELD_VALUE} data-testid={testId}>
         {value}
       </dd>
     </div>
