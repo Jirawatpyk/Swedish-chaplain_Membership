@@ -54,7 +54,8 @@ describe('F119 T063 — Start formatted version (UX review)', () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 201 }));
     vi.stubGlobal('fetch', fetchMock);
     renderStart('leaves_submitted');
-    expect(trigger().className).not.toContain('bg-primary');
+    // Spec 122 US12c-1 — AURA's secondary button, not its primary.
+    expect(trigger().className).toContain('aura-btn--secondary');
 
     fireEvent.click(trigger());
     const dialog = await screen.findByRole('alertdialog');
@@ -63,7 +64,7 @@ describe('F119 T063 — Start formatted version (UX review)', () => {
 
     const confirm = within(dialog).getByTestId('eblast-start-version-confirm');
     // Non-destructive: nothing is lost that cannot be recovered by the member.
-    expect(confirm.className).not.toContain('text-destructive');
+    expect(confirm.className).not.toMatch(/aura-btn--danger/);
     fireEvent.click(confirm);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   });
@@ -72,7 +73,7 @@ describe('F119 T063 — Start formatted version (UX review)', () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 201 }));
     vi.stubGlobal('fetch', fetchMock);
     renderStart('none');
-    expect(trigger().className).toContain('bg-primary');
+    expect(trigger().className).toContain('aura-btn--primary');
     fireEvent.click(trigger());
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('alertdialog')).toBeNull();
@@ -124,5 +125,16 @@ describe('F119 T063 — Start formatted version (UX review)', () => {
     trigger().focus();
     fireEvent.click(trigger());
     await waitFor(() => expect(document.activeElement).toBe(document.getElementById('main-content')));
+  });
+
+  it('spec 122 US12c-1: the void confirmation is an AURA alert dialog whose confirm is the danger button', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 201 })));
+    renderStart('voids_approval');
+    expect(trigger().className).toContain('aura-btn');
+    fireEvent.click(trigger());
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.closest('.aura-dialog, [class*="aura-dialog"]')).not.toBeNull();
+    expect(within(dialog).getByTestId('eblast-start-version-confirm').className).toContain('aura-btn--danger');
+    expect(document.querySelector('[data-slot="alert-dialog-content"]')).toBeNull();
   });
 });

@@ -31,6 +31,12 @@
  * D4/D5; a toast would sit behind the modal) — else the #390 toast. A refusal
  * inside the confirmation is focused when it lands (review D8, § 6.4).
  *
+ * Spec 122 US12c-1 (board `Admin-eblast-start`) — AURA: the trigger an AURA
+ * `Button` (primary from `changes_requested`, secondary where it asks first;
+ * `aria-disabled` while it runs, so it keeps focus), the confirmation an AURA
+ * `Dialog role="alertdialog"` whose confirm is the danger button when it voids
+ * an approval.
+ *
  * Focus: on success the trigger unmounts with the stage, so the shared
  * resolver lands on `#main-content`; on Cancel/ESC it returns to the trigger.
  * The no-confirm path (`none`) has no dialog to hand focus on, so it moves
@@ -40,21 +46,10 @@
  * lands.
  */
 import { useRef, useState, useTransition } from 'react';
-import { Loader2Icon, PenLine } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { Button, Dialog } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
@@ -152,10 +147,11 @@ export function StartFormattedVersionAction({
         ref={triggerRef}
         type="button"
         data-testid="eblast-start-version"
-        variant={asks ? 'outline' : 'default'}
-        disabled={pending}
-        focusableWhenDisabled
-        aria-busy={pending || undefined}
+        variant={asks ? 'secondary' : 'primary'}
+        touchHeight
+        icon="pencil"
+        loading={pending && !confirmOpen}
+        aria-disabled={pending || undefined}
         onClick={() => {
           if (pending) return;
           closedViaSuccessRef.current = false;
@@ -165,53 +161,45 @@ export function StartFormattedVersionAction({
           } else start();
         }}
       >
-        {pending && !confirmOpen ? (
-          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-        ) : (
-          <PenLine className="size-4" aria-hidden="true" />
-        )}
         {t('button')}
       </Button>
       {asks ? (
-        <AlertDialog
+        <Dialog
+          role="alertdialog"
           open={confirmOpen}
-          onOpenChange={(next) => {
-            if (!pending) setConfirmOpen(next);
+          dismissible={!pending}
+          onClose={() => {
+            if (!pending) setConfirmOpen(false);
           }}
-        >
-          <AlertDialogContent finalFocus={finalFocus}>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{voids ? t('voidTitle') : t('submittedTitle')}</AlertDialogTitle>
-              <AlertDialogDescription>{voids ? t('voidBody', { round }) : t('submittedBody')}</AlertDialogDescription>
-            </AlertDialogHeader>
-            {dialogError === null ? null : dialogError.kind === 'read_only' ? (
-              <InlineWarning
-                id={DIALOG_ERROR_ID}
-                title={tReadOnly('readOnlyMode')}
-                description={tReadOnly('readOnlyNothingChanged')}
-              />
-            ) : (
-              <InlineError id={DIALOG_ERROR_ID} message={dialogError.message} />
-            )}
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={pending}>{voids ? t('voidCancel') : t('submittedCancel')}</AlertDialogCancel>
-              <AlertDialogAction
+          finalFocus={() => finalFocus() || null}
+          title={voids ? t('voidTitle') : t('submittedTitle')}
+          description={voids ? t('voidBody', { round }) : t('submittedBody')}
+          footer={
+            <>
+              <Button variant="secondary" disabled={pending} onClick={() => setConfirmOpen(false)}>
+                {voids ? t('voidCancel') : t('submittedCancel')}
+              </Button>
+              <Button
                 data-testid="eblast-start-version-confirm"
-                variant={voids ? 'destructive' : 'default'}
-                disabled={pending}
-                focusableWhenDisabled
-                aria-busy={pending || undefined}
-                onClick={(e) => {
-                  e.preventDefault();
-                  start();
-                }}
+                variant={voids ? 'danger' : 'primary'}
+                loading={pending}
+                onClick={start}
               >
-                {pending ? <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : null}
                 {voids ? t('voidConfirm') : t('submittedConfirm')}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+              </Button>
+            </>
+          }
+        >
+          {dialogError === null ? null : dialogError.kind === 'read_only' ? (
+            <InlineWarning
+              id={DIALOG_ERROR_ID}
+              title={tReadOnly('readOnlyMode')}
+              description={tReadOnly('readOnlyNothingChanged')}
+            />
+          ) : (
+            <InlineError id={DIALOG_ERROR_ID} message={dialogError.message} />
+          )}
+        </Dialog>
       ) : null}
     </>
   );
