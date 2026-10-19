@@ -2,11 +2,9 @@
 
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertCircleIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { RouteErrorPanel } from '@/components/shell/route-error-panel';
 
 /**
  * F119 T142 (US6-AS3, FR-047) — segment-scoped error boundary for the staff
@@ -14,11 +12,16 @@ import { PageHeader } from '@/components/layout/page-header';
  * render that fails THROWS from the page and lands here instead of the staff
  * root boundary, keeping the admin shell intact — the queue's boundary, one
  * level down. Same `DetailContainer` as page.tsx + loading.tsx
- * (`check:layout`).
+ * (`check:layout`). Spec 122 US12c-1 — the shared AURA error panel (generic
+ * message, error id, retry), as every migrated route.
  */
-export default function BroadcastReviewError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  const t = useTranslations('errors');
-  const tButtons = useTranslations('buttons');
+export default function BroadcastReviewError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}): React.JSX.Element {
   const tReview = useTranslations('admin.broadcasts.review');
 
   useEffect(() => {
@@ -28,18 +31,7 @@ export default function BroadcastReviewError({ error, reset }: { error: Error & 
   return (
     <DetailContainer>
       <PageHeader title={tReview('title')} />
-      <Card>
-        <CardHeader className="flex flex-row items-start gap-3">
-          <AlertCircleIcon className="size-6 text-destructive" aria-hidden />
-          <div>
-            <CardTitle>{t('generic')}</CardTitle>
-            <CardDescription>{error.digest ? t('errorId', { id: error.digest }) : null}</CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Button onClick={reset}>{tButtons('retry')}</Button>
-        </CardContent>
-      </Card>
+      <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </DetailContainer>
   );
 }

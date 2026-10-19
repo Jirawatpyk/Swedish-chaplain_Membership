@@ -17,7 +17,9 @@ describe('admin E-Blast detail skeleton (M9)', () => {
 
   it('no skeleton bar has a fixed width wider than a 320 px viewport can hold', () => {
     const { container } = render(<AdminBroadcastDetailLoading />);
-    const fixedWide = Array.from(container.querySelectorAll('[data-slot="skeleton"]')).filter((el) =>
+    const bars = container.querySelectorAll('[data-slot="skeleton-block"]');
+    expect(bars.length).toBeGreaterThan(0);
+    const fixedWide = Array.from(bars).filter((el) =>
       /(?:^|\s)w-(?:7[2-9]|[89]\d)(?:\s|$)/.test(el.className),
     );
     expect(fixedWide).toEqual([]);
@@ -39,11 +41,17 @@ describe('admin E-Blast detail skeleton reserves the two-column content grid (T0
     expect(grid).not.toBeNull();
     expect(grid!.className).toContain('lg:grid-cols-2');
 
-    const cards = Array.from(grid!.children).filter((el) => el.getAttribute('data-slot') === 'card');
+    const cards = Array.from(grid!.children).filter((el) => el.classList.contains('aura-card'));
     expect(cards).toHaveLength(2);
     // Word-bounded: the Card's own `overflow-hidden` is not a `hidden`.
     expect(cards[0]!.className).not.toMatch(/(?:^|\s)hidden(?:\s|$)/);
     expect(cards[1]!.className).toContain('hidden lg:flex');
+  });
+
+  it('spec 122 US12c-1 — every card is an AURA card and every bar the shared skeleton block', () => {
+    const { container } = render(<AdminBroadcastDetailLoading />);
+    expect(container.querySelectorAll('.aura-card')).toHaveLength(4);
+    expect(container.querySelector('[data-slot="card"], [data-slot="skeleton"]')).toBeNull();
   });
 
   it("each column reserves the page's own preview frame height", () => {
