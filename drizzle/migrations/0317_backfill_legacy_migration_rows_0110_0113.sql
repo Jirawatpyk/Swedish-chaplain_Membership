@@ -12,8 +12,16 @@
 --     renewal_cycles, so there is nothing left for it to fix;
 --   - no __drizzle_migrations row has created_at 1792224000001…0004, and the
 --     window between 0109 and 0114 holds exactly 0109's row.
+--   - prod's max(created_at) is exactly 0316's `when` (1798544900000), so
+--     drizzle's normal path does reach 0317 (1798545000000).
 -- So recording them is bookkeeping only. This migration runs no DDL and
 -- touches no application table.
+--
+-- WHY A MIGRATION, NOT scripts/reconcile-drizzle-ledger.ts: that script writes
+-- the same (hash, created_at) rows, but it would have to be run against prod
+-- by hand, and prod write scripts are denied (D-025). A migration is the one
+-- sanctioned way to write to prod: it is reviewed, and it is applied by the
+-- deploy itself.
 --
 -- HASH: sha256 of each file's bytes as a Linux checkout reads them (the git
 -- blob), which is what drizzle computes on Vercel. Phase 4 matches on
