@@ -187,6 +187,20 @@ describe('.github/workflows/e2e-nightly.yml', () => {
     expect(body).toMatch(/exit 1/);
   });
 
+  // #592: the first full nightly (39241857172) ran with F6 and F7 OFF (the PR
+  // job's `.github/ci/e2e.env` keeps them off for @critical), so every events,
+  // broadcasts and E-Blast approval spec failed on its first assertion. The
+  // nightly layers its own flags over that file; the PR job never reads them.
+  it('runs every e2e job with F6, F7 and E-Blast member approval on, as in production (#592)', () => {
+    // The same flags as production, from the shared CI env file.
+    const shared = read(join(process.cwd(), '.github', 'ci', 'e2e.env'));
+    for (const flag of ['FEATURE_F6_EVENTCREATE', 'FEATURE_F7_BROADCASTS', 'FEATURE_EBLAST_MEMBER_APPROVAL']) {
+      expect(shared, flag).toMatch(new RegExp(`^${flag}=true\\s*$`, 'm'));
+    }
+    const apply = step(src, /- name: Apply the CI env/);
+    expect(apply, 'applies the shared CI env').toMatch(/\.github\/ci\/e2e\.env/);
+  });
+
   it('runs the full suite on chromium with one worker against next dev from the base config', () => {
     const run = step(src, /- name: e2e full suite on chromium/);
     expect(run).toMatch(/--project=chromium/);
