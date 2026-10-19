@@ -44,4 +44,13 @@ describe('OriginalDisclosure', () => {
     expect(container.querySelector('summary')!.className).toContain('lg:hidden');
     expect(screen.getAllByTestId('original-card')).toHaveLength(1);
   });
+  it('from lg it fills the comparison column, so both cards end level (UX review L3)', () => {
+    at(1280);
+    const { container } = render(
+      <OriginalDisclosure summary="Member's original">
+        <div data-testid="original-card" />
+      </OriginalDisclosure>,
+    );
+    expect(container.querySelector('details')).toHaveClass('lg:h-full');
+  });
 });

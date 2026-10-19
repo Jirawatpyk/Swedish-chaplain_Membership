@@ -38,7 +38,7 @@ export function OriginalDisclosure({
       data-testid="eblast-original-disclosure"
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
-      className="min-w-0"
+      className="min-w-0 lg:h-full"
     >
       <summary className="flex min-h-11 cursor-pointer items-center rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] px-4 text-sm font-medium lg:hidden">
         {summary}
