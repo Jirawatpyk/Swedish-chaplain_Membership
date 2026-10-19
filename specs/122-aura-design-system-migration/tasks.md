@@ -721,7 +721,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1216 [US12] Review actions, approve, reject and clear-halt dialogs on AURA; bodies, toasts, undo and final focus unchanged. Test: `approve-dialog-*`, `reject-dialog`, `review-actions-halves`.
 - [x] T1217 [US12] Banners (SLA, overdue, halt, halt-unavailable, inline warning) as AURA `Alert`; page frame (PageHeader actions, Card), loading and error on AURA.
 - [x] T1218 [US12] The shared reason-confirmation dialog and typed-phrase field on AURA. Test: `tests/unit/components/shell/{reason-confirmation-dialog,typed-phrase-field}.test.tsx`.
-- [ ] T1219 [US12] Exit: `MIGRATED_PATHS` and a US12b ratchet block (controls move to US12c/d files); preview views; budgets; e2e selectors; gates; shots; UX and security reviews; relay R57.
+- [x] T1219 [US12] Exit: `MIGRATED_PATHS` and a US12b ratchet block (controls move to US12c/d files); preview views; budgets; e2e selectors; gates; shots; UX and security reviews; relay R57.
 - [ ] T1220 [US12] US12c: approval-round detail (workspace, schedule dialog, start formatted version, version thread, cancel), plus the portal detail and member sign-off.
 - [ ] T1230 [US12] US12d: compose (staff proxy and portal), editor toolbar and dialogs, quota display, plus the benefits page's E-Blast tab.
 
