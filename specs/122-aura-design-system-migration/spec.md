@@ -649,6 +649,10 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - the selection announcer and order hint;
   - the halt, SLA and overdue banners;
   - the typed-phrase normaliser (case-insensitive, unlike the refund gate).
+- **Parity comments (maintainer, 19 Oct: "group it neatly", "why two boxes?"):**
+  - The Stage chips sit in labelled rows, "In review" and "Closed", each named by its caption on screen (the caption on the left from 640 px, above the chips on a phone). The two presets move into a third row, "Quick views", before the member and date fields.
+  - From / To become one AURA "Submitted" `FilterDateRange` in the tenant timezone, as audit (US10b) and change requests already do. The `fromDate` / `toDate` URL keys and their server parsing are unchanged. The picker writes a whole range (or "Any time") at once, so the 300 ms date debounce goes, and the UI no longer sets a lone "from" day; a URL that carries one still filters, the same step audit took.
+  - The typed-phrase field shows its phrase once. When the label already names it ("Type Acme Co., Ltd. to confirm", "Type CANCEL to confirm"), the grey copy under the label goes: it read as a second field and, being focusable, took the dialog's first focus. A subject gate, whose label only refers to the phrase, keeps the box and its copy button.
 
 ## User Scenarios & Testing *(mandatory)*
 

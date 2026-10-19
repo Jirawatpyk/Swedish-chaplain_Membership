@@ -323,9 +323,9 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     await expect(
       page.getByRole('combobox', { name: /member/i }).first(),
     ).toBeVisible();
-    // Date range inputs still present (controlled).
-    await expect(page.locator('input[name="fromDate"]').first()).toBeVisible();
-    await expect(page.locator('input[name="toDate"]').first()).toBeVisible();
+    // One AURA "Submitted" date range (parity comments, 19 Oct; it was two
+    // native date boxes).
+    await expect(page.getByRole('button', { name: /^submitted:/i }).first()).toBeVisible();
   });
 
   test('D1: filter checkboxes round-trip through URL (uncheck submitted → URL writes status_all sentinel)', async ({

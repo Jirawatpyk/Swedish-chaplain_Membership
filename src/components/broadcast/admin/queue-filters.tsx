@@ -18,11 +18,11 @@
  * Findings closed by this file: D1, D2, D3 (filter buttons), A1, A2,
  * A3, H3 (see specs/010-email-broadcast review report).
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState, useTransition } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { CalendarClockIcon, InboxIcon } from 'lucide-react';
-import { Button, FilterBar, FilterSelect, Tag, TextField } from '@jirawatpyk/aura-react';
+import { Button, FilterBar, FilterDateRange, FilterSelect, Tag } from '@jirawatpyk/aura-react';
 // Import directly from the Domain value-object file (NOT the module
 // barrel) — the barrel re-exports infrastructure adapters that pull in
 // server-only Next.js APIs (`revalidateTag` via the F5 payments repo
@@ -34,8 +34,6 @@ import {
   type BroadcastStatus,
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { MARKETING_TURN_STATUSES } from '@/modules/broadcasts/domain/stage/whose-turn';
-
-const DEBOUNCE_MS = 300;
 
 // Default-view filter — mirrors `page.tsx` `statusRaw` resolution so
 // the visual checkbox state matches what the server actually filters
@@ -114,12 +112,15 @@ export interface QueueFiltersProps {
   readonly stageCounts: Readonly<Record<BroadcastStatus, number>> | null;
   /** F119 T116 — `FEATURE_EBLAST_MEMBER_APPROVAL`, read on the server (`readEblastStageChips`). */
   readonly approvalRoundEnabled: boolean;
+  /** The tenant's IANA timezone — the "Submitted" range's today (the page turns the days into UTC bounds). */
+  readonly timeZone: string;
 }
 
 export function QueueFilters({
   memberOptions,
   stageCounts,
   approvalRoundEnabled,
+  timeZone,
 }: QueueFiltersProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.queue.filters');
   const tStatus = useTranslations('admin.broadcasts.queue.status');
@@ -128,7 +129,6 @@ export function QueueFilters({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // UX review LOW — set just before a navigation that will unmount the
   // focused control (a chip offered only because the URL named it; Reset once
   // nothing is left to reset). See the effect below `isOffered`.
@@ -183,23 +183,6 @@ export function QueueFilters({
   const currentMemberId = searchParams.get('memberId') ?? '';
   const currentFromDate = searchParams.get('fromDate') ?? '';
   const currentToDate = searchParams.get('toDate') ?? '';
-  // Spec 122 US12b — the date fields keep their typed value with the page
-  // (AURA moves the bar's controls into the phone "Filters" sheet and back, so
-  // an uncontrolled field would reset). Each re-syncs when the URL changes
-  // (navigation, Reset), with the render-time "adjust state when a prop
-  // changes" pattern; typing still commits to the URL after DEBOUNCE_MS.
-  const [fromInput, setFromInput] = useState(currentFromDate);
-  const [toInput, setToInput] = useState(currentToDate);
-  const [syncedFrom, setSyncedFrom] = useState(currentFromDate);
-  const [syncedTo, setSyncedTo] = useState(currentToDate);
-  if (currentFromDate !== syncedFrom) {
-    setSyncedFrom(currentFromDate);
-    setFromInput(currentFromDate);
-  }
-  if (currentToDate !== syncedTo) {
-    setSyncedTo(currentToDate);
-    setToInput(currentToDate);
-  }
   // FR-030 — the chip counts are per stage for the WHOLE tenant (the FR-025
   // backlog; R18 offers a chip by them), so they do not follow a member filter,
   // a date range or the Upcoming bound. With one of those on, the Stage group
@@ -302,16 +285,6 @@ export function QueueFilters({
     [currentStatus, pushUrl, approvalRoundEnabled, stageCounts],
   );
 
-  const onDateChange = useCallback(
-    (key: 'fromDate' | 'toDate', value: string) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        pushUrl({ [key]: value || null } as Parameters<typeof pushUrl>[0]);
-      }, DEBOUNCE_MS);
-    },
-    [pushUrl],
-  );
-
   // "Has any user-applied filter" — true when the URL has any explicit
   // query param. The default-status fallback above does NOT count
   // (no URL param yet → no Clear button to surface).
@@ -344,7 +317,6 @@ export function QueueFilters({
   // submitted chip; the `status_all=1` sentinel surfaces from there
   // automatically.
   const clearAll = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
     // Reset unmounts itself once the URL is clean.
     restoreFocusRef.current = true;
     startTransition(() => {
@@ -443,6 +415,22 @@ export function QueueFilters({
     );
   };
 
+  const inReviewCaptionId = useId();
+  const closedCaptionId = useId();
+  const quickCaptionId = useId();
+  const chipRow = (captionId: string, caption: string, chips: React.ReactNode): React.ReactElement => (
+    <div
+      role="group"
+      aria-labelledby={captionId}
+      className="flex min-w-0 flex-col gap-[var(--aura-space-2)] sm:grid sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-[var(--aura-space-3)]"
+    >
+      <span id={captionId} className="aura-text-caption text-[var(--aura-fg-secondary)] sm:pt-[var(--aura-space-2)]">
+        {caption}
+      </span>
+      <div className="flex min-w-0 flex-wrap gap-[var(--aura-space-2)]">{chips}</div>
+    </div>
+  );
+
   // The phone "Filters (n)" count: the bar has no chips of its own, so it is
   // told how many filters are on (a preset is a stage filter). The default
   // view's stage counts too, so a phone shows the cards are filtered (UX M2).
@@ -469,40 +457,59 @@ export function QueueFilters({
         ) : undefined
       }
     >
-      {/* UX review B1 — `min-w-0` on the fieldset AND on both group rows: a
+      {/* UX review B1 — `min-w-0` on the fieldset and on every chip row: a
           fieldset's default `min-inline-size: min-content` and a flex item's
           `min-width: auto` each pin a chip at its min-content width, so the
           chip's truncation never engaged at 320 px. */}
       <fieldset
         ref={stageFieldsetRef}
-        className="m-0 flex min-w-0 basis-full flex-col gap-[var(--aura-space-2)] border-0 p-0"
+        className="m-0 flex min-w-0 basis-full flex-col gap-[var(--aura-space-3)] border-0 p-0"
         aria-describedby={countsCoverMoreThanView ? countsNoteId : undefined}
       >
         <legend className="mb-[var(--aura-space-1)] p-0 aura-text-body font-medium">
           {t('statusLabel')}
         </legend>
-        <div className="flex flex-wrap gap-[var(--aura-space-3)]">
-          <div
-            role="group"
-            aria-label={tStatusGroup('inReview')}
-            className="flex min-w-0 flex-wrap gap-[var(--aura-space-2)]"
-          >
-            {IN_REVIEW_STATUSES.filter(isOffered).map(renderChip)}
-          </div>
-          <div
-            role="group"
-            aria-label={tStatusGroup('terminal')}
-            className="flex min-w-0 flex-wrap gap-[var(--aura-space-2)]"
-          >
-            {TERMINAL_STATUSES.filter(isOffered).map(renderChip)}
-          </div>
-        </div>
+        {/* Parity comments (19 Oct) — each group is a labelled row: its
+            caption on the left from `sm` up (above its chips on a phone),
+            naming the group for assistive tech too. */}
+        {chipRow(inReviewCaptionId, tStatusGroup('inReview'), IN_REVIEW_STATUSES.filter(isOffered).map(renderChip))}
+        {chipRow(closedCaptionId, tStatusGroup('terminal'), TERMINAL_STATUSES.filter(isOffered).map(renderChip))}
         {countsCoverMoreThanView ? (
           <p id={countsNoteId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
             {t('chipCountsScope')}
           </p>
         ) : null}
       </fieldset>
+
+      {/* The presets are views, not dates: their own row, before the member
+          and date fields (parity comments, 19 Oct). UX review H5 — a pressed
+          preset looks pressed: AURA's selected chip, as a ticked stage. */}
+      <div className="flex min-w-0 basis-full flex-col">
+        {chipRow(
+          quickCaptionId,
+          t('quickViews'),
+          <>
+            <Tag
+              selected={upcomingActive}
+              touchHeight
+              icon={<CalendarClockIcon aria-hidden="true" />}
+              onClick={toggleUpcoming}
+            >
+              {t('upcomingSends')}
+            </Tag>
+            {marketingPresetOffered && (
+              <Tag
+                selected={marketingActive}
+                touchHeight
+                icon={<InboxIcon aria-hidden="true" />}
+                onClick={toggleMarketing}
+              >
+                {t('waitingOnMarketing')}
+              </Tag>
+            )}
+          </>,
+        )}
+      </div>
 
       <FilterSelect
         label={t('memberLabel')}
@@ -515,53 +522,15 @@ export function QueueFilters({
         ]}
       />
 
-      <TextField
-        id="filter-from"
-        type="date"
-        name="fromDate"
-        touchHeight
-        label={t('fromDate')}
-        value={fromInput}
-        onChange={(e) => {
-          setFromInput(e.target.value);
-          onDateChange('fromDate', e.target.value);
-        }}
+      {/* One "Submitted" range, as audit and change requests (parity
+          comments, 19 Oct). It runs on a complete range or "Any time" —
+          never on a lone day — so the URL gets a whole range. */}
+      <FilterDateRange
+        label={t('submittedRange')}
+        timeZone={timeZone}
+        value={{ start: currentFromDate || null, end: currentToDate || null }}
+        onChange={(r) => pushUrl({ fromDate: r.start, toDate: r.end })}
       />
-
-      <TextField
-        id="filter-to"
-        type="date"
-        name="toDate"
-        touchHeight
-        label={t('toDate')}
-        value={toInput}
-        onChange={(e) => {
-          setToInput(e.target.value);
-          onDateChange('toDate', e.target.value);
-        }}
-      />
-
-      {/* UX review H5 — a pressed preset must look pressed: AURA's selected
-          chip, the same as a ticked stage. */}
-      <Tag
-        selected={upcomingActive}
-        touchHeight
-        icon={<CalendarClockIcon aria-hidden="true" />}
-        onClick={toggleUpcoming}
-      >
-        {t('upcomingSends')}
-      </Tag>
-
-      {marketingPresetOffered && (
-        <Tag
-          selected={marketingActive}
-          touchHeight
-          icon={<InboxIcon aria-hidden="true" />}
-          onClick={toggleMarketing}
-        >
-          {t('waitingOnMarketing')}
-        </Tag>
-      )}
     </FilterBar>
   );
 }

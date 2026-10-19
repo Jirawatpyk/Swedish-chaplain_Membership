@@ -3572,11 +3572,11 @@
           "statusLabel": "Steg",
           "memberLabel": "Medlem",
           "memberAll": "Alla medlemmar",
-          "fromDate": "Inskickad från",
-          "toDate": "Inskickad till",
+          "submittedRange": "Inskickad",
           "reset": "Återställ filter",
           "upcomingSends": "Kommande utskick",
           "waitingOnMarketing": "Väntar på marknad",
+          "quickViews": "Snabbvyer",
           "chipCount": "{count, plural, one {# utskick} other {# utskick}}",
           "chipCountsScope": "Antalen gäller alla utskick i varje steg — filtren för medlem, datum och kommande utskick ändrar dem inte."
         },

@@ -50,7 +50,7 @@ function renderFilters(props: {
 }) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <QueueFilters memberOptions={[]} {...props} />
+      <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} {...props} />
     </NextIntlClientProvider>,
   );
 }

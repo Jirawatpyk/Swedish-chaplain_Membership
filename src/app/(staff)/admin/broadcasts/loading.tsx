@@ -17,7 +17,7 @@
  * What it mirrors:
  *   - SLA banner placeholder (h-16)
  *   - Filter bar: one chip placeholder per `OFFERED_BROADCAST_STATUSES`
- *     entry + member-select + 2 date inputs (matches `queue-filters.tsx`
+ *     entry + member-select + one date range (matches `queue-filters.tsx`
  *     flex-wrap layout, which renders one chip per OFFERED status — Task 3
  *     fix: this used to hardcode 8, drifting from the 10-entry
  *     `BROADCAST_STATUSES` tuple after the F7.1a Phase 3 B0 extension)
@@ -74,8 +74,8 @@ const CARDS = 4;
 /**
  * Spec 122 US12b — mirrors the AURA page: the header actions, the banner, then
  * one card holding the filter bar (below 640 px only the "Filters" button and
- * Reset; from 640 px the stage chips, member, both dates and the two presets,
- * each control with its label line), the order hint, the eight-column table
+ * Reset; from 640 px the stage chips and the two presets in labelled rows, then
+ * the member select and the "Submitted" range), the order hint, the eight-column table
  * from `md` and the board's phone cards below it.
  */
 export default async function AdminBroadcastsLoading(): Promise<React.ReactElement> {
@@ -107,33 +107,35 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
           {/* Round 4 D11 — each control keeps its LABEL line, so the bar does
               not grow by a line when the data lands. */}
           <div data-skeleton="filters" className="flex flex-wrap items-end gap-[var(--aura-space-3)] max-sm:hidden">
-            <div className="flex basis-full flex-col gap-1">
+            {/* The Stage legend, then a labelled row per group: In review,
+                Closed, Quick views (the caption on the left from 640 px). */}
+            <div className="flex basis-full flex-col gap-3">
               <SkeletonBlock className="h-5 w-16" />
+              {[Math.ceil(chipCount / 2), Math.floor(chipCount / 2)].map((n, row) => (
+                <div key={row} className="grid grid-cols-[7rem_minmax(0,1fr)] items-start gap-3">
+                  <SkeletonBlock className="mt-2 h-4 w-16" />
+                  <div className="flex flex-wrap gap-2">
+                    {Array.from({ length: n }).map((_, i) => (
+                      <SkeletonBlock key={i} data-skeleton="stage-chip" className="h-8 w-24 rounded-full" />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="grid basis-full grid-cols-[7rem_minmax(0,1fr)] items-start gap-3">
+              <SkeletonBlock className="mt-2 h-4 w-20" />
               <div className="flex flex-wrap gap-2">
-                {Array.from({ length: chipCount }).map((_, i) => (
-                  <SkeletonBlock key={i} data-skeleton="stage-chip" className="h-8 w-24 rounded-full" />
-                ))}
+                <SkeletonBlock data-skeleton="upcoming-sends" className="h-8 w-40 rounded-full" />
+                {/* #400 item 8 — the Waiting on marketing chip, withheld with
+                    the round off like the round's stage chips (#400 U2). */}
+                {approvalRoundEnabled ? (
+                  <SkeletonBlock data-skeleton="waiting-on-marketing" className="h-8 w-52 rounded-full" />
+                ) : null}
               </div>
             </div>
-            <div className="flex flex-col gap-1">
-              <SkeletonBlock className="h-4 w-20" />
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-56" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <SkeletonBlock className="h-4 w-20" />
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-40" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <SkeletonBlock className="h-4 w-20" />
-              <SkeletonBlock className="h-[var(--aura-input-height)] w-40" />
-            </div>
-            {/* The Upcoming sends chip — no label above it. */}
-            <SkeletonBlock data-skeleton="upcoming-sends" className="h-8 w-40 rounded-full" />
-            {/* #400 item 8 — the Waiting on marketing chip, withheld with the
-                round off like the round's stage chips (#400 U2). */}
-            {approvalRoundEnabled ? (
-              <SkeletonBlock data-skeleton="waiting-on-marketing" className="h-8 w-52 rounded-full" />
-            ) : null}
+            {/* The member select and the one "Submitted" range. */}
+            <SkeletonBlock className="h-[var(--aura-input-height)] w-56" />
+            <SkeletonBlock data-skeleton="submitted-range" className="h-[var(--aura-input-height)] w-48" />
           </div>
           {/* The order hint above the list. */}
           <SkeletonBlock data-skeleton="order-hint" className="h-4 w-48" />

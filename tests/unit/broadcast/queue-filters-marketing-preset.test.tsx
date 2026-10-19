@@ -40,7 +40,7 @@ function filters(
 ) {
   return (
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <QueueFilters memberOptions={[]} stageCounts={stageCounts} approvalRoundEnabled={approvalRoundEnabled} />
+      <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={stageCounts} approvalRoundEnabled={approvalRoundEnabled} />
     </NextIntlClientProvider>
   );
 }

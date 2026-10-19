@@ -273,7 +273,7 @@ export async function renderQueuePreview(state: string | undefined) {
       {readOnly ? <ManagerReadonlyBanner /> : null}
       <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
         <div className="flex flex-col gap-[var(--aura-space-4)]">
-          <QueueFilters memberOptions={QUEUE_MEMBERS} stageCounts={QUEUE_STAGE_COUNTS} approvalRoundEnabled />
+          <QueueFilters timeZone="Asia/Bangkok" memberOptions={QUEUE_MEMBERS} stageCounts={QUEUE_STAGE_COUNTS} approvalRoundEnabled />
           <QueueTable
             rows={rows}
             readOnly={readOnly}

@@ -56,7 +56,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('splits the status chips into an in-review group and a terminal group', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
+        <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -90,7 +90,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('renders one stage chip per non-retired status across the two groups', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
+        <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -128,7 +128,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('renders exactly OFFERED_BROADCAST_STATUSES.length chips with the round on — the number the loading skeleton reserves then', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
+        <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -144,7 +144,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('keeps the Reset button adjacent to the chip strip, not pushed to the row edge', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
+        <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 

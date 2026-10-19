@@ -39,7 +39,7 @@ const ZERO = Object.fromEntries(BROADCAST_STATUSES.map((s) => [s, 0])) as Record
 function filters(approvalRoundEnabled = false) {
   return (
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <QueueFilters memberOptions={[]} stageCounts={ZERO} approvalRoundEnabled={approvalRoundEnabled} />
+      <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={ZERO} approvalRoundEnabled={approvalRoundEnabled} />
     </NextIntlClientProvider>
   );
 }
@@ -181,14 +181,49 @@ describe('chip focus ring (T086a V4)', () => {
 });
 
 /**
- * T086a follow-on — From / To filter on the SUBMIT date, and said only "From"
- * and "To". The labels now name the date they filter on.
+ * T086a follow-on — the dates filter on the SUBMIT date. Parity comments
+ * (19 Oct): one AURA "Submitted" range, as audit and change requests, in
+ * place of two native date boxes (an en-US browser showed mm/dd/yyyy).
  */
-describe('date range labels (T086a follow-on)', () => {
-  it('the From / To inputs say they filter on the submitted date', () => {
+describe('the "Submitted" date range (parity, 19 Oct)', () => {
+  it('is one AURA date range named for the submitted date, with no native date boxes', () => {
     render(filters());
-    expect(screen.getByLabelText(/^submitted from$/i)).toHaveAttribute('name', 'fromDate');
-    expect(screen.getByLabelText(/^submitted to$/i)).toHaveAttribute('name', 'toDate');
+    expect(screen.getByRole('button', { name: 'Submitted: Any time' })).toBeInTheDocument();
+    expect(document.querySelector('input[type="date"]')).toBeNull();
+  });
+
+  it('shows the range from the URL, and "Any time" drops both days and the cursor', () => {
+    nav.searchParams.current = new URLSearchParams('memberId=m-1&fromDate=2026-09-01&toDate=2026-09-10&cursor=abc');
+    render(filters());
+    const range = screen.getByRole('button', { name: /^Submitted: 1\s?–\s?10 Sept 2026$/ });
+    fireEvent.click(range);
+    fireEvent.click(screen.getByRole('button', { name: 'Any time' }));
+    expect(nav.replaceMock).toHaveBeenLastCalledWith('/admin/broadcasts?memberId=m-1', { scroll: false });
+  });
+});
+
+/**
+ * Parity comments (19 Oct) — "group it neatly": each chip group is named by a
+ * caption on screen, and the two presets are their own "Quick views" group,
+ * before the member and date fields instead of after them.
+ */
+describe('chip groups with visible captions (parity, 19 Oct)', () => {
+  it.each([['In review'], ['Closed'], ['Quick views']])('the %s group is named by its visible caption', (name) => {
+    render(filters(true));
+    const group = screen.getByRole('group', { name });
+    const captionId = group.getAttribute('aria-labelledby');
+    expect(captionId).toBeTruthy();
+    expect(document.getElementById(captionId!)).toHaveTextContent(name);
+    expect(document.getElementById(captionId!)).not.toHaveClass('sr-only');
+  });
+
+  it('the presets sit in Quick views, before the member and date fields', () => {
+    render(filters(true));
+    const quick = screen.getByRole('group', { name: 'Quick views' });
+    expect(within(quick).getByRole('button', { name: /upcoming sends/i })).toBeInTheDocument();
+    expect(within(quick).getByRole('button', { name: /waiting on marketing/i })).toBeInTheDocument();
+    const member = screen.getByRole('combobox', { name: /member/i });
+    expect(quick.compareDocumentPosition(member) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 

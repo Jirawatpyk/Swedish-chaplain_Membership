@@ -179,3 +179,26 @@ describe('TypedPhraseField — on AURA (spec 122 US12b)', () => {
     expect(field!.querySelector('.aura-field__addon, [id$="-addon"]')).toContainElement(phrase);
   });
 });
+
+describe('TypedPhraseField — a label that already names the phrase (parity, 19 Oct)', () => {
+  it('shows the phrase once — in the label — and the input is the only box and the first stop', () => {
+    render(
+      <TypedPhraseField
+        id="ch"
+        label="Type Scandinavian Design Co., Ltd. to confirm"
+        phrase="Scandinavian Design Co., Ltd."
+        value=""
+        onChange={() => {}}
+        errorMessage="Does not match"
+      />,
+    );
+    const field = screen.getByLabelText('Type Scandinavian Design Co., Ltd. to confirm');
+    // No second, box-like copy of the phrase under the label (it read as a second field).
+    expect(screen.queryByText('Scandinavian Design Co., Ltd.', { exact: true })).toBeNull();
+    expect(document.getElementById('ch-phrase')).toBeNull();
+    expect(field.getAttribute('aria-describedby') ?? '').not.toContain('ch-phrase');
+    // Nothing focusable sits before the input, so the dialog's first focus lands in it.
+    expect(document.querySelector('[tabindex="0"]')).toBeNull();
+  });
+});
+

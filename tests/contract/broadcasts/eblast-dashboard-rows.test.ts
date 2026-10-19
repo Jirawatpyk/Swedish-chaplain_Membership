@@ -181,7 +181,7 @@ describe('`expired_no_member_response` is a closed stage (T110, /speckit.analyze
       createElement(
         IntlProvider,
         { locale: 'en', messages: enMessages },
-        createElement(QueueFilters, { memberOptions: [], stageCounts: null, approvalRoundEnabled: true }),
+        createElement(QueueFilters, { memberOptions: [], stageCounts: null, approvalRoundEnabled: true, timeZone: 'Asia/Bangkok' }),
       ),
     );
     // Spec 122 US12b — each stage is a pressed AURA Tag carrying `data-status`.

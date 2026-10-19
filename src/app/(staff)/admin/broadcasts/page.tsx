@@ -411,6 +411,7 @@ export default async function AdminBroadcastsPage({
             memberOptions={memberOptions}
             stageCounts={stageChips.kind === 'ok' ? stageChips.counts : null}
             approvalRoundEnabled={stageChips.approvalRoundEnabled}
+            timeZone={env.tenant.timezone}
           />
           {/* Round 2 (UX M-1): the warning travels to the decision point — the
               bulk-approve confirm dialog repeats it when the halt state is

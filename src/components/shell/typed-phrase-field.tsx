@@ -133,9 +133,51 @@ export function TypedPhraseField({
     copiedTimer.current = window.setTimeout(() => setCopied(false), 3000);
   }
 
-  const describedBy = [phraseId, helpText ? helpId : null, showError ? errorId : null]
+  // A label that already names the phrase ("Type Acme Co. to confirm",
+  // "Type CANCEL to confirm") shows it once: a second copy under the label
+  // read as a second field and, being tabbable, took the dialog's first focus.
+  // The box stays for a phrase the label only refers to (an E-Blast subject).
+  const showPhrase = !label.includes(phrase);
+
+  const describedBy = [showPhrase ? phraseId : null, helpText ? helpId : null, showError ? errorId : null]
     .filter(Boolean)
     .join(' ');
+
+  const labelAddon =
+    showPhrase || copy ? (
+      <span className="flex flex-col gap-[var(--aura-space-2)]">
+        {/* UX-C3 + U35: the WHOLE expected phrase as a copy target, wrapped in
+            body type (a mono face has no Thai glyphs to fall back on). A 200
+            character subject scrolls inside the cap; tabIndex keeps that
+            scroll region reachable by keyboard. */}
+        {showPhrase ? (
+          <span
+            id={phraseId}
+            tabIndex={0}
+            className="block max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--aura-radius-sm)] bg-[var(--aura-bg-canvas)] px-[var(--aura-space-2)] py-[var(--aura-space-1)] aura-text-body"
+          >
+            {phrase}
+          </span>
+        ) : null}
+        {copy ? (
+          <span className="flex items-center gap-[var(--aura-space-2)]">
+            <Button
+              variant="secondary"
+              size="sm"
+              touchHeight
+              icon="copy"
+              onClick={() => void onCopy()}
+              disabled={disabled}
+            >
+              {copy.label}
+            </Button>
+            <span role="status" aria-live="polite" className="aura-text-caption text-[var(--aura-fg-secondary)]">
+              {copied ? copy.copiedMessage : ''}
+            </span>
+          </span>
+        ) : null}
+      </span>
+    ) : null;
 
   // Spec 122 US12b — an AURA `TextField` with the phrase (and its copy
   // button) as the `labelAddon`, as the invoice typed confirmation does. The
@@ -148,38 +190,7 @@ export function TypedPhraseField({
         label={label}
         touchHeight
         labelAddonDescribes={false}
-        labelAddon={
-          <span className="flex flex-col gap-[var(--aura-space-2)]">
-            {/* UX-C3 + U35: the WHOLE expected phrase as a copy target, wrapped
-                in body type (a mono face has no Thai glyphs to fall back on). A
-                200 character subject scrolls inside the cap; tabIndex keeps
-                that scroll region reachable by keyboard. */}
-            <span
-              id={phraseId}
-              tabIndex={0}
-              className="block max-h-32 overflow-y-auto whitespace-pre-wrap break-words rounded-[var(--aura-radius-sm)] bg-[var(--aura-bg-canvas)] px-[var(--aura-space-2)] py-[var(--aura-space-1)] aura-text-body"
-            >
-              {phrase}
-            </span>
-            {copy ? (
-              <span className="flex items-center gap-[var(--aura-space-2)]">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  touchHeight
-                  icon="copy"
-                  onClick={() => void onCopy()}
-                  disabled={disabled}
-                >
-                  {copy.label}
-                </Button>
-                <span role="status" aria-live="polite" className="aura-text-caption text-[var(--aura-fg-secondary)]">
-                  {copied ? copy.copiedMessage : ''}
-                </span>
-              </span>
-            ) : null}
-          </span>
-        }
+        {...(labelAddon !== null ? { labelAddon } : {})}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={() => setTouched(true)}

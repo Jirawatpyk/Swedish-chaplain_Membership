@@ -3572,11 +3572,11 @@
           "statusLabel": "Stage",
           "memberLabel": "Member",
           "memberAll": "All members",
-          "fromDate": "Submitted from",
-          "toDate": "Submitted to",
+          "submittedRange": "Submitted",
           "reset": "Reset filters",
           "upcomingSends": "Upcoming sends",
           "waitingOnMarketing": "Waiting on marketing",
+          "quickViews": "Quick views",
           "chipCount": "{count, plural, one {# E-Blast} other {# E-Blasts}}",
           "chipCountsScope": "Counts are for every E-Blast in each stage — the member, date and Upcoming sends filters do not change them."
         },
