@@ -532,3 +532,6 @@ Filled in at Verify, one block per slice.
     - Repro for a follow-up: load `/admin/members?q=…`, click a row at once, and assert that `<main>` renders the member page.
     - The maintainer decides whether this becomes a follow-up spec.
 
+### Slice 2 — DW-7 split into parallel jobs
+
+- DW-7: first post-refresh run 28.3 min > 25 → split per the pre-agreed remedy (PR #TBD)
