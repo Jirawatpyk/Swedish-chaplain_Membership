@@ -102,6 +102,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
+import { openActionDialog } from './helpers/open-action-dialog';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import {
   seedF7Broadcasts,
@@ -500,9 +501,8 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     await reseed();
 
     await page.goto(`/admin/broadcasts/${SEEDED_SUBMITTED_BROADCAST_ID}`);
-    await page.getByRole('button', { name: /^approve$/i }).first().click();
     const dialog = page.getByRole('alertdialog');
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    await openActionDialog(page, page.getByRole('button', { name: /^approve$/i }).first(), dialog);
     await dialog.getByRole('button', { name: /^approve$/i }).click();
     // Wait for dialog to dismiss → indicates use-case completed (or 409
     // returned a toast but kept dialog open). Toast-success closes the
@@ -527,9 +527,8 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     await reseed();
 
     await page.goto(`/admin/broadcasts/${SEEDED_SUBMITTED_BROADCAST_ID}`);
-    await page.getByRole('button', { name: /^reject$/i }).first().click();
     const dialog = page.getByRole('alertdialog');
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    await openActionDialog(page, page.getByRole('button', { name: /^reject$/i }).first(), dialog);
     await dialog
       .getByRole('textbox')
       .fill('Off-topic for chamber audience');
@@ -554,9 +553,8 @@ test.describe('admin review queue (T099 — US2 AS1–AS6 + Q14)', () => {
     await reseed();
 
     await page.goto(`/admin/broadcasts/${SEEDED_SUBMITTED_BROADCAST_ID}`);
-    await page.getByRole('button', { name: /^approve$/i }).first().click();
     const dialog = page.getByRole('alertdialog');
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
+    await openActionDialog(page, page.getByRole('button', { name: /^approve$/i }).first(), dialog);
     await dialog
       .getByRole('radio', { name: /schedule/i })
       .check({ force: true });

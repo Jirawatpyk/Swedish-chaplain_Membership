@@ -16,6 +16,7 @@
 import type { Page } from '@playwright/test';
 import { expect } from '../fixtures';
 import { signInAsAdmin } from './admin-session';
+import { openActionDialog } from './open-action-dialog';
 
 /**
  * Sign in as `e2e-admin`, open the E-Blast and start a formatted version.
@@ -26,7 +27,7 @@ export async function startFormattedVersionAsMarketing(page: Page, broadcastId: 
   await page.goto(`/admin/broadcasts/${broadcastId}`);
   const start = page.locator('[data-testid="eblast-start-version"]:visible');
   await expect(start, 'Start is absent — is FEATURE_EBLAST_MEMBER_APPROVAL on for this server?').toBeVisible();
-  await start.click();
+  await openActionDialog(page, start);
   // From `submitted`, starting ends approve-as-submitted, so it asks first (UX review M3).
   await page.locator('[data-testid="eblast-start-version-confirm"]:visible').click();
   await expect(page.locator('[data-testid="eblast-format-workspace"]:visible')).toBeVisible({ timeout: 60_000 });
