@@ -13,9 +13,11 @@
 #
 # SHARDS
 #   ~694 tests at the spike's ~18 s per test under `next start` is about 3.5 h;
-#   `next dev` compiles each route on first hit, so a single job could reach
-#   5-6 h with retries, against GitHub's 6 h job limit. Two shards, each on its
-#   own branch, keep each job near 2-3 h.
+#   `next dev` compiles each route on first hit. The first full run (39182165888)
+#   with two shards and two retries ran past 5 h, and the job limit cancelled a
+#   shard before it wrote any result: each red test spent two more attempts.
+#   Four shards, ONE retry, and a suite step limit 30 min under the job limit,
+#   so the summary, the uploads, the branch delete and the issue still run.
 #
 # SECURITY (the repo is PUBLIC)
 #   - schedule + workflow_dispatch only; no pull_request trigger.
@@ -45,7 +47,7 @@ concurrency:
 
 jobs:
   e2e:
-    name: e2e nightly (chromium, shard ${{ matrix.shard }}/2)
+    name: e2e nightly (chromium, shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:
@@ -53,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     env:
       CI_E2E_BRANCH_NAME: ci-e2e/nightly-${{ github.run_id }}-${{ github.run_attempt }}-s${{ matrix.shard }}
       TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
@@ -182,13 +184,14 @@ jobs:
       # playwright.config.ts starts `pnpm dev --port 3100` itself (webServer).
       - name: e2e full suite on chromium
         id: e2e
+        timeout-minutes: 320
         env:
           E2E_X_TENANT_HEADER_ENABLED: '1'
           PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-results/chromium.json
         run: |
           t0=$SECONDS
           trap 'echo "e2e-chromium $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
-          pnpm exec playwright test --project=chromium --workers=1 --fail-on-flaky-tests --shard="$SHARD/2" --trace=retain-on-failure --reporter=list,html,json
+          pnpm exec playwright test --project=chromium --workers=1 --retries=1 --fail-on-flaky-tests --shard="$SHARD/4" --trace=retain-on-failure --reporter=list,html,json
 
       # Spec FILE names only; the issue is public. A results file jq cannot
       # read fails this step rather than reading as "nothing failed".

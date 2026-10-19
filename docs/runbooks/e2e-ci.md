@@ -15,7 +15,7 @@
 - **Each run** creates its own branch `ci-e2e/<run>-<attempt>` from that parent (2 h expiry; 8 h for the nightly). The DW-9 guard (`scripts/seed-ci-e2e.ts --guard-only`) refuses any other target. The run migrates (only the PR's new migrations), seeds personas and fixtures (`scripts/seed-ci-e2e.ts`), and deletes the branch in an `always()` step.
 - **`e2e-critical`** builds the app, runs `next start` on :3100, then runs the `@critical` specs (the list is in `tests/unit/architecture/e2e-critical-set.test.ts`) on chromium and mobile-chrome with `--workers=1`. Budget: 25 min (DW-7).
   - **Job layout:** `e2e` is a matrix over `project: [chromium, mobile-chrome]` with `fail-fast: false`, so a PR shows two checks that run in parallel. Each job runs the whole chain on its own: its own Neon branch `ci-e2e/<run>-<attempt>-<project>`, rate-limit prefix `swecham-ci-<run>-<attempt>-<project>`, one Playwright project, and its own artifact. The first post-refresh run took 28.3 min with both projects in series, which is why they were split.
-- **`e2e-nightly`** (19:00 UTC) resets the schema on its own branch and migrates **from zero**, then runs the full suite on chromium under `next dev` with `E2E_X_TENANT_HEADER_ENABLED=1`, in two shards.
+- **`e2e-nightly`** (19:00 UTC) resets the schema on its own branch and migrates **from zero**, then runs the full suite on chromium under `next dev` with `E2E_X_TENANT_HEADER_ENABLED=1`, in four shards with one retry. The suite step stops at 320 min (the job limit is 350), so the summary, the uploads, the branch delete and the issue still run when the suite is slow.
 
 ## A red `e2e-critical` check on a PR
 

@@ -196,6 +196,23 @@ describe('.github/workflows/e2e-nightly.yml', () => {
     expect(code).not.toMatch(/next start/);
   });
 
+  // The first full run (39182165888) took over 5 h on a shard and the 350-min
+  // job limit cancelled shard 1 before it wrote any result: every red spent
+  // two extra attempts. Four shards, one retry, and a step limit under the
+  // job limit so the summary, upload and issue steps still run.
+  it('runs four shards with one retry, and stops the suite before the job limit', () => {
+    expect(code).toMatch(/^\s{8}shard: \[1, 2, 3, 4\]\s*$/m);
+    const run = step(src, /- name: e2e full suite on chromium/);
+    expect(run).toMatch(/--shard="\$SHARD\/4"/);
+    expect(run).toMatch(/--retries=1(\s|$)/);
+    const jobLimit = Number(/^\s{4}timeout-minutes: (\d+)\s*$/m.exec(code)?.[1]);
+    const stepLimit = Number(/^\s{8}timeout-minutes: (\d+)\s*$/m.exec(run)?.[1]);
+    expect(jobLimit, 'job timeout').toBeGreaterThan(0);
+    expect(stepLimit, 'suite step timeout').toBeGreaterThan(0);
+    // Room for the summary, the uploads and the branch delete after it.
+    expect(jobLimit - stepLimit).toBeGreaterThanOrEqual(30);
+  });
+
   it('uploads only the Playwright report, traces and failed-spec list — never an env file', () => {
     for (const name of stepsMentioning(src, /actions\/upload-artifact/)) {
       const body = step(src, new RegExp(`- name: ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
