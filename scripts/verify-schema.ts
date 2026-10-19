@@ -101,10 +101,10 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit FROM information_schema.triggers WHERE event_object_table = 'audit_log' AND trigger_name = 'audit_log_retention_default_for_f4_tax_docs'`,
       },
       {
-        // 0110-0113 are in the journal but have no row in
-        // drizzle.__drizzle_migrations on prod, and the normal-mode migrator
-        // never revisits an entry older than the last recorded one — so these
-        // canaries are the only thing that proves their DDL landed (spec 123).
+        // 0110-0113 had no row in drizzle.__drizzle_migrations on prod until
+        // 0317 recorded them as bookkeeping, and the normal-mode migrator never
+        // revisits an entry older than the last recorded one — so these
+        // canaries remain the only proof that their DDL landed (spec 123).
         name: "audit_event_type carries the eight 0110-0112 values (migs 0110-0112)",
         query: `SELECT 1 AS hit WHERE (SELECT count(*) FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel IN ('renewal_lapsed','at_risk_score_recomputed','at_risk_score_threshold_crossed','at_risk_snoozed','at_risk_outreach_recorded','at_risk_skipped_below_min_tenure','at_risk_compute_partial_failure','cron_bearer_auth_rejected')) = 8`,
       },
