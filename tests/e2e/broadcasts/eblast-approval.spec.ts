@@ -59,6 +59,10 @@ test.describe('F119 T063 — the staff format surface', () => {
 
     const workspace = page.locator('[data-testid="eblast-format-workspace"]:visible');
     await expect(workspace).toBeVisible({ timeout: 60_000 });
+    // Spec 122 US12c-1 — below lg the member's original is folded under its
+    // title (board `Admin-eblast-design-mobile`); open it before reading it.
+    const originalFold = page.locator('[data-testid="eblast-original-disclosure"]:not([open]) > summary:visible');
+    if ((await originalFold.count()) > 0) await originalFold.click();
     await expect(page.locator('[data-testid="eblast-member-original"]:visible')).toBeVisible();
     await expect(page.locator('[data-testid="eblast-whose-turn"]:visible')).toHaveText(/Marketing/);
 

@@ -115,8 +115,8 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
     renderWorkspace();
     expect(saveButton()).not.toHaveAttribute('disabled');
     expect(saveButton()).toHaveAttribute('aria-disabled', 'true');
-    // The hook the shared Button's `data-disabled:` dimmed look keys on.
-    expect(saveButton()).toHaveAttribute('data-disabled');
+    // Spec 122 US12c-1 — AURA dims an `aria-disabled` button itself (the
+    // legacy `data-disabled` hook is gone with the legacy Button).
     expect(screen.getByTestId('eblast-test-copy')).not.toHaveAttribute('disabled');
   });
 
@@ -143,8 +143,9 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
     expect(alert).toHaveTextContent(t.errors.validation_error);
     expect(subject.getAttribute('aria-describedby')?.split(' ')).toContain(alert.id);
     expect(subject).toHaveAttribute('aria-invalid', 'true');
-    // Below the field: in the subject's own group, after the input.
-    expect(subject.parentElement).toContainElement(alert);
+    // Below the field: in the subject's own group (the AURA field and its
+    // refusal line), after the input.
+    expect(subject.closest('.aura-field')!.parentElement).toContainElement(alert);
     expect(subject.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(alert.querySelector('svg')).not.toBeNull();
   });
@@ -315,5 +316,36 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
     await user.type(screen.getByTestId('tiptap-editor'), 'more{Enter}');
     await user.type(screen.getByLabelText(t.workspace.noteLabel), 'a note{Enter}');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Spec 122 US12c-1 (T1224, board `Admin-eblast-design`) — the workspace on
+ * AURA: its card labelled by its own h2, the subject and the note AURA fields,
+ * Save the plain secondary button (no icon, by the button-icon rule) and Send
+ * the primary one with `mail`, the send confirmation AURA's alert dialog, and
+ * the member's original an AURA card in the disclosure that folds it on a phone.
+ */
+describe('Spec 122 US12c-1 — the formatted-version workspace on AURA', () => {
+  it('card, fields, buttons and the original are AURA', async () => {
+    const { container } = renderWorkspace();
+    const workspace = screen.getByTestId('eblast-format-workspace');
+    expect(workspace.classList.contains('aura-card')).toBe(true);
+    expect(workspace.querySelector('h2#eblast-format-title.aura-card__title')).not.toBeNull();
+    expect(screen.getByLabelText(t.workspace.subjectLabel).closest('.aura-field')).not.toBeNull();
+    expect(screen.getByLabelText(t.workspace.noteLabel).closest('.aura-field')).not.toBeNull();
+    expect(saveButton().className).toContain('aura-btn--secondary');
+    expect(saveButton().querySelector('svg')).toBeNull();
+    expect(sendButton().className).toContain('aura-btn--primary');
+    expect(sendButton().querySelector('svg')).not.toBeNull();
+    expect(screen.getByTestId('eblast-test-copy').className).toContain('aura-btn');
+    const original = screen.getByTestId('eblast-member-original');
+    expect(original.classList.contains('aura-card')).toBe(true);
+    expect(original.closest('[data-testid="eblast-original-disclosure"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="card"], [data-slot="input"], [data-slot="textarea"]')).toBeNull();
+
+    fireEvent.click(sendButton());
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.closest('[class*="aura-dialog"]')).not.toBeNull();
   });
 });

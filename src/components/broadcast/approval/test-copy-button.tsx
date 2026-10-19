@@ -18,10 +18,9 @@
  * handler refuses the click itself.
  */
 import { useTransition } from 'react';
-import { Loader2Icon, MailCheck } from 'lucide-react';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 import { isLocale } from '@/i18n/config';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
@@ -81,22 +80,20 @@ export function TestCopyButton({
     });
   }
 
+  // Spec 122 US12c-1 — AURA's secondary button with `mail` (send, by the
+  // button-icon rule); `aria-disabled` while it is unavailable, so it keeps focus.
   return (
     <Button
       type="button"
-      variant="outline"
+      variant="secondary"
+      touchHeight
+      icon="mail"
       data-testid="eblast-test-copy"
       className={className}
       onClick={send}
-      disabled={disabled || pending}
-      focusableWhenDisabled
-      aria-busy={pending || undefined}
+      loading={pending}
+      aria-disabled={disabled || pending || undefined}
     >
-      {pending ? (
-        <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-      ) : (
-        <MailCheck className="size-4" aria-hidden="true" />
-      )}
       {t('button')}
     </Button>
   );

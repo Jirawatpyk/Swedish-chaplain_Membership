@@ -662,6 +662,10 @@ test.describe('@a11y F119 T086a — the approval screens PR-2 builds (320 px)', 
       page.locator('[data-testid="eblast-format-workspace"]:visible [contenteditable="true"]'),
     ).toBeVisible();
     await expectNoHorizontalScroll(page);
+    // Spec 122 US12c-1 — below lg the member's original is folded under its
+    // title (board `Admin-eblast-design-mobile`); open it before reading it.
+    const originalFold = page.locator('[data-testid="eblast-original-disclosure"]:not([open]) > summary:visible');
+    if ((await originalFold.count()) > 0) await originalFold.click();
     // The member's original beside the working copy.
     await expect(page.locator('[data-testid="eblast-member-original"]:visible')).toBeVisible();
     // Two sandboxed previews: the member's original (server-rendered) and the

@@ -48,33 +48,18 @@
  * it confirms first.
  */
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
-import { Loader2Icon, Save, Send } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { Alert, Button, Card, Dialog, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
-import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/components/ui/inline-alert';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 import { PreviewPane } from '@/components/broadcast/preview-pane';
 import { PreviewSurface, type PreviewState } from '@/components/broadcast/use-preview-html';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
-import { SubjectCounter, SUBJECT_MAX_LENGTH } from '@/components/broadcast/compose/subject-counter';
+import { SUBJECT_MAX_LENGTH } from '@/components/broadcast/compose/subject-counter';
+import { OriginalDisclosure } from '@/components/broadcast/admin/original-disclosure';
 import { useComposeDirtyGuard } from '@/components/broadcast/compose/use-compose-dirty-guard';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
@@ -99,10 +84,8 @@ const TiptapEditor = loadTiptapEditor<{
 export const NOTE_TO_MEMBER_MAX = 1_000;
 
 const SUBJECT_ID = 'eblast-format-subject';
-const SUBJECT_COUNTER_ID = 'eblast-format-subject-counter';
 const BODY_LABEL_ID = 'eblast-format-body-label';
 const NOTE_ID = 'eblast-format-note';
-const NOTE_HELP_ID = 'eblast-format-note-help';
 /** One error line per field, directly under it (§ 4.1); `null` = the end of the form. */
 const ERROR_IDS = {
   subject: 'eblast-format-subject-error',
@@ -110,8 +93,6 @@ const ERROR_IDS = {
   note: 'eblast-format-note-error',
   form: 'eblast-format-error',
 } as const;
-/** `CardTitle`'s type, on a real heading: the shadcn `CardTitle` is a `<div>` (not in the SR heading tree). */
-const CARD_HEADING = 'font-heading text-base leading-snug font-medium';
 /** Footer buttons wrap their label below `sm` rather than overflow a 320 px screen (SV runs long). */
 const FOOTER_BUTTON = 'max-sm:h-auto max-sm:min-h-9 max-sm:whitespace-normal';
 
@@ -171,6 +152,7 @@ export function FormattedVersionWorkspace({
   const t = useTranslations('admin.broadcasts.approval.workspace');
   const tContent = useTranslations('admin.broadcasts.approval.content');
   const tSend = useTranslations('admin.broadcasts.approval.send');
+  const tFields = useTranslations('portal.broadcasts.compose.fields');
   const tErrors = useTranslations('admin.broadcasts.approval.errors');
   const locale = useLocale();
   const router = useRouter();
@@ -370,10 +352,10 @@ export function FormattedVersionWorkspace({
   }
 
   const errorFor = (field: ErrorField): string | null => (error !== null && error.field === field ? error.message : null);
-  const describedBy = (field: Exclude<ErrorField, null>, base?: string): string | undefined => {
-    const ids = [base, error?.field === field ? ERROR_IDS[field] : undefined].filter(Boolean);
-    return ids.length > 0 ? ids.join(' ') : undefined;
-  };
+  // AURA's fields describe themselves by their hint; the refusal line under a
+  // field joins it (`aria-describedby` is merged by the field).
+  const describedBy = (field: Exclude<ErrorField, null>): string | undefined =>
+    error?.field === field ? ERROR_IDS[field] : undefined;
   const subjectError = errorFor('subject');
   const bodyError = errorFor('body');
   const noteError = errorFor('note');
@@ -382,210 +364,213 @@ export function FormattedVersionWorkspace({
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]">
       <UnsavedChangesGuard armed={dirty && !sending} />
+      {/* Spec 122 US12c-1 (board `Admin-eblast-design`) — an AURA card,
+          labelled by its own h2, holding AURA fields and buttons. */}
       <Card
         data-testid="eblast-format-workspace"
         className="min-w-0"
-        role="region"
-        aria-labelledby="eblast-format-title"
+        titleId="eblast-format-title"
+        title={t('title', { version: workingCopy.versionNo })}
+        headingLevel={2}
+        description={t('description')}
       >
-        <CardHeader>
-          <h2 id="eblast-format-title" className={CARD_HEADING}>
-            {t('title', { version: workingCopy.versionNo })}
-          </h2>
-          <CardDescription>{t('description')}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form
-            className="space-y-4"
-            noValidate
-            onSubmit={(e) => {
-              e.preventDefault();
-              void onSave();
-            }}
-          >
-            {conflict ? (
-              <InlineAlert tone="warning" data-testid="eblast-format-conflict">
-                <InlineAlertTitle>{t('conflictTitle')}</InlineAlertTitle>
-                <InlineAlertDescription className="space-y-2">
-                  <span className="block">{t('conflictBody')}</span>
-                  <Button
-                    ref={reloadRef}
-                    type="button"
-                    variant="outline"
-                    className={FOOTER_BUTTON}
-                    onClick={() => router.refresh()}
-                  >
-                    {t('reload')}
-                  </Button>
-                </InlineAlertDescription>
-              </InlineAlert>
-            ) : null}
+        <form
+          className="flex flex-col gap-[var(--aura-space-4)]"
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault();
+            void onSave();
+          }}
+        >
+          {conflict ? (
+            <Alert
+              tone="warning"
+              title={t('conflictTitle')}
+              data-testid="eblast-format-conflict"
+              action={
+                <Button
+                  ref={reloadRef}
+                  type="button"
+                  variant="secondary"
+                  touchHeight
+                  className={FOOTER_BUTTON}
+                  onClick={() => router.refresh()}
+                >
+                  {t('reload')}
+                </Button>
+              }
+            >
+              {t('conflictBody')}
+            </Alert>
+          ) : null}
 
-            <div className="space-y-2">
-              <Label htmlFor={SUBJECT_ID}>{t('subjectLabel')}</Label>
-              <Input
-                id={SUBJECT_ID}
-                value={subject}
-                maxLength={SUBJECT_MAX_LENGTH}
-                disabled={busy}
-                onChange={(e) => {
-                  setSubject(e.target.value);
-                  if (error?.field === 'subject') setError(null);
-                }}
-                aria-invalid={subjectError !== null || undefined}
-                aria-describedby={describedBy('subject', SUBJECT_COUNTER_ID)}
-              />
-              <SubjectCounter id={SUBJECT_COUNTER_ID} value={subject} />
-              {subjectError !== null ? <InlineError id={ERROR_IDS.subject} message={subjectError} /> : null}
-            </div>
+          <div className="flex flex-col gap-[var(--aura-space-2)]">
+            <TextField
+              id={SUBJECT_ID}
+              touchHeight
+              label={t('subjectLabel')}
+              hint={tFields('subjectCounter', { count: subject.length, max: SUBJECT_MAX_LENGTH })}
+              value={subject}
+              maxLength={SUBJECT_MAX_LENGTH}
+              disabled={busy}
+              invalid={subjectError !== null}
+              aria-describedby={describedBy('subject')}
+              onChange={(e) => {
+                setSubject(e.target.value);
+                if (error?.field === 'subject') setError(null);
+              }}
+            />
+            {subjectError !== null ? <InlineError id={ERROR_IDS.subject} message={subjectError} /> : null}
+          </div>
 
-            <div className="space-y-2">
-              <Label id={BODY_LABEL_ID}>{t('bodyLabel')}</Label>
-              <TiptapEditor
-                initialHtml={workingCopy.bodyHtml}
-                onChange={(next) => {
-                  setBodyHtml(next);
-                  if (error?.field === 'body') setError(null);
-                }}
-                disabled={busy}
-                labelledById={BODY_LABEL_ID}
-                invalid={bodyError !== null}
-                {...(bodyError !== null ? { describedById: ERROR_IDS.body } : {})}
-                imagesEnabled={imagesEnabled}
-                draftId={broadcastId}
-                imageUploadUrl={`/api/admin/broadcasts/${broadcastId}/images`}
-              />
-              {bodyError !== null ? <InlineError id={ERROR_IDS.body} message={bodyError} /> : null}
-            </div>
+          <div className="flex flex-col gap-[var(--aura-space-2)]">
+            <span id={BODY_LABEL_ID} className="text-sm font-medium text-[var(--aura-fg-primary)]">
+              {t('bodyLabel')}
+            </span>
+            <TiptapEditor
+              initialHtml={workingCopy.bodyHtml}
+              onChange={(next) => {
+                setBodyHtml(next);
+                if (error?.field === 'body') setError(null);
+              }}
+              disabled={busy}
+              labelledById={BODY_LABEL_ID}
+              invalid={bodyError !== null}
+              {...(bodyError !== null ? { describedById: ERROR_IDS.body } : {})}
+              imagesEnabled={imagesEnabled}
+              draftId={broadcastId}
+              imageUploadUrl={`/api/admin/broadcasts/${broadcastId}/images`}
+            />
+            {bodyError !== null ? <InlineError id={ERROR_IDS.body} message={bodyError} /> : null}
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor={NOTE_ID}>{t('noteLabel')}</Label>
-              <Textarea
-                id={NOTE_ID}
-                value={note}
-                maxLength={NOTE_TO_MEMBER_MAX}
-                rows={3}
-                disabled={busy}
-                onChange={(e) => {
-                  setNote(e.target.value);
-                  if (error?.field === 'note') setError(null);
-                }}
-                aria-invalid={noteError !== null || undefined}
-                aria-describedby={describedBy('note', NOTE_HELP_ID)}
-              />
-              <p id={NOTE_HELP_ID} className="text-xs text-muted-foreground">
-                {t('noteHelp', { count: note.length, max: NOTE_TO_MEMBER_MAX })}
+          <div className="flex flex-col gap-[var(--aura-space-2)]">
+            <Textarea
+              id={NOTE_ID}
+              label={t('noteLabel')}
+              hint={t('noteHelp', { count: note.length, max: NOTE_TO_MEMBER_MAX })}
+              value={note}
+              maxLength={NOTE_TO_MEMBER_MAX}
+              rows={3}
+              disabled={busy}
+              invalid={noteError !== null}
+              aria-describedby={describedBy('note')}
+              onChange={(e) => {
+                setNote(e.target.value);
+                if (error?.field === 'note') setError(null);
+              }}
+            />
+            {noteError !== null ? <InlineError id={ERROR_IDS.note} message={noteError} /> : null}
+          </div>
+
+          {formError !== null ? <InlineError id={ERROR_IDS.form} message={formError} /> : null}
+
+          {/* DOM order = visual order = Tab order at every width: the footer
+              stacks top-to-bottom below `sm` and runs left-to-right above it. */}
+          <div className="flex flex-col gap-2 border-t border-[var(--aura-border-default)] pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+            {guard.savedAt !== null ? (
+              // Not a live region: the save's toast is the one announcement.
+              <p className="aura-text-caption text-[var(--aura-fg-secondary)] sm:mr-auto">
+                {t('savedAt', { time: formatLocalisedDate(guard.savedAt, locale, TIME_HH_MM) })}
               </p>
-              {noteError !== null ? <InlineError id={ERROR_IDS.note} message={noteError} /> : null}
-            </div>
-
-            {formError !== null ? <InlineError id={ERROR_IDS.form} message={formError} /> : null}
-
-            {/* DOM order = visual order = Tab order at every width: the footer
-                stacks top-to-bottom below `sm` and runs left-to-right above it. */}
-            <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-              {guard.savedAt !== null ? (
-                // Not a live region: the save's toast is the one announcement.
-                <p className="text-xs text-muted-foreground sm:mr-auto">
-                  {t('savedAt', { time: formatLocalisedDate(guard.savedAt, locale, TIME_HH_MM) })}
-                </p>
-              ) : null}
-              <TestCopyButton
-                broadcastId={broadcastId}
-                versionId={workingCopy.id}
-                subject={subject}
-                bodyHtml={bodyHtml}
-                disabled={busy}
-                className={FOOTER_BUTTON}
-              />
-              <Button
-                // The form's submit — its `onSubmit` runs `onSave` (a click and
-                // Enter in the subject both arrive there, once).
-                type="submit"
-                variant="outline"
-                data-testid="eblast-format-save"
-                className={FOOTER_BUTTON}
-                disabled={busy || !dirty}
-                focusableWhenDisabled
-                aria-busy={saving || undefined}
-              >
-                {saving ? (
-                  <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-                ) : (
-                  <Save className="size-4" aria-hidden="true" />
-                )}
-                {t('save')}
-              </Button>
-              <Button
-                ref={sendTriggerRef}
-                type="button"
-                data-testid="eblast-send-to-member"
-                className={FOOTER_BUTTON}
-                disabled={busy || conflict}
-                focusableWhenDisabled
-                onClick={() => {
-                  if (busy || conflict) return;
-                  closedViaSuccessRef.current = false;
-                  failFocusRef.current = undefined;
-                  setSendOpen(true);
-                }}
-              >
-                <Send className="size-4" aria-hidden="true" />
-                {tSend('button')}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
+            ) : null}
+            <TestCopyButton
+              broadcastId={broadcastId}
+              versionId={workingCopy.id}
+              subject={subject}
+              bodyHtml={bodyHtml}
+              disabled={busy}
+              className={FOOTER_BUTTON}
+            />
+            <Button
+              // The form's submit — its `onSubmit` runs `onSave` (a click and
+              // Enter in the subject both arrive there, once).
+              type="submit"
+              variant="secondary"
+              touchHeight
+              data-testid="eblast-format-save"
+              className={FOOTER_BUTTON}
+              loading={saving}
+              aria-disabled={busy || !dirty || undefined}
+            >
+              {t('save')}
+            </Button>
+            <Button
+              ref={sendTriggerRef}
+              type="button"
+              variant="primary"
+              touchHeight
+              icon="mail"
+              data-testid="eblast-send-to-member"
+              className={FOOTER_BUTTON}
+              aria-disabled={busy || conflict || undefined}
+              onClick={() => {
+                if (busy || conflict) return;
+                closedViaSuccessRef.current = false;
+                failFocusRef.current = undefined;
+                setSendOpen(true);
+              }}
+            >
+              {tSend('button')}
+            </Button>
+          </div>
+        </form>
       </Card>
 
       <div className="min-w-0 space-y-6 lg:sticky lg:top-[calc(var(--shell-bar-height,0px)+1rem)] lg:self-start">
         <PreviewPane subject={subject} bodyHtml={deferredBody} endpoint="/api/admin/broadcasts/preview" locale={locale} />
-        <Card data-testid="eblast-member-original" role="region" aria-labelledby="eblast-original-title">
-          <CardHeader>
-            <h2 id="eblast-original-title" className={CARD_HEADING}>
-              {tContent('originalTitle')}
-            </h2>
-            <CardDescription>{tContent('originalHint')}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-sm font-medium break-words">{original.subject}</p>
-            <PreviewSurface state={original.preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
-          </CardContent>
-        </Card>
+        {/* Board `Admin-eblast-design-mobile` (maintainer, 19 Oct) — folded
+            under its title where the columns stack. */}
+        <OriginalDisclosure summary={tContent('originalTitle')}>
+          <Card
+            data-testid="eblast-member-original"
+            titleId="eblast-original-title"
+            title={tContent('originalTitle')}
+            headingLevel={2}
+            description={tContent('originalHint')}
+          >
+            <div className="space-y-2">
+              <p className="text-sm font-medium break-words">{original.subject}</p>
+              <PreviewSurface state={original.preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
+            </div>
+          </Card>
+        </OriginalDisclosure>
       </div>
 
-      <AlertDialog
+      <Dialog
+        role="alertdialog"
         open={sendOpen}
-        onOpenChange={(next) => {
-          if (!sending) setSendOpen(next);
+        dismissible={!sending}
+        onClose={() => {
+          if (!sending) setSendOpen(false);
         }}
-      >
-        <AlertDialogContent finalFocus={sendFinalFocus}>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{tSend('title')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {tSend('body')}
-              {dirty ? <span className="mt-2 block text-foreground">{tSend('savesFirst')}</span> : null}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={sending}>{tSend('cancel')}</AlertDialogCancel>
-            <AlertDialogAction
+        finalFocus={() => sendFinalFocus() || null}
+        title={tSend('title')}
+        description={
+          <>
+            {tSend('body')}
+            {dirty ? (
+              <span className="mt-[var(--aura-space-2)] block text-[var(--aura-fg-primary)]">{tSend('savesFirst')}</span>
+            ) : null}
+          </>
+        }
+        footer={
+          <>
+            <Button variant="secondary" disabled={sending} onClick={() => setSendOpen(false)}>
+              {tSend('cancel')}
+            </Button>
+            <Button
               data-testid="eblast-send-to-member-confirm"
-              disabled={sending}
-              focusableWhenDisabled
-              aria-busy={sending || undefined}
-              onClick={(e) => {
-                e.preventDefault();
-                void onSend();
-              }}
+              variant="primary"
+              icon="mail"
+              loading={sending}
+              onClick={() => void onSend()}
             >
-              {sending ? <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : null}
               {tSend('confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </Button>
+          </>
+        }
+      />
     </div>
   );
 }
