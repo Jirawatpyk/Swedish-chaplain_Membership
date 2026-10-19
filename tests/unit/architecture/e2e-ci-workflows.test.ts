@@ -238,7 +238,12 @@ describe('.github/ci/e2e.env', () => {
     expect(pairs.get('E2E_BASE_URL')).toBe('http://localhost:3100');
     expect(pairs.get('APP_BASE_URL')).toBe('http://localhost:3100');
     expect(pairs.get('APP_ALLOWED_ORIGINS')).toBe('http://localhost:3100');
-    expect(pairs.get('FEATURE_F6_EVENTCREATE')).toBe('false');
+    // F6 and F7 run as in production (#592), with the synthetic values their
+    // production boot checks require.
+    expect(pairs.get('FEATURE_F6_EVENTCREATE')).toBe('true');
+    expect(pairs.get('ZAPIER_DPA_EXECUTED')).toBe('true');
+    expect(pairs.get('FEATURE_F7_BROADCASTS')).toBe('true');
+    expect(pairs.get('TENANT_PRIVACY_CONTACT_EMAIL')).toMatch(/^[^\s@]+@[^\s@]+\.internal$/);
     expect(pairs.get('FEATURE_F5_ONLINE_PAYMENT')).toBe('true');
     expect(pairs.get('FEATURE_088_TAX_AT_PAYMENT')).toBe('true');
     expect(pairs.get('FEATURE_F9_DASHBOARD')).toBe('true');

@@ -84,6 +84,7 @@ e2e never runs in CI, so every PR needs a manual local verification round to cat
 - `.github/ci/e2e.env` (new, no secrets): the CI overrides for a production boot.
   - `APP_ALLOWED_ORIGINS=http://localhost:3100`; without it CSRF rejects every POST in production.
   - `FEATURE_F6_EVENTCREATE=false`, because otherwise boot requires `ZAPIER_DPA_EXECUTED`.
+    - **Superseded (2026-10-19, #592):** F6, F7 and E-Blast member approval are on in CI, as in production, with synthetic `ZAPIER_DPA_EXECUTED` and `TENANT_PRIVACY_CONTACT_EMAIL` values.
   - F7 needs an inbox and `TENANT_PRIVACY_POLICY_URL` to boot: either supply synthetic values or switch F7 off for PR runs. Decided in the spike.
   - `FEATURE_F8_RENEWALS=true`, and F9 on with the CI Blob token.
 - `.github/workflows/e2e-critical.yml` (new). Trigger: `pull_request` only (never `pull_request_target`); fork PRs skip with a notice; concurrency is per ref with cancel-in-progress. Steps:
