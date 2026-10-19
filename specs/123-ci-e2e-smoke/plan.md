@@ -485,6 +485,7 @@ Filled in at Verify, one block per slice.
   - `LEGACY_UNRECORDED_TAGS` in `scripts/lib/migrate-fresh.ts` names exactly the four tags above, with no wildcard.
   - In normal mode, the unrecorded entries must be a subset of it; in fresh mode it does not apply.
   - Tests: RED `8c97e3d5f`, GREEN `96252832d`. A mutation that drops the fresh-mode branch turns the fresh-mode test red.
+  - **Superseded by #595 (2026-10-19):** migration `0317` records the four entries on prod, and the allow-list and `disallowedUnrecorded` are deleted, so Phase 4 now refuses any unrecorded entry in both modes.
   - Follow-up, in a separate PR: the maintainer verifies `renewal_cycles.plan_id_at_cycle_start` on prod, then the four rows are backfilled on prod and the list is deleted. Claude does not touch prod.
 - **DW-7 timing deferred to post-merge (projection 25.2 min).**
   - No change in this PR. The first real run after the parent refresh is the measurement.

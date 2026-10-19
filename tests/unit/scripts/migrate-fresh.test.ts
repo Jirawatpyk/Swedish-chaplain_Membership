@@ -5,10 +5,8 @@ import {
   applyFreshMigrations,
   attachJournalTags,
   decideMigrationMode,
-  disallowedUnrecorded,
   findUnrecordedMigrations,
   isPooledConnection,
-  LEGACY_UNRECORDED_TAGS,
   migrationTargetHost,
   withMigrationLock,
   type MigrationSqlClient,
@@ -490,35 +488,38 @@ describe('the real journal', () => {
   });
 });
 
-describe('disallowedUnrecorded (Phase 4 allow-list)', () => {
-  // Literal, not derived from the constant, so an emptied allow-list cannot pass vacuously.
+describe('Phase 4: no allow-list once 0317 records 0110-0113', () => {
+  // Literal, not read from the migration, so a 0317 that dropped a row could not pass by itself.
   const LEGACY = [
     '0110_f8_wave_k24_renewal_lapsed_enum',
     '0111_f8_phase6_us4_audit_event_type_enum',
     '0112_f8_phase6_review_cron_bearer_auth_rejected',
     '0113_f8_t149_fix_plan_id_at_cycle_start_text',
   ];
-  const legacy = LEGACY.map((tag, i) => ({ tag, folderMillis: 1792224000001 + i }));
+  const root = resolve(__dirname, '../../..');
+  const read = (rel: string) => readFileSync(resolve(root, rel), 'utf-8');
 
-  it('lists exactly the four legacy F8 tags, each a real journal entry', () => {
-    expect([...LEGACY_UNRECORDED_TAGS]).toEqual(LEGACY);
-    const journal = JSON.parse(
-      readFileSync(resolve(__dirname, '../../../drizzle/migrations/meta/_journal.json'), 'utf-8'),
-    ) as { entries: Array<{ tag: string }> };
-    const tags = new Set(journal.entries.map((e) => e.tag));
-    expect(LEGACY_UNRECORDED_TAGS.every((t) => tags.has(t))).toBe(true);
+  it('run-migrations and migrate-fresh carry no Phase 4 allow-list any more', () => {
+    for (const file of ['scripts/lib/migrate-fresh.ts', 'scripts/run-migrations.ts']) {
+      const src = read(file);
+      expect(src, file).not.toMatch(/LEGACY_UNRECORDED_TAGS|disallowedUnrecorded/);
+    }
+    // Positive control: the Phase 4 call itself is still there.
+    expect(read('scripts/run-migrations.ts')).toMatch(/findUnrecordedMigrations\(/);
   });
 
-  it('normal mode: an unrecorded entry outside the allow-list still fails', () => {
-    const other = { tag: '0200_something_new', folderMillis: 1795000000000 };
-    expect(disallowedUnrecorded([...legacy, other], 'normal')).toEqual([other]);
-  });
-
-  it('normal mode: the four allow-listed entries pass', () => {
-    expect(disallowedUnrecorded(legacy, 'normal')).toEqual([]);
-  });
-
-  it('fresh mode: the allow-list does not apply, every entry must be recorded', () => {
-    expect(disallowedUnrecorded(legacy, 'fresh')).toEqual(legacy);
+  it('0317 records exactly the four legacy entries, each by its journal `when`', () => {
+    const journal = JSON.parse(read('drizzle/migrations/meta/_journal.json')) as {
+      entries: Array<{ tag: string; when: number }>;
+    };
+    const whenOf = new Map(journal.entries.map((e) => [e.tag, e.when]));
+    const expected = LEGACY.map((tag) => whenOf.get(tag));
+    expect(expected.every((w) => typeof w === 'number')).toBe(true);
+    const sql = read('drizzle/migrations/0317_backfill_legacy_migration_rows_0110_0113.sql');
+    const recorded = [...sql.matchAll(/\('([0-9a-f]{64})',\s*(\d+)::bigint\)/g)].map((m) => Number(m[2]));
+    expect(recorded).toHaveLength(4);
+    expect(recorded).toEqual(expected);
+    expect(sql).toMatch(/WHERE NOT EXISTS[\s\S]*m\.created_at = v\.created_at/);
+    expect(journal.entries.some((e) => e.tag === '0317_backfill_legacy_migration_rows_0110_0113')).toBe(true);
   });
 });

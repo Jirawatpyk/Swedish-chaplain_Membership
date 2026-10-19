@@ -60,7 +60,6 @@ import {
   applyFreshMigrations,
   attachJournalTags,
   decideMigrationMode,
-  disallowedUnrecorded,
   findUnrecordedMigrations,
   isAlreadyExists,
   isPooledConnection,
@@ -250,9 +249,9 @@ async function main(): Promise<void> {
       }
       // Phase 4 — every journal entry must be recorded (by hash or by
       // created_at). drizzle's normal path skips an entry whose `when` is
-      // older than the newest applied one, and says nothing. In normal mode
-      // the four legacy F8 entries are tolerated (LEGACY_UNRECORDED_TAGS).
-      const unrecorded = disallowedUnrecorded(await findUnrecordedMigrations(port, migrations), mode);
+      // older than the newest applied one, and says nothing. No allow-list:
+      // 0317 recorded the four legacy F8 entries (0110-0113) on prod.
+      const unrecorded = await findUnrecordedMigrations(port, migrations);
       if (unrecorded.length > 0) {
         failure =
           `${unrecorded.length} journal entr${unrecorded.length === 1 ? 'y is' : 'ies are'} not recorded in ` +

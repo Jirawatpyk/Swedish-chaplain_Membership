@@ -248,35 +248,6 @@ export async function findUnrecordedMigrations(
 }
 
 /**
- * Journal entries that production (and every branch cut from it) records
- * neither by hash nor by `created_at = when`. Phase 4 found them on PR #586's
- * integration smoke and preview builds. Their files and `when` have not
- * changed since #24 (2026-05-11), so prod's rows were most likely written by
- * pre-final versions of them, while `db:migrate` still targeted prod.
- *
- * Tolerated in NORMAL mode only, by exact tag (no wildcard); any other
- * unrecorded entry still fails. FOLLOW-UP: verify 0113's effect on prod
- * (`renewal_cycles.plan_id_at_cycle_start` data_type = text), then backfill
- * the four rows on prod in a separate PR and delete this list.
- */
-export const LEGACY_UNRECORDED_TAGS: readonly string[] = [
-  '0110_f8_wave_k24_renewal_lapsed_enum',
-  '0111_f8_phase6_us4_audit_event_type_enum',
-  '0112_f8_phase6_review_cron_bearer_auth_rejected',
-  '0113_f8_t149_fix_plan_id_at_cycle_start_text',
-];
-
-/**
- * The unrecorded entries Phase 4 must fail on: every one in fresh mode (fresh
- * mode records each file it applies, so a gap there is a real bug), and all
- * but the legacy allow-list in normal mode.
- */
-export function disallowedUnrecorded<T extends { tag: string }>(unrecorded: readonly T[], mode: MigrationMode): T[] {
-  if (mode === 'fresh') return [...unrecorded];
-  return unrecorded.filter((entry) => !LEGACY_UNRECORDED_TAGS.includes(entry.tag));
-}
-
-/**
  * `readMigrationFiles` drops the tag; zip it back from the journal (same order —
  * it iterates `journal.entries`) so a failure can name the file.
  */
