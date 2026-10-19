@@ -2,25 +2,11 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { Alert, Card } from '@jirawatpyk/aura-react/server';
-import { RelativeTime } from '@/components/shell/relative-time';
-import { RefreshPageButton } from '@/components/shell/refresh-page-button';
-import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { failureReasonToken } from '@/components/broadcast/admin/failure-reason';
-import { ReviewActions } from '@/components/broadcast/admin/review-actions';
-import { DetailActionBar } from '@/components/broadcast/admin/detail-action-bar';
-import { OriginalDisclosure } from '@/components/broadcast/admin/original-disclosure';
-import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
-import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
-import { FormattedVersionWorkspace } from '@/components/broadcast/approval/formatted-version-workspace';
-import { ScheduleConfirmAction } from '@/components/broadcast/approval/schedule-confirm-dialog';
-import { StartFormattedVersionAction } from '@/components/broadcast/approval/start-formatted-version-action';
-import { VersionThread, hasThreadHistory, staffThreadModel } from '@/components/broadcast/approval/version-thread';
-import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
-import { PreviewSurface, type PreviewState } from '@/components/broadcast/use-preview-html';
+import { staffThreadModel } from '@/components/broadcast/approval/version-thread';
+import { type PreviewState } from '@/components/broadcast/use-preview-html';
+import { BroadcastDetailView } from './_components/broadcast-detail-view';
 import {
   canCancel,
   canTransition,
@@ -31,7 +17,6 @@ import {
   parseBroadcastId,
   readDispatchHold,
   readFormattingWarnings,
-  stageOf,
   turnOf,
   type BroadcastStatus,
   type BroadcastVersion,
@@ -51,10 +36,6 @@ import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { asMemberId } from '@/modules/members';
-
-/** A field's label and value on AURA's type (the label in the secondary tone, never the empty-sentinel dash). */
-const FIELD_LABEL = 'aura-text-caption text-[var(--aura-fg-secondary)]';
-const FIELD_VALUE = 'mt-1 text-sm break-words';
 
 /** Stages whose E-Blast carries version rows (or is about to) — the thread is read only for these. */
 const VERSIONED_STATUSES: ReadonlySet<BroadcastStatus> = new Set([
@@ -93,14 +74,8 @@ export default async function AdminBroadcastDetailPage({
   readonly params: Promise<{ id: string }>;
 }): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.review');
-  const tActor = await getTranslations('admin.broadcasts.queue.actorRole');
-  const tSegment = await getTranslations('admin.broadcasts.review.segmentType');
-  const tHeader = await getTranslations('admin.broadcasts.approval.header');
-  const tWarnings = await getTranslations('admin.broadcasts.approval.warnings');
-  const tContent = await getTranslations('admin.broadcasts.approval.content');
   const tFeedback = await getTranslations('admin.broadcasts.approval.feedback');
   const tThread = await getTranslations('admin.broadcasts.approval.thread');
-  const tButtons = await getTranslations('buttons');
   const session = await requirePagePermission('broadcasts.read');
   // 016 re-review D — evaluator-derived, never ROLE_BUNDLES: a `manager` holds
   // `broadcasts.read` only, so every action control below is ABSENT for them
@@ -144,8 +119,6 @@ export default async function AdminBroadcastDetailPage({
     getDateFormatLocale(locale),
     { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok' },
   );
-  const notSet = <EmptyValue label={tHeader('notSet')} />;
-  const formatDate = (d: Date | null): React.ReactNode => (d !== null ? fmt.format(d) : notSet);
 
   // ROUND-3 #2 — the approver reads the DOCUMENT THAT SHIPS: every body on
   // this page goes through `renderBroadcastDetailBody` (the shared renderer
@@ -250,18 +223,6 @@ export default async function AdminBroadcastDetailPage({
   });
 
   const turn = turnOf(status);
-  // M2 — the Round row speaks only where a round exists or can still start:
-  // with the flag off, `submitted` has no formatting round (FR-034 — "behave
-  // as today"). At round 0, "not sent to the member yet" is true only while
-  // a version can still be sent (`submitted`, `in_design`); an E-Blast
-  // approved as submitted, rejected or cancelled at round 0 had no round.
-  const showRoundRow = !(status === 'submitted' && !memberApprovalOn);
-  const roundValue: React.ReactNode =
-    round >= 1
-      ? String(round)
-      : status === 'submitted' || status === 'in_design'
-        ? tHeader('roundNone')
-        : <EmptyValue label={tHeader('roundNoRound')} />;
   // F119 T085 (FR-011, FR-032) — the history: every version sent to the
   // member and every decision with its reason, attached to the version it
   // concerns. It sits BELOW the workspace (UX review M6), so a long thread
@@ -289,218 +250,44 @@ export default async function AdminBroadcastDetailPage({
         ? tThread(feedbackWithdrawn ? 'withdrawnBy' : 'changesRequestedBy', { version: feedbackVersion, name: feedbackName })
         : tFeedback(feedbackWithdrawn ? 'withdrawnTitle' : 'changesRequestedTitle', { version: feedbackVersion });
 
-  return (
-    <DetailContainer>
-      {/* B3 UX hardening — the status badge sits in `role="status"` so AT
-          announces the new stage when an action refreshes the page. */}
-      <PageHeader
-        title={broadcast.subject}
-        subtitle={`${memberDisplayName} · ${t('subtitle')}`}
-        badge={
-          <span role="status" aria-live="polite" className="inline-flex max-w-full min-w-0">
-            <StatusBadge status={status} />
-          </span>
-        }
-      />
-      {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
-
-      {/* F119 PR-A — "marketing sees why it is blocked": the stored reason,
-          translated (never the raw value, which can be provider free text),
-          under the status it explains. A note, not a live region: it is page
-          content, not an event. Body text, not the muted empty-sentinel tone. */}
-      {status === 'failed_to_dispatch' ? (
-        <Alert tone={failureTone} role="note" title={t('failureReasonTitle')} data-testid="eblast-failure-reason">
-          <span className="block break-words leading-relaxed">{failureReasonText}</span>
-        </Alert>
-      ) : null}
-      {/* F119 PR-A R1 — held, not failed: it sends by itself once the member
-          pays, or fails if the membership ends. Info, not warning: nothing is
-          wrong with the E-Blast and staff have nothing to fix. */}
-      {dispatchHeld ? (
-        <Alert tone="info" role="note" title={t('dispatchHeldTitle')} data-testid="eblast-dispatch-held">
-          <span className="block break-words leading-relaxed">{t('dispatchHeldBody')}</span>
-        </Alert>
-      ) : null}
-
-      {threadUnavailable ? (
-        <Alert
-          tone="danger"
-          title={tContent('threadUnavailableTitle')}
-          action={<RefreshPageButton label={tButtons('retry')} />}
-          data-testid="eblast-thread-unavailable"
-        >
-          {/* PR #392 review D7 — the working copy / original / formatting
-              claim holds only on a versioned stage; elsewhere (approved,
-              sent, closed) only the history is missing. */}
-          {VERSIONED_STATUSES.has(status)
-            ? tContent('threadUnavailableBody')
-            : tContent('threadUnavailableHistoryBody')}
-        </Alert>
-      ) : null}
-      {showNoPortalUser ? (
-        <Alert tone="warning" role="note" title={tWarnings('noPortalUserTitle')} data-testid="eblast-warning-no-portal-user">
-          {tWarnings('noPortalUserBody', { company: memberDisplayName })}
-        </Alert>
-      ) : null}
-      {unsafeImages.length > 0 ? (
-        <Alert tone="warning" role="note" title={tWarnings('unsafeImagesTitle')} data-testid="eblast-warning-unsafe-images">
-          <span className="block">{tWarnings('unsafeImagesBody')}</span>
-          <ul className="mt-1 list-disc space-y-1 pl-5">
-            {unsafeImages.map((image) => (
-              <li key={image.src} className="break-all">
-                <code className="text-xs">{image.src}</code>
-                {' — '}
-                {tWarnings(`reason.${image.reason}`)}
-              </li>
-            ))}
-          </ul>
-        </Alert>
-      ) : null}
-
-      {/* F119 T063 — the stage header (contract § Page contracts; FR-026):
-          whose turn, time in the stage, the round, and the member's proposed
-          time beside the confirmed one (FR-016 — both, separately). The
-          stage itself is the header badge above. */}
-      <Card titleId="eblast-stage-title" title={tHeader('title')} headingLevel={2} data-stage={stageOf(status)}>
-        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <Field
-                label={tHeader('turn')}
-                value={turn === null ? <EmptyValue label={tHeader('turnValue.none')} /> : tHeader(`turnValue.${turn}`)}
-                testId="eblast-whose-turn"
-              />
-              <div>
-                <dt className={FIELD_LABEL}>
-                  {tHeader('timeInStage')}
-                </dt>
-                <dd className={FIELD_VALUE}>
-                  <RelativeTime iso={broadcast.stageEnteredAt.toISOString()} title={fmt.format(broadcast.stageEnteredAt)} />
-                </dd>
-              </div>
-              {showRoundRow ? <Field label={tHeader('round')} value={roundValue} testId="eblast-round" /> : null}
-              <Field label={tHeader('proposedSendAt')} value={formatDate(broadcast.proposedSendAt)} />
-              <Field label={t('fields.scheduledFor')} value={formatDate(broadcast.scheduledFor)} />
-        </dl>
-      </Card>
-
-      <Card titleId="eblast-details-title" title={tHeader('detailsTitle')} headingLevel={2}>
-            {/* B1 UX hardening — `<dl>/<dt>/<dd>` so each label↔value pair is
-                announced as a unit (WCAG 1.3.1). */}
-            <dl className="grid gap-3 sm:grid-cols-2">
-              <Field label={t('fields.submittedBy')} value={memberDisplayName} />
-              <Field label={t('fields.actorRole')} value={tActor(broadcast.actorRole)} />
-              <Field label={t('fields.submittedAt')} value={formatDate(broadcast.submittedAt)} />
-              <Field
-                label={t('fields.segment')}
-                value={tSegment(broadcast.segmentType as Parameters<typeof tSegment>[0])}
-              />
-              <Field label={t('fields.recipientCount')} value={String(broadcast.estimatedRecipientCount)} />
-            </dl>
-      </Card>
-
-      {memberFeedback !== null && feedbackTitle !== null ? (
-        <Alert tone="info" role="note" title={feedbackTitle} data-testid="eblast-member-feedback">
-          <span className="block whitespace-pre-line break-words">{memberFeedback.reason}</span>
-        </Alert>
-      ) : null}
-
-      {showWorkspace && workingCopy !== null && original !== null && originalPreview !== null ? (
-        // The writing tool, with the member's original beside it read-only.
-        // Keyed on the concurrency token so a refresh after a conflict
-        // remounts it from the server's current copy.
-        <FormattedVersionWorkspace
-          key={workingCopy.updatedAt.toISOString()}
-          broadcastId={broadcastId}
-          workingCopy={{
-            id: workingCopy.id,
-            versionNo: workingCopy.versionNo,
-            subject: workingCopy.subject,
-            bodyHtml: workingCopy.bodyHtml,
-            noteToMember: workingCopy.noteToMember,
-            updatedAt: workingCopy.updatedAt.toISOString(),
-          }}
-          original={{ subject: original.subject, preview: originalPreview }}
-          imagesEnabled={isF71aUs2Enabled()}
-        />
-      ) : shownVersion !== null && shownPreview !== null && original !== null && originalPreview !== null ? (
-        // Read-only comparison: the version marketing is on (or sent, or the
-        // member approved) beside the member's original — the manager's view
-        // of `in_design`, and everyone's view after a version was sent.
-        <div className="grid gap-6 lg:grid-cols-2" data-testid="eblast-version-comparison">
-          <ContentCard
-            id="eblast-shown-version-title"
-            title={
-              workingCopy !== null
-                ? tContent('workingCopyTitle', { version: shownVersion.versionNo })
-                : tContent('sentVersionTitle', { version: shownVersion.versionNo })
-            }
-            subject={shownVersion.subject}
-            preview={shownPreview}
-            note={shownVersion.noteToMember}
-            noteLabel={tContent('noteLabel')}
-          />
-          {/* Spec 122 US12c-1 — folded under its own title where the cards stack. */}
-          <OriginalDisclosure summary={tContent('originalTitle')}>
-            <ContentCard
-              id="eblast-original-title"
-              title={tContent('originalTitle')}
-              description={tContent('originalHint')}
-              subject={original.subject}
-              preview={originalPreview}
-            />
-          </OriginalDisclosure>
-        </div>
-      ) : (
-        <Card titleId="eblast-body-title" title={t('fields.body')} headingLevel={2}>
-          {bodyRenderFailed ? (
-            <Alert tone="danger" role="alert" title={t('bodyRenderFailedTitle')}>
-              {t('bodyRenderFailedHint')}
-            </Alert>
-          ) : (
-            <PreviewSurface state={previewState} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
-          )}
-        </Card>
-      )}
-
-      {threadModel !== null && hasThreadHistory(threadModel) ? (
-        <VersionThread audience="staff" model={threadModel} />
-      ) : null}
-
-      <AuditTimeline tenantId={tenant.slug} broadcastId={broadcastId} />
-
-      {/* Spec 122 US12c-1 — the stage's staff actions, as the board groups
-          them: the destructive ones (Cancel, Reject) at the start, the next
-          step at the end; pinned to the bottom of the screen on a phone.
-          Every control here is ABSENT for a `manager` (read-only), never
-          disabled. "Send to member" lives with the working copy it sends. */}
-      {showActionRow ? (
-        <DetailActionBar
-          start={
-            isCancellable || showReject ? (
-              <>
-                {isCancellable ? (
-                  <CancelBroadcastAction broadcastId={broadcastId} surface="admin" subject={broadcast.subject} />
-                ) : null}
-                {showReject ? <ReviewActions broadcastId={broadcastId} showApprove={false} showReject /> : null}
-              </>
-            ) : undefined
-          }
-        >
-          {showStart ? (
-            <StartFormattedVersionAction broadcastId={broadcastId} confirm={startConfirm} round={round} />
-          ) : null}
-          {showSchedule ? (
-            <ScheduleConfirmAction
-              broadcastId={broadcastId}
-              status={status === 'approved' ? 'approved' : 'member_approved'}
-              proposedSendAt={broadcast.proposedSendAt?.toISOString() ?? null}
-              scheduledFor={broadcast.scheduledFor?.toISOString() ?? null}
-            />
-          ) : null}
-          {showApprove ? <ReviewActions broadcastId={broadcastId} showApprove showReject={false} /> : null}
-        </DetailActionBar>
-      ) : null}
-    </DetailContainer>
-  );
+  // Called, not rendered as `<BroadcastDetailView/>`: the view is async, and
+  // this page's own tests render it with `renderToStaticMarkup`.
+  return BroadcastDetailView({
+    broadcastId,
+    broadcast,
+    status,
+    round,
+    memberDisplayName,
+    fmt,
+    isReadOnlyManager,
+    failure: status === 'failed_to_dispatch' ? { tone: failureTone, text: failureReasonText } : null,
+    dispatchHeld,
+    threadUnavailable,
+    versionedStage: VERSIONED_STATUSES.has(status),
+    showNoPortalUser,
+    unsafeImages,
+    turn,
+    memberApprovalOn,
+    memberFeedback: memberFeedback !== null && feedbackTitle !== null ? { title: feedbackTitle, reason: memberFeedback.reason ?? '' } : null,
+    showWorkspace,
+    workingCopy,
+    original,
+    originalPreview,
+    shownVersion,
+    shownPreview,
+    previewState,
+    bodyRenderFailed,
+    imagesEnabled: isF71aUs2Enabled(),
+    threadModel,
+    audit: <AuditTimeline tenantId={tenant.slug} broadcastId={broadcastId} />,
+    showActionRow,
+    isCancellable,
+    showStart,
+    startConfirm,
+    showSchedule,
+    showApprove,
+    showReject,
+  });
 }
 
 async function readThread(
@@ -579,70 +366,4 @@ async function readWarnings(
     'broadcasts.detail_page.warnings_read_failed',
   );
   return null;
-}
-
-function ContentCard({
-  id,
-  title,
-  description,
-  subject,
-  preview,
-  note,
-  noteLabel,
-}: {
-  readonly id: string;
-  readonly title: string;
-  readonly description?: string;
-  readonly subject: string;
-  readonly preview: PreviewState;
-  readonly note?: string | null;
-  readonly noteLabel?: string;
-}): React.ReactElement {
-  return (
-    <Card titleId={id} title={title} headingLevel={2} description={description} className="h-full min-w-0">
-      <div className="space-y-2">
-        <p className="text-sm font-medium break-words">{subject}</p>
-        {note !== undefined && note !== null && noteLabel !== undefined ? (
-          <p className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] px-3 py-2 text-sm">
-            <span className={`block ${FIELD_LABEL}`}>{noteLabel}</span>
-            <span className="whitespace-pre-line">{note}</span>
-          </p>
-        ) : null}
-        <PreviewSurface state={preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
-      </div>
-    </Card>
-  );
-}
-
-/** An empty value: a muted dash for sight (the empty sentinel), a word for AT. */
-function EmptyValue({ label }: { readonly label: string }): React.ReactElement {
-  return (
-    <>
-      <span aria-hidden="true" className="text-[var(--aura-fg-secondary)]">—</span>
-      <span className="sr-only">{label}</span>
-    </>
-  );
-}
-
-function Field({
-  label,
-  value,
-  testId,
-}: {
-  readonly label: string;
-  readonly value: React.ReactNode;
-  readonly testId?: string;
-}): React.ReactElement {
-  // B1 UX hardening — `<dl>` parent, so each Field is a `<div>` wrapping
-  // a `<dt>`/`<dd>` pair.
-  return (
-    <div>
-      <dt className={FIELD_LABEL}>
-        {label}
-      </dt>
-      <dd className={FIELD_VALUE} data-testid={testId}>
-        {value}
-      </dd>
-    </div>
-  );
 }
