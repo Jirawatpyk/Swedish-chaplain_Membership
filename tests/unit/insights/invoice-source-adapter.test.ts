@@ -514,14 +514,23 @@ describe('invoiceSourceAdapter.getMonthlyPaidRevenueSatang — monthly trend buc
   });
 
   it('reads the payment date as a calendar date, with no time-zone shift', async () => {
-    // 2026-03-31 parsed as a UTC instant is 07:00 Bangkok on 31 Mar; a tenant
-    // west of UTC would see 30 Mar. Either way the month must stay March.
-    const buckets = await run(
-      [{ ...paidRow(50_000n), paymentDate: '2026-03-31', paidAt: '2026-04-01T01:00:00.000Z' }],
-      ['2026-03', '2026-04'],
+    // 2026-04-01 parsed as a UTC instant is 20:00 on 31 Mar in New York, so a
+    // reader that applied the tenant zone would land in March. Recorded in May.
+    listInvoicesMock.mockResolvedValue({
+      ok: true,
+      value: {
+        rows: [{ ...paidRow(50_000n), paymentDate: '2026-04-01', paidAt: '2026-05-02T15:00:00.000Z' }],
+        nextCursor: null,
+      },
+    });
+    const buckets = await invoiceSourceAdapter.getMonthlyPaidRevenueSatang(
+      ctx,
+      ['2026-03', '2026-04', '2026-05'],
+      'America/New_York',
+      NO_WAIVERS,
     );
 
-    expect(buckets['2026-03']).toBe(50_000n);
+    expect(buckets).toEqual({ '2026-04': 50_000n });
   });
 
   it('falls back to the Bangkok month of paidAt, then issueDate, for rows without a payment date', async () => {
