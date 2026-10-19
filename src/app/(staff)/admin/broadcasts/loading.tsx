@@ -69,9 +69,10 @@ import {
 /** The table's seven columns (select is the admin's extra, narrow one). */
 const QUEUE_COLUMNS = 7;
 // The select column, then the columns in the page's minimum widths
-// (`queue-table-client.tsx`: 112 · 112 · 200 · 132 · 84 · 100, Actions 128).
+// (`queue-table-client.tsx`: 112 · 112 · 200 · 132 · 84 · 100, Actions 128,
+// wider from 1,440 px where it takes the spare width).
 const QUEUE_GRID =
-  'grid grid-cols-[2.5rem_112fr_112fr_200fr_132fr_84fr_100fr_8rem] gap-3 px-6';
+  'grid grid-cols-[2.5rem_112fr_112fr_200fr_132fr_84fr_100fr_128fr] min-[1440px]:grid-cols-[2.5rem_112fr_112fr_200fr_132fr_84fr_100fr_320fr] gap-3 px-6';
 const TABLE_ROWS = 6;
 const CARDS = 4;
 
@@ -154,12 +155,13 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
               ))}
             </div>
             {/* UX review L10 — as tall as a real row (88 px: Approve over
-                Reject), so the page does not move when the rows land. */}
+                Reject; 68 px from ~1,800 px, where nothing wraps), so the page
+                does not move when the rows land. */}
             {Array.from({ length: TABLE_ROWS }).map((_, row) => (
               <div
                 key={row}
                 data-skeleton="queue-row"
-                className={`${QUEUE_GRID} min-h-[5.5rem] items-center border-b border-[var(--aura-border-default)] py-1.5`}
+                className={`${QUEUE_GRID} min-h-[5.5rem] min-[1800px]:min-h-[4.25rem] items-center border-b border-[var(--aura-border-default)] py-1.5`}
               >
                 <SkeletonBlock data-skeleton="queue-select" className="size-4 rounded-[var(--aura-radius-xs)]" />
                 {Array.from({ length: QUEUE_COLUMNS - 1 }).map((_, i) => (
@@ -169,7 +171,7 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
                   </div>
                 ))}
                 <div data-skeleton="queue-cell" className="flex flex-col gap-1">
-                  <span data-skeleton="queue-actions" className="flex flex-col gap-1">
+                  <span data-skeleton="queue-actions" className="flex flex-col gap-1 min-[1440px]:flex-row min-[1440px]:gap-2">
                     <SkeletonBlock className="h-9 w-24 rounded-full" />
                     <SkeletonBlock className="h-9 w-24 rounded-full" />
                   </span>

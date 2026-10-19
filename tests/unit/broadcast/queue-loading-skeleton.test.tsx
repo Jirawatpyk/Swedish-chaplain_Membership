@@ -122,6 +122,10 @@ describe('the queue loading skeleton mirrors the page (T086a V3)', () => {
     const actions = row.querySelector('[data-skeleton="queue-actions"]')!;
     expect(actions.querySelectorAll('.h-9')).toHaveLength(2);
     expect(row.className).toContain('min-h-[5.5rem]');
+    // From 1,440 px Approve and Reject sit side by side; from ~1,800 px the
+    // other columns stop wrapping and a real row is 68 px.
+    expect(actions.className).toContain('min-[1440px]:flex-row');
+    expect(row.className).toContain('min-[1800px]:min-h-[4.25rem]');
   });
 
   it('the card list sits below md', async () => {

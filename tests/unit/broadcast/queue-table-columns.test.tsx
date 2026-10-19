@@ -164,6 +164,28 @@ describe('the columns (UX review M1; parity comments 19 Oct)', () => {
     );
   });
 
+  // Maintainer (19 Oct): Approve and Reject side by side where the screen
+  // allows (~214 px), stacked at 1,280 where the columns are at their minimums.
+  it('Actions has a minimum, not a fixed width, and takes a bigger share of spare width (stand-in until AURA #162)', () => {
+    render(table({ rows: [makeRow()] }));
+    const actions = within(screen.getByRole('grid'))
+      .getAllByRole('columnheader')
+      .find((th) => th.textContent?.trim() === 'Actions')!;
+    expect(actions.getAttribute('style')).toMatch(/--aura-cell-min:\s*128px/);
+    expect(actions.getAttribute('style')).not.toMatch(/--aura-cell-w:/);
+    const box = screen.getByRole('grid').closest<HTMLElement>('[style*="--queue-row-min"]');
+    expect(box).toHaveClass(
+      '[&_.aura-table\\_\\_th:has(+.aura-table\\_\\_gutter--end)]:grow-[2.5]',
+      '[&_.aura-table\\_\\_td:has(+.aura-table\\_\\_break)]:grow-[2.5]',
+    );
+  });
+
+  it('a read-only table has no Actions column and gives no column the bigger share', () => {
+    render(table({ rows: [makeRow()], readOnly: true }));
+    const box = screen.getByRole('grid').closest<HTMLElement>('[style*="--queue-row-min"]');
+    expect(box?.className).not.toContain('grow-[2.5]');
+  });
+
   it('whose turn is a line under the Stage pill, named by its label; none when nobody is waiting', () => {
     render(table({ rows: [makeRow({ whoseTurnLabel: 'Marketing' }), makeRow({ broadcastId: 'b2' })] }));
     expect(cellOf('Stage')).toHaveTextContent(/Whose turn:\s*Marketing/);

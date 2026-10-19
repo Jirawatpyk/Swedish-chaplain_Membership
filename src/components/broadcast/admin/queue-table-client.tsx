@@ -59,6 +59,15 @@ const SORTED_COLUMN: Readonly<
   send_time: { id: 'sendTime', direction: 'ascending' },
 };
 
+// The row minimum counts each column's own minimum (stand-in until AURA #159:
+// DataTable counts 160 px for every flexible column). `String.raw` keeps the
+// `\_` escapes Tailwind reads in this file.
+const QUEUE_TABLE_BOX = String.raw`max-md:hidden [&_.aura-table\_\_head]:min-w-[var(--queue-row-min)] [&_.aura-table\_\_row]:min-w-[var(--queue-row-min)]`;
+// Actions, the last column (the header cell before AURA's end gutter, the body
+// cell before its row break), takes two and a half shares of the spare width so Approve and
+// Reject sit side by side on a wide grid (stand-in until AURA #162: no column weight).
+const ACTIONS_COLUMN_SHARE = String.raw`[&_.aura-table\_\_th:has(+.aura-table\_\_gutter--end)]:grow-[2.5] [&_.aura-table\_\_td:has(+.aura-table\_\_break)]:grow-[2.5]`;
+
 export type EnrichedQueueRow = {
   readonly broadcastId: string;
   readonly subject: string;
@@ -313,8 +322,9 @@ export function QueueTableClient({
       base.push({
         key: 'actions',
         label: columnLabels.actions,
-        // Approve above Reject: the two side by side need 230 px.
-        width: 128,
+        // Approve above Reject at 128 px (1,280 px screens); side by side
+        // (~214 px) once the column takes its larger share of a wider grid.
+        minWidth: 128,
         render: (row) =>
           row.actionable ? (
             <ReviewActions broadcastId={row.broadcastId} recipientCount={row.recipientCount} />
@@ -420,9 +430,7 @@ export function QueueTableClient({
       </p>
       <div
         ref={tableRef}
-        // The row minimum counts each column's own minimum (stand-in until AURA #159:
-        // DataTable counts 160 px for every flexible column).
-        className="max-md:hidden [&_.aura-table\_\_head]:min-w-[var(--queue-row-min)] [&_.aura-table\_\_row]:min-w-[var(--queue-row-min)]"
+        className={readOnly ? QUEUE_TABLE_BOX : `${QUEUE_TABLE_BOX} ${ACTIONS_COLUMN_SHARE}`}
         style={{ '--queue-row-min': rowMin } as React.CSSProperties}
       >
         <DataTable<EnrichedQueueRow>
