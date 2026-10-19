@@ -140,6 +140,8 @@ export function QueueWithBulk({
         recipientByIdRows={rows.map((r) => ({
           broadcastId: r.broadcastId,
           recipientCount: r.recipientCount,
+          subject: r.subject,
+          memberDisplayName: r.memberDisplayName,
         }))}
       />
     </>

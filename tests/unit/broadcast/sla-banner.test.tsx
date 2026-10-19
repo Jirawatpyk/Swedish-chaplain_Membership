@@ -37,26 +37,28 @@ afterEach(() => {
 });
 
 describe('SlaBanner', () => {
-  it('green severity uses the semantic success token, not raw emerald', async () => {
+  // Spec 122 US12b — the severity is the AURA Alert tone, a named region
+  // unless it is a breach.
+  it('green severity is a success-tone AURA alert in a named region, not raw emerald', async () => {
     const ui = await SlaBanner({ stats: green });
     const { container } = render(ui);
-    const el = container.querySelector('[class*="success"]');
-    expect(el).not.toBeNull();
+    expect(container.querySelector('.aura-alert--success')).not.toBeNull();
+    expect(container.querySelector('section[aria-label]')).not.toBeNull();
     expect(container.innerHTML).not.toMatch(/emerald-/);
   });
 
-  it('red severity keeps the destructive token + role=alert', async () => {
+  it('red severity is a danger-tone AURA alert with role=alert', async () => {
     const ui = await SlaBanner({ stats: red });
     const { container } = render(ui);
-    expect(container.querySelector('[role="alert"]')).not.toBeNull();
-    expect(container.innerHTML).toContain('destructive');
+    const alert = container.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect(alert).toHaveClass('aura-alert--danger');
   });
 
-  it('amber severity uses the semantic warning token, not raw amber', async () => {
+  it('amber severity is a warning-tone AURA alert, not raw amber', async () => {
     const ui = await SlaBanner({ stats: amber });
     const { container } = render(ui);
-    expect(container.innerHTML).toMatch(/bg-warning-surface/);
-    expect(container.innerHTML).toMatch(/text-warning/);
+    expect(container.querySelector('.aura-alert--warning')).not.toBeNull();
     expect(container.innerHTML).not.toMatch(/amber-/);
   });
 

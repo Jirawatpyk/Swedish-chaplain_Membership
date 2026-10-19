@@ -371,3 +371,33 @@ describe('ApproveDialog — a standing refusal is named inside the dialog (T166 
     await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('approve-trigger')));
   });
 });
+
+describe('ApproveDialog — on AURA (spec 122 US12b)', () => {
+  it('is an AURA alert dialog: a radio group for when to send, the schedule an AURA field', async () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ApproveDialog broadcastId="b1" open onOpenChange={() => {}} />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    const group = screen.getByRole('group', { name: 'When to send' });
+    expect(group).toHaveClass('aura-radio-group');
+    fireEvent.click(screen.getByRole('radio', { name: enMessages.admin.broadcasts.approveDialog.decision.schedule }));
+    expect(screen.getByLabelText(enMessages.admin.broadcasts.approveDialog.scheduleLabel).closest('.aura-field')).not.toBeNull();
+  });
+
+  // US12b UX review L5 — while the approve request runs, the dialog has no
+  // header close button (AURA `dismissible={false}`), as Cancel is disabled.
+  it('cannot be closed from its header while the request is running', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => {})));
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ApproveDialog broadcastId="b1" open onOpenChange={() => {}} />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Close' })).toBeNull());
+    vi.unstubAllGlobals();
+  });
+});

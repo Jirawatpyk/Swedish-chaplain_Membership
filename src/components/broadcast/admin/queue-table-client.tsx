@@ -1,91 +1,44 @@
 'use client';
 
 /**
- * T117 — TanStack Table v8 client renderer.
+ * T117 — the admin review queue's list: an AURA `DataTable` from `md` up, the
+ * board's phone cards below it (spec 122 US12b).
  *
- * Task 2 (2026-08-01-broadcast-review-queue-pr2): row virtualization
- * (`@tanstack/react-virtual`, threshold 100 rows, perf.md CHK039) was
- * removed — the queue query pages at 50 rows, so the threshold never
- * fired in production. Dead code removed to unblock the shared `<Table>`
- * adoption (Task 3).
+ * Selection (Smart-2: admins bulk-approve rows awaiting review) is AURA's own
+ * per-row predicate (`isRowSelectable`, handoff item 52): only `actionable`
+ * rows (`status === 'submitted'`) get a box, select-all skips the rest, and
+ * managers (`readOnly`) get no selection column at all. The selection is
+ * controlled here and mirrored up to `QueueWithBulk`, which owns the bulk bar:
+ *   - `onSelectionChange(ids)` — fired whenever the selection changes, and
+ *     re-fired (after pruning) when `rows` changes, so a row that drops out of
+ *     a `router.refresh()` never leaves a phantom id in the mirror, the bar's
+ *     count or a retried bulk approve (broadcast-queue-crosspr-hotfix);
+ *   - `clearSelectionNonce` — bumped by the parent to clear (Clear, or a full
+ *     bulk-approve success);
+ *   - `reselectIds` + `reselectNonce` — bumped after a partial bulk failure so
+ *     ONLY the failed rows stay selected (see `queue-with-bulk.tsx`).
  *
- * Task 3 — the desktop table markup now renders through the shared
- * `@/components/ui/table.tsx` primitive (focusable `role="region"` scroll
- * container, sticky `bg-card` header, `--table-row-height` rows) instead
- * of a hand-rolled `<table>`, matching the members/renewals lists. Wrapped
- * in `hidden md:block` to prepare Task 4's mobile card dual-render (the
- * card list itself is out of scope here).
+ * The phone cards follow board `Admin-broadcasts-mobile` (maintainer, 18 Oct):
+ * no checkbox and no inline Approve / Reject — each card opens the detail page.
  *
- * Smart-2 (2026-04-30): admins can multi-select `submitted` rows and
- * bulk-approve them (catalogue Feature #7).
+ * The sr-only `role="status"` announcer is the list's ONE live region (FR-025):
+ * permanently mounted (a region inserted with its text already in it is not
+ * reliably read), it says whichever happened last — the view changing ("N
+ * E-Blasts in this view, M stalled") or the selection count changing. The bulk
+ * bar's visible count is deliberately not a live region.
  *
- * Task 6 (2026-08-01-broadcast-review-queue-pr2) — selection ownership
- * moved OUT of this component. `rowSelection` stays local/uncontrolled
- * (TanStack needs somewhere to hold it), but a parent (`QueueWithBulk`)
- * now mirrors it via three new optional props:
- *   - `enableSelection` (defaults to `!readOnly`, the pre-Task-6 gate) —
- *     whether the `select` column renders at all. (F119 T109: the sr-only
- *     announcer no longer follows it — it is mounted for every viewer.)
- *   - `onSelectionChange(ids)` — fired in an effect whenever the local
- *     `rowSelection` changes, so the parent always has the current
- *     broadcastId list. Cross-PR hotfix (broadcast-queue-crosspr-hotfix):
- *     also re-fires (and prunes `rowSelection`) when `rows` changes without
- *     a selection toggle, so a row dropping out of a `router.refresh()` no
- *     longer leaves a stale/phantom id in the mirror or the checkbox state
- *     — see the comment above the mirror effect below.
- *   - `clearSelectionNonce` — bumped by the parent to force this
- *     component's uncontrolled selection back to `{}` (e.g. after Clear
- *     or a full bulk-approve success). Mirrors the members-directory
- *     `DirectoryWithBulk`/`MembersTable` nonce precedent.
- * The OLD sticky-top `role="region"` bulk bar + its `handleBulkApprove`
- * fan-out are DELETED from this file — that UI + logic now live in the
- * fixed-bottom `QueueBulkActionBar` (Task 5), mounted by `QueueWithBulk`
- * alongside this table. The sr-only `role="status"` selection announcer
- * STAYS here (see the comment above `selectionAnnouncer` below) and is the
- * SOLE live region for the count — the bar's visible count span is
- * deliberately NOT a live region, so this permanently-mounted announcer
- * covers the mount/unmount 0↔1 transitions the round-2 a11y fix exists for
- * without a double-announce.
- *
- * The parent server component pre-formats every per-row + column-header
- * i18n string and locale-formatted date, so this component never needs
- * `getTranslations` or a locale instance for row/column content. The
- * selection-announcer string (`admin.broadcasts.queue.bulk.selected`) is
- * the one exception — it's translated client-side via `useTranslations`
- * so the ICU-plural count interpolates correctly.
+ * The parent server component pre-formats every per-row string and date; only
+ * the ICU-plural announcements are translated here.
  */
-import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle } from 'lucide-react';
+import { QUEUE_COLUMN_LAYOUT } from './queue-table-layout';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import {
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-  type ColumnDef,
-  type RowSelectionState,
-} from '@tanstack/react-table';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from '@/components/ui/table';
-import { cn } from '@/lib/utils';
+import { DataTable, Icon, StatusPill, type DataTableColumn } from '@jirawatpyk/aura-react';
+import type { BroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
 import { ReviewActions } from './review-actions';
 import { QueueCardList } from './queue-card-list';
-import { EmptySentinel, SendTime, TimeInStage } from './queue-row-cells';
-
-type BadgeVariant =
-  | 'default'
-  | 'secondary'
-  | 'destructive'
-  | 'outline'
-  | 'ghost';
+import { SendTime, TimeInStage } from './queue-row-cells';
 
 /** UX review M1 — the visible hint for each order. */
 const ORDER_HINT_KEY = {
@@ -100,17 +53,19 @@ const ORDER_HINT_KEY = {
  * shortest time in stage first, so ASCENDING.
  */
 const SORTED_COLUMN: Readonly<
-  Record<QueueOrder, { readonly id: string; readonly direction: 'ascending' | 'descending' }>
+  Record<QueueOrder, { readonly id: 'timeInStage' | 'sendTime'; readonly direction: 'ascending' | 'descending' }>
 > = {
   longest_in_stage: { id: 'timeInStage', direction: 'descending' },
   most_recent: { id: 'timeInStage', direction: 'ascending' },
   send_time: { id: 'sendTime', direction: 'ascending' },
 };
 
-/** UX review M1 — the text cells that wrap (capped) rather than widen the table. */
-const WRAPPED_COLUMNS: ReadonlySet<string> = new Set(['member', 'timeInStage', 'sendTime', 'audience']);
+// The table box is the grid from 768px; phones get the cards. AURA counts
+// each column's own minimum for the row width (5.51, #159), so the grid fits
+// a 1280px window without scrolling sideways.
+const QUEUE_TABLE_BOX = 'max-md:hidden';
 
-export interface EnrichedQueueRow {
+export type EnrichedQueueRow = {
   readonly broadcastId: string;
   readonly subject: string;
   readonly memberDisplayName: string;
@@ -118,8 +73,8 @@ export interface EnrichedQueueRow {
   readonly segmentLabel: string;
   readonly recipientCount: number;
   /**
-   * Type-3 (round-3) — single nullable struct so `(label, variant)`
-   * cannot drift apart. Null = no badge to render.
+   * Type-3 (round-3) — single nullable struct so `(label, variant)` cannot
+   * drift apart. Null = no badge to render.
    *
    * F119 T117 / T118 — re-based on `stage_entered_at` and applied to EVERY
    * waiting stage (`stageAgeOf`): `red` IS the stalled flag (marketing-held
@@ -131,8 +86,8 @@ export interface EnrichedQueueRow {
     readonly label: string;
     readonly variant: 'amber' | 'red';
   } | null;
-  readonly statusBadgeVariant: BadgeVariant;
-  readonly statusBadgeClassName?: string;
+  /** Spec 122 US12b — the AURA `StatusPill` tone (`getBroadcastStatusTone`). */
+  readonly statusTone: BroadcastStatusTone;
   /** The FR-019 stage label (`approved` reads "Scheduled"). */
   readonly statusBadgeLabel: string;
   readonly actionable: boolean;
@@ -148,7 +103,7 @@ export interface EnrichedQueueRow {
   readonly lastActivityFormatted: string;
   /** F119 T119 (FR-029) — "N recipients · N delivered · …" on sent rows; null elsewhere. */
   readonly deliverySummary: string | null;
-}
+};
 
 /**
  * UX review H1 / M1 — the order the page asked the list for, so the table can
@@ -164,7 +119,7 @@ export interface QueueTableClientProps {
   /**
    * UX review M1 — eight columns (plus selection): the FR-026 fields folded
    * into fewer, wrapping cells so Actions stays reachable. Round sits under
-   * the Stage badge, last activity is Time in stage's "since" line, the two
+   * the Stage pill, last activity is Time in stage's "since" line, the two
    * send times share one column, and Audience carries the recipient count.
    */
   readonly columnLabels: {
@@ -183,9 +138,8 @@ export interface QueueTableClientProps {
   readonly order?: QueueOrder;
   /**
    * UX review H3 — how many E-Blasts the whole VIEW holds (not the page of
-   * ≤ 50), when the page knows it; `null` when it does not (a member filter or
-   * the Upcoming preset narrows the per-stage counts it is summed from), and
-   * then the announcement says "shown" rather than claiming a total.
+   * ≤ 50), when the page knows it; `null` when it does not, and then the
+   * announcement says "shown" rather than claiming a total.
    */
   readonly viewTotal?: number | null;
   /**
@@ -196,38 +150,19 @@ export interface QueueTableClientProps {
   readonly readOnly?: boolean;
   /**
    * F119 T109 — rendered in place of the table AND the card list when there
-   * are no rows. It lives here, not in the server wrapper, so a stage change
-   * that empties the list keeps the one live region below mounted (and able
-   * to say so) instead of swapping the whole component out.
+   * are no rows, so a stage change that empties the list keeps the one live
+   * region below mounted (and able to say so).
    */
   readonly emptyState?: React.ReactNode;
-  /**
-   * Task 6 — whether the `select` column renders (the announcer is always
-   * mounted since F119 T109).
-   * Defaults to `!readOnly` (the pre-Task-6 gate) when omitted, so direct
-   * callers that don't opt into the selection lift (e.g. unit tests) keep
-   * the original behaviour unchanged.
-   */
+  /** Whether rows can be selected; defaults to `!readOnly`. */
   readonly enableSelection?: boolean;
-  /** Task 6 — fired in an effect whenever the local `rowSelection` changes. */
+  /** Fired whenever the selection changes (and after a prune on new rows). */
   readonly onSelectionChange?: (ids: string[]) => void;
-  /** Task 6 — bump to force the local, uncontrolled `rowSelection` to `{}`. */
+  /** Bump to clear the selection. */
   readonly clearSelectionNonce?: number;
-  /**
-   * Task 6 (2026-08-02-broadcast-review-queue-pr3) — the ids to re-apply as
-   * `rowSelection` the next time `reselectNonce` bumps. `QueueWithBulk` uses
-   * this to keep ONLY the failed rows checked after a partial bulk-approve
-   * failure: because this is the SAME `rowSelection` state that backs the
-   * desktop checkboxes, the mobile `QueueCardList`, and the selection
-   * mirror/announcer below, re-applying it here (rather than narrowing the
-   * parent's own `selectedIds` mirror in isolation) keeps every consumer of
-   * the shared `useReactTable` instance in lockstep — no desync between the
-   * toolbar's displayed count and the checkboxes. See `queue-with-bulk.tsx`'s
-   * module docstring for why the PR2 "clear everything" acceptable-minimum
-   * is replaced by this controlled re-select.
-   */
+  /** The ids to select the next time `reselectNonce` bumps (the failed rows of a partial bulk approve). */
   readonly reselectIds?: readonly string[];
-  /** Task 6 — bump to force `rowSelection` to exactly `reselectIds`. */
+  /** Bump to set the selection to exactly `reselectIds`. */
   readonly reselectNonce?: number;
 }
 
@@ -245,346 +180,203 @@ export function QueueTableClient({
   viewTotal = null,
   viewKey = '',
 }: QueueTableClientProps): React.ReactElement {
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+  const [selected, setSelected] = useState<string[]>([]);
   const tBulk = useTranslations('admin.broadcasts.queue.bulk');
   const tQueue = useTranslations('admin.broadcasts.queue');
   const selectionEnabled = enableSelection ?? !readOnly;
+  const tableRef = useRef<HTMLDivElement>(null);
 
-  const columns = useMemo<ColumnDef<EnrichedQueueRow>[]>(() => {
-    const base: ColumnDef<EnrichedQueueRow>[] = [];
+  const actionableIds = useMemo(
+    () => rows.filter((r) => r.actionable).map((r) => r.broadcastId),
+    [rows],
+  );
 
-    // Smart-2: row-selection checkbox (admin only). Manager (`readOnly`)
-    // never sees the column so the bulk-action surface is invisible to
-    // read-only roles.
-    if (selectionEnabled) {
-      base.push({
-        id: 'select',
-        header: ({ table }) => {
-          const actionableRows = table
-            .getRowModel()
-            .rows.filter((r) => r.original.actionable);
-          const selectedActionable = actionableRows.filter((r) => r.getIsSelected());
-          const allSelected =
-            actionableRows.length > 0 && selectedActionable.length === actionableRows.length;
-          const someSelected = selectedActionable.length > 0 && !allSelected;
-          return (
-            <Checkbox
-              // T086a V2 — the bulk bar's Clear hands focus here (the bar
-              // unmounts with the selection it clears).
-              data-testid="queue-select-all"
-              aria-label={columnLabels.select}
-              checked={allSelected}
-              indeterminate={someSelected}
-              className="min-h-[24px] min-w-[24px]"
-              onCheckedChange={(checked) => {
-                actionableRows.forEach((r) => r.toggleSelected(Boolean(checked)));
-              }}
-            />
-          );
-        },
-        cell: (ctx) =>
-          ctx.row.original.actionable ? (
-            <Checkbox
-              aria-label={columnLabels.select}
-              checked={ctx.row.getIsSelected()}
-              className="min-h-[24px] min-w-[24px]"
-              onCheckedChange={(checked) => ctx.row.toggleSelected(Boolean(checked))}
-            />
-          ) : null,
-      });
+  // Mirror the selection up, pruned to the rows that are still here and still
+  // selectable: a row approved away by a `router.refresh()` must not stay in
+  // the bar's count or a retried bulk approve. A prune sets state and lets the
+  // effect run again; once nothing is orphaned it settles and reports.
+  useEffect(() => {
+    const kept = selected.filter((id) => actionableIds.includes(id));
+    if (kept.length !== selected.length) {
+      setSelected(kept);
+      return;
     }
+    onSelectionChange?.(kept);
+  }, [selected, actionableIds, onSelectionChange]);
 
+  // Parent-commanded clear (Clear, or a full bulk-approve success).
+  useEffect(() => {
+    if (clearSelectionNonce !== undefined) setSelected([]);
+  }, [clearSelectionNonce]);
+
+  // Parent-commanded re-select after a partial bulk failure. `reselectIds` is
+  // read at bump time only — the nonce is the sole trigger.
+  useEffect(() => {
+    if (reselectNonce === undefined) return;
+    setSelected([...(reselectIds ?? [])]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reselectNonce]);
+
+  const columns = useMemo<DataTableColumn<EnrichedQueueRow>[]>(() => {
     // F119 T117 — the FR-026 fields, in the order a reviewer scans them: who
     // and what, where it stands and whose move it is, how long it has waited,
-    // when it goes out and to whom. UX review M1 folded the twelve columns
-    // into eight so Actions stays on screen at 1,280-1,440 px: Round rides
-    // under the Stage badge, last activity is Time in stage's "since" line,
-    // the two send times share Send time, and Audience carries the recipient
-    // count. Submitted left the table (it is on the detail page). Every FR-026
-    // field is still on the row. The SLA badge lives on Time in stage, which is
-    // what it measures (`stage_entered_at`, every waiting stage).
-    base.push(
+    // when it goes out and to whom. Every FR-026 field is on the row; whose
+    // turn is a line under the Stage pill (parity comments, 19 Oct), so the
+    // pill has the width to stay on one line.
+    // Spec 122 US12b — each column states the minimum its content needs (AURA
+    // gives an unsized column 160 px, which pushed Actions off a 1,440 px
+    // screen); together they fit the 871 px a 1,280 px screen leaves for the
+    // columns, and the spare width on a wider one is shared out.
+    const base: DataTableColumn<EnrichedQueueRow>[] = [
       {
-        id: 'member',
-        header: columnLabels.member,
-        accessorKey: 'memberDisplayName',
-        cell: (ctx) => (
-          <div className="flex flex-col">
-            <span className="font-medium">{ctx.row.original.memberDisplayName}</span>
-            {ctx.row.original.actorRoleLabel ? (
-              <span className="text-xs text-muted-foreground">
-                {ctx.row.original.actorRoleLabel}
-              </span>
+        key: 'member',
+        label: columnLabels.member,
+        ...QUEUE_COLUMN_LAYOUT.member,
+        render: (row) => (
+          <span className="flex flex-col [overflow-wrap:anywhere]">
+            <span className="font-medium">{row.memberDisplayName}</span>
+            {row.actorRoleLabel ? (
+              <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{row.actorRoleLabel}</span>
             ) : null}
-          </div>
+          </span>
         ),
       },
       {
-        id: 'subject',
-        header: columnLabels.subject,
-        accessorKey: 'subject',
-        cell: (ctx) => (
+        key: 'subject',
+        label: columnLabels.subject,
+        ...QUEUE_COLUMN_LAYOUT.subject,
+        render: (row) => (
           <Link
-            href={`/admin/broadcasts/${ctx.row.original.broadcastId}`}
-            className="font-medium text-primary hover:underline"
+            href={`/admin/broadcasts/${row.broadcastId}`}
+            className="font-medium text-[var(--aura-fg-accent)] [overflow-wrap:anywhere] hover:underline"
           >
-            {ctx.row.original.subject}
+            {row.subject}
           </Link>
         ),
       },
       {
-        id: 'status',
-        header: columnLabels.status,
-        cell: (ctx) => (
-          <div className="flex flex-col gap-1">
-            <Badge
-              variant={ctx.row.original.statusBadgeVariant}
-              className={cn('self-start', ctx.row.original.statusBadgeClassName)}
-            >
-              {ctx.row.original.statusBadgeLabel}
-            </Badge>
-            {/* FR-026 — the round: versions sent to the member so far. */}
-            {ctx.row.original.round > 0 ? (
-              <span className="text-xs tabular-nums">
-                {tQueue('row.round', { round: ctx.row.original.round })}
+        key: 'status',
+        label: columnLabels.status,
+        ...QUEUE_COLUMN_LAYOUT.status,
+        render: (row) => (
+          // A stage name too long for the column (SV) wraps inside its pill,
+          // which then reads as a rounded box (AURA `wrap`, 5.51, #158).
+          <span className="flex flex-col items-start gap-1">
+            <StatusPill tone={row.statusTone} wrap>
+              {row.statusBadgeLabel}
+            </StatusPill>
+            {row.whoseTurnLabel !== null ? (
+              <span className="aura-text-caption">
+                <span className="text-[var(--aura-fg-secondary)]">{columnLabels.whoseTurn}:</span> {row.whoseTurnLabel}
               </span>
+            ) : null}
+            {/* FR-026 — the round: versions sent to the member so far. */}
+            {row.round > 0 ? (
+              <span className="aura-text-caption tabular-nums">{tQueue('row.round', { round: row.round })}</span>
             ) : null}
             {/* FR-029 — delivery results travel with the Sent stage. */}
-            {ctx.row.original.deliverySummary !== null ? (
-              <span className="text-xs tabular-nums">
-                {ctx.row.original.deliverySummary}
-              </span>
+            {row.deliverySummary !== null ? (
+              <span className="aura-text-caption tabular-nums">{row.deliverySummary}</span>
             ) : null}
-          </div>
-        ),
-      },
-      {
-        id: 'whoseTurn',
-        header: columnLabels.whoseTurn,
-        cell: (ctx) =>
-          ctx.row.original.whoseTurnLabel !== null ? (
-            <span>{ctx.row.original.whoseTurnLabel}</span>
-          ) : (
-            <EmptySentinel />
-          ),
-      },
-      {
-        id: 'timeInStage',
-        header: columnLabels.timeInStage,
-        // FR-026 — last activity (`stage_entered_at`) is the "since" line: on
-        // a waiting stage it dates the wait, on any other it is the only time.
-        cell: (ctx) => (
-          <div className="flex flex-col gap-1">
-            <TimeInStage row={ctx.row.original} />
-            <span className="text-xs tabular-nums">
-              {tQueue('row.since', { date: ctx.row.original.lastActivityFormatted })}
-            </span>
-          </div>
-        ),
-      },
-      {
-        id: 'sendTime',
-        header: columnLabels.sendTime,
-        cell: (ctx) => <SendTime row={ctx.row.original} proposedLabel={tQueue('row.proposed')} />,
-      },
-      {
-        id: 'audience',
-        header: columnLabels.audience,
-        // The label keeps its own element, so "All members" is still a whole
-        // text node to find (admin-review-queue D2b, queue-table-segment).
-        cell: (ctx) => (
-          <span>
-            <span>{ctx.row.original.segmentLabel}</span>
-            {' · '}
-            <span className="tabular-nums">{ctx.row.original.recipientCount}</span>
           </span>
         ),
       },
-    );
+      {
+        key: 'timeInStage',
+        label: columnLabels.timeInStage,
+        ...QUEUE_COLUMN_LAYOUT.timeInStage,
+        // UX review M1 — `aria-sort` on the column the page's order follows
+        // (AURA `sortDirection`, 5.51, #157: no button, the order is the page's).
+        ...(SORTED_COLUMN[order].id === 'timeInStage' ? { sortDirection: SORTED_COLUMN[order].direction } : {}),
+        // FR-026 — last activity (`stage_entered_at`) is the "since" line.
+        render: (row) => (
+          <span className="flex flex-col items-start gap-1">
+            <TimeInStage row={row} />
+            <span className="aura-text-caption tabular-nums">
+              {tQueue('row.since', { date: row.lastActivityFormatted })}
+            </span>
+          </span>
+        ),
+      },
+      {
+        key: 'sendTime',
+        label: columnLabels.sendTime,
+        ...QUEUE_COLUMN_LAYOUT.sendTime,
+        ...(SORTED_COLUMN[order].id === 'sendTime' ? { sortDirection: SORTED_COLUMN[order].direction } : {}),
+        render: (row) => <SendTime row={row} proposedLabel={tQueue('row.proposed')} />,
+      },
+      {
+        key: 'audience',
+        label: columnLabels.audience,
+        ...QUEUE_COLUMN_LAYOUT.audience,
+        // The label keeps its own element, so "All members" is still a whole
+        // text node to find (admin-review-queue D2b, queue-table-segment).
+        render: (row) => (
+          <span className="[overflow-wrap:anywhere]">
+            <span>{row.segmentLabel}</span>
+            {' · '}
+            <span className="tabular-nums">{row.recipientCount}</span>
+          </span>
+        ),
+      },
+    ];
     if (!readOnly) {
       base.push({
-        id: 'actions',
-        header: columnLabels.actions,
-        cell: (ctx) =>
-          ctx.row.original.actionable ? (
-            <ReviewActions
-              broadcastId={ctx.row.original.broadcastId}
-              recipientCount={ctx.row.original.recipientCount}
-            />
+        key: 'actions',
+        label: columnLabels.actions,
+        // Approve above Reject at 128 px (1,280 px screens); side by side
+        // (~214 px) once the column takes its larger share of a wider grid.
+        ...QUEUE_COLUMN_LAYOUT.actions,
+        render: (row) =>
+          row.actionable ? (
+            <ReviewActions broadcastId={row.broadcastId} recipientCount={row.recipientCount} />
           ) : null,
       });
     }
     return base;
-  }, [columnLabels, readOnly, selectionEnabled, tQueue]);
+  }, [columnLabels, readOnly, tQueue, order]);
 
-  // Task 6 (2026-08-02-broadcast-review-queue-pr3) — the
-  // `react-hooks/incompatible-library` disable that used to sit here is now
-  // reported as unused: with the reselect effect below also present, the
-  // React Compiler's whole-component analysis bails out on THAT effect's
-  // intentionally non-exhaustive deps first and never reaches this call to
-  // re-flag `useReactTable`. The underlying caveat (TanStack's returned
-  // functions aren't safely memoizable) hasn't changed — this component was
-  // never a React Compiler memoization candidate either way (it holds
-  // uncontrolled `rowSelection` state) — only the lint tool's bailout order
-  // did, so the stale disable was removed rather than left as dead comment.
-  const table = useReactTable({
-    data: rows as EnrichedQueueRow[],
-    columns,
-    state: { rowSelection },
-    enableRowSelection: (row) => row.original.actionable,
-    onRowSelectionChange: setRowSelection,
-    // Round-4 HIGH-G — stable row id keyed on broadcastId so the
-    // failed-rows-stay-selected guarantee survives data refresh /
-    // reorder. Without this, TanStack defaults to the row index and
-    // selection points to wrong rows after `router.refresh()`.
-    getRowId: (row) => row.broadcastId,
-    getCoreRowModel: getCoreRowModel(),
+  useEffect(() => {
+    // V2 — the bulk bar's Clear returns focus to the select-all checkbox by
+    // this test id (`queue-bulk-action-bar.tsx`); AURA's header checkbox has
+    // no prop for it, so it is tagged here.
+    tableRef.current
+      ?.querySelector<HTMLInputElement>('[role="columnheader"][aria-colindex="1"] input[type="checkbox"]')
+      ?.setAttribute('data-testid', 'queue-select-all');
   });
 
-  const rowModel = table.getRowModel();
-
-  // Task 6 — mirror the local uncontrolled selection up to the parent
-  // (`QueueWithBulk`) on every change, so the fixed-bottom
-  // `QueueBulkActionBar` (which owns the bulk-approve fan-out now — see
-  // module docstring) always has the current broadcastId list.
-  //
-  // Cross-PR hotfix (broadcast-queue-crosspr-hotfix) — the original deps
-  // here were `[rowSelection, onSelectionChange, table]`. `table` is a
-  // stable instance across re-renders (it mutates in place via
-  // `setOptions`, it doesn't get recreated — see the comment above the
-  // `useReactTable` call for why it's still not a safe ESLint
-  // auto-dependency), and `onSelectionChange` is the parent's stable
-  // `setSelectedIds` setter. So when `router.refresh()` drops a
-  // previously-selected row out of `rows` WITHOUT any checkbox toggle
-  // (e.g. the admin approves/rejects ONE row individually while others
-  // stay checked, and the default view filters to `status=['submitted']`),
-  // neither dep changed and this effect never re-fired: the parent mirror,
-  // the toolbar count, and the confirm dialog stayed stuck on the old
-  // (now-partly-absent) selection, and a bulk-approve retry would fan a
-  // doomed `POST /approve` for the row that's no longer there. Adding
-  // `rows` re-fires the mirror on every data change so
-  // `getSelectedRowModel()` (which already intersects `rowSelection` with
-  // the CURRENT row model) re-syncs the parent to only-present ids.
-  //
-  // That alone leaves the local `rowSelection` map itself still holding the
-  // absent row's key — a phantom that would resurrect CHECKED if that row
-  // ever reappears in a later refresh. Prune it here too. Guarded against a
-  // render loop the same way `clearSelectionNonce`/`reselectNonce` below
-  // avoid re-triggering themselves: only call `setRowSelection` when the
-  // prune actually drops a key; once nothing is orphaned this branch is
-  // skipped and the effect settles.
-  useEffect(() => {
-    const presentIds = new Set(rows.map((r) => r.broadcastId));
-    const prunedEntries = Object.entries(rowSelection).filter(([id]) =>
-      presentIds.has(id),
-    );
-    if (prunedEntries.length !== Object.keys(rowSelection).length) {
-      setRowSelection(Object.fromEntries(prunedEntries));
-    }
-    onSelectionChange?.(
-      table.getSelectedRowModel().rows.map((r) => r.original.broadcastId),
-    );
-  }, [rowSelection, rows, onSelectionChange, table]);
-
-  // Task 6 — parent-commanded reset (Clear / full bulk-approve success).
-  // Guarded only on the prop being defined at all — direct callers that
-  // never pass `clearSelectionNonce` (e.g. unit tests) never fire this.
-  useEffect(() => {
-    if (clearSelectionNonce !== undefined) setRowSelection({});
-  }, [clearSelectionNonce]);
-
-  // Task 6 (2026-08-02-broadcast-review-queue-pr3) — parent-commanded
-  // CONTROLLED re-select: after a partial bulk-approve failure,
-  // `QueueWithBulk` bumps `reselectNonce` with `reselectIds` set to exactly
-  // the failed ids. Re-applying `rowSelection` here (rather than only
-  // narrowing the parent's own mirror) is what keeps the desktop checkboxes,
-  // the mobile card list, and the toolbar count all reading off the SAME
-  // state — no desync. `reselectIds` is deliberately read at bump time only,
-  // not tracked as a dep — the nonce is the sole trigger, mirroring
-  // `clearSelectionNonce` above.
-  useEffect(() => {
-    if (reselectNonce === undefined) return;
-    setRowSelection(Object.fromEntries((reselectIds ?? []).map((id) => [id, true])));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reselectNonce]);
-
-  // Simplify-S3 (round-3) — derive in render; no useMemo + ESLint
-  // suppression. Selection size is bounded by visible rows; cost is
-  // negligible.
-  const selectedIds = table.getSelectedRowModel().rows.map((r) => r.original.broadcastId);
-
-  // A5 UX hardening — bulk-bar `aria-label` was the unresolved template
-  // string `"{count} selected"`; SR users heard the literal placeholder.
-  // Task 5 — moved to `tBulk('selected', {count})` (ICU plural) so the
-  // count is both correctly interpolated AND grammatically pluralised.
-  const bulkSelectedLabel = tBulk('selected', { count: selectedIds.length });
-  // Round-2 review Fix 1 — the announcer is PERMANENTLY MOUNTED (not
-  // conditionally rendered only while `selectedIds.length > 0`), because an
-  // `aria-live` region that appears WITH its content already populated in
-  // the same paint is not reliably announced by NVDA/JAWS — only text
-  // MUTATIONS on an already-mounted live region are announced. That would
-  // silence exactly the transitions this feature exists to announce: 0→1
-  // (entering selection) and 1→0 (clearing). Task 6 — this stays here even
-  // though the VISIBLE bulk bar moved to `QueueBulkActionBar` (Task 5,
-  // mounted by `QueueWithBulk`): that bar's visible count span is
-  // deliberately NOT a live region (it would otherwise double-announce with
-  // this one), and the bar itself unmounts at the 0↔1 boundary
-  // (`selectedIds.length === 0` renders `null`), so this permanently-mounted
-  // announcer is the sole region covering every transition. Precedent:
-  // `members-table.tsx` selected-count region + `renewals/result-count-
-  // announcer.tsx`.
-  //
-  // F119 T109 (FR-025) — the SAME region also announces a change of the list
-  // itself (a stage selected, a row approved away): "N E-Blasts in this view,
-  // M stalled". Never a second region. So it is mounted for EVERY viewer —
-  // a read-only manager changes stage too — and it announces whichever
-  // happened last: the list changing, or the selection changing. Nothing is
-  // announced on the first paint. Derived during render from the previous
-  // values (React's "adjust state when a prop changes" pattern) rather than
-  // in an effect with a run-once ref, which StrictMode's double mount defeats.
-  // `stalled` counts ONLY the red (stalled) badges: the amber pre-warning is
-  // never announced as stalled (FR-027).
-  //
-  // UX review H3 — the count is the VIEW's (`viewTotal`, what the stage chips
-  // add up to), not the page of ≤ 50 the list holds; when the page cannot know
-  // the total it says "shown". Stalled is counted on the rows shown, and says
-  // so ("N stalled shown"): the stalled flag is computed per row, and a page
-  // is all the rows there are here.
-  //
-  // UX review H4 — the list is keyed on the VIEW (`viewKey`, the URL) as well
-  // as its rows, so a change of view is news even when it lands on the same
-  // rows (two empty views, say). And every announcement is a NEW text node
-  // (`seq` keys the span): with `aria-atomic`, replacing the node is a DOM
-  // mutation a screen reader hears even when the words repeat — setting the
-  // same string again changes nothing and is silent.
+  const bulkSelectedLabel = tBulk('selected', { count: selected.length });
+  // F119 T109 (FR-025) / UX review H3 / H4 — the ONE live region: the view's
+  // count (or "shown" when the page cannot know it) when the list changes, the
+  // selection count when that changes. Derived during render from the previous
+  // values; every announcement is a new text node (`seq` keys the span), so a
+  // repeat of the same words is still heard. `stalled` counts only the red
+  // badges (FR-027).
   const stalledCount = rows.filter((r) => r.ageBadge?.variant === 'red').length;
   const listKey = `${viewKey}#${rows.map((r) => r.broadcastId).join('|')}`;
   const [announced, setAnnounced] = useState({
     listKey,
-    selectedCount: selectedIds.length,
+    selectedCount: selected.length,
     text: '',
     seq: 0,
   });
-  if (announced.listKey !== listKey || announced.selectedCount !== selectedIds.length) {
+  if (announced.listKey !== listKey || announced.selectedCount !== selected.length) {
     const listChanged = announced.listKey !== listKey;
     setAnnounced({
       listKey,
-      selectedCount: selectedIds.length,
+      selectedCount: selected.length,
       text: listChanged
         ? viewTotal !== null
           ? tQueue('resultsAnnouncement', { count: viewTotal, stalled: stalledCount })
           : tQueue('resultsAnnouncementShown', { count: rows.length, stalled: stalledCount })
-        : selectedIds.length > 0
+        : selected.length > 0
           ? bulkSelectedLabel
           : '',
       seq: announced.seq + 1,
     });
   }
-  // `data-testid`: the bulk-action bar mounts a SECOND permanently-mounted
-  // polite `role="status"` announcer (`7465ae9be`) while a selection exists,
-  // so a selector on the role alone resolves to two elements (e2e
-  // strict-mode violation, 2026-09-10). The hook is the stable way to name
-  // THIS one.
+  // `data-testid`: the bulk bar mounts a second polite status region while a
+  // selection exists, so the hook names THIS one.
   const announcer = (
     <div
       className="sr-only"
@@ -610,97 +402,46 @@ export function QueueTableClient({
     <>
       {announcer}
       {/* F119 T118 — the stalled count of the rows shown: icon + text, the
-          same number the announcer speaks; amber rows are not in it. UX review
-          H3 — worded "shown", because it is counted on this page. */}
+          same number the announcer speaks; amber rows are not in it. */}
       {stalledCount > 0 ? (
-        <p className="flex items-center gap-1.5 text-sm font-medium">
-          <AlertCircle className="size-4 shrink-0 text-destructive" aria-hidden="true" />
+        <p className="flex items-center gap-1.5 aura-text-body font-medium">
+          <Icon name="circle-alert" size={16} className="shrink-0 text-[var(--aura-fg-danger)]" />
           {tQueue('stalledSummary', { count: stalledCount })}
         </p>
       ) : null}
       {/* UX review M1 — the order, said out loud for sighted users (the table
-          header carries `aria-sort`; the phone card list has no header). */}
-      <p className="text-xs text-muted-foreground" data-testid="queue-order-hint">
+          header carries `aria-sort`; the phone cards have no header). */}
+      <p className="aura-text-caption text-[var(--aura-fg-secondary)]" data-testid="queue-order-hint">
         {tQueue(ORDER_HINT_KEY[order])}
       </p>
-      {/* Task 4 — dual-render: desktop `<table>` hidden below `md`, mobile
-          `QueueCardList` hidden at/above `md`. Both read from the SAME
-          `table` instance built above, so a selection made in one
-          presentation is visible in the other across a breakpoint resize. */}
-      <div className="hidden md:block">
-        <Table aria-label={columnLabels.tableAria}>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  const narrow = header.column.id === 'select';
-                  const sort =
-                    header.column.id === SORTED_COLUMN[order].id
-                      ? SORTED_COLUMN[order].direction
-                      : undefined;
-                  return (
-                    <TableHead
-                      key={header.id}
-                      scope="col"
-                      aria-sort={sort}
-                      className={cn(narrow && 'w-10')}
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(header.column.columnDef.header, header.getContext())}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {rowModel.rows.map((row) => (
-              <TableRow key={row.id} data-state={row.getIsSelected() ? 'selected' : undefined}>
-                {row.getVisibleCells().map((cell) => {
-                  // Review round 1, I-1 — `TableCell` applies `whitespace-nowrap`
-                  // to every cell. `subject` is free-text up to ~200 chars (F7
-                  // sanitiser cap) and the primary column admins scan; under
-                  // table auto-layout an un-wrapped long subject widens the
-                  // whole table past its container. Restore wrapping on this
-                  // column only, capped so one very long word/subject can't
-                  // still blow out the column width. Precedent:
-                  // `members-table.tsx` "057 overflow fix" (`whitespace-normal
-                  // break-words` replacing `whitespace-nowrap`).
-                  const wrapSubject = cell.column.id === 'subject';
-                  // F119 T119 — the Stage cell carries the delivery results on
-                  // a sent row; let that line wrap under the badge instead of
-                  // widening the whole table.
-                  const wrapStage = cell.column.id === 'status';
-                  // UX review M1 — the other text cells wrap too, each capped,
-                  // so a long company name, audience label or two-line date
-                  // grows the row instead of pushing Actions off screen
-                  // (measured: the member column alone ran 317 px unwrapped).
-                  const wrapText = WRAPPED_COLUMNS.has(cell.column.id);
-                  return (
-                    <TableCell
-                      key={cell.id}
-                      className={cn(
-                        wrapSubject && 'max-w-[40ch] whitespace-normal break-words',
-                        wrapStage && 'min-w-[8rem] max-w-[16rem] whitespace-normal',
-                        wrapText && 'max-w-[12rem] whitespace-normal break-words',
-                      )}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <div
+        ref={tableRef}
+        className={QUEUE_TABLE_BOX}
+      >
+        <DataTable<EnrichedQueueRow>
+          label={columnLabels.tableAria}
+          rows={rows}
+          columns={columns}
+          rowKey="broadcastId"
+          rowHeight="auto"
+          bleed
+          // Approve, Reject and the row links are Tab stops, not cells reached
+          // only with the arrows (AURA 5.51, #161).
+          keyboard="tab"
+          {...(selectionEnabled
+            ? {
+                selectable: true,
+                selected,
+                onSelectionChange: (keys: Array<string | number>) => setSelected(keys.map(String)),
+                isRowSelectable: (row: EnrichedQueueRow) => row.actionable,
+                rowSelectLabel: (row: EnrichedQueueRow) => tBulk('selectRowAria', { subject: row.subject }),
+                rowSelectDisabledLabel: (row: EnrichedQueueRow) =>
+                  tBulk('rowNotSelectable', { subject: row.subject }),
+              }
+            : {})}
+        />
       </div>
-      <QueueCardList
-        table={table}
-        readOnly={readOnly}
-        columnLabels={columnLabels}
-        className="md:hidden"
-      />
+      <QueueCardList rows={rows} className="md:hidden" />
     </>
   );
 }

@@ -203,7 +203,7 @@ export function BrandSettingsForm({ initial, tenantDisplayName }: Props): React.
           <div className="flex items-start gap-2">
             <TextField
               id={colourFieldId}
-              className="min-w-0 flex-1 sm:max-w-40 sm:flex-none [&_div:has(>input[aria-invalid=true])]:border-[var(--aura-border-danger)]"
+              className="min-w-0 flex-1 sm:max-w-40 sm:flex-none"
               label={t('colour.label')}
               value={colour}
               onChange={(e) => setColour(e.target.value)}
@@ -212,11 +212,10 @@ export function BrandSettingsForm({ initial, tenantDisplayName }: Props): React.
               autoComplete="off"
               inputMode="text"
               aria-describedby={colourHintId}
-              // UX L4 — the danger border follows aria-invalid (class above;
-              // stand-in until AURA #156). AURA's `error` would replace this
-              // hint id with its own, and Save's aria-describedby points at
-              // the reason line below.
-              aria-invalid={normalisedColour === null || !meetsAa}
+              // UX L4 — AURA 5.50 `invalid` (#156): the danger border without
+              // AURA's message. `error` would replace this hint id with its
+              // own, and Save's aria-describedby points at the reason line.
+              invalid={normalisedColour === null || !meetsAa}
               touchHeight
             />
             {/* Keyboard-operable colour picker beside the text field — the

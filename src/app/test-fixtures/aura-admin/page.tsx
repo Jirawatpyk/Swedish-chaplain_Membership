@@ -108,10 +108,12 @@ import {
 import { ATTENDEE_ROWS, ERASURE_EMAIL, ERASURE_ROWS, EVENT_DETAIL, EVENT_ID, EVENT_ROWS, IMPORT_HISTORY_ROWS, IMPORT_PICKER_EVENTS, MEMBER_SEARCH_HITS } from './event-fixtures';
 import { ImportPreviewDriver, MemberSearchStub, OpenRotateDialog, OpenRowEraseMenu, RevealPreview } from './event-previews';
 import { MembersApiStub, PickRadioInDialog } from './user-previews';
+import { QueueDialogDriver } from './eblast-queue-driver';
 import {
   renderAudiencePreview,
   renderBrandPreview,
   renderBroadcastSettingsPreview,
+  renderQueuePreview,
   renderTemplateFormPreview,
   renderTemplatesPreview,
 } from './eblast-previews';
@@ -506,6 +508,7 @@ const LOADING_ROUTES = {
     path: '/admin/marketing/audience',
     load: async () => (await import('@/app/(staff)/admin/marketing/audience/loading')).default(),
   },
+  broadcasts: { path: '/admin/broadcasts', load: async () => (await import('@/app/(staff)/admin/broadcasts/loading')).default() },
 } as const;
 
 function StaffFrame({ path, children }: { readonly path: string; readonly children: React.ReactNode }) {
@@ -1939,6 +1942,23 @@ export default async function AuraAdminPreviewPage({
   }
   if (view === 'audience') {
     return <StaffFrame path="/admin/marketing/audience">{await renderAudiencePreview(state)}</StaffFrame>;
+  }
+
+  // 122 US12b (T1219) — the review queue (boards Admin-broadcasts*,
+  // Admin-state-broadcasts-*) and its dialogs (`dialog=approve|reject|bulk|
+  // clear-halt`; clear-halt needs `state=halted`).
+  if (view === 'broadcasts') {
+    const { dialog } = await searchParams;
+    const body = await renderQueuePreview(state);
+    return (
+      <StaffFrame path="/admin/broadcasts">
+        {dialog === 'approve' || dialog === 'reject' || dialog === 'bulk' || dialog === 'clear-halt' ? (
+          <QueueDialogDriver dialog={dialog}>{body}</QueueDialogDriver>
+        ) : (
+          body
+        )}
+      </StaffFrame>
+    );
   }
 
   if (view === 'eventcreate') {

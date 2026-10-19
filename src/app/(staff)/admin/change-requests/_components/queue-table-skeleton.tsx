@@ -19,6 +19,13 @@ interface QueueTableSkeletonProps {
   readonly rows: number;
 }
 
+/**
+ * Each column's share of the table, from the real queue at a 1440px window
+ * (AURA's static Table sizes its columns to the content), so the skeleton's
+ * columns sit where the real ones land.
+ */
+const COLUMN_SHARES = ['23%', '13%', '14%', '13%', '13%', '14%', '10%'] as const;
+
 /** Two-line member and submitter cells, then one line each; Review last, at touch height on a phone card. */
 function Cell({ index }: { readonly index: number }) {
   if (index < 2) {
@@ -40,8 +47,10 @@ export function QueueTableSkeleton({ caption, heads, rows }: QueueTableSkeletonP
       <Table caption={caption} captionHidden stackBelow="sm" stackStyle="cards" align="middle" bleed>
         <THead>
           <Tr>
-            {heads.map((head) => (
-              <Th key={head}>{head}</Th>
+            {heads.map((head, i) => (
+              <Th key={head} style={{ width: COLUMN_SHARES[i] }}>
+                {head}
+              </Th>
             ))}
           </Tr>
         </THead>

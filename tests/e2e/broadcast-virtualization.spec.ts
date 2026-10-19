@@ -51,16 +51,20 @@ test.describe('@perf T209 — admin queue DOM count + virtualization', () => {
     await page.goto('/admin/broadcasts');
     await page.waitForLoadState('domcontentloaded', { timeout: 120_000 });
 
-    // Confirm the queue page rendered — there's either a tbody tr OR
-    // an empty-state row. The empty-state still counts as `tr` in DOM
-    // for the bounded-count assertion below.
-    await page.locator('table').first().waitFor({ timeout: 60_000 });
+    // Confirm the queue page rendered — the AURA grid (spec 122 US12b) or
+    // the empty state, which renders no grid at all (count 0).
+    await page
+      .locator('[role="grid"]')
+      .or(page.getByText(/queue is clear|ไม่มี|kön är tom/i))
+      .first()
+      .waitFor({ timeout: 60_000 });
 
-    const trCount = await page.locator('tbody tr').count();
+    // Body rows only: the grid's first row is its header.
+    const trCount = await page.locator('[role="grid"] [role="row"]:not(:first-child)').count();
 
     if (QUEUE_1K_TENANT) {
       // Layer 2 — virtualization regression guard. With 1k rows in the
-      // current page, TanStack should keep DOM nodes under 150 (visible
+      // current page, the grid should keep DOM rows under 150 (visible
       // viewport + overscan). >150 means virtualization broke.
       expect(trCount).toBeLessThan(150);
     } else {

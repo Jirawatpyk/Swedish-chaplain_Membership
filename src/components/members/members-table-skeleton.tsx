@@ -47,6 +47,8 @@ export function MembersTableSkeleton({ withSelection = false }: MembersTableSkel
           ...(key in MEMBERS_COLUMN_CARD ? MEMBERS_COLUMN_CARD[key as keyof typeof MEMBERS_COLUMN_CARD] : {}),
           ...(key === 'actions' ? { actions: true } : {}),
           ...(key === 'status' ? { pill: true } : {}),
+          // The contact's name over its portal-invite badge: two lines on every row.
+          ...(key === 'primary_contact' ? { skeletonLines: 2 } : {}),
         };
       }),
     [t],

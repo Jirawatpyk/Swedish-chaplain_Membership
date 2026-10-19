@@ -15,6 +15,7 @@
  * directly in the page JSX without an `await`.
  */
 import { useTranslations } from 'next-intl';
+import { Alert } from '@jirawatpyk/aura-react/server';
 
 export interface OverdueBannerProps {
   readonly count: number;
@@ -23,12 +24,10 @@ export interface OverdueBannerProps {
 export function OverdueBanner({ count }: OverdueBannerProps): React.ReactElement | null {
   const t = useTranslations('admin.broadcasts.queue');
   if (count <= 0) return null;
+  // Spec 122 US12b — an AURA danger Alert, still `role="alert"`.
   return (
-    <div
-      role="alert"
-      className="rounded-md border border-destructive/40 bg-destructive-surface p-3 text-sm font-medium text-destructive"
-    >
+    <Alert tone="danger" role="alert">
       {t('overdueBanner', { count })}
-    </div>
+    </Alert>
   );
 }

@@ -14,7 +14,7 @@
  * a URL change is modelled as a new `searchParams` + a rerender.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
@@ -39,14 +39,18 @@ const ZERO = Object.fromEntries(BROADCAST_STATUSES.map((s) => [s, 0])) as Record
 function filters(approvalRoundEnabled = false) {
   return (
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <QueueFilters memberOptions={[]} stageCounts={ZERO} approvalRoundEnabled={approvalRoundEnabled} />
+      <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={ZERO} approvalRoundEnabled={approvalRoundEnabled} />
     </NextIntlClientProvider>
   );
 }
 
 const upcomingButton = () => screen.getByRole('button', { name: /upcoming sends/i });
-const firstStageCheckbox = () =>
-  screen.getByRole('group', { name: /stage/i }).querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+const firstStageChip = () =>
+  screen.getByRole('group', { name: /^stage$/i }).querySelector<HTMLButtonElement>('button[aria-pressed]')!;
+const stageChip = (name: RegExp) =>
+  within(screen.getByRole('group', { name: /^stage$/i })).getByRole('button', { name });
+const queryStageChip = (name: RegExp) =>
+  within(screen.getByRole('group', { name: /^stage$/i })).queryByRole('button', { name });
 
 beforeEach(() => {
   vi.useRealTimers();
@@ -72,37 +76,34 @@ describe('Upcoming sends preset (UX review M3, H5)', () => {
     expect(url.searchParams.getAll('status')).toEqual([]);
   });
 
-  it('the pressed state carries the chip\'s checked style and a check icon; the unpressed one neither', () => {
+  it('the pressed state is AURA\'s selected chip, as a ticked stage; the unpressed one is not', () => {
     const { rerender } = render(filters());
     expect(upcomingButton()).toHaveAttribute('aria-pressed', 'false');
-    expect(upcomingButton().className).not.toContain('border-primary/40');
-    expect(upcomingButton().querySelector('[data-icon="pressed-check"]')).toBeNull();
+    expect(upcomingButton()).not.toHaveClass('is-selected');
 
     nav.searchParams.current = new URLSearchParams('status=approved&sort=scheduled_for&from=now');
     rerender(filters());
     expect(upcomingButton()).toHaveAttribute('aria-pressed', 'true');
-    expect(upcomingButton().className).toContain('bg-primary/10');
-    expect(upcomingButton().className).toContain('border-primary/40');
-    expect(upcomingButton().querySelector('[data-icon="pressed-check"]')).not.toBeNull();
+    expect(upcomingButton()).toHaveClass('aura-tag', 'is-selected');
   });
 });
 
 describe('focus survives a control that unmounts under it (UX review LOW)', () => {
-  it('unchecking a chip offered only because the URL named it moves focus to the first Stage checkbox', () => {
+  it('unchecking a chip offered only because the URL named it moves focus to the first Stage chip', () => {
     // Flag off + zero rows: `member_approved` is offered ONLY because the URL names it.
     nav.searchParams.current = new URLSearchParams('status=member_approved');
     const { rerender } = render(filters(false));
-    const chip = screen.getByRole('checkbox', { name: /member approved/i });
+    const chip = stageChip(/member approved/i);
     chip.focus();
     fireEvent.click(chip);
     // The navigation lands: the chip is no longer in the URL, so it unmounts.
     nav.searchParams.current = new URLSearchParams('status_all=1');
     rerender(filters(false));
-    expect(screen.queryByRole('checkbox', { name: /member approved/i })).toBeNull();
-    expect(document.activeElement).toBe(firstStageCheckbox());
+    expect(queryStageChip(/member approved/i)).toBeNull();
+    expect(document.activeElement).toBe(firstStageChip());
   });
 
-  it('Reset unmounting itself moves focus to the first Stage checkbox', () => {
+  it('Reset unmounting itself moves focus to the first Stage chip', () => {
     nav.searchParams.current = new URLSearchParams('status=sent');
     const { rerender } = render(filters());
     const reset = screen.getByRole('button', { name: /reset/i });
@@ -111,7 +112,7 @@ describe('focus survives a control that unmounts under it (UX review LOW)', () =
     nav.searchParams.current = new URLSearchParams();
     rerender(filters());
     expect(screen.queryByRole('button', { name: /reset/i })).toBeNull();
-    expect(document.activeElement).toBe(firstStageCheckbox());
+    expect(document.activeElement).toBe(firstStageChip());
   });
 
   it('a URL change the user did not start from a vanishing control leaves focus alone', () => {
@@ -125,13 +126,12 @@ describe('focus survives a control that unmounts under it (UX review LOW)', () =
   });
 });
 
-describe('Reset matches its h-9 neighbours (UX review LOW)', () => {
-  it('Reset is the default (h-9) size, not sm (h-7)', () => {
+describe('Reset matches its neighbours (UX review LOW)', () => {
+  it('Reset is an AURA button with the same 44px touch height as the chips beside it', () => {
     nav.searchParams.current = new URLSearchParams('status=sent');
     render(filters());
     const reset = screen.getByRole('button', { name: /reset/i });
-    expect(reset.className).toContain('h-9');
-    expect(reset.className).not.toContain('h-7');
+    expect(reset).toHaveClass('aura-btn', 'aura-btn--touch');
   });
 });
 
@@ -163,37 +163,107 @@ describe('chip counts under a filter they do not see (FR-030)', () => {
 });
 
 /**
- * T086a V4 (PR-1's U14) — the chip is a 44 px pill around a 16 px checkbox. The
- * focus ring was the checkbox's own, drawn on the 16 px box; the pill wore
- * nothing. The pill (the `<label>`) now wears the Button's ring tokens while its
- * checkbox has keyboard focus, and the checkbox's own outline is dropped so
- * there is one ring, not two. The checkbox stays the focusable control (Tab,
- * Space and the accessible name are unchanged). jsdom has no CSS, so this pins
- * the classes that draw it.
+ * T086a V4 (PR-1's U14) — the chip once wrapped a 16 px checkbox in a 44 px
+ * pill and had to move the focus ring onto the pill. Spec 122 US12b — the chip
+ * is an AURA toggle (a native button with `aria-pressed`), so the control that
+ * takes focus IS the pill and wears AURA's own ring: one focusable control,
+ * one ring.
  */
 describe('chip focus ring (T086a V4)', () => {
-  it('the pill wears the focus ring while its checkbox has keyboard focus', () => {
+  it('each stage chip is one focusable native button with aria-pressed', () => {
     render(filters());
-    const checkbox = firstStageCheckbox();
-    const pill = checkbox.closest('label')!;
-    expect(pill.className).toContain('has-[:focus-visible]:ring-3');
-    expect(pill.className).toContain('has-[:focus-visible]:ring-ring/50');
-    expect(pill.className).toContain('has-[:focus-visible]:border-ring');
-    expect(checkbox.className).toContain('focus-visible:outline-none');
-    // Keyboard semantics unchanged: a native checkbox inside its label.
-    expect(checkbox.tagName).toBe('INPUT');
-    expect(checkbox.type).toBe('checkbox');
+    const chip = firstStageChip();
+    expect(chip.tagName).toBe('BUTTON');
+    expect(chip).toHaveAttribute('aria-pressed');
+    expect(chip).toHaveClass('aura-tag');
+    expect(chip.querySelector('input, button')).toBeNull();
   });
 });
 
 /**
- * T086a follow-on — From / To filter on the SUBMIT date, and said only "From"
- * and "To". The labels now name the date they filter on.
+ * T086a follow-on — the dates filter on the SUBMIT date. Parity comments
+ * (19 Oct): one AURA "Submitted" range, as audit and change requests, in
+ * place of two native date boxes (an en-US browser showed mm/dd/yyyy).
  */
-describe('date range labels (T086a follow-on)', () => {
-  it('the From / To inputs say they filter on the submitted date', () => {
+describe('the "Submitted" date range (parity, 19 Oct)', () => {
+  it('is one AURA date range named for the submitted date, with no native date boxes', () => {
     render(filters());
-    expect(screen.getByLabelText(/^submitted from$/i)).toHaveAttribute('name', 'fromDate');
-    expect(screen.getByLabelText(/^submitted to$/i)).toHaveAttribute('name', 'toDate');
+    expect(screen.getByRole('button', { name: 'Submitted: Any time' })).toBeInTheDocument();
+    expect(document.querySelector('input[type="date"]')).toBeNull();
+  });
+
+  it('shows the range from the URL, and "Any time" drops both days and the cursor', () => {
+    nav.searchParams.current = new URLSearchParams('memberId=m-1&fromDate=2026-09-01&toDate=2026-09-10&cursor=abc');
+    render(filters());
+    const range = screen.getByRole('button', { name: /^Submitted: 1\s?–\s?10 Sept 2026$/ });
+    fireEvent.click(range);
+    fireEvent.click(screen.getByRole('button', { name: 'Any time' }));
+    expect(nav.replaceMock).toHaveBeenLastCalledWith('/admin/broadcasts?memberId=m-1', { scroll: false });
+  });
+});
+
+/**
+ * Parity comments (19 Oct) — "group it neatly": each chip group is named by a
+ * caption on screen, and the two presets are their own "Quick views" group,
+ * before the member and date fields instead of after them.
+ */
+describe('chip groups with visible captions (parity, 19 Oct)', () => {
+  it.each([['In review'], ['Closed'], ['Quick views']])('the %s group is named by its visible caption', (name) => {
+    render(filters(true));
+    const group = screen.getByRole('group', { name });
+    const captionId = group.getAttribute('aria-labelledby');
+    expect(captionId).toBeTruthy();
+    expect(document.getElementById(captionId!)).toHaveTextContent(name);
+    expect(document.getElementById(captionId!)).not.toHaveClass('sr-only');
+  });
+
+  it('the presets sit in Quick views, before the member and date fields', () => {
+    render(filters(true));
+    const quick = screen.getByRole('group', { name: 'Quick views' });
+    expect(within(quick).getByRole('button', { name: /upcoming sends/i })).toBeInTheDocument();
+    expect(within(quick).getByRole('button', { name: /waiting on marketing/i })).toBeInTheDocument();
+    const member = screen.getByRole('combobox', { name: /member/i });
+    expect(quick.compareDocumentPosition(member) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+/**
+ * Spec 122 US12b — the queue's filters follow the global filter pattern: an
+ * AURA `FilterBar` whose controls fold into a "Filters (n)" sheet on a phone.
+ * The bar shows no chips of its own, so it is told how many filters are on.
+ */
+describe('the global filter pattern (spec 122 US12b)', () => {
+  it('is an AURA FilterBar named for the queue filters, folding below 640 px', () => {
+    render(filters());
+    const bar = screen.getByRole('region', { name: 'Broadcast queue filters' });
+    expect(bar).toHaveClass('aura-filterbar');
+    expect(within(bar).getByRole('button', { name: /filters/i })).toHaveAttribute('aria-haspopup', 'dialog');
+  });
+
+  it('the Filters button counts the filters that are on (a stage, a member, each date)', () => {
+    nav.searchParams.current = new URLSearchParams('status=sent&memberId=m-1&fromDate=2026-09-01');
+    render(filters());
+    const bar = screen.getByRole('region', { name: 'Broadcast queue filters' });
+    // (Reset is "Reset filters" too, so the sheet button is found by its popup.)
+    expect(bar.querySelector('button[aria-haspopup="dialog"]')).toHaveTextContent('Filters (3)');
+  });
+
+  // US12b UX review M2 — the default view is one stage, and a phone user must
+  // see that the cards are filtered (board `Admin-broadcasts-mobile`).
+  it('the default view counts its stage, so the phone button reads "Filters (1)"', () => {
+    render(filters());
+    const bar = screen.getByRole('region', { name: 'Broadcast queue filters' });
+    expect(bar.querySelector('button[aria-haspopup="dialog"]')).toHaveTextContent('Filters (1)');
+  });
+
+  // US12b UX review M1 / L8 — from 640 px the whole stage name and its count
+  // show (AURA caps a Tag's text at 24ch outside its own chip row), and AURA's
+  // own tip is the only tooltip on a cut chip.
+  // AURA 5.51 (#160) lifts the cap for a toggle Tag inside FilterBar itself.
+  it('a stage chip reaches into no AURA class for its text cap and carries no title tooltip', () => {
+    render(filters(true));
+    const chip = stageChip(/changes requested/i);
+    expect(chip.className).not.toContain('[&_.aura-tag');
+    expect(chip).not.toHaveAttribute('title');
   });
 });

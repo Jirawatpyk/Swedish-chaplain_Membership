@@ -355,7 +355,7 @@ export async function renderPortalInvoicesView({
                 tabIndex={0}
                 className="hidden overflow-x-auto rounded-[var(--aura-radius-sm)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] lg:block"
               >
-                <Table caption={t('title')} captionHidden className="[&_td]:align-middle">
+                <Table caption={t('title')} captionHidden bleed className="[&_td]:align-middle">
                   <THead>
                     <Tr>
                       <Th>

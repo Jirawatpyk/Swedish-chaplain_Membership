@@ -3518,6 +3518,8 @@
         },
         "bulk": {
           "selectAria": "เลือก E-Blast",
+          "selectRowAria": "เลือก {subject}",
+          "rowNotSelectable": "{subject} ไม่ได้รอการตรวจทาน",
           "selected": "{count, plural, other {เลือกแล้ว # รายการ}}",
           "toolbarLabel": "การดำเนินการแบบกลุ่มสำหรับ E-Blast ที่เลือก",
           "selectedCount": "{count, plural, other {เลือกแล้ว # รายการ}}",
@@ -3531,6 +3533,8 @@
           "confirm": {
             "title": "อนุมัติ E-Blast {count} รายการ?",
             "recipientTotal": "ส่งถึงผู้รับประมาณ {recipients} คน จาก {count} รายการ",
+            "itemsLabel": "E-Blast ที่จะอนุมัติ",
+            "itemMeta": "{member} · ผู้รับ {count, plural, other {# ราย}}",
             "overCapNote": "จะอนุมัติเฉพาะ {max} รายการแรกจากที่เลือก {selected} รายการเท่านั้น",
             "decisionLabel": "กำหนดเวลาส่ง",
             "sendNow": "ส่งทันที",
@@ -3558,21 +3562,23 @@
           }
         },
         "card": {
-          "actionsLabel": "การดำเนินการ",
           "statusLabel": "ขั้นตอน",
           "whoseTurnLabel": "ถึงคิวใคร",
-          "timeInStageLabel": "อยู่ในขั้นตอนนี้"
+          "timeInStageLabel": "อยู่ในขั้นตอนนี้",
+          "review": "ตรวจทาน",
+          "reviewAria": "ตรวจทาน {subject}",
+          "recipients": "{count, plural, other {ผู้รับ # ราย}}"
         },
         "filters": {
           "formAriaLabel": "ตัวกรองคิวตรวจสอบ E-Blast",
           "statusLabel": "ขั้นตอน",
           "memberLabel": "สมาชิก",
           "memberAll": "สมาชิกทั้งหมด",
-          "fromDate": "ส่งเมื่อ ตั้งแต่",
-          "toDate": "ส่งเมื่อ ถึง",
+          "submittedRange": "ส่งเมื่อ",
           "reset": "รีเซ็ตเป็นค่าเริ่มต้น",
           "upcomingSends": "กำหนดส่งที่จะถึง",
           "waitingOnMarketing": "รอฝ่ายการตลาด",
+          "quickViews": "มุมมองด่วน",
           "chipCount": "{count} รายการ",
           "chipCountsScope": "ตัวเลขนับ E-Blast ทั้งหมดในแต่ละขั้นตอน ตัวกรองสมาชิก ช่วงวันที่ และกำหนดส่งที่จะถึงไม่มีผลต่อตัวเลขนี้"
         },
@@ -3848,6 +3854,7 @@
           "sendNow": "อนุมัติและส่งทันที",
           "schedule": "อนุมัติและนัดส่ง"
         },
+        "decisionLabel": "กำหนดเวลาส่ง",
         "scheduleLabel": "ส่งเวลา",
         "scheduleHelp": "อย่างน้อย 5 นาทีจากเวลาปัจจุบัน · เขตเวลา: Asia/Bangkok",
         "schedulePreviewLabel": "จะส่งในวันที่:",

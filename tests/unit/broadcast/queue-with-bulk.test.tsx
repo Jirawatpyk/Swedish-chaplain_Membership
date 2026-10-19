@@ -71,7 +71,7 @@ function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
     segmentLabel: 'All members',
     recipientCount: 42,
     ageBadge: null,
-    statusBadgeVariant: 'secondary',
+    statusTone: 'progress',
     statusBadgeLabel: 'Awaiting review',
     actionable: true,
     whoseTurnLabel: 'Marketing',
@@ -98,6 +98,14 @@ const LABELS = {
   tableAria: 'Broadcast review queue',
 };
 
+/** The row checkboxes of the AURA grid (the header row's select-all excluded). */
+function rowCheckboxes(): HTMLElement[] {
+  return within(screen.getByRole('grid'))
+    .getAllByRole('row')
+    .slice(1)
+    .flatMap((row) => within(row).queryAllByRole('checkbox'));
+}
+
 describe('<QueueWithBulk>', () => {
   it('lifts selection to the toolbar and clears both on Clear', async () => {
     const user = userEvent.setup();
@@ -115,26 +123,24 @@ describe('<QueueWithBulk>', () => {
     );
 
     // No toolbar before any selection.
-    expect(screen.queryByRole('toolbar')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Bulk actions for selected broadcasts' })).toBeNull();
 
-    const rowChecks = within(
-      screen.getByRole('table').querySelector('tbody')!,
-    ).getAllByRole('checkbox');
+    const rowChecks = rowCheckboxes();
     await user.click(rowChecks[0]!);
 
-    const bar = await screen.findByRole('toolbar');
+    const bar = await screen.findByRole('region', { name: 'Bulk actions for selected broadcasts' });
     expect(within(bar).getByText('1 selected')).toBeInTheDocument();
 
     // The desktop table's own checkbox reflects the SAME lifted state —
     // no forked selection between the table and the toolbar.
-    expect(rowChecks[0]).toHaveAttribute('aria-checked', 'true');
+    expect(rowChecks[0]).toBeChecked();
 
     await user.click(within(bar).getByRole('button', { name: /clear/i }));
 
     // Selection cleared → bar unmounts AND the table's checkbox resets —
     // the parity guarantee this task's wiring must not break.
-    expect(screen.queryByRole('toolbar')).toBeNull();
-    expect(rowChecks[0]).toHaveAttribute('aria-checked', 'false');
+    expect(screen.queryByRole('region', { name: 'Bulk actions for selected broadcasts' })).toBeNull();
+    expect(rowChecks[0]).not.toBeChecked();
   });
 
   it('never renders the toolbar for a read-only (manager) render', () => {
@@ -150,7 +156,7 @@ describe('<QueueWithBulk>', () => {
 
     // No select column at all when read-only — nothing to click.
     expect(screen.queryByRole('checkbox')).toBeNull();
-    expect(screen.queryByRole('toolbar')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Bulk actions for selected broadcasts' })).toBeNull();
   });
 
   // T086a V2 — Clear empties the selection, the bar returns null and the
@@ -171,14 +177,13 @@ describe('<QueueWithBulk>', () => {
         </main>
       </Provider>,
     );
-    const table = screen.getByRole('table');
-    await user.click(within(table.querySelector('tbody')!).getAllByRole('checkbox')[0]!);
-    const bar = await screen.findByRole('toolbar');
+    await user.click(rowCheckboxes()[0]!);
+    const bar = await screen.findByRole('region', { name: 'Bulk actions for selected broadcasts' });
 
     await user.click(within(bar).getByRole('button', { name: /clear/i }));
 
-    expect(screen.queryByRole('toolbar')).toBeNull();
-    expect(document.activeElement).toBe(within(table.querySelector('thead')!).getByRole('checkbox'));
+    expect(screen.queryByRole('region', { name: 'Bulk actions for selected broadcasts' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('checkbox', { name: 'Select all rows' }));
   });
 
   // T086a V10 — the bulk toolbar is `position: fixed` at the bottom of the
@@ -200,8 +205,8 @@ describe('<QueueWithBulk>', () => {
         />
       </Provider>,
     );
-    await user.click(within(screen.getByRole('table').querySelector('tbody')!).getAllByRole('checkbox')[0]!);
-    const bar = await screen.findByRole('toolbar');
+    await user.click(rowCheckboxes()[0]!);
+    const bar = await screen.findByRole('region', { name: 'Bulk actions for selected broadcasts' });
     const pages = screen.getByRole('navigation', { name: 'Queue pages' });
 
     expect(pages.compareDocumentPosition(bar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -242,13 +247,12 @@ describe('<QueueWithBulk> — cross-PR hotfix: selection re-sync + prune on a da
       </Provider>,
     );
 
-    const getTbody = () => screen.getByRole('table').querySelector('tbody')!;
-    let rowChecks = within(getTbody()).getAllByRole('checkbox');
+    let rowChecks = rowCheckboxes();
     await user.click(rowChecks[0]!); // a
     await user.click(rowChecks[1]!); // b
     await user.click(rowChecks[2]!); // c
 
-    const bar = await screen.findByRole('toolbar');
+    const bar = await screen.findByRole('region', { name: 'Bulk actions for selected broadcasts' });
     expect(within(bar).getByText('3 selected')).toBeInTheDocument();
 
     // Simulate `router.refresh()` dropping row `b` out of the filtered
@@ -268,13 +272,13 @@ describe('<QueueWithBulk> — cross-PR hotfix: selection re-sync + prune on a da
     // (the phantom-fan-out bug: a bulk-approve retry would otherwise POST
     // `/approve` for the now-absent `b` and 409).
     await waitFor(() => {
-      expect(within(screen.getByRole('toolbar')).getByText('2 selected')).toBeInTheDocument();
+      expect(within(screen.getByRole('region', { name: 'Bulk actions for selected broadcasts' })).getByText('2 selected')).toBeInTheDocument();
     });
 
-    rowChecks = within(getTbody()).getAllByRole('checkbox');
+    rowChecks = rowCheckboxes();
     expect(rowChecks).toHaveLength(2);
-    expect(rowChecks[0]).toHaveAttribute('aria-checked', 'true'); // a
-    expect(rowChecks[1]).toHaveAttribute('aria-checked', 'true'); // c
+    expect(rowChecks[0]).toBeChecked(); // a
+    expect(rowChecks[1]).toBeChecked(); // c
 
     // Prove the phantom is actually PRUNED from `rowSelection`, not merely
     // hidden because its row is absent: bring `b` back (e.g. the admin
@@ -300,14 +304,14 @@ describe('<QueueWithBulk> — cross-PR hotfix: selection re-sync + prune on a da
     // checkboxes, so the prune effect's state update from this rerender is
     // flushed inside `waitFor`'s `act()` wrapper rather than racing it.
     await waitFor(() => {
-      expect(within(screen.getByRole('toolbar')).getByText('2 selected')).toBeInTheDocument();
+      expect(within(screen.getByRole('region', { name: 'Bulk actions for selected broadcasts' })).getByText('2 selected')).toBeInTheDocument();
     });
 
-    rowChecks = within(getTbody()).getAllByRole('checkbox');
+    rowChecks = rowCheckboxes();
     expect(rowChecks).toHaveLength(3);
-    expect(rowChecks[0]).toHaveAttribute('aria-checked', 'true'); // a
-    expect(rowChecks[1]).toHaveAttribute('aria-checked', 'false'); // b — not resurrected
-    expect(rowChecks[2]).toHaveAttribute('aria-checked', 'true'); // c
+    expect(rowChecks[0]).toBeChecked(); // a
+    expect(rowChecks[1]).not.toBeChecked(); // b — not resurrected
+    expect(rowChecks[2]).toBeChecked(); // c
   });
 });
 
@@ -357,12 +361,11 @@ describe('<QueueWithBulk> — Task 6 failed-rows-stay retry (2026-08-02-broadcas
       </Provider>,
     );
 
-    const tbody = screen.getByRole('table').querySelector('tbody')!;
-    const rowChecksBefore = within(tbody).getAllByRole('checkbox');
+    const rowChecksBefore = rowCheckboxes();
     await user.click(rowChecksBefore[0]!);
     await user.click(rowChecksBefore[1]!);
 
-    const bar = await screen.findByRole('toolbar');
+    const bar = await screen.findByRole('region', { name: 'Bulk actions for selected broadcasts' });
     expect(within(bar).getByText('2 selected')).toBeInTheDocument();
 
     // Task 4's confirm gate sits in front of the fan-out now — go through it.
@@ -379,9 +382,9 @@ describe('<QueueWithBulk> — Task 6 failed-rows-stay retry (2026-08-02-broadcas
 
     // No desync: re-query the SAME checkboxes and confirm they match the
     // toolbar's count exactly — b1 unchecked, b2 still checked.
-    const rowChecksAfter = within(tbody).getAllByRole('checkbox');
-    expect(rowChecksAfter[0]).toHaveAttribute('aria-checked', 'false');
-    expect(rowChecksAfter[1]).toHaveAttribute('aria-checked', 'true');
+    const rowChecksAfter = rowCheckboxes();
+    expect(rowChecksAfter[0]).not.toBeChecked();
+    expect(rowChecksAfter[1]).toBeChecked();
 
     // Retry re-opens a FRESH confirm dialog — switching to Schedule shows an
     // empty, unvalidated input, proving the min-lead re-check runs against

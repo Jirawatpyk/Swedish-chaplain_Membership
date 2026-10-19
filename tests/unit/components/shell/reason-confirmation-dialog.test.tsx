@@ -91,7 +91,7 @@ describe('ReasonConfirmationDialog — while the request runs (H2)', () => {
     expect(confirm).not.toHaveAttribute('disabled');
     expect(confirm).toHaveAttribute('aria-disabled', 'true');
     expect(document.activeElement).toBe(confirm);
-    expect(confirm.querySelector('svg.motion-safe\\:animate-spin')).not.toBeNull();
+    expect(confirm.querySelector('.aura-spin')).not.toBeNull();
     expect(reasonField()).not.toBeDisabled();
     expect(reasonField()).toHaveAttribute('readonly');
 
@@ -201,7 +201,8 @@ describe('ReasonConfirmationDialog — field errors', () => {
   it('the too-long error sits immediately under the field and describes it (L4)', () => {
     render(ui());
     fireEvent.change(reasonField(), { target: { value: 'x'.repeat(21) } });
-    const error = reasonField().nextElementSibling as HTMLElement;
+    // The field is AURA's: the error follows its field box.
+    const error = reasonField().closest('.aura-field')!.nextElementSibling as HTMLElement;
     expect(error).toHaveTextContent(T.errors.reasonTooLong);
     expect(error).toHaveAttribute('role', 'alert');
     expect(reasonField().getAttribute('aria-describedby')?.split(' ')).toContain(error.id);
@@ -229,19 +230,43 @@ describe('ReasonConfirmationDialog — the typed-phrase error placement (L4)', (
     const phrase = screen.getByLabelText(en.portal.broadcasts.detail.cancelDialog.subjectLabel);
     fireEvent.change(phrase, { target: { value: 'Winter' } });
     fireEvent.blur(phrase);
-    expect(phrase.nextElementSibling).toHaveTextContent(en.portal.broadcasts.detail.cancelDialog.subjectError);
+    expect(phrase.closest('.aura-field')!.nextElementSibling).toHaveTextContent(
+      en.portal.broadcasts.detail.cancelDialog.subjectError,
+    );
   });
 });
 
 describe('ReasonConfirmationDialog — confirm tone (M2)', () => {
   it('destructive by default', () => {
     render(ui());
-    expect(confirmButton().className).toContain('bg-destructive');
+    expect(confirmButton()).toHaveClass('aura-btn--danger');
   });
 
   it('primary when asked — a reversible step is not painted red', () => {
     render(ui({ confirmTone: 'primary' }));
     const dialog = screen.getByRole('alertdialog');
-    expect(within(dialog).getByRole('button', { name: T.confirm }).className).not.toContain('bg-destructive');
+    const confirm = within(dialog).getByRole('button', { name: T.confirm });
+    expect(confirm).toHaveClass('aura-btn--primary');
+    expect(confirm).not.toHaveClass('aura-btn--danger');
+  });
+});
+
+describe('ReasonConfirmationDialog — on AURA (spec 122 US12b)', () => {
+  it('is an AURA alert dialog whose reason field is an AURA textarea', () => {
+    render(ui());
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(reasonField().closest('.aura-field')).not.toBeNull();
+    expect(confirmButton()).toHaveClass('aura-btn');
+  });
+
+  it('a required reason takes the first focus; an optional one hands it to Cancel', async () => {
+    const { unmount } = render(ui());
+    await settleOpenFocus();
+    expect(document.activeElement).toBe(reasonField());
+    unmount();
+
+    render(ui({ reasonRequired: false }));
+    await settleOpenFocus();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: T.cancel }));
   });
 });

@@ -274,7 +274,7 @@ describe('a member mutation refused by the read-only proxy', () => {
       const alert = await within(screen.getByRole('alertdialog')).findByRole('alert');
       expect(alert).toHaveTextContent(en.errors.readOnlyMode);
       expect(alert).toHaveTextContent(en.errors.readOnlyNothingChanged);
-      expect(alert).toHaveAttribute('data-tone', 'warning');
+      expect(alert).toHaveClass('aura-alert--warning');
       expect(toast.warning).not.toHaveBeenCalled();
     } else {
       await waitFor(() =>

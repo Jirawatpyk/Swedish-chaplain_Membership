@@ -232,7 +232,7 @@ export interface RouteBudget {
 const BUDGETS: ReadonlyArray<RouteBudget> = [
   // --- F7 broadcasts ---------------------------------------------------
   { route: '/portal/broadcasts/new', maxKb: 2100 },
-  { route: '/admin/broadcasts', maxKb: 2140 },
+  { route: '/admin/broadcasts', maxKb: 1020 }, // 911.2 KB on AURA (spec 122 US12b)
   { route: '/admin/broadcasts/[id]', maxKb: 2030 },
   { route: '/portal/benefits/e-blasts', maxKb: 1050 },
   { route: '/unsubscribe/[token]', maxKb: 690 },

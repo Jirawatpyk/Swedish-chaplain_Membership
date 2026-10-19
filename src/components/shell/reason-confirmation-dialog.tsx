@@ -39,19 +39,7 @@ import {
   useTransition,
 } from 'react';
 import { useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Button, Dialog, Textarea } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 import {
   TypedPhraseField,
@@ -344,34 +332,61 @@ export function ReasonConfirmationDialog({
     else document.getElementById(formErrorId)?.focus();
   }, [refusal, formErrorId]);
 
+  // Spec 122 US12b — AURA `Dialog role="alertdialog"`. AURA focuses the first
+  // control in the body on open (the reason field); an optional-reason dialog
+  // marks Cancel `data-autofocus` instead, as Base UI's `initialFocus` did.
+  // `finalFocus` may answer `false` (the hook focuses the landmark itself);
+  // AURA takes `null` for "the default", which the hook's queued focus follows.
   return (
-    <AlertDialog
+    <Dialog
+      role="alertdialog"
       open={open}
-      onOpenChange={(next) => {
-        // L5 — Escape / backdrop cannot close the dialog while the request
-        // runs: the result would land on a closed dialog. Callers' own
-        // programmatic closes call their `onOpenChange` directly, not this.
-        if (!next && pending) return;
-        onOpenChange(next);
+      // L5 — Escape / the scrim cannot close the dialog while the request
+      // runs: the result would land on a closed dialog. Callers' own
+      // programmatic closes call their `onOpenChange` directly, not this.
+      dismissible={!pending}
+      onClose={() => {
+        if (pending) return;
+        onOpenChange(false);
       }}
+      finalFocus={() => finalFocus() || null}
+      title={t('title')}
+      description={t('description')}
+      footer={
+        <>
+          <Button
+            ref={cancelRef}
+            variant="secondary"
+            disabled={pending}
+            onClick={() => onOpenChange(false)}
+            {...(reasonRequired ? {} : { 'data-autofocus': '' })}
+          >
+            {t('cancel')}
+          </Button>
+          {/* ux-standards § 6.2 — red for a destructive action, primary for a
+              reversible one (`confirmTone`). While the request runs Confirm
+              stays focusable, says it is busy and spins (AURA `loading`); idle
+              and invalid it is natively disabled. The dialog only closes via
+              the caller's onOpenChange after the request settles. */}
+          <Button
+            variant={confirmTone === 'destructive' ? 'danger' : 'primary'}
+            disabled={!valid && !pending}
+            loading={pending}
+            onClick={handleConfirm}
+          >
+            {t('confirm')}
+          </Button>
+        </>
+      }
     >
-      <AlertDialogContent
-        className="max-w-lg"
-        finalFocus={finalFocus}
-        {...(reasonRequired ? {} : { initialFocus: cancelRef })}
-      >
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('title')}</AlertDialogTitle>
-          <AlertDialogDescription>{t('description')}</AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <div className="space-y-2">
-          <Label htmlFor={fieldIdPrefix}>{t('reasonLabel')}</Label>
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
+        <div className="flex flex-col gap-[var(--aura-space-2)]">
           {/* H2 — read-only (never `disabled`) while the request runs: a
               disabled control that holds focus drops it to <body>. */}
           <Textarea
             id={fieldIdPrefix}
             ref={textareaRef}
+            label={t('reasonLabel')}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             onBlur={(e) => {
@@ -383,22 +398,22 @@ export function ReasonConfirmationDialog({
             rows={textareaRows}
             readOnly={pending}
             aria-describedby={describedBy}
-            aria-invalid={overCap || fieldError !== null}
+            invalid={overCap || fieldError !== null}
           />
           {/* L4 — every error sits immediately under the field it describes. */}
           {fieldError !== null ? (
             <InlineError key={blankReason ? 'blank' : refusalKey} id={fieldErrorId} message={fieldError} />
           ) : null}
           {overCap ? <InlineError id={tooLongId} message={t('errors.reasonTooLong')} /> : null}
-          <p id={helpId} className="text-xs text-muted-foreground">
+          <p id={helpId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
             {t('reasonHelp')}
           </p>
           <p
             id={counterId}
             aria-live="polite"
             className={cn(
-              'text-xs',
-              overCap ? 'font-semibold text-destructive' : 'text-muted-foreground',
+              'aura-text-caption tabular-nums',
+              overCap ? 'font-semibold text-[var(--aura-fg-danger)]' : 'text-[var(--aura-fg-secondary)]',
             )}
           >
             {reason.length} / {maxLength}
@@ -425,39 +440,7 @@ export function ReasonConfirmationDialog({
         ) : (
           <InlineError key={refusalKey} id={formErrorId} message={formError} />
         )}
-
-        <AlertDialogFooter>
-          <AlertDialogCancel ref={cancelRef} disabled={pending}>
-            {t('cancel')}
-          </AlertDialogCancel>
-          {/* ux-standards § 6.2 — red for a destructive action, primary for a
-              reversible one (`confirmTone`). While the request runs Confirm
-              stays focusable (`focusableWhenDisabled`), says it is busy and
-              spins; idle and invalid it is natively disabled.
-              preventDefault stops AlertDialogAction's default auto-close so the
-              dialog only closes via the caller's onOpenChange after the fetch
-              settles (stays open on a transient error for retry). */}
-          <AlertDialogAction
-            disabled={!valid || pending}
-            focusableWhenDisabled={pending}
-            aria-busy={pending || undefined}
-            className={cn(
-              confirmTone === 'destructive' && [
-                'bg-destructive text-destructive-foreground',
-                'hover:bg-destructive/90',
-                'focus-visible:ring-destructive',
-              ],
-            )}
-            onClick={(e) => {
-              e.preventDefault();
-              handleConfirm();
-            }}
-          >
-            {pending ? <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : null}
-            {t('confirm')}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      </div>
+    </Dialog>
   );
 }

@@ -21,17 +21,8 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { CalendarClockIcon, CheckIcon, InboxIcon, XIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  TranslatedSelectValue,
-} from '@/components/ui/select';
+import { CalendarClockIcon, InboxIcon } from 'lucide-react';
+import { Button, FilterBar, FilterDateRange, FilterSelect, Tag } from '@jirawatpyk/aura-react';
 // Import directly from the Domain value-object file (NOT the module
 // barrel) — the barrel re-exports infrastructure adapters that pull in
 // server-only Next.js APIs (`revalidateTag` via the F5 payments repo
@@ -43,9 +34,6 @@ import {
   type BroadcastStatus,
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import { MARKETING_TURN_STATUSES } from '@/modules/broadcasts/domain/stage/whose-turn';
-import { cn } from '@/lib/utils';
-
-const DEBOUNCE_MS = 300;
 
 // Default-view filter — mirrors `page.tsx` `statusRaw` resolution so
 // the visual checkbox state matches what the server actually filters
@@ -124,12 +112,15 @@ export interface QueueFiltersProps {
   readonly stageCounts: Readonly<Record<BroadcastStatus, number>> | null;
   /** F119 T116 — `FEATURE_EBLAST_MEMBER_APPROVAL`, read on the server (`readEblastStageChips`). */
   readonly approvalRoundEnabled: boolean;
+  /** The tenant's IANA timezone — the "Submitted" range's today (the page turns the days into UTC bounds). */
+  readonly timeZone: string;
 }
 
 export function QueueFilters({
   memberOptions,
   stageCounts,
   approvalRoundEnabled,
+  timeZone,
 }: QueueFiltersProps): React.ReactElement {
   const t = useTranslations('admin.broadcasts.queue.filters');
   const tStatus = useTranslations('admin.broadcasts.queue.status');
@@ -138,7 +129,6 @@ export function QueueFilters({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // UX review LOW — set just before a navigation that will unmount the
   // focused control (a chip offered only because the URL named it; Reset once
   // nothing is left to reset). See the effect below `isOffered`.
@@ -295,16 +285,6 @@ export function QueueFilters({
     [currentStatus, pushUrl, approvalRoundEnabled, stageCounts],
   );
 
-  const onDateChange = useCallback(
-    (key: 'fromDate' | 'toDate', value: string) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        pushUrl({ [key]: value || null } as Parameters<typeof pushUrl>[0]);
-      }, DEBOUNCE_MS);
-    },
-    [pushUrl],
-  );
-
   // "Has any user-applied filter" — true when the URL has any explicit
   // query param. The default-status fallback above does NOT count
   // (no URL param yet → no Clear button to surface).
@@ -337,7 +317,6 @@ export function QueueFilters({
   // submitted chip; the `status_all=1` sentinel surfaces from there
   // automatically.
   const clearAll = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
     // Reset unmounts itself once the URL is clean.
     restoreFocusRef.current = true;
     startTransition(() => {
@@ -389,7 +368,7 @@ export function QueueFilters({
 
   // UX review LOW — when the control that had focus unmounted with the URL
   // change it started, focus fell to `<body>` and a keyboard user had to Tab
-  // back from the top of the page. Hand it to the first Stage checkbox — only
+  // back from the top of the page. Hand it to the first Stage chip — only
   // then, and only if focus really was lost, so a URL change started anywhere
   // else never moves focus.
   useEffect(() => {
@@ -397,211 +376,161 @@ export function QueueFilters({
     restoreFocusRef.current = false;
     if (document.activeElement !== null && document.activeElement !== document.body) return;
     stageFieldsetRef.current
-      ?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+      ?.querySelector<HTMLButtonElement>('button[aria-pressed]')
       ?.focus();
   }, [searchParams]);
 
   const renderChip = (s: BroadcastStatus): React.ReactElement => {
     const label = tStatus(s);
     const count = stageCounts === null ? null : stageCounts[s];
-    // T086a V4 (PR-1's U14) — the 44 px pill wears the focus ring (the
-    // Button's own tokens) while its checkbox has keyboard focus; the 16 px
-    // checkbox drops its outline so there is one ring, not two. The checkbox
-    // stays the focusable control: Tab, Space and its name are unchanged.
+    const checked = isStatusChecked(s);
+    // Spec 122 US12b — an AURA toggle chip (`aria-pressed`), as every list's
+    // filter chips; toggling writes the same URL the checkbox did.
     return (
-      <label
+      <Tag
         key={s}
-        className="flex min-h-[44px] max-w-full cursor-pointer items-center gap-1.5 rounded-full border bg-background px-3 py-2 text-xs transition-[color,box-shadow] hover:bg-muted/40 has-[:checked]:bg-primary/10 has-[:checked]:border-primary/40 has-[:focus-visible]:border-ring has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50"
+        data-status={s}
+        selected={checked}
+        touchHeight
+        // From `sm` up the whole stage name and its count show: a toggle Tag
+        // in FilterBar is not capped there (AURA 5.51, #160).
+        className="max-w-full"
+        onClick={() => toggleStatus(s, !checked)}
       >
-        <input
-          type="checkbox"
-          name="status"
-          value={s}
-          checked={isStatusChecked(s)}
-          onChange={(e) => toggleStatus(s, e.target.checked)}
-          className="h-4 w-4 shrink-0 accent-primary focus-visible:outline-none"
-        />
         {/* SV runs up to +28 %: below `sm` the label truncates inside its chip
-            (the full text in the tooltip) instead of reflowing the strip at
-            320 px. From `sm` up there is room for the whole label, so it is no
-            longer capped (UX review M4 — it truncated at every width). */}
-        <span className="min-w-0 max-w-[14rem] truncate sm:max-w-none" title={label}>
-          {label}
-        </span>
+            (the full text in AURA's own tip) instead of reflowing the strip at
+            320 px; from `sm` up the whole label shows (UX review M4). */}
+        <span className="min-w-0 max-w-[14rem] truncate sm:max-w-none">{label}</span>
         {count !== null ? (
           <>
             {' '}
             {/* The number is visual; its words are in the accessible name. */}
-            <span
-              aria-hidden="true"
-              className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[11px] leading-none tabular-nums"
-            >
+            <span aria-hidden="true" className="shrink-0 tabular-nums text-[var(--aura-fg-secondary)]">
               {count}
             </span>
             <span className="sr-only">{t('chipCount', { count })}</span>
           </>
         ) : null}
-      </label>
+      </Tag>
     );
   };
 
-  return (
+  const inReviewCaptionId = useId();
+  const closedCaptionId = useId();
+  const quickCaptionId = useId();
+  const chipRow = (captionId: string, caption: string, chips: React.ReactNode): React.ReactElement => (
     <div
-      role="search"
-      aria-label={t('formAriaLabel')}
-      className="flex flex-wrap items-end gap-3 rounded-md border bg-muted/20 p-3"
+      role="group"
+      aria-labelledby={captionId}
+      className="flex min-w-0 flex-col gap-[var(--aura-space-2)] sm:grid sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-[var(--aura-space-3)]"
     >
-      {/* UX review B1 — `min-w-0` on the fieldset AND on both group rows: a
+      <span id={captionId} className="aura-text-caption text-[var(--aura-fg-secondary)] sm:pt-[var(--aura-space-2)]">
+        {caption}
+      </span>
+      <div className="flex min-w-0 flex-wrap gap-[var(--aura-space-2)]">{chips}</div>
+    </div>
+  );
+
+  // The phone "Filters (n)" count: the bar has no chips of its own, so it is
+  // told how many filters are on (a preset is a stage filter). The default
+  // view's stage counts too, so a phone shows the cards are filtered (UX M2).
+  const filterCount =
+    (visualStatus.length > 0 || currentStatusAll ? 1 : 0) +
+    (currentMemberId ? 1 : 0) +
+    (currentFromDate ? 1 : 0) +
+    (currentToDate ? 1 : 0);
+
+  // Spec 122 US12b — the global filter pattern: an AURA `FilterBar` whose
+  // controls fold into a "Filters (n)" sheet below 640 px. Reset (back to the
+  // default view, not "show everything") stays in the bar.
+  return (
+    <FilterBar
+      collapseBelow="sm"
+      touchHeight
+      label={t('formAriaLabel')}
+      filterCount={filterCount}
+      actions={
+        hasAnyFilter ? (
+          <Button variant="ghost" size="sm" touchHeight icon="x" onClick={clearAll}>
+            {t('reset')}
+          </Button>
+        ) : undefined
+      }
+    >
+      {/* UX review B1 — `min-w-0` on the fieldset and on every chip row: a
           fieldset's default `min-inline-size: min-content` and a flex item's
           `min-width: auto` each pin a chip at its min-content width, so the
-          chip's `truncate` never engaged and the SV "member approved" chip ran
-          334 px wide at a 320 px viewport. Every link of the chain needs it. */}
+          chip's truncation never engaged at 320 px. */}
       <fieldset
         ref={stageFieldsetRef}
-        className="min-w-0 space-y-1"
+        className="m-0 flex min-w-0 basis-full flex-col gap-[var(--aura-space-3)] border-0 p-0"
         aria-describedby={countsCoverMoreThanView ? countsNoteId : undefined}
       >
-        <legend className="mb-[var(--field-label-gap)] text-[length:var(--font-size-body)] font-medium">
+        <legend className="mb-[var(--aura-space-1)] p-0 aura-text-body font-medium">
           {t('statusLabel')}
         </legend>
-        <div className="flex flex-wrap gap-3">
-          <div
-            role="group"
-            aria-label={tStatusGroup('inReview')}
-            className="flex min-w-0 flex-wrap gap-2"
-          >
-            {IN_REVIEW_STATUSES.filter(isOffered).map(renderChip)}
-          </div>
-          <div
-            role="group"
-            aria-label={tStatusGroup('terminal')}
-            className="flex min-w-0 flex-wrap gap-2"
-          >
-            {TERMINAL_STATUSES.filter(isOffered).map(renderChip)}
-          </div>
-        </div>
+        {/* Parity comments (19 Oct) — each group is a labelled row: its
+            caption on the left from `sm` up (above its chips on a phone),
+            naming the group for assistive tech too. */}
+        {chipRow(inReviewCaptionId, tStatusGroup('inReview'), IN_REVIEW_STATUSES.filter(isOffered).map(renderChip))}
+        {chipRow(closedCaptionId, tStatusGroup('terminal'), TERMINAL_STATUSES.filter(isOffered).map(renderChip))}
         {countsCoverMoreThanView ? (
-          <p id={countsNoteId} className="text-xs text-muted-foreground">
+          <p id={countsNoteId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
             {t('chipCountsScope')}
           </p>
         ) : null}
       </fieldset>
 
-      <div className="space-y-1">
-        <Label htmlFor="filter-member">{t('memberLabel')}</Label>
-        <Select
-          value={currentMemberId || 'all'}
-          onValueChange={(v) => pushUrl({ memberId: v === 'all' ? null : v })}
-        >
-          <SelectTrigger
-            id="filter-member"
-            className="w-56"
-            aria-label={t('memberLabel')}
-          >
-            <TranslatedSelectValue
-              placeholder={t('memberAll')}
-              translate={(v) => {
-                if (!v || v === 'all') return t('memberAll');
-                return (
-                  memberOptions.find((m) => m.memberId === v)?.displayName ?? v
-                );
-              }}
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t('memberAll')}</SelectItem>
-            {memberOptions.map((m) => (
-              <SelectItem key={m.memberId} value={m.memberId}>
-                {m.displayName}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-1">
-        <Label htmlFor="filter-from">{t('fromDate')}</Label>
-        <Input
-          id="filter-from"
-          type="date"
-          name="fromDate"
-          // `key` forces re-mount when URL value changes, ensuring the
-          // native input reflects URL-driven state after navigation.
-          key={`from-${currentFromDate}`}
-          defaultValue={currentFromDate}
-          onChange={(e) => onDateChange('fromDate', e.target.value)}
-          className="w-40"
-        />
-      </div>
-
-      <div className="space-y-1">
-        <Label htmlFor="filter-to">{t('toDate')}</Label>
-        <Input
-          id="filter-to"
-          type="date"
-          name="toDate"
-          key={`to-${currentToDate}`}
-          defaultValue={currentToDate}
-          onChange={(e) => onDateChange('toDate', e.target.value)}
-          className="w-40"
-        />
-      </div>
-
-      {/* UX review H5 — the pressed state wears the stage chip's checked
-          style plus a check icon. The old `outline` -> `secondary` swap
-          changed the fill by 1.09:1 (light) / 1.31:1 (dark): state you could
-          not see. */}
-      <Button
-        type="button"
-        variant="outline"
-        aria-pressed={upcomingActive}
-        onClick={toggleUpcoming}
-        className={cn(
-          'whitespace-nowrap',
-          upcomingActive && 'border-primary/40 bg-primary/10 hover:bg-primary/15',
+      {/* The presets are views, not dates: their own row, before the member
+          and date fields (parity comments, 19 Oct). UX review H5 — a pressed
+          preset looks pressed: AURA's selected chip, as a ticked stage. */}
+      <div className="flex min-w-0 basis-full flex-col">
+        {chipRow(
+          quickCaptionId,
+          t('quickViews'),
+          <>
+            <Tag
+              selected={upcomingActive}
+              touchHeight
+              icon={<CalendarClockIcon aria-hidden="true" />}
+              onClick={toggleUpcoming}
+            >
+              {t('upcomingSends')}
+            </Tag>
+            {marketingPresetOffered && (
+              <Tag
+                selected={marketingActive}
+                touchHeight
+                icon={<InboxIcon aria-hidden="true" />}
+                onClick={toggleMarketing}
+              >
+                {t('waitingOnMarketing')}
+              </Tag>
+            )}
+          </>,
         )}
-      >
-        {upcomingActive ? (
-          <CheckIcon className="size-4" aria-hidden="true" data-icon="pressed-check" />
-        ) : (
-          <CalendarClockIcon className="size-4" aria-hidden="true" />
-        )}
-        {t('upcomingSends')}
-      </Button>
+      </div>
 
-      {marketingPresetOffered && (
-        <Button
-          type="button"
-          variant="outline"
-          aria-pressed={marketingActive}
-          onClick={toggleMarketing}
-          className={cn(
-            'whitespace-nowrap',
-            marketingActive && 'border-primary/40 bg-primary/10 hover:bg-primary/15',
-          )}
-        >
-          {marketingActive ? (
-            <CheckIcon className="size-4" aria-hidden="true" data-icon="pressed-check" />
-          ) : (
-            <InboxIcon className="size-4" aria-hidden="true" />
-          )}
-          {t('waitingOnMarketing')}
-        </Button>
-      )}
+      <FilterSelect
+        label={t('memberLabel')}
+        allLabel={t('memberAll')}
+        value={currentMemberId}
+        onChange={(v) => pushUrl({ memberId: v || null })}
+        options={[
+          { value: '', label: t('memberAll') },
+          ...memberOptions.map((m) => ({ value: m.memberId, label: m.displayName })),
+        ]}
+      />
 
-      {/* UX review LOW — the default h-9, like the controls beside it (it
-          was `size="sm"`, h-7). */}
-      {hasAnyFilter && (
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={clearAll}
-          className="whitespace-nowrap"
-        >
-          <XIcon className="size-4" aria-hidden="true" />
-          {t('reset')}
-        </Button>
-      )}
-    </div>
+      {/* One "Submitted" range, as audit and change requests (parity
+          comments, 19 Oct). It runs on a complete range or "Any time" —
+          never on a lone day — so the URL gets a whole range. */}
+      <FilterDateRange
+        label={t('submittedRange')}
+        timeZone={timeZone}
+        value={{ start: currentFromDate || null, end: currentToDate || null }}
+        onChange={(r) => pushUrl({ fromDate: r.start, toDate: r.end })}
+      />
+    </FilterBar>
   );
 }

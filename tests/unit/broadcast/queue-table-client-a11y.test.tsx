@@ -1,31 +1,20 @@
 /**
- * Task 5 (2026-08-01-broadcast-review-queue-pr1) — bulk-selection bar a11y:
- * a PERMANENTLY-MOUNTED `role="status" aria-live="polite"` announcer for
- * the selected count, `indeterminate` (aria-checked="mixed") on the header
- * select-all checkbox when some-but-not-all actionable rows are selected,
- * and a 24px minimum touch target on every select checkbox (WCAG 2.2
- * SC 2.5.8).
+ * The review queue's desktop list on AURA `DataTable` (spec 122 US12b): the
+ * selection column follows the FR-011 rule — only `submitted` rows
+ * (`actionable`) carry a checkbox; every other row's cell is named for why it
+ * cannot be picked (`isRowSelectable` + `rowSelectDisabledLabel`). Select-all
+ * picks the actionable rows only. A read-only (manager) view has no selection.
  *
- * Round-2 review Fix 1 — the announcer must stay mounted across the
- * 0-selected ↔ 1-selected transition. A live region that is INSERTED into
- * the DOM already containing its text (e.g. conditionally rendered only
- * while `selectedIds.length > 0`) is not reliably announced by NVDA/JAWS —
- * only text MUTATIONS on an already-mounted region are. So this asserts
- * the region exists even with 0 selected (empty text) and gains the count
- * text after a row is selected — the exact 0→1 transition the feature
- * exists to announce.
+ * Round-2 review Fix 1 — the announcer stays mounted across the
+ * 0-selected ↔ 1-selected transition: a live region INSERTED with its text
+ * already in it is not reliably announced by NVDA/JAWS; only text MUTATIONS
+ * on a mounted region are.
  *
- * `QueueTableClient` now translates its own `bulk.*` strings via
- * `useTranslations` (Task 1 made `bulk.selected` an ICU-plural key), so this
- * renders under a real `NextIntlClientProvider` backed by canonical
- * `en.json` — an echo/mock translator would hide an ICU wiring regression.
- *
- * `QueueTableClient` calls `useRouter()` (for `router.refresh()` after a
- * bulk-approve action) — established idiom:
- * tests/unit/app/admin/renewals/tier-upgrade-queue.test.tsx:21-23.
+ * Renders under a real `NextIntlClientProvider` backed by `en.json` — an echo
+ * translator would hide an ICU wiring regression.
  */
-import { describe, expect, it, afterEach, beforeAll, beforeEach, vi } from 'vitest';
-import { render, cleanup, within } from '@testing-library/react';
+import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
+import { render, cleanup, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -38,22 +27,6 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 
-// Base UI Checkbox dispatches via `PointerEvent`, which jsdom does not
-// implement. Established idiom:
-// tests/unit/members/presentation/members-table-selection.test.tsx:18-30.
-beforeAll(() => {
-  if (typeof globalThis.PointerEvent === 'undefined') {
-    // @ts-expect-error — minimal polyfill for jsdom
-    globalThis.PointerEvent = class PointerEvent extends MouseEvent {
-      readonly pointerId: number;
-      constructor(type: string, params?: PointerEventInit) {
-        super(type, params);
-        this.pointerId = params?.pointerId ?? 0;
-      }
-    };
-  }
-});
-
 const base: EnrichedQueueRow = {
   broadcastId: 'b1',
   subject: 'Hi',
@@ -62,7 +35,7 @@ const base: EnrichedQueueRow = {
   segmentLabel: 'All members',
   recipientCount: 5,
   ageBadge: null,
-  statusBadgeVariant: 'secondary',
+  statusTone: 'progress',
   statusBadgeLabel: 'Submitted',
   actionable: true,
   whoseTurnLabel: 'Marketing',
@@ -73,8 +46,11 @@ const base: EnrichedQueueRow = {
   lastActivityFormatted: '1 Aug 2026, 07:00',
   deliverySummary: null,
 };
-const rows = [base, { ...base, broadcastId: 'b2', subject: 'Hi2' }];
-// columnLabels now omits the bulk.* strings (client translates them):
+const rows: EnrichedQueueRow[] = [
+  base,
+  { ...base, broadcastId: 'b2', subject: 'Hi2' },
+  { ...base, broadcastId: 'b3', subject: 'Closed one', actionable: false, statusTone: 'ready', statusBadgeLabel: 'Sent' },
+];
 const columnLabels = {
   member: 'Member',
   subject: 'Subject',
@@ -88,159 +64,98 @@ const columnLabels = {
   tableAria: 'Broadcast review queue',
 };
 
-function renderTable() {
+function renderTable(props: Partial<React.ComponentProps<typeof QueueTableClient>> = {}) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <QueueTableClient rows={rows} columnLabels={columnLabels} />
+      <QueueTableClient rows={rows} columnLabels={columnLabels} {...props} />
     </NextIntlClientProvider>,
   );
 }
 
-// Shared vitest setup installs fake timers; @testing-library/user-event
-// schedules its internal delays on them, so `await user.click()` never
-// resolves and every test dies on the 30s test timeout (not a `waitFor`
-// timeout). Precedent: reference_component_test_harness_fake_timers memory.
+// Shared setup installs fake timers; user-event's internal delays would
+// never resolve under them.
 beforeEach(() => {
   vi.useRealTimers();
 });
 afterEach(cleanup);
 
-// The header select-all checkbox and every per-row checkbox share the same
-// accessible name ("Select broadcast" — pre-existing, out of Task 5 scope),
-// so `getAllByRole('checkbox', {name: ...})` returns [header, row1, row2] in
-// DOM order (<thead> precedes <tbody>). Scope to `tbody` to reliably click a
-// ROW checkbox rather than the select-all header.
-function getRowCheckboxes(container: HTMLElement) {
-  const tbody = container.querySelector('tbody');
-  if (!tbody) throw new Error('tbody not found');
-  return within(tbody).getAllByRole('checkbox', { name: /select broadcast/i });
-}
+describe('QueueTableClient on AURA DataTable — selection, a11y, ICU', () => {
+  it('is an AURA grid named by the table label, one row per broadcast', () => {
+    renderTable();
+    const grid = screen.getByRole('grid', { name: 'Broadcast review queue' });
+    // header row + one row per broadcast; no virtualisation padding rows
+    expect(within(grid).getAllByRole('row')).toHaveLength(rows.length + 1);
+  });
 
-describe('QueueTableClient a11y + ICU', () => {
+  it('only actionable rows carry a checkbox, named for the subject; the others say why not', () => {
+    renderTable();
+    const grid = screen.getByRole('grid');
+    expect(within(grid).getByRole('checkbox', { name: 'Select Hi' })).toBeInTheDocument();
+    expect(within(grid).getByRole('checkbox', { name: 'Select Hi2' })).toBeInTheDocument();
+    expect(within(grid).queryByRole('checkbox', { name: 'Select Closed one' })).toBeNull();
+    expect(within(grid).getByRole('gridcell', { name: 'Closed one is not awaiting review' })).toBeInTheDocument();
+  });
+
   it('the selected-count announcer is permanently mounted and announces the 0→1 transition via ICU', async () => {
     const user = userEvent.setup();
-    const { container } = renderTable();
-
-    // Permanently-mounted regardless of selection state (Round-2 review
-    // Fix 1) — must exist BEFORE any row is clicked, with empty text.
-    const announcer = container.querySelector('[role="status"][aria-live="polite"]');
-    expect(announcer).not.toBeNull();
-    expect(announcer).toHaveAttribute('aria-atomic', 'true');
+    renderTable();
+    const announcer = screen.getByTestId('queue-selection-announcer');
+    expect(announcer).toHaveAttribute('role', 'status');
+    expect(announcer).toHaveAttribute('aria-live', 'polite');
     expect(announcer).toHaveTextContent('');
 
-    const [rowCheckbox] = getRowCheckboxes(container);
-    await user.click(rowCheckbox!);
+    await user.click(screen.getByRole('checkbox', { name: 'Select Hi' }));
 
-    // Same node, now carrying the ICU-pluralised count — a text MUTATION on
-    // an already-mounted live region, which SR/AT reliably announce.
-    expect(container.querySelector('[role="status"][aria-live="polite"]')).toBe(announcer);
+    expect(screen.getByTestId('queue-selection-announcer')).toBe(announcer);
     expect(announcer).toHaveTextContent(/1 selected/);
   });
 
-  it('the header select-all checkbox exposes an indeterminate (mixed) state', async () => {
+  it('select-all picks only the actionable rows', async () => {
     const user = userEvent.setup();
-    const { container } = renderTable();
-    const [rowCheckbox] = getRowCheckboxes(container);
-    await user.click(rowCheckbox!); // 1 of 2 selected → mixed
-    // shadcn Checkbox indeterminate → aria-checked="mixed" on the header control
-    const mixed = container.querySelector('[aria-checked="mixed"]');
-    expect(mixed).not.toBeNull();
+    const onSelectionChange = vi.fn();
+    renderTable({ onSelectionChange });
+    await user.click(screen.getByRole('checkbox', { name: 'Select all rows' }));
+    expect(screen.getByTestId('queue-selection-announcer')).toHaveTextContent(/2 selected/);
+    expect(onSelectionChange).toHaveBeenLastCalledWith(['b1', 'b2']);
   });
 
-  it('checkbox targets meet the 24px minimum — header AND row', () => {
-    const { container } = renderTable();
-    const headerCb = container.querySelector('thead [role="checkbox"], thead input[type="checkbox"]');
-    expect(headerCb?.className ?? '').toMatch(/min-h-\[24px\]/);
-    expect(headerCb?.className ?? '').toMatch(/min-w-\[24px\]/);
-
-    const [rowCb] = getRowCheckboxes(container);
-    expect(rowCb?.className ?? '').toMatch(/min-h-\[24px\]/);
-    expect(rowCb?.className ?? '').toMatch(/min-w-\[24px\]/);
+  it('a read-only (manager) view has no selection column and no review actions', () => {
+    renderTable({ readOnly: true });
+    const grid = screen.getByRole('grid');
+    expect(within(grid).queryByRole('checkbox')).toBeNull();
+    expect(within(grid).queryByRole('button', { name: 'Approve' })).toBeNull();
   });
 
-  // Task 2 (2026-08-01-broadcast-review-queue-pr2) — the row-virtualization
-  // branch (`@tanstack/react-virtual`, threshold 100 rows) never fires in
-  // production: the queue query pages at 50 rows. This guard renders a
-  // row count well below the old threshold and asserts every row lands in
-  // the DOM as a real `<tr>` — no synthetic virtualizer padding rows —
-  // so a future re-introduction of virtualization at a low threshold (or
-  // any padding-row artifact) fails loudly here.
-  it('renders every row without virtualization padding rows', () => {
-    const manyRows: EnrichedQueueRow[] = Array.from({ length: 12 }, (_, i) => ({
-      ...base,
-      broadcastId: `b${i}`,
-      subject: `Subject ${i}`,
-    }));
-    const { container } = render(
+  it('marks the column the order follows with aria-sort: AURA `sortDirection` (#157)', () => {
+    const { rerender } = renderTable();
+    const header = (name: string) => screen.getByRole('columnheader', { name });
+    expect(header('Time in stage')).toHaveAttribute('aria-sort', 'descending');
+    expect(header('Send time')).not.toHaveAttribute('aria-sort');
+
+    rerender(
       <NextIntlClientProvider locale="en" messages={enMessages}>
-        <QueueTableClient rows={manyRows} columnLabels={columnLabels} />
+        <QueueTableClient rows={rows} columnLabels={columnLabels} order="send_time" />
       </NextIntlClientProvider>,
     );
-
-    const bodyRows = container.querySelectorAll('tbody tr');
-    expect(bodyRows).toHaveLength(12); // exactly the data rows, no padding <tr>
-    bodyRows.forEach((tr) => {
-      expect(tr).not.toHaveAttribute('aria-hidden');
-    });
+    expect(header('Send time')).toHaveAttribute('aria-sort', 'ascending');
+    expect(header('Time in stage')).not.toHaveAttribute('aria-sort');
   });
 
-  // Task 3 (2026-08-01-broadcast-review-queue-pr2) — the desktop table now
-  // renders through the shared `@/components/ui/table.tsx` primitive
-  // instead of a hand-rolled `<table>`, for consistency with the
-  // members/renewals lists. Asserts the primitive's data-slot markers +
-  // sticky header + focusable scroll region, rather than re-testing the
-  // primitive's own internals (covered by its own test suite).
-  //
-  // Review round 1, M-1 — also assert `aria-label={columnLabels.tableAria}`
-  // actually reaches the region. Without this, a regression in that wiring
-  // would silently fall back to the primitive's hardcoded English
-  // `'Data table'` default and no test would fail.
-  it('renders through the shared Table primitive (focusable region + sticky header)', () => {
-    const { container } = renderTable();
-    expect(container.querySelector('[data-slot="table"]')).not.toBeNull();
-    const region = container.querySelector('[data-slot="table-container"]');
-    expect(region).toHaveAttribute('tabindex', '0');
-    expect(region).toHaveAttribute('role', 'region');
-    expect(region).toHaveAttribute('aria-label', columnLabels.tableAria);
-    expect(container.querySelector('[data-slot="table-header"]')).toHaveClass('sticky');
+  // AURA 5.51 #161 (`keyboard="tab"`): Approve, Reject and the row links are
+  // Tab stops, not cells reached only with the arrows.
+  it('every row action is a Tab stop (AURA keyboard="tab", #161)', () => {
+    renderTable();
+    const grid = screen.getByRole('grid');
+    for (const button of within(grid).getAllByRole('button', { name: /approve|reject/i })) {
+      expect(button).not.toHaveAttribute('tabindex', '-1');
+    }
+    for (const link of within(grid).getAllByRole('link')) expect(link).not.toHaveAttribute('tabindex', '-1');
   });
 
-  // Review round 1, I-1 — the shared `TableCell` applies `whitespace-nowrap`
-  // to every cell by default. `subject` is free-text up to ~200 chars (F7
-  // sanitiser cap) and the primary column admins scan; left un-wrapped, a
-  // long subject widens the whole table past its container on every wide
-  // row. Guards the fix (`whitespace-normal break-words` on the subject
-  // cell only — precedent: `members-table.tsx` "057 overflow fix") against
-  // regression.
-  it('wraps a long subject instead of forcing table overflow', () => {
-    const longSubject =
-      'A'.repeat(60) + ' ' + 'B'.repeat(60) + ' very long broadcast subject line for review';
-    const { container } = render(
-      <NextIntlClientProvider locale="en" messages={enMessages}>
-        <QueueTableClient
-          rows={[{ ...base, subject: longSubject }]}
-          columnLabels={columnLabels}
-        />
-      </NextIntlClientProvider>,
-    );
-    // Task 4 (2026-08-01-broadcast-review-queue-pr2) — the mobile
-    // `QueueCardList` dual-render also shows the subject (as a link with
-    // the same accessible name), so this desktop-only assertion must be
-    // scoped to the `<table>` itself, not the whole container. jsdom
-    // applies no real CSS, so the `hidden md:block` / `md:hidden` wrapper
-    // classes don't hide either tree from queries — only the `[data-slot=
-    // "table"]` scope disambiguates which one is desktop.
-    const desktopTable = container.querySelector<HTMLElement>('[data-slot="table"]');
-    expect(desktopTable).not.toBeNull();
-    const subjectLink = within(desktopTable!).getByRole('link', { name: longSubject });
-    const subjectCell = subjectLink.closest('[data-slot="table-cell"]');
-    expect(subjectCell).not.toBeNull();
-    expect(subjectCell).toHaveClass('whitespace-normal');
-    expect(subjectCell).toHaveClass('break-words');
-    // Not every column wraps — Whose turn stays nowrap (the shared
-    // primitive's default). (F119 UX review M1 moved the recipient count this
-    // used to check into the Audience cell, which now wraps, capped.)
-    const whoseTurnCell = within(desktopTable!).getByText('Marketing').closest('[data-slot="table-cell"]');
-    expect(whoseTurnCell).not.toHaveClass('whitespace-normal');
+  it('wraps a long subject instead of forcing the row wider', () => {
+    const longSubject = 'A'.repeat(60) + ' ' + 'B'.repeat(60) + ' very long broadcast subject line';
+    renderTable({ rows: [{ ...base, subject: longSubject }] });
+    const link = within(screen.getByRole('grid')).getByRole('link', { name: longSubject });
+    expect(link).toHaveClass('[overflow-wrap:anywhere]');
   });
 });

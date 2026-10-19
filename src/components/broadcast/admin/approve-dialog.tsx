@@ -22,23 +22,10 @@
  * `InlineWarning`).
  */
 import { useMemo, useRef, useState, useTransition } from 'react';
-import { Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Button, Dialog, RadioGroup, TextField } from '@jirawatpyk/aura-react';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import {
   bangkokInputToIso,
@@ -279,108 +266,96 @@ export function ApproveDialog({
     closedViaSuccessRef,
   );
 
+  // Board `Admin-broadcast-approve` (spec 122 US12b) — AURA `Dialog
+  // role="alertdialog"`: the decision an AURA `RadioGroup`, the schedule an
+  // AURA `TextField` (`datetime-local`, Bangkok wall time as before).
+  const preview =
+    scheduledFor === ''
+      ? null
+      : (() => {
+          try {
+            // Parse as Bangkok wall-time then render in Bangkok TZ — the
+            // round-trip is identity, so the preview matches what the admin
+            // typed regardless of browser TZ.
+            return new Intl.DateTimeFormat(getDateFormatLocale(locale), {
+              dateStyle: 'long',
+              timeStyle: 'short',
+              timeZone: 'Asia/Bangkok',
+            }).format(bangkokInputToInstant(scheduledFor));
+          } catch {
+            return '';
+          }
+        })();
+
   return (
-    <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent className="max-w-lg" finalFocus={finalFocus}>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{t('title')}</AlertDialogTitle>
-          <AlertDialogDescription>
-            {t('description')}
-            {/* a11y M1 (2026-08-01-broadcast-review-queue-pr2 Task 8) — the
-                recipient sentence used to be a sibling <p> of this element.
-                Base UI wires the dialog's `aria-describedby` to
-                AlertDialogDescription only, so a screen reader announced the
-                title + description but never "Reaches ~N recipients" on
-                open. Folding it in here (as a `block` span — an inner <p>
-                would be invalid inside this description's own <p>) makes it
-                part of the announced description. */}
-            {recipientCount !== undefined ? (
-              <span className="mt-2 block text-muted-foreground">
-                {t('recipientCount', { count: recipientCount })}
-              </span>
-            ) : null}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {/* C3 UX hardening — removed `aria-disabled` on the fieldset.
-            HTML `disabled` on a `<fieldset>` disables all descendant
-            form controls natively + sets `aria-disabled` implicitly.
-            The duplicated attribute risked confusing future maintainers
-            who might think two different semantics were intended. */}
-        <fieldset className="space-y-3" disabled={pending}>
-          <RadioGroup
-            value={decision}
-            onValueChange={(v) =>
-              setDecision(v === 'schedule' ? 'schedule' : 'send_now')
-            }
-            disabled={pending}
-            className="space-y-2"
-          >
-            <div className="flex items-center gap-2">
-              <RadioGroupItem id="approve-send-now" value="send_now" aria-label={t('decision.sendNow')} />
-              <Label htmlFor="approve-send-now" className="cursor-pointer">
-                {t('decision.sendNow')}
-              </Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <RadioGroupItem id="approve-schedule" value="schedule" aria-label={t('decision.schedule')} />
-              <Label htmlFor="approve-schedule" className="cursor-pointer">
-                {t('decision.schedule')}
-              </Label>
-            </div>
-          </RadioGroup>
-          {decision === 'schedule' ? (
-            <div className="ml-6 space-y-2">
-              <Label htmlFor="approve-when">{t('scheduleLabel')}</Label>
-              <Input
-                id="approve-when"
-                type="datetime-local"
-                value={scheduledFor}
-                min={minLocal}
-                onChange={(e) => setScheduledFor(e.target.value)}
-                disabled={pending}
-                aria-describedby="approve-when-help"
-              />
-              {scheduledFor !== '' ? (
-                <p className="text-xs font-medium text-foreground">
-                  {t('schedulePreviewLabel')}{' '}
-                  {/* The preview only renders when `scheduledFor !== ''`,
-                      which is initialised to '' by useState — so this
-                      branch is unreachable during SSR. The previous
-                      `suppressHydrationWarning` was dead defensive code
-                      and has been removed. */}
-                  <span>
-                    {(() => {
-                      try {
-                        // Parse as Bangkok wall-time then render in
-                        // Bangkok TZ — round-trip is identity, so the
-                        // preview matches what the admin typed in the
-                        // input regardless of browser TZ.
-                        const instant = bangkokInputToInstant(scheduledFor);
-                        const formatter = new Intl.DateTimeFormat(
-                          getDateFormatLocale(locale),
-                          {
-                            dateStyle: 'long',
-                            timeStyle: 'short',
-                            timeZone: 'Asia/Bangkok',
-                          },
-                        );
-                        return formatter.format(instant);
-                      } catch {
-                        return '';
-                      }
-                    })()}
-                  </span>
-                </p>
-              ) : null}
-              <p
-                id="approve-when-help"
-                className="text-xs text-muted-foreground"
-              >
-                {t('scheduleHelp')}
-              </p>
-            </div>
+    <Dialog
+      role="alertdialog"
+      open={open}
+      dismissible={!pending}
+      onClose={() => handleOpenChange(false)}
+      finalFocus={() => finalFocus() || null}
+      title={t('title')}
+      description={
+        <>
+          {t('description')}
+          {/* a11y M1 — the recipient line is part of the announced
+              description, not a sibling the dialog's describedby misses. */}
+          {recipientCount !== undefined ? (
+            <span className="mt-[var(--aura-space-2)] block font-medium text-[var(--aura-fg-primary)]">
+              {t('recipientCount', { count: recipientCount })}
+            </span>
           ) : null}
-        </fieldset>
+        </>
+      }
+      footer={
+        <>
+          <Button variant="secondary" disabled={pending} onClick={() => handleOpenChange(false)}>
+            {t('cancel')}
+          </Button>
+          <Button
+            variant="primary"
+            icon="circle-check"
+            disabled={submitDisabled}
+            loading={pending}
+            onClick={onConfirm}
+          >
+            {t('confirm')}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-[var(--aura-space-4)]">
+        <RadioGroup
+          touchHeight
+          label={t('decisionLabel')}
+          value={decision}
+          onChange={(v) => setDecision(v === 'schedule' ? 'schedule' : 'send_now')}
+          disabled={pending}
+          options={[
+            { value: 'send_now', label: t('decision.sendNow') },
+            { value: 'schedule', label: t('decision.schedule') },
+          ]}
+        />
+        {decision === 'schedule' ? (
+          <div className="flex flex-col gap-[var(--aura-space-2)]">
+            <TextField
+              id="approve-when"
+              touchHeight
+              type="datetime-local"
+              label={t('scheduleLabel')}
+              hint={t('scheduleHelp')}
+              value={scheduledFor}
+              min={minLocal}
+              onChange={(e) => setScheduledFor(e.target.value)}
+              disabled={pending}
+            />
+            {preview !== null ? (
+              <p className="aura-text-body font-medium">
+                {t('schedulePreviewLabel')} <span>{preview}</span>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {formError === null ? null : formError.kind === 'read_only' ? (
           <InlineWarning
             id={FORM_ERROR_ID}
@@ -391,27 +366,7 @@ export function ApproveDialog({
         ) : (
           <InlineError id={FORM_ERROR_ID} data-testid="approve-dialog-error" message={formError.message} />
         )}
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>{t('cancel')}</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={submitDisabled}
-            aria-busy={pending}
-            onClick={(e) => {
-              e.preventDefault();
-              onConfirm();
-            }}
-          >
-            {pending ? (
-              <>
-                <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-                {t('confirm')}
-              </>
-            ) : (
-              t('confirm')
-            )}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      </div>
+    </Dialog>
   );
 }

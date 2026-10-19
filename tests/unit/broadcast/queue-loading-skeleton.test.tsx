@@ -52,19 +52,19 @@ describe('the queue loading skeleton (UX review M2)', () => {
     expect(OFFERED_BROADCAST_STATUSES).toHaveLength(13);
   });
 
-  it('reserves an h-9 slot for the Upcoming sends button', async () => {
+  it('reserves a chip-height (h-8) slot for the Upcoming sends chip', async () => {
     const { container } = await renderSkeleton();
     const slot = container.querySelector('[data-skeleton="upcoming-sends"]');
     expect(slot).not.toBeNull();
-    expect(slot!.className).toContain('h-9');
+    expect(slot!.className).toContain('h-8');
   });
 
-  it('#400 item 8 / U6: reserves an h-9 slot for the Waiting on marketing button, as wide as the button (w-52)', async () => {
+  it('#400 item 8 / U6: reserves a chip-height slot for the Waiting on marketing chip, as wide as it (w-52)', async () => {
     flag.on = true;
     const { container } = await renderSkeleton();
     const slot = container.querySelector('[data-skeleton="waiting-on-marketing"]');
     expect(slot).not.toBeNull();
-    expect(slot!.className).toContain('h-9');
+    expect(slot!.className).toContain('h-8');
     expect(slot!.className).toContain('w-52');
   });
 
@@ -98,20 +98,48 @@ describe('the queue loading skeleton mirrors the page (T086a V3)', () => {
     expect(off.container.querySelectorAll('[data-skeleton="header-action"]')).toHaveLength(1);
   });
 
-  it('reserves the order hint, the eight-column table from md and the card list below it', async () => {
+  it('reserves the order hint, the seven-column table from md and the card list below it', async () => {
     const { container } = await renderSkeleton();
     expect(container.querySelector('[data-skeleton="order-hint"]')).not.toBeNull();
 
     const table = container.querySelector('[data-skeleton="queue-table"]');
     expect(table?.className).toMatch(/(?:^|\s)hidden(?:\s|$)/);
     expect(table?.className).toContain('md:block');
-    expect(table?.querySelectorAll('[data-skeleton="queue-column"]')).toHaveLength(8);
+    // Parity comments (19 Oct): whose turn moved under the Stage pill.
+    expect(table?.querySelectorAll('[data-skeleton="queue-column"]')).toHaveLength(7);
     // Real rows are two-line (a value over its secondary line) in every column.
     const firstRow = table?.querySelector('[data-skeleton="queue-row"]');
-    expect(firstRow?.querySelectorAll('[data-skeleton="queue-cell"]')).toHaveLength(8);
+    expect(firstRow?.querySelectorAll('[data-skeleton="queue-cell"]')).toHaveLength(7);
+  });
+
+  // UX review L10 — the skeleton rows were ~58 px against 88 px real rows (the
+  // stacked Approve / Reject), and had no select column, so the page moved
+  // when the data landed.
+  it('a skeleton row has the select column and the stacked Approve / Reject, as tall as a real row', async () => {
+    const { container } = await renderSkeleton();
+    const row = container.querySelector('[data-skeleton="queue-table"] [data-skeleton="queue-row"]')!;
+    expect(row.querySelector('[data-skeleton="queue-select"]')).not.toBeNull();
+    const actions = row.querySelector('[data-skeleton="queue-actions"]')!;
+    expect(actions.querySelectorAll('.h-9')).toHaveLength(2);
+    expect(row.className).toContain('min-h-[5.5rem]');
+    // From 1,440 px Approve and Reject sit side by side; from ~1,800 px the
+    // other columns stop wrapping and a real row is 68 px.
+    expect(actions.className).toContain('min-[1440px]:flex-row');
+    expect(row.className).toContain('min-[1800px]:min-h-[4.25rem]');
+  });
+
+  it('the card list sits below md', async () => {
+    const { container } = await renderSkeleton();
 
     const cards = container.querySelector('[data-skeleton="queue-card-list"]');
     expect(cards?.className).toContain('md:hidden');
-    expect(cards?.querySelectorAll('[data-slot="card"]').length).toBeGreaterThan(0);
+    expect(cards?.querySelectorAll('[data-skeleton="queue-card"]').length).toBeGreaterThan(0);
+  });
+
+  // Spec 122 US12b — the filters fold into the "Filters" button below 640 px.
+  it('reserves the phone Filters button below 640 px and the full filter row from 640 px', async () => {
+    const { container } = await renderSkeleton();
+    expect(container.querySelector('[data-skeleton="filters-button"]')?.className).toContain('sm:hidden');
+    expect(container.querySelector('[data-skeleton="filters"]')?.className).toContain('max-sm:hidden');
   });
 });
