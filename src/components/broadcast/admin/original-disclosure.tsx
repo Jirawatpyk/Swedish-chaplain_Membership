@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useBreakpoint } from '@jirawatpyk/aura-react';
 
 /**
@@ -22,14 +22,16 @@ export function OriginalDisclosure({
 }): React.ReactElement {
   const breakpoint = useBreakpoint();
   const stacked = breakpoint === 'base' || breakpoint === 'sm' || breakpoint === 'md';
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(!stacked);
+  const [foldedFor, setFoldedFor] = useState(stacked);
 
-  // Each change of layout resets the fold: closed where the cards stack, open
-  // where they sit side by side (the summary is hidden there, so it could not
-  // be reopened).
-  useEffect(() => {
+  // Each change of layout resets the fold, during render rather than in an
+  // effect: closed where the cards stack, open where they sit side by side
+  // (the summary is hidden there, so it could not be reopened).
+  if (foldedFor !== stacked) {
+    setFoldedFor(stacked);
     setOpen(!stacked);
-  }, [stacked]);
+  }
 
   return (
     <details
