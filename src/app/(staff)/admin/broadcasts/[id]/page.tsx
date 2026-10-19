@@ -10,6 +10,7 @@ import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { failureReasonToken } from '@/components/broadcast/admin/failure-reason';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
+import { DetailActionBar } from '@/components/broadcast/admin/detail-action-bar';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
@@ -225,8 +226,7 @@ export default async function AdminBroadcastDetailPage({
   const isCancellable = canCancel(status);
   const showApprove = canWrite && status === 'submitted' && !bodyRenderFailed;
   const showReject = canWrite && canTransition(status, 'rejected');
-  const showReview = showApprove || showReject;
-  const showActionRow = canWrite && (isCancellable || showReview || showStart || showSchedule);
+  const showActionRow = canWrite && (isCancellable || showApprove || showReject || showStart || showSchedule);
 
   // F119 PR-A — why a `failed_to_dispatch` E-Blast was not sent. The stored
   // reason is a lookup hint (`failureReasonToken`), never display text; a token
@@ -463,14 +463,24 @@ export default async function AdminBroadcastDetailPage({
 
       <AuditTimeline tenantId={tenant.slug} broadcastId={broadcastId} />
 
-      {/* One right-aligned action row for the stage's staff actions. Every
-          control here is ABSENT for a `manager` (read-only), never disabled.
-          "Send to member" lives with the working copy it sends. */}
+      {/* Spec 122 US12c-1 — the stage's staff actions, as the board groups
+          them: the destructive ones (Cancel, Reject) at the start, the next
+          step at the end; pinned to the bottom of the screen on a phone.
+          Every control here is ABSENT for a `manager` (read-only), never
+          disabled. "Send to member" lives with the working copy it sends. */}
       {showActionRow ? (
-        <div className="flex flex-wrap items-center justify-end gap-2" data-testid="eblast-action-row">
-          {isCancellable ? (
-            <CancelBroadcastAction broadcastId={broadcastId} surface="admin" subject={broadcast.subject} />
-          ) : null}
+        <DetailActionBar
+          start={
+            isCancellable || showReject ? (
+              <>
+                {isCancellable ? (
+                  <CancelBroadcastAction broadcastId={broadcastId} surface="admin" subject={broadcast.subject} />
+                ) : null}
+                {showReject ? <ReviewActions broadcastId={broadcastId} showApprove={false} showReject /> : null}
+              </>
+            ) : undefined
+          }
+        >
           {showStart ? (
             <StartFormattedVersionAction broadcastId={broadcastId} confirm={startConfirm} round={round} />
           ) : null}
@@ -482,10 +492,8 @@ export default async function AdminBroadcastDetailPage({
               scheduledFor={broadcast.scheduledFor?.toISOString() ?? null}
             />
           ) : null}
-          {showReview ? (
-            <ReviewActions broadcastId={broadcastId} showApprove={showApprove} showReject={showReject} />
-          ) : null}
-        </div>
+          {showApprove ? <ReviewActions broadcastId={broadcastId} showApprove showReject={false} /> : null}
+        </DetailActionBar>
       ) : null}
     </DetailContainer>
   );

@@ -303,7 +303,7 @@ html:has(.chamber-viewport-actionbar) {
    are read, never AURA's own classes. The bar never shows a status, so its
    empty status cell gives the actions the whole row on a phone. */
 @media (max-width: 639.98px) {
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) {
     bottom: 0;
     margin-inline: calc(-1 * var(--page-padding-x));
     border-inline: 0;
@@ -317,10 +317,10 @@ html:has(.chamber-viewport-actionbar) {
   }
   /* AURA pads the bar's row 16px at its start and 12px at its end; pinned
      edge to edge, the buttons sit 16px from both screen edges, as drawn. */
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div {
     padding-inline: var(--aura-space-4);
   }
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div > :first-child:empty {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div > :first-child:empty {
     display: none;
   }
   :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div > :last-child {
@@ -345,13 +345,20 @@ html:has(.chamber-viewport-actionbar) {
   .plan-form-actions--start-wide > div > :nth-child(2):not(:last-child) {
     display: none;
   }
+  /* Spec 122 US12c-1 — the E-Blast detail bar (board `Admin-broadcast-review-mobile`)
+     carries up to four actions: its two groups wrap rather than squeeze, the
+     next step on the first line. */
+  .eblast-detail-actions > div {
+    flex-wrap: wrap-reverse;
+    row-gap: var(--aura-space-2);
+  }
   /* The plan wizard's Back / Next share the bar evenly (board `Admin-plan-new-mobile`). */
   .plan-form-actions--even > div > :last-child > * {
     flex: 1 1 0;
   }
 }
 @media (min-width: 640px) {
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) {
     position: static;
     margin-top: 0;
     border: 0;
@@ -359,7 +366,7 @@ html:has(.chamber-viewport-actionbar) {
     background: transparent;
     box-shadow: none;
   }
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div {
     min-height: 0;
     padding: 0;
   }

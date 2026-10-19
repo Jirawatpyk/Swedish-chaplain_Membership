@@ -726,3 +726,56 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     expect(html).toContain('data-testid="refresh-page-button"');
   });
 });
+
+/**
+ * Spec 122 US12c-1 (maintainer, 19 Oct — the board's proposed action row): the
+ * stage's actions are AURA's action bar, the destructive ones (Cancel, Reject)
+ * at its start and the next step (Start, Schedule, Approve) at its end. On a
+ * phone the app's `chamber-viewport-actionbar` pins it to the bottom of the
+ * screen; from 640px it is a plain row at the end of the page.
+ */
+describe('Spec 122 US12c-1 — the staff detail action row follows the board', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    role = 'admin';
+    flagOn = true;
+    decisions = [];
+    missingKeys = new Set();
+    warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } });
+    holdMock.mockResolvedValue({ ok: true, value: false });
+  });
+
+  function slot(html: string, cls: string): string {
+    const at = html.indexOf(`class="${cls}"`);
+    expect(at, cls).toBeGreaterThan(-1);
+    const next = html.indexOf('class="aura-actionbar__', at + cls.length);
+    return html.slice(at, next === -1 ? undefined : next);
+  }
+
+  it('submitted: Cancel and Reject at the start; Start and Approve at the end', async () => {
+    const html = await renderPage('submitted');
+    const row = html.slice(html.indexOf('data-testid="eblast-action-row"'));
+    expect(row).toContain('aura-actionbar');
+    expect(row).toContain('chamber-viewport-actionbar');
+    const start = slot(row, 'aura-actionbar__start');
+    const end = slot(row, 'aura-actionbar__actions');
+    expect(start).toContain('data-testid="cancel-action"');
+    expect(start).toContain('data-testid="reject-action"');
+    expect(start).not.toContain('approve-action');
+    expect(end).toContain('data-testid="start-version"');
+    expect(end).toContain('data-testid="approve-action"');
+    expect(end).not.toMatch(/cancel-action|reject-action/);
+    // Each half is asked for once: one Approve, one Reject on the page.
+    expect(html.match(/data-testid="approve-action"/g)).toHaveLength(1);
+    expect(html.match(/data-testid="reject-action"/g)).toHaveLength(1);
+  });
+
+  it('member_approved: Schedule at the end, Cancel and Reject at the start', async () => {
+    const html = await renderPage('member_approved', 1);
+    const row = html.slice(html.indexOf('data-testid="eblast-action-row"'));
+    expect(slot(row, 'aura-actionbar__actions')).toContain('data-testid="confirm-schedule"');
+    const start = slot(row, 'aura-actionbar__start');
+    expect(start).toContain('data-testid="cancel-action"');
+    expect(start).toContain('data-testid="reject-action"');
+  });
+});

@@ -102,11 +102,17 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
       {/* Audit timeline. */}
       <SkeletonBlock className="h-40 w-full" />
 
-      {/* The action row — real controls are AURA buttons (h-9). */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <SkeletonBlock className="h-9 w-28" />
-        <SkeletonBlock className="h-9 w-40" />
-        <SkeletonBlock className="h-9 w-24" />
+      {/* The action row — the destructive actions at the start, the next step
+          at the end (AURA buttons, h-9; 44 px on touch). */}
+      <div data-skeleton="action-row" className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-2">
+          <SkeletonBlock className="h-9 w-28 max-sm:h-11" />
+          <SkeletonBlock className="h-9 w-24 max-sm:h-11" />
+        </div>
+        <div className="flex gap-2">
+          <SkeletonBlock className="h-9 w-40 max-sm:h-11" />
+          <SkeletonBlock className="h-9 w-24 max-sm:h-11" />
+        </div>
       </div>
     </DetailContainer>
   );
