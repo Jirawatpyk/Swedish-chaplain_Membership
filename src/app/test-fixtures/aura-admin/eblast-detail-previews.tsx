@@ -117,7 +117,7 @@ export async function renderBroadcastDetailPreview(state: string | undefined) {
       proposedSendAt: ahead(36),
       scheduledFor: status === 'approved' ? ago(1) : status === 'sent' ? ago(20) : null,
       submittedAt: ago(48),
-      actorRole: 'member',
+      actorRole: 'member_self_service',
       segmentType: 'all_members',
       estimatedRecipientCount: 130,
     },
