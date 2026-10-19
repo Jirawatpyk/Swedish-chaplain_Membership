@@ -177,6 +177,11 @@ describe('.github/workflows/e2e-nightly.yml', () => {
     expect(body).toMatch(/DROP SCHEMA public CASCADE;/);
     expect(body).toMatch(/DROP SCHEMA IF EXISTS drizzle CASCADE;/);
     expect(body).toMatch(/CREATE SCHEMA public;/);
+    // A recreated `public` lacks the USAGE grant PostgreSQL gives PUBLIC on a
+    // new database, and no migration grants it, so `chamber_app` (the role
+    // runInTenant switches to) could not read any table: the first nightly
+    // (run 39180255712) failed in the plans seed. Restore the default.
+    expect(body).toMatch(/CREATE SCHEMA public; GRANT USAGE ON SCHEMA public TO PUBLIC;/);
     expect(body).toMatch(/ci-e2e\/\*\)/);
     expect(body).toMatch(/CI_E2E_BRANCH_CREATED/);
     expect(body).toMatch(/exit 1/);

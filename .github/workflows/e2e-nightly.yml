@@ -130,7 +130,7 @@ jobs:
             *"@$CI_E2E_EXPECTED_DIRECT_HOST"*) ;;
             *) echo "::error title=Refusing to reset::the connection host is not the one Neon returned for this branch."; exit 1 ;;
           esac
-          psql "$DATABASE_URL_UNPOOLED" -v ON_ERROR_STOP=1 -q -c 'DROP SCHEMA public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public;'
+          psql "$DATABASE_URL_UNPOOLED" -v ON_ERROR_STOP=1 -q -c 'DROP SCHEMA public CASCADE; DROP SCHEMA IF EXISTS drizzle CASCADE; CREATE SCHEMA public; GRANT USAGE ON SCHEMA public TO PUBLIC;'
           echo "Schema reset on $CI_E2E_BRANCH_NAME."
 
       - name: Start the migration timer
