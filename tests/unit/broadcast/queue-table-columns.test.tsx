@@ -104,15 +104,16 @@ const cellOf = (column: string) => {
   return within(firstRow).getAllByRole('gridcell')[index]!;
 };
 
-describe('the eight columns (UX review M1)', () => {
-  it('an admin sees selection + exactly Member · Subject · Stage · Whose turn · Time in stage · Send time · Audience · Actions', () => {
+describe('the columns (UX review M1; parity comments 19 Oct)', () => {
+  // Parity comments (19 Oct): "Whose turn" is a line under the Stage pill, so
+  // Stage gets the width for a one-line pill. Every FR-026 field stays on the row.
+  it('an admin sees selection + exactly Member · Subject · Stage · Time in stage · Send time · Audience · Actions', () => {
     render(table({ rows: [makeRow()] }));
     expect(headers()).toEqual([
       'Select rows',
       'Member',
       'Subject',
       'Stage',
-      'Whose turn',
       'Time in stage',
       'Send time',
       'Audience',
@@ -146,10 +147,28 @@ describe('the eight columns (UX review M1)', () => {
     );
   });
 
-  it('a long stage name wraps inside its pill instead of running into Whose turn (stand-in until AURA #158)', () => {
+  it('a long stage name wraps inside its pill instead of running into the next column (stand-in until AURA #158)', () => {
     render(table({ rows: [makeRow()] }));
     const pill = cellOf('Stage').querySelector('.aura-pill');
     expect(pill?.parentElement).toHaveClass('[&_.aura-pill]:whitespace-normal');
+  });
+
+  it('Stage is wide enough for a one-line pill, and a pill that still wraps is a rounded box, not a blob', () => {
+    render(table({ rows: [makeRow()] }));
+    const stage = within(screen.getByRole('grid'))
+      .getAllByRole('columnheader')
+      .find((th) => th.textContent?.trim() === 'Stage')!;
+    expect(stage.getAttribute('style')).toMatch(/--aura-cell-min:\s*200px/);
+    expect(cellOf('Stage').querySelector('.aura-pill')?.parentElement).toHaveClass(
+      '[&_.aura-pill]:rounded-[var(--aura-radius-lg)]',
+    );
+  });
+
+  it('whose turn is a line under the Stage pill, named by its label; none when nobody is waiting', () => {
+    render(table({ rows: [makeRow({ whoseTurnLabel: 'Marketing' }), makeRow({ broadcastId: 'b2' })] }));
+    expect(cellOf('Stage')).toHaveTextContent(/Whose turn:\s*Marketing/);
+    const second = within(screen.getByRole('grid')).getAllByRole('row')[2]!;
+    expect(second).not.toHaveTextContent(/Whose turn/);
   });
 
   it('Stage carries the round; Time in stage carries the "since" date (last activity)', () => {

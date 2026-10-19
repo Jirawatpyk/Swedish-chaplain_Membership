@@ -336,3 +336,32 @@ describe('BulkApproveConfirmDialog', () => {
     expect(alertDialogCapture.finalFocus?.()).toBe(triggerRef.current);
   });
 });
+
+/**
+ * Maintainer (19 Oct): the dialog lists the E-Blasts it will approve, as
+ * board `Admin-broadcasts-bulk-approve` draws it. The rows are the queue's
+ * own (nothing fetched); a long selection scrolls inside the list.
+ */
+describe('the list of E-Blasts to approve (maintainer, 19 Oct)', () => {
+  it('lists each selected E-Blast with its member and recipients, in a scrolling list', () => {
+    renderDialog({
+      items: [
+        { broadcastId: 'b1', subject: 'Autumn gala', memberDisplayName: 'Acme Co', recipientCount: 40 },
+        { broadcastId: 'b2', subject: 'Spring mixer', memberDisplayName: 'Nordic Ltd', recipientCount: 1 },
+      ],
+    });
+    const list = screen.getByRole('list', { name: 'E-Blasts to approve' });
+    const items = list.querySelectorAll('li');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('Autumn gala');
+    expect(items[0]).toHaveTextContent('Acme Co · 40 recipients');
+    expect(items[1]).toHaveTextContent('Nordic Ltd · 1 recipient');
+    expect(list.className).toContain('max-h-48');
+    expect(list.className).toContain('overflow-y-auto');
+  });
+
+  it('shows no list when it is given none', () => {
+    renderDialog();
+    expect(screen.queryByRole('list', { name: 'E-Blasts to approve' })).toBeNull();
+  });
+});

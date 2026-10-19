@@ -44,7 +44,7 @@
  *     every phone load. A manager sees no New E-Blast; the skeleton cannot know
  *     the role, so it reserves the admin's row (the common reader);
  *   - the order hint line above the list;
- *   - from `md`: the eight-column table — a header row and two-line rows (a
+ *   - from `md`: the seven-column table — a header row and two-line rows (a
  *     value over its secondary line, as every real column renders);
  *   - below `md`: the card list the page renders there instead;
  *   - `aria-busy` on the container, like the other admin loading states.
@@ -66,8 +66,12 @@ import {
   isF71aUs7Enabled,
 } from '@/modules/broadcasts';
 
-/** The table's eight columns (select is the admin's extra, narrow one). */
-const QUEUE_COLUMNS = 8;
+/** The table's seven columns (select is the admin's extra, narrow one). */
+const QUEUE_COLUMNS = 7;
+// The select column, then the columns in the page's minimum widths
+// (`queue-table-client.tsx`: 112 · 112 · 200 · 132 · 84 · 100, Actions 128).
+const QUEUE_GRID =
+  'grid grid-cols-[2.5rem_112fr_112fr_200fr_132fr_84fr_100fr_8rem] gap-3 px-6';
 const TABLE_ROWS = 6;
 const CARDS = 4;
 
@@ -75,7 +79,7 @@ const CARDS = 4;
  * Spec 122 US12b — mirrors the AURA page: the header actions, the banner, then
  * one card holding the filter bar (below 640 px only the "Filters" button and
  * Reset; from 640 px the stage chips and the two presets in labelled rows, then
- * the member select and the "Submitted" range), the order hint, the eight-column table
+ * the member select and the "Submitted" range), the order hint, the seven-column table
  * from `md` and the board's phone cards below it.
  */
 export default async function AdminBroadcastsLoading(): Promise<React.ReactElement> {
@@ -139,25 +143,37 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
           </div>
           {/* The order hint above the list. */}
           <SkeletonBlock data-skeleton="order-hint" className="h-4 w-48" />
-          {/* From md: the eight-column table — a header row and two-line rows. */}
+          {/* From md: the seven-column table — a header row and two-line rows. */}
           <div data-skeleton="queue-table" className="hidden md:block">
-            <div className="grid grid-cols-8 gap-3 border-b border-[var(--aura-border-default)] px-2 py-3">
+            {/* The select column, the seven columns (whose turn sits under the
+                Stage pill) and the Actions column, in the page's proportions. */}
+            <div className={`${QUEUE_GRID} border-b border-[var(--aura-border-default)] py-3`}>
+              <span aria-hidden="true" />
               {Array.from({ length: QUEUE_COLUMNS }).map((_, i) => (
                 <SkeletonBlock key={i} data-skeleton="queue-column" className="h-4 w-3/4" />
               ))}
             </div>
+            {/* UX review L10 — as tall as a real row (88 px: Approve over
+                Reject), so the page does not move when the rows land. */}
             {Array.from({ length: TABLE_ROWS }).map((_, row) => (
               <div
                 key={row}
                 data-skeleton="queue-row"
-                className="grid grid-cols-8 gap-3 border-b border-[var(--aura-border-default)] px-2 py-3"
+                className={`${QUEUE_GRID} min-h-[5.5rem] items-center border-b border-[var(--aura-border-default)] py-1.5`}
               >
-                {Array.from({ length: QUEUE_COLUMNS }).map((_, i) => (
+                <SkeletonBlock data-skeleton="queue-select" className="size-4 rounded-[var(--aura-radius-xs)]" />
+                {Array.from({ length: QUEUE_COLUMNS - 1 }).map((_, i) => (
                   <div key={i} data-skeleton="queue-cell" className="space-y-1.5">
                     <SkeletonBlock className="h-4 w-full" />
                     <SkeletonBlock className="h-3 w-2/3" />
                   </div>
                 ))}
+                <div data-skeleton="queue-cell" className="flex flex-col gap-1">
+                  <span data-skeleton="queue-actions" className="flex flex-col gap-1">
+                    <SkeletonBlock className="h-9 w-24 rounded-full" />
+                    <SkeletonBlock className="h-9 w-24 rounded-full" />
+                  </span>
+                </div>
               </div>
             ))}
           </div>

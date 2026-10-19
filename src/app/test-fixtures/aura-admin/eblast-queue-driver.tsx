@@ -2,8 +2,9 @@
 
 /**
  * 122 US12b (T1219) — opens a review-queue dialog for the `view=broadcasts`
- * previews, the way an admin does: `bulk` ticks the first actionable row and
- * presses "Approve selected"; the others press their trigger by its label.
+ * previews, the way an admin does: `bulk` ticks every actionable row
+ * (select-all) and presses "Approve selected"; the others press their trigger
+ * by its label.
  * Keeps trying until a dialog is open, for up to 5 s (the queue hydrates
  * after this effect first runs).
  */
@@ -42,9 +43,8 @@ export function QueueDialogDriver({
           approveSelected.click();
           return;
         }
-        root
-          .querySelector<HTMLInputElement>('[role="row"]:not(:first-child) input[type="checkbox"]:not(:checked)')
-          ?.click();
+        // Select-all ticks every actionable row, so the confirm shows its list.
+        root.querySelector<HTMLInputElement>('[role="row"]:first-child input[type="checkbox"]:not(:checked)')?.click();
         return;
       }
       const label = TRIGGER_LABEL[dialog];

@@ -3533,6 +3533,8 @@
           "confirm": {
             "title": "Approve {count, plural, one {# broadcast} other {# broadcasts}}?",
             "recipientTotal": "Reaches ~{recipients, plural, one {# recipient} other {# recipients}} across {count, plural, one {# broadcast} other {# broadcasts}}.",
+            "itemsLabel": "E-Blasts to approve",
+            "itemMeta": "{member} · {count, plural, one {# recipient} other {# recipients}}",
             "overCapNote": "Only the first {max} of {selected} selected will be approved.",
             "decisionLabel": "When to send",
             "sendNow": "Send now",

@@ -54,6 +54,13 @@ export type BulkApproveDecision =
   | { readonly type: 'send_now' }
   | { readonly type: 'schedule'; readonly scheduledFor: string }; // ISO-8601 instant
 
+export interface BulkApproveItem {
+  readonly broadcastId: string;
+  readonly subject: string;
+  readonly memberDisplayName: string;
+  readonly recipientCount: number;
+}
+
 export interface BulkApproveConfirmDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (next: boolean) => void;
@@ -63,6 +70,12 @@ export interface BulkApproveConfirmDialogProps {
   readonly selectedCount: number;
   readonly cap: number;
   readonly totalRecipients: number;
+  /**
+   * The E-Blasts this confirm approves (the capped selection), shown as a
+   * list (maintainer, 19 Oct; board `Admin-broadcasts-bulk-approve`). The
+   * queue's own rows — nothing is fetched.
+   */
+  readonly items?: ReadonlyArray<BulkApproveItem>;
   readonly onConfirm: (decision: BulkApproveDecision) => void;
   /**
    * Ref to the "Approve selected" trigger button so focus returns to it on
@@ -284,6 +297,29 @@ export function BulkApproveConfirmDialog(
             ) : null}
           </div>
         )}
+
+        {props.items !== undefined && props.items.length > 0 ? (
+          // After the decision, so the dialog's first focus stays on "When to
+          // send". A long selection scrolls inside the list; tabIndex keeps
+          // that scroll region reachable by keyboard.
+          <ul
+            aria-label={t('itemsLabel')}
+            tabIndex={0}
+            className="m-0 flex max-h-48 list-none flex-col overflow-y-auto rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-0"
+          >
+            {props.items.map((item) => (
+              <li
+                key={item.broadcastId}
+                className="flex flex-col gap-0.5 border-b border-[var(--aura-border-default)] px-[var(--aura-space-3)] py-[var(--aura-space-2)] last:border-b-0"
+              >
+                <span className="aura-text-body font-medium [overflow-wrap:anywhere]">{item.subject}</span>
+                <span className="aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]">
+                  {t('itemMeta', { member: item.memberDisplayName, count: item.recipientCount })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
     </Dialog>
   );

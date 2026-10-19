@@ -98,17 +98,34 @@ describe('the queue loading skeleton mirrors the page (T086a V3)', () => {
     expect(off.container.querySelectorAll('[data-skeleton="header-action"]')).toHaveLength(1);
   });
 
-  it('reserves the order hint, the eight-column table from md and the card list below it', async () => {
+  it('reserves the order hint, the seven-column table from md and the card list below it', async () => {
     const { container } = await renderSkeleton();
     expect(container.querySelector('[data-skeleton="order-hint"]')).not.toBeNull();
 
     const table = container.querySelector('[data-skeleton="queue-table"]');
     expect(table?.className).toMatch(/(?:^|\s)hidden(?:\s|$)/);
     expect(table?.className).toContain('md:block');
-    expect(table?.querySelectorAll('[data-skeleton="queue-column"]')).toHaveLength(8);
+    // Parity comments (19 Oct): whose turn moved under the Stage pill.
+    expect(table?.querySelectorAll('[data-skeleton="queue-column"]')).toHaveLength(7);
     // Real rows are two-line (a value over its secondary line) in every column.
     const firstRow = table?.querySelector('[data-skeleton="queue-row"]');
-    expect(firstRow?.querySelectorAll('[data-skeleton="queue-cell"]')).toHaveLength(8);
+    expect(firstRow?.querySelectorAll('[data-skeleton="queue-cell"]')).toHaveLength(7);
+  });
+
+  // UX review L10 — the skeleton rows were ~58 px against 88 px real rows (the
+  // stacked Approve / Reject), and had no select column, so the page moved
+  // when the data landed.
+  it('a skeleton row has the select column and the stacked Approve / Reject, as tall as a real row', async () => {
+    const { container } = await renderSkeleton();
+    const row = container.querySelector('[data-skeleton="queue-table"] [data-skeleton="queue-row"]')!;
+    expect(row.querySelector('[data-skeleton="queue-select"]')).not.toBeNull();
+    const actions = row.querySelector('[data-skeleton="queue-actions"]')!;
+    expect(actions.querySelectorAll('.h-9')).toHaveLength(2);
+    expect(row.className).toContain('min-h-[5.5rem]');
+  });
+
+  it('the card list sits below md', async () => {
+    const { container } = await renderSkeleton();
 
     const cards = container.querySelector('[data-skeleton="queue-card-list"]');
     expect(cards?.className).toContain('md:hidden');

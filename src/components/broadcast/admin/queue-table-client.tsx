@@ -37,7 +37,7 @@ import { DataTable, Icon, StatusPill, type DataTableColumn } from '@jirawatpyk/a
 import type { BroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
 import { ReviewActions } from './review-actions';
 import { QueueCardList } from './queue-card-list';
-import { EmptySentinel, SendTime, TimeInStage } from './queue-row-cells';
+import { SendTime, TimeInStage } from './queue-row-cells';
 
 /** UX review M1 — the visible hint for each order. */
 const ORDER_HINT_KEY = {
@@ -214,7 +214,9 @@ export function QueueTableClient({
   const columns = useMemo<DataTableColumn<EnrichedQueueRow>[]>(() => {
     // F119 T117 — the FR-026 fields, in the order a reviewer scans them: who
     // and what, where it stands and whose move it is, how long it has waited,
-    // when it goes out and to whom. Every FR-026 field is on the row.
+    // when it goes out and to whom. Every FR-026 field is on the row; whose
+    // turn is a line under the Stage pill (parity comments, 19 Oct), so the
+    // pill has the width to stay on one line.
     // Spec 122 US12b — each column states the minimum its content needs (AURA
     // gives an unsized column 160 px, which pushed Actions off a 1,440 px
     // screen); together they fit the 871 px a 1,280 px screen leaves for the
@@ -249,12 +251,18 @@ export function QueueTableClient({
       {
         key: 'status',
         label: columnLabels.status,
-        minWidth: 120,
+        minWidth: 200,
         render: (row) => (
-          // A long stage name wraps inside its pill rather than running into
-          // the next column (stand-in until AURA #158: a StatusPill never wraps).
-          <span className="flex flex-col items-start gap-1 [&_.aura-pill]:whitespace-normal">
+          // A stage name too long for the column (SV) wraps inside its pill,
+          // which then reads as a rounded box: a finite radius, clamped to a
+          // full pill on one line (stand-in until AURA #158: a StatusPill never wraps).
+          <span className="flex flex-col items-start gap-1 [&_.aura-pill]:whitespace-normal [&_.aura-pill]:rounded-[var(--aura-radius-lg)]">
             <StatusPill tone={row.statusTone}>{row.statusBadgeLabel}</StatusPill>
+            {row.whoseTurnLabel !== null ? (
+              <span className="aura-text-caption">
+                <span className="text-[var(--aura-fg-secondary)]">{columnLabels.whoseTurn}:</span> {row.whoseTurnLabel}
+              </span>
+            ) : null}
             {/* FR-026 — the round: versions sent to the member so far. */}
             {row.round > 0 ? (
               <span className="aura-text-caption tabular-nums">{tQueue('row.round', { round: row.round })}</span>
@@ -265,12 +273,6 @@ export function QueueTableClient({
             ) : null}
           </span>
         ),
-      },
-      {
-        key: 'whoseTurn',
-        label: columnLabels.whoseTurn,
-        minWidth: 80,
-        render: (row) => (row.whoseTurnLabel !== null ? <span>{row.whoseTurnLabel}</span> : <EmptySentinel />),
       },
       {
         key: 'timeInStage',

@@ -3533,6 +3533,8 @@
           "confirm": {
             "title": "อนุมัติ E-Blast {count} รายการ?",
             "recipientTotal": "ส่งถึงผู้รับประมาณ {recipients} คน จาก {count} รายการ",
+            "itemsLabel": "E-Blast ที่จะอนุมัติ",
+            "itemMeta": "{member} · ผู้รับ {count, plural, other {# ราย}}",
             "overCapNote": "จะอนุมัติเฉพาะ {max} รายการแรกจากที่เลือก {selected} รายการเท่านั้น",
             "decisionLabel": "กำหนดเวลาส่ง",
             "sendNow": "ส่งทันที",

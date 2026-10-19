@@ -155,6 +155,9 @@ export interface QueueBulkActionBarProps {
   readonly recipientByIdRows: ReadonlyArray<{
     readonly broadcastId: string;
     readonly recipientCount: number;
+    /** The confirm dialog lists the E-Blasts it approves (maintainer, 19 Oct). */
+    readonly subject?: string;
+    readonly memberDisplayName?: string;
   }>;
 }
 
@@ -279,6 +282,24 @@ export function QueueBulkActionBar({
       recipientByIdRows.map((r) => [r.broadcastId, r.recipientCount]),
     );
     return cappedIds.reduce((sum, id) => sum + (recipientById.get(id) ?? 0), 0);
+  }, [recipientByIdRows, cappedIds]);
+
+  // The capped selection, in selection order, for the confirm dialog's list.
+  const confirmItems = useMemo(() => {
+    const rowById = new Map(recipientByIdRows.map((r) => [r.broadcastId, r]));
+    return cappedIds.flatMap((id) => {
+      const row = rowById.get(id);
+      return row === undefined
+        ? []
+        : [
+            {
+              broadcastId: id,
+              subject: row.subject ?? '',
+              memberDisplayName: row.memberDisplayName ?? '',
+              recipientCount: row.recipientCount,
+            },
+          ];
+    });
   }, [recipientByIdRows, cappedIds]);
 
   // IMP-1 (queue-table-client.tsx round-3) — chunked Promise.allSettled,
@@ -517,6 +538,7 @@ export function QueueBulkActionBar({
         selectedCount={selectedIds.length}
         cap={BULK_CAP}
         totalRecipients={totalRecipients}
+        items={confirmItems}
         onConfirm={(d) => handleBulkApprove(d)}
         triggerRef={approveBtnRef}
         haltUnknown={haltUnknown}
