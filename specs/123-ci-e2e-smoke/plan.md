@@ -534,4 +534,5 @@ Filled in at Verify, one block per slice.
 
 ### Slice 2 — DW-7 split into parallel jobs
 
-- DW-7: first post-refresh run 28.3 min > 25 → split per the pre-agreed remedy (PR #TBD)
+- DW-7: first post-refresh run 28.3 min > 25 → split per the pre-agreed remedy (PR #594)
+- Result ([run 39197085018](https://github.com/Jirawatpyk/Swedish-chaplain_Membership/actions/runs/39197085018), head `8199eb9fe`, **success**): chromium job 18.1 min, mobile-chrome job 16.0 min, both under 25. Phases in seconds, chromium / mobile-chrome: migrate 89 / 79, seed 191 / 167, build 138 / 93, ready 7 / 4, e2e 613 / 567. Each job created and deleted its own branch (`ci-e2e/39197085018-1-chromium`, `ci-e2e/39197085018-1-mobile-chrome`). No flaky or slow warning.
