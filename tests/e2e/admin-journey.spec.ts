@@ -28,7 +28,7 @@ const F7 = process.env.FEATURE_F7_BROADCASTS === 'true';
 const F8 = process.env.FEATURE_F8_RENEWALS === 'true';
 const F9 = process.env.FEATURE_F9_DASHBOARD === 'true';
 
-test.describe('Journey — admin golden path across module seams @journey', () => {
+test.describe('Journey — admin golden path across module seams @journey @critical', () => {
   // A journey visits ~10 admin routes; under `next dev` each compiles on first hit
   // (Turbopack), blowing the default 30 s per-test budget on a cold run. 120 s is ample
   // here and on the pre-built preview (where routes are already compiled).

@@ -3,9 +3,14 @@
  *
  * Usage: `pnpm db:migrate`
  *
- * Reads `.env.local` so the same command works locally and in CI without
- * extra wrapper scripts. Uses the *unpooled* connection because pooled
- * Neon connections can interfere with schema-changing statements.
+ * The env comes from the caller only: `pnpm db:migrate` passes
+ * `--env-file=.env.local`, the prod script passes the prod file, and Vercel /
+ * CI inject `process.env`. This script loads no env file of its own: a second
+ * load of `.env.local` used to fill any variable the prod file lacks (e.g.
+ * DATABASE_URL_UNPOOLED, read first) from DEV, the defect #588 fixed in
+ * verify-schema.ts. A direct `tsx` run must pass `--env-file` itself. Uses the
+ * *unpooled* connection because pooled Neon connections can interfere with
+ * schema-changing statements (and with the session advisory lock).
  *
  * Migrations live in `drizzle/migrations/`. The Drizzle journal
  * (`drizzle/migrations/meta/_journal.json`) tracks which ones have been
@@ -28,10 +33,22 @@
  *   Phase 3 then asserts the code-required values actually exist and exits
  *   non-zero if not, so a half-applied enum can never silently ship again.
  *   See scripts/lib/enum-migration-guard.ts for the full rationale.
+ *
+ * ── FRESH-DB MODE (spec 123 slice 2) ──────────────────────────────────────────
+ *   When `drizzle.__drizzle_migrations` is missing or empty, Phases 1–2 are
+ *   replaced by one transaction per journal entry (scripts/lib/migrate-fresh.ts):
+ *   from zero, drizzle's single transaction hits 55P04 at 0021 and the global
+ *   pre-pass is inert (no type exists yet). Any DB with at least one recorded
+ *   migration takes the unchanged path above, so a dev/prod deploy stays
+ *   all-or-nothing. A fresh run that stops part-way leaves a marker table, so
+ *   the retry resumes in fresh mode. Phase 3 (required enums) and Phase 4
+ *   (every journal entry recorded) run after either mode, all under one
+ *   session advisory lock.
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import {
@@ -39,17 +56,21 @@ import {
   findMissingEnumValues,
   formatMissingEnumValuesError,
 } from './lib/enum-migration-guard';
-
-// Local convenience: load `.env.local` if present (covers direct `tsx`
-// invocations alongside the `--env-file=.env.local` flag in `pnpm db:migrate`).
-// On Vercel / CI there is no `.env.local` — env comes from the injected
-// `process.env` — so a missing file is NOT an error (`?.` only guards an
-// undefined function, not ENOENT; the try/catch covers the missing file).
-try {
-  process.loadEnvFile?.('.env.local');
-} catch {
-  // .env.local absent (Vercel build / CI) — use the ambient process.env.
-}
+import {
+  applyFreshMigrations,
+  attachJournalTags,
+  decideMigrationMode,
+  disallowedUnrecorded,
+  findUnrecordedMigrations,
+  isAlreadyExists,
+  isPooledConnection,
+  isUndefinedType,
+  migrationTargetHost,
+  withMigrationLock,
+  type MigrationSqlClient,
+  type MigrationSqlRunner,
+  type TaggedMigration,
+} from './lib/migrate-fresh';
 
 const url =
   process.env.DATABASE_URL_UNPOOLED ??
@@ -63,32 +84,17 @@ if (!url) {
   process.exit(1);
 }
 
+// The host only, never the URL: it names which branch is migrated.
+const target = migrationTargetHost(url);
+if (!target.ok) {
+  console.error(`scripts/run-migrations.ts: ${target.message}`);
+  process.exit(1);
+}
+console.log(`Target host: ${target.host}`);
+
 const MIGRATIONS_DIR = join(process.cwd(), 'drizzle', 'migrations');
 
 type Sql = ReturnType<typeof postgres>;
-
-/**
- * True when a driver error means the enum value is already present (`IF NOT
- * EXISTS` no-op, or the older bare form re-applied → 42710 duplicate_object).
- */
-function isAlreadyExists(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  const message = error instanceof Error ? error.message : String(error);
-  return code === '42710' || message.includes('already exists');
-}
-
-/**
- * True when a driver error means the target enum TYPE does not exist yet. On a
- * fresh database the type is created by a later migration, and the transactional
- * migrate() adds the value safely in the same transaction that creates the type
- * (PostgreSQL allows using a new value of a same-transaction-created enum). So
- * we simply skip the autocommit pre-pass for a not-yet-created type.
- */
-function isUndefinedType(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code;
-  const message = error instanceof Error ? error.message : String(error);
-  return code === '42704' || message.includes('does not exist');
-}
 
 /**
  * Phase 1 — apply every `ALTER TYPE … ADD VALUE` found across the migration
@@ -162,6 +168,49 @@ async function findMissingRequiredEnums(client: Sql) {
   return findMissingEnumValues(present);
 }
 
+/**
+ * Narrow the postgres-js client to the port scripts/lib/migrate-fresh.ts uses.
+ * `unsafe(q)` with no params runs on the simple protocol, exactly as drizzle's
+ * own migrate() executes each statement.
+ */
+function asMigrationClient(client: Sql): MigrationSqlClient {
+  const runner = (sql: Sql | postgres.TransactionSql): MigrationSqlRunner => ({
+    unsafe: async (query, params) =>
+      params === undefined
+        ? await sql.unsafe(query)
+        : await sql.unsafe(query, params as postgres.ParameterOrJSON<never>[]),
+  });
+  return {
+    ...runner(client),
+    begin: async <T>(fn: (tx: MigrationSqlRunner) => Promise<T>): Promise<T> =>
+      (await client.begin((tx) => fn(runner(tx)))) as T,
+  };
+}
+
+/** Every journal entry with its tag, in journal order. */
+function journalMigrations(): TaggedMigration[] {
+  const journal = JSON.parse(
+    readFileSync(join(MIGRATIONS_DIR, 'meta', '_journal.json'), 'utf-8'),
+  ) as { entries: ReadonlyArray<{ tag: string }> };
+  return attachJournalTags(
+    readMigrationFiles({ migrationsFolder: './drizzle/migrations' }),
+    journal.entries,
+  );
+}
+
+/** Fresh mode: apply the whole journal, one transaction per file (resumable). */
+async function applyFreshFromZero(client: Sql, migrations: readonly TaggedMigration[]): Promise<void> {
+  const { applied, skipped, elapsedMs } = await applyFreshMigrations(
+    asMigrationClient(client),
+    migrations,
+  );
+  console.log(
+    `✓ Fresh-DB migrate: applied ${applied}, skipped ${skipped} (hash already recorded) in ${(
+      elapsedMs / 1000
+    ).toFixed(1)} s`,
+  );
+}
+
 async function main(): Promise<void> {
   const client = postgres(url!, {
     max: 1,
@@ -171,21 +220,46 @@ async function main(): Promise<void> {
   const db = drizzle(client);
 
   let failure: string | null = null;
+  const port = asMigrationClient(client);
   try {
-    {
-      // Phase 1 — commit enum-adds in their own transaction (see header).
-      // (Phase 0, the 016 D7 promotion gate, was deleted in PR 5 with the
-      // cutover machinery it protected.)
-      await applyEnumAddsAutocommit(client);
-      // Phase 2 — normal transactional migrate (journal / __drizzle_migrations).
-      await migrate(db, { migrationsFolder: './drizzle/migrations' });
-      console.log('✓ Migrations applied');
+    // One session advisory lock around the mode decision, the apply and the
+    // checks, in both modes (scripts/lib/migrate-fresh.ts § withMigrationLock).
+    await withMigrationLock(port, async () => {
+      const migrations = journalMigrations();
+      const mode = await decideMigrationMode(port);
+      if (mode === 'fresh') {
+        // Empty database, or a fresh run that stopped part-way (the marker):
+        // one transaction per journal entry — see scripts/lib/migrate-fresh.ts.
+        // drizzle's single-transaction migrate() hits 55P04 at 0021 here, and
+        // the global enum pre-pass is inert because no type exists yet.
+        await applyFreshFromZero(client, migrations);
+      } else {
+        // Phase 1 — commit enum-adds in their own transaction (see header).
+        // (Phase 0, the 016 D7 promotion gate, was deleted in PR 5 with the
+        // cutover machinery it protected.)
+        await applyEnumAddsAutocommit(client);
+        // Phase 2 — normal transactional migrate (journal / __drizzle_migrations).
+        await migrate(db, { migrationsFolder: './drizzle/migrations' });
+        console.log('✓ Migrations applied');
+      }
       // Phase 3 — fail loudly if a code-required enum value did not land.
       const missing = await findMissingRequiredEnums(client);
       if (missing.length > 0) {
         failure = formatMissingEnumValuesError(missing);
+        return;
       }
-    }
+      // Phase 4 — every journal entry must be recorded (by hash or by
+      // created_at). drizzle's normal path skips an entry whose `when` is
+      // older than the newest applied one, and says nothing. In normal mode
+      // the four legacy F8 entries are tolerated (LEGACY_UNRECORDED_TAGS).
+      const unrecorded = disallowedUnrecorded(await findUnrecordedMigrations(port, migrations), mode);
+      if (unrecorded.length > 0) {
+        failure =
+          `${unrecorded.length} journal entr${unrecorded.length === 1 ? 'y is' : 'ies are'} not recorded in ` +
+          `drizzle.__drizzle_migrations (neither its hash nor its created_at = when):\n` +
+          unrecorded.map((m) => `  - ${m.tag} (when ${m.folderMillis})`).join('\n');
+      }
+    }, { pooled: isPooledConnection(url!) });
   } catch (error) {
     failure = `Migration failed: ${
       error instanceof Error ? (error.stack ?? error.message) : String(error)

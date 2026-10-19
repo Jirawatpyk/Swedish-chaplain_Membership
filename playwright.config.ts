@@ -1,14 +1,15 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { defineConfig, devices } from '@playwright/test';
+import { parseEnvLine } from './tests/e2e/helpers/parse-env-line';
 
 /**
  * Minimal `.env.local` loader (no dotenv dep).
  *
  * Playwright does NOT auto-load .env files, so the global-setup +
  * test workers lose access to Upstash and DB credentials unless we
- * inject them here. Parses `KEY=VALUE` lines, strips `export `
- * prefixes, removes surrounding single- or double-quotes, and
- * ignores existing process.env values so an operator can still
+ * inject them here. Each line goes through `parseEnvLine`
+ * (tests/e2e/helpers/parse-env-line.ts: quotes, `export `, inline
+ * `# comments`), and existing process.env values win so an operator can still
  * override locally via `UPSTASH_REDIS_REST_URL=... pnpm test:e2e`.
  */
 function loadEnvLocal(): void {
@@ -16,20 +17,9 @@ function loadEnvLocal(): void {
   if (!existsSync(path)) return;
   const content = readFileSync(path, 'utf8');
   for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    const match = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
-    if (!match) continue;
-    const [, key, rawValue] = match;
-    if (!key || process.env[key] !== undefined) continue;
-    let value = rawValue ?? '';
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    process.env[key] = value;
+    const parsed = parseEnvLine(rawLine);
+    if (parsed === null || process.env[parsed.key] !== undefined) continue;
+    process.env[parsed.key] = parsed.value;
   }
 }
 loadEnvLocal();

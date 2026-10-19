@@ -22,7 +22,7 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 
 test.describe.configure({ mode: 'serial' });
 
-test.describe('members directory search — F3 US2 @f3 @a11y @i18n', () => {
+test.describe('members directory search — F3 US2 @f3 @a11y @i18n @critical', () => {
   test.skip(
     !ADMIN_EMAIL || !ADMIN_PASSWORD,
     'Set E2E_ADMIN_EMAIL and E2E_ADMIN_PASSWORD',

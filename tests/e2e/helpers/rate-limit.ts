@@ -1,6 +1,6 @@
 /**
- * E2E helper: wipe all Upstash rate-limit buckets that start with
- * the `swecham` prefix.
+ * E2E helper: wipe the Upstash rate-limit buckets of this run's prefix
+ * (`RATE_LIMIT_KEY_PREFIX`, default `swecham`; per run in CI), and no other.
  *
  * Used from `beforeAll` hooks in specs that sign in multiple times
  * per run, so the 5/15-min per-email bucket doesn't trip when the
@@ -12,6 +12,10 @@
  * application-layer dependency graph into the Playwright worker.
  */
 import { Redis } from '@upstash/redis';
+import {
+  rateLimitKeyPattern,
+  rateLimitPrefix,
+} from '../../../src/modules/auth/infrastructure/rate-limit/rate-limit-prefix';
 
 export async function clearE2ERateLimits(): Promise<void> {
   // Vercel KV integration exports KV_REST_API_{URL,TOKEN}; plain
@@ -30,7 +34,7 @@ export async function clearE2ERateLimits(): Promise<void> {
   const matches: string[] = [];
   do {
     const [next, keys] = (await redis.scan(cursor, {
-      match: 'swecham*',
+      match: rateLimitKeyPattern(rateLimitPrefix(process.env.RATE_LIMIT_KEY_PREFIX)),
       count: 200,
     })) as [string, string[]];
     cursor = next;

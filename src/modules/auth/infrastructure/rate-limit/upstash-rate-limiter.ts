@@ -25,6 +25,7 @@ import { Redis } from '@upstash/redis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { authMetrics } from '@/lib/metrics';
+import { rateLimitPrefix } from './rate-limit-prefix';
 
 // --- Public interface ---------------------------------------------------------
 
@@ -78,6 +79,9 @@ export interface RateLimiter {
 
 // --- Upstash-backed implementation -------------------------------------------
 
+// Per-run in CI (RATE_LIMIT_KEY_PREFIX), `swecham` everywhere else.
+const RATE_LIMIT_PREFIX = rateLimitPrefix(process.env.RATE_LIMIT_KEY_PREFIX);
+
 const redis = new Redis({
   url: env.upstash.url,
   token: env.upstash.token,
@@ -97,7 +101,7 @@ function getRateLimit(max: number, windowSeconds: number): Ratelimit {
       redis,
       limiter: Ratelimit.slidingWindow(max, `${windowSeconds} s`),
       analytics: false,
-      prefix: 'swecham',
+      prefix: RATE_LIMIT_PREFIX,
     });
     rateLimitCache.set(cacheKey, limit);
   }

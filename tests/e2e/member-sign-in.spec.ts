@@ -15,7 +15,7 @@ import { expect, fillField, test } from './fixtures';
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
 
-test.describe('member sign-in (T140)', () => {
+test.describe('member sign-in (T140) @critical', () => {
   test.skip(
     !MEMBER_EMAIL || !MEMBER_PASSWORD,
     'Set E2E_MEMBER_EMAIL and E2E_MEMBER_PASSWORD to run',

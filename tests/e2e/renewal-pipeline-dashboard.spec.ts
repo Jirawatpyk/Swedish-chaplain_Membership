@@ -25,6 +25,11 @@ import AxeBuilder from '@axe-core/playwright';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const F8_RENEWALS_ENABLED = process.env.FEATURE_F8_RENEWALS === 'true';
+// AS5's wall-clock smoke. 5 s on a workstation next to the Singapore database;
+// a US CI runner adds a cross-region round trip per request, so CI sets its own
+// value (.github/ci/e2e.env). The real p95 lives in `pnpm test:perf`.
+const AS1_BUDGET_RAW = Number(process.env.E2E_RENEWALS_AS1_BUDGET_MS);
+const AS1_BUDGET_MS = Number.isFinite(AS1_BUDGET_RAW) && AS1_BUDGET_RAW > 0 ? AS1_BUDGET_RAW : 5_000;
 
 type Page = import('@playwright/test').Page;
 type Locator = import('@playwright/test').Locator;
@@ -138,7 +143,7 @@ test.describe('F8 — /admin/renewals pipeline dashboard (US1)', () => {
     await expect(page.getByRole('combobox', { name: /^tier$/i })).toBeVisible();
 
     // AS5 perf smoke (full 5k-member benchmark in pnpm test:perf)
-    expect(elapsed).toBeLessThan(5_000);
+    expect(elapsed).toBeLessThan(AS1_BUDGET_MS);
   });
 
   test('AS2: tier filter updates URL with ?tier=premium', async ({ page }) => {

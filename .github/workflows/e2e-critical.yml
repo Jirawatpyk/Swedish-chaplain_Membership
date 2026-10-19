@@ -1,0 +1,340 @@
+# e2e @critical on every pull request (spec 123 US2, DW-6…DW-10).
+#
+# WHY THIS EXISTS
+# e2e had no CI job: every PR needed a manual local run to catch a broken
+# critical path. This job runs the specs tagged `@critical` on chromium and
+# mobile-chrome against a production build, on a database made for this run
+# alone. It REPORTS; it is not a required check yet (DW-12).
+#
+# SHAPE
+#   1. A Neon branch `ci-e2e/<run_id>-<attempt>` in the SEPARATE CI Neon
+#      project (synthetic data only), cut from `vars.NEON_CI_PARENT_BRANCH`,
+#      with a 2 h expiry as a backstop for a delete that never ran.
+#   2. DW-9 guard (`scripts/seed-ci-e2e.ts --guard-only`): the branch name
+#      starts with `ci-e2e/`, the action created it (it silently REUSES a
+#      same-named branch), the connection hosts equal the hosts Neon returned,
+#      and the host is not in TEST_DB_HOST_BLOCKLIST or a placeholder.
+#   3. Migrate (only this PR's new migrations once ci-e2e-parent-refresh.yml
+#      has migrated the parent on main; the whole chain while the parent is
+#      still empty), then seed personas and
+#      fixtures (`scripts/seed-ci-e2e.ts`), then the production-boot env
+#      (`.github/ci/e2e.env` + the CI Blob / Upstash secrets).
+#   4. `next build`, `next start` on :3100, readiness on `/api/health` (app up
+#      AND database reachable), then Playwright attached to it, once per
+#      project, `--workers=1`.
+#   5. On failure, the HTML report and traces (synthetic data only, 7 days).
+#      ALWAYS, the branch this run created is deleted.
+#
+# SECURITY (the repo is PUBLIC)
+#   - `pull_request` only, never `pull_request_target`; a fork PR gets no
+#     secrets, so it skips with a notice instead of a confusing red.
+#   - The Neon key is the CI project's own `NEON_CI_API_KEY`. The project-wide
+#     `NEON_API_KEY` (which can branch production) is never used here.
+#   - The key reaches only the scope check, the create step and the delete
+#     step. The scope check runs first and refuses a key that can see any
+#     project but the CI project. Both Neon actions are pinned by commit SHA.
+#   - The Blob and Upstash tokens are the CI stores', never production's, and
+#     each run uses its own rate-limit key prefix.
+#   - A skipped @critical test fails the job; a flaky one is named in a warning.
+#   - Every connection string and the password are masked before any other
+#     step runs; the seed masks each exported value before it is written.
+#   - No `${{ }}` is expanded inside `run:`; values reach the shell via `env:`.
+#   - `tests/unit/architecture/e2e-ci-workflows.test.ts` asserts all of this.
+name: e2e critical
+
+on:
+  pull_request:
+
+permissions: {}
+
+concurrency:
+  group: e2e-critical-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fork-notice:
+    name: e2e @critical (fork PR, skipped)
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Explain the skip
+        run: echo "::notice title=e2e critical skipped::A fork pull request gets no secrets, so this run cannot create its Neon branch or reach the CI Blob and Upstash stores. The hermetic quality gates still cover the change." | tee -a "$GITHUB_STEP_SUMMARY"
+
+  e2e:
+    name: e2e @critical (chromium + mobile-chrome)
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # A kill switch, not a budget: DW-7's budget is 25 min, and the spike
+    # measures where the job really lands.
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CI_E2E_BRANCH_NAME: ci-e2e/${{ github.run_id }}-${{ github.run_attempt }}
+      TEST_DB_HOST_BLOCKLIST: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+      # US runner, Singapore-class latency: give each address 1 s to connect
+      # (see integration-smoke.yml for the AggregateError ETIMEDOUT it avoids).
+      NODE_OPTIONS: --network-family-autoselection-attempt-timeout=1000
+      # Own Upstash buckets per run: the CI store and the persona emails are
+      # shared with other runs (M2; RATE_LIMIT_KEY_PREFIX, default swecham).
+      RATE_LIMIT_KEY_PREFIX: swecham-ci-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      # M3 (the security sign-off condition), two-sided and fail-closed: the
+      # listing is refused (a project-scoped key) or holds exactly the CI
+      # project, AND the CI project opens by id. Logic and tests:
+      # scripts/ci-neon-key-scope.ts. Prints statuses and ok/fail only.
+      - name: Prove the CI key reaches only the CI project
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_CI_API_KEY }}
+          PROJECT_ID: ${{ vars.NEON_CI_PROJECT_ID }}
+        run: node --import tsx scripts/ci-neon-key-scope.ts
+
+      - name: Branch expiry (2 h backstop)
+        id: expiry
+        run: echo "at=$(date -u --date '+2 hours' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Create this run's Neon branch
+        id: branch
+        uses: neondatabase/create-branch-action@fb620d43d4c565abaf088b848a4e28e5c4ea4d9c # v6
+        with:
+          project_id: ${{ vars.NEON_CI_PROJECT_ID }}
+          parent_branch: ${{ vars.NEON_CI_PARENT_BRANCH }}
+          branch_name: ${{ env.CI_E2E_BRANCH_NAME }}
+          expires_at: ${{ steps.expiry.outputs.at }}
+          api_key: ${{ secrets.NEON_CI_API_KEY }}
+
+      - name: Mask and export the branch connection
+        env:
+          DB_URL: ${{ steps.branch.outputs.db_url }}
+          DB_URL_POOLED: ${{ steps.branch.outputs.db_url_pooled }}
+          DB_PASSWORD: ${{ steps.branch.outputs.password }}
+          DB_HOST: ${{ steps.branch.outputs.db_host }}
+          DB_HOST_POOLED: ${{ steps.branch.outputs.db_host_pooled }}
+          CREATED: ${{ steps.branch.outputs.created }}
+        run: |
+          echo "::add-mask::$DB_PASSWORD"
+          echo "::add-mask::$DB_URL"
+          echo "::add-mask::$DB_URL_POOLED"
+          {
+            echo "DATABASE_URL=$DB_URL_POOLED"
+            echo "DATABASE_URL_UNPOOLED=$DB_URL"
+            echo "CI_E2E_EXPECTED_HOST=$DB_HOST_POOLED"
+            echo "CI_E2E_EXPECTED_DIRECT_HOST=$DB_HOST"
+            echo "CI_E2E_BRANCH_CREATED=$CREATED"
+          } >> "$GITHUB_ENV"
+
+      - name: Refuse any target but this run's ci-e2e branch (DW-9)
+        run: node --import tsx scripts/seed-ci-e2e.ts --guard-only
+
+      - name: Start the migration timer
+        run: echo "MIGRATE_T0=$(date +%s)" >> "$GITHUB_ENV"
+
+      # ci-e2e-parent-refresh.yml keeps the CI parent migrated to main, so this
+      # applies only the PR's own migrations (normal path). On an empty parent
+      # it applies the whole chain (fresh-DB mode, ~520 s). The direct
+      # (unpooled) URL carries the DDL.
+      - name: Migrate the branch
+        uses: ./.github/actions/ci-neon-env
+        with:
+          database-url: ${{ steps.branch.outputs.db_url }}
+          blocklist: ${{ vars.TEST_DB_HOST_BLOCKLIST }}
+          migrate: 'true'
+
+      - name: Record the migration time
+        if: always() && env.MIGRATE_T0 != ''
+        run: echo "migrate $(( $(date +%s) - MIGRATE_T0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"
+
+      # Before the production-boot env on purpose: the seeds run as they do on
+      # a developer's machine (NODE_ENV unset, the .env.example flags), except
+      # the portal invoices, which the orchestrator seeds with 088 on. Only the
+      # F4 admin fixtures need a service: they upload invoice PDFs to Blob.
+      - name: Seed personas and fixtures
+        env:
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.CI_BLOB_READ_WRITE_TOKEN }}
+        run: |
+          t0=$SECONDS
+          trap 'echo "seed $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
+          node --import tsx scripts/seed-ci-e2e.ts
+
+      - name: Apply the CI env (.github/ci/e2e.env + CI service secrets)
+        env:
+          CI_BLOB_READ_WRITE_TOKEN: ${{ secrets.CI_BLOB_READ_WRITE_TOKEN }}
+          CI_BLOB_PRIVATE_READ_WRITE_TOKEN: ${{ secrets.CI_BLOB_PRIVATE_READ_WRITE_TOKEN }}
+          CI_UPSTASH_REDIS_REST_URL: ${{ secrets.CI_UPSTASH_REDIS_REST_URL }}
+          CI_UPSTASH_REDIS_REST_TOKEN: ${{ secrets.CI_UPSTASH_REDIS_REST_TOKEN }}
+        run: |
+          for name in CI_BLOB_READ_WRITE_TOKEN CI_BLOB_PRIVATE_READ_WRITE_TOKEN CI_UPSTASH_REDIS_REST_URL CI_UPSTASH_REDIS_REST_TOKEN; do
+            if [ -z "${!name}" ]; then
+              echo "::error title=Missing CI secret::The repository secret $name is empty or unset."
+              exit 1
+            fi
+          done
+          grep -E '^[A-Z][A-Z0-9_]*=' .github/ci/e2e.env >> "$GITHUB_ENV"
+          # env.ts reads KV_REST_API_* before UPSTASH_REDIS_REST_*, and
+          # .env.example sets the KV pair to placeholders, so override that pair.
+          {
+            echo "BLOB_READ_WRITE_TOKEN=$CI_BLOB_READ_WRITE_TOKEN"
+            echo "BLOB_PRIVATE_READ_WRITE_TOKEN=$CI_BLOB_PRIVATE_READ_WRITE_TOKEN"
+            echo "KV_REST_API_URL=$CI_UPSTASH_REDIS_REST_URL"
+            echo "KV_REST_API_TOKEN=$CI_UPSTASH_REDIS_REST_TOKEN"
+          } >> "$GITHUB_ENV"
+
+      - name: Build (next build)
+        run: |
+          t0=$SECONDS
+          trap 'echo "build $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
+          pnpm build
+
+      - name: Start the app (next start :3100) and wait for /api/health
+        id: server
+        run: |
+          nohup pnpm exec next start --port 3100 > "$RUNNER_TEMP/next-start.log" 2>&1 &
+          t0=$SECONDS
+          deadline=$(( SECONDS + 180 ))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            if curl -fsS --max-time 5 http://localhost:3100/api/health 2>/dev/null | grep -q '"status":"ok"'; then
+              echo "ready $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error title=App not ready::GET /api/health did not answer {\"status\":\"ok\"} within 3 minutes."
+          tail -n 80 "$RUNNER_TEMP/next-start.log"
+          exit 1
+
+      # Pixel 5 (mobile-chrome) is Chromium too, so one browser serves both.
+      - name: Install Chromium for Playwright
+        run: pnpm exec playwright install --with-deps chromium
+
+      # `retries` stays what playwright.config.ts sets under CI. Each project
+      # writes its own report, JSON and output dir: Playwright clears
+      # test-results/ and overwrites the HTML report at the start of a run.
+      - name: e2e @critical on chromium
+        id: chromium
+        timeout-minutes: 15
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/chromium
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-results/chromium.json
+        run: |
+          t0=$SECONDS
+          trap 'echo "e2e-chromium $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
+          pnpm exec playwright test --config=playwright.attach.config.ts --grep @critical --project=chromium --workers=1 --max-failures=5 --trace=retain-on-failure --reporter=list,html,json --output=test-results/chromium
+
+      - name: e2e @critical on mobile-chrome
+        id: mobile-chrome
+        timeout-minutes: 15
+        if: ${{ !cancelled() && steps.server.outcome == 'success' }}
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/mobile-chrome
+          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-results/mobile-chrome.json
+        run: |
+          t0=$SECONDS
+          trap 'echo "e2e-mobile-chrome $(( SECONDS - t0 ))" >> "$RUNNER_TEMP/e2e-timings.txt"' EXIT
+          pnpm exec playwright test --config=playwright.attach.config.ts --grep @critical --project=mobile-chrome --workers=1 --max-failures=5 --trace=retain-on-failure --reporter=list,html,json --output=test-results/mobile-chrome
+
+      # Per spec file: wall time over every attempt, retries, and outcomes.
+      # A skipped test is not a pass, so skips get their own column.
+      - name: Timing and per-spec summary
+        id: summary
+        if: always()
+        run: |
+          {
+            echo "## e2e @critical: timings"
+            echo
+            echo "| Phase | Seconds |"
+            echo "|---|---|"
+            if [ -f "$RUNNER_TEMP/e2e-timings.txt" ]; then
+              while read -r phase secs; do echo "| $phase | $secs |"; done < "$RUNNER_TEMP/e2e-timings.txt"
+            fi
+            for f in playwright-results/*.json; do
+              [ -f "$f" ] || continue
+              echo
+              echo "### $(basename "$f" .json): per spec (retries = extra attempts)"
+              echo
+              echo "| Spec | Seconds | Retries | Passed | Flaky | Failed | Skipped |"
+              echo "|---|---|---|---|---|---|---|"
+              jq -r '
+                [.suites[] | .. | objects | select(has("specs")) | .specs[]]
+                | group_by(.file)[]
+                | {
+                    file: .[0].file,
+                    secs: (([.[].tests[].results[].duration] | add // 0) / 1000 | floor),
+                    retries: ([.[].tests[] | (.results | length) - 1 | select(. > 0)] | add // 0),
+                    passed: ([.[].tests[] | select(.status == "expected")] | length),
+                    flaky: ([.[].tests[] | select(.status == "flaky")] | length),
+                    failed: ([.[].tests[] | select(.status == "unexpected")] | length),
+                    skipped: ([.[].tests[] | select(.status == "skipped")] | length)
+                  }
+                | "| \(.file) | \(.secs) | \(.retries) | \(.passed) | \(.flaky) | \(.failed) | \(.skipped) |"
+              ' "$f" || echo "| (could not read $f) | | | | | | |"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+          # A skip is not a pass (H2): an @critical test that skipped means its
+          # persona or fixture was missing, so the job fails. A flaky spec
+          # passed only on a retry; name it so it is not hidden (M1).
+          status=0
+          for f in playwright-results/*.json; do
+            [ -f "$f" ] || continue
+            project="$(basename "$f" .json)"
+            flaky="$(jq -r '[.suites[] | .. | objects | select(has("specs")) | .specs[] | select(any(.tests[]; .status == "flaky")) | .file] | unique[]' "$f")"
+            for spec in $flaky; do
+              echo "::warning title=Flaky @critical spec::$project: $spec passed only on a retry."
+              echo "flaky=true" >> "$GITHUB_OUTPUT"
+            done
+            # A spec over 1.5x its baseline (.github/ci/e2e-critical-baselines.json)
+            # is a render regression the generous waits would otherwise hide.
+            slow="$(jq -r --slurpfile base .github/ci/e2e-critical-baselines.json '
+              [.suites[] | .. | objects | select(has("specs")) | .specs[]]
+              | group_by(.file)[]
+              | { file: .[0].file, secs: (([.[].tests[].results[].duration] | add // 0) / 1000 | floor) }
+              | ($base[0][.file] // 0) as $b
+              | select($b > 0 and .secs > ($b * 1.5))
+              | "\(.file) \(.secs) \($b)"' "$f")"
+            while read -r spec secs b; do
+              [ -n "$spec" ] || continue
+              echo "::warning title=Slow @critical spec::$project: $spec took $secs s, over 1.5x its $b s baseline."
+            done <<< "$slow"
+            skipped="$(jq '[.suites[] | .. | objects | select(has("specs")) | .specs[].tests[] | select(.status == "skipped")] | length' "$f")"
+            if [ "$skipped" != "0" ]; then
+              echo "::error title=Skipped @critical tests::$project skipped ${skipped:-an unknown number of} test(s); a skip is not a pass."
+              status=1
+            fi
+          done
+          if [ "$status" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Upload the Playwright report and traces (7 days, synthetic data only)
+        # Also on a flaky pass: the failed attempts' traces are the only
+        # evidence of what went wrong (run 39121468131).
+        if: failure() || cancelled() || steps.summary.outputs.flaky == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-critical-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # DW-8: pass, fail or cancel. Only the branch THIS run created; a reused
+      # one was refused by the guard and is left to the expiry and the sweep.
+      - name: Delete this run's Neon branch
+        if: always() && steps.branch.outputs.created == 'true'
+        uses: neondatabase/delete-branch-action@4468d825d5a88ef4012f1705a82f02ec3072f776 # v3
+        with:
+          project_id: ${{ vars.NEON_CI_PROJECT_ID }}
+          branch: ${{ steps.branch.outputs.branch_id }}
+          api_key: ${{ secrets.NEON_CI_API_KEY }}
