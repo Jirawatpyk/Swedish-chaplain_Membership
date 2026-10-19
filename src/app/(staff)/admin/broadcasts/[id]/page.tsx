@@ -11,6 +11,7 @@ import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { failureReasonToken } from '@/components/broadcast/admin/failure-reason';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 import { DetailActionBar } from '@/components/broadcast/admin/detail-action-bar';
+import { OriginalDisclosure } from '@/components/broadcast/admin/original-disclosure';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
 import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
@@ -437,13 +438,16 @@ export default async function AdminBroadcastDetailPage({
             note={shownVersion.noteToMember}
             noteLabel={tContent('noteLabel')}
           />
-          <ContentCard
-            id="eblast-original-title"
-            title={tContent('originalTitle')}
-            description={tContent('originalHint')}
-            subject={original.subject}
-            preview={originalPreview}
-          />
+          {/* Spec 122 US12c-1 — folded under its own title where the cards stack. */}
+          <OriginalDisclosure summary={tContent('originalTitle')}>
+            <ContentCard
+              id="eblast-original-title"
+              title={tContent('originalTitle')}
+              description={tContent('originalHint')}
+              subject={original.subject}
+              preview={originalPreview}
+            />
+          </OriginalDisclosure>
         </div>
       ) : (
         <Card titleId="eblast-body-title" title={t('fields.body')} headingLevel={2}>

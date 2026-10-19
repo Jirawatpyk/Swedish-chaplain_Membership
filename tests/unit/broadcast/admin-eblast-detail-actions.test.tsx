@@ -779,3 +779,25 @@ describe('Spec 122 US12c-1 — the staff detail action row follows the board', (
     expect(start).toContain('data-testid="reject-action"');
   });
 });
+
+describe('Spec 122 US12c-1 — the member original folds on a phone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    role = 'admin';
+    flagOn = true;
+    decisions = [];
+    missingKeys = new Set();
+    warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } });
+    holdMock.mockResolvedValue({ ok: true, value: false });
+  });
+
+  it('the read-only comparison puts the original, not the version, in the disclosure', async () => {
+    const html = await renderPage('awaiting_member_approval', 1);
+    const open = html.indexOf('data-testid="eblast-original-disclosure"');
+    expect(open).toBeGreaterThan(-1);
+    const block = html.slice(open, html.indexOf('</details>', open));
+    expect(block).toContain('id="eblast-original-title"');
+    expect(block).not.toContain('id="eblast-shown-version-title"');
+    expect(block).toContain('<summary');
+  });
+});
