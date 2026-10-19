@@ -490,3 +490,70 @@ describe('invoiceSourceAdapter — waived-refund netting (Track B)', () => {
     expect(paid?.count).toBe(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Monthly trend buckets by payment date — the chart caption reads "by payment
+// date", and `paymentDate` is the date the money arrived (admin-entered, or the
+// processor's settlement date). `paidAt` is only the server time payment was
+// RECORDED: a transfer dated 30 Mar recorded on 2 Apr belongs to March.
+// ---------------------------------------------------------------------------
+describe('invoiceSourceAdapter.getMonthlyPaidRevenueSatang — monthly trend buckets by payment date', () => {
+  const run = (rows: unknown[], months: string[]) => {
+    listInvoicesMock.mockResolvedValue({ ok: true, value: { rows, nextCursor: null } });
+    return invoiceSourceAdapter.getMonthlyPaidRevenueSatang(ctx, months, 'Asia/Bangkok', NO_WAIVERS);
+  };
+
+  it('buckets into the payment-date month, not the month the payment was recorded', async () => {
+    const buckets = await run(
+      [{ ...paidRow(100_000n), paymentDate: '2026-03-30', paidAt: '2026-04-02T03:00:00.000Z' }],
+      ['2026-03', '2026-04'],
+    );
+
+    expect(buckets['2026-03']).toBe(100_000n);
+    expect(buckets['2026-04']).toBeUndefined();
+  });
+
+  it('reads the payment date as a calendar date, with no time-zone shift', async () => {
+    // 2026-03-31 parsed as a UTC instant is 07:00 Bangkok on 31 Mar; a tenant
+    // west of UTC would see 30 Mar. Either way the month must stay March.
+    const buckets = await run(
+      [{ ...paidRow(50_000n), paymentDate: '2026-03-31', paidAt: '2026-04-01T01:00:00.000Z' }],
+      ['2026-03', '2026-04'],
+    );
+
+    expect(buckets['2026-03']).toBe(50_000n);
+  });
+
+  it('falls back to the Bangkok month of paidAt, then issueDate, for rows without a payment date', async () => {
+    const buckets = await run(
+      [
+        // 31 Mar 18:00 UTC is 1 Apr 01:00 in Bangkok.
+        { ...paidRow(10_000n), paymentDate: null, paidAt: '2026-03-31T18:00:00.000Z' },
+        { ...paidRow(20_000n), paymentDate: null, paidAt: null, issueDate: '2026-03-05' },
+      ],
+      ['2026-03', '2026-04'],
+    );
+
+    expect(buckets['2026-04']).toBe(10_000n);
+    expect(buckets['2026-03']).toBe(20_000n);
+  });
+
+  it('nets a credit note into the payment-date month', async () => {
+    const buckets = await run(
+      [
+        {
+          status: 'partially_credited',
+          paymentDate: '2026-03-30',
+          paidAt: '2026-04-02T03:00:00.000Z',
+          subtotal: { satang: 100_000n },
+          total: { satang: 107_000n },
+          creditedTotal: { satang: 10_700n },
+        },
+      ],
+      ['2026-03', '2026-04'],
+    );
+
+    expect(buckets['2026-03']).toBe(90_000n);
+    expect(buckets['2026-04']).toBeUndefined();
+  });
+});
