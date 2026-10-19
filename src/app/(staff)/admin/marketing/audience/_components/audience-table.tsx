@@ -30,6 +30,13 @@
  * and Member, the reason lines and the last change wrap instead of widening
  * their columns.
  */
+import {
+  AUDIENCE_COLUMN_WIDTHS,
+  AUDIENCE_COLUMNS_READ_ONLY,
+  AUDIENCE_COLUMNS_WITH_SWITCH,
+  AUDIENCE_MIN_WIDTH,
+  isSharedColumn,
+} from './audience-table-layout';
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -56,40 +63,7 @@ export type AudienceTableRow = {
   readonly changedAt: string | null;
 };
 
-/**
- * px — the skeleton mirrors these (audience-table-skeleton.tsx). `contact` is
- * a MINIMUM: its <col> carries no width, so it flexes into the space the
- * fixed columns leave.
- */
-export const AUDIENCE_COLUMN_WIDTHS = {
-  contact: 184,
-  // Sized for the LONGEST locale (FR-050a): SV "Status ej tillgänglig" badge,
-  // SV "REGLAGE" header, EN "Broadcasts halted" badge, TH "ผู้ติดต่อรอง" role
-  // badge — badges are atomic (`whitespace-nowrap overflow-hidden`), so the
-  // column, not the badge, wraps.
-  state: 184,
-  switch: 112,
-  member: 168,
-  kind: 112,
-  memberStatus: 152,
-  lastChange: 136,
-} as const;
-
-type ColumnKey = keyof typeof AUDIENCE_COLUMN_WIDTHS;
-
-const COLUMNS_WITH_SWITCH: readonly ColumnKey[] = [
-  'contact', 'state', 'switch', 'member', 'kind', 'memberStatus', 'lastChange',
-];
-const COLUMNS_READ_ONLY: readonly ColumnKey[] = COLUMNS_WITH_SWITCH.filter((k) => k !== 'switch');
-
-const sumWidths = (columns: readonly ColumnKey[]): number =>
-  columns.reduce((sum, key) => sum + AUDIENCE_COLUMN_WIDTHS[key], 0);
-
-/** The table's min-width per shape — the skeleton must land on the same box. */
-export const AUDIENCE_MIN_WIDTH = {
-  withSwitch: sumWidths(COLUMNS_WITH_SWITCH),
-  readOnly: sumWidths(COLUMNS_READ_ONLY),
-} as const;
+export { AUDIENCE_COLUMN_WIDTHS, AUDIENCE_MIN_WIDTH } from './audience-table-layout';
 
 export function AudienceTable({
   rows,
@@ -107,7 +81,7 @@ export function AudienceTable({
   const t = useTranslations('admin.marketing.audience');
   const tReason = useTranslations('shared.marketing.reason');
 
-  const columns = canMarketing ? COLUMNS_WITH_SWITCH : COLUMNS_READ_ONLY;
+  const columns = canMarketing ? AUDIENCE_COLUMNS_WITH_SWITCH : AUDIENCE_COLUMNS_READ_ONLY;
   const minWidth = canMarketing ? AUDIENCE_MIN_WIDTH.withSwitch : AUDIENCE_MIN_WIDTH.readOnly;
 
   return (
@@ -125,7 +99,7 @@ export function AudienceTable({
     >
       <colgroup>
         {columns.map((key) =>
-          key === 'contact' ? (
+          isSharedColumn(key) ? (
             <col key={key} />
           ) : (
             <col key={key} style={{ width: `${AUDIENCE_COLUMN_WIDTHS[key]}px` }} />

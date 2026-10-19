@@ -54,11 +54,13 @@
  * admin selects ≥1 row, so reserving space pre-data would itself cause
  * CLS once data lands with zero selections.
  */
+import type { CSSProperties } from 'react';
 import { getTranslations } from 'next-intl/server';
 import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
+import { QUEUE_ACTIONS_SHARE, QUEUE_COLUMN_LAYOUT } from '@/components/broadcast/admin/queue-table-layout';
 import {
   APPROVAL_ROUND_ONLY_STATUSES,
   OFFERED_BROADCAST_STATUSES,
@@ -68,11 +70,22 @@ import {
 
 /** The table's seven columns (select is the admin's extra, narrow one). */
 const QUEUE_COLUMNS = 7;
-// The select column, then the columns in the page's minimum widths
-// (`queue-table-client.tsx`: 112 · 112 · 200 · 132 · 84 · 100, Actions 128,
-// wider from 1,440 px where it takes the spare width).
+// The select column, then the page's own column minimums (one module with
+// `queue-table-client.tsx`, so the two cannot drift), as grid shares; from
+// 1,440 px Actions takes its two and a half shares of the spare width.
+const shares = (actionsShare: number): string =>
+  [
+    '2.5rem',
+    ...Object.entries(QUEUE_COLUMN_LAYOUT).map(([key, { minWidth }]) =>
+      `${key === 'actions' ? minWidth * actionsShare : minWidth}fr`,
+    ),
+  ].join(' ');
+const QUEUE_GRID_STYLE = {
+  '--queue-grid': shares(1),
+  '--queue-grid-wide': shares(QUEUE_ACTIONS_SHARE),
+} as CSSProperties;
 const QUEUE_GRID =
-  'grid grid-cols-[2.5rem_112fr_112fr_200fr_132fr_84fr_100fr_128fr] min-[1440px]:grid-cols-[2.5rem_112fr_112fr_200fr_132fr_84fr_100fr_320fr] gap-3 px-6';
+  'grid grid-cols-[var(--queue-grid)] min-[1440px]:grid-cols-[var(--queue-grid-wide)] gap-3 px-6';
 const TABLE_ROWS = 6;
 const CARDS = 4;
 
@@ -148,7 +161,7 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
           <div data-skeleton="queue-table" className="hidden md:block">
             {/* The select column, the seven columns (whose turn sits under the
                 Stage pill) and the Actions column, in the page's proportions. */}
-            <div className={`${QUEUE_GRID} border-b border-[var(--aura-border-default)] py-3`}>
+            <div className={`${QUEUE_GRID} border-b border-[var(--aura-border-default)] py-3`} style={QUEUE_GRID_STYLE}>
               <span aria-hidden="true" />
               {Array.from({ length: QUEUE_COLUMNS }).map((_, i) => (
                 <SkeletonBlock key={i} data-skeleton="queue-column" className="h-4 w-3/4" />
@@ -162,6 +175,7 @@ export default async function AdminBroadcastsLoading(): Promise<React.ReactEleme
                 key={row}
                 data-skeleton="queue-row"
                 className={`${QUEUE_GRID} min-h-[5.5rem] min-[1800px]:min-h-[4.25rem] items-center border-b border-[var(--aura-border-default)] py-1.5`}
+                style={QUEUE_GRID_STYLE}
               >
                 <SkeletonBlock data-skeleton="queue-select" className="size-4 rounded-[var(--aura-radius-xs)]" />
                 {Array.from({ length: QUEUE_COLUMNS - 1 }).map((_, i) => (

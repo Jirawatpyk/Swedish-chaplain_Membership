@@ -30,6 +30,7 @@
  * The parent server component pre-formats every per-row string and date; only
  * the ICU-plural announcements are translated here.
  */
+import { QUEUE_COLUMN_LAYOUT } from './queue-table-layout';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
@@ -234,7 +235,7 @@ export function QueueTableClient({
       {
         key: 'member',
         label: columnLabels.member,
-        minWidth: 112,
+        ...QUEUE_COLUMN_LAYOUT.member,
         render: (row) => (
           <span className="flex flex-col [overflow-wrap:anywhere]">
             <span className="font-medium">{row.memberDisplayName}</span>
@@ -247,7 +248,7 @@ export function QueueTableClient({
       {
         key: 'subject',
         label: columnLabels.subject,
-        minWidth: 112,
+        ...QUEUE_COLUMN_LAYOUT.subject,
         render: (row) => (
           <Link
             href={`/admin/broadcasts/${row.broadcastId}`}
@@ -260,7 +261,7 @@ export function QueueTableClient({
       {
         key: 'status',
         label: columnLabels.status,
-        minWidth: 200,
+        ...QUEUE_COLUMN_LAYOUT.status,
         render: (row) => (
           // A stage name too long for the column (SV) wraps inside its pill,
           // which then reads as a rounded box: a finite radius, clamped to a
@@ -286,7 +287,7 @@ export function QueueTableClient({
       {
         key: 'timeInStage',
         label: columnLabels.timeInStage,
-        minWidth: 132,
+        ...QUEUE_COLUMN_LAYOUT.timeInStage,
         // FR-026 — last activity (`stage_entered_at`) is the "since" line.
         render: (row) => (
           <span className="flex flex-col items-start gap-1">
@@ -300,13 +301,13 @@ export function QueueTableClient({
       {
         key: 'sendTime',
         label: columnLabels.sendTime,
-        minWidth: 84,
+        ...QUEUE_COLUMN_LAYOUT.sendTime,
         render: (row) => <SendTime row={row} proposedLabel={tQueue('row.proposed')} />,
       },
       {
         key: 'audience',
         label: columnLabels.audience,
-        minWidth: 100,
+        ...QUEUE_COLUMN_LAYOUT.audience,
         // The label keeps its own element, so "All members" is still a whole
         // text node to find (admin-review-queue D2b, queue-table-segment).
         render: (row) => (
@@ -324,7 +325,7 @@ export function QueueTableClient({
         label: columnLabels.actions,
         // Approve above Reject at 128 px (1,280 px screens); side by side
         // (~214 px) once the column takes its larger share of a wider grid.
-        minWidth: 128,
+        ...QUEUE_COLUMN_LAYOUT.actions,
         render: (row) =>
           row.actionable ? (
             <ReviewActions broadcastId={row.broadcastId} recipientCount={row.recipientCount} />

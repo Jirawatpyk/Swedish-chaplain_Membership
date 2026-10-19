@@ -4,8 +4,8 @@
  * (CLS 0, ux-standards § 2.1). Plain data: the skeleton imports it without
  * the table.
  *
- * Fitted to a ~1,120px table (1440px window): Company is the flexible column
- * and every cell wraps (AURA 5.11 auto rows); Last activity goes first on a
+ * Fitted to a ~1,120px table (1440px window): Company, Primary contact and
+ * Plan are the flexible columns and every cell wraps (AURA 5.11 auto rows); Last activity goes first on a
  * narrower table so the row menu stays in view.
  */
 import type { DataTableColumn } from '@jirawatpyk/aura-react';
@@ -14,10 +14,15 @@ type ColumnSize = Pick<DataTableColumn, 'width' | 'minWidth' | 'hideBelow'>;
 type ColumnCard = Pick<DataTableColumn, 'card' | 'cardOrder'>;
 
 export const MEMBERS_COLUMN_SIZES = {
-  company_name: { minWidth: 130 },
+  // At 1440px the three share 503px: Company keeps the 189px it had when
+  // it was the only flexible column, the other two sit at their minimums.
+  company_name: { minWidth: 188 },
   member_number_display: { width: 92 },
-  primary_contact: { width: 164, hideBelow: 'lg' },
-  plan_display_name: { width: 150, hideBelow: 'lg' },
+  // Minimums, not fixed widths: on a wide screen the spare width is shared
+  // by the three columns of text, so a contact or plan stops wrapping once
+  // there is room (maintainer, 19 Oct 2026).
+  primary_contact: { minWidth: 164, hideBelow: 'lg' },
+  plan_display_name: { minWidth: 150, hideBelow: 'lg' },
   // Its two badges wrap onto a second line (auto rows), so it can stay narrow.
   status: { width: 140 },
   engagement: { width: 116 },

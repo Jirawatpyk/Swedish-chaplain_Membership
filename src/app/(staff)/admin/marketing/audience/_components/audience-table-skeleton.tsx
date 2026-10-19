@@ -14,24 +14,25 @@
  * and the table shape from `sm` up; rules use the AURA border token (L6).
  */
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
-
-/**
- * px — mirrors `AUDIENCE_COLUMN_WIDTHS` in audience-table.tsx (a literal, not
- * an import: that module is `'use client'`, and this skeleton renders on the
- * server). The first track is Contact's MINIMUM — it flexes like the real
- * table's width-less <col>.
- */
-const WIDTHS = [184, 184, 112, 168, 112, 152, 136] as const;
+import {
+  AUDIENCE_COLUMNS_READ_ONLY,
+  AUDIENCE_COLUMNS_WITH_SWITCH,
+  audienceColumnFloor,
+  isSharedColumn,
+} from './audience-table-layout';
 
 export function AudienceTableSkeleton({
   withSwitch = true,
 }: {
   readonly withSwitch?: boolean;
 } = {}) {
-  const widths = withSwitch ? [...WIDTHS] : WIDTHS.filter((_, i) => i !== 2);
+  // The real table's columns and floors (one module, so the two cannot drift):
+  // Contact and Member share the spare width as the real width-less <col>s do.
+  const columns = withSwitch ? AUDIENCE_COLUMNS_WITH_SWITCH : AUDIENCE_COLUMNS_READ_ONLY;
+  const widths = columns.map(audienceColumnFloor);
   const rows = 15;
-  const gridTemplateColumns = widths
-    .map((w, i) => (i === 0 ? `minmax(${w}px, 1fr)` : `${w}px`))
+  const gridTemplateColumns = columns
+    .map((key) => (isSharedColumn(key) ? `minmax(${audienceColumnFloor(key)}px, 1fr)` : `${audienceColumnFloor(key)}px`))
     .join(' ');
   return (
     <div className="flex flex-col gap-4" aria-hidden>

@@ -193,11 +193,12 @@ describe('AudienceTable — fits the staff content area at 1440 px', () => {
     expect(minWidth).toBeLessThanOrEqual(contentWidthAt(1440));
   });
 
-  it('Contact flexes: its <col> has no fixed width; every other column does', () => {
+  // Maintainer, 19 Oct 2026: Contact and Member share the spare width of a wide table.
+  it('Contact and Member flex: their <col>s have no fixed width; every other column does', () => {
     const { container } = renderTable(true);
     const cols = Array.from(container.querySelectorAll<HTMLElement>('colgroup > col'));
-    expect(cols[0]?.style.width).toBe('');
-    for (const col of cols.slice(1)) expect(col.style.width).toMatch(/px$/);
+    // contact, state, switch, member, kind, memberStatus, lastChange
+    expect(cols.map((col) => col.style.width === '')).toEqual([true, false, false, true, false, false, false]);
   });
 
   it('"Changed by" + "Changed" are ONE two-line column', () => {
