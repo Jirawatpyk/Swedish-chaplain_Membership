@@ -2,7 +2,7 @@
 
 **Owner**: Solo-maintainer
 **Severity**: `e2e-critical` red = the PR is not ready (advisory until DW-12 makes it required); `e2e-nightly` red = triage the next working day
-**Source signal**: a red `e2e @critical (chromium + mobile-chrome)` check on a PR; a GitHub issue labelled `e2e-nightly`
+**Source signal**: a red `e2e @critical (chromium)` or `e2e @critical (mobile-chrome)` check on a PR; a GitHub issue labelled `e2e-nightly`
 **Workflows**: `.github/workflows/e2e-critical.yml` · `e2e-nightly.yml` · `ci-e2e-parent-refresh.yml` · `ci-e2e-branch-sweep.yml`
 **Spec**: `specs/123-ci-e2e-smoke/` (slice 2, DW-6…DW-12)
 **Last reviewed**: 2026-10-18 (spec 123 slice 2)
@@ -14,6 +14,7 @@
 - **The CI Neon project** (`vars.NEON_CI_PROJECT_ID`, key `NEON_CI_API_KEY`) holds synthetic data only; it is not the production project. Its parent branch `vars.NEON_CI_PARENT_BRANCH` is kept migrated to `main` by `ci-e2e-parent-refresh.yml` (push to `main` + manual dispatch).
 - **Each run** creates its own branch `ci-e2e/<run>-<attempt>` from that parent (2 h expiry; 8 h for the nightly). The DW-9 guard (`scripts/seed-ci-e2e.ts --guard-only`) refuses any other target. The run migrates (only the PR's new migrations), seeds personas and fixtures (`scripts/seed-ci-e2e.ts`), and deletes the branch in an `always()` step.
 - **`e2e-critical`** builds the app, runs `next start` on :3100, then runs the `@critical` specs (the list is in `tests/unit/architecture/e2e-critical-set.test.ts`) on chromium and mobile-chrome with `--workers=1`. Budget: 25 min (DW-7).
+  - **Job layout:** `e2e` is a matrix over `project: [chromium, mobile-chrome]` with `fail-fast: false`, so a PR shows two checks that run in parallel. Each job runs the whole chain on its own: its own Neon branch `ci-e2e/<run>-<attempt>-<project>`, rate-limit prefix `swecham-ci-<run>-<attempt>-<project>`, one Playwright project, and its own artifact. The first post-refresh run took 28.3 min with both projects in series, which is why they were split.
 - **`e2e-nightly`** (19:00 UTC) resets the schema on its own branch and migrates **from zero**, then runs the full suite on chromium under `next dev` with `E2E_X_TENANT_HEADER_ENABLED=1`, in two shards.
 
 ## A red `e2e-critical` check on a PR
@@ -25,7 +26,7 @@
    - *Seed personas and fixtures*: a seed broke on the CI data, often a NOT NULL column without a DB default (see `tests/unit/scripts/seed-insert-not-null-coverage.test.ts`).
    - *Build / Start the app*: the production build or the boot env failed. `next-start.log` is tailed in the step.
    - *e2e @critical on …*: a real test failure, or "0 tests" when a spec throws while being collected (an env var missing at import time). Read the list output, then the artifact.
-3. **The report and traces** are uploaded as `e2e-critical-<run>-<attempt>` for 7 days, on a failure, a cancel, or a flaky pass. Open a trace with `pnpm exec playwright show-trace <zip>`.
+3. **The report and traces** are uploaded as `e2e-critical-<run>-<attempt>-<project>` for 7 days, on a failure, a cancel, or a flaky pass. Open a trace with `pnpm exec playwright show-trace <zip>`.
    - **They contain the e2e persona passwords.** A trace records every action, including the passwords typed into the sign-in form, and the repo is public, so anyone can download them for 7 days.
    - This is accepted for three reasons. The personas are synthetic and seeded per run. They exist only on the run's own `ci-e2e/` branch of the CI Neon project, and that branch is deleted at the end of the run. No E2E persona exists in production.
    - Never point these workflows at a database with a real account.
@@ -40,7 +41,7 @@
 
 ## DW-12: making `e2e-critical` required
 
-It stays advisory for two weeks from #586's merge. Record each red that was not the PR's fault (a flake) on the `e2e-nightly` issue or in a dedicated issue. After two weeks with a flake rate of 2% or less (DW-12), add `e2e @critical (chromium + mobile-chrome)` to `main`'s required status checks, and update `docs/operational-state.md`.
+It stays advisory for two weeks from #586's merge. Record each red that was not the PR's fault (a flake) on the `e2e-nightly` issue or in a dedicated issue. After two weeks with a flake rate of 2% or less (DW-12), add both `e2e @critical (chromium)` and `e2e @critical (mobile-chrome)` to `main`'s required status checks, and update `docs/operational-state.md`.
 
 ## The CI parent refresh
 
