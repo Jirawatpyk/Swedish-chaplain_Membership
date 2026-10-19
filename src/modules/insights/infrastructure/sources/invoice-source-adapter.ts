@@ -22,7 +22,7 @@ import {
 import { deriveFiscalYear, type FiscalYearStartMonth } from '@/lib/fiscal-year';
 import type { TenantContext } from '@/modules/tenants';
 import type { InvoiceSource, WaivedRefundTotals } from '../../application/ports/source-ports';
-import { monthKeyOf } from '../../domain/trend-window';
+import { monthKeyOf, monthKeyOfDateOnly } from '../../domain/trend-window';
 
 const PAGE = 100;
 
@@ -212,11 +212,16 @@ export const invoiceSourceAdapter: InvoiceSource = {
     timeZone: string,
     waivedByInvoice: WaivedRefundTotals,
   ): Promise<Readonly<Record<string, bigint>>> {
-    // NOTE: this buckets by the month a paid invoice was SETTLED (`paidAt`),
-    // spanning fiscal years — intentionally a different basis from the YTD KPI
-    // (`getYtdPaidRevenueSatang`, which filters by issue-date fiscal year). The
-    // trend answers "revenue realised per month", the KPI "this fiscal year".
-    // Credit notes are NETTED against the invoice's original settle month
+    // NOTE: this buckets by the month the money arrived — `paymentDate`, the
+    // admin-entered or processor settlement date printed on the receipt — not
+    // `paidAt`, which is only the server time the payment was recorded (a
+    // transfer dated 30 Mar and recorded on 2 Apr belongs to March, as the
+    // chart caption "by payment date" says). Rows with no `paymentDate` fall
+    // back to the tenant-local month of `paidAt`, then `issueDate`.
+    // The trend spans fiscal years — intentionally a different basis from the
+    // YTD KPI (`getYtdPaidRevenueSatang`, which filters by issue-date fiscal
+    // year). It answers "revenue realised per month", the KPI "this fiscal
+    // year". Credit notes are NETTED against the invoice's own payment month
     // (`total − creditedTotal`); attributing the reversal to the credit-note
     // month instead would need a separate credit_notes source (follow-on).
     const window = new Set(monthKeys);
@@ -236,11 +241,17 @@ export const invoiceSourceAdapter: InvoiceSource = {
       if (!result.ok) throw new Error('InvoiceSource: monthly-revenue list failed');
       for (const inv of result.value.rows) {
         if (!PAID_REVENUE_STATUSES.has(inv.status)) continue;
+        // `paymentDate` is a calendar date (`YYYY-MM-DD`): read it without a
+        // time-zone shift. `paidAt` is an instant: read it in the tenant zone.
         const settled = inv.paidAt ?? inv.issueDate;
-        if (!settled) continue;
-        const key = monthKeyOf(new Date(settled), timeZone);
+        const key = inv.paymentDate
+          ? monthKeyOfDateOnly(new Date(inv.paymentDate))
+          : settled
+            ? monthKeyOf(new Date(settled), timeZone)
+            : null;
+        if (key === null) continue;
         if (!window.has(key)) continue; // outside the 12-month window
-        // Track B — the waived amount nets into the invoice's ORIGINAL settle
+        // Track B — the waived amount nets into the invoice's own payment
         // month, never the month the refund completed. Same basis the credit
         // notes already use (see the note above). Attributing it to the refund
         // month would subtract money from a month whose revenue never included
