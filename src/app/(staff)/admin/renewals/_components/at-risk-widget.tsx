@@ -225,7 +225,7 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
   ) : (
     // Board `Admin-renewals-needs-action`: Company, Risk score, Last
     // computed and Actions; each row a card on a phone.
-    <Table caption={t('title')} captionHidden stackBelow="sm" stackStyle="cards" align="middle">
+    <Table caption={t('title')} captionHidden stackBelow="sm" stackStyle="cards" align="middle" bleed>
       <THead>
         <Tr>
           <Th>{t('table.company')}</Th>

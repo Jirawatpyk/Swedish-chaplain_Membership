@@ -575,7 +575,7 @@ export async function renderInvoiceDetailView({
             </p>
           }
         >
-          <Table caption={t('creditNotesSection.title', { count: creditNotes.length })} captionHidden stackBelow="sm">
+          <Table caption={t('creditNotesSection.title', { count: creditNotes.length })} captionHidden stackBelow="sm" bleed>
             <THead>
               <Tr>
                 <Th>{t('creditNotesSection.col.number')}</Th>
@@ -633,7 +633,7 @@ export async function renderInvoiceDetailView({
       <Card title={t('lines.title')} titleId="invoice-lines-heading" headingLevel={2}>
         {/* Stacked on a phone, each field cell names itself: AURA cannot read
             the headers of a table rendered from a server file. */}
-        <Table caption={t('lines.title')} captionHidden stackBelow="sm">
+        <Table caption={t('lines.title')} captionHidden stackBelow="sm" bleed>
           <THead>
             <Tr>
               <Th>{t('lines.description')}</Th>

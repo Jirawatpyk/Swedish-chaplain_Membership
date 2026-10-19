@@ -115,6 +115,7 @@ export function AudienceTable({
     <AudienceCards rows={rows} canMarketing={canMarketing} leavesView={leavesView} />
     <div data-audience-table-wrap="" className="max-sm:hidden">
     <Table
+      bleed
       caption={t('tableCaption')}
       captionHidden
       aria-label={t('tableCaption')}

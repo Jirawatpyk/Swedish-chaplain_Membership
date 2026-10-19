@@ -7,6 +7,8 @@
  * - Recent exports show their status as an AURA StatusPill and keep the
  *   contextual download label (WCAG 2.4.6).
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import { DirectoryTable, type DirectoryTableRow } from '@/components/directory/directory-table';
@@ -95,6 +97,24 @@ describe('DirectoryTable on AURA DataTable (T506)', () => {
   it('shows the empty state when there are no rows', () => {
     render(<DirectoryTable rows={[]} labels={labels} />);
     expect(screen.getByText(labels.emptyTitle)).toBeInTheDocument();
+  });
+
+  // Maintainer, 19 Oct 2026 ("ตารางซ้อนกัน"): the grid runs edge to edge inside
+  // the Members card (AURA `bleed`), as every other list does, instead of a
+  // second framed box inside the card.
+  it('bleeds to the card edges; the pager follows it, so it does not end the card', () => {
+    const { container } = render(<DirectoryTable rows={rows} labels={labels} />);
+    expect(container.querySelector('.aura-bleed')).not.toBeNull();
+    expect(container.querySelector('.aura-bleed-end')).toBeNull();
+  });
+
+  it('its loading skeleton is AURA’s table skeleton with the same columns, also edge to edge', () => {
+    const loading = readFileSync(join(process.cwd(), 'src/app/(staff)/admin/directory/loading.tsx'), 'utf8');
+    expect(loading).toMatch(/<DataTableSkeleton\b/);
+    expect(loading).toMatch(/DIRECTORY_COLUMN_LAYOUT/);
+    expect(loading).not.toMatch(/DirectoryTableSkeleton/);
+    const table = readFileSync(join(process.cwd(), 'src/components/directory/directory-table.tsx'), 'utf8');
+    expect(table).toMatch(/DIRECTORY_COLUMN_LAYOUT/);
   });
 });
 

@@ -12,6 +12,7 @@
 import { CheckIcon } from 'lucide-react';
 import { Badge, DataTable, StatusPill, type DataTableColumn } from '@jirawatpyk/aura-react';
 import { EmptyState } from '@/components/shell/empty-state';
+import { DIRECTORY_COLUMN_LAYOUT, type DirectoryColumnKey } from './directory-table-layout';
 
 export interface DirectoryTableRow {
   readonly memberId: string;
@@ -56,66 +57,50 @@ export function DirectoryTable({
     return <EmptyState title={labels.emptyTitle} description={labels.empty} />;
   }
 
-  const columns: DataTableColumn<DirectoryTableRow>[] = [
-    {
-      key: 'companyName',
-      label: labels.company,
-      render: (row) => (
-        <span className="font-medium whitespace-normal text-[var(--aura-fg-accent)] [overflow-wrap:anywhere]">
-          {row.companyName}
+  const render: Record<DirectoryColumnKey, (row: DirectoryTableRow) => React.ReactNode> = {
+    companyName: (row) => (
+      <span className="font-medium whitespace-normal text-[var(--aura-fg-accent)] [overflow-wrap:anywhere]">
+        {row.companyName}
+      </span>
+    ),
+    tier: (row) => row.tier ?? DASH,
+    industry: (row) => row.industry ?? DASH,
+    location: (row) => row.location ?? DASH,
+    // The table says Yes / No; a phone card, where the column name is not
+    // beside it, says "Listed" / "Not listed" with the pill's icon (boards
+    // `Admin-directory` and `-mobile`). AURA app content: swapped on a stacked card.
+    listed: (row) => (
+      <>
+        <span className="in-[.aura-table--stacked]:hidden">
+          <Badge {...(row.listed ? { tone: 'success' as const } : { variant: 'outline' as const })}>
+            {row.listed ? labels.yes : labels.no}
+          </Badge>
         </span>
-      ),
-    },
-    { key: 'tier', label: labels.tier, width: 170, render: (row) => row.tier ?? DASH },
-    { key: 'industry', label: labels.industry, width: 160, hideBelow: 'lg', render: (row) => row.industry ?? DASH },
-    { key: 'location', label: labels.location, width: 130, render: (row) => row.location ?? DASH },
-    {
-      key: 'listed',
-      label: labels.listed,
-      width: 90,
-      pill: true,
-      // The table says Yes / No; a phone card, where the column name is not
-      // beside it, says "Listed" / "Not listed" with the pill's icon (boards
-      // `Admin-directory` and `-mobile`). AURA app content: swapped on a stacked card.
-      render: (row) => (
+        <span className="hidden in-[.aura-table--stacked]:inline-flex">
+          <StatusPill tone={row.listed ? 'ready' : 'neutral'}>
+            {row.listed ? labels.listedPill : labels.notListedPill}
+          </StatusPill>
+        </span>
+      </>
+    ),
+    hasLogo: (row) =>
+      row.hasLogo ? (
+        <span className="flex items-center gap-1">
+          <CheckIcon className="block size-4" aria-hidden />
+          <span className="sr-only">{labels.hasLogo}</span>
+        </span>
+      ) : (
         <>
-          <span className="in-[.aura-table--stacked]:hidden">
-            <Badge {...(row.listed ? { tone: 'success' as const } : { variant: 'outline' as const })}>
-              {row.listed ? labels.yes : labels.no}
-            </Badge>
-          </span>
-          <span className="hidden in-[.aura-table--stacked]:inline-flex">
-            <StatusPill tone={row.listed ? 'ready' : 'neutral'}>
-              {row.listed ? labels.listedPill : labels.notListedPill}
-            </StatusPill>
-          </span>
+          <span aria-hidden>{DASH}</span>
+          <span className="sr-only">{labels.no}</span>
         </>
       ),
-    },
-    {
-      key: 'hasLogo',
-      label: labels.logo,
-      width: 64,
-      hideBelow: 'lg',
-      render: (row) =>
-        row.hasLogo ? (
-          <span className="flex items-center gap-1">
-            <CheckIcon className="block size-4" aria-hidden />
-            <span className="sr-only">{labels.hasLogo}</span>
-          </span>
-        ) : (
-          <>
-            <span aria-hidden>{DASH}</span>
-            <span className="sr-only">{labels.no}</span>
-          </>
-        ),
-    },
-    { key: 'contactName', label: labels.contact, width: 150, hideBelow: 'lg', render: (row) => row.contactName ?? DASH },
-  ];
-  // Industry, Logo and Contact drop out on a table narrower than `lg` (a
-  // tablet, or a laptop beside the nav), so the rest fits without scrolling;
-  // a phone card still shows every field.
-
+    contactName: (row) => row.contactName ?? DASH,
+  };
+  // Keys, labels and sizes come from the layout the loading skeleton shares.
+  const columns: DataTableColumn<DirectoryTableRow>[] = DIRECTORY_COLUMN_LAYOUT.map(
+    ({ labelKey, ...column }) => ({ ...column, label: labels[labelKey], render: render[column.key] }),
+  );
   return (
     <DataTable<DirectoryTableRow>
       label={labels.caption}
@@ -127,6 +112,9 @@ export function DirectoryTable({
       // Rows grow to fit (AURA 5.11): a long company name wraps in full.
       rowHeight="auto"
       stackBelow={640}
+      // Edge to edge inside the Members card, as every list table is (AURA
+      // `bleed`); the pager follows, so it does not end the card.
+      bleed
     />
   );
 }
