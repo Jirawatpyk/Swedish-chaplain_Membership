@@ -110,7 +110,9 @@ describe('.github/workflows/e2e-critical.yml', () => {
   });
 
   it('creates a ci-e2e/ branch in the CI project from the CI parent, with an expiry backstop', () => {
-    expect(code).toMatch(/^\s{6}CI_E2E_BRANCH_NAME: ci-e2e\/\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}\s*$/m);
+    expect(code).toMatch(
+      /^\s{6}CI_E2E_BRANCH_NAME: ci-e2e\/\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-\$\{\{ matrix\.project \}\}\s*$/m,
+    );
     const create = step(src, /- name: Create this run's Neon branch/);
     expect(create).toContain('uses: neondatabase/create-branch-action@fb620d43d4c565abaf088b848a4e28e5c4ea4d9c # v6');
     expect(create).toMatch(/project_id: \$\{\{ vars\.NEON_CI_PROJECT_ID \}\}/);
@@ -168,18 +170,20 @@ describe('.github/workflows/e2e-critical.yml', () => {
     expect(code).toContain('pnpm exec playwright install --with-deps chromium');
   });
 
-  it('runs @critical once per project, attached, --workers=1, keeping traces of failures', () => {
+  it('runs @critical for exactly ONE matrix project per job, attached, --workers=1, keeping traces of failures', () => {
     const runs = blocks.filter((b) => /playwright test/.test(b.text));
-    expect(runs).toHaveLength(2);
-    const projects = runs.map((b) => /--project=(\S+)/.exec(b.text)?.[1]);
-    expect(projects).toEqual(['chromium', 'mobile-chrome']);
+    expect(runs).toHaveLength(1);
+    // `${{ }}` stays out of run blocks, so the matrix value arrives via env.
+    expect(step(src, /- name: e2e @critical on the matrix project/)).toMatch(/^\s+PROJECT: \$\{\{ matrix\.project \}\}\s*$/m);
+    expect(runs.map((b) => /--project="\$PROJECT"(\s|$)/.test(b.text))).toEqual([true]);
+    expect(runs[0]!.text.match(/--project/g)).toHaveLength(1);
     for (const b of runs) {
       expect(b.text).toContain('--config=playwright.attach.config.ts');
       expect(b.text).toContain('--grep @critical');
       expect(b.text).toMatch(/--workers=1(\s|$)/);
       expect(b.text).toContain('--trace=retain-on-failure');
       expect(b.text).toMatch(/--reporter=\S*json/);
-      expect(b.text).toMatch(/--output=test-results\/\S+/);
+      expect(b.text).toMatch(/--output=test-results\/"\$PROJECT"(\s|$)/);
     }
   });
 
@@ -208,7 +212,7 @@ describe('.github/workflows/e2e-critical.yml', () => {
   });
 
   it('writes build, migrate, seed and per-project timings to the step summary', () => {
-    for (const phase of ['migrate', 'seed', 'build', 'e2e-chromium', 'e2e-mobile-chrome']) {
+    for (const phase of ['migrate', 'seed', 'build', 'e2e-\\$PROJECT']) {
       expect(code).toMatch(new RegExp(`echo "${phase} \\$`));
     }
     const summary = step(src, /- name: Timing and per-spec summary/);
@@ -257,8 +261,7 @@ describe('e2e-critical.yml — review round 1 (PR #586)', () => {
   const src = read(WORKFLOW);
   const code = codeLines(src).join('\n');
   const blocks = runBlocks(src);
-  const testSteps = () =>
-    ['e2e @critical on chromium', 'e2e @critical on mobile-chrome'].map((name) => step(src, new RegExp(`- name: ${name}`)));
+  const testSteps = () => [step(src, /- name: e2e @critical on the matrix project/)];
 
   it('proves, before creating a branch, that the key reaches only the CI project (M3, two-sided)', () => {
     const scope = step(src, /- name: Prove the CI key reaches only the CI project/);
@@ -299,7 +302,7 @@ describe('e2e-critical.yml — review round 1 (PR #586)', () => {
 
   it('gives each run its own Upstash rate-limit prefix (M2)', () => {
     expect(code).toMatch(
-      /^\s{6}RATE_LIMIT_KEY_PREFIX: swecham-ci-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}\s*$/m,
+      /^\s{6}RATE_LIMIT_KEY_PREFIX: swecham-ci-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-\$\{\{ matrix\.project \}\}\s*$/m,
     );
   });
 
@@ -334,5 +337,75 @@ describe('e2e-critical.yml — review round 2 (PR #586)', () => {
     expect(server).toMatch(/deadline=\$\(\( SECONDS \+ 180 \)\)/);
     expect(server).toMatch(/while \[ "\$SECONDS" -lt "\$deadline" \]/);
     expect(server).toMatch(/within 3 minutes/);
+  });
+});
+
+describe('e2e-critical.yml — one parallel job per project (spec 123 DW-7)', () => {
+  const src = read(WORKFLOW);
+  const code = codeLines(src).join('\n');
+  const PROJECTS = ['chromium', 'mobile-chrome'];
+  /** The branch-name and rate-limit-prefix templates with a project substituted in. */
+  const expand = (template: string, project: string) =>
+    template
+      .replace('${{ github.run_id }}', '39182204895')
+      .replace('${{ github.run_attempt }}', '1')
+      .replace('${{ matrix.project }}', project);
+
+  it('is a matrix over both projects, and one project failing does not cancel the other', () => {
+    const job = lines(src)
+      .slice(lines(src).findIndex((l) => /^ {2}e2e:\s*$/.test(l)))
+      .join('\n');
+    expect(job).toMatch(/^\s{4}strategy:\s*$/m);
+    expect(job).toMatch(/^\s{6}fail-fast:\s*false\s*$/m);
+    expect(job).toMatch(/^\s{6}matrix:\s*$/m);
+    const listed = /^\s{8}project:\s*\[([^\]]*)\]\s*$/m.exec(job)?.[1]?.split(',').map((p) => p.trim());
+    expect(listed).toEqual(PROJECTS);
+  });
+
+  it('names each job after its project, so the check list shows both', () => {
+    expect(code).toMatch(/^\s{4}name: e2e @critical \(\$\{\{ matrix\.project \}\}\)\s*$/m);
+    expect(code).not.toContain('chromium + mobile-chrome)');
+  });
+
+  it('gives each project its own ci-e2e/ branch, and the name still passes the DW-9 guard and the sweep prefix', () => {
+    const template = /^\s{6}CI_E2E_BRANCH_NAME: (.+?)\s*$/m.exec(code)?.[1] ?? '';
+    const names = PROJECTS.map((p) => expand(template, p));
+    expect(new Set(names).size).toBe(PROJECTS.length);
+    for (const name of names) expect(name).toMatch(/^ci-e2e\/\d+-\d+-[a-z0-9-]+$/);
+  });
+
+  it('gives each project its own Upstash prefix, inside the validator (1-64 of [a-z0-9-])', () => {
+    const template = /^\s{6}RATE_LIMIT_KEY_PREFIX: (.+?)\s*$/m.exec(code)?.[1] ?? '';
+    const prefixes = PROJECTS.map((p) => expand(template, p));
+    expect(new Set(prefixes).size).toBe(PROJECTS.length);
+    for (const prefix of prefixes) expect(prefix).toMatch(/^[a-z0-9][a-z0-9-]{0,63}$/);
+  });
+
+  it('uploads one artifact name per project (two jobs with one name would collide)', () => {
+    const upload = step(src, /- name: Upload the Playwright report/);
+    expect(upload).toMatch(
+      /^\s+name: e2e-critical-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}-\$\{\{ matrix\.project \}\}\s*$/m,
+    );
+  });
+
+  it('runs the whole chain in each job and drops the cross-project step chaining', () => {
+    for (const re of [
+      /- name: Create this run's Neon branch/,
+      /- name: Refuse any target but this run's ci-e2e branch/,
+      /- name: Migrate the branch/,
+      /- name: Seed personas and fixtures/,
+      /- name: Build \(next build\)/,
+      /- name: Start the app/,
+      /- name: e2e @critical on the matrix project/,
+      /- name: Timing and per-spec summary/,
+      /- name: Upload the Playwright report/,
+      /- name: Delete this run's Neon branch/,
+    ]) {
+      expect(stepRange(src, re), String(re)).not.toBeNull();
+    }
+    // The mobile-chrome step ran only after the server step of the SAME job.
+    expect(code).not.toMatch(/steps\.server\.outcome/);
+    expect(code).not.toMatch(/- name: e2e @critical on (chromium|mobile-chrome)\s*$/m);
+    expect(code).not.toMatch(/^\s+id: (chromium|mobile-chrome)\s*$/m);
   });
 });
