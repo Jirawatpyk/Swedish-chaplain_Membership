@@ -169,12 +169,16 @@ describe('T093 — focus returns to the Preview button, and motion is reduced-mo
     });
   });
 
-  it('the dialog surface carries the shared reduced-motion duration token', async () => {
+  // Spec 122 US12c-1 — the dialog is AURA's, whose own stylesheet drops its
+  // motion under `prefers-reduced-motion` (the legacy token is gone with it).
+  it('the dialog and its trigger are AURA\'s', async () => {
     const user = userEvent.setup();
     renderDialog();
+    expect(trigger().className).toContain('aura-btn');
     await user.click(trigger());
     const dialog = await screen.findByRole('dialog');
-    expect(dialog.className).toContain('motion-reduce:duration-0');
+    expect(dialog.closest('[class*="aura-dialog"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="dialog-content"]')).toBeNull();
   });
 });
 

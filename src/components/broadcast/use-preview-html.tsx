@@ -29,7 +29,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { isLocale, type Locale } from '@/i18n/config';
 
 export type PreviewState =
@@ -206,7 +206,7 @@ export function PreviewSurface({
   switch (state.status) {
     case 'empty':
       return (
-        <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+        <p className="px-3 py-6 text-center text-sm text-[var(--aura-fg-secondary)]">
           {t('empty')}
         </p>
       );
@@ -216,23 +216,23 @@ export function PreviewSurface({
           <span className="sr-only" role="status">
             {tFields('previewLoading')}
           </span>
-          <Skeleton className="h-4 w-1/3" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-5/6" />
-          <Skeleton className="h-4 w-2/3" />
+          <SkeletonBlock className="h-4 w-1/3" />
+          <SkeletonBlock className="h-4 w-full" />
+          <SkeletonBlock className="h-4 w-5/6" />
+          <SkeletonBlock className="h-4 w-2/3" />
         </div>
       );
     case 'paused':
       return (
-        <p role="status" className="px-3 py-6 text-center text-sm text-warning">
+        <p role="status" className="px-3 py-6 text-center text-sm text-[var(--aura-alert-warning-fg)]">
           {t('paused', { seconds: state.retryAfterSeconds })}
         </p>
       );
     case 'error':
       return (
-        <div role="alert" className="px-3 py-3 text-sm text-destructive">
+        <div role="alert" className="px-3 py-3 text-sm text-[var(--aura-fg-danger)]">
           <p className="font-medium">{tFields('previewUnavailable')}</p>
-          <p className="text-caption text-muted-foreground">
+          <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
             {tFields('previewUnavailableHint')}
           </p>
         </div>
