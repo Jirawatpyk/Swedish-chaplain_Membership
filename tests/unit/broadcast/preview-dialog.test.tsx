@@ -75,6 +75,11 @@ afterEach(() => {
 });
 
 describe('T093 — the dialog shows the complete email at both recipient widths', () => {
+  it('Spec 122 US12c-1: the Preview button is 44px on a phone (touch height)', () => {
+    renderDialog();
+    expect(trigger()).toHaveClass('aura-btn--touch');
+  });
+
   it('opens on the Preview button and shows header, body and the unsubscribe footer', async () => {
     const user = userEvent.setup();
     renderDialog();

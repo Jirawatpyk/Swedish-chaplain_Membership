@@ -111,6 +111,17 @@ async function sendAndConfirm(): Promise<void> {
 }
 
 describe('F119 T063 — the staff format workspace (UX review)', () => {
+  it('Spec 122 US12c-1: the footer buttons stay 44px on a phone (touch height, no 36px floor)', () => {
+    renderWorkspace();
+    for (const id of ['eblast-test-copy', 'eblast-format-save', 'eblast-send-to-member']) {
+      const button = screen.getByTestId(id);
+      expect(button).toHaveClass('aura-btn--touch');
+      // A wrapped label grows the button; it never shrinks it below 44px.
+      expect(button).toHaveClass('max-sm:min-h-11');
+      expect(button).not.toHaveClass('max-sm:min-h-9');
+    }
+  });
+
   it('H2: Save is aria-disabled (still focusable), never natively disabled, while there is nothing to save', () => {
     renderWorkspace();
     expect(saveButton()).not.toHaveAttribute('disabled');

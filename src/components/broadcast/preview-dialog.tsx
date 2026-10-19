@@ -54,7 +54,7 @@ export function PreviewDialog({ state }: PreviewDialogProps): React.ReactElement
 
   return (
     <>
-      <Button ref={triggerRef} type="button" variant="secondary" size="sm" icon="eye" onClick={() => setOpen(true)}>
+      <Button ref={triggerRef} type="button" variant="secondary" size="sm" touchHeight icon="eye" onClick={() => setOpen(true)}>
         {t('openLabel')}
       </Button>
       <Dialog

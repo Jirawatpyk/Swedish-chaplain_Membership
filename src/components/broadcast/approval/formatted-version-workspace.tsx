@@ -93,8 +93,12 @@ const ERROR_IDS = {
   note: 'eblast-format-note-error',
   form: 'eblast-format-error',
 } as const;
-/** Footer buttons wrap their label below `sm` rather than overflow a 320 px screen (SV runs long). */
-const FOOTER_BUTTON = 'max-sm:h-auto max-sm:min-h-9 max-sm:whitespace-normal';
+/**
+ * Footer buttons wrap their label below `sm` rather than overflow a 320 px
+ * screen (SV runs long). A wrapped button grows; it never drops below the
+ * 44 px touch height its `touchHeight` gives (spec 122 US12c-1).
+ */
+const FOOTER_BUTTON = 'max-sm:h-auto max-sm:min-h-11 max-sm:whitespace-normal';
 
 /** Which field a refusal belongs to, so the message lands where the problem is. */
 type ErrorField = 'subject' | 'body' | 'note' | null;
