@@ -31,10 +31,10 @@ describe('OverdueBanner', () => {
     const { container } = renderBanner(0);
     expect(container.firstChild).toBeNull();
   });
-  it('renders a destructive alert with the count when > 0', () => {
+  it('renders a danger-tone AURA alert with the count when > 0', () => {
     renderBanner(3);
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent(/3 broadcasts have been waiting over 48 hours/);
-    expect(alert.className).toContain('bg-destructive-surface');
+    expect(alert).toHaveClass('aura-alert', 'aura-alert--danger');
   });
 });

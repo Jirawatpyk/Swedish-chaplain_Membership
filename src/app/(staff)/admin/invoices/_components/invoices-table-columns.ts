@@ -32,10 +32,13 @@ export const INVOICES_COLUMN_LAYOUT = {
   dueDate: { width: 100 },
   // The receipt number over its state (generating, method, failed).
   receipt: { width: 136, card: 'hide', hideBelow: RECEIPT_COLUMN_MIN_TABLE_PX, skeletonLines: 2 },
-  total: { width: 120, align: 'end' },
+  // A six-figure total ("107,000.00 THB", 110px) stays on one line.
+  total: { width: 136, align: 'end' },
   // The phone card's last row, full width (the US7a rule).
   // The ⋯ is 44px on a phone (`touchHeight`), and so is the skeleton's bar.
-  actions: { width: 184, actions: true, card: 'footer', skeletonTouch: true },
+  // 208px fits "Record payment…" (138px), the gap and the ⋯ (32px) inside the
+  // cell padding, so the ⋯ ends at the same place on every row.
+  actions: { width: 208, actions: true, card: 'footer', skeletonTouch: true },
 } as const satisfies Record<string, ColumnLayout>;
 
 export type InvoicesColumnKey = keyof typeof INVOICES_COLUMN_LAYOUT;

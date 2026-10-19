@@ -183,3 +183,20 @@ afterAll(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
+
+// AURA `RadioGroup` gives its `<fieldset>` its own `focus()` (it moves focus to
+// the checked radio) by assigning `el.focus`. user-event replaces
+// `HTMLElement.prototype.focus` with a getter-only accessor, so that
+// assignment throws "Cannot set property focus … which has only a getter" in
+// any test that opens a RadioGroup after a user-event call. A writable
+// `focus` on the fieldset prototype lets the instance assignment land; it
+// delegates to whatever `HTMLElement.prototype.focus` is at call time.
+if (typeof HTMLFieldSetElement !== 'undefined') {
+  Object.defineProperty(HTMLFieldSetElement.prototype, 'focus', {
+    configurable: true,
+    writable: true,
+    value: function focus(this: HTMLElement, options?: FocusOptions) {
+      return HTMLElement.prototype.focus.call(this, options);
+    },
+  });
+}

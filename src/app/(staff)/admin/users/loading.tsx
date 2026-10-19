@@ -3,13 +3,14 @@ import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
-import { DataTableSkeleton } from '@/components/shell/data-table-skeleton';
+import { StaticTableSkeleton } from '@/components/shell/static-table-skeleton';
 
 /**
  * Loading skeleton must mirror the real page layout 1:1 for CLS 0:
  *   - PageHeader with "Invite user" action button (right-aligned)
  *   - Filter row: search, Role and Status filters, the count
- *   - Table (5 columns × 8 rows), edge to edge in the card; cards below 640px
+ *   - Table (5 columns × 8 rows): AURA's static Table, as the real one, with
+ *     each column's share of it; edge to edge in the card; cards below 640px
  *   - Pagination summary + nav row
  *
  * Spec 122 US10a (T1006): on AURA — the page's AURA card, which drops its
@@ -19,9 +20,13 @@ import { DataTableSkeleton } from '@/components/shell/data-table-skeleton';
 export default async function Loading() {
   const t = await getTranslations('admin.users');
   const tLayout = await getTranslations('layout');
+  // The real table is AURA's static Table (it sizes its columns to the
+  // content): each column's share of it at a 1440px window.
+  const shares = { email: '26%', name: '12%', role: '14%', status: '23%', actions: '25%' } as const;
   const columns = (['email', 'name', 'role', 'status', 'actions'] as const).map((key) => ({
-    key,
     label: t(`columns.${key}`),
+    share: shares[key],
+    ...(key === 'email' ? { card: 'title' as const } : key === 'actions' ? { card: 'action' as const } : {}),
   }));
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingTable')}>
@@ -41,7 +46,7 @@ export default async function Loading() {
               <SkeletonBlock className="h-8 w-32 max-sm:hidden" data-skeleton="filter-select" />
               <SkeletonBlock className="ml-auto h-4 w-16" data-skeleton="result-count" />
             </div>
-            <DataTableSkeleton label={t('title')} columns={columns} rows={8} />
+            <StaticTableSkeleton caption={t('title')} columns={columns} rows={8} />
             {/* Pagination row — "Showing X–Y of Z" + page nav */}
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-between" aria-hidden>
               <SkeletonBlock className="h-4 w-40" />

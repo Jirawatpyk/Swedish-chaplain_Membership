@@ -71,7 +71,7 @@ function makeRow(overrides: Partial<EnrichedQueueRow> = {}): EnrichedQueueRow {
     segmentLabel: 'All members',
     recipientCount: 42,
     ageBadge: null,
-    statusBadgeVariant: 'secondary',
+    statusTone: 'progress',
     statusBadgeLabel: 'Scheduled',
     actionable: false,
     whoseTurnLabel: null,
@@ -94,30 +94,91 @@ function table(props: Partial<QueueTableClientProps> & { rows: ReadonlyArray<Enr
 }
 
 const headers = () =>
-  within(screen.getByRole('table'))
+  within(screen.getByRole('grid'))
     .getAllByRole('columnheader')
     .map((th) => th.textContent?.trim() ?? '');
 
 const cellOf = (column: string) => {
   const index = headers().indexOf(column);
-  const firstRow = within(screen.getByRole('table')).getAllByRole('row')[1]!;
-  return within(firstRow).getAllByRole('cell')[index]!;
+  const firstRow = within(screen.getByRole('grid')).getAllByRole('row')[1]!;
+  return within(firstRow).getAllByRole('gridcell')[index]!;
 };
 
-describe('the eight columns (UX review M1)', () => {
-  it('an admin sees selection + exactly Member · Subject · Stage · Whose turn · Time in stage · Send time · Audience · Actions', () => {
+describe('the columns (UX review M1; parity comments 19 Oct)', () => {
+  // Parity comments (19 Oct): "Whose turn" is a line under the Stage pill, so
+  // Stage gets the width for a one-line pill. Every FR-026 field stays on the row.
+  it('an admin sees selection + exactly Member · Subject · Stage · Time in stage · Send time · Audience · Actions', () => {
     render(table({ rows: [makeRow()] }));
     expect(headers()).toEqual([
-      '',
+      'Select rows',
       'Member',
       'Subject',
       'Stage',
-      'Whose turn',
       'Time in stage',
       'Send time',
       'Audience',
       'Actions',
     ]);
+  });
+
+  // Spec 122 US12b — AURA's DataTable gives an unsized column a 160 px
+  // minimum, so eight of them pushed Actions out of a 1,440 px screen. Each
+  // column now states the minimum its content needs. On a 1,280 px screen the
+  // grid is 959 px: 40 px of selection and 48 px of row gutters leave 871 px.
+  it('fits Actions on a 1,280 px screen: the column minimums add up to at most 871 px', () => {
+    render(table({ rows: [makeRow()] }));
+    const minimums = within(screen.getByRole('grid'))
+      .getAllByRole('columnheader')
+      .slice(1)
+      .map((th) => {
+        const style = th.getAttribute('style') ?? '';
+        const px = /--aura-cell-(?:min|w):\s*(\d+)px/.exec(style)?.[1];
+        return Number(px ?? 160);
+      });
+    expect(minimums.reduce((sum, px) => sum + px, 0)).toBeLessThanOrEqual(871);
+  });
+
+  // AURA 5.51 closed the stand-ins: the row minimum counts each column's own
+  // minimum (#159), a StatusPill wraps (#158), a column takes a grow weight (#162).
+  it('the rows are only as wide as those minimums: AURA counts them (#159), no app min-width', () => {
+    render(table({ rows: [makeRow()] }));
+    expect(screen.getByRole('grid').closest('[style*="--queue-row-min"]')).toBeNull();
+    expect(document.querySelector('[class*="queue-row-min"]')).toBeNull();
+  });
+
+  it('a long stage name wraps inside its pill, a rounded box: AURA StatusPill `wrap` (#158)', () => {
+    render(table({ rows: [makeRow()] }));
+    const pill = cellOf('Stage').querySelector('.aura-pill');
+    expect(pill).toHaveClass('is-wrap');
+    expect(pill?.parentElement?.className ?? '').not.toContain('[&_.aura-pill]');
+  });
+
+  it('Stage is wide enough for a one-line pill', () => {
+    render(table({ rows: [makeRow()] }));
+    const stage = within(screen.getByRole('grid'))
+      .getAllByRole('columnheader')
+      .find((th) => th.textContent?.trim() === 'Stage')!;
+    expect(stage.getAttribute('style')).toMatch(/--aura-cell-min:\s*200px/);
+  });
+
+  // Maintainer (19 Oct): Approve and Reject side by side where the screen
+  // allows (~214 px), stacked at 1,280 where the columns are at their minimums.
+  it('Actions has a minimum, not a fixed width, and two and a half shares of spare width: AURA `grow` (#162)', () => {
+    render(table({ rows: [makeRow()] }));
+    const actions = within(screen.getByRole('grid'))
+      .getAllByRole('columnheader')
+      .find((th) => th.textContent?.trim() === 'Actions')!;
+    expect(actions.getAttribute('style')).toMatch(/--aura-cell-min:\s*128px/);
+    expect(actions.getAttribute('style')).toMatch(/--aura-cell-flex:\s*2\.5 1 0/);
+    expect(actions.getAttribute('style')).not.toMatch(/--aura-cell-w:/);
+    expect(document.querySelector('[class*="grow-[2.5]"]')).toBeNull();
+  });
+
+  it('whose turn is a line under the Stage pill, named by its label; none when nobody is waiting', () => {
+    render(table({ rows: [makeRow({ whoseTurnLabel: 'Marketing' }), makeRow({ broadcastId: 'b2' })] }));
+    expect(cellOf('Stage')).toHaveTextContent(/Whose turn:\s*Marketing/);
+    const second = within(screen.getByRole('grid')).getAllByRole('row')[2]!;
+    expect(second).not.toHaveTextContent(/Whose turn/);
   });
 
   it('Stage carries the round; Time in stage carries the "since" date (last activity)', () => {
@@ -172,7 +233,7 @@ describe('the eight columns (UX review M1)', () => {
     ['send_time', 'Send time', 'ascending', 'Sorted by send time'],
   ] as const)('order %s: `aria-sort` on %s (%s) and the visible hint', (order, column, direction, hint) => {
     render(table({ rows: [makeRow()], readOnly: true, order }));
-    const sorted = within(screen.getByRole('table'))
+    const sorted = within(screen.getByRole('grid'))
       .getAllByRole('columnheader')
       .filter((th) => th.hasAttribute('aria-sort'));
     expect(sorted).toHaveLength(1);
@@ -185,7 +246,7 @@ describe('the eight columns (UX review M1)', () => {
 describe('muted type is for labels only (UX review M6)', () => {
   it('the Audience value is not muted', () => {
     render(table({ rows: [makeRow()], readOnly: true }));
-    expect(within(cellOf('Audience')).getByText(/All members/).closest('.text-muted-foreground')).toBeNull();
+    expect(within(cellOf('Audience')).getByText(/All members/).closest('[class*="aura-fg-secondary"]')).toBeNull();
   });
 });
 

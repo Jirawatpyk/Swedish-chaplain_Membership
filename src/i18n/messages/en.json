@@ -3518,6 +3518,8 @@
         },
         "bulk": {
           "selectAria": "Select broadcast",
+          "selectRowAria": "Select {subject}",
+          "rowNotSelectable": "{subject} is not awaiting review",
           "selected": "{count, plural, one {# selected} other {# selected}}",
           "toolbarLabel": "Bulk actions for selected broadcasts",
           "selectedCount": "{count, plural, one {# selected} other {# selected}}",
@@ -3531,6 +3533,8 @@
           "confirm": {
             "title": "Approve {count, plural, one {# broadcast} other {# broadcasts}}?",
             "recipientTotal": "Reaches ~{recipients, plural, one {# recipient} other {# recipients}} across {count, plural, one {# broadcast} other {# broadcasts}}.",
+            "itemsLabel": "E-Blasts to approve",
+            "itemMeta": "{member} · {count, plural, one {# recipient} other {# recipients}}",
             "overCapNote": "Only the first {max} of {selected} selected will be approved.",
             "decisionLabel": "When to send",
             "sendNow": "Send now",
@@ -3558,21 +3562,23 @@
           }
         },
         "card": {
-          "actionsLabel": "Actions",
           "statusLabel": "Stage",
           "whoseTurnLabel": "Whose turn",
-          "timeInStageLabel": "Time in stage"
+          "timeInStageLabel": "Time in stage",
+          "review": "Review",
+          "reviewAria": "Review {subject}",
+          "recipients": "{count, plural, one {# recipient} other {# recipients}}"
         },
         "filters": {
           "formAriaLabel": "Broadcast queue filters",
           "statusLabel": "Stage",
           "memberLabel": "Member",
           "memberAll": "All members",
-          "fromDate": "Submitted from",
-          "toDate": "Submitted to",
+          "submittedRange": "Submitted",
           "reset": "Reset filters",
           "upcomingSends": "Upcoming sends",
           "waitingOnMarketing": "Waiting on marketing",
+          "quickViews": "Quick views",
           "chipCount": "{count, plural, one {# E-Blast} other {# E-Blasts}}",
           "chipCountsScope": "Counts are for every E-Blast in each stage — the member, date and Upcoming sends filters do not change them."
         },
@@ -3848,6 +3854,7 @@
           "sendNow": "Approve & send now",
           "schedule": "Approve & schedule"
         },
+        "decisionLabel": "When to send",
         "scheduleLabel": "Send at",
         "scheduleHelp": "At least 5 minutes from now. Time zone: Asia/Bangkok.",
         "schedulePreviewLabel": "Will be sent on:",

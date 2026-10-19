@@ -49,3 +49,11 @@ describe('ReviewActions — each half on its own (F119 B1)', () => {
     expect(reject()).toBeNull();
   });
 });
+
+describe('ReviewActions — on AURA (spec 122 US12b)', () => {
+  it('Approve is the primary AURA button and Reject the danger outline, both 44 px on touch', () => {
+    renderActions({});
+    expect(approve()).toHaveClass('aura-btn', 'aura-btn--primary', 'aura-btn--touch');
+    expect(reject()).toHaveClass('aura-btn', 'aura-btn--danger-secondary', 'aura-btn--touch');
+  });
+});

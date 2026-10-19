@@ -13,25 +13,20 @@
  * (the F3 halt read threw — review H-1, `getMembersHaltedInTenant` fails
  * closed).
  */
-import { ShieldAlert } from 'lucide-react';
+import { Alert } from '@jirawatpyk/aura-react/server';
 import { useTranslations } from 'next-intl';
 
 export function HaltStateUnavailableBanner(): React.ReactElement {
   const t = useTranslations('admin.broadcasts.queue');
+  // Spec 122 US12b — an AURA danger Alert inside the named region (a page-
+  // load state, not a live announcement), keeping its h2.
   return (
-    <div
-      role="region"
-      aria-label={t('haltStateUnavailableTitle')}
-      className="rounded-md border border-destructive/40 bg-destructive-surface p-4"
-    >
-      <div className="flex items-start gap-3">
-        <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-destructive" aria-hidden="true" />
-        <div>
-          {/* h2: PageHeader is the page h1; this shares h2 with the SLA / halt banners */}
-          <h2 className="text-sm font-semibold text-destructive">{t('haltStateUnavailableTitle')}</h2>
-          <p className="text-sm text-muted-foreground">{t('haltStateUnavailable')}</p>
-        </div>
-      </div>
-    </div>
+    <section aria-label={t('haltStateUnavailableTitle')}>
+      <Alert tone="danger" role="none" icon="shield-alert">
+        {/* h2: PageHeader is the page h1; this shares h2 with the SLA / halt banners */}
+        <h2 className="aura-text-body font-semibold">{t('haltStateUnavailableTitle')}</h2>
+        <p>{t('haltStateUnavailable')}</p>
+      </Alert>
+    </section>
   );
 }

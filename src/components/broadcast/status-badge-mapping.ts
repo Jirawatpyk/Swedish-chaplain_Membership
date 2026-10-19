@@ -81,3 +81,36 @@ export function getBroadcastStatusBadgeProps(
 ): BroadcastBadgeProps {
   return STATUS_STYLES[status];
 }
+
+/**
+ * Spec 122 US12b — the AURA `StatusPill` tone for each stage (the queue's
+ * Stage column and its phone cards). The word carries the meaning; the tone
+ * only groups: progress while marketing or the send is working, neutral while
+ * the member holds it or it has ended quietly, ready once approved or sent,
+ * warning when an admin must act on a partial send, blocked when it failed or
+ * was rejected. The legacy `Badge` mapping above stays for the surfaces not
+ * yet on AURA (the detail page, the portal).
+ */
+export type BroadcastStatusTone = 'neutral' | 'progress' | 'ready' | 'warning' | 'blocked';
+
+const STATUS_TONES: Record<BroadcastStatus, BroadcastStatusTone> = {
+  draft: 'neutral',
+  submitted: 'progress',
+  in_design: 'progress',
+  changes_requested: 'progress',
+  member_approved: 'progress',
+  awaiting_member_approval: 'neutral',
+  approved: 'ready',
+  sending: 'progress',
+  sent: 'ready',
+  partially_sent: 'warning',
+  partial_delivery_accepted: 'neutral',
+  rejected: 'blocked',
+  cancelled: 'neutral',
+  failed_to_dispatch: 'blocked',
+  expired_no_member_response: 'neutral',
+};
+
+export function getBroadcastStatusTone(status: BroadcastStatus): BroadcastStatusTone {
+  return STATUS_TONES[status];
+}

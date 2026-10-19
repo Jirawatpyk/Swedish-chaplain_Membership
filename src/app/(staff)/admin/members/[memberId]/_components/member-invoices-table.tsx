@@ -143,6 +143,8 @@ export function MemberInvoicesTable({
       manual
       rowHeight="auto"
       stackBelow={640}
+      // Edge to edge inside the Invoices card, as every list table is.
+      bleed
     />
   );
 }

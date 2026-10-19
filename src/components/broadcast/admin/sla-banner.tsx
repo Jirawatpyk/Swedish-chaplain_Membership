@@ -9,9 +9,8 @@
  *   - amber: median >24h OR p95 >40h (and p95 ≤48h)
  *   - red:   p95 >48h (SC-002 breach)
  */
-import { Clock } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
-import { cn } from '@/lib/utils';
+import { Alert, Badge } from '@jirawatpyk/aura-react/server';
 
 export interface SlaStats {
   readonly targetSlaHours: number;
@@ -21,23 +20,12 @@ export interface SlaStats {
   readonly bannerSeverity: 'green' | 'amber' | 'red';
 }
 
-const SEVERITY_STYLES: Record<SlaStats['bannerSeverity'], string> = {
-  green: 'border-success/40 bg-success-surface text-success',
-  amber: 'border-warning/40 bg-warning-surface text-warning',
-  red: 'border-destructive/40 bg-destructive-surface text-destructive',
-};
-
-const PILL_STYLES: Record<SlaStats['bannerSeverity'], string> = {
-  green: 'bg-success text-success-foreground',
-  amber: 'bg-warning text-warning-foreground',
-  // --destructive-foreground stays near-white in dark mode (unlike --success/
-  // --warning-foreground which flip to near-black), so on the bright dark-mode
-  // --destructive fill it fails WCAG AA (~2.77:1). Override the DARK text to
-  // near-black (via the --background token) to mimic the success/warning flip
-  // — light mode keeps the white foreground (6.43:1). Root token asymmetry
-  // tracked as a separate design-system follow-up.
-  red: 'bg-destructive text-destructive-foreground dark:text-background',
-};
+/** Spec 122 US12b — the severity as the AURA Alert / Badge tone. */
+const SEVERITY_TONE = {
+  green: 'success',
+  amber: 'warning',
+  red: 'danger',
+} as const satisfies Record<SlaStats['bannerSeverity'], 'success' | 'warning' | 'danger'>;
 
 export interface SlaBannerProps {
   readonly stats: SlaStats;
@@ -67,49 +55,41 @@ export async function SlaBanner({
       return null;
     }
     return (
-      <p className="text-xs text-muted-foreground tabular-nums">
+      <p className="aura-text-caption text-[var(--aura-fg-secondary)] tabular-nums">
         {t('medianRolling30d', { hours: fmt(stats.medianTimeToDecisionHours) })}{' '}
         <span aria-hidden="true">·</span>{' '}
         {t('p95Rolling30d', { hours: fmt(stats.p95TimeToDecisionHours) })}
       </p>
     );
   }
-  return (
-    <div
-      role={stats.bannerSeverity === 'red' ? 'alert' : 'region'}
-      aria-label={t('targetSla')}
-      className={cn(
-        'flex flex-wrap items-center gap-x-6 gap-y-2 rounded-md border px-4 py-3 text-sm',
-        SEVERITY_STYLES[stats.bannerSeverity],
-      )}
-    >
-      <div className="flex items-center gap-2 font-medium">
-        <Clock className="h-4 w-4 shrink-0" aria-hidden="true" />
-        <span>{t('targetSla')}</span>
-      </div>
-      <div className="flex items-center gap-x-4 gap-y-1 tabular-nums">
-        <span>
-          {t('medianRolling30d', { hours: fmt(stats.medianTimeToDecisionHours) })}
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>{t('p95Rolling30d', { hours: fmt(stats.p95TimeToDecisionHours) })}</span>
-      </div>
-      {/* D-banner-1 UX hardening — removed `aria-live="polite"` on
-          this inner pill. When severity=red the outer wrapper already
-          has `role="alert"` and auto-announces the entire region; an
-          inner polite region would either duplicate the announcement
-          or fight the alert priority. For green/amber the value is
-          server-derived per page-load (cached 5 min via
-          `unstable_cache`) and never updates client-side, so a live
-          region would never fire — pure noise to assistive tech. */}
-      <span
-        className={cn(
-          'ml-auto rounded-full px-2 py-0.5 text-xs font-semibold',
-          PILL_STYLES[stats.bannerSeverity],
-        )}
-      >
+  const tone = SEVERITY_TONE[stats.bannerSeverity];
+  const body = (
+    <span className="flex flex-wrap items-center gap-x-4 gap-y-1 tabular-nums">
+      <span>{t('medianRolling30d', { hours: fmt(stats.medianTimeToDecisionHours) })}</span>
+      <span aria-hidden="true">·</span>
+      <span>{t('p95Rolling30d', { hours: fmt(stats.p95TimeToDecisionHours) })}</span>
+      {/* D-banner-1 — no inner live region: when red the Alert itself is
+          `role="alert"`; green / amber is server-derived per page load and
+          never updates client-side. */}
+      <Badge tone={tone} variant="solid">
         {stats.bannerSeverity === 'red' ? t('breachWarning') : t('withinBudget')}
-      </span>
-    </div>
+      </Badge>
+    </span>
+  );
+  // Spec 122 US12b — an AURA Alert in the severity's tone. A breach is
+  // announced (`role="alert"`); otherwise it is a named region.
+  if (stats.bannerSeverity === 'red') {
+    return (
+      <Alert tone={tone} role="alert" icon="clock" aria-label={t('targetSla')} title={t('targetSla')}>
+        {body}
+      </Alert>
+    );
+  }
+  return (
+    <section aria-label={t('targetSla')}>
+      <Alert tone={tone} role="none" icon="clock" title={t('targetSla')}>
+        {body}
+      </Alert>
+    </section>
   );
 }

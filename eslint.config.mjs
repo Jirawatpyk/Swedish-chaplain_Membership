@@ -488,6 +488,30 @@ export const MIGRATED_PATHS = [
   'src/components/broadcast/admin-image-allowlist-editor.tsx',
   'src/components/broadcast/brand/brand-settings-form.tsx',
   'src/app/(staff)/admin/marketing/**',
+  // US12b — the E-Blast review queue (page, loading, error), its table, phone
+  // cards, bulk bar, filters, review and halt dialogs, and banners.
+  'src/app/(staff)/admin/broadcasts/page.tsx',
+  'src/app/(staff)/admin/broadcasts/loading.tsx',
+  'src/app/(staff)/admin/broadcasts/error.tsx',
+  'src/components/broadcast/admin/queue-table.tsx',
+  'src/components/broadcast/admin/queue-table-client.tsx',
+  'src/components/broadcast/admin/queue-card-list.tsx',
+  'src/components/broadcast/admin/queue-row-cells.tsx',
+  'src/components/broadcast/admin/queue-with-bulk.tsx',
+  'src/components/broadcast/admin/queue-bulk-action-bar.tsx',
+  'src/components/broadcast/admin/bulk-approve-confirm-dialog.tsx',
+  'src/components/broadcast/admin/queue-filters.tsx',
+  'src/components/broadcast/admin/review-actions.tsx',
+  'src/components/broadcast/admin/approve-dialog.tsx',
+  'src/components/broadcast/admin/reject-dialog.tsx',
+  'src/components/broadcast/admin/clear-halt-dialog.tsx',
+  'src/components/broadcast/admin/halt-state-banner.tsx',
+  'src/components/broadcast/admin/halt-state-unavailable-banner.tsx',
+  'src/components/broadcast/admin/manager-readonly-banner.tsx',
+  'src/components/broadcast/admin/sla-banner.tsx',
+  'src/components/broadcast/admin/overdue-banner.tsx',
+  'src/components/broadcast/approval/inline-warning.tsx',
+  'src/components/broadcast/status-badge-mapping.ts',
 ];
 
 /**
@@ -495,10 +519,6 @@ export const MIGRATED_PATHS = [
  * phase that moves it. The list only shrinks.
  */
 const NOT_YET_ON_AURA = [
-  // The reason + typed-phrase dialog: its callers are the E-Blast review
-  // (US12); US5 uses only its `useDialogFinalFocus` hook.
-  'src/components/shell/reason-confirmation-dialog.tsx',
-  'src/components/shell/typed-phrase-field.tsx',
   // The benefits page's E-Blast tab: the broadcast list moves with US12.
   'src/app/(member)/portal/benefits/_components/broadcasts-panel.tsx',
   'src/app/(member)/portal/benefits/_components/broadcast-history-card-list.tsx',

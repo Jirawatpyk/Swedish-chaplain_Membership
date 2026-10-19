@@ -2,11 +2,11 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { sql } from 'drizzle-orm';
 import { getTranslations } from 'next-intl/server';
-import { LayoutTemplateIcon } from 'lucide-react';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { keepTermTogether } from '@/components/broadcast/keep-term-together';
-import { buttonVariants } from '@/components/ui/button';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { LayoutTemplate } from 'lucide-react';
 import { QueueTable } from '@/components/broadcast/admin/queue-table';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
 import { SlaBanner, type SlaStats } from '@/components/broadcast/admin/sla-banner';
@@ -355,7 +355,7 @@ export default async function AdminBroadcastsPage({
       {/* T155 finding U2 — the actions go through `PageHeader`'s own `actions`
           slot, as `templates/page.tsx` does. The hand-rolled
           `flex items-center gap-2` row that stood here had no `flex-wrap`,
-          and `buttonVariants` bakes in `whitespace-nowrap`, so the two links
+          and the buttons bake in `whitespace-nowrap`, so the two links
           overflowed 320 px in every locale (SV +260 px, EN +172 px, TH +32 px
           — measured 2026-09-22). `PageHeader` stacks title and actions below
           `sm`, wraps the action row, and stretches each child to a full-width
@@ -373,25 +373,20 @@ export default async function AdminBroadcastsPage({
             {templatesEnabled ? (
               <Link
                 href="/admin/broadcasts/templates"
-                className={buttonVariants({ variant: 'outline' })}
+                className={buttonClass({ variant: 'secondary', touchHeight: true })}
               >
-                <LayoutTemplateIcon
-                  className="mr-2 size-4"
-                  aria-hidden="true"
-                />
+                <LayoutTemplate aria-hidden="true" className="size-4" />
                 {t('templatesEntryButton')}
               </Link>
             ) : null}
             {/* DV-4 — admin-only proxy-submit entry. Hidden entirely for
                 manager (read-only): the e2e asserts the link is absent for
-                manager, so this is gated, not merely disabled. Uses the
-                `buttonVariants` default (primary CTA, h-9 36px tap target)
-                applied to a <Link> — the repo `Button` has no `asChild`
-                (Base UI), matching the sibling templates-entry pattern. */}
+                manager, so this is gated, not merely disabled. AURA's
+                `buttonClass` (primary) on a <Link>, as the templates entry. */}
             {!isReadOnlyManager ? (
               <Link
                 href="/admin/broadcasts/new"
-                className={buttonVariants()}
+                className={buttonClass({ variant: 'primary', touchHeight: true })}
               >
                 {tBroadcasts('proxySubmitButton')}
               </Link>
@@ -408,54 +403,61 @@ export default async function AdminBroadcastsPage({
         <HaltStateBanner halted={haltedSerialised} readOnly={isReadOnlyManager} />
       )}
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
-      <QueueFilters
-        memberOptions={memberOptions}
-        stageCounts={stageChips.kind === 'ok' ? stageChips.counts : null}
-        approvalRoundEnabled={stageChips.approvalRoundEnabled}
-      />
-      {/* Round 2 (UX M-1): the warning travels to the decision point — the
-          bulk-approve confirm dialog repeats it when the halt state is
-          unknown. A NEW prop, not `readOnly`: "manager cannot approve" and
-          "the halt read failed" are different facts. */}
-      <QueueTable
-        rows={rows}
-        readOnly={isReadOnlyManager}
-        haltUnknown={haltStateUnavailable}
-        order={queueOrderOf(sort)}
-        viewTotal={viewTotal}
-        viewKey={viewKey}
-        // T086a V10 — rendered by the queue between the list and the bulk
-        // toolbar: the toolbar is fixed to the bottom of the viewport, so it is
-        // visually last and must come last in Tab order too (it came first).
-        pagination={
-          nextPageHref !== null || firstPageHref !== null ? (
-            <nav
-              aria-label={t('pagination.label')}
-              className="flex flex-wrap items-center justify-between gap-3"
-            >
-              <p className="text-sm tabular-nums">
-                {/* On the first page only: keyset pages have no offset, so on page 2
-                    "Showing 50 of 132" would read as the same first 50. */}
-                {viewTotal !== null && firstPageHref === null
-                  ? t('pagination.summary', { shown: rows.length, total: viewTotal })
-                  : null}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {firstPageHref !== null ? (
-                  <Link href={firstPageHref} className={buttonVariants({ variant: 'outline' })}>
-                    {t('pagination.first')}
-                  </Link>
-                ) : null}
-                {nextPageHref !== null ? (
-                  <Link href={nextPageHref} className={buttonVariants({ variant: 'outline' })}>
-                    {t('pagination.next')}
-                  </Link>
-                ) : null}
-              </div>
-            </nav>
-          ) : null
-        }
-      />
+      {/* Spec 122 US12b — the filters and the list in one AURA card, frameless
+          on a phone (the cards stand on the page gutter), as every list. */}
+      <Card flushBelow="sm" className="max-sm:border-0 max-sm:p-0">
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          <QueueFilters
+            memberOptions={memberOptions}
+            stageCounts={stageChips.kind === 'ok' ? stageChips.counts : null}
+            approvalRoundEnabled={stageChips.approvalRoundEnabled}
+            timeZone={env.tenant.timezone}
+          />
+          {/* Round 2 (UX M-1): the warning travels to the decision point — the
+              bulk-approve confirm dialog repeats it when the halt state is
+              unknown. A NEW prop, not `readOnly`: "manager cannot approve" and
+              "the halt read failed" are different facts. */}
+          <QueueTable
+            rows={rows}
+            readOnly={isReadOnlyManager}
+            haltUnknown={haltStateUnavailable}
+            order={queueOrderOf(sort)}
+            viewTotal={viewTotal}
+            viewKey={viewKey}
+            // T086a V10 — rendered by the queue between the list and the bulk
+            // toolbar: the toolbar is fixed to the bottom of the viewport, so it is
+            // visually last and must come last in Tab order too (it came first).
+            pagination={
+              nextPageHref !== null || firstPageHref !== null ? (
+                <nav
+                  aria-label={t('pagination.label')}
+                  className="flex flex-wrap items-center justify-between gap-3"
+                >
+                  <p className="aura-text-body tabular-nums">
+                    {/* On the first page only: keyset pages have no offset, so on page 2
+                        "Showing 50 of 132" would read as the same first 50. */}
+                    {viewTotal !== null && firstPageHref === null
+                      ? t('pagination.summary', { shown: rows.length, total: viewTotal })
+                      : null}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {firstPageHref !== null ? (
+                      <Link href={firstPageHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
+                        {t('pagination.first')}
+                      </Link>
+                    ) : null}
+                    {nextPageHref !== null ? (
+                      <Link href={nextPageHref} className={buttonClass({ variant: 'secondary', touchHeight: true })}>
+                        {t('pagination.next')}
+                      </Link>
+                    ) : null}
+                  </div>
+                </nav>
+              ) : null
+            }
+          />
+        </div>
+      </Card>
     </TableContainer>
   );
 }

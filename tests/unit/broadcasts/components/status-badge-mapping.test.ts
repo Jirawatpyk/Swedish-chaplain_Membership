@@ -19,6 +19,7 @@ import {
 } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import {
   getBroadcastStatusBadgeProps,
+  getBroadcastStatusTone,
   type BroadcastBadgeVariant,
 } from '@/components/broadcast/status-badge-mapping';
 
@@ -82,5 +83,36 @@ describe('getBroadcastStatusBadgeProps', () => {
     expect(
       getBroadcastStatusBadgeProps('failed_to_dispatch').className,
     ).toBeUndefined();
+  });
+});
+
+// Spec 122 US12b — the review queue's AURA `StatusPill` tone per stage: work in
+// flight is progress, done is ready, failed or refused is blocked, a partial
+// send is a warning, and parked or closed stages stay neutral.
+describe('getBroadcastStatusTone', () => {
+  it.each<[BroadcastStatus, ReturnType<typeof getBroadcastStatusTone>]>([
+    ['draft', 'neutral'],
+    ['submitted', 'progress'],
+    ['in_design', 'progress'],
+    ['changes_requested', 'progress'],
+    ['awaiting_member_approval', 'neutral'],
+    ['member_approved', 'progress'],
+    ['approved', 'ready'],
+    ['sending', 'progress'],
+    ['sent', 'ready'],
+    ['partially_sent', 'warning'],
+    ['partial_delivery_accepted', 'neutral'],
+    ['rejected', 'blocked'],
+    ['cancelled', 'neutral'],
+    ['failed_to_dispatch', 'blocked'],
+    ['expired_no_member_response', 'neutral'],
+  ])('maps %s to tone=%s', (status, tone) => {
+    expect(getBroadcastStatusTone(status)).toBe(tone);
+  });
+
+  it('covers every BroadcastStatus', () => {
+    for (const status of BROADCAST_STATUSES) {
+      expect(getBroadcastStatusTone(status)).toBeDefined();
+    }
   });
 });

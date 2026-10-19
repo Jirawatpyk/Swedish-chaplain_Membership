@@ -11,7 +11,7 @@
  * `next/navigation` is mocked per `queue-filters-grouping.test.tsx`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
@@ -50,15 +50,14 @@ function renderFilters(props: {
 }) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <QueueFilters memberOptions={[]} {...props} />
+      <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} {...props} />
     </NextIntlClientProvider>,
   );
 }
 
 const offeredValues = () =>
-  screen
-    .getAllByRole('checkbox')
-    .map((el) => (el as HTMLInputElement).value)
+  within(screen.getByRole('group', { name: /^stage$/i })).getAllByRole('button')
+    .map((el) => el.getAttribute('data-status'))
     .sort();
 
 beforeEach(() => {
@@ -91,11 +90,10 @@ describe('<QueueFilters> — new-stage chips follow "flag ON or rows exist" (T15
   it('flag off + zero rows, but the URL already filters on a new stage → that chip stays, checked, so it can be cleared', () => {
     nav.searchParams.current = new URLSearchParams('status=awaiting_member_approval');
     renderFilters({ approvalRoundEnabled: false, stageCounts: counts() });
-    const chip = screen
-      .getAllByRole('checkbox')
-      .find((el) => (el as HTMLInputElement).value === 'awaiting_member_approval');
+    const chip = within(screen.getByRole('group', { name: /^stage$/i })).getAllByRole('button')
+      .find((el) => el.getAttribute('data-status') === 'awaiting_member_approval');
     expect(chip).toBeDefined();
-    expect(chip).toBeChecked();
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('flag off + counts unreadable → the new-stage chips are offered (an in-flight row must never be hidden)', () => {

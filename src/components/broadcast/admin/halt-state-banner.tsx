@@ -11,7 +11,7 @@
  * per FR-014; conditional rendering at the call site).
  */
 import Link from 'next/link';
-import { ShieldAlert } from 'lucide-react';
+import { Alert } from '@jirawatpyk/aura-react/server';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
@@ -44,18 +44,12 @@ export async function HaltStateBanner({
     { dateStyle: 'medium', timeZone: env.tenant.timezone },
   );
 
+  // Spec 122 US12b — an AURA danger Alert inside the named region, keeping
+  // the h2 the clear-halt dialog returns focus to.
   return (
-    <div
-      role="region"
-      aria-label={t('title', { count: halted.length })}
-      className="rounded-md border border-destructive/40 bg-destructive-surface p-4"
-    >
-      <div className="flex items-start gap-3">
-        <ShieldAlert
-          className="mt-0.5 h-5 w-5 shrink-0 text-destructive"
-          aria-hidden="true"
-        />
-        <div className="flex-1 space-y-3">
+    <section aria-label={t('title', { count: halted.length })}>
+      <Alert tone="danger" role="none" icon="shield-alert">
+        <div className="flex flex-col gap-[var(--aura-space-3)]">
           <div>
             {/* h2: PageHeader is the page h1; halt banner shares h2 with SLA banner.
                 T155 U3 — `tabIndex={-1}` makes it focusable (not tabbable, so
@@ -64,49 +58,38 @@ export async function HaltStateBanner({
             <h2
               id={HALT_BANNER_HEADING_ID}
               tabIndex={-1}
-              className="text-sm font-semibold text-destructive focus-visible:outline-none"
+              className="aura-text-body font-semibold focus-visible:outline-none"
             >
               {t('title', { count: halted.length })}
             </h2>
-            <p className="text-sm text-muted-foreground">{t('body')}</p>
+            <p>{t('body')}</p>
           </div>
-          <ul className="space-y-1.5">
+          <ul className="flex flex-col gap-[var(--aura-space-2)]">
             {halted.map((m) => (
               <li
                 key={m.memberId}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-background/60 px-3 py-2 dark:bg-background/30"
+                className="flex flex-wrap items-center justify-between gap-[var(--aura-space-2)] max-sm:flex-col max-sm:items-stretch rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface)] px-[var(--aura-space-3)] py-[var(--aura-space-2)]"
               >
                 <div>
-                  {/* Smart-G3 (round-3) — deep-link to F3 member detail
-                      so admin can investigate plan tier + activity
-                      history before clearing halt. */}
+                  {/* Smart-G3 (round-3) — deep-link to F3 member detail so admin
+                      can investigate plan tier + activity before clearing halt. */}
                   <Link
                     href={`/admin/members/${m.memberId}`}
-                    className="text-sm font-medium hover:underline focus-visible:underline"
+                    className="inline-flex min-h-11 items-center aura-text-body font-medium text-[var(--aura-fg-accent)] hover:underline focus-visible:underline sm:min-h-0"
                   >
                     {m.displayName}
                   </Link>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
                     {t('haltedSince', { date: fmt.format(m.haltedSinceAt) })}
                   </p>
                 </div>
                 {!readOnly ? (
-                  <ClearHaltDialog
-                    memberId={m.memberId}
-                    memberDisplayName={m.displayName}
-                  />
+                  <ClearHaltDialog memberId={m.memberId} memberDisplayName={m.displayName} />
                 ) : (
-                  // UX I8: a disabled button fails contrast + tells the
-                  // manager nothing about WHY they can't act. Render an
-                  // inline note instead so the role limitation is
-                  // self-explanatory.
-                  //
-                  // T155 finding U5 — NO `italic`. Thai has no italic form;
-                  // the browser synthesises a slant that hurts legibility,
-                  // which is the very reason FR-044 drops the italic CONTROL
-                  // under `th`. Weight carries the aside instead
-                  // (ux-standards § typography).
-                  <span className="text-xs font-medium text-muted-foreground">
+                  // UX I8: an inline note says WHY a manager cannot act (a
+                  // disabled button would not). T155 U5 — NO italic: Thai has
+                  // no italic form; weight carries the aside instead.
+                  <span className="aura-text-caption font-medium text-[var(--aura-fg-secondary)]">
                     {t('readOnlyNote')}
                   </span>
                 )}
@@ -114,7 +97,7 @@ export async function HaltStateBanner({
             ))}
           </ul>
         </div>
-      </div>
-    </div>
+      </Alert>
+    </section>
   );
 }

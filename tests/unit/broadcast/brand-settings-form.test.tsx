@@ -150,10 +150,14 @@ describe('BrandSettingsForm — postal address', () => {
     const field = screen.getByLabelText(/primary colour/i);
     fireEvent.change(field, { target: { value: '#f5f5f5' } });
     expect(field).toHaveAttribute('aria-invalid', 'true');
+    // AURA 5.50 `invalid` (#156): AURA's own danger state, no field-DOM reach.
     const root = field.closest('.aura-field');
-    expect(root?.className).toContain('[&_div:has(>input[aria-invalid=true])]:border-[var(--aura-border-danger)]');
-    // No AURA `error`: the field keeps its own hint id in aria-describedby.
-    expect(root).not.toHaveClass('is-invalid');
+    expect(root).toHaveClass('is-invalid');
+    expect(root?.className).not.toContain('aria-invalid=true');
+    // No AURA `error` message: the hint stays the description, no `-error` id.
+    const describedBy = field.getAttribute('aria-describedby') ?? '';
+    expect(describedBy).not.toMatch(/-error\b/);
+    expect(document.getElementById(describedBy.split(' ')[0]!)).toHaveTextContent(/six hex digits/i);
   });
 
   it('UX L5: Save is full width on phones', () => {

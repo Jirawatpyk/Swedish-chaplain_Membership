@@ -94,7 +94,7 @@ describe('TypedPhraseField — behaviour', () => {
     const long = 'ก'.repeat(200);
     render(<Harness phrase={long} />);
     const target = screen.getByText(long);
-    for (const cls of ['whitespace-pre-wrap', 'break-words', 'max-h-32', 'overflow-y-auto', 'text-sm', 'leading-relaxed']) {
+    for (const cls of ['whitespace-pre-wrap', 'break-words', 'max-h-32', 'overflow-y-auto', 'aura-text-body']) {
       expect(target.className).toMatch(new RegExp(`(^|\\s)${cls}(\\s|$)`));
     }
     expect(target.className).not.toMatch(/font-mono/);
@@ -156,7 +156,7 @@ describe('TypedPhraseField — behaviour', () => {
     });
     render(<Harness phrase="Spring mixer" copy={{ label: 'Copy subject', copiedMessage: 'Copied' }} />);
     const button = screen.getByRole('button', { name: 'Copy subject' });
-    expect(button.className).toMatch(/(^|\s)h-9(\s|$)/);
+    expect(button).toHaveClass('aura-btn', 'aura-btn--touch');
     await act(async () => {
       fireEvent.click(button);
     });
@@ -169,3 +169,36 @@ describe('TypedPhraseField — behaviour', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 });
+
+describe('TypedPhraseField — on AURA (spec 122 US12b)', () => {
+  it('is an AURA text field with the phrase between its label and its box', () => {
+    render(<Harness phrase="Autumn mixer" />);
+    const phrase = screen.getByText('Autumn mixer');
+    const field = phrase.closest('.aura-field');
+    expect(field).not.toBeNull();
+    expect(field!.querySelector('.aura-field__addon, [id$="-addon"]')).toContainElement(phrase);
+  });
+});
+
+describe('TypedPhraseField — a label that already names the phrase (parity, 19 Oct)', () => {
+  it('shows the phrase once — in the label — and the input is the only box and the first stop', () => {
+    render(
+      <TypedPhraseField
+        id="ch"
+        label="Type Scandinavian Design Co., Ltd. to confirm"
+        phrase="Scandinavian Design Co., Ltd."
+        value=""
+        onChange={() => {}}
+        errorMessage="Does not match"
+      />,
+    );
+    const field = screen.getByLabelText('Type Scandinavian Design Co., Ltd. to confirm');
+    // No second, box-like copy of the phrase under the label (it read as a second field).
+    expect(screen.queryByText('Scandinavian Design Co., Ltd.', { exact: true })).toBeNull();
+    expect(document.getElementById('ch-phrase')).toBeNull();
+    expect(field.getAttribute('aria-describedby') ?? '').not.toContain('ch-phrase');
+    // Nothing focusable sits before the input, so the dialog's first focus lands in it.
+    expect(document.querySelector('[tabindex="0"]')).toBeNull();
+  });
+});
+

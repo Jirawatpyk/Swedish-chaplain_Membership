@@ -79,35 +79,26 @@ vi.mock('next/navigation', () => ({
 }));
 
 // Fix round 2 (closedViaSuccessRef reset) — captures the `finalFocus`
-// resolver `BulkApproveConfirmDialog` hands to `AlertDialogContent` on every
-// render. `useDialogFinalFocus` returns a `useCallback` memoized on stable ref
-// identities, so this is the SAME function reference the whole time the
-// component stays mounted; calling it later reflects the LIVE
-// `closedViaSuccessRef.current` at call time, exactly as Base UI would at
-// close. `AlertDialogContent` itself is delegated to the real implementation
-// unchanged — every other test in this file still exercises the real Base UI
-// dialog content; this only taps the one prop.
+// resolver `BulkApproveConfirmDialog` hands to AURA's `Dialog` on every render
+// (spec 122 US12b). Calling it later reflects the LIVE `closedViaSuccessRef`
+// at call time, exactly as the dialog would at close. `Dialog` itself is the
+// real implementation; this only taps the one prop.
 const { alertDialogCapture } = vi.hoisted(() => ({
   alertDialogCapture: {
     finalFocus: undefined as (() => HTMLElement | false | null) | undefined,
   },
 }));
 
-vi.mock('@/components/ui/alert-dialog', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('@/components/ui/alert-dialog')>();
+vi.mock('@jirawatpyk/aura-react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@jirawatpyk/aura-react')>();
   return {
     ...actual,
-    AlertDialogContent: (
-      props: ComponentProps<typeof actual.AlertDialogContent>,
-    ) => {
-      // `finalFocus` on Base UI's Popup is a wider union (bool | RefObject |
-      // callback) — `BulkApproveConfirmDialog` only ever passes the
-      // `useDialogFinalFocus` callback shape, so narrow it for the capture.
+    Dialog: (props: ComponentProps<typeof actual.Dialog>) => {
+      // `BulkApproveConfirmDialog` only ever passes the callback shape.
       alertDialogCapture.finalFocus = props.finalFocus as
         | (() => HTMLElement | false | null)
         | undefined;
-      return <actual.AlertDialogContent {...props} />;
+      return <actual.Dialog {...props} />;
     },
   };
 });
@@ -158,6 +149,20 @@ function renderDialog(
 }
 
 describe('BulkApproveConfirmDialog', () => {
+  // Spec 122 US12b — board `Admin-broadcasts-bulk-approve` on AURA.
+  it('is an AURA alert dialog with an AURA radio group, a danger send-now warning the Confirm points at, and the schedule as an AURA field', async () => {
+    renderDialog({});
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog.closest('.aura-dialog, [class*="aura-dialog"]')).not.toBeNull();
+    const group = screen.getByRole('group', { name: 'When to send' });
+    expect(group).toHaveClass('aura-radio-group');
+    const confirm = screen.getByRole('button', { name: /Approve & send now/ });
+    expect(confirm).toHaveClass('aura-btn');
+    expect(confirm).toHaveAccessibleDescription(/send immediately and cannot be recalled/);
+    await userEvent.click(screen.getByRole('radio', { name: /Schedule/ }));
+    expect(screen.getByLabelText(/Send at/).closest('.aura-field')).not.toBeNull();
+  });
+
   it('shows the recipient total and broadcast count', () => {
     renderDialog({ broadcastCount: 3, selectedCount: 3, totalRecipients: 42 });
     expect(
@@ -329,5 +334,34 @@ describe('BulkApproveConfirmDialog', () => {
     // `closedViaSuccessRef` back to `false` — a Cancel/ESC from here (no new
     // confirm) must return focus to the still-present trigger, not skip it.
     expect(alertDialogCapture.finalFocus?.()).toBe(triggerRef.current);
+  });
+});
+
+/**
+ * Maintainer (19 Oct): the dialog lists the E-Blasts it will approve, as
+ * board `Admin-broadcasts-bulk-approve` draws it. The rows are the queue's
+ * own (nothing fetched); a long selection scrolls inside the list.
+ */
+describe('the list of E-Blasts to approve (maintainer, 19 Oct)', () => {
+  it('lists each selected E-Blast with its member and recipients, in a scrolling list', () => {
+    renderDialog({
+      items: [
+        { broadcastId: 'b1', subject: 'Autumn gala', memberDisplayName: 'Acme Co', recipientCount: 40 },
+        { broadcastId: 'b2', subject: 'Spring mixer', memberDisplayName: 'Nordic Ltd', recipientCount: 1 },
+      ],
+    });
+    const list = screen.getByRole('list', { name: 'E-Blasts to approve' });
+    const items = list.querySelectorAll('li');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent('Autumn gala');
+    expect(items[0]).toHaveTextContent('Acme Co · 40 recipients');
+    expect(items[1]).toHaveTextContent('Nordic Ltd · 1 recipient');
+    expect(list.className).toContain('max-h-48');
+    expect(list.className).toContain('overflow-y-auto');
+  });
+
+  it('shows no list when it is given none', () => {
+    renderDialog();
+    expect(screen.queryByRole('list', { name: 'E-Blasts to approve' })).toBeNull();
   });
 });

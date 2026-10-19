@@ -769,7 +769,7 @@ export async function renderPortalInvoiceDetailView({
             {/* The line items keep their name as the table caption (hidden:
                 the card title already heads the section). Below 640px the
                 list after the table takes over. */}
-            <Table caption={t('linesHeading')} captionHidden>
+            <Table caption={t('linesHeading')} captionHidden bleed>
               <THead>
                 <Tr>
                   <Th>{t('lines.description')}</Th>

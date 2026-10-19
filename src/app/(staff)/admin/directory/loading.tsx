@@ -2,7 +2,8 @@
  * Route-level loading UI for /admin/directory — shimmer skeleton in the final
  * shape for CLS 0 (ux-standards § 2.1). Mirrors the directory layout: header +
  * two generate actions, the Card-wrapped search filter bar + 7-column directory
- * table (via `DirectoryTableSkeleton`), and the recent-exports section. The
+ * table (AURA's table skeleton with the real columns, edge to edge in the card
+ * as the table is), and the recent-exports section. The
  * Members card is the page's own AURA Card with the same props, so it goes
  * flush on a phone exactly as the loaded card does (no frame, no padding, the
  * heading dropped as the page's is `max-sm:sr-only`) and keeps AURA's padding
@@ -15,7 +16,8 @@ import { Card } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
-import { DirectoryTableSkeleton } from '@/components/directory/directory-table-skeleton';
+import { DataTableSkeleton } from '@/components/shell/data-table-skeleton';
+import { DIRECTORY_COLUMN_LAYOUT } from '@/components/directory/directory-table-layout';
 
 const CARD =
   'flex flex-col gap-4 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-5 max-sm:p-4';
@@ -55,7 +57,14 @@ export default async function Loading(): Promise<React.JSX.Element> {
                 <SkeletonBlock className="h-4 w-24" />
               </div>
             </div>
-            <DirectoryTableSkeleton />
+            <DataTableSkeleton
+              label={t('table.caption')}
+              columns={DIRECTORY_COLUMN_LAYOUT.map(({ labelKey, ...column }) => ({
+                ...column,
+                label: t(`table.${labelKey}`),
+              }))}
+              rows={8}
+            />
           </div>
         </Card>
 

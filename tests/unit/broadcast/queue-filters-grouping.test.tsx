@@ -16,7 +16,7 @@
  * since `QueueFilters` is a client component driven entirely by URL state.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { QueueFilters } from '@/components/broadcast/admin/queue-filters';
@@ -56,7 +56,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('splits the status chips into an in-review group and a terminal group', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
+        <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -87,10 +87,10 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
    * this assertion by itself — the count is what went stale here, and it is the
    * only thing in the file that could.
    */
-  it('renders one checkbox per non-retired status across the two groups', () => {
+  it('renders one stage chip per non-retired status across the two groups', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
+        <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
@@ -99,7 +99,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
     // disagree with the real strip: the assertion tracked the component, and
     // nothing tracked the skeleton.
     const offered = OFFERED_BROADCAST_STATUSES;
-    expect(screen.getAllByRole('checkbox')).toHaveLength(offered.length);
+    expect(within(screen.getByRole('group', { name: /^stage$/i })).getAllByRole('button')).toHaveLength(offered.length);
 
     // Positive controls: the count alone passes if the strip renders the wrong
     // eight, and it also passes if a live status were retired by mistake.
@@ -128,11 +128,11 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('renders exactly OFFERED_BROADCAST_STATUSES.length chips with the round on — the number the loading skeleton reserves then', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
+        <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 
-    expect(screen.getAllByRole('checkbox')).toHaveLength(
+    expect(within(screen.getByRole('group', { name: /^stage$/i })).getAllByRole('button')).toHaveLength(
       OFFERED_BROADCAST_STATUSES.length,
     );
     // Both halves named, so a change to either list has to be deliberate twice.
@@ -144,7 +144,7 @@ describe('<QueueFilters> — status chip grouping + Reset placement', () => {
   it('keeps the Reset button adjacent to the chip strip, not pushed to the row edge', () => {
     render(
       <Provider>
-        <QueueFilters memberOptions={[]} stageCounts={null} approvalRoundEnabled />
+        <QueueFilters timeZone="Asia/Bangkok" memberOptions={[]} stageCounts={null} approvalRoundEnabled />
       </Provider>,
     );
 

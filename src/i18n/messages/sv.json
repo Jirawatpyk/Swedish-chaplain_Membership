@@ -3518,6 +3518,8 @@
         },
         "bulk": {
           "selectAria": "Välj utskick",
+          "selectRowAria": "Välj {subject}",
+          "rowNotSelectable": "{subject} väntar inte på granskning",
           "selected": "{count, plural, one {# markerad} other {# markerade}}",
           "toolbarLabel": "Massåtgärder för valda utskick",
           "selectedCount": "{count, plural, one {# markerad} other {# markerade}}",
@@ -3531,6 +3533,8 @@
           "confirm": {
             "title": "Godkänn {count, plural, one {# utskick} other {# utskick}}?",
             "recipientTotal": "Når ~{recipients, plural, one {# mottagare} other {# mottagare}} över {count, plural, one {# utskick} other {# utskick}}.",
+            "itemsLabel": "Utskick att godkänna",
+            "itemMeta": "{member} · {count, plural, one {# mottagare} other {# mottagare}}",
             "overCapNote": "Endast de första {max} av {selected} valda godkänns.",
             "decisionLabel": "När ska det skickas",
             "sendNow": "Skicka nu",
@@ -3558,21 +3562,23 @@
           }
         },
         "card": {
-          "actionsLabel": "Åtgärder",
           "statusLabel": "Steg",
           "whoseTurnLabel": "Vems tur",
-          "timeInStageLabel": "Tid i steget"
+          "timeInStageLabel": "Tid i steget",
+          "review": "Granska",
+          "reviewAria": "Granska {subject}",
+          "recipients": "{count, plural, one {# mottagare} other {# mottagare}}"
         },
         "filters": {
           "formAriaLabel": "Filter för utskickskö",
           "statusLabel": "Steg",
           "memberLabel": "Medlem",
           "memberAll": "Alla medlemmar",
-          "fromDate": "Inskickad från",
-          "toDate": "Inskickad till",
+          "submittedRange": "Inskickad",
           "reset": "Återställ filter",
           "upcomingSends": "Kommande utskick",
           "waitingOnMarketing": "Väntar på marknad",
+          "quickViews": "Snabbvyer",
           "chipCount": "{count, plural, one {# utskick} other {# utskick}}",
           "chipCountsScope": "Antalen gäller alla utskick i varje steg — filtren för medlem, datum och kommande utskick ändrar dem inte."
         },
@@ -3583,7 +3589,7 @@
           "status": "Steg",
           "whoseTurn": "Vems tur",
           "timeInStage": "Tid i steget",
-          "sendTime": "Utskickstid",
+          "sendTime": "Sändtid",
           "actions": "Åtgärder"
         },
         "status": {
@@ -3848,6 +3854,7 @@
           "sendNow": "Godkänn och skicka nu",
           "schedule": "Godkänn och schemalägg"
         },
+        "decisionLabel": "När ska det skickas",
         "scheduleLabel": "Skicka",
         "scheduleHelp": "Minst 5 minuter från nu. Tidszon: Asia/Bangkok.",
         "schedulePreviewLabel": "Skickas:",
