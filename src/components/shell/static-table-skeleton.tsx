@@ -13,6 +13,9 @@
  * module, so the route passes the translated labels in. `inert` with
  * `aria-hidden`: a placeholder takes no keyboard focus; the route's
  * `PageSkeletonShell` announces the load.
+ *
+ * Stand-in until AURA #164 (Addendum 65): AURA's static `Table` has no
+ * `loading` state of its own, as `DataTable` does.
  */
 import { Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';

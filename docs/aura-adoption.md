@@ -188,6 +188,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #164 | the static `Table` has no `loading` state (Addendum 65) | `StaticTableSkeleton` (users, audit) draws AURA `Table` with share-width columns and our `SkeletonBlock` cells; the queue and audience skeletons read their tables' layout modules |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

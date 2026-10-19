@@ -1,11 +1,11 @@
 /**
- * The audience count sits at the end of the filter row from 640px up, as the
- * result count does on every other list (maintainer, 19 Oct 2026). The count
+ * The audience count sits at the end of the filter row from 640px up at every
+ * width, as "131 results" does on Members (maintainer, 19 Oct 2026). The count
  * stays the results' own element (the live region, silent at zero, and the
  * focus target when the last row leaves a filtered view): the results stream
- * in after the filters, so the card's body wraps and places it beside the
- * filter bar when the bar's one-row width leaves room, instead of moving it
- * into the bar (a grid column squeezed the bar onto two rows at 1440).
+ * in after the filters, so the card's body is a row in which the filter bar
+ * takes the width the count leaves (its controls wrap inside it when they
+ * must) and the count keeps its own width, aligned to the bar's first row.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,11 +15,17 @@ const view = readFileSync(join(process.cwd(), 'src/app/(staff)/admin/marketing/a
 const filters = readFileSync(join(process.cwd(), 'src/app/(staff)/admin/marketing/audience/_components/audience-filters.tsx'), 'utf8');
 
 describe('the audience count beside the filters', () => {
-  it('the card body wraps from 640px: the filters take their one-row width as a basis, the count joins them when it fits', () => {
-    expect(view).toMatch(/sm:flex-row sm:flex-wrap/);
+  it('from 640px the filters take the width the count leaves, so the count never drops under them', () => {
+    expect(view).toMatch(/sm:flex-row sm:flex-wrap sm:items-start/);
     expect(view).toMatch(/sm:\[&>\*\]:basis-full/);
-    expect(view).toMatch(/sm:\[&>\[data-audience-filters\]\]:basis-\[max-content\]/);
+    expect(view).toMatch(/sm:\[&>\[data-audience-filters\]\]:basis-0/);
+    expect(view).not.toMatch(/basis-\[max-content\]/);
     expect(view).toMatch(/sm:\[&>#audience-count\]:basis-auto/);
+  });
+
+  it("the count lines up with the bar's first row of controls (36px, 44px on touch)", () => {
+    expect(view).toMatch(/sm:\[&>#audience-count\]:min-h-9/);
+    expect(view).toMatch(/sm:pointer-coarse:\[&>#audience-count\]:min-h-11/);
   });
 
   it('the filters mark their root so the grid can place them', () => {
