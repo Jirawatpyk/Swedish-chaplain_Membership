@@ -353,6 +353,11 @@ html:has(.chamber-viewport-actionbar) {
      text), the groups wrap in DOM order — Reject first, the next step on the
      line nearest the thumb — so Tab follows what is seen (WCAG 2.4.3), and a
      focused control is kept clear of the taller bar (WCAG 2.4.11). */
+  /* The bar is the page's last element: it takes the page's bottom padding,
+     so at the end of the scroll it still meets the screen edge. */
+  .eblast-detail-actions {
+    margin-bottom: calc(-1 * var(--page-padding-bottom));
+  }
   .eblast-detail-actions > div {
     flex-wrap: wrap;
     row-gap: var(--aura-space-2);

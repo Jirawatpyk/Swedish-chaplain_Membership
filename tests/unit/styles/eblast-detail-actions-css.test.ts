@@ -64,4 +64,9 @@ describe('the E-Blast detail action row on a phone', () => {
     expect(ruleAfter(`${only} > :nth-child(2) > div {`)).toMatch(/flex:\s*1 1 auto;/);
     expect(ruleAfter(`${only} > :nth-child(2) > div > button {`)).toMatch(/flex:\s*1 1 auto;/);
   });
+
+  it('reaches the bottom edge at the end of the scroll: the page\'s bottom padding sits above it, not under it', () => {
+    const rule = ruleAfter('.eblast-detail-actions {');
+    expect(rule).toMatch(/margin-bottom:\s*calc\(-1 \* var\(--page-padding-bottom\)\);/);
+  });
 });
