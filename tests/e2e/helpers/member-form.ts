@@ -58,3 +58,27 @@ async function pickFirstOption(page: Page, trigger: Locator): Promise<void> {
   await page.locator('[role="option"]:not([aria-disabled="true"])').first().click();
   await expect(page.getByRole('option')).toHaveCount(0);
 }
+
+/**
+ * Scrolls the member form to the end and waits until it stays there, for an
+ * axe scan on a phone. Mid-page the pinned action bar covers whichever field
+ * sits under it, and axe reports that as an obscured target (target-size,
+ * target-offset; relays R60, R61).
+ *
+ * The create form focuses `#company_name` on load (ux-standards § 7.2). On a
+ * slow `next dev` that focus can land after a scroll and pull the page back
+ * up to the company section, so the scan ran with `#website` under the bar
+ * (R61, create red while edit, which has no autofocus, was green). The caller
+ * waits for that focus first; this then scrolls and checks the page is still
+ * at the end after a pause.
+ */
+export async function scrollFormToEndAtRest(page: Page): Promise<void> {
+  const atEnd = () =>
+    Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 1;
+  await expect(async () => {
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.waitForFunction(atEnd);
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(atEnd)).toBe(true);
+  }).toPass({ timeout: 10_000 });
+}
