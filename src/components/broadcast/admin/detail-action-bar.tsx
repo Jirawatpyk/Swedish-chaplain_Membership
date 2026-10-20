@@ -21,6 +21,7 @@ import { DetailMoreMenu, DetailMoreMenuProvider } from './detail-more-menu';
 export function DetailActionBar({
   start,
   moreLabel,
+  status,
   className,
   children,
 }: {
@@ -28,12 +29,14 @@ export function DetailActionBar({
   /** The ⋯ menu's name ("More actions"). */
   readonly moreLabel: string;
   readonly className?: string | undefined;
+  /** The phone status line (recipients · audience · time in stage); hidden from 640px. */
+  readonly status?: React.ReactNode;
   readonly children?: React.ReactNode;
 }): React.ReactElement {
   return (
     <div className="contents" data-testid="eblast-action-row">
       <DetailMoreMenuProvider>
-        <ActionBar className={cn('chamber-viewport-actionbar eblast-detail-actions', className)} start={start} touchHeight>
+        <ActionBar className={cn('chamber-viewport-actionbar eblast-detail-actions', className)} start={start} status={status} touchHeight>
           {children}
           <DetailMoreMenu label={moreLabel} />
         </ActionBar>

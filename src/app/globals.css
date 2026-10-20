@@ -379,6 +379,11 @@ html:has(.chamber-viewport-actionbar) {
   }
 }
 @media (min-width: 640px) {
+  /* The E-Blast detail's status line is the phone board's only (the desktop
+     board draws the row of buttons alone at the end of the page). */
+  .eblast-detail-actions > div > :first-child {
+    display: none;
+  }
   :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) {
     position: static;
     margin-top: 0;

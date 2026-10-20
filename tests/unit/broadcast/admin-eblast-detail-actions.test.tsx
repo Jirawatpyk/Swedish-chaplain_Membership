@@ -843,4 +843,12 @@ describe('the staff detail page on a phone', () => {
     const html = await renderPage('submitted');
     expect(openTag(html, 'data-stage=')).not.toContain('max-sm:order-');
   });
+
+  it('the bar carries the board\'s status line: recipients · audience · time in stage (parity, 20 Oct)', async () => {
+    const html = await renderPage('submitted');
+    const row = html.slice(html.indexOf('data-testid="eblast-action-row"'));
+    // The translator here echoes keys; the line's words are pinned on the
+    // preview and the duration in stage-duration.test.ts.
+    expect(row).toMatch(/role="status"><span data-bar-status="true">barStatus<\/span>/);
+  });
 });

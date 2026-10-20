@@ -6,7 +6,7 @@
  * results; nothing here reads the database or decides what a user may do.
  * The audit timeline reads the database itself, so it arrives as a slot.
  */
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import { Alert, Card } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -15,6 +15,7 @@ import { RefreshPageButton } from '@/components/shell/refresh-page-button';
 import { StatusBadge } from '@/components/broadcast/admin/status-badge';
 import { ReviewActions } from '@/components/broadcast/admin/review-actions';
 import { DetailActionBar } from '@/components/broadcast/admin/detail-action-bar';
+import { formatStageDuration } from '@/components/broadcast/admin/stage-duration';
 import { OriginalDisclosure } from '@/components/broadcast/admin/original-disclosure';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
 import { ManagerReadonlyBanner } from '@/components/broadcast/admin/manager-readonly-banner';
@@ -142,6 +143,18 @@ export async function BroadcastDetailView({
       : status === 'submitted' || status === 'in_design'
         ? tHeader('roundNone')
         : <EmptyValue label={tHeader('roundNoRound')} />;
+
+  // The phone bar's status line (board `Admin-broadcast-review-mobile`, parity
+  // comment 20 Oct): recipients · audience · time in stage. Hidden from 640px.
+  const barStatus = (
+    <span data-bar-status>
+      {t('barStatus', {
+        recipients: broadcast.estimatedRecipientCount,
+        audience: tSegment(broadcast.segmentType as Parameters<typeof tSegment>[0]),
+        time: formatStageDuration(broadcast.stageEnteredAt, new Date(), await getLocale()),
+      })}
+    </span>
+  );
 
   // Parity comment, 20 Oct (board `Admin-eblast-design-mobile`): while marketing
   // is writing, a phone shows the editor first and the round's facts after it.
@@ -344,6 +357,7 @@ export async function BroadcastDetailView({
       {showActionRow ? (
         <DetailActionBar
           moreLabel={t('moreActions')}
+          status={barStatus}
           className={tailOnPhone}
           start={
             isCancellable || showReject ? (

@@ -39,4 +39,11 @@ describe('the E-Blast detail action row on a phone', () => {
     expect(next).toMatch(/white-space:\s*normal;/);
     expect(next).toMatch(/min-height:\s*2\.75rem;/);
   });
+
+  it('shows the status line on a phone only; from 640px the row is buttons alone, as the desktop board', () => {
+    const at = css.indexOf('@media (min-width: 640px)', css.indexOf('.eblast-detail-actions > div > :last-child > button {'));
+    expect(at).toBeGreaterThan(-1);
+    const rule = css.slice(css.indexOf('.eblast-detail-actions > div > :first-child {', at));
+    expect(rule.slice(0, rule.indexOf('}'))).toMatch(/display:\s*none;/);
+  });
 });
