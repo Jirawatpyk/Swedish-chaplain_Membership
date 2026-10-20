@@ -80,12 +80,12 @@ export function TestCopyButton({
     });
   }
 
-  // Spec 122 US12c-1 — AURA's secondary button with `mail` (send, by the
-  // button-icon rule); `aria-disabled` while it is unavailable, so it keeps focus.
+  // Spec 122 US12c-1 — AURA's ghost button with `mail`, as board
+  // `Admin-eblast-design` draws it; `aria-disabled` while it is unavailable, so it keeps focus.
   return (
     <Button
       type="button"
-      variant="secondary"
+      variant="ghost"
       touchHeight
       icon="mail"
       data-testid="eblast-test-copy"

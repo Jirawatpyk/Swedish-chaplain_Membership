@@ -363,7 +363,34 @@ html:has(.chamber-viewport-actionbar) {
     flex-wrap: nowrap;
     min-width: 0;
   }
+  /* Approve sits inside ReviewActions' wrapper: it stretches too. */
+  .eblast-detail-actions > div > :last-child > div {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .eblast-detail-actions > div > :last-child > div > button,
   .eblast-detail-actions > div > :last-child > button {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: auto;
+    min-height: 2.75rem;
+    white-space: normal;
+  }
+  /* Design state: ⋯ is the end's only control, so Reject takes the free
+     space instead (board `Admin-eblast-design-mobile`). */
+  .eblast-detail-actions > div:has(> :last-child > [data-more-actions]:only-child) > :last-child {
+    flex: 0 0 auto;
+  }
+  .eblast-detail-actions > div:has(> :last-child > [data-more-actions]:only-child) > :nth-child(2) {
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+  .eblast-detail-actions > div:has(> :last-child > [data-more-actions]:only-child) > :nth-child(2) > div {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .eblast-detail-actions > div:has(> :last-child > [data-more-actions]:only-child) > :nth-child(2) > div > button {
     flex: 1 1 auto;
     min-width: 0;
     height: auto;

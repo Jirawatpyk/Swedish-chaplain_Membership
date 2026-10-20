@@ -50,6 +50,7 @@
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { Send } from 'lucide-react';
 import { Alert, Button, Card, Dialog, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
@@ -366,7 +367,7 @@ export function FormattedVersionWorkspace({
   const formError = errorFor(null);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)] lg:items-start">
       <UnsavedChangesGuard armed={dirty && !sending} />
       {/* Spec 122 US12c-1 (board `Admin-eblast-design`) — an AURA card,
           labelled by its own h2, holding AURA fields and buttons. */}
@@ -504,7 +505,7 @@ export function FormattedVersionWorkspace({
               type="button"
               variant="primary"
               touchHeight
-              icon="mail"
+              icon={<Send aria-hidden />}
               data-testid="eblast-send-to-member"
               className={FOOTER_BUTTON}
               aria-disabled={busy || conflict || undefined}

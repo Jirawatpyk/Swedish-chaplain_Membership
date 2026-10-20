@@ -359,4 +359,12 @@ describe('Spec 122 US12c-1 — the formatted-version workspace on AURA', () => {
     const dialog = await screen.findByRole('alertdialog');
     expect(dialog.closest('[class*="aura-dialog"]')).not.toBeNull();
   });
+
+  it('follows board `Admin-eblast-design`: ghost test copy, send icon, cards end at their own content', () => {
+    renderWorkspace();
+    const testCopy = screen.getByTestId('eblast-test-copy');
+    expect(testCopy.className).toContain('aura-btn--ghost');
+    expect(sendButton().querySelector('svg.lucide-send')).not.toBeNull();
+    expect(screen.getByTestId('eblast-format-workspace').parentElement?.className).toContain('lg:items-start');
+  });
 });

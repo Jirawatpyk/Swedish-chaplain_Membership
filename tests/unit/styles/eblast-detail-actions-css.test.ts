@@ -46,4 +46,22 @@ describe('the E-Blast detail action row on a phone', () => {
     const rule = css.slice(css.indexOf('.eblast-detail-actions > div > :first-child {', at));
     expect(rule.slice(0, rule.indexOf('}'))).toMatch(/display:\s*none;/);
   });
+
+  it('stretches the next step across the free space even when it sits in a wrapper (Approve inside ReviewActions)', () => {
+    const wrapper = ruleAfter('.eblast-detail-actions > div > :last-child > div {');
+    expect(wrapper).toMatch(/flex:\s*1 1 auto;/);
+    expect(wrapper).toMatch(/min-width:\s*0;/);
+    const inner = ruleAfter('.eblast-detail-actions > div > :last-child > div > button,');
+    expect(inner).toMatch(/flex:\s*1 1 auto;/);
+  });
+
+  it('gives Reject the free space when ⋯ is the only control at the end (design state, board `Admin-eblast-design-mobile`)', () => {
+    const only = '.eblast-detail-actions > div:has(> :last-child > [data-more-actions]:only-child)';
+    expect(ruleAfter(`${only} > :last-child {`)).toMatch(/flex:\s*0 0 auto;/);
+    const start = ruleAfter(`${only} > :nth-child(2) {`);
+    expect(start).toMatch(/flex:\s*1 1 0;/);
+    expect(start).toMatch(/min-width:\s*0;/);
+    expect(ruleAfter(`${only} > :nth-child(2) > div {`)).toMatch(/flex:\s*1 1 auto;/);
+    expect(ruleAfter(`${only} > :nth-child(2) > div > button {`)).toMatch(/flex:\s*1 1 auto;/);
+  });
 });
