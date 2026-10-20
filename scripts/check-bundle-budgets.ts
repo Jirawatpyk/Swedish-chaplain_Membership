@@ -234,6 +234,7 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   { route: '/portal/broadcasts/new', maxKb: 2100 },
   { route: '/admin/broadcasts', maxKb: 1020 }, // 911.2 KB on AURA (spec 122 US12b)
   { route: '/admin/broadcasts/[id]', maxKb: 980 }, // 872 KB on AURA (spec 122 US12c-1)
+  { route: '/portal/broadcasts/[id]', maxKb: 890 }, // 780.6 KB on AURA (spec 122 US12c-2): ceil(kb/10)*10+100
   { route: '/portal/benefits/e-blasts', maxKb: 1050 },
   { route: '/unsubscribe/[token]', maxKb: 690 },
   // Spec 122 US12a first budgets (AURA templates, broadcast settings, the
