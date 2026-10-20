@@ -733,10 +733,10 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1228 [US12] `MIGRATED_PATHS` and a US12c-1 ratchet block (controls move to US12c-2 / US12d files); preview views (`?view=broadcast-detail&state=…&dialog=…`) and the loading route; budget for `/admin/broadcasts/[id]`.
 - [x] T1229 [US12] Exit: e2e selectors; gates; shots at 1440/390 light and dark; UX and security reviews; draft PR; parity artifact; relay R58 (green on chromium + mobile-chrome, 20 Oct; parity artifact https://claude.ai/artifact/QwkFEefd6eBWCKuXcvKPrz).
 - [x] T1240 [US12] US12c-2 spec session (boards, frames fit, kept deviations) and tasks T1240–T1249.
-- [ ] T1241 [US12] Portal detail frame on AURA: Back via `buttonClass`; stage banner → AURA `Alert` + `StatusPill`; thread-unavailable → AURA `Alert`; fields, content and delivery cards → AURA `Card`; the render moves to a `portal-broadcast-detail-view` taking the page's computed props. Tests: `portal-eblast-sign-off-page`, `portal-eblast-detail-body`.
-- [ ] T1242 [US12] Member sign-off on AURA: decision `Card`, `Button`s with icons, approve `Dialog role="alertdialog"` + `Textarea`; request changes and withdraw on the shell reason dialog; requests and toasts unchanged. Test: `member-sign-off-actions`.
-- [ ] T1243 [US12] The portal's e-mail frames fit the e-mail (`fit`, each in an `EmailFrame`); security review.
-- [ ] T1244 [US12] Loading on `PageSkeletonShell` + AURA skeleton cards; error and not-found on AURA buttons. Tests: `portal-eblast-detail-skeleton`, `portal-eblast-not-found`.
+- [x] T1241 [US12] Portal detail frame on AURA: Back via `buttonClass`; stage banner → AURA `Alert` + `StatusPill`; thread-unavailable → AURA `Alert`; fields, content and delivery cards → AURA `Card`; the render moves to a `portal-broadcast-detail-view` taking the page's computed props. Tests: `portal-eblast-sign-off-page`, `portal-eblast-detail-body`.
+- [x] T1242 [US12] Member sign-off on AURA: decision `Card`, `Button`s with icons, approve `Dialog role="alertdialog"` + `Textarea`; request changes and withdraw on the shell reason dialog; requests and toasts unchanged. Test: `member-sign-off-actions`.
+- [x] T1243 [US12] The portal's e-mail frames fit the e-mail (`fit`, each in an `EmailFrame`); security review.
+- [x] T1244 [US12] Loading on `PageSkeletonShell` + AURA skeleton cards; error and not-found on AURA buttons. Tests: `portal-eblast-detail-skeleton`, `portal-eblast-not-found`.
 - [ ] T1245 [US12] `MIGRATED_PATHS` gains the portal detail and the sign-off (and the clean approval helpers); the ratchet controls move to US12d files; a US12c-2 block.
 - [ ] T1246 [US12] Preview: `aura-portal?view=broadcast-detail&state=…&dialog=…` and the loading route.
 - [ ] T1247 [US12] First budget for `/portal/broadcasts/[id]`.

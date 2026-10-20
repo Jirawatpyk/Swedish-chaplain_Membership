@@ -30,17 +30,14 @@
  * decision controls and the history sit in that slot, so it was the wrong
  * card. It is no longer reserved: the stage-dependent sections below the
  * compare grid all arrive under the fold. And the fields card now has the
- * page's `CardHeader` (the "Subject" overline over the subject heading); the
+ * page's card head (the "Subject" overline over the subject heading); the
  * skeleton drew both bars inside its content.
  */
-import Link from 'next/link';
-import { ArrowLeft } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import { BackLink } from '@/components/portal/back-link';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 
@@ -51,35 +48,29 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        {/* L8 — the settled page's Back link is `self-start`; so is this one, or
-            its label would sit centred full-width and jump left on settle. */}
-        <Link
-          href="/portal/benefits?tab=broadcasts"
-          className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'self-start')}
-        >
-          <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
-          {t('back')}
-        </Link>
+        {/* L8 — the settled page's Back link, the same component and place. */}
+        <BackLink href="/portal/benefits?tab=broadcasts">{t('back')}</BackLink>
         {/* F119 T086 — the stage banner (status badge + whose turn + expiry). */}
         <SkeletonBlock data-testid="detail-stage-banner-skeleton" className="h-16 w-full" />
         {/* Fields card: the header (the "Subject" overline over the subject
             heading), then the dl grid (recipients, submitted, sent, proposed
             and confirmed send time). */}
-        <Card>
-          <CardHeader className="space-y-1">
-            <SkeletonBlock className="h-4 w-16" />
-            <SkeletonBlock className="h-5.5 w-2/3" />
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="flex flex-col gap-1.5">
-                  <SkeletonBlock className="h-3 w-20" />
-                  <SkeletonBlock className="h-5 w-28" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
+        <Card
+          header={
+            <>
+              <SkeletonBlock className="h-4 w-16" />
+              <SkeletonBlock className="h-5.5 w-2/3" />
+            </>
+          }
+        >
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="flex flex-col gap-1.5">
+                <SkeletonBlock className="h-3 w-20" />
+                <SkeletonBlock className="h-5 w-28" />
+              </div>
+            ))}
+          </div>
         </Card>
         {/* The content: the sign-off compare grid — the formatted version
             first, the member's original beside it at ≥ lg. Below lg only the
@@ -87,20 +78,21 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
             sent yet) or two stacked, and reserving one keeps the first
             viewport still either way. Frames are the page's own
             DETAIL_PREVIEW_FRAME_HEIGHT, so the reservation cannot drift. */}
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
           {Array.from({ length: 2 }).map((_, i) => (
-            <Card key={i} className={i === 1 ? 'hidden lg:flex' : undefined}>
-              <CardHeader>
-                <SkeletonBlock className="h-5 w-40" />
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
+            <Card
+              key={i}
+              className={i === 1 ? 'hidden lg:flex' : undefined}
+              header={<SkeletonBlock className="h-5 w-40" />}
+            >
+              <div className="flex flex-col gap-3">
                 <SkeletonBlock className="h-4 w-2/3" />
                 <SkeletonBlock
                   data-testid={i === 0 ? 'detail-content-frame-skeleton' : 'detail-original-frame-skeleton'}
                   className="w-full"
                   style={{ height: DETAIL_PREVIEW_FRAME_HEIGHT }}
                 />
-              </CardContent>
+              </div>
             </Card>
           ))}
         </div>

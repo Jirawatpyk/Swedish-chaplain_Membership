@@ -49,7 +49,7 @@ describe('portal E-Blast detail skeleton reserves the page it precedes (U1)', ()
     // delivery card is NOT reserved — the page renders it only once sending
     // has begun, and on the sign-off stages this view exists for, the
     // decision controls and the history sit in that slot instead.
-    const cards = Array.from(document.querySelectorAll('[data-slot="card"]'));
+    const cards = Array.from(document.querySelectorAll('.aura-card'));
     expect(cards).toHaveLength(3);
     // The banner is reserved ABOVE the fields card, as the page renders it.
     const banner = screen.getByTestId('detail-stage-banner-skeleton');
@@ -62,8 +62,8 @@ describe('portal E-Blast detail skeleton reserves the page it precedes (U1)', ()
     );
     render(await Loading());
 
-    const fields = document.querySelectorAll('[data-slot="card"]')[0]!;
-    const header = Array.from(fields.children).find((el) => el.getAttribute('data-slot') === 'card-header');
+    const fields = document.querySelectorAll('.aura-card')[0]!;
+    const header = Array.from(fields.children).find((el) => el.classList.contains('aura-card__head'));
     expect(header).toBeDefined();
     // The overline label and the subject heading — two bars, as `page.tsx`.
     expect(header!.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(2);
@@ -82,7 +82,7 @@ describe('portal E-Blast detail skeleton reserves the page it precedes (U1)', ()
 
     // …and it sits in the SECOND card (the grid's first), after the fields
     // card; the original's frame beside it is reserved at ≥ lg only.
-    const cards = Array.from(document.querySelectorAll('[data-slot="card"]'));
+    const cards = Array.from(document.querySelectorAll('.aura-card'));
     expect(cards[1]?.contains(frame)).toBe(true);
     const original = screen.getByTestId('detail-original-frame-skeleton');
     expect(cards[2]?.contains(original)).toBe(true);
