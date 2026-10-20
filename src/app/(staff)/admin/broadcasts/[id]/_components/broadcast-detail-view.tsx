@@ -26,6 +26,7 @@ import {
   type StartConfirm,
 } from '@/components/broadcast/approval/start-formatted-version-action';
 import { cn } from '@/lib/utils';
+import { turnBar, type TurnBar } from './turn-bar';
 import { VersionThread, hasThreadHistory, type VersionThreadModel } from '@/components/broadcast/approval/version-thread';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 import { EmailFrame } from '@/components/broadcast/email-frame';
@@ -56,6 +57,36 @@ const TONE_CLASS = {
 } as const;
 function toned(n: number, tone: keyof typeof TONE_CLASS): string {
   return n > 0 ? TONE_CLASS[tone] : 'tabular-nums';
+}
+
+type TurnKey = 'review' | 'reviewNoFormat' | 'design' | 'awaitingMember' | 'changesRequested' | 'confirmSchedule' | 'confirmScheduleNoProposal';
+
+function turnBarText(
+  bar: TurnBar | null,
+  turn: string,
+  t: (key: TurnKey, values: Record<string, string | number>) => string,
+  date: (d: Date) => string,
+): string | null {
+  if (bar === null) return null;
+  switch (bar.kind) {
+    case 'review':
+      return t(bar.canFormat ? 'review' : 'reviewNoFormat', { turn });
+    case 'design':
+      return t('design', { turn });
+    case 'awaitingMember':
+      return t('awaitingMember', { version: bar.version, sentAt: date(bar.sentAt), expiresAt: date(bar.expiresAt) });
+    case 'changesRequested':
+      return t('changesRequested', { turn, version: bar.nextVersion });
+    case 'confirmSchedule':
+      return bar.proposedAt === null
+        ? t('confirmScheduleNoProposal', { turn })
+        : t('confirmSchedule', { turn, proposedAt: date(bar.proposedAt) });
+    default: {
+      const _exhaustive: never = bar;
+      void _exhaustive;
+      return null;
+    }
+  }
 }
 
 export interface BroadcastDetailViewProps {
@@ -190,6 +221,20 @@ export async function BroadcastDetailView({
   const afterEditorOnPhone = showWorkspace ? 'max-sm:order-2' : undefined;
   const tailOnPhone = showWorkspace ? 'max-sm:order-3' : undefined;
 
+  const tTurn = await getTranslations('admin.broadcasts.review.turnBar');
+  const turnText = turnBarText(
+    turnBar({
+      status,
+      round,
+      memberApprovalOn,
+      stageEnteredAt: broadcast.stageEnteredAt,
+      proposedSendAt: broadcast.proposedSendAt,
+    }),
+    tTurn(isReadOnlyManager ? 'marketing' : 'you'),
+    (key, values) => tTurn(key, values),
+    (d) => fmt.format(d),
+  );
+
   return (
     <DetailContainer>
       {/* B3 UX hardening — the status badge sits in `role="status"` so AT
@@ -204,6 +249,15 @@ export async function BroadcastDetailView({
         }
       />
       {isReadOnlyManager ? <ManagerReadonlyBanner /> : null}
+
+      {/* The whose-turn bar (spec 122 US12c-1 follow-up, 20 Oct): who acts
+          next and what, as the boards draw it under the header. A manager
+          reads it as marketing's turn; an admin as their own. */}
+      {turnText !== null ? (
+        <Alert tone="info" role="note" data-testid="eblast-turn-bar">
+          <span className="block break-words leading-relaxed">{turnText}</span>
+        </Alert>
+      ) : null}
 
       {/* F119 PR-A — "marketing sees why it is blocked": the stored reason,
           translated (never the raw value, which can be provider free text),

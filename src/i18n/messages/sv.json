@@ -3642,6 +3642,17 @@
           "complained": "Klagomål",
           "caption": "{recipients, plural, one {# mottagare} other {# mottagare}} · från e-postleverantörens leveranshändelser. Mjuk studs = ett tillfälligt fel där leverantören försökte leverera igen. Öppningar och klick spåras inte."
         },
+        "turnBar": {
+          "you": "Din tur",
+          "marketing": "Marknadsföringens tur",
+          "review": "{turn} — godkänn det som inskickat, starta en formaterad version eller avvisa det.",
+          "reviewNoFormat": "{turn} — godkänn det som inskickat eller avvisa det.",
+          "design": "{turn} — gör klart den formaterade versionen och skicka den till medlemmen.",
+          "awaitingMember": "Medlemmens tur — version {version} skickades {sentAt}. Om ingen svarar löper begäran ut {expiresAt}.",
+          "changesRequested": "{turn} — starta formaterad version {version} för att svara på medlemmens ändringar.",
+          "confirmSchedule": "{turn} — bekräfta sändningstiden. Medlemmen föreslog {proposedAt}.",
+          "confirmScheduleNoProposal": "{turn} — bekräfta sändningstiden."
+        },
         "bodyRenderFailedTitle": "Innehållet kunde inte renderas säkert",
         "bodyRenderFailedHint": "Saneringen kunde inte bearbeta detta utskick. Godkännande är blockerat — kontakta drift för utredning.",
         "batchLoadFailedTitle": "Detaljer per batch är tillfälligt otillgängliga",

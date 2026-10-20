@@ -111,6 +111,11 @@ const renderBroadcastPreviewMock = vi.fn();
 // F119 T051 — the page gates Cancel on the Domain `canCancel`; the real
 // policy, not a copy of its rule.
 vi.mock('@/modules/broadcasts', async () => ({
+  memberApprovalExpiresAt: (
+    await vi.importActual<typeof import('@/modules/broadcasts/domain/approval/member-approval-expiry')>(
+      '@/modules/broadcasts/domain/approval/member-approval-expiry',
+    )
+  ).memberApprovalExpiresAt,
   canTransition: (
     await vi.importActual<typeof import('@/modules/broadcasts/domain/policies/broadcast-status-transitions')>(
       '@/modules/broadcasts/domain/policies/broadcast-status-transitions',

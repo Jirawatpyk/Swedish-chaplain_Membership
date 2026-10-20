@@ -3642,6 +3642,17 @@
           "complained": "Complained",
           "caption": "{recipients, plural, one {# recipient} other {# recipients}} · from the email provider's delivery events. Soft-bounced = a temporary failure the provider retried. Opens and clicks aren't tracked."
         },
+        "turnBar": {
+          "you": "Your turn",
+          "marketing": "Marketing's turn",
+          "review": "{turn} — approve it as submitted, start a formatted version, or reject it.",
+          "reviewNoFormat": "{turn} — approve it as submitted, or reject it.",
+          "design": "{turn} — finish the formatted version and send it to the member.",
+          "awaitingMember": "Member's turn — version {version} was sent on {sentAt}. If nobody responds, the request expires on {expiresAt}.",
+          "changesRequested": "{turn} — start formatted version {version} to answer the member's changes.",
+          "confirmSchedule": "{turn} — confirm the send time. The member proposed {proposedAt}.",
+          "confirmScheduleNoProposal": "{turn} — confirm the send time."
+        },
         "bodyRenderFailedTitle": "Body could not be rendered safely",
         "bodyRenderFailedHint": "The sanitiser failed to process this broadcast. Approve is blocked — contact ops to investigate.",
         "batchLoadFailedTitle": "Per-batch breakdown temporarily unavailable",
