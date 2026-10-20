@@ -600,15 +600,18 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
 
 /**
  * WCAG 4.1.2 by hand for the frames the scan excludes (header note: axe cannot
- * enter a `sandbox=""` frame). Counted, not `.first()`: a screen that renders
- * one frame where it should render two would otherwise pass.
+ * enter a sandboxed frame). Counted, not `.first()`: a screen that renders
+ * one frame where it should render two would otherwise pass. The staff
+ * detail's read-only frames fit the e-mail and so carry `allow-same-origin`
+ * (spec 122 US12c-1, security review 20 Oct); every frame stays scriptless.
  */
 async function expectFramesTitled(page: Page, expected: number): Promise<void> {
   const frames = page.locator('iframe[srcdoc]:visible');
   await expect(frames).toHaveCount(expected);
   for (let i = 0; i < expected; i++) {
     await expect(frames.nth(i)).toHaveAttribute('title', /.+/);
-    await expect(frames.nth(i)).toHaveAttribute('sandbox', '');
+    await expect(frames.nth(i)).toHaveAttribute('sandbox', /^(|allow-same-origin)$/);
+    await expect(frames.nth(i)).not.toHaveAttribute('sandbox', /allow-scripts/);
   }
 }
 
