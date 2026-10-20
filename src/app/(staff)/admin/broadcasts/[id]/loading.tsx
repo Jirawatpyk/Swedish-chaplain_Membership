@@ -66,7 +66,7 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
 
       {/* "Approval round" — whose turn, time in stage, round, proposed, scheduled. */}
       <Card header={<SkeletonBlock className="h-6 w-36" />}>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
           <FieldSkeletons count={5} />
         </div>
       </Card>
@@ -99,19 +99,33 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
         ))}
       </div>
 
-      {/* Audit timeline. */}
-      <SkeletonBlock className="h-40 w-full" />
+      {/* "Lifecycle timeline" — an AURA card, one row per step. */}
+      <Card header={<SkeletonBlock className="h-6 w-40" />}>
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          {Array.from({ length: 2 }, (_, i) => (
+            <div key={i} className="flex items-start gap-[var(--aura-space-3)]">
+              <SkeletonBlock className="size-4 shrink-0 rounded-full" />
+              <div className="min-w-0 flex-1 space-y-1">
+                <SkeletonBlock className="h-5 w-24" />
+                <SkeletonBlock className="h-4 w-full max-w-72" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
       {/* The action row — the destructive actions at the start, the next step
-          at the end (AURA buttons, h-9; 44 px on touch). */}
+          at the end (AURA buttons, h-9; 44 px on touch). Below 640px Cancel and
+          Start sit in a ⋯ menu: Reject · Approve · ⋯. */}
       <div data-skeleton="action-row" className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-2">
-          <SkeletonBlock className="h-9 w-28 max-sm:h-11" />
+          <SkeletonBlock className="h-9 w-28 max-sm:hidden" />
           <SkeletonBlock className="h-9 w-24 max-sm:h-11" />
         </div>
         <div className="flex gap-2">
-          <SkeletonBlock className="h-9 w-40 max-sm:h-11" />
+          <SkeletonBlock className="h-9 w-40 max-sm:hidden" />
           <SkeletonBlock className="h-9 w-24 max-sm:h-11" />
+          <SkeletonBlock className="hidden size-11 max-sm:block" />
         </div>
       </div>
     </DetailContainer>

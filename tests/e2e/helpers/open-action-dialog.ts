@@ -29,3 +29,21 @@ export async function openActionDialog(
     await expect(dialog).toBeVisible({ timeout: 2_000 });
   }).toPass({ timeout: 15_000 });
 }
+
+/**
+ * Opens "Start formatted version"'s confirmation from wherever the row puts
+ * it: its own button from 640 px, the ⋯ menu below (parity comment, 20 Oct;
+ * board `Admin-broadcast-review-mobile`). Only one of the two is visible.
+ */
+export async function openStartConfirmation(page: Page): Promise<void> {
+  const start = page.locator('[data-testid="eblast-start-version"]:visible');
+  const more = page.locator('[data-testid="eblast-more-actions"]:visible');
+  await expect(start.or(more), 'Start is absent — is FEATURE_EBLAST_MEMBER_APPROVAL on for this server?').toBeVisible();
+  if ((await start.count()) > 0) {
+    await openActionDialog(page, start);
+    return;
+  }
+  await openActionDialog(page, more, page.getByRole('menu'));
+  await page.getByRole('menuitem', { name: /start formatted version/i }).click();
+  await expect(page.getByRole('alertdialog')).toBeVisible();
+}

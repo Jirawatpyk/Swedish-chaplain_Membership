@@ -57,6 +57,7 @@ import { approvalErrorMessage, readErrorCode } from './approval-error';
 import { InlineError } from './inline-error';
 import { InlineWarning } from './inline-warning';
 import { useFocusRefusal } from './use-focus-refusal';
+import { useDetailMoreEntry } from '@/components/broadcast/admin/detail-more-menu';
 
 const DIALOG_ERROR_ID = 'eblast-start-version-error';
 
@@ -88,9 +89,12 @@ export function StartFormattedVersionAction({
   const [pending, startTransition] = useTransition();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closedViaSuccessRef = useRef(false);
-  const finalFocus = useDialogFinalFocus(triggerRef, undefined, closedViaSuccessRef);
-  useFocusRefusal(dialogError, DIALOG_ERROR_ID);
   const asks = confirm !== 'none';
+  // Secondary (it asks first): inside the staff detail's bar it folds into ⋯
+  // below 640px. As the next step (no confirmation) it stays a button.
+  const more = useDetailMoreEntry({ id: 'start', order: 1, label: t('button'), icon: 'pencil' }, triggerRef, asks);
+  const finalFocus = useDialogFinalFocus(more.returnFocusRef, undefined, closedViaSuccessRef);
+  useFocusRefusal(dialogError, DIALOG_ERROR_ID);
   const voids = confirm === 'voids_approval';
 
   /** T086a V1 — see the docblock: the dialog paths get this from `finalFocus`. */
@@ -150,6 +154,9 @@ export function StartFormattedVersionAction({
         variant={asks ? 'secondary' : 'primary'}
         touchHeight
         icon="pencil"
+        className={more.folded ? 'max-sm:hidden' : undefined}
+        onPointerDown={more.markInline}
+        onKeyDown={more.markInline}
         loading={pending && !confirmOpen}
         aria-disabled={pending || undefined}
         onClick={() => {

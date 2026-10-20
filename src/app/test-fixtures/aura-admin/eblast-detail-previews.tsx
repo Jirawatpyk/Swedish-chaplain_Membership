@@ -7,7 +7,9 @@
  * guards and the reads; the affordance decisions below mirror its rules for
  * each stage, so the preview shows what an admin (or a manager) would get.
  */
+import { getTranslations } from 'next-intl/server';
 import { BroadcastDetailView, type BroadcastDetailViewProps } from '@/app/(staff)/admin/broadcasts/[id]/_components/broadcast-detail-view';
+import { AuditTimelineView } from '@/components/broadcast/admin/audit-timeline';
 import type { VersionThreadModel } from '@/components/broadcast/approval/version-thread';
 import type { PreviewState } from '@/components/broadcast/use-preview-html';
 import type { BroadcastStatus, BroadcastVersion } from '@/modules/broadcasts';
@@ -148,7 +150,7 @@ export async function renderBroadcastDetailPreview(state: string | undefined) {
     bodyRenderFailed: false,
     imagesEnabled: true,
     threadModel: round >= 1 ? thread(fmt, status === 'changes_requested' ? 'changes' : status === 'awaiting_member_approval' ? 'none' : 'approved') : null,
-    audit: null,
+    audit: await auditFixture(status, fmt),
     showActionRow: canWrite && (cancellable || showApprove || showReject || showStart || showSchedule),
     isCancellable: cancellable,
     showStart,
@@ -158,4 +160,28 @@ export async function renderBroadcastDetailPreview(state: string | undefined) {
     showReject,
   };
   return BroadcastDetailView(props);
+}
+
+/** The lifecycle rows the audit log would hold for each stage (the real page reads them). */
+async function auditFixture(status: BroadcastStatus, fmt: Intl.DateTimeFormat): Promise<React.ReactElement> {
+  const t = await getTranslations('admin.broadcasts.review.audit');
+  const member = t('actorBy', { actor: 'anna.lindqvist@lindqvist.example' });
+  const staff = t('actorBy', { actor: 'malin.berg@swecham.example' });
+  const system = t('actorBy', { actor: t('actorSystem') });
+  const rows: Array<[string, number, string]> = [
+    ['drafted', 50, member],
+    ['submitted', 48, member],
+  ];
+  if (status === 'sent' || status === 'sending' || status === 'failed_to_dispatch') rows.push(['approved', 20, staff], ['sendStarted', 1, system]);
+  if (status === 'sent') rows.push(['sent', 0.9, system]);
+  if (status === 'failed_to_dispatch') rows.push(['failedToDispatch', 0.9, system]);
+  return (
+    <AuditTimelineView
+      title={t('title')}
+      events={rows.map(([key, hours, actor]) => {
+        const at = ago(hours);
+        return { key, label: t(key), instant: at.toISOString(), when: fmt.format(at), actor, actorId: 'u1' };
+      })}
+    />
+  );
 }

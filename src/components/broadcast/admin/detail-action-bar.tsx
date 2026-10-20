@@ -1,6 +1,8 @@
 'use client';
 
 import { ActionBar } from '@jirawatpyk/aura-react';
+import { cn } from '@/lib/utils';
+import { DetailMoreMenu, DetailMoreMenuProvider } from './detail-more-menu';
 
 /**
  * Spec 122 US12c-1 — the staff E-Blast detail page's action row (board
@@ -10,21 +12,32 @@ import { ActionBar } from '@jirawatpyk/aura-react';
  * to the bottom of the screen on a phone (`Admin-broadcast-review-mobile`);
  * from 640px it is a plain row at the end of the page (`globals.css`).
  *
+ * Below 640px the secondary actions fold into one ⋯ (`detail-more-menu`,
+ * parity comment 20 Oct), so the bar holds one line: Reject, the next step, ⋯.
+ *
  * The wrapper is `display: contents`, so the test id rides on the page without
  * becoming the sticky bar's containing block — the bar sticks within the page.
  */
 export function DetailActionBar({
   start,
+  moreLabel,
+  className,
   children,
 }: {
   readonly start?: React.ReactNode;
+  /** The ⋯ menu's name ("More actions"). */
+  readonly moreLabel: string;
+  readonly className?: string | undefined;
   readonly children?: React.ReactNode;
 }): React.ReactElement {
   return (
     <div className="contents" data-testid="eblast-action-row">
-      <ActionBar className="chamber-viewport-actionbar eblast-detail-actions" start={start} touchHeight>
-        {children}
-      </ActionBar>
+      <DetailMoreMenuProvider>
+        <ActionBar className={cn('chamber-viewport-actionbar eblast-detail-actions', className)} start={start} touchHeight>
+          {children}
+          <DetailMoreMenu label={moreLabel} />
+        </ActionBar>
+      </DetailMoreMenuProvider>
     </div>
   );
 }

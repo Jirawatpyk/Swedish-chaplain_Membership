@@ -50,7 +50,7 @@ describe('admin E-Blast detail skeleton reserves the two-column content grid (T0
 
   it('spec 122 US12c-1 — every card is an AURA card and every bar the shared skeleton block', () => {
     const { container } = render(<AdminBroadcastDetailLoading />);
-    expect(container.querySelectorAll('.aura-card')).toHaveLength(4);
+    expect(container.querySelectorAll('.aura-card')).toHaveLength(5); // round, submission, two content cards, the lifecycle timeline
     expect(container.querySelector('[data-slot="card"], [data-slot="skeleton"]')).toBeNull();
   });
 

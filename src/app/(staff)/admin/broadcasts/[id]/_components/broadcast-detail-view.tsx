@@ -143,6 +143,12 @@ export async function BroadcastDetailView({
         ? tHeader('roundNone')
         : <EmptyValue label={tHeader('roundNoRound')} />;
 
+  // Parity comment, 20 Oct (board `Admin-eblast-design-mobile`): while marketing
+  // is writing, a phone shows the editor first and the round's facts after it.
+  // Visual order only below 640px; neither card holds a focusable control.
+  const afterEditorOnPhone = showWorkspace ? 'max-sm:order-2' : undefined;
+  const tailOnPhone = showWorkspace ? 'max-sm:order-3' : undefined;
+
   return (
     <DetailContainer>
       {/* B3 UX hardening — the status badge sits in `role="status"` so AT
@@ -215,8 +221,15 @@ export async function BroadcastDetailView({
           whose turn, time in the stage, the round, and the member's proposed
           time beside the confirmed one (FR-016 — both, separately). The
           stage itself is the header badge above. */}
-      <Card titleId="eblast-stage-title" title={tHeader('title')} headingLevel={2} data-stage={stageOf(status)}>
-        <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <Card
+        titleId="eblast-stage-title"
+        title={tHeader('title')}
+        headingLevel={2}
+        data-stage={stageOf(status)}
+        className={afterEditorOnPhone}
+      >
+        {/* Two columns on a phone too (board `Admin-broadcast-review-mobile`). */}
+        <dl className="grid grid-cols-2 gap-3 lg:grid-cols-3">
               <Field
                 label={tHeader('turn')}
                 value={turn === null ? <EmptyValue label={tHeader('turnValue.none')} /> : tHeader(`turnValue.${turn}`)}
@@ -236,7 +249,7 @@ export async function BroadcastDetailView({
         </dl>
       </Card>
 
-      <Card titleId="eblast-details-title" title={tHeader('detailsTitle')} headingLevel={2}>
+      <Card titleId="eblast-details-title" title={tHeader('detailsTitle')} headingLevel={2} className={afterEditorOnPhone}>
             {/* B1 UX hardening — `<dl>/<dt>/<dd>` so each label↔value pair is
                 announced as a unit (WCAG 1.3.1). */}
             <dl className="grid gap-3 sm:grid-cols-2">
@@ -316,10 +329,12 @@ export async function BroadcastDetailView({
       )}
 
       {threadModel !== null && hasThreadHistory(threadModel) ? (
-        <VersionThread audience="staff" model={threadModel} />
+        <div className={tailOnPhone}>
+          <VersionThread audience="staff" model={threadModel} />
+        </div>
       ) : null}
 
-      {audit}
+      {audit ? <div className={tailOnPhone}>{audit}</div> : null}
 
       {/* Spec 122 US12c-1 — the stage's staff actions, as the board groups
           them: the destructive ones (Cancel, Reject) at the start, the next
@@ -328,6 +343,8 @@ export async function BroadcastDetailView({
           disabled. "Send to member" lives with the working copy it sends. */}
       {showActionRow ? (
         <DetailActionBar
+          moreLabel={t('moreActions')}
+          className={tailOnPhone}
           start={
             isCancellable || showReject ? (
               <>

@@ -30,6 +30,7 @@ import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@jirawatpyk/aura-react';
 import { CancelBroadcastDialog } from '@/components/broadcast/cancel-broadcast-dialog';
+import { useDetailMoreEntry } from '@/components/broadcast/admin/detail-more-menu';
 
 export interface CancelBroadcastActionProps {
   readonly broadcastId: string;
@@ -81,12 +82,23 @@ export function CancelBroadcastAction({
   const t = useTranslations(cfg.labelNamespace);
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // Inside the staff detail's bar it folds into ⋯ below 640px (board `Admin-broadcast-review-mobile`).
+  const more = useDetailMoreEntry({ id: 'cancel', order: 2, label: t(cfg.labelKey), icon: 'ban', danger: true }, triggerRef);
 
   return (
     <>
       {/* Spec 122 US12c-1 — AURA's danger outline button (boards
           `Admin-broadcast-cancel`, `Portal-broadcast-cancel`). */}
-      <Button variant="danger-secondary" icon="ban" touchHeight ref={triggerRef} onClick={() => setOpen(true)}>
+      <Button
+        variant="danger-secondary"
+        icon="ban"
+        touchHeight
+        ref={triggerRef}
+        className={more.folded ? 'max-sm:hidden' : undefined}
+        onPointerDown={more.markInline}
+        onKeyDown={more.markInline}
+        onClick={() => setOpen(true)}
+      >
         {t(cfg.labelKey)}
       </Button>
       <CancelBroadcastDialog
@@ -97,7 +109,7 @@ export function CancelBroadcastAction({
         toastNamespace={cfg.toastNamespace}
         reasonRequired={cfg.reasonRequired}
         successToastKey={cfg.successToastKey}
-        triggerRef={triggerRef}
+        triggerRef={more.returnFocusRef}
         subject={subject}
       />
     </>

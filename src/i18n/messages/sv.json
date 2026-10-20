@@ -3632,6 +3632,7 @@
       "review": {
         "title": "Granska utskick",
         "subtitle": "Granska innehåll + godkänn, avvisa eller avbryt.",
+        "moreActions": "Fler åtgärder",
         "bodyRenderFailedTitle": "Innehållet kunde inte renderas säkert",
         "bodyRenderFailedHint": "Saneringen kunde inte bearbeta detta utskick. Godkännande är blockerat — kontakta drift för utredning.",
         "batchLoadFailedTitle": "Detaljer per batch är tillfälligt otillgängliga",

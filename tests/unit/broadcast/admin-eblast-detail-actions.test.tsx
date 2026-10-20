@@ -801,3 +801,46 @@ describe('Spec 122 US12c-1 — the member original folds on a phone', () => {
     expect(block).toContain('<summary');
   });
 });
+
+/**
+ * Spec 122 US12c-1 (parity comments, 20 Oct; boards
+ * `Admin-broadcast-review-mobile`, `Admin-eblast-design-mobile`) — the phone
+ * layout: the Approval round reads in two columns, and while marketing is
+ * writing, the editor comes first and the round's facts follow it.
+ */
+describe('the staff detail page on a phone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    role = 'admin';
+    flagOn = true;
+    decisions = [];
+    warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } });
+  });
+
+  const openTag = (html: string, marker: string): string => {
+    const at = html.indexOf(marker);
+    expect(at, marker).toBeGreaterThan(-1);
+    const start = html.lastIndexOf('<', at);
+    return html.slice(start, html.indexOf('>', at) + 1);
+  };
+
+  it('lays the Approval round out in two columns at every width', async () => {
+    const html = await renderPage('submitted');
+    const stage = html.slice(html.indexOf('data-stage='));
+    const dl = stage.slice(stage.indexOf('<dl'), stage.indexOf('>', stage.indexOf('<dl')) + 1);
+    expect(dl).toMatch(/class="[^"]*(?<![\w:-])grid-cols-2/);
+  });
+
+  it('in design, moves the round and the submission after the editor below 640px', async () => {
+    const html = await renderPage('in_design');
+    expect(openTag(html, 'data-stage=')).toContain('max-sm:order-2');
+    const beforeDetailsTitle = html.slice(0, html.indexOf('id="eblast-details-title"'));
+    const detailsCard = beforeDetailsTitle.slice(beforeDetailsTitle.lastIndexOf('<section'));
+    expect(detailsCard).toContain('max-sm:order-2');
+  });
+
+  it('outside design, keeps the page order on a phone', async () => {
+    const html = await renderPage('submitted');
+    expect(openTag(html, 'data-stage=')).not.toContain('max-sm:order-');
+  });
+});

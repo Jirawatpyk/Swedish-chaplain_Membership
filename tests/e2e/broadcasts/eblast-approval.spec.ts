@@ -23,7 +23,7 @@ import { expect, test } from '../fixtures';
 import { signInAsAdmin } from '../helpers/admin-session';
 import { seedMemberDetailBroadcast, wipeE2EMemberBroadcasts } from '../helpers/broadcasts-seed';
 import { formatAndSendAsMarketing } from '../helpers/eblast-approval-flow';
-import { openActionDialog } from '../helpers/open-action-dialog';
+import { openStartConfirmation } from '../helpers/open-action-dialog';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL_EMPTY;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD_EMPTY;
@@ -52,9 +52,7 @@ test.describe('F119 T063 — the staff format surface', () => {
 
     // Next keeps the previous segment's DOM hidden after a client navigation,
     // so every locator is scoped to what is visible.
-    const start = page.locator('[data-testid="eblast-start-version"]:visible');
-    await expect(start, 'Start is absent — is FEATURE_EBLAST_MEMBER_APPROVAL on for this server?').toBeVisible();
-    await openActionDialog(page, start);
+    await openStartConfirmation(page);
     // From `submitted`, starting ends approve-as-submitted, so it asks first (UX review M3).
     await page.locator('[data-testid="eblast-start-version-confirm"]:visible').click();
 
