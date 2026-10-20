@@ -7,9 +7,8 @@ import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
 import { staffThreadModel } from '@/components/broadcast/approval/version-thread';
 import { type PreviewState } from '@/components/broadcast/use-preview-html';
 import { BroadcastDetailView } from './_components/broadcast-detail-view';
+import { detailActions } from './_components/detail-actions';
 import {
-  canCancel,
-  canTransition,
   isEblastMemberApprovalEnabled,
   isF71aUs2Enabled,
   listBroadcastVersions,
@@ -174,33 +173,13 @@ export default async function AdminBroadcastDetailPage({
   const unsafeImages = warnings !== null && IMAGE_CHECK_STATUSES.has(status) ? warnings.unsafeImages : [];
 
   // ---- Affordances (the SERVER decides which controls exist) ---------------
-  //
-  // T152 — the flag gates the `submitted → in_design` edge in the use case;
-  // hiding the button is a UI affordance only, never the gate. From
-  // `changes_requested`, and from `member_approved`/`approved` once a round
-  // has run, the route answers 201 in both flag states (FR-034 — an in-flight
-  // E-Blast stays completable), so the control follows the route, not the flag.
-  const voidsApproval = (status === 'member_approved' || status === 'approved') && round >= 1;
-  const showStart =
-    canWrite && ((status === 'submitted' && memberApprovalOn) || status === 'changes_requested' || voidsApproval);
+  // One function for the page and the preview harness (`detail-actions.ts`).
+  const { showStart, startConfirm, showSchedule, isCancellable, showApprove, showReject, showActionRow } =
+    detailActions({ status, round, canWrite, canSend, memberApprovalOn, bodyRenderFailed });
   const showWorkspace = canWrite && workingCopy !== null && original !== null;
   // Rendered only when it is shown read-only (the workspace previews its own).
   const shownPreview =
     shownVersion === null || showWorkspace ? null : await render(shownVersion.subject, shownVersion.bodyHtml);
-  const showSchedule = canSend && (status === 'member_approved' || (status === 'approved' && round >= 1));
-  // M3 — what starting a version costs from this stage, so the island asks
-  // (or not) before it posts: from `submitted` it ends approve-as-submitted.
-  const startConfirm = status === 'submitted' ? 'leaves_submitted' : voidsApproval ? 'voids_approval' : 'none';
-  // F119 T051 — Cancel reads the Domain cut-off (`canCancel`), the same policy
-  // the `/cancel` use case enforces. B1 — Approve is approve-AS-SUBMITTED, so
-  // it stays `submitted`-only (and refuses content the server could not
-  // render, IMP-3); Reject follows the Domain edge T081 widened
-  // (`canTransition(status, 'rejected')` — every pre-send stage but
-  // `approved`), which is what the `/reject` use case enforces.
-  const isCancellable = canCancel(status);
-  const showApprove = canWrite && status === 'submitted' && !bodyRenderFailed;
-  const showReject = canWrite && canTransition(status, 'rejected');
-  const showActionRow = canWrite && (isCancellable || showApprove || showReject || showStart || showSchedule);
 
   // F119 PR-A — why a `failed_to_dispatch` E-Blast was not sent. The stored
   // reason is a lookup hint (`failureReasonToken`), never display text; a token
