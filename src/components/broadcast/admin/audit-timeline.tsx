@@ -3,7 +3,10 @@
  * events for a broadcast from the F1-owned `audit_log` table.
  *
  * Shows: drafted → submitted → approved → sending → sent / rejected /
- * cancelled / failed_to_dispatch.
+ * cancelled / failed_to_dispatch, plus the approval round's own steps
+ * (spec 122 US12c-1 follow-up, 20 Oct): the member's approval or request
+ * for changes and marketing's send-time confirmation. A round never emits
+ * `broadcast_approved` (that is approve-as-submitted only).
  *
  * F1's `auditLog` schema is intentionally NOT exposed in the public
  * `@/modules/auth` barrel (Constitution Principle III — append-only
@@ -27,6 +30,8 @@ interface AuditRow {
   readonly timestamp: string | Date;
   /** Resolved via LEFT JOIN users (UX-C6). Null for system actors. */
   readonly actorEmail: string | null;
+  /** `broadcast_schedule_confirmed` only: how marketing set the time (`cancel` clears it). */
+  readonly mode: string | null;
 }
 
 function formatActor(row: AuditRow, t: (key: string) => string): string {
@@ -59,7 +64,44 @@ const RELEVANT_EVENTS = [
   'broadcast_rejected',
   'broadcast_cancelled',
   'broadcast_failed_to_dispatch',
+  // The approval round's steps; these rows key the E-Blast as `broadcast_id`.
+  'broadcast_member_approved',
+  'broadcast_member_changes_requested',
+  'broadcast_schedule_confirmed',
 ] as const;
+
+type TimelineLabelKey =
+  | 'drafted'
+  | 'submitted'
+  | 'approved'
+  | 'rejected'
+  | 'cancelled'
+  | 'sendStarted'
+  | 'sent'
+  | 'failedToDispatch'
+  | 'memberApproved'
+  | 'memberChangesRequested'
+  | 'scheduleConfirmed'
+  | 'scheduleCancelled';
+
+const LABEL_KEY: Record<string, TimelineLabelKey> = {
+  broadcast_drafted: 'drafted',
+  broadcast_submitted: 'submitted',
+  broadcast_approved: 'approved',
+  broadcast_rejected: 'rejected',
+  broadcast_cancelled: 'cancelled',
+  broadcast_send_started: 'sendStarted',
+  broadcast_sent: 'sent',
+  broadcast_failed_to_dispatch: 'failedToDispatch',
+  broadcast_member_approved: 'memberApproved',
+  broadcast_member_changes_requested: 'memberChangesRequested',
+};
+
+/** The label key for one audit row; a schedule `cancel` reads differently from a confirmation. */
+export function timelineLabelKey(eventType: string, mode: string | null): TimelineLabelKey | null {
+  if (eventType === 'broadcast_schedule_confirmed') return mode === 'cancel' ? 'scheduleCancelled' : 'scheduleConfirmed';
+  return LABEL_KEY[eventType] ?? null;
+}
 
 export interface AuditTimelineProps {
   readonly tenantId: string;
@@ -104,37 +146,29 @@ export async function AuditTimeline({
       SELECT al.event_type::text                           AS "eventType",
              COALESCE(al.actor_user_id, '')                AS "actorUserId",
              al.timestamp                                  AS "timestamp",
-             u.email                                       AS "actorEmail"
+             u.email                                       AS "actorEmail",
+             al.payload->>'mode'                           AS "mode"
         FROM audit_log al
         LEFT JOIN users u ON u.id::text = al.actor_user_id
        WHERE al.tenant_id = ${tenantId}
-         AND al.payload->>'broadcastId' = ${broadcastId}
+         AND (al.payload->>'broadcastId' = ${broadcastId}
+              OR al.payload->>'broadcast_id' = ${broadcastId})
          AND al.event_type::text IN ${eventList}
        ORDER BY al.timestamp ASC
     `),
   )) as unknown as ReadonlyArray<AuditRow>;
   const events = rows;
 
-  const eventLabel: Record<string, string> = {
-    broadcast_drafted: t('drafted'),
-    broadcast_submitted: t('submitted'),
-    broadcast_approved: t('approved'),
-    broadcast_rejected: t('rejected'),
-    broadcast_cancelled: t('cancelled'),
-    broadcast_send_started: t('sendStarted'),
-    broadcast_sent: t('sent'),
-    broadcast_failed_to_dispatch: t('failedToDispatch'),
-  };
-
   return (
     <AuditTimelineView
       title={t('title')}
       events={events.map((r) => {
         const ts = new Date(r.timestamp);
+        const labelKey = timelineLabelKey(r.eventType, r.mode);
         return {
           key: `${r.eventType}-${ts.getTime()}`,
           failed: r.eventType === 'broadcast_failed_to_dispatch',
-          label: eventLabel[r.eventType] ?? r.eventType,
+          label: labelKey === null ? r.eventType : t(labelKey),
           instant: ts.toISOString(),
           when: fmt.format(ts),
           actor: t('actorBy', { actor: formatActor(r, t) }),

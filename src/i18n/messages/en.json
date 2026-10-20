@@ -3649,7 +3649,7 @@
           "reviewNoFormat": "{turn} — approve it as submitted, or reject it.",
           "design": "{turn} — finish the formatted version and send it to the member.",
           "awaitingMember": "Member's turn — version {version} was sent on {sentAt}. If nobody responds, the request expires on {expiresAt}.",
-          "changesRequested": "{turn} — start formatted version {version} to answer the member's changes.",
+          "changesRequested": "{turn} — start formatted version {version} to address the member's requested changes.",
           "confirmSchedule": "{turn} — confirm the send time. The member proposed {proposedAt}.",
           "confirmScheduleNoProposal": "{turn} — confirm the send time."
         },
@@ -3706,6 +3706,10 @@
           "sendStarted": "Send started",
           "sent": "Sent",
           "failedToDispatch": "Dispatch failed",
+          "memberApproved": "Approved by the member",
+          "memberChangesRequested": "Member requested changes",
+          "scheduleConfirmed": "Send time confirmed",
+          "scheduleCancelled": "Send time cancelled",
           "actorBy": "by {actor}",
           "actorSystem": "system",
           "actorUnknown": "unknown user"
