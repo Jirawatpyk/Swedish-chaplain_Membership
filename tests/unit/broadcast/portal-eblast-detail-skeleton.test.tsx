@@ -54,6 +54,9 @@ describe('portal E-Blast detail skeleton reserves the page it precedes (U1)', ()
     // The banner is reserved ABOVE the fields card, as the page renders it.
     const banner = screen.getByTestId('detail-stage-banner-skeleton');
     expect(banner.compareDocumentPosition(cards[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // UX review L7 — reserve the awaiting banner's height (two lines + the
+    // pill), so the page does not shift when it lands.
+    expect(banner.className).toContain('h-24');
   });
 
   it('T086a V5: the fields card has a header (the overline + the subject heading), as the page does', async () => {

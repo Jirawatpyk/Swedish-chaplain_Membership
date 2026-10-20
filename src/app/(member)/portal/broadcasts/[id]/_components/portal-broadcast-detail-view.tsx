@@ -20,7 +20,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { BackLink } from '@/components/portal/back-link';
 import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import { RefreshPageButton } from '@/components/shell/refresh-page-button';
-import { getBroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
+import { getPortalBroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 import { EmailFrame } from '@/components/broadcast/email-frame';
 import { PreviewSurface, type PreviewState } from '@/components/broadcast/use-preview-html';
@@ -141,7 +141,7 @@ export async function PortalBroadcastDetailView({
         title={
           <span className="flex flex-wrap items-center gap-2">
             <span>{t('fields.status')}</span>
-            <StatusPill tone={getBroadcastStatusTone(status)} wrap className="max-w-full">
+            <StatusPill tone={getPortalBroadcastStatusTone(status)} wrap className="max-w-full">
               {statusLabel}
             </StatusPill>
           </span>
@@ -161,8 +161,11 @@ export async function PortalBroadcastDetailView({
         ) : null}
       </Alert>
 
+      {/* A failed read is an error, not a stage change: it keeps its own
+          `role="alert"` (as the legacy InlineAlert did), apart from the
+          stage banner's status region (UX review L6). */}
       {threadUnavailable ? (
-        <Alert tone="danger" data-testid="eblast-thread-unavailable" title={tApproval('threadUnavailable.title')}>
+        <Alert tone="danger" role="alert" data-testid="eblast-thread-unavailable" title={tApproval('threadUnavailable.title')}>
           <span className="block">{tApproval('threadUnavailable.body')}</span>
           <span className="mt-[var(--aura-space-2)] block">
             <RefreshPageButton label={tApproval('threadUnavailable.refresh')} />

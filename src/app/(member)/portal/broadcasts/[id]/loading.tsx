@@ -51,7 +51,7 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
         {/* L8 — the settled page's Back link, the same component and place. */}
         <BackLink href="/portal/benefits?tab=broadcasts">{t('back')}</BackLink>
         {/* F119 T086 — the stage banner (status badge + whose turn + expiry). */}
-        <SkeletonBlock data-testid="detail-stage-banner-skeleton" className="h-16 w-full" />
+        <SkeletonBlock data-testid="detail-stage-banner-skeleton" className="h-24 w-full sm:h-[6.5rem]" />
         {/* Fields card: the header (the "Subject" overline over the subject
             heading), then the dl grid (recipients, submitted, sent, proposed
             and confirmed send time). */}

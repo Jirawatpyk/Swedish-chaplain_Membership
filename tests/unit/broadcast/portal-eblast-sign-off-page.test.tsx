@@ -384,6 +384,15 @@ describe('F119 UX review — the member sign-off page around the decision', () =
     expect(html).not.toContain('data-slot="badge"');
   });
 
+  // Spec 122 US12c-2 (UX review M1) — the one stage that asks the member to
+  // act reads "in progress", as the boards draw it, not grey "nothing to do".
+  it('awaiting the member: the stage pill is in the progress tone', async () => {
+    const html = await renderPage({ status: 'awaiting_member_approval', round: 1 });
+    const banner = html.indexOf('data-testid="eblast-stage-banner"');
+    const pill = /<span class="(aura-pill[^"]*)"/.exec(html.slice(banner));
+    expect(pill?.[1]).toContain('aura-pill--progress');
+  });
+
   // Spec 122 US12c-2 (maintainer, 20 Oct) — every e-mail on the page fits the
   // e-mail, each in its own bordered frame, as on the staff detail.
   it.each([
