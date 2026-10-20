@@ -13,20 +13,19 @@
  * them here against a different member would only test RBAC denial, not the golden path.
  * Run with `--workers=1`.
  *
- * KNOWN RED, and deliberately not fixed by the lapsed-persona pass: this walk
- * crosses the lapsed boundary in both directions. `/portal/invoices` and
- * `/portal/invoices/[id]` are on the lapsed allowlist and their fixture
- * (`E2E_ISSUED_INVOICE_ID`, seeded against "E2E Alpha Co") belongs to the
- * DEFAULT persona, while `/portal/profile` and `/portal/benefits` are not on
- * that allowlist and need the good-standing one — which owns no invoices by
- * design (`scripts/seed-e2e-portal-invoices.ts`, "No invoices for Echo"). So
- * neither persona can complete the walk, and the fix is a decision rather than
- * an edit: either seed an issued invoice for the good-standing member, or let
- * the journey re-sign-in mid-walk and accept that it then covers two members
- * instead of one. Recorded, not chosen here.
+ * The walk crosses the lapsed boundary, so it signs in twice. The F8 seed
+ * leaves the default persona ("E2E Alpha Co") LAPSED: `/portal/invoices` and
+ * `/portal/invoices/[id]` are on the lapsed allowlist, and the issued-invoice
+ * fixture (`E2E_ISSUED_INVOICE_ID`) belongs to Alpha, so Alpha walks F1, F4 and F5.
+ * `/portal/profile`, `/portal/benefits` and the export are not on that
+ * allowlist, so the walk signs in again as the good-standing persona
+ * ("E2E Echo Co", `E2E_MEMBER_EMAIL_EMPTY`) for F3 and F9. Echo owns no
+ * invoices on purpose (portal-invoices AS3), and the payable persona's bills
+ * are consumed by manual pay checks, so neither can carry the whole walk.
+ * The journey therefore covers two members across the same module seams.
  */
 import { expect, test } from './fixtures';
-import { signInAsMember } from './helpers/member-session';
+import { goodStandingMemberCredentials, signInAsMember } from './helpers/member-session';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 // The seeded ISSUED (payable) invoice owned by the e2e-member — reset to status='issued'
@@ -35,6 +34,7 @@ const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const ISSUED_INVOICE_ID = process.env.E2E_ISSUED_INVOICE_ID;
 const F5 = process.env.FEATURE_F5_ONLINE_PAYMENT === 'true';
 const F9 = process.env.FEATURE_F9_DASHBOARD === 'true';
+const GOOD_STANDING = goodStandingMemberCredentials();
 
 test.describe('Journey — member self-service golden path across module seams @journey', () => {
   // A journey visits ~6 portal routes; under `next dev` each route compiles on first hit
@@ -43,9 +43,9 @@ test.describe('Journey — member self-service golden path across module seams @
   test.describe.configure({ timeout: 120_000 });
 
   test.beforeAll(() => {
-    if (!MEMBER_EMAIL) {
+    if (!MEMBER_EMAIL || !GOOD_STANDING) {
       throw new Error(
-        'E2E_MEMBER_EMAIL/E2E_MEMBER_PASSWORD missing — set the seeded member creds in .env.local before running @journey.',
+        'E2E_MEMBER_EMAIL/E2E_MEMBER_PASSWORD and E2E_MEMBER_EMAIL_EMPTY/E2E_MEMBER_PASSWORD_EMPTY missing — set the seeded member creds in .env.local before running @journey.',
       );
     }
   });
@@ -82,8 +82,14 @@ test.describe('Journey — member self-service golden path across module seams @
       await expect(page.getByTestId('pay-now-button')).toBeVisible({ timeout: 10_000 });
     });
 
+    // --- Sign in again as the good-standing member: the routes below are not
+    // on the lapsed allowlist, so Alpha would be redirected to /portal ---
+    await page.context().clearCookies();
+    await signInAsMember(page, GOOD_STANDING!);
+
     // --- F3 — profile is editable ---
     await page.goto('/portal/profile');
+    await expect(page).toHaveURL(/\/portal\/profile$/);
     await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible({ timeout: 10_000 });
 
     // --- F9 — own plan + tier benefits are viewable ---

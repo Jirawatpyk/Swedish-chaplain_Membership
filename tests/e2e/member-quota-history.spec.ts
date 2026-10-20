@@ -26,17 +26,24 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 import {
+  removeMemberHistoryBroadcasts,
   removeMemberSentBroadcast,
   resetF7AckSeed,
   seedF7PlanChangedAudit,
+  seedMemberHistoryBroadcasts,
   seedMemberSentBroadcast,
   SENT_FIXTURE_SUBJECT,
+  setF7AckSeed,
 } from './helpers/broadcasts-seed';
 import { signInAsMember as signIn } from './helpers/member-sign-in';
 import { goodStandingMemberCredentials } from './helpers/member-session';
 
 const MEMBER_EMAIL = process.env.E2E_MEMBER_EMAIL;
 const MEMBER_PASSWORD = process.env.E2E_MEMBER_PASSWORD;
+// `/portal/benefits` is not on the lapsed allowlist and the F8 seed lapses
+// `E2E_MEMBER_EMAIL`, so every test that opens the benefits page signs in as
+// the good-standing persona, and the seeds those tests read are keyed to it.
+const GOOD_STANDING = goodStandingMemberCredentials();
 
 /**
  * F119 U37 — below `md` (768 px) the history renders as a card list and the
@@ -61,8 +68,8 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('US3 — Member quota + history (T129 RED)', () => {
   test.skip(
-    !MEMBER_EMAIL || !MEMBER_PASSWORD,
-    'Set E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD',
+    !MEMBER_EMAIL || !MEMBER_PASSWORD || !GOOD_STANDING,
+    'Set E2E_MEMBER_EMAIL + E2E_MEMBER_PASSWORD and E2E_MEMBER_EMAIL_EMPTY + E2E_MEMBER_PASSWORD_EMPTY',
   );
 
   /** D2 — seeded once for the whole describe so AS2 can assert the
@@ -70,36 +77,29 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
    *  date. audit_log is append-only; new rows just become the latest
    *  on subsequent runs. */
   let planChangedAt: Date | null = null;
+  let historySeeded = false;
 
   test.beforeAll(async () => {
     await clearE2ERateLimits();
-    const seed = await seedF7PlanChangedAudit();
+    const seed = await seedF7PlanChangedAudit(GOOD_STANDING?.email);
     if (seed) planChangedAt = seed.changedAt;
+    // AS1: eleven rows. One is enough for the history table; eleven fill
+    // more than the first page of 10, which the pagination test needs. Seeded
+    // here so either AS1 test can run on its own; AS4 removes them first.
+    historySeeded = (await seedMemberHistoryBroadcasts(GOOD_STANDING?.email, 11)) !== null;
   });
 
-  // AS3's sent fixture holds one of the persona's quota places while it exists.
+  // AS3's sent fixture holds a quota place; AS1's history rows fill Echo's history.
   test.afterAll(async () => {
     await removeMemberSentBroadcast();
+    await removeMemberHistoryBroadcasts();
   });
 
   // ── AS1 ────────────────────────────────────────────────────────────
   test('AS1 — benefits page shows quota counters + Next-reset date copy', async ({
     page,
   }) => {
-    // The GOOD-STANDING persona: `/portal/benefits` is not on the lapsed
-    // allowlist, and the default `e2e-member` is lapsed by the F8 seed, so this
-    // test was asserting `quota-display` while the browser sat on `/portal`.
-    // Because this describe is serial, its failure also skipped the eleven
-    // tests after it — they have not run since. Only this test moves persona:
-    // AS2 and AS6-AS8 read seeds that hardcode `E2E_MEMBER_EMAIL`
-    // (`seedF7PlanChangedAudit`, `resetF7AckSeed`), so switching them would
-    // decouple the seeded row from the signed-in member.
-    const goodStanding = goodStandingMemberCredentials();
-    test.skip(
-      !goodStanding,
-      'Set E2E_MEMBER_EMAIL_EMPTY / E2E_MEMBER_PASSWORD_EMPTY — a lapsed member cannot open /portal/benefits',
-    );
-    await signIn(page, goodStanding!);
+    await signIn(page, GOOD_STANDING!);
     const res = await page.goto('/portal/benefits?tab=broadcasts');
     expect(res?.status()).toBeLessThan(400);
 
@@ -120,7 +120,8 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   test('AS1 — history table lists rows sorted desc with status badges', async ({
     page,
   }) => {
-    await signIn(page);
+    test.skip(!historySeeded, 'Set DATABASE_URL — beforeAll seeds the history AS1 lists');
+    await signIn(page, GOOD_STANDING!);
     await page.goto('/portal/benefits?tab=broadcasts');
 
     // Implementation must expose the history region with this testid (the
@@ -130,7 +131,8 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
 
   // ── AS1 pagination ────────────────────────────────────────────────
   test('AS1 — history table is paginated (page size 10)', async ({ page }) => {
-    await signIn(page);
+    test.skip(!historySeeded, 'Set DATABASE_URL — beforeAll seeds the history AS1 pages');
+    await signIn(page, GOOD_STANDING!);
     await page.goto('/portal/benefits?tab=broadcasts');
     // [RED — T129/AS1-pagination] Pagination control must be present.
     await expect(page.getByTestId('broadcast-history-pagination')).toBeVisible();
@@ -161,7 +163,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
       },
     ]);
 
-    await signIn(page);
+    await signIn(page, GOOD_STANDING!);
     await page.goto('/portal/benefits?tab=broadcasts');
 
     const el = page.getByTestId('quota-plan-changed-explainer');
@@ -176,7 +178,9 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     // the assertion is stable regardless of CI runner timezone.
     const text = await el.innerText();
     expect(text).toMatch(/Plan changed on .+/i);
-    const expectedDate = new Intl.DateTimeFormat('en', {
+    // `en-GB`: the page formats EN dates through `getDateFormatLocale`
+    // (src/lib/format-date-localised.ts), which maps `en` to day-month-year.
+    const expectedDate = new Intl.DateTimeFormat('en-GB', {
       dateStyle: 'long',
       timeZone: 'Asia/Bangkok',
     }).format(planChangedAt!);
@@ -214,7 +218,8 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   test('AS4 — empty state illustration + CTA when no broadcasts', async ({
     page,
   }) => {
-    await signIn(page);
+    await removeMemberHistoryBroadcasts();
+    await signIn(page, GOOD_STANDING!);
     await page.goto('/portal/benefits?tab=broadcasts');
     // The current page already renders an empty-block; the RED contract
     // is that the empty state has the canonical testid + a primary CTA
@@ -300,14 +305,20 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     // exercises the fresh banner path. Without this, a successful
     // AS7 acknowledge in chromium would leave the column set and
     // subsequent project AS6 runs would see no banner.
+    // The good-standing persona: the acknowledge route refuses a lapsed
+    // member (403), so the default `e2e-member` can never complete AS7.
     test.beforeEach(async () => {
-      await resetF7AckSeed();
+      await resetF7AckSeed(GOOD_STANDING?.email);
+    });
+    // Leave the persona acknowledged, as the other specs that sign it in expect.
+    test.afterAll(async () => {
+      await setF7AckSeed(GOOD_STANDING?.email, new Date());
     });
 
     test('AS6 — Q15 acknowledgement banner appears for unacknowledged paying-tier member', async ({
       page,
     }) => {
-      await signIn(page);
+      await signIn(page, GOOD_STANDING!);
       await page.goto('/portal');
       await expect(
         page.getByTestId('broadcasts-acknowledge-banner'),
@@ -317,7 +328,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     test('AS7 — Acknowledge dismisses banner + shows success toast (GDPR consent)', async ({
       page,
     }) => {
-      await signIn(page);
+      await signIn(page, GOOD_STANDING!);
       await page.goto('/portal');
       const banner = page.getByTestId('broadcasts-acknowledge-banner');
       // After `resetF7AckSeed`, banner MUST be present.
@@ -363,7 +374,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     test('AS8 — Remind me later dismisses banner for page-load only (no audit, banner returns next sign-in)', async ({
       page,
     }) => {
-      await signIn(page);
+      await signIn(page, GOOD_STANDING!);
       await page.goto('/portal');
       const banner = page.getByTestId('broadcasts-acknowledge-banner');
       await expect(banner).toBeVisible();
@@ -374,7 +385,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     test('a11y CHK042 — banner dismissal returns focus to the anchor', async ({
       page,
     }) => {
-      await signIn(page);
+      await signIn(page, GOOD_STANDING!);
       await page.goto('/portal');
       const banner = page.getByTestId('broadcasts-acknowledge-banner');
       await expect(banner).toBeVisible();
@@ -393,7 +404,8 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   test('Command palette: ⌘K opens, "Compose E-Blast" + "View E-Blast usage" entries are clickable', async ({
     page,
   }) => {
-    await signIn(page);
+    // The palette hides the E-Blast entries from a lapsed member (`membershipAccess`).
+    await signIn(page, GOOD_STANDING!);
     await page.goto('/portal');
 
     // Wait for the body's keyboard listener to mount before pressing
