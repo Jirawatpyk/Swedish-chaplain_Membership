@@ -807,6 +807,29 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     for (const frame of frames) expect(frame).toContain('data-fit="true"');
   });
 
+  it('a whose-turn bar sits under the header while someone has a next step (board `Admin-eblast-awaiting-member`)', async () => {
+    const html = await renderPage('awaiting_member_approval', 1);
+    const bar = openingTagWith(html, 'data-testid="eblast-turn-bar"');
+    expect(bar).toContain('aura-alert');
+    expect(bar).toContain('role="note"');
+    const at = html.indexOf('data-testid="eblast-turn-bar"');
+    expect(html.indexOf('turnBar.awaitingMember', at)).toBeGreaterThan(at);
+    // Above the round card, under the header.
+    expect(at).toBeLessThan(html.indexOf('aria-labelledby="eblast-stage-title"'));
+  });
+
+  it('no whose-turn bar once nobody acts next', async () => {
+    expect(await renderPage('sent', 1)).not.toContain('data-testid="eblast-turn-bar"');
+  });
+
+  it('a manager reads it as marketing\'s turn, an admin as their own', async () => {
+    const admin = await renderPage('in_design', 1);
+    expect(admin.slice(admin.indexOf('eblast-turn-bar'))).toContain('turnBar.you');
+    role = 'manager';
+    const manager = await renderPage('in_design', 1);
+    expect(manager.slice(manager.indexOf('eblast-turn-bar'))).toContain('turnBar.marketing');
+  });
+
   it('version history and the lifecycle timeline sit side by side from 1024px, each ending at its own content (maintainer, 20 Oct)', async () => {
     const html = await renderPage('awaiting_member_approval', 1);
     const row = openingTagWith(html, 'data-testid="eblast-history-row"');
