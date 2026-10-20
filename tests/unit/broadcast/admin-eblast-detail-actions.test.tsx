@@ -744,6 +744,8 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
 
   it('a tile label wraps inside its tile at 200% text on a phone (WCAG 1.4.4)', async () => {
     const section = deliverySection(await renderPage('sent', 0));
+    // Below 640px a tile takes a row of its own once two no longer fit side by side.
+    expect(section).toContain('grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))]');
     const tiles = section.match(/<[^>]*class="[^"]*aura-stat\b[^"]*"[^>]*>/g) ?? [];
     expect(tiles.length).toBe(4);
     for (const tile of tiles) {

@@ -304,7 +304,7 @@ export async function BroadcastDetailView({
         // Board `Admin-broadcast-sent` — the provider's delivery events by
         // outcome, once sending has begun (the same read the member's page uses).
         <Card titleId="eblast-delivery-title" title={t('delivery.title')} headingLevel={2} data-testid="eblast-delivery">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat
               className={STAT_WRAP}
               label={t('delivery.delivered')}
