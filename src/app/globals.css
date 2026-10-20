@@ -315,6 +315,12 @@ html:has(.chamber-viewport-actionbar) {
        margins above carry it to the screen edges. */
     width: auto;
   }
+  /* Each bar is its form's last element: it takes the page's bottom padding,
+     so at the end of the scroll it still meets the screen edge (measured at
+     390: 32px under the bar before; spec 122 US12c-1 follow-up, 20 Oct). */
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) {
+    margin-bottom: calc(-1 * var(--page-padding-bottom));
+  }
   /* AURA pads the bar's row 16px at its start and 12px at its end; pinned
      edge to edge, the buttons sit 16px from both screen edges, as drawn. */
   :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div {
@@ -339,6 +345,7 @@ html:has(.chamber-viewport-actionbar) {
   .plan-form-actions--in-card,
   .template-form-actions {
     margin-inline: calc(-1 * (var(--page-padding-x) + var(--aura-space-4) + 1px));
+    margin-bottom: calc(-1 * (var(--page-padding-bottom) + var(--aura-space-4) + 1px));
   }
   /* The plan wizard keeps Cancel in the page on a phone: its start slot
      (status, start, actions) leaves the pinned bar. */
@@ -353,11 +360,6 @@ html:has(.chamber-viewport-actionbar) {
      text), the groups wrap in DOM order — Reject first, the next step on the
      line nearest the thumb — so Tab follows what is seen (WCAG 2.4.3), and a
      focused control is kept clear of the taller bar (WCAG 2.4.11). */
-  /* The bar is the page's last element: it takes the page's bottom padding,
-     so at the end of the scroll it still meets the screen edge. */
-  .eblast-detail-actions {
-    margin-bottom: calc(-1 * var(--page-padding-bottom));
-  }
   .eblast-detail-actions > div {
     flex-wrap: wrap;
     row-gap: var(--aura-space-2);

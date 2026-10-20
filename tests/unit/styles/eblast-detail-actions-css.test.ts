@@ -66,7 +66,8 @@ describe('the E-Blast detail action row on a phone', () => {
   });
 
   it('reaches the bottom edge at the end of the scroll: the page\'s bottom padding sits above it, not under it', () => {
-    const rule = ruleAfter('.eblast-detail-actions {');
+    // The shared rule for every pinned bar (pinned-bar-edge-css.test.ts) covers this bar.
+    const rule = ruleAfter('.template-form-actions, .eblast-detail-actions) {\n    margin-bottom');
     expect(rule).toMatch(/margin-bottom:\s*calc\(-1 \* var\(--page-padding-bottom\)\);/);
   });
 });
