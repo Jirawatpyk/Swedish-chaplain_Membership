@@ -216,7 +216,10 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
       const frame = page.locator('iframe[srcdoc]');
       await expect(frame).toBeVisible();
       await expect(frame).toHaveAttribute('title', /.+/);
-      await expect(frame).toHaveAttribute('sandbox', '');
+      // Spec 122 US12c-2 — the portal frame fits the e-mail, as the staff
+      // detail's does: same-origin to measure it, never scripts.
+      await expect(frame).toHaveAttribute('sandbox', 'allow-same-origin');
+      await expect(frame).not.toHaveAttribute('sandbox', /allow-scripts/);
     });
   });
 

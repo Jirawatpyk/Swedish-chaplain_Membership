@@ -19,6 +19,7 @@ import { BackLink } from '@/components/portal/back-link';
 import { PortalEditForm } from '@/components/members/portal-edit-form';
 import { renderPortalProfileView, type PortalProfileViewProps } from '@/components/members/portal-profile-view';
 import { renderPortalAccountView } from '@/components/portal/portal-account-view';
+import { renderPortalBroadcastDetailPreview } from './eblast-detail-previews';
 import { TimelineFilters } from '@/components/members/timeline-filters';
 import { TimelineStream } from '@/components/members/timeline-stream';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
@@ -178,6 +179,16 @@ export default async function AuraPortalPreviewPage({
   if (!process.env.ALLOW_TEST_ROUTES) notFound();
   const sp = await searchParams;
   const { view = 'home' } = sp;
+
+  // Spec 122 US12c-2 — the member's E-Blast detail through the page's own view,
+  // and its loading skeleton in the same frame.
+  if (view === 'broadcast-detail') {
+    return <MemberFrame path="/portal/benefits">{await renderPortalBroadcastDetailPreview(sp.state)}</MemberFrame>;
+  }
+  if (view === 'broadcast-detail-loading') {
+    const Loading = (await import('@/app/(member)/portal/broadcasts/[id]/loading')).default;
+    return <MemberFrame path="/portal/benefits">{await Loading()}</MemberFrame>;
+  }
 
   if (view === 'benefits') {
     // The `Benefits` / `Benefits-mobile` board data.
