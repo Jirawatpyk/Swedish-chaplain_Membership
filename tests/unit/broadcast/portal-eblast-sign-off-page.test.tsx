@@ -44,7 +44,11 @@ vi.mock('@/lib/broadcast-detail-body', () => ({
   renderBroadcastDetailBody: vi.fn(async (a: { subject: string }) => ({ status: 'ready', html: `doc:${a.subject}` })),
 }));
 vi.mock('@/components/broadcast/use-preview-html', () => ({
-  PreviewSurface: ({ state }: { state: { html?: string } }) => <div data-testid="preview-surface">{state.html}</div>,
+  PreviewSurface: ({ state, fit }: { state: { html?: string }; fit?: boolean }) => (
+    <div data-testid="preview-surface" data-fit={String(fit === true)}>
+      {state.html}
+    </div>
+  ),
 }));
 vi.mock('@/components/broadcast/approval/version-thread', () => ({
   VersionThread: () => <div data-testid="version-thread" />,
@@ -152,7 +156,7 @@ function setUp({ status, round, approvedVersionId = null }: Case): void {
         submittedAt: new Date('2026-09-01T03:00:00Z'),
         sentAt: status === 'sent' ? new Date('2026-10-01T03:00:00Z') : null,
       },
-      delivery: { delivered: 0, bounced: 0, softBounced: 0, complained: 0, sent: 0, total: 0 },
+      delivery: { delivered: 40, bounced: 0, softBounced: 1, complained: 0, sent: 1, total: 42 },
     },
   });
   const versions = round >= 1 ? [V0, ...Array.from({ length: round }, (_, i) => sentVersion(i + 1))] : [];
@@ -252,7 +256,7 @@ describe('F119 T086 — the member sign-off compare view', () => {
     const html = await renderPage({ status: 'awaiting_member_approval', round: 1 });
     const banner = html.indexOf('data-testid="eblast-stage-banner"');
     expect(banner).toBeGreaterThan(-1);
-    expect(html.slice(html.lastIndexOf('<div', banner), banner)).toContain('role="status"');
+    expect(html.slice(html.lastIndexOf('<div', banner), html.indexOf('>', banner))).toContain('role="status"');
     expect(html.match(/role="status"|aria-live=/g)).toHaveLength(1);
     expect(html).toContain('banner.expires');
   });
@@ -306,7 +310,7 @@ describe('F119 T086 — the member sign-off compare view', () => {
 });
 
 const backLink = (html: string): { href: string; text: string } | null => {
-  const m = /<a href="([^"]*)"[^>]*>(?:<svg[\s\S]*?<\/svg>)?([^<]*)<\/a>/.exec(html);
+  const m = /<a href="([^"]*)"[^>]*>(?:<span class="aura-icon[\s\S]*?<\/svg><\/span>)?([^<]*)<\/a>/.exec(html);
   return m === null ? null : { href: m[1] ?? '', text: m[2] ?? '' };
 };
 
@@ -336,21 +340,59 @@ describe('F119 UX review — the member sign-off page around the decision', () =
     expect(html).not.toContain('data-testid="delivery-breakdown"');
   });
 
-  it('L7 — once sent, the delivery breakdown has its heading in the card header, like the other cards', async () => {
+  it('L7 — once sent, the delivery breakdown is an AURA card titled in its head, like the other cards', async () => {
     const html = await renderPage({ status: 'sent', round: 1, approvedVersionId: 'v1-id' });
     const card = html.indexOf('data-testid="delivery-breakdown"');
     expect(card).toBeGreaterThan(-1);
-    const heading = /<h2 id="delivery-breakdown-heading" class="([^"]*)"/.exec(html.slice(card));
-    expect(heading?.[1]).toBe('font-heading text-base font-medium leading-snug');
-    const header = html.slice(card, html.indexOf('id="delivery-breakdown-heading"', card));
-    expect(header).toContain('data-slot="card-header"');
+    expect(html.slice(html.lastIndexOf('<section', card), html.indexOf('>', card))).toContain('aura-card');
+    const heading = /<h2 class="([^"]*)" id="delivery-breakdown-heading"/.exec(html.slice(card));
+    expect(heading?.[1]).toBe('aura-card__title');
+  });
+
+  // Spec 122 US12c-2 — board `Portal-broadcast-detail`: the six counts are
+  // tiles in the board's order, a count toned only when there is one to report.
+  it('the delivery counts keep their <dl> per count, in the board order, toned only above 0', async () => {
+    const html = await renderPage({ status: 'sent', round: 1, approvedVersionId: 'v1-id' });
+    const order = ['delivered', 'bounced', 'soft-bounced', 'complained', 'sent', 'total'].map((k) =>
+      html.indexOf(`data-testid="delivery-${k}-count"`),
+    );
+    expect(order.every((i) => i > -1)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    const delivered = html.slice(html.indexOf('data-testid="delivery-delivered-count"'));
+    expect(delivered.slice(0, delivered.indexOf('</dl>'))).toContain('text-[var(--aura-fg-positive)]');
+    const bounced = html.slice(html.indexOf('data-testid="delivery-bounced-count"'));
+    expect(bounced.slice(0, bounced.indexOf('</dl>'))).not.toContain('--aura-fg-danger');
   });
 
   it('L6 — a real value is not muted; only the empty sentinel is', async () => {
     const html = await renderPage({ status: 'awaiting_member_approval', round: 1 });
     const at = html.indexOf('data-testid="eblast-proposed-send-at"');
     const dd = html.slice(html.lastIndexOf('<dd', at), at);
+    expect(dd).not.toContain('--aura-fg-secondary');
     expect(dd).not.toContain('text-muted-foreground');
+  });
+
+  // Spec 122 US12c-2 — the stage banner is AURA's info alert; the stage an AURA
+  // StatusPill that wraps inside a 320 px banner (SV `member_approved`).
+  it('the stage banner is an AURA info alert holding a wrapping StatusPill', async () => {
+    const html = await renderPage({ status: 'member_approved', round: 1, approvedVersionId: 'v1-id' });
+    const banner = html.indexOf('data-testid="eblast-stage-banner"');
+    const open = html.slice(html.lastIndexOf('<div', banner), html.indexOf('>', banner));
+    expect(open).toContain('aura-alert--info');
+    const pill = /<span class="(aura-pill[^"]*)"/.exec(html.slice(banner));
+    expect(pill?.[1]).toContain('is-wrap');
+    expect(html).not.toContain('data-slot="badge"');
+  });
+
+  // Spec 122 US12c-2 (maintainer, 20 Oct) — every e-mail on the page fits the
+  // e-mail, each in its own bordered frame, as on the staff detail.
+  it.each([
+    ['the compare view', { status: 'awaiting_member_approval', round: 1 }, 2],
+    ['the record body', { status: 'submitted', round: 0 }, 1],
+  ] as const)('%s: each e-mail frame fits the e-mail inside an EmailFrame', async (_l, c, n) => {
+    const html = await renderPage(c);
+    expect(html.match(/data-testid="preview-surface" data-fit="true"/g)).toHaveLength(n);
+    expect(html.match(/data-email-frame/g)).toHaveLength(n);
   });
 
   it('L12 — the thread-unavailable alert offers a Refresh button', async () => {

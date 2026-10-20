@@ -38,32 +38,14 @@
  * blocked, so their Back leads to the dashboard instead (UX review M5).
  */
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { ArrowLeft } from 'lucide-react';
-import { DetailContainer } from '@/components/layout';
-import { PageHeader } from '@/components/layout/page-header';
-import { keepTermTogether } from '@/components/broadcast/keep-term-together';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { buttonVariants } from '@/components/ui/button';
-import { InlineAlert, InlineAlertDescription, InlineAlertTitle } from '@/components/ui/inline-alert';
-import { RefreshPageButton } from '@/components/shell/refresh-page-button';
-import { getBroadcastStatusBadgeProps } from '@/components/broadcast/status-badge-mapping';
-import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
-import { PreviewSurface, type PreviewState } from '@/components/broadcast/use-preview-html';
-import { MemberSignOffActions } from '@/components/broadcast/approval/member-sign-off-actions';
-import {
-  VersionThread,
-  hasThreadHistory,
-  memberThreadModel,
-} from '@/components/broadcast/approval/version-thread';
+import { memberThreadModel } from '@/components/broadcast/approval/version-thread';
+import type { PreviewState } from '@/components/broadcast/use-preview-html';
 import { makeGetMemberVersionThreadDeps } from '@/lib/broadcast-approval-deps';
 import { isPortalPathAllowed } from '@/lib/lapsed-portal-scope';
 import { loadMembershipAccess } from '@/lib/load-membership-access';
 import { renderBroadcastDetailBody } from '@/lib/broadcast-detail-body';
-import { cn } from '@/lib/utils';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
@@ -80,10 +62,11 @@ import {
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import {
+  PortalBroadcastDetailView,
+  type PortalBroadcastDetailViewProps,
+} from './_components/portal-broadcast-detail-view';
 import { randomUUID } from 'node:crypto';
-
-/** `CardTitle`'s type on a real `<h2>` — the shadcn `CardTitle` is a `<div>`, outside the heading tree. */
-const CARD_HEADING = 'font-heading text-base font-medium leading-snug';
 
 /** Where the E-Blast list lives (the benefits page's broadcasts tab). */
 const BENEFITS_PATH = '/portal/benefits';
@@ -228,9 +211,6 @@ export default async function BroadcastDetailPage(props: {
     );
   }
 
-  const t = await getTranslations('portal.broadcasts.detail');
-  const tStatus = await getTranslations('portal.broadcasts.list.status');
-  const tApproval = await getTranslations('portal.broadcasts.approval');
   const locale = await getLocale();
   const dateFormatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
     dateStyle: 'medium',
@@ -239,6 +219,7 @@ export default async function BroadcastDetailPage(props: {
     // the admin broadcast detail's H2 Bangkok pin; canonical tenant TZ.
     timeZone: env.tenant.timezone,
   });
+  const format = (d: Date | string | null): string | null => (d === null ? null : dateFormatter.format(new Date(d)));
 
   const render = (subject: string, bodyHtml: string): Promise<PreviewState> =>
     renderBroadcastDetailBody({
@@ -253,13 +234,16 @@ export default async function BroadcastDetailPage(props: {
   const compare =
     latestSent !== null && original !== null
       ? {
-          formatted: latestSent,
-          formattedPreview: await render(latestSent.subject, latestSent.bodyHtml),
-          original,
-          originalPreview: await render(original.subject, original.bodyHtml),
+          formatted: {
+            versionNo: latestSent.versionNo,
+            noteToMember: latestSent.noteToMember,
+            subject: latestSent.subject,
+            preview: await render(latestSent.subject, latestSent.bodyHtml),
+          },
+          original: { subject: original.subject, preview: await render(original.subject, original.bodyHtml) },
         }
       : null;
-  const previewState =
+  const body =
     compare === null && !awaitingWithoutSent ? await render(broadcast.subject, broadcast.bodyHtml) : null;
 
   // ---- Which decisions exist (the SERVER decides; the island performs) ----
@@ -275,287 +259,48 @@ export default async function BroadcastDetailPage(props: {
     summary.approvedVersionId !== null &&
     latestSent !== null;
   const canWithdrawEblast = canCancel(status);
-  const threadModel = thread === null ? null : memberThreadModel(thread, (d) => dateFormatter.format(d));
 
-  const statusBadge = getBroadcastStatusBadgeProps(status);
-  // Guard the i18n lookup; fall back to the raw status so a future enum
-  // value degrades gracefully.
-  const statusKey = status as Parameters<typeof tStatus>[0];
-  const statusLabel = tStatus.has(statusKey) ? tStatus(statusKey) : status;
-  // L6 — muted is the empty sentinel's colour only; a real value is not.
-  const notSet = (
-    <span className="text-muted-foreground">
-      <span aria-hidden="true">—</span>
-      <span className="sr-only">{tApproval('fields.notSet')}</span>
-    </span>
-  );
+  const turn: PortalBroadcastDetailViewProps['turn'] =
+    summary === null || summary.whoseTurn === null
+      ? null
+      : summary.whoseTurn === 'marketing'
+        ? { kind: 'marketing' }
+        : latestSent !== null
+          ? { kind: 'member', version: latestSent.versionNo }
+          : null;
 
-  return (
-    <DetailContainer>
-      <PageHeader title={keepTermTogether(t('title'))} subtitle={t('subtitle')} />
-
-      <Link
-        href={backToList ? `${BENEFITS_PATH}?tab=broadcasts` : '/portal'}
-        className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'self-start')}
-      >
-        <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
-        {backToList ? t('back') : t('backToDashboard')}
-      </Link>
-
-      {/* F119 T086 — the stage banner: the page's ONE live region. It names
-          the stage, whose turn it is and — while awaiting the member — the
-          expiry date. It stays mounted across a decision's refresh, so the new
-          stage is announced from here, not from a second region. */}
-      <InlineAlert tone="info" role="status" data-testid="eblast-stage-banner">
-        <InlineAlertTitle className="flex flex-wrap items-center gap-2 text-foreground">
-          <span>{t('fields.status')}</span>
-          {/* F1 UX hardening — the shared `getBroadcastStatusBadgeProps` (H4)
-              keeps the colour signal: rejected is destructive, sending pulses.
-              UX review H3 — a Badge is `h-5 whitespace-nowrap` by default; the
-              longest stage (SV `member_approved`, ~282 px) overflows the
-              banner's ~246 px at 320 px, so here it may wrap. */}
-          <Badge
-            variant={statusBadge.variant}
-            className={cn(statusBadge.className, 'h-auto max-w-full whitespace-normal text-left')}
-          >
-            {statusLabel}
-          </Badge>
-        </InlineAlertTitle>
-        {summary !== null && summary.whoseTurn !== null ? (
-          <InlineAlertDescription className="text-foreground">
-            {summary.whoseTurn === 'marketing' ? (
-              <span className="block">{tApproval('banner.turn.marketing')}</span>
-            ) : latestSent !== null ? (
-              <span className="block">{tApproval('banner.turn.member', { version: latestSent.versionNo })}</span>
-            ) : null}
-            {summary.expiresAt !== null ? (
-              <span className="block">
-                {tApproval('banner.expires', { date: dateFormatter.format(summary.expiresAt) })}
-              </span>
-            ) : null}
-          </InlineAlertDescription>
-        ) : null}
-      </InlineAlert>
-
-      {thread === null || missingSent ? (
-        <InlineAlert tone="destructive" data-testid="eblast-thread-unavailable">
-          <InlineAlertTitle>{tApproval('threadUnavailable.title')}</InlineAlertTitle>
-          <InlineAlertDescription>
-            <span className="block">{tApproval('threadUnavailable.body')}</span>
-            <span className="mt-2 block">
-              <RefreshPageButton label={tApproval('threadUnavailable.refresh')} />
-            </span>
-          </InlineAlertDescription>
-        </InlineAlert>
-      ) : null}
-
-      <Card role="region" aria-labelledby="broadcast-detail-fields-heading">
-        {/* The subject value is the card's title (and its accessible
-            region name); "Subject" is a small overline label so the value
-            reads as the dominant element rather than being subordinate to
-            its own label (UX R2-I3 — the text-h4 label outweighed the 16px
-            value).
-
-            F119 T141 — the title moved into `CardHeader` and carries the
-            portal's card-heading treatment: a REAL `<h2>` with the
-            `CardTitle` font classes, never the shadcn `CardTitle` `<div>`,
-            which would drop the subject out of the SR heading tree
-            (`portal/account/page.tsx` HubCard, `portal/profile/page.tsx`
-            SectionHeading — the same fix twice before this one). */}
-        <CardHeader className="space-y-1">
-          <p className="text-caption uppercase tracking-wide text-muted-foreground">
-            {t('fields.subject')}
-          </p>
-          <h2 id="broadcast-detail-fields-heading" className={CARD_HEADING}>
-            {broadcast.subject}
-          </h2>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {/* F119 T086 — the status moved into the stage banner above; the
-              member's proposed send time stays visible beside the confirmed
-              one throughout (FR-016), right above the compare view. */}
-          <dl className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <dt className="text-xs text-muted-foreground">{t('fields.recipients')}</dt>
-              <dd className="mt-1 tabular-nums">{broadcast.estimatedRecipientCount}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">{t('fields.submittedAt')}</dt>
-              <dd className="mt-1">
-                {broadcast.submittedAt !== null
-                  ? dateFormatter.format(new Date(broadcast.submittedAt))
-                  : notSet}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">{t('fields.sentAt')}</dt>
-              <dd className="mt-1">
-                {broadcast.sentAt !== null ? dateFormatter.format(new Date(broadcast.sentAt)) : notSet}
-              </dd>
-            </div>
-            {summary !== null ? (
-              <>
-                <div>
-                  <dt className="text-xs text-muted-foreground">{tApproval('fields.proposedSendAt')}</dt>
-                  <dd className="mt-1" data-testid="eblast-proposed-send-at">
-                    {summary.proposedSendAt !== null ? dateFormatter.format(summary.proposedSendAt) : notSet}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs text-muted-foreground">{tApproval('fields.confirmedSendAt')}</dt>
-                  <dd className="mt-1">
-                    {summary.confirmedSendAt !== null ? dateFormatter.format(summary.confirmedSendAt) : notSet}
-                  </dd>
-                </div>
-              </>
-            ) : null}
-          </dl>
-        </CardContent>
-      </Card>
-
-      {compare !== null ? (
-        // FR-008 — DOM order is the layout: the formatted version FIRST, the
-        // original after it. One grid, so a phone stacks them (formatted on
-        // top, the original below on this same page — never a link away, never
-        // a tab that unmounts the decision controls) and ≥ lg sets them side
-        // by side.
-        <div className="grid gap-6 lg:grid-cols-2" data-testid="eblast-compare">
-          <section
-            aria-labelledby="eblast-formatted-title"
-            data-testid="eblast-formatted-version"
-            className="min-w-0"
-          >
-            <Card className="h-full">
-              <CardHeader>
-                <h2 id="eblast-formatted-title" className={CARD_HEADING}>
-                  {tApproval('compare.formattedTitle', { version: compare.formatted.versionNo })}
-                </h2>
-                <CardDescription>{tApproval('compare.formattedHint')}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {compare.formatted.noteToMember !== null ? (
-                  <p className="rounded-md bg-muted/50 px-3 py-2 text-sm">
-                    <span className="block text-xs uppercase tracking-wide text-muted-foreground">
-                      {tApproval('compare.noteLabel')}
-                    </span>
-                    <span className="whitespace-pre-line break-words">{compare.formatted.noteToMember}</span>
-                  </p>
-                ) : null}
-                <p className="text-sm font-medium break-words">{compare.formatted.subject}</p>
-                <PreviewSurface state={compare.formattedPreview} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
-              </CardContent>
-            </Card>
-          </section>
-          <section
-            aria-labelledby="eblast-original-title"
-            data-testid="eblast-member-original"
-            className="min-w-0"
-          >
-            <Card className="h-full">
-              <CardHeader>
-                <h2 id="eblast-original-title" className={CARD_HEADING}>
-                  {tApproval('compare.originalTitle')}
-                </h2>
-                <CardDescription>{tApproval('compare.originalHint')}</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm font-medium break-words">{compare.original.subject}</p>
-                <PreviewSurface state={compare.originalPreview} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
-              </CardContent>
-            </Card>
-          </section>
-        </div>
-      ) : previewState !== null ? (
-        // F119 T141 (US6-AS2, FR-049) — the content itself, rendered as the
-        // recipient sees it. `PreviewSurface` owns the sandboxed frame and the
-        // translated empty / error states; this page only decides WHICH
-        // document goes in it.
-        <Card role="region" aria-labelledby="broadcast-detail-body-heading">
-          <CardHeader>
-            <h2 id="broadcast-detail-body-heading" className={CARD_HEADING}>
-              {t('fields.content')}
-            </h2>
-          </CardHeader>
-          <CardContent>
-            <PreviewSurface state={previewState} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {/* F119 T084 — the decisions this stage allows, right under what they
-          decide on. DV-12's member Cancel ("Withdraw E-Blast") lives in the
-          same island: `getMemberBroadcast` gates VISIBILITY (a cross-member
-          probe 404s above) and every POST is re-guarded by its use case. */}
-      {canDecide || canWithdrawApproval || canWithdrawEblast ? (
-        <MemberSignOffActions
-          broadcastId={broadcast.broadcastId as string}
-          subject={broadcast.subject}
-          version={latestSent === null ? null : { id: latestSent.id, versionNo: latestSent.versionNo }}
-          canDecide={canDecide}
-          canWithdrawApproval={canWithdrawApproval}
-          canWithdrawEblast={canWithdrawEblast}
-        />
-      ) : null}
-
-      {threadModel !== null && hasThreadHistory(threadModel) ? (
-        <VersionThread audience="member" model={threadModel} />
-      ) : null}
-
-      {/* AS3 — Delivery breakdown (delivered / bounced / complained /
-          soft-bounced / sent / total). Exposes testids for T129; uses
-          aria-labelledby (not aria-label) so the visible h2 is the
-          single accessible name (avoids SR double-announce — WCAG
-          1.3.1 + 4.1.2). UX review L7 — shown once a send has begun
-          (before it every count is zero), with its heading in the
-          `CardHeader` in the page's card-heading type, like every other
-          card here. */}
-      {DELIVERY_STATUSES.has(status) ? (
-        <Card
-          role="region"
-          data-testid="delivery-breakdown"
-          aria-labelledby="delivery-breakdown-heading"
-        >
-          <CardHeader>
-            <h2 id="delivery-breakdown-heading" className={CARD_HEADING}>
-              {t('delivery.title')}
-            </h2>
-          </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <DeliveryStat
-              label={t('delivery.delivered')}
-              value={delivery.delivered}
-              testId="delivery-delivered-count"
-            />
-            <DeliveryStat
-              label={t('delivery.bounced')}
-              value={delivery.bounced}
-              testId="delivery-bounced-count"
-            />
-            <DeliveryStat
-              label={t('delivery.complained')}
-              value={delivery.complained}
-              testId="delivery-complained-count"
-            />
-            <DeliveryStat
-              label={t('delivery.softBounced')}
-              value={delivery.softBounced}
-              testId="delivery-soft-bounced-count"
-            />
-            <DeliveryStat
-              label={t('delivery.sent')}
-              value={delivery.sent}
-              testId="delivery-sent-count"
-            />
-            <DeliveryStat
-              label={t('delivery.total')}
-              value={delivery.total}
-              testId="delivery-total-count"
-            />
-          </CardContent>
-        </Card>
-      ) : null}
-    </DetailContainer>
-  );
+  return PortalBroadcastDetailView({
+    back: { href: backToList ? `${BENEFITS_PATH}?tab=broadcasts` : '/portal', toDashboard: !backToList },
+    status,
+    turn,
+    expiresAt: summary !== null && summary.whoseTurn !== null ? format(summary.expiresAt) : null,
+    threadUnavailable: thread === null || missingSent,
+    subject: broadcast.subject,
+    fields: {
+      recipients: broadcast.estimatedRecipientCount,
+      submittedAt: format(broadcast.submittedAt),
+      sentAt: format(broadcast.sentAt),
+      sendTimes:
+        summary === null
+          ? null
+          : { proposed: format(summary.proposedSendAt), confirmed: format(summary.confirmedSendAt) },
+    },
+    compare,
+    body,
+    signOff:
+      canDecide || canWithdrawApproval || canWithdrawEblast
+        ? {
+            broadcastId: broadcast.broadcastId as string,
+            subject: broadcast.subject,
+            version: latestSent === null ? null : { id: latestSent.id, versionNo: latestSent.versionNo },
+            canDecide,
+            canWithdrawApproval,
+            canWithdrawEblast,
+          }
+        : null,
+    thread: thread === null ? null : memberThreadModel(thread, (d) => dateFormatter.format(d)),
+    delivery: DELIVERY_STATUSES.has(status) ? delivery : null,
+  });
 }
 
 /**
@@ -598,26 +343,5 @@ function latestSentVersion(versions: readonly MemberVisibleVersion[]): MemberVis
     (latest, v) =>
       v.versionNo >= 1 && v.sentToMemberAt !== null && (latest === null || v.versionNo > latest.versionNo) ? v : latest,
     null,
-  );
-}
-
-function DeliveryStat({
-  label,
-  value,
-  testId,
-}: {
-  label: string;
-  value: number;
-  testId: string;
-}): React.ReactElement {
-  // `<dl>/<dt>/<dd>` carries the term/definition association at the
-  // semantic level — screen readers announce "Delivered: 128" as a
-  // unit (WCAG SC 1.3.2 meaningful sequence). Same pattern as the
-  // sibling broadcast-detail-fields section above.
-  return (
-    <dl data-testid={testId} className="space-y-1">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="text-2xl font-semibold tabular-nums">{value}</dd>
-    </dl>
   );
 }
