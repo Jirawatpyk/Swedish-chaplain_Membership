@@ -7,7 +7,7 @@
  * The audit timeline reads the database itself, so it arrives as a slot.
  */
 import { getLocale, getTranslations } from 'next-intl/server';
-import { Alert, Card } from '@jirawatpyk/aura-react/server';
+import { Alert, Card, Stat } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { RelativeTime } from '@/components/shell/relative-time';
@@ -34,6 +34,14 @@ import { stageOf, type BroadcastStatus, type BroadcastVersion } from '@/modules/
 /** A field's label and value on AURA's type (the label in the secondary tone, never the empty-sentinel dash). */
 const FIELD_LABEL = 'aura-text-caption text-[var(--aura-fg-secondary)]';
 const FIELD_VALUE = 'mt-1 text-sm break-words';
+
+/** Board `Admin-broadcast-sent` — the delivery events the provider reported, by outcome. */
+export interface DeliveryCounts {
+  readonly delivered: number;
+  readonly bounced: number;
+  readonly softBounced: number;
+  readonly complained: number;
+}
 
 export interface BroadcastDetailViewProps {
   readonly broadcastId: string;
@@ -73,6 +81,8 @@ export interface BroadcastDetailViewProps {
   readonly shownPreview: PreviewState | null;
   readonly previewState: PreviewState;
   readonly bodyRenderFailed: boolean;
+  /** The delivery counts once sending has begun (`sending` onward); null before. */
+  readonly delivery: DeliveryCounts | null;
   readonly imagesEnabled: boolean;
   readonly threadModel: VersionThreadModel | null;
   /** The audit timeline (it reads the database itself). */
@@ -111,6 +121,7 @@ export async function BroadcastDetailView({
   shownPreview,
   previewState,
   bodyRenderFailed,
+  delivery,
   imagesEnabled,
   threadModel,
   audit,
@@ -277,6 +288,32 @@ export async function BroadcastDetailView({
               <Field label={t('fields.recipientCount')} value={String(broadcast.estimatedRecipientCount)} />
             </dl>
       </Card>
+
+      {delivery !== null ? (
+        // Board `Admin-broadcast-sent` — the provider's delivery events by
+        // outcome, once sending has begun (the same read the member's page uses).
+        <Card titleId="eblast-delivery-title" title={t('delivery.title')} headingLevel={2} data-testid="eblast-delivery">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Stat
+              label={t('delivery.delivered')}
+              value={<span className="text-[var(--aura-fg-positive)] tabular-nums">{delivery.delivered}</span>}
+            />
+            <Stat
+              label={t('delivery.bounced')}
+              value={
+                <span className={delivery.bounced > 0 ? 'text-[var(--aura-fg-danger)] tabular-nums' : 'tabular-nums'}>
+                  {delivery.bounced}
+                </span>
+              }
+            />
+            <Stat label={t('delivery.softBounced')} value={<span className="tabular-nums">{delivery.softBounced}</span>} />
+            <Stat label={t('delivery.complained')} value={<span className="tabular-nums">{delivery.complained}</span>} />
+          </div>
+          <p className="mt-[var(--aura-space-3)] aura-text-caption text-[var(--aura-fg-secondary)]">
+            {t('delivery.caption', { recipients: broadcast.estimatedRecipientCount })}
+          </p>
+        </Card>
+      ) : null}
 
       {memberFeedback !== null ? (
         <Alert tone="info" role="note" title={memberFeedback.title} data-testid="eblast-member-feedback">

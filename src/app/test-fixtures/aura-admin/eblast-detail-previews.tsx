@@ -145,6 +145,12 @@ export async function renderBroadcastDetailPreview(state: string | undefined) {
     shownPreview: shownVersion !== null && !showWorkspace ? ready('Nordic Leadership Breakfast — 15 October') : null,
     previewState: ready('Nordic Leadership Breakfast'),
     bodyRenderFailed: false,
+    delivery:
+      status === 'sent'
+        ? { delivered: 121, bounced: 3, softBounced: 2, complained: 0 }
+        : status === 'failed_to_dispatch'
+          ? { delivered: 0, bounced: 0, softBounced: 0, complained: 0 }
+          : null,
     imagesEnabled: true,
     threadModel: round >= 1 ? thread(fmt, status === 'changes_requested' ? 'changes' : status === 'awaiting_member_approval' ? 'none' : 'approved') : null,
     audit: await auditFixture(status, fmt),

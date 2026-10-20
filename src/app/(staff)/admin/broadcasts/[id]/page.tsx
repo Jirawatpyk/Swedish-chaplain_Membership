@@ -52,6 +52,17 @@ const PORTAL_USER_STATUSES: ReadonlySet<BroadcastStatus> = new Set(['submitted',
  * member, shown as a warning. Every other `failed_to_dispatch` token is a
  * delivery failure, shown as destructive.
  */
+/**
+ * The statuses at which a send has begun, so the delivery breakdown means
+ * something (the member's detail page uses the same set).
+ */
+const DELIVERY_STATUSES: ReadonlySet<BroadcastStatus> = new Set<BroadcastStatus>([
+  'sending',
+  'sent',
+  'partially_sent',
+  'partial_delivery_accepted',
+  'failed_to_dispatch',
+]);
 const STANDING_FAILURE_TOKENS: ReadonlySet<string> = new Set(['member_halted', 'member_not_in_good_standing']);
 
 /** Stages whose next hand-off re-checks the images (the send, or the promotion). */
@@ -181,6 +192,13 @@ export default async function AdminBroadcastDetailPage({
   const shownPreview =
     shownVersion === null || showWorkspace ? null : await render(shownVersion.subject, shownVersion.bodyHtml);
 
+  // Board `Admin-broadcast-sent` — the delivery breakdown, once sending has
+  // begun (before it every count is zero). The same tenant-bound read the
+  // member's detail uses; a manager (`broadcasts.read`) sees it too.
+  const delivery = DELIVERY_STATUSES.has(status)
+    ? await deps.broadcastsRepo.aggregateDeliveryCountsForBroadcast(tenant.slug, broadcast.broadcastId)
+    : null;
+
   // F119 PR-A — why a `failed_to_dispatch` E-Blast was not sent. The stored
   // reason is a lookup hint (`failureReasonToken`), never display text; a token
   // with no sentence in the catalogue reads the generic one (`t.has`).
@@ -256,6 +274,7 @@ export default async function AdminBroadcastDetailPage({
     shownPreview,
     previewState,
     bodyRenderFailed,
+    delivery,
     imagesEnabled: isF71aUs2Enabled(),
     threadModel,
     audit: <AuditTimeline tenantId={tenant.slug} broadcastId={broadcastId} />,
