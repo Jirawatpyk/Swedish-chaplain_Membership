@@ -49,8 +49,12 @@ export interface DeliveryCounts {
 const STAT_WRAP = 'min-w-0 [overflow-wrap:anywhere]';
 
 /** A count takes its tone only when there is something to report. */
-function toned(n: number, tone: 'positive' | 'danger'): string {
-  return n > 0 ? `text-[var(--aura-fg-${tone})] tabular-nums` : 'tabular-nums';
+const TONE_CLASS = {
+  positive: 'text-[var(--aura-fg-positive)] tabular-nums',
+  danger: 'text-[var(--aura-fg-danger)] tabular-nums',
+} as const;
+function toned(n: number, tone: keyof typeof TONE_CLASS): string {
+  return n > 0 ? TONE_CLASS[tone] : 'tabular-nums';
 }
 
 export interface BroadcastDetailViewProps {
