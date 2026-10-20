@@ -200,6 +200,7 @@ test.describe('F5 container widths @layout', () => {
       for (const { route, min, max } of PORTAL_FORM_ROUTES) {
         test(`FormContainer on ${route} @ 1440px`, async ({ page }) => {
           test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_*_EMPTY not set');
+          test.skip(previousSetting === null, 'no seed DB client — approval mode could not be turned on');
           await page.setViewportSize({ width: 1440, height: 900 });
           await signInMember(page);
           await page.goto(route);
