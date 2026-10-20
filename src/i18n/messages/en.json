@@ -3634,6 +3634,14 @@
         "subtitle": "Inspect content + approve, reject, or cancel.",
         "moreActions": "More actions",
         "barStatus": "{recipients, plural, one {# recipient} other {# recipients}} · {audience} · {time} in stage",
+        "delivery": {
+          "title": "Delivery",
+          "delivered": "Delivered",
+          "bounced": "Bounced",
+          "softBounced": "Soft-bounced",
+          "complained": "Complained",
+          "caption": "{recipients, plural, one {# recipient} other {# recipients}} · from the email provider's delivery events. Soft-bounced = a temporary failure the provider retried. Opens and clicks aren't tracked."
+        },
         "bodyRenderFailedTitle": "Body could not be rendered safely",
         "bodyRenderFailedHint": "The sanitiser failed to process this broadcast. Approve is blocked — contact ops to investigate.",
         "batchLoadFailedTitle": "Per-batch breakdown temporarily unavailable",

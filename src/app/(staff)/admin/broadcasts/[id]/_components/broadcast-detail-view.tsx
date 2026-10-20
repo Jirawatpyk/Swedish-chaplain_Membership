@@ -6,8 +6,8 @@
  * results; nothing here reads the database or decides what a user may do.
  * The audit timeline reads the database itself, so it arrives as a slot.
  */
-import { getLocale, getTranslations } from 'next-intl/server';
-import { Alert, Card } from '@jirawatpyk/aura-react/server';
+import { getFormatter, getLocale, getTranslations } from 'next-intl/server';
+import { Alert, Card, Stat } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { RelativeTime } from '@/components/shell/relative-time';
@@ -25,6 +25,7 @@ import {
   StartFormattedVersionAction,
   type StartConfirm,
 } from '@/components/broadcast/approval/start-formatted-version-action';
+import { cn } from '@/lib/utils';
 import { VersionThread, hasThreadHistory, type VersionThreadModel } from '@/components/broadcast/approval/version-thread';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 import { EmailFrame } from '@/components/broadcast/email-frame';
@@ -34,6 +35,28 @@ import { stageOf, type BroadcastStatus, type BroadcastVersion } from '@/modules/
 /** A field's label and value on AURA's type (the label in the secondary tone, never the empty-sentinel dash). */
 const FIELD_LABEL = 'aura-text-caption text-[var(--aura-fg-secondary)]';
 const FIELD_VALUE = 'mt-1 text-sm break-words';
+
+/** Board `Admin-broadcast-sent` — the delivery events the provider reported, by outcome. */
+export interface DeliveryCounts {
+  readonly delivered: number;
+  readonly bounced: number;
+  readonly softBounced: number;
+  readonly complained: number;
+  /** Every recipient row, handed over included (`sent`) — the caption's count. */
+  readonly recipients: number;
+}
+
+/** A tile's label wraps inside the tile at 200% text on a phone (WCAG 1.4.4). */
+const STAT_WRAP = 'min-w-0 [overflow-wrap:anywhere]';
+
+/** A count takes its tone only when there is something to report. */
+const TONE_CLASS = {
+  positive: 'text-[var(--aura-fg-positive)] tabular-nums',
+  danger: 'text-[var(--aura-fg-danger)] tabular-nums',
+} as const;
+function toned(n: number, tone: keyof typeof TONE_CLASS): string {
+  return n > 0 ? TONE_CLASS[tone] : 'tabular-nums';
+}
 
 export interface BroadcastDetailViewProps {
   readonly broadcastId: string;
@@ -73,6 +96,8 @@ export interface BroadcastDetailViewProps {
   readonly shownPreview: PreviewState | null;
   readonly previewState: PreviewState;
   readonly bodyRenderFailed: boolean;
+  /** The delivery counts once sending has begun (`sending` onward); null before. */
+  readonly delivery: DeliveryCounts | null;
   readonly imagesEnabled: boolean;
   readonly threadModel: VersionThreadModel | null;
   /** The audit timeline (it reads the database itself). */
@@ -111,6 +136,7 @@ export async function BroadcastDetailView({
   shownPreview,
   previewState,
   bodyRenderFailed,
+  delivery,
   imagesEnabled,
   threadModel,
   audit,
@@ -129,6 +155,7 @@ export async function BroadcastDetailView({
   const tWarnings = await getTranslations('admin.broadcasts.approval.warnings');
   const tContent = await getTranslations('admin.broadcasts.approval.content');
   const tButtons = await getTranslations('buttons');
+  const format = await getFormatter();
 
   const notSet = <EmptyValue label={tHeader('notSet')} />;
   const formatDate = (d: Date | null): React.ReactNode => (d !== null ? fmt.format(d) : notSet);
@@ -278,6 +305,38 @@ export async function BroadcastDetailView({
             </dl>
       </Card>
 
+      {delivery !== null ? (
+        // Board `Admin-broadcast-sent` — the provider's delivery events by
+        // outcome, once sending has begun (the same read the member's page uses).
+        <Card titleId="eblast-delivery-title" title={t('delivery.title')} headingLevel={2} data-testid="eblast-delivery">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))] gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Stat
+              className={STAT_WRAP}
+              label={t('delivery.delivered')}
+              value={<span className={toned(delivery.delivered, 'positive')}>{format.number(delivery.delivered)}</span>}
+            />
+            <Stat
+              className={STAT_WRAP}
+              label={t('delivery.bounced')}
+              value={<span className={toned(delivery.bounced, 'danger')}>{format.number(delivery.bounced)}</span>}
+            />
+            <Stat
+              className={STAT_WRAP}
+              label={t('delivery.softBounced')}
+              value={<span className="tabular-nums">{format.number(delivery.softBounced)}</span>}
+            />
+            <Stat
+              className={STAT_WRAP}
+              label={t('delivery.complained')}
+              value={<span className={toned(delivery.complained, 'danger')}>{format.number(delivery.complained)}</span>}
+            />
+          </div>
+          <p className="mt-[var(--aura-space-3)] aura-text-caption text-[var(--aura-fg-secondary)]">
+            {t('delivery.caption', { recipients: delivery.recipients })}
+          </p>
+        </Card>
+      ) : null}
+
       {memberFeedback !== null ? (
         <Alert tone="info" role="note" title={memberFeedback.title} data-testid="eblast-member-feedback">
           <span className="block whitespace-pre-line break-words">{memberFeedback.reason}</span>
@@ -344,13 +403,20 @@ export async function BroadcastDetailView({
         </Card>
       )}
 
+      {/* Version history beside the lifecycle timeline from 1024px, each card
+          ending at its own content (maintainer, 20 Oct: the board stacks them,
+          which left half of each card empty); stacked below that. */}
       {threadModel !== null && hasThreadHistory(threadModel) ? (
-        <div className={tailOnPhone}>
+        <div
+          className={cn('grid gap-6 lg:grid-cols-2 lg:items-start', tailOnPhone)}
+          data-testid="eblast-history-row"
+        >
           <VersionThread audience="staff" model={threadModel} />
+          {audit}
         </div>
+      ) : audit ? (
+        <div className={tailOnPhone}>{audit}</div>
       ) : null}
-
-      {audit ? <div className={tailOnPhone}>{audit}</div> : null}
 
       {/* Spec 122 US12c-1 — the stage's staff actions, as the board groups
           them: the destructive ones (Cancel, Reject) at the start, the next

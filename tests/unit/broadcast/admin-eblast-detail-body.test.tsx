@@ -46,6 +46,7 @@ vi.mock('next-intl/server', () => ({
     Object.assign((key: string) => key, { has: () => true }),
   ),
   getLocale: vi.fn().mockResolvedValue('en'),
+  getFormatter: vi.fn().mockResolvedValue({ number: (n: number) => String(n) }),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'tenant-a' }),
@@ -120,7 +121,12 @@ vi.mock('@/modules/broadcasts', async () => ({
       '@/modules/broadcasts/domain/policies/cancel-cutoff-policy',
     )
   ).canCancel,
-  makeGetBroadcastDeps: () => ({ broadcastsRepo: { findById: findByIdMock } }),
+  makeGetBroadcastDeps: () => ({
+    broadcastsRepo: {
+      findById: findByIdMock,
+      aggregateDeliveryCountsForBroadcast: async () => ({ broadcastId: 'x', sent: 0, delivered: 0, bounced: 0, softBounced: 0, complained: 0 }),
+    },
+  }),
   parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),
   renderBroadcastPreview: (...args: unknown[]) => renderBroadcastPreviewMock(...args),
   // F119 T063 — no version rows on these fixtures, so the page shows the

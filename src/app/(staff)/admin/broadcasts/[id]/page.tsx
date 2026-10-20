@@ -7,9 +7,8 @@ import { AuditTimeline } from '@/components/broadcast/admin/audit-timeline';
 import { staffThreadModel } from '@/components/broadcast/approval/version-thread';
 import { type PreviewState } from '@/components/broadcast/use-preview-html';
 import { BroadcastDetailView } from './_components/broadcast-detail-view';
+import { detailActions } from './_components/detail-actions';
 import {
-  canCancel,
-  canTransition,
   isEblastMemberApprovalEnabled,
   isF71aUs2Enabled,
   listBroadcastVersions,
@@ -53,6 +52,17 @@ const PORTAL_USER_STATUSES: ReadonlySet<BroadcastStatus> = new Set(['submitted',
  * member, shown as a warning. Every other `failed_to_dispatch` token is a
  * delivery failure, shown as destructive.
  */
+/**
+ * The statuses at which a send has begun, so the delivery breakdown means
+ * something (the member's detail page uses the same set).
+ */
+const DELIVERY_STATUSES: ReadonlySet<BroadcastStatus> = new Set<BroadcastStatus>([
+  'sending',
+  'sent',
+  'partially_sent',
+  'partial_delivery_accepted',
+  'failed_to_dispatch',
+]);
 const STANDING_FAILURE_TOKENS: ReadonlySet<string> = new Set(['member_halted', 'member_not_in_good_standing']);
 
 /** Stages whose next hand-off re-checks the images (the send, or the promotion). */
@@ -174,33 +184,32 @@ export default async function AdminBroadcastDetailPage({
   const unsafeImages = warnings !== null && IMAGE_CHECK_STATUSES.has(status) ? warnings.unsafeImages : [];
 
   // ---- Affordances (the SERVER decides which controls exist) ---------------
-  //
-  // T152 — the flag gates the `submitted → in_design` edge in the use case;
-  // hiding the button is a UI affordance only, never the gate. From
-  // `changes_requested`, and from `member_approved`/`approved` once a round
-  // has run, the route answers 201 in both flag states (FR-034 — an in-flight
-  // E-Blast stays completable), so the control follows the route, not the flag.
-  const voidsApproval = (status === 'member_approved' || status === 'approved') && round >= 1;
-  const showStart =
-    canWrite && ((status === 'submitted' && memberApprovalOn) || status === 'changes_requested' || voidsApproval);
+  // One function for the page and the preview harness (`detail-actions.ts`).
+  const { showStart, startConfirm, showSchedule, isCancellable, showApprove, showReject, showActionRow } =
+    detailActions({ status, round, canWrite, canSend, memberApprovalOn, bodyRenderFailed });
   const showWorkspace = canWrite && workingCopy !== null && original !== null;
   // Rendered only when it is shown read-only (the workspace previews its own).
   const shownPreview =
     shownVersion === null || showWorkspace ? null : await render(shownVersion.subject, shownVersion.bodyHtml);
-  const showSchedule = canSend && (status === 'member_approved' || (status === 'approved' && round >= 1));
-  // M3 — what starting a version costs from this stage, so the island asks
-  // (or not) before it posts: from `submitted` it ends approve-as-submitted.
-  const startConfirm = status === 'submitted' ? 'leaves_submitted' : voidsApproval ? 'voids_approval' : 'none';
-  // F119 T051 — Cancel reads the Domain cut-off (`canCancel`), the same policy
-  // the `/cancel` use case enforces. B1 — Approve is approve-AS-SUBMITTED, so
-  // it stays `submitted`-only (and refuses content the server could not
-  // render, IMP-3); Reject follows the Domain edge T081 widened
-  // (`canTransition(status, 'rejected')` — every pre-send stage but
-  // `approved`), which is what the `/reject` use case enforces.
-  const isCancellable = canCancel(status);
-  const showApprove = canWrite && status === 'submitted' && !bodyRenderFailed;
-  const showReject = canWrite && canTransition(status, 'rejected');
-  const showActionRow = canWrite && (isCancellable || showApprove || showReject || showStart || showSchedule);
+
+  // Board `Admin-broadcast-sent` — the delivery breakdown, once sending has
+  // begun (before it every count is zero). The same tenant-bound read the
+  // member's detail uses; a manager (`broadcasts.read`) sees it too.
+  // The caption counts every recipient row, handed over included, so it is the
+  // sum of the figures above it plus those still awaiting an outcome.
+  const counts = DELIVERY_STATUSES.has(status)
+    ? await deps.broadcastsRepo.aggregateDeliveryCountsForBroadcast(tenant.slug, broadcast.broadcastId)
+    : null;
+  const delivery =
+    counts === null
+      ? null
+      : {
+          delivered: counts.delivered,
+          bounced: counts.bounced,
+          softBounced: counts.softBounced,
+          complained: counts.complained,
+          recipients: counts.delivered + counts.bounced + counts.softBounced + counts.complained + counts.sent,
+        };
 
   // F119 PR-A — why a `failed_to_dispatch` E-Blast was not sent. The stored
   // reason is a lookup hint (`failureReasonToken`), never display text; a token
@@ -277,6 +286,7 @@ export default async function AdminBroadcastDetailPage({
     shownPreview,
     previewState,
     bodyRenderFailed,
+    delivery,
     imagesEnabled: isF71aUs2Enabled(),
     threadModel,
     audit: <AuditTimeline tenantId={tenant.slug} broadcastId={broadcastId} />,

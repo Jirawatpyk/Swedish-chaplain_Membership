@@ -3634,6 +3634,14 @@
         "subtitle": "Granska innehåll + godkänn, avvisa eller avbryt.",
         "moreActions": "Fler åtgärder",
         "barStatus": "{recipients, plural, one {# mottagare} other {# mottagare}} · {audience} · {time} i detta steg",
+        "delivery": {
+          "title": "Leverans",
+          "delivered": "Levererade",
+          "bounced": "Studsade",
+          "softBounced": "Mjuk studs",
+          "complained": "Klagomål",
+          "caption": "{recipients, plural, one {# mottagare} other {# mottagare}} · från e-postleverantörens leveranshändelser. Mjuk studs = ett tillfälligt fel där leverantören försökte leverera igen. Öppningar och klick spåras inte."
+        },
         "bodyRenderFailedTitle": "Innehållet kunde inte renderas säkert",
         "bodyRenderFailedHint": "Saneringen kunde inte bearbeta detta utskick. Godkännande är blockerat — kontakta drift för utredning.",
         "batchLoadFailedTitle": "Detaljer per batch är tillfälligt otillgängliga",

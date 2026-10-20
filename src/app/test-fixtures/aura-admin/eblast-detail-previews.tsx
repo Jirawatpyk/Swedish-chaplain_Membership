@@ -7,6 +7,7 @@
  * guards and the reads; the affordance decisions below mirror its rules for
  * each stage, so the preview shows what an admin (or a manager) would get.
  */
+import { detailActions } from '@/app/(staff)/admin/broadcasts/[id]/_components/detail-actions';
 import { getTranslations } from 'next-intl/server';
 import { BroadcastDetailView, type BroadcastDetailViewProps } from '@/app/(staff)/admin/broadcasts/[id]/_components/broadcast-detail-view';
 import { AuditTimelineView } from '@/components/broadcast/admin/audit-timeline';
@@ -104,12 +105,8 @@ export async function renderBroadcastDetailPreview(state: string | undefined) {
   const showWorkspace = !manager && working !== null;
   const shownVersion = working ?? (round >= 1 ? v1 : null);
   const canWrite = !manager;
-  const cancellable = ['submitted', 'in_design', 'awaiting_member_approval', 'changes_requested', 'member_approved', 'approved'].includes(status);
-  const rejectable = ['submitted', 'in_design', 'awaiting_member_approval', 'changes_requested', 'member_approved'].includes(status);
-  const showStart = canWrite && (status === 'submitted' || status === 'changes_requested');
-  const showSchedule = canWrite && status === 'member_approved';
-  const showApprove = canWrite && status === 'submitted';
-  const showReject = canWrite && rejectable;
+  // The page's own rules (`detail-actions.ts`), so the preview shows what the page shows.
+  const actions = detailActions({ status, round, canWrite, canSend: canWrite, memberApprovalOn: true, bodyRenderFailed: false });
 
   const props: BroadcastDetailViewProps = {
     broadcastId: ID,
@@ -148,16 +145,16 @@ export async function renderBroadcastDetailPreview(state: string | undefined) {
     shownPreview: shownVersion !== null && !showWorkspace ? ready('Nordic Leadership Breakfast — 15 October') : null,
     previewState: ready('Nordic Leadership Breakfast'),
     bodyRenderFailed: false,
+    delivery:
+      status === 'sent'
+        ? { delivered: 121, bounced: 3, softBounced: 2, complained: 0, recipients: 126 }
+        : status === 'failed_to_dispatch'
+          ? { delivered: 0, bounced: 0, softBounced: 0, complained: 0, recipients: 0 }
+          : null,
     imagesEnabled: true,
     threadModel: round >= 1 ? thread(fmt, status === 'changes_requested' ? 'changes' : status === 'awaiting_member_approval' ? 'none' : 'approved') : null,
     audit: await auditFixture(status, fmt),
-    showActionRow: canWrite && (cancellable || showApprove || showReject || showStart || showSchedule),
-    isCancellable: cancellable,
-    showStart,
-    startConfirm: status === 'submitted' ? 'leaves_submitted' : 'none',
-    showSchedule,
-    showApprove,
-    showReject,
+    ...actions,
   };
   return BroadcastDetailView(props);
 }

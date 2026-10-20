@@ -42,6 +42,7 @@ vi.mock('next-intl/server', () => ({
     Object.assign((key: string) => key, { has: (key: string) => !missingKeys.has(key) }),
   ),
   getLocale: vi.fn().mockResolvedValue('en'),
+  getFormatter: vi.fn().mockResolvedValue({ number: (n: number) => String(n) }),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'tenant-a' }),
@@ -119,6 +120,7 @@ vi.mock('@/components/broadcast/use-preview-html', () => ({
 }));
 
 const findByIdMock = vi.fn();
+const deliveryMock = vi.fn(async () => ({ broadcastId: 'x', sent: 0, delivered: 121, bounced: 3, softBounced: 2, complained: 0 }));
 const listVersionsMock = vi.fn();
 const warningsMock = vi.fn();
 /** F119 PR-A R1 — the page's "held for the member's payment" read; default: not held. */
@@ -143,7 +145,9 @@ vi.mock('@/modules/broadcasts', async () => {
     turnOf: turn.turnOf,
     isEblastMemberApprovalEnabled: () => flagOn,
     isF71aUs2Enabled: () => false,
-    makeGetBroadcastDeps: () => ({ broadcastsRepo: { findById: findByIdMock } }),
+    makeGetBroadcastDeps: () => ({
+      broadcastsRepo: { findById: findByIdMock, aggregateDeliveryCountsForBroadcast: deliveryMock },
+    }),
     parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),
     listBroadcastVersions: (...args: unknown[]) => listVersionsMock(...args),
     readFormattingWarnings: (...args: unknown[]) => warningsMock(...args),
@@ -689,6 +693,81 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     expect(html).not.toContain('data-slot="card"');
   });
 
+  it('once sending has begun, a Delivery card shows the four counts (board `Admin-broadcast-sent`)', async () => {
+    deliveryMock.mockClear();
+    const html = await renderPage('sent', 0);
+    expect(deliveryMock).toHaveBeenCalledWith('tenant-a', ID);
+    const card = openingTagWith(html, 'aria-labelledby="eblast-delivery-title"');
+    expect(card).toContain('aura-card');
+    const at = html.indexOf('aria-labelledby="eblast-delivery-title"');
+    const section = html.slice(at, html.indexOf('</section>', at));
+    for (const key of ['delivered', 'bounced', 'softBounced', 'complained']) {
+      expect(section, key).toContain(`delivery.${key}`);
+    }
+    expect(section.match(/aura-stat\b/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    for (const n of ['121', '3', '2', '0']) expect(section).toContain(`>${n}<`);
+    expect(section).toContain('delivery.caption');
+  });
+
+  function deliverySection(html: string): string {
+    const at = html.indexOf('aria-labelledby="eblast-delivery-title"');
+    return html.slice(at, html.indexOf('</section>', at));
+  }
+
+  it('the caption counts every recipient row, handed over included, as the board does (121 + 3 + 2 + 4 = 130)', async () => {
+    const { getTranslations } = await import('next-intl/server');
+    const plain = Object.assign((key: string) => key, { has: (key: string) => !missingKeys.has(key) });
+    vi.mocked(getTranslations).mockResolvedValue(
+      Object.assign((key: string, values?: Record<string, unknown>) => (key === 'delivery.caption' ? `${key}:${String(values?.recipients)}` : key), {
+        has: plain.has,
+      }) as never,
+    );
+    deliveryMock.mockResolvedValueOnce({ broadcastId: 'x', sent: 4, delivered: 121, bounced: 3, softBounced: 2, complained: 0 });
+    try {
+      const html = await renderPage('sent', 0);
+      expect(deliverySection(html)).toContain('delivery.caption:130');
+    } finally {
+      vi.mocked(getTranslations).mockResolvedValue(plain as never);
+    }
+  });
+
+  it('tones only a figure that is there: Delivered green above 0, Bounced and Complained red above 0', async () => {
+    deliveryMock.mockResolvedValueOnce({ broadcastId: 'x', sent: 0, delivered: 0, bounced: 0, softBounced: 0, complained: 0 });
+    const none = deliverySection(await renderPage('sent', 0));
+    expect(none).not.toContain('--aura-fg-positive');
+    expect(none).not.toContain('--aura-fg-danger');
+    deliveryMock.mockResolvedValueOnce({ broadcastId: 'x', sent: 0, delivered: 5, bounced: 1, softBounced: 1, complained: 2 });
+    const some = deliverySection(await renderPage('sent', 0));
+    expect(some.match(/--aura-fg-positive/g)?.length).toBe(1);
+    expect(some.match(/--aura-fg-danger/g)?.length).toBe(2);
+  });
+
+  it('a tile label wraps inside its tile at 200% text on a phone (WCAG 1.4.4)', async () => {
+    const section = deliverySection(await renderPage('sent', 0));
+    // Below 640px a tile takes a row of its own once two no longer fit side by side.
+    expect(section).toContain('grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))]');
+    const tiles = section.match(/<[^>]*class="[^"]*aura-stat\b[^"]*"[^>]*>/g) ?? [];
+    expect(tiles.length).toBe(4);
+    for (const tile of tiles) {
+      expect(tile).toContain('min-w-0');
+      expect(tile).toContain('[overflow-wrap:anywhere]');
+    }
+  });
+
+  it('a manager sees the Delivery card on a sent E-Blast, and no action controls', async () => {
+    role = 'manager';
+    const html = await renderPage('sent', 0);
+    expect(html).toContain('aria-labelledby="eblast-delivery-title"');
+    expect(html).not.toContain('data-testid="eblast-action-row"');
+  });
+
+  it('before sending begins there is no Delivery card and no read', async () => {
+    deliveryMock.mockClear();
+    const html = await renderPage('submitted', 0);
+    expect(html).not.toContain('eblast-delivery-title');
+    expect(deliveryMock).not.toHaveBeenCalled();
+  });
+
   it('the version comparison is two AURA cards', async () => {
     const html = await renderPage('awaiting_member_approval', 1);
     for (const id of ['eblast-shown-version-title', 'eblast-original-title']) {
@@ -726,6 +805,20 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     const frames = html.match(/<div data-testid="preview-surface"[^>]*>/g) ?? [];
     expect(frames).toHaveLength(2);
     for (const frame of frames) expect(frame).toContain('data-fit="true"');
+  });
+
+  it('version history and the lifecycle timeline sit side by side from 1024px, each ending at its own content (maintainer, 20 Oct)', async () => {
+    const html = await renderPage('awaiting_member_approval', 1);
+    const row = openingTagWith(html, 'data-testid="eblast-history-row"');
+    expect(row).toContain('lg:grid-cols-2');
+    expect(row).toContain('lg:items-start');
+    const at = html.indexOf('data-testid="eblast-history-row"');
+    expect(html.indexOf('version-thread', at)).toBeGreaterThan(at);
+  });
+
+  it('with no version history the lifecycle timeline keeps the full width', async () => {
+    const html = await renderPage('submitted', 0);
+    expect(html).not.toContain('data-testid="eblast-history-row"');
   });
 
   it('every page note is an AURA alert that keeps its test id and role', async () => {
