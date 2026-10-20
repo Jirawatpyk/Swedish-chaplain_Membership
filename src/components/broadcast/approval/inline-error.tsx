@@ -1,7 +1,7 @@
 /**
  * F119 T063 / T064 UX review — the one inline refusal line the approval
- * surfaces render (ux-standards § 4.1: below the field, `text-sm
- * text-destructive`, a `<CircleAlert />`, announced by `role="alert"` on first
+ * surfaces render (ux-standards § 4.1: below the field, `text-sm` on
+ * AURA's danger token, a `<CircleAlert />`, announced by `role="alert"` on first
  * appearance).
  *
  * Callers mount it only while there is a message and clear it at the start of
@@ -28,7 +28,7 @@ export function InlineError({ id, message, className, ...rest }: InlineErrorProp
       id={id}
       role="alert"
       tabIndex={-1}
-      className={cn('flex items-start gap-1.5 text-sm text-destructive', className)}
+      className={cn('flex items-start gap-1.5 text-sm text-[var(--aura-fg-danger)]', className)}
       {...rest}
     >
       <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />

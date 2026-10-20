@@ -15,6 +15,7 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { CheckCircle2, Circle } from 'lucide-react';
+import { Card, Icon } from '@jirawatpyk/aura-react/server';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
 
@@ -126,53 +127,83 @@ export async function AuditTimeline({
   };
 
   return (
-    <section
-      aria-label={t('title')}
-      className="rounded-md border bg-muted/20 p-4"
-    >
-      {/* h2: the detail page's only caller outlines every section at h2. */}
-      <h2 className="mb-3 text-sm font-semibold">{t('title')}</h2>
+    <AuditTimelineView
+      title={t('title')}
+      events={events.map((r) => {
+        const ts = new Date(r.timestamp);
+        return {
+          key: `${r.eventType}-${ts.getTime()}`,
+          label: eventLabel[r.eventType] ?? r.eventType,
+          instant: ts.toISOString(),
+          when: fmt.format(ts),
+          actor: t('actorBy', { actor: formatActor(r, t) }),
+          actorId: r.actorUserId,
+        };
+      })}
+    />
+  );
+}
+
+export interface AuditTimelineEvent {
+  readonly key: string;
+  readonly label: string;
+  /** ISO 8601 UTC instant, for `<time dateTime>`. */
+  readonly instant: string;
+  /** The instant formatted in the tenant's time zone. */
+  readonly when: string;
+  /** "by …", already localised. */
+  readonly actor: string;
+  /** The raw actor id, kept in the title attribute for ops debugging. */
+  readonly actorId: string;
+}
+
+/**
+ * Spec 122 US12c-1 (parity comment, 20 Oct; board `Admin-broadcast-review`)
+ * — the timeline as an AURA card titled at h2 like the page's other cards: a
+ * hollow circle per past step, a check on the latest. Split from the loader so
+ * the preview harness can render it without a database.
+ */
+export function AuditTimelineView({
+  title,
+  events,
+}: {
+  readonly title: string;
+  readonly events: ReadonlyArray<AuditTimelineEvent>;
+}): React.ReactElement {
+  return (
+    <Card titleId="eblast-audit-title" title={title} headingLevel={2}>
       {events.length === 0 ? (
-        <p className="text-xs text-muted-foreground">—</p>
+        <p className="aura-text-body text-[var(--aura-fg-secondary)]">—</p>
       ) : (
-        <ol className="space-y-2">
-          {events.map((r, idx) => {
-            const ts = new Date(r.timestamp);
+        <ol className="flex flex-col gap-[var(--aura-space-4)]">
+          {events.map((e, idx) => {
+            const latest = idx === events.length - 1;
             return (
-              <li
-                key={`${r.eventType}-${ts.getTime()}`}
-                className="flex items-start gap-3"
-              >
-                {idx === events.length - 1 ? (
-                  <CheckCircle2
-                    className="mt-0.5 h-4 w-4 shrink-0 text-primary"
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <Circle
-                    className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                )}
-                <div className="flex-1">
-                  <p className="text-sm font-medium">
-                    {eventLabel[r.eventType] ?? r.eventType}
-                  </p>
-                  <p className="text-xs text-muted-foreground tabular-nums">
-                    {fmt.format(ts)}
+              <li key={e.key} data-step={latest ? 'latest' : 'past'} className="flex items-start gap-[var(--aura-space-3)]">
+                <span
+                  className={
+                    latest
+                      ? 'mt-0.5 shrink-0 text-[var(--aura-fg-positive)]'
+                      : 'mt-0.5 shrink-0 text-[var(--aura-fg-secondary)]'
+                  }
+                >
+                  <Icon name={latest ? <CheckCircle2 /> : <Circle />} size={16} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="aura-text-body font-semibold">{e.label}</p>
+                  <div className="aura-text-caption text-[var(--aura-fg-secondary)] break-words tabular-nums">
+                    <time dateTime={e.instant}>{e.when}</time>
                     <span className="mx-1.5" aria-hidden="true">
                       ·
                     </span>
-                    <span title={r.actorUserId || undefined}>
-                      {t('actorBy', { actor: formatActor(r, t) })}
-                    </span>
-                  </p>
+                    <span title={e.actorId || undefined}>{e.actor}</span>
+                  </div>
                 </div>
               </li>
             );
           })}
         </ol>
       )}
-    </section>
+    </Card>
   );
 }
