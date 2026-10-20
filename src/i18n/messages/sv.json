@@ -3636,7 +3636,7 @@
         "barStatus": "{recipients, plural, one {# mottagare} other {# mottagare}} · {audience} · {time} i detta steg",
         "delivery": {
           "title": "Leverans",
-          "delivered": "Levererad",
+          "delivered": "Levererade",
           "bounced": "Studsade",
           "softBounced": "Mjuk studs",
           "complained": "Klagomål",

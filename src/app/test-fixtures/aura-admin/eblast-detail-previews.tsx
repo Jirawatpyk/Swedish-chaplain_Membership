@@ -147,9 +147,9 @@ export async function renderBroadcastDetailPreview(state: string | undefined) {
     bodyRenderFailed: false,
     delivery:
       status === 'sent'
-        ? { delivered: 121, bounced: 3, softBounced: 2, complained: 0 }
+        ? { delivered: 121, bounced: 3, softBounced: 2, complained: 0, recipients: 126 }
         : status === 'failed_to_dispatch'
-          ? { delivered: 0, bounced: 0, softBounced: 0, complained: 0 }
+          ? { delivered: 0, bounced: 0, softBounced: 0, complained: 0, recipients: 0 }
           : null,
     imagesEnabled: true,
     threadModel: round >= 1 ? thread(fmt, status === 'changes_requested' ? 'changes' : status === 'awaiting_member_approval' ? 'none' : 'approved') : null,

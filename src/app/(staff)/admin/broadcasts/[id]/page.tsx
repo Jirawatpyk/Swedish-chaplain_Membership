@@ -195,9 +195,21 @@ export default async function AdminBroadcastDetailPage({
   // Board `Admin-broadcast-sent` — the delivery breakdown, once sending has
   // begun (before it every count is zero). The same tenant-bound read the
   // member's detail uses; a manager (`broadcasts.read`) sees it too.
-  const delivery = DELIVERY_STATUSES.has(status)
+  // The caption counts every recipient row, handed over included, so it is the
+  // sum of the figures above it plus those still awaiting an outcome.
+  const counts = DELIVERY_STATUSES.has(status)
     ? await deps.broadcastsRepo.aggregateDeliveryCountsForBroadcast(tenant.slug, broadcast.broadcastId)
     : null;
+  const delivery =
+    counts === null
+      ? null
+      : {
+          delivered: counts.delivered,
+          bounced: counts.bounced,
+          softBounced: counts.softBounced,
+          complained: counts.complained,
+          recipients: counts.delivered + counts.bounced + counts.softBounced + counts.complained + counts.sent,
+        };
 
   // F119 PR-A — why a `failed_to_dispatch` E-Blast was not sent. The stored
   // reason is a lookup hint (`failureReasonToken`), never display text; a token

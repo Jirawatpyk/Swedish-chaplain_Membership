@@ -41,6 +41,16 @@ export interface DeliveryCounts {
   readonly bounced: number;
   readonly softBounced: number;
   readonly complained: number;
+  /** Every recipient row, handed over included (`sent`) — the caption's count. */
+  readonly recipients: number;
+}
+
+/** A tile's label wraps inside the tile at 200% text on a phone (WCAG 1.4.4). */
+const STAT_WRAP = 'min-w-0 [overflow-wrap:anywhere]';
+
+/** A count takes its tone only when there is something to report. */
+function toned(n: number, tone: 'positive' | 'danger'): string {
+  return n > 0 ? `text-[var(--aura-fg-${tone})] tabular-nums` : 'tabular-nums';
 }
 
 export interface BroadcastDetailViewProps {
@@ -296,22 +306,28 @@ export async function BroadcastDetailView({
         <Card titleId="eblast-delivery-title" title={t('delivery.title')} headingLevel={2} data-testid="eblast-delivery">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat
+              className={STAT_WRAP}
               label={t('delivery.delivered')}
-              value={<span className="text-[var(--aura-fg-positive)] tabular-nums">{format.number(delivery.delivered)}</span>}
+              value={<span className={toned(delivery.delivered, 'positive')}>{format.number(delivery.delivered)}</span>}
             />
             <Stat
+              className={STAT_WRAP}
               label={t('delivery.bounced')}
-              value={
-                <span className={delivery.bounced > 0 ? 'text-[var(--aura-fg-danger)] tabular-nums' : 'tabular-nums'}>
-                  {format.number(delivery.bounced)}
-                </span>
-              }
+              value={<span className={toned(delivery.bounced, 'danger')}>{format.number(delivery.bounced)}</span>}
             />
-            <Stat label={t('delivery.softBounced')} value={<span className="tabular-nums">{format.number(delivery.softBounced)}</span>} />
-            <Stat label={t('delivery.complained')} value={<span className="tabular-nums">{format.number(delivery.complained)}</span>} />
+            <Stat
+              className={STAT_WRAP}
+              label={t('delivery.softBounced')}
+              value={<span className="tabular-nums">{format.number(delivery.softBounced)}</span>}
+            />
+            <Stat
+              className={STAT_WRAP}
+              label={t('delivery.complained')}
+              value={<span className={toned(delivery.complained, 'danger')}>{format.number(delivery.complained)}</span>}
+            />
           </div>
           <p className="mt-[var(--aura-space-3)] aura-text-caption text-[var(--aura-fg-secondary)]">
-            {t('delivery.caption', { recipients: broadcast.estimatedRecipientCount })}
+            {t('delivery.caption', { recipients: delivery.recipients })}
           </p>
         </Card>
       ) : null}
