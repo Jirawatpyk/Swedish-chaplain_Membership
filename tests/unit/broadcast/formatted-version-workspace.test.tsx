@@ -111,12 +111,23 @@ async function sendAndConfirm(): Promise<void> {
 }
 
 describe('F119 T063 — the staff format workspace (UX review)', () => {
+  it('Spec 122 US12c-1: the footer buttons stay 44px on a phone (touch height, no 36px floor)', () => {
+    renderWorkspace();
+    for (const id of ['eblast-test-copy', 'eblast-format-save', 'eblast-send-to-member']) {
+      const button = screen.getByTestId(id);
+      expect(button).toHaveClass('aura-btn--touch');
+      // A wrapped label grows the button; it never shrinks it below 44px.
+      expect(button).toHaveClass('max-sm:min-h-11');
+      expect(button).not.toHaveClass('max-sm:min-h-9');
+    }
+  });
+
   it('H2: Save is aria-disabled (still focusable), never natively disabled, while there is nothing to save', () => {
     renderWorkspace();
     expect(saveButton()).not.toHaveAttribute('disabled');
     expect(saveButton()).toHaveAttribute('aria-disabled', 'true');
-    // The hook the shared Button's `data-disabled:` dimmed look keys on.
-    expect(saveButton()).toHaveAttribute('data-disabled');
+    // Spec 122 US12c-1 — AURA dims an `aria-disabled` button itself (the
+    // legacy `data-disabled` hook is gone with the legacy Button).
     expect(screen.getByTestId('eblast-test-copy')).not.toHaveAttribute('disabled');
   });
 
@@ -143,8 +154,9 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
     expect(alert).toHaveTextContent(t.errors.validation_error);
     expect(subject.getAttribute('aria-describedby')?.split(' ')).toContain(alert.id);
     expect(subject).toHaveAttribute('aria-invalid', 'true');
-    // Below the field: in the subject's own group, after the input.
-    expect(subject.parentElement).toContainElement(alert);
+    // Below the field: in the subject's own group (the AURA field and its
+    // refusal line), after the input.
+    expect(subject.closest('.aura-field')!.parentElement).toContainElement(alert);
     expect(subject.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(alert.querySelector('svg')).not.toBeNull();
   });
@@ -315,5 +327,51 @@ describe('F119 T063 — the staff format workspace (UX review)', () => {
     await user.type(screen.getByTestId('tiptap-editor'), 'more{Enter}');
     await user.type(screen.getByLabelText(t.workspace.noteLabel), 'a note{Enter}');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Spec 122 US12c-1 (T1224, board `Admin-eblast-design`) — the workspace on
+ * AURA: its card labelled by its own h2, the subject and the note AURA fields,
+ * Save the plain secondary button (no icon, by the button-icon rule) and Send
+ * the primary one with `mail`, the send confirmation AURA's alert dialog, and
+ * the member's original an AURA card in the disclosure that folds it on a phone.
+ */
+describe('Spec 122 US12c-1 — the formatted-version workspace on AURA', () => {
+  it('card, fields, buttons and the original are AURA', async () => {
+    const { container } = renderWorkspace();
+    const workspace = screen.getByTestId('eblast-format-workspace');
+    expect(workspace.classList.contains('aura-card')).toBe(true);
+    expect(workspace.querySelector('h2#eblast-format-title.aura-card__title')).not.toBeNull();
+    expect(screen.getByLabelText(t.workspace.subjectLabel).closest('.aura-field')).not.toBeNull();
+    expect(screen.getByLabelText(t.workspace.noteLabel).closest('.aura-field')).not.toBeNull();
+    expect(saveButton().className).toContain('aura-btn--secondary');
+    expect(saveButton().querySelector('svg')).toBeNull();
+    expect(sendButton().className).toContain('aura-btn--primary');
+    expect(sendButton().querySelector('svg')).not.toBeNull();
+    expect(screen.getByTestId('eblast-test-copy').className).toContain('aura-btn');
+    const original = screen.getByTestId('eblast-member-original');
+    expect(original.classList.contains('aura-card')).toBe(true);
+    expect(original.closest('[data-testid="eblast-original-disclosure"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="card"], [data-slot="input"], [data-slot="textarea"]')).toBeNull();
+
+    fireEvent.click(sendButton());
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.closest('[class*="aura-dialog"]')).not.toBeNull();
+  });
+
+  it('on a phone, Send to member sits first, then Save, then the test copy (board `Admin-eblast-design-mobile`)', () => {
+    renderWorkspace();
+    expect(sendButton().className).toContain('max-sm:order-1');
+    expect(saveButton().className).toContain('max-sm:order-2');
+    expect(screen.getByTestId('eblast-test-copy').className).toContain('max-sm:order-3');
+  });
+
+  it('follows board `Admin-eblast-design`: ghost test copy, send icon, cards end at their own content', () => {
+    renderWorkspace();
+    const testCopy = screen.getByTestId('eblast-test-copy');
+    expect(testCopy.className).toContain('aura-btn--ghost');
+    expect(sendButton().querySelector('svg.lucide-send')).not.toBeNull();
+    expect(screen.getByTestId('eblast-format-workspace').parentElement?.className).toContain('lg:items-start');
   });
 });

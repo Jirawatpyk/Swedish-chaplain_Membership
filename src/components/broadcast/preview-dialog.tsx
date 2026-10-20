@@ -16,24 +16,17 @@
  * trigger is a sibling of this dialog and never unmounts on close, so it is
  * always the least-surprising target — no `resolveDialogFinalFocus` success
  * case applies here. The resolver is a stable `useCallback` reading a ref,
- * because Base UI reads `finalFocus` at CLOSE time, when a value captured
+ * because the dialog reads `finalFocus` at CLOSE time, when a value captured
  * from render-time state has already gone.
  *
- * Motion: the shared `DialogContent` carries `motion-reduce:duration-0`, so
- * `prefers-reduced-motion: reduce` removes the open/close animation without
- * a per-component override (ux-standards § 17).
+ * Spec 122 US12c-1 — AURA's `Dialog` and `Button`s. Motion: AURA's dialog
+ * drops its open/close animation under `prefers-reduced-motion: reduce` in its
+ * own stylesheet (ux-standards § 17). The compose surfaces (US12d) share this
+ * dialog and restyle with it, with no code change of their own.
  */
 import { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Eye } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Button, Dialog } from '@jirawatpyk/aura-react';
 import { PreviewSurface, type PreviewState } from './use-preview-html';
 
 /** FR-043 — the two recipient widths, in CSS pixels. */
@@ -61,31 +54,19 @@ export function PreviewDialog({ state }: PreviewDialogProps): React.ReactElement
 
   return (
     <>
-      <Button
-        ref={triggerRef}
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setOpen(true)}
-      >
-        <Eye aria-hidden="true" />
+      <Button ref={triggerRef} type="button" variant="secondary" size="sm" touchHeight icon="eye" onClick={() => setOpen(true)}>
         {t('openLabel')}
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent
-          className="sm:max-w-[680px]"
-          finalFocus={finalFocus}
-        >
-          <DialogHeader>
-            <DialogTitle>{t('dialogTitle')}</DialogTitle>
-            <DialogDescription>{t('dialogDescription')}</DialogDescription>
-          </DialogHeader>
-
-          <div
-            role="group"
-            aria-label={t('widthLabel')}
-            className="flex flex-wrap gap-2"
-          >
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        finalFocus={finalFocus}
+        size="lg"
+        title={t('dialogTitle')}
+        description={t('dialogDescription')}
+      >
+        <div className="flex flex-col gap-[var(--aura-space-3)]">
+          <div role="group" aria-label={t('widthLabel')} className="flex flex-wrap gap-2">
             {(
               [
                 [PREVIEW_WIDTH_DESKTOP, t('widthDesktop')],
@@ -105,14 +86,10 @@ export function PreviewDialog({ state }: PreviewDialogProps): React.ReactElement
             ))}
           </div>
 
-          <div className="max-h-[70vh] overflow-auto rounded-md border bg-muted/20 p-2">
-            <PreviewSurface
-              state={state}
-              width={width}
-              height={PREVIEW_DIALOG_FRAME_HEIGHT}
-            />
+          <div className="max-h-[70vh] overflow-auto rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)] p-2">
+            <PreviewSurface state={state} width={width} height={PREVIEW_DIALOG_FRAME_HEIGHT} />
           </div>
-        </DialogContent>
+        </div>
       </Dialog>
     </>
   );

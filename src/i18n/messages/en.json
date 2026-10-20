@@ -3632,6 +3632,8 @@
       "review": {
         "title": "Broadcast review",
         "subtitle": "Inspect content + approve, reject, or cancel.",
+        "moreActions": "More actions",
+        "barStatus": "{recipients, plural, one {# recipient} other {# recipients}} · {audience} · {time} in stage",
         "bodyRenderFailedTitle": "Body could not be rendered safely",
         "bodyRenderFailedHint": "The sanitiser failed to process this broadcast. Approve is blocked — contact ops to investigate.",
         "batchLoadFailedTitle": "Per-batch breakdown temporarily unavailable",

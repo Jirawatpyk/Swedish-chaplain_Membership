@@ -210,4 +210,18 @@ describe('F119 T085 — the version thread', () => {
     expect(region).toHaveTextContent(tPortal.approvedAsSubmitted);
     expect(region).not.toHaveTextContent(STAFF_NAME);
   });
+
+  it('spec 122 US12c-1: the thread is an AURA card titled by its own h2, on both sides', () => {
+    for (const audience of ['staff', 'member'] as const) {
+      const { container, unmount } = renderThread(audience);
+      const card = container.querySelector('[data-testid="eblast-version-thread"]')!;
+      expect(card.classList.contains('aura-card'), audience).toBe(true);
+      const title = card.querySelector('h2.aura-card__title')!;
+      expect(title, audience).not.toBeNull();
+      expect(card.getAttribute('aria-labelledby')).toBe(title.id);
+      expect(container.querySelector('[data-slot="card"], .text-muted-foreground')).toBeNull();
+      unmount();
+    }
+  });
 });
+

@@ -62,6 +62,16 @@ function typePhrase(dialog: HTMLElement, ns: { readonly subjectLabel: string }):
 describe('CancelBroadcastAction (admin surface)', () => {
   const triggerName = en.admin.broadcasts.cancelDialog.confirm;
 
+  it('spec 122 US12c-1: the trigger is AURA\'s danger outline button on both surfaces', () => {
+    for (const surface of ['admin', 'member'] as const) {
+      const { unmount } = renderAction(surface);
+      const trigger = screen.getAllByRole('button')[0]!;
+      expect(trigger.className, surface).toContain('aura-btn--danger-secondary');
+      expect(trigger.querySelector('svg'), surface).not.toBeNull();
+      unmount();
+    }
+  });
+
   it('renders the trigger button', () => {
     renderAction('admin');
     expect(screen.getByRole('button', { name: triggerName })).toBeInTheDocument();

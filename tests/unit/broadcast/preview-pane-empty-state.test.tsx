@@ -231,7 +231,9 @@ describe("T103 — the pane renders the ROUTE's document in a sandboxed srcdoc i
   it('shows a shimmer skeleton while the first render is in flight', () => {
     stubFetch();
     const { container } = renderPane();
-    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+    // Spec 122 US12c-1 — the shared skeleton block (AURA's pulse), not the legacy Skeleton.
+    expect(container.querySelector('[data-slot="skeleton-block"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="skeleton"]')).toBeNull();
   });
 });
 

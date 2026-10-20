@@ -58,11 +58,11 @@ export function PreviewPane({
     <section
       data-compose-feature="preview-pane"
       aria-label={t('previewLabel')}
-      className="rounded-md border bg-muted/20 overflow-x-hidden min-w-0"
+      className="min-w-0 overflow-x-hidden rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)]"
     >
-      <header className="flex items-start justify-between gap-2 border-b px-3 py-2">
+      <header className="flex items-start justify-between gap-2 border-b border-[var(--aura-border-default)] px-3 py-2">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
+          <p className="aura-text-caption text-[var(--aura-fg-secondary)]">
             {t('previewLabel')}
           </p>
           {/* Portal live walk U32 — this used to be
