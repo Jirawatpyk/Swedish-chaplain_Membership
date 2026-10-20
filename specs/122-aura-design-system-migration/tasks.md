@@ -737,7 +737,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1242 [US12] Member sign-off on AURA: decision `Card`, `Button`s with icons, approve `Dialog role="alertdialog"` + `Textarea`; request changes and withdraw on the shell reason dialog; requests and toasts unchanged. Test: `member-sign-off-actions`.
 - [x] T1243 [US12] The portal's e-mail frames fit the e-mail (`fit`, each in an `EmailFrame`); security review.
 - [x] T1244 [US12] Loading on `PageSkeletonShell` + AURA skeleton cards; error and not-found on AURA buttons. Tests: `portal-eblast-detail-skeleton`, `portal-eblast-not-found`.
-- [ ] T1245 [US12] `MIGRATED_PATHS` gains the portal detail and the sign-off (and the clean approval helpers); the ratchet controls move to US12d files; a US12c-2 block.
+- [x] T1245 [US12] `MIGRATED_PATHS` gains the portal detail and the sign-off (and the clean approval helpers); the ratchet controls move to US12d files; a US12c-2 block.
 - [ ] T1246 [US12] Preview: `aura-portal?view=broadcast-detail&state=…&dialog=…` and the loading route.
 - [ ] T1247 [US12] First budget for `/portal/broadcasts/[id]`.
 - [ ] T1248 [US12] e2e selectors where the swap breaks them (`eblast-approval`, `eblast-a11y`, `member-quota-history`).

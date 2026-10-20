@@ -178,8 +178,9 @@ export async function PortalBroadcastDetailView({
         header={
           <>
             <p className={OVERLINE}>{t('fields.subject')}</p>
-            <h2 id="broadcast-detail-fields-heading" className="aura-card__title break-words">
-              {subject}
+            {/* AURA's card-title type on the inner text: preflight resets a heading's font. */}
+            <h2 id="broadcast-detail-fields-heading">
+              <span className="aura-text-h3 block break-words">{subject}</span>
             </h2>
           </>
         }

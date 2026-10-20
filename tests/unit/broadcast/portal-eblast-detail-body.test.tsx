@@ -208,11 +208,11 @@ describe('F119 T134 — portal E-Blast detail body (US6-AS2, FR-049)', () => {
   it('renders the subject as a real <h2> in the AURA card-title type, naming its card', async () => {
     const html = await renderPage();
 
-    const heading = /<h2[^>]*id="broadcast-detail-fields-heading"[^>]*>/.exec(
+    const heading = /<h2[^>]*id="broadcast-detail-fields-heading"[^>]*>(<span[^>]*>)/.exec(
       html,
     );
     expect(heading).not.toBeNull();
-    expect(heading?.[0]).toContain('aura-card__title');
+    expect(heading?.[1]).toContain('aura-text-h3');
     expect(html).toContain('aria-labelledby="broadcast-detail-fields-heading"');
   });
 
