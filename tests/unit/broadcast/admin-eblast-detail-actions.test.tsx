@@ -857,6 +857,8 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     const row = openingTagWith(html, 'data-testid="eblast-history-row"');
     expect(row).toContain('lg:grid-cols-2');
     expect(row).toContain('lg:items-start');
+    // Its cards shrink with the screen: a long actor e-mail wraps at 200% text instead of widening the page.
+    expect(row).toMatch(/\[&(amp;)?(>|&gt;)\*\]:min-w-0/);
     const at = html.indexOf('data-testid="eblast-history-row"');
     expect(html.indexOf('version-thread', at)).toBeGreaterThan(at);
   });

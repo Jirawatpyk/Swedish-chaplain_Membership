@@ -462,7 +462,7 @@ export async function BroadcastDetailView({
           which left half of each card empty); stacked below that. */}
       {threadModel !== null && hasThreadHistory(threadModel) ? (
         <div
-          className={cn('grid gap-6 lg:grid-cols-2 lg:items-start', tailOnPhone)}
+          className={cn('grid gap-6 lg:grid-cols-2 lg:items-start [&>*]:min-w-0', tailOnPhone)}
           data-testid="eblast-history-row"
         >
           <VersionThread audience="staff" model={threadModel} />
