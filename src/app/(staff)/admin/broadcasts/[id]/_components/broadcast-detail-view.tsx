@@ -6,7 +6,7 @@
  * results; nothing here reads the database or decides what a user may do.
  * The audit timeline reads the database itself, so it arrives as a slot.
  */
-import { getLocale, getTranslations } from 'next-intl/server';
+import { getFormatter, getLocale, getTranslations } from 'next-intl/server';
 import { Alert, Card, Stat } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -140,6 +140,7 @@ export async function BroadcastDetailView({
   const tWarnings = await getTranslations('admin.broadcasts.approval.warnings');
   const tContent = await getTranslations('admin.broadcasts.approval.content');
   const tButtons = await getTranslations('buttons');
+  const format = await getFormatter();
 
   const notSet = <EmptyValue label={tHeader('notSet')} />;
   const formatDate = (d: Date | null): React.ReactNode => (d !== null ? fmt.format(d) : notSet);
@@ -296,18 +297,18 @@ export async function BroadcastDetailView({
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat
               label={t('delivery.delivered')}
-              value={<span className="text-[var(--aura-fg-positive)] tabular-nums">{delivery.delivered}</span>}
+              value={<span className="text-[var(--aura-fg-positive)] tabular-nums">{format.number(delivery.delivered)}</span>}
             />
             <Stat
               label={t('delivery.bounced')}
               value={
                 <span className={delivery.bounced > 0 ? 'text-[var(--aura-fg-danger)] tabular-nums' : 'tabular-nums'}>
-                  {delivery.bounced}
+                  {format.number(delivery.bounced)}
                 </span>
               }
             />
-            <Stat label={t('delivery.softBounced')} value={<span className="tabular-nums">{delivery.softBounced}</span>} />
-            <Stat label={t('delivery.complained')} value={<span className="tabular-nums">{delivery.complained}</span>} />
+            <Stat label={t('delivery.softBounced')} value={<span className="tabular-nums">{format.number(delivery.softBounced)}</span>} />
+            <Stat label={t('delivery.complained')} value={<span className="tabular-nums">{format.number(delivery.complained)}</span>} />
           </div>
           <p className="mt-[var(--aura-space-3)] aura-text-caption text-[var(--aura-fg-secondary)]">
             {t('delivery.caption', { recipients: broadcast.estimatedRecipientCount })}

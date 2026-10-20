@@ -42,6 +42,7 @@ vi.mock('next-intl/server', () => ({
     Object.assign((key: string) => key, { has: (key: string) => !missingKeys.has(key) }),
   ),
   getLocale: vi.fn().mockResolvedValue('en'),
+  getFormatter: vi.fn().mockResolvedValue({ number: (n: number) => String(n) }),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'tenant-a' }),

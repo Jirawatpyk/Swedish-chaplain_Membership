@@ -3640,7 +3640,7 @@
           "bounced": "Studsade",
           "softBounced": "Mjuk studs",
           "complained": "Klagomål",
-          "caption": "{recipients, plural, one {# mottagare} other {# mottagare}} · från e-postleverantörens leveranshändelser. Mjuk studs = ett tillfälligt fel som leverantören försökte igen. Öppningar och klick spåras inte."
+          "caption": "{recipients, plural, one {# mottagare} other {# mottagare}} · från e-postleverantörens leveranshändelser. Mjuk studs = ett tillfälligt fel där leverantören försökte leverera igen. Öppningar och klick spåras inte."
         },
         "bodyRenderFailedTitle": "Innehållet kunde inte renderas säkert",
         "bodyRenderFailedHint": "Saneringen kunde inte bearbeta detta utskick. Godkännande är blockerat — kontakta drift för utredning.",
