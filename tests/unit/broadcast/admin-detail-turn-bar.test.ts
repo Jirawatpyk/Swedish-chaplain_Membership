@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest';
 import { turnBar } from '@/app/(staff)/admin/broadcasts/[id]/_components/turn-bar';
 
 const entered = new Date('2026-09-26T03:05:00Z');
-const base = { round: 0, memberApprovalOn: true, stageEnteredAt: entered, proposedSendAt: null } as const;
+const now = new Date('2026-10-01T00:00:00Z');
+const base = { round: 0, memberApprovalOn: true, stageEnteredAt: entered, proposedSendAt: null, now } as const;
 
 describe('turnBar', () => {
   it('submitted: marketing reviews it; the formatted-version option only while the approval round is on', () => {
@@ -26,6 +27,14 @@ describe('turnBar', () => {
       version: 2,
       sentAt: entered,
       expiresAt: new Date('2026-10-26T03:05:00Z'),
+    });
+  });
+
+  it('awaiting the member past the 30 days (the closing job not run yet): says it has expired, not a past date', () => {
+    expect(turnBar({ ...base, status: 'awaiting_member_approval', round: 1, now: new Date('2026-10-26T03:05:00Z') })).toEqual({
+      kind: 'awaitingMemberExpired',
+      version: 1,
+      sentAt: entered,
     });
   });
 
