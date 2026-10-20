@@ -119,6 +119,7 @@ vi.mock('@/components/broadcast/use-preview-html', () => ({
 }));
 
 const findByIdMock = vi.fn();
+const deliveryMock = vi.fn(async () => ({ broadcastId: 'x', sent: 0, delivered: 121, bounced: 3, softBounced: 2, complained: 0 }));
 const listVersionsMock = vi.fn();
 const warningsMock = vi.fn();
 /** F119 PR-A R1 — the page's "held for the member's payment" read; default: not held. */
@@ -143,7 +144,9 @@ vi.mock('@/modules/broadcasts', async () => {
     turnOf: turn.turnOf,
     isEblastMemberApprovalEnabled: () => flagOn,
     isF71aUs2Enabled: () => false,
-    makeGetBroadcastDeps: () => ({ broadcastsRepo: { findById: findByIdMock } }),
+    makeGetBroadcastDeps: () => ({
+      broadcastsRepo: { findById: findByIdMock, aggregateDeliveryCountsForBroadcast: deliveryMock },
+    }),
     parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),
     listBroadcastVersions: (...args: unknown[]) => listVersionsMock(...args),
     readFormattingWarnings: (...args: unknown[]) => warningsMock(...args),
@@ -687,6 +690,29 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     // The stage stays on the round card for the e2e and the styles that read it.
     expect(openingTagWith(html, 'aria-labelledby="eblast-stage-title"')).toContain('data-stage=');
     expect(html).not.toContain('data-slot="card"');
+  });
+
+  it('once sending has begun, a Delivery card shows the four counts (board `Admin-broadcast-sent`)', async () => {
+    deliveryMock.mockClear();
+    const html = await renderPage('sent', 0);
+    expect(deliveryMock).toHaveBeenCalledWith('tenant-a', ID);
+    const card = openingTagWith(html, 'aria-labelledby="eblast-delivery-title"');
+    expect(card).toContain('aura-card');
+    const at = html.indexOf('aria-labelledby="eblast-delivery-title"');
+    const section = html.slice(at, html.indexOf('</section>', at));
+    for (const key of ['delivered', 'bounced', 'softBounced', 'complained']) {
+      expect(section, key).toContain(`delivery.${key}`);
+    }
+    expect(section.match(/aura-stat\b/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    for (const n of ['121', '3', '2', '0']) expect(section).toContain(`>${n}<`);
+    expect(section).toContain('delivery.caption');
+  });
+
+  it('before sending begins there is no Delivery card and no read', async () => {
+    deliveryMock.mockClear();
+    const html = await renderPage('submitted', 0);
+    expect(html).not.toContain('eblast-delivery-title');
+    expect(deliveryMock).not.toHaveBeenCalled();
   });
 
   it('the version comparison is two AURA cards', async () => {
