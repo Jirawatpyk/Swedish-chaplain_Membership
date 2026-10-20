@@ -33,6 +33,7 @@ import {
   seedMemberHistoryBroadcasts,
   seedMemberSentBroadcast,
   SENT_FIXTURE_SUBJECT,
+  setF7AckSeed,
 } from './helpers/broadcasts-seed';
 import { signInAsMember as signIn } from './helpers/member-sign-in';
 import { goodStandingMemberCredentials } from './helpers/member-session';
@@ -76,11 +77,16 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
    *  date. audit_log is append-only; new rows just become the latest
    *  on subsequent runs. */
   let planChangedAt: Date | null = null;
+  let historySeeded = false;
 
   test.beforeAll(async () => {
     await clearE2ERateLimits();
     const seed = await seedF7PlanChangedAudit(GOOD_STANDING?.email);
     if (seed) planChangedAt = seed.changedAt;
+    // AS1: eleven rows. One is enough for the history table; eleven fill
+    // more than the first page of 10, which the pagination test needs. Seeded
+    // here so either AS1 test can run on its own; AS4 removes them first.
+    historySeeded = (await seedMemberHistoryBroadcasts(GOOD_STANDING?.email, 11)) !== null;
   });
 
   // AS3's sent fixture holds a quota place; AS1's history rows fill Echo's history.
@@ -114,10 +120,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
   test('AS1 — history table lists rows sorted desc with status badges', async ({
     page,
   }) => {
-    // Eleven rows: one is enough for the table, eleven fill more than the
-    // first page of 10, which the pagination test below needs.
-    const seeded = await seedMemberHistoryBroadcasts(GOOD_STANDING?.email, 11);
-    test.skip(seeded === null, 'Set DATABASE_URL — AS1 seeds the history it lists');
+    test.skip(!historySeeded, 'Set DATABASE_URL — beforeAll seeds the history AS1 lists');
     await signIn(page, GOOD_STANDING!);
     await page.goto('/portal/benefits?tab=broadcasts');
 
@@ -128,7 +131,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
 
   // ── AS1 pagination ────────────────────────────────────────────────
   test('AS1 — history table is paginated (page size 10)', async ({ page }) => {
-    // Reads the eleven rows the test above seeded (this describe is serial).
+    test.skip(!historySeeded, 'Set DATABASE_URL — beforeAll seeds the history AS1 pages');
     await signIn(page, GOOD_STANDING!);
     await page.goto('/portal/benefits?tab=broadcasts');
     // [RED — T129/AS1-pagination] Pagination control must be present.
@@ -309,7 +312,7 @@ test.describe('US3 — Member quota + history (T129 RED)', () => {
     });
     // Leave the persona acknowledged, as the other specs that sign it in expect.
     test.afterAll(async () => {
-      await resetF7AckSeed(GOOD_STANDING?.email, new Date());
+      await setF7AckSeed(GOOD_STANDING?.email, new Date());
     });
 
     test('AS6 — Q15 acknowledgement banner appears for unacknowledged paying-tier member', async ({

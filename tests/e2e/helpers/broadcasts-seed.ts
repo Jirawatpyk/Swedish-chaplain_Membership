@@ -510,8 +510,18 @@ export async function seedF7PlanChangedAudit(
  */
 export async function resetF7AckSeed(
   memberEmail: string | undefined = process.env.E2E_MEMBER_EMAIL,
-  /** `null` re-arms the banner; a date restores an acknowledged member afterwards. */
-  acknowledgedAt: Date | null = null,
+): Promise<void> {
+  await setF7AckSeed(memberEmail, null);
+}
+
+/**
+ * Sets `members.broadcasts_acknowledged_at` for the persona: `null` re-arms the
+ * Q15 banner (`resetF7AckSeed`), a date leaves the persona acknowledged again
+ * after a test that cleared it.
+ */
+export async function setF7AckSeed(
+  memberEmail: string | undefined,
+  acknowledgedAt: Date | null,
 ): Promise<void> {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl || !memberEmail) {
@@ -520,7 +530,7 @@ export async function resetF7AckSeed(
     // misconfiguration. Per the project memory `feedback_skip_is_not_pass`,
     // env-missing in a seed helper is a CI bug, not a test signal.
     throw new Error(
-      'resetF7AckSeed: DATABASE_URL or the member email missing — refusing to no-op (would mask AS6/AS7 banner state).',
+      'setF7AckSeed: DATABASE_URL or the member email missing — refusing to no-op (would mask AS6/AS7 banner state).',
     );
   }
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
@@ -633,6 +643,29 @@ export async function wipeE2EMemberBroadcasts(
   }
 }
 
+/** The persona's user, member, plan and reply-to address, or `null` when it has no member row. */
+async function findPersonaMember(
+  sql: ReturnType<typeof postgres>,
+  memberEmail: string,
+): Promise<{ user_id: string; member_id: string; plan_uuid: string; reply_to: string } | null> {
+  const rows = await sql<
+    Array<{ user_id: string; member_id: string; plan_uuid: string; reply_to: string }>
+  >`
+    SELECT u.id::text AS user_id,
+           m.member_id::text AS member_id,
+           m.plan_id AS plan_uuid,
+           u.email AS reply_to
+    FROM users u
+    JOIN contacts c
+      ON c.linked_user_id = u.id AND c.tenant_id = ${TENANT_ID}
+    JOIN members m
+      ON m.member_id = c.member_id AND m.tenant_id = ${TENANT_ID}
+    WHERE u.email = ${memberEmail}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
 /** Subject of the single row `seedMemberSentBroadcast` owns. */
 export const SENT_FIXTURE_SUBJECT = '[E2E SEED] T129 AS3 sent fixture';
 
@@ -691,22 +724,7 @@ export async function seedMemberSentBroadcast(
   if (!dbUrl || !memberEmail) return null;
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   try {
-    const memberRows = await sql<
-      Array<{ user_id: string; member_id: string; plan_uuid: string; reply_to: string }>
-    >`
-      SELECT u.id::text AS user_id,
-             m.member_id::text AS member_id,
-             m.plan_id AS plan_uuid,
-             u.email AS reply_to
-      FROM users u
-      JOIN contacts c
-        ON c.linked_user_id = u.id AND c.tenant_id = ${TENANT_ID}
-      JOIN members m
-        ON m.member_id = c.member_id AND m.tenant_id = ${TENANT_ID}
-      WHERE u.email = ${memberEmail}
-      LIMIT 1
-    `;
-    const member = memberRows[0];
+    const member = await findPersonaMember(sql, memberEmail);
     if (!member) return null;
 
     await deleteBroadcastsBySubject(sql, SENT_FIXTURE_SUBJECT);
@@ -789,48 +807,33 @@ export async function seedMemberHistoryBroadcasts(
   if (!dbUrl || !memberEmail) return null;
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   try {
-    const memberRows = await sql<
-      Array<{ user_id: string; member_id: string; plan_uuid: string; reply_to: string }>
-    >`
-      SELECT u.id::text AS user_id,
-             m.member_id::text AS member_id,
-             m.plan_id AS plan_uuid,
-             u.email AS reply_to
-      FROM users u
-      JOIN contacts c
-        ON c.linked_user_id = u.id AND c.tenant_id = ${TENANT_ID}
-      JOIN members m
-        ON m.member_id = c.member_id AND m.tenant_id = ${TENANT_ID}
-      WHERE u.email = ${memberEmail}
-      LIMIT 1
-    `;
-    const member = memberRows[0];
+    const member = await findPersonaMember(sql, memberEmail);
     if (!member) return null;
 
     await deleteBroadcastsBySubject(sql, HISTORY_FIXTURE_SUBJECT);
-    for (let k = 0; k < count; k += 1) {
-      await sql`
-        INSERT INTO broadcasts (
-          tenant_id, broadcast_id,
-          requested_by_member_id, requested_by_member_plan_id_snapshot,
-          submitted_by_user_id, actor_role,
-          subject, body_html, body_source,
-          from_name, reply_to_email,
-          segment_type, estimated_recipient_count,
-          status, submitted_at, cancelled_at,
-          retention_years, created_at, updated_at
-        ) VALUES (
-          ${TENANT_ID}, ${randomUUID()}::uuid,
-          ${member.member_id}::uuid, ${member.plan_uuid},
-          ${member.user_id}::uuid, 'member_self_service',
-          ${HISTORY_FIXTURE_SUBJECT}, '<p>History fixture.</p>', '<p>History fixture.</p>',
-          'SweCham', ${member.reply_to},
-          'all_members', 3,
-          'cancelled', NOW(), NOW(),
-          5, NOW() - make_interval(mins => ${k}), NOW()
-        )
-      `;
-    }
+    // One round trip: `k` staggers created_at so the history has a stable order.
+    await sql`
+      INSERT INTO broadcasts (
+        tenant_id, broadcast_id,
+        requested_by_member_id, requested_by_member_plan_id_snapshot,
+        submitted_by_user_id, actor_role,
+        subject, body_html, body_source,
+        from_name, reply_to_email,
+        segment_type, estimated_recipient_count,
+        status, submitted_at, cancelled_at,
+        retention_years, created_at, updated_at
+      )
+      SELECT
+        ${TENANT_ID}, gen_random_uuid(),
+        ${member.member_id}::uuid, ${member.plan_uuid},
+        ${member.user_id}::uuid, 'member_self_service',
+        ${HISTORY_FIXTURE_SUBJECT}, '<p>History fixture.</p>', '<p>History fixture.</p>',
+        'SweCham', ${member.reply_to},
+        'all_members', 3,
+        'cancelled', NOW(), NOW(),
+        5, NOW() - make_interval(mins => k), NOW()
+      FROM generate_series(0, ${count - 1}) AS k
+    `;
     return count;
   } finally {
     await sql.end({ timeout: 5 });
