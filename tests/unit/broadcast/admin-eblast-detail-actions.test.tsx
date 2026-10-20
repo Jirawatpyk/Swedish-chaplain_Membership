@@ -709,6 +709,49 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     expect(section).toContain('delivery.caption');
   });
 
+  function deliverySection(html: string): string {
+    const at = html.indexOf('aria-labelledby="eblast-delivery-title"');
+    return html.slice(at, html.indexOf('</section>', at));
+  }
+
+  it('the caption counts every recipient row, handed over included, as the board does (121 + 3 + 2 + 4 = 130)', async () => {
+    const { getTranslations } = await import('next-intl/server');
+    const plain = Object.assign((key: string) => key, { has: (key: string) => !missingKeys.has(key) });
+    vi.mocked(getTranslations).mockResolvedValue(
+      Object.assign((key: string, values?: Record<string, unknown>) => (key === 'delivery.caption' ? `${key}:${String(values?.recipients)}` : key), {
+        has: plain.has,
+      }) as never,
+    );
+    deliveryMock.mockResolvedValueOnce({ broadcastId: 'x', sent: 4, delivered: 121, bounced: 3, softBounced: 2, complained: 0 });
+    try {
+      const html = await renderPage('sent', 0);
+      expect(deliverySection(html)).toContain('delivery.caption:130');
+    } finally {
+      vi.mocked(getTranslations).mockResolvedValue(plain as never);
+    }
+  });
+
+  it('tones only a figure that is there: Delivered green above 0, Bounced and Complained red above 0', async () => {
+    deliveryMock.mockResolvedValueOnce({ broadcastId: 'x', sent: 0, delivered: 0, bounced: 0, softBounced: 0, complained: 0 });
+    const none = deliverySection(await renderPage('sent', 0));
+    expect(none).not.toContain('--aura-fg-positive');
+    expect(none).not.toContain('--aura-fg-danger');
+    deliveryMock.mockResolvedValueOnce({ broadcastId: 'x', sent: 0, delivered: 5, bounced: 1, softBounced: 1, complained: 2 });
+    const some = deliverySection(await renderPage('sent', 0));
+    expect(some.match(/--aura-fg-positive/g)?.length).toBe(1);
+    expect(some.match(/--aura-fg-danger/g)?.length).toBe(2);
+  });
+
+  it('a tile label wraps inside its tile at 200% text on a phone (WCAG 1.4.4)', async () => {
+    const section = deliverySection(await renderPage('sent', 0));
+    const tiles = section.match(/<[^>]*class="[^"]*aura-stat\b[^"]*"[^>]*>/g) ?? [];
+    expect(tiles.length).toBe(4);
+    for (const tile of tiles) {
+      expect(tile).toContain('min-w-0');
+      expect(tile).toContain('[overflow-wrap:anywhere]');
+    }
+  });
+
   it('a manager sees the Delivery card on a sent E-Blast, and no action controls', async () => {
     role = 'manager';
     const html = await renderPage('sent', 0);
