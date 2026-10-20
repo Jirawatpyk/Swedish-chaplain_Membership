@@ -709,6 +709,13 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     expect(section).toContain('delivery.caption');
   });
 
+  it('a manager sees the Delivery card on a sent E-Blast, and no action controls', async () => {
+    role = 'manager';
+    const html = await renderPage('sent', 0);
+    expect(html).toContain('aria-labelledby="eblast-delivery-title"');
+    expect(html).not.toContain('data-testid="eblast-action-row"');
+  });
+
   it('before sending begins there is no Delivery card and no read', async () => {
     deliveryMock.mockClear();
     const html = await renderPage('submitted', 0);
