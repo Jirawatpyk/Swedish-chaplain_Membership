@@ -25,6 +25,7 @@ import {
   StartFormattedVersionAction,
   type StartConfirm,
 } from '@/components/broadcast/approval/start-formatted-version-action';
+import { cn } from '@/lib/utils';
 import { VersionThread, hasThreadHistory, type VersionThreadModel } from '@/components/broadcast/approval/version-thread';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 import { EmailFrame } from '@/components/broadcast/email-frame';
@@ -402,13 +403,20 @@ export async function BroadcastDetailView({
         </Card>
       )}
 
+      {/* Version history beside the lifecycle timeline from 1024px, each card
+          ending at its own content (maintainer, 20 Oct: the board stacks them,
+          which left half of each card empty); stacked below that. */}
       {threadModel !== null && hasThreadHistory(threadModel) ? (
-        <div className={tailOnPhone}>
+        <div
+          className={cn('grid gap-6 lg:grid-cols-2 lg:items-start', tailOnPhone)}
+          data-testid="eblast-history-row"
+        >
           <VersionThread audience="staff" model={threadModel} />
+          {audit}
         </div>
+      ) : audit ? (
+        <div className={tailOnPhone}>{audit}</div>
       ) : null}
-
-      {audit ? <div className={tailOnPhone}>{audit}</div> : null}
 
       {/* Spec 122 US12c-1 — the stage's staff actions, as the board groups
           them: the destructive ones (Cancel, Reject) at the start, the next

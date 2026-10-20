@@ -807,6 +807,20 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     for (const frame of frames) expect(frame).toContain('data-fit="true"');
   });
 
+  it('version history and the lifecycle timeline sit side by side from 1024px, each ending at its own content (maintainer, 20 Oct)', async () => {
+    const html = await renderPage('awaiting_member_approval', 1);
+    const row = openingTagWith(html, 'data-testid="eblast-history-row"');
+    expect(row).toContain('lg:grid-cols-2');
+    expect(row).toContain('lg:items-start');
+    const at = html.indexOf('data-testid="eblast-history-row"');
+    expect(html.indexOf('version-thread', at)).toBeGreaterThan(at);
+  });
+
+  it('with no version history the lifecycle timeline keeps the full width', async () => {
+    const html = await renderPage('submitted', 0);
+    expect(html).not.toContain('data-testid="eblast-history-row"');
+  });
+
   it('every page note is an AURA alert that keeps its test id and role', async () => {
     warningsMock.mockResolvedValue({
       ok: true,
