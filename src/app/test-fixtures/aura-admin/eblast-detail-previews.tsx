@@ -153,14 +153,14 @@ export async function renderBroadcastDetailPreview(state: string | undefined) {
           : null,
     imagesEnabled: true,
     threadModel: round >= 1 ? thread(fmt, status === 'changes_requested' ? 'changes' : status === 'awaiting_member_approval' ? 'none' : 'approved') : null,
-    audit: await auditFixture(status, fmt),
+    audit: await auditFixture(status, round, fmt),
     ...actions,
   };
   return BroadcastDetailView(props);
 }
 
 /** The lifecycle rows the audit log would hold for each stage (the real page reads them). */
-async function auditFixture(status: BroadcastStatus, fmt: Intl.DateTimeFormat): Promise<React.ReactElement> {
+async function auditFixture(status: BroadcastStatus, round: number, fmt: Intl.DateTimeFormat): Promise<React.ReactElement> {
   const t = await getTranslations('admin.broadcasts.review.audit');
   const member = t('actorBy', { actor: 'anna.lindqvist@lindqvist.example' });
   const staff = t('actorBy', { actor: 'malin.berg@swecham.example' });
@@ -169,7 +169,14 @@ async function auditFixture(status: BroadcastStatus, fmt: Intl.DateTimeFormat): 
     ['drafted', 50, member],
     ['submitted', 48, member],
   ];
-  if (status === 'sent' || status === 'sending' || status === 'failed_to_dispatch') rows.push(['approved', 20, staff], ['sendStarted', 1, system]);
+  // A round never logs "Approved" (approve-as-submitted only): the member's
+  // approval and marketing's send-time confirmation are its steps, timed
+  // after the thread fixture's member approval (5 h ago).
+  if (status === 'sent' || status === 'sending' || status === 'failed_to_dispatch') {
+    if (round >= 1) rows.push(['memberApproved', 5, member], ['scheduleConfirmed', 3, staff]);
+    else rows.push(['approved', 20, staff]);
+    rows.push(['sendStarted', 1, system]);
+  }
   if (status === 'sent') rows.push(['sent', 0.9, system]);
   if (status === 'failed_to_dispatch') rows.push(['failedToDispatch', 0.9, system]);
   return (

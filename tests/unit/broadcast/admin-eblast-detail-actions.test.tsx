@@ -143,6 +143,11 @@ vi.mock('@/modules/broadcasts', async () => {
     canTransition: transitions.canTransition,
     stageOf: stage.stageOf,
     turnOf: turn.turnOf,
+    memberApprovalExpiresAt: (
+      await vi.importActual<typeof import('@/modules/broadcasts/domain/approval/member-approval-expiry')>(
+        '@/modules/broadcasts/domain/approval/member-approval-expiry',
+      )
+    ).memberApprovalExpiresAt,
     isEblastMemberApprovalEnabled: () => flagOn,
     isF71aUs2Enabled: () => false,
     makeGetBroadcastDeps: () => ({
@@ -807,11 +812,53 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     for (const frame of frames) expect(frame).toContain('data-fit="true"');
   });
 
+  /** Renders with a translator that spells out its values, so the bar's words can be read. */
+  async function renderSpelled(status: string, round: number): Promise<string> {
+    const { getTranslations } = await import('next-intl/server');
+    const plain = Object.assign((key: string) => key, { has: (key: string) => !missingKeys.has(key) });
+    vi.mocked(getTranslations).mockResolvedValue(
+      Object.assign((key: string, values?: Record<string, unknown>) => (values ? `${key}${JSON.stringify(values)}` : key), {
+        has: plain.has,
+      }) as never,
+    );
+    try {
+      return await renderPage(status, round);
+    } finally {
+      vi.mocked(getTranslations).mockResolvedValue(plain as never);
+    }
+  }
+  const barOf = (html: string): string => {
+    const at = html.indexOf('data-testid="eblast-turn-bar"');
+    return html.slice(at, at + 1500);
+  };
+
+  it('a whose-turn bar sits under the header while someone has a next step (board `Admin-eblast-awaiting-member`)', async () => {
+    const html = await renderSpelled('awaiting_member_approval', 1);
+    const bar = openingTagWith(html, 'data-testid="eblast-turn-bar"');
+    expect(bar).toContain('aura-alert');
+    expect(bar).toContain('role="note"');
+    // Version 1, sent when the stage was entered (20 Sep), expiring 30 days on (20 Oct).
+    expect(barOf(html)).toMatch(/awaitingMember\{&quot;version&quot;:1,&quot;sentAt&quot;:&quot;20 Sept? 2026[^&]*&quot;,&quot;expiresAt&quot;:&quot;20 Oct 2026/);
+    expect(html.indexOf('data-testid="eblast-turn-bar"')).toBeLessThan(html.indexOf('aria-labelledby="eblast-stage-title"'));
+  });
+
+  it('no whose-turn bar once nobody acts next', async () => {
+    expect(await renderPage('sent', 1)).not.toContain('data-testid="eblast-turn-bar"');
+  });
+
+  it("an admin reads it as their own turn, a manager as marketing's", async () => {
+    expect(barOf(await renderSpelled('in_design', 1))).toContain('design{&quot;turn&quot;:&quot;you&quot;}');
+    role = 'manager';
+    expect(barOf(await renderSpelled('in_design', 1))).toContain('design{&quot;turn&quot;:&quot;marketing&quot;}');
+  });
+
   it('version history and the lifecycle timeline sit side by side from 1024px, each ending at its own content (maintainer, 20 Oct)', async () => {
     const html = await renderPage('awaiting_member_approval', 1);
     const row = openingTagWith(html, 'data-testid="eblast-history-row"');
     expect(row).toContain('lg:grid-cols-2');
     expect(row).toContain('lg:items-start');
+    // Its cards shrink with the screen: a long actor e-mail wraps at 200% text instead of widening the page.
+    expect(row).toMatch(/\[&(amp;)?(>|&gt;)\*\]:min-w-0/);
     const at = html.indexOf('data-testid="eblast-history-row"');
     expect(html.indexOf('version-thread', at)).toBeGreaterThan(at);
   });
