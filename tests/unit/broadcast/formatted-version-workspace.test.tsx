@@ -360,6 +360,13 @@ describe('Spec 122 US12c-1 — the formatted-version workspace on AURA', () => {
     expect(dialog.closest('[class*="aura-dialog"]')).not.toBeNull();
   });
 
+  it('on a phone, Send to member sits first, then Save, then the test copy (board `Admin-eblast-design-mobile`)', () => {
+    renderWorkspace();
+    expect(sendButton().className).toContain('max-sm:order-1');
+    expect(saveButton().className).toContain('max-sm:order-2');
+    expect(screen.getByTestId('eblast-test-copy').className).toContain('max-sm:order-3');
+  });
+
   it('follows board `Admin-eblast-design`: ghost test copy, send icon, cards end at their own content', () => {
     renderWorkspace();
     const testCopy = screen.getByTestId('eblast-test-copy');

@@ -696,6 +696,27 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     }
   });
 
+  it('a version card reads note, subject, then the e-mail in its own frame (board `Admin-eblast-awaiting-member`)', async () => {
+    findByIdMock.mockResolvedValue(makeBroadcast({ status: 'awaiting_member_approval', currentRound: 1 }));
+    const thread = threadFor('awaiting_member_approval', 1);
+    listVersionsMock.mockResolvedValue({
+      ...thread,
+      value: { ...thread.value, sentVersions: [{ version: { ...V1, noteToMember: 'Moved the date' }, authoredByName: 'Marketing' }] },
+    });
+    const Page = (await import('@/app/(staff)/admin/broadcasts/[id]/page')).default;
+    const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ id: ID }) }));
+    const at = html.indexOf('data-testid="eblast-version-comparison"');
+    const card = html.slice(at, html.indexOf('</section>', at));
+    const note = card.indexOf('data-version-note');
+    const subject = card.indexOf('data-version-subject');
+    const frame = card.indexOf('data-email-frame');
+    expect(note).toBeGreaterThan(-1);
+    expect(subject).toBeGreaterThan(note);
+    expect(frame).toBeGreaterThan(subject);
+    expect(card.slice(frame, card.indexOf('>', frame))).toMatch(/rounded-\[var\(--aura-radius-md\)\][^"]*border|border[^"]*rounded-\[var\(--aura-radius-md\)\]/);
+    expect(card.indexOf('data-testid="preview-surface"')).toBeGreaterThan(frame);
+  });
+
   it('the comparison cards end at their own content and their frames fit the e-mail (parity, 20 Oct)', async () => {
     const html = await renderPage('awaiting_member_approval', 1);
     for (const id of ['eblast-shown-version-title', 'eblast-original-title']) {

@@ -27,6 +27,7 @@ import {
 } from '@/components/broadcast/approval/start-formatted-version-action';
 import { VersionThread, hasThreadHistory, type VersionThreadModel } from '@/components/broadcast/approval/version-thread';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
+import { EmailFrame } from '@/components/broadcast/email-frame';
 import { PreviewSurface, type PreviewState } from '@/components/broadcast/use-preview-html';
 import { stageOf, type BroadcastStatus, type BroadcastVersion } from '@/modules/broadcasts';
 
@@ -336,7 +337,9 @@ export async function BroadcastDetailView({
               {t('bodyRenderFailedHint')}
             </Alert>
           ) : (
-            <PreviewSurface state={previewState} height={DETAIL_PREVIEW_FRAME_HEIGHT} fit />
+            <EmailFrame>
+              <PreviewSurface state={previewState} height={DETAIL_PREVIEW_FRAME_HEIGHT} fit />
+            </EmailFrame>
           )}
         </Card>
       )}
@@ -407,15 +410,21 @@ function ContentCard({
 }): React.ReactElement {
   return (
     <Card titleId={id} title={title} headingLevel={2} description={description} className="min-w-0">
-      <div className="space-y-2">
-        <p className="text-sm font-medium break-words">{subject}</p>
+      {/* Board `Admin-eblast-awaiting-member`: the note to the member, the
+          subject, then the e-mail in its own frame. */}
+      <div className="space-y-3">
         {note !== undefined && note !== null && noteLabel !== undefined ? (
-          <p className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] px-3 py-2 text-sm">
+          <p data-version-note className="rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-canvas)] px-3 py-2 text-sm">
             <span className={`block ${FIELD_LABEL}`}>{noteLabel}</span>
             <span className="whitespace-pre-line">{note}</span>
           </p>
         ) : null}
-        <PreviewSurface state={preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} fit />
+        <p data-version-subject className="text-sm font-medium break-words">
+          {subject}
+        </p>
+        <EmailFrame>
+          <PreviewSurface state={preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} fit />
+        </EmailFrame>
       </div>
     </Card>
   );

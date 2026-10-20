@@ -99,7 +99,7 @@ export async function renderBroadcastDetailPreview(state: string | undefined) {
   const round = status === 'submitted' || status === 'in_design' ? 0 : 1;
   const v0 = version(0, SUBJECT, null);
   const v1 = version(1, `${SUBJECT} — breakfast at the Anantara`, ago(26), 'We moved the date into the heading and shortened the intro.');
-  const working = status === 'in_design' ? version(0, SUBJECT, null) : null;
+  const working = status === 'in_design' ? version(1, SUBJECT, null) : null;
   const versioned = ['in_design', 'awaiting_member_approval', 'changes_requested', 'member_approved'].includes(status);
   const showWorkspace = !manager && working !== null;
   const shownVersion = working ?? (round >= 1 ? v1 : null);

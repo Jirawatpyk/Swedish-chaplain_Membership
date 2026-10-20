@@ -69,11 +69,11 @@ describe('F119 T063 — Start formatted version (UX review)', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   });
 
-  it('from changes_requested it is the primary action and runs on the click', async () => {
+  it('from changes_requested it runs on the click, an outline button as board `Admin-eblast-changes-requested` draws it', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 201 }));
     vi.stubGlobal('fetch', fetchMock);
     renderStart('none');
-    expect(trigger().className).toContain('aura-btn--primary');
+    expect(trigger().className).toContain('aura-btn--secondary');
     fireEvent.click(trigger());
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole('alertdialog')).toBeNull();

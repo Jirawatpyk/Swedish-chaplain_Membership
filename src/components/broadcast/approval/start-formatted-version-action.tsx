@@ -151,7 +151,7 @@ export function StartFormattedVersionAction({
         ref={triggerRef}
         type="button"
         data-testid="eblast-start-version"
-        variant={asks ? 'secondary' : 'primary'}
+        variant="secondary"
         touchHeight
         icon="pencil"
         className={more.folded ? 'max-sm:hidden' : undefined}

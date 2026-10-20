@@ -49,6 +49,18 @@ describe('AuditTimelineView', () => {
     expect(items[1]?.textContent).toContain('by anna.lindqvist@lindqvist.example');
   });
 
+  it('marks a failed dispatch with a danger cross, never a success check (board `Admin-eblast-failed`)', () => {
+    const failed = [
+      ...events,
+      { key: 'broadcast_failed_to_dispatch-3', label: 'Dispatch failed', instant: '2026-09-26T03:00:00.000Z', when: '26 Sep 2026, 10:00', actor: 'by system', actorId: '', failed: true },
+    ];
+    render(<AuditTimelineView title="Lifecycle timeline" events={failed} />);
+    const last = within(screen.getByRole('list')).getAllByRole('listitem').at(-1)!;
+    expect(last.querySelector('svg.lucide-circle-x')).not.toBeNull();
+    expect(last.querySelector('svg.lucide-circle-check')).toBeNull();
+    expect(last.querySelector('span')?.className).toContain('--aura-fg-danger');
+  });
+
   it('shows the empty sentinel when there are no events', () => {
     render(<AuditTimelineView title="Lifecycle timeline" events={[]} />);
     expect(screen.queryByRole('list')).toBeNull();

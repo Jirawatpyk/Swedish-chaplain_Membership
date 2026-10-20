@@ -53,6 +53,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { Send } from 'lucide-react';
 import { Alert, Button, Card, Dialog, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
@@ -61,6 +62,7 @@ import { PreviewSurface, type PreviewState } from '@/components/broadcast/use-pr
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 import { SUBJECT_MAX_LENGTH } from '@/components/broadcast/compose/subject-counter';
 import { OriginalDisclosure } from '@/components/broadcast/admin/original-disclosure';
+import { EmailFrame } from '@/components/broadcast/email-frame';
 import { useComposeDirtyGuard } from '@/components/broadcast/compose/use-compose-dirty-guard';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
@@ -470,12 +472,13 @@ export function FormattedVersionWorkspace({
 
           {formError !== null ? <InlineError id={ERROR_IDS.form} message={formError} /> : null}
 
-          {/* DOM order = visual order = Tab order at every width: the footer
-              stacks top-to-bottom below `sm` and runs left-to-right above it. */}
+          {/* Left to right from 640px: test copy, Save, Send to member. Below
+              640px board `Admin-eblast-design-mobile` stacks the next step
+              first: Send, Save, test copy (maintainer, parity 20 Oct). */}
           <div className="flex flex-col gap-2 border-t border-[var(--aura-border-default)] pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             {guard.savedAt !== null ? (
               // Not a live region: the save's toast is the one announcement.
-              <p className="aura-text-caption text-[var(--aura-fg-secondary)] sm:mr-auto">
+              <p className="aura-text-caption text-[var(--aura-fg-secondary)] max-sm:order-first sm:mr-auto">
                 {t('savedAt', { time: formatLocalisedDate(guard.savedAt, locale, TIME_HH_MM) })}
               </p>
             ) : null}
@@ -485,7 +488,7 @@ export function FormattedVersionWorkspace({
               subject={subject}
               bodyHtml={bodyHtml}
               disabled={busy}
-              className={FOOTER_BUTTON}
+              className={cn(FOOTER_BUTTON, 'max-sm:order-3')}
             />
             <Button
               // The form's submit — its `onSubmit` runs `onSave` (a click and
@@ -494,7 +497,7 @@ export function FormattedVersionWorkspace({
               variant="secondary"
               touchHeight
               data-testid="eblast-format-save"
-              className={FOOTER_BUTTON}
+              className={cn(FOOTER_BUTTON, 'max-sm:order-2')}
               loading={saving}
               aria-disabled={busy || !dirty || undefined}
             >
@@ -507,7 +510,7 @@ export function FormattedVersionWorkspace({
               touchHeight
               icon={<Send aria-hidden />}
               data-testid="eblast-send-to-member"
-              className={FOOTER_BUTTON}
+              className={cn(FOOTER_BUTTON, 'max-sm:order-1')}
               aria-disabled={busy || conflict || undefined}
               onClick={() => {
                 if (busy || conflict) return;
@@ -536,7 +539,9 @@ export function FormattedVersionWorkspace({
           >
             <div className="space-y-2">
               <p className="text-sm font-medium break-words">{original.subject}</p>
-              <PreviewSurface state={original.preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} fit />
+              <EmailFrame>
+                <PreviewSurface state={original.preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} fit />
+              </EmailFrame>
             </div>
           </Card>
         </OriginalDisclosure>

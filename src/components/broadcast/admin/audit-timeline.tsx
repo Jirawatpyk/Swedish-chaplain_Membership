@@ -14,7 +14,7 @@ import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
-import { CheckCircle2, Circle } from 'lucide-react';
+import { CheckCircle2, Circle, CircleX } from 'lucide-react';
 import { Card, Icon } from '@jirawatpyk/aura-react/server';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
@@ -133,6 +133,7 @@ export async function AuditTimeline({
         const ts = new Date(r.timestamp);
         return {
           key: `${r.eventType}-${ts.getTime()}`,
+          failed: r.eventType === 'broadcast_failed_to_dispatch',
           label: eventLabel[r.eventType] ?? r.eventType,
           instant: ts.toISOString(),
           when: fmt.format(ts),
@@ -155,6 +156,8 @@ export interface AuditTimelineEvent {
   readonly actor: string;
   /** The raw actor id, kept in the title attribute for ops debugging. */
   readonly actorId: string;
+  /** A failed dispatch: a danger cross, never the success check (board `Admin-eblast-failed`). */
+  readonly failed?: boolean;
 }
 
 /**
@@ -182,12 +185,14 @@ export function AuditTimelineView({
               <li key={e.key} data-step={latest ? 'latest' : 'past'} className="flex items-start gap-[var(--aura-space-3)]">
                 <span
                   className={
-                    latest
-                      ? 'mt-0.5 shrink-0 text-[var(--aura-fg-positive)]'
-                      : 'mt-0.5 shrink-0 text-[var(--aura-fg-secondary)]'
+                    e.failed === true
+                      ? 'mt-0.5 shrink-0 text-[var(--aura-fg-danger)]'
+                      : latest
+                        ? 'mt-0.5 shrink-0 text-[var(--aura-fg-positive)]'
+                        : 'mt-0.5 shrink-0 text-[var(--aura-fg-secondary)]'
                   }
                 >
-                  <Icon name={latest ? <CheckCircle2 /> : <Circle />} size={16} />
+                  <Icon name={e.failed === true ? <CircleX /> : latest ? <CheckCircle2 /> : <Circle />} size={16} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="aura-text-body font-semibold">{e.label}</p>
