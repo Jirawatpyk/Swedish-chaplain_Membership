@@ -16,7 +16,7 @@ import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
-import { fillRequiredMembershipAndAddress } from './helpers/member-form';
+import { fillRequiredMembershipAndAddress, scrollFormToEndAtRest } from './helpers/member-form';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
@@ -118,11 +118,11 @@ test.describe('members create — F3 US1 @f3 @a11y @i18n', () => {
     // so mid-page it covers whichever field sits under it and axe reports that
     // field (or the bar's buttons) as an obscured target (target-size,
     // target-offset; relay R60, red on main too). Scan the form at rest at the
-    // end of the scroll, where the bar sits below the last field.
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await page.waitForFunction(
-      () => Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 1,
-    );
+    // end of the scroll, where the bar sits below the last field. The form
+    // focuses the company name on load; wait for it, or a late focus pulls the
+    // page back up after the scroll (relay R61).
+    await expect(page.locator('#company_name')).toBeFocused();
+    await scrollFormToEndAtRest(page);
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])

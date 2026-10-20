@@ -22,6 +22,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
+import { scrollFormToEndAtRest } from './helpers/member-form';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -93,10 +94,7 @@ test.describe('members edit + bundle warning — F3 US3 @f3 @a11y @i18n', () => 
     // field (or the bar's buttons) as an obscured target (target-size,
     // target-offset; relay R60, red on main too). Scan the form at rest at the
     // end of the scroll, where the bar sits below the last field.
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await page.waitForFunction(
-      () => Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight - 1,
-    );
+    await scrollFormToEndAtRest(page);
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
