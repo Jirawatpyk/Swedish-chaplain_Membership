@@ -3649,6 +3649,7 @@
           "reviewNoFormat": "{turn} — อนุมัติตามที่ส่งมา หรือปฏิเสธ",
           "design": "{turn} — จัดรูปแบบให้เสร็จแล้วส่งให้สมาชิก",
           "awaitingMember": "ถึงตาสมาชิก — ส่งฉบับจัดรูปแบบที่ {version} ไปเมื่อ {sentAt} หากไม่มีการตอบกลับ คำขอจะหมดอายุเมื่อ {expiresAt}",
+          "awaitingMemberExpired": "ถึงตาสมาชิก — ส่งฉบับจัดรูปแบบที่ {version} ไปเมื่อ {sentAt} คำขอหมดอายุแล้ว และจะปิดในไม่ช้า",
           "changesRequested": "{turn} — เริ่มฉบับจัดรูปแบบที่ {version} เพื่อแก้ไขตามที่สมาชิกขอ",
           "confirmSchedule": "{turn} — ยืนยันเวลาส่ง สมาชิกเสนอเวลา {proposedAt}",
           "confirmScheduleNoProposal": "{turn} — ยืนยันเวลาส่ง"
@@ -3708,8 +3709,8 @@
           "failedToDispatch": "ส่งไม่สำเร็จ",
           "memberApproved": "สมาชิกอนุมัติ",
           "memberChangesRequested": "สมาชิกขอให้แก้ไข",
-          "scheduleConfirmed": "ยืนยันเวลาส่ง",
-          "scheduleCancelled": "ยกเลิกเวลาส่ง",
+          "scheduleConfirmed": "ยืนยันเวลาส่งแล้ว",
+          "scheduleCancelled": "ยกเลิกเวลาส่งแล้ว",
           "actorBy": "โดย {actor}",
           "actorSystem": "ระบบ",
           "actorUnknown": "ผู้ใช้ที่ไม่ทราบ"

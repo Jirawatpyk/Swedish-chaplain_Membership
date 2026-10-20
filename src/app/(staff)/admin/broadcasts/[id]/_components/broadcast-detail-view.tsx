@@ -59,7 +59,7 @@ function toned(n: number, tone: keyof typeof TONE_CLASS): string {
   return n > 0 ? TONE_CLASS[tone] : 'tabular-nums';
 }
 
-type TurnKey = 'review' | 'reviewNoFormat' | 'design' | 'awaitingMember' | 'changesRequested' | 'confirmSchedule' | 'confirmScheduleNoProposal';
+type TurnKey = 'review' | 'reviewNoFormat' | 'design' | 'awaitingMember' | 'awaitingMemberExpired' | 'changesRequested' | 'confirmSchedule' | 'confirmScheduleNoProposal';
 
 function turnBarText(
   bar: TurnBar | null,
@@ -75,6 +75,8 @@ function turnBarText(
       return t('design', { turn });
     case 'awaitingMember':
       return t('awaitingMember', { version: bar.version, sentAt: date(bar.sentAt), expiresAt: date(bar.expiresAt) });
+    case 'awaitingMemberExpired':
+      return t('awaitingMemberExpired', { version: bar.version, sentAt: date(bar.sentAt) });
     case 'changesRequested':
       return t('changesRequested', { turn, version: bar.nextVersion });
     case 'confirmSchedule':
@@ -229,6 +231,7 @@ export async function BroadcastDetailView({
       memberApprovalOn,
       stageEnteredAt: broadcast.stageEnteredAt,
       proposedSendAt: broadcast.proposedSendAt,
+      now: new Date(),
     }),
     tTurn(isReadOnlyManager ? 'marketing' : 'you'),
     (key, values) => tTurn(key, values),

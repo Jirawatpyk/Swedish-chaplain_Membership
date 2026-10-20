@@ -3644,11 +3644,12 @@
         },
         "turnBar": {
           "you": "Din tur",
-          "marketing": "Marknads tur",
+          "marketing": "Marknadsavdelningens tur",
           "review": "{turn} — godkänn det som inskickat, starta en formaterad version eller avvisa det.",
           "reviewNoFormat": "{turn} — godkänn det som inskickat eller avvisa det.",
           "design": "{turn} — gör klart den formaterade versionen och skicka den till medlemmen.",
           "awaitingMember": "Medlemmens tur — version {version} skickades den {sentAt}. Om ingen svarar löper begäran ut den {expiresAt}.",
+          "awaitingMemberExpired": "Medlemmens tur — version {version} skickades den {sentAt}. Begäran har löpt ut och stängs inom kort.",
           "changesRequested": "{turn} — starta formaterad version {version} för att tillgodose medlemmens ändringsönskemål.",
           "confirmSchedule": "{turn} — bekräfta sändningstiden. Medlemmen föreslog {proposedAt}.",
           "confirmScheduleNoProposal": "{turn} — bekräfta sändningstiden."
@@ -3709,7 +3710,7 @@
           "memberApproved": "Godkänt av medlemmen",
           "memberChangesRequested": "Medlemmen begärde ändringar",
           "scheduleConfirmed": "Sändningstid bekräftad",
-          "scheduleCancelled": "Sändningstid avbruten",
+          "scheduleCancelled": "Sändningstid borttagen",
           "actorBy": "av {actor}",
           "actorSystem": "system",
           "actorUnknown": "okänd användare"
