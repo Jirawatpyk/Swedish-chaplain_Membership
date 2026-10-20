@@ -28,4 +28,15 @@ describe('the E-Blast detail action row on a phone', () => {
     const rule = ruleAfter('html:has(.eblast-detail-actions) {');
     expect(rule).toMatch(/scroll-padding-bottom:\s*calc\(var\(--aura-bottomnav-offset, 0px\) \+ 8rem/);
   });
+
+  it('keeps Reject · next step · ⋯ on one line: the next step shrinks and wraps its label (parity, 20 Oct)', () => {
+    const group = ruleAfter('.eblast-detail-actions > div > :last-child {');
+    expect(group).toMatch(/flex:\s*1 1 0;/);
+    expect(group).toMatch(/flex-wrap:\s*nowrap;/);
+    expect(group).toMatch(/min-width:\s*0;/);
+    const next = ruleAfter('.eblast-detail-actions > div > :last-child > button {');
+    expect(next).toMatch(/min-width:\s*0;/);
+    expect(next).toMatch(/white-space:\s*normal;/);
+    expect(next).toMatch(/min-height:\s*2\.75rem;/);
+  });
 });

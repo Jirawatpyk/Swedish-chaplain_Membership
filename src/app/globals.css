@@ -345,16 +345,30 @@ html:has(.chamber-viewport-actionbar) {
   .plan-form-actions--start-wide > div > :nth-child(2):not(:last-child) {
     display: none;
   }
-  /* Spec 122 US12c-1 — the E-Blast detail bar (board `Admin-broadcast-review-mobile`)
-     carries up to four actions: its two groups wrap rather than squeeze, in
-     DOM order — Cancel / Reject on the first line, the next step on the line
-     nearest the thumb — so Tab follows what is seen (WCAG 2.4.3; the board
-     draws the next step first, UX review). Two lines are ~104px plus the safe
-     area, taller than the shared 5.5rem pad, so a focused control is kept
-     clear of them (WCAG 2.4.11). */
+  /* Spec 122 US12c-1 — the E-Blast detail bar (board `Admin-broadcast-review-mobile`).
+     Cancel and a secondary Start fold into ⋯ (parity, 20 Oct), so the bar is
+     one line: Reject · the next step · ⋯. The next step takes the rest of the
+     row and wraps its own label rather than push the row onto a second line
+     (SV "Bekräfta sändningstid" at 360px). If a line still overflows (200%
+     text), the groups wrap in DOM order — Reject first, the next step on the
+     line nearest the thumb — so Tab follows what is seen (WCAG 2.4.3), and a
+     focused control is kept clear of the taller bar (WCAG 2.4.11). */
   .eblast-detail-actions > div {
     flex-wrap: wrap;
     row-gap: var(--aura-space-2);
+    column-gap: var(--aura-space-2);
+  }
+  .eblast-detail-actions > div > :last-child {
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+  .eblast-detail-actions > div > :last-child > button {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: auto;
+    min-height: 2.75rem;
+    white-space: normal;
   }
   html:has(.eblast-detail-actions) {
     scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 8rem + env(safe-area-inset-bottom, 0px));
