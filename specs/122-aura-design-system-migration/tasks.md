@@ -722,16 +722,16 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1217 [US12] Banners (SLA, overdue, halt, halt-unavailable, inline warning) as AURA `Alert`; page frame (PageHeader actions, Card), loading and error on AURA.
 - [x] T1218 [US12] The shared reason-confirmation dialog and typed-phrase field on AURA. Test: `tests/unit/components/shell/{reason-confirmation-dialog,typed-phrase-field}.test.tsx`.
 - [x] T1219 [US12] Exit: `MIGRATED_PATHS` and a US12b ratchet block (controls move to US12c/d files); preview views; budgets; e2e selectors; gates; shots; UX and security reviews; relay R57.
-- [ ] T1220 [US12] US12c-1 spec session (two PRs, boards, shared pieces, dialog roles, the proposed items) and tasks T1220–T1229.
-- [ ] T1221 [US12] Detail page frame on AURA: `PageHeader`, Cards with titled headings for the approval round, submission, content and lifecycle timeline; `InlineAlert` → AURA `Alert` (testids and roles kept); loading on `PageSkeletonShell`; error on `RouteErrorPanel`. The render moves to a `broadcast-detail-view` taking the page's computed props, so the preview can feed it. Test: `admin-broadcast-detail-view`.
-- [ ] T1222 [US12] Status badge on AURA through `status-badge-mapping`, tones unchanged. Test: `status-badge`.
-- [ ] T1223 [US12] Start formatted version on AURA `Dialog role="alertdialog"`; the confirm gate and the request unchanged. Test: `start-formatted-version-action`.
-- [ ] T1224 [US12] Formatted-version workspace chrome on AURA (subject `TextField`, note `Textarea`, buttons, send and discard dialogs, inline errors); editor, dirty guard and requests unchanged. Test: `formatted-version-workspace*`, `test-copy-button`.
-- [ ] T1225 [US12] Schedule dialog on AURA `Dialog` + `RadioGroup` + the Bangkok `datetime-local` field; modes and body unchanged. Test: `schedule-confirm-dialog`.
-- [ ] T1226 [US12] Version thread on AURA (a card per round, badges); order and content unchanged. Test: `version-thread`.
-- [ ] T1227 [US12] Cancel action button and the preview pane and dialog on AURA; compose callers re-tested. Test: `cancel-broadcast-*`, `preview-*`.
-- [ ] T1228 [US12] `MIGRATED_PATHS` and a US12c-1 ratchet block (controls move to US12c-2 / US12d files); preview views (`?view=broadcast-detail&state=…&dialog=…`) and the loading route; budget for `/admin/broadcasts/[id]`.
-- [ ] T1229 [US12] Exit: e2e selectors; gates; shots at 1440/390 light and dark; UX and security reviews; draft PR; parity artifact; relay R58.
+- [x] T1220 [US12] US12c-1 spec session (two PRs, boards, shared pieces, dialog roles, the proposed items) and tasks T1220–T1229.
+- [x] T1221 [US12] Detail page frame on AURA: `PageHeader`, Cards with titled headings for the approval round, submission, content and lifecycle timeline; `InlineAlert` → AURA `Alert` (testids and roles kept); loading on `PageSkeletonShell`; error on `RouteErrorPanel`. The render moves to a `broadcast-detail-view` taking the page's computed props, so the preview can feed it. Test: `admin-broadcast-detail-view`.
+- [x] T1222 [US12] Status badge on AURA through `status-badge-mapping`, tones unchanged. Test: `status-badge`.
+- [x] T1223 [US12] Start formatted version on AURA `Dialog role="alertdialog"`; the confirm gate and the request unchanged. Test: `start-formatted-version-action`.
+- [x] T1224 [US12] Formatted-version workspace chrome on AURA (subject `TextField`, note `Textarea`, buttons, send and discard dialogs, inline errors); editor, dirty guard and requests unchanged. Test: `formatted-version-workspace*`, `test-copy-button`.
+- [x] T1225 [US12] Schedule dialog on AURA `Dialog` + `RadioGroup` + the Bangkok `datetime-local` field; modes and body unchanged. Test: `schedule-confirm-dialog`.
+- [x] T1226 [US12] Version thread on AURA (a card per round, badges); order and content unchanged. Test: `version-thread`.
+- [x] T1227 [US12] Cancel action button and the preview pane and dialog on AURA; compose callers re-tested. Test: `cancel-broadcast-*`, `preview-*`.
+- [x] T1228 [US12] `MIGRATED_PATHS` and a US12c-1 ratchet block (controls move to US12c-2 / US12d files); preview views (`?view=broadcast-detail&state=…&dialog=…`) and the loading route; budget for `/admin/broadcasts/[id]`.
+- [x] T1229 [US12] Exit: e2e selectors; gates; shots at 1440/390 light and dark; UX and security reviews; draft PR; parity artifact; relay R58 (green on chromium + mobile-chrome, 20 Oct; the parity check used the preview shots at every stage instead of a separate artifact).
 - [ ] T1220b [US12] US12c-2: the portal detail and member sign-off (tasks written when it starts).
 - [ ] T1230 [US12] US12d: compose (staff proxy and portal), editor toolbar and dialogs, quota display, plus the benefits page's E-Blast tab.
 
