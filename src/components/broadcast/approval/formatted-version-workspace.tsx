@@ -536,7 +536,7 @@ export function FormattedVersionWorkspace({
           >
             <div className="space-y-2">
               <p className="text-sm font-medium break-words">{original.subject}</p>
-              <PreviewSurface state={original.preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
+              <PreviewSurface state={original.preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} fit />
             </div>
           </Card>
         </OriginalDisclosure>

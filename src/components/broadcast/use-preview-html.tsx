@@ -27,7 +27,7 @@
  * never sets state synchronously (`react-hooks/set-state-in-effect` is an
  * error here).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { isLocale, type Locale } from '@/i18n/config';
@@ -192,6 +192,20 @@ export interface PreviewSurfaceProps {
    * on every keystroke, which is the layout shift T156 goes looking for.
    */
   readonly height: number;
+  /**
+   * Spec 122 US12c-1 (parity, maintainer 20 Oct) — a READ-ONLY surface (the
+   * staff detail) grows the frame to the e-mail's height, as the boards draw
+   * it, instead of leaving empty space under a short e-mail. `height` is then
+   * the reservation until the document is measured. Reading the document needs
+   * `sandbox="allow-same-origin"`: still no scripts (the body sanitiser also
+   * forbids `<script>`, `<style>` and `on*`), forms, popups or top navigation,
+   * and the app's `frame-ancestors 'none'` keeps its own pages out of the
+   * frame. Never on the compose pane: a frame that resizes per keystroke moves
+   * everything below it (T156). NEVER add `allow-scripts` here: with
+   * `allow-same-origin` that is a sandbox escape (security review, 20 Oct); a
+   * test pins the value.
+   */
+  readonly fit?: boolean;
 }
 
 /** The outcome of ONE preview request, at ONE width. */
@@ -199,9 +213,44 @@ export function PreviewSurface({
   state,
   width,
   height,
+  fit = false,
 }: PreviewSurfaceProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.preview');
   const tFields = useTranslations('portal.broadcasts.compose.fields');
+  const [fitted, setFitted] = useState<number | null>(null);
+  const observer = useRef<ResizeObserver | null>(null);
+
+  // The brand logo and any images land after `load`, so the body is watched,
+  // not measured once.
+  const watch = useCallback((doc: Document | null | undefined): void => {
+    observer.current?.disconnect();
+    observer.current = null;
+    const body = doc?.body;
+    if (body === undefined || body === null) return;
+    const measure = () => setFitted(Math.ceil(body.getBoundingClientRect().height));
+    measure();
+    if (typeof ResizeObserver !== 'undefined') {
+      observer.current = new ResizeObserver(measure);
+      observer.current.observe(body);
+    }
+  }, []);
+  // The server renders the frame with its `srcdoc`, so on a full page load the
+  // document can finish before React attaches `onLoad`; one already complete
+  // (and not the initial about:blank) is measured on attach. Detaching the
+  // frame stops the watch.
+  const attachFrame = useCallback(
+    (frame: HTMLIFrameElement | null): void => {
+      if (frame === null) {
+        observer.current?.disconnect();
+        observer.current = null;
+        return;
+      }
+      const doc = frame.contentDocument;
+      if (doc !== null && doc.readyState === 'complete' && doc.URL === 'about:srcdoc') watch(doc);
+    },
+    [watch],
+  );
+  const onFrameLoad = (event: React.SyntheticEvent<HTMLIFrameElement>): void => watch(event.currentTarget.contentDocument);
 
   switch (state.status) {
     case 'empty':
@@ -243,7 +292,8 @@ export function PreviewSurface({
           title={t('frameTitle')}
           // `srcdoc` only: no `src`, so the frame makes no request of its own.
           // `sandbox=""` is the empty allow-list — no scripts, no forms, no
-          // same-origin access back into the app.
+          // same-origin access back into the app; `fit` adds only
+          // `allow-same-origin`, to read the e-mail's height (see the prop).
           //
           // `bg-white` is a DELIBERATE, documented exception to
           // ux-standards § theming's "semantic tokens only" (T155 § 15 walk,
@@ -258,11 +308,11 @@ export function PreviewSurface({
           // with a transparency checker (T155 U16,
           // `brand/brand-settings-form.tsx`).
           srcDoc={state.html}
-          sandbox=""
+          sandbox={fit ? 'allow-same-origin' : ''}
           referrerPolicy="no-referrer"
-          loading="lazy"
+          {...(fit ? { ref: attachFrame, onLoad: onFrameLoad } : { loading: 'lazy' as const })}
           className="mx-auto block w-full max-w-full border-0 bg-white"
-          style={{ height, ...(width !== undefined && { width }) }}
+          style={{ height: fit && fitted !== null && fitted > 0 ? fitted : height, ...(width !== undefined && { width }) }}
         />
       );
   }

@@ -305,7 +305,7 @@ export async function BroadcastDetailView({
         // Read-only comparison: the version marketing is on (or sent, or the
         // member approved) beside the member's original — the manager's view
         // of `in_design`, and everyone's view after a version was sent.
-        <div className="grid gap-6 lg:grid-cols-2" data-testid="eblast-version-comparison">
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start" data-testid="eblast-version-comparison">
           <ContentCard
             id="eblast-shown-version-title"
             title={
@@ -336,7 +336,7 @@ export async function BroadcastDetailView({
               {t('bodyRenderFailedHint')}
             </Alert>
           ) : (
-            <PreviewSurface state={previewState} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
+            <PreviewSurface state={previewState} height={DETAIL_PREVIEW_FRAME_HEIGHT} fit />
           )}
         </Card>
       )}
@@ -406,7 +406,7 @@ function ContentCard({
   readonly noteLabel?: string;
 }): React.ReactElement {
   return (
-    <Card titleId={id} title={title} headingLevel={2} description={description} className="h-full min-w-0">
+    <Card titleId={id} title={title} headingLevel={2} description={description} className="min-w-0">
       <div className="space-y-2">
         <p className="text-sm font-medium break-words">{subject}</p>
         {note !== undefined && note !== null && noteLabel !== undefined ? (
@@ -415,7 +415,7 @@ function ContentCard({
             <span className="whitespace-pre-line">{note}</span>
           </p>
         ) : null}
-        <PreviewSurface state={preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} />
+        <PreviewSurface state={preview} height={DETAIL_PREVIEW_FRAME_HEIGHT} fit />
       </div>
     </Card>
   );

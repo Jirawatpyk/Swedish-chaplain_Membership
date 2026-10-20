@@ -115,7 +115,7 @@ vi.mock('@/components/broadcast/admin/manager-readonly-banner', () => ({
   ManagerReadonlyBanner: () => <div data-testid="manager-banner" />,
 }));
 vi.mock('@/components/broadcast/use-preview-html', () => ({
-  PreviewSurface: () => <div data-testid="preview-surface" />,
+  PreviewSurface: ({ fit }: { fit?: boolean }) => <div data-testid="preview-surface" data-fit={fit ? 'true' : 'false'} />,
 }));
 
 const findByIdMock = vi.fn();
@@ -694,6 +694,17 @@ describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
     for (const id of ['eblast-shown-version-title', 'eblast-original-title']) {
       expect(openingTagWith(html, `aria-labelledby="${id}"`), id).toContain('aura-card');
     }
+  });
+
+  it('the comparison cards end at their own content and their frames fit the e-mail (parity, 20 Oct)', async () => {
+    const html = await renderPage('awaiting_member_approval', 1);
+    for (const id of ['eblast-shown-version-title', 'eblast-original-title']) {
+      expect(openingTagWith(html, `aria-labelledby="${id}"`), id).not.toMatch(/\bh-full\b/);
+    }
+    expect(openingTagWith(html, 'data-testid="eblast-version-comparison"')).toContain('lg:items-start');
+    const frames = html.match(/<div data-testid="preview-surface"[^>]*>/g) ?? [];
+    expect(frames).toHaveLength(2);
+    for (const frame of frames) expect(frame).toContain('data-fit="true"');
   });
 
   it('every page note is an AURA alert that keeps its test id and role', async () => {
