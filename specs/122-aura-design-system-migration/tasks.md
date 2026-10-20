@@ -731,7 +731,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1226 [US12] Version thread on AURA (a card per round, badges); order and content unchanged. Test: `version-thread`.
 - [x] T1227 [US12] Cancel action button and the preview pane and dialog on AURA; compose callers re-tested. Test: `cancel-broadcast-*`, `preview-*`.
 - [x] T1228 [US12] `MIGRATED_PATHS` and a US12c-1 ratchet block (controls move to US12c-2 / US12d files); preview views (`?view=broadcast-detail&state=…&dialog=…`) and the loading route; budget for `/admin/broadcasts/[id]`.
-- [x] T1229 [US12] Exit: e2e selectors; gates; shots at 1440/390 light and dark; UX and security reviews; draft PR; parity artifact; relay R58 (green on chromium + mobile-chrome, 20 Oct; the parity check used the preview shots at every stage instead of a separate artifact).
+- [x] T1229 [US12] Exit: e2e selectors; gates; shots at 1440/390 light and dark; UX and security reviews; draft PR; parity artifact; relay R58 (green on chromium + mobile-chrome, 20 Oct; parity artifact https://claude.ai/artifact/QwkFEefd6eBWCKuXcvKPrz).
 - [ ] T1220b [US12] US12c-2: the portal detail and member sign-off (tasks written when it starts).
 - [ ] T1230 [US12] US12d: compose (staff proxy and portal), editor toolbar and dialogs, quota display, plus the benefits page's E-Blast tab.
 
