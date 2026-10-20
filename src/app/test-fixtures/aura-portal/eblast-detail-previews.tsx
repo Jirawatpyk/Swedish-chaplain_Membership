@@ -80,7 +80,7 @@ export async function renderPortalBroadcastDetailPreview(state: string | undefin
       approved: 'member_approved',
       scheduled: 'approved',
       sent: 'sent',
-      expired: 'expired',
+      expired: 'expired_no_member_response',
       submitted: 'submitted',
       'thread-unavailable': 'awaiting_member_approval',
     } as const
@@ -131,7 +131,13 @@ export async function renderPortalBroadcastDetailPreview(state: string | undefin
             canWithdrawEblast,
           }
         : null,
-    thread: round >= 1 ? thread(fmt, decision) : null,
+    thread:
+      round >= 1
+        ? thread(fmt, decision)
+        : stage === 'sent'
+          ? // Approved as submitted, as board `Portal-broadcast-detail` draws it.
+            { original: null, rounds: [], approvedAsSubmitted: { at: at(ago(30), fmt), author: { side: 'organisation', name: null } } }
+          : null,
     delivery:
       stage === 'sent' ? { delivered: 121, bounced: 3, softBounced: 2, complained: 0, sent: 0, total: 126 } : null,
   };
