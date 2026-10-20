@@ -88,8 +88,11 @@ test.describe('PaySheet stale-invoice auto-refund — @payment @f5 @us5', () => 
     // status='void' — without this assertion, a regression that hides
     // the void banner entirely would also mask the refund-notice
     // assertion that follows).
-    // The AURA alert renders its title as a paragraph, not a heading.
-    await expect(page.getByText(/^invoice voided$/i)).toBeVisible({ timeout: 10_000 });
+    // The void notice is an AURA <Alert role="note">, whose title is a
+    // paragraph rather than a heading (the admin voidDetails pattern).
+    await expect(page.getByRole('note').getByText(/^invoice voided$/i)).toBeVisible({
+      timeout: 10_000,
+    });
 
     // Auto-refund sub-section. Pinned by data-testid so the assertion
     // survives copy tweaks across i18n updates; the rendered text is
