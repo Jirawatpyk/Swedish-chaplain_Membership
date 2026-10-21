@@ -263,3 +263,7 @@ Follow-ups 1–4 from the #607 review: behaviour changes, so a PR of their own (
 - **RED** (commit `test(ui): …`): the 2 positive controls passed and the 2 real checks failed.
   - "every Button in an AURA Dialog footer carries touchHeight" → `expected [ …(70) ] to deeply equal []`: 70 footer buttons across 36 files, including the shared `ConfirmationDialog` and `ReasonConfirmationDialog`.
   - "no AURA Button or buttonClass stretches with a bare w-full" → `expected [ …(5) ] to deeply equal []` (cycle-admin-actions, pending-reactivation-actions, member-sign-off-actions ×2, section-nav).
+- **Mobile/a11y review follow-up:**
+  - The guard now also catches a `buttonClass(...)` link in a footer without `touchHeight: true`. RED: `event-fee-form.tsx:1161` (the duplicate dialog's "View invoice"). Fixed.
+  - On `issue-invoice-form`, the confirm names the total, and at 320px the label ran out of the button because the container's `max-sm:[&>*]:w-full` kept `nowrap`. Each button is now `fullWidth` plus `FULL_WIDTH_BELOW_SM`.
+  - The other container-stretched rows still fit their labels (refund, void, credit note, events wizard/mapping, erase page). They are listed as a follow-up, and the guard doesn't see them yet.

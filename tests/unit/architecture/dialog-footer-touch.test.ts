@@ -113,6 +113,20 @@ export function scanFooters(file: string, source: string): FooterScan {
         missing.push(`${file}:${line + 1}`);
       }
     }
+    // A link styled as a button (`buttonClass(...)`) in the footer is a
+    // footer button too: it needs `touchHeight: true`.
+    const visit = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && names.buttonClass.has(n.expression.text)) {
+        const opts = n.arguments[0];
+        const touch =
+          opts !== undefined &&
+          ts.isObjectLiteralExpression(opts) &&
+          opts.properties.some((p) => ts.isPropertyAssignment(p) && p.name.getText() === 'touchHeight');
+        if (!touch) missing.push(`${file}:${sf.getLineAndCharacterOfPosition(n.getStart()).line + 1}`);
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(root);
   }
   return { footers, missing };
 }
@@ -157,6 +171,16 @@ describe('dialog footer buttons are 44px on phones (spec 122 follow-up 5)', () =
       '  <Dialog open title="t" footer={<><div><Button variant="secondary">No</Button></div><Button touchHeight>Yes</Button></>} />',
       ');',
     ].join('\r\n');
+    expect(scanFooters('fixture.tsx', fixture)).toEqual({ footers: 1, missing: ['fixture.tsx:3'] });
+  });
+
+  it('positive control: a link styled with buttonClass in a footer needs touchHeight too', () => {
+    const fixture = [
+      "import { Dialog, buttonClass } from '@jirawatpyk/aura-react';",
+      'export const A = () => (',
+      "  <Dialog open title=\"t\" footer={<a className={buttonClass({ variant: 'primary' })}>Go</a>} />",
+      ');',
+    ].join('\n');
     expect(scanFooters('fixture.tsx', fixture)).toEqual({ footers: 1, missing: ['fixture.tsx:3'] });
   });
 

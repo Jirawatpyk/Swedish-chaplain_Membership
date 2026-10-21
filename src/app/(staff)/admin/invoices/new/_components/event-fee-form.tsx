@@ -1158,7 +1158,7 @@ export function EventFeeForm({
               {t('duplicateDialog.cancel')}
             </Button>
             {duplicateInvoiceId !== null && (
-              <Link href={`/admin/invoices/${duplicateInvoiceId}`} className={buttonClass({ variant: 'primary' })}>
+              <Link href={`/admin/invoices/${duplicateInvoiceId}`} className={buttonClass({ variant: 'primary', touchHeight: true })}>
                 {t('duplicateDialog.viewInvoice')}
               </Link>
             )}

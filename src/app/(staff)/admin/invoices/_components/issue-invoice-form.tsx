@@ -56,6 +56,7 @@ import {
 } from '../_lib/issue-vat-treatment';
 import { routeIssueError } from './issue-error-routing';
 import { ZeroRateCertUploader } from './zero-rate-cert-uploader';
+import { FULL_WIDTH_BELOW_SM } from '@/components/shell/full-width-below-sm';
 
 export type IssueInvoiceFormProps = {
   readonly invoiceId: string;
@@ -621,16 +622,29 @@ export function IssueInvoiceForm({
       {/* The buttons stick to the bottom of the dialog's scrolling body, so a
           long form never scrolls them away and focusing Cancel on open does
           not scroll the summary out of view; on a phone they stack full
-          width, the primary action on top (ux-standards § 11.1). */}
-      <div className="sticky bottom-0 flex flex-wrap justify-end gap-[var(--aura-space-2)] bg-[var(--aura-bg-surface)] py-[var(--aura-space-3)] max-sm:flex-col-reverse max-sm:[&>*]:w-full">
+          width, the primary action on top (ux-standards § 11.1). Each is
+          AURA's full-width button below sm, so the confirm's label (it names
+          the total) wraps instead of running out of the button at 320px. */}
+      <div className="sticky bottom-0 flex flex-wrap justify-end gap-[var(--aura-space-2)] bg-[var(--aura-bg-surface)] py-[var(--aura-space-3)] max-sm:flex-col-reverse">
         {/* Cancel takes the first focus (ux-standards § 6, the safe action). */}
-        <Button type="button" variant="secondary" touchHeight data-autofocus disabled={pending} onClick={onClose}>
+        <Button
+          type="button"
+          variant="secondary"
+          touchHeight
+          fullWidth
+          className={FULL_WIDTH_BELOW_SM}
+          data-autofocus
+          disabled={pending}
+          onClick={onClose}
+        >
           {t('cancel')}
         </Button>
         <Button
           type="button"
           variant="primary"
           touchHeight
+          fullWidth
+          className={FULL_WIDTH_BELOW_SM}
           loading={pending}
           // Board Admin-invoice-issue: the confirm names the document and its
           // total, with the money-step check icon (§ Button icons). The total
