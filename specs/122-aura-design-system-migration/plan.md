@@ -279,7 +279,11 @@ These are logic fixes from the #608 reviews, in a PR of their own. The touch-tar
     - `paid` and `pay` stay.
   - **Sign-in notice on retry.** The notice now gives way only to an inline error (server or format) or to success, not at the start of a submit.
   - **Notice copy.** It now lives under `auth.signIn.notice.*`; the wording is unchanged.
-- **Logging check:** `src/proxy.ts` logs `nextUrl.pathname` only. The query, with the client secret, reaches only the `x-pathname` request header, which is not logged.
+- **Logging check:**
+  - App code never logs the secret. `src/proxy.ts` logs `nextUrl.pathname` only. The query reaches the `x-pathname` header, and every reader of that header drops the query or goes through `buildSignInUrl`.
+  - What a client-side fix cannot remove: the first GET after a 3DS redirect is still recorded by Vercel's request logs and by Next's root span (`http.target`). This comes from how Stripe's `return_url` works, and `redirect: 'if_required'` keeps it rare.
+  - A client secret is not cardholder data, so scope stays SAQ-A (`pci-saqa-guardian`).
+  - A scoped 303 redirect in the proxy would also close the device-history and same-origin Referer copies. That is left as a possible follow-up.
 - **RED** (commit `d0d115f5e`, before any code change): 8 failed, 69 passed across 4 files.
   - `return-url.test.ts`:
     - "drops the Stripe redirect parameters and keeps the rest of the query" → `Received "/portal/sign-in?returnTo=%2Fportal%2Finvoices%2Fi1%3Fpay%3D1%26payment_intent%3Dpi_1%26payment_intent_client_secret%3D…"`
@@ -289,3 +293,6 @@ These are logic fixes from the #608 reviews, in a PR of their own. The touch-tar
   - `sign-in-form-errors.test.tsx`:
     - "keeps the notice while a retry after a network failure is still in flight" → `expect(received).toHaveTextContent()`, "received value must be a Node" (the notice was gone)
     - "a format error after a network failure replaces the notice" → `expected <div id="signin-notice" …> to be null`
+- **Review follow-ups, RED** (commit `1862aa9a0`):
+  - `strip-stripe-return-params.test.tsx`: "hands Next a null state so the router learns the clean URL" → `expected "replaceState" to be called with arguments: [ null, '', …(1) ]`. The component passed `window.history.state`. That state carries Next's `__NA` marker, so Next skipped its router sync, and a later `router.refresh()` would write the secret back (`financial-integrity-reviewer`).
+  - `return-url.test.ts`: "still drops returnTo for an unsafe query that also carries Stripe keys" → `Received "/portal/sign-in?returnTo=%2Fportal%2Fx%3Fnext%3Dhttps%253A%252F%252Fevil.example"`. Stripping had re-encoded the query past `safeReturnTo` (`security-engineer`, LOW 1).
