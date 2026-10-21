@@ -60,6 +60,9 @@ export function SignInForm({ portal, returnTo, notice }: SignInFormProps) {
   const tv = useTranslations('shared.validation');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  // The last attempt never reached the server (network failure): only a toast
+  // says so, nothing inline, so the reason notice stays on the card.
+  const [networkFailed, setNetworkFailed] = useState(false);
 
   const schema = useMemo(() => buildSignInSchema(tv as Translator), [tv]);
 
@@ -82,8 +85,9 @@ export function SignInForm({ portal, returnTo, notice }: SignInFormProps) {
   // The reason notice gives way once a sign-in is attempted, so the error (the
   // summary or the server alert) is the only alert on the card. Keyed on the
   // attempt, not on `errors.root`: that is cleared at the start of each submit
-  // and would bring the notice back for the length of the request.
-  const showNotice = notice !== undefined && submitCount === 0;
+  // and would bring the notice back for the length of the request. A network
+  // failure shows no inline error, so the notice stays.
+  const showNotice = notice !== undefined && (submitCount === 0 || networkFailed);
 
   // Auto-focus the email field on mount (spec FR-024 primary-input table).
   useEffect(() => {
@@ -92,6 +96,7 @@ export function SignInForm({ portal, returnTo, notice }: SignInFormProps) {
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setSubmitting(true);
+    setNetworkFailed(false);
     // Clear any prior server-rejection banner so it can't linger next to a
     // different outcome (e.g. a later network throw) on a fresh attempt.
     clearErrors('root');
@@ -137,6 +142,7 @@ export function SignInForm({ portal, returnTo, notice }: SignInFormProps) {
       });
       setFocus('email');
     } catch {
+      setNetworkFailed(true);
       toast.error(tErrors('network'));
     } finally {
       setSubmitting(false);
