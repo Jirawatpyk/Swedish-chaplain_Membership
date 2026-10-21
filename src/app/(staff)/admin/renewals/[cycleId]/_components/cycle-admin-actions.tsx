@@ -262,7 +262,11 @@ export function CycleAdminActions({
           <Button
             variant="danger-secondary"
             icon="ban"
-            className={inDangerZone ? 'w-full' : 'max-sm:hidden'}
+            // In the phone danger zone it fills the column; `fullWidth` lets a
+            // long label wrap rather than overflow (spec 122 follow-up 5).
+            fullWidth={inDangerZone}
+            touchHeight
+            className={inDangerZone ? undefined : 'max-sm:hidden'}
             onClick={(e) => {
               cancelTriggerRef.current = e.currentTarget;
               cancelSucceededRef.current = false;
@@ -283,7 +287,7 @@ export function CycleAdminActions({
             // Focus on Cancel by default (ux-standards § 4).
             footer={
               <>
-                <Button
+                <Button touchHeight
                   variant="secondary"
                   data-autofocus=""
                   onClick={closeCancel}
@@ -291,7 +295,7 @@ export function CycleAdminActions({
                 >
                   {t('cancelCycle.cancel')}
                 </Button>
-                <Button
+                <Button touchHeight
                   variant="danger"
                   onClick={onCancel}
                   loading={cancelPending}

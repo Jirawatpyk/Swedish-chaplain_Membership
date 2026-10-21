@@ -133,10 +133,10 @@ export function ClearHaltDialog({
         description={t('body')}
         footer={
           <>
-            <Button variant="secondary" disabled={pending} onClick={() => onOpenChange(false)}>
+            <Button touchHeight variant="secondary" disabled={pending} onClick={() => onOpenChange(false)}>
               {t('cancel')}
             </Button>
-            <Button variant="primary" disabled={!phraseValid || pending} loading={pending} onClick={onConfirm}>
+            <Button touchHeight variant="primary" disabled={!phraseValid || pending} loading={pending} onClick={onConfirm}>
               {t('confirm')}
             </Button>
           </>

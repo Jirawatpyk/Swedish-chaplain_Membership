@@ -1154,11 +1154,11 @@ export function EventFeeForm({
         description={t('duplicateDialog.description')}
         footer={
           <>
-            <Button type="button" variant="secondary" data-autofocus onClick={() => setDuplicateOpen(false)}>
+            <Button touchHeight type="button" variant="secondary" data-autofocus onClick={() => setDuplicateOpen(false)}>
               {t('duplicateDialog.cancel')}
             </Button>
             {duplicateInvoiceId !== null && (
-              <Link href={`/admin/invoices/${duplicateInvoiceId}`} className={buttonClass({ variant: 'primary' })}>
+              <Link href={`/admin/invoices/${duplicateInvoiceId}`} className={buttonClass({ variant: 'primary', touchHeight: true })}>
                 {t('duplicateDialog.viewInvoice')}
               </Link>
             )}

@@ -189,6 +189,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #165 | Below 640px the `Dialog` footer stretches its buttons but they keep the density height (36px in compact) and `nowrap`; there is no responsive `fullWidth` (Addendum 66) | `touchHeight` (44px below 640px or on a coarse pointer) on every `Button` in an AURA `Dialog` `footer` (`tests/unit/architecture/dialog-footer-touch.test.ts` keeps it, about 70 buttons in 36 files); phone-only stretch as `fullWidth` plus `FULL_WIDTH_BELOW_SM` (`sm:w-auto sm:whitespace-nowrap`, `src/components/shell/full-width-below-sm.ts`) |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

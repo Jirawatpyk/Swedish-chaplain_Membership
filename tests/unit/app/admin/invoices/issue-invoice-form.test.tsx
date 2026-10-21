@@ -610,7 +610,14 @@ describe('IssueInvoiceDialog — AURA alertdialog', () => {
 describe('IssueInvoiceForm — the buttons stay in view (spec 122 US8b, UX review)', () => {
   it('keeps Cancel and Issue in a row stuck to the bottom of the scrolling dialog body, stacked full width on a phone', () => {
     renderForm();
-    const row = screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel }).parentElement!;
-    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
+    const cancel = screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel });
+    const row = cancel.parentElement!;
+    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse');
+    // Each button is AURA's full-width button below sm (natural width above),
+    // so the confirm's label, which names the total, wraps at 320px instead
+    // of running out of the button (spec 122 follow-up 5).
+    for (const button of row.querySelectorAll('button')) {
+      expect(button).toHaveClass('aura-btn--full', 'aura-btn--touch', 'sm:w-auto');
+    }
   });
 });

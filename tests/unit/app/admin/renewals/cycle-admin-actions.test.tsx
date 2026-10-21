@@ -197,7 +197,7 @@ describe('<CycleAdminActions> on AURA', () => {
     expect(screen.queryByRole('link')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Mark paid offline' })).toBeNull();
     const cancel = screen.getByRole('button', { name: 'Cancel cycle' });
-    expect(cancel).toHaveClass('aura-btn--danger-secondary', 'w-full');
+    expect(cancel).toHaveClass('aura-btn--danger-secondary', 'aura-btn--full', 'aura-btn--touch');
     expect(cancel).not.toHaveClass('max-sm:hidden');
   });
 

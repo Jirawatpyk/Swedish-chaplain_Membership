@@ -325,10 +325,10 @@ export function ChangeRoleDialog({
       description={t('changeRole.description')}
       footer={
         <>
-          <Button variant="secondary" disabled={submitting} onClick={() => onOpenChange(false)}>
+          <Button touchHeight variant="secondary" disabled={submitting} onClick={() => onOpenChange(false)}>
             {t('confirm.cancel')}
           </Button>
-          <Button
+          <Button touchHeight
             variant="primary"
             disabled={confirmDisabled}
             loading={submitting}

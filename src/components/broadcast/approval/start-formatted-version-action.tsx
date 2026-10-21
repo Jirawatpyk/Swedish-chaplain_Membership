@@ -183,10 +183,10 @@ export function StartFormattedVersionAction({
           description={voids ? t('voidBody', { round }) : t('submittedBody')}
           footer={
             <>
-              <Button variant="secondary" disabled={pending} onClick={() => setConfirmOpen(false)}>
+              <Button touchHeight variant="secondary" disabled={pending} onClick={() => setConfirmOpen(false)}>
                 {voids ? t('voidCancel') : t('submittedCancel')}
               </Button>
-              <Button
+              <Button touchHeight
                 data-testid="eblast-start-version-confirm"
                 variant={voids ? 'danger' : 'primary'}
                 loading={pending}

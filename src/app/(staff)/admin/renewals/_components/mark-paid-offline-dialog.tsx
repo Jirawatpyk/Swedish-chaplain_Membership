@@ -353,10 +353,10 @@ export function MarkPaidOfflineDialog({
       description={t('markPaidOffline.dialogBody')}
       footer={
         <>
-          <Button variant="secondary" data-autofocus="" onClick={close} disabled={pending}>
+          <Button touchHeight variant="secondary" data-autofocus="" onClick={close} disabled={pending}>
             {t('markPaidOffline.cancel')}
           </Button>
-          <Button onClick={onMarkPaid} loading={pending} disabled={incomplete}>
+          <Button touchHeight onClick={onMarkPaid} loading={pending} disabled={incomplete}>
             {pending ? t('markPaidOffline.submitting') : t('markPaidOffline.confirm')}
           </Button>
         </>

@@ -223,10 +223,10 @@ export function InviteUserDialog({
       description={t('description')}
       footer={
         <>
-          <Button variant="secondary" onClick={() => setOpen(false)}>
+          <Button touchHeight variant="secondary" onClick={() => setOpen(false)}>
             {t('cancel')}
           </Button>
-          <Button
+          <Button touchHeight
             type="submit"
             form={formId}
             variant="primary"

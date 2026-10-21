@@ -89,10 +89,10 @@ export function OverrideReasonDialog({
       description={t('description')}
       footer={
         <>
-          <Button variant="secondary" onClick={handleCancel}>
+          <Button touchHeight variant="secondary" onClick={handleCancel}>
             {t('cancel')}
           </Button>
-          <Button onClick={handleProceed} disabled={!canProceed}>
+          <Button touchHeight onClick={handleProceed} disabled={!canProceed}>
             {t('proceed')}
           </Button>
         </>

@@ -42,10 +42,10 @@ export function SoftDuplicateDialog({
       description={t('description')}
       footer={
         <>
-          <Button variant="secondary" data-autofocus onClick={() => onOpenChange(false)}>
+          <Button touchHeight variant="secondary" data-autofocus onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>
-          <Button onClick={onProceed}>{t('proceed')}</Button>
+          <Button touchHeight onClick={onProceed}>{t('proceed')}</Button>
         </>
       }
     >

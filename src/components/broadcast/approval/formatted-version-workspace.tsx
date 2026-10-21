@@ -566,10 +566,10 @@ export function FormattedVersionWorkspace({
         }
         footer={
           <>
-            <Button variant="secondary" disabled={sending} onClick={() => setSendOpen(false)}>
+            <Button touchHeight variant="secondary" disabled={sending} onClick={() => setSendOpen(false)}>
               {tSend('cancel')}
             </Button>
-            <Button
+            <Button touchHeight
               data-testid="eblast-send-to-member-confirm"
               variant="primary"
               icon="mail"

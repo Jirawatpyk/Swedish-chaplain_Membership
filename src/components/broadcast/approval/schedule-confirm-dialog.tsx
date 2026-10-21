@@ -275,7 +275,7 @@ export function ScheduleConfirmAction({
         }
         footer={
           <>
-            <Button
+            <Button touchHeight
               variant="secondary"
               data-testid="schedule-confirm-cancel"
               disabled={pending}
@@ -283,7 +283,7 @@ export function ScheduleConfirmAction({
             >
               {t('close')}
             </Button>
-            <Button
+            <Button touchHeight
               data-testid="schedule-confirm-submit"
               variant={mode === 'cancel' ? 'danger' : 'primary'}
               loading={pending}
