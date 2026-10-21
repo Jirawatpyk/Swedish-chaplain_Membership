@@ -47,6 +47,10 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
   // arbitrary banner injection via query param.
   const reasonCandidate = Array.isArray(rawReason) ? rawReason[0] : rawReason;
   const showSecurityBanner = reasonCandidate === 'security-update';
+  // The idle warning sends whoever it signed out for inactivity here, so the
+  // reason waits on the card for them to come back (a toast closed itself
+  // while they were away; board `Portal-idle-signed-out`).
+  const showIdleBanner = reasonCandidate === 'idle';
 
   const current = await getCurrentSession();
   // Domain invariant, not a role literal — a role added to ROLES bounces
@@ -56,6 +60,7 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
   }
 
   const t = await getTranslations('auth.signIn');
+  const tIdle = await getTranslations('auth.idleWarning');
   const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 
   return (
@@ -67,6 +72,7 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
       variant="sign-in"
     >
       {showSecurityBanner ? <SecurityUpdateBanner message={t('securityUpdateBanner')} /> : null}
+      {showIdleBanner ? <SecurityUpdateBanner message={tIdle('signedOutInactive')} /> : null}
       <SignInForm portal="staff" returnTo={validatedReturnTo} />
     </AuthFrame>
   );

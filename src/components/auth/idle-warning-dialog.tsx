@@ -12,12 +12,14 @@
  *   - Fires at **29 minutes** of inactivity (IDLE_TIMEOUT_MS - 1 min).
  *   - Modal shows a live countdown from 60 → 0.
  *   - "Stay signed in" → POST /api/auth/heartbeat → resets local clock.
- *   - "Sign out now" → POST /api/auth/sign-out and redirect with NO toast
+ *   - "Sign out now" → POST /api/auth/sign-out and redirect with no reason
  *     (a voluntary sign-out, same as the user-menu one — the member must
  *     not be told they were inactive).
  *   - Countdown reaches 0 with no action → client-side POST to sign-out
- *     and redirect to the appropriate sign-in page with a friendly
- *     "signed out due to inactivity" toast.
+ *     and redirect to the appropriate sign-in page with `?reason=idle`, which
+ *     shows "signed out due to inactivity" on the sign-in card. Not a toast:
+ *     the user is away when this happens, and a toast closes itself before
+ *     they come back (board `Portal-idle-signed-out`).
  *
  * Inactivity is measured at the window level: any `mousemove`, `keydown`,
  * `click`, `scroll`, or `touchstart` resets the timer. We intentionally
@@ -37,7 +39,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { toast } from '@/lib/toast';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
 // Client component — cannot import from the `@/modules/auth`
 // barrel because the barrel transitively pulls in Application
@@ -112,8 +113,8 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   /**
    * Sign the user out. `'inactive'` is the involuntary path (countdown hit
    * zero, or the heartbeat found the session gone); `'voluntary'` is the
-   * "Sign out now" button. Only the reason decides the toast — the POST,
-   * redirect and refresh are identical. Tolerates the sign-out POST failing
+   * "Sign out now" button. Only the reason decides whether the sign-in URL
+   * carries `?reason=idle` — the POST and refresh are identical. Tolerates the sign-out POST failing
    * (if the session is already dead the server returns 200 anyway).
    */
   const forceSignOut = useCallback(async (reason: SignOutReason) => {
@@ -126,13 +127,12 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     } catch {
       // Swallow — we're redirecting anyway.
     }
-    // Dedicated past-tense reason — NOT the countdown copy (which reads
-    // "signed out in 0 seconds" and never states the inactivity reason).
-    if (reason === 'inactive') toast.info(t('signedOutInactive'));
-    router.replace(signInPath);
+    // The sign-in page states the inactivity reason in a banner that stays
+    // until the user is back; a voluntary sign-out carries no reason.
+    router.replace(reason === 'inactive' ? `${signInPath}?reason=idle` : signInPath);
     // Force a server round-trip so the layout guard re-runs.
     router.refresh();
-  }, [router, signInPath, t]);
+  }, [router, signInPath]);
 
   /**
    * "Stay signed in" — heartbeat the server, close the modal optimistically,
