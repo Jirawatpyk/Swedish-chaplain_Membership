@@ -36,11 +36,14 @@ vi.mock('@/modules/members/members-deps', () => ({
   buildMembersDeps: () => ({ memberRepo: { findByLinkedUserId: findByLinkedUserIdMock } }),
 }));
 vi.mock('@/lib/load-membership-access', () => ({ loadMembershipAccess: loadMembershipAccessMock }));
+const loggerWarnMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/logger', () => ({ logger: { warn: loggerWarnMock, error: vi.fn(), debug: vi.fn() } }));
 
 beforeEach(() => {
   getCurrentSessionMock.mockReset().mockResolvedValue({ user: { id: 'user-1', role: 'member' } });
   findByLinkedUserIdMock.mockReset().mockResolvedValue({ ok: true, value: { memberId: 'member-1' } });
   loadMembershipAccessMock.mockReset().mockResolvedValue({ access: 'full' });
+  loggerWarnMock.mockReset();
 });
 
 async function backLink() {
@@ -85,6 +88,15 @@ describe('portal E-Blast not-found (T086a V6)', () => {
     const link = await backLink();
     expect(link).toHaveAttribute('href', '/portal/benefits?tab=broadcasts');
     expect(link).toHaveTextContent('portal.broadcasts.detail.back');
+  });
+
+  it('a failing read is logged (error kind only), not swallowed', async () => {
+    findByLinkedUserIdMock.mockRejectedValue(new TypeError('db down'));
+    await backLink();
+    expect(loggerWarnMock).toHaveBeenCalledWith(
+      { err: 'TypeError' },
+      'broadcasts.detail_not_found.back_link_fallback',
+    );
   });
 
   it.each([

@@ -1,6 +1,8 @@
 import { getCurrentSession } from '@/lib/auth-session';
 import { isPortalPathAllowed } from '@/lib/lapsed-portal-scope';
 import { loadMembershipAccess } from '@/lib/load-membership-access';
+import { errKind } from '@/lib/log-id';
+import { logger } from '@/lib/logger';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 
@@ -30,7 +32,8 @@ export async function portalBroadcastBack(tenantSlug: string, memberId: string):
  * page gave up — possibly because the member lookup itself failed. Any gap
  * (no session, no member row, a failing read) falls back to the E-Blast list,
  * the link it showed before; a terminated member who follows it is redirected
- * by the portal guard.
+ * by the portal guard. A failing read is logged (the error class only), so an
+ * outage is not hidden behind the fallback.
  */
 export async function portalBroadcastBackForViewer(): Promise<PortalBroadcastBack> {
   try {
@@ -40,7 +43,8 @@ export async function portalBroadcastBackForViewer(): Promise<PortalBroadcastBac
     const member = await buildMembersDeps(tenant).memberRepo.findByLinkedUserId(tenant, session.user.id);
     if (!member.ok) return TO_LIST;
     return await portalBroadcastBack(tenant.slug, member.value.memberId);
-  } catch {
+  } catch (e) {
+    logger.warn({ err: errKind(e) }, 'broadcasts.detail_not_found.back_link_fallback');
     return TO_LIST;
   }
 }
