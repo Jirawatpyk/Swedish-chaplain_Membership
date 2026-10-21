@@ -161,4 +161,26 @@ describe('buildSignInUrl', () => {
     );
     expect(buildSignInUrl('member', '/admin/users', 'idle')).toBe('/portal/sign-in?reason=idle');
   });
+
+  // After a 3DS redirect Stripe appends its PaymentIntent parameters to the
+  // invoice URL. The client secret must not travel into returnTo (#608 review).
+  it('drops the Stripe redirect parameters and keeps the rest of the query', () => {
+    expect(
+      buildSignInUrl(
+        'member',
+        '/portal/invoices/i1?pay=1&payment_intent=pi_1&payment_intent_client_secret=pi_1_secret_x&redirect_status=succeeded',
+        'idle',
+      ),
+    ).toBe('/portal/sign-in?returnTo=%2Fportal%2Finvoices%2Fi1%3Fpay%3D1&reason=idle');
+    expect(
+      buildSignInUrl('member', '/portal/invoices/i1?payment_intent=pi_1&redirect_status=failed'),
+    ).toBe('/portal/sign-in?returnTo=%2Fportal%2Finvoices%2Fi1');
+  });
+
+  it('keeps returnTo when only a long Stripe client secret made the path too long', () => {
+    const secret = `pi_1_secret_${'x'.repeat(600)}`;
+    expect(
+      buildSignInUrl('member', `/portal/invoices/i1?paid=1&payment_intent_client_secret=${secret}`),
+    ).toBe('/portal/sign-in?returnTo=%2Fportal%2Finvoices%2Fi1%3Fpaid%3D1');
+  });
 });

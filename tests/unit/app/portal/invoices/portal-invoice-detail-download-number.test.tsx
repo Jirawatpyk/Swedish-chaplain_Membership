@@ -221,6 +221,9 @@ vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/online-payment-d
 vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/optimistic-paid-overlay', () => ({
   OptimisticPaidOverlay: () => null,
 }));
+vi.mock('@/app/(member)/portal/invoices/[invoiceId]/_components/strip-stripe-return-params', () => ({
+  StripStripeReturnParams: () => <span data-testid="strip-stripe-return-params-marker" />,
+}));
 
 import PortalInvoiceDetailPage from '@/app/(member)/portal/invoices/[invoiceId]/page';
 
@@ -339,6 +342,18 @@ describe('PortalInvoiceDetailPage — main-download number for an unpaid 088 bil
     expect(html).toContain('data-doc="SC-2026-000045"');
     // Pre-fix the main download fell to displayDocumentNumber(...) ?? '—'.
     expect(html).not.toContain('data-doc="—"');
+  });
+});
+
+describe('PortalInvoiceDetailPage — Stripe redirect parameters are cleaned on every invoice (#608 review)', () => {
+  // After 3DS the member usually lands on an invoice that is already paid,
+  // where the pay sheet never mounts — so the cleanup must not live in it.
+  it.each([
+    ['issued', issuedUnpaid088Bill],
+    ['paid', paidSeparateInvoice],
+  ])('%s invoice → renders the URL cleanup', async (_status, invoice) => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: invoice() });
+    expect(await renderPage()).toContain('data-testid="strip-stripe-return-params-marker"');
   });
 });
 
