@@ -111,7 +111,7 @@ export function SnoozeDialog({
       }
       footer={
         <>
-          <Button
+          <Button touchHeight
             variant="secondary"
             data-autofocus=""
             onClick={() => onOpenChange(false)}
@@ -119,7 +119,7 @@ export function SnoozeDialog({
           >
             {t('cancel')}
           </Button>
-          <Button onClick={onConfirm} loading={pending}>
+          <Button touchHeight onClick={onConfirm} loading={pending}>
             {pending ? t('confirming') : t('confirm')}
           </Button>
         </>

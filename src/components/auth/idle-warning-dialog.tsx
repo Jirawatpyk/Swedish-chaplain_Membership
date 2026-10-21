@@ -355,10 +355,10 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
       description={<span aria-live="polite">{t('description', { seconds: remaining })}</span>}
       footer={
         <>
-          <Button variant="secondary" onClick={() => void forceSignOut('voluntary')}>
+          <Button touchHeight variant="secondary" onClick={() => void forceSignOut('voluntary')}>
             {t('signOut')}
           </Button>
-          <Button variant="primary" data-autofocus onClick={() => void stayAction()}>
+          <Button touchHeight variant="primary" data-autofocus onClick={() => void stayAction()}>
             {t('stay')}
           </Button>
         </>

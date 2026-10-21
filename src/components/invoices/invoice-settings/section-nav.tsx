@@ -96,8 +96,10 @@ export function SectionNav({ sections }: { readonly sections: ReadonlyArray<Sect
                   // 088 FR-036 — 44px at every width (the compact staff
                   // density is 36px); the current section on the selected
                   // ground, as AURA's SideNav marks the current page.
+                  // `fullWidth` fills the rail and lets a long label wrap.
+                  fullWidth
                   className={cn(
-                    'min-h-11 w-full justify-start text-left font-normal',
+                    'min-h-11 justify-start text-left font-normal',
                     isActive && 'bg-[var(--aura-bg-selected)] font-medium text-[var(--aura-fg-primary)]',
                   )}
                 >

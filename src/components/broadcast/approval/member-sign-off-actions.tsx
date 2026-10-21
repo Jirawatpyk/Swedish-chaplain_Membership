@@ -69,6 +69,7 @@ import { approvalErrorMessage, isRecordedDecision, readRouteError } from './appr
 import { InlineError } from './inline-error';
 import { InlineWarning } from './inline-warning';
 import { useFocusRefusal } from './use-focus-refusal';
+import { PHONE_FULL_WIDTH_BUTTON } from '@/components/shell/phone-full-width-button';
 
 /** FR-009 — the approval's optional note. */
 const NOTE_MAX = 500;
@@ -276,7 +277,7 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
         ref={triggerRef}
         icon="check"
         touchHeight
-        className="w-full sm:w-auto"
+        className={PHONE_FULL_WIDTH_BUTTON}
         data-testid="eblast-approve"
         onClick={() => {
           closedViaSuccessRef.current = false;
@@ -303,12 +304,12 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
         description={t('description')}
         footer={
           <>
-            <Button variant="secondary" disabled={pending} onClick={() => setOpen(false)} data-autofocus="">
+            <Button touchHeight variant="secondary" disabled={pending} onClick={() => setOpen(false)} data-autofocus="">
               {t('cancel')}
             </Button>
             {/* While the request runs Confirm stays focusable, says it is busy
                 and spins (AURA `loading`); a note over the cap disables it. */}
-            <Button
+            <Button touchHeight
               data-testid="eblast-approve-confirm"
               icon="check"
               disabled={overCap && !pending}
@@ -421,7 +422,7 @@ function ReasonAction({
         variant={tone === 'primary' ? 'secondary' : 'danger-secondary'}
         icon={icon}
         touchHeight
-        className="w-full sm:w-auto"
+        className={PHONE_FULL_WIDTH_BUTTON}
         data-testid={testId}
         onClick={() => {
           closedViaSuccessRef.current = false;

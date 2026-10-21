@@ -128,10 +128,10 @@ export function CsvExportDialog({
       description={t('dialog.description')}
       footer={
         <>
-          <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
+          <Button touchHeight type="button" variant="secondary" onClick={() => setOpen(false)}>
             {t('actions.cancel')}
           </Button>
-          <Button type="submit" variant="primary" form="csv-export-form">
+          <Button touchHeight type="submit" variant="primary" form="csv-export-form">
             {t('actions.download')}
           </Button>
         </>

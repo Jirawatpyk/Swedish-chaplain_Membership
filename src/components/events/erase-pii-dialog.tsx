@@ -210,12 +210,12 @@ export function ErasePiiDialog({
       description={t('confirmBody', { attendeeName })}
       footer={
         <>
-          <Button variant="secondary" data-autofocus disabled={pending} onClick={close}>
+          <Button touchHeight variant="secondary" data-autofocus disabled={pending} onClick={close}>
             {t('cancel')}
           </Button>
           {/* Reachable but refused until the reason is valid (AURA #102):
               aria-disabled + the hint as its description, not native disabled. */}
-          <Button
+          <Button touchHeight
             variant="danger"
             icon={<Eraser aria-hidden="true" />}
             loading={pending}

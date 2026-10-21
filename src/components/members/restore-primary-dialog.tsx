@@ -117,7 +117,7 @@ export function RestorePrimaryDialog({
       description={none ? t('noContactsDescription') : t('description')}
       footer={
         <>
-          <Button variant="secondary" onClick={handleClose} disabled={submitting} data-testid="restore-primary-cancel">
+          <Button touchHeight variant="secondary" onClick={handleClose} disabled={submitting} data-testid="restore-primary-cancel">
             {t('cancel')}
           </Button>
           {none ? (
@@ -130,14 +130,14 @@ export function RestorePrimaryDialog({
               trigger={
                 // AURA's loading state is aria-disabled, never `disabled`: the
                 // nested dialog returns focus here, so it must stay focusable.
-                <Button loading={submitting} data-testid="restore-primary-add-contact">
+                <Button touchHeight loading={submitting} data-testid="restore-primary-add-contact">
                   {!submitting && <UserPlusIcon className="size-4" aria-hidden="true" />}
                   {submitting ? t('restoring') : t('addContact')}
                 </Button>
               }
             />
           ) : (
-            <Button
+            <Button touchHeight
               onClick={() => {
                 if (selected !== null) onConfirm(selected);
               }}

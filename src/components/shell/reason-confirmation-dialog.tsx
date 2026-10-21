@@ -354,7 +354,7 @@ export function ReasonConfirmationDialog({
       description={t('description')}
       footer={
         <>
-          <Button
+          <Button touchHeight
             ref={cancelRef}
             variant="secondary"
             disabled={pending}
@@ -368,7 +368,7 @@ export function ReasonConfirmationDialog({
               stays focusable, says it is busy and spins (AURA `loading`); idle
               and invalid it is natively disabled. The dialog only closes via
               the caller's onOpenChange after the request settles. */}
-          <Button
+          <Button touchHeight
             variant={confirmTone === 'destructive' ? 'danger' : 'primary'}
             disabled={!valid && !pending}
             loading={pending}

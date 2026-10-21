@@ -145,7 +145,7 @@ export function OutreachDialog({
       }
       footer={
         <>
-          <Button
+          <Button touchHeight
             variant="secondary"
             data-autofocus=""
             onClick={() => onOpenChange(false)}
@@ -153,7 +153,7 @@ export function OutreachDialog({
           >
             {t('cancel')}
           </Button>
-          <Button onClick={onConfirm} loading={pending} disabled={noteOver}>
+          <Button touchHeight onClick={onConfirm} loading={pending} disabled={noteOver}>
             {pending ? t('submitting') : t('confirm')}
           </Button>
         </>

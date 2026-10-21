@@ -230,10 +230,10 @@ export function BulkApproveConfirmDialog(
       })}
       footer={
         <>
-          <Button variant="secondary" onClick={() => props.onOpenChange(false)}>
+          <Button touchHeight variant="secondary" onClick={() => props.onOpenChange(false)}>
             {t('cancel')}
           </Button>
-          <Button
+          <Button touchHeight
             variant="primary"
             icon={decision === 'send_now' ? <SendIcon aria-hidden="true" /> : 'calendar'}
             disabled={!scheduleValid}

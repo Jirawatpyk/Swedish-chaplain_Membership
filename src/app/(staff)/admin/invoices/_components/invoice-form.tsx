@@ -423,10 +423,10 @@ export function CreateDraftForm({
         description={tDup('description')}
         footer={
           <>
-            <Button type="button" variant="secondary" data-autofocus disabled={pending} onClick={() => setDuplicate(null)}>
+            <Button touchHeight type="button" variant="secondary" data-autofocus disabled={pending} onClick={() => setDuplicate(null)}>
               {tDup('cancel')}
             </Button>
-            <Button type="button" variant="danger" loading={pending} onClick={() => create(true)}>
+            <Button touchHeight type="button" variant="danger" loading={pending} onClick={() => create(true)}>
               {pending ? t('submitting') : tDup('createAnyway')}
             </Button>
           </>

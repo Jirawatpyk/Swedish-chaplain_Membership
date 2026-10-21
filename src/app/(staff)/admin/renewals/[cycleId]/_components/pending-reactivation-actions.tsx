@@ -230,7 +230,7 @@ export function PendingReactivationActions({
         // Focus on Cancel by default (defensive for a money action).
         footer={
           <>
-            <Button
+            <Button touchHeight
               variant="secondary"
               data-autofocus=""
               onClick={() => setReactivateOpen(false)}
@@ -238,7 +238,7 @@ export function PendingReactivationActions({
             >
               {t('reactivate.cancel')}
             </Button>
-            <Button onClick={onReactivate} loading={reactivatePending}>
+            <Button touchHeight onClick={onReactivate} loading={reactivatePending}>
               {reactivatePending ? t('reactivate.submitting') : t('reactivate.confirm')}
             </Button>
           </>
@@ -249,7 +249,11 @@ export function PendingReactivationActions({
       <Button
         variant="danger-secondary"
         icon="rotate-ccw"
-        className={placement === 'dangerZone' ? 'w-full' : 'max-sm:hidden'}
+        // In the phone danger zone it fills the column; `fullWidth` lets a
+        // long label wrap rather than overflow (spec 122 follow-up 5).
+        fullWidth={placement === 'dangerZone'}
+        touchHeight
+        className={placement === 'dangerZone' ? undefined : 'max-sm:hidden'}
         onClick={open(setRejectOpen)}
       >
         {t('reject.button')}
@@ -264,10 +268,10 @@ export function PendingReactivationActions({
         description={t('reject.dialogBody')}
         footer={
           <>
-            <Button variant="secondary" data-autofocus="" onClick={closeReject} disabled={rejectPending}>
+            <Button touchHeight variant="secondary" data-autofocus="" onClick={closeReject} disabled={rejectPending}>
               {t('reject.cancel')}
             </Button>
-            <Button variant="danger" onClick={onReject} loading={rejectPending} disabled={reasonInvalid}>
+            <Button touchHeight variant="danger" onClick={onReject} loading={rejectPending} disabled={reasonInvalid}>
               {rejectPending ? t('reject.submitting') : t('reject.confirm')}
             </Button>
           </>

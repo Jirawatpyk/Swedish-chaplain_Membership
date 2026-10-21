@@ -16,7 +16,7 @@
  *     dismisses.
  *   - Continue button has `aria-describedby` linking the warning copy
  *     so screen readers announce the consequence before activation.
- *   - WCAG 2.5.8 target size: buttons inherit `min-h-11` from primitives.
+ *   - WCAG 2.5.8 target size: the footer buttons carry `touchHeight` (44px on phones).
  */
 import { useId } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
