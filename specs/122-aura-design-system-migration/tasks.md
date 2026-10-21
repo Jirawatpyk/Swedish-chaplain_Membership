@@ -741,7 +741,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1246 [US12] Preview: `aura-portal?view=broadcast-detail&state=…&dialog=…` and the loading route.
 - [x] T1247 [US12] First budget for `/portal/broadcasts/[id]`.
 - [x] T1248 [US12] e2e selectors where the swap breaks them (`eblast-approval`, `eblast-a11y`, `member-quota-history`).
-- [ ] T1249 [US12] Exit: gates; shots at 1440/390 light and dark and 200% text; UX and security reviews; parity artifact; draft PR; relay R63.
+- [x] T1249 [US12] Exit: gates; shots at 1440/390 light and dark and 200% text; UX and security reviews; parity artifact; draft PR; relay R63. Done: parity page, PR #606, R63 green (no branch-only red).
 - [ ] T1230 [US12] US12d: compose (staff proxy and portal), editor toolbar and dialogs, quota display, plus the benefits page's E-Blast tab.
 
 ## Later phases (one PR each; tasks written when the phase starts)
