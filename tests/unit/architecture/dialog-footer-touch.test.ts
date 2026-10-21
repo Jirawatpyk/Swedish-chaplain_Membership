@@ -169,6 +169,11 @@ export function scanStaleTouch(file: string, source: string): TouchScan {
   return { footers, actionBars, stale };
 }
 
+/** A footer Button AURA does not size: neither a direct child nor the only element in a wrapper. */
+export function scanUnsizedFooterButtons(_file: string, _source: string): string[] {
+  return [];
+}
+
 /** `w-full` as a bare class (not `max-sm:w-full`, `sm:w-full`, `min-w-full`). */
 const BARE_W_FULL = /(?<![\w:-])w-full(?![\w-])/;
 /** A container stretching its children: `[&>*]:w-full`, `[&>button]:w-full`, `[&_button]:w-full`, `*:w-full`, any variant prefix. */
@@ -244,6 +249,30 @@ describe('AURA sizes footer and action-bar buttons on phones; no touchHeight sta
 
   it('no Button in a Dialog/Drawer footer or an ActionBar carries touchHeight', () => {
     expect(scans.flatMap((s) => s.stale)).toEqual([]);
+  });
+});
+
+describe('every footer Button is one AURA sizes (direct, or the only element in a wrapper)', () => {
+  // AURA 5.53 sizes `.aura-dialog__foot > .aura-btn` and
+  // `.aura-dialog__foot > * > .aura-btn:only-child`; a Button deeper, or beside
+  // a sibling in a wrapper, stays at the density height on a phone.
+  it('positive control: a Button with a sibling in a wrapper, or two wrappers deep, is caught', () => {
+    const fixture = [
+      "import { Button, Dialog } from '@jirawatpyk/aura-react';",
+      'export const A = () => (',
+      '  <Dialog open title="t" footer={<>',
+      '    <div><Button>No</Button><span>hint</span></div>',
+      '    <span><span><Button>Deep</Button></span></span>',
+      '    <span><Button>Only child</Button></span>',
+      '    <Button>Direct</Button>',
+      '  </>} />',
+      ');',
+    ].join('\n');
+    expect(scanUnsizedFooterButtons('fixture.tsx', fixture)).toEqual(['fixture.tsx:4', 'fixture.tsx:5']);
+  });
+
+  it('no footer Button sits where AURA does not size it', () => {
+    expect(files.flatMap(({ file, source }) => scanUnsizedFooterButtons(file, source))).toEqual([]);
   });
 });
 
