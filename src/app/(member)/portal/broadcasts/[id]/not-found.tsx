@@ -18,6 +18,9 @@
  * F119 T086a V6 — the heading and the paragraph were the same string
  * (`errors.notFound` twice). Each now has its own key; the body names no
  * reason, so "absent" and "someone else's" still read alike.
+ *
+ * The way back follows the member's standing, as the page's Back does: a
+ * terminated member cannot open the E-Blast list, so theirs leads home.
  */
 import Link from 'next/link';
 import { ArrowLeft, FileQuestion } from 'lucide-react';
@@ -25,9 +28,11 @@ import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { Icon, buttonClass } from '@jirawatpyk/aura-react/server';
+import { portalBroadcastBackForViewer } from './_lib/portal-broadcast-back';
 
 export default async function BroadcastNotFound(): Promise<React.ReactElement> {
   const t = await getTranslations('portal.broadcasts.detail');
+  const back = await portalBroadcastBackForViewer();
 
   return (
     // F2 UX hardening — full empty-state anatomy per ux-standards § 3.1:
@@ -44,11 +49,11 @@ export default async function BroadcastNotFound(): Promise<React.ReactElement> {
         <h2 className="m-0 aura-text-h3">{t('notFound.title')}</h2>
         <p className="m-0 max-w-md aura-text-body text-[var(--aura-fg-secondary)]">{t('notFound.body')}</p>
         <Link
-          href="/portal/benefits?tab=broadcasts"
+          href={back.href}
           className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'mt-2' })}
         >
           <Icon name={<ArrowLeft />} size={16} />
-          {t('back')}
+          {back.toDashboard ? t('backToDashboard') : t('back')}
         </Link>
       </div>
     </DetailContainer>

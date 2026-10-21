@@ -1,9 +1,11 @@
 /**
  * F7 US3 T134 — Member broadcast detail loading skeleton.
  *
- * Renders the real PageHeader + Back link (static i18n + static href,
- * no broadcast data needed) so chrome doesn't flash between skeleton
- * and final state. The body mirrors the settled page's THREE Card
+ * Renders the real PageHeader (static i18n, no broadcast data needed) so
+ * chrome doesn't flash between skeleton and final state. The Back link's
+ * place is a block, not a link: where Back leads follows the member's
+ * standing (a terminated member's leads home), which the skeleton cannot
+ * read without delaying itself (spec 122, overriding US12c-2 L8 here). The body mirrors the settled page's THREE Card
  * sections — fields (subject + 4-item dl), the content read-back (a
  * heading + the 560 px preview frame) and the delivery breakdown
  * (6-stat grid) — using `SkeletonBlock` for reduced-motion-safe
@@ -37,7 +39,6 @@ import { getTranslations } from 'next-intl/server';
 import { Card } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { BackLink } from '@/components/portal/back-link';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 
@@ -48,8 +49,12 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
     <PageSkeletonShell ariaLabel={tLayout('loadingPage')}>
       <DetailContainer>
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
-        {/* L8 — the settled page's Back link, the same component and place. */}
-        <BackLink href="/portal/benefits?tab=broadcasts">{t('back')}</BackLink>
+        {/* The Back link's place (L8), as a block: it may lead to the E-Blast
+            list or the dashboard, and only the page knows which. The size of
+            BackLink: a 44px row on phones, one label line above. */}
+        <div className="-mb-1 flex min-h-11 items-center self-start sm:min-h-0">
+          <SkeletonBlock data-testid="detail-back-skeleton" className="h-4 w-32" />
+        </div>
         {/* F119 T086 — the stage banner (status badge + whose turn + expiry). */}
         <SkeletonBlock data-testid="detail-stage-banner-skeleton" className="h-24 w-full sm:h-[6.5rem]" />
         {/* Fields card: the header (the "Subject" overline over the subject
