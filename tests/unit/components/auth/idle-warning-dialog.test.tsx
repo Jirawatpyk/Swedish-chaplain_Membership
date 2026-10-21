@@ -61,8 +61,6 @@ const messages = {
       description: 'Signing out in {seconds} s',
       stay: 'Stay signed in',
       signOut: 'Sign out',
-      signedOutInactive:
-        'You were signed out due to inactivity. Please sign in again.',
     },
   },
 };

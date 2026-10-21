@@ -33,7 +33,7 @@ function renderForm(notice?: string) {
   );
 }
 
-const NOTICE = enMessages.auth.idleWarning.signedOutInactive;
+const NOTICE = enMessages.auth.signIn.notice.idle;
 
 describe('SignInForm', () => {
   it('shows the sign-in reason as a standing notice that describes the email field (not a live region)', () => {

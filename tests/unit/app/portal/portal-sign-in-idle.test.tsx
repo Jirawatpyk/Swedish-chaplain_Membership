@@ -45,9 +45,9 @@ describe.each([
   }
 
   it.each([
-    ['idle', 'auth.idleWarning.signedOutInactive'],
-    ['session-ended', 'auth.idleWarning.signedOutEnded'],
-    ['security-update', 'auth.signIn.securityUpdateBanner'],
+    ['idle', 'auth.signIn.notice.idle'],
+    ['session-ended', 'auth.signIn.notice.sessionEnded'],
+    ['security-update', 'auth.signIn.notice.securityUpdate'],
   ])('?reason=%s hands the form its notice', async (reason, message) => {
     expect(await noticeFor(reason)).toBe(message);
   });
@@ -57,7 +57,7 @@ describe.each([
   });
 
   it('?reason=link_invalid is the member page\'s alone — the staff page shows nothing', async () => {
-    expect(await noticeFor('link_invalid')).toBe(_path === '/portal/sign-in' ? 'auth.signIn.linkInvalidBanner' : '');
+    expect(await noticeFor('link_invalid')).toBe(_path === '/portal/sign-in' ? 'auth.signIn.notice.linkInvalid' : '');
   });
 
   it('renders no reason banner of its own beside the form (one place for the reason)', async () => {

@@ -54,16 +54,15 @@ export default async function MemberSignInPage({
   }
 
   const t = await getTranslations('auth.signIn');
-  const tIdle = await getTranslations('auth.idleWarning');
   const notice =
     reasonCandidate === 'security-update'
-      ? t('securityUpdateBanner')
+      ? t('notice.securityUpdate')
       : reasonCandidate === 'idle'
-        ? tIdle('signedOutInactive')
+        ? t('notice.idle')
         : reasonCandidate === 'session-ended'
-          ? tIdle('signedOutEnded')
+          ? t('notice.sessionEnded')
           : reasonCandidate === 'link_invalid'
-            ? t('linkInvalidBanner')
+            ? t('notice.linkInvalid')
             : undefined;
   const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 
