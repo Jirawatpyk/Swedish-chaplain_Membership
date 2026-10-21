@@ -83,7 +83,8 @@ test.describe('return-after-signin (T171, spec AS5)', () => {
     const url = new URL(page.url());
     expect(url.pathname).toBe('/admin');
     expect(url.searchParams.get('returnTo')).toBeNull(); // no longer in URL
-    await expect(page.getByRole('heading', { name: /welcome/i })).toBeVisible();
+    // The staff home's h1 is "Dashboard" since the AURA shell (spec 122).
+    await expect(page.getByRole('heading', { level: 1, name: /^dashboard$/i })).toBeVisible();
   });
 
   test('open-redirect attempt is neutralised — hostile returnTo is ignored', async ({ page }) => {
