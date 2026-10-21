@@ -16,8 +16,10 @@
  * is imported — never the client preview component.
  *
  * UX review M9: `aria-busy` like every other admin loading state; header bars
- * are capped (`w-full max-w-*`) so they fit 320 px; card-heading bars are
- * `h-5.5` — the real `<h2>` (`text-base leading-snug`) is ~22 px, not 20.
+ * are capped (`w-full max-w-*`) so they fit 320 px. Spec 122 US12c-1: the
+ * cards are AURA cards (a skeleton bar in the card head where the h2 sits,
+ * `h-6` — AURA's card title is 16 px at a 1.5 line height) and the bars are
+ * the shared `SkeletonBlock`.
  *
  * T086a V7 — the content slot. The skeleton cannot know the stage, so it
  * reserves the most common shape: the TWO-COLUMN grid from `lg`. Once a
@@ -32,9 +34,9 @@
  * the shape every reader sees, a manager included; the writer's first column
  * is taller than a frame, and that difference lands below the fold.
  */
+import { Card } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { DETAIL_PREVIEW_FRAME_HEIGHT } from '@/components/broadcast/preview-frame-heights';
 
 function FieldSkeletons({ count }: { readonly count: number }): React.ReactElement {
@@ -42,8 +44,8 @@ function FieldSkeletons({ count }: { readonly count: number }): React.ReactEleme
     <>
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="space-y-1">
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-4 w-40" />
+          <SkeletonBlock className="h-4 w-24" />
+          <SkeletonBlock className="h-5 w-40 max-w-full" />
         </div>
       ))}
     </>
@@ -56,64 +58,75 @@ export default function AdminBroadcastDetailLoading(): React.ReactElement {
       {/* PageHeader: subject (h1) + "member · subtitle" + the stage badge. */}
       <header className="flex flex-col items-stretch justify-between gap-3 sm:flex-row sm:items-start">
         <div className="min-w-0 flex-1 space-y-2">
-          <Skeleton className="h-7 w-full max-w-72" />
-          <Skeleton className="h-4 w-full max-w-80" />
+          <SkeletonBlock className="h-8 w-full max-w-72" />
+          <SkeletonBlock className="h-4 w-full max-w-80" />
         </div>
-        <Skeleton className="h-5 w-24 rounded-4xl" />
+        <SkeletonBlock className="h-6 w-28 rounded-full" />
       </header>
 
       {/* "Approval round" — whose turn, time in stage, round, proposed, scheduled. */}
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-5.5 w-36" />
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <FieldSkeletons count={5} />
-          </div>
-        </CardContent>
+      <Card header={<SkeletonBlock className="h-6 w-36" />}>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <FieldSkeletons count={5} />
+        </div>
       </Card>
 
       {/* "Submission" — five `<dl>` rows in two columns. */}
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-5.5 w-28" />
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <FieldSkeletons count={5} />
-          </div>
-        </CardContent>
+      <Card header={<SkeletonBlock className="h-6 w-28" />}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FieldSkeletons count={5} />
+        </div>
       </Card>
 
       {/* The content (V7 above): the version, the member's original beside it
           from lg — a heading, the subject line, the sandboxed frame. */}
       <div data-skeleton="content-grid" className="grid gap-6 lg:grid-cols-2">
         {Array.from({ length: 2 }, (_, i) => (
-          <Card key={i} className={i === 1 ? 'hidden lg:flex' : undefined}>
-            <CardHeader>
-              <Skeleton className="h-5.5 w-40 max-w-full" />
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Skeleton className="h-5 w-2/3" />
-              <Skeleton
+          <Card
+            key={i}
+            header={<SkeletonBlock className="h-6 w-40 max-w-full" />}
+            className={i === 1 ? 'hidden lg:flex' : undefined}
+          >
+            <div className="space-y-2">
+              <SkeletonBlock className="h-5 w-2/3" />
+              <SkeletonBlock
                 data-skeleton="preview-frame"
                 className="w-full"
                 style={{ height: DETAIL_PREVIEW_FRAME_HEIGHT }}
               />
-            </CardContent>
+            </div>
           </Card>
         ))}
       </div>
 
-      {/* Audit timeline. */}
-      <Skeleton className="h-40 w-full" />
+      {/* "Lifecycle timeline" — an AURA card, one row per step. */}
+      <Card header={<SkeletonBlock className="h-6 w-40" />}>
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          {Array.from({ length: 2 }, (_, i) => (
+            <div key={i} className="flex items-start gap-[var(--aura-space-3)]">
+              <SkeletonBlock className="size-4 shrink-0 rounded-full" />
+              <div className="min-w-0 flex-1 space-y-1">
+                <SkeletonBlock className="h-5 w-24" />
+                <SkeletonBlock className="h-4 w-full max-w-72" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
 
-      {/* Right-aligned action row — real controls are `<Button>` h-9 (36 px). */}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Skeleton className="h-9 w-28" />
-        <Skeleton className="h-9 w-40" />
-        <Skeleton className="h-9 w-24" />
+      {/* The action row — the destructive actions at the start, the next step
+          at the end (AURA buttons, h-9; 44 px on touch). Below 640px Cancel and
+          Start sit in a ⋯ menu: Reject · Approve · ⋯. */}
+      <div data-skeleton="action-row" className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-2">
+          <SkeletonBlock className="h-9 w-28 max-sm:hidden" />
+          <SkeletonBlock className="h-9 w-24 max-sm:h-11" />
+        </div>
+        <div className="flex gap-2">
+          <SkeletonBlock className="h-9 w-40 max-sm:hidden" />
+          <SkeletonBlock className="h-9 w-24 max-sm:h-11" />
+          <SkeletonBlock className="hidden size-11 max-sm:block" />
+        </div>
       </div>
     </DetailContainer>
   );

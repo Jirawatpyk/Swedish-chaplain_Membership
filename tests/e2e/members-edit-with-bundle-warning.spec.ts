@@ -22,6 +22,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
+import { scrollFormToEndAtRest } from './helpers/member-form';
 import { clearE2ERateLimits } from './helpers/rate-limit';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -88,6 +89,12 @@ test.describe('members edit + bundle warning — F3 US3 @f3 @a11y @i18n', () => 
     test.skip(memberId === null, 'No members — skip a11y on edit page');
     await page.goto(`/admin/members/${memberId}/edit`);
     await page.locator('#company_name').waitFor({ timeout: 10_000 });
+    // On a phone the form's action bar is pinned to the bottom of the screen,
+    // so mid-page it covers whichever field sits under it and axe reports that
+    // field (or the bar's buttons) as an obscured target (target-size,
+    // target-offset; relay R60, red on main too). Scan the form at rest at the
+    // end of the scroll, where the bar sits below the last field.
+    await scrollFormToEndAtRest(page);
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])

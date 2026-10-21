@@ -839,6 +839,7 @@ export { isEblastMemberApprovalEnabled } from './infrastructure/feature-flags';
 // ---------------------------------------------------------------------------
 export type { BroadcastVersion } from './domain/approval/broadcast-version';
 export { isVersionEditable } from './domain/approval/broadcast-version';
+export { memberApprovalExpiresAt } from './domain/approval/member-approval-expiry';
 export type { MemberDecision, MemberDecisionKind } from './domain/approval/member-decision';
 export { stageOf, type BroadcastStage } from './domain/stage/broadcast-stage';
 export type {

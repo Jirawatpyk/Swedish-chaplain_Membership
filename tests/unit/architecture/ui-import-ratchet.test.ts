@@ -97,8 +97,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast detail keeps the legacy kit until US12c', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/approval/version-thread.tsx')).toEqual([]);
+    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/compose-form.tsx')).toEqual([]);
     });
   });
 
@@ -118,8 +118,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast detail keeps the legacy kit until US12c', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/admin/status-badge.tsx')).toEqual([]);
+    it('control: E-Blast proxy compose keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/proxy-compose-form.tsx')).toEqual([]);
     });
   });
 
@@ -370,8 +370,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast detail keeps the legacy kit until US12c', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/[id]/page.tsx')).toEqual([]);
+    it('control: the staff compose route keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/error.tsx')).toEqual([]);
     });
   });
 
@@ -448,8 +448,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast schedule dialog keeps the legacy kit until US12c', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/approval/schedule-confirm-dialog.tsx')).toEqual([]);
+    it('control: the compose template picker keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/compose/template-picker.tsx')).toEqual([]);
     });
   });
 
@@ -518,8 +518,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast detail keeps the legacy kit until US12c', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/[id]/page.tsx')).toEqual([]);
+    it('control: the staff compose route keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/error.tsx')).toEqual([]);
     });
   });
 
@@ -700,8 +700,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast schedule dialog keeps the legacy kit until US12c', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/approval/schedule-confirm-dialog.tsx')).toEqual([]);
+    it('control: the compose template picker keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/compose/template-picker.tsx')).toEqual([]);
     });
   });
 
@@ -738,6 +738,29 @@ describe('UI import ratchet (spec 122)', () => {
 
     it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
       expect(await ratchetHits(legacy, 'src/components/broadcast/proxy-compose-form.tsx')).toEqual([]);
+    });
+  });
+
+  describe('the US12c-1 staff approval-round detail and its shared pieces are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+    it.each([
+      'src/app/(staff)/admin/broadcasts/[id]/page.tsx',
+      'src/app/(staff)/admin/broadcasts/[id]/loading.tsx',
+      'src/app/(staff)/admin/broadcasts/[id]/error.tsx',
+      'src/components/broadcast/admin/status-badge.tsx',
+      'src/components/broadcast/admin/detail-action-bar.tsx',
+      'src/components/broadcast/admin/original-disclosure.tsx',
+      'src/components/broadcast/approval/formatted-version-workspace.tsx',
+      'src/components/broadcast/approval/schedule-confirm-dialog.tsx',
+      'src/components/broadcast/approval/start-formatted-version-action.tsx',
+      'src/components/broadcast/approval/version-thread.tsx',
+      'src/components/broadcast/approval/test-copy-button.tsx',
+      'src/components/broadcast/cancel-broadcast-action.tsx',
+      'src/components/broadcast/preview-pane.tsx',
+      'src/components/broadcast/preview-dialog.tsx',
+      'src/components/broadcast/use-preview-html.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
   });
 });

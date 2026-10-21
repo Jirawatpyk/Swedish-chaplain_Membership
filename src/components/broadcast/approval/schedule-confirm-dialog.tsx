@@ -42,24 +42,10 @@
  * Every form-level refusal is focused when it lands (review D8, § 6.4).
  */
 import { useEffect, useRef, useState, useTransition } from 'react';
-import { CalendarClock, Loader2Icon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
+import { Alert, Button, Dialog, RadioGroup, TextField } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
 import {
   bangkokInputToIso,
@@ -259,108 +245,116 @@ export function ScheduleConfirmAction({
         ref={triggerRef}
         type="button"
         data-testid="schedule-confirm-trigger"
-        variant={isChange ? 'outline' : 'default'}
+        variant={isChange ? 'secondary' : 'primary'}
+        touchHeight
+        icon="calendar"
         onClick={handleOpen}
       >
-        <CalendarClock className="size-4" aria-hidden="true" />
         {isChange ? t('buttonChange') : t('button')}
       </Button>
-      <AlertDialog
+      <Dialog
+        role="alertdialog"
         open={open}
-        onOpenChange={(next) => {
-          if (!pending) setOpen(next);
+        dismissible={!pending}
+        onClose={() => {
+          if (!pending) setOpen(false);
         }}
-      >
-        <AlertDialogContent finalFocus={finalFocus}>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{isChange ? t('titleChange') : t('title')}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {isChange ? t('descriptionChange') : t('description')}
-              <span id={PROPOSAL_ID} className="mt-2 block font-medium text-foreground" data-testid="schedule-confirm-proposal">
-                {proposalLine}
-              </span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <fieldset className="space-y-3" disabled={pending}>
-            <legend className="sr-only">{t('modeLegend')}</legend>
-            <RadioGroup
-              value={mode}
-              onValueChange={(v) => {
-                if (modes.includes(v as ScheduleConfirmMode)) {
-                  setMode(v as ScheduleConfirmMode);
-                  setFieldError(null);
-                }
-              }}
-              disabled={pending}
-              className="space-y-2"
+        finalFocus={() => finalFocus() || null}
+        title={isChange ? t('titleChange') : t('title')}
+        description={
+          <>
+            {isChange ? t('descriptionChange') : t('description')}
+            <span
+              id={PROPOSAL_ID}
+              className="mt-[var(--aura-space-2)] block font-medium text-[var(--aura-fg-primary)]"
+              data-testid="schedule-confirm-proposal"
             >
-              {modes.map((m) => {
-                const unavailable = m === 'keep_proposal' && !proposalUsable;
-                return (
-                  <div key={m} className="flex items-center gap-2">
-                    {/* Named by its <Label htmlFor> alone; an unavailable keep
-                        option points at the proposal line that says why. */}
-                    <RadioGroupItem
-                      id={`schedule-mode-${m}`}
-                      data-testid={`schedule-mode-${m}`}
-                      value={m}
-                      disabled={unavailable}
-                      {...(unavailable ? { 'aria-describedby': PROPOSAL_ID } : {})}
-                    />
-                    <Label htmlFor={`schedule-mode-${m}`} className="cursor-pointer">
-                      {t(`mode.${m}`)}
-                    </Label>
-                  </div>
-                );
-              })}
-            </RadioGroup>
+              {proposalLine}
+            </span>
+          </>
+        }
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              data-testid="schedule-confirm-cancel"
+              disabled={pending}
+              onClick={() => setOpen(false)}
+            >
+              {t('close')}
+            </Button>
+            <Button
+              data-testid="schedule-confirm-submit"
+              variant={mode === 'cancel' ? 'danger' : 'primary'}
+              loading={pending}
+              aria-disabled={submitDisabled || undefined}
+              onClick={onConfirm}
+            >
+              {/* T086a V9 — send-now, the least reversible mode, names its action. */}
+              {mode === 'cancel' ? t('confirmCancel') : mode === 'send_now' ? t('confirmSendNow') : t('confirm')}
+            </Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          {/* Board `Admin-eblast-schedule` (spec 122 US12c-1) — the modes the
+              route accepts from this stage, as AURA's radio group; a keep
+              option whose proposal has passed is unavailable, and the
+              proposal line in the description says why. */}
+          <RadioGroup
+            touchHeight
+            label={t('modeLegend')}
+            value={mode}
+            onChange={(v) => {
+              if (modes.includes(v as ScheduleConfirmMode)) {
+                setMode(v as ScheduleConfirmMode);
+                setFieldError(null);
+              }
+            }}
+            disabled={pending}
+            options={modes.map((m) => ({
+              value: m,
+              label: t(`mode.${m}`),
+              disabled: m === 'keep_proposal' && !proposalUsable,
+            }))}
+          />
 
-            {mode === 'schedule' ? (
-              <div className="ml-6 space-y-2">
-                <Label htmlFor={WHEN_ID}>{t('whenLabel')}</Label>
-                <Input
-                  id={WHEN_ID}
-                  data-testid="schedule-confirm-when"
-                  type="datetime-local"
-                  required
-                  value={when}
-                  min={minWhen}
-                  onChange={(e) => {
-                    setWhen(e.target.value);
-                    setFieldError(null);
-                  }}
-                  aria-invalid={fieldError !== null || undefined}
-                  aria-describedby={
-                    fieldError !== null ? 'schedule-confirm-when-error schedule-confirm-when-help' : 'schedule-confirm-when-help'
-                  }
-                />
-                <p id="schedule-confirm-when-help" className="text-xs text-muted-foreground">
-                  {t('whenHelp')}
-                </p>
-              </div>
+          {mode === 'schedule' ? (
+            <TextField
+              id={WHEN_ID}
+              data-testid="schedule-confirm-when"
+              touchHeight
+              type="datetime-local"
+              required
+              label={t('whenLabel')}
+              hint={t('whenHelp')}
+              value={when}
+              min={minWhen}
+              disabled={pending}
+              onChange={(e) => {
+                setWhen(e.target.value);
+                setFieldError(null);
+              }}
+              {...(fieldError !== null ? { error: fieldError } : {})}
+            />
+          ) : null}
+
+          {mode === 'cancel' ? (
+            <p className="aura-text-body text-[var(--aura-fg-secondary)]" data-testid="schedule-confirm-cancel-hint">
+              {t('cancelHint', { stage: tStatus('changes_requested') })}
+            </p>
+          ) : null}
+
+          {/* Mounted from the start and only its content swaps: a live
+              region that mounts WITH its text is not announced (M4). */}
+          <div role="status" aria-live="polite">
+            {differs && proposedSendAt !== null ? (
+              <Alert tone="warning" role="none" data-testid="schedule-confirm-differs">
+                {t('differs', { time: formatIso(proposedSendAt) })}
+              </Alert>
             ) : null}
+          </div>
 
-            {mode === 'cancel' ? (
-              <p className="text-sm text-muted-foreground" data-testid="schedule-confirm-cancel-hint">
-                {t('cancelHint', { stage: tStatus('changes_requested') })}
-              </p>
-            ) : null}
-
-            {fieldError !== null ? <InlineError id="schedule-confirm-when-error" message={fieldError} /> : null}
-
-            {/* Mounted from the start and only its content swaps: a live
-                region that mounts WITH its text is not announced (M4). */}
-            <div role="status" aria-live="polite">
-              {differs && proposedSendAt !== null ? (
-                <p
-                  data-testid="schedule-confirm-differs"
-                  className="rounded-md border border-warning/30 bg-warning-surface px-3 py-2 text-sm text-warning"
-                >
-                  {t('differs', { time: formatIso(proposedSendAt) })}
-                </p>
-              ) : null}
-            </div>
-          </fieldset>
           {formError === null ? null : formError.kind === 'read_only' ? (
             <InlineWarning
               id={FORM_ERROR_ID}
@@ -371,27 +365,8 @@ export function ScheduleConfirmAction({
           ) : (
             <InlineError id={FORM_ERROR_ID} data-testid="schedule-confirm-error" message={formError.message} />
           )}
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="schedule-confirm-cancel" disabled={pending}>
-              {t('close')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              data-testid="schedule-confirm-submit"
-              disabled={submitDisabled}
-              focusableWhenDisabled
-              aria-busy={pending || undefined}
-              onClick={(e) => {
-                e.preventDefault();
-                onConfirm();
-              }}
-            >
-              {pending ? <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : null}
-              {/* T086a V9 — send-now, the least reversible mode, names its action. */}
-              {mode === 'cancel' ? t('confirmCancel') : mode === 'send_now' ? t('confirmSendNow') : t('confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        </div>
+      </Dialog>
     </>
   );
 }

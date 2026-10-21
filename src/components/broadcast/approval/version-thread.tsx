@@ -26,7 +26,7 @@
  * Times arrive formatted by the page, in the tenant's time zone.
  */
 import { useTranslations } from 'next-intl';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
+import { Card } from '@jirawatpyk/aura-react/server';
 import type {
   BroadcastVersionThread,
   MemberDecisionKind,
@@ -216,7 +216,10 @@ export interface VersionThreadProps {
   readonly model: VersionThreadModel;
 }
 
-const HEADING = 'font-heading text-sm font-medium leading-snug';
+const HEADING = 'text-sm font-semibold leading-snug';
+/** A label or a time beside a value: AURA's secondary text, never the empty-value sentinel. */
+const SECONDARY = 'block text-xs text-[var(--aura-fg-secondary)]';
+const ENTRY = 'border-l-2 border-[var(--aura-border-default)] pl-3';
 
 export function VersionThread({ audience, model }: VersionThreadProps): React.ReactElement {
   const tPortal = useTranslations('portal.broadcasts.approval.thread');
@@ -270,52 +273,50 @@ export function VersionThread({ audience, model }: VersionThreadProps): React.Re
   };
 
   return (
-    <section aria-labelledby={headingId} data-testid="eblast-version-thread">
-      <Card>
-        <CardHeader>
-          <h2 id={headingId} className="font-heading text-base font-medium leading-snug">
-            {t('title')}
-          </h2>
-          {member ? <CardDescription>{tPortal('description')}</CardDescription> : null}
-        </CardHeader>
-        <CardContent>
-          <ol className="space-y-4 text-sm">
-            {model.approvedAsSubmitted !== null && model.original === null && model.rounds.length === 0 ? (
-              <li className="border-l-2 border-border pl-3">
-                <p>{approvedAsSubmittedLine(model.approvedAsSubmitted.author)}</p>
-                <When at={model.approvedAsSubmitted.at} />
-              </li>
-            ) : null}
-            {model.original !== null ? (
-              <li className="border-l-2 border-border pl-3">
-                <h3 className={HEADING}>{t('original')}</h3>
-                <VersionEntry line={versionLine(model.original)} version={model.original} noteLabel={t('noteLabel')} />
-              </li>
-            ) : null}
-            {model.rounds.map((r) => (
-              <li key={r.version.id} className="border-l-2 border-border pl-3">
-                <h3 className={HEADING}>{t('round', { round: r.round })}</h3>
-                <VersionEntry line={versionLine(r.version)} version={r.version} noteLabel={t('noteLabel')} />
-                {r.decisions.map((d) => (
-                  <div key={d.id} className="mt-3">
-                    <p className="font-medium">{decisionLine(d, r.version.versionNo)}</p>
-                    <When at={d.at} />
-                    {d.reason !== null ? (
-                      <p className="mt-1 whitespace-pre-line break-words">
-                        <span className="block text-xs text-muted-foreground">
-                          {d.decision === 'approved' ? t('approvalNoteLabel') : t('reasonLabel')}
-                        </span>
-                        {d.reason}
-                      </p>
-                    ) : null}
-                  </div>
-                ))}
-              </li>
+    // Spec 122 US12c-1 — an AURA card labelled by its own h2 (the section it
+    // was), on the staff and the member page alike.
+    <Card
+      titleId={headingId}
+      title={t('title')}
+      headingLevel={2}
+      description={member ? tPortal('description') : undefined}
+      data-testid="eblast-version-thread"
+    >
+      <ol className="space-y-4 text-sm">
+        {model.approvedAsSubmitted !== null && model.original === null && model.rounds.length === 0 ? (
+          <li className={ENTRY}>
+            <p>{approvedAsSubmittedLine(model.approvedAsSubmitted.author)}</p>
+            <When at={model.approvedAsSubmitted.at} />
+          </li>
+        ) : null}
+        {model.original !== null ? (
+          <li className={ENTRY}>
+            <h3 className={HEADING}>{t('original')}</h3>
+            <VersionEntry line={versionLine(model.original)} version={model.original} noteLabel={t('noteLabel')} />
+          </li>
+        ) : null}
+        {model.rounds.map((r) => (
+          <li key={r.version.id} className={ENTRY}>
+            <h3 className={HEADING}>{t('round', { round: r.round })}</h3>
+            <VersionEntry line={versionLine(r.version)} version={r.version} noteLabel={t('noteLabel')} />
+            {r.decisions.map((d) => (
+              <div key={d.id} className="mt-3">
+                <p className="font-medium">{decisionLine(d, r.version.versionNo)}</p>
+                <When at={d.at} />
+                {d.reason !== null ? (
+                  <p className="mt-1 whitespace-pre-line break-words">
+                    <span className={SECONDARY}>
+                      {d.decision === 'approved' ? t('approvalNoteLabel') : t('reasonLabel')}
+                    </span>
+                    {d.reason}
+                  </p>
+                ) : null}
+              </div>
             ))}
-          </ol>
-        </CardContent>
-      </Card>
-    </section>
+          </li>
+        ))}
+      </ol>
+    </Card>
   );
 }
 
@@ -335,7 +336,7 @@ function VersionEntry({
       <p className="mt-1 break-words">{version.subject}</p>
       {version.versionNo >= 1 && version.note !== null ? (
         <p className="mt-1 whitespace-pre-line break-words">
-          <span className="block text-xs text-muted-foreground">{noteLabel}</span>
+          <span className={SECONDARY}>{noteLabel}</span>
           {version.note}
         </p>
       ) : null}
@@ -345,7 +346,7 @@ function VersionEntry({
 
 function When({ at }: { readonly at: ThreadTime }): React.ReactElement {
   return (
-    <time dateTime={at.iso} className="block text-xs text-muted-foreground tabular-nums">
+    <time dateTime={at.iso} className={`${SECONDARY} tabular-nums`}>
       {at.label}
     </time>
   );

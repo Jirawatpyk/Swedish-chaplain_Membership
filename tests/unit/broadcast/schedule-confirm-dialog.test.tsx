@@ -48,8 +48,8 @@ const refusal = (status: number, code: string) =>
   });
 
 async function chooseSendNow(): Promise<void> {
-  fireEvent.click(document.querySelector('label[for="schedule-mode-send_now"]')!);
-  await waitFor(() => expect(mode('send_now')).toHaveAttribute('aria-checked', 'true'));
+  fireEvent.click(mode('send_now')!);
+  await waitFor(() => expect(mode('send_now')).toBeChecked());
 }
 
 function renderAction(props: {
@@ -76,8 +76,9 @@ function open(): void {
   fireEvent.click(screen.getByTestId('schedule-confirm-trigger'));
 }
 
-function mode(value: string): HTMLElement | null {
-  return screen.queryByTestId(`schedule-mode-${value}`);
+/** Spec 122 US12c-1 — the modes are AURA's radio group: native radios, one per mode. */
+function mode(value: string): HTMLInputElement | null {
+  return document.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`);
 }
 
 describe('F119 T064 — the schedule confirmation dialog', () => {
@@ -89,16 +90,20 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
     open();
     await screen.findByRole('alertdialog');
 
-    expect(mode('keep_proposal')).toHaveAttribute('aria-checked', 'false');
-    expect(mode('schedule')).toHaveAttribute('aria-checked', 'true');
+    expect(mode('keep_proposal')).not.toBeChecked();
+    expect(mode('schedule')).toBeChecked();
     const when = screen.getByTestId('schedule-confirm-when');
     expect(when).toBeRequired();
     expect(when).toHaveValue('');
     // H2 — unavailable, but still focusable (`aria-disabled`, never native `disabled`).
     expect(screen.getByTestId('schedule-confirm-submit')).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByTestId('schedule-confirm-submit')).not.toHaveAttribute('disabled');
-    // LOW — the unavailable keep option says why: it points at the proposal line.
-    expect(mode('keep_proposal')).toHaveAttribute('aria-describedby', 'schedule-confirm-proposal');
+    // LOW — the unavailable keep option says why: it is unavailable, and the
+    // proposal line that explains it is part of the dialog's description.
+    expect(mode('keep_proposal')).toBeDisabled();
+    const dialog = screen.getByRole('alertdialog');
+    const describedBy = (dialog.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean);
+    expect(describedBy.some((id) => document.getElementById(id)?.querySelector('[data-testid="schedule-confirm-proposal"]'))).toBe(true);
   });
 
   it('a proposal still far enough away IS pre-selected (positive control)', async () => {
@@ -109,9 +114,9 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
     open();
     await screen.findByRole('alertdialog');
 
-    expect(mode('keep_proposal')).toHaveAttribute('aria-checked', 'true');
+    expect(mode('keep_proposal')).toBeChecked();
     expect(screen.queryByTestId('schedule-confirm-when')).toBeNull();
-    expect(screen.getByTestId('schedule-confirm-submit')).toHaveAttribute('aria-disabled', 'false');
+    expect(screen.getByTestId('schedule-confirm-submit')).not.toHaveAttribute('aria-disabled', 'true');
     // Nothing differs while the member's own time is kept.
     expect(screen.queryByTestId('schedule-confirm-differs')).toBeNull();
   });
@@ -124,9 +129,7 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
     open();
     await screen.findByRole('alertdialog');
 
-    // A Base UI radio selects on its LABEL in jsdom, not on the role=radio node.
-    fireEvent.click(document.querySelector('label[for="schedule-mode-send_now"]')!);
-    await waitFor(() => expect(mode('send_now')).toHaveAttribute('aria-checked', 'true'));
+    await chooseSendNow();
     expect(screen.getByTestId('schedule-confirm-differs')).toBeInTheDocument();
   });
 
@@ -235,7 +238,7 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
     const first = await within(dialog).findByRole('alert');
     // The alert lands before the transition settles; a click while still
     // `pending` is (correctly) refused, so wait for the button to come back.
-    await waitFor(() => expect(screen.getByTestId('schedule-confirm-submit')).toHaveAttribute('aria-disabled', 'false'));
+    await waitFor(() => expect(screen.getByTestId('schedule-confirm-submit')).not.toHaveAttribute('aria-disabled', 'true'));
     fireEvent.click(screen.getByTestId('schedule-confirm-submit'));
     await waitFor(() => expect(within(dialog).getByRole('alert')).not.toBe(first));
   });
@@ -317,5 +320,16 @@ describe('F119 T064 — the schedule confirmation dialog', () => {
 
     await chooseSendNow();
     expect(submit.textContent).toBe('Send now');
+  });
+
+  it('spec 122 US12c-1: AURA trigger, AURA alert dialog, AURA radio group and time field', async () => {
+    renderAction({ status: 'approved', proposedSendAt: null });
+    expect(screen.getByTestId('schedule-confirm-trigger').className).toContain('aura-btn');
+    open();
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.querySelector('fieldset.aura-radio-group')).not.toBeNull();
+    expect(mode('schedule')!.className).toContain('aura-radio');
+    expect(screen.getByTestId('schedule-confirm-when').closest('.aura-field')).not.toBeNull();
+    expect(document.querySelector('[data-slot="alert-dialog-content"], [data-slot="radio-group"]')).toBeNull();
   });
 });

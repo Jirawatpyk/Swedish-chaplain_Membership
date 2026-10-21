@@ -42,6 +42,7 @@ vi.mock('next-intl/server', () => ({
     Object.assign((key: string) => key, { has: (key: string) => !missingKeys.has(key) }),
   ),
   getLocale: vi.fn().mockResolvedValue('en'),
+  getFormatter: vi.fn().mockResolvedValue({ number: (n: number) => String(n) }),
 }));
 vi.mock('@/lib/tenant-context', () => ({
   resolveTenantFromRequest: () => ({ slug: 'tenant-a' }),
@@ -115,10 +116,11 @@ vi.mock('@/components/broadcast/admin/manager-readonly-banner', () => ({
   ManagerReadonlyBanner: () => <div data-testid="manager-banner" />,
 }));
 vi.mock('@/components/broadcast/use-preview-html', () => ({
-  PreviewSurface: () => <div data-testid="preview-surface" />,
+  PreviewSurface: ({ fit }: { fit?: boolean }) => <div data-testid="preview-surface" data-fit={fit ? 'true' : 'false'} />,
 }));
 
 const findByIdMock = vi.fn();
+const deliveryMock = vi.fn(async () => ({ broadcastId: 'x', sent: 0, delivered: 121, bounced: 3, softBounced: 2, complained: 0 }));
 const listVersionsMock = vi.fn();
 const warningsMock = vi.fn();
 /** F119 PR-A R1 — the page's "held for the member's payment" read; default: not held. */
@@ -141,9 +143,16 @@ vi.mock('@/modules/broadcasts', async () => {
     canTransition: transitions.canTransition,
     stageOf: stage.stageOf,
     turnOf: turn.turnOf,
+    memberApprovalExpiresAt: (
+      await vi.importActual<typeof import('@/modules/broadcasts/domain/approval/member-approval-expiry')>(
+        '@/modules/broadcasts/domain/approval/member-approval-expiry',
+      )
+    ).memberApprovalExpiresAt,
     isEblastMemberApprovalEnabled: () => flagOn,
     isF71aUs2Enabled: () => false,
-    makeGetBroadcastDeps: () => ({ broadcastsRepo: { findById: findByIdMock } }),
+    makeGetBroadcastDeps: () => ({
+      broadcastsRepo: { findById: findByIdMock, aggregateDeliveryCountsForBroadcast: deliveryMock },
+    }),
     parseBroadcastId: (id: string) => ({ ok: true as const, value: id }),
     listBroadcastVersions: (...args: unknown[]) => listVersionsMock(...args),
     readFormattingWarnings: (...args: unknown[]) => warningsMock(...args),
@@ -372,7 +381,8 @@ describe('F119 T063 — the staff detail page action controls', () => {
     });
     const html = await renderPage('changes_requested', 1);
     for (const testId of ['eblast-warning-no-portal-user', 'eblast-warning-unsafe-images']) {
-      const tag = html.slice(html.lastIndexOf('<div', html.indexOf(`data-testid="${testId}"`)), html.indexOf(`data-testid="${testId}"`));
+      const at = html.indexOf(`data-testid="${testId}"`);
+      const tag = html.slice(html.lastIndexOf('<div', at), html.indexOf('>', at));
       expect(tag, testId).toContain('role="note"');
     }
     expect(html).not.toContain('role="status" data-testid="eblast-warning');
@@ -399,7 +409,7 @@ describe('F119 T063 — the staff detail page action controls', () => {
   it('nobody\'s turn → a muted dash for sight and a word for AT', async () => {
     const html = await renderPage('approved', 0);
     const cell = html.slice(html.indexOf('data-testid="eblast-whose-turn"'), html.indexOf('</dd>', html.indexOf('data-testid="eblast-whose-turn"')));
-    expect(cell).toContain('<span aria-hidden="true" class="text-muted-foreground">—</span>');
+    expect(cell).toContain('<span aria-hidden="true" class="text-[var(--aura-fg-secondary)]">—</span>');
     expect(cell).toContain('<span class="sr-only">turnValue.none</span>');
   });
 
@@ -446,7 +456,7 @@ describe('F119 T063 — the staff detail page action controls', () => {
     const work = html.indexOf(`data-testid="${workTestId}"`);
     const thread = html.indexOf('data-testid="version-thread"');
     expect(note).toBeGreaterThan(-1);
-    expect(html.slice(html.lastIndexOf('<div', note), note)).toContain('role="note"');
+    expect(html.slice(html.lastIndexOf('<div', note), html.indexOf('>', note))).toContain('role="note"');
     expect(html.slice(note, work)).toContain('The date in the heading is wrong');
     expect(work).toBeGreaterThan(note);
     expect(thread).toBeGreaterThan(work);
@@ -546,8 +556,8 @@ describe('F119 PR-A — the staff detail page shows why an E-Blast was not sent'
       expect(block).toContain('failureReasonTitle');
       expect(block).toContain(`failureReason.${reason}`);
       // Body text, not the muted empty-sentinel colour; never italic (Thai).
-      expect(block).toContain('text-foreground');
-      expect(block).not.toMatch(/text-muted-foreground|italic/);
+      expect(block).toContain('aura-alert');
+      expect(block).not.toMatch(/text-muted-foreground|fg-secondary|italic/);
     },
   );
 
@@ -576,19 +586,19 @@ describe('F119 PR-A — the staff detail page shows why an E-Blast was not sent'
 
   /**
    * R6.7 — the two STANDING refusals are decisions about the member (warning);
-   * every other token is a delivery failure (destructive). The sentence gets
+   * every other token is a delivery failure (danger). The sentence gets
    * Thai-safe line height: Thai diacritics clip at the default `text-sm`
    * leading.
    */
   it.each([
     ['member_halted', 'warning'],
     ['member_not_in_good_standing', 'warning'],
-    ['audience_import_stuck', 'destructive'],
-    ['gateway_permanent', 'destructive'],
-    ['retry_budget_exhausted_after_1h:server_5xx:x', 'destructive'],
+    ['audience_import_stuck', 'danger'],
+    ['gateway_permanent', 'danger'],
+    ['retry_budget_exhausted_after_1h:server_5xx:x', 'danger'],
   ] as const)('failed_to_dispatch (%s) → tone %s, relaxed leading', async (reason, tone) => {
     const block = reasonBlock(await renderFailed(reason));
-    expect(block).toContain(`data-tone="${tone}"`);
+    expect(block).toContain(`aura-alert--${tone}`);
     expect(block).toContain('leading-relaxed');
   });
 });
@@ -626,7 +636,9 @@ describe('F119 PR-A — the staff detail page says when a due E-Blast is held fo
     const at = html.indexOf('data-testid="eblast-dispatch-held"');
     const block = html.slice(html.lastIndexOf('<div', at), html.indexOf('</div></div>', at));
     expect(block).toContain('role="note"');
-    expect(block).toContain('data-tone="info"');
+    // Spec 122 US12c-1 — an AURA info alert, not a warning or danger one.
+    expect(block).toContain('aura-alert');
+    expect(block).not.toMatch(/aura-alert--(warning|danger|success)/);
     expect(block).toContain('dispatchHeldTitle');
     expect(block).toContain('dispatchHeldBody');
     expect(holdMock).toHaveBeenCalledWith(
@@ -648,5 +660,367 @@ describe('F119 PR-A — the staff detail page says when a due E-Blast is held fo
       expect.objectContaining({ errorId: 'M119.admin.detail.dispatch_hold', err: 'Error' }),
       'broadcasts.detail_page.dispatch_hold_read_failed',
     );
+  });
+});
+
+/**
+ * Spec 122 US12c-1 (T1221) — the detail page's frame is AURA's: each section is
+ * an AURA card titled by its own h2 (the section is labelled by it, as before),
+ * and every page note is an AURA alert that keeps its test id and its role.
+ */
+describe('Spec 122 US12c-1 — the staff detail page frame on AURA', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    role = 'admin';
+    flagOn = true;
+    decisions = [];
+    missingKeys = new Set();
+    warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } });
+    holdMock.mockResolvedValue({ ok: true, value: false });
+  });
+
+  /** The opening tag of the element that carries `attr`. */
+  function openingTagWith(html: string, attr: string): string {
+    const at = html.indexOf(attr);
+    expect(at, attr).toBeGreaterThan(-1);
+    return html.slice(html.lastIndexOf('<', at), html.indexOf('>', at) + 1);
+  }
+
+  it('the approval round and the submission are AURA cards labelled by their h2', async () => {
+    const html = await renderPage('submitted');
+    for (const id of ['eblast-stage-title', 'eblast-details-title', 'eblast-body-title']) {
+      const card = openingTagWith(html, `aria-labelledby="${id}"`);
+      expect(card, id).toContain('aura-card');
+      expect(html, id).toMatch(new RegExp(`<h2[^>]*id="${id}"[^>]*class="[^"]*aura-card__title|<h2[^>]*class="[^"]*aura-card__title[^"]*"[^>]*id="${id}"`));
+    }
+    // The stage stays on the round card for the e2e and the styles that read it.
+    expect(openingTagWith(html, 'aria-labelledby="eblast-stage-title"')).toContain('data-stage=');
+    expect(html).not.toContain('data-slot="card"');
+  });
+
+  it('once sending has begun, a Delivery card shows the four counts (board `Admin-broadcast-sent`)', async () => {
+    deliveryMock.mockClear();
+    const html = await renderPage('sent', 0);
+    expect(deliveryMock).toHaveBeenCalledWith('tenant-a', ID);
+    const card = openingTagWith(html, 'aria-labelledby="eblast-delivery-title"');
+    expect(card).toContain('aura-card');
+    const at = html.indexOf('aria-labelledby="eblast-delivery-title"');
+    const section = html.slice(at, html.indexOf('</section>', at));
+    for (const key of ['delivered', 'bounced', 'softBounced', 'complained']) {
+      expect(section, key).toContain(`delivery.${key}`);
+    }
+    expect(section.match(/aura-stat\b/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+    for (const n of ['121', '3', '2', '0']) expect(section).toContain(`>${n}<`);
+    expect(section).toContain('delivery.caption');
+  });
+
+  function deliverySection(html: string): string {
+    const at = html.indexOf('aria-labelledby="eblast-delivery-title"');
+    return html.slice(at, html.indexOf('</section>', at));
+  }
+
+  it('the caption counts every recipient row, handed over included, as the board does (121 + 3 + 2 + 4 = 130)', async () => {
+    const { getTranslations } = await import('next-intl/server');
+    const plain = Object.assign((key: string) => key, { has: (key: string) => !missingKeys.has(key) });
+    vi.mocked(getTranslations).mockResolvedValue(
+      Object.assign((key: string, values?: Record<string, unknown>) => (key === 'delivery.caption' ? `${key}:${String(values?.recipients)}` : key), {
+        has: plain.has,
+      }) as never,
+    );
+    deliveryMock.mockResolvedValueOnce({ broadcastId: 'x', sent: 4, delivered: 121, bounced: 3, softBounced: 2, complained: 0 });
+    try {
+      const html = await renderPage('sent', 0);
+      expect(deliverySection(html)).toContain('delivery.caption:130');
+    } finally {
+      vi.mocked(getTranslations).mockResolvedValue(plain as never);
+    }
+  });
+
+  it('tones only a figure that is there: Delivered green above 0, Bounced and Complained red above 0', async () => {
+    deliveryMock.mockResolvedValueOnce({ broadcastId: 'x', sent: 0, delivered: 0, bounced: 0, softBounced: 0, complained: 0 });
+    const none = deliverySection(await renderPage('sent', 0));
+    expect(none).not.toContain('--aura-fg-positive');
+    expect(none).not.toContain('--aura-fg-danger');
+    deliveryMock.mockResolvedValueOnce({ broadcastId: 'x', sent: 0, delivered: 5, bounced: 1, softBounced: 1, complained: 2 });
+    const some = deliverySection(await renderPage('sent', 0));
+    expect(some.match(/--aura-fg-positive/g)?.length).toBe(1);
+    expect(some.match(/--aura-fg-danger/g)?.length).toBe(2);
+  });
+
+  it('a tile label wraps inside its tile at 200% text on a phone (WCAG 1.4.4)', async () => {
+    const section = deliverySection(await renderPage('sent', 0));
+    // Below 640px a tile takes a row of its own once two no longer fit side by side.
+    expect(section).toContain('grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))]');
+    const tiles = section.match(/<[^>]*class="[^"]*aura-stat\b[^"]*"[^>]*>/g) ?? [];
+    expect(tiles.length).toBe(4);
+    for (const tile of tiles) {
+      expect(tile).toContain('min-w-0');
+      expect(tile).toContain('[overflow-wrap:anywhere]');
+    }
+  });
+
+  it('a manager sees the Delivery card on a sent E-Blast, and no action controls', async () => {
+    role = 'manager';
+    const html = await renderPage('sent', 0);
+    expect(html).toContain('aria-labelledby="eblast-delivery-title"');
+    expect(html).not.toContain('data-testid="eblast-action-row"');
+  });
+
+  it('before sending begins there is no Delivery card and no read', async () => {
+    deliveryMock.mockClear();
+    const html = await renderPage('submitted', 0);
+    expect(html).not.toContain('eblast-delivery-title');
+    expect(deliveryMock).not.toHaveBeenCalled();
+  });
+
+  it('the version comparison is two AURA cards', async () => {
+    const html = await renderPage('awaiting_member_approval', 1);
+    for (const id of ['eblast-shown-version-title', 'eblast-original-title']) {
+      expect(openingTagWith(html, `aria-labelledby="${id}"`), id).toContain('aura-card');
+    }
+  });
+
+  it('a version card reads note, subject, then the e-mail in its own frame (board `Admin-eblast-awaiting-member`)', async () => {
+    findByIdMock.mockResolvedValue(makeBroadcast({ status: 'awaiting_member_approval', currentRound: 1 }));
+    const thread = threadFor('awaiting_member_approval', 1);
+    listVersionsMock.mockResolvedValue({
+      ...thread,
+      value: { ...thread.value, sentVersions: [{ version: { ...V1, noteToMember: 'Moved the date' }, authoredByName: 'Marketing' }] },
+    });
+    const Page = (await import('@/app/(staff)/admin/broadcasts/[id]/page')).default;
+    const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ id: ID }) }));
+    const at = html.indexOf('data-testid="eblast-version-comparison"');
+    const card = html.slice(at, html.indexOf('</section>', at));
+    const note = card.indexOf('data-version-note');
+    const subject = card.indexOf('data-version-subject');
+    const frame = card.indexOf('data-email-frame');
+    expect(note).toBeGreaterThan(-1);
+    expect(subject).toBeGreaterThan(note);
+    expect(frame).toBeGreaterThan(subject);
+    expect(card.slice(frame, card.indexOf('>', frame))).toMatch(/rounded-\[var\(--aura-radius-md\)\][^"]*border|border[^"]*rounded-\[var\(--aura-radius-md\)\]/);
+    expect(card.indexOf('data-testid="preview-surface"')).toBeGreaterThan(frame);
+  });
+
+  it('the comparison cards end at their own content and their frames fit the e-mail (parity, 20 Oct)', async () => {
+    const html = await renderPage('awaiting_member_approval', 1);
+    for (const id of ['eblast-shown-version-title', 'eblast-original-title']) {
+      expect(openingTagWith(html, `aria-labelledby="${id}"`), id).not.toMatch(/\bh-full\b/);
+    }
+    expect(openingTagWith(html, 'data-testid="eblast-version-comparison"')).toContain('lg:items-start');
+    const frames = html.match(/<div data-testid="preview-surface"[^>]*>/g) ?? [];
+    expect(frames).toHaveLength(2);
+    for (const frame of frames) expect(frame).toContain('data-fit="true"');
+  });
+
+  /** Renders with a translator that spells out its values, so the bar's words can be read. */
+  async function renderSpelled(status: string, round: number): Promise<string> {
+    const { getTranslations } = await import('next-intl/server');
+    const plain = Object.assign((key: string) => key, { has: (key: string) => !missingKeys.has(key) });
+    vi.mocked(getTranslations).mockResolvedValue(
+      Object.assign((key: string, values?: Record<string, unknown>) => (values ? `${key}${JSON.stringify(values)}` : key), {
+        has: plain.has,
+      }) as never,
+    );
+    try {
+      return await renderPage(status, round);
+    } finally {
+      vi.mocked(getTranslations).mockResolvedValue(plain as never);
+    }
+  }
+  const barOf = (html: string): string => {
+    const at = html.indexOf('data-testid="eblast-turn-bar"');
+    return html.slice(at, at + 1500);
+  };
+
+  it('a whose-turn bar sits under the header while someone has a next step (board `Admin-eblast-awaiting-member`)', async () => {
+    const html = await renderSpelled('awaiting_member_approval', 1);
+    const bar = openingTagWith(html, 'data-testid="eblast-turn-bar"');
+    expect(bar).toContain('aura-alert');
+    expect(bar).toContain('role="note"');
+    // Version 1, sent when the stage was entered (20 Sep), expiring 30 days on (20 Oct).
+    expect(barOf(html)).toMatch(/awaitingMember\{&quot;version&quot;:1,&quot;sentAt&quot;:&quot;20 Sept? 2026[^&]*&quot;,&quot;expiresAt&quot;:&quot;20 Oct 2026/);
+    expect(html.indexOf('data-testid="eblast-turn-bar"')).toBeLessThan(html.indexOf('aria-labelledby="eblast-stage-title"'));
+  });
+
+  it('no whose-turn bar once nobody acts next', async () => {
+    expect(await renderPage('sent', 1)).not.toContain('data-testid="eblast-turn-bar"');
+  });
+
+  it("an admin reads it as their own turn, a manager as marketing's", async () => {
+    expect(barOf(await renderSpelled('in_design', 1))).toContain('design{&quot;turn&quot;:&quot;you&quot;}');
+    role = 'manager';
+    expect(barOf(await renderSpelled('in_design', 1))).toContain('design{&quot;turn&quot;:&quot;marketing&quot;}');
+  });
+
+  it('version history and the lifecycle timeline sit side by side from 1024px, each ending at its own content (maintainer, 20 Oct)', async () => {
+    const html = await renderPage('awaiting_member_approval', 1);
+    const row = openingTagWith(html, 'data-testid="eblast-history-row"');
+    expect(row).toContain('lg:grid-cols-2');
+    expect(row).toContain('lg:items-start');
+    // Its cards shrink with the screen: a long actor e-mail wraps at 200% text instead of widening the page.
+    expect(row).toMatch(/\[&(amp;)?(>|&gt;)\*\]:min-w-0/);
+    const at = html.indexOf('data-testid="eblast-history-row"');
+    expect(html.indexOf('version-thread', at)).toBeGreaterThan(at);
+  });
+
+  it('with no version history the lifecycle timeline keeps the full width', async () => {
+    const html = await renderPage('submitted', 0);
+    expect(html).not.toContain('data-testid="eblast-history-row"');
+  });
+
+  it('every page note is an AURA alert that keeps its test id and role', async () => {
+    warningsMock.mockResolvedValue({
+      ok: true,
+      value: { hasPortalUser: false, unsafeImages: [{ src: 'https://evil.example/x.png', reason: 'not_allowlisted' }] },
+    });
+    decisions = [{ decision: 'changes_requested', reason: 'Fix the date', round: 1, versionId: V1.id, decidedByName: null, decidedAt: new Date() }];
+    const html = await renderPage('changes_requested', 1);
+    for (const [testId, tone] of [
+      ['eblast-warning-no-portal-user', 'warning'],
+      ['eblast-warning-unsafe-images', 'warning'],
+      ['eblast-member-feedback', null],
+    ] as const) {
+      const tag = openingTagWith(html, `data-testid="${testId}"`);
+      expect(tag, testId).toContain('aura-alert');
+      expect(tag, testId).toContain('role="note"');
+      if (tone !== null) expect(tag, testId).toContain(`aura-alert--${tone}`);
+    }
+    expect(html).not.toContain('data-slot="inline-alert"');
+  });
+
+  it('a thread that cannot be read is a danger alert with the retry inside it', async () => {
+    listVersionsMock.mockResolvedValue({ ok: false, error: { kind: 'server_error', errKind: 'Error' } });
+    findByIdMock.mockResolvedValue(makeBroadcast({ status: 'in_design', currentRound: 0 }));
+    const Page = (await import('@/app/(staff)/admin/broadcasts/[id]/page')).default;
+    const html = renderToStaticMarkup(await Page({ params: Promise.resolve({ id: ID }) }));
+    const tag = openingTagWith(html, 'data-testid="eblast-thread-unavailable"');
+    expect(tag).toContain('aura-alert--danger');
+    expect(html).toContain('data-testid="refresh-page-button"');
+  });
+});
+
+/**
+ * Spec 122 US12c-1 (maintainer, 19 Oct — the board's proposed action row): the
+ * stage's actions are AURA's action bar, the destructive ones (Cancel, Reject)
+ * at its start and the next step (Start, Schedule, Approve) at its end. On a
+ * phone the app's `chamber-viewport-actionbar` pins it to the bottom of the
+ * screen; from 640px it is a plain row at the end of the page.
+ */
+describe('Spec 122 US12c-1 — the staff detail action row follows the board', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    role = 'admin';
+    flagOn = true;
+    decisions = [];
+    missingKeys = new Set();
+    warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } });
+    holdMock.mockResolvedValue({ ok: true, value: false });
+  });
+
+  function slot(html: string, cls: string): string {
+    const at = html.indexOf(`class="${cls}"`);
+    expect(at, cls).toBeGreaterThan(-1);
+    const next = html.indexOf('class="aura-actionbar__', at + cls.length);
+    return html.slice(at, next === -1 ? undefined : next);
+  }
+
+  it('submitted: Cancel and Reject at the start; Start and Approve at the end', async () => {
+    const html = await renderPage('submitted');
+    const row = html.slice(html.indexOf('data-testid="eblast-action-row"'));
+    expect(row).toContain('aura-actionbar');
+    expect(row).toContain('chamber-viewport-actionbar');
+    const start = slot(row, 'aura-actionbar__start');
+    const end = slot(row, 'aura-actionbar__actions');
+    expect(start).toContain('data-testid="cancel-action"');
+    expect(start).toContain('data-testid="reject-action"');
+    expect(start).not.toContain('approve-action');
+    expect(end).toContain('data-testid="start-version"');
+    expect(end).toContain('data-testid="approve-action"');
+    expect(end).not.toMatch(/cancel-action|reject-action/);
+    // Each half is asked for once: one Approve, one Reject on the page.
+    expect(html.match(/data-testid="approve-action"/g)).toHaveLength(1);
+    expect(html.match(/data-testid="reject-action"/g)).toHaveLength(1);
+  });
+
+  it('member_approved: Schedule at the end, Cancel and Reject at the start', async () => {
+    const html = await renderPage('member_approved', 1);
+    const row = html.slice(html.indexOf('data-testid="eblast-action-row"'));
+    expect(slot(row, 'aura-actionbar__actions')).toContain('data-testid="confirm-schedule"');
+    const start = slot(row, 'aura-actionbar__start');
+    expect(start).toContain('data-testid="cancel-action"');
+    expect(start).toContain('data-testid="reject-action"');
+  });
+});
+
+describe('Spec 122 US12c-1 — the member original folds on a phone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    role = 'admin';
+    flagOn = true;
+    decisions = [];
+    missingKeys = new Set();
+    warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } });
+    holdMock.mockResolvedValue({ ok: true, value: false });
+  });
+
+  it('the read-only comparison puts the original, not the version, in the disclosure', async () => {
+    const html = await renderPage('awaiting_member_approval', 1);
+    const open = html.indexOf('data-testid="eblast-original-disclosure"');
+    expect(open).toBeGreaterThan(-1);
+    const block = html.slice(open, html.indexOf('</details>', open));
+    expect(block).toContain('id="eblast-original-title"');
+    expect(block).not.toContain('id="eblast-shown-version-title"');
+    expect(block).toContain('<summary');
+  });
+});
+
+/**
+ * Spec 122 US12c-1 (parity comments, 20 Oct; boards
+ * `Admin-broadcast-review-mobile`, `Admin-eblast-design-mobile`) — the phone
+ * layout: the Approval round reads in two columns, and while marketing is
+ * writing, the editor comes first and the round's facts follow it.
+ */
+describe('the staff detail page on a phone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    role = 'admin';
+    flagOn = true;
+    decisions = [];
+    warningsMock.mockResolvedValue({ ok: true, value: { hasPortalUser: true, unsafeImages: [] } });
+  });
+
+  const openTag = (html: string, marker: string): string => {
+    const at = html.indexOf(marker);
+    expect(at, marker).toBeGreaterThan(-1);
+    const start = html.lastIndexOf('<', at);
+    return html.slice(start, html.indexOf('>', at) + 1);
+  };
+
+  it('lays the Approval round out in two columns at every width', async () => {
+    const html = await renderPage('submitted');
+    const stage = html.slice(html.indexOf('data-stage='));
+    const dl = stage.slice(stage.indexOf('<dl'), stage.indexOf('>', stage.indexOf('<dl')) + 1);
+    expect(dl).toMatch(/class="[^"]*(?<![\w:-])grid-cols-2/);
+  });
+
+  it('in design, moves the round and the submission after the editor below 640px', async () => {
+    const html = await renderPage('in_design');
+    expect(openTag(html, 'data-stage=')).toContain('max-sm:order-2');
+    const beforeDetailsTitle = html.slice(0, html.indexOf('id="eblast-details-title"'));
+    const detailsCard = beforeDetailsTitle.slice(beforeDetailsTitle.lastIndexOf('<section'));
+    expect(detailsCard).toContain('max-sm:order-2');
+  });
+
+  it('outside design, keeps the page order on a phone', async () => {
+    const html = await renderPage('submitted');
+    expect(openTag(html, 'data-stage=')).not.toContain('max-sm:order-');
+  });
+
+  it('the bar carries the board\'s status line: recipients · audience · time in stage (parity, 20 Oct)', async () => {
+    const html = await renderPage('submitted');
+    const row = html.slice(html.indexOf('data-testid="eblast-action-row"'));
+    // The translator here echoes keys; the line's words are pinned on the
+    // preview and the duration in stage-duration.test.ts.
+    expect(row).toMatch(/role="status"><span data-bar-status="true">barStatus<\/span>/);
   });
 });

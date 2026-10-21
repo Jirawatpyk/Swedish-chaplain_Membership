@@ -1,9 +1,8 @@
 import { getTranslations } from 'next-intl/server';
-import { Card } from '@jirawatpyk/aura-react/server';
+import { Card, TableSkeleton } from '@jirawatpyk/aura-react/server';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
-import { StaticTableSkeleton } from '@/components/shell/static-table-skeleton';
 
 /**
  * Loading skeleton must mirror the real page layout 1:1 for CLS 0:
@@ -15,7 +14,7 @@ import { StaticTableSkeleton } from '@/components/shell/static-table-skeleton';
  *
  * Spec 122 US10a (T1006): on AURA — the page's AURA card, which drops its
  * frame below 640px as the page does, and AURA's own table skeleton with the
- * real column names.
+ * real column names (`TableSkeleton`, AURA 5.52 #164).
  */
 export default async function Loading() {
   const t = await getTranslations('admin.users');
@@ -25,8 +24,12 @@ export default async function Loading() {
   const shares = { email: '26%', name: '12%', role: '14%', status: '23%', actions: '25%' } as const;
   const columns = (['email', 'name', 'role', 'status', 'actions'] as const).map((key) => ({
     label: t(`columns.${key}`),
-    share: shares[key],
-    ...(key === 'email' ? { card: 'title' as const } : key === 'actions' ? { card: 'action' as const } : {}),
+    width: shares[key],
+    ...(key === 'email'
+      ? { card: 'title' as const }
+      : key === 'actions'
+        ? { card: 'action' as const, skeleton: { kind: 'action' as const, touch: true } }
+        : {}),
   }));
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingTable')}>
@@ -46,7 +49,7 @@ export default async function Loading() {
               <SkeletonBlock className="h-8 w-32 max-sm:hidden" data-skeleton="filter-select" />
               <SkeletonBlock className="ml-auto h-4 w-16" data-skeleton="result-count" />
             </div>
-            <StaticTableSkeleton caption={t('title')} columns={columns} rows={8} />
+            <TableSkeleton columns={columns} rows={8} stackBelow="sm" stackStyle="cards" align="middle" bleed />
             {/* Pagination row — "Showing X–Y of Z" + page nav */}
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-between" aria-hidden>
               <SkeletonBlock className="h-4 w-40" />

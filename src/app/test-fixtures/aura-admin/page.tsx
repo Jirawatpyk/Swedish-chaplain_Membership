@@ -117,6 +117,7 @@ import {
   renderTemplateFormPreview,
   renderTemplatesPreview,
 } from './eblast-previews';
+import { renderBroadcastDetailPreview } from './eblast-detail-previews';
 import { UsersListBody } from '@/app/(staff)/admin/users/_components/users-list-body';
 import { InviteUserDialog } from '@/components/auth/invite-user-dialog';
 import { CsvMappingForm } from '@/components/events/csv-mapping-form';
@@ -509,6 +510,10 @@ const LOADING_ROUTES = {
     load: async () => (await import('@/app/(staff)/admin/marketing/audience/loading')).default(),
   },
   broadcasts: { path: '/admin/broadcasts', load: async () => (await import('@/app/(staff)/admin/broadcasts/loading')).default() },
+  'broadcast-detail': {
+    path: '/admin/broadcasts/7d3e2a10-5b4c-4f1e-9a8d-2c6b0e4f1a90',
+    load: async () => (await import('@/app/(staff)/admin/broadcasts/[id]/loading')).default(),
+  },
 } as const;
 
 function StaffFrame({ path, children }: { readonly path: string; readonly children: React.ReactNode }) {
@@ -1959,6 +1964,12 @@ export default async function AuraAdminPreviewPage({
         )}
       </StaffFrame>
     );
+  }
+
+  // 122 US12c-1 (T1228) — the staff approval-round detail, one view per stage
+  // (boards Admin-broadcast-review, Admin-eblast-*), through the page's view.
+  if (view === 'broadcast-detail') {
+    return <StaffFrame path="/admin/broadcasts/7d3e2a10-5b4c-4f1e-9a8d-2c6b0e4f1a90">{await renderBroadcastDetailPreview(state)}</StaffFrame>;
   }
 
   if (view === 'eventcreate') {

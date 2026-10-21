@@ -303,7 +303,7 @@ html:has(.chamber-viewport-actionbar) {
    are read, never AURA's own classes. The bar never shows a status, so its
    empty status cell gives the actions the whole row on a phone. */
 @media (max-width: 639.98px) {
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) {
     bottom: 0;
     margin-inline: calc(-1 * var(--page-padding-x));
     border-inline: 0;
@@ -315,12 +315,18 @@ html:has(.chamber-viewport-actionbar) {
        margins above carry it to the screen edges. */
     width: auto;
   }
+  /* Each bar is its form's last element: it takes the page's bottom padding,
+     so at the end of the scroll it still meets the screen edge (measured at
+     390: 32px under the bar before; spec 122 US12c-1 follow-up, 20 Oct). */
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) {
+    margin-bottom: calc(-1 * var(--page-padding-bottom));
+  }
   /* AURA pads the bar's row 16px at its start and 12px at its end; pinned
      edge to edge, the buttons sit 16px from both screen edges, as drawn. */
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div {
     padding-inline: var(--aura-space-4);
   }
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div > :first-child:empty {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div > :first-child:empty {
     display: none;
   }
   :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div > :last-child {
@@ -339,11 +345,67 @@ html:has(.chamber-viewport-actionbar) {
   .plan-form-actions--in-card,
   .template-form-actions {
     margin-inline: calc(-1 * (var(--page-padding-x) + var(--aura-space-4) + 1px));
+    margin-bottom: calc(-1 * (var(--page-padding-bottom) + var(--aura-space-4) + 1px));
   }
   /* The plan wizard keeps Cancel in the page on a phone: its start slot
      (status, start, actions) leaves the pinned bar. */
   .plan-form-actions--start-wide > div > :nth-child(2):not(:last-child) {
     display: none;
+  }
+  /* Spec 122 US12c-1 — the E-Blast detail bar (board `Admin-broadcast-review-mobile`).
+     Cancel and a secondary Start fold into ⋯ (parity, 20 Oct), so the bar is
+     one line: Reject · the next step · ⋯. The next step takes the rest of the
+     row and wraps its own label rather than push the row onto a second line
+     (SV "Bekräfta sändningstid" at 360px). If a line still overflows (200%
+     text), the groups wrap in DOM order — Reject first, the next step on the
+     line nearest the thumb — so Tab follows what is seen (WCAG 2.4.3), and a
+     focused control is kept clear of the taller bar (WCAG 2.4.11). */
+  .eblast-detail-actions > div {
+    flex-wrap: wrap;
+    row-gap: var(--aura-space-2);
+    column-gap: var(--aura-space-2);
+  }
+  .eblast-detail-actions > div > :last-child {
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+  /* Approve sits inside ReviewActions' wrapper: it stretches too. */
+  .eblast-detail-actions > div > :last-child > div {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .eblast-detail-actions > div > :last-child > div > button,
+  .eblast-detail-actions > div > :last-child > button {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: auto;
+    min-height: 2.75rem;
+    white-space: normal;
+  }
+  /* Design state: ⋯ is the end's only control, so Reject takes the free
+     space instead (board `Admin-eblast-design-mobile`). */
+  .eblast-detail-actions > div:has(> :last-child > [data-more-actions]:only-child) > :last-child {
+    flex: 0 0 auto;
+  }
+  .eblast-detail-actions > div:has(> :last-child > [data-more-actions]:only-child) > :nth-child(2) {
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+  .eblast-detail-actions > div:has(> :last-child > [data-more-actions]:only-child) > :nth-child(2) > div {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .eblast-detail-actions > div:has(> :last-child > [data-more-actions]:only-child) > :nth-child(2) > div > button {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: auto;
+    min-height: 2.75rem;
+    white-space: normal;
+  }
+  html:has(.eblast-detail-actions) {
+    scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 8rem + env(safe-area-inset-bottom, 0px));
   }
   /* The plan wizard's Back / Next share the bar evenly (board `Admin-plan-new-mobile`). */
   .plan-form-actions--even > div > :last-child > * {
@@ -351,7 +413,12 @@ html:has(.chamber-viewport-actionbar) {
   }
 }
 @media (min-width: 640px) {
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) {
+  /* The E-Blast detail's status line is the phone board's only (the desktop
+     board draws the row of buttons alone at the end of the page). */
+  .eblast-detail-actions > div > :first-child {
+    display: none;
+  }
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) {
     position: static;
     margin-top: 0;
     border: 0;
@@ -359,7 +426,7 @@ html:has(.chamber-viewport-actionbar) {
     background: transparent;
     box-shadow: none;
   }
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div {
     min-height: 0;
     padding: 0;
   }

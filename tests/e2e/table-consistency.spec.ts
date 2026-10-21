@@ -67,7 +67,7 @@ async function probeRow(page: Page, path: string): Promise<RowMetrics> {
   // `:visible`, not `.first()`: Next keeps the previous segment's DOM in the
   // tree (hidden) after a client nav, and this walks two routes. Through the
   // `table` role, because both routes' loading skeletons are AURA's static
-  // `Table` too (`StaticTableSkeleton`, aria-hidden): a bare `tbody tr` matched
+  // `Table` too (AURA `TableSkeleton`, aria-hidden): a bare `tbody tr` matched
   // the skeleton's row, which the real page then swapped out, and a detached
   // row computes no padding at all (R57).
   const row = page.getByRole('table').locator('tbody tr:visible').first();

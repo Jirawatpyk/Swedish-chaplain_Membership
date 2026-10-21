@@ -512,6 +512,24 @@ export const MIGRATED_PATHS = [
   'src/components/broadcast/admin/overdue-banner.tsx',
   'src/components/broadcast/approval/inline-warning.tsx',
   'src/components/broadcast/status-badge-mapping.ts',
+  // US12c-1 — the staff approval-round detail (page, loading, error), its
+  // stage badge, action bar and original fold; the formatted-version workspace,
+  // the start, schedule and test-copy actions, the version thread (also on the
+  // portal detail), the cancel action and the preview pane, dialog and states
+  // (shared with compose, US12d).
+  'src/app/(staff)/admin/broadcasts/\\[id\\]/**',
+  'src/components/broadcast/admin/status-badge.tsx',
+  'src/components/broadcast/admin/detail-action-bar.tsx',
+  'src/components/broadcast/admin/original-disclosure.tsx',
+  'src/components/broadcast/approval/formatted-version-workspace.tsx',
+  'src/components/broadcast/approval/schedule-confirm-dialog.tsx',
+  'src/components/broadcast/approval/start-formatted-version-action.tsx',
+  'src/components/broadcast/approval/version-thread.tsx',
+  'src/components/broadcast/approval/test-copy-button.tsx',
+  'src/components/broadcast/cancel-broadcast-action.tsx',
+  'src/components/broadcast/preview-pane.tsx',
+  'src/components/broadcast/preview-dialog.tsx',
+  'src/components/broadcast/use-preview-html.tsx',
 ];
 
 /**
