@@ -109,4 +109,28 @@ test.describe('return-after-signin (T171, spec AS5)', () => {
     expect(page.url()).toContain('/admin');
     expect(page.url()).not.toContain('evil.example');
   });
+
+  test('signed out for inactivity: the card says why, and signing in returns to the page', async ({ page }) => {
+    // Where the idle warning sends someone it signed out (?reason=idle plus
+    // the page they were on). The reason is a notice on the card that
+    // describes the email field, which has focus.
+    await page.goto('/admin/sign-in?returnTo=%2Fadmin%2Fmembers&reason=idle');
+    await page.waitForLoadState('networkidle');
+    const notice = page.locator('#signin-notice');
+    await expect(notice).toHaveText(/signed out due to inactivity/i);
+    await expect(page.getByLabel(/email/i)).toHaveAttribute('aria-describedby', /signin-notice/);
+
+    await fillField(page.getByLabel(/email/i), ADMIN_EMAIL!);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), ADMIN_PASSWORD!);
+    await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes('/api/auth/sign-in') && res.request().method() === 'POST',
+        { timeout: 30_000 },
+      ),
+      page.getByRole('button', { name: /sign in/i }).click(),
+    ]);
+
+    await page.waitForURL('**/admin/members', { timeout: 45_000 });
+    expect(new URL(page.url()).pathname).toBe('/admin/members');
+  });
 });

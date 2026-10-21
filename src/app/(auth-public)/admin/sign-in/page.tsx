@@ -3,7 +3,6 @@ import { getTranslations } from 'next-intl/server';
 import { redirect } from 'next/navigation';
 import { SignInForm } from '@/components/auth/sign-in-form';
 import { AuthFrame } from '@/components/auth/auth-frame';
-import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
 import { getCurrentSession } from '@/lib/auth-session';
 import { isStaffRole } from '@/modules/auth';
 import { safeReturnTo } from '@/lib/return-url';
@@ -40,17 +39,15 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
   // searchParams can be string | string[] | undefined — coerce first.
   const returnToCandidate = Array.isArray(rawReturnTo) ? rawReturnTo[0] : rawReturnTo;
   const validatedReturnTo = safeReturnTo(returnToCandidate, 'staff');
-  // H3 (Round 2): show a banner when ?reason=security-update is present.
-  // Operators link to this URL on deploy day after migration 0159 bulk
-  // session invalidation so users get UX context instead of an opaque
-  // "you got logged out". Allowlist of accepted reasons prevents
-  // arbitrary banner injection via query param.
+  // ?reason= says why the user is here; the form shows it as a notice.
+  // H3 (Round 2): `security-update` — operators link to this URL on deploy
+  // day after migration 0159 bulk session invalidation so users get UX
+  // context instead of an opaque "you got logged out". `idle` and
+  // `session-ended` — the idle warning signed the user out (inactivity, or
+  // the session was already gone), so the reason waits on the card for them
+  // to come back (board `Portal-idle-signed-out`). Allowlist of accepted
+  // reasons prevents arbitrary text injection via query param.
   const reasonCandidate = Array.isArray(rawReason) ? rawReason[0] : rawReason;
-  const showSecurityBanner = reasonCandidate === 'security-update';
-  // The idle warning sends whoever it signed out for inactivity here, so the
-  // reason waits on the card for them to come back (a toast closed itself
-  // while they were away; board `Portal-idle-signed-out`).
-  const showIdleBanner = reasonCandidate === 'idle';
 
   const current = await getCurrentSession();
   // Domain invariant, not a role literal — a role added to ROLES bounces
@@ -61,6 +58,14 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
 
   const t = await getTranslations('auth.signIn');
   const tIdle = await getTranslations('auth.idleWarning');
+  const notice =
+    reasonCandidate === 'security-update'
+      ? t('securityUpdateBanner')
+      : reasonCandidate === 'idle'
+        ? tIdle('signedOutInactive')
+        : reasonCandidate === 'session-ended'
+          ? tIdle('signedOutEnded')
+          : undefined;
   const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 
   return (
@@ -71,9 +76,7 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
       tenantName={tenantName}
       variant="sign-in"
     >
-      {showSecurityBanner ? <SecurityUpdateBanner message={t('securityUpdateBanner')} /> : null}
-      {showIdleBanner ? <SecurityUpdateBanner message={tIdle('signedOutInactive')} /> : null}
-      <SignInForm portal="staff" returnTo={validatedReturnTo} />
+      <SignInForm portal="staff" returnTo={validatedReturnTo} notice={notice} />
     </AuthFrame>
   );
 }

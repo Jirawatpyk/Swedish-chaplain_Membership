@@ -112,7 +112,6 @@ describe('UI import ratchet (spec 122)', () => {
       'src/components/auth/change-password-form.tsx',
       'src/components/auth/change-password-form-skeleton.tsx',
       'src/components/auth/password-strength.tsx',
-      'src/components/auth/security-update-banner.tsx',
       'src/components/auth/auth-frame.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);

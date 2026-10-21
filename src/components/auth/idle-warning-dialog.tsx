@@ -20,6 +20,11 @@
  *     shows "signed out due to inactivity" on the sign-in card. Not a toast:
  *     the user is away when this happens, and a toast closes itself before
  *     they come back (board `Portal-idle-signed-out`).
+ *   - "Stay signed in" gets a 401 → the session was already gone (signed out
+ *     in another tab, revoked, past the absolute cap) → `?reason=session-ended`,
+ *     which says the session ended rather than blaming inactivity.
+ *   - Both involuntary paths carry `returnTo` (the current page), so signing
+ *     back in lands where the user was.
  *
  * Inactivity is measured at the window level: any `mousemove`, `keydown`,
  * `click`, `scroll`, or `touchstart` resets the timer. We intentionally
@@ -48,6 +53,7 @@ import { Button, Dialog } from '@jirawatpyk/aura-react';
  
 import { IDLE_TIMEOUT_MS } from '@/modules/auth/domain/session';
 import { portalSignInPath } from '@/lib/portal-paths';
+import { buildSignInUrl } from '@/lib/return-url';
 
 export interface IdleWarningDialogProps {
   /** Where to send the user on involuntary sign-out. */
@@ -68,7 +74,7 @@ const WARNING_AFTER_MS = IDLE_TIMEOUT_MS - WARNING_WINDOW_MS;
  */
 const HEARTBEAT_TIMEOUT_MS = 10 * 1000;
 
-type SignOutReason = 'inactive' | 'voluntary';
+type SignOutReason = 'inactive' | 'ended' | 'voluntary';
 
 const ACTIVITY_EVENTS = [
   'mousemove',
@@ -108,14 +114,12 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
   // and the countdown can both honour the freeze — not only the idle poll.
   const pausedAtRef = useRef<number | null>(null);
 
-  const signInPath = portalSignInPath(portal);
-
   /**
-   * Sign the user out. `'inactive'` is the involuntary path (countdown hit
-   * zero, or the heartbeat found the session gone); `'voluntary'` is the
-   * "Sign out now" button. Only the reason decides whether the sign-in URL
-   * carries `?reason=idle` — the POST and refresh are identical. Tolerates the sign-out POST failing
-   * (if the session is already dead the server returns 200 anyway).
+   * Sign the user out. `'inactive'` is the countdown hitting zero; `'ended'`
+   * is the heartbeat finding the session already gone; `'voluntary'` is the
+   * "Sign out now" button. Only the reason decides the sign-in URL — the POST
+   * and refresh are identical. Tolerates the sign-out POST failing (if the
+   * session is already dead the server returns 200 anyway).
    */
   const forceSignOut = useCallback(async (reason: SignOutReason) => {
     setOpen(false);
@@ -127,12 +131,21 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
     } catch {
       // Swallow — we're redirecting anyway.
     }
-    // The sign-in page states the inactivity reason in a banner that stays
-    // until the user is back; a voluntary sign-out carries no reason.
-    router.replace(reason === 'inactive' ? `${signInPath}?reason=idle` : signInPath);
+    // The sign-in page states the reason on the card until the user is back,
+    // and `returnTo` brings them back to this page. A voluntary sign-out
+    // carries neither: the user chose to leave.
+    router.replace(
+      reason === 'voluntary'
+        ? portalSignInPath(portal)
+        : buildSignInUrl(
+            portal,
+            window.location.pathname + window.location.search,
+            reason === 'inactive' ? 'idle' : 'session-ended',
+          ),
+    );
     // Force a server round-trip so the layout guard re-runs.
     router.refresh();
-  }, [router, signInPath]);
+  }, [router, portal]);
 
   /**
    * "Stay signed in" — heartbeat the server, close the modal optimistically,
@@ -187,7 +200,7 @@ export function IdleWarningDialog({ portal }: IdleWarningDialogProps) {
       // 60/min/session) or a 5xx (transient Neon/Upstash blip) does NOT mean
       // the session died.
       if (response.status === 401) {
-        await forceSignOut('inactive');
+        await forceSignOut('ended');
         return;
       }
       if (response.ok) {

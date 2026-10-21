@@ -703,6 +703,11 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 ### Session 2026-10-21 (signed out for inactivity: banner, not toast)
 
 - **Idle sign-out reason (maintainer, 21 Oct: "ทำเลย หลัง merge"):** when the idle warning signs someone out for inactivity (countdown at zero, or the heartbeat finds the session gone), it sends them to the sign-in page with `?reason=idle`. The card shows "You've been signed out due to inactivity" in an info banner (the existing `SecurityUpdateBanner`, same text), as board `Portal-idle-signed-out` draws it; the toast is gone, because it closed itself while the user was away. The staff sign-in does the same (no board, same dialog). "Sign out now" carries no reason. The sign-in pages keep an allowlist of reasons, so any other value shows nothing. Its own PR, not a UI swap, as it changes behaviour.
+- **Sign-in reason follow-ups (maintainer, 21 Oct: "หลัง merge ทำ 1 2 3 4 5 7"; item 4: "distinct copy only"):** the #607 review found three gaps, closed in their own PR (behaviour, not a UI swap).
+  - The reason banner was a live region filled after hydration, and the email autofocus in the same commit cut its announcement off. The reason is now a `notice` on `SignInForm`: a static info `Alert` (`role="none"`, `id="signin-notice"`) that describes the email field, so the focused field reads it. `SecurityUpdateBanner` is gone.
+  - After a sign-in attempt the notice gives way to the error, so the card shows one alert.
+  - The idle sign-out now carries `returnTo`.
+  - A "Stay signed in" heartbeat that gets a 401 means the session was already gone, for example signed out in another tab. It now sends `?reason=session-ended` with its own copy ("Your session has ended. Please sign in again.") instead of "inactivity". There is no cross-tab signal: a tab still learns of it only on its next request.
 
 ## User Scenarios & Testing *(mandatory)*
 
