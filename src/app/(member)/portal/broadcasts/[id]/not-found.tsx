@@ -24,7 +24,7 @@ import { ArrowLeft, FileQuestion } from 'lucide-react';
 import { getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
-import { buttonVariants } from '@/components/ui/button';
+import { Icon, buttonClass } from '@jirawatpyk/aura-react/server';
 
 export default async function BroadcastNotFound(): Promise<React.ReactElement> {
   const t = await getTranslations('portal.broadcasts.detail');
@@ -38,21 +38,16 @@ export default async function BroadcastNotFound(): Promise<React.ReactElement> {
       <PageHeader title={t('title')} />
       <div
         data-testid="broadcast-not-found"
-        className="flex flex-col items-center gap-3 rounded-md border p-12 text-center"
+        className="flex flex-col items-center gap-3 rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-12 text-center"
       >
-        <FileQuestion
-          className="h-12 w-12 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <h2 className="text-lg font-semibold">{t('notFound.title')}</h2>
-        <p className="max-w-md text-sm text-muted-foreground">
-          {t('notFound.body')}
-        </p>
+        <Icon name={<FileQuestion />} size={48} className="text-[var(--aura-fg-secondary)]" />
+        <h2 className="m-0 aura-text-h3">{t('notFound.title')}</h2>
+        <p className="m-0 max-w-md aura-text-body text-[var(--aura-fg-secondary)]">{t('notFound.body')}</p>
         <Link
           href="/portal/benefits?tab=broadcasts"
-          className={`${buttonVariants({ variant: 'outline', size: 'sm' })} mt-2 inline-flex items-center`}
+          className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'mt-2' })}
         >
-          <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
+          <Icon name={<ArrowLeft />} size={16} />
           {t('back')}
         </Link>
       </div>

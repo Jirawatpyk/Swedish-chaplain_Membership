@@ -205,15 +205,15 @@ describe('F119 T134 — portal E-Blast detail body (US6-AS2, FR-049)', () => {
     expect(html).not.toContain('dangerouslySetInnerHTML');
   });
 
-  it('renders the subject as a real <h2> with the card-title font classes, not a CardTitle div', async () => {
+  it('renders the subject as a real <h2> in the AURA card-title type, naming its card', async () => {
     const html = await renderPage();
 
-    const heading = /<h2[^>]*id="broadcast-detail-fields-heading"[^>]*>/.exec(
+    const heading = /<h2[^>]*id="broadcast-detail-fields-heading"[^>]*>(<span[^>]*>)/.exec(
       html,
     );
     expect(heading).not.toBeNull();
-    expect(heading?.[0]).toContain('font-heading');
-    expect(heading?.[0]).not.toContain('text-h4');
+    expect(heading?.[1]).toContain('aura-text-h3');
+    expect(html).toContain('aria-labelledby="broadcast-detail-fields-heading"');
   });
 
   it('a failed render degrades to the shared error state instead of throwing', async () => {

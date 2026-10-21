@@ -530,6 +530,16 @@ export const MIGRATED_PATHS = [
   'src/components/broadcast/preview-pane.tsx',
   'src/components/broadcast/preview-dialog.tsx',
   'src/components/broadcast/use-preview-html.tsx',
+  // US12c-2 — the member's E-Blast detail (page, loading, error, not-found and
+  // its view) and the sign-off island, plus the approval pieces they use that
+  // were already clean.
+  'src/app/(member)/portal/broadcasts/\\[id\\]/**',
+  'src/components/broadcast/approval/member-sign-off-actions.tsx',
+  'src/components/broadcast/approval/inline-error.tsx',
+  'src/components/broadcast/approval/approval-error.ts',
+  'src/components/broadcast/approval/use-focus-refusal.ts',
+  'src/components/broadcast/cancel-broadcast-dialog.tsx',
+  'src/components/broadcast/email-frame.tsx',
 ];
 
 /**

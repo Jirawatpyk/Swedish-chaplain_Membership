@@ -8,7 +8,9 @@
  *
  * No live region of its own: the page it refreshes owns its announcements
  * (the sign-off page's stage banner is its one `role="status"`). While the
- * refresh runs the button says it is busy and stays focusable.
+ * refresh runs the button says it is busy and stays focusable. It takes the
+ * 44px touch height: on a phone it is the only way out of a failed read
+ * (spec 122 US12c-2, UX review M2).
  */
 import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
@@ -24,6 +26,7 @@ export function RefreshPageButton({ label }: { readonly label: string }): React.
       type="button"
       variant="secondary"
       size="sm"
+      touchHeight
       icon="rotate-ccw"
       loading={pending}
       onClick={() => startTransition(() => router.refresh())}

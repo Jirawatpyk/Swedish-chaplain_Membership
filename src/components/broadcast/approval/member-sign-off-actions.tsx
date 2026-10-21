@@ -53,24 +53,11 @@
  * the fields turn read-only, never `disabled`, for the same reason.
  */
 import { useRef, useState, useTransition } from 'react';
-import { CircleCheck, Loader2Icon, MessageSquareWarning, Undo2 } from 'lucide-react';
+import { MessageSquareWarning, Undo2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Button, Card, Dialog, Textarea } from '@jirawatpyk/aura-react';
 import { CancelBroadcastAction } from '@/components/broadcast/cancel-broadcast-action';
 import {
   ReasonConfirmationDialog,
@@ -198,55 +185,55 @@ export function MemberSignOffActions({
     ) : null;
   }
 
+  // Spec 122 US12c-2 — boards `Portal-eblast-approval` / `-approved`: the
+  // next step first (Approve, then Request changes; or Withdraw approval) and
+  // Cancel E-Blast at the far end. L10 — one full-width button per row on a
+  // phone (320 px leaves ~224 px of card content), a wrapping row from `sm`.
   return (
-    <section aria-labelledby="eblast-sign-off-title" data-testid="eblast-sign-off">
-      <Card>
-        <CardHeader>
-          <h2 id="eblast-sign-off-title" className="font-heading text-base font-medium leading-snug">
-            {t('title')}
-          </h2>
-          <CardDescription>
-            {decide
-              ? t('decideDescription', { version: version?.versionNo ?? 0 })
-              : t('withdrawDescription', { version: version?.versionNo ?? 0 })}
-          </CardDescription>
-        </CardHeader>
-        {/* L10 — one full-width button per row on a phone (320 px leaves
-            ~224 px of card content), a wrapping row from `sm`. */}
-        <CardContent className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
-          {decide ? (
-            <>
-              <ApproveAction versionNo={version?.versionNo ?? 0} post={post} />
-              <ReasonAction
-                testId="eblast-request-changes"
-                decision="changes_requested"
-                namespace="portal.broadcasts.approval.requestChanges"
-                label={t('requestChanges')}
-                icon={<MessageSquareWarning className="size-4" aria-hidden="true" />}
-                tone="primary"
-                post={post}
-              />
-            </>
-          ) : null}
-          {withdraw ? (
+    <Card
+      data-testid="eblast-sign-off"
+      titleId="eblast-sign-off-title"
+      headingLevel={2}
+      title={t('title')}
+      description={
+        decide
+          ? t('decideDescription', { version: version?.versionNo ?? 0 })
+          : t('withdrawDescription', { version: version?.versionNo ?? 0 })
+      }
+    >
+      <div className="grid gap-[var(--aura-space-2)] sm:flex sm:flex-wrap sm:items-center">
+        {decide ? (
+          <>
+            <ApproveAction versionNo={version?.versionNo ?? 0} post={post} />
             <ReasonAction
-              testId="eblast-withdraw-approval"
-              decision="approval_withdrawn"
-              namespace="portal.broadcasts.approval.withdrawApproval"
-              label={t('withdrawApproval')}
-              icon={<Undo2 className="size-4" aria-hidden="true" />}
-              tone="destructive"
+              testId="eblast-request-changes"
+              decision="changes_requested"
+              namespace="portal.broadcasts.approval.requestChanges"
+              label={t('requestChanges')}
+              icon={<MessageSquareWarning />}
+              tone="primary"
               post={post}
             />
-          ) : null}
-          {canWithdrawEblast ? (
-            <div className="grid sm:ml-auto sm:block">
-              <CancelBroadcastAction broadcastId={broadcastId} surface="member" subject={subject} />
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
-    </section>
+          </>
+        ) : null}
+        {withdraw ? (
+          <ReasonAction
+            testId="eblast-withdraw-approval"
+            decision="approval_withdrawn"
+            namespace="portal.broadcasts.approval.withdrawApproval"
+            label={t('withdrawApproval')}
+            icon={<Undo2 />}
+            tone="destructive"
+            post={post}
+          />
+        ) : null}
+        {canWithdrawEblast ? (
+          <div data-slot="end" className="grid sm:ml-auto sm:block">
+            <CancelBroadcastAction broadcastId={broadcastId} surface="member" subject={subject} />
+          </div>
+        ) : null}
+      </div>
+    </Card>
   );
 }
 
@@ -260,7 +247,6 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
   const [refusal, setRefusal] = useState<Refusal>(null);
   const [pending, startTransition] = useTransition();
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const cancelRef = useRef<HTMLButtonElement>(null);
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const seqRef = useRef(0);
   const closedViaSuccessRef = useRef(false);
@@ -288,7 +274,8 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
     <>
       <Button
         ref={triggerRef}
-        type="button"
+        icon="check"
+        touchHeight
         className="w-full sm:w-auto"
         data-testid="eblast-approve"
         onClick={() => {
@@ -298,31 +285,55 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
           setOpen(true);
         }}
       >
-        <CircleCheck className="size-4" aria-hidden="true" />
         {tActions('approve')}
       </Button>
-      <AlertDialog
+      {/* Spec 122 US12c-2 — AURA `Dialog role="alertdialog"` (approving is
+          consequential; the board's plain `dialog` is not adopted). Cancel
+          ("Not yet") takes the first focus, as Base UI's `initialFocus` did;
+          Escape and the scrim cannot close it while the request runs. */}
+      <Dialog
+        role="alertdialog"
         open={open}
-        onOpenChange={(next) => {
-          if (!pending) setOpen(next);
+        dismissible={!pending}
+        onClose={() => {
+          if (!pending) setOpen(false);
         }}
+        finalFocus={() => finalFocus() || null}
+        title={t('title', { version: versionNo })}
+        description={t('description')}
+        footer={
+          <>
+            <Button variant="secondary" disabled={pending} onClick={() => setOpen(false)} data-autofocus="">
+              {t('cancel')}
+            </Button>
+            {/* While the request runs Confirm stays focusable, says it is busy
+                and spins (AURA `loading`); a note over the cap disables it. */}
+            <Button
+              data-testid="eblast-approve-confirm"
+              icon="check"
+              disabled={overCap && !pending}
+              loading={pending}
+              onClick={confirm}
+            >
+              {t('confirm')}
+            </Button>
+          </>
+        }
       >
-        <AlertDialogContent finalFocus={finalFocus} initialFocus={cancelRef}>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t('title', { version: versionNo })}</AlertDialogTitle>
-            <AlertDialogDescription>{t('description')}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="eblast-approve-note">{t('noteLabel')}</Label>
+        <div className="flex flex-col gap-[var(--aura-space-4)]">
+          <div className="flex flex-col gap-[var(--aura-space-2)]">
+            {/* Read-only (never `disabled`) while the request runs: a disabled
+                control that holds focus drops it to <body>. */}
             <Textarea
               id="eblast-approve-note"
               ref={noteRef}
+              label={t('noteLabel')}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder={t('notePlaceholder')}
               rows={3}
               readOnly={pending}
-              aria-invalid={noteError !== null || undefined}
+              invalid={noteError !== null}
               aria-describedby={
                 noteError !== null
                   ? 'eblast-approve-note-error eblast-approve-note-help eblast-approve-note-counter'
@@ -337,12 +348,15 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
                 message={noteError}
               />
             ) : null}
-            <p id="eblast-approve-note-help" className="text-xs text-muted-foreground">
+            <p id="eblast-approve-note-help" className="aura-text-caption text-[var(--aura-fg-secondary)]">
               {t('noteHelp')}
             </p>
             <p
               id="eblast-approve-note-counter"
-              className={cn('text-xs tabular-nums', overCap ? 'font-semibold text-destructive' : 'text-muted-foreground')}
+              className={cn(
+                'aura-text-caption tabular-nums',
+                overCap ? 'font-semibold text-[var(--aura-fg-danger)]' : 'text-[var(--aura-fg-secondary)]',
+              )}
             >
               {note.length} / {NOTE_MAX}
             </p>
@@ -357,26 +371,8 @@ function ApproveAction({ versionNo, post }: { readonly versionNo: number; readon
           ) : (
             <InlineError key={`refusal-${refusal?.seq ?? 0}`} id="eblast-approve-error" message={formError} />
           )}
-          <AlertDialogFooter>
-            <AlertDialogCancel ref={cancelRef} disabled={pending}>
-              {t('cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              data-testid="eblast-approve-confirm"
-              disabled={pending || overCap}
-              focusableWhenDisabled
-              aria-busy={pending || undefined}
-              onClick={(e) => {
-                e.preventDefault();
-                confirm();
-              }}
-            >
-              {pending ? <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" /> : null}
-              {t('confirm')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        </div>
+      </Dialog>
     </>
   );
 }
@@ -394,8 +390,8 @@ function ReasonAction({
   readonly decision: 'changes_requested' | 'approval_withdrawn';
   readonly namespace: string;
   readonly label: string;
-  readonly icon: React.ReactNode;
-  /** `primary` — a normal, reversible step (outline trigger, primary Confirm); `destructive` — the red tier. */
+  readonly icon: React.ReactElement;
+  /** `primary` — a normal, reversible step (secondary trigger, primary Confirm); `destructive` — the red tier. */
   readonly tone: 'primary' | 'destructive';
   readonly post: Post;
 }): React.ReactElement {
@@ -422,8 +418,9 @@ function ReasonAction({
     <>
       <Button
         ref={triggerRef}
-        type="button"
-        variant={tone === 'primary' ? 'outline' : 'destructive-outline'}
+        variant={tone === 'primary' ? 'secondary' : 'danger-secondary'}
+        icon={icon}
+        touchHeight
         className="w-full sm:w-auto"
         data-testid={testId}
         onClick={() => {
@@ -432,7 +429,6 @@ function ReasonAction({
           setOpen(true);
         }}
       >
-        {icon}
         {label}
       </Button>
       <ReasonConfirmationDialog

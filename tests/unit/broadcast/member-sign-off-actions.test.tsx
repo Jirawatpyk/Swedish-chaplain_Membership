@@ -318,7 +318,8 @@ describe('F119 UX review — sign-off dialogs while busy and after a refusal', (
 
   it('Request changes is a normal step: an outline trigger and a primary Confirm; Withdraw approval stays destructive (M2)', async () => {
     renderActions();
-    expect(screen.getByTestId('eblast-request-changes').className.split(' ')).not.toContain('text-destructive');
+    expect(screen.getByTestId('eblast-request-changes')).toHaveClass('aura-btn--secondary');
+    expect(screen.getByTestId('eblast-request-changes')).not.toHaveClass('aura-btn--danger-secondary');
     fireEvent.click(screen.getByTestId('eblast-request-changes'));
     const dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByRole('button', { name: t.requestChanges.confirm })).not.toHaveClass('aura-btn--danger');
@@ -328,7 +329,7 @@ describe('F119 UX review — sign-off dialogs while busy and after a refusal', (
 
     renderActions({ canDecide: false, canWithdrawApproval: true });
     // Positive control: the destructive tier really paints the trigger red.
-    expect(screen.getByTestId('eblast-withdraw-approval').className.split(' ')).toContain('text-destructive');
+    expect(screen.getByTestId('eblast-withdraw-approval')).toHaveClass('aura-btn--danger-secondary');
     fireEvent.click(screen.getByTestId('eblast-withdraw-approval'));
     const withdraw = await screen.findByRole('alertdialog');
     expect(within(withdraw).getByRole('button', { name: t.withdrawApproval.confirm })).toHaveClass('aura-btn--danger');
@@ -358,6 +359,30 @@ describe('F119 UX review — sign-off dialogs while busy and after a refusal', (
     const dialog = await screen.findByRole('alertdialog');
     const note = within(dialog).getByLabelText(t.approveDialog.noteLabel);
     fireEvent.change(note, { target: { value: 'x'.repeat(501) } });
-    expect(note.nextElementSibling).toHaveTextContent(t.approveDialog.noteTooLong);
+    expect(note.closest('.aura-field')?.nextElementSibling).toHaveTextContent(t.approveDialog.noteTooLong);
+  });
+
+  // Spec 122 US12c-2 — boards `Portal-eblast-approval` / `-approved`: an AURA
+  // card titled "Your decision", the next step first (Approve, primary, then
+  // Request changes) and Cancel E-Blast at the far end.
+  it('the decision card is an AURA card; Approve is the primary button and Cancel E-Blast sits at the end', () => {
+    renderActions({ canWithdrawEblast: true });
+    const card = screen.getByTestId('eblast-sign-off');
+    expect(card).toHaveClass('aura-card');
+    expect(within(card).getByRole('heading', { level: 2, name: t.actions.title })).toHaveClass('aura-card__title');
+    const approve = screen.getByTestId('eblast-approve');
+    expect(approve).toHaveClass('aura-btn--primary');
+    const buttons = within(card).getAllByRole('button');
+    expect(buttons.indexOf(approve)).toBe(0);
+    expect(buttons.indexOf(screen.getByTestId('eblast-request-changes'))).toBe(1);
+    expect(buttons.at(-1)?.closest('[data-slot="end"]')).not.toBeNull();
+  });
+
+  it('the approve confirmation is an AURA alertdialog that opens on Cancel ("Not yet")', async () => {
+    renderActions();
+    fireEvent.click(screen.getByTestId('eblast-approve'));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveClass('aura-dialog');
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: t.approveDialog.cancel })).toHaveFocus());
   });
 });

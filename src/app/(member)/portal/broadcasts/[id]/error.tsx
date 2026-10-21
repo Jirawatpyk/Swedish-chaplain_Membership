@@ -18,7 +18,7 @@
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { DetailContainer } from '@/components/layout';
-import { buttonVariants } from '@/components/ui/button';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 import { PortalRouteError } from '@/components/shell/portal-route-error';
 
 export default function BroadcastDetailError(props: {
@@ -34,7 +34,7 @@ export default function BroadcastDetailError(props: {
       actions={
         <Link
           href="/portal/benefits?tab=broadcasts"
-          className={buttonVariants({ variant: 'outline' })}
+          className={buttonClass({ variant: 'secondary', touchHeight: true })}
         >
           {tBack('back')}
         </Link>

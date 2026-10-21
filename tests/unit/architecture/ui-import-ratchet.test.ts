@@ -391,8 +391,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the member E-Blast pages keep the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(member)/portal/broadcasts/[id]/page.tsx')).toEqual([]);
+    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/compose-form.tsx')).toEqual([]);
     });
   });
 
@@ -427,8 +427,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast sign-off keeps the legacy kit until US12c', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/approval/member-sign-off-actions.tsx')).toEqual([]);
+    it('control: the E-Blast schedule picker keeps the legacy kit until US12d', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/schedule-picker.tsx')).toEqual([]);
     });
   });
 
@@ -759,6 +759,23 @@ describe('UI import ratchet (spec 122)', () => {
       'src/components/broadcast/preview-pane.tsx',
       'src/components/broadcast/preview-dialog.tsx',
       'src/components/broadcast/use-preview-html.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+  });
+
+  describe('the US12c-2 portal E-Blast detail and the member sign-off are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+    it.each([
+      'src/app/(member)/portal/broadcasts/[id]/page.tsx',
+      'src/app/(member)/portal/broadcasts/[id]/loading.tsx',
+      'src/app/(member)/portal/broadcasts/[id]/error.tsx',
+      'src/app/(member)/portal/broadcasts/[id]/not-found.tsx',
+      'src/app/(member)/portal/broadcasts/[id]/_components/portal-broadcast-detail-view.tsx',
+      'src/components/broadcast/approval/member-sign-off-actions.tsx',
+      'src/components/broadcast/approval/inline-error.tsx',
+      'src/components/broadcast/cancel-broadcast-dialog.tsx',
+      'src/components/broadcast/email-frame.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });

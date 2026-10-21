@@ -114,3 +114,13 @@ const STATUS_TONES: Record<BroadcastStatus, BroadcastStatusTone> = {
 export function getBroadcastStatusTone(status: BroadcastStatus): BroadcastStatusTone {
   return STATUS_TONES[status];
 }
+
+/**
+ * Spec 122 US12c-2 (UX review M1) — the member's view of the same stages.
+ * Awaiting the member's approval is the one stage that asks the member to
+ * act, so the portal shows it in progress (as the portal boards draw it);
+ * the staff side, which is only waiting, keeps it neutral.
+ */
+export function getPortalBroadcastStatusTone(status: BroadcastStatus): BroadcastStatusTone {
+  return status === 'awaiting_member_approval' ? 'progress' : STATUS_TONES[status];
+}

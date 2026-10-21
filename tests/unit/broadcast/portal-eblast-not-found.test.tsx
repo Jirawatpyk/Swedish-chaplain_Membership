@@ -35,6 +35,9 @@ describe('portal E-Blast not-found (T086a V6)', () => {
     const body = state.querySelector('p')!;
     expect(title).toHaveTextContent('portal.broadcasts.detail.notFound.title');
     expect(body).toHaveTextContent('portal.broadcasts.detail.notFound.body');
+    // Spec 122 US12c-2 — the way back is an AURA button on the AURA surface.
+    expect(state.querySelector('a')?.className).toContain('aura-btn');
+    expect(state.className).toContain('--aura-border-default');
   });
 
   it.each([
