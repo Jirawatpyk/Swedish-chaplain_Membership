@@ -1,20 +1,21 @@
 /**
- * Spec 122 follow-up 5 (maintainer, 21 Oct 2026) — dialog footer buttons are
- * 44px on phones, and a stretched AURA button stretches with `fullWidth`.
+ * Spec 122 follow-up 5 (maintainer, 21 Oct 2026), adopted on AURA 5.54
+ * (22 Oct 2026) — action buttons are 44px on phones through AURA, and a
+ * stretched AURA button stretches with `fullWidth`.
  *
- * 1. Staff screens run AURA's compact density, so a dialog's footer buttons
- *    were 36px below 640px with a fine pointer (the UX review counted about 38
- *    of 40 footers). Every `<Button>` in an AURA `Dialog`'s `footer` carries
- *    `touchHeight` (44px below 640px or on a coarse pointer, whatever the
- *    density).
- * 2. A stretched button set with the `w-full` class keeps AURA's fixed height
- *    and `nowrap`, so a long label overflows instead of wrapping. `fullWidth`
- *    (`.aura-btn--full`) is the supported way: height auto, the label wraps.
- *    Phone-only stretch has no AURA prop yet: `fullWidth` plus
- *    `FULL_WIDTH_BELOW_SM` (stand-in until AURA #165).
+ * 1. Since 5.53 (#165) AURA gives the Buttons in a Dialog or Drawer `footer`
+ *    44px and wrapping below 640px whatever the density, and since 5.54
+ *    (#166) the same for the Buttons in an ActionBar's `children` and
+ *    `start`. The per-button `touchHeight` stand-ins came out (maintainer:
+ *    "ถอดออก", accepting 36px on a touch tablet from 640px in compact
+ *    density); this keeps them from creeping back.
+ * 2. A stretched button set with a `w-full` class — on the button or from its
+ *    container (`[&>*]:w-full`) — keeps AURA's fixed height and `nowrap`, so a
+ *    long label overflows instead of wrapping. `fullWidth` (or
+ *    `fullWidth="below-sm"` for phones only, 5.53) is the supported way.
  *
- * Parsed with the TypeScript compiler, not a regex, so nested JSX in a footer
- * is walked; each check has a positive control that must fail.
+ * Parsed with the TypeScript compiler, not a regex, so nested JSX is walked;
+ * each check has a positive control that must fail.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -33,17 +34,33 @@ function walk(dir: string): string[] {
   });
 }
 
-/** Local names bound to AURA's `Dialog`, `Button` and `buttonClass` in one file. */
-function auraNames(sf: ts.SourceFile): { dialog: Set<string>; button: Set<string>; buttonClass: Set<string> } {
-  const names = { dialog: new Set<string>(), button: new Set<string>(), buttonClass: new Set<string>() };
+interface AuraNames {
+  readonly footered: Set<string>;
+  readonly actionBar: Set<string>;
+  readonly button: Set<string>;
+  readonly buttonClass: Set<string>;
+  readonly any: boolean;
+}
+
+/** Local names bound to AURA's footered overlays, `ActionBar`, `Button` and `buttonClass`. */
+function auraNames(sf: ts.SourceFile): AuraNames {
+  const names = {
+    footered: new Set<string>(),
+    actionBar: new Set<string>(),
+    button: new Set<string>(),
+    buttonClass: new Set<string>(),
+    any: false,
+  };
   for (const st of sf.statements) {
     if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
     if (!AURA.test(st.moduleSpecifier.text)) continue;
+    names.any = true;
     const bindings = st.importClause?.namedBindings;
     if (!bindings || !ts.isNamedImports(bindings)) continue;
     for (const el of bindings.elements) {
       const imported = (el.propertyName ?? el.name).text;
-      if (imported === 'Dialog') names.dialog.add(el.name.text);
+      if (imported === 'Dialog' || imported === 'Drawer') names.footered.add(el.name.text);
+      if (imported === 'ActionBar') names.actionBar.add(el.name.text);
       if (imported === 'Button') names.button.add(el.name.text);
       if (imported === 'buttonClass') names.buttonClass.add(el.name.text);
     }
@@ -76,6 +93,14 @@ function localInitializer(sf: ts.SourceFile, name: string): ts.Node | undefined 
   return found;
 }
 
+/** The JSX an attribute holds, following a same-file const. */
+function attrRoot(sf: ts.SourceFile, el: ts.JsxOpeningLikeElement, name: string): ts.Node | undefined {
+  const init = attr(el, name)?.initializer;
+  if (!init || !ts.isJsxExpression(init) || !init.expression) return undefined;
+  const expr = init.expression;
+  return ts.isIdentifier(expr) ? localInitializer(sf, expr.text) : expr;
+}
+
 function openingElements(root: ts.Node): ts.JsxOpeningLikeElement[] {
   const out: ts.JsxOpeningLikeElement[] = [];
   const visit = (n: ts.Node): void => {
@@ -86,63 +111,79 @@ function openingElements(root: ts.Node): ts.JsxOpeningLikeElement[] {
   return out;
 }
 
-interface FooterScan {
-  readonly footers: number;
-  readonly missing: string[];
-}
-
-export function scanFooters(file: string, source: string): FooterScan {
-  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-  const names = auraNames(sf);
-  if (names.dialog.size === 0) return { footers: 0, missing: [] };
-  let footers = 0;
-  const missing: string[] = [];
-  for (const el of openingElements(sf)) {
-    if (!names.dialog.has(tagName(el))) continue;
-    const footer = attr(el, 'footer');
-    const init = footer?.initializer;
-    if (!init || !ts.isJsxExpression(init) || !init.expression) continue;
-    const expr = init.expression;
-    const root = ts.isIdentifier(expr) ? localInitializer(sf, expr.text) : expr;
-    if (!root) continue;
-    footers += 1;
-    for (const btn of openingElements(root)) {
-      if (!names.button.has(tagName(btn))) continue;
-      if (!attr(btn, 'touchHeight')) {
-        const { line } = sf.getLineAndCharacterOfPosition(btn.getStart());
-        missing.push(`${file}:${line + 1}`);
+/** Each `Button touchHeight` and `buttonClass({ touchHeight })` under `root`. */
+function touchHeights(sf: ts.SourceFile, names: AuraNames, root: ts.Node, file: string): string[] {
+  const hits: string[] = [];
+  const at = (n: ts.Node) => `${file}:${sf.getLineAndCharacterOfPosition(n.getStart()).line + 1}`;
+  for (const btn of openingElements(root)) {
+    if (names.button.has(tagName(btn)) && attr(btn, 'touchHeight')) hits.push(at(btn));
+  }
+  const visit = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && names.buttonClass.has(n.expression.text)) {
+      const opts = n.arguments[0];
+      if (
+        opts !== undefined &&
+        ts.isObjectLiteralExpression(opts) &&
+        opts.properties.some((p) => ts.isPropertyAssignment(p) && p.name.getText() === 'touchHeight')
+      ) {
+        hits.push(at(n));
       }
     }
-    // A link styled as a button (`buttonClass(...)`) in the footer is a
-    // footer button too: it needs `touchHeight: true`.
-    const visit = (n: ts.Node): void => {
-      if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && names.buttonClass.has(n.expression.text)) {
-        const opts = n.arguments[0];
-        const touch =
-          opts !== undefined &&
-          ts.isObjectLiteralExpression(opts) &&
-          opts.properties.some((p) => ts.isPropertyAssignment(p) && p.name.getText() === 'touchHeight');
-        if (!touch) missing.push(`${file}:${sf.getLineAndCharacterOfPosition(n.getStart()).line + 1}`);
+    ts.forEachChild(n, visit);
+  };
+  visit(root);
+  return hits;
+}
+
+interface TouchScan {
+  readonly footers: number;
+  readonly actionBars: number;
+  readonly stale: string[];
+}
+
+/** `touchHeight` left on a button AURA already sizes: Dialog/Drawer footers, ActionBar children and `start`. */
+export function scanStaleTouch(file: string, source: string): TouchScan {
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = auraNames(sf);
+  let footers = 0;
+  let actionBars = 0;
+  const stale: string[] = [];
+  for (const el of openingElements(sf)) {
+    const tag = tagName(el);
+    if (names.footered.has(tag)) {
+      const root = attrRoot(sf, el, 'footer');
+      if (!root) continue;
+      footers += 1;
+      stale.push(...touchHeights(sf, names, root, file));
+    }
+    if (names.actionBar.has(tag)) {
+      actionBars += 1;
+      const start = attrRoot(sf, el, 'start');
+      if (start) stale.push(...touchHeights(sf, names, start, file));
+      // Children: walk the whole element, not the opening tag's attributes.
+      if (ts.isJsxOpeningElement(el)) {
+        for (const child of el.parent.children) stale.push(...touchHeights(sf, names, child, file));
       }
-      ts.forEachChild(n, visit);
-    };
-    visit(root);
+    }
   }
-  return { footers, missing };
+  return { footers, actionBars, stale };
 }
 
 /** `w-full` as a bare class (not `max-sm:w-full`, `sm:w-full`, `min-w-full`). */
 const BARE_W_FULL = /(?<![\w:-])w-full(?![\w-])/;
+/** A container stretching its children: `[&>*]:w-full`, `[&>button]:w-full`, `[&_button]:w-full`, `*:w-full`, any variant prefix. */
+const CHILD_W_FULL = /(?<![\w-])(?:\[&>\*\]|\[&>button\]|\[&_button\]|\*):w-full(?![\w-])/;
 
 export function scanStretched(file: string, source: string): string[] {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const names = auraNames(sf);
+  if (!names.any) return [];
   const hits: string[] = [];
   const at = (n: ts.Node) => `${file}:${sf.getLineAndCharacterOfPosition(n.getStart()).line + 1}`;
   const visit = (n: ts.Node): void => {
-    if ((ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) && names.button.has(tagName(n))) {
-      const cls = attr(n, 'className');
-      if (cls?.initializer && BARE_W_FULL.test(cls.initializer.getText())) hits.push(at(n));
+    if (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) {
+      const text = attr(n, 'className')?.initializer?.getText() ?? '';
+      if (CHILD_W_FULL.test(text) || (names.button.has(tagName(n)) && BARE_W_FULL.test(text))) hits.push(at(n));
     }
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && names.buttonClass.has(n.expression.text)) {
       const opts = n.arguments[0];
@@ -161,50 +202,66 @@ export function scanStretched(file: string, source: string): string[] {
 
 const files = walk(SRC).map((path) => ({ file: relative(ROOT, path), source: readFileSync(path, 'utf8') }));
 
-describe('dialog footer buttons are 44px on phones (spec 122 follow-up 5)', () => {
-  const scans = files.map(({ file, source }) => scanFooters(file, source));
+describe('AURA sizes footer and action-bar buttons on phones; no touchHeight stand-ins (spec 122, AURA 5.53/5.54)', () => {
+  const scans = files.map(({ file, source }) => scanStaleTouch(file, source));
 
-  it('positive control: a footer Button without touchHeight is caught, nested JSX included', () => {
+  it('positive control: touchHeight in a Dialog or Drawer footer is caught, nested JSX and buttonClass included', () => {
     const fixture = [
-      "import { Button, Dialog } from '@jirawatpyk/aura-react';",
+      "import { Button, Dialog, Drawer, buttonClass } from '@jirawatpyk/aura-react';",
       'export const A = () => (',
-      '  <Dialog open title="t" footer={<><div><Button variant="secondary">No</Button></div><Button touchHeight>Yes</Button></>} />',
+      '  <Dialog open title="t" footer={<><div><Button touchHeight variant="secondary">No</Button></div><Button>Yes</Button></>} />',
       ');',
+      "export const B = () => <Drawer open title=\"t\" footer={<a className={buttonClass({ variant: 'primary', touchHeight: true })}>Go</a>} />;",
     ].join('\r\n');
-    expect(scanFooters('fixture.tsx', fixture)).toEqual({ footers: 1, missing: ['fixture.tsx:3'] });
+    expect(scanStaleTouch('fixture.tsx', fixture)).toEqual({
+      footers: 2,
+      actionBars: 0,
+      stale: ['fixture.tsx:3', 'fixture.tsx:5'],
+    });
   });
 
-  it('positive control: a link styled with buttonClass in a footer needs touchHeight too', () => {
+  it('positive control: touchHeight on an ActionBar button is caught, in children and in start', () => {
     const fixture = [
-      "import { Dialog, buttonClass } from '@jirawatpyk/aura-react';",
+      "import { ActionBar, Button } from '@jirawatpyk/aura-react';",
       'export const A = () => (',
-      "  <Dialog open title=\"t\" footer={<a className={buttonClass({ variant: 'primary' })}>Go</a>} />",
+      '  <ActionBar start={<Button touchHeight>Cancel</Button>}>',
+      '    <Button touchHeight>Save</Button>',
+      '    <Button>Next</Button>',
+      '  </ActionBar>',
       ');',
     ].join('\n');
-    expect(scanFooters('fixture.tsx', fixture)).toEqual({ footers: 1, missing: ['fixture.tsx:3'] });
+    expect(scanStaleTouch('fixture.tsx', fixture)).toEqual({
+      footers: 0,
+      actionBars: 1,
+      stale: ['fixture.tsx:3', 'fixture.tsx:4'],
+    });
   });
 
-  it('positive control: the scan parses the app\'s dialog footers', () => {
+  it("positive control: the scan parses the app's dialog footers and action bars", () => {
     expect(scans.reduce((n, s) => n + s.footers, 0)).toBeGreaterThan(30);
+    expect(scans.reduce((n, s) => n + s.actionBars, 0)).toBeGreaterThan(5);
   });
 
-  it('every Button in an AURA Dialog footer carries touchHeight', () => {
-    expect(scans.flatMap((s) => s.missing)).toEqual([]);
+  it('no Button in a Dialog/Drawer footer or an ActionBar carries touchHeight', () => {
+    expect(scans.flatMap((s) => s.stale)).toEqual([]);
   });
 });
 
-describe('a stretched AURA button uses fullWidth, not the w-full class (spec 122 follow-up 5)', () => {
-  it('positive control: Button and buttonClass with a bare w-full are caught, max-sm:w-full is not', () => {
+describe('a stretched AURA button uses fullWidth, not a w-full class (spec 122 follow-up 5)', () => {
+  it('positive control: a bare w-full on Button/buttonClass and a container stretch class are caught', () => {
     const fixture = [
       "import { Button, buttonClass } from '@jirawatpyk/aura-react/server';",
       'export const A = () => <Button className="mt-2 w-full">Go</Button>;',
       "export const B = buttonClass({ variant: 'secondary', className: 'w-full' });",
       'export const C = () => <Button className="max-sm:w-full">Go</Button>;',
+      'export const D = () => <div className="flex max-sm:[&>*]:w-full"><Button>Go</Button></div>;',
+      'export const E = () => <div className="max-sm:[&>button]:w-full sm:[&_button]:w-full" />;',
+      'export const F = () => <div className="max-sm:[&>*]:flex-1 [&>*]:min-w-full" />;',
     ].join('\n');
-    expect(scanStretched('fixture.tsx', fixture)).toEqual(['fixture.tsx:2', 'fixture.tsx:3']);
+    expect(scanStretched('fixture.tsx', fixture)).toEqual(['fixture.tsx:2', 'fixture.tsx:3', 'fixture.tsx:5', 'fixture.tsx:6']);
   });
 
-  it('no AURA Button or buttonClass stretches with a bare w-full', () => {
+  it('no AURA Button or buttonClass stretches with a w-full class, on itself or from its container', () => {
     expect(files.flatMap(({ file, source }) => scanStretched(file, source))).toEqual([]);
   });
 });
