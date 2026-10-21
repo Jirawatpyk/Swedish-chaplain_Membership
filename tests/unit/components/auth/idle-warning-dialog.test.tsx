@@ -22,9 +22,10 @@ import {
 import { render, screen, act, cleanup, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 
+const replaceMock = vi.hoisted(() => vi.fn());
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
-    replace: vi.fn(),
+    replace: replaceMock,
     refresh: vi.fn(),
     push: vi.fn(),
   }),
@@ -76,6 +77,8 @@ function renderDialog() {
 describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
+    replaceMock.mockClear();
+    vi.mocked(toast.info).mockClear();
   });
   afterEach(() => {
     cleanup();
@@ -96,7 +99,7 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     expect(screen.queryByText('Are you still here?')).toBeNull();
   });
 
-  it('on countdown expiry, the involuntary-signout toast states the inactivity reason (not the countdown copy) — TC-AUTH-05 step 3', async () => {
+  it('on countdown expiry, the sign-in page is told why (?reason=idle), with no toast — TC-AUTH-05 step 3', async () => {
     // Resolve the sign-out POST immediately so forceSignOut proceeds to the
     // toast under fake timers (a real fetch would never settle here).
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }));
@@ -110,16 +113,15 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60 * 1000);
     });
-    expect(toast.info).toHaveBeenCalledWith(
-      'You were signed out due to inactivity. Please sign in again.',
-    );
-    // Exactly one toast with that message — catches an accidental extra/wrong
-    // toast.info (e.g. someone re-routing the countdown copy through a toast).
-    expect(toast.info).toHaveBeenCalledTimes(1);
+    // The reason travels to the sign-in page, which shows it in a banner
+    // that waits for the member to come back (board Portal-idle-signed-out) —
+    // a toast would have closed itself while they were away.
+    expect(replaceMock).toHaveBeenCalledWith('/sign-in?reason=idle');
+    expect(toast.info).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 
-  it('"Sign out now" is voluntary — it signs out and redirects but does NOT show the inactivity toast', async () => {
+  it('"Sign out now" is voluntary — it signs out and redirects with no reason and no toast', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal('fetch', fetchMock);
     renderDialog();
@@ -138,6 +140,7 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     // …but the member chose to leave, so they are NOT told they were inactive
     // (matches the user-menu sign-out, which shows no success toast).
     expect(toast.info).not.toHaveBeenCalled();
+    expect(replaceMock).toHaveBeenCalledWith('/sign-in');
     vi.unstubAllGlobals();
   });
 
@@ -179,11 +182,10 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Stay signed in'));
     });
-    // A real no-session 401 DOES escalate to involuntary sign-out with the
-    // inactivity toast (not the countdown copy).
-    expect(toast.info).toHaveBeenCalledWith(
-      'You were signed out due to inactivity. Please sign in again.',
-    );
+    // A real no-session 401 DOES escalate to involuntary sign-out, so the
+    // sign-in page is told why.
+    expect(replaceMock).toHaveBeenCalledWith('/sign-in?reason=idle');
+    expect(toast.info).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 
