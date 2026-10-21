@@ -59,6 +59,21 @@ describe('portal E-Blast detail skeleton reserves the page it precedes (U1)', ()
     expect(banner.className).toContain('h-24');
   });
 
+  it('reserves the Back link\'s place without a link: the skeleton cannot know where Back leads', async () => {
+    // Back follows the member's standing (a terminated member's leads home,
+    // UX review M5), which the skeleton cannot read without delaying itself.
+    // So it reserves the link's place with a block instead of a link that may
+    // point the wrong way (spec 122 decision, overriding US12c-2 L8 here).
+    const { default: Loading } = await import(
+      '@/app/(member)/portal/broadcasts/[id]/loading'
+    );
+    render(await Loading());
+
+    expect(document.querySelector('a')).toBeNull();
+    const back = screen.getByTestId('detail-back-skeleton');
+    expect(back.compareDocumentPosition(screen.getByTestId('detail-stage-banner-skeleton')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('T086a V5: the fields card has a header (the overline + the subject heading), as the page does', async () => {
     const { default: Loading } = await import(
       '@/app/(member)/portal/broadcasts/[id]/loading'
