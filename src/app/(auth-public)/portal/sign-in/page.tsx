@@ -44,6 +44,10 @@ export default async function MemberSignInPage({
   // The renewal redeem-link route sends EVERY failure here (expired, used,
   // tampered) without saying which — keep the banner equally unspecific.
   const showLinkInvalidBanner = reasonCandidate === 'link_invalid';
+  // The idle warning sends whoever it signed out for inactivity here, so the
+  // reason waits on the card for them to come back (a toast closed itself
+  // while they were away; board `Portal-idle-signed-out`).
+  const showIdleBanner = reasonCandidate === 'idle';
 
   const current = await getCurrentSession();
   if (current) {
@@ -55,6 +59,7 @@ export default async function MemberSignInPage({
   }
 
   const t = await getTranslations('auth.signIn');
+  const tIdle = await getTranslations('auth.idleWarning');
   const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 
   return (
@@ -66,6 +71,7 @@ export default async function MemberSignInPage({
       variant="sign-in"
     >
       {showSecurityBanner ? <SecurityUpdateBanner message={t('securityUpdateBanner')} /> : null}
+      {showIdleBanner ? <SecurityUpdateBanner message={tIdle('signedOutInactive')} /> : null}
       {showLinkInvalidBanner ? <SecurityUpdateBanner message={t('linkInvalidBanner')} /> : null}
       <SignInForm portal="member" returnTo={validatedReturnTo} />
     </AuthFrame>

@@ -457,7 +457,10 @@ Before the 30-minute idle timeout hits, show a warning modal:
   - **Sign out now** (secondary) — ends the session immediately
 - **Countdown**: visible "XX seconds" that counts down in real time
 - **On expiry**: the modal auto-signs the user out and redirects to the
-  sign-in page with a friendly "Signed out due to inactivity" toast
+  sign-in page with `?reason=idle`, where the card shows "Signed out due to
+  inactivity" in an info banner. Not a toast: the user is away when this
+  happens, and a toast would close itself before they return. "Sign out now"
+  redirects with no reason.
 
 This is a **required** feature for enterprise UX — surprising auto-sign-outs
 are a top user complaint.
