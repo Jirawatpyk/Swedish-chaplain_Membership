@@ -267,3 +267,25 @@ Follow-ups 1–4 from the #607 review: behaviour changes, so a PR of their own (
   - The guard now also catches a `buttonClass(...)` link in a footer without `touchHeight: true`. RED: `event-fee-form.tsx:1161` (the duplicate dialog's "View invoice"). Fixed.
   - On `issue-invoice-form`, the confirm names the total, and at 320px the label ran out of the button because the container's `max-sm:[&>*]:w-full` kept `nowrap`. Each button is now `fullWidth` plus `FULL_WIDTH_BELOW_SM`.
   - The other container-stretched rows still fit their labels (refund, void, credit note, events wizard/mapping, erase page). They are listed as a follow-up, and the guard doesn't see them yet.
+
+### Sign-in and Stripe URL follow-up (PR 4 of the #607/#610 follow-ups; size M, plan agreed 2026-10-21)
+
+These are logic fixes from the #608 reviews, in a PR of their own. The touch-target follow-ups from #610 are in the next PR (maintainer, 21 Oct: split into 2 PRs).
+
+- **Plan.**
+  - **Stripe redirect keys.** After a 3DS redirect, Stripe appends `payment_intent`, `payment_intent_client_secret` and `redirect_status` to the invoice URL. Nothing reads them.
+    - The invoice detail page now removes them from the address bar on load (`StripStripeReturnParams`). It does this on every invoice, paid ones included, because the pay sheet never mounts on a paid invoice.
+    - `buildSignInUrl` drops the same keys before `safeReturnTo`.
+    - `paid` and `pay` stay.
+  - **Sign-in notice on retry.** The notice now gives way only to an inline error (server or format) or to success, not at the start of a submit.
+  - **Notice copy.** It now lives under `auth.signIn.notice.*`; the wording is unchanged.
+- **Logging check:** `src/proxy.ts` logs `nextUrl.pathname` only. The query, with the client secret, reaches only the `x-pathname` request header, which is not logged.
+- **RED** (commit `d0d115f5e`, before any code change): 8 failed, 69 passed across 4 files.
+  - `return-url.test.ts`:
+    - "drops the Stripe redirect parameters and keeps the rest of the query" → `Received "/portal/sign-in?returnTo=%2Fportal%2Finvoices%2Fi1%3Fpay%3D1%26payment_intent%3Dpi_1%26payment_intent_client_secret%3D…"`
+    - "keeps returnTo when only a long Stripe client secret made the path too long" → `Received "/portal/sign-in"`
+  - `strip-stripe-return-params.test.tsx` (stub component): "removes the Stripe redirect parameters and keeps pay, paid and the path" → `expected '?paid=1&payment_intent=pi_1&…' to be '?paid=1&pay=1'`. The bare-path case failed too.
+  - `portal-invoice-detail-download-number.test.tsx`: "issued|paid invoice → renders the URL cleanup" → `expected '<span …' to contain 'data-testid="strip-stripe-return-params-marker"'`
+  - `sign-in-form-errors.test.tsx`:
+    - "keeps the notice while a retry after a network failure is still in flight" → `expect(received).toHaveTextContent()`, "received value must be a Node" (the notice was gone)
+    - "a format error after a network failure replaces the notice" → `expected <div id="signin-notice" …> to be null`
