@@ -250,3 +250,5 @@ Follow-ups 1–4 from the #607 review: behaviour changes, so a PR of their own (
   - `sign-in-form-errors.test.tsx`: "shows the sign-in reason as a standing notice…" → no `#signin-notice`.
   - `portal-sign-in-idle.test.tsx` (both pages): `?reason=idle|session-ended|security-update hands the form its notice` → `expected '' to be 'auth.idleWarning.signedOutInactive'` etc.; "renders no reason banner of its own beside the form" → `expected <div role="status" …> to be null`.
   - `portal-sign-in-link-invalid.test.tsx`: "hands the form the … notice" → no `data-notice`.
+- **Review follow-up (UX LOW 1), RED:** `sign-in-form-errors.test.tsx` › "keeps the notice after a network failure — no inline error replaces it, only a toast" → `expect(received).toHaveTextContent()` on a null `#signin-notice`. After a network failure, nothing on the card replaced the notice; only the toast was left.
+- **Accepted risk (security LOW 2):** an idle sign-out on `/admin/members?q=<name or email>` carries the search into `returnTo`. It stays same-origin, there is no analytics, and the referrer is cut to the origin. `requireSession` on main already does the same.

@@ -76,6 +76,21 @@ describe('SignInForm', () => {
     vi.unstubAllGlobals();
   });
 
+  it('keeps the notice after a network failure — no inline error replaces it, only a toast', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    const { container } = renderForm(NOTICE);
+    fireEvent.change(container.querySelector('#email')!, { target: { value: 'user@example.com' } });
+    fireEvent.change(container.querySelector('#password')!, { target: { value: 'some-password' } });
+    fireEvent.submit(container.querySelector('form')!);
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(container.querySelector('#signin-notice')).toHaveTextContent(NOTICE);
+    expect(
+      (container.querySelector('#email')?.getAttribute('aria-describedby') ?? '').split(' '),
+    ).toContain('signin-notice');
+    vi.unstubAllGlobals();
+  });
+
   it('keeps a format error announced on the email field after a submit with a notice', async () => {
     const { container } = renderForm(NOTICE);
     fireEvent.change(container.querySelector('#email')!, { target: { value: 'notanemail' } });
