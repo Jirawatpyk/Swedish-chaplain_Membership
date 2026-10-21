@@ -256,9 +256,9 @@ Follow-ups 1–4 from the #607 review: behaviour changes, so a PR of their own (
 ### Dialog footer touch targets + `fullWidth` (follow-up 5, with 6; size M, plan agreed 2026-10-21)
 
 - **Plan.**
-  - Every `<Button>` in an AURA `Dialog`'s `footer` carries `touchHeight`, so it is 44px below 640px in compact density too. Before this, staff footers were 36px with a fine pointer.
+  - Every `<Button>` in an AURA `Dialog`'s `footer` carries `touchHeight`, so it is 44px below 640px (or on a coarse pointer) in compact density too. Before this, staff footers were 36px with a fine pointer.
   - A stretched AURA button uses `fullWidth` rather than the `w-full` class, which keeps AURA's fixed height and `nowrap`, so long labels overflowed.
-  - Phone-only stretch has no AURA prop, so it goes through the `PHONE_FULL_WIDTH_BUTTON` stand-in until AURA #165.
+  - Phone-only stretch has no AURA prop, so it is `fullWidth` plus the `FULL_WIDTH_BELOW_SM` reset above `sm` (a stand-in until AURA #165).
   - Guarded by `tests/unit/architecture/dialog-footer-touch.test.ts`. It parses with the TypeScript compiler, and it has positive controls: a CRLF fixture that must fail, and more than 30 footers parsed.
 - **RED** (commit `test(ui): …`): the 2 positive controls passed and the 2 real checks failed.
   - "every Button in an AURA Dialog footer carries touchHeight" → `expected [ …(70) ] to deeply equal []`: 70 footer buttons across 36 files, including the shared `ConfirmationDialog` and `ReasonConfirmationDialog`.

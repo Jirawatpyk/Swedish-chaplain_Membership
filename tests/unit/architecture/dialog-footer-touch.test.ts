@@ -5,12 +5,13 @@
  * 1. Staff screens run AURA's compact density, so a dialog's footer buttons
  *    were 36px below 640px with a fine pointer (the UX review counted about 38
  *    of 40 footers). Every `<Button>` in an AURA `Dialog`'s `footer` carries
- *    `touchHeight` (44px below 640px, whatever the density).
+ *    `touchHeight` (44px below 640px or on a coarse pointer, whatever the
+ *    density).
  * 2. A stretched button set with the `w-full` class keeps AURA's fixed height
  *    and `nowrap`, so a long label overflows instead of wrapping. `fullWidth`
  *    (`.aura-btn--full`) is the supported way: height auto, the label wraps.
- *    Phone-only stretch has no AURA prop yet and goes through
- *    `PHONE_FULL_WIDTH_BUTTON` (stand-in until AURA #165).
+ *    Phone-only stretch has no AURA prop yet: `fullWidth` plus
+ *    `FULL_WIDTH_BELOW_SM` (stand-in until AURA #165).
  *
  * Parsed with the TypeScript compiler, not a regex, so nested JSX in a footer
  * is walked; each check has a positive control that must fail.
