@@ -56,6 +56,10 @@ describe.each([
     expect(await noticeFor(reason)).toBe('');
   });
 
+  it('?reason=link_invalid is the member page\'s alone — the staff page shows nothing', async () => {
+    expect(await noticeFor('link_invalid')).toBe(_path === '/portal/sign-in' ? 'auth.signIn.linkInvalidBanner' : '');
+  });
+
   it('renders no reason banner of its own beside the form (one place for the reason)', async () => {
     const ui = await Page({ searchParams: Promise.resolve({ reason: 'idle' }) });
     render(ui);
