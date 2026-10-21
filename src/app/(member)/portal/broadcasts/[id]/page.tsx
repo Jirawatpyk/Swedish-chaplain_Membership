@@ -43,8 +43,6 @@ import { getLocale, getTranslations } from 'next-intl/server';
 import { memberThreadModel } from '@/components/broadcast/approval/version-thread';
 import type { PreviewState } from '@/components/broadcast/use-preview-html';
 import { makeGetMemberVersionThreadDeps } from '@/lib/broadcast-approval-deps';
-import { isPortalPathAllowed } from '@/lib/lapsed-portal-scope';
-import { loadMembershipAccess } from '@/lib/load-membership-access';
 import { renderBroadcastDetailBody } from '@/lib/broadcast-detail-body';
 import { logger } from '@/lib/logger';
 import { requireSession } from '@/lib/auth-session';
@@ -67,9 +65,7 @@ import {
   type PortalBroadcastDetailViewProps,
 } from './_components/portal-broadcast-detail-view';
 import { randomUUID } from 'node:crypto';
-
-/** Where the E-Blast list lives (the benefits page's broadcasts tab). */
-const BENEFITS_PATH = '/portal/benefits';
+import { portalBroadcastBack } from './_lib/portal-broadcast-back';
 
 /**
  * UX review L7 — the statuses at which a send has begun, so the delivery
@@ -178,11 +174,9 @@ export default async function BroadcastDetailPage(props: {
   const { broadcast, delivery } = result.value;
   const status = broadcast.status;
 
-  // UX review M5 — the same request-cached, audit-free access read the
-  // benefits page gates on; a terminated member cannot open the E-Blast list,
-  // so their Back leads to the dashboard. Fails open to `full`.
-  const access = await loadMembershipAccess(tenant.slug, memberId);
-  const backToList = isPortalPathAllowed(access.access, BENEFITS_PATH);
+  // UX review M5 — a terminated member cannot open the E-Blast list, so their
+  // Back leads to the dashboard (shared with the not-found state).
+  const back = await portalBroadcastBack(tenant.slug, memberId);
 
   // F119 T086 — the approval round, from the member projection (sent
   // versions only). Owner already proven above, so this read cannot probe.
@@ -270,7 +264,7 @@ export default async function BroadcastDetailPage(props: {
           : null;
 
   return PortalBroadcastDetailView({
-    back: { href: backToList ? `${BENEFITS_PATH}?tab=broadcasts` : '/portal', toDashboard: !backToList },
+    back,
     status,
     turn,
     expiresAt: summary !== null && summary.whoseTurn !== null ? format(summary.expiresAt) : null,

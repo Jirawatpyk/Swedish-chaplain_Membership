@@ -708,6 +708,10 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - After a sign-in attempt the notice gives way to the error, so the card shows one alert.
   - The idle sign-out now carries `returnTo`.
   - A "Stay signed in" heartbeat that gets a 401 means the session was already gone, for example signed out in another tab. It now sends `?reason=session-ended` with its own copy ("Your session has ended. Please sign in again.") instead of "inactivity". There is no cross-tab signal: a tab still learns of it only on its next request.
+- **Portal E-Blast Back link follows standing everywhere (maintainer, 21 Oct: follow-up 7, "skeleton block").**
+  - The page already sends a terminated member's Back to the dashboard (UX review M5). The not-found state now does the same, through the shared `portalBroadcastBack` (`broadcasts/[id]/_lib/portal-broadcast-back.ts`). If it can't tell (no session, no member row, a failing read), it falls back to the E-Blast list.
+  - The loading skeleton cannot know the member's standing without delaying itself. So it reserves the Back link's place with a block of the same size instead of a link. This overrides US12c-2 L8 ("the settled page's Back link, the same component and place") for this one element: the place is kept, the link is not.
+  - `error.tsx` is a client component and keeps its link to the list. A terminated member who follows it is redirected by the portal guard.
 
 ## User Scenarios & Testing *(mandatory)*
 
