@@ -57,14 +57,13 @@ export default async function StaffSignInPage({ searchParams }: StaffSignInPageP
   }
 
   const t = await getTranslations('auth.signIn');
-  const tIdle = await getTranslations('auth.idleWarning');
   const notice =
     reasonCandidate === 'security-update'
-      ? t('securityUpdateBanner')
+      ? t('notice.securityUpdate')
       : reasonCandidate === 'idle'
-        ? tIdle('signedOutInactive')
+        ? t('notice.idle')
         : reasonCandidate === 'session-ended'
-          ? tIdle('signedOutEnded')
+          ? t('notice.sessionEnded')
           : undefined;
   const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 

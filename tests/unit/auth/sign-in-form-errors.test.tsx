@@ -33,7 +33,7 @@ function renderForm(notice?: string) {
   );
 }
 
-const NOTICE = enMessages.auth.idleWarning.signedOutInactive;
+const NOTICE = enMessages.auth.signIn.notice.idle;
 
 describe('SignInForm', () => {
   it('shows the sign-in reason as a standing notice that describes the email field (not a live region)', () => {
@@ -88,6 +88,42 @@ describe('SignInForm', () => {
     expect(
       (container.querySelector('#email')?.getAttribute('aria-describedby') ?? '').split(' '),
     ).toContain('signin-notice');
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps the notice while a retry after a network failure is still in flight', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockReturnValueOnce(new Promise(() => {}));
+    vi.stubGlobal('fetch', fetchMock);
+    const { container } = renderForm(NOTICE);
+    fireEvent.change(container.querySelector('#email')!, { target: { value: 'user@example.com' } });
+    fireEvent.change(container.querySelector('#password')!, { target: { value: 'some-password' } });
+    fireEvent.submit(container.querySelector('form')!);
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+
+    fireEvent.submit(container.querySelector('form')!);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(container.querySelector('#signin-notice')).toHaveTextContent(NOTICE);
+    expect(
+      (container.querySelector('#email')?.getAttribute('aria-describedby') ?? '').split(' '),
+    ).toContain('signin-notice');
+    vi.unstubAllGlobals();
+  });
+
+  it('a format error after a network failure replaces the notice', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    const { container } = renderForm(NOTICE);
+    fireEvent.change(container.querySelector('#email')!, { target: { value: 'user@example.com' } });
+    fireEvent.change(container.querySelector('#password')!, { target: { value: 'some-password' } });
+    fireEvent.submit(container.querySelector('form')!);
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+
+    fireEvent.change(container.querySelector('#email')!, { target: { value: 'notanemail' } });
+    fireEvent.submit(container.querySelector('form')!);
+    await screen.findByText((_t, node) => node?.id === 'email-error');
+    expect(container.querySelector('#signin-notice')).toBeNull();
     vi.unstubAllGlobals();
   });
 

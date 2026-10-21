@@ -35,6 +35,31 @@ import type { Portal } from '@/modules/auth/domain/role';
 export type { Portal };
 
 const MAX_RETURN_TO_LENGTH = 512;
+
+/**
+ * Query keys Stripe appends to `return_url` after a 3DS redirect. Nothing
+ * reads them, and the client secret must not travel into `returnTo` — the
+ * invoice page also removes them from the address bar on load.
+ */
+export const STRIPE_RETURN_PARAMS = [
+  'payment_intent',
+  'payment_intent_client_secret',
+  'redirect_status',
+] as const;
+
+/** What `safeReturnTo` rejects anywhere in the path: `://`, backslash, CR, LF. */
+const UNSAFE_RAW_RETURN_TO = /:\/\/|[\\\r\n]/;
+
+/** `path` without the Stripe redirect keys; any other query key is kept. */
+function withoutStripeReturnParams(path: string): string {
+  const queryIndex = path.indexOf('?');
+  if (queryIndex < 0) return path;
+  const params = new URLSearchParams(path.slice(queryIndex + 1));
+  if (!STRIPE_RETURN_PARAMS.some((key) => params.has(key))) return path;
+  for (const key of STRIPE_RETURN_PARAMS) params.delete(key);
+  const query = params.toString();
+  return query ? `${path.slice(0, queryIndex)}?${query}` : path.slice(0, queryIndex);
+}
 const FORBIDDEN_PREFIXES = [
   '/admin/sign-in',
   '/portal/sign-in',
@@ -97,7 +122,7 @@ export type SignInReason = 'idle' | 'session-ended';
  * (src/lib/auth-session.ts) to redirect an unauthenticated visitor
  * while remembering where they were trying to go, and by the idle
  * warning, which adds the `reason`. An unsafe path drops `returnTo`
- * but keeps the reason.
+ * but keeps the reason. Stripe's redirect keys are removed first.
  */
 export function buildSignInUrl(
   portal: Portal,
@@ -105,7 +130,11 @@ export function buildSignInUrl(
   reason?: SignInReason,
 ): string {
   const params: string[] = [];
-  const safe = fromPath ? safeReturnTo(fromPath, portal) : null;
+  // Stripping re-encodes the query, so the characters safeReturnTo rejects
+  // are checked on the raw path first; a fragment is dropped before the split.
+  const raw = fromPath?.split('#')[0] ?? null;
+  const safe =
+    raw && !UNSAFE_RAW_RETURN_TO.test(raw) ? safeReturnTo(withoutStripeReturnParams(raw), portal) : null;
   if (safe) params.push(`returnTo=${encodeURIComponent(safe)}`);
   if (reason) params.push(`reason=${reason}`);
   const base = portalSignInPath(portal);

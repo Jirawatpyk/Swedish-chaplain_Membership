@@ -41,7 +41,7 @@ async function renderPage(reason?: string) {
 describe('portal sign-in — reason=link_invalid', () => {
   it('hands the form the "link is no longer valid" notice', async () => {
     await renderPage('link_invalid');
-    expect(screen.getByTestId('sign-in-form')).toHaveAttribute('data-notice', 'linkInvalidBanner');
+    expect(screen.getByTestId('sign-in-form')).toHaveAttribute('data-notice', 'notice.linkInvalid');
   });
 
   it('hands the form no notice without a reason', async () => {

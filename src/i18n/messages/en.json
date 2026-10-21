@@ -8,7 +8,6 @@
       "title": "Sign in",
       "cardDescription": "Staff portal",
       "memberCardDescription": "Member portal",
-      "securityUpdateBanner": "We've updated our security. Please sign in again.",
       "emailLabel": "Email",
       "passwordLabel": "Password",
       "submit": "Sign in",
@@ -20,7 +19,12 @@
         "accountLocked": "Too many failed attempts. Try again later.",
         "rateLimited": "Too many requests. Please wait and try again."
       },
-      "linkInvalidBanner": "That link is no longer valid. Sign in to continue."
+      "notice": {
+        "securityUpdate": "We've updated our security. Please sign in again.",
+        "linkInvalid": "That link is no longer valid. Sign in to continue.",
+        "idle": "You've been signed out due to inactivity. Please sign in again.",
+        "sessionEnded": "Your session has ended. Please sign in again."
+      }
     },
     "signOut": {
       "label": "Sign out"
@@ -102,9 +106,7 @@
       "title": "Still there?",
       "description": "You'll be signed out in {seconds} seconds.",
       "stay": "Stay signed in",
-      "signOut": "Sign out now",
-      "signedOutInactive": "You've been signed out due to inactivity. Please sign in again.",
-      "signedOutEnded": "Your session has ended. Please sign in again."
+      "signOut": "Sign out now"
     },
     "denied": {
       "readOnly": "Your role does not permit this action.",

@@ -8,7 +8,6 @@
       "title": "Logga in",
       "cardDescription": "Personalportal",
       "memberCardDescription": "Medlemsportal",
-      "securityUpdateBanner": "Vi har uppdaterat säkerheten. Vänligen logga in igen.",
       "emailLabel": "E-post",
       "passwordLabel": "Lösenord",
       "submit": "Logga in",
@@ -20,7 +19,12 @@
         "accountLocked": "För många misslyckade försök. Försök igen senare.",
         "rateLimited": "För många förfrågningar. Vänta och försök igen."
       },
-      "linkInvalidBanner": "Länken är inte längre giltig. Logga in för att fortsätta."
+      "notice": {
+        "securityUpdate": "Vi har uppdaterat säkerheten. Vänligen logga in igen.",
+        "linkInvalid": "Länken är inte längre giltig. Logga in för att fortsätta.",
+        "idle": "Du har loggats ut på grund av inaktivitet. Logga in igen.",
+        "sessionEnded": "Din session har avslutats. Logga in igen."
+      }
     },
     "signOut": {
       "label": "Logga ut"
@@ -102,9 +106,7 @@
       "title": "Är du kvar?",
       "description": "Du loggas ut om {seconds} sekunder.",
       "stay": "Stanna inloggad",
-      "signOut": "Logga ut nu",
-      "signedOutInactive": "Du har loggats ut på grund av inaktivitet. Logga in igen.",
-      "signedOutEnded": "Din session har avslutats. Logga in igen."
+      "signOut": "Logga ut nu"
     },
     "denied": {
       "readOnly": "Din roll tillåter inte den här åtgärden.",
