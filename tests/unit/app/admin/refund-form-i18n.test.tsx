@@ -390,6 +390,8 @@ describe('RefundForm — the buttons stay in view (spec 122 US8b, UX review)', (
   it('keeps Cancel and Confirm in a row stuck to the bottom of the scrolling dialog body, stacked full width on a phone', () => {
     renderForm();
     const row = screen.getByTestId('refund-form-confirm').parentElement!;
-    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
+    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse');
+    // AURA's full width below sm (5.53): 44px and the long amount label wraps.
+    for (const button of row.querySelectorAll('button')) expect(button).toHaveClass('aura-btn--full-below-sm');
   });
 });

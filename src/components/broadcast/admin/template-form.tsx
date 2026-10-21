@@ -330,7 +330,6 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
           type="button"
           variant="secondary"
           disabled={isPending}
-          touchHeight
           onClick={() => router.push('/admin/broadcasts/templates')}
         >
           {t('cancelButton')}
@@ -339,7 +338,6 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
           type="submit"
           variant="primary"
           loading={isPending}
-          touchHeight
           disabled={!isPending && (!name.trim() || !subject.trim() || !bodyHtml.trim())}
         >
           {isPending ? t('savingButton') : t('saveButton')}

@@ -103,10 +103,10 @@ export function TaskActionDialog({
       description={description}
       footer={
         <>
-          <Button touchHeight variant="secondary" data-autofocus="" disabled={isPending} onClick={() => onOpenChange(false)}>
+          <Button variant="secondary" data-autofocus="" disabled={isPending} onClick={() => onOpenChange(false)}>
             {cancelLabel}
           </Button>
-          <Button touchHeight
+          <Button
             variant={variant === 'destructive' ? 'danger' : 'primary'}
             loading={isPending}
             disabled={!canSubmit}

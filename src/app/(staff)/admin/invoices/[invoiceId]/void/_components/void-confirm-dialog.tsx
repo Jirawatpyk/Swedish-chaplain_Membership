@@ -259,11 +259,11 @@ export function VoidConfirmDialog({ invoiceId, documentNumber, isBill = false }:
         * From 640px the row ends at the card's edge, Cancel then Void; on a
         * phone the buttons stack full width with Void on top (the mobile
         * board, spec Session 2026-10-02). */}
-      <div className="flex justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:[&>*]:w-full">
+      <div className="flex justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse">
         <Button
           type="button"
           variant="secondary"
-          touchHeight
+          fullWidth="below-sm"
           onClick={() => router.push(`/admin/invoices/${invoiceId}`)}
           disabled={pending}
         >
@@ -273,7 +273,7 @@ export function VoidConfirmDialog({ invoiceId, documentNumber, isBill = false }:
         <Button
           type="submit"
           variant="danger"
-          touchHeight
+          fullWidth="below-sm"
           icon={<ArchiveIcon aria-hidden="true" />}
           loading={pending}
           disabled={!canSubmit}

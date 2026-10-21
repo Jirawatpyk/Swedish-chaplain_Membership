@@ -449,17 +449,17 @@ export function CreditNoteForm({
           Admin-credit-note). On a phone they stack full width, the primary
           action on top (ux-standards § 11.1, as the void page); Cancel stays
           first in the DOM, so it is first in the tab order. */}
-      <div className="flex justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:[&>*]:w-full">
+      <div className="flex justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse">
         <Button
           type="button"
           variant="secondary"
-          touchHeight
+          fullWidth="below-sm"
           onClick={() => router.push(`/admin/invoices/${invoiceId}`)}
           disabled={pending}
         >
           {t('cancel')}
         </Button>
-        <Button type="submit" variant="primary" icon="check" touchHeight loading={pending} disabled={!canSubmit}>
+        <Button type="submit" variant="primary" icon="check" fullWidth="below-sm" loading={pending} disabled={!canSubmit}>
           {pending ? t('submitting') : t('submit')}
         </Button>
       </div>

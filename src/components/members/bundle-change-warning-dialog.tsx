@@ -108,10 +108,10 @@ export function BundleChangeWarningDialog({
       description={count !== null ? t('description', { affectedCount: count }) : t('loading')}
       footer={
         <>
-          <Button touchHeight variant="secondary" onClick={() => onOpenChange(false)}>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>
-          <Button touchHeight onClick={onConfirm} disabled={loading}>
+          <Button onClick={onConfirm} disabled={loading}>
             {t('confirm')}
           </Button>
         </>

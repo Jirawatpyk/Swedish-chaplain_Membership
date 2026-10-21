@@ -79,10 +79,10 @@ export function PlanChangeConfirmDialog({
       // destructive — ux-standards § 6.2).
       footer={
         <>
-          <Button touchHeight variant="secondary" data-autofocus onClick={() => onOpenChange(false)} disabled={submitting}>
+          <Button variant="secondary" data-autofocus onClick={() => onOpenChange(false)} disabled={submitting}>
             {t('cancel')}
           </Button>
-          <Button touchHeight loading={submitting} disabled={submitting} onClick={onConfirm}>
+          <Button loading={submitting} disabled={submitting} onClick={onConfirm}>
             {t('confirm')}
           </Button>
         </>

@@ -72,12 +72,11 @@ export function EventMismatchWarningDialog(
       }
       footer={
         <>
-          <Button type="button" variant="secondary" touchHeight onClick={close}>
+          <Button type="button" variant="secondary" onClick={close}>
             {t('cancelCta')}
           </Button>
           <Button
             type="button"
-            touchHeight
             aria-describedby={describedById}
             onClick={() => {
               close();

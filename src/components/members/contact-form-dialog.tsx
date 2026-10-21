@@ -392,12 +392,12 @@ export function ContactFormDialog({
       description={mode === 'add' ? (description ?? t('description')) : t('editDescription')}
       footer={
         <>
-          <Button touchHeight variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>
+          <Button variant="secondary" onClick={() => setOpen(false)} disabled={submitting}>
             {t('cancel')}
           </Button>
           {/* `loading` alone: AURA marks it aria-disabled and ignores clicks,
               and focus stays on it (a native disabled drops it to <body>). */}
-          <Button touchHeight type="submit" form={formId} loading={submitting}>
+          <Button type="submit" form={formId} loading={submitting}>
             {submitting ? t('submitting') : t('submit')}
           </Button>
         </>

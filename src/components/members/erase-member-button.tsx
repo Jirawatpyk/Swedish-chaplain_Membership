@@ -199,10 +199,10 @@ export function EraseMemberButton({
         // (5.14, handoff 102); handleConfirm re-checks the gate too.
         footer={
           <>
-            <Button touchHeight variant="secondary" data-autofocus disabled={loading} onClick={() => handleOpenChange(false)}>
+            <Button variant="secondary" data-autofocus disabled={loading} onClick={() => handleOpenChange(false)}>
               {t('cancel')}
             </Button>
-            <Button touchHeight
+            <Button
               variant="danger"
               loading={loading}
               aria-disabled={!canConfirm || undefined}

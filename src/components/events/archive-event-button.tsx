@@ -38,6 +38,8 @@ interface ArchiveResponse {
 
 interface ArchiveEventButtonProps {
   readonly eventId: string;
+  /** Stretch the button to its container (the phone actions section). */
+  readonly fullWidth?: boolean;
 }
 
 async function postArchive(
@@ -64,7 +66,7 @@ async function postArchive(
   return { ok: false, status: res.status, ...body };
 }
 
-export function ArchiveEventButton({ eventId }: ArchiveEventButtonProps) {
+export function ArchiveEventButton({ eventId, fullWidth = false }: ArchiveEventButtonProps) {
   const t = useTranslations('admin.events.detail.archive');
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -116,6 +118,7 @@ export function ArchiveEventButton({ eventId }: ArchiveEventButtonProps) {
         variant="danger-secondary"
         icon={<Archive aria-hidden />}
         touchHeight
+        fullWidth={fullWidth}
         loading={pending}
         // NEW-I1 (wave-6): the trigger stays focusable during a POST.
         onClick={() => !pending && setOpen(true)}

@@ -376,8 +376,8 @@ describe('VoidConfirmDialog — AURA layout', () => {
     expect(cancel.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const row = cancel.parentElement!;
     expect(row).toBe(submit.parentElement);
-    expect(row).toHaveClass('max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
-    expect(submit).toHaveClass('aura-btn');
+    expect(row).toHaveClass('max-sm:flex-col-reverse');
+    for (const button of [cancel, submit]) expect(button).toHaveClass('aura-btn', 'aura-btn--full-below-sm');
   });
 });
 
