@@ -128,7 +128,7 @@ describe('<PendingReactivationActions> on AURA', () => {
     renderActions({ status: 'pending_admin_reactivation', rejectRefundInitiatedAt: null, placement: 'dangerZone' });
     expect(screen.queryByRole('button', { name: P.reactivate.button })).toBeNull();
     const reject = screen.getByRole('button', { name: P.reject.button });
-    expect(reject).toHaveClass('w-full');
+    expect(reject).toHaveClass('aura-btn--full', 'aura-btn--touch');
     expect(reject).not.toHaveClass('max-sm:hidden');
   });
 
