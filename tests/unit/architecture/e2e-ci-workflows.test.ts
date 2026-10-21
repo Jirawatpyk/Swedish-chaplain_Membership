@@ -252,6 +252,10 @@ describe('.github/ci/e2e.env', () => {
     expect(pairs.get('FEATURE_F5_ONLINE_PAYMENT')).toBe('true');
     expect(pairs.get('FEATURE_088_TAX_AT_PAYMENT')).toBe('true');
     expect(pairs.get('FEATURE_F9_DASHBOARD')).toBe('true');
+    // F114's platform half, on in production: without it /portal/edit always
+    // takes the immediate path, and container-widths' approval-mode column
+    // (880 px) can never render in CI (nightly 39277018214).
+    expect(pairs.get('FEATURE_MEMBER_CHANGE_APPROVAL')).toBe('true');
     expect(pairs.get('EXPORT_DOWNLOAD_TOKEN_SECRET')?.length ?? 0).toBeGreaterThanOrEqual(32);
   });
 

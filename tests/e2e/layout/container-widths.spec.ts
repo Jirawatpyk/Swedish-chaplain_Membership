@@ -26,6 +26,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../fixtures';
 import { clearE2ERateLimits } from '../helpers/rate-limit';
+import { ensureApprovalSetting } from '../helpers/change-request-seed';
 import { assertNoHorizontalScroll, signInViaForm, waitForLayoutContainer } from '../helpers/layout';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -184,24 +185,38 @@ test.describe('F5 container widths @layout', () => {
       }
     }
 
-    for (const { route, min, max } of PORTAL_FORM_ROUTES) {
-      test(`FormContainer on ${route} @ 1440px`, async ({ page }) => {
-        test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_*_EMPTY not set');
-        await page.setViewportSize({ width: 1440, height: 900 });
-        await signInMember(page);
-        await page.goto(route);
-        await waitForLayoutContainer(page);
-
-        const container = page.locator('[data-slot="layout-container"][data-variant="form"]').first();
-        await expect(container).toBeVisible();
-
-        const boxWidth = await container.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
-        expect(boxWidth).toBeGreaterThanOrEqual(min);
-        expect(boxWidth).toBeLessThanOrEqual(max);
-
-        await assertNoHorizontalScroll(page);
+    // `/portal/edit` draws the 880 px column only in F114 approval mode, which
+    // production runs; the immediate path keeps the 720 px staff form. Turn the
+    // tenant half on for these cases and restore it afterwards.
+    test.describe('portal form routes (approval mode)', () => {
+      let previousSetting: boolean | null = null;
+      test.beforeAll(async () => {
+        previousSetting = await ensureApprovalSetting(true);
       });
-    }
+      test.afterAll(async () => {
+        if (previousSetting !== null) await ensureApprovalSetting(previousSetting);
+      });
+
+      for (const { route, min, max } of PORTAL_FORM_ROUTES) {
+        test(`FormContainer on ${route} @ 1440px`, async ({ page }) => {
+          test.skip(!MEMBER_EMAIL || !MEMBER_PASSWORD, 'E2E_MEMBER_*_EMPTY not set');
+          test.skip(previousSetting === null, 'no seed DB client — approval mode could not be turned on');
+          await page.setViewportSize({ width: 1440, height: 900 });
+          await signInMember(page);
+          await page.goto(route);
+          await waitForLayoutContainer(page);
+
+          const container = page.locator('[data-slot="layout-container"][data-variant="form"]').first();
+          await expect(container).toBeVisible();
+
+          const boxWidth = await container.evaluate((el) => (el as HTMLElement).getBoundingClientRect().width);
+          expect(boxWidth).toBeGreaterThanOrEqual(min);
+          expect(boxWidth).toBeLessThanOrEqual(max);
+
+          await assertNoHorizontalScroll(page);
+        });
+      }
+    });
   });
 
   test.describe('container-widths detail', () => {
