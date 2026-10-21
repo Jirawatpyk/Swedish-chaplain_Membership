@@ -177,6 +177,15 @@ describe('buildSignInUrl', () => {
     ).toBe('/portal/sign-in?returnTo=%2Fportal%2Finvoices%2Fi1');
   });
 
+  // Stripping re-encodes the query; it must not launder characters that
+  // safeReturnTo rejects on the raw path (#609 security review, LOW 1).
+  it('still drops returnTo for an unsafe query that also carries Stripe keys', () => {
+    expect(buildSignInUrl('member', '/portal/x?next=https://evil.example&payment_intent=pi_1')).toBe(
+      '/portal/sign-in',
+    );
+    expect(buildSignInUrl('member', '/portal/x?a=\\b&payment_intent=pi_1')).toBe('/portal/sign-in');
+  });
+
   it('keeps returnTo when only a long Stripe client secret made the path too long', () => {
     const secret = `pi_1_secret_${'x'.repeat(600)}`;
     expect(

@@ -35,6 +35,21 @@ describe('StripStripeReturnParams', () => {
     expect(window.location.pathname + window.location.search).toBe('/portal/invoices/i1');
   });
 
+  // Next's App Router keeps `__NA` in history.state and skips its router sync
+  // for any replaceState that carries it — a later router.refresh() would then
+  // write the old URL (secret included) back. Passing null lets Next copy its
+  // own state and update the URL it remembers.
+  it('hands Next a null state so the router learns the clean URL', () => {
+    window.history.replaceState(
+      { __NA: true },
+      '',
+      '/portal/invoices/i1?paid=1&payment_intent=pi_1&payment_intent_client_secret=pi_1_secret_x',
+    );
+    const replace = vi.spyOn(window.history, 'replaceState');
+    render(<StripStripeReturnParams />);
+    expect(replace).toHaveBeenCalledWith(null, '', '/portal/invoices/i1?paid=1');
+  });
+
   it('does not touch the history entry when there is nothing to remove', () => {
     window.history.replaceState(null, '', '/portal/invoices/i1?pay=1');
     const replace = vi.spyOn(window.history, 'replaceState');
