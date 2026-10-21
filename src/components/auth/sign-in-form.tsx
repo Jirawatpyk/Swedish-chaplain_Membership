@@ -96,7 +96,6 @@ export function SignInForm({ portal, returnTo, notice }: SignInFormProps) {
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setSubmitting(true);
-    setNetworkFailed(false);
     // Clear any prior server-rejection banner so it can't linger next to a
     // different outcome (e.g. a later network throw) on a fresh attempt.
     clearErrors('root');
@@ -114,6 +113,7 @@ export function SignInForm({ portal, returnTo, notice }: SignInFormProps) {
         // the sign-in page's server component, but we re-check here
         // so any future refactor that forgets the guard still stays
         // safe).
+        setNetworkFailed(false);
         const safeReturn = returnTo ? safeReturnTo(returnTo, portal) : null;
         router.push(safeReturn ?? data.redirect);
         router.refresh();
@@ -135,6 +135,9 @@ export function SignInForm({ portal, returnTo, notice }: SignInFormProps) {
         'rate-limited': t('errors.rateLimited'),
         'invalid-credentials': t('errors.invalidCredentials'),
       };
+      // The notice gives way to the error only now, so a retry after a network
+      // failure keeps it while the request is in flight.
+      setNetworkFailed(false);
       setError('root', {
         message:
           (errorBody.error !== undefined ? messageByCode[errorBody.error] : undefined) ??
@@ -151,7 +154,8 @@ export function SignInForm({ portal, returnTo, notice }: SignInFormProps) {
 
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
+      // A format error is an inline error too: it replaces the notice.
+      onSubmit={handleSubmit(onSubmit, () => setNetworkFailed(false))}
       // Native (pre-hydration) fallback MUST be POST so credentials land in
       // the request body, never the URL query string. CWE-598 — see
       // tests/unit/auth/auth-forms-post-method.test.tsx. Inert once hydrated

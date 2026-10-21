@@ -101,6 +101,7 @@ import { OnlinePaymentDisabledCard } from './_components/online-payment-disabled
 import { OptimisticPaidOverlay } from './_components/optimistic-paid-overlay';
 import { PayBar } from './_components/pay-bar';
 import { ReceiptReveal } from './_components/receipt-reveal';
+import { StripStripeReturnParams } from './_components/strip-stripe-return-params';
 
 interface RouteParams {
   readonly invoiceId: string;
@@ -665,6 +666,10 @@ export async function renderPortalInvoiceDetailView({
           available. Rendered UNCONDITIONALLY so its optimistic-paid
           subscription is live when the pay-sheet's `dispatchInvoicePaid` fires;
           it returns null when there is nothing to poll. */}
+      {/* Removes Stripe's 3DS redirect keys (the client secret among them)
+          from the address bar on every invoice, paid ones included. */}
+      <StripStripeReturnParams />
+
       <ReceiptReveal
         invoiceId={invoice.invoiceId}
         receiptAvailable={showReceiptPdf}
