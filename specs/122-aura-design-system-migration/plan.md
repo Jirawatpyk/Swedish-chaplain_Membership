@@ -296,3 +296,22 @@ These are logic fixes from the #608 reviews, in a PR of their own. The touch-tar
 - **Review follow-ups, RED** (commit `1862aa9a0`):
   - `strip-stripe-return-params.test.tsx`: "hands Next a null state so the router learns the clean URL" → `expected "replaceState" to be called with arguments: [ null, '', …(1) ]`. The component passed `window.history.state`. That state carries Next's `__NA` marker, so Next skipped its router sync, and a later `router.refresh()` would write the secret back (`financial-integrity-reviewer`).
   - `return-url.test.ts`: "still drops returnTo for an unsafe query that also carries Stripe keys" → `Received "/portal/sign-in?returnTo=%2Fportal%2Fx%3Fnext%3Dhttps%253A%252F%252Fevil.example"`. Stripping had re-encoded the query past `safeReturnTo` (`security-engineer`, LOW 1).
+
+### AURA 5.54: touch-target stand-ins out (PR 5 of the #607/#610 follow-ups; size M, plan agreed 2026-10-22)
+
+AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `touchHeight` stand-ins (22 Oct: "ถอดออก"), accepting the density height on a touch tablet from 640px.
+
+- **Plan.**
+  - Bump to 5.54. The brand theme regenerated with identical tokens and only its header comment changed, so it was kept as is.
+  - Remove `touchHeight` from Dialog/Drawer footers and ActionBar `children`/`start`.
+  - `FULL_WIDTH_BELOW_SM` becomes `fullWidth="below-sm"`.
+  - Container-stretched rows move to per-button `fullWidth="below-sm"`.
+  - Body buttons AURA does not cover gain `touchHeight`: the preview width toggles and the invoice form rows.
+  - The guard flips: it refuses a `touchHeight` stand-in where AURA sizes the button, and any container `w-full` stretch.
+- **Kept, deliberately:**
+  - `sticky-save-bar.tsx` `min-h-11`: 088 FR-036 asks for 44px at every width.
+  - The `.eblast-detail-actions` CSS: it also lays out the wrapping row, not only the height.
+- **RED** (commit `10f0ab703`, guard only): 2 failed, 4 passed (both positive controls held).
+  - "no Button in a Dialog/Drawer footer or an ActionBar carries touchHeight" → 88 hits, for example `src/components/shell/confirmation-dialog.tsx:166`, `src/app/(staff)/admin/members/_components/bulk-action-bar.tsx:440`.
+  - "no AURA Button or buttonClass stretches with a w-full class, on itself or from its container" → 6 hits: `event-detail-view.tsx:117`, `refund-form.tsx:692`, `credit-note-form.tsx:452`, `void-confirm-dialog.tsx:262`, `csv-mapping-form.tsx:1223`, `webhook-config-wizard.tsx:242`.
+- **GREEN** (`c5e4fec84`, D-023 UI exception: the prop removals share the guard's GREEN commit). Seven component tests that asserted the removed classes were updated to assert AURA's (`aura-btn--full-below-sm`, a button inside `.aura-actionbar` without `aura-btn--touch`).
