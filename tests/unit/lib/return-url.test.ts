@@ -144,4 +144,21 @@ describe('buildSignInUrl', () => {
   it('strips sign-in self-reference (no loop)', () => {
     expect(buildSignInUrl('staff', '/admin/sign-in')).toBe('/admin/sign-in');
   });
+
+  it('appends the sign-in reason after returnTo', () => {
+    expect(buildSignInUrl('member', '/portal/profile', 'idle')).toBe(
+      '/portal/sign-in?returnTo=%2Fportal%2Fprofile&reason=idle',
+    );
+    expect(buildSignInUrl('staff', '/admin/users', 'session-ended')).toBe(
+      '/admin/sign-in?returnTo=%2Fadmin%2Fusers&reason=session-ended',
+    );
+  });
+
+  it('keeps the reason when the path is missing or unsafe', () => {
+    expect(buildSignInUrl('member', null, 'idle')).toBe('/portal/sign-in?reason=idle');
+    expect(buildSignInUrl('member', '//evil.example', 'session-ended')).toBe(
+      '/portal/sign-in?reason=session-ended',
+    );
+    expect(buildSignInUrl('member', '/admin/users', 'idle')).toBe('/portal/sign-in?reason=idle');
+  });
 });

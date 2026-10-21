@@ -232,3 +232,21 @@ Failing runs recorded under constitution 2.1.0 (D-023): for UI presentation the 
 | US12c-2 T1244, 20 Oct: loading, error and not-found on AURA | `portal-eblast-detail-skeleton.test.tsx` (3) · `portal-eblast-not-found.test.tsx` › title and body … the way back is an AURA button | failed before (`expected [] to have a length of 3 but got +0`; `expected 'group/button inline-flex shrink-0 cur…' to contain 'aura-btn'`); passed after |
 | US12c-2 T1245, 20 Oct: ratchet block and controls moved to US12d files | `ui-import-ratchet.test.ts` › the US12c-2 portal E-Blast detail and the member sign-off are on AURA (9) | failed before (9 × `expected [] to have a length of 1`) until `MIGRATED_PATHS` listed them; passed after. The moved controls (`compose-form.tsx`, `schedule-picker.tsx`) pass, so each still sees the legacy kit |
 | US12c-2 T1249, 20 Oct: UX review M1/M2/L7 | `portal-eblast-sign-off-page.test.tsx` › awaiting the member: the stage pill is in the progress tone; `refresh-page-button.test.tsx` › takes the touch height; `portal-eblast-detail-skeleton.test.tsx` › renders the stage banner… | failed before (`expected 'aura-pill aura-pill--neutral is-wrap …' to contain 'aura-pill--progress'`; `expected 'aura-btn aura-btn--secondary aura-btn…' to contain 'aura-btn--touch'`; `expected 'rounded-md skeleton-shimmer h-16 w-fu…' to contain 'h-24'`); passed after |
+
+### Sign-in reasons follow-up (after #607; size M, plan agreed 2026-10-21)
+
+Follow-ups 1–4 from the #607 review: behaviour changes, so a PR of their own (not a UI swap).
+
+- **Plan.**
+  - The `?reason=` message moves into `SignInForm` as a `notice` prop. It is a static AURA info `Alert` with `id="signin-notice"` and no live region, and it describes the email field.
+  - That field takes focus on mount, so the reason is read with its label. Before this, the focus announcement cut off the old post-hydration live region.
+  - After a sign-in attempt the notice gives way to the error, so only one alert shows.
+  - The idle sign-out carries `returnTo` (via `buildSignInUrl(portal, fromPath, reason)`).
+  - A heartbeat 401 means the session was already gone (another tab, revoked, past its cap). It now reads `?reason=session-ended` with its own copy instead of "inactivity".
+  - `SecurityUpdateBanner` is deleted.
+- **RED** (commit `test(auth): …`, run before any code change): 14 failed, 62 passed across 5 files.
+  - `idle-warning-dialog.test.tsx`: "on countdown expiry…" and "BUG-018: Stay signed in signs out only on a definitive 401" → `expected "spy" to be called with arguments` (no `returnTo`, no `session-ended`).
+  - `return-url.test.ts`: "appends the sign-in reason after returnTo" → `Expected "/portal/sign-in?returnTo=%2Fportal%2Fprofile&reason=idle"`, `Received "/portal/sign-in?returnTo=%2Fportal%2Fprofile"`. "keeps the reason when the path is missing or unsafe" → `Received "/portal/sign-in"`.
+  - `sign-in-form-errors.test.tsx`: "shows the sign-in reason as a standing notice…" → no `#signin-notice`.
+  - `portal-sign-in-idle.test.tsx` (both pages): `?reason=idle|session-ended|security-update hands the form its notice` → `expected '' to be 'auth.idleWarning.signedOutInactive'` etc.; "renders no reason banner of its own beside the form" → `expected <div role="status" …> to be null`.
+  - `portal-sign-in-link-invalid.test.tsx`: "hands the form the … notice" → no `data-notice`.

@@ -1,8 +1,12 @@
 /**
- * `/portal/sign-in?reason=idle` — where the idle warning sends a member it
- * signed out for inactivity. The reason used to be a toast, which closed
- * itself while the member was away; the sign-in card now says it and keeps
- * saying it (board `Portal-idle-signed-out`).
+ * The sign-in reasons — `?reason=` on both sign-in pages. The page reads the
+ * allow-listed reason and hands its message to the form, which shows it as a
+ * standing notice that describes the email field (so the focused field reads
+ * it) and gives way to the error after a failed sign-in.
+ *
+ * `idle`: the idle warning signed the user out for inactivity (board
+ * `Portal-idle-signed-out`). `session-ended`: "Stay signed in" found the
+ * session already gone (signed out in another tab, revoked, past its cap).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -15,7 +19,9 @@ vi.mock('@/lib/auth-session', () => ({
 }));
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
 vi.mock('@/components/auth/sign-in-form', () => ({
-  SignInForm: () => <form data-testid="sign-in-form" />,
+  SignInForm: ({ notice }: { notice?: string }) => (
+    <form data-testid="sign-in-form" data-notice={notice ?? ''} />
+  ),
 }));
 vi.mock('@/components/shell/auth-page-controls', () => ({
   AuthPageControls: () => null,
@@ -24,31 +30,35 @@ vi.mock('@/components/shell/brand-mark', () => ({
   BrandMark: () => null,
   CHAMBER_FULL_NAME: 'Thai-Swedish Chamber of Commerce',
 }));
-vi.mock('@/components/auth/security-update-banner', () => ({
-  SecurityUpdateBanner: ({ message }: { message: string }) => <div role="status">{message}</div>,
-}));
 
 const { default: MemberSignInPage } = await import('@/app/(auth-public)/portal/sign-in/page');
 const { default: StaffSignInPage } = await import('@/app/(auth-public)/admin/sign-in/page');
-
-const IDLE = 'auth.idleWarning.signedOutInactive';
 
 describe.each([
   ['/portal/sign-in', MemberSignInPage],
   ['/admin/sign-in', StaffSignInPage],
 ] as const)('%s', (_path, Page) => {
-  async function renderPage(reason?: string) {
+  async function noticeFor(reason?: string) {
     const ui = await Page({ searchParams: Promise.resolve(reason === undefined ? {} : { reason }) });
     render(ui);
+    return screen.getByTestId('sign-in-form').getAttribute('data-notice');
   }
 
-  it('?reason=idle says the user was signed out for inactivity', async () => {
-    await renderPage('idle');
-    expect(screen.getByRole('status').textContent).toBe(IDLE);
+  it.each([
+    ['idle', 'auth.idleWarning.signedOutInactive'],
+    ['session-ended', 'auth.idleWarning.signedOutEnded'],
+    ['security-update', 'auth.signIn.securityUpdateBanner'],
+  ])('?reason=%s hands the form its notice', async (reason, message) => {
+    expect(await noticeFor(reason)).toBe(message);
   });
 
-  it.each([undefined, 'idle-ish', 'IDLE'])('reason %s shows no inactivity banner', async (reason) => {
-    await renderPage(reason);
-    expect(screen.queryByText(IDLE)).toBeNull();
+  it.each([undefined, 'idle-ish', 'IDLE', 'Session-Ended'])('reason %s hands the form no notice', async (reason) => {
+    expect(await noticeFor(reason)).toBe('');
+  });
+
+  it('renders no reason banner of its own beside the form (one place for the reason)', async () => {
+    const ui = await Page({ searchParams: Promise.resolve({ reason: 'idle' }) });
+    render(ui);
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });

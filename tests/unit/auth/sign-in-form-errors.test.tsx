@@ -25,15 +25,70 @@ beforeEach(() => {
   toastError.mockClear();
 });
 
-function renderForm() {
+function renderForm(notice?: string) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <SignInForm portal="staff" />
+      <SignInForm portal="staff" {...(notice === undefined ? {} : { notice })} />
     </NextIntlClientProvider>,
   );
 }
 
+const NOTICE = enMessages.auth.idleWarning.signedOutInactive;
+
 describe('SignInForm', () => {
+  it('shows the sign-in reason as a standing notice that describes the email field (not a live region)', () => {
+    // The email field takes focus on mount; a live region announced at the
+    // same moment is cut off by that focus. Described by the notice, the
+    // focused field reads the reason with its label instead.
+    const { container } = renderForm(NOTICE);
+    const notice = container.querySelector('#signin-notice');
+    expect(notice).toHaveTextContent(NOTICE);
+    expect(notice?.closest('[role="status"],[role="alert"],[aria-live]')).toBeNull();
+    expect(notice?.querySelector('[role="status"],[role="alert"],[aria-live]')).toBeNull();
+    expect(
+      (container.querySelector('#email')?.getAttribute('aria-describedby') ?? '').split(' '),
+    ).toContain('signin-notice');
+  });
+
+  it('renders no notice and no description without a reason', () => {
+    const { container } = renderForm();
+    expect(container.querySelector('#signin-notice')).toBeNull();
+    expect(container.querySelector('#email')?.getAttribute('aria-describedby') ?? '').not.toContain(
+      'signin-notice',
+    );
+  });
+
+  it('after a failed sign-in, the error replaces the notice: one alert, and email is described by the error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: 'invalid-credentials' }) }),
+    );
+    const { container } = renderForm(NOTICE);
+    fireEvent.change(container.querySelector('#email')!, { target: { value: 'user@example.com' } });
+    fireEvent.change(container.querySelector('#password')!, { target: { value: 'some-password' } });
+    fireEvent.submit(container.querySelector('form')!);
+
+    await screen.findByText((_t, node) => node?.id === 'signin-error');
+    expect(container.querySelector('#signin-notice')).toBeNull();
+    const describedBy = (container.querySelector('#email')?.getAttribute('aria-describedby') ?? '').split(' ');
+    expect(describedBy).toContain('signin-error');
+    expect(describedBy).not.toContain('signin-notice');
+    vi.unstubAllGlobals();
+  });
+
+  it('keeps a format error announced on the email field after a submit with a notice', async () => {
+    const { container } = renderForm(NOTICE);
+    fireEvent.change(container.querySelector('#email')!, { target: { value: 'notanemail' } });
+    fireEvent.change(container.querySelector('#password')!, { target: { value: 'some-password' } });
+    fireEvent.submit(container.querySelector('form')!);
+
+    await screen.findByText((_t, node) => node?.id === 'email-error');
+    expect(container.querySelector('#signin-notice')).toBeNull();
+    expect(
+      (container.querySelector('#email')?.getAttribute('aria-describedby') ?? '').split(' '),
+    ).toContain('email-error');
+  });
+
   it('email field uses inputmode=email for the right mobile keyboard', () => {
     const { container } = renderForm();
     expect(container.querySelector('#email')?.getAttribute('inputmode')).toBe(
