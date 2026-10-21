@@ -67,8 +67,6 @@ import {
 import { randomUUID } from 'node:crypto';
 import { portalBroadcastBack } from './_lib/portal-broadcast-back';
 
-/** Where the E-Blast list lives (the benefits page's broadcasts tab). */
-
 /**
  * UX review L7 — the statuses at which a send has begun, so the delivery
  * breakdown means something. Before them it is all zeros (awaiting the

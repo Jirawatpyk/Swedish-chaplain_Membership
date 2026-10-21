@@ -72,6 +72,12 @@ describe('portal E-Blast detail skeleton reserves the page it precedes (U1)', ()
     expect(document.querySelector('a')).toBeNull();
     const back = screen.getByTestId('detail-back-skeleton');
     expect(back.compareDocumentPosition(screen.getByTestId('detail-stage-banner-skeleton')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The row is BackLink's height: 44px on phones, one label line above —
+    // the label's line box (18.2px), not the 16px block, or the page shifts.
+    const row = back.parentElement!;
+    expect(row.className).toContain('min-h-11');
+    expect(row.className).toContain('aura-text-label');
+    expect(row.className).toContain('sm:min-h-[1lh]');
   });
 
   it('T086a V5: the fields card has a header (the overline + the subject heading), as the page does', async () => {

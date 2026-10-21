@@ -51,8 +51,9 @@ export default async function BroadcastDetailLoading(): Promise<React.ReactEleme
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         {/* The Back link's place (L8), as a block: it may lead to the E-Blast
             list or the dashboard, and only the page knows which. The size of
-            BackLink: a 44px row on phones, one label line above. */}
-        <div className="-mb-1 flex min-h-11 items-center self-start sm:min-h-0">
+            BackLink: a 44px row on phones, one label line (the label's line
+            box, 18.2px, taller than the 16px block) above. */}
+        <div className="-mb-1 flex min-h-11 items-center self-start aura-text-label sm:min-h-[1lh]">
           <SkeletonBlock data-testid="detail-back-skeleton" className="h-4 w-32" />
         </div>
         {/* F119 T086 — the stage banner (status badge + whose turn + expiry). */}
