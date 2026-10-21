@@ -46,6 +46,29 @@ test.describe('member sign-in (T140) @critical', () => {
     ).toBeVisible();
   });
 
+  test('session ended elsewhere: the card says so, and signing in returns to the page', async ({ page }) => {
+    // Where the idle warning sends a member whose session was already gone
+    // ("Stay signed in" got a 401). /portal/account stays open in every
+    // membership state, so the return lands for any persona.
+    await page.goto('/portal/sign-in?returnTo=%2Fportal%2Faccount&reason=session-ended');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('#signin-notice')).toHaveText(/your session has ended/i);
+    await expect(page.getByLabel(/email/i)).toHaveAttribute('aria-describedby', /signin-notice/);
+
+    await fillField(page.getByLabel(/email/i), MEMBER_EMAIL!);
+    await fillField(page.getByRole('textbox', { name: /^password$/i }), MEMBER_PASSWORD!);
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/api/auth/sign-in') && r.request().method() === 'POST',
+        { timeout: 15_000 },
+      ),
+      page.getByRole('button', { name: /sign in/i }).click(),
+    ]);
+
+    await page.waitForURL('**/portal/account', { timeout: 30_000 });
+    expect(new URL(page.url()).pathname).toBe('/portal/account');
+  });
+
   test('member attempting /admin is bounced back to /portal', async ({ page }) => {
     await page.goto('/portal/sign-in');
     await fillField(page.getByLabel(/email/i), MEMBER_EMAIL!);

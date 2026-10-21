@@ -250,7 +250,6 @@ export const MIGRATED_PATHS = [
   'src/components/auth/auth-title.tsx',
   'src/components/auth/auth-link-invalid.tsx',
   'src/components/auth/password-strength.tsx',
-  'src/components/auth/security-update-banner.tsx',
   // US3 — the member portal's home, benefits, profile, change requests,
   // account, invite and timeline, with the components they render (several
   // shared with staff screens: the change-request pill and diff, the data

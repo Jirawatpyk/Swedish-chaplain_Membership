@@ -3,7 +3,6 @@ import { getTranslations } from 'next-intl/server';
 import { redirect } from 'next/navigation';
 import { SignInForm } from '@/components/auth/sign-in-form';
 import { AuthFrame } from '@/components/auth/auth-frame';
-import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
 import { getCurrentSession } from '@/lib/auth-session';
 import { safeReturnTo } from '@/lib/return-url';
 
@@ -38,16 +37,12 @@ export default async function MemberSignInPage({
   const { returnTo: rawReturnTo, reason: rawReason } = await searchParams;
   const returnToCandidate = Array.isArray(rawReturnTo) ? rawReturnTo[0] : rawReturnTo;
   const validatedReturnTo = safeReturnTo(returnToCandidate, 'member');
-  // H3 (Round 2): see admin/sign-in/page.tsx for rationale.
+  // ?reason= says why the member is here; the form shows it as a notice.
+  // Allow-listed — see admin/sign-in/page.tsx for the shared reasons.
+  // `link_invalid`: the renewal redeem-link route sends EVERY failure here
+  // (expired, used, tampered) without saying which — keep the notice
+  // equally unspecific.
   const reasonCandidate = Array.isArray(rawReason) ? rawReason[0] : rawReason;
-  const showSecurityBanner = reasonCandidate === 'security-update';
-  // The renewal redeem-link route sends EVERY failure here (expired, used,
-  // tampered) without saying which — keep the banner equally unspecific.
-  const showLinkInvalidBanner = reasonCandidate === 'link_invalid';
-  // The idle warning sends whoever it signed out for inactivity here, so the
-  // reason waits on the card for them to come back (a toast closed itself
-  // while they were away; board `Portal-idle-signed-out`).
-  const showIdleBanner = reasonCandidate === 'idle';
 
   const current = await getCurrentSession();
   if (current) {
@@ -60,6 +55,16 @@ export default async function MemberSignInPage({
 
   const t = await getTranslations('auth.signIn');
   const tIdle = await getTranslations('auth.idleWarning');
+  const notice =
+    reasonCandidate === 'security-update'
+      ? t('securityUpdateBanner')
+      : reasonCandidate === 'idle'
+        ? tIdle('signedOutInactive')
+        : reasonCandidate === 'session-ended'
+          ? tIdle('signedOutEnded')
+          : reasonCandidate === 'link_invalid'
+            ? t('linkInvalidBanner')
+            : undefined;
   const tenantName = process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham';
 
   return (
@@ -70,10 +75,7 @@ export default async function MemberSignInPage({
       tenantName={tenantName}
       variant="sign-in"
     >
-      {showSecurityBanner ? <SecurityUpdateBanner message={t('securityUpdateBanner')} /> : null}
-      {showIdleBanner ? <SecurityUpdateBanner message={tIdle('signedOutInactive')} /> : null}
-      {showLinkInvalidBanner ? <SecurityUpdateBanner message={t('linkInvalidBanner')} /> : null}
-      <SignInForm portal="member" returnTo={validatedReturnTo} />
+      <SignInForm portal="member" returnTo={validatedReturnTo} notice={notice} />
     </AuthFrame>
   );
 }

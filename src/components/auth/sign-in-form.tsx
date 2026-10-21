@@ -15,6 +15,8 @@
  *   - Inline error messages localised via next-intl
  *   - On a validation failure the error summary takes focus and links to
  *     each field; on a server rejection focus moves to the email
+ *   - The page's `?reason=` message is a standing notice that describes the
+ *     email field, and gives way to the error once a sign-in is attempted
  *   - All toasts are routed through `@/lib/toast` (AURA; see AuraBridge)
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -45,14 +47,22 @@ export interface SignInFormProps {
    * run; we re-validate client-side as defense-in-depth.
    */
   readonly returnTo?: string | null;
+  /**
+   * Why the user is on the sign-in page (the page's allow-listed `?reason=`
+   * message): signed out for inactivity, session ended, security update, …
+   */
+  readonly notice?: string | undefined;
 }
 
-export function SignInForm({ portal, returnTo }: SignInFormProps) {
+export function SignInForm({ portal, returnTo, notice }: SignInFormProps) {
   const t = useTranslations('auth.signIn');
   const tErrors = useTranslations('errors');
   const tv = useTranslations('shared.validation');
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
+  // The last attempt never reached the server (network failure): only a toast
+  // says so, nothing inline, so the reason notice stays on the card.
+  const [networkFailed, setNetworkFailed] = useState(false);
 
   const schema = useMemo(() => buildSignInSchema(tv as Translator), [tv]);
 
@@ -72,6 +82,12 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
   });
   // `root` is the server message with its own alert, never a field.
   const { root: _root, ...fieldErrors } = errors;
+  // The reason notice gives way once a sign-in is attempted, so the error (the
+  // summary or the server alert) is the only alert on the card. Keyed on the
+  // attempt, not on `errors.root`: that is cleared at the start of each submit
+  // and would bring the notice back for the length of the request. A network
+  // failure shows no inline error, so the notice stays.
+  const showNotice = notice !== undefined && (submitCount === 0 || networkFailed);
 
   // Auto-focus the email field on mount (spec FR-024 primary-input table).
   useEffect(() => {
@@ -80,6 +96,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     setSubmitting(true);
+    setNetworkFailed(false);
     // Clear any prior server-rejection banner so it can't linger next to a
     // different outcome (e.g. a later network throw) on a fresh attempt.
     clearErrors('root');
@@ -125,6 +142,7 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
       });
       setFocus('email');
     } catch {
+      setNetworkFailed(true);
       toast.error(tErrors('network'));
     } finally {
       setSubmitting(false);
@@ -145,6 +163,17 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
     >
       <FormErrorSummary errors={fieldErrors} focusKey={submitCount} />
 
+      {showNotice ? (
+        // Not a live region: the email field takes focus on mount, and that
+        // focus cut off a polite announcement made at the same moment. The
+        // field is described by the notice instead, so it is read with the
+        // field's label (WCAG 4.1.3). Static text, so it is there before
+        // hydration too.
+        <Alert id="signin-notice" tone="info" role="none">
+          {notice}
+        </Alert>
+      ) : null}
+
       <TextField
         id="email"
         label={t('emailLabel')}
@@ -157,8 +186,9 @@ export function SignInForm({ portal, returnTo }: SignInFormProps) {
         // `error`) — a server rejection (bad credentials / account state)
         // doesn't mean the email is malformed. But the focused field IS
         // described by the rejection so a SR user hears the reason (audit
-        // XF-01 / WCAG 3.3.1).
-        aria-describedby={errors.root ? 'signin-error' : undefined}
+        // XF-01 / WCAG 3.3.1) — or, before any attempt, by the reason notice.
+        // AURA joins this with the field's own error id.
+        aria-describedby={errors.root ? 'signin-error' : showNotice ? 'signin-notice' : undefined}
         {...register('email')}
       />
 

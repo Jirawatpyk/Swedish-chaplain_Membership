@@ -84,15 +84,30 @@ export function safeReturnTo(candidate: unknown, portal: Portal): string | null 
 }
 
 /**
+ * Why the sign-in page is shown, when a client sign-out sends the user there
+ * (`?reason=`). The sign-in pages allow-list these and show the message on
+ * the card: `idle` — signed out for inactivity; `session-ended` — the
+ * session was already gone (another tab, revoked, past its absolute cap).
+ */
+export type SignInReason = 'idle' | 'session-ended';
+
+/**
  * Build a sign-in URL with the `returnTo` query param if the caller
  * supplies a current path worth preserving. Used by `requireSession`
  * (src/lib/auth-session.ts) to redirect an unauthenticated visitor
- * while remembering where they were trying to go.
+ * while remembering where they were trying to go, and by the idle
+ * warning, which adds the `reason`. An unsafe path drops `returnTo`
+ * but keeps the reason.
  */
-export function buildSignInUrl(portal: Portal, fromPath: string | null): string {
+export function buildSignInUrl(
+  portal: Portal,
+  fromPath: string | null,
+  reason?: SignInReason,
+): string {
+  const params: string[] = [];
+  const safe = fromPath ? safeReturnTo(fromPath, portal) : null;
+  if (safe) params.push(`returnTo=${encodeURIComponent(safe)}`);
+  if (reason) params.push(`reason=${reason}`);
   const base = portalSignInPath(portal);
-  if (!fromPath) return base;
-  const safe = safeReturnTo(fromPath, portal);
-  if (!safe) return base;
-  return `${base}?returnTo=${encodeURIComponent(safe)}`;
+  return params.length > 0 ? `${base}?${params.join('&')}` : base;
 }

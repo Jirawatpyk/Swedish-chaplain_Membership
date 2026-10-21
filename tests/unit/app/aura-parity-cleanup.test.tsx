@@ -12,7 +12,6 @@ import { readFileSync } from 'node:fs';
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
-import { SecurityUpdateBanner } from '@/components/auth/security-update-banner';
 
 const src = (path: string): string => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 const RAW_TEXT_PX = /\btext-\[\d+px\]/;
@@ -64,13 +63,12 @@ describe('US1 shell', () => {
 });
 
 describe('US2 auth', () => {
-  it('the security-update banner is AURA’s info Alert, without a second live region', () => {
-    // render() flushes the mount effect that fills the live region
-    const { container, getByText } = render(<SecurityUpdateBanner message="Your password was changed." />);
-    getByText('Your password was changed.');
-    expect(container.querySelector('.aura-alert.aura-alert--info .aura-alert__text')).not.toBeNull();
-    expect(container.querySelectorAll('[role="status"], [role="alert"]')).toHaveLength(1);
-    expect(src('src/components/auth/security-update-banner.tsx')).not.toMatch(/aura-alert/);
+  it('the sign-in reason notice is AURA’s info Alert, not a live region', () => {
+    // The banner it replaced was a live region cut off by the email autofocus;
+    // the notice describes the email field instead (sign-in-form-errors.test).
+    const form = src('src/components/auth/sign-in-form.tsx');
+    expect(form).toMatch(/<Alert id="signin-notice" tone="info" role="none">/);
+    expect(form).not.toMatch(/aura-alert/);
   });
 
   it.each([

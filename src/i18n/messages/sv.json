@@ -103,7 +103,8 @@
       "description": "Du loggas ut om {seconds} sekunder.",
       "stay": "Stanna inloggad",
       "signOut": "Logga ut nu",
-      "signedOutInactive": "Du har loggats ut på grund av inaktivitet. Logga in igen."
+      "signedOutInactive": "Du har loggats ut på grund av inaktivitet. Logga in igen.",
+      "signedOutEnded": "Din session har avslutats. Logga in igen."
     },
     "denied": {
       "readOnly": "Din roll tillåter inte den här åtgärden.",

@@ -2,7 +2,7 @@
  * `/portal/sign-in?reason=link_invalid` — where the renewal redeem-link route
  * sends every failure (expired, used, tampered: deliberately not saying which).
  * The page used to ignore the reason, so the member landed on a bare sign-in
- * form with no idea why. It now shows a banner.
+ * form with no idea why. The form now shows the reason as its notice.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -15,7 +15,9 @@ vi.mock('@/lib/auth-session', () => ({
 }));
 vi.mock('next/navigation', () => ({ redirect: vi.fn() }));
 vi.mock('@/components/auth/sign-in-form', () => ({
-  SignInForm: () => <form data-testid="sign-in-form" />,
+  SignInForm: ({ notice }: { notice?: string }) => (
+    <form data-testid="sign-in-form" data-notice={notice ?? ''} />
+  ),
 }));
 vi.mock('@/components/shell/auth-page-controls', () => ({
   AuthPageControls: () => null,
@@ -23,11 +25,6 @@ vi.mock('@/components/shell/auth-page-controls', () => ({
 vi.mock('@/components/shell/brand-mark', () => ({
   BrandMark: () => null,
   CHAMBER_FULL_NAME: 'Thai-Swedish Chamber of Commerce',
-}));
-vi.mock('@/components/auth/security-update-banner', () => ({
-  SecurityUpdateBanner: ({ message }: { message: string }) => (
-    <div role="status">{message}</div>
-  ),
 }));
 
 const { default: MemberSignInPage } = await import(
@@ -42,13 +39,13 @@ async function renderPage(reason?: string) {
 }
 
 describe('portal sign-in — reason=link_invalid', () => {
-  it('shows the "link is no longer valid" banner', async () => {
+  it('hands the form the "link is no longer valid" notice', async () => {
     await renderPage('link_invalid');
-    expect(screen.getByRole('status')).toHaveTextContent('linkInvalidBanner');
+    expect(screen.getByTestId('sign-in-form')).toHaveAttribute('data-notice', 'linkInvalidBanner');
   });
 
-  it('shows no banner without a reason', async () => {
+  it('hands the form no notice without a reason', async () => {
     await renderPage();
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getByTestId('sign-in-form')).toHaveAttribute('data-notice', '');
   });
 });

@@ -49,6 +49,7 @@ vi.mock('@/modules/auth/domain/session', () => ({
 
 vi.mock('@/lib/portal-paths', () => ({
   portalSignInPath: () => '/sign-in',
+  portalHomePath: () => '/portal',
 }));
 
 import { IdleWarningDialog } from '@/components/auth/idle-warning-dialog';
@@ -77,6 +78,8 @@ function renderDialog() {
 describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
+    // The page the member was on, carried to sign-in as `returnTo`.
+    window.history.replaceState({}, '', '/portal/profile?tab=contacts');
     replaceMock.mockClear();
     vi.mocked(toast.info).mockClear();
   });
@@ -115,8 +118,11 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     });
     // The reason travels to the sign-in page, which shows it in a banner
     // that waits for the member to come back (board Portal-idle-signed-out) —
-    // a toast would have closed itself while they were away.
-    expect(replaceMock).toHaveBeenCalledWith('/sign-in?reason=idle');
+    // a toast would have closed itself while they were away. Signing back in
+    // returns them to the page they were on.
+    expect(replaceMock).toHaveBeenCalledWith(
+      '/sign-in?returnTo=%2Fportal%2Fprofile%3Ftab%3Dcontacts&reason=idle',
+    );
     expect(toast.info).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
@@ -182,9 +188,12 @@ describe('<IdleWarningDialog> — F5 pause/resume amendment', () => {
     await act(async () => {
       fireEvent.click(screen.getByText('Stay signed in'));
     });
-    // A real no-session 401 DOES escalate to involuntary sign-out, so the
-    // sign-in page is told why.
-    expect(replaceMock).toHaveBeenCalledWith('/sign-in?reason=idle');
+    // A real no-session 401 DOES escalate to involuntary sign-out. The session
+    // was already gone (signed out in another tab, revoked, past its cap), so
+    // the sign-in page says it ended — not that the member was inactive.
+    expect(replaceMock).toHaveBeenCalledWith(
+      '/sign-in?returnTo=%2Fportal%2Fprofile%3Ftab%3Dcontacts&reason=session-ended',
+    );
     expect(toast.info).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
