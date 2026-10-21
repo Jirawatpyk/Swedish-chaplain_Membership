@@ -299,7 +299,7 @@ These are logic fixes from the #608 reviews, in a PR of their own. The touch-tar
 
 ### AURA 5.54: touch-target stand-ins out (PR 5 of the #607/#610 follow-ups; size M, plan agreed 2026-10-22)
 
-AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `touchHeight` stand-ins (22 Oct: "ถอดออก"), accepting the density height on a touch tablet from 640px.
+AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `touchHeight` stand-ins (22 Oct: "ถอดออก"), accepting that on a touch tablet from 640px the bulk bars' `size="sm"` buttons look 32px (44px hit area; default buttons are 44px there through the coarse-pointer density).
 
 - **Plan.**
   - Bump to 5.54. The brand theme regenerated with identical tokens and only its header comment changed, so it was kept as is.
@@ -315,3 +315,10 @@ AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `to
   - "no Button in a Dialog/Drawer footer or an ActionBar carries touchHeight" → 88 hits, for example `src/components/shell/confirmation-dialog.tsx:166`, `src/app/(staff)/admin/members/_components/bulk-action-bar.tsx:440`.
   - "no AURA Button or buttonClass stretches with a w-full class, on itself or from its container" → 6 hits: `event-detail-view.tsx:117`, `refund-form.tsx:692`, `credit-note-form.tsx:452`, `void-confirm-dialog.tsx:262`, `csv-mapping-form.tsx:1223`, `webhook-config-wizard.tsx:242`.
 - **GREEN** (`c5e4fec84`, D-023 UI exception: the prop removals share the guard's GREEN commit). Seven component tests that asserted the removed classes were updated to assert AURA's (`aura-btn--full-below-sm`, a button inside `.aura-actionbar` without `aura-btn--touch`).
+- **Review follow-up (`enterprise-ux-designer` MEDIUM), RED** (`0d76f081b`, with a stub that returns nothing): "positive control: a Button with a sibling in a wrapper, or two wrappers deep, is caught" → `Expected ["fixture.tsx:4", "fixture.tsx:5"]`, `Received []`. Now that `touchHeight` is banned in footers, a Button in such a wrapper would silently fall to the density height on a phone. The real check passes: every footer Button in the app is direct, or the only element in its wrapper.
+- **Reviews:**
+  - `enterprise-ux-designer`: Ship with follow-ups.
+  - `mobile-a11y-ux-reviewer`: Ship.
+  - Both confirmed that every Button whose stand-in came out is sized by AURA's selectors. The ActionBar rule is a descendant selector, so it reaches Buttons at any depth.
+  - The tablet wording was corrected: default buttons are 44px on a coarse pointer in compact density.
+  - The E-Blast ⋯ IconButton keeps `touchHeight`, now with a comment: DropdownMenu puts it two wrappers deep.

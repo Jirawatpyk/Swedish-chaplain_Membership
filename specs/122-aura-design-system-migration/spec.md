@@ -717,7 +717,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 
 - **AURA sizes the action buttons (maintainer, 22 Oct: "ถอดออก").**
   - AURA 5.53 (#165) and 5.54 (#166) make Dialog and Drawer footer buttons and ActionBar buttons at least 44px below 640px, whatever the density. The app's per-button `touchHeight` stand-ins come out.
-  - The trade-off: AURA's rule is viewport-based, so a touch tablet from 640px in compact density gets the density height there. The maintainer chose this over keeping `touchHeight`.
+  - The trade-off: AURA's rule is viewport-based. On a touch tablet from 640px, compact density already makes a default button 44px (coarse pointer); only the bulk bars' `size="sm"` buttons stay 32px to the eye, with a 44px hit area. The maintainer chose this over keeping `touchHeight`.
   - Body buttons AURA does not cover keep `touchHeight`.
 - **Phone-only stretch is `fullWidth="below-sm"`.** A row that stacks on phones sets it on each button, never `[&>*]:w-full` on the container (which keeps the fixed height and `nowrap`). A guard enforces both rules.
 

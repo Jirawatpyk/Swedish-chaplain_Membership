@@ -7,8 +7,10 @@
  *    44px and wrapping below 640px whatever the density, and since 5.54
  *    (#166) the same for the Buttons in an ActionBar's `children` and
  *    `start`. The per-button `touchHeight` stand-ins came out (maintainer:
- *    "ถอดออก", accepting 36px on a touch tablet from 640px in compact
- *    density); this keeps them from creeping back.
+ *    "ถอดออก"; a touch tablet from 640px already gets 44px default buttons
+ *    from the coarse-pointer density, and `size="sm"` keeps a 44px hit
+ *    area); this keeps them from creeping back, and checks every footer
+ *    Button sits where AURA's rule reaches it.
  * 2. A stretched button set with a `w-full` class — on the button or from its
  *    container (`[&>*]:w-full`) — keeps AURA's fixed height and `nowrap`, so a
  *    long label overflows instead of wrapping. `fullWidth` (or
@@ -170,8 +172,33 @@ export function scanStaleTouch(file: string, source: string): TouchScan {
 }
 
 /** A footer Button AURA does not size: neither a direct child nor the only element in a wrapper. */
-export function scanUnsizedFooterButtons(_file: string, _source: string): string[] {
-  return [];
+export function scanUnsizedFooterButtons(file: string, source: string): string[] {
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = auraNames(sf);
+  const hits: string[] = [];
+  const elementChildren = (el: ts.JsxElement) =>
+    el.children.filter((c) => ts.isJsxElement(c) || ts.isJsxSelfClosingElement(c) || ts.isJsxExpression(c));
+  for (const el of openingElements(sf)) {
+    if (!names.footered.has(tagName(el))) continue;
+    const root = attrRoot(sf, el, 'footer');
+    if (!root) continue;
+    for (const btn of openingElements(root)) {
+      if (!names.button.has(tagName(btn))) continue;
+      // Wrapping elements between the footer and the Button (fragments don't
+      // count). A Button passed in an attribute (a `trigger`) is left alone:
+      // the component decides where it lands.
+      const wrappers: ts.JsxElement[] = [];
+      let inAttribute = false;
+      for (let n: ts.Node | undefined = btn.parent; n && n !== root; n = n.parent) {
+        if (ts.isJsxAttribute(n)) inAttribute = true;
+        if (ts.isJsxElement(n) && n.openingElement !== btn) wrappers.push(n);
+      }
+      if (inAttribute || wrappers.length === 0) continue;
+      if (wrappers.length === 1 && elementChildren(wrappers[0]!).length === 1) continue;
+      hits.push(`${file}:${sf.getLineAndCharacterOfPosition(btn.getStart()).line + 1}`);
+    }
+  }
+  return hits;
 }
 
 /** `w-full` as a bare class (not `max-sm:w-full`, `sm:w-full`, `min-w-full`). */
