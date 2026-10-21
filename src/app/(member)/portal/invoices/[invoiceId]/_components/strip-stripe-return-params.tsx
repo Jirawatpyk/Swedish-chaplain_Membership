@@ -20,8 +20,11 @@ export function StripStripeReturnParams(): null {
     const url = new URL(window.location.href);
     if (!STRIPE_RETURN_PARAMS.some((key) => url.searchParams.has(key))) return;
     for (const key of STRIPE_RETURN_PARAMS) url.searchParams.delete(key);
-    // Native replaceState: Next syncs it with the router, no refetch.
-    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    // A null state, not window.history.state: Next skips its router sync for
+    // a state that carries its own `__NA` marker, and a later router.refresh()
+    // would write the old URL back. With null, Next copies its state and
+    // updates the URL it remembers (no server request).
+    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
   }, []);
   return null;
 }

@@ -178,7 +178,7 @@ describe('buildSignInUrl', () => {
   });
 
   // Stripping re-encodes the query; it must not launder characters that
-  // safeReturnTo rejects on the raw path (#609 security review, LOW 1).
+  // safeReturnTo rejects on the raw path (PR 4 security review, LOW 1).
   it('still drops returnTo for an unsafe query that also carries Stripe keys', () => {
     expect(buildSignInUrl('member', '/portal/x?next=https://evil.example&payment_intent=pi_1')).toBe(
       '/portal/sign-in',

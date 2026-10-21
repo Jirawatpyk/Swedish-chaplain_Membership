@@ -47,6 +47,9 @@ export const STRIPE_RETURN_PARAMS = [
   'redirect_status',
 ] as const;
 
+/** What `safeReturnTo` rejects anywhere in the path: `://`, backslash, CR, LF. */
+const UNSAFE_RAW_RETURN_TO = /:\/\/|[\\\r\n]/;
+
 /** `path` without the Stripe redirect keys; any other query key is kept. */
 function withoutStripeReturnParams(path: string): string {
   const queryIndex = path.indexOf('?');
@@ -127,7 +130,11 @@ export function buildSignInUrl(
   reason?: SignInReason,
 ): string {
   const params: string[] = [];
-  const safe = fromPath ? safeReturnTo(withoutStripeReturnParams(fromPath), portal) : null;
+  // Stripping re-encodes the query, so the characters safeReturnTo rejects
+  // are checked on the raw path first; a fragment is dropped before the split.
+  const raw = fromPath?.split('#')[0] ?? null;
+  const safe =
+    raw && !UNSAFE_RAW_RETURN_TO.test(raw) ? safeReturnTo(withoutStripeReturnParams(raw), portal) : null;
   if (safe) params.push(`returnTo=${encodeURIComponent(safe)}`);
   if (reason) params.push(`reason=${reason}`);
   const base = portalSignInPath(portal);
