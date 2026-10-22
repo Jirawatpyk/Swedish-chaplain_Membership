@@ -16,6 +16,7 @@ import { TablePagination } from '@/components/layout/table-pagination';
 import { InvoicesTable, type InvoicesTableRow } from './invoice-table';
 import { InvoiceFilters } from './invoice-filters';
 import { InvoicesExportActions } from './invoices-export-actions';
+import type { PlanFilter } from '../_lib/plan-filter';
 
 export interface InvoicesListViewProps {
   /** `invoicing.write`: the header actions, Record payment and the queue actions. */
@@ -42,7 +43,7 @@ export interface InvoicesListViewProps {
   /** The tenant-TZ today for the per-row Record payment date clamp. */
   readonly todayIso: string;
   /** 124 — `?plan=` resolved on the server: the filter's chip names the plan. */
-  readonly planFilter?: { readonly id: string; readonly label: string } | undefined;
+  readonly planFilter?: PlanFilter | undefined;
 }
 
 export async function renderInvoicesListView({

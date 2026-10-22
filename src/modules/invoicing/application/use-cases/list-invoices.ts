@@ -7,6 +7,7 @@
  * RBAC: admin + manager (manager is read-only — guard at route level).
  */
 import { ok, type Result } from '@/lib/result';
+import { parseIsoCalendarDate } from '@/lib/iso-calendar-date';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
@@ -119,10 +120,12 @@ export const listInvoicesPagedSchema = z.object({
     .optional(),
   // 124 slice 1 — inclusive due-date lower bound: `due_date >= dueAfter`.
   // With `dueBefore` it is the half-open range the invoice dashboard's aging
-  // rows link to. Same page-first validation as `dueBefore`.
+  // rows link to. The page validates first; the schema uses the same
+  // calendar check, so a non-page caller's 2026-02-30 is refused here rather
+  // than by Postgres.
   dueAfter: z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine((v) => parseIsoCalendarDate(v) !== undefined)
     .optional(),
   // 124 slice 1 — membership plan (`invoices.plan_id`), the dashboard's Plan
   // filter; event invoices carry no plan and never match.

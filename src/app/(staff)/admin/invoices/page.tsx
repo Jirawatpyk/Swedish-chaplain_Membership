@@ -211,11 +211,7 @@ async function loadPlanFilter(
   tenant: TenantContext,
   locale: string,
 ): Promise<PlanFilter | undefined> {
-  const deps = buildPlansDeps(tenant);
-  const plans = await listPlans(
-    { filter: {} },
-    { tenant: deps.tenant, planRepo: deps.planRepo, taxPolicy: deps.taxPolicy, clock: deps.clock },
-  );
+  const plans = await listPlans({ filter: {} }, buildPlansDeps(tenant));
   if (!plans.ok) {
     logger.warn({ tenantId: tenant.slug }, '[admin-invoices-list] plan filter lookup failed; filter dropped');
     return undefined;

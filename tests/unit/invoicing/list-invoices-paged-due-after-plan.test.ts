@@ -21,6 +21,7 @@ describe('listInvoicesPagedSchema — 124 dueAfter + planId', () => {
 
   it('rejects a malformed dueAfter', () => {
     expect(listInvoicesPagedSchema.safeParse({ ...base, dueAfter: '1/1/2026' }).success).toBe(false);
+    expect(listInvoicesPagedSchema.safeParse({ ...base, dueAfter: '2026-02-30' }).success).toBe(false);
   });
 
   it('rejects an empty or over-long planId', () => {

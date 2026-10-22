@@ -38,7 +38,7 @@
  * unchanged.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -54,6 +54,7 @@ import {
   useBreakpoint,
 } from '@jirawatpyk/aura-react';
 import { parseIsoCalendarDate } from '@/lib/iso-calendar-date';
+import type { PlanFilter } from '../_lib/plan-filter';
 import { originFilterPatch } from './queue-view';
 
 /**
@@ -135,7 +136,7 @@ interface InvoiceFiltersProps {
    * the plan, which only the server knows). URL-only like the due dates;
    * absent ⇒ no plan chip, whatever the URL says (the server ignored it too).
    */
-  readonly planFilter?: { readonly id: string; readonly label: string };
+  readonly planFilter?: PlanFilter;
   /**
    * The filter pattern (spec 122): the matches across every page, shown at
    * the end of the row by AURA's FilterBar (worded and announced politely).
@@ -252,16 +253,14 @@ export function InvoiceFilters({
   // renewals-suspended-visibility-audit Task 3 / 124 — due-date clamps: the
   // same `parseIsoCalendarDate` as the server page, so the chip and the data
   // can never split-brain. Gated on `showDueDateFilters` (see the prop doc).
-  const currentDueBefore = showDueDateFilters
-    ? (parseIsoCalendarDate(searchParams.get('dueBefore')) ?? null)
-    : null;
-  const currentDueAfter = showDueDateFilters
-    ? (parseIsoCalendarDate(searchParams.get('dueAfter')) ?? null)
-    : null;
+  const dueDateParam = (key: 'dueBefore' | 'dueAfter') =>
+    showDueDateFilters ? parseIsoCalendarDate(searchParams.get(key)) : undefined;
+  const currentDueBefore = dueDateParam('dueBefore');
+  const currentDueAfter = dueDateParam('dueAfter');
   // 124 — the plan chip shows only while the URL still names the plan the
   // server resolved (a client-side param change awaits the next render).
   const currentPlan =
-    planFilter && searchParams.get('plan') === planFilter.id ? planFilter : null;
+    planFilter && searchParams.get('plan') === planFilter.id ? planFilter : undefined;
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -407,8 +406,17 @@ export function InvoiceFilters({
   //
   // 124 — `dueAfter` ("Due from {date}") and the plan ("Plan: {name}") are
   // URL-only in the same way; the three share one chip + read-only row shape.
-  const urlOnlyFilters = [
-    currentDueAfter !== null && {
+  const urlOnlyFilters: {
+    readonly id: string;
+    readonly fieldLabel: string;
+    readonly clearLabel: string;
+    readonly readout: string;
+    readonly readoutTestId: string;
+    readonly label: string;
+    readonly clear: () => void;
+  }[] = [];
+  if (currentDueAfter) {
+    urlOnlyFilters.push({
       id: 'dueAfter',
       fieldLabel: t('filters.dueAfter.label'),
       clearLabel: t('filters.dueAfter.clear'),
@@ -416,8 +424,10 @@ export function InvoiceFilters({
       readoutTestId: 'invoice-due-after-readout',
       label: t('filters.dueAfter.chip', { date: currentDueAfter }),
       clear: () => pushUrl({ dueAfter: null }),
-    },
-    currentDueBefore !== null && {
+    });
+  }
+  if (currentDueBefore) {
+    urlOnlyFilters.push({
       id: 'dueBefore',
       fieldLabel: t('filters.dueBefore.label'),
       clearLabel: t('filters.dueBefore.clear'),
@@ -425,8 +435,10 @@ export function InvoiceFilters({
       readoutTestId: 'invoice-due-before-readout',
       label: t('filters.dueBefore.chip', { date: currentDueBefore }),
       clear: () => pushUrl({ dueBefore: null }),
-    },
-    currentPlan !== null && {
+    });
+  }
+  if (currentPlan) {
+    urlOnlyFilters.push({
       id: 'plan',
       fieldLabel: t('filters.plan.label'),
       clearLabel: t('filters.plan.clear'),
@@ -434,8 +446,8 @@ export function InvoiceFilters({
       readoutTestId: 'invoice-plan-readout',
       label: t('filters.plan.chip', { plan: currentPlan.label }),
       clear: () => pushUrl({ plan: null }),
-    },
-  ].filter((f) => f !== false);
+    });
+  }
   if (collapseSecondary) secondaryChips.push(...urlOnlyFilters);
   // The popover badge: the secondaries in the popover, the URL-only filters
   // included (#292 review A1 — the popover shows each as a read-only row).
@@ -656,7 +668,7 @@ export function InvoiceFilters({
             popover shows each too: a read-only row (no picker by design) with
             a clear button reusing the chip's handler. */}
         {urlOnlyFilters.map((f) => (
-          <div key={f.id} className="contents">
+          <Fragment key={f.id}>
             {field(
               f.fieldLabel,
               <div className="flex items-center justify-between gap-2">
@@ -675,7 +687,7 @@ export function InvoiceFilters({
                 </Button>
               </div>,
             )}
-          </div>
+          </Fragment>
         ))}
       </div>
     </Popover>
