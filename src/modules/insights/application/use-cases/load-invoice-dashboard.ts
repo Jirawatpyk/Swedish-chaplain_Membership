@@ -162,8 +162,9 @@ export interface InvoiceDashboardMethodRow {
   readonly method: InvoiceDashboardMethod;
   readonly amountSatang: bigint;
   /**
-   * Largest-remainder share of AMOUNT; the six add up to 100 when any is
-   * non-zero, and are all 0 when any row is negative or nothing was collected.
+   * Largest-remainder share of AMOUNT over the POSITIVE rows only: a negative
+   * or zero row (e.g. this FY's credit notes on last FY's invoices) gets 0,
+   * and the positive rows' shares add up to 100 (all 0 when none is positive).
    */
   readonly sharePercent: number;
 }
@@ -350,7 +351,8 @@ export function loadInvoiceDashboardMethods(
       sums.set(method, (sums.get(method) ?? 0n) + r.amountSatang);
     }
     const amounts = INVOICE_DASHBOARD_METHODS.map((method) => sums.get(method) ?? 0n);
-    const shares = allocatePercentages(amounts.map((a) => Number(a)));
+    // Shares over the positive rows: one negative row must not zero them all.
+    const shares = allocatePercentages(amounts.map((a) => (a > 0n ? Number(a) : 0)));
     const rows = INVOICE_DASHBOARD_METHODS.map((method, i) => ({
       method,
       amountSatang: amounts[i] ?? 0n,

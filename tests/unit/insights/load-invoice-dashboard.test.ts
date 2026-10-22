@@ -376,10 +376,11 @@ describe('loadInvoiceDashboardMethods', () => {
       from: '2026-04-01',
       to: '2026-06-15',
     });
+    // Shares over the positive rows (6,320): the negative cash row gets 0.
     expect(result.value.rows).toEqual([
-      { method: 'bank_transfer', amountSatang: 5_000n, sharePercent: 0 },
-      { method: 'promptpay', amountSatang: 300n, sharePercent: 0 },
-      { method: 'card', amountSatang: 1_000n, sharePercent: 0 },
+      { method: 'bank_transfer', amountSatang: 5_000n, sharePercent: 79 },
+      { method: 'promptpay', amountSatang: 300n, sharePercent: 5 },
+      { method: 'card', amountSatang: 1_000n, sharePercent: 16 },
       { method: 'cheque', amountSatang: 0n, sharePercent: 0 },
       { method: 'cash', amountSatang: -200n, sharePercent: 0 },
       { method: 'other', amountSatang: 20n, sharePercent: 0 },
@@ -387,9 +388,8 @@ describe('loadInvoiceDashboardMethods', () => {
     expect(result.value.totalSatang).toBe(6_120n);
     expect(result.value.range).toEqual({ from: '2026-04-01', to: '2026-06-15' });
     expect(result.value.toDate).toBe(true);
-    // A negative row has no part-to-whole reading: allocatePercentages refuses
-    // the whole allocation, so every share is 0 (never a share above 100%).
-    expect(result.value.rows.map((r) => r.sharePercent)).toEqual([0, 0, 0, 0, 0, 0]);
+    // Never a share above 100%: the positive rows' shares add up to exactly 100.
+    expect(result.value.rows.reduce((s, r) => s + r.sharePercent, 0)).toBe(100);
   });
 
   it('each row carries its largest-remainder share of AMOUNT, adding to 100', async () => {
