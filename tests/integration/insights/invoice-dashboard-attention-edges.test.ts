@@ -3,6 +3,11 @@
  *   - Receipt PDF failed counts `status = 'paid'` only: the receipt worker
  *     (`render-receipt-pdf.ts`) re-renders nothing else, so a credited
  *     invoice's stale failure would sit in the card forever.
+ *   - Row 5's legacy `failed` + `f4_bridge_%` refunds count only with a
+ *     `processor_refund_id` (Stripe paid out) — the payments module's own
+ *     settled-unbooked shape (`drizzle-refunds-repo.ts`). A failed row can
+ *     never carry a credit note or a waiver (CHECK
+ *     `refunds_succeeded_iff_documented`), so that is the whole predicate.
  *
  * One disposable tenant; every invoice is `gold`, `manual`, membership.
  */
@@ -53,6 +58,25 @@ describe('Needs attention — edge cases', () => {
           key: 'credFailed', total: 100_000, method: 'bank_transfer', paymentDate: '2026-06-01',
           status: 'credited', credited: 100_000, receiptPdfStatus: 'failed',
         },
+        { key: 'invSettled', total: 500_000, method: 'other', paymentDate: '2026-06-01' },
+        { key: 'invNoId', total: 500_000, method: 'other', paymentDate: '2026-06-01' },
+      ],
+      payments: [
+        { key: 'paySettled', invoiceKey: 'invSettled', method: 'card', amount: 500_000, completedAt: '2026-06-01T03:00:00Z' },
+        { key: 'payNoId', invoiceKey: 'invNoId', method: 'card', amount: 500_000, completedAt: '2026-06-01T03:00:00Z' },
+      ],
+      refunds: [
+        // Counted: Stripe paid out (refund id kept), the credit note was never booked.
+        {
+          paymentKey: 'paySettled', invoiceKey: 'invSettled', status: 'failed', amount: 10_000,
+          initiatedAt: new Date('2026-06-10T03:00:00Z'), failureReasonCode: 'f4_bridge_error',
+        },
+        // Not counted: no refund id, so no money left through Stripe.
+        {
+          paymentKey: 'payNoId', invoiceKey: 'invNoId', status: 'failed', amount: 10_000,
+          initiatedAt: new Date('2026-06-10T03:00:00Z'), failureReasonCode: 'f4_bridge_error',
+          withProcessorRefundId: false,
+        },
       ],
     });
   });
@@ -65,5 +89,10 @@ describe('Needs attention — edge cases', () => {
   it('Receipt PDF failed counts a paid invoice only, never a partially credited or credited one', async () => {
     const attention = unwrap(await loadInvoiceDashboardAttention(tenant.ctx, INPUT, deps));
     expect(attention.receiptPdfFailed).toBe(1);
+  });
+
+  it('row 5 counts a legacy f4_bridge_% refund only while it carries a Stripe refund id', async () => {
+    const attention = unwrap(await loadInvoiceDashboardAttention(tenant.ctx, INPUT, deps));
+    expect(attention.refundsPendingOverThreshold).toBe(1);
   });
 });

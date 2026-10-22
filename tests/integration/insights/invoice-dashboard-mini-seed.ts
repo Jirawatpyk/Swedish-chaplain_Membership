@@ -89,6 +89,11 @@ export interface MiniRefund {
   readonly initiatedAt: Date;
   /** For `failed`; default `stripe_refund_failed`. */
   readonly failureReasonCode?: string;
+  /**
+   * Whether Stripe returned a refund id. Default: `succeeded`, or a `failed`
+   * row whose code is `f4_bridge_%` (Stripe paid out, the booking failed).
+   */
+  readonly withProcessorRefundId?: boolean;
   /** Default: one hour after `initiatedAt` (for a non-pending refund). */
   readonly completedAt?: Date;
   /** Default: the database's `now()`. */
@@ -273,7 +278,10 @@ export async function seedMiniScenario(
       amountSatang: BigInt(o.amount),
       reason: 'dashboard edge case',
       status: o.status,
-      processorRefundId: succeeded ? `re_mini_${randomUUID()}` : null,
+      processorRefundId:
+        (o.withProcessorRefundId ?? (succeeded || o.failureReasonCode?.startsWith('f4_bridge_') === true))
+          ? `re_mini_${randomUUID()}`
+          : null,
       failureReasonCode: o.status === 'failed' ? (o.failureReasonCode ?? 'stripe_refund_failed') : null,
       creditNoteId: null,
       creditNoteWaiverReason: succeeded ? ('section_105_receipt' as const) : null,
