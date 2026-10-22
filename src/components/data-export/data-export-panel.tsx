@@ -120,7 +120,9 @@ export function DataExportPanel({
   return (
     // The boards: 16px between the parts, the pending note 12px from the button.
     <div className="space-y-4">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+      {/* Wraps by the space it has, not the viewport: in a narrow column (the
+          member page's aside) the pending note drops under the button. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Button
           variant="secondary"
           icon="download"
@@ -132,7 +134,7 @@ export function DataExportPanel({
           {pending ? labels.requesting : labels.requestButton}
         </Button>
         {hasPending && !pending ? (
-          <p className="aura-text-table-cell text-[var(--aura-fg-secondary)]">{labels.alreadyPending}</p>
+          <p className="aura-text-table-cell min-w-0 flex-[1_1_14rem] text-[var(--aura-fg-secondary)]">{labels.alreadyPending}</p>
         ) : null}
       </div>
 
@@ -154,8 +156,11 @@ export function DataExportPanel({
         ) : (
           <>
             {/* The boards draw the list without a box: AURA's frameless, centred
-                Table (5.13, handoff #81); its row height and header are AURA's. */}
-            <Table caption={labels.caption} captionHidden bordered={false} align="middle">
+                Table (5.13, handoff #81); its row height and header are AURA's.
+                Rows stack below 640px of the table's own width (a container
+                query), so the member page's 280–340px aside never pushes the
+                page sideways (relay R73). */}
+            <Table caption={labels.caption} captionHidden bordered={false} align="middle" stackBelow="sm">
               <THead className="max-sm:hidden">
                 <Tr>
                   <Th>{labels.colStatus}</Th>
@@ -178,7 +183,8 @@ export function DataExportPanel({
                     </Td>
                     {showFor ? <Td className="max-sm:hidden">{row.forLabel ?? ''}</Td> : null}
                     <Td className="max-sm:hidden">{row.requestedAt}</Td>
-                    <Td align="end">
+                    {/* No "Download" label on a stacked row with nothing to download. */}
+                    <Td align="end" {...(row.downloadable ? {} : { label: '' })}>
                       {row.downloadable ? (
                         <a
                           href={`${downloadUrlBase}/${row.jobId}/download`}

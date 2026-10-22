@@ -138,7 +138,7 @@ import { renderMemberChangesView } from '@/app/(staff)/admin/settings/member-cha
 import { renderStaffAccountView } from '@/app/(staff)/admin/account/page';
 import { OpenSwitchOffDialog, ShowReadOnlyRefusal } from './settings-previews';
 import { renderDashboardPreview } from './dashboard-previews';
-import type { GroupedEvidence } from '@/modules/insights';
+import type { ExportJobRecord, GroupedEvidence } from '@/modules/insights';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -603,6 +603,19 @@ const MEMBER_EVENTS: TimelineItemProps[] = [
   { id: 't3', timestamp: ago(12), source: 'renewal', eventType: 'reminded', actorKind: 'system', actorDisplayName: null, payload: null },
 ];
 
+// `view=member&state=exports`: the Data export card with recent requests, so
+// its table can be seen in the page's 280–340px aside (relay R73).
+const exportJob = (id: string, status: ExportJobRecord['status'], contactId: string | null, daysAgo: number): ExportJobRecord => ({
+  id, tenantId: 'swecham', kind: 'gdpr_member_archive', subjectMemberId: MEMBER_ID, requestedBy: 'u-admin', requestedForPeriod: null,
+  requesterLocale: 'en', subjectContactId: contactId, status, idempotencyKey: id, blobKey: null, downloadTokenHash: null,
+  expiresAt: null, errorCode: null, createdAt: new Date(Date.now() - daysAgo * DAY), updatedAt: new Date(Date.now() - daysAgo * DAY),
+});
+const EXPORT_JOBS: readonly ExportJobRecord[] = [
+  exportJob('job-1', 'ready', 'c-erik', 1),
+  exportJob('job-2', 'processing', null, 0),
+  exportJob('job-3', 'expired', null, 40),
+];
+
 export default async function AuraAdminPreviewPage({
   searchParams,
 }: {
@@ -715,7 +728,7 @@ export default async function AuraAdminPreviewPage({
             ),
             timeline: <TimelinePreviewCard memberId={MEMBER_ID} events={MEMBER_EVENTS} loadFailed={false} />,
             changeRequests: <MemberChangeRequestsCard memberId={MEMBER_ID} rows={changeRequestRows} loadFailed={false} />,
-            dataExport: manager || erased ? null : <MemberDataExportCard memberId={MEMBER_ID} contacts={contacts} jobs={[]} />,
+            dataExport: manager || erased ? null : <MemberDataExportCard memberId={MEMBER_ID} contacts={contacts} jobs={state === 'exports' ? EXPORT_JOBS : []} />,
           },
         })}
       </StaffFrame>

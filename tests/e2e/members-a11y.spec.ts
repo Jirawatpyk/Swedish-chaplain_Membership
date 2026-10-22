@@ -127,6 +127,18 @@ test.describe('F3 admin comprehensive a11y scan @f3 @a11y', () => {
     await page.keyboard.press('Escape');
     await expect(drawer).toHaveCount(0);
     await expect(trigger).toBeFocused();
+
+    // Keyboard (relay R73): Enter on the focused trigger opens it with focus
+    // inside, and Esc closes it back to the trigger.
+    await expect(page.getByTestId('company-details-open')).toHaveCount(1);
+    await page.keyboard.press('Enter');
+    await expect(drawer).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]')))
+      .toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(trigger).toBeFocused();
   });
 
   test('4. /admin/members/:id/edit — no axe violations', async ({ page }) => {
