@@ -57,6 +57,11 @@ function tables() {
 
 /** The paid family — exactly the predicate of `invoices_tenant_tax_point_paid_idx`. */
 const PAID_FAMILY = sql.raw(`('paid', 'partially_credited', 'credited')`);
+/**
+ * Billed (D-e): every status but `draft` and `void`, written as the positive
+ * list (the same rows; a list the planner can match, unlike `NOT IN`).
+ */
+const BILLABLE = sql.raw(`('issued', 'paid', 'partially_credited', 'credited')`);
 /** Payment rows whose method stands for the invoice. */
 const METHOD_PAYMENT_STATUSES = sql.raw(`('succeeded', 'partially_refunded', 'refunded')`);
 const BANGKOK = sql.raw(`'Asia/Bangkok'`);
@@ -233,7 +238,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     const { inv, cn } = tables();
     const t = ctx.slug;
     const scope = scopeOf(filters);
-    const billable = sql`${inv.status} NOT IN ('draft', 'void')`;
+    const billable = sql`${inv.status} IN ${BILLABLE}`;
     const month = (d: SQL) => sql`to_char(${d}, 'YYYY-MM')`;
     const result = await rows(
       ctx,
