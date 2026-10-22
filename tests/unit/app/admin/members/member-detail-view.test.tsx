@@ -5,9 +5,10 @@
  *
  * - The header: the status, the member number and the auto-invoice badge
  *   above the company name; the plan and year below it.
- * - The header actions per role and state, as before: Benefits (F9), Erase,
- *   Archive and Edit for a writer; Archive and Edit hidden once archived;
- *   everything but Benefits hidden once erased or for a read-only viewer.
+ * - The header actions per role and state: Benefits (F9), Edit and a ⋯ menu
+ *   with Archive and Erase for a writer (layout B); Archive and Edit gone
+ *   once archived; everything but Benefits gone once erased or for a
+ *   read-only viewer.
  * - The sticky "On this page" links name only the sections this viewer has,
  *   and every link lands on a section with that id.
  */
@@ -138,6 +139,11 @@ async function renderView(over: Partial<Props> = {}) {
   );
 }
 
+async function openCompanyDetails(over: Partial<Props> = {}) {
+  await renderView(over);
+  fireEvent.click(screen.getByRole('button', { name: enMessages.admin.members.detail.companyDetails.open }));
+}
+
 describe('renderMemberDetailView — header (T553)', () => {
   it('puts the status, the member number and the auto-invoice badge above the company name', async () => {
     await renderView();
@@ -219,11 +225,11 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
     const nav = screen.getByRole('navigation', { name: L.label });
     const links = within(nav).getAllByRole('link');
     expect(links.map((a) => a.textContent?.trim())).toEqual([
-      L.overview,
       L.contacts,
       L.invoices,
       L.changeRequests,
       L.timeline,
+      L.company,
       L.dataExport,
     ]);
     for (const a of links) {
@@ -236,15 +242,18 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
     await renderView({ slots: { ...base.slots, invoices: null, changeRequests: null, dataExport: null } });
     const nav = screen.getByRole('navigation', { name: L.label });
     expect(within(nav).getAllByRole('link').map((a) => a.textContent?.trim())).toEqual([
-      L.overview,
       L.contacts,
       L.timeline,
+      L.company,
     ]);
   });
 
-  it('renders the strip above the links, and the sections in the board order', async () => {
+  // Layout B (maintainer, 22 Oct): the main column (contacts, invoices,
+  // change requests, timeline) comes before the aside (renewal, benefits,
+  // company, data export) in the DOM, which is also the phone's order.
+  it('renders the strip above the links, and the sections in the layout B order', async () => {
     const { container } = await renderView();
-    const order = ['strip', 'renewal', 'benefits', 'invoices', 'change-requests', 'timeline', 'data-export'];
+    const order = ['strip', 'invoices', 'change-requests', 'timeline', 'renewal', 'benefits', 'data-export'];
     const nodes = order.map((id) => container.querySelector(`[data-testid="${id}"]`)!);
     for (let i = 1; i < nodes.length; i++) {
       expect(nodes[i - 1]!.compareDocumentPosition(nodes[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -268,10 +277,25 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
     expect(alert.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  // UX review (board): Organisation and Membership are h3 under the company
-  // card's h2, so heading navigation reaches them.
-  it('the company card groups are h3 headings', async () => {
+  // Layout B: the company card is a summary; the full record opens in a
+  // Drawer from "All company details".
+  it('the company card summarises the tax facts and opens the full record in a drawer', async () => {
     await renderView();
+    const D = enMessages.admin.members.detail;
+    const company = screen.getByRole('region', { name: D.sections.company });
+    expect(company).toHaveTextContent('0105561234567');
+    expect(company).toHaveTextContent('Company Limited');
+    expect(company).toHaveTextContent('Premium Corporate');
+    expect(within(company).getByRole('heading', { level: 3, name: D.fields.billingAddress })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(within(company).getByRole('button', { name: D.companyDetails.open }));
+    expect(screen.getByRole('dialog', { name: member.companyName })).toBeInTheDocument();
+  });
+
+  // UX review (board): Organisation and Membership are h3 inside the full
+  // company record, so heading navigation reaches them.
+  it('the company record groups are h3 headings', async () => {
+    await openCompanyDetails();
     const D = enMessages.admin.members.detail;
     expect(screen.getByRole('heading', { level: 3, name: D.sections.organisation })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: D.sections.membership })).toBeInTheDocument();
@@ -280,8 +304,8 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
   // Board `Admin-member-detail`: the labels already say "(THB)", so the
   // figures carry no currency; the website shows its host.
   it('turnover and capital read as plain figures; the website as its host', async () => {
-    await renderView({ member: { ...member, turnoverThb: 184000000, registeredCapitalThb: 20000000 } });
-    const company = screen.getByRole('region', { name: enMessages.admin.members.detail.sections.company });
+    await openCompanyDetails({ member: { ...member, turnoverThb: 184000000, registeredCapitalThb: 20000000 } });
+    const company = screen.getByRole('dialog', { name: member.companyName });
     expect(company).toHaveTextContent('184,000,000');
     expect(company).not.toHaveTextContent(/THB\s?184|฿184/);
     expect(screen.getByRole('link', { name: /^siamnordic\.example/ })).toHaveAttribute('href', 'https://siamnordic.example');
@@ -300,7 +324,7 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
   // UX review M6 (2.5.3 Label in Name): the link's name starts with the
   // address it shows; "opens in a new tab" follows for screen readers.
   it('the website link is named by the address it shows', async () => {
-    await renderView();
+    await openCompanyDetails();
     const link = screen.getByRole('link', { name: /^siamnordic\.example/ });
     expect(link).toHaveAttribute('href', 'https://siamnordic.example');
     expect(link).toHaveAccessibleName(expect.stringContaining(enMessages.admin.members.detail.fields.websiteExternal));

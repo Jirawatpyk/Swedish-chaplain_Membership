@@ -287,9 +287,14 @@ html:has([data-auth-frame]) {
    clear of the sticky shell bar (56px; the portal's is 72px at lg) and of a
    viewport ActionBar (~72px) riding above the bottom nav. A viewport
    ActionBar carries the app class `chamber-viewport-actionbar`, so this
-   never reads AURA's own modifier class. */
+   never reads AURA's own modifier class.
+   Layout B (22 Oct) — the top offset is the shell bar (AURA sets its
+   height on the shell element, below this root, so the root reads the
+   56px fallback), plus a sticky section-tab row's measured height
+   (`use-section-tabs-scroll-padding`, 0 on pages without one), plus a gap:
+   56 + 0 + 32 = 88px on every other page, the 5.5rem it was. */
 html:has(.chamber-shell) {
-  scroll-padding-top: 5.5rem;
+  scroll-padding-top: calc(var(--aura-shell-bar-height, 56px) + var(--chamber-section-tabs-height, 0px) + var(--aura-space-8));
 }
 html:has(.chamber-viewport-actionbar) {
   scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem + env(safe-area-inset-bottom, 0px));

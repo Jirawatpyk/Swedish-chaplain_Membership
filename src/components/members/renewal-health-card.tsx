@@ -4,28 +4,23 @@
  * Pass A · Section 1 — Renewal & Health card (presentational, client-safe).
  *
  * Fed plain serializable props by the async server wrapper
- * (`MemberRenewalHealthSection`). Surfaces the member's current renewal
- * posture (status + expiry + days remaining) AND the F9 engagement score so
- * an admin on a renewal call never has to leave for `/admin/renewals` to
- * answer "is this member renewing, and how healthy are they?".
+ * (`MemberRenewalHealthSection`). Surfaces the member's renewal cycle status
+ * and the F9 engagement score, with the renew action and the way to the
+ * cycle. Layout B (maintainer, 22 Oct): the expiry, the days left and the
+ * engagement band are the figures strip's, above it on the same page, so
+ * the card no longer repeats them.
  *
- * Accessibility (FR-035 / WCAG 1.4.1): the cycle status and the engagement
- * band are rendered as visible TEXT labels, never colour-alone. The Badge
- * variant is decorative; the localised label carries the meaning.
- *
- * Localisation: the expiry date is formatted via `formatDatePreset` (en-GB for English)
- * so th-TH renders Buddhist-Era years (display-only) — the prop is an ISO
- * 8601 UTC string, never a pre-formatted/raw `.toISOString()` slice.
+ * Accessibility (FR-035 / WCAG 1.4.1): the cycle status is a visible TEXT
+ * label, never colour alone.
  */
 import Link from 'next/link';
 import { ArrowRightIcon } from 'lucide-react';
-import { useFormatter, useLocale, useTranslations } from 'next-intl';
-import { Badge, Card, StatusPill } from '@jirawatpyk/aura-react';
+import { useFormatter, useTranslations } from 'next-intl';
+import { Card, StatusPill } from '@jirawatpyk/aura-react';
 import type { CycleStatus } from '@/modules/renewals/client';
 import { CYCLE_STATUS_TONE } from '@/components/renewals/cycle-status-tone';
 import type { EngagementBand } from '@/modules/insights';
 import { RenewLapsedMemberDialog } from '@/components/members/renew-lapsed-member-dialog';
-import { formatDatePreset } from '@/lib/format-date-localised';
 
 export interface RenewalHealthCardProps {
   /**
@@ -35,10 +30,6 @@ export interface RenewalHealthCardProps {
   readonly headingId: string;
   /** Cycle status, or null when the member has no renewal cycle. */
   readonly status: CycleStatus | null;
-  /** ISO 8601 UTC expiry instant, or null. Localised at render time. */
-  readonly expiryIso: string | null;
-  /** Days to expiry (negative = overdue), or null when no cycle. */
-  readonly daysRemaining: number | null;
   /** F9 engagement score 0–100 (null when un-scored OR F9 flag off). */
   readonly engagementScore: number | null;
   readonly engagementBand: EngagementBand | null;
@@ -79,19 +70,9 @@ function isLapsed(status: CycleStatus | null): boolean {
   );
 }
 
-/** Engagement band tones, as the members list draws them. */
-const ENGAGEMENT_TONE: Readonly<Record<EngagementBand, 'success' | 'neutral' | 'warning' | 'danger'>> = {
-  healthy: 'success',
-  moderate: 'neutral',
-  warning: 'warning',
-  critical: 'danger',
-};
-
 export function RenewalHealthCard({
   headingId,
   status,
-  expiryIso,
-  daysRemaining,
   engagementScore,
   engagementBand,
   viewHref,
@@ -100,22 +81,16 @@ export function RenewalHealthCard({
   memberId,
 }: RenewalHealthCardProps): React.ReactElement {
   const t = useTranslations('admin.members.detail.renewalHealth');
-  const tBand = useTranslations('admin.members.directory.engagementBand');
   const format = useFormatter();
-  const locale = useLocale();
 
-  const hasEngagement = engagementScore !== null && engagementBand !== null;
+  // The band is the strip's; the score beside the status is the card's own.
+  const engagementValue =
+    engagementScore !== null && engagementBand !== null ? (
+      <span className="text-sm tabular-nums">{format.number(engagementScore)}</span>
+    ) : null;
 
-  const engagementValue = hasEngagement ? (
-    <span className="flex flex-wrap items-center gap-2">
-      <Badge tone={ENGAGEMENT_TONE[engagementBand]}>{tBand(engagementBand)}</Badge>
-      <span className="text-xs tabular-nums text-[var(--aura-fg-secondary)]">{format.number(engagementScore)}</span>
-    </span>
-  ) : null;
-
-  // Spec 122 US5b-1 — an AURA Card as the `Admin-member-detail` board draws
-  // it: Status and Expiry side by side, Engagement under them, then Renew
-  // (lapsed only) and "View renewal →".
+  // Layout B — an AURA Card in the page's aside: Status and the engagement
+  // score side by side, then Renew (lapsed only) and "View renewal →".
   return (
     <Card
       as="section"
@@ -150,27 +125,8 @@ export function RenewalHealthCard({
               <StatusPill tone={CYCLE_STATUS_TONE[status]}>{t(`cycleStatus.${status}`)}</StatusPill>
             </dd>
           </div>
-          <div className="flex flex-col gap-1">
-            <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('expiry')}</dt>
-            <dd className="text-sm">
-              {expiryIso !== null ? (
-                <span className="flex flex-col">
-                  <span>{formatDatePreset(expiryIso, locale, 'dateMedium2Digit')}</span>
-                  {daysRemaining !== null && (
-                    <span className="text-xs text-[var(--aura-fg-secondary)]">
-                      {daysRemaining < 0
-                        ? t('overdueDays', { days: Math.abs(daysRemaining) })
-                        : t('daysRemaining', { days: daysRemaining })}
-                    </span>
-                  )}
-                </span>
-              ) : (
-                <span className="text-[var(--aura-fg-secondary)]">—</span>
-              )}
-            </dd>
-          </div>
           {engagementValue && (
-            <div className="col-span-2 flex flex-col gap-1">
+            <div className="flex flex-col gap-1">
               <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('engagement')}</dt>
               <dd>{engagementValue}</dd>
             </div>

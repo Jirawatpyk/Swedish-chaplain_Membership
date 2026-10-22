@@ -1291,14 +1291,13 @@
     "members": {
         "changeRequests": {
             "title": "Change requests",
-          "viewQueue": "Open in queue",
+          "viewAll": "View all change requests",
           "loadFailed": "Change requests could not be loaded. Reload the page to try again.",
           "empty": "No change requests for this member yet.",
           "submittedBy": "Submitted by {name} ({role})",
           "submittedOn": "Submitted {submittedAt}",
           "review": "Review",
-          "pendingAlert": "Change request awaiting review",
-          "open": "Open"
+          "pendingAlert": "Change request awaiting review"
         },
       "title": "Members",
       "overrideReason": {
@@ -1661,6 +1660,10 @@
         },
         "editCta": "Edit",
         "headerMoreActions": "More actions",
+        "companyDetails": {
+          "open": "All company details",
+          "close": "Close company details"
+        },
         "contactActions": {
           "add": "Add contact",
           "edit": "Edit",
@@ -1711,11 +1714,11 @@
         },
         "sectionLinks": {
           "label": "On this page",
-          "overview": "Overview",
           "contacts": "Contacts",
           "invoices": "Invoices",
           "changeRequests": "Change requests",
           "timeline": "Timeline",
+          "company": "Company",
           "dataExport": "Data export"
         }
       },

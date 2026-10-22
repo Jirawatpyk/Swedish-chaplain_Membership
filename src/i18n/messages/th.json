@@ -1291,14 +1291,13 @@
     "members": {
         "changeRequests": {
             "title": "คำขอแก้ไขข้อมูล",
-          "viewQueue": "เปิดในคิว",
+          "viewAll": "ดูคำขอเปลี่ยนแปลงทั้งหมด",
           "loadFailed": "ไม่สามารถโหลดคำขอแก้ไขข้อมูลได้ โหลดหน้าใหม่เพื่อลองอีกครั้ง",
           "empty": "ยังไม่มีคำขอแก้ไขข้อมูลของสมาชิกรายนี้",
           "submittedBy": "ส่งโดย {name} ({role})",
           "submittedOn": "ส่งเมื่อ {submittedAt}",
           "review": "พิจารณา",
-          "pendingAlert": "คำขอแก้ไขข้อมูลรอตรวจสอบ",
-          "open": "เปิด"
+          "pendingAlert": "คำขอแก้ไขข้อมูลรอตรวจสอบ"
         },
       "title": "สมาชิก",
       "overrideReason": {
@@ -1661,6 +1660,10 @@
         },
         "editCta": "แก้ไข",
         "headerMoreActions": "การดำเนินการเพิ่มเติม",
+        "companyDetails": {
+          "open": "รายละเอียดบริษัททั้งหมด",
+          "close": "ปิดรายละเอียดบริษัท"
+        },
         "contactActions": {
           "add": "เพิ่มผู้ติดต่อ",
           "edit": "แก้ไข",
@@ -1711,11 +1714,11 @@
         },
         "sectionLinks": {
           "label": "ในหน้านี้",
-          "overview": "ภาพรวม",
           "contacts": "ผู้ติดต่อ",
           "invoices": "ใบแจ้งหนี้",
           "changeRequests": "คำขอแก้ไขข้อมูล",
           "timeline": "ไทม์ไลน์",
+          "company": "บริษัท",
           "dataExport": "ส่งออกข้อมูล"
         }
       },

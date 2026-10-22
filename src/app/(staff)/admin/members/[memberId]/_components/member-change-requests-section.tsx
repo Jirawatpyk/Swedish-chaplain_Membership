@@ -1,11 +1,12 @@
 /**
  * F114 — "Change requests" section on the member detail page (US4 AS1;
- * FR-026; T075). The member's requests, every state, newest first: per-field
- * outcomes through the shared read-only diff table, the reviewer's name with
- * the "deactivated" marker (staff accounts are disabled, never deleted —
- * FR-026), the reason as plain text, and a link to the review page.
+ * FR-026; T075). The member's requests, newest first: pending ones with
+ * Review, then the latest decided ones with the reviewer's name and the
+ * "deactivated" marker (staff accounts are disabled, never deleted —
+ * FR-026). Each request's diff and reason are on its review page, one
+ * click away (layout B, maintainer 22 Oct).
  *
- * The list carries NO `aria-label`: the section's own `<h2>` names it, and a
+ * The lists carry NO `aria-label`: the section's own `<h2>` names it, and a
  * second name was announced three times over (PR-1 review, UX M8).
  *
  * Server component, Suspense-wrapped at the call site (mirrors the invoices
@@ -18,17 +19,16 @@ import { cache } from 'react';
 import Link from 'next/link';
 import { headers } from 'next/headers';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { FileClockIcon } from 'lucide-react';
+import { ArrowRightIcon } from 'lucide-react';
 import { Alert, Card, EmptyState, buttonClass } from '@jirawatpyk/aura-react/server';
 import { logger } from '@/lib/logger';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import { requestIdFromHeaders } from '@/lib/request-id';
 import { buildChangeRequestDeps } from '@/lib/members-change-request-deps';
-import { serialiseField } from '@/lib/change-request-portal-view';
+import type { ChangeRequestFieldView } from '@/lib/change-request-portal-view';
 import { asMemberId, listMemberChangeRequests, type ChangeRequestQueueItem } from '@/modules/members';
 import type { TenantContext } from '@/modules/tenants';
-import { ChangeRequestDiffTable } from '@/components/members/change-requests/change-request-diff-table';
-import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
+import { ChangeRequestStatusBadge, changeRequestStatusOf, type ChangeRequestStatus } from '@/components/members/change-requests/change-request-status-badge';
 import { SectionCardSkeleton } from './section-card-skeleton';
 
 const SECTION_LIMIT = 10;
@@ -111,15 +111,71 @@ export async function PendingChangeRequestAlert({
 }
 
 export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
+  const tReview = await getTranslations('admin.changeRequests.review');
+  const { items, loadFailed } = await loadMemberChangeRequests(tenant, memberId);
+  const rows: MemberChangeRequestRow[] = items.map(({ row }) => {
+    const r = row.request;
+    return {
+      id: r.id,
+      status: changeRequestStatusOf(r),
+      fieldKeys: r.fields.map((f) => f.key),
+      submitterName: row.submitter.displayName,
+      submitterRole: tReview(`roles.${r.submitterRoleAtSubmission}`),
+      submittedAtIso: r.submittedAt.toISOString(),
+      decidedByName:
+        r.decidedAt && row.decidedBy
+          ? `${row.decidedBy.displayName || tReview('unknownReviewer')}${row.decidedBy.deactivated ? ` ${tReview('deactivated')}` : ''}`
+          : null,
+      decidedAtIso: r.decidedAt?.toISOString() ?? null,
+    };
+  });
+  return <MemberChangeRequestsCard memberId={memberId} rows={rows} loadFailed={loadFailed} />;
+}
+
+/** One request as the card shows it — plain values, so the no-DB preview renders the card too. */
+export interface MemberChangeRequestRow {
+  readonly id: string;
+  readonly status: ChangeRequestStatus;
+  readonly fieldKeys: readonly ChangeRequestFieldView['key'][];
+  readonly submitterName: string;
+  readonly submitterRole: string;
+  readonly submittedAtIso: string;
+  /** The reviewer's name (with the "deactivated" marker), once decided. */
+  readonly decidedByName: string | null;
+  readonly decidedAtIso: string | null;
+}
+
+/** Decided or withdrawn requests the card shows; the queue has the rest. */
+export const CHANGE_REQUEST_HISTORY_ROWS = 3;
+
+/**
+ * Layout B (maintainer, 22 Oct; board `Admin-member-detail`) — the card in
+ * the page's main column: every pending request with Review, then up to
+ * three decided or withdrawn ones on one line each (the fields · status ·
+ * who decided · when), and "View all" to the queue filtered to this member,
+ * where each request's diff and reason are. A failed read renders a DISTINCT
+ * "unavailable" state, never "none yet".
+ */
+export async function MemberChangeRequestsCard({
+  memberId,
+  rows,
+  loadFailed,
+}: {
+  readonly memberId: string;
+  readonly rows: readonly MemberChangeRequestRow[];
+  readonly loadFailed: boolean;
+}) {
   const t = await getTranslations('admin.members.changeRequests');
   const tReview = await getTranslations('admin.changeRequests.review');
+  const tField = await getTranslations('portal.changeRequests.diff.labels');
   const locale = await getLocale();
-  const { items, loadFailed } = await loadMemberChangeRequests(tenant, memberId);
+  const fmt = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium' });
+  const fields = (keys: readonly string[]) => keys.map((k) => tField(k as never)).join(', ');
 
-  const fmt = (d: Date) => formatLocalisedDate(d.toISOString(), locale, { dateStyle: 'medium', timeStyle: 'short' });
+  const pending = rows.filter((r) => r.status.state === 'pending');
+  const history = rows.filter((r) => r.status.state !== 'pending').slice(0, CHANGE_REQUEST_HISTORY_ROWS);
+  const viewAllHref = `/admin/change-requests?memberId=${encodeURIComponent(memberId)}`;
 
-  // Spec 122 US5b-1 — an AURA Card; the full history stays (Clarifications,
-  // Session 2026-09-29), each request a framed row with its diff.
   return (
     <Card
       as="section"
@@ -127,15 +183,6 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
       title={t('title')}
       titleId="member-change-requests-heading"
       headingLevel={2}
-      actions={
-        <Link
-          href={`/admin/change-requests?memberId=${encodeURIComponent(memberId)}`}
-          className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
-        >
-          <FileClockIcon className="size-4" aria-hidden="true" />
-          {t('viewQueue')}
-        </Link>
-      }
     >
       {loadFailed ? (
         // `status`, not `alert`: the page rendered, one section did not —
@@ -143,56 +190,77 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
         <Alert tone="danger" role="status" data-testid="member-change-requests-unavailable">
           {t('loadFailed')}
         </Alert>
-      ) : items.length === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState size="sm" title={t('empty')} />
       ) : (
-        <ul className="flex flex-col gap-4">
-          {items.map(({ row }) => {
-            const r = row.request;
-            return (
-              <li
-                key={r.id}
-                className="rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] p-3"
-                data-testid="member-change-request"
-                data-request-id={r.id}
-              >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="space-y-1 text-sm">
-                    <p className="font-medium">
-                      {t('submittedBy', { name: row.submitter.displayName, role: tReview(`roles.${r.submitterRoleAtSubmission}`) })}
-                    </p>
+        <div className="flex flex-col">
+          {pending.length > 0 && (
+            <ul className="flex flex-col divide-y divide-[var(--aura-border-default)]">
+              {pending.map((r) => (
+                <li
+                  key={r.id}
+                  className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between"
+                  data-testid="member-change-request-pending"
+                  data-request-id={r.id}
+                >
+                  <div className="min-w-0 space-y-1 text-sm">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{fields(r.fieldKeys)}</span>
+                      <ChangeRequestStatusBadge status={r.status} audience="staff" />
+                    </div>
                     <p className="text-xs text-[var(--aura-fg-secondary)]">
-                      {t('submittedOn', { submittedAt: fmt(r.submittedAt) })}
-                      {r.decidedAt && row.decidedBy
-                        ? ` · ${tReview('decidedBy', { name: row.decidedBy.displayName || tReview('unknownReviewer'), decidedAt: fmt(r.decidedAt) })}${row.decidedBy.deactivated ? ` ${tReview('deactivated')}` : ''}`
-                        : null}
+                      {`${t('submittedBy', { name: r.submitterName, role: r.submitterRole })} · ${fmt(r.submittedAtIso)}`}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
+                  <Link
+                    href={`/admin/change-requests/${r.id}`}
+                    className={buttonClass({ size: 'sm', touchHeight: true })}
+                  >
+                    {t('review')}
+                    {/* Each row has one: the date tells them apart (UX review M7). */}
+                    <span className="sr-only">{`, ${t('submittedOn', { submittedAt: fmt(r.submittedAtIso) })}`}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {history.length > 0 && (
+            <ul
+              className={`flex flex-col divide-y divide-[var(--aura-border-default)] ${pending.length > 0 ? 'border-t border-[var(--aura-border-default)]' : ''}`}
+            >
+              {history.map((r) => (
+                <li
+                  key={r.id}
+                  className="flex items-start justify-between gap-3 py-3"
+                  data-testid="member-change-request-history"
+                  data-request-id={r.id}
+                >
+                  <div className="min-w-0 space-y-1 text-sm">
                     <Link
                       href={`/admin/change-requests/${r.id}`}
-                      className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
+                      className="font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline"
                     >
-                      {r.state === 'pending' ? t('review') : t('open')}
-                      {/* Each row has one: the date tells them apart (UX review M7). */}
-                      <span className="sr-only">{`, ${t('submittedOn', { submittedAt: fmt(r.submittedAt) })}`}</span>
+                      {fields(r.fieldKeys)}
                     </Link>
+                    <p className="text-xs text-[var(--aura-fg-secondary)]">
+                      {r.decidedByName && r.decidedAtIso
+                        ? tReview('decidedBy', { name: r.decidedByName, decidedAt: fmt(r.decidedAtIso) })
+                        : t('submittedOn', { submittedAt: fmt(r.submittedAtIso) })}
+                    </p>
                   </div>
-                </div>
-                <div className="mt-3">
-                  <ChangeRequestDiffTable fields={r.fields.map(serialiseField)} showOutcome={r.state === 'decided'} />
-                </div>
-                {r.decisionReason ? (
-                  <div className="mt-3 rounded-[var(--aura-radius-md)] bg-[var(--aura-bg-surface-hover)] p-3 text-sm">
-                    <p className="font-medium">{tReview('decisionReason')}</p>
-                    <p className="whitespace-pre-wrap break-words">{r.decisionReason}</p>
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+                  <ChangeRequestStatusBadge status={r.status} audience="staff" className="shrink-0" />
+                </li>
+              ))}
+            </ul>
+          )}
+          <Link
+            href={viewAllHref}
+            className="inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+          >
+            {t('viewAll')}
+            <ArrowRightIcon className="size-4" aria-hidden="true" />
+          </Link>
+        </div>
       )}
     </Card>
   );

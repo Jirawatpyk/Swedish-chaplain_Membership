@@ -16,37 +16,44 @@
  * never reaches the bar). Following a link marks it at once and moves focus
  * into that section, so the next Tab continues there (UX review M3, 2.4.3).
  */
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Tabs } from '@jirawatpyk/aura-react';
+import { useSectionTabsScrollPadding } from '@/hooks/use-section-tabs-scroll-padding';
 
 export interface SectionLink {
   readonly id: string;
   readonly label: string;
 }
 
-/** Below the shell bar and this row (the sections' `scroll-mt-28`, 112 px). */
-const BAND_TOP_PX = 120;
+/** A section counts as reached a little below this row's bottom edge. */
+const BAND_SLACK_PX = 8;
 
-function sectionInView(links: readonly SectionLink[]): string | undefined {
+function sectionInView(links: readonly SectionLink[], bandTop: number): string | undefined {
   const doc = document.documentElement;
   if (window.innerHeight + window.scrollY >= doc.scrollHeight - 2) return links.at(-1)?.id;
   let current = links[0]?.id;
   for (const l of links) {
     const el = document.getElementById(l.id);
-    if (el && el.getBoundingClientRect().top <= BAND_TOP_PX) current = l.id;
+    if (el && el.getBoundingClientRect().top <= bandTop) current = l.id;
   }
   return current;
 }
 
 export function SectionLinks({ label, links }: { readonly label: string; readonly links: readonly SectionLink[] }) {
   const [current, setCurrent] = useState(links[0]?.id);
+  const rowRef = useRef<HTMLDivElement>(null);
+  // The row's height feeds `scroll-padding-top`, so an anchored section lands
+  // below the shell bar and this row at any width, locale or zoom.
+  useSectionTabsScrollPadding(rowRef);
 
   useEffect(() => {
     let frame = 0;
     const update = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        const id = sectionInView(links);
+        // While stuck, the row's bottom is the shell bar plus the row.
+        const bandTop = (rowRef.current?.getBoundingClientRect().bottom ?? 0) + BAND_SLACK_PX;
+        const id = sectionInView(links, bandTop);
         if (id) setCurrent(id);
       });
     };
@@ -73,6 +80,7 @@ export function SectionLinks({ label, links }: { readonly label: string; readonl
 
   return (
     <div
+      ref={rowRef}
       className="sticky top-[var(--aura-shell-bar-height)] z-[5] -mx-[var(--page-padding-x)] bg-[var(--aura-bg-canvas)] px-[var(--page-padding-x)]"
       onClick={onClick}
     >

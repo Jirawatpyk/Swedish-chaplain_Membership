@@ -373,3 +373,19 @@ AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `to
   - **GREEN**: 126 test files, 1694 tests pass (members presentation, parity cleanup, architecture).
   - **Preview** (production build): the bar is one row, 62px tall, at 1024 and 1280 with a mouse and with touch. Keyboard: ⋯ → Enter opens the menu, a chosen item opens its dialog, Esc returns focus to ⋯.
   - **UX review** (`enterprise-ux-designer`, Ship): MEDIUM, over the cap the dimmed menu items gave no reason. Each now carries `disabledReason` (the bar's `overCap` copy), read with the item. Failing run before the fix: "over the cap, the menu items are disabled like the buttons" → `Expected element to have accessible description` (received none).
+
+### Evidence: member detail layout B (size M, plan agreed 2026-10-22)
+
+- **Scope:** the header ⋯ menu at every width, the two-column body, the Company summary + Drawer, the compact Change requests card, the Renewal card without the strip's figures, the invoice filter threshold, and measured scroll padding under the sticky section tabs. Decisions in spec Clarifications, Session 2026-10-22 (member detail layout B).
+- **RED** (`60ece6f95`, behaviour, so no shared commit): 9 failed, 27 passed, and the hook's file failed to import.
+  - `member-detail-view.test.tsx` "a writer gets Benefits, Edit and the ⋯ menu, in that order" → `expected [ 'Benefits', …(4) ] to deeply equal [ 'Benefits', 'Edit', 'More actions' ]`; "Erase and Archive live in the ⋯ menu at every width" → `expected <span …(1)>…(1)</span> to be null` (the menu's `sm:hidden` wrapper).
+  - `member-invoices-section.test.ts` "hides the filters at 10 invoices" → `expected true to be false`.
+  - `member-change-requests-card.test.tsx` (5 cases) → `MemberChangeRequestsCard is not a function`.
+  - `renewal-health-card.test.tsx` "renders the status and the engagement score, not the expiry or the band" → `expected document not to contain element, found <dt`.
+  - `use-section-tabs-scroll-padding.test.ts` → `Failed to resolve import "@/hooks/use-section-tabs-scroll-padding"`.
+- **Shared commit (D-023, presentation only)**, `member-detail-view.test.tsx` before the test change:
+  - "links every section the viewer has" → `expected [ 'Contacts', 'Invoices', …(4) ] to deeply equal [ undefined, 'Contacts', …(4) ]` (no Overview link any more);
+  - "renders the strip above the links, and the sections in the board order" → `expected +0 to be truthy` (the new DOM order);
+  - "the company card groups are h3 headings" → `Unable to find an accessible element with the role "heading" and name "Organisation"` (the record is in the Drawer).
+- **GREEN:** `tests/unit/app/admin/members/` 75 passed; the hook, the renewal card and the change-requests card pass.
+

@@ -1291,14 +1291,13 @@
     "members": {
         "changeRequests": {
             "title": "Ändringsbegäranden",
-          "viewQueue": "Öppna i kön",
+          "viewAll": "Visa alla ändringsbegäranden",
           "loadFailed": "Ändringsbegärandena kunde inte läsas in. Ladda om sidan för att försöka igen.",
           "empty": "Inga ändringsbegäranden för den här medlemmen ännu.",
           "submittedBy": "Skickad av {name} ({role})",
           "submittedOn": "Skickad {submittedAt}",
           "review": "Granska",
-          "pendingAlert": "Ändringsbegäran väntar på granskning",
-          "open": "Öppna"
+          "pendingAlert": "Ändringsbegäran väntar på granskning"
         },
       "title": "Medlemmar",
       "overrideReason": {
@@ -1661,6 +1660,10 @@
         },
         "editCta": "Redigera",
         "headerMoreActions": "Fler åtgärder",
+        "companyDetails": {
+          "open": "Alla företagsuppgifter",
+          "close": "Stäng företagsuppgifter"
+        },
         "contactActions": {
           "add": "Lägg till kontakt",
           "edit": "Redigera",
@@ -1711,11 +1714,11 @@
         },
         "sectionLinks": {
           "label": "På den här sidan",
-          "overview": "Översikt",
           "contacts": "Kontakter",
           "invoices": "Fakturor",
           "changeRequests": "Ändringsbegäranden",
           "timeline": "Tidslinje",
+          "company": "Företag",
           "dataExport": "Dataexport"
         }
       },

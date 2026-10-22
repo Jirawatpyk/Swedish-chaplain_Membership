@@ -113,6 +113,16 @@ test.describe('F3 admin comprehensive a11y scan @f3 @a11y', () => {
       .withTags([...AXE_TAGS])
       .analyze();
     expect(results.violations).toEqual([]);
+
+    // Layout B — the full company record opens in a Drawer; scan it open.
+    await page.getByRole('button', { name: /all company details/i }).click();
+    const drawer = page.getByRole('dialog');
+    await expect(drawer).toBeVisible();
+    const drawerResults = await new AxeBuilder({ page })
+      .include('[role="dialog"]')
+      .withTags([...AXE_TAGS])
+      .analyze();
+    expect(drawerResults.violations).toEqual([]);
   });
 
   test('4. /admin/members/:id/edit — no axe violations', async ({ page }) => {
