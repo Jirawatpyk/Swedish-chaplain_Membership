@@ -69,7 +69,7 @@ export function ResendBouncedInviteButton({ memberId, contactId }: Props) {
   });
 
   return (
-    <Button variant="secondary" size="sm" onClick={handleClick} disabled={submitting}>
+    <Button variant="secondary" size="sm" touchHeight onClick={handleClick} disabled={submitting}>
       <MailIcon className="size-4" aria-hidden="true" />
       {submitting ? t('resendSubmitting') : t('resendLabel')}
     </Button>

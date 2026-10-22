@@ -32,7 +32,7 @@ export default async function AdminCreditNoteNotFound(): Promise<React.ReactElem
         <p className="m-0 text-sm text-[var(--aura-fg-secondary)]">{tErrors('notFound')}</p>
         <Link
           href="/admin/credit-notes"
-          className={buttonClass({ variant: 'secondary', size: 'sm', className: 'mt-4' })}
+          className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'mt-4' })}
         >
           <Icon name={<ArrowLeft />} size={16} />
           {t('title')}

@@ -231,6 +231,7 @@ export function ArchivedBanner({
             ref={restoreButtonRef}
             variant="secondary"
             size="sm"
+            touchHeight
             onClick={() => void handleUndelete()}
             disabled={disabled}
           >
@@ -243,7 +244,7 @@ export function ArchivedBanner({
           // AURA's Button keeps the passed aria-disabled and ignores clicks
           // (5.14, handoff 102).
           <Tooltip content={t('windowExpiredTooltip')}>
-            <Button variant="secondary" size="sm" aria-disabled="true">
+            <Button variant="secondary" size="sm" touchHeight aria-disabled="true">
               <ArchiveRestoreIcon className="size-4" aria-hidden="true" />
               {t('undeleteCta')}
             </Button>

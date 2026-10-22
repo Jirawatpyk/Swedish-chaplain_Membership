@@ -20,7 +20,7 @@ export function AddContactButton({ memberId }: { readonly memberId: string }) {
       trigger={
         // The word at every width, like the page's other card-head buttons,
         // though the phone board draws a bare + (maintainer, 29 Sep).
-        <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+        <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
           <PlusIcon className="size-4" aria-hidden="true" />
           {t('add')}
         </button>

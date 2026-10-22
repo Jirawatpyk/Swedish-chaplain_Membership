@@ -103,7 +103,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
         // read-only while letting a linked SECONDARY email be edited.
         contact={{ ...contact, isPrimary }}
         trigger={
-          <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+          <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
             <PencilIcon className="size-4" aria-hidden="true" />
             {t('edit')}
             {/* Several contacts each have an Edit: the name tells them apart. */}
@@ -116,7 +116,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
         <>
           <button
             type="button"
-            className={buttonClass({ variant: 'secondary', size: 'sm' })}
+            className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
             onClick={() => setPromoteOpen(true)}
           >
             <StarIcon className="size-4" aria-hidden="true" />
@@ -128,7 +128,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
           <span className="max-sm:absolute max-sm:end-0 max-sm:top-0">
             <DropdownMenu
               label={t('moreActions', { name: contactName })}
-              trigger={<IconButton icon="ellipsis" size="sm" label={t('moreActions', { name: contactName })} />}
+              trigger={<IconButton icon="ellipsis" size="sm" touchHeight label={t('moreActions', { name: contactName })} />}
               items={[{ label: t('remove'), icon: 'trash-2', tone: 'danger', onSelect: () => setRemoveOpen(true) }]}
             />
           </span>

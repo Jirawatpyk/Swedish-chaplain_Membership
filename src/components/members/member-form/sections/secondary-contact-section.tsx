@@ -141,6 +141,7 @@ export function SecondaryContactSection() {
           type="button"
           variant="danger-secondary"
           size="sm"
+          touchHeight
           icon={<Trash2Icon className="size-4" aria-hidden="true" />}
           onClick={handleRemove}
           className="w-fit"

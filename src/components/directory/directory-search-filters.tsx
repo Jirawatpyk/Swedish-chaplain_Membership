@@ -105,7 +105,7 @@ export function DirectorySearchFilters(): React.JSX.Element {
             {t('listedOnly')}
           </Checkbox>
           {hasAny && (
-            <Button variant="ghost" size="sm" icon="x" onClick={clearAll}>
+            <Button variant="ghost" size="sm" touchHeight icon="x" onClick={clearAll}>
               {t('clear')}
             </Button>
           )}

@@ -203,7 +203,7 @@ export function AtRiskWidget({ canSnooze }: AtRiskWidgetProps) {
       tone="danger"
       title={t('errorLoading')}
       action={
-        <Button size="sm" variant="secondary" onClick={() => setRefetchKey((k) => k + 1)}>
+        <Button size="sm" touchHeight variant="secondary" onClick={() => setRefetchKey((k) => k + 1)}>
           {t('actions.retry')}
         </Button>
       }

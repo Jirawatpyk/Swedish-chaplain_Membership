@@ -132,6 +132,7 @@ export function ErrorCardActions({
           type="button"
           variant="primary"
           size="sm"
+          touchHeight
           icon="rotate-ccw"
           onClick={handleRetry}
           disabled={isPending}
@@ -139,7 +140,7 @@ export function ErrorCardActions({
         >
           {isPending ? (pendingLabel ?? retryLabel) : retryLabel}
         </Button>
-        <Button href={goBackHref} variant="secondary" size="sm">
+        <Button href={goBackHref} variant="secondary" size="sm" touchHeight>
           {goBackLabel}
         </Button>
       </div>

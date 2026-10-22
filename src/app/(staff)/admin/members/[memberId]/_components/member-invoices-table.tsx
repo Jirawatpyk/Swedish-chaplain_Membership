@@ -126,7 +126,7 @@ export function MemberInvoicesTable({
         return (
           <DropdownMenu
             label={name}
-            trigger={<IconButton icon="ellipsis" size="sm" label={name} />}
+            trigger={<IconButton icon="ellipsis" size="sm" touchHeight label={name} />}
             items={menuItems(row, labels, canMutate)}
           />
         );

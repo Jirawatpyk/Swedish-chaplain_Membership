@@ -53,8 +53,8 @@ export function CopyChargeIdButton({ chargeId }: { chargeId: string }) {
         icon={copied ? 'check' : 'copy'}
         label={t('copyAction')}
         size="sm"
-        // 44px touch target at every width (WCAG 2.5.5, ux-standards mobile-first).
-        className="min-h-11 min-w-11"
+        // 44px on a phone or a touch screen, as every small button the user taps.
+        touchHeight
         onClick={handleCopy}
         data-testid="copy-charge-id-button"
       />

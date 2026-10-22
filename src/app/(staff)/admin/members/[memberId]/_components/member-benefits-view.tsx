@@ -80,7 +80,7 @@ export async function renderMemberBenefitsView({
         staffSubjectName={member.companyName}
         staffActions={
           reminderHref !== undefined ? (
-            <a href={reminderHref} className={buttonClass({ variant: 'secondary', size: 'sm', className: 'max-sm:hidden' })}>
+            <a href={reminderHref} className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'max-sm:hidden' })}>
               <MailIcon className="size-4" aria-hidden="true" />
               {t('staffActions.sendReminder')}
             </a>
