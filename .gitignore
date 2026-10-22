@@ -171,6 +171,8 @@ scripts/_demo-data/
 .vercel
 .env*.local
 .e2e-seed.json
+# Throwaway verify probes (run-chamber-os § 4): never committed.
+tests/e2e/zz-probe-*
 
 # ============================================
 # F6 perf-bench local results (R9 B.3 — orchestrator output)

@@ -7,6 +7,7 @@ Spec: `specs/124-invoice-dashboard/spec.md` · Size: L · Agreed by the user on:
 - **One SQL aggregate per card, in insights infrastructure** (`invoice-dashboard-source-adapter.ts`), behind one insights port `InvoiceDashboardSource` (the shape of `WaivedRefundSource`, `src/modules/insights/application/ports/source-ports.ts:230`). The adapter reads the barrel-exported `invoicesTable` and `paymentsTable`, plus `creditNotesTable` and `refundsTable` exported the same way. Infra-to-infra schema sharing through a barrel is the documented policy (`src/modules/payments/index.ts:199-206`; precedents `renewals/infrastructure/ports-adapters/invoice-due-bridge-drizzle.ts:22`, `insights/infrastructure/sources/benefit-consumption-aggregate-adapter.ts:44`). Each query runs inside `runInTenant` with `tx` and an explicit `tenant_id` predicate (second wall), so every card reads one snapshot.
 - **The tax point is one exported expression**: `invoiceTaxPointSql` from the invoicing barrel (precedent `liveMembershipBillWhere`), replacing the private `TAX_POINT` in `drizzle-invoice-repo.ts:1784`; the register, the dashboard and migration 0318 share it.
 - **Per-card loaders** in insights application (`loadInvoiceDashboardTiles`, `…Aging`, `…Attention`, `…OldestOverdue`, `…Trend`, `…Methods`) share one filter parser (`domain/invoice-dashboard-filters.ts`) and one role projection; each returns its own `Result`. A card's server component renders `EmptyState tone="danger"` with the logged reference id on `err`, so one failing query never blanks the page (a React error boundary would only get a digest in production).
+- **One `today` per request (slice 2)**: the aging and overdue SQL takes Bangkok today as a parameter computed once in the app (`bangkokLocalDate`), the same value the drill-down links carry, never the database's `now()`, so a figure and its link cannot straddle midnight (financial-integrity review of slice 1, L-3).
 - **Role cut on the server**: the page guard is `requirePagePermission('invoicing.read')` (one literal key, as `check-staff-page-guard.ts` and the nav parity test require), then `canPerform(role, 'insights.finance')`; today every holder of `invoicing.read` (admin, manager) also holds `insights.finance` (`role-bundles.ts:30-47`). `canPerform(role, 'invoicing.write')` decides actions and the two draft rows.
 - **No cache** (spec D-a). The trend chart loads via `next/dynamic({ ssr: false })` like `src/components/dashboard/_mini-series-chart.tsx`.
 - Not taken: aggregates as invoicing read use cases (more ports for nothing); paging `listInvoices` in JS (O(n), forbidden by the design spec); payments use cases returning per-invoice maps (unbounded `IN (...)`, no invoice filters, a separate transaction each); a port onto renewals for the auto-renewal queue (barrel cycle `renewals → insights → renewals`, the 066 class).
@@ -41,7 +42,7 @@ Each slice is cut from `origin/main` after the previous one merged, in a short `
 | US2.3 `due_date >= dueAfter`; range with `dueBefore`; drafts excluded | `tests/integration/invoicing/list-invoices-origin-filter.test.ts` § dueAfter | integration |
 | US2.4 `plan` keeps that plan's membership invoices only | same file § plan | integration |
 | US2.3/2.4 use case rejects a malformed `dueAfter` / `plan` | `tests/unit/invoicing/list-invoices-paged-088-filters.test.ts` | unit |
-| US2.3/2.4 page ignores an invalid `dueAfter` and an unknown `plan` | page param test | unit |
+| US2.3/2.4 page and use case ignore an invalid `dueAfter`; any well-formed `plan` filters, named by the id when unknown | `tests/unit/lib/iso-calendar-date.test.ts`, `tests/unit/app/invoices/plan-filter.test.ts`, use-case test | unit |
 | US2.3/2.4 chips show and clear (UI: may share a commit; failing run in § Evidence) | `tests/unit/app/invoices/invoice-filters-popover.test.tsx` | unit |
 | US1.3 aging edges: due today = not yet due; 30/31/60/61/90/91 | `tests/unit/insights/invoice-dashboard-domain.test.ts` | unit |
 | US1.3 shares add to 100; non-zero under 1% → `<1%` | `tests/unit/lib/allocate-percentages.test.ts` (existing chart test still green) | unit |
@@ -100,7 +101,7 @@ Each slice is cut from `origin/main` after the previous one merged, in a short `
 
 1. Slices merge in order, each on the user's word (D-006). Each is safe to deploy alone: slice 1 is additive, slice 2 is a migration plus unused code, slice 3 is behind `FEATURE_INVOICE_DASHBOARD` (default off).
 2. Turning the flag on is a production deploy (D-007): only on the user's word, recorded in `docs/operational-state.md`.
-3. Follow-up issue: the CSV export labels a refunded Stripe invoice "other".
+3. Follow-up issues: the CSV export labels a refunded Stripe invoice "other"; `listInvoicesPaged` passes `dueBefore` through on a regex only, so a non-page caller's `2026-02-30` would still reach Postgres (pre-existing; `dueAfter` is now checked in the use case).
 
 ## Risks
 

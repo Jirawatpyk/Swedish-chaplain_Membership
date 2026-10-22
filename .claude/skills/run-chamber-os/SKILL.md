@@ -23,7 +23,7 @@ git worktree add "C:/Users/<you>/AppData/Local/Temp/fNN" <branch-or-sha>   # sho
 
 Then provide `node_modules` with **`pnpm install --frozen-lockfile`** in the worktree. A junction to the main checkout's `node_modules` is fine for lint, typecheck and unit tests, but **`next dev` refuses it** ("Symlink [project]/node_modules is invalid, it points out of the filesystem root"), so a worktree that runs the app needs a real install. Remove a junction with `cmd /c rmdir <path>` (never `rm -rf`, which follows it).
 
-Copy `.env.local` from the main checkout (`cp`, never print it): without it the app answers 500 with "Environment validation failed". It is gitignored, so never commit it and never print its values. Before you start, confirm it points at the dev host, not prod, by printing only the host: `node -e "console.log(new URL(require('fs').readFileSync('.env.local','utf8').match(/^DATABASE_URL=[\"']?([^\"'\\r\\n]+)/m)[1]).host)"`. Reading the file itself (`cat`, `grep`, `Get-Content`) is blocked by the repo guard, and `TEST_DB_HOST_BLOCKLIST` *names* the prod host, so a grep would give a false match anyway.
+The worktree needs `.env.local`: without it the app answers 500 with "Environment validation failed". The repo guard (D-016) refuses any command that names an `.env*` file, a `cp` and a host-printing `node -e` included, so **ask the user to copy it** (give them the one `cp` line with both absolute paths) and never try another spelling. It is gitignored, so never commit it. The dev-not-prod check is mechanical: integration tests refuse to run against prod (`TEST_DB_HOST_BLOCKLIST` in `tests/integration-setup.ts`), so the first `pnpm test:integration <path>` in the worktree is the host check.
 
 ## 2. Start the server cold
 
@@ -62,7 +62,7 @@ E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright
 
 **Drive every changed screen, route or cron** in the browser, including one wrong-input probe (an invalid value, a missing field, a role that must be refused).
 
-**A one-off probe:** write a throwaway spec in the scratchpad, copy it into `tests/e2e/` for the run, delete it afterwards, and never commit it. Have it print one JSON line (`console.log('PROBE ' + JSON.stringify(out))`) and parse that line.
+**A one-off probe:** write a throwaway spec in the scratchpad, copy it into `tests/e2e/` **as `zz-probe-<name>.spec.ts`** for the run, delete it afterwards, and never commit it. That prefix is gitignored and ESLint-ignored, so a `pnpm check` running meanwhile cannot trip over it. Have it print one JSON line (`console.log('PROBE ' + JSON.stringify(out))`) and parse that line.
 
 ## 5. UI probes (every UI change)
 
