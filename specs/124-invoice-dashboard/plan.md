@@ -116,3 +116,4 @@ Each slice is cut from `origin/main` after the previous one merged, in a short `
 - The boards predate decisions 10 and D-d to D-h: read the 7 `.dc.html` files at slice 3 before claiming parity; captions and the attention rows will differ.
 - Measuring at volume on the shared dev tenant would burn §87 numbers and leak rows: a disposable tenant created and deleted in the run (D-h).
 - CI's live-Neon suites run about 7× slower than a workstation: no explicit per-test timeouts.
+- A tenant's first queries before autovacuum has ANALYZEd its rows see `rows=1` estimates and nested loops over its whole paid set: measured at 2k invoices, Collected FY ~55–61 ms and By method / monthly ~115–125 ms (about 30× the analysed figures, still under D-j's 150 ms). It grows with volume until autoanalyze runs; a new tenant's import should be followed by `ANALYZE` on invoices, credit_notes, payments and refunds (slice 2 review fixes, 22 Oct).
