@@ -1,13 +1,11 @@
 /**
  * 124 slice 1 — `?plan=<plan_id>` on the admin invoice list (the invoice
- * dashboard's Plan filter drills down with it). A plan id the tenant has
- * resolves to the filter and its chip label (`resolvePlanName`'s locale
- * fallback chain); an unknown id is IGNORED (no 500, no restriction), like
- * every other list param.
- *
- * When the plan lookup itself failed (`plans` undefined) a plausible id still
- * filters, its chip named by the id: dropping it would show the whole list
- * as if it were the plan's, with nothing on screen to say so.
+ * dashboard's Plan filter drills down with it). Any well-formed id filters
+ * (`invoices.plan_id`, every plan year); the chip names the plan through
+ * `resolvePlanName`'s locale fallback chain when the lookup knows it, else by
+ * the id (another plan year, a deleted plan, a failed lookup). Dropping an
+ * unknown id instead would show the whole list unmarked; an id no invoice
+ * carries simply matches nothing. Empty or over-long values are IGNORED.
  */
 import { resolvePlanName } from '@/lib/resolve-plan-name';
 
@@ -23,11 +21,7 @@ export function resolvePlanFilter(
   plans: readonly { readonly plan_id: string; readonly plan_name: unknown }[] | undefined,
   locale: string,
 ): PlanFilter | undefined {
-  if (!raw) return undefined;
-  if (plans === undefined) {
-    return raw.length <= MAX_PLAN_ID_LENGTH ? { id: raw, label: raw } : undefined;
-  }
-  const plan = plans.find((p) => p.plan_id === raw);
-  if (!plan) return undefined;
-  return { id: plan.plan_id, label: resolvePlanName(plan.plan_name, plan.plan_id, locale) };
+  if (!raw || raw.length > MAX_PLAN_ID_LENGTH) return undefined;
+  const plan = plans?.find((p) => p.plan_id === raw);
+  return { id: raw, label: plan ? resolvePlanName(plan.plan_name, raw, locale) : raw };
 }

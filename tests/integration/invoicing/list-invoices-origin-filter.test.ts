@@ -32,6 +32,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { runInTenant } from '@/lib/db';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -87,6 +88,11 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
   // `memberId`, so this row is invisible to them.
   const otherMemberId = randomUUID();
   const otherPlanIssuedInv = randomUUID();
+  // The same plan id in the 2025 plan year: `planId` matches every year.
+  const otherPlanPriorYearInv = randomUUID();
+  // Due on Bangkok today: "not yet due" (issued + dueAfter=today), never overdue.
+  const dueTodayInv = randomUUID();
+  const todayBkk = bangkokLocalDate(new Date().toISOString());
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -117,6 +123,26 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
         tenantId: tenant.ctx.slug,
         planId: 'other-plan',
         planYear: 2026,
+        planName: { en: 'Other Plan' },
+        description: { en: 'desc' },
+        sortOrder: 20,
+        planCategory: 'corporate',
+        memberTypeScope: 'company',
+        annualFeeMinorUnits: 1_000_000,
+        includesCorporatePlanId: null,
+        minTurnoverMinorUnits: null,
+        maxTurnoverMinorUnits: null,
+        maxDurationYears: null,
+        maxMemberAge: null,
+        benefitMatrix: MATRIX,
+        isActive: true,
+        createdBy: user.userId,
+        updatedBy: user.userId,
+      });
+      await tx.insert(membershipPlans).values({
+        tenantId: tenant.ctx.slug,
+        planId: 'other-plan',
+        planYear: 2025,
         planName: { en: 'Other Plan' },
         description: { en: 'desc' },
         sortOrder: 20,
@@ -279,6 +305,62 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
           memberIdentitySnapshot: SNAP_MEMBER,
           pdfBlobKey: 'invoicing/of/2025/2.pdf',
           pdfSha256: 'c'.repeat(64),
+          pdfTemplateVersion: 1,
+        },
+        {
+          tenantId: tenant.ctx.slug,
+          invoiceId: otherPlanPriorYearInv,
+          invoiceSubject: 'membership',
+          memberId: otherMemberId,
+          planYear: 2025,
+          planId: 'other-plan',
+          draftByUserId: user.userId,
+          status: 'issued',
+          pdfDocKind: 'invoice',
+          fiscalYear: 2024,
+          sequenceNumber: 1,
+          documentNumber: 'OF-2024-000001',
+          issueDate: '2024-05-02',
+          dueDate: '2024-06-01',
+          subtotalSatang: 100_000n,
+          vatRateSnapshot: '0.0700',
+          vatSatang: 7_000n,
+          totalSatang: 107_000n,
+          creditedTotalSatang: 0n,
+          proRatePolicySnapshot: 'monthly',
+          netDaysSnapshot: 30,
+          tenantIdentitySnapshot: SNAP_TENANT,
+          memberIdentitySnapshot: SNAP_MEMBER,
+          pdfBlobKey: 'invoicing/of/2024/1.pdf',
+          pdfSha256: 'd'.repeat(64),
+          pdfTemplateVersion: 1,
+        },
+        {
+          tenantId: tenant.ctx.slug,
+          invoiceId: dueTodayInv,
+          invoiceSubject: 'membership',
+          memberId: otherMemberId,
+          planYear: 2026,
+          planId: 'other-plan',
+          draftByUserId: user.userId,
+          status: 'issued',
+          pdfDocKind: 'invoice',
+          fiscalYear: 2026,
+          sequenceNumber: 2,
+          documentNumber: 'OF-2026-000002',
+          issueDate: '2026-01-05',
+          dueDate: todayBkk,
+          subtotalSatang: 100_000n,
+          vatRateSnapshot: '0.0700',
+          vatSatang: 7_000n,
+          totalSatang: 107_000n,
+          creditedTotalSatang: 0n,
+          proRatePolicySnapshot: 'monthly',
+          netDaysSnapshot: 30,
+          tenantIdentitySnapshot: SNAP_TENANT,
+          memberIdentitySnapshot: SNAP_MEMBER,
+          pdfBlobKey: 'invoicing/of/2026/2.pdf',
+          pdfSha256: 'e'.repeat(64),
           pdfTemplateVersion: 1,
         },
       ]);
@@ -444,7 +526,7 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
       });
 
     it('dueAfter=2026-01-01 is inclusive: the bill due that day and the later one, never the earlier one', async () => {
-      const result = await listAll({ dueAfter: '2026-01-01' });
+      const result = await listAll({ dueAfter: '2026-01-01', dueBefore: '2026-06-01' });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.rows.map((r) => r.invoiceId).sort()).toEqual(
@@ -461,8 +543,30 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
       expect(result.value.rows.map((r) => r.invoiceId)).toEqual([otherPlanIssuedInv]);
     });
 
+    it('a bill due on Bangkok today is "not yet due": issued + dueAfter=today, never overdue', async () => {
+      const notYetDue = await listInvoicesPaged(makeListInvoicesDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        offset: 0,
+        pageSize: 50,
+        includeDrafts: false,
+        status: 'issued',
+        dueAfter: todayBkk,
+      });
+      const overdue = await listInvoicesPaged(makeListInvoicesDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        offset: 0,
+        pageSize: 50,
+        includeDrafts: false,
+        status: 'overdue',
+      });
+      expect(notYetDue.ok && overdue.ok).toBe(true);
+      if (!notYetDue.ok || !overdue.ok) return;
+      expect(notYetDue.value.rows.map((r) => r.invoiceId)).toEqual([dueTodayInv]);
+      expect(overdue.value.rows.map((r) => r.invoiceId)).not.toContain(dueTodayInv);
+    });
+
     it('drafts stay excluded even when their due date is in range', async () => {
-      const result = await listAll({ dueAfter: '2026-02-01' });
+      const result = await listAll({ dueAfter: '2026-02-01', dueBefore: '2026-06-01' });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.value.rows.map((r) => r.invoiceId)).toEqual([manualIssuedInv]);
@@ -481,8 +585,11 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
       });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect(result.value.rows.map((r) => r.invoiceId)).toEqual([otherPlanIssuedInv]);
-      expect(result.value.total).toBe(1);
+      // Every plan year: the 2025-year invoice of the same plan id matches too.
+      expect(result.value.rows.map((r) => r.invoiceId).sort()).toEqual(
+        [otherPlanIssuedInv, otherPlanPriorYearInv, dueTodayInv].sort(),
+      );
+      expect(result.value.total).toBe(3);
     });
 
     it('composes with dueAfter and the derived overdue status', async () => {

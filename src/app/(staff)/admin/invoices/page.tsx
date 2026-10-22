@@ -199,15 +199,17 @@ interface SearchParams {
   readonly dueAfter?: string;
   /**
    * 124 slice 1 — `?plan=<plan_id>`: membership invoices on that plan (the
-   * invoice dashboard's Plan filter). An id the tenant has no plan for →
-   * ignored.
+   * invoice dashboard's Plan filter), in every plan year. Any well-formed id
+   * filters; the chip names the plan, or shows the id when this year's plans
+   * do not know it.
    */
   readonly plan?: string;
 }
 
 /**
- * 124 slice 1 — resolve `?plan=` against this Bangkok year's plans (see
- * `resolvePlanFilter`; the invoice dashboard offers the same year's plans).
+ * 124 slice 1 — name `?plan=` from this Bangkok year's plans (the invoice
+ * dashboard offers the same year's); the filter applies either way (see
+ * `resolvePlanFilter`).
  */
 async function loadPlanFilter(
   raw: string,
@@ -222,7 +224,7 @@ async function loadPlanFilter(
   if (!plans.ok) {
     logger.warn(
       { tenantId: tenant.slug, errKind: plans.error.type },
-      '[admin-invoices-list] plan filter lookup failed; filtering by the raw id',
+      '[admin-invoices-list] plan name lookup failed; the chip shows the plan id',
     );
   }
   return resolvePlanFilter(raw, plans.ok ? plans.value.data : undefined, locale);
@@ -334,9 +336,8 @@ export default async function AdminInvoicesPage({
   // bound (NOT flag-gated: a plain date filter any admin can use/bookmark).
   const dueBeforeFilter = parseIsoCalendarDate(query.dueBefore);
   // 124 slice 1 — the inclusive lower bound and the plan, both from the
-  // invoice dashboard's drill-down links. The plan lookup runs only when the
-  // param is present; a failed lookup drops the filter (and its chip) rather
-  // than failing the list.
+  // invoice dashboard's drill-down links. The plan-name lookup runs only when
+  // the param is present, and its failure never fails the list.
   const dueAfterFilter = parseIsoCalendarDate(query.dueAfter);
   const planFilter = query.plan
     ? await loadPlanFilter(query.plan, tenantCtx, locale, bangkokLocalDate(new Date().toISOString()))
