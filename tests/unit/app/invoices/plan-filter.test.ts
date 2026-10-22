@@ -1,8 +1,9 @@
 /**
  * Unit — 124 slice 1: the admin invoice list's `?plan=<plan_id>` resolves
  * against the tenant's plans. A known id gives the filter and its chip label
- * (in the viewer's locale, English as fallback); anything else is ignored,
- * like every other list param (no 500, no restriction).
+ * (in the viewer's locale, English as fallback). A well-formed id the lookup
+ * does not know (another plan year, a deleted plan, a failed lookup) still
+ * filters, its chip named by the id, so the list never widens unmarked.
  */
 import { describe, it, expect } from 'vitest';
 import { resolvePlanFilter } from '@/app/(staff)/admin/invoices/_lib/plan-filter';
@@ -30,10 +31,14 @@ describe('resolvePlanFilter', () => {
     ).toEqual({ id: 'bare', label: 'bare' });
   });
 
-  it('an unknown, empty or absent value is ignored', () => {
-    expect(resolvePlanFilter('no-such-plan', plans, 'en')).toBeUndefined();
+  it("an id this year's plans do not know still filters, named by the id", () => {
+    expect(resolvePlanFilter('gold-2025', plans, 'en')).toEqual({ id: 'gold-2025', label: 'gold-2025' });
+  });
+
+  it('an empty, absent or over-long value is ignored', () => {
     expect(resolvePlanFilter('', plans, 'en')).toBeUndefined();
     expect(resolvePlanFilter(undefined, plans, 'en')).toBeUndefined();
+    expect(resolvePlanFilter('x'.repeat(65), plans, 'en')).toBeUndefined();
   });
 
   it('when the plan lookup failed, still filters by a plausible id and names it by the id', () => {
