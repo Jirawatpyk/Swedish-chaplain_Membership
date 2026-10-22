@@ -64,7 +64,10 @@ export interface AttentionCounts {
   readonly manualDrafts: number;
   readonly autoRenewalDrafts: number;
   readonly receiptPdfFailed: number;
-  /** Payments whose LATEST refund attempt failed at Stripe (`stripe_refund_%`). */
+  /**
+   * Payments with a refund attempt failed at Stripe (`stripe_refund_%`) and no
+   * LATER succeeded or pending attempt; one per payment, however many failed.
+   */
   readonly refundsFailedAtStripe: number;
   /**
    * Refunds still `pending` whose `initiated_at` is strictly older than the

@@ -251,8 +251,10 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     const scope = scopeOf(filters);
     // Strictly older, as the sweep's `ageMs <= ESCALATION_AGE_MS → not yet` reads.
     const pendingBefore = new Date(now.getTime() - STALE_REFUND_ESCALATION_AGE_MS).toISOString();
-    // A failed attempt counts only while no later attempt exists on its payment
+    // Refunds failed at Stripe (US1): a payment counts once while one of its
+    // `stripe_refund_%` failures has no LATER succeeded or pending attempt
     // (initiated_at, created_at, id — the order the latest attempt is chosen by).
+    // A later failure of another kind does not clear it.
     const result = await rows(
       ctx,
       sql`
@@ -267,11 +269,12 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
           AND (${inv.status} = 'draft' OR ${inv.receiptPdfStatus} = 'failed')${scope}
       ), refund_pass AS (
         SELECT
-          COUNT(*) FILTER (
+          COUNT(DISTINCT ${rf.paymentId}) FILTER (
             WHERE ${rf.status} = 'failed' AND ${rf.failureReasonCode} LIKE 'stripe_refund_%'
               AND NOT EXISTS (
                 SELECT 1 FROM ${rf} AS ${later}
                 WHERE ${later.tenantId} = ${t} AND ${later.paymentId} = ${rf.paymentId}
+                  AND ${later.status} IN ('succeeded', 'pending')
                   AND (${later.initiatedAt}, ${later.createdAt}, ${later.id})
                     > (${rf.initiatedAt}, ${rf.createdAt}, ${rf.id})
               )
