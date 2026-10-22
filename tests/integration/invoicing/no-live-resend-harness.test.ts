@@ -18,6 +18,9 @@ describe('integration harness: no live transactional email', () => {
       html: '<p>harness check</p>',
       text: 'harness check',
     });
-    expect(result.ok && result.value.messageId).toMatch(/^integration-mock-/);
+    expect(result).toMatchObject({
+      ok: true,
+      value: { messageId: expect.stringMatching(/^integration-mock-/) },
+    });
   });
 });
