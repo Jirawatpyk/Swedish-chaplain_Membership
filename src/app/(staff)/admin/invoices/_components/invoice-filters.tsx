@@ -408,6 +408,8 @@ export function InvoiceFilters({
   //
   // 124 — `dueAfter` ("Due from {date}") and the plan ("Plan: {name}") are
   // URL-only in the same way; the three share one chip + read-only row shape.
+  // A long plan name (or the SV "Förfaller från {date}") can pass AURA's 24ch
+  // chip and be cut there; the popover's read-only row shows it whole.
   const urlOnlyFilters: {
     readonly id: string;
     readonly fieldLabel: string;

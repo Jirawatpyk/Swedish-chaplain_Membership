@@ -51,7 +51,7 @@ import { formatCalendarYear } from '@/lib/format-date-localised';
 import { parseThbDecimal, parseThbDecimalToSatang } from '@/lib/money';
 import { parseIsoCalendarDate } from '@/lib/iso-calendar-date';
 import type { TenantContext } from '@/modules/tenants';
-import { listPlans } from '@/modules/plans';
+import { asPlanYear, listPlans } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
 import { resolvePlanFilter, type PlanFilter } from './_lib/plan-filter';
 import { TableContainer } from '@/components/layout';
@@ -205,18 +205,27 @@ interface SearchParams {
   readonly plan?: string;
 }
 
-/** 124 slice 1 — resolve `?plan=` against the tenant's plans (see `resolvePlanFilter`). */
+/**
+ * 124 slice 1 — resolve `?plan=` against this Bangkok year's plans (see
+ * `resolvePlanFilter`; the invoice dashboard offers the same year's plans).
+ */
 async function loadPlanFilter(
   raw: string,
   tenant: TenantContext,
   locale: string,
+  todayBkk: string,
 ): Promise<PlanFilter | undefined> {
-  const plans = await listPlans({ filter: {} }, buildPlansDeps(tenant));
+  const plans = await listPlans(
+    { filter: { year: asPlanYear(Number(todayBkk.slice(0, 4))) } },
+    buildPlansDeps(tenant),
+  );
   if (!plans.ok) {
-    logger.warn({ tenantId: tenant.slug }, '[admin-invoices-list] plan filter lookup failed; filter dropped');
-    return undefined;
+    logger.warn(
+      { tenantId: tenant.slug, errKind: plans.error.type },
+      '[admin-invoices-list] plan filter lookup failed; filtering by the raw id',
+    );
   }
-  return resolvePlanFilter(raw, plans.value.data, locale);
+  return resolvePlanFilter(raw, plans.ok ? plans.value.data : undefined, locale);
 }
 
 export default async function AdminInvoicesPage({
@@ -329,7 +338,9 @@ export default async function AdminInvoicesPage({
   // param is present; a failed lookup drops the filter (and its chip) rather
   // than failing the list.
   const dueAfterFilter = parseIsoCalendarDate(query.dueAfter);
-  const planFilter = query.plan ? await loadPlanFilter(query.plan, tenantCtx, locale) : undefined;
+  const planFilter = query.plan
+    ? await loadPlanFilter(query.plan, tenantCtx, locale, bangkokLocalDate(new Date().toISOString()))
+    : undefined;
   const hasFilters =
     Boolean(qTrim) ||
     Boolean(statusFilter) ||

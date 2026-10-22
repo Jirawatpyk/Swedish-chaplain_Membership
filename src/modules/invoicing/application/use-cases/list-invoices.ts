@@ -120,9 +120,8 @@ export const listInvoicesPagedSchema = z.object({
     .optional(),
   // 124 slice 1 — inclusive due-date lower bound: `due_date >= dueAfter`.
   // With `dueBefore` it is the half-open range the invoice dashboard's aging
-  // rows link to. The page validates first; the schema uses the same
-  // calendar check, so a non-page caller's 2026-02-30 is refused here rather
-  // than by Postgres.
+  // rows link to. `listInvoicesPaged` does not parse this schema, so the use
+  // case itself drops a non-calendar value (Postgres would 500 on it).
   dueAfter: z
     .string()
     .refine((v) => parseIsoCalendarDate(v) !== undefined)
@@ -174,7 +173,7 @@ export async function listInvoicesPaged(
     vatTreatment: input.vatTreatment,
     origin: input.origin,
     dueBefore: input.dueBefore,
-    dueAfter: input.dueAfter,
+    dueAfter: parseIsoCalendarDate(input.dueAfter),
     planId: input.planId,
   });
   return ok({ rows, total });
