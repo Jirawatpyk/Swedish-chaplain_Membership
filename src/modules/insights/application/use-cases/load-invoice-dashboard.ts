@@ -140,15 +140,32 @@ export interface InvoiceDashboardTrendSlot {
 }
 
 export interface InvoiceDashboardTrend {
+  /** The whole FY: the slots and the Billed series. */
   readonly range: DashboardDateRange;
+  /** The Collected series' range: the FY cut at `today` (as Collected in FY). */
+  readonly collectedRange: DashboardDateRange;
+  /** True when `collectedRange` was cut at `today` (the current FY). */
+  readonly toDate: boolean;
   readonly slots: readonly InvoiceDashboardTrendSlot[];
+}
+
+export interface InvoiceDashboardMethodRow {
+  readonly method: InvoiceDashboardMethod;
+  readonly amountSatang: bigint;
+  /**
+   * Largest-remainder share of AMOUNT; the six add up to 100 when any is
+   * non-zero, and are all 0 when any row is negative or nothing was collected.
+   */
+  readonly sharePercent: number;
 }
 
 export interface InvoiceDashboardMethods {
   readonly range: DashboardDateRange;
+  /** True when `range` was cut at `today` (the current FY). */
+  readonly toDate: boolean;
   /** Σ rows — equals Collected in FY for the same filters. */
   readonly totalSatang: bigint;
-  readonly rows: readonly { readonly method: InvoiceDashboardMethod; readonly amountSatang: bigint }[];
+  readonly rows: readonly InvoiceDashboardMethodRow[];
 }
 
 /** The spec's design count for Oldest overdue is a slice-3 choice; this is the default. */
@@ -297,7 +314,7 @@ export function loadInvoiceDashboardTrend(
       const m = byMonth.get(slot.monthKey);
       return { ...slot, billedSatang: m?.billedSatang ?? 0n, collectedSatang: m?.collectedSatang ?? 0n };
     });
-    return { range, slots };
+    return { range, collectedRange: collected.range, toDate: collected.toDate, slots };
   });
 }
 
@@ -313,17 +330,25 @@ export function loadInvoiceDashboardMethods(
   deps: LoadInvoiceDashboardDeps,
 ): Promise<InvoiceDashboardResult<InvoiceDashboardMethods>> {
   return guarded('methods', ctx, deps, async () => {
-    const { range } = fiscalYearToDate(input.fiscalYearRange, input.today);
+    const { range, toDate } = fiscalYearToDate(input.fiscalYearRange, input.today);
     const raw = await deps.source.collectedByMethod(ctx, input.filters, range);
     const sums = new Map<InvoiceDashboardMethod, bigint>();
     for (const r of raw) {
       const method = normaliseMethod(r.method);
       sums.set(method, (sums.get(method) ?? 0n) + r.amountSatang);
     }
-    const rows = INVOICE_DASHBOARD_METHODS.map((method) => ({
+    const amounts = INVOICE_DASHBOARD_METHODS.map((method) => sums.get(method) ?? 0n);
+    const shares = allocatePercentages(amounts.map((a) => Number(a)));
+    const rows = INVOICE_DASHBOARD_METHODS.map((method, i) => ({
       method,
-      amountSatang: sums.get(method) ?? 0n,
+      amountSatang: amounts[i] ?? 0n,
+      sharePercent: shares[i] ?? 0,
     }));
-    return { range, totalSatang: rows.reduce((sum, r) => sum + r.amountSatang, 0n), rows };
+    return {
+      range,
+      toDate,
+      totalSatang: rows.reduce((sum, r) => sum + r.amountSatang, 0n),
+      rows,
+    };
   });
 }
