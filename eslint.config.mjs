@@ -1357,10 +1357,10 @@ const eslintConfig = defineConfig([
     // worktree's entire src/tests tree and lints another branch's code —
     // breaking `pnpm lint` (and CI would too) whenever any worktree exists.
     ".claude/worktrees/**",
-    // Throwaway verify probes (run-chamber-os § 4) are copied into tests/e2e/
+    // Throwaway verify probes (run-chamber-os § 4) are copied under tests/
     // for one run and deleted; a `pnpm check` running meanwhile listed one,
     // then hit ENOENT when it vanished (124 retro). Gitignored too.
-    "tests/e2e/zz-probe-*",
+    "tests/**/zz-probe-*",
   ]),
 ]);
 

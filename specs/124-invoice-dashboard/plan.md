@@ -24,6 +24,7 @@ No new tables or columns. Migration **0318** (slice 2, `new-migration` skill; ap
 - invoices `(tenant_id, <invoiceTaxPointSql>) WHERE status IN ('paid', 'partially_credited', 'credited')`; immutability checked on dev first (fallback: partials on `(tenant_id, payment_date)` and `(tenant_id, paid_at)`).
 - `credit_notes (tenant_id, issue_date)` and `refunds (tenant_id, completed_at) WHERE status = 'succeeded'`: checked in `pg_indexes`, added only if missing.
 - No `(tenant_id, status, due_date)` index: the existing partial `invoices_tenant_due_date_issued_idx` serves every `status = 'issued'` query; the auto-renewal count uses `invoices_auto_renewal_draft_idx`.
+- **Facts read on the dev branch (22 Oct, read-only probe, slice 2 step 0)**: `timezone(text, timestamptz)` is IMMUTABLE and a trial index on the exact tax-point expression builds, so no fallback; `credit_notes` has no `(tenant_id, issue_date)` index and `refunds` no `(tenant_id, completed_at)` one, so 0318 adds both; no void invoice carries `paid_at` or a refund; no paid-family invoice lacks both `payment_date` and `paid_at` (no footnote needed); no invoice has two payments in the method set; 61 manual credit notes, all on bank-transfer invoices; refunds are 30 `pending` + 2 `succeeded`, none `failed`.
 
 ## Slices (L only)
 
