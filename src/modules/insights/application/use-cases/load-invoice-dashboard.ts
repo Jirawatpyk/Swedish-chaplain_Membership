@@ -77,7 +77,10 @@ export interface InvoiceDashboardTiles {
   readonly collectedThisMonth: {
     readonly amountSatang: bigint;
     readonly invoiceCount: number;
+    /** The 1st of today's Bangkok month to `today` (spec US1: "{Month} to date"). */
     readonly range: DashboardDateRange;
+    /** Always true: the month is read to today. */
+    readonly toDate: true;
   };
   readonly collectedInFiscalYear: {
     readonly amountSatang: bigint;
@@ -209,7 +212,9 @@ export function loadInvoiceDashboardTiles(
   deps: LoadInvoiceDashboardDeps,
 ): Promise<InvoiceDashboardResult<InvoiceDashboardTiles>> {
   return guarded('tiles', ctx, deps, async () => {
-    const month = calendarMonthRange(input.today);
+    // Today's calendar month, cut at today ("{Month} to date"); today always
+    // lies inside its own month.
+    const month = { from: calendarMonthRange(input.today).from, to: input.today };
     const fy = fiscalYearToDate(input.fiscalYearRange, input.today);
     const [aging, collectedMonth, collectedFy] = await Promise.all([
       readAging(ctx, input, deps),
@@ -223,7 +228,7 @@ export function loadInvoiceDashboardTiles(
         amountSatang: overdueRows.reduce((sum, b) => sum + b.amountSatang, 0n),
         count: overdueRows.reduce((sum, b) => sum + b.count, 0),
       },
-      collectedThisMonth: { ...collectedMonth, range: month },
+      collectedThisMonth: { ...collectedMonth, range: month, toDate: true },
       collectedInFiscalYear: { ...collectedFy, range: fy.range, toDate: fy.toDate },
     };
   });
