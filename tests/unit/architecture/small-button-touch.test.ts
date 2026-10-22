@@ -3,13 +3,17 @@
  * UI") — a `size="sm"` AURA button the user taps is 44px on a phone, wherever
  * it sits.
  *
- * AURA sizes the buttons of a Dialog/Drawer footer and an ActionBar below
- * 640px (5.53/5.54), and the coarse-pointer density makes a default-size
- * button 44px on a touch screen. A `size="sm"` button gets neither: it shows
- * 32px (with a 44px hit area from AURA's `::after`). So every `size="sm"`
- * `Button`, `IconButton` and `buttonClass({ size: 'sm' })` carries
- * `touchHeight` — in a page body (not-found pages, empty and error states,
- * banners, card actions, list rows, filter controls) as in a footer or bar.
+ * The coarse-pointer density makes a default-size button 44px on a touch
+ * screen, but not a `size="sm"` one: it shows 32px (with a 44px hit area
+ * from AURA's `::after`). So every `size="sm"` `Button`, `IconButton` and
+ * `buttonClass({ size: 'sm' })` in a page body (not-found pages, empty and
+ * error states, banners, card actions, list rows, filter controls) carries
+ * `touchHeight`.
+ *
+ * A `Button` or `buttonClass` in a Dialog/Drawer `footer` or an ActionBar's
+ * children or `start` is left to AURA: since 5.55 (#167) AURA makes it 44px
+ * below 640px or on a coarse pointer, `size="sm"` included, and
+ * `dialog-footer-touch.test.ts` refuses a `touchHeight` there.
  *
  * An `IconButton` is a 32px box whatever its `size` (that prop sizes the
  * icon), so every `IconButton` the user taps carries `touchHeight` too.
@@ -69,6 +73,24 @@ function isHelpTrigger(el: ts.JsxOpeningLikeElement, names: Map<string, string>)
   return ts.isJsxOpeningLikeElement(owner) && names.get(owner.tagName.getText()) === 'Popover';
 }
 
+/**
+ * Inside a Dialog/Drawer `footer` or an ActionBar's children or `start`, where AURA sizes a Button (5.55). Read from the
+ * JSX around the node, so a footer built in a separate const is not seen; `dialog-footer-touch` follows those.
+ */
+function inSizedRegion(node: ts.Node, names: Map<string, string>): boolean {
+  for (let n: ts.Node = node; n.parent; n = n.parent) {
+    const p = n.parent;
+    if (ts.isJsxAttribute(p) && ts.isJsxOpeningLikeElement(p.parent.parent)) {
+      const owner = names.get(p.parent.parent.tagName.getText());
+      const key = p.name.getText();
+      if ((owner === 'Dialog' || owner === 'Drawer') && key === 'footer') return true;
+      if (owner === 'ActionBar' && key === 'start') return true;
+    }
+    if (ts.isJsxElement(p) && n !== p.openingElement && names.get(p.openingElement.tagName.getText()) === 'ActionBar') return true;
+  }
+  return false;
+}
+
 /** A `size` the scan cannot read: a variable, a ternary, a call. */
 function isOpaque(value: ts.Node | undefined): boolean {
   if (value === undefined) return false;
@@ -77,7 +99,10 @@ function isOpaque(value: ts.Node | undefined): boolean {
   return true;
 }
 
-/** `size="sm"` Buttons and `buttonClass`, and every IconButton, without `touchHeight` (help popover triggers aside). */
+/**
+ * `size="sm"` Buttons and `buttonClass` outside a footer or bar, and every IconButton, without `touchHeight` (help
+ * popover triggers aside).
+ */
 export function scanSmallButtons(file: string, source: string): { readonly small: number; readonly unsized: string[] } {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const names = auraImports(sf);
@@ -95,7 +120,7 @@ export function scanSmallButtons(file: string, source: string): { readonly small
         if (isSmall(size)) small += 1;
         const sized = attr('touchHeight') !== undefined;
         if (tag === 'IconButton' && !sized && !isHelpTrigger(n, names)) unsized.push(at(n));
-        if (tag === 'Button' && isSmall(size) && !sized) unsized.push(at(n));
+        if (tag === 'Button' && isSmall(size) && !sized && !inSizedRegion(n, names)) unsized.push(at(n));
       }
     }
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && names.get(n.expression.text) === 'buttonClass') {
@@ -107,7 +132,7 @@ export function scanSmallButtons(file: string, source: string): { readonly small
         if (isOpaque(size)) unsized.push(`${at(n)} (size must be a literal)`);
         if (isSmall(size)) {
           small += 1;
-          if (prop('touchHeight') === undefined) unsized.push(at(n));
+          if (prop('touchHeight') === undefined && !inSizedRegion(n, names)) unsized.push(at(n));
         }
       }
     }
@@ -122,10 +147,10 @@ const files = walk(SRC).map((path) => ({
   source: readFileSync(path, 'utf8'),
 }));
 
-describe('a size="sm" AURA button and every IconButton carry touchHeight; only a help popover trigger stays compact (spec 122)', () => {
-  it('positive control: body, table and menu buttons and a bare IconButton are caught; a help popover trigger is not', () => {
+describe('a size="sm" AURA button outside a footer or bar, and every IconButton, carry touchHeight; only a help popover trigger stays compact (spec 122)', () => {
+  it('positive control: body, table and menu buttons and a bare IconButton are caught; a help popover trigger and footer/bar buttons are not', () => {
     const fixture = [
-      "import { Button, IconButton, DropdownMenu, Popover, buttonClass } from '@jirawatpyk/aura-react';",
+      "import { ActionBar, Button, Dialog, IconButton, DropdownMenu, Popover, buttonClass } from '@jirawatpyk/aura-react';",
       "import { Td } from '@/components/shell/aura-table';",
       'export const A = ({ s }: { s: "sm" | "md" }) => (',
       '  <div>',
@@ -138,11 +163,13 @@ describe('a size="sm" AURA button and every IconButton carry touchHeight; only a
       '    <Popover title="h" trigger={<IconButton icon="info" label="h" size="sm" />}>x</Popover>',
       '    <Button size={s}>Opaque</Button>',
       '    <IconButton icon="search" label="Search" />',
+      '    <ActionBar start={<Button size="sm">Clear</Button>}><div><Button size="sm">Archive</Button></div></ActionBar>',
+      "    <Dialog open title=\"t\" footer={<a className={buttonClass({ size: 'sm' })}>Go</a>} />",
       '  </div>',
       ');',
     ].join('\r\n');
     expect(scanSmallButtons('fixture.tsx', fixture)).toEqual({
-      small: 7,
+      small: 10,
       unsized: ['fixture.tsx:5', 'fixture.tsx:6', 'fixture.tsx:7', 'fixture.tsx:9', 'fixture.tsx:10', 'fixture.tsx:12 (size must be a literal)', 'fixture.tsx:13'],
     });
   });
