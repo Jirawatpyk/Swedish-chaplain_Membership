@@ -35,4 +35,14 @@ describe('resolvePlanFilter', () => {
     expect(resolvePlanFilter('', plans, 'en')).toBeUndefined();
     expect(resolvePlanFilter(undefined, plans, 'en')).toBeUndefined();
   });
+
+  it('when the plan lookup failed, still filters by a plausible id and names it by the id', () => {
+    expect(resolvePlanFilter('corporate-gold', undefined, 'en')).toEqual({
+      id: 'corporate-gold',
+      label: 'corporate-gold',
+    });
+    expect(resolvePlanFilter('x'.repeat(65), undefined, 'en')).toBeUndefined();
+    expect(resolvePlanFilter('', undefined, 'en')).toBeUndefined();
+  });
 });
+
