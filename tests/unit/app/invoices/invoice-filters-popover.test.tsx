@@ -335,6 +335,17 @@ describe('<InvoiceFilters> — dueAfter and plan chips (124)', () => {
     expect(within(content).getByRole('button', { name: 'Clear Due from 2026-01-01' })).toBeInTheDocument();
   });
 
+  it('each read-only row is a group named by its label, so the value is announced with it', () => {
+    searchParamsStub = new URLSearchParams('dueAfter=2026-01-01&dueBefore=2026-02-01');
+    renderWith({});
+    fireEvent.click(screen.getByTestId('invoice-more-filters-trigger'));
+    const popover = screen.getByTestId('filters-popover-content');
+    const dueFrom = within(popover).getByRole('group', { name: 'Due from' });
+    expect(within(dueFrom).getByTestId('invoice-due-after-readout')).toHaveTextContent('2026-01-01');
+    const dueBefore = within(popover).getByRole('group', { name: 'Due before' });
+    expect(within(dueBefore).getByTestId('invoice-due-before-readout')).toHaveTextContent('2026-02-01');
+  });
+
   it('a malformed ?dueAfter, or the portal shape, renders no chip', () => {
     searchParamsStub = new URLSearchParams('dueAfter=2026-02-30');
     renderWith({});
