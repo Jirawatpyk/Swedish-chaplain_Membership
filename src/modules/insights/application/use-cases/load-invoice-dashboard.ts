@@ -168,8 +168,8 @@ export interface InvoiceDashboardMethods {
   readonly rows: readonly InvoiceDashboardMethodRow[];
 }
 
-/** The spec's design count for Oldest overdue is a slice-3 choice; this is the default. */
-export const OLDEST_OVERDUE_DEFAULT_LIMIT = 8;
+/** Spec US1: "Oldest overdue (6 rows)". A caller may ask for 1–50 (the phone shows 3). */
+export const OLDEST_OVERDUE_DEFAULT_LIMIT = 6;
 const OLDEST_OVERDUE_MAX_LIMIT = 50;
 
 async function guarded<T>(
