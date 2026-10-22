@@ -41,6 +41,7 @@ import {
   invoiceLines,
   creditNotes,
   liveMembershipBillWhere,
+  invoiceTaxPointSql,
   type InvoiceRow,
   type InvoiceLineRow,
 } from '../db';
@@ -1784,17 +1785,15 @@ export function makeDrizzleInvoiceRepo(
  *     VAT for the use-case to subtract (net = RC + RE − credit notes).
  */
 /**
- * The §78/1 tax point every register method — and the CSV export — buckets by:
- * the admin-entered Bangkok-local `payment_date`, falling back to the server
- * `paid_at` (as a Bangkok-local date) only when a row has none. ONE definition
- * so the ภ.พ.30 register and the bookkeeper's CSV can never disagree about
- * which month a receipt belongs to.
+ * Every register method — and the CSV export — buckets by the §78/1 tax point,
+ * `invoiceTaxPointSql` (`../db/invoice-tax-point.ts`): ONE definition shared
+ * with the invoice dashboard and migration 0318's expression index, so the
+ * ภ.พ.30 register and the bookkeeper's CSV can never disagree about which
+ * month a receipt belongs to.
  */
-const TAX_POINT = sql`COALESCE(${invoices.paymentDate}, (${invoices.paidAt} AT TIME ZONE 'Asia/Bangkok')::date)`;
-
-/** Inclusive `[from, to]` on {@link TAX_POINT}; a date-less row never matches. */
+/** Inclusive `[from, to]` on the tax point; a date-less row never matches. */
 function taxPointBetween(from: string, to: string) {
-  return [sql`${TAX_POINT} >= ${from}`, sql`${TAX_POINT} <= ${to}`];
+  return [sql`${invoiceTaxPointSql} >= ${from}`, sql`${invoiceTaxPointSql} <= ${to}`];
 }
 
 /**
@@ -1832,7 +1831,7 @@ function creditNotesIssuedBetween(tenantIdArg: string, from: string, to: string)
 }
 
 /** Per-row tax point for ordering the export: issue date for combined rows. */
-const ROW_TAX_POINT = sql`CASE WHEN ${invoices.receiptDocumentNumberRaw} IS NULL THEN ${invoices.issueDate} ELSE ${TAX_POINT} END`;
+const ROW_TAX_POINT = sql`CASE WHEN ${invoices.receiptDocumentNumberRaw} IS NULL THEN ${invoices.issueDate} ELSE ${invoiceTaxPointSql} END`;
 
 export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
   const ctx = asTenantContext(tenantId);

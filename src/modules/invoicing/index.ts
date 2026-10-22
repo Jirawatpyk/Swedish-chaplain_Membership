@@ -671,6 +671,17 @@ export {
 // (instead of a deep `./infrastructure/db/schema-invoices` import) keeps
 // the cross-module dependency at the documented barrel surface.
 export { invoices as invoicesTable } from './infrastructure/db/schema-invoices';
+// 124-invoice-dashboard slice 2 — same infra-to-infra schema sharing for the
+// insights dashboard adapter, which sums Collected in SQL (one aggregate per
+// card) and subtracts credit notes by `issue_date`. Read-only; going through
+// the barrel keeps the cross-module dependency at the documented surface
+// (see `paymentsTable` in `@/modules/payments`).
+export { creditNotes as creditNotesTable } from './infrastructure/db/schema-credit-notes';
+// The §78/1 tax point (`payment_date`, else Bangkok-local `paid_at`) — the
+// register's own expression, shared with the invoice dashboard so its
+// Collected figures bucket receipts exactly as the register does, and indexed
+// verbatim by migration 0318 (a guard test pins the two together).
+export { invoiceTaxPointSql } from './infrastructure/db/invoice-tax-point';
 // Single source of truth for the "live membership bill for (tenant, member,
 // plan year)" WHERE predicate, shared by the invoicing admin-create guard
 // (`createInvoiceDraft`) and the renewals offline mark-paid guard (via the F8

@@ -221,6 +221,14 @@ async function main(): Promise<void> {
         name: 'broadcasts.dispatch_first_failed_at column + broadcasts_immutable_after_submit_fn GUC-arm entry for it (mig 0311)',
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcasts' AND column_name = 'dispatch_first_failed_at' AND data_type = 'timestamp with time zone' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'broadcasts_immutable_after_submit_fn' AND prosrc LIKE '%NEW.dispatch_first_failed_at%')`,
       },
+      {
+        // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure
+        // indexes. The tax-point one is asserted by its expression: an index
+        // of that name on another expression would silently stop matching
+        // `invoiceTaxPointSql` and the dashboard would seq-scan.
+        name: 'invoices_tenant_tax_point_paid_idx (tax-point expression) + credit_notes_tenant_issue_date_idx + refunds_tenant_completed_succeeded_idx (mig 0318)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'invoices_tenant_tax_point_paid_idx' AND indexdef LIKE '%COALESCE(payment_date, ((paid_at AT TIME ZONE ''Asia/Bangkok''::text))::date)%' AND indexdef LIKE '%WHERE%') AND (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname IN ('credit_notes_tenant_issue_date_idx', 'refunds_tenant_completed_succeeded_idx')) = 2`,
+      },
     ];
     let failures = 0;
     for (const canary of canaries) {

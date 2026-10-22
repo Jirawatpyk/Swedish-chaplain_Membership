@@ -204,3 +204,7 @@ export {
 // infra-to-infra schema sharing is permitted (F4/F5/F7 do same), but
 // going through a barrel re-export documents the contract.
 export { payments as paymentsTable } from './infrastructure/schema';
+// 124-invoice-dashboard slice 2 — the insights dashboard adapter subtracts
+// waived succeeded refunds and counts failed attempts for Needs attention in
+// SQL; same read-only infra-to-infra sharing through the barrel as above.
+export { refunds as refundsTable } from './infrastructure/schema';
