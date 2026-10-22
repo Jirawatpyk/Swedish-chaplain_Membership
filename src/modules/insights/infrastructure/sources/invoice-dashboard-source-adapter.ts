@@ -300,9 +300,10 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     // A later failure of another kind does not clear it.
     // Row 5 (D-k) also counts legacy `failed` + `f4_bridge_%` refunds: Stripe
     // paid out, the credit note was never booked, nothing was subtracted.
-    // Receipt PDF failed: paid-family invoices only (a stale status on a
-    // voided invoice is no receipt to re-render).
-    const receiptFailed = sql`${inv.receiptPdfStatus} = 'failed' AND ${inv.status} IN ${PAID_FAMILY}`;
+    // Receipt PDF failed: `paid` invoices only — the receipt worker
+    // (`render-receipt-pdf.ts`) re-renders no other status, so a credited or
+    // voided invoice's stale failure is no receipt anyone can re-render.
+    const receiptFailed = sql`${inv.receiptPdfStatus} = 'failed' AND ${inv.status} = 'paid'`;
     const result = await rows(
       ctx,
       'attention',
