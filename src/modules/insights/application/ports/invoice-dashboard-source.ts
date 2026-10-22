@@ -1,18 +1,13 @@
 /**
  * 124 invoice dashboard (`/admin/finance`) — the read port behind the six
- * cards. One method per card, each backed by ONE SQL aggregate in
- * `infrastructure/sources/invoice-dashboard-source-adapter.ts` (no paging rows
- * into JS, no unbounded `IN (...)` lists), run inside `runInTenant` with an
- * explicit `tenant_id` predicate on every table it reads.
+ * cards, one method (one SQL aggregate) per card. Figures: spec 124
+ * § Figure definitions.
  *
- * Figure definitions are spec 124 § Figure definitions; the adapter header
- * restates each one beside its SQL. Every method applies the three row
- * filters (type, plan, origin) to its invoices AND to every subtraction,
- * through the invoice each subtraction belongs to. Dates are Bangkok calendar
- * dates (`YYYY-MM-DD`) handed in by the caller — `today` is never the
- * database's clock, so a figure and its drill-down link cannot straddle
- * midnight. Amounts are satang (bigint), VAT-inclusive, never floats.
- *
+ * Every method applies the three row filters (type, plan, origin) to its
+ * invoices AND to every subtraction, through the invoice it belongs to.
+ * Dates are Bangkok calendar dates (`YYYY-MM-DD`) handed in by the caller,
+ * never the database's clock, so a figure and its drill-down link cannot
+ * straddle midnight. Amounts are satang (bigint), VAT-inclusive.
  * Pure interfaces — no framework or ORM imports.
  */
 import type { TenantContext } from '@/modules/tenants';

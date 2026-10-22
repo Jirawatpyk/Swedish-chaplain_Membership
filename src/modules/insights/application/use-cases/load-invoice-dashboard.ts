@@ -1,27 +1,14 @@
 /**
- * 124 invoice dashboard (`/admin/finance`) — one loader per card.
+ * 124 invoice dashboard (`/admin/finance`) — one loader per card. Figures and
+ * the date range each card reads: spec 124 § Figure definitions, US1, US3.3.
  *
- * Every loader takes the same input — the parsed filters, Bangkok `today`
- * (computed ONCE per request by the caller, the value the drill-down links
- * carry too), the selected fiscal year's date range and whether the viewer may
- * write — and returns its own `Result`, so one failing query blanks one card,
- * never the page (spec US5.3). A source fault is never thrown: it is logged as
- * `err: errKind(e)` (the class only; a DB message can carry SQL) beside a
- * reference id, and that id is returned for the card to show.
- *
- * Which dates each card reads (spec US1, US3.3):
- *   - Outstanding, Overdue, aging, Oldest overdue, Needs attention: as of
- *     `today`, all years, never the FY filter.
- *   - Collected this month: the Bangkok calendar month holding `today`, whatever
- *     FY is selected.
- *   - Collected in FY and By payment method: the FY range clamped to `today`
- *     ("to date" for the current FY), so the method rows add up to the tile.
- *   - Trend: the FY's 12 month slots; months still to come are empty.
- *
- * Role projection is made here, on the server (US4): a viewer without
- * `invoicing.write` gets no draft rows in Needs attention and no
- * record-payment action. The draft counts are ABSENT, not zeroed — rebuilt by
- * construction as `projectEngagementOnly` does in `list-dashboard.ts`.
+ * Each loader returns its own `Result`, so one failing query blanks one card,
+ * never the page (US5.3); the fault is logged as `err: errKind(e)` (a DB
+ * message can carry SQL) beside the reference id the card shows. `today` and
+ * `now` are taken once per request by the caller. Collected in FY and By
+ * method read the same FY range clamped to `today`, so the rows add up to
+ * the tile. The role cut is made here (US4): without `invoicing.write` the
+ * draft counts are ABSENT, not zeroed, and Record payment is not offered.
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
@@ -270,8 +257,7 @@ export function loadInvoiceDashboardAttention(
       refundsFailedAtStripe: counts.refundsFailedAtStripe,
       refundsPendingOverThreshold: counts.refundsPendingOverThreshold,
     };
-    // `!== true`: the safe direction if the flag ever arrives loosely typed.
-    if (input.canWrite !== true) return readOnly;
+    if (!input.canWrite) return readOnly;
     return {
       ...readOnly,
       drafts: { manual: counts.manualDrafts, autoRenewal: counts.autoRenewalDrafts },

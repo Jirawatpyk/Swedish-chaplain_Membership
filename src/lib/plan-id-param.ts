@@ -7,7 +7,7 @@
  * or over-long values are IGNORED. The 64 matches the list use case's zod
  * `planId` bound. Pure, client-safe.
  */
-export const MAX_PLAN_ID_LENGTH = 64;
+const MAX_PLAN_ID_LENGTH = 64;
 
 /** The `?plan=` value to filter by, or undefined when it is ignored. */
 export function parsePlanIdParam(raw: string | undefined): string | undefined {

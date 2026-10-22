@@ -10,10 +10,6 @@
 import { resolvePlanName } from '@/lib/resolve-plan-name';
 import { parsePlanIdParam } from '@/lib/plan-id-param';
 
-// The id rule lives in `@/lib/plan-id-param`, shared with the invoice
-// dashboard's filter parser so a figure and its drill-down accept the same ids.
-export { parsePlanIdParam };
-
 export interface PlanFilter {
   readonly id: string;
   readonly label: string;
