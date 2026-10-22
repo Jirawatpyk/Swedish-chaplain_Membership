@@ -23,6 +23,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { runInTenant } from '@/lib/db';
+import { insightsMetrics } from '@/lib/metrics';
 import { addDays } from '@/lib/fiscal-year';
 import { parseBigintColumn } from '@/lib/money';
 import { creditNotesTable, invoicesTable, invoiceTaxPointSql } from '@/modules/invoicing';
@@ -147,8 +148,23 @@ function collectedTermsSql(t: string, range: DashboardDateRange, scope: SQL): SQ
 
 type Row = Record<string, unknown>;
 
-async function rows(ctx: TenantContext, query: SQL): Promise<Row[]> {
-  return runInTenant(ctx, async (tx) => (await tx.execute(query)) as unknown as Row[]);
+/** The `card` label of `insights_invoice_dashboard_query_duration_ms`: one per query. */
+type QueryCard = 'aging' | 'collected' | 'methods' | 'trend' | 'attention' | 'oldest_overdue';
+
+/**
+ * One statement in its own `runInTenant`, timed from here (the transaction's
+ * round trips included) and recorded on both outcomes; the error propagates.
+ */
+async function rows(ctx: TenantContext, card: QueryCard, query: SQL): Promise<Row[]> {
+  const startedAt = performance.now();
+  try {
+    const result = await runInTenant(ctx, async (tx) => (await tx.execute(query)) as unknown as Row[]);
+    insightsMetrics.invoiceDashboardQueryDurationMs(performance.now() - startedAt, card, 'ok');
+    return result;
+  } catch (e) {
+    insightsMetrics.invoiceDashboardQueryDurationMs(performance.now() - startedAt, card, 'error');
+    throw e;
+  }
 }
 
 export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
@@ -158,6 +174,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     const edge = (bucket: AgingBucket): string => agingBucketDueRange(bucket, today).dueAfter ?? today;
     const result = await rows(
       ctx,
+      'aging',
       sql`
       SELECT
         CASE
@@ -183,6 +200,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   async collectedInRange(ctx, filters, range): Promise<CollectedTotal> {
     const result = await rows(
       ctx,
+      'collected',
       sql`
       WITH terms AS (${collectedTermsSql(ctx.slug, range, scopeOf(filters))})
       SELECT COALESCE(SUM(amount), 0)::bigint AS amount,
@@ -202,6 +220,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     // up only for the invoices the terms touch), else `invoices.payment_method`.
     const result = await rows(
       ctx,
+      'methods',
       sql`
       WITH terms AS (${collectedTermsSql(t, range, scopeOf(filters))}),
       latest_method AS (
@@ -242,6 +261,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     const month = (d: SQL) => sql`to_char(${d}, 'YYYY-MM')`;
     const result = await rows(
       ctx,
+      'trend',
       sql`
       WITH collected AS (${collectedTermsSql(t, collectedRange, scope)}),
       terms AS (
@@ -285,6 +305,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     const receiptFailed = sql`${inv.receiptPdfStatus} = 'failed' AND ${inv.status} IN ${PAID_FAMILY}`;
     const result = await rows(
       ctx,
+      'attention',
       sql`
       WITH invoice_pass AS (
         SELECT
@@ -332,6 +353,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     const docNo = sql`COALESCE(${inv.documentNumber}, ${inv.billDocumentNumberRaw})`;
     const result = await rows(
       ctx,
+      'oldest_overdue',
       sql`
       SELECT ${inv.invoiceId}::text AS invoice_id,
              ${docNo} AS document_number,

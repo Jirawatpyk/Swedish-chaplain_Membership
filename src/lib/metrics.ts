@@ -6623,6 +6623,24 @@ export const insightsMetrics = {
       ).record(ms, { outcome });
     });
   },
+  /**
+   * 124 invoice dashboard (`/admin/finance`) — one sample per card query,
+   * wall time from the adapter (`runInTenant` round trips included), on BOTH
+   * outcomes so a query that is slow and then throws still counts (the
+   * timeline precedent above). Backs D-j: 150 ms p95 per query of server
+   * time; alert threshold and why in docs/observability.md § 25.4. `card` is
+   * one of six fixed literals (aging, collected, methods, trend, attention,
+   * oldest_overdue); no tenant or PII label.
+   */
+  invoiceDashboardQueryDurationMs(ms: number, card: string, outcome: 'ok' | 'error'): void {
+    safeMetric(() => {
+      histogram(
+        'insights_invoice_dashboard_query_duration_ms',
+        '124 invoice dashboard per-card query latency (wall time from the adapter)',
+        'ms',
+      ).record(ms, { card, outcome });
+    });
+  },
   /** A member/admin updated a directory listing (US5 / FR-025). */
   directoryListingUpdated(tenantId: string): void {
     safeMetric(() => {
