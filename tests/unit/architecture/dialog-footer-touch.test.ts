@@ -113,62 +113,90 @@ function openingElements(root: ts.Node): ts.JsxOpeningLikeElement[] {
   return out;
 }
 
-/** Each `Button touchHeight` and `buttonClass({ touchHeight })` under `root`. */
-function touchHeights(sf: ts.SourceFile, names: AuraNames, root: ts.Node, file: string): string[] {
-  const hits: string[] = [];
+function isSmall(value: ts.Expression | ts.JsxAttributeValue | undefined): boolean {
+  if (value === undefined) return false;
+  if (ts.isStringLiteral(value)) return value.text === 'sm';
+  if (ts.isJsxExpression(value) && value.expression) return isSmall(value.expression);
+  return false;
+}
+
+interface TouchSplit {
+  /** `touchHeight` on a default-size button: AURA sizes it already. */
+  readonly stale: string[];
+  /** A `size="sm"` button without `touchHeight`: AURA's rule is viewport-only, so a touch tablet would show it 32px. */
+  readonly smallUnsized: string[];
+}
+
+/** Each Button and `buttonClass()` under `root`, split by size: default-size `touchHeight` is stale, `size="sm"` needs it. */
+function touchHeights(sf: ts.SourceFile, names: AuraNames, root: ts.Node, file: string): TouchSplit {
+  const stale: string[] = [];
+  const smallUnsized: string[] = [];
   const at = (n: ts.Node) => `${file}:${sf.getLineAndCharacterOfPosition(n.getStart()).line + 1}`;
+  const sort = (n: ts.Node, touch: boolean, small: boolean): void => {
+    if (touch && !small) stale.push(at(n));
+    if (small && !touch) smallUnsized.push(at(n));
+  };
   for (const btn of openingElements(root)) {
-    if (names.button.has(tagName(btn)) && attr(btn, 'touchHeight')) hits.push(at(btn));
+    if (names.button.has(tagName(btn))) {
+      sort(btn, attr(btn, 'touchHeight') !== undefined, isSmall(attr(btn, 'size')?.initializer));
+    }
   }
   const visit = (n: ts.Node): void => {
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && names.buttonClass.has(n.expression.text)) {
       const opts = n.arguments[0];
-      if (
-        opts !== undefined &&
-        ts.isObjectLiteralExpression(opts) &&
-        opts.properties.some((p) => ts.isPropertyAssignment(p) && p.name.getText() === 'touchHeight')
-      ) {
-        hits.push(at(n));
+      if (opts !== undefined && ts.isObjectLiteralExpression(opts)) {
+        const prop = (key: string) =>
+          opts.properties.find((p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && p.name.getText() === key);
+        sort(n, prop('touchHeight') !== undefined, isSmall(prop('size')?.initializer));
       }
     }
     ts.forEachChild(n, visit);
   };
   visit(root);
-  return hits;
+  return { stale, smallUnsized };
 }
 
 interface TouchScan {
   readonly footers: number;
   readonly actionBars: number;
   readonly stale: string[];
+  readonly smallUnsized: string[];
 }
 
-/** `touchHeight` left on a button AURA already sizes: Dialog/Drawer footers, ActionBar children and `start`. */
+/**
+ * Buttons in Dialog/Drawer footers and ActionBar children and `start`: `touchHeight` left on a default-size button
+ * AURA already sizes, and a `size="sm"` button without it.
+ */
 export function scanStaleTouch(file: string, source: string): TouchScan {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const names = auraNames(sf);
   let footers = 0;
   let actionBars = 0;
   const stale: string[] = [];
+  const smallUnsized: string[] = [];
+  const add = (split: TouchSplit): void => {
+    stale.push(...split.stale);
+    smallUnsized.push(...split.smallUnsized);
+  };
   for (const el of openingElements(sf)) {
     const tag = tagName(el);
     if (names.footered.has(tag)) {
       const root = attrRoot(sf, el, 'footer');
       if (!root) continue;
       footers += 1;
-      stale.push(...touchHeights(sf, names, root, file));
+      add(touchHeights(sf, names, root, file));
     }
     if (names.actionBar.has(tag)) {
       actionBars += 1;
       const start = attrRoot(sf, el, 'start');
-      if (start) stale.push(...touchHeights(sf, names, start, file));
+      if (start) add(touchHeights(sf, names, start, file));
       // Children: walk the whole element, not the opening tag's attributes.
       if (ts.isJsxOpeningElement(el)) {
-        for (const child of el.parent.children) stale.push(...touchHeights(sf, names, child, file));
+        for (const child of el.parent.children) add(touchHeights(sf, names, child, file));
       }
     }
   }
-  return { footers, actionBars, stale };
+  return { footers, actionBars, stale, smallUnsized };
 }
 
 /** A footer Button AURA does not size: neither a direct child nor the only element in a wrapper. */
@@ -249,6 +277,7 @@ describe('AURA sizes footer and action-bar buttons on phones; no touchHeight sta
       footers: 2,
       actionBars: 0,
       stale: ['fixture.tsx:3', 'fixture.tsx:5'],
+      smallUnsized: [],
     });
   });
 
@@ -266,6 +295,28 @@ describe('AURA sizes footer and action-bar buttons on phones; no touchHeight sta
       footers: 0,
       actionBars: 1,
       stale: ['fixture.tsx:3', 'fixture.tsx:4'],
+      smallUnsized: [],
+    });
+  });
+
+  // AURA's footer and ActionBar rules are viewport-based (below 640px). A default-size button on a touch tablet
+  // still gets 44px from the coarse-pointer density; a size="sm" one does not, so it keeps touchHeight (#123).
+  it('positive control: a size="sm" button needs touchHeight there, and keeping it is not stale', () => {
+    const fixture = [
+      "import { ActionBar, Button, Dialog, buttonClass } from '@jirawatpyk/aura-react';",
+      'export const A = () => (',
+      '  <ActionBar start={<Button size="sm">Clear</Button>}>',
+      '    <Button size="sm" touchHeight>Archive</Button>',
+      "    <Button size={'sm'}>Export</Button>",
+      '  </ActionBar>',
+      ');',
+      "export const B = () => <Dialog open title=\"t\" footer={<a className={buttonClass({ size: 'sm' })}>Go</a>} />;",
+    ].join('\n');
+    expect(scanStaleTouch('fixture.tsx', fixture)).toEqual({
+      footers: 1,
+      actionBars: 1,
+      stale: [],
+      smallUnsized: ['fixture.tsx:3', 'fixture.tsx:5', 'fixture.tsx:8'],
     });
   });
 
@@ -274,8 +325,12 @@ describe('AURA sizes footer and action-bar buttons on phones; no touchHeight sta
     expect(scans.reduce((n, s) => n + s.actionBars, 0)).toBeGreaterThan(5);
   });
 
-  it('no Button in a Dialog/Drawer footer or an ActionBar carries touchHeight', () => {
+  it('no default-size Button in a Dialog/Drawer footer or an ActionBar carries touchHeight', () => {
     expect(scans.flatMap((s) => s.stale)).toEqual([]);
+  });
+
+  it('every size="sm" Button in a Dialog/Drawer footer or an ActionBar carries touchHeight (44px on a touch tablet, #123)', () => {
+    expect(scans.flatMap((s) => s.smallUnsized)).toEqual([]);
   });
 });
 
