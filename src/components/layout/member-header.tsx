@@ -63,7 +63,7 @@ export function MemberHeader({
           persistToAccount
           className="max-sm:h-11 max-sm:gap-1 max-sm:pr-2.5 max-sm:pl-3 lg:h-10 lg:pr-3 lg:pl-4"
         />
-        <ThemeToggle className="max-sm:size-11" />
+        <ThemeToggle />
         <UserMenu {...user} firstNameOnTrigger className="lg:h-11 lg:pr-3" />
       </div>
     </div>

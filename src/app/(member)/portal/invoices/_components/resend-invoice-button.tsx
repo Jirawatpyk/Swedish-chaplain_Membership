@@ -147,6 +147,7 @@ export function ResendInvoiceButton({
       <IconButton
         type="button"
         icon={isPending ? 'loader-circle' : 'mail'}
+        touchHeight
         label={label}
         onClick={handleClick}
         aria-disabled={disabled || undefined}
