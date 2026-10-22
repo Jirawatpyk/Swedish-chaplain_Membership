@@ -34,6 +34,7 @@ export function RenewalsErrorRetry({
       type="button"
       variant="secondary"
       size="sm"
+      touchHeight
       className="mt-[var(--aura-space-3)]"
       loading={isPending}
       onClick={() => startTransition(() => router.refresh())}

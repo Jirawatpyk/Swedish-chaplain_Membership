@@ -83,13 +83,13 @@ export function DecisionOutcomeBanner({ request }: DecisionOutcomeBannerProps) {
           {anyRejected ? (
             <Link
               href={`/portal/edit?resubmit=${encodeURIComponent(request.id)}`}
-              className={buttonClass({ variant: 'secondary', size: 'sm' })}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
               data-testid="resubmit-link"
             >
               {t('resubmit')}
             </Link>
           ) : null}
-          <Button type="button" variant="secondary" size="sm" onClick={dismiss} disabled={pending} data-testid="dismiss-decision">
+          <Button type="button" variant="secondary" size="sm" touchHeight onClick={dismiss} disabled={pending} data-testid="dismiss-decision">
             {t('dismiss')}
           </Button>
         </div>

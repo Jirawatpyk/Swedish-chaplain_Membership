@@ -103,7 +103,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
         // read-only while letting a linked SECONDARY email be edited.
         contact={{ ...contact, isPrimary }}
         trigger={
-          <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+          <button type="button" className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
             <PencilIcon className="size-4" aria-hidden="true" />
             {t('edit')}
             {/* Several contacts each have an Edit: the name tells them apart. */}
@@ -116,7 +116,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
         <>
           <button
             type="button"
-            className={buttonClass({ variant: 'secondary', size: 'sm' })}
+            className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
             onClick={() => setPromoteOpen(true)}
           >
             <StarIcon className="size-4" aria-hidden="true" />

@@ -168,6 +168,7 @@ export function ResendInvoiceButton({
       className={buttonClass({
         variant: variant === 'outline' ? 'secondary' : 'ghost',
         size: 'sm',
+        touchHeight: true,
         loading: isPending,
         className: dimmed,
       })}

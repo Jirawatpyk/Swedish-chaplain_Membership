@@ -138,7 +138,7 @@ export async function TimelinePreviewCard({
       titleId="member-timeline-preview-heading"
       headingLevel={2}
       actions={
-        <Link href={`/admin/members/${memberId}/timeline`} className={buttonClass({ variant: 'ghost', size: 'sm' })}>
+        <Link href={`/admin/members/${memberId}/timeline`} className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true })}>
           {t('timelinePreview.viewAll')}
           <ArrowRightIcon className="size-4" aria-hidden="true" />
         </Link>

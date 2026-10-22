@@ -90,7 +90,7 @@ export function RenewLapsedMemberDialog({
 
   return (
     <>
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+      <Button variant="secondary" size="sm" touchHeight onClick={() => setOpen(true)}>
         <RefreshCwIcon className="size-3.5" aria-hidden="true" />
         {t('trigger')}
       </Button>

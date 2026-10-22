@@ -80,7 +80,7 @@ export function InvitePortalButton({ memberId, contactId }: Props) {
   }
 
   return (
-    <Button variant="secondary" size="sm" onClick={handleClick} disabled={submitting}>
+    <Button variant="secondary" size="sm" touchHeight onClick={handleClick} disabled={submitting}>
       <MailPlusIcon className="size-4" aria-hidden="true" />
       {submitting ? t('submitting') : t('label')}
     </Button>

@@ -183,6 +183,7 @@ export function ForgotPasswordForm({ signInHref }: { readonly signInHref: string
             type="button"
             variant="secondary"
             size="sm"
+            touchHeight
             onClick={handleResend}
             disabled={remaining > 0 || submitting}
             loading={submitting}

@@ -637,6 +637,7 @@ export function InvoiceFilters({
                 type="button"
                 variant="ghost"
                 size="sm"
+                touchHeight
                 icon="x"
                 onClick={dueBeforeChip.clear}
                 aria-label={t('filters.more.removeAria', { label: dueBeforeChip.label })}

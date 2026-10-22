@@ -131,6 +131,7 @@ export function ZeroRateCertUploader({
             type="button"
             variant="ghost"
             size="sm"
+            touchHeight
             // FR-036 — 44px at every width.
             className="min-h-11"
             onClick={onRemove}

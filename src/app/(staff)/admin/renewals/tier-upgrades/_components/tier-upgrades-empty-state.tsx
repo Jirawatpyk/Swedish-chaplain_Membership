@@ -27,7 +27,7 @@ export function TierUpgradesEmptyState() {
       action={
         <Link
           href="/admin/settings/renewals/schedules"
-          className={buttonClass({ variant: 'secondary', size: 'sm' })}
+          className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
         >
           {t('empty_state.cta')}
         </Link>

@@ -38,7 +38,7 @@ export function ErrorState({ title, description, onRetry, className }: ErrorStat
         ) : null}
       </div>
       {onRetry ? (
-        <Button variant="secondary" size="sm" onClick={onRetry}>
+        <Button variant="secondary" size="sm" touchHeight onClick={onRetry}>
           {t('buttons.retry')}
         </Button>
       ) : null}

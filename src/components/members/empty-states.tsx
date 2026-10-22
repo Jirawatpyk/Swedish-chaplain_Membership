@@ -61,7 +61,7 @@ export function MembersZeroState({
         description={canAddMember ? t('description') : t('adminOnlyHint')}
         action={
           canAddMember ? (
-            <Button href="/admin/members/new" size="sm" icon="plus">
+            <Button href="/admin/members/new" size="sm" touchHeight icon="plus">
               {t('cta')}
             </Button>
           ) : undefined
@@ -83,7 +83,7 @@ export function MembersFilteredEmptyState() {
         title={t('title')}
         description={t('description')}
         action={
-          <Button variant="secondary" size="sm" icon="x" onClick={() => router.replace(pathname)}>
+          <Button variant="secondary" size="sm" touchHeight icon="x" onClick={() => router.replace(pathname)}>
             {t('cta')}
           </Button>
         }
@@ -108,6 +108,7 @@ export function MembersAllInvitedEmptyState() {
           <Button
             variant="secondary"
             size="sm"
+            touchHeight
             icon="x"
             onClick={() => {
               // Clear ONLY the chip — router.replace(pathname) (what the
@@ -144,7 +145,7 @@ export function MembersErrorState() {
       title={t('title')}
       description={t('description')}
       action={
-        <Button variant="secondary" size="sm" icon="rotate-ccw" onClick={() => router.refresh()}>
+        <Button variant="secondary" size="sm" touchHeight icon="rotate-ccw" onClick={() => router.refresh()}>
           {t('cta')}
         </Button>
       }

@@ -216,7 +216,7 @@ export async function MemberInvoicesCard({
         <span className="flex items-center gap-3">
           <span className="text-xs text-[var(--aura-fg-secondary)]">{t('count', { count: total })}</span>
           {canMutate && total > 0 ? (
-            <Link href={newInvoiceHref} className={buttonClass({ size: 'sm' })}>
+            <Link href={newInvoiceHref} className={buttonClass({ size: 'sm', touchHeight: true })}>
               <PlusIcon className="size-4" aria-hidden="true" />
               {t('newInvoice')}
             </Link>
@@ -234,7 +234,7 @@ export async function MemberInvoicesCard({
             title={hasFilter ? t('emptyFiltered') : t('empty')}
             action={
               !hasFilter && canMutate ? (
-                <Link href={newInvoiceHref} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+                <Link href={newInvoiceHref} className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
                   {t('emptyCta')}
                 </Link>
               ) : undefined
