@@ -35,6 +35,16 @@ function firstOfMonth(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, '0')}-01`;
 }
 
+/** The calendar month holding `ymd` (`YYYY-MM-DD`), first to last day, inclusive. */
+export function calendarMonthRange(ymd: string): { readonly from: string; readonly to: string } {
+  const year = Number(ymd.slice(0, 4));
+  const month = Number(ymd.slice(5, 7));
+  // Day 0 of the next month (0-based `month`) is this month's last day.
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const from = firstOfMonth(year, month);
+  return { from, to: `${from.slice(0, 8)}${String(lastDay).padStart(2, '0')}` };
+}
+
 /** The (year, month) `offset` months after (year, startMonth). Integer math only. */
 function monthAt(year: number, startMonth: number, offset: number): { year: number; month: number } {
   const zeroBased = startMonth - 1 + offset;

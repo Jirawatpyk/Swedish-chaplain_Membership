@@ -13,7 +13,7 @@
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { addDays, type FiscalYearStartMonth } from '@/lib/fiscal-year';
+import type { FiscalYearStartMonth } from '@/lib/fiscal-year';
 import { allocatePercentages } from '@/lib/allocate-percentages';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -24,6 +24,7 @@ import {
 } from '../../domain/invoice-dashboard-aging';
 import type { InvoiceDashboardFilters } from '../../domain/invoice-dashboard-filters';
 import {
+  calendarMonthRange,
   fiscalYearMonthSlots,
   type FiscalMonthSlotState,
   type FiscalYearDateRange,
@@ -168,16 +169,6 @@ async function guarded<T>(
   }
 }
 
-/** The Bangkok calendar month holding `today`, inclusive. */
-function monthRangeOf(today: string): DashboardDateRange {
-  const year = Number(today.slice(0, 4));
-  const month = Number(today.slice(5, 7));
-  const nextYear = month === 12 ? year + 1 : year;
-  const nextMonth = month === 12 ? 1 : month + 1;
-  const nextFirst = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
-  return { from: `${today.slice(0, 7)}-01`, to: addDays(nextFirst, -1) };
-}
-
 /** The FY range cut at `today` when today falls inside it. */
 function fiscalYearToDate(
   range: FiscalYearDateRange,
@@ -217,7 +208,7 @@ export function loadInvoiceDashboardTiles(
   deps: LoadInvoiceDashboardDeps,
 ): Promise<InvoiceDashboardResult<InvoiceDashboardTiles>> {
   return guarded('tiles', ctx, deps, async () => {
-    const month = monthRangeOf(input.today);
+    const month = calendarMonthRange(input.today);
     const fy = fiscalYearToDate(input.fiscalYearRange, input.today);
     const [aging, collectedMonth, collectedFy] = await Promise.all([
       readAging(ctx, input, deps),
