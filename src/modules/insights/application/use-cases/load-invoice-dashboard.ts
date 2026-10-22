@@ -104,10 +104,26 @@ export interface InvoiceDashboardAgingRow {
 /**
  * An aging bucket's drill-down: `issued` for "Not yet due", `overdue` for the
  * rest, plus the bucket's due-date range, so a link can never list paid or
- * void invoices.
+ * void invoices; and the active filters in the `/admin/invoices` vocabulary
+ * (`subject`, `plan`, `origin`, each absent when unfiltered), so a drill-down
+ * never widens past the card it came from.
  */
 export interface InvoiceDashboardAgingListQuery extends DueDateRange {
   readonly status: 'issued' | 'overdue';
+  readonly subject?: 'membership' | 'event';
+  readonly plan?: string;
+  readonly origin?: 'manual' | 'auto_renewal';
+}
+
+/** The active filters as `/admin/invoices` query keys, unfiltered keys absent. */
+function listFilterQuery(
+  filters: InvoiceDashboardFilters,
+): Pick<InvoiceDashboardAgingListQuery, 'subject' | 'plan' | 'origin'> {
+  return {
+    ...(filters.type !== 'all' ? { subject: filters.type } : {}),
+    ...(filters.planId !== null ? { plan: filters.planId } : {}),
+    ...(filters.origin !== 'all' ? { origin: filters.origin } : {}),
+  };
 }
 
 export interface InvoiceDashboardAging {
@@ -222,6 +238,7 @@ async function readAging(
     count: byBucket.get(bucket)?.count ?? 0,
   }));
   const shares = allocatePercentages(rows.map((r) => Number(r.amountSatang)));
+  const filterQuery = listFilterQuery(input.filters);
   return {
     totalSatang: rows.reduce((sum, r) => sum + r.amountSatang, 0n),
     count: rows.reduce((sum, r) => sum + r.count, 0),
@@ -231,6 +248,7 @@ async function readAging(
       listQuery: {
         status: r.bucket === 'not_yet_due' ? ('issued' as const) : ('overdue' as const),
         ...agingBucketDueRange(r.bucket, input.today),
+        ...filterQuery,
       },
     })),
   };

@@ -197,12 +197,13 @@ describe('loadInvoiceDashboardAging', () => {
     expect(buckets.map((b) => b.sharePercent)).toEqual([100, 0, 0, 0, 0]);
     // Each bucket carries the invoice-list query its link opens (US2.2): a
     // status of issued / overdue only, so a link can never list paid or void.
+    const f = { subject: 'membership', plan: 'gold', origin: 'manual' };
     expect(buckets.map((b) => b.listQuery)).toEqual([
-      { status: 'issued', dueAfter: '2026-06-15' },
-      { status: 'overdue', dueAfter: '2026-05-16', dueBefore: '2026-06-15' },
-      { status: 'overdue', dueAfter: '2026-04-16', dueBefore: '2026-05-16' },
-      { status: 'overdue', dueAfter: '2026-03-17', dueBefore: '2026-04-16' },
-      { status: 'overdue', dueBefore: '2026-03-17' },
+      { status: 'issued', dueAfter: '2026-06-15', ...f },
+      { status: 'overdue', dueAfter: '2026-05-16', dueBefore: '2026-06-15', ...f },
+      { status: 'overdue', dueAfter: '2026-04-16', dueBefore: '2026-05-16', ...f },
+      { status: 'overdue', dueAfter: '2026-03-17', dueBefore: '2026-04-16', ...f },
+      { status: 'overdue', dueBefore: '2026-03-17', ...f },
     ]);
     expect(buckets[4]).toMatchObject({ amountSatang: 1_00n, count: 5 });
   });
