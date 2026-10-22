@@ -37,6 +37,7 @@ import type { InvoiceStatusBucket, InvoiceStatusDistribution } from '@/modules/i
 import { CHART_HERO_GROUP, CHART_HERO_ROW, CHART_HERO_VALUE_NOWRAP } from './chart-card-type';
 import { formatWrapping } from './format-wrapping';
 import { ChartDataTable } from './chart-data-table';
+import { formatSharePercentages } from '@/lib/allocate-percentages';
 
 export interface InvoiceStatusChartProps {
   readonly distribution: InvoiceStatusDistribution;
@@ -91,48 +92,6 @@ function zeroBucket(bucket: Bucket): InvoiceStatusBucket {
   return { bucket, satang: '0', count: 0 };
 }
 
-/** Largest-remainder ("Hare quota") allocation — NOT independent
- * `Math.round(n / total * 100)` per bucket. Three shares rounded
- * independently can land on e.g. 33/33/33 (sum 99) or 34/34/34 (sum 101)
- * for a total that isn't a clean multiple of the bucket count, which then
- * contradicts the hard-coded "100%" Total row. This guarantees the returned
- * integers always sum to exactly 100 whenever `total > 0`: floor every raw
- * share, then hand the leftover percentage points (an integer, since it's
- * 100 minus a sum of integers) one-by-one to the buckets with the largest
- * fractional remainder, tie-broken by original index for determinism. */
-function allocatePercentages(values: readonly number[]): number[] {
-  // Track B — a NEGATIVE input must yield all-zeros, not a negative share.
-  // `total <= 0` alone does not cover it: mixed signs can sum positive, and
-  // [-100, 500, 0] then allocates −25% and 125% beside a hard-coded "100%"
-  // Total row. There is no meaningful part-to-whole reading of a negative
-  // slice, so refusing the whole allocation is the only honest answer —
-  // clamping just the negative bucket would silently inflate its siblings'
-  // shares to fill the gap.
-  //
-  // Unreachable from F9 today (both netting helpers clamp at 0n), and kept
-  // anyway: this component is shared, and that clamp is one edit away from
-  // someone removing it after "verifying" a negative cannot occur.
-  if (values.some((v) => !Number.isFinite(v) || v < 0)) {
-    return values.map(() => 0);
-  }
-  const total = values.reduce((sum, v) => sum + v, 0);
-  if (total <= 0) return values.map(() => 0);
-
-  const raw = values.map((v) => (v / total) * 100);
-  const floors = raw.map((r) => Math.floor(r));
-  const leftover = 100 - floors.reduce((sum, f) => sum + f, 0);
-
-  const byRemainderDesc = raw
-    .map((r, index) => ({ index, frac: r - Math.floor(r) }))
-    .sort((a, b) => b.frac - a.frac || a.index - b.index);
-
-  const result = [...floors];
-  for (const { index } of byRemainderDesc.slice(0, leftover)) {
-    result[index] = (result[index] ?? 0) + 1;
-  }
-  return result;
-}
-
 export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
   const t = useTranslations('admin.dashboard.invoiceStatus');
   const locale = useLocale();
@@ -153,18 +112,14 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
   const totalSatangNumber = satangNumbers.reduce((sum, n) => sum + n, 0);
   const hasData = totalSatangNumber > 0;
 
-  // Largest-remainder allocation (see `allocatePercentages` doc) so the
+  // Largest-remainder allocation (`@/lib/allocate-percentages`) so the
   // displayed bucket %s always sum to exactly 100 — keeping the hard-coded
-  // Total row's "100%" honest.
-  const pctAllocations = allocatePercentages(satangNumbers);
-  // False when the allocation refused its input (a negative bucket) and
-  // returned all zeros: then "0%" is the honest reading, never "<1%".
-  const allocated = pctAllocations.some((p) => p > 0);
+  // Total row's "100%" honest — and a real amount under 1% reads "<1%".
+  const pctLabels = formatSharePercentages(satangNumbers);
 
   const rows: BucketRow[] = BUCKET_ORDER.map((key, i) => {
     const b = bucketsInOrder[i] ?? zeroBucket(key);
     const satangNumber = satangNumbers[i] ?? 0;
-    const pct = pctAllocations[i] ?? 0;
     return {
       bucket: key,
       label: t(`bucket.${key}`),
@@ -172,9 +127,7 @@ export function InvoiceStatusChart({ distribution }: InvoiceStatusChartProps) {
       amountLabel: thbFmt.format(satangNumber / 100),
       visibleAmount: formatWrapping(thbFmt, satangNumber / 100),
       count: b.count,
-      // A real amount that rounds to 0% reads "<1%", never a bare "0%"
-      // beside a non-zero amount (financial review, 17 Oct).
-      pctLabel: allocated && pct === 0 && satangNumber > 0 ? '<1%' : `${pct}%`,
+      pctLabel: pctLabels[i] ?? '0%',
     };
   });
 
