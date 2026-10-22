@@ -2785,6 +2785,16 @@
             "label": "Due before",
             "clear": "Clear"
           },
+          "dueAfter": {
+            "chip": "Due from {date}",
+            "label": "Due from",
+            "clear": "Clear"
+          },
+          "plan": {
+            "chip": "Plan: {plan}",
+            "label": "Plan",
+            "clear": "Clear"
+          },
           "more": {
             "button": "More filters",
             "ariaOpen": "More filters ({count} active)",

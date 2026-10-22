@@ -49,6 +49,11 @@ import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { formatSatangThb } from '@/lib/format-thb';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { parseThbDecimal, parseThbDecimalToSatang } from '@/lib/money';
+import { parseIsoCalendarDate } from '@/lib/iso-calendar-date';
+import type { TenantContext } from '@/modules/tenants';
+import { listPlans } from '@/modules/plans';
+import { buildPlansDeps } from '@/modules/plans/plans-deps';
+import { resolvePlanFilter, type PlanFilter } from './_lib/plan-filter';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
@@ -186,20 +191,36 @@ interface SearchParams {
    * restriction) — mirrors every other param's fall-through posture.
    */
   readonly dueBefore?: string;
+  /**
+   * 124 slice 1 — `?dueAfter=YYYY-MM-DD`: `due_date >= dueAfter`
+   * (inclusive). With `dueBefore`, the half-open range the invoice
+   * dashboard's aging rows link to. Malformed → ignored, as `dueBefore`.
+   */
+  readonly dueAfter?: string;
+  /**
+   * 124 slice 1 — `?plan=<plan_id>`: membership invoices on that plan (the
+   * invoice dashboard's Plan filter). An id the tenant has no plan for →
+   * ignored.
+   */
+  readonly plan?: string;
 }
 
-/**
- * `?dueBefore` validator — strict `YYYY-MM-DD` shape AND a real calendar
- * date. V8's lenient parser ROLLS OVER out-of-range days instead of
- * rejecting them (`2026-02-30T00:00:00Z` parses as Mar 2), so a NaN check
- * alone is not enough — the UTC round-trip must reproduce the input
- * exactly. Anything else → undefined (param ignored; never a 500).
- */
-function parseDueBeforeParam(raw: string | undefined): string | undefined {
-  if (!raw || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return undefined;
-  const ms = Date.parse(`${raw}T00:00:00.000Z`);
-  if (Number.isNaN(ms)) return undefined;
-  return new Date(ms).toISOString().slice(0, 10) === raw ? raw : undefined;
+/** 124 slice 1 — resolve `?plan=` against the tenant's plans (see `resolvePlanFilter`). */
+async function loadPlanFilter(
+  raw: string,
+  tenant: TenantContext,
+  locale: string,
+): Promise<PlanFilter | undefined> {
+  const deps = buildPlansDeps(tenant);
+  const plans = await listPlans(
+    { filter: {} },
+    { tenant: deps.tenant, planRepo: deps.planRepo, taxPolicy: deps.taxPolicy, clock: deps.clock },
+  );
+  if (!plans.ok) {
+    logger.warn({ tenantId: tenant.slug }, '[admin-invoices-list] plan filter lookup failed; filter dropped');
+    return undefined;
+  }
+  return resolvePlanFilter(raw, plans.value.data, locale);
 }
 
 export default async function AdminInvoicesPage({
@@ -306,7 +327,13 @@ export default async function AdminInvoicesPage({
       : undefined;
   // renewals-suspended-visibility-audit Task 3 — generic due-date upper
   // bound (NOT flag-gated: a plain date filter any admin can use/bookmark).
-  const dueBeforeFilter = parseDueBeforeParam(query.dueBefore);
+  const dueBeforeFilter = parseIsoCalendarDate(query.dueBefore);
+  // 124 slice 1 — the inclusive lower bound and the plan, both from the
+  // invoice dashboard's drill-down links. The plan lookup runs only when the
+  // param is present; a failed lookup drops the filter (and its chip) rather
+  // than failing the list.
+  const dueAfterFilter = parseIsoCalendarDate(query.dueAfter);
+  const planFilter = query.plan ? await loadPlanFilter(query.plan, tenantCtx, locale) : undefined;
   const hasFilters =
     Boolean(qTrim) ||
     Boolean(statusFilter) ||
@@ -316,7 +343,9 @@ export default async function AdminInvoicesPage({
     Boolean(taxPointFilter) ||
     Boolean(vatTreatmentFilter) ||
     Boolean(originFilter) ||
-    Boolean(dueBeforeFilter);
+    Boolean(dueBeforeFilter) ||
+    Boolean(dueAfterFilter) ||
+    Boolean(planFilter);
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -394,6 +423,8 @@ export default async function AdminInvoicesPage({
       ...(vatTreatmentFilter ? { vatTreatment: vatTreatmentFilter } : {}),
       ...(originFilter ? { origin: originFilter } : {}),
       ...(dueBeforeFilter ? { dueBefore: dueBeforeFilter } : {}),
+      ...(dueAfterFilter ? { dueAfter: dueAfterFilter } : {}),
+      ...(planFilter ? { planId: planFilter.id } : {}),
     });
   } catch (e) {
     return renderLoadError(e);
@@ -762,6 +793,7 @@ export default async function AdminInvoicesPage({
         // page threads to the dialog, so the payment-date clamp never
         // off-by-ones for ~7h/day.
         todayIso: bangkokLocalDate(nowUtcIso),
+        planFilter,
       })}
     </TableContainer>
   );

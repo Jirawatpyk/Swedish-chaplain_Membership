@@ -285,6 +285,14 @@ export interface InvoiceRepo {
        * overdue cohort. Absent = no restriction.
        */
       readonly dueBefore?: string | undefined;
+      /**
+       * 124 slice 1 — inclusive due-date lower bound (`due_date IS NOT NULL
+       * AND due_date >= dueAfter`); with `dueBefore`, the half-open range
+       * `[dueAfter, dueBefore)`. Absent = no restriction.
+       */
+      readonly dueAfter?: string | undefined;
+      /** 124 slice 1 — `invoices.plan_id = planId` (membership only). */
+      readonly planId?: string | undefined;
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 

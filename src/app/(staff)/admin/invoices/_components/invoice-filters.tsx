@@ -53,6 +53,7 @@ import {
   Tooltip,
   useBreakpoint,
 } from '@jirawatpyk/aura-react';
+import { parseIsoCalendarDate } from '@/lib/iso-calendar-date';
 import { originFilterPatch } from './queue-view';
 
 /**
@@ -124,8 +125,17 @@ interface InvoiceFiltersProps {
    * param) ignores a stray value — no phantom clear-all, no split-brain
    * (mirrors the `show088Filters` / `paidOnlineActive` guards). The admin
    * page passes `true` unconditionally (generic filter, not flag-gated).
+   *
+   * 124 slice 1 — also gates `?dueAfter=YYYY-MM-DD` (inclusive lower bound,
+   * "Due from {date}" chip), the invoice dashboard's aging drill-down.
    */
-  readonly showDueBeforeFilter?: boolean;
+  readonly showDueDateFilters?: boolean;
+  /**
+   * 124 slice 1 — `?plan=<plan_id>` as resolved on the server (the chip names
+   * the plan, which only the server knows). URL-only like the due dates;
+   * absent ⇒ no plan chip, whatever the URL says (the server ignored it too).
+   */
+  readonly planFilter?: { readonly id: string; readonly label: string };
   /**
    * The filter pattern (spec 122): the matches across every page, shown at
    * the end of the row by AURA's FilterBar (worded and announced politely).
@@ -139,7 +149,8 @@ export function InvoiceFilters({
   showPaidOnlineChip = true,
   show088Filters = false,
   showAutoInvoiceFilter = false,
-  showDueBeforeFilter = false,
+  showDueDateFilters = false,
+  planFilter,
   resultCount,
 }: InvoiceFiltersProps = {}) {
   const t = useTranslations('admin.invoices.list');
@@ -238,24 +249,19 @@ export function InvoiceFilters({
     (rawOrigin === 'manual' || rawOrigin === 'auto_renewal')
       ? rawOrigin
       : 'all';
-  // renewals-suspended-visibility-audit Task 3 — dueBefore clamp: strict
-  // `YYYY-MM-DD` shape + a real calendar date, matching the server page's
-  // `parseDueBeforeParam` so the chip and the data can never split-brain.
-  // V8's lenient parser ROLLS OVER out-of-range days (2026-02-30 → Mar 2)
-  // instead of rejecting them, so the UTC round-trip must reproduce the
-  // input exactly. Gated on `showDueBeforeFilter` (see the prop doc).
-  const rawDueBefore = searchParams.get('dueBefore');
-  const dueBeforeMs =
-    rawDueBefore !== null && /^\d{4}-\d{2}-\d{2}$/.test(rawDueBefore)
-      ? Date.parse(`${rawDueBefore}T00:00:00.000Z`)
-      : Number.NaN;
-  const currentDueBefore =
-    showDueBeforeFilter &&
-    rawDueBefore !== null &&
-    !Number.isNaN(dueBeforeMs) &&
-    new Date(dueBeforeMs).toISOString().slice(0, 10) === rawDueBefore
-      ? rawDueBefore
-      : null;
+  // renewals-suspended-visibility-audit Task 3 / 124 — due-date clamps: the
+  // same `parseIsoCalendarDate` as the server page, so the chip and the data
+  // can never split-brain. Gated on `showDueDateFilters` (see the prop doc).
+  const currentDueBefore = showDueDateFilters
+    ? (parseIsoCalendarDate(searchParams.get('dueBefore')) ?? null)
+    : null;
+  const currentDueAfter = showDueDateFilters
+    ? (parseIsoCalendarDate(searchParams.get('dueAfter')) ?? null)
+    : null;
+  // 124 — the plan chip shows only while the URL still names the plan the
+  // server resolved (a client-side param change awaits the next render).
+  const currentPlan =
+    planFilter && searchParams.get('plan') === planFilter.id ? planFilter : null;
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -398,22 +404,43 @@ export function InvoiceFilters({
   // echo an admin may copy back into a URL (BE is display-only for
   // member-facing dates). The label fits AURA's 24ch chip in every locale,
   // so the date is not cut short.
-  const dueBeforeChip =
-    currentDueBefore !== null
-      ? {
-          id: 'dueBefore',
-          label: t('filters.dueBefore.chip', { date: currentDueBefore }),
-          clear: () => pushUrl({ dueBefore: null }),
-        }
-      : null;
-  if (dueBeforeChip && collapseSecondary) secondaryChips.push(dueBeforeChip);
-  // The popover badge: the secondaries in the popover, dueBefore included
-  // (#292 review A1 — the popover shows it as a read-only row).
+  //
+  // 124 — `dueAfter` ("Due from {date}") and the plan ("Plan: {name}") are
+  // URL-only in the same way; the three share one chip + read-only row shape.
+  const urlOnlyFilters = [
+    currentDueAfter !== null && {
+      id: 'dueAfter',
+      fieldLabel: t('filters.dueAfter.label'),
+      clearLabel: t('filters.dueAfter.clear'),
+      readout: currentDueAfter,
+      readoutTestId: 'invoice-due-after-readout',
+      label: t('filters.dueAfter.chip', { date: currentDueAfter }),
+      clear: () => pushUrl({ dueAfter: null }),
+    },
+    currentDueBefore !== null && {
+      id: 'dueBefore',
+      fieldLabel: t('filters.dueBefore.label'),
+      clearLabel: t('filters.dueBefore.clear'),
+      readout: currentDueBefore,
+      readoutTestId: 'invoice-due-before-readout',
+      label: t('filters.dueBefore.chip', { date: currentDueBefore }),
+      clear: () => pushUrl({ dueBefore: null }),
+    },
+    currentPlan !== null && {
+      id: 'plan',
+      fieldLabel: t('filters.plan.label'),
+      clearLabel: t('filters.plan.clear'),
+      readout: currentPlan.label,
+      readoutTestId: 'invoice-plan-readout',
+      label: t('filters.plan.chip', { plan: currentPlan.label }),
+      clear: () => pushUrl({ plan: null }),
+    },
+  ].filter((f) => f !== false);
+  if (collapseSecondary) secondaryChips.push(...urlOnlyFilters);
+  // The popover badge: the secondaries in the popover, the URL-only filters
+  // included (#292 review A1 — the popover shows each as a read-only row).
   const secondaryActiveCount = secondaryChips.length;
-  const allChips = [
-    ...chips,
-    ...(collapseSecondary ? secondaryChips : dueBeforeChip ? [dueBeforeChip] : []),
-  ];
+  const allChips = [...chips, ...(collapseSecondary ? secondaryChips : urlOnlyFilters)];
   const activeFilters = allChips.map((c) => ({
     id: c.id,
     label: c.label,
@@ -506,6 +533,8 @@ export function InvoiceFilters({
       vat: null,
       origin: null,
       dueBefore: null,
+      dueAfter: null,
+      plan: null,
     });
   };
 
@@ -623,28 +652,31 @@ export function InvoiceFilters({
         )}
         {/* Paid-online toggle — self-labelled, no field label. */}
         {paidOnlineToggle}
-        {/* #292 review A1 — the badge counts an active dueBefore, so the
-            popover shows it too: a read-only row (the filter is URL-only, no
-            picker by design) with a clear button reusing the chip's handler. */}
-        {dueBeforeChip &&
-          field(
-            t('filters.dueBefore.label'),
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm tabular-nums" data-testid="invoice-due-before-readout">
-                {currentDueBefore}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                icon="x"
-                onClick={dueBeforeChip.clear}
-                aria-label={t('filters.more.removeAria', { label: dueBeforeChip.label })}
-              >
-                {t('filters.dueBefore.clear')}
-              </Button>
-            </div>,
-          )}
+        {/* #292 review A1 — the badge counts the URL-only filters, so the
+            popover shows each too: a read-only row (no picker by design) with
+            a clear button reusing the chip's handler. */}
+        {urlOnlyFilters.map((f) => (
+          <div key={f.id} className="contents">
+            {field(
+              f.fieldLabel,
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm tabular-nums" data-testid={f.readoutTestId}>
+                  {f.readout}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  icon="x"
+                  onClick={f.clear}
+                  aria-label={t('filters.more.removeAria', { label: f.label })}
+                >
+                  {f.clearLabel}
+                </Button>
+              </div>,
+            )}
+          </div>
+        ))}
       </div>
     </Popover>
   ) : null;

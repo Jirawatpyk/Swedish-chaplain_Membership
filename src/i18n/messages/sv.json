@@ -2785,6 +2785,16 @@
             "label": "Förfaller före",
             "clear": "Rensa"
           },
+          "dueAfter": {
+            "chip": "Förfaller från {date}",
+            "label": "Förfaller från",
+            "clear": "Rensa"
+          },
+          "plan": {
+            "chip": "Plan: {plan}",
+            "label": "Plan",
+            "clear": "Rensa"
+          },
           "more": {
             "button": "Fler filter",
             "ariaOpen": "Fler filter ({count} aktiva)",

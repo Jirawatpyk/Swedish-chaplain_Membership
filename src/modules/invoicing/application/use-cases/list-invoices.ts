@@ -117,6 +117,16 @@ export const listInvoicesPagedSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  // 124 slice 1 — inclusive due-date lower bound: `due_date >= dueAfter`.
+  // With `dueBefore` it is the half-open range the invoice dashboard's aging
+  // rows link to. Same page-first validation as `dueBefore`.
+  dueAfter: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  // 124 slice 1 — membership plan (`invoices.plan_id`), the dashboard's Plan
+  // filter; event invoices carry no plan and never match.
+  planId: z.string().min(1).max(64).optional(),
 });
 
 export type ListInvoicesPagedInput = z.infer<typeof listInvoicesPagedSchema>;
@@ -161,6 +171,8 @@ export async function listInvoicesPaged(
     vatTreatment: input.vatTreatment,
     origin: input.origin,
     dueBefore: input.dueBefore,
+    dueAfter: input.dueAfter,
+    planId: input.planId,
   });
   return ok({ rows, total });
 }

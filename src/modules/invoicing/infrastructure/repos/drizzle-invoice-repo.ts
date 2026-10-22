@@ -950,6 +950,15 @@ export function makeDrizzleInvoiceRepo(
             sql`${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < ${opts.dueBefore}`,
           );
         }
+        // 124 slice 1 — inclusive lower bound, same NULL exclusion.
+        if (opts.dueAfter) {
+          filters.push(
+            sql`${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} >= ${opts.dueAfter}`,
+          );
+        }
+        if (opts.planId) {
+          filters.push(eq(invoices.planId, opts.planId));
+        }
         if (opts.search && opts.search.length > 0) {
           // W1 (064 remediation) — match invoice doc number OR the §105
           // receipt number OR (088 T069/FR-030) the non-§87 SC bill number
