@@ -56,7 +56,6 @@ import {
 } from '../_lib/issue-vat-treatment';
 import { routeIssueError } from './issue-error-routing';
 import { ZeroRateCertUploader } from './zero-rate-cert-uploader';
-import { FULL_WIDTH_BELOW_SM } from '@/components/shell/full-width-below-sm';
 
 export type IssueInvoiceFormProps = {
   readonly invoiceId: string;
@@ -630,9 +629,7 @@ export function IssueInvoiceForm({
         <Button
           type="button"
           variant="secondary"
-          touchHeight
-          fullWidth
-          className={FULL_WIDTH_BELOW_SM}
+          fullWidth="below-sm"
           data-autofocus
           disabled={pending}
           onClick={onClose}
@@ -642,9 +639,7 @@ export function IssueInvoiceForm({
         <Button
           type="button"
           variant="primary"
-          touchHeight
-          fullWidth
-          className={FULL_WIDTH_BELOW_SM}
+          fullWidth="below-sm"
           loading={pending}
           // Board Admin-invoice-issue: the confirm names the document and its
           // total, with the money-step check icon (§ Button icons). The total

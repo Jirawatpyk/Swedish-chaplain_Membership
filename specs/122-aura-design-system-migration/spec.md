@@ -713,6 +713,14 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The loading skeleton cannot know the member's standing without delaying itself. So it reserves the Back link's place with a block of the same size instead of a link. This overrides US12c-2 L8 ("the settled page's Back link, the same component and place") for this one element: the place is kept, the link is not.
   - `error.tsx` is a client component and keeps its link to the list. A terminated member who follows it is redirected by the portal guard.
 
+### Session 2026-10-22 (AURA 5.54: touch targets from AURA)
+
+- **AURA sizes the action buttons (maintainer, 22 Oct: "ถอดออก").**
+  - AURA 5.53 (#165) and 5.54 (#166) make Dialog and Drawer footer buttons and ActionBar buttons at least 44px below 640px, whatever the density. The app's per-button `touchHeight` stand-ins come out.
+  - The trade-off: AURA's rule is viewport-based. On a touch tablet from 640px, compact density already makes a default button 44px (coarse pointer); only the bulk bars' `size="sm"` buttons stay 32px to the eye, with a 44px hit area. The maintainer chose this over keeping `touchHeight`.
+  - Body buttons AURA does not cover keep `touchHeight`.
+- **Phone-only stretch is `fullWidth="below-sm"`.** A row that stacks on phones sets it on each button, never `[&>*]:w-full` on the container (which keeps the fixed height and `nowrap`). A guard enforces both rules.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

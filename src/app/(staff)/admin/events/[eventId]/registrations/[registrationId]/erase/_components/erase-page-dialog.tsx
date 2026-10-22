@@ -24,6 +24,7 @@ export function ErasePageDialog({
       registrationId={registrationId}
       attendeeName={attendeeName}
       defaultOpen
+      triggerFullWidth="below-sm"
       onErased={() => router.push(`/admin/events/${eventId}`)}
     />
   );

@@ -408,7 +408,7 @@ export function TierUpgradeQueueClient({
         // Focus on Cancel by default (FR-058 § 4).
         footer={
           <>
-            <Button touchHeight
+            <Button
               variant="secondary"
               data-autofocus=""
               onClick={() => setDialog(null)}
@@ -416,7 +416,7 @@ export function TierUpgradeQueueClient({
             >
               {t('dialog.cancel')}
             </Button>
-            <Button touchHeight
+            <Button
               // Dismiss is irreversible (90-day suppression): the danger style.
               variant={dialogAction === 'dismiss' ? 'danger' : 'primary'}
               loading={dialogBusy}

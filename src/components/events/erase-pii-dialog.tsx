@@ -66,6 +66,8 @@ interface ErasePiiDialogProps {
   readonly onErased?: () => void;
   /** Open on arrival (uncontrolled only): the deep-link erase page. */
   readonly defaultOpen?: boolean;
+  /** The trigger's stretch, e.g. `'below-sm'` on the deep-link erase page. */
+  readonly triggerFullWidth?: boolean | 'below-sm';
 }
 
 const REASON_MAX = 500;
@@ -109,6 +111,7 @@ export function ErasePiiDialog({
   successFocus,
   onErased,
   defaultOpen = false,
+  triggerFullWidth = false,
 }: ErasePiiDialogProps) {
   const t = useTranslations('admin.events.detail.erase');
   const router = useRouter();
@@ -186,6 +189,7 @@ export function ErasePiiDialog({
       variant="danger-secondary"
       size="sm"
       touchHeight
+      fullWidth={triggerFullWidth}
       type="button"
       icon={<Eraser aria-hidden="true" />}
       loading={pending}
@@ -210,12 +214,12 @@ export function ErasePiiDialog({
       description={t('confirmBody', { attendeeName })}
       footer={
         <>
-          <Button touchHeight variant="secondary" data-autofocus disabled={pending} onClick={close}>
+          <Button variant="secondary" data-autofocus disabled={pending} onClick={close}>
             {t('cancel')}
           </Button>
           {/* Reachable but refused until the reason is valid (AURA #102):
               aria-disabled + the hint as its description, not native disabled. */}
-          <Button touchHeight
+          <Button
             variant="danger"
             icon={<Eraser aria-hidden="true" />}
             loading={pending}

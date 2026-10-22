@@ -1220,19 +1220,19 @@ function PreviewPanel({
         {/* Board: Cancel then Confirm, at the end of the row. On phones they
             stack full width with Confirm on top (column-reverse), so the
             reading order stays Cancel → Confirm. */}
-        <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:[&>button]:w-full">
+        <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse">
           <Button
             type="button"
             onClick={onCancel}
             variant="secondary"
-            touchHeight
+            fullWidth="below-sm"
           >
             {cancelLabel}
           </Button>
           <Button
             type="button"
             icon="cloud-upload"
-            touchHeight
+            fullWidth="below-sm"
             onClick={onSubmit}
             // FR-026 (#10a) — the parent folds BOTH the event-selection gate
             // AND the remap-required gate into `submitDisabled`, so a generic

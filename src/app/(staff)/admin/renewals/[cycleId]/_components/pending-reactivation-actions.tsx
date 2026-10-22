@@ -230,7 +230,7 @@ export function PendingReactivationActions({
         // Focus on Cancel by default (defensive for a money action).
         footer={
           <>
-            <Button touchHeight
+            <Button
               variant="secondary"
               data-autofocus=""
               onClick={() => setReactivateOpen(false)}
@@ -238,7 +238,7 @@ export function PendingReactivationActions({
             >
               {t('reactivate.cancel')}
             </Button>
-            <Button touchHeight onClick={onReactivate} loading={reactivatePending}>
+            <Button onClick={onReactivate} loading={reactivatePending}>
               {reactivatePending ? t('reactivate.submitting') : t('reactivate.confirm')}
             </Button>
           </>
@@ -268,10 +268,10 @@ export function PendingReactivationActions({
         description={t('reject.dialogBody')}
         footer={
           <>
-            <Button touchHeight variant="secondary" data-autofocus="" onClick={closeReject} disabled={rejectPending}>
+            <Button variant="secondary" data-autofocus="" onClick={closeReject} disabled={rejectPending}>
               {t('reject.cancel')}
             </Button>
-            <Button touchHeight variant="danger" onClick={onReject} loading={rejectPending} disabled={reasonInvalid}>
+            <Button variant="danger" onClick={onReject} loading={rejectPending} disabled={reasonInvalid}>
               {rejectPending ? t('reject.submitting') : t('reject.confirm')}
             </Button>
           </>

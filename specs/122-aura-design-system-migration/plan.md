@@ -296,3 +296,48 @@ These are logic fixes from the #608 reviews, in a PR of their own. The touch-tar
 - **Review follow-ups, RED** (commit `1862aa9a0`):
   - `strip-stripe-return-params.test.tsx`: "hands Next a null state so the router learns the clean URL" → `expected "replaceState" to be called with arguments: [ null, '', …(1) ]`. The component passed `window.history.state`. That state carries Next's `__NA` marker, so Next skipped its router sync, and a later `router.refresh()` would write the secret back (`financial-integrity-reviewer`).
   - `return-url.test.ts`: "still drops returnTo for an unsafe query that also carries Stripe keys" → `Received "/portal/sign-in?returnTo=%2Fportal%2Fx%3Fnext%3Dhttps%253A%252F%252Fevil.example"`. Stripping had re-encoded the query past `safeReturnTo` (`security-engineer`, LOW 1).
+
+### AURA 5.54: touch-target stand-ins out (PR 5 of the #607/#610 follow-ups; size M, plan agreed 2026-10-22)
+
+AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `touchHeight` stand-ins (22 Oct: "ถอดออก"), accepting that on a touch tablet from 640px the bulk bars' `size="sm"` buttons look 32px (44px hit area; default buttons are 44px there through the coarse-pointer density).
+
+- **Plan.**
+  - Bump to 5.54. The brand theme regenerated with identical tokens and only its header comment changed, so it was kept as is.
+  - Remove `touchHeight` from Dialog/Drawer footers and ActionBar `children`/`start`.
+  - `FULL_WIDTH_BELOW_SM` becomes `fullWidth="below-sm"`.
+  - Container-stretched rows move to per-button `fullWidth="below-sm"`.
+  - Body buttons AURA does not cover gain `touchHeight`: the preview width toggles and the invoice form rows.
+  - The guard flips: it refuses a `touchHeight` stand-in where AURA sizes the button, and any container `w-full` stretch.
+- **Kept, deliberately:**
+  - The `.eblast-detail-actions` layout CSS (the wrapping row, `height: auto` and `white-space: normal` for a wrapped label). Its own `min-height: 2.75rem` came out later; see "E-Blast bar consistency" below.
+- **RED** (commit `10f0ab703`, guard only): 2 failed, 4 passed (both positive controls held).
+  - "no Button in a Dialog/Drawer footer or an ActionBar carries touchHeight" → 88 hits, for example `src/components/shell/confirmation-dialog.tsx:166`, `src/app/(staff)/admin/members/_components/bulk-action-bar.tsx:440`.
+  - "no AURA Button or buttonClass stretches with a w-full class, on itself or from its container" → 6 hits: `event-detail-view.tsx:117`, `refund-form.tsx:692`, `credit-note-form.tsx:452`, `void-confirm-dialog.tsx:262`, `csv-mapping-form.tsx:1223`, `webhook-config-wizard.tsx:242`.
+- **GREEN** (`c5e4fec84`, D-023 UI exception: the prop removals share the guard's GREEN commit). Seven component tests that asserted the removed classes were updated to assert AURA's (`aura-btn--full-below-sm`, a button inside `.aura-actionbar` without `aura-btn--touch`).
+- **Review follow-up (`enterprise-ux-designer` MEDIUM), RED** (`0d76f081b`, with a stub that returns nothing): "positive control: a Button with a sibling in a wrapper, or two wrappers deep, is caught" → `Expected ["fixture.tsx:4", "fixture.tsx:5"]`, `Received []`. Now that `touchHeight` is banned in footers, a Button in such a wrapper would silently fall to the density height on a phone. The real check passes: every footer Button in the app is direct, or the only element in its wrapper.
+- **Reviews:**
+  - `enterprise-ux-designer`: Ship with follow-ups.
+  - `mobile-a11y-ux-reviewer`: Ship.
+  - Both confirmed that every Button whose stand-in came out is sized by AURA's selectors. The ActionBar rule is a descendant selector, so it reaches Buttons at any depth.
+  - The tablet wording was corrected: default buttons are 44px on a coarse pointer in compact density.
+  - The E-Blast ⋯ IconButton keeps `touchHeight`, now with a comment: DropdownMenu puts it two wrappers deep.
+- **Save bar consistency (maintainer, 22 Oct: "ควรแก้ให้ consist" — make it consistent).**
+  - The invoice-settings save bar dropped its `min-h-11` as well: the ActionBar gives 44px below 640px. 088 FR-036 asks for touch targets of at least 44px and a reachable Save at 320px. The earlier note that it meant "44px at every width" was wrong.
+  - The Save shown while nothing has changed (in the form body) moves from `min-h-11 max-sm:w-full` to `fullWidth="below-sm"`.
+  - Failing run first (D-023 UI, shared commit): `invoice-settings-discard.test.tsx` › "is an AURA Button…" and `invoice-settings-form.test.tsx` › "the primary Save button…" both gave `expect(element).not.toHaveClass("min-h-11")`.
+- **E-Blast bar consistency (maintainer, 22 Oct).**
+  - `globals.css`: the two `min-height: 2.75rem` lines on the E-Blast detail bar's buttons came out (the next step, and Reject in the design state). AURA 5.54's ActionBar rule reaches them in `children` and in `start`. The layout rules stay: wrap, `height: auto` so a wrapped label grows the button, and `white-space: normal`.
+  - `detail-action-bar.tsx`: the dead `touchHeight` on `ActionBar` came out. It sizes only the bar's own Clear button, and this bar has no `onClearSelection`.
+  - Failing run first (D-023 UI, shared commit): `eblast-detail-actions-css.test.ts` › "keeps Reject · next step · ⋯ on one line…" and "leaves the 44px minimum to AURA…" both gave `AssertionError: expected '.eblast-detail-actions > div …' not to match /min-height/`.
+- **R69 regression: `size="sm"` bulk-bar buttons on a touch tablet.**
+  - R69 found one branch-only red: `renewal-a11y.spec.ts:188` "122 #123 — PipelineBulkActionBar keeps 44px targets on a touch tablet (1024px, coarse pointer)" → `toolbar button 1 height >= 44px at 1024px`, Expected ≥ 44, Received 32, on both projects. Base passes it.
+  - Cause: AURA 5.54's ActionBar rule (and 5.53's footer rule) is viewport-based (below 640px). A default-size button on a touch tablet still gets 44px from the coarse-pointer density; a `size="sm"` one does not. Removing its `touchHeight` broke #123.
+  - Fix (maintainer, 22 Oct, asked for the consistent and correct option): `touchHeight` back on the nine `size="sm"` buttons in the members, renewal pipeline and E-Blast queue bulk bars. The guard now refuses `touchHeight` on a default-size footer or bar button and asks for it on a `size="sm"` one. An AURA handoff asks for the bar and footer rules to use the same `(max-width: 639.98px), (pointer: coarse)` query as `touchHeight` (#123), after which these nine can go.
+  - **RED** (`d3d3efaae`, guard only): "every size=\"sm\" Button in a Dialog/Drawer footer or an ActionBar carries touchHeight" → 9 hits (`bulk-action-bar.tsx:440, 456, 475, 491, 506`, `pipeline-bulk-action-bar.tsx:606, 619`, `queue-bulk-action-bar.tsx:511, 520`). Its positive control holds.
+  - **GREEN**: the nine props back. Three component tests that asserted no `aura-btn--touch` on those buttons now assert it.
+  - **Verified in the preview** (production build): the renewal pipeline bar at 1024 with a touch context (`pointer: coarse`) is 44px for Clear selection, Send reminder and Mark paid. At 1440 with a mouse the same buttons are 32px, as on base. The e2e run here stopped in its Upstash rate-limit fixture before the test body, so the e2e itself is for the relay.
+- **Members bulk bar: the count on the same line as the buttons (maintainer, 22 Oct, screenshot).** Pre-existing, same on base (R69 observation).
+  - Cause: AURA's status cell asks for at least 8rem (`flex: 1 1 8rem`). At 1440 the members bar's row is 1041px; 8rem + 12px gap + 917px of buttons is 1057px, so the count wrapped onto its own line (bar 80px tall).
+  - Fix: `.chamber-bulk-actionbar > div > :first-child { flex-basis: auto }` in `globals.css` (the app's class and the bar's structure, never AURA's classes), on the members and renewal pipeline bulk bars. The E-Blast queue bar is left out: its `start` slot puts its status on a row of its own by design.
+  - Failing run first (D-023 UI, shared commit): `bulk-bar-status-css.test.ts` › "takes the width of its text, at every width" → `.chamber-bulk-actionbar > div > :first-child { not found: expected -1 to be greater than -1`; the members and pipeline bar tests → `expected null not to be null` on `closest('.chamber-bulk-actionbar')`.
+  - Measured after: at 1440 the members bar is one line, 60px (count 112px wide, buttons 917px). At 1280 and 1024 it still wraps, as there is no room.

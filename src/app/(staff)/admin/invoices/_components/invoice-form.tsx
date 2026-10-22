@@ -386,13 +386,14 @@ export function CreateDraftForm({
       </Card>
 
       <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:[&>*]:flex-1">
-        <Link href="/admin/invoices" className={buttonClass({ variant: 'secondary' })}>
+        <Link href="/admin/invoices" className={buttonClass({ variant: 'secondary', touchHeight: true })}>
           {t('cancel')}
         </Link>
         <Button
           type="submit"
           variant="primary"
           icon="plus"
+          touchHeight
           loading={pending}
           disabled={noMembers || !memberId || !selectedPlan}
         >
@@ -423,10 +424,10 @@ export function CreateDraftForm({
         description={tDup('description')}
         footer={
           <>
-            <Button touchHeight type="button" variant="secondary" data-autofocus disabled={pending} onClick={() => setDuplicate(null)}>
+            <Button type="button" variant="secondary" data-autofocus disabled={pending} onClick={() => setDuplicate(null)}>
               {tDup('cancel')}
             </Button>
-            <Button touchHeight type="button" variant="danger" loading={pending} onClick={() => create(true)}>
+            <Button type="button" variant="danger" loading={pending} onClick={() => create(true)}>
               {pending ? t('submitting') : tDup('createAnyway')}
             </Button>
           </>

@@ -239,7 +239,7 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
       {phase === 'b-walkthrough' && (
         <div className="flex flex-col gap-[var(--aura-space-4)]">
           {walkthrough}
-          <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse max-sm:[&>button]:w-full">
+          <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:flex-col-reverse">
             {/*
               Round 3 H2 — Back returns to the reveal only while the
               one-time payload is still in memory; otherwise to step 3
@@ -248,14 +248,14 @@ export function WebhookConfigWizard({ view, walkthrough }: WebhookConfigWizardPr
             <Button
               type="button"
               variant="ghost"
-              touchHeight
+              fullWidth="below-sm"
               onClick={() =>
                 generated ? setPhase('a-reveal') : setPhase('c-test')
               }
             >
               {t('back')}
             </Button>
-            <Button type="button" touchHeight onClick={handleWalkthroughComplete}>
+            <Button type="button" fullWidth="below-sm" onClick={handleWalkthroughComplete}>
               {t('connectComplete')}
             </Button>
           </div>

@@ -287,7 +287,7 @@ export function CycleAdminActions({
             // Focus on Cancel by default (ux-standards § 4).
             footer={
               <>
-                <Button touchHeight
+                <Button
                   variant="secondary"
                   data-autofocus=""
                   onClick={closeCancel}
@@ -295,7 +295,7 @@ export function CycleAdminActions({
                 >
                   {t('cancelCycle.cancel')}
                 </Button>
-                <Button touchHeight
+                <Button
                   variant="danger"
                   onClick={onCancel}
                   loading={cancelPending}

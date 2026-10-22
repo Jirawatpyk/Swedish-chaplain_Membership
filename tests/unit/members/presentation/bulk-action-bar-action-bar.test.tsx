@@ -69,11 +69,23 @@ describe('BulkActionBar on AURA ActionBar (T504)', () => {
     }
   });
 
-  it('every control in the bar, Clear included, is a 44px touch target (WCAG 2.5.5)', () => {
+  // WCAG 2.5.5: since AURA 5.54 (#166) the bar itself makes every Button in
+  // it 44px below 640px, so the actions carry no touchHeight stand-in; the
+  // bar's own Clear takes its touchHeight prop.
+  it('every control is an AURA button in the bar; every small button keeps the touch height (#123)', () => {
     renderBar(['11111111-2222-3333-4444-555555555555']);
-    const buttons = within(screen.getByRole('region', { name: BULK.toolbarLabel })).getAllByRole('button');
-    expect(buttons[0]).toHaveTextContent(BULK.clear);
-    for (const button of buttons) expect(button).toHaveClass('aura-btn--touch');
+    const region = screen.getByRole('region', { name: BULK.toolbarLabel });
+    const [clear, ...actions] = within(region).getAllByRole('button');
+    expect(clear).toHaveTextContent(BULK.clear);
+    expect(clear).toHaveClass('aura-btn--touch');
+    expect(actions.length).toBeGreaterThan(0);
+    for (const button of actions) {
+      expect(button).toHaveClass('aura-btn');
+      // size="sm": AURA's bar rule is phone-only, so touchHeight keeps 44px on a touch tablet (#123).
+      expect(button).toHaveClass('aura-btn--touch');
+      expect(button.closest('.aura-actionbar')).not.toBeNull();
+      expect(button.closest('.chamber-bulk-actionbar')).not.toBeNull();
+    }
   });
 
   it('renders no spacer: the bar is in the flow, not fixed over the page', () => {

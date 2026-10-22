@@ -61,10 +61,10 @@ export function CloneYearDialog({
       })}
       footer={
         <>
-          <Button touchHeight variant="secondary" data-autofocus onClick={() => onOpenChange(false)} disabled={submitting}>
+          <Button variant="secondary" data-autofocus onClick={() => onOpenChange(false)} disabled={submitting}>
             {t('cancel')}
           </Button>
-          <Button touchHeight icon="copy" loading={submitting} disabled={submitting} onClick={onConfirm}>
+          <Button icon="copy" loading={submitting} disabled={submitting} onClick={onConfirm}>
             {submitting ? t('submitting') : t('submit', { count: countLabel })}
           </Button>
         </>

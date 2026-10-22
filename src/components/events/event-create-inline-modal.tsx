@@ -259,7 +259,6 @@ export function EventCreateInlineModal(
             variant="secondary"
             onClick={handleClose}
             disabled={submitting}
-            touchHeight
           >
             {t('cancelCta')}
           </Button>
@@ -267,7 +266,6 @@ export function EventCreateInlineModal(
             type="submit"
             form={formId}
             loading={submitting}
-            touchHeight
           >
             {submitting ? t('submittingCta') : t('submitCta')}
           </Button>

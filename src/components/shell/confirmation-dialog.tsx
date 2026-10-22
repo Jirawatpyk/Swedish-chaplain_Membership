@@ -163,10 +163,10 @@ export function ConfirmationDialog({
       description={description}
       footer={
         <>
-          <Button touchHeight variant="secondary" data-autofocus disabled={submitting} onClick={close}>
+          <Button variant="secondary" data-autofocus disabled={submitting} onClick={close}>
             {cancelLabel}
           </Button>
-          <Button touchHeight
+          <Button
             variant={destructive ? 'danger' : 'primary'}
             loading={submitting}
             disabled={confirmDisabled || submitting}

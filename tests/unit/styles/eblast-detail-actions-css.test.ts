@@ -37,7 +37,15 @@ describe('the E-Blast detail action row on a phone', () => {
     const next = ruleAfter('.eblast-detail-actions > div > :last-child > button {');
     expect(next).toMatch(/min-width:\s*0;/);
     expect(next).toMatch(/white-space:\s*normal;/);
-    expect(next).toMatch(/min-height:\s*2\.75rem;/);
+    // 44px comes from AURA 5.54's ActionBar rule (#166), as on every other bar.
+    expect(next).toMatch(/height:\s*auto;/);
+    expect(next).not.toMatch(/min-height/);
+  });
+
+  it('leaves the 44px minimum to AURA: no min-height of its own on any bar button (AURA 5.54, #166)', () => {
+    const block = css.slice(css.indexOf('.eblast-detail-actions > div {'), css.indexOf('html:has(.eblast-detail-actions) {'));
+    expect(block.length).toBeGreaterThan(0);
+    expect(block).not.toMatch(/min-height/);
   });
 
   it('shows the status line on a phone only; from 640px the row is buttons alone, as the desktop board', () => {

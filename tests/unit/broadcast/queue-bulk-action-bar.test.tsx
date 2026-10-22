@@ -173,11 +173,17 @@ describe('QueueBulkActionBar — bar shell + count (AURA ActionBar)', () => {
     expect(container.querySelector('[data-testid="queue-bulk-spacer"]')).toBeNull();
   });
 
-  it('Clear and Approve selected are AURA buttons with the 44px touch height', () => {
+  // AURA 5.54 (#166) sizes the bar's Buttons to 44px below 640px, so neither
+  // carries a touchHeight stand-in.
+  it('Clear and Approve selected are AURA buttons in the bar that keep the touch height (size sm, #123)', () => {
     renderBar();
     const bar = within(screen.getByRole('region', { name: BAR_NAME }));
     for (const name of ['Clear', 'Approve selected']) {
-      expect(bar.getByRole('button', { name })).toHaveClass('aura-btn', 'aura-btn--touch');
+      const button = bar.getByRole('button', { name });
+      expect(button).toHaveClass('aura-btn');
+      // size="sm": AURA's bar rule is phone-only, so touchHeight keeps 44px on a touch tablet (#123).
+      expect(button).toHaveClass('aura-btn--touch');
+      expect(button.closest('.aura-actionbar')).not.toBeNull();
     }
   });
 

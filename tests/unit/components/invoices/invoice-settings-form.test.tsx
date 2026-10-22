@@ -6,7 +6,7 @@
  *   - the 44px fields (seller branch, the prefixes and receipt mode, the bank
  *     text fields) are AURA boxes with `touchHeight="always"` (`.is-touch-always`,
  *     spec 122 US8c-2) — the staff frame's compact density is 36px otherwise;
- *   - the primary Save button is ≥44px (`min-h-11` on the AURA Button);
+ *   - the primary Save button is 44px and full width on a phone (`fullWidth="below-sm"`);
  *   - every section is grouped with `<fieldset><legend>` (mobile-first grouping).
  *
  * The measurable @a11y check (axe + boundingBox ≥44 + 320/375 reflow) lives in
@@ -114,9 +114,11 @@ describe('InvoiceSettingsForm — target-size on new US5 controls (FR-036 / SC-0
     }
   });
 
-  it('the primary Save button carries min-h-11 (44px)', () => {
+  it('the primary Save button is full width and 44px on a phone (fullWidth="below-sm")', () => {
     renderSettings();
-    expect(screen.getByRole('button', { name: /Save settings/i })).toHaveClass('aura-btn', 'min-h-11');
+    const save = screen.getByRole('button', { name: /Save settings/i });
+    expect(save).toHaveClass('aura-btn', 'aura-btn--full-below-sm');
+    expect(save).not.toHaveClass('min-h-11');
   });
 });
 
