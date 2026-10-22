@@ -16,14 +16,18 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
 
 const statements: string[] = [];
+const queries: { sql: string; params: unknown[] }[] = [];
 
 vi.mock('@/lib/db', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/db')>()),
   runInTenant: vi.fn(async (_ctx: unknown, fn: (tx: unknown) => Promise<unknown>) =>
     fn({
       execute: vi.fn(async (q: SQL) => {
-        statements.push(new PgDialect().sqlToQuery(q).sql);
-        return [];
+        const query = new PgDialect().sqlToQuery(q);
+        statements.push(query.sql);
+        queries.push({ sql: query.sql, params: query.params });
+        // One row every mapper can parse (the figures are proven on live Neon).
+        return [{ amount: '0', n: 0, billed: '0', collected: '0', month: '2026-01' }];
       }),
     }),
   ),
@@ -54,5 +58,26 @@ describe('collectedByMethod — SQL shape', () => {
     expect(text).toMatch(
       /COALESCE\(own_method\.method,\s*latest_method\.method,\s*terms\.invoice_payment_method\)/,
     );
+  });
+});
+
+describe('the waived-refund term — a leakproof, index-usable completed_at range', () => {
+  it('bounds completed_at by Bangkok-midnight instants computed in the app, half-open', async () => {
+    queries.length = 0;
+    await invoiceDashboardSourceAdapter.collectedInRange(CTX, FILTERS, {
+      from: '2026-04-01',
+      to: '2026-04-30',
+    });
+    const { sql: text, params } = queries[0] ?? { sql: '', params: [] };
+    const range = text.match(
+      /"refunds"\."completed_at" >= \$(\d+)::timestamptz AND "refunds"\."completed_at" < \$(\d+)::timestamptz/,
+    );
+    expect(range).not.toBeNull();
+    expect(params[Number(range?.[1]) - 1]).toBe('2026-04-01T00:00:00+07:00');
+    // The day after `to`, so 2026-04-30T23:30Z (= 1 May in Bangkok) stays out.
+    expect(params[Number(range?.[2]) - 1]).toBe('2026-05-01T00:00:00+07:00');
+    // The Bangkok date is only the grouping column, never the range predicate
+    // (timezone() is not leakproof, so under RLS it can never be an index condition).
+    expect(text).not.toMatch(/AT TIME ZONE 'Asia\/Bangkok'\)::date\) >=/);
   });
 });
