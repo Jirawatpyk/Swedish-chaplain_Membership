@@ -11,9 +11,12 @@
  * `touchHeight` — in a page body (not-found pages, empty and error states,
  * banners, card actions, list rows, filter controls) as in a footer or bar.
  *
- * One place stays compact by design, read from the JSX structure: the help ⓘ
- * beside a heading — an `IconButton icon="info"` that is a `Popover`
- * `trigger`. It sits at the heading's line height, and AURA gives it a 44px
+ * An `IconButton` is a 32px box whatever its `size` (that prop sizes the
+ * icon), so every `IconButton` the user taps carries `touchHeight` too.
+ *
+ * One place stays compact by design, read from the JSX structure: the help
+ * icon beside a heading or a label — an `IconButton` that is a `Popover`
+ * `trigger` (ⓘ, ?). It sits at the line's height, and AURA gives it a 44px
  * hit area. A row's ⋯ is not exempt: twelve row menus already carry
  * `touchHeight`, and a table stacks into cards on a phone (UX + mobile a11y
  * review, 22 Oct). A `size` that is not a literal fails, so nothing slips past.
@@ -57,11 +60,8 @@ function isSmall(value: ts.Node | undefined): boolean {
   return false;
 }
 
-/** An `IconButton icon="info"` that is a `Popover`'s `trigger`: the help ⓘ beside a heading. */
-function isHelpTrigger(el: ts.JsxOpeningLikeElement, tag: string | undefined, names: Map<string, string>): boolean {
-  if (tag !== 'IconButton') return false;
-  const icon = el.attributes.properties.find((p): p is ts.JsxAttribute => ts.isJsxAttribute(p) && p.name.getText() === 'icon');
-  if (!icon?.initializer || !ts.isStringLiteral(icon.initializer) || icon.initializer.text !== 'info') return false;
+/** An `IconButton` that is a `Popover`'s `trigger`: the help icon beside a heading or a label. */
+function isHelpTrigger(el: ts.JsxOpeningLikeElement, names: Map<string, string>): boolean {
   const holder = ts.isJsxSelfClosingElement(el) ? el : el.parent;
   const expr = holder.parent;
   if (!ts.isJsxExpression(expr) || !ts.isJsxAttribute(expr.parent) || expr.parent.name.getText() !== 'trigger') return false;
@@ -77,7 +77,7 @@ function isOpaque(value: ts.Node | undefined): boolean {
   return true;
 }
 
-/** `size="sm"` AURA buttons without `touchHeight` outside the compact places. */
+/** `size="sm"` Buttons and `buttonClass`, and every IconButton, without `touchHeight` (help popover triggers aside). */
 export function scanSmallButtons(file: string, source: string): { readonly small: number; readonly unsized: string[] } {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const names = auraImports(sf);
@@ -92,10 +92,10 @@ export function scanSmallButtons(file: string, source: string): { readonly small
           n.attributes.properties.find((p): p is ts.JsxAttribute => ts.isJsxAttribute(p) && p.name.getText() === key);
         const size = attr('size')?.initializer;
         if (isOpaque(size)) unsized.push(`${at(n)} (size must be a literal)`);
-        if (isSmall(size)) {
-          small += 1;
-          if (!isHelpTrigger(n, tag, names) && attr('touchHeight') === undefined) unsized.push(at(n));
-        }
+        if (isSmall(size)) small += 1;
+        const sized = attr('touchHeight') !== undefined;
+        if (tag === 'IconButton' && !sized && !isHelpTrigger(n, names)) unsized.push(at(n));
+        if (tag === 'Button' && isSmall(size) && !sized) unsized.push(at(n));
       }
     }
     if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && names.get(n.expression.text) === 'buttonClass') {
@@ -122,8 +122,8 @@ const files = walk(SRC).map((path) => ({
   source: readFileSync(path, 'utf8'),
 }));
 
-describe('a size="sm" AURA button carries touchHeight; only a help ⓘ popover trigger stays compact (spec 122)', () => {
-  it('positive control: body, table and menu buttons are caught; a help ⓘ popover trigger is not', () => {
+describe('a size="sm" AURA button and every IconButton carry touchHeight; only a help popover trigger stays compact (spec 122)', () => {
+  it('positive control: body, table and menu buttons and a bare IconButton are caught; a help popover trigger is not', () => {
     const fixture = [
       "import { Button, IconButton, DropdownMenu, Popover, buttonClass } from '@jirawatpyk/aura-react';",
       "import { Td } from '@/components/shell/aura-table';",
@@ -137,12 +137,13 @@ describe('a size="sm" AURA button carries touchHeight; only a help ⓘ popover t
       '    <DropdownMenu label="m" items={[]} trigger={<IconButton icon="ellipsis" label="m" size="sm" />} />',
       '    <Popover title="h" trigger={<IconButton icon="info" label="h" size="sm" />}>x</Popover>',
       '    <Button size={s}>Opaque</Button>',
+      '    <IconButton icon="search" label="Search" />',
       '  </div>',
       ');',
     ].join('\r\n');
     expect(scanSmallButtons('fixture.tsx', fixture)).toEqual({
       small: 7,
-      unsized: ['fixture.tsx:5', 'fixture.tsx:6', 'fixture.tsx:7', 'fixture.tsx:9', 'fixture.tsx:10', 'fixture.tsx:12 (size must be a literal)'],
+      unsized: ['fixture.tsx:5', 'fixture.tsx:6', 'fixture.tsx:7', 'fixture.tsx:9', 'fixture.tsx:10', 'fixture.tsx:12 (size must be a literal)', 'fixture.tsx:13'],
     });
   });
 
@@ -150,7 +151,7 @@ describe('a size="sm" AURA button carries touchHeight; only a help ⓘ popover t
     expect(files.reduce((n, { file, source }) => n + scanSmallButtons(file, source).small, 0)).toBeGreaterThan(40);
   });
 
-  it('every size="sm" AURA button the user taps carries touchHeight', () => {
+  it('every size="sm" AURA button and every IconButton the user taps carries touchHeight', () => {
     expect(files.flatMap(({ file, source }) => scanSmallButtons(file, source).unsized)).toEqual([]);
   });
 });
