@@ -81,3 +81,18 @@ describe('the waived-refund term — a leakproof, index-usable completed_at rang
     expect(text).not.toMatch(/\("refunds"\."completed_at" AT TIME ZONE 'Asia\/Bangkok'\)::date\) >=/);
   });
 });
+
+describe('Billed — the billable statuses as a positive list', () => {
+  it('reads issued | paid | partially_credited | credited, never a NOT IN', async () => {
+    queries.length = 0;
+    const range = { from: '2026-01-01', to: '2026-12-31' };
+    await invoiceDashboardSourceAdapter.monthlyBilledCollected(CTX, FILTERS, range, range);
+    const text = queries[0]?.sql ?? '';
+    // Positive control: the Billed invoice term and its credit-note term are both there.
+    const billable = text.match(
+      /"invoices"\."status" IN \('issued', 'paid', 'partially_credited', 'credited'\)/g,
+    );
+    expect(billable).toHaveLength(2);
+    expect(text).not.toMatch(/NOT IN/);
+  });
+});
