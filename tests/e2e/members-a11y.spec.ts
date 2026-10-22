@@ -25,6 +25,7 @@ import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { expect, test, fillField } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { scrollFormToEndAtRest } from './helpers/member-form';
 import { MEMBERS_GRID, firstMemberRowLink, firstRowCheckbox } from './helpers/members-grid';
 
 const ADMIN_EMAIL = process.env.E2E_ADMIN_EMAIL;
@@ -85,6 +86,12 @@ test.describe('F3 admin comprehensive a11y scan @f3 @a11y', () => {
     await signIn(page);
     await page.goto('/admin/members/new');
     await page.waitForLoadState('networkidle');
+    // On a phone the pinned action bar covers whichever field sits under it
+    // mid-page, and axe reports that field or the bar's buttons as obscured
+    // (target-size, target-offset; relays R60, R61, R70). Scan at the end of
+    // the scroll, as members-create does, after the autofocus has landed.
+    await expect(page.locator('#company_name')).toBeFocused();
+    await scrollFormToEndAtRest(page);
 
     const results = await new AxeBuilder({ page })
       .withTags([...AXE_TAGS])
@@ -117,6 +124,7 @@ test.describe('F3 admin comprehensive a11y scan @f3 @a11y', () => {
     }
     await page.goto(`/admin/members/${memberId}/edit`);
     await page.waitForLoadState('networkidle');
+    await scrollFormToEndAtRest(page);
 
     const results = await new AxeBuilder({ page })
       .withTags([...AXE_TAGS])
