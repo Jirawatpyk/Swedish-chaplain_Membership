@@ -19,3 +19,4 @@ Live in production with real money. Review with `financial-integrity-reviewer` +
 - `/api/internal/metrics/stale-pending-count` emits the `payments.stale_pending_count` gauge every 5 min.
 - Billing emails resolve the recipient through `BillingRecipientPort` (the live primary contact).
 - Bulk "mark paid" goes through `record-payment`, not `mark-paid-offline`.
+- **Money aggregates take amounts from `invoices`, never `SUM(payments.amount_satang)`**: retries and auto-refunded rows double count. One method row per invoice: `DISTINCT ON (invoice_id) … ORDER BY invoice_id, completed_at DESC` over `status IN ('succeeded','partially_refunded','refunded')`, falling back to `invoices.payment_method`.
