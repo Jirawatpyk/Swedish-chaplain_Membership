@@ -311,10 +311,14 @@ describe('loadInvoiceDashboardTrend', () => {
     const result = await loadInvoiceDashboardTrend(ctx, input(), deps(source));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(source.monthlyBilledCollected).toHaveBeenCalledWith(ctx, FILTERS, {
-      from: '2026-04-01',
-      to: '2027-03-31',
-    });
+    // Billed over the whole FY; Collected over the FY clamped to today, as the tile.
+    expect(source.monthlyBilledCollected).toHaveBeenCalledWith(
+      ctx,
+      FILTERS,
+      { from: '2026-04-01', to: '2027-03-31' },
+      { from: '2026-04-01', to: '2026-06-15' },
+    );
+    expect(result.value.range).toEqual({ from: '2026-04-01', to: '2027-03-31' });
     const { slots } = result.value;
     expect(slots).toHaveLength(12);
     expect(slots[0]).toMatchObject({ monthKey: '2026-04', state: 'past', billedSatang: 500n, collectedSatang: 300n });
