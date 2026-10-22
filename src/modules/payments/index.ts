@@ -154,12 +154,12 @@ export {
 } from './application/use-cases/resolve-failed-auto-refund';
 export {
   sweepStalePendingRefunds,
-  ESCALATION_AGE_MS as STALE_REFUND_ESCALATION_AGE_MS,
   type SweepStalePendingRefundsInput,
   type SweepStalePendingRefundsOutput,
   type SweepStalePendingRefundsError,
   type SweepStalePendingRefundsDeps,
 } from './application/use-cases/sweep-stale-pending-refunds';
+export { STALE_REFUND_ESCALATION_AGE_MS } from './domain/refund-escalation';
 export {
   REFUND_STATUSES,
   TERMINAL_REFUND_STATUSES,

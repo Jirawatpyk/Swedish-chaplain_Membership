@@ -86,6 +86,7 @@ import { noopLogger } from '../ports/logger-port';
 import { retentionFor } from '../ports/audit-port';
 import { proveProcessorSettledFailed } from '../../domain/settlement/money-moved';
 import { SYSTEM_ACTOR_STRIPE_WEBHOOK } from '../../domain/system-actors';
+import { STALE_REFUND_ESCALATION_AGE_MS as ESCALATION_AGE_MS } from '../../domain/refund-escalation';
 import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
 import { commitTx, rollbackTx, runTxDecided } from '../settlement/tx-decision';
 import { paymentsMetrics } from '@/lib/metrics';
@@ -133,18 +134,6 @@ const RETRIEVE_TIMEOUT_MS = 8_000;
  * dropped to 30s → set this to ~20s).
  */
 const SWEEP_TOTAL_BUDGET_MS = 35_000;
-
-/**
- * A stale-pending refund the sweep cannot terminalise (Stripe still
- * `pending`/`requires_action`, or the row has no `processor_refund_id`)
- * escalates to an ops signal once older than this. Signal ONLY — never a
- * state change; the row stays `pending`.
- *
- * Exported (barrel: `STALE_REFUND_ESCALATION_AGE_MS`) so the invoice
- * dashboard's Needs-attention row ages pending refunds by the same rule
- * (spec 124 D-k): strictly older than this, measured on `initiated_at`.
- */
-export const ESCALATION_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
