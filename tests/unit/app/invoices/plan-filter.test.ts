@@ -2,7 +2,7 @@
  * Unit — 124 slice 1: the admin invoice list's `?plan=<plan_id>` resolves
  * against the tenant's plans. A known id gives the filter and its chip label
  * (in the viewer's locale, English as fallback). A well-formed id the lookup
- * does not know (another plan year, a deleted plan, a failed lookup) still
+ * does not know (another plan year, a failed lookup) still
  * filters, its chip named by the id, so the list never widens unmarked.
  */
 import { describe, it, expect } from 'vitest';
