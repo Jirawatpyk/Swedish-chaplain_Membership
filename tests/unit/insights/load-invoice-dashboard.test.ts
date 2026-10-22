@@ -39,6 +39,7 @@ import { fiscalYearDateRange } from '@/modules/insights/domain/invoice-dashboard
 import type { InvoiceDashboardFilters } from '@/modules/insights/domain/invoice-dashboard-filters';
 
 const ctx = asTenantContext('test-tenant');
+const NOW = new Date('2026-06-15T05:00:00Z');
 
 const FILTERS: InvoiceDashboardFilters = {
   type: 'membership',
@@ -51,6 +52,7 @@ function input(over: Partial<InvoiceDashboardLoadInput> = {}): InvoiceDashboardL
   return {
     filters: FILTERS,
     today: '2026-06-15',
+    now: NOW,
     // FY 2026 starting in April: 2026-04-01 … 2027-03-31.
     fiscalYearRange: fiscalYearDateRange(2026, 4),
     canWrite: true,
@@ -69,7 +71,7 @@ function stubSource(over: Partial<InvoiceDashboardSource> = {}): InvoiceDashboar
       autoRenewalDrafts: 0,
       receiptPdfFailed: 0,
       refundsFailedAtStripe: 0,
-      refundsSettledUnbooked: 0,
+      refundsPendingOverThreshold: 0,
     }),
     oldestOverdue: vi.fn().mockResolvedValue([]),
     ...over,
@@ -217,7 +219,7 @@ describe('loadInvoiceDashboardAttention — role projection on the server', () =
     autoRenewalDrafts: 4,
     receiptPdfFailed: 1,
     refundsFailedAtStripe: 2,
-    refundsSettledUnbooked: 5,
+    refundsPendingOverThreshold: 5,
   };
 
   it('an admin (canWrite) gets all five counts', async () => {
@@ -228,10 +230,10 @@ describe('loadInvoiceDashboardAttention — role projection on the server', () =
     expect(result.value).toEqual({
       receiptPdfFailed: 1,
       refundsFailedAtStripe: 2,
-      refundsSettledUnbooked: 5,
+      refundsPendingOverThreshold: 5,
       drafts: { manual: 3, autoRenewal: 4 },
     });
-    expect(source.attentionCounts).toHaveBeenCalledWith(ctx, FILTERS);
+    expect(source.attentionCounts).toHaveBeenCalledWith(ctx, FILTERS, NOW);
   });
 
   it('a manager (no write) gets the three read-only counts; the draft rows are ABSENT, not zeroed', async () => {
@@ -242,7 +244,7 @@ describe('loadInvoiceDashboardAttention — role projection on the server', () =
     expect(result.value).toEqual({
       receiptPdfFailed: 1,
       refundsFailedAtStripe: 2,
-      refundsSettledUnbooked: 5,
+      refundsPendingOverThreshold: 5,
     });
     expect('drafts' in result.value).toBe(false);
     expect(JSON.stringify(result.value)).not.toMatch(/draft/i);

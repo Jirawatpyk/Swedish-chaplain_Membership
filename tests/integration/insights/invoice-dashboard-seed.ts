@@ -30,6 +30,8 @@ import type { TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
 export const TODAY = '2026-06-15';
+/** The request instant behind `TODAY` (noon in Bangkok); the pending-refund age is measured from it. */
+export const NOW = new Date('2026-06-15T05:00:00Z');
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -390,7 +392,8 @@ export async function seedInvoiceDashboardScenario(
     issueDate: '2026-04-05', total: 642_000, paymentDate: '2026-04-10',
     paidAt: '2026-04-10T05:00:00Z', method: 'other',
   });
-  // Stripe paid the refund out but booking failed (f4_bridge_%): never netted.
+  // A legacy `failed` + f4_bridge_% refund: never netted, and since D-k not a
+  // Needs-attention row either (row 5 counts refunds `pending` past 3 days).
   paid('pF4', membership(SILVER), {
     issueDate: '2026-05-15', total: 856_000, paymentDate: '2026-05-20',
     paidAt: '2026-05-20T05:00:00Z', method: 'other',
@@ -458,7 +461,8 @@ export async function seedInvoiceDashboardScenario(
   // X: latest attempt failed at Stripe → counted.
   refund('payX', 'aX', { status: 'failed', amount: 10_000, initiatedAt: '2025-08-02T03:00:00Z', completedAt: '2025-08-02T04:00:00Z', failureReasonCode: 'stripe_refund_failed' });
   refund('payX', 'aX', { status: 'failed', amount: 10_000, initiatedAt: '2025-08-03T03:00:00Z', completedAt: '2025-08-03T04:00:00Z', failureReasonCode: 'stripe_refund_canceled' });
-  // Y: a later attempt is pending → not counted.
+  // Y: a later attempt is pending → not counted as failed at Stripe; that
+  // pending attempt (2025-08-04, far past 3 days before NOW) is row 5's one.
   refund('payY', 'aY', { status: 'failed', amount: 10_000, initiatedAt: '2025-08-02T03:00:00Z', completedAt: '2025-08-02T04:00:00Z', failureReasonCode: 'stripe_refund_failed' });
   refund('payY', 'aY', { status: 'pending', amount: 10_000, initiatedAt: '2025-08-04T03:00:00Z' });
   // Z: the latest attempt failed with a gateway refusal ('permanent'), not
@@ -606,7 +610,8 @@ export const EXPECTED = {
     autoRenewalDrafts: 1,
     receiptPdfFailed: 1,
     refundsFailedAtStripe: 1,
-    refundsSettledUnbooked: 1,
+    // payY's pending attempt (gold); pF4's failed f4_bridge_% refund is not counted.
+    refundsPendingOverThreshold: 1,
   },
   /** Overdue set, longest past due first, then amount desc, then number asc. */
   oldestOverdueOrder: ['iD91', 'iD61', 'iD31b', 'iD31c', 'iD31', 'iD30', 'iD1'],

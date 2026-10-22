@@ -24,6 +24,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import {
   EXPECTED,
+  NOW,
   TODAY,
   seedInvoiceDashboardScenario,
   type SeededScenario,
@@ -32,6 +33,7 @@ import {
 const INPUT: InvoiceDashboardLoadInput = {
   filters: { type: 'all', fiscalYear: 2026, planId: null, origin: 'all' },
   today: TODAY,
+  now: NOW,
   fiscalYearRange: fiscalYearDateRange(2026, 1),
   canWrite: true,
 };
@@ -119,7 +121,7 @@ describe('invoice dashboard — cross-tenant isolation (Principle I)', () => {
       expect(attention).toEqual({
         receiptPdfFailed: EXPECTED.attention.receiptPdfFailed,
         refundsFailedAtStripe: EXPECTED.attention.refundsFailedAtStripe,
-        refundsSettledUnbooked: EXPECTED.attention.refundsSettledUnbooked,
+        refundsPendingOverThreshold: EXPECTED.attention.refundsPendingOverThreshold,
         drafts: {
           manual: EXPECTED.attention.manualDrafts,
           autoRenewal: EXPECTED.attention.autoRenewalDrafts,

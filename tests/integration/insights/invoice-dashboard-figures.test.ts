@@ -24,6 +24,7 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import {
   EXPECTED,
+  NOW,
   TODAY,
   seedInvoiceDashboardScenario,
   type SeededScenario,
@@ -33,6 +34,7 @@ function input(filters: Partial<InvoiceDashboardFilters> = {}): InvoiceDashboard
   return {
     filters: { type: 'all', fiscalYear: 2026, planId: null, origin: 'all', ...filters },
     today: TODAY,
+    now: NOW,
     fiscalYearRange: fiscalYearDateRange(2026, 1),
     canWrite: true,
   };
@@ -177,12 +179,12 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
   });
 
   describe('Needs attention', () => {
-    it('five counts; refunds failed at Stripe by the latest attempt per payment; settled-but-unbooked = failed f4_bridge_%', async () => {
+    it('five counts; refunds failed at Stripe by the latest attempt per payment; refunds pending past 3 days (D-k)', async () => {
       const attention = unwrap(await loadInvoiceDashboardAttention(tenant.ctx, input(), deps));
       expect(attention).toEqual({
         receiptPdfFailed: EXPECTED.attention.receiptPdfFailed,
         refundsFailedAtStripe: EXPECTED.attention.refundsFailedAtStripe,
-        refundsSettledUnbooked: EXPECTED.attention.refundsSettledUnbooked,
+        refundsPendingOverThreshold: EXPECTED.attention.refundsPendingOverThreshold,
         drafts: {
           manual: EXPECTED.attention.manualDrafts,
           autoRenewal: EXPECTED.attention.autoRenewalDrafts,
@@ -241,7 +243,7 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
       expect(unwrap(await loadInvoiceDashboardAttention(tenant.ctx, i, deps))).toEqual({
         receiptPdfFailed: 0,
         refundsFailedAtStripe: 0,
-        refundsSettledUnbooked: 0,
+        refundsPendingOverThreshold: 0,
         drafts: { manual: 0, autoRenewal: 0 },
       });
       const oldest = unwrap(await loadInvoiceDashboardOldestOverdue(tenant.ctx, i, deps));
@@ -276,7 +278,8 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
       expect(unwrap(await loadInvoiceDashboardAttention(tenant.ctx, i, deps))).toEqual({
         receiptPdfFailed: 1,
         refundsFailedAtStripe: 1,
-        refundsSettledUnbooked: 0,
+        // payY's pending attempt is on a gold invoice.
+        refundsPendingOverThreshold: 1,
         drafts: { manual: 1, autoRenewal: 1 },
       });
     });
@@ -295,7 +298,8 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
       expect(unwrap(await loadInvoiceDashboardAttention(tenant.ctx, i, deps))).toEqual({
         receiptPdfFailed: 0,
         refundsFailedAtStripe: 0,
-        refundsSettledUnbooked: 1,
+        // pF4's failed f4_bridge_% refund (silver) is no longer row 5 (D-k).
+        refundsPendingOverThreshold: 0,
         drafts: { manual: 1, autoRenewal: 0 },
       });
     });
