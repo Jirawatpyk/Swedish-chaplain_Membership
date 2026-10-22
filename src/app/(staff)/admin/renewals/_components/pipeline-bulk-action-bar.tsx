@@ -606,6 +606,7 @@ export function PipelineBulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon="mail"
                 disabled={executing || overCap}
                 onClick={(e) => {
@@ -619,6 +620,7 @@ export function PipelineBulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<BanknoteIcon aria-hidden="true" />}
                 disabled={executing || overCap}
                 onClick={(e) => {

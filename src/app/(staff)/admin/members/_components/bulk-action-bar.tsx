@@ -440,6 +440,7 @@ export function BulkActionBar({
               <Button
                 variant="danger-secondary"
                 size="sm"
+                touchHeight
                 icon={<ArchiveIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -456,6 +457,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<MailIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -475,6 +477,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<FileTextIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -491,6 +494,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<FileMinusIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {
@@ -506,6 +510,7 @@ export function BulkActionBar({
               <Button
                 variant="secondary"
                 size="sm"
+                touchHeight
                 icon={<BellIcon aria-hidden="true" />}
                 disabled={overCap}
                 onClick={(e) => {

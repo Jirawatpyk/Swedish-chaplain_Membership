@@ -511,6 +511,7 @@ export function QueueBulkActionBar({
         <Button
           variant="ghost"
           size="sm"
+          touchHeight
           icon="x"
           onClick={handleClearClick}
           disabled={executing}
@@ -521,6 +522,7 @@ export function QueueBulkActionBar({
           ref={approveBtnRef}
           variant="primary"
           size="sm"
+          touchHeight
           icon="circle-check"
           disabled={executing}
           onClick={() => setConfirmOpen(true)}

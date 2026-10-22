@@ -743,7 +743,7 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
 
   // WCAG 2.5.5 (renewal-a11y): AURA 5.54 (#166) sizes the bar's Buttons to
   // 44px below 640px; Clear takes the bar's touchHeight prop.
-  it('every control is an AURA button in the bar; Clear has the touch height, the actions no stand-in', () => {
+  it('every control is an AURA button in the bar; every small button keeps the touch height (#123)', () => {
     render(
       wrap(
         <PipelineBulkActionBar
@@ -757,7 +757,8 @@ describe('PipelineBulkActionBar — accessibility + selection wiring', () => {
     expect(buttons.map((b) => b.textContent)).toEqual([B.clear, B.actions.sendReminder, B.actions.markPaid]);
     expect(buttons[0]).toHaveClass('aura-btn--touch');
     for (const button of buttons.slice(1)) {
-      expect(button).not.toHaveClass('aura-btn--touch');
+      // size="sm": AURA's bar rule is phone-only, so touchHeight keeps 44px on a touch tablet (#123).
+      expect(button).toHaveClass('aura-btn--touch');
       expect(button.closest('.aura-actionbar')).not.toBeNull();
     }
   });
