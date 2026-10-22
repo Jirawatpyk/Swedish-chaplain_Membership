@@ -35,7 +35,7 @@ export default async function PortalCreditNoteNotFound(): Promise<React.ReactEle
         <p className="m-0 text-sm text-[var(--aura-fg-secondary)]">{tErrors('notFound')}</p>
         <Link
           href="/portal/invoices"
-          className={buttonClass({ variant: 'secondary', size: 'sm', className: 'mt-4' })}
+          className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'mt-4' })}
         >
           <ArrowLeft className="mr-1 h-4 w-4" aria-hidden="true" />
           {tInvoices('title')}

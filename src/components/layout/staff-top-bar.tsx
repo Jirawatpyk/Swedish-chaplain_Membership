@@ -148,7 +148,8 @@ export function StaffTopBar({ tenantName, user, extras, currentPath }: StaffTopB
         </kbd>
       </button>
       <IconButton
-        className="max-sm:size-11 xl:hidden"
+        className="xl:hidden"
+        touchHeight
         icon={<SearchIcon aria-hidden />}
         label={t('open')}
         onClick={openCommandPalette}

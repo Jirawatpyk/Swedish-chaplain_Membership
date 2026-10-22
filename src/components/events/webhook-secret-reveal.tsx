@@ -157,11 +157,13 @@ export function WebhookSecretReveal({
               icon={visible ? 'eye-off' : 'eye'}
               label={visible ? t('hideSecret') : t('revealSecret')}
               onClick={() => setVisible((v) => !v)}
+              touchHeight
             />
             <IconButton
               icon={copied ? 'check' : 'copy'}
               label={t('copySecret')}
               onClick={() => void handleCopy()}
+              touchHeight
             />
           </div>
           <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('warning')}</p>

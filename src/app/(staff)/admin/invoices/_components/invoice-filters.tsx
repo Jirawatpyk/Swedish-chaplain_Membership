@@ -686,6 +686,7 @@ export function InvoiceFilters({
                   type="button"
                   variant="ghost"
                   size="sm"
+                  touchHeight
                   icon="x"
                   className="shrink-0"
                   onClick={() => {

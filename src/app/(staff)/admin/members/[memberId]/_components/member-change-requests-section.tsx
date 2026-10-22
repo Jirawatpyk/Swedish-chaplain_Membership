@@ -100,7 +100,7 @@ export async function PendingChangeRequestAlert({
       role="status"
       title={t('pendingAlert')}
       action={
-        <Link href={`/admin/change-requests/${requestId}`} className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+        <Link href={`/admin/change-requests/${requestId}`} className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
           {t('review')}
         </Link>
       }
@@ -130,7 +130,7 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
       actions={
         <Link
           href={`/admin/change-requests?memberId=${encodeURIComponent(memberId)}`}
-          className={buttonClass({ variant: 'secondary', size: 'sm' })}
+          className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
         >
           <FileClockIcon className="size-4" aria-hidden="true" />
           {t('viewQueue')}
@@ -172,7 +172,7 @@ export async function MemberChangeRequestsSection({ tenant, memberId }: Props) {
                     <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="staff" />
                     <Link
                       href={`/admin/change-requests/${r.id}`}
-                      className={buttonClass({ variant: 'secondary', size: 'sm' })}
+                      className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
                     >
                       {r.state === 'pending' ? t('review') : t('open')}
                       {/* Each row has one: the date tells them apart (UX review M7). */}

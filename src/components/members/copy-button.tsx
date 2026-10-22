@@ -35,7 +35,7 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
       }
     }
   };
-  // Spec 122 US3: AURA IconButton — a 32px round button whose hit area is
-  // 44px on touch screens, with the label as its accessible name and tooltip.
-  return <IconButton icon="copy" label={label} onClick={onCopy} />;
+  // Spec 122 US3: AURA IconButton, with the label as its accessible name and
+  // tooltip; 44px on a phone or a touch screen, as every button the user taps.
+  return <IconButton icon="copy" label={label} onClick={onCopy} touchHeight />;
 }

@@ -180,6 +180,7 @@ export function ReassignTaskDropdown({
           action={
             <Button
               size="sm"
+              touchHeight
               variant="secondary"
               loading={isLoadingUsers}
               onClick={() => {

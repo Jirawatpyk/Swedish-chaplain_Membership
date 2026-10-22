@@ -291,7 +291,7 @@ export function ConfirmationPanel({
           // match the codebase 44px convention (WCAG 2.5.5) without adding
           // vertical space; primary keyboard targets remain Download / Close.
           className={cn(
-            buttonClass({ variant: 'secondary', size: 'sm' }),
+            buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true }),
             "relative min-h-9 gap-1 px-3 before:absolute before:inset-x-0 before:-inset-y-1 before:content-['']",
           )}
           data-testid={paused ? 'pay-sheet-confirmation-resume' : 'pay-sheet-confirmation-pause'}

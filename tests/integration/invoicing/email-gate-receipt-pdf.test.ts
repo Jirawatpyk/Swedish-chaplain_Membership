@@ -41,15 +41,8 @@ import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
 
-// Stub Resend so the dispatcher's email-send branch is a no-op in tests.
-// Without this, sending hits the real network when the gate releases.
-vi.mock('resend', () => ({
-  Resend: class {
-    emails = {
-      send: vi.fn(async () => ({ data: { id: 'mock-resend-id' }, error: null })),
-    };
-  },
-}));
+// The dispatcher's email send is a no-op here: tests/integration-setup.ts
+// replaces `emailSender` for every integration suite.
 
 // Stub the PDF prefetch adapter — the dispatcher attaches PDF bytes
 // when the `expected_pdf_sha256` field is set; we don't set it on this

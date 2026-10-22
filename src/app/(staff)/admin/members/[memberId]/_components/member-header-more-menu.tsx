@@ -40,7 +40,7 @@ export function MemberHeaderMoreMenu({
   ];
   return (
     <span className="flex-none! sm:hidden">
-      <DropdownMenu label={label} trigger={<IconButton icon="ellipsis" label={label} />} items={items} />
+      <DropdownMenu label={label} trigger={<IconButton icon="ellipsis" label={label} touchHeight />} items={items} />
       <EraseMemberButton
         memberId={memberId}
         companyName={companyName}

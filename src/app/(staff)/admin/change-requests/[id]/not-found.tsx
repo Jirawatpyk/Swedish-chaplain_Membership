@@ -23,7 +23,7 @@ export default async function ChangeRequestNotFound(): Promise<React.ReactElemen
           icon="search"
           title={tErrors('notFound')}
           action={
-            <Link href="/admin/members" className={buttonClass({ variant: 'secondary', size: 'sm' })}>
+            <Link href="/admin/members" className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}>
               <ArrowLeftIcon className="size-4" aria-hidden="true" />
               {t('backToMembers')}
             </Link>

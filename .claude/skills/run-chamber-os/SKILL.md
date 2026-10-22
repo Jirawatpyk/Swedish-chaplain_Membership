@@ -79,4 +79,4 @@ Scope locators to `:visible`. Next keeps the previous segment's DOM hidden after
 
 ## 6. Clean up
 
-Stop the :3400 server, remove any probe specs, and leave the worktree in place until the user says to clear it. Then remove it with `git worktree remove --force`, followed by a robocopy-mirror delete. Remove the `node_modules` junction **before** removing the worktree. Deleting session folders needs the user's approval.
+Stop the :3400 server, remove any probe specs, call `wipeF8Renewals()` (`tests/e2e/helpers/renewals-seed.ts`) to remove the F8 renewal seed from dev, and leave the worktree in place until the user says to clear it. Then remove it with `git worktree remove --force`, followed by a robocopy-mirror delete. Remove the `node_modules` junction **before** removing the worktree. Deleting session folders needs the user's approval.
