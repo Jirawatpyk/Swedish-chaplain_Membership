@@ -100,4 +100,31 @@ describe('SectionLinks scroll-spy in two columns', () => {
     await frame();
     expect(screen.getByRole('link', { name: 'Timeline' })).toHaveAttribute('aria-current', 'location');
   });
+
+  // UX review H1: from 1024px the aside's Company passes the tabs while the
+  // reader is still in the main column, so aside sections are left out of the
+  // spy there (a followed link to one still marks it).
+  it('from lg, an aside section does not take over while the main column is read', async () => {
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: q.includes('1024'), media: q, addEventListener() {}, removeEventListener() {} }));
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: 10_000, configurable: true });
+    const links = [
+      { id: 'contacts', label: 'Contacts' },
+      { id: 'invoices', label: 'Invoices' },
+      { id: 'company', label: 'Company', aside: true },
+    ];
+    const at: Record<string, number> = { contacts: -600, invoices: 300, company: -50 };
+    const { container } = render(
+      <>
+        <SectionLinks label="On this page" links={links} />
+        {links.map((l) => (
+          <section key={l.id} id={l.id} aria-label={l.label} />
+        ))}
+      </>,
+    );
+    for (const l of links) document.getElementById(l.id)!.getBoundingClientRect = () => ({ top: at[l.id]! }) as DOMRect;
+    (container.firstElementChild as HTMLElement).getBoundingClientRect = () => ({ bottom: 100 }) as DOMRect;
+    fireEvent.scroll(window);
+    await frame();
+    expect(screen.getByRole('link', { name: 'Contacts' })).toHaveAttribute('aria-current', 'location');
+  });
 });
