@@ -152,37 +152,33 @@ describe('renderMemberDetailView — header (T553)', () => {
     expect(header).toHaveTextContent('Premium Corporate');
   });
 
-  it('a writer gets Benefits, Erase, Archive and Edit, in that order', async () => {
-    await renderView();
-    const header = screen.getByRole('heading', { level: 1 }).closest<HTMLElement>('[data-slot="page-header"]')!;
-    const actions = [...header.querySelectorAll('a, button')].filter((a) => a.textContent?.trim());
-    expect(actions.map((a) => a.textContent?.trim())).toEqual([
-      enMessages.admin.members.detail.sections.benefits,
-      'Erase (GDPR/PDPA)…',
-      'Archive member',
-      enMessages.admin.members.detail.editCta,
-    ]);
-  });
-
-  // Board `Admin-member-detail-mobile` (maintainer, 29 Sep): on a phone the
-  // header is Edit, Benefits and ⋯; Erase and Archive live in the menu. From
-  // sm up they stay visible buttons.
-  it('on a phone, Erase and Archive move into a ⋯ menu', async () => {
+  // Layout B (maintainer, 22 Oct): Benefits and Edit stay visible; Erase and
+  // Archive open from the ⋯ menu at every width.
+  it('a writer gets Benefits, Edit and the ⋯ menu, in that order', async () => {
     await renderView();
     const D = enMessages.admin.members;
     const header = screen.getByRole('heading', { level: 1 }).closest<HTMLElement>('[data-slot="page-header"]')!;
-    expect(within(header).getByText('Erase (GDPR/PDPA)…').closest('[class*="max-sm:hidden"]')).not.toBeNull();
+    const actions = [...header.querySelectorAll('a, button')].map((a) => a.textContent?.trim() || a.getAttribute('aria-label'));
+    expect(actions).toEqual([D.detail.sections.benefits, D.detail.editCta, D.detail.headerMoreActions]);
+    expect(within(header).queryByText('Erase (GDPR/PDPA)…')).toBeNull();
+    expect(within(header).queryByText('Archive member')).toBeNull();
+  });
+
+  it('Erase and Archive live in the ⋯ menu at every width', async () => {
+    await renderView();
+    const D = enMessages.admin.members;
+    const header = screen.getByRole('heading', { level: 1 }).closest<HTMLElement>('[data-slot="page-header"]')!;
     const more = within(header).getByRole('button', { name: D.detail.headerMoreActions });
-    expect(more.closest('[class*="sm:hidden"]')).not.toBeNull();
+    expect(more.closest('[class*="sm:hidden"]')).toBeNull();
     fireEvent.click(more);
     const menu = screen.getByRole('menu');
     expect(within(menu).getAllByRole('menuitem').map((i) => i.textContent?.trim())).toEqual([
-      D.erase.eraseCta,
       D.archive.archiveCta,
+      D.erase.eraseCta,
     ]);
   });
 
-  it('the phone menu follows the same gates: Erase only when archived, none for a reader', async () => {
+  it('the menu follows the same gates: Erase only when archived, none for a reader or once erased', async () => {
     const D = enMessages.admin.members;
     await renderView({ member: { ...member, status: 'archived' } as Member });
     fireEvent.click(screen.getByRole('button', { name: D.detail.headerMoreActions }));
@@ -192,13 +188,14 @@ describe('renderMemberDetailView — header (T553)', () => {
     cleanup();
     await renderView({ can: { write: false, marketing: false } });
     expect(screen.queryByRole('button', { name: D.detail.headerMoreActions })).toBeNull();
+    cleanup();
+    await renderView({ erasure: { erasedAt: new Date('2026-09-01T00:00:00Z'), completed: true } });
+    expect(screen.queryByRole('button', { name: D.detail.headerMoreActions })).toBeNull();
   });
 
-  it('an archived member keeps Erase but loses Archive and Edit', async () => {
+  it('an archived member loses Edit', async () => {
     await renderView({ member: { ...member, status: 'archived' } as Member });
     const header = screen.getByRole('heading', { level: 1 }).closest<HTMLElement>('[data-slot="page-header"]')!;
-    expect(within(header).getByText('Erase (GDPR/PDPA)…')).toBeInTheDocument();
-    expect(within(header).queryByText('Archive member')).toBeNull();
     expect(within(header).queryByRole('link', { name: enMessages.admin.members.detail.editCta })).toBeNull();
   });
 

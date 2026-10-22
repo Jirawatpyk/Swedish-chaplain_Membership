@@ -96,3 +96,29 @@ describe('MemberInvoicesSection owing flag', () => {
     expect(await owingFor({ ...invoice, ...unpaid, status: 'issued' })).toBe(true);
   });
 });
+
+// Layout B (maintainer, 22 Oct): the filter row shows only once the member
+// has more invoices than one screen of them (above 10, unfiltered).
+describe('MemberInvoicesSection filter threshold', () => {
+  const showFiltersFor = async (count: number): Promise<boolean> => {
+    rows = Array.from({ length: count }, (_, i) => ({ ...invoice, invoiceId: `i-${i}` }));
+    try {
+      const el = (await MemberInvoicesSection({
+        tenant: { slug: 't1' } as never,
+        memberId: 'm-1',
+        role: 'admin',
+      })) as ReactElement<{ showFilters: boolean }>;
+      return el.props.showFilters;
+    } finally {
+      rows = [invoice];
+    }
+  };
+
+  it('hides the filters at 10 invoices', async () => {
+    expect(await showFiltersFor(10)).toBe(false);
+  });
+
+  it('shows the filters at 11 invoices', async () => {
+    expect(await showFiltersFor(11)).toBe(true);
+  });
+});
