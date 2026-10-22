@@ -346,6 +346,15 @@ describe('<InvoiceFilters> — dueAfter and plan chips (124)', () => {
     expect(within(dueBefore).getByTestId('invoice-due-before-readout')).toHaveTextContent('2026-02-01');
   });
 
+  it('the plan row is a group named Plan holding the plan readout', () => {
+    searchParamsStub = new URLSearchParams('plan=corporate-gold&subject=membership');
+    renderWith({ planFilter: { id: 'corporate-gold', label: 'Corporate Gold' } });
+    fireEvent.click(screen.getByTestId('invoice-more-filters-trigger'));
+    const popover = screen.getByTestId('filters-popover-content');
+    const plan = within(popover).getByRole('group', { name: f.plan.label });
+    expect(within(plan).getByTestId('invoice-plan-readout')).toHaveTextContent('Corporate Gold');
+  });
+
   it('a malformed ?dueAfter, or the portal shape, renders no chip', () => {
     searchParamsStub = new URLSearchParams('dueAfter=2026-02-30');
     renderWith({});
