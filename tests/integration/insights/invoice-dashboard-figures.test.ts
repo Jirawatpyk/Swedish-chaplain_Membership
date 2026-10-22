@@ -92,7 +92,8 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
       // 2026-05-31T17:30Z is 2026-06-01 in Bangkok: it lands in June.
       expect(tiles.collectedThisMonth).toEqual({
         ...EXPECTED.collectedThisMonth,
-        range: { from: '2026-06-01', to: '2026-06-30' },
+        range: { from: '2026-06-01', to: '2026-06-15' },
+        toDate: true,
       });
     });
 
