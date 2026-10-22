@@ -60,6 +60,7 @@
  */
 import { sql, type SQL } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
+import { parseBigintColumn } from '@/lib/money';
 import { creditNotesTable, invoicesTable, invoiceTaxPointSql } from '@/modules/invoicing';
 import {
   paymentsTable,
@@ -140,10 +141,6 @@ async function rows(ctx: TenantContext, query: SQL): Promise<Row[]> {
   return runInTenant(ctx, async (tx) => (await tx.execute(query)) as unknown as Row[]);
 }
 
-function toBigInt(value: unknown): bigint {
-  return BigInt(String(value ?? 0));
-}
-
 export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   async outstandingByAgingBucket(ctx, filters, today): Promise<readonly AgingBucketTotal[]> {
     const { inv } = tables();
@@ -168,7 +165,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     );
     return result.map((r) => ({
       bucket: r.bucket as AgingBucket,
-      amountSatang: toBigInt(r.amount),
+      amountSatang: parseBigintColumn(r.amount, 'outstanding'),
       count: Number(r.n),
     }));
   },
@@ -201,7 +198,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
       FROM gross, credited, waived`,
     );
     const r = result[0] ?? {};
-    return { amountSatang: toBigInt(r.amount), invoiceCount: Number(r.n ?? 0) };
+    return { amountSatang: parseBigintColumn(r.amount, 'collected'), invoiceCount: Number(r.n ?? 0) };
   },
 
   async collectedByMethod(ctx, filters, range): Promise<readonly CollectedMethodTotal[]> {
@@ -245,7 +242,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     );
     return result.map((r) => ({
       method: r.method === null || r.method === undefined ? null : String(r.method),
-      amountSatang: toBigInt(r.amount),
+      amountSatang: parseBigintColumn(r.amount, 'collected_by_method'),
     }));
   },
 
@@ -285,8 +282,8 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     );
     return result.map((r) => ({
       monthKey: String(r.month),
-      billedSatang: toBigInt(r.billed),
-      collectedSatang: toBigInt(r.collected),
+      billedSatang: parseBigintColumn(r.billed, 'billed'),
+      collectedSatang: parseBigintColumn(r.collected, 'collected'),
     }));
   },
 
@@ -357,7 +354,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
       buyerName: r.buyer_name === null ? null : String(r.buyer_name),
       dueDate: String(r.due_date),
       daysPastDue: Number(r.days_past_due),
-      amountSatang: toBigInt(r.amount),
+      amountSatang: parseBigintColumn(r.amount, 'overdue_amount'),
     }));
   },
 };
