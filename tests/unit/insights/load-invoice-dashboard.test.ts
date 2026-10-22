@@ -207,6 +207,30 @@ describe('loadInvoiceDashboardAging', () => {
     expect(buckets[4]).toMatchObject({ amountSatang: 1_00n, count: 5 });
   });
 
+  it('each listQuery carries the active filters in the invoice-list vocabulary, so a drill-down never widens', async () => {
+    const source = stubSource();
+    const planOnly = await loadInvoiceDashboardAging(
+      ctx,
+      input({ filters: { type: 'all', fiscalYear: 2026, planId: 'gold', origin: 'all' } }),
+      deps(source),
+    );
+    expect(planOnly.ok).toBe(true);
+    if (!planOnly.ok) return;
+    // `all` and a null plan are absent, never `undefined` keys.
+    expect(planOnly.value.buckets[1]?.listQuery).toEqual({
+      status: 'overdue',
+      dueAfter: '2026-05-16',
+      dueBefore: '2026-06-15',
+      plan: 'gold',
+    });
+    const every = await loadInvoiceDashboardAging(ctx, input(), deps(source));
+    expect(every.ok).toBe(true);
+    if (!every.ok) return;
+    for (const b of every.value.buckets) {
+      expect(b.listQuery).toMatchObject({ subject: 'membership', plan: 'gold', origin: 'manual' });
+    }
+  });
+
   it('shares sum to exactly 100 when amounts do not divide evenly', async () => {
     const source = stubSource({
       outstandingByAgingBucket: vi.fn().mockResolvedValue([
