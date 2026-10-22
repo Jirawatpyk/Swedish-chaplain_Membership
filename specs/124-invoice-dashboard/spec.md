@@ -20,7 +20,7 @@ Done when:
 - The aging card shows five rows (Not yet due, 1–30, 31–60, 61–90, Over 90 days) whose amounts add to Outstanding and whose shares add to 100% (a non-zero share under 1% reads `<1%`).
 - Collected this month is the current Bangkok calendar month on the **document basis** (§ Figure definitions), whatever fiscal year is selected; its caption says "as of today · all fiscal years".
 - Collected in {FY} is the same over the selected fiscal year ("to date" only for the current FY); By payment method splits it into bank transfer, PromptPay, card, cheque, cash, other, the rows add up to the tile, and a Stripe-paid invoice is counted as card or PromptPay, never other, and once only.
-- Needs attention shows five counts: manual drafts not issued, auto-renewal drafts awaiting review, receipt PDF failed, refunds failed at Stripe (latest attempt per payment failed with `stripe_refund_%`, no later succeeded or pending attempt), and refunds pending at Stripe for more than 3 days (`status = 'pending'` older than the stale-refund sweep's escalation age, D-k).
+- Needs attention shows five counts: manual drafts not issued, auto-renewal drafts awaiting review, receipt PDF failed, refunds failed at Stripe (payments with a `failed` refund whose code is `stripe_refund_%` and no later `succeeded` or `pending` attempt, each payment counted once), and refunds pending at Stripe for more than 3 days (`status = 'pending'` older than the stale-refund sweep's escalation age, D-k).
 - Oldest overdue lists the overdue set longest past due first (ties by amount, then document number), each row with a Record payment… button that opens the existing dialog; after success the figures refresh and focus moves to the next row's button (or the card title when the list empties).
 
 ### US2 — Every figure drills into the list it summarises (P1)
@@ -101,7 +101,7 @@ Decisions 1–10 of the design spec stand. Added in this session (22 Oct 2026):
 |---|---|---|
 | refunds `status = 'completed'` | `pending \| succeeded \| failed` (`src/modules/payments/domain/refund.ts:35`) | D-d: only waived `succeeded` refunds are subtracted; credited ones are covered by their credit note |
 | Collected = receipts less refunds | a refund with an `invoice_voided` waiver sits on a void invoice never counted in (`refund-credit-note-requirement.ts:38`); an offline refund leaves only a manual credit note (`refunds.payment_id` NOT NULL) | D-d document basis |
-| refunds "failed at Stripe" | `failed` + `f4_bridge_%` means Stripe paid out but booking failed (`drizzle-refunds-repo.ts:546`); `failed` is terminal and a retry is a new row | two attention rows; count by latest attempt |
+| refunds "failed at Stripe" | `failed` + `f4_bridge_%` means Stripe paid out but booking failed (`drizzle-refunds-repo.ts:546`); `failed` is terminal and a retry is a new row | attention counts payments with a Stripe-failed refund and no later succeeded or pending attempt; row 5 became D-k |
 | one payment method per invoice | `payments_one_active_per_invoice` (0033:166) does not cover `refunded` | `DISTINCT ON (invoice_id)` + a two-row integration test |
 | auto-refunded payments might double-subtract | `confirm-payment` auto-refunds create **no** `refunds` row (`process-charge-refunded.ts:297`) | nothing to exclude |
 | home revenue chart still on paid date (design spec follow-up) | moved to payment date by #596 | follow-up dropped; the charts still differ: home is ex-VAT, nets credit notes into the paid month, and falls back to `issue_date` |
