@@ -268,12 +268,9 @@ describe('loadInvoiceDashboardOldestOverdue', () => {
     const result = await loadInvoiceDashboardOldestOverdue(ctx, input(), deps(source));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(source.oldestOverdue).toHaveBeenCalledWith(
-      ctx,
-      FILTERS,
-      '2026-06-15',
-      OLDEST_OVERDUE_DEFAULT_LIMIT,
-    );
+    // Spec US1: "Oldest overdue (6 rows)".
+    expect(OLDEST_OVERDUE_DEFAULT_LIMIT).toBe(6);
+    expect(source.oldestOverdue).toHaveBeenCalledWith(ctx, FILTERS, '2026-06-15', 6);
     expect(result.value).toEqual({ rows: [row], canRecordPayment: true });
   });
 
@@ -283,11 +280,12 @@ describe('loadInvoiceDashboardOldestOverdue', () => {
       ctx,
       input({ canWrite: false }),
       deps(source),
-      6,
+      3,
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(source.oldestOverdue).toHaveBeenCalledWith(ctx, FILTERS, '2026-06-15', 6);
+    // 3: the phone's count (plan.md), distinct from the default.
+    expect(source.oldestOverdue).toHaveBeenCalledWith(ctx, FILTERS, '2026-06-15', 3);
     expect(result.value.canRecordPayment).toBe(false);
   });
 
@@ -296,9 +294,10 @@ describe('loadInvoiceDashboardOldestOverdue', () => {
     await loadInvoiceDashboardOldestOverdue(ctx, input(), deps(source), 0);
     await loadInvoiceDashboardOldestOverdue(ctx, input(), deps(source), 1.5);
     await loadInvoiceDashboardOldestOverdue(ctx, input(), deps(source), 51);
-    for (const call of vi.mocked(source.oldestOverdue).mock.calls) {
-      expect(call[3]).toBe(OLDEST_OVERDUE_DEFAULT_LIMIT);
-    }
+    await loadInvoiceDashboardOldestOverdue(ctx, input(), deps(source), 50);
+    await loadInvoiceDashboardOldestOverdue(ctx, input(), deps(source), 1);
+    // Out of range → the default (6); the 1–50 bounds themselves are kept.
+    expect(vi.mocked(source.oldestOverdue).mock.calls.map((c) => c[3])).toEqual([6, 6, 6, 50, 1]);
   });
 });
 
