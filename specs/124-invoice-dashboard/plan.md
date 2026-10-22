@@ -84,7 +84,15 @@ Each slice is cut from `origin/main` after the previous one merged, in a short `
 
 ## Evidence
 
-(one line per Done-when line, added per slice)
+### Slice 1 (2026-10-22, branch `124-invoice-dashboard-s1`, after merging `origin/main` with AURA 5.54)
+
+- **US2.3 `dueAfter`** — RED `ddd6b1ebb`: 5 new integration cases failed (`expected [ …(3) ] to deeply equal [ …(2) ]` and similar), unit schema / helper / chip tests failed; GREEN `2995dce45`: `tests/integration/invoicing/list-invoices-origin-filter.test.ts` 12/12 on the Neon dev branch (inclusive edge 2026-01-01, half-open range `[2025-08-16, 2026-01-02)` → only the 2026-01-01 bill, drafts excluded). Browser on the branch server: `?status=overdue&dueAfter=2026-01-01&dueBefore=2026-03-01` → 200, chips "Due from 2026-01-01" + "Due before 2026-03-01" + Clear filters; `?dueAfter=2026-02-30` → 200, no chip, unfiltered (60 results).
+- **US2.4 `plan`** — same RED / GREEN commits; integration `planId` cases pass (only that plan's invoices; composes with `dueAfter` and derived overdue). Browser: `?plan=diamond` → chip "Plan: Diamond Partnership"; TH "แผน: พาร์ทเนอร์ระดับเพชร"; `?plan=no-such-plan` → 200, no chip. Manager sees the same chips.
+- **D-023 UI commit** `b8268f791` (Clear filters counts `dueAfter` / `plan`, not an absent date): failing run first — "dueAfter alone, or a plan alone, still offers Clear filters" → `Unable to find role button "Clear filters"`; the regression it closes was caught by `tests/unit/app/portal/invoices/invoice-filters-props.test.tsx` (2 failures in the first coverage run, passing again after the fix; the same file passes 14/14 against `main`'s component).
+- **Gates**: `pnpm check` exit 0; `pnpm test:coverage` 1763/1763 files, exit 0; `pnpm vitest run tests/contract/` 254/254 files; typecheck 0.
+- **e2e (branch server on :3401, attach config, workers 1)**: `invoice-admin-a11y` chromium 2/2, mobile-chrome 2/2; `admin-payment-reconciliation-view` chromium 4/4, mobile-chrome 4/4.
+- **UI probes**: 320 px phone with three chips → `innerWidth` 320, `scrollWidth` 305; EN and TH render with no `MISSING_MESSAGE`.
+- **Unflagged behaviours (slice 1)**: `?dueAfter=` and `?plan=` on `/admin/invoices` for admin and manager; both additive and read-only.
 
 ## Rollout
 
