@@ -309,7 +309,7 @@ AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `to
   - Body buttons AURA does not cover gain `touchHeight`: the preview width toggles and the invoice form rows.
   - The guard flips: it refuses a `touchHeight` stand-in where AURA sizes the button, and any container `w-full` stretch.
 - **Kept, deliberately:**
-  - The `.eblast-detail-actions` CSS: it also lays out the wrapping row, not only the height.
+  - The `.eblast-detail-actions` layout CSS (the wrapping row, `height: auto` and `white-space: normal` for a wrapped label). Its own `min-height: 2.75rem` came out later; see "E-Blast bar consistency" below.
 - **RED** (commit `10f0ab703`, guard only): 2 failed, 4 passed (both positive controls held).
   - "no Button in a Dialog/Drawer footer or an ActionBar carries touchHeight" → 88 hits, for example `src/components/shell/confirmation-dialog.tsx:166`, `src/app/(staff)/admin/members/_components/bulk-action-bar.tsx:440`.
   - "no AURA Button or buttonClass stretches with a w-full class, on itself or from its container" → 6 hits: `event-detail-view.tsx:117`, `refund-form.tsx:692`, `credit-note-form.tsx:452`, `void-confirm-dialog.tsx:262`, `csv-mapping-form.tsx:1223`, `webhook-config-wizard.tsx:242`.
@@ -325,3 +325,7 @@ AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `to
   - The invoice-settings save bar dropped its `min-h-11` as well: the ActionBar gives 44px below 640px. 088 FR-036 asks for touch targets of at least 44px and a reachable Save at 320px. The earlier note that it meant "44px at every width" was wrong.
   - The Save shown while nothing has changed (in the form body) moves from `min-h-11 max-sm:w-full` to `fullWidth="below-sm"`.
   - Failing run first (D-023 UI, shared commit): `invoice-settings-discard.test.tsx` › "is an AURA Button…" and `invoice-settings-form.test.tsx` › "the primary Save button…" both gave `expect(element).not.toHaveClass("min-h-11")`.
+- **E-Blast bar consistency (maintainer, 22 Oct).**
+  - `globals.css`: the two `min-height: 2.75rem` lines on the E-Blast detail bar's buttons came out (the next step, and Reject in the design state). AURA 5.54's ActionBar rule reaches them in `children` and in `start`. The layout rules stay: wrap, `height: auto` so a wrapped label grows the button, and `white-space: normal`.
+  - `detail-action-bar.tsx`: the dead `touchHeight` on `ActionBar` came out. It sizes only the bar's own Clear button, and this bar has no `onClearSelection`.
+  - Failing run first (D-023 UI, shared commit): `eblast-detail-actions-css.test.ts` › "keeps Reject · next step · ⋯ on one line…" and "leaves the 44px minimum to AURA…" both gave `AssertionError: expected '.eblast-detail-actions > div …' not to match /min-height/`.

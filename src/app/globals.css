@@ -370,7 +370,9 @@ html:has(.chamber-viewport-actionbar) {
     flex-wrap: nowrap;
     min-width: 0;
   }
-  /* Approve sits inside ReviewActions' wrapper: it stretches too. */
+  /* Approve sits inside ReviewActions' wrapper: it stretches too. A wrapped
+     label grows the button (`height: auto`); AURA 5.54 keeps it at least
+     44px, as on every other bar (#166). */
   .eblast-detail-actions > div > :last-child > div {
     flex: 1 1 auto;
     min-width: 0;
@@ -380,7 +382,6 @@ html:has(.chamber-viewport-actionbar) {
     flex: 1 1 auto;
     min-width: 0;
     height: auto;
-    min-height: 2.75rem;
     white-space: normal;
   }
   /* Design state: ⋯ is the end's only control, so Reject takes the free
@@ -401,7 +402,6 @@ html:has(.chamber-viewport-actionbar) {
     flex: 1 1 auto;
     min-width: 0;
     height: auto;
-    min-height: 2.75rem;
     white-space: normal;
   }
   html:has(.eblast-detail-actions) {
