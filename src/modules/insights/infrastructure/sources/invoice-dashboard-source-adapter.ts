@@ -298,8 +298,13 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     // `stripe_refund_%` failures has no LATER succeeded or pending attempt
     // (initiated_at, created_at, id — the order the latest attempt is chosen by).
     // A later failure of another kind does not clear it.
-    // Row 5 (D-k) also counts legacy `failed` + `f4_bridge_%` refunds: Stripe
-    // paid out, the credit note was never booked, nothing was subtracted.
+    // Row 5 (D-k) also counts legacy `failed` + `f4_bridge_%` refunds that
+    // carry a `processor_refund_id` — the payments module's settled-unbooked
+    // shape (`drizzle-refunds-repo.ts`): Stripe paid out, the credit note was
+    // never booked, nothing was subtracted. A failed row can carry neither a
+    // credit note nor a waiver (CHECK `refunds_succeeded_iff_documented`), and
+    // the out-of-band runbook reconciles with a credit note on the INVOICE, so
+    // such a row stays counted after reconciliation.
     // Receipt PDF failed: `paid` invoices only — the receipt worker
     // (`render-receipt-pdf.ts`) re-renders no other status, so a credited or
     // voided invoice's stale failure is no receipt anyone can re-render.
@@ -331,7 +336,8 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
           )::int AS refunds_failed_at_stripe,
           COUNT(*) FILTER (
             WHERE (${rf.status} = 'pending' AND ${rf.initiatedAt} < ${pendingBefore}::timestamptz)
-               OR (${rf.status} = 'failed' AND ${rf.failureReasonCode} LIKE 'f4_bridge_%')
+               OR (${rf.status} = 'failed' AND ${rf.processorRefundId} IS NOT NULL
+                   AND ${rf.failureReasonCode} LIKE 'f4_bridge_%')
           )::int AS refunds_pending_over_threshold
         FROM ${refundsJoin(t)}
           AND ${rf.status} IN ('failed', 'pending')${scope}
