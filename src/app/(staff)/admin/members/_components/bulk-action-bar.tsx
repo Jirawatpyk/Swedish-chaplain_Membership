@@ -11,8 +11,14 @@
  * padding tracks its height so a focused row is never hidden behind it
  * (ADOPT-01 / WCAG 2.2 SC 2.4.11).
  *
- * Cap enforcement: if > 100 rows are selected, the action buttons are
- * disabled with a message instructing the admin to split the operation.
+ * Cap enforcement: if > 100 rows are selected, the action buttons and menu
+ * items are disabled with a message instructing the admin to split the
+ * operation.
+ *
+ * Send invite and Send renewal reminder stay on the bar; Enrol, Stop
+ * auto-invoicing and Archive sit in its ⋯ menu, so the bar keeps one row
+ * below 1440px (maintainer, 22 Oct). A dialog opened from the menu takes the
+ * ⋯ trigger as its trigger for focus-on-close.
  *
  * Focus-on-close (107-auto-invoice Task 15 review, UX-1). EVERY successful
  * bulk action removes the bar's actions from the DOM: `executeBulk` calls
@@ -55,7 +61,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ActionBar, AuraProvider, Button } from '@jirawatpyk/aura-react';
+import { ActionBar, AuraProvider, Button, DropdownMenu, IconButton, type MenuItem } from '@jirawatpyk/aura-react';
 import { ArchiveIcon, BellIcon, FileTextIcon, FileMinusIcon, MailIcon } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import { ArchiveConfirmDialog } from './archive-confirm-dialog';
@@ -126,6 +132,10 @@ export function BulkActionBar({
   // `closedViaSuccessRef` has to be reset on dialog OPEN.
   const lastTriggerRef = useRef<HTMLButtonElement | null>(null);
   const closedViaSuccessRef = useRef<boolean>(false);
+  // Enrol, Stop auto-invoicing and Archive sit in the bar's ⋯ menu, so the
+  // bar keeps one row below 1440px (maintainer, 22 Oct). A dialog opened from
+  // the menu returns focus to ⋯: the menu item is gone once the menu closes.
+  const moreRef = useRef<HTMLButtonElement | null>(null);
   const finalFocus = useDialogFinalFocus(
     lastTriggerRef,
     undefined,
@@ -402,6 +412,46 @@ export function BulkActionBar({
     [t],
   );
 
+  // Opens a dialog from the ⋯ menu, on the same focus refs as the buttons.
+  // Over the cap the items say why they are dimmed: the bar's alert was
+  // announced when the rows were selected, not when the menu opens.
+  const overCapReason = overCap ? { disabledReason: t('overCap', { max: BULK_CAP }) } : {};
+  const openFromMenu = (open: (next: boolean) => void) => () => {
+    lastTriggerRef.current = moreRef.current;
+    closedViaSuccessRef.current = false;
+    open(true);
+  };
+  // 107-auto-invoice Tasks 15 and 18 — Enrol only turns ON a billing
+  // preference and Stop only stops FUTURE drafts, so neither is destructive.
+  // FileTextIcon, NOT a receipt icon: Enrol drafts an INVOICE (ใบแจ้งหนี้),
+  // and invoice/receipt/tax-invoice are legally distinct documents in Thai
+  // tax law. Archive is the one destructive action, last and apart.
+  const moreItems: MenuItem[] = [
+    {
+      label: t('actions.enrol_auto_invoice'),
+      icon: <FileTextIcon aria-hidden="true" />,
+      disabled: overCap,
+      ...overCapReason,
+      onSelect: openFromMenu(setEnrolDialogOpen),
+    },
+    {
+      label: t('actions.unenrol_auto_invoice'),
+      icon: <FileMinusIcon aria-hidden="true" />,
+      disabled: overCap,
+      ...overCapReason,
+      onSelect: openFromMenu(setUnenrolDialogOpen),
+    },
+    { separator: true },
+    {
+      label: t('actions.archive'),
+      icon: <ArchiveIcon aria-hidden="true" />,
+      tone: 'danger',
+      disabled: overCap,
+      ...overCapReason,
+      onSelect: openFromMenu(setArchiveDialogOpen),
+    },
+  ];
+
   return (
     <>
       <AuraProvider strings={barStrings}>
@@ -439,22 +489,6 @@ export function BulkActionBar({
           {visible && (
             <>
               <Button
-                variant="danger-secondary"
-                size="sm"
-                icon={<ArchiveIcon aria-hidden="true" />}
-                disabled={overCap}
-                onClick={(e) => {
-                  lastTriggerRef.current = e.currentTarget;
-                  // "How did THIS dialog close" — reset on OPEN so Cancel/ESC
-                  // after an earlier SUCCESS still returns focus to the
-                  // trigger. The fiber (and this ref) survives the idle bar.
-                  closedViaSuccessRef.current = false;
-                  setArchiveDialogOpen(true);
-                }}
-              >
-                {t('actions.archive')}
-              </Button>
-              <Button
                 variant="secondary"
                 size="sm"
                 icon={<MailIcon aria-hidden="true" />}
@@ -466,41 +500,6 @@ export function BulkActionBar({
                 }}
               >
                 {t('actions.send_portal_invite')}
-              </Button>
-              {/* 107-auto-invoice Task 15 — non-destructive (it only turns ON
-                  a billing preference), so a secondary button + the generic
-                  ConfirmationDialog, like the invite button.
-                  FileTextIcon, NOT a receipt icon: this action drafts an
-                  INVOICE (ใบแจ้งหนี้), and invoice/receipt/tax-invoice are
-                  legally distinct documents in Thai tax law. */}
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<FileTextIcon aria-hidden="true" />}
-                disabled={overCap}
-                onClick={(e) => {
-                  lastTriggerRef.current = e.currentTarget;
-                  closedViaSuccessRef.current = false;
-                  setEnrolDialogOpen(true);
-                }}
-              >
-                {t('actions.enrol_auto_invoice')}
-              </Button>
-              {/* 107-auto-invoice Task 18 — the off switch for the button
-                  above. Not destructive: it destroys no data and issues no
-                  document; it only stops FUTURE drafts being prepared. */}
-              <Button
-                variant="secondary"
-                size="sm"
-                icon={<FileMinusIcon aria-hidden="true" />}
-                disabled={overCap}
-                onClick={(e) => {
-                  lastTriggerRef.current = e.currentTarget;
-                  closedViaSuccessRef.current = false;
-                  setUnenrolDialogOpen(true);
-                }}
-              >
-                {t('actions.unenrol_auto_invoice')}
               </Button>
               {/* #4 members-ux — send a renewal reminder (best-effort per
                   member), on the same finalFocus refs as the other four. */}
@@ -517,6 +516,13 @@ export function BulkActionBar({
               >
                 {t('actions.send_renewal_reminder')}
               </Button>
+              <DropdownMenu
+                label={t('moreActions')}
+                items={moreItems}
+                trigger={
+                  <IconButton ref={moreRef} icon="ellipsis" label={t('moreActions')} variant="outline" touchHeight />
+                }
+              />
             </>
           )}
         </ActionBar>

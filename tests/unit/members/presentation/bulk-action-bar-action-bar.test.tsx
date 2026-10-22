@@ -9,7 +9,7 @@
  * selection is announced.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 
@@ -57,15 +57,31 @@ describe('BulkActionBar on AURA ActionBar (T504)', () => {
     expect(region).toHaveClass('aura-actionbar');
     expect(region).not.toHaveClass('is-idle');
     expect(region).toHaveTextContent('2 selected');
-    for (const action of [
-      BULK.actions.archive,
+    // The two sends stay on the bar; the rest sit in its ⋯ menu, so the bar
+    // keeps one row below 1440px (maintainer, 22 Oct).
+    expect(within(region).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual([
+      BULK.clear,
       BULK.actions.send_portal_invite,
+      BULK.actions.send_renewal_reminder,
+      BULK.moreActions,
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: BULK.moreActions }));
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
       BULK.actions.enrol_auto_invoice,
       BULK.actions.unenrol_auto_invoice,
-      BULK.actions.send_renewal_reminder,
-      BULK.clear,
-    ]) {
-      expect(screen.getByRole('button', { name: action })).toBeInTheDocument();
+      BULK.actions.archive,
+    ]);
+  });
+
+  it('over the cap, the menu items are disabled like the buttons', () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `${String(i).padStart(8, '0')}-2222-3333-4444-555555555555`);
+    renderBar(ids);
+    expect(screen.getByRole('button', { name: BULK.actions.send_portal_invite })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: BULK.moreActions }));
+    for (const item of screen.getAllByRole('menuitem')) {
+      expect(item).toHaveAttribute('aria-disabled', 'true');
+      // The reason is read with the item, since the bar's alert was announced at selection time.
+      expect(item).toHaveAccessibleDescription(BULK.overCap.replace('{max}', '100'));
     }
   });
 
@@ -75,9 +91,13 @@ describe('BulkActionBar on AURA ActionBar (T504)', () => {
   it('every control is an AURA button in the bar; the actions are sized by AURA (no touchHeight)', () => {
     renderBar(['11111111-2222-3333-4444-555555555555']);
     const region = screen.getByRole('region', { name: BULK.toolbarLabel });
-    const [clear, ...actions] = within(region).getAllByRole('button');
+    const [clear, ...rest] = within(region).getAllByRole('button');
     expect(clear).toHaveTextContent(BULK.clear);
     expect(clear).toHaveClass('aura-btn--touch');
+    const more = screen.getByRole('button', { name: BULK.moreActions });
+    // The ⋯ sits inside DropdownMenu, past AURA's bar rule for IconButtons, so it carries touchHeight.
+    expect(more).toHaveClass('aura-icon-btn', 'aura-icon-btn--touch');
+    const actions = rest.filter((b) => b !== more);
     expect(actions.length).toBeGreaterThan(0);
     for (const button of actions) {
       expect(button).toHaveClass('aura-btn');
