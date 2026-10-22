@@ -179,7 +179,7 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
   });
 
   describe('Needs attention', () => {
-    it('five counts; refunds failed at Stripe by the latest attempt per payment; refunds pending past 3 days (D-k)', async () => {
+    it('five counts; refunds failed at Stripe once per payment with no later succeeded or pending attempt; refunds pending past 3 days (D-k)', async () => {
       const attention = unwrap(await loadInvoiceDashboardAttention(tenant.ctx, input(), deps));
       expect(attention).toEqual({
         receiptPdfFailed: EXPECTED.attention.receiptPdfFailed,
@@ -277,7 +277,8 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
       });
       expect(unwrap(await loadInvoiceDashboardAttention(tenant.ctx, i, deps))).toEqual({
         receiptPdfFailed: 1,
-        refundsFailedAtStripe: 1,
+        // payX and payZ are both on gold invoices.
+        refundsFailedAtStripe: 2,
         // payY's pending attempt is on a gold invoice.
         refundsPendingOverThreshold: 1,
         drafts: { manual: 1, autoRenewal: 1 },

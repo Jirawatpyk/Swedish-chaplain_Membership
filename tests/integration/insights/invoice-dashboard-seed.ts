@@ -458,15 +458,16 @@ export async function seedInvoiceDashboardScenario(
     status: 'failed', amount: 100_000, initiatedAt: '2026-05-21T02:00:00Z',
     completedAt: '2026-05-21T03:00:00Z', failureReasonCode: 'f4_bridge_error',
   });
-  // X: latest attempt failed at Stripe → counted.
+  // X: two attempts failed at Stripe, none succeeded or pending after them →
+  // counted ONCE (a payment is one item, not one per attempt).
   refund('payX', 'aX', { status: 'failed', amount: 10_000, initiatedAt: '2025-08-02T03:00:00Z', completedAt: '2025-08-02T04:00:00Z', failureReasonCode: 'stripe_refund_failed' });
   refund('payX', 'aX', { status: 'failed', amount: 10_000, initiatedAt: '2025-08-03T03:00:00Z', completedAt: '2025-08-03T04:00:00Z', failureReasonCode: 'stripe_refund_canceled' });
   // Y: a later attempt is pending → not counted as failed at Stripe; that
   // pending attempt (2025-08-04, far past 3 days before NOW) is row 5's one.
   refund('payY', 'aY', { status: 'failed', amount: 10_000, initiatedAt: '2025-08-02T03:00:00Z', completedAt: '2025-08-02T04:00:00Z', failureReasonCode: 'stripe_refund_failed' });
   refund('payY', 'aY', { status: 'pending', amount: 10_000, initiatedAt: '2025-08-04T03:00:00Z' });
-  // Z: the latest attempt failed with a gateway refusal ('permanent'), not
-  // `stripe_refund_%` → not counted under the spec's predicate.
+  // Z: a Stripe failure, then a later gateway refusal ('permanent'): no later
+  // attempt succeeded or is pending, so the Stripe failure still counts (US1).
   refund('payZ', 'aZ', { status: 'failed', amount: 10_000, initiatedAt: '2025-08-02T03:00:00Z', completedAt: '2025-08-02T04:00:00Z', failureReasonCode: 'stripe_refund_failed' });
   refund('payZ', 'aZ', { status: 'failed', amount: 10_000, initiatedAt: '2025-08-05T03:00:00Z', completedAt: '2025-08-05T04:00:00Z', failureReasonCode: 'permanent' });
   // W: a later attempt succeeded → not counted.
@@ -609,7 +610,8 @@ export const EXPECTED = {
     manualDrafts: 2,
     autoRenewalDrafts: 1,
     receiptPdfFailed: 1,
-    refundsFailedAtStripe: 1,
+    // payX and payZ; not payY (later pending) nor payW (later succeeded).
+    refundsFailedAtStripe: 2,
     // payY's pending attempt (gold); pF4's failed f4_bridge_% refund is not counted.
     refundsPendingOverThreshold: 1,
   },
