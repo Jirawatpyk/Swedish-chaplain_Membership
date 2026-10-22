@@ -25,6 +25,9 @@ import {
   listInvoices,
   makeListInvoicesDeps,
   computeIsOverdue,
+  creditNotesTable,
+  invoicesTable,
+  invoiceTaxPointSql,
 } from '@/modules/invoicing';
 import { directorySearchWithCount } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
@@ -32,6 +35,8 @@ import { makeBroadcastApprovalCounter } from '@/modules/broadcasts';
 import {
   listWaivedRefundTotalsByInvoice,
   makeListWaivedRefundTotalsByInvoiceDeps,
+  paymentsTable,
+  refundsTable,
 } from '@/modules/payments';
 
 // The F9 adapters under contract + the F9-owned ports they must satisfy.
@@ -142,6 +147,24 @@ describe('F9 inter-module boundary contract [T017a / analyze R2-M1]', () => {
     it('waivedRefundSourceAdapter satisfies the port', () => {
       const port: WaivedRefundSource = waivedRefundSourceAdapter;
       expect(typeof port.sumWaivedByInvoice).toBe('function');
+    });
+  });
+
+  // 124 slice 2 — the invoice dashboard aggregates in SQL, one query per card,
+  // over the four money tables. Infra-to-infra schema sharing goes through the
+  // owning barrels (payments/index.ts § paymentsTable), and the §78/1 tax point
+  // is the register's own expression, never a second copy.
+  describe('invoicing + payments barrels → invoice dashboard (124)', () => {
+    it('exports the four tables the dashboard adapter reads', () => {
+      for (const table of [invoicesTable, creditNotesTable, paymentsTable, refundsTable]) {
+        expect(typeof table).toBe('object');
+        expect(typeof table.tenantId).toBe('object');
+      }
+    });
+
+    it('exports the tax-point expression as SQL', () => {
+      expect(typeof invoiceTaxPointSql).toBe('object');
+      expect(typeof invoiceTaxPointSql.getSQL).toBe('function');
     });
   });
 
