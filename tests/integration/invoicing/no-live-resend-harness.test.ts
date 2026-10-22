@@ -6,6 +6,7 @@
  * mock is in force for a suite that does not mock the sender itself. It
  * lives in `invoicing/` so the nightly rotation sweeps it.
  */
+import { Resend } from 'resend';
 import { describe, expect, it, vi } from 'vitest';
 import { emailSender } from '@/modules/auth/infrastructure/email/resend-client';
 
@@ -22,5 +23,19 @@ describe('integration harness: no live transactional email', () => {
       ok: true,
       value: { messageId: expect.stringMatching(/^integration-mock-/) },
     });
+  });
+
+  it('a Resend client built directly (the F8 renewal gateway) sends through the fake', async () => {
+    const client = new Resend('re_harness_check');
+    // Checked before sending, so a regression fails without a live call.
+    expect(vi.isMockFunction(client.emails.send)).toBe(true);
+    const response = await client.emails.send({
+      from: 'harness@swecham.test',
+      to: 'no-live-resend@swecham.test',
+      subject: 'harness check',
+      text: 'harness check',
+    });
+    expect(response).toMatchObject({ data: { id: expect.stringMatching(/^integration-mock-/) }, error: null });
+    expect(typeof client.broadcasts.create).toBe('function');
   });
 });

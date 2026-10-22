@@ -23,6 +23,24 @@ vi.mock('@/modules/auth/infrastructure/email/resend-client', () => ({
     })),
   },
 }));
+// Senders that build their own client (the F8 renewal gateway) go through the
+// SDK directly: replace `emails.send` / `batch.send` on every `Resend`, and
+// keep the rest of the SDK (Broadcasts, contacts) as it is.
+vi.mock('resend', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('resend')>();
+  const fakeSend = vi.fn(async () => ({
+    data: { id: `integration-mock-${crypto.randomUUID()}` },
+    error: null,
+  }));
+  class Resend extends actual.Resend {
+    constructor(...args: ConstructorParameters<typeof actual.Resend>) {
+      super(...args);
+      Object.assign(this.emails, { send: fakeSend });
+      Object.assign(this.batch, { send: fakeSend });
+    }
+  }
+  return { ...actual, Resend };
+});
 
 // Pin STRIPE_API_VERSION for F5 webhook integration tests so the
 // fixture `api_version: '2024-06-20'` in tests/integration/payments/*
