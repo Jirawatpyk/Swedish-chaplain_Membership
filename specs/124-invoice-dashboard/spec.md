@@ -1,7 +1,7 @@
 # 124 — Invoice dashboard (`/admin/finance`)
 
 **Size**: L (insights + payments + invoicing list + renewals count; money figures; a migration; a new flag; an RBAC gate).
-**Status**: spec agreed with the maintainer; plan approved 22 Oct 2026; slices 1–3 not built.
+**Status**: spec agreed with the maintainer; plan approved 22 Oct 2026; slice 1 merged (#617, 22 Oct); slice 2 (loaders, migration 0318) built 23 Oct; slice 3 (the page) not built.
 **Sources**: the maintainer's design spec "Invoice dashboard — design spec" (Claude Docs, rev 19, decisions 1–10 of 19 and 22 Oct 2026) and the 7 `Admin-finance*` boards on the "Chamber-OS Portal — Aura" canvas (page `finance`). Where this file and the design spec disagree, this file wins: its § Premises records each correction made against the code.
 
 ## Summary
@@ -20,7 +20,7 @@ Done when:
 - The aging card shows five rows (Not yet due, 1–30, 31–60, 61–90, Over 90 days) whose amounts add to Outstanding and whose shares add to 100% (a non-zero share under 1% reads `<1%`).
 - Collected this month is the current Bangkok calendar month on the **document basis** (§ Figure definitions), from the 1st to today, whatever fiscal year is selected; its caption says "{Month} to date · not affected by the fiscal-year filter".
 - Collected in {FY} is the same over the selected fiscal year ("to date" only for the current FY); By payment method splits it into bank transfer, PromptPay, card, cheque, cash, other, the rows add up to the tile, and a Stripe-paid invoice is counted as card or PromptPay, never other, and once only.
-- Needs attention shows five counts: manual drafts not issued, auto-renewal drafts awaiting review, receipt PDF failed, refunds failed at Stripe (payments with a `failed` refund whose code is `stripe_refund_%` and no later `succeeded` or `pending` attempt, each payment counted once), and refunds pending at Stripe for more than 3 days (`status = 'pending'` older than the stale-refund sweep's escalation age, D-k).
+- Needs attention shows five counts: manual drafts not issued, auto-renewal drafts awaiting review, receipt PDF failed on a paid invoice (`paid`, `partially_credited`, `credited` — the only states the worker re-renders), refunds failed at Stripe (payments with a `failed` refund whose code is `stripe_refund_%` and no later `succeeded` or `pending` attempt, each payment counted once), and refunds pending at Stripe for more than 3 days (`status = 'pending'` older than the stale-refund sweep's escalation age, D-k).
 - Oldest overdue lists the overdue set longest past due first (ties by amount, then document number), each row with a Record payment… button that opens the existing dialog; after success the figures refresh and focus moves to the next row's button (or the card title when the list empties).
 
 ### US2 — Every figure drills into the list it summarises (P1)
@@ -41,7 +41,7 @@ Done when:
 - Each filter applies on pick, writes the URL (`type`, `fy`, `plan`, `origin`), and shows a chip; Clear all resets them; the default FY shows no chip.
 - Picking a Plan sets Invoice type to Membership and both chips show; with Invoice type = Events the Plan filter is hidden and any `plan` param is dropped.
 - As-of-today figures (Outstanding, Overdue, Collected this month, aging, Oldest overdue, Needs attention) ignore `fy` but follow type, plan and origin (Needs attention's caption says "under these filters" when any is set); Collected this year, the trend chart and By payment method follow it, and their captions start with the FY label.
-- An unknown plan or an FY outside the list falls back to the default without an error page.
+- An FY outside the list falls back to the current FY, and an unknown value of type or origin to All, without an error page; a well-formed but unknown plan id still filters (D-i), so the dashboard and the list it links to show the same nothing rather than different everythings.
 - Filtered to nothing, each card shows its own zero with "No invoices match these filters"; the page-level empty state never shows.
 
 ### US4 — Manager reads, never acts (P1)
@@ -64,7 +64,7 @@ Done when:
 - The 7 boards match at 390 and 1280 px in light and dark.
 - Each chart has an sr-only ChartDataTable and an `aria-hidden` drawing; card titles are h2 under the page h1; touch targets are 44 px below 640 px or on a coarse pointer; the `@a11y` axe scan passes in light and dark.
 - EN, TH and SV render with no missing key; TH shows the Buddhist year for display only.
-- Each dashboard query runs ≤ 150 ms p95 on the Neon dev branch (measured as D-h); recharts is out of first-load JS; `/admin/finance` has a bundle budget.
+- Each dashboard query runs ≤ 150 ms p95 on the Neon dev branch (server time, D-j); recharts is out of first-load JS; `/admin/finance` has a bundle budget.
 - Tenant B's invoices, payments and refunds never appear in tenant A's figures (cross-tenant integration test, Principle I).
 
 ## Figure definitions

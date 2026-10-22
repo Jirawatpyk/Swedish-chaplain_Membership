@@ -61,7 +61,7 @@ Each slice is cut from `origin/main` after the previous one merged, in a short `
 | US4.1 manager projection drops draft rows and actions | loader test | unit |
 | US6.5 tenant B never in tenant A figures | `tests/integration/insights/invoice-dashboard-cross-tenant.test.ts` | integration |
 | new adapter and barrel symbols | `tests/contract/insights/source-adapters-boundary.contract.test.ts` | contract |
-| US6.4 each query ≤ 150 ms p95 (D-h) | measured, numbers in § Evidence | perf |
+| US6.4 each query ≤ 150 ms p95 server time (D-j) | measured, numbers in § Evidence | perf |
 | US3.2 Plan rule switches type; Events drops `plan` | finance URL-state parser test (logic: separate RED / GREEN) | unit |
 | US4.3 flag off → notFound; no `insights.finance` → Page not available | page-guard test (guard: separate RED / GREEN) | unit |
 | US4.3 nav guard = page guard | `tests/unit/nav/nav-permission-parity.test.ts`, `nav-config.test.ts` | unit |
@@ -77,7 +77,7 @@ Each slice is cut from `origin/main` after the previous one merged, in a short `
 - **IV PCI DSS** — pass: method labels only, no card data.
 - **i18n** — pass: EN / TH / SV; Buddhist year display-only via `formatLocalisedDate`.
 - **Inclusive UX** — pass: WCAG 2.1 AA, 44 px targets, both themes.
-- **Perf & Observability** — pass: per-query p95 measured (D-h); bundle budget; recharts out of first-load JS; per-card failures logged with a reference id.
+- **Perf & Observability** — pass: per-query server p95 measured (D-j); bundle budget; recharts out of first-load JS; per-card failures logged with a reference id.
 - **Reliability** — pass: per-card `Result`; read-only.
 - **Code Quality** — pass.
 - **Simplicity** — pass: zero new npm dependencies; one extraction justified by its second caller.
@@ -101,7 +101,7 @@ Each slice is cut from `origin/main` after the previous one merged, in a short `
 - **UI probes**: 320 px phone with three chips → `innerWidth` 320, `scrollWidth` 305; 390 px with four chips → `scrollWidth` 375; EN, TH and SV render with no `MISSING_MESSAGE`.
 - **Unflagged behaviours (slice 1)**: `?dueAfter=` and `?plan=` on `/admin/invoices` for admin and manager; both additive and read-only.
 
-### Slice 2 (2026-10-22/23, branch `124-invoice-dashboard-s2`, cut from `4eb802bfe`; 61 commits, 20 of them RED)
+### Slice 2 (2026-10-22/23, branch `124-invoice-dashboard-s2`, cut from `4eb802bfe`; 61 build and fix commits, 20 of them RED)
 
 Built in four subagent batches (A migration, B pure code, C money SQL + loaders, D carried items), then `/simplify`, `/code-review high` (6 findings: 4 fixed, 2 deferred to slice 3 — list `overdue` on DB `now()`, aging read twice per page) and six surface reviews (financial-integrity, financial-reporting, security, drizzle-migration, performance, enterprise-ux: no BLOCKER, no money HIGH; every HIGH/MEDIUM fixed). Decisions made on the way: D-j, D-k (spec § Decisions).
 
@@ -120,7 +120,7 @@ Built in four subagent batches (A migration, B pure code, C money SQL + loaders,
 - **Gates on `e386f9d0d`** — `pnpm check` exit 0; `pnpm test:coverage` 1773/1773 files, exit 0; `pnpm vitest run tests/contract/` 254/254.
 - **e2e on the branch server (:3401, attach config, workers 1)** — `invoice-admin-a11y` chromium 2/2, mobile-chrome 2/2; `admin-payment-reconciliation-view` chromium 4/4, mobile-chrome 4/4.
 - **Unflagged behaviours (slice 2)** — migration 0318's three indexes; the register reads the shared tax-point expression (same SQL); `/admin/invoices` refuses a non-calendar `dueBefore` from non-page callers; popover rows gain `role="group"`; new barrel exports (`creditNotesTable`, `refundsTable`, `invoiceTaxPointSql`, `STALE_REFUND_ESCALATION_AGE_MS`). The loaders are unused until slice 3.
-- **For slice 3** — call the six loaders with `Promise.all` and read aging once (Tiles and Aging share it); oldest overdue default 6 rows (phone 3); captions from `range` / `collectedRange` / `toDate`; Needs attention "under these filters".
+- **For slice 3** — call the six loaders with `Promise.all` and read aging once (Tiles and Aging share it); the invoice list's `status=overdue` still reads the database's `now()` while the dashboard passes `today`, so a figure and its drill-down can differ for a request that straddles Bangkok midnight — pass `today` through the link or accept and caption it (from `/code-review`, deferred); oldest overdue default 6 rows (phone 3); captions from `range` / `collectedRange` / `toDate`; Needs attention "under these filters".
 
 ## Rollout
 
@@ -133,7 +133,7 @@ Built in four subagent batches (A migration, B pure code, C money SQL + loaders,
 - The home chart and this page's chart disagree by design: home is ex-VAT, nets credit notes into the paid month, and falls back to `issue_date`; this page is incl. VAT and nets in the document's month. Captions say so; neither is "fixed".
 - Billed for a past month changes when one of its invoices is voided (D-e); the caption says so.
 - A refund Stripe paid out whose credit note was not booked overstates Collected until the hourly sweep books it; Needs attention counts refunds pending more than 3 days (D-k).
-- Under RLS the tax-point date range runs as a Filter after `invoices_tenant_tax_point_paid_idx` narrows by tenant and status (`timezone()` is not leakproof, so it cannot be an index condition; the register's `TAX_POINT` has always behaved so). Accepted at SweCham's volume (Collected 13 ms server p95 at 2k invoices); the leakproof rewrite (separate `payment_date` / `paid_at` ranges + two partial indexes) is the fix if volume grows.
+- Under RLS the tax-point date range runs as a Filter after `invoices_tenant_tax_point_paid_idx` narrows by tenant and status (`timezone()` is not leakproof, so it cannot be an index condition; the register's `TAX_POINT` has always behaved so). Accepted at SweCham's volume (Collected FY 2.27 ms server p95 at ~2.1k invoices, slice 2 evidence); the leakproof rewrite (separate `payment_date` / `paid_at` ranges + two partial indexes) is the fix if volume grows.
 - The boards predate decisions 10 and D-d to D-h: read the 7 `.dc.html` files at slice 3 before claiming parity; captions and the attention rows will differ.
 - Measuring at volume on the shared dev tenant would burn §87 numbers and leak rows: a disposable tenant created and deleted in the run (D-h).
 - CI's live-Neon suites run about 7× slower than a workstation: no explicit per-test timeouts.
