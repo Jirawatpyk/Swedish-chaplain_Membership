@@ -11,12 +11,12 @@
  * `touchHeight` — in a page body (not-found pages, empty and error states,
  * banners, card actions, list rows, filter controls) as in a footer or bar.
  *
- * Two places stay compact by design, read from the JSX structure, not a file
- * list:
- * - a table cell (`Td`/`Th`, or a DataTable column's `render`/`cell`): a 44px
- *   button would make every row taller;
- * - an `IconButton` that is a menu or popover `trigger` (a row's ⋯, a help ⓘ
- *   beside a heading): an icon affordance kept at the line's height.
+ * One place stays compact by design, read from the JSX structure: the help ⓘ
+ * beside a heading — an `IconButton icon="info"` that is a `Popover`
+ * `trigger`. It sits at the heading's line height, and AURA gives it a 44px
+ * hit area. A row's ⋯ is not exempt: twelve row menus already carry
+ * `touchHeight`, and a table stacks into cards on a phone (UX + mobile a11y
+ * review, 22 Oct). A `size` that is not a literal fails, so nothing slips past.
  *
  * Parsed with the TypeScript compiler, with positive controls that must fail.
  */
@@ -28,8 +28,6 @@ import { describe, expect, it } from 'vitest';
 const ROOT = join(__dirname, '../../..');
 const SRC = join(ROOT, 'src');
 const AURA = /^@jirawatpyk\/aura-react(\/server)?$/;
-/** The app's re-export of AURA's table parts (`Td`, `Th`, …). */
-const AURA_TABLE = '@/components/shell/aura-table';
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -39,12 +37,12 @@ function walk(dir: string): string[] {
   });
 }
 
-/** Local name → AURA export name, for this file's AURA imports (and the app's table re-export). */
+/** Local name → AURA export name, for this file's AURA imports. */
 function auraImports(sf: ts.SourceFile): Map<string, string> {
   const names = new Map<string, string>();
   for (const st of sf.statements) {
     if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
-    if (!AURA.test(st.moduleSpecifier.text) && st.moduleSpecifier.text !== AURA_TABLE) continue;
+    if (!AURA.test(st.moduleSpecifier.text)) continue;
     const bindings = st.importClause?.namedBindings;
     if (!bindings || !ts.isNamedImports(bindings)) continue;
     for (const el of bindings.elements) names.set(el.name.text, (el.propertyName ?? el.name).text);
@@ -59,23 +57,24 @@ function isSmall(value: ts.Node | undefined): boolean {
   return false;
 }
 
-/** A table cell, or a DataTable column's `render`/`cell`, holds `node`. */
-function inTableCell(node: ts.Node, names: Map<string, string>): boolean {
-  for (let p = node.parent; p; p = p.parent) {
-    if (ts.isJsxElement(p)) {
-      const tag = names.get(p.openingElement.tagName.getText());
-      if (tag === 'Td' || tag === 'Th') return true;
-    }
-    if ((ts.isPropertyAssignment(p) || ts.isMethodDeclaration(p)) && /^(render|cell)$/.test(p.name.getText())) return true;
-  }
-  return false;
-}
-
-/** The element is the value of a `trigger` attribute (a menu's ⋯, a popover's ⓘ). */
-function isTrigger(el: ts.JsxOpeningLikeElement): boolean {
+/** An `IconButton icon="info"` that is a `Popover`'s `trigger`: the help ⓘ beside a heading. */
+function isHelpTrigger(el: ts.JsxOpeningLikeElement, tag: string | undefined, names: Map<string, string>): boolean {
+  if (tag !== 'IconButton') return false;
+  const icon = el.attributes.properties.find((p): p is ts.JsxAttribute => ts.isJsxAttribute(p) && p.name.getText() === 'icon');
+  if (!icon?.initializer || !ts.isStringLiteral(icon.initializer) || icon.initializer.text !== 'info') return false;
   const holder = ts.isJsxSelfClosingElement(el) ? el : el.parent;
   const expr = holder.parent;
-  return ts.isJsxExpression(expr) && ts.isJsxAttribute(expr.parent) && expr.parent.name.getText() === 'trigger';
+  if (!ts.isJsxExpression(expr) || !ts.isJsxAttribute(expr.parent) || expr.parent.name.getText() !== 'trigger') return false;
+  const owner = expr.parent.parent.parent;
+  return ts.isJsxOpeningLikeElement(owner) && names.get(owner.tagName.getText()) === 'Popover';
+}
+
+/** A `size` the scan cannot read: a variable, a ternary, a call. */
+function isOpaque(value: ts.Node | undefined): boolean {
+  if (value === undefined) return false;
+  if (ts.isStringLiteral(value)) return false;
+  if (ts.isJsxExpression(value)) return value.expression ? isOpaque(value.expression) : false;
+  return true;
 }
 
 /** `size="sm"` AURA buttons without `touchHeight` outside the compact places. */
@@ -91,10 +90,11 @@ export function scanSmallButtons(file: string, source: string): { readonly small
       if (tag === 'Button' || tag === 'IconButton') {
         const attr = (key: string) =>
           n.attributes.properties.find((p): p is ts.JsxAttribute => ts.isJsxAttribute(p) && p.name.getText() === key);
-        if (isSmall(attr('size')?.initializer)) {
+        const size = attr('size')?.initializer;
+        if (isOpaque(size)) unsized.push(`${at(n)} (size must be a literal)`);
+        if (isSmall(size)) {
           small += 1;
-          const compact = inTableCell(n, names) || (tag === 'IconButton' && isTrigger(n));
-          if (!compact && attr('touchHeight') === undefined) unsized.push(at(n));
+          if (!isHelpTrigger(n, tag, names) && attr('touchHeight') === undefined) unsized.push(at(n));
         }
       }
     }
@@ -103,9 +103,11 @@ export function scanSmallButtons(file: string, source: string): { readonly small
       if (opts !== undefined && ts.isObjectLiteralExpression(opts)) {
         const prop = (key: string) =>
           opts.properties.find((p): p is ts.PropertyAssignment => ts.isPropertyAssignment(p) && p.name.getText() === key);
-        if (isSmall(prop('size')?.initializer)) {
+        const size = prop('size')?.initializer;
+        if (isOpaque(size)) unsized.push(`${at(n)} (size must be a literal)`);
+        if (isSmall(size)) {
           small += 1;
-          if (!inTableCell(n, names) && prop('touchHeight') === undefined) unsized.push(at(n));
+          if (prop('touchHeight') === undefined) unsized.push(at(n));
         }
       }
     }
@@ -120,12 +122,12 @@ const files = walk(SRC).map((path) => ({
   source: readFileSync(path, 'utf8'),
 }));
 
-describe('a size="sm" AURA button carries touchHeight outside a table cell or a menu/popover icon trigger (spec 122)', () => {
-  it('positive control: body buttons and links are caught; table cells and icon triggers are not', () => {
+describe('a size="sm" AURA button carries touchHeight; only a help ⓘ popover trigger stays compact (spec 122)', () => {
+  it('positive control: body, table and menu buttons are caught; a help ⓘ popover trigger is not', () => {
     const fixture = [
       "import { Button, IconButton, DropdownMenu, Popover, buttonClass } from '@jirawatpyk/aura-react';",
       "import { Td } from '@/components/shell/aura-table';",
-      'export const A = () => (',
+      'export const A = ({ s }: { s: "sm" | "md" }) => (',
       '  <div>',
       '    <Button size="sm">Retry</Button>',
       "    <a className={buttonClass({ variant: 'secondary', size: 'sm' })}>Back</a>",
@@ -134,13 +136,13 @@ describe('a size="sm" AURA button carries touchHeight outside a table cell or a 
       '    <Td><Button size="sm">Open</Button></Td>',
       '    <DropdownMenu label="m" items={[]} trigger={<IconButton icon="ellipsis" label="m" size="sm" />} />',
       '    <Popover title="h" trigger={<IconButton icon="info" label="h" size="sm" />}>x</Popover>',
+      '    <Button size={s}>Opaque</Button>',
       '  </div>',
       ');',
-      "export const columns = [{ key: 'a', render: () => <Button size={'sm'}>Row</Button> }];",
     ].join('\r\n');
     expect(scanSmallButtons('fixture.tsx', fixture)).toEqual({
-      small: 8,
-      unsized: ['fixture.tsx:5', 'fixture.tsx:6', 'fixture.tsx:7'],
+      small: 7,
+      unsized: ['fixture.tsx:5', 'fixture.tsx:6', 'fixture.tsx:7', 'fixture.tsx:9', 'fixture.tsx:10', 'fixture.tsx:12 (size must be a literal)'],
     });
   });
 
@@ -148,7 +150,7 @@ describe('a size="sm" AURA button carries touchHeight outside a table cell or a 
     expect(files.reduce((n, { file, source }) => n + scanSmallButtons(file, source).small, 0)).toBeGreaterThan(40);
   });
 
-  it('every size="sm" AURA button the user taps outside a table carries touchHeight', () => {
+  it('every size="sm" AURA button the user taps carries touchHeight', () => {
     expect(files.flatMap(({ file, source }) => scanSmallButtons(file, source).unsized)).toEqual([]);
   });
 });
