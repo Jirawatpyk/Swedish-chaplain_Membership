@@ -74,10 +74,14 @@ import type {
   OverdueInvoiceRow,
 } from '../../application/ports/invoice-dashboard-source';
 
-const inv = invoicesTable;
-const cn = creditNotesTable;
-const pay = paymentsTable;
-const rf = refundsTable;
+/**
+ * The four tables, resolved per call rather than at module load: a test's
+ * partial `vi.mock` of a sibling barrel must not crash every importer of the
+ * insights barrel (vitest throws on reading an export the mock lacks).
+ */
+function tables() {
+  return { inv: invoicesTable, cn: creditNotesTable, pay: paymentsTable, rf: refundsTable };
+}
 
 /** The paid family — exactly the predicate of `invoices_tenant_tax_point_paid_idx`. */
 const PAID_FAMILY = sql.raw(`('paid', 'partially_credited', 'credited')`);
@@ -87,6 +91,7 @@ const BANGKOK = sql.raw(`'Asia/Bangkok'`);
 
 /** `AND`-prefixed type / plan / origin predicates on `invoices`, or nothing. */
 function scopeOf(filters: InvoiceDashboardFilters): SQL {
+  const { inv } = tables();
   const parts: SQL[] = [];
   if (filters.type !== 'all') parts.push(sql`${inv.invoiceSubject} = ${filters.type}`);
   if (filters.planId !== null) parts.push(sql`${inv.planId} = ${filters.planId}`);
@@ -96,6 +101,7 @@ function scopeOf(filters: InvoiceDashboardFilters): SQL {
 
 /** Credit notes joined to their invoice, both tenant-fenced. */
 function creditNotesJoin(tenantId: string): SQL {
+  const { inv, cn } = tables();
   return sql`${cn} JOIN ${inv}
       ON ${inv.tenantId} = ${cn.tenantId} AND ${inv.invoiceId} = ${cn.originalInvoiceId}
     WHERE ${cn.tenantId} = ${tenantId} AND ${inv.tenantId} = ${tenantId}`;
@@ -103,17 +109,18 @@ function creditNotesJoin(tenantId: string): SQL {
 
 /** Refunds joined to their invoice, both tenant-fenced. */
 function refundsJoin(tenantId: string): SQL {
+  const { inv, rf } = tables();
   return sql`${rf} JOIN ${inv}
       ON ${inv.tenantId} = ${rf.tenantId} AND ${inv.invoiceId} = ${rf.invoiceId}
     WHERE ${rf.tenantId} = ${tenantId} AND ${inv.tenantId} = ${tenantId}`;
 }
 
-// Built per call, not at module load: a test's partial `vi.mock` of a sibling
-// barrel must not crash every importer of the insights barrel.
 function waivedBangkokDate(): SQL {
+  const { rf } = tables();
   return sql`((${rf.completedAt} AT TIME ZONE ${BANGKOK})::date)`;
 }
 function waivedRefund(): SQL {
+  const { rf } = tables();
   return sql`${rf.status} = 'succeeded' AND ${rf.creditNoteWaivedAt} IS NOT NULL`;
 }
 
@@ -133,6 +140,7 @@ function toBigInt(value: unknown): bigint {
 
 export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   async outstandingByAgingBucket(ctx, filters, today): Promise<readonly AgingBucketTotal[]> {
+    const { inv } = tables();
     const t = ctx.slug;
     const edge = (bucket: AgingBucket): string => agingBucketDueRange(bucket, today).dueAfter ?? today;
     const result = await rows(
@@ -160,6 +168,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   },
 
   async collectedInRange(ctx, filters, range): Promise<CollectedTotal> {
+    const { inv, cn, rf } = tables();
     const t = ctx.slug;
     const scope = scopeOf(filters);
     const result = await rows(
@@ -190,6 +199,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   },
 
   async collectedByMethod(ctx, filters, range): Promise<readonly CollectedMethodTotal[]> {
+    const { inv, cn, pay, rf } = tables();
     const t = ctx.slug;
     const scope = scopeOf(filters);
     const result = await rows(
@@ -234,6 +244,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   },
 
   async monthlyBilledCollected(ctx, filters, range): Promise<readonly MonthlyBilledCollected[]> {
+    const { inv, cn, rf } = tables();
     const t = ctx.slug;
     const scope = scopeOf(filters);
     const month = (d: SQL) => sql`to_char(${d}, 'YYYY-MM')`;
@@ -274,6 +285,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   },
 
   async attentionCounts(ctx, filters): Promise<AttentionCounts> {
+    const { inv, rf } = tables();
     const t = ctx.slug;
     const scope = scopeOf(filters);
     const result = await rows(
@@ -311,6 +323,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   },
 
   async oldestOverdue(ctx, filters, today, limit): Promise<readonly OverdueInvoiceRow[]> {
+    const { inv } = tables();
     const t = ctx.slug;
     const docNo = sql`COALESCE(${inv.documentNumber}, ${inv.billDocumentNumberRaw})`;
     const result = await rows(
