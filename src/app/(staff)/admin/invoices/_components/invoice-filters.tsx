@@ -38,7 +38,7 @@
  * unchanged.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -53,6 +53,8 @@ import {
   Tooltip,
   useBreakpoint,
 } from '@jirawatpyk/aura-react';
+import { parseIsoCalendarDate } from '@/lib/iso-calendar-date';
+import type { PlanFilter } from '../_lib/plan-filter';
 import { originFilterPatch } from './queue-view';
 
 /**
@@ -124,8 +126,17 @@ interface InvoiceFiltersProps {
    * param) ignores a stray value — no phantom clear-all, no split-brain
    * (mirrors the `show088Filters` / `paidOnlineActive` guards). The admin
    * page passes `true` unconditionally (generic filter, not flag-gated).
+   *
+   * 124 slice 1 — also gates `?dueAfter=YYYY-MM-DD` (inclusive lower bound,
+   * "Due from {date}" chip), the invoice dashboard's aging drill-down.
    */
-  readonly showDueBeforeFilter?: boolean;
+  readonly showDueDateFilters?: boolean;
+  /**
+   * 124 slice 1 — `?plan=<plan_id>` as resolved on the server (the chip names
+   * the plan, which only the server knows). URL-only like the due dates;
+   * absent ⇒ no plan chip, whatever the URL says (the server ignored it too).
+   */
+  readonly planFilter?: PlanFilter;
   /**
    * The filter pattern (spec 122): the matches across every page, shown at
    * the end of the row by AURA's FilterBar (worded and announced politely).
@@ -139,7 +150,8 @@ export function InvoiceFilters({
   showPaidOnlineChip = true,
   show088Filters = false,
   showAutoInvoiceFilter = false,
-  showDueBeforeFilter = false,
+  showDueDateFilters = false,
+  planFilter,
   resultCount,
 }: InvoiceFiltersProps = {}) {
   const t = useTranslations('admin.invoices.list');
@@ -238,24 +250,17 @@ export function InvoiceFilters({
     (rawOrigin === 'manual' || rawOrigin === 'auto_renewal')
       ? rawOrigin
       : 'all';
-  // renewals-suspended-visibility-audit Task 3 — dueBefore clamp: strict
-  // `YYYY-MM-DD` shape + a real calendar date, matching the server page's
-  // `parseDueBeforeParam` so the chip and the data can never split-brain.
-  // V8's lenient parser ROLLS OVER out-of-range days (2026-02-30 → Mar 2)
-  // instead of rejecting them, so the UTC round-trip must reproduce the
-  // input exactly. Gated on `showDueBeforeFilter` (see the prop doc).
-  const rawDueBefore = searchParams.get('dueBefore');
-  const dueBeforeMs =
-    rawDueBefore !== null && /^\d{4}-\d{2}-\d{2}$/.test(rawDueBefore)
-      ? Date.parse(`${rawDueBefore}T00:00:00.000Z`)
-      : Number.NaN;
-  const currentDueBefore =
-    showDueBeforeFilter &&
-    rawDueBefore !== null &&
-    !Number.isNaN(dueBeforeMs) &&
-    new Date(dueBeforeMs).toISOString().slice(0, 10) === rawDueBefore
-      ? rawDueBefore
-      : null;
+  // renewals-suspended-visibility-audit Task 3 / 124 — due-date clamps: the
+  // same `parseIsoCalendarDate` as the server page, so the chip and the data
+  // can never split-brain. Gated on `showDueDateFilters` (see the prop doc).
+  const dueDateParam = (key: 'dueBefore' | 'dueAfter') =>
+    showDueDateFilters ? parseIsoCalendarDate(searchParams.get(key)) : undefined;
+  const currentDueBefore = dueDateParam('dueBefore');
+  const currentDueAfter = dueDateParam('dueAfter');
+  // 124 — the plan chip shows only while the URL still names the plan the
+  // server resolved (a client-side param change awaits the next render).
+  const currentPlan =
+    planFilter && searchParams.get('plan') === planFilter.id ? planFilter : undefined;
 
   const pushUrl = useCallback(
     (patch: Record<string, string | null>) => {
@@ -289,7 +294,9 @@ export function InvoiceFilters({
     currentTaxPoint !== 'all' ||
     currentVat !== 'all' ||
     currentOrigin !== 'all' ||
-    currentDueBefore !== null;
+    currentDueBefore !== undefined ||
+    currentDueAfter !== undefined ||
+    currentPlan !== undefined;
 
   const togglePaidOnline = () => {
     pushUrl({ paidOnline: paidOnlineActive ? null : '1' });
@@ -396,24 +403,58 @@ export function InvoiceFilters({
   // visible representation and clear affordance besides Clear filters, in
   // both layouts. {date} stays the raw ISO `YYYY-MM-DD`: a technical filter
   // echo an admin may copy back into a URL (BE is display-only for
-  // member-facing dates). The label fits AURA's 24ch chip in every locale,
-  // so the date is not cut short.
-  const dueBeforeChip =
-    currentDueBefore !== null
-      ? {
-          id: 'dueBefore',
-          label: t('filters.dueBefore.chip', { date: currentDueBefore }),
-          clear: () => pushUrl({ dueBefore: null }),
-        }
-      : null;
-  if (dueBeforeChip && collapseSecondary) secondaryChips.push(dueBeforeChip);
-  // The popover badge: the secondaries in the popover, dueBefore included
-  // (#292 review A1 — the popover shows it as a read-only row).
+  // member-facing dates). AURA shows an applied-filter chip in full and cuts
+  // it only past the row's width, with the whole label in a tooltip.
+  //
+  // 124 — `dueAfter` ("Due from {date}") and the plan ("Plan: {name}") are
+  // URL-only in the same way; the three share one chip + read-only row shape.
+  const urlOnlyFilters: {
+    readonly id: string;
+    readonly fieldLabel: string;
+    readonly clearLabel: string;
+    readonly readout: string;
+    readonly readoutTestId: string;
+    readonly label: string;
+    readonly clear: () => void;
+  }[] = [];
+  if (currentDueAfter) {
+    urlOnlyFilters.push({
+      id: 'dueAfter',
+      fieldLabel: t('filters.dueAfter.label'),
+      clearLabel: t('filters.dueAfter.clear'),
+      readout: currentDueAfter,
+      readoutTestId: 'invoice-due-after-readout',
+      label: t('filters.dueAfter.chip', { date: currentDueAfter }),
+      clear: () => pushUrl({ dueAfter: null }),
+    });
+  }
+  if (currentDueBefore) {
+    urlOnlyFilters.push({
+      id: 'dueBefore',
+      fieldLabel: t('filters.dueBefore.label'),
+      clearLabel: t('filters.dueBefore.clear'),
+      readout: currentDueBefore,
+      readoutTestId: 'invoice-due-before-readout',
+      label: t('filters.dueBefore.chip', { date: currentDueBefore }),
+      clear: () => pushUrl({ dueBefore: null }),
+    });
+  }
+  if (currentPlan) {
+    urlOnlyFilters.push({
+      id: 'plan',
+      fieldLabel: t('filters.plan.label'),
+      clearLabel: t('filters.plan.clear'),
+      readout: currentPlan.label,
+      readoutTestId: 'invoice-plan-readout',
+      label: t('filters.plan.chip', { plan: currentPlan.label }),
+      clear: () => pushUrl({ plan: null }),
+    });
+  }
+  if (collapseSecondary) secondaryChips.push(...urlOnlyFilters);
+  // The popover badge: the secondaries in the popover, the URL-only filters
+  // included (#292 review A1 — the popover shows each as a read-only row).
   const secondaryActiveCount = secondaryChips.length;
-  const allChips = [
-    ...chips,
-    ...(collapseSecondary ? secondaryChips : dueBeforeChip ? [dueBeforeChip] : []),
-  ];
+  const allChips = [...chips, ...(collapseSecondary ? secondaryChips : urlOnlyFilters)];
   const activeFilters = allChips.map((c) => ({
     id: c.id,
     label: c.label,
@@ -506,6 +547,8 @@ export function InvoiceFilters({
       vat: null,
       origin: null,
       dueBefore: null,
+      dueAfter: null,
+      plan: null,
     });
   };
 
@@ -623,36 +666,49 @@ export function InvoiceFilters({
         )}
         {/* Paid-online toggle — self-labelled, no field label. */}
         {paidOnlineToggle}
-        {/* #292 review A1 — the badge counts an active dueBefore, so the
-            popover shows it too: a read-only row (the filter is URL-only, no
-            picker by design) with a clear button reusing the chip's handler. */}
-        {dueBeforeChip &&
-          field(
-            t('filters.dueBefore.label'),
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm tabular-nums" data-testid="invoice-due-before-readout">
-                {currentDueBefore}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                touchHeight
-                icon="x"
-                onClick={dueBeforeChip.clear}
-                aria-label={t('filters.more.removeAria', { label: dueBeforeChip.label })}
-              >
-                {t('filters.dueBefore.clear')}
-              </Button>
-            </div>,
-          )}
+        {/* #292 review A1 — the badge counts the URL-only filters, so the
+            popover shows each too: a read-only row (no picker by design) with
+            a clear button reusing the chip's handler. Its name starts with
+            the "Clear" it shows (WCAG 2.5.3), and clearing unmounts the row,
+            so focus moves to the search box as a chip's removal does. */}
+        {urlOnlyFilters.map((f) => (
+          <Fragment key={f.id}>
+            {field(
+              f.fieldLabel,
+              <div className="flex items-center justify-between gap-2">
+                <span
+                  className="min-w-0 break-words text-sm tabular-nums"
+                  data-testid={f.readoutTestId}
+                >
+                  {f.readout}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  touchHeight
+                  icon="x"
+                  className="shrink-0"
+                  onClick={() => {
+                    f.clear();
+                    focusSearch();
+                  }}
+                  aria-label={t('filters.more.clearAria', { label: f.label })}
+                >
+                  {f.clearLabel}
+                </Button>
+              </div>,
+            )}
+          </Fragment>
+        ))}
       </div>
     </Popover>
   ) : null;
 
   // Phones (spec 122, 2026-10-15, AURA #146): the popover's filters are the
   // bar's own children, so AURA's Filters sheet lists them with the others,
-  // each a labelled field. The due-before filter keeps its chip in the bar.
+  // each a labelled field. The URL-only filters (due dates, plan) keep their
+  // chips in the bar.
   // `lg` on the server, so the server HTML keeps the popover.
   const onPhone = useBreakpoint() === 'base';
   const secondaryOnPhone = (
@@ -716,10 +772,12 @@ export function InvoiceFilters({
         searchPlaceholder={t('searchPlaceholder')}
         filters={activeFilters}
         // The phone "Filters (n)" button counts what is in the sheet: not the
-        // search (it stays in the bar), plus Paid online outside the tax view
-        // (a chip only there).
+        // search (it stays in the bar) nor the URL-only filters (chips only,
+        // no field in the sheet), plus Paid online outside the tax view (a
+        // chip only there).
         filterCount={
-          activeFilters.filter((f) => f.id !== 'q').length + (paidOnlineActive && !collapseSecondary ? 1 : 0)
+          activeFilters.filter((f) => f.id !== 'q' && !urlOnlyFilters.some((u) => u.id === f.id))
+            .length + (paidOnlineActive && !collapseSecondary ? 1 : 0)
         }
         {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
         {...(resultCount !== undefined ? { resultCount } : {})}

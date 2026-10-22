@@ -7,6 +7,7 @@
  * RBAC: admin + manager (manager is read-only — guard at route level).
  */
 import { ok, type Result } from '@/lib/result';
+import { parseIsoCalendarDate } from '@/lib/iso-calendar-date';
 import { z } from 'zod';
 import type { InvoiceRepo } from '../ports/invoice-repo';
 import type { Invoice, InvoiceStatus } from '@/modules/invoicing/domain/invoice';
@@ -117,6 +118,17 @@ export const listInvoicesPagedSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
+  // 124 slice 1 — inclusive due-date lower bound: `due_date >= dueAfter`.
+  // With `dueBefore` it is the half-open range the invoice dashboard's aging
+  // rows link to. `listInvoicesPaged` does not parse this schema, so the use
+  // case itself drops a non-calendar value (Postgres would 500 on it).
+  dueAfter: z
+    .string()
+    .refine((v) => parseIsoCalendarDate(v) !== undefined)
+    .optional(),
+  // 124 slice 1 — membership plan (`invoices.plan_id`), the dashboard's Plan
+  // filter; event invoices carry no plan and never match.
+  planId: z.string().min(1).max(64).optional(),
 });
 
 export type ListInvoicesPagedInput = z.infer<typeof listInvoicesPagedSchema>;
@@ -161,6 +173,8 @@ export async function listInvoicesPaged(
     vatTreatment: input.vatTreatment,
     origin: input.origin,
     dueBefore: input.dueBefore,
+    dueAfter: parseIsoCalendarDate(input.dueAfter),
+    planId: input.planId,
   });
   return ok({ rows, total });
 }

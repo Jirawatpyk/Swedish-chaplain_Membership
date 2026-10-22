@@ -189,6 +189,13 @@ export type { RecordAuditEventError } from './application/record-audit-event';
 // Phase 3 (US1 — T072-T074) — shipped:
 
 export {
+  listPlanNames,
+  type PlanNameItem,
+  type ListPlanNamesDeps,
+  type ListPlanNamesError,
+} from './application/list-plan-names';
+
+export {
   listPlans,
   type ListPlansInput,
   type ListPlansSuccess,

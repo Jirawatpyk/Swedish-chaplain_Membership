@@ -16,6 +16,7 @@ import { TablePagination } from '@/components/layout/table-pagination';
 import { InvoicesTable, type InvoicesTableRow } from './invoice-table';
 import { InvoiceFilters } from './invoice-filters';
 import { InvoicesExportActions } from './invoices-export-actions';
+import type { PlanFilter } from '../_lib/plan-filter';
 
 export interface InvoicesListViewProps {
   /** `invoicing.write`: the header actions, Record payment and the queue actions. */
@@ -41,6 +42,8 @@ export interface InvoicesListViewProps {
   readonly showMethodColumn: boolean;
   /** The tenant-TZ today for the per-row Record payment date clamp. */
   readonly todayIso: string;
+  /** 124 — `?plan=` resolved on the server: the filter's chip names the plan. */
+  readonly planFilter?: PlanFilter | undefined;
 }
 
 export async function renderInvoicesListView({
@@ -58,6 +61,7 @@ export async function renderInvoicesListView({
   payIntent,
   showMethodColumn,
   todayIso,
+  planFilter,
 }: InvoicesListViewProps) {
   const t = await getTranslations('admin.invoices');
   const tShared = await getTranslations('shared');
@@ -103,8 +107,9 @@ export async function renderInvoicesListView({
           <InvoiceFilters
             show088Filters={show088Filters}
             showAutoInvoiceFilter={showAutoInvoiceFilter}
-            // Task 3 — generic filter, not flag-gated.
-            showDueBeforeFilter
+            // Task 3 / 124 — generic filters, not flag-gated.
+            showDueDateFilters
+            {...(planFilter ? { planFilter } : {})}
             // The filter pattern: the count at the end of the row, announced
             // politely by AURA's FilterBar. Zero when the filters match
             // nothing; none beside the "no invoices yet" empty state.

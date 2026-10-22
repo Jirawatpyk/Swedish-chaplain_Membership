@@ -175,14 +175,14 @@ describe('<InvoiceFilters> — active secondary filters surface as removable chi
 describe('<InvoiceFilters> — dueBefore chip (Task 3)', () => {
   function renderWithDueBefore(props: {
     show088Filters?: boolean;
-    showDueBeforeFilter?: boolean;
+    showDueDateFilters?: boolean;
   }) {
     return render(
       <NextIntlClientProvider locale="en" messages={enMessages}>
         <InvoiceFilters
           show088Filters={props.show088Filters ?? true}
           showPaidOnlineChip
-          showDueBeforeFilter={props.showDueBeforeFilter ?? true}
+          showDueDateFilters={props.showDueDateFilters ?? true}
         />
       </NextIntlClientProvider>,
     );
@@ -233,9 +233,10 @@ describe('<InvoiceFilters> — dueBefore chip (Task 3)', () => {
     expect(
       within(content).getByTestId('invoice-due-before-readout'),
     ).toHaveTextContent('2026-01-01');
+    // WCAG 2.5.3 — the row's button reads "Clear", so its name starts with it.
     fireEvent.click(
       within(content).getByRole('button', {
-        name: 'Remove filter: Due before 2026-01-01',
+        name: 'Clear Due before 2026-01-01',
       }),
     );
     expect(replace).toHaveBeenCalledTimes(1);
@@ -246,7 +247,7 @@ describe('<InvoiceFilters> — dueBefore chip (Task 3)', () => {
 
   it('gated off by default (portal shape): a stray ?dueBefore renders nothing', () => {
     searchParamsStub = new URLSearchParams('dueBefore=2026-01-01');
-    renderWithDueBefore({ showDueBeforeFilter: false });
+    renderWithDueBefore({ showDueDateFilters: false });
     expect(screen.queryByText(/^Due before/)).toBeNull();
   });
 
@@ -291,3 +292,88 @@ describe('<InvoiceFilters> — admin-tax secondary filters on phones', () => {
     expect(screen.getByRole('button', { name: /^Filters/ })).toHaveAttribute('aria-haspopup', 'dialog');
   });
 });
+
+// 124 slice 1 — `?dueAfter=` (inclusive lower bound) and `?plan=` are URL-only
+// filters like dueBefore: they arrive from the invoice dashboard's drill-down
+// links, show as chips, and clear one param each.
+describe('<InvoiceFilters> — dueAfter and plan chips (124)', () => {
+  function renderWith(props: {
+    show088Filters?: boolean;
+    showDueDateFilters?: boolean;
+    planFilter?: { id: string; label: string };
+  }) {
+    return render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <InvoiceFilters
+          show088Filters={props.show088Filters ?? true}
+          showPaidOnlineChip
+          showDueDateFilters={props.showDueDateFilters ?? true}
+          {...(props.planFilter ? { planFilter: props.planFilter } : {})}
+        />
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('a valid ?dueAfter surfaces a chip whose ✕ clears just that param', () => {
+    searchParamsStub = new URLSearchParams('dueAfter=2026-01-01&dueBefore=2026-02-01&status=overdue');
+    renderWith({});
+    expect(screen.getByText('Due from 2026-01-01')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove filter: Due from 2026-01-01' }));
+    const url = String(replace.mock.calls[0]?.[0]);
+    expect(url).not.toContain('dueAfter');
+    expect(url).toContain('dueBefore=2026-02-01');
+    expect(url).toContain('status=overdue');
+  });
+
+  it('the popover counts both due-date bounds and shows a read-only dueAfter row', () => {
+    searchParamsStub = new URLSearchParams('dueAfter=2026-01-01&dueBefore=2026-02-01');
+    renderWith({});
+    expect(screen.getByTestId('invoice-more-filters-count')).toHaveTextContent('2');
+    fireEvent.click(screen.getByTestId('invoice-more-filters-trigger'));
+    const content = screen.getByTestId('filters-popover-content');
+    expect(within(content).getByTestId('invoice-due-after-readout')).toHaveTextContent('2026-01-01');
+    expect(within(content).getByRole('button', { name: 'Clear Due from 2026-01-01' })).toBeInTheDocument();
+  });
+
+  it('a malformed ?dueAfter, or the portal shape, renders no chip', () => {
+    searchParamsStub = new URLSearchParams('dueAfter=2026-02-30');
+    renderWith({});
+    expect(screen.queryByText(/^Due from/)).toBeNull();
+
+    searchParamsStub = new URLSearchParams('dueAfter=2026-01-01');
+    renderWith({ showDueDateFilters: false });
+    expect(screen.queryByText(/^Due from/)).toBeNull();
+  });
+
+  it('a resolved plan shows its name as a chip whose ✕ clears just ?plan', () => {
+    searchParamsStub = new URLSearchParams('plan=corporate-gold&subject=membership');
+    renderWith({ planFilter: { id: 'corporate-gold', label: 'Corporate Gold' } });
+    expect(screen.getByText('Plan: Corporate Gold')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove filter: Plan: Corporate Gold' }));
+    const url = String(replace.mock.calls[0]?.[0]);
+    expect(url).not.toContain('plan=');
+    expect(url).toContain('subject=membership');
+  });
+
+  it('dueAfter alone, or a plan alone, still offers Clear filters', () => {
+    searchParamsStub = new URLSearchParams('dueAfter=2026-01-01');
+    const { unmount } = renderWith({ show088Filters: false });
+    expect(screen.getByRole('button', { name: f.clearAll })).toBeInTheDocument();
+    unmount();
+
+    searchParamsStub = new URLSearchParams('plan=corporate-gold');
+    renderWith({ show088Filters: false, planFilter: { id: 'corporate-gold', label: 'Corporate Gold' } });
+    expect(screen.getByRole('button', { name: f.clearAll })).toBeInTheDocument();
+  });
+
+  it('Clear filters drops dueAfter and plan with the rest', () => {
+    searchParamsStub = new URLSearchParams('dueAfter=2026-01-01&plan=corporate-gold&status=overdue');
+    renderWith({ show088Filters: false, planFilter: { id: 'corporate-gold', label: 'Corporate Gold' } });
+    fireEvent.click(screen.getByRole('button', { name: f.clearAll }));
+    const url = String(replace.mock.calls.at(-1)?.[0]);
+    expect(url).not.toContain('dueAfter');
+    expect(url).not.toContain('plan=');
+    expect(url).not.toContain('status=');
+  });
+});
+
