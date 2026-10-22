@@ -403,13 +403,11 @@ export function InvoiceFilters({
   // visible representation and clear affordance besides Clear filters, in
   // both layouts. {date} stays the raw ISO `YYYY-MM-DD`: a technical filter
   // echo an admin may copy back into a URL (BE is display-only for
-  // member-facing dates). The label fits AURA's 24ch chip in every locale,
-  // so the date is not cut short.
+  // member-facing dates). AURA shows an applied-filter chip in full and cuts
+  // it only past the row's width, with the whole label in a tooltip.
   //
   // 124 — `dueAfter` ("Due from {date}") and the plan ("Plan: {name}") are
   // URL-only in the same way; the three share one chip + read-only row shape.
-  // A long plan name (or the SV "Förfaller från {date}") can pass AURA's 24ch
-  // chip and be cut there; the popover's read-only row shows it whole.
   const urlOnlyFilters: {
     readonly id: string;
     readonly fieldLabel: string;
@@ -670,13 +668,18 @@ export function InvoiceFilters({
         {paidOnlineToggle}
         {/* #292 review A1 — the badge counts the URL-only filters, so the
             popover shows each too: a read-only row (no picker by design) with
-            a clear button reusing the chip's handler. */}
+            a clear button reusing the chip's handler. Its name starts with
+            the "Clear" it shows (WCAG 2.5.3), and clearing unmounts the row,
+            so focus moves to the search box as a chip's removal does. */}
         {urlOnlyFilters.map((f) => (
           <Fragment key={f.id}>
             {field(
               f.fieldLabel,
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm tabular-nums" data-testid={f.readoutTestId}>
+                <span
+                  className="min-w-0 break-words text-sm tabular-nums"
+                  data-testid={f.readoutTestId}
+                >
                   {f.readout}
                 </span>
                 <Button
@@ -684,8 +687,12 @@ export function InvoiceFilters({
                   variant="ghost"
                   size="sm"
                   icon="x"
-                  onClick={f.clear}
-                  aria-label={t('filters.more.removeAria', { label: f.label })}
+                  className="shrink-0"
+                  onClick={() => {
+                    f.clear();
+                    focusSearch();
+                  }}
+                  aria-label={t('filters.more.clearAria', { label: f.label })}
                 >
                   {f.clearLabel}
                 </Button>
@@ -699,7 +706,8 @@ export function InvoiceFilters({
 
   // Phones (spec 122, 2026-10-15, AURA #146): the popover's filters are the
   // bar's own children, so AURA's Filters sheet lists them with the others,
-  // each a labelled field. The due-before filter keeps its chip in the bar.
+  // each a labelled field. The URL-only filters (due dates, plan) keep their
+  // chips in the bar.
   // `lg` on the server, so the server HTML keeps the popover.
   const onPhone = useBreakpoint() === 'base';
   const secondaryOnPhone = (
@@ -763,10 +771,12 @@ export function InvoiceFilters({
         searchPlaceholder={t('searchPlaceholder')}
         filters={activeFilters}
         // The phone "Filters (n)" button counts what is in the sheet: not the
-        // search (it stays in the bar), plus Paid online outside the tax view
-        // (a chip only there).
+        // search (it stays in the bar) nor the URL-only filters (chips only,
+        // no field in the sheet), plus Paid online outside the tax view (a
+        // chip only there).
         filterCount={
-          activeFilters.filter((f) => f.id !== 'q').length + (paidOnlineActive && !collapseSecondary ? 1 : 0)
+          activeFilters.filter((f) => f.id !== 'q' && !urlOnlyFilters.some((u) => u.id === f.id))
+            .length + (paidOnlineActive && !collapseSecondary ? 1 : 0)
         }
         {...(hasAnyFilter ? { onClearAll: clearAll } : {})}
         {...(resultCount !== undefined ? { resultCount } : {})}

@@ -233,9 +233,10 @@ describe('<InvoiceFilters> — dueBefore chip (Task 3)', () => {
     expect(
       within(content).getByTestId('invoice-due-before-readout'),
     ).toHaveTextContent('2026-01-01');
+    // WCAG 2.5.3 — the row's button reads "Clear", so its name starts with it.
     fireEvent.click(
       within(content).getByRole('button', {
-        name: 'Remove filter: Due before 2026-01-01',
+        name: 'Clear Due before 2026-01-01',
       }),
     );
     expect(replace).toHaveBeenCalledTimes(1);
@@ -331,6 +332,7 @@ describe('<InvoiceFilters> — dueAfter and plan chips (124)', () => {
     fireEvent.click(screen.getByTestId('invoice-more-filters-trigger'));
     const content = screen.getByTestId('filters-popover-content');
     expect(within(content).getByTestId('invoice-due-after-readout')).toHaveTextContent('2026-01-01');
+    expect(within(content).getByRole('button', { name: 'Clear Due from 2026-01-01' })).toBeInTheDocument();
   });
 
   it('a malformed ?dueAfter, or the portal shape, renders no chip', () => {

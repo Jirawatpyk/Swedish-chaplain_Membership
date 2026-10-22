@@ -2796,6 +2796,7 @@
             "clear": "Clear"
           },
           "more": {
+            "clearAria": "Clear {label}",
             "button": "More filters",
             "ariaOpen": "More filters ({count} active)",
             "title": "More filters",

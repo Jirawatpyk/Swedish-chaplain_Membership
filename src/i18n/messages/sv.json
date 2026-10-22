@@ -2791,11 +2791,12 @@
             "clear": "Rensa"
           },
           "plan": {
-            "chip": "Plan: {plan}",
-            "label": "Plan",
+            "chip": "Paket: {plan}",
+            "label": "Paket",
             "clear": "Rensa"
           },
           "more": {
+            "clearAria": "Rensa {label}",
             "button": "Fler filter",
             "ariaOpen": "Fler filter ({count} aktiva)",
             "title": "Fler filter",
