@@ -1,62 +1,23 @@
 /**
- * 124 invoice dashboard — `InvoiceDashboardSource` adapter: ONE SQL aggregate
- * per card (spec 124 § Figure definitions, D-d, D-e).
+ * 124 invoice dashboard — `InvoiceDashboardSource` adapter: one SQL aggregate
+ * per card. Figures: spec 124 § Figure definitions (D-d, D-e, D-k).
  *
- * Reads four money tables through their owning barrels — `invoicesTable`,
- * `creditNotesTable`, `invoiceTaxPointSql` from `@/modules/invoicing`;
- * `paymentsTable`, `refundsTable` from `@/modules/payments` — the documented
- * read-only infra-to-infra schema sharing (`payments/index.ts` § paymentsTable).
- * No deep import into another module, no paging rows into JS, no `IN (...)`
- * list built from data.
- *
- * Tenancy (Principle I, two walls): every statement runs inside
- * `runInTenant(ctx, tx)` (RLS + FORCE via `SET LOCAL app.current_tenant`), AND
- * every table it reads carries an explicit `tenant_id = ctx.slug` predicate,
- * joins included.
- *
- * The figures, as implemented here:
- *   - Outstanding = Σ `total_satang`, count of `status = 'issued'`, all years,
- *     no netting. Aging buckets come from that same statement (GROUP BY a CASE
- *     on `due_date`); the edges are `agingBucketDueRange(…, today)` handed in as
- *     parameters, so a row lands exactly where `agingBucketOf` puts it and the
- *     buckets sum to Outstanding. `today` is the caller's Bangkok date, never
- *     `now()` / `CURRENT_DATE`.
- *   - Collected (document basis) over [from, to] =
- *       Σ invoices in paid | partially_credited | credited whose tax point
- *         (`invoiceTaxPointSql`, the very object migration 0318 indexes) is in
- *         range
- *     − Σ credit notes by `issue_date` in range, joined to their invoice via
- *         `original_invoice_id`, same status set and filters
- *     − Σ waived refunds (`status = 'succeeded' AND credit_note_waived_at IS
- *         NOT NULL`) by `(completed_at AT TIME ZONE 'Asia/Bangkok')::date` in
- *         range, joined via `refunds.invoice_id`, same status set and filters.
- *     A refund on a void invoice therefore never subtracts; a `failed` or
- *     `pending` refund is never subtracted; `payments.amount_satang` is never
- *     summed.
- *   - By method: an invoice's method is its latest `payments` row in
- *     succeeded | partially_refunded | refunded (`DISTINCT ON (invoice_id)`,
- *     `completed_at DESC`), else `invoices.payment_method`; a credit note takes
- *     its invoice's method, a waived refund its own payment's method. The same
- *     three terms as Collected, so the rows add up to it.
- *   - Billed per month = Σ `total_satang` by `issue_date`, status neither draft
- *     nor void (D-e), − credit notes by their `issue_date` (their invoice is in
- *     the paid family, so never draft or void). Collected per month as above.
- *   - Needs attention: drafts by origin; `receipt_pdf_status = 'failed'`;
- *     payments whose LATEST refund attempt (by `initiated_at`) is `failed` with
- *     `stripe_refund_%`; refunds `pending` whose `initiated_at` is strictly
- *     older than `now − STALE_REFUND_ESCALATION_AGE_MS` (the payments sweep's
- *     own constant and column, D-k). `now` is the caller's instant.
- *   - Oldest overdue: issued, `due_date < today`, by `due_date`, then amount
- *     desc, then document number.
- *
- * Status literals are inlined (`sql.raw` of constants, never input) so the
- * planner can match the partial indexes `invoices_tenant_tax_point_paid_idx`,
- * `invoices_tenant_due_date_issued_idx` and `refunds_tenant_completed_succeeded_idx`.
- * The three row filters arrive parsed (`parseInvoiceDashboardFilters`) and
- * are bound as parameters.
- *
- * A Drizzle / Postgres error propagates: the loader turns it into a typed
- * error with a logged reference id. Drizzle types stay in this file.
+ * Invariants a reader cannot see in the SQL alone:
+ *   - Tenancy, two walls (Principle I): every statement runs in `runInTenant`
+ *     (RLS + FORCE) AND every table it reads — joins and subqueries included —
+ *     carries an explicit `tenant_id = ctx.slug` predicate.
+ *   - Collected's three terms are written once (`collectedTermsSql`); the
+ *     Collected tile, By method and the trend's Collected all aggregate them,
+ *     so the method rows and the months add up to the tile.
+ *   - Status literals are inlined (`sql.raw` of constants, never input) and the
+ *     tax point is `invoiceTaxPointSql` (the expression migration 0318
+ *     indexes), so the planner can match the partial indexes.
+ *   - `today`, `now` and every range come from the caller, never `now()` /
+ *     `CURRENT_DATE`; the aging edges are `agingBucketDueRange(…, today)`, so a
+ *     row lands exactly where `agingBucketOf` puts it.
+ *   - The four money tables come through their owning barrels (read-only
+ *     infra-to-infra sharing). A Drizzle / Postgres error propagates to the
+ *     loader, which logs it with a reference id.
  */
 import { sql, type SQL } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
@@ -82,9 +43,10 @@ import type {
 } from '../../application/ports/invoice-dashboard-source';
 
 /**
- * The four tables, resolved per call rather than at module load: a test's
- * partial `vi.mock` of a sibling barrel must not crash every importer of the
- * insights barrel (vitest throws on reading an export the mock lacks).
+ * Barrel values (the four tables, the escalation age) are read per call, never
+ * at module load: a test's partial `vi.mock` of a sibling barrel must not crash
+ * every importer of the insights barrel (vitest throws on reading an export the
+ * mock lacks).
  */
 function tables() {
   return { inv: invoicesTable, cn: creditNotesTable, pay: paymentsTable, rf: refundsTable };
@@ -122,17 +84,44 @@ function refundsJoin(tenantId: string): SQL {
     WHERE ${rf.tenantId} = ${tenantId} AND ${inv.tenantId} = ${tenantId}`;
 }
 
-function waivedBangkokDate(): SQL {
-  const { rf } = tables();
-  return sql`((${rf.completedAt} AT TIME ZONE ${BANGKOK})::date)`;
-}
-function waivedRefund(): SQL {
-  const { rf } = tables();
-  return sql`${rf.status} = 'succeeded' AND ${rf.creditNoteWaivedAt} IS NOT NULL`;
-}
-
 function inRange(expr: SQL, range: DashboardDateRange): SQL {
   return sql`${expr} >= ${range.from}::date AND ${expr} <= ${range.to}::date`;
+}
+
+/**
+ * Collected's three terms over `range` (spec D-d), one signed row each, all
+ * through a paid-family invoice and the row filters:
+ *   `gross`         + invoice total, by tax point;
+ *   `credit_note`   − credit note total, by `issue_date`;
+ *   `waived_refund` − succeeded refund with `credit_note_waived_at`, by its
+ *                     Bangkok `completed_at` date.
+ * Columns: term, term_date, invoice_id, payment_id (the waived refund's own
+ * payment, else NULL), invoice_payment_method, amount.
+ */
+function collectedTermsSql(t: string, range: DashboardDateRange, scope: SQL): SQL {
+  const { inv, cn, rf } = tables();
+  const paidFamily = sql`${inv.status} IN ${PAID_FAMILY}`;
+  const waivedOn = sql`((${rf.completedAt} AT TIME ZONE ${BANGKOK})::date)`;
+  return sql`
+    SELECT 'gross' AS term, ${invoiceTaxPointSql} AS term_date, ${inv.invoiceId} AS invoice_id,
+           NULL::text AS payment_id, ${inv.paymentMethod} AS invoice_payment_method,
+           ${inv.totalSatang} AS amount
+    FROM ${inv}
+    WHERE ${inv.tenantId} = ${t} AND ${paidFamily}
+      AND ${inRange(invoiceTaxPointSql, range)}${scope}
+    UNION ALL
+    SELECT 'credit_note', ${cn.issueDate}, ${inv.invoiceId}, NULL, ${inv.paymentMethod},
+           0 - ${cn.totalSatang}
+    FROM ${creditNotesJoin(t)}
+      AND ${paidFamily}
+      AND ${inRange(sql`${cn.issueDate}`, range)}${scope}
+    UNION ALL
+    SELECT 'waived_refund', ${waivedOn}, ${inv.invoiceId}, ${rf.paymentId}, ${inv.paymentMethod},
+           0 - ${rf.amountSatang}
+    FROM ${refundsJoin(t)}
+      AND ${rf.status} = 'succeeded' AND ${rf.creditNoteWaivedAt} IS NOT NULL
+      AND ${paidFamily}
+      AND ${inRange(waivedOn, range)}${scope}`;
 }
 
 type Row = Record<string, unknown>;
@@ -171,74 +160,49 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   },
 
   async collectedInRange(ctx, filters, range): Promise<CollectedTotal> {
-    const { inv, cn, rf } = tables();
-    const t = ctx.slug;
-    const scope = scopeOf(filters);
     const result = await rows(
       ctx,
       sql`
-      WITH gross AS (
-        SELECT COALESCE(SUM(${inv.totalSatang}), 0)::bigint AS amount, COUNT(*)::int AS n
-        FROM ${inv}
-        WHERE ${inv.tenantId} = ${t} AND ${inv.status} IN ${PAID_FAMILY}
-          AND ${inRange(invoiceTaxPointSql, range)}${scope}
-      ), credited AS (
-        SELECT COALESCE(SUM(${cn.totalSatang}), 0)::bigint AS amount
-        FROM ${creditNotesJoin(t)}
-          AND ${inv.status} IN ${PAID_FAMILY}
-          AND ${inRange(sql`${cn.issueDate}`, range)}${scope}
-      ), waived AS (
-        SELECT COALESCE(SUM(${rf.amountSatang}), 0)::bigint AS amount
-        FROM ${refundsJoin(t)}
-          AND ${waivedRefund()}
-          AND ${inv.status} IN ${PAID_FAMILY}
-          AND ${inRange(waivedBangkokDate(), range)}${scope}
-      )
-      SELECT (gross.amount - credited.amount - waived.amount)::bigint AS amount, gross.n AS n
-      FROM gross, credited, waived`,
+      WITH terms AS (${collectedTermsSql(ctx.slug, range, scopeOf(filters))})
+      SELECT COALESCE(SUM(amount), 0)::bigint AS amount,
+             COUNT(*) FILTER (WHERE term = 'gross')::int AS n
+      FROM terms`,
     );
     const r = result[0] ?? {};
     return { amountSatang: parseBigintColumn(r.amount, 'collected'), invoiceCount: Number(r.n ?? 0) };
   },
 
   async collectedByMethod(ctx, filters, range): Promise<readonly CollectedMethodTotal[]> {
-    const { inv, cn, pay, rf } = tables();
+    const { pay } = tables();
     const t = ctx.slug;
-    const scope = scopeOf(filters);
+    // An invoice's method is its latest payment in the method set (looked up
+    // only for the invoices the terms touch), else `invoices.payment_method`;
+    // a waived refund takes its own payment's method.
     const result = await rows(
       ctx,
       sql`
-      WITH invoice_method AS (
+      WITH terms AS (${collectedTermsSql(t, range, scopeOf(filters))}),
+      latest_method AS (
         SELECT DISTINCT ON (${pay.invoiceId}) ${pay.invoiceId} AS invoice_id, ${pay.method} AS method
         FROM ${pay}
         WHERE ${pay.tenantId} = ${t} AND ${pay.status} IN ${METHOD_PAYMENT_STATUSES}
+          AND ${pay.invoiceId} IN (SELECT invoice_id FROM terms WHERE term <> 'waived_refund')
         ORDER BY ${pay.invoiceId}, ${pay.completedAt} DESC NULLS LAST, ${pay.id} DESC
-      ), terms AS (
-        SELECT COALESCE(invoice_method.method, ${inv.paymentMethod}) AS method,
-               ${inv.totalSatang} AS amount
-        FROM ${inv}
-        LEFT JOIN invoice_method ON invoice_method.invoice_id = ${inv.invoiceId}
-        WHERE ${inv.tenantId} = ${t} AND ${inv.status} IN ${PAID_FAMILY}
-          AND ${inRange(invoiceTaxPointSql, range)}${scope}
-        UNION ALL
-        SELECT COALESCE(invoice_method.method, ${inv.paymentMethod}), 0 - ${cn.totalSatang}
-        FROM ${cn}
-        JOIN ${inv} ON ${inv.tenantId} = ${cn.tenantId} AND ${inv.invoiceId} = ${cn.originalInvoiceId}
-        LEFT JOIN invoice_method ON invoice_method.invoice_id = ${inv.invoiceId}
-        WHERE ${cn.tenantId} = ${t} AND ${inv.tenantId} = ${t}
-          AND ${inv.status} IN ${PAID_FAMILY}
-          AND ${inRange(sql`${cn.issueDate}`, range)}${scope}
-        UNION ALL
-        SELECT ${pay.method}, 0 - ${rf.amountSatang}
-        FROM ${rf}
-        JOIN ${inv} ON ${inv.tenantId} = ${rf.tenantId} AND ${inv.invoiceId} = ${rf.invoiceId}
-        JOIN ${pay} ON ${pay.tenantId} = ${rf.tenantId} AND ${pay.id} = ${rf.paymentId}
-        WHERE ${rf.tenantId} = ${t} AND ${inv.tenantId} = ${t} AND ${pay.tenantId} = ${t}
-          AND ${waivedRefund()}
-          AND ${inv.status} IN ${PAID_FAMILY}
-          AND ${inRange(waivedBangkokDate(), range)}${scope}
+      ), own_method AS (
+        SELECT ${pay.id} AS payment_id, ${pay.method} AS method
+        FROM ${pay}
+        WHERE ${pay.tenantId} = ${t}
+          AND ${pay.id} IN (SELECT payment_id FROM terms WHERE term = 'waived_refund')
       )
-      SELECT method, SUM(amount)::bigint AS amount FROM terms GROUP BY method`,
+      SELECT CASE WHEN terms.term = 'waived_refund' THEN own_method.method
+                  ELSE COALESCE(latest_method.method, terms.invoice_payment_method)
+             END AS method,
+             SUM(terms.amount)::bigint AS amount
+      FROM terms
+      LEFT JOIN latest_method ON latest_method.invoice_id = terms.invoice_id
+      LEFT JOIN own_method ON own_method.payment_id = terms.payment_id
+      WHERE terms.term <> 'waived_refund' OR own_method.payment_id IS NOT NULL
+      GROUP BY 1`,
     );
     return result.map((r) => ({
       method: r.method === null || r.method === undefined ? null : String(r.method),
@@ -247,35 +211,27 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   },
 
   async monthlyBilledCollected(ctx, filters, range): Promise<readonly MonthlyBilledCollected[]> {
-    const { inv, cn, rf } = tables();
+    const { inv, cn } = tables();
     const t = ctx.slug;
     const scope = scopeOf(filters);
+    const billable = sql`${inv.status} NOT IN ('draft', 'void')`;
     const month = (d: SQL) => sql`to_char(${d}, 'YYYY-MM')`;
     const result = await rows(
       ctx,
       sql`
-      WITH terms AS (
+      WITH collected AS (${collectedTermsSql(t, range, scope)}),
+      terms AS (
         SELECT ${month(sql`${inv.issueDate}`)} AS month, ${inv.totalSatang} AS billed, 0::bigint AS collected
         FROM ${inv}
-        WHERE ${inv.tenantId} = ${t} AND ${inv.status} NOT IN ('draft', 'void')
+        WHERE ${inv.tenantId} = ${t} AND ${billable}
           AND ${inRange(sql`${inv.issueDate}`, range)}${scope}
         UNION ALL
-        SELECT ${month(invoiceTaxPointSql)}, 0::bigint, ${inv.totalSatang}
-        FROM ${inv}
-        WHERE ${inv.tenantId} = ${t} AND ${inv.status} IN ${PAID_FAMILY}
-          AND ${inRange(invoiceTaxPointSql, range)}${scope}
-        UNION ALL
-        SELECT ${month(sql`${cn.issueDate}`)},
-               CASE WHEN ${inv.status} NOT IN ('draft', 'void') THEN 0 - ${cn.totalSatang} ELSE 0 END,
-               CASE WHEN ${inv.status} IN ${PAID_FAMILY} THEN 0 - ${cn.totalSatang} ELSE 0 END
+        SELECT ${month(sql`${cn.issueDate}`)}, 0 - ${cn.totalSatang}, 0::bigint
         FROM ${creditNotesJoin(t)}
+          AND ${billable}
           AND ${inRange(sql`${cn.issueDate}`, range)}${scope}
         UNION ALL
-        SELECT ${month(waivedBangkokDate())}, 0::bigint, 0 - ${rf.amountSatang}
-        FROM ${refundsJoin(t)}
-          AND ${waivedRefund()}
-          AND ${inv.status} IN ${PAID_FAMILY}
-          AND ${inRange(waivedBangkokDate(), range)}${scope}
+        SELECT to_char(term_date, 'YYYY-MM'), 0::bigint, amount FROM collected
       )
       SELECT month, SUM(billed)::bigint AS billed, SUM(collected)::bigint AS collected
       FROM terms GROUP BY month ORDER BY month`,
@@ -291,9 +247,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     const { inv, rf } = tables();
     const t = ctx.slug;
     const scope = scopeOf(filters);
-    // Read per call like `tables()`: a partial mock of the payments barrel
-    // must not crash this module at load. Strictly older, as the sweep's
-    // `ageMs <= ESCALATION_AGE_MS → not yet` reads.
+    // Strictly older, as the sweep's `ageMs <= ESCALATION_AGE_MS → not yet` reads.
     const pendingBefore = new Date(now.getTime() - STALE_REFUND_ESCALATION_AGE_MS).toISOString();
     const result = await rows(
       ctx,
