@@ -172,7 +172,7 @@ export async function listInvoicesPaged(
     taxPointState: input.taxPointState,
     vatTreatment: input.vatTreatment,
     origin: input.origin,
-    dueBefore: input.dueBefore,
+    dueBefore: parseIsoCalendarDate(input.dueBefore),
     dueAfter: parseIsoCalendarDate(input.dueAfter),
     planId: input.planId,
   });
