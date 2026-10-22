@@ -84,6 +84,7 @@ describe('BulkActionBar on AURA ActionBar (T504)', () => {
       // size="sm": AURA's bar rule is phone-only, so touchHeight keeps 44px on a touch tablet (#123).
       expect(button).toHaveClass('aura-btn--touch');
       expect(button.closest('.aura-actionbar')).not.toBeNull();
+      expect(button.closest('.chamber-bulk-actionbar')).not.toBeNull();
     }
   });
 
