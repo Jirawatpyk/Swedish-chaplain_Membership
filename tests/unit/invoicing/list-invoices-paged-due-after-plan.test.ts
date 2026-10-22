@@ -1,7 +1,8 @@
 /**
  * Unit — 124 slice 1: `listInvoicesPagedSchema` gains `dueAfter` (inclusive
  * due-date lower bound) and `planId` (membership plan). The page validates
- * first; the schema is defence in depth for non-page callers.
+ * first; `listInvoicesPaged` does not parse the schema, so it also drops a
+ * non-calendar dueAfter itself.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { listInvoicesPaged, listInvoicesPagedSchema } from '@/modules/invoicing';

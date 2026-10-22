@@ -29,7 +29,7 @@ Done when:
 - The Outstanding and Overdue tiles link to `/admin/invoices?status=issued` and `?status=overdue`, and the list's count equals the tile's count.
 - Each aging row is one link named "{bucket}: {amount}, {count} invoices" to `status=overdue&dueAfter=…&dueBefore=…` ("Not yet due": `status=issued&dueAfter=<today>`), and the list shows the same count.
 - `/admin/invoices?dueAfter=YYYY-MM-DD` keeps invoices with `due_date >= dueAfter`; with `dueBefore` it gives a range; an invalid value is ignored exactly as an invalid `dueBefore` is; the filter shows as a chip that clears it.
-- `/admin/invoices?plan=<plan_id>` keeps membership invoices on that plan (`invoices.plan_id`); an unknown or malformed value is ignored; the filter shows as a chip naming the plan that clears it.
+- `/admin/invoices?plan=<plan_id>` keeps membership invoices on that plan (`invoices.plan_id`, every plan year); any well-formed id (≤ 64 characters) filters, so an id this year's plans do not know matches its invoices or nothing, never the whole list (D-i); an empty or over-long value is ignored; the filter shows as a chip naming the plan (or the id, when unknown) that clears it.
 - Every dashboard link carries the active `type`, `plan` and `origin` filters as the list's `subject`, `plan` and `origin`, so the list count equals the figure it came from under any filter.
 - Export CSV opens the existing `GET /api/admin/invoices/export.csv` with `from` = the FY start and `to` = the earlier of FY end and today.
 
@@ -90,6 +90,7 @@ Decisions 1–10 of the design spec stand. Added in this session (22 Oct 2026):
 - D-e: **Voided invoices are excluded** from Billed outright; past months may change, and the caption says so.
 - D-f: **The invoice list gains `plan`** in slice 1, so drill-downs match under a Plan filter.
 - D-g (OQ1 closed): the Billed bar stays on `issue_date`; it is a billing view, not the ภ.พ.30 basis, and its caption says to use the tax-document register for VAT.
+- D-i: **An unknown `?plan=` id still filters** (chip shows the id), so a link from another plan year or a lookup failure never widens the list unmarked (22 Oct, after the slice 1 review).
 - D-h (OQ3 closed, maintainer may override): p95 measured at 2k invoices on a disposable tenant, serially and warm (≥ 20 runs), with the client location and row counts stated; `EXPLAIN` under `SET enable_seqscan = off` proves the tax-point index matches the query.
 
 ## Premises checked against the code
