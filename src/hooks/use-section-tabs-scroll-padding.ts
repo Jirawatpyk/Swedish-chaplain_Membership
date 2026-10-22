@@ -1,14 +1,14 @@
 'use client';
 
 /**
- * A sticky section-tab row under the shell bar (member detail, invoice
- * settings) publishes its measured height as `--chamber-section-tabs-height`
+ * A sticky section-tab row under the shell bar (the member detail page's
+ * "On this page" tabs) publishes its measured height as `--chamber-section-tabs-height`
  * on the root. `globals.css` adds it to `scroll-padding-top`, so a section
  * reached by its anchor lands below the shell bar AND the row, whatever
  * height the row has at this width, locale or zoom — no fixed number.
  *
  * The variable is removed on unmount, so a page without tabs keeps the plain
- * shell-bar offset. Assumes one tab row per page (true for both callers).
+ * shell-bar offset. Assumes one tab row per page.
  */
 
 import { useEffect, type RefObject } from 'react';

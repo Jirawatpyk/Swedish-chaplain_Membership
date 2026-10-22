@@ -1291,7 +1291,7 @@
     "members": {
         "changeRequests": {
             "title": "Change requests",
-          "viewAll": "View all change requests",
+          "viewAll": "View all",
           "loadFailed": "Change requests could not be loaded. Reload the page to try again.",
           "empty": "No change requests for this member yet.",
           "submittedBy": "Submitted by {name} ({role})",
@@ -1496,10 +1496,10 @@
           "empty": "No active renewal cycle",
           "readFailed": "We couldn't load this member's renewal status. Please try again.",
           "status": "Status",
-          "expiry": "Expiry",
           "daysRemaining": "{days} days remaining",
           "overdueDays": "Overdue by {days} days",
-          "engagement": "Engagement",
+          "engagement": "Engagement score",
+          "engagementScoreValue": "{score} / 100",
           "viewRenewal": "View renewal",
           "cycleStatus": {
             "upcoming": "Upcoming",
@@ -1661,7 +1661,8 @@
         "editCta": "Edit",
         "headerMoreActions": "More actions",
         "companyDetails": {
-          "open": "All company details",
+          "title": "Company details",
+          "open": "Show all company details",
           "close": "Close company details"
         },
         "contactActions": {

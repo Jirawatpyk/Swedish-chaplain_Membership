@@ -15,11 +15,14 @@ import { Button, Drawer } from '@jirawatpyk/aura-react';
 export function CompanyDetailsDrawer({
   triggerLabel,
   title,
+  description,
   closeLabel,
   children,
 }: {
   readonly triggerLabel: string;
   readonly title: string;
+  /** The company's name under the title, so the dialog says whose record it is. */
+  readonly description?: string;
   readonly closeLabel: string;
   readonly children: ReactNode;
 }) {
@@ -45,6 +48,7 @@ export function CompanyDetailsDrawer({
         side="right"
         size="md"
         title={title}
+        description={description}
         closeLabel={closeLabel}
         closeProps={{ touchHeight: true }}
         data-testid="company-details-drawer"

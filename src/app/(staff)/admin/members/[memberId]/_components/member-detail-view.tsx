@@ -358,11 +358,13 @@ export async function renderMemberDetailView({
                 <DetailField label={t('fields.legalEntityType')} value={legalEntityLabel} />
                 <DetailField label={t('fields.plan')} value={planDisplayName} />
               </dl>
-              <AddressGroup label={t('fields.address')} lines={addressLines} />
-              <AddressGroup label={t('fields.billingAddress')} lines={billingLines ?? []} />
+              {/* One level with the fields above (dt/dd); the h3 groups are the Drawer's. */}
+              <TextBlock label={t('fields.address')} lines={addressLines.length > 0 ? [addressLines.join('\n')] : []} />
+              <TextBlock label={t('fields.billingAddress')} lines={billingLines ? [billingLines.join('\n')] : []} />
               <CompanyDetailsDrawer
                 triggerLabel={t('companyDetails.open')}
-                title={member.companyName}
+                title={t('companyDetails.title')}
+                description={member.companyName}
                 closeLabel={t('companyDetails.close')}
               >
             <div className="flex flex-col gap-6">

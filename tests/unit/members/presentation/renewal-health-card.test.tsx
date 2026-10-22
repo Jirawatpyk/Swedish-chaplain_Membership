@@ -36,7 +36,8 @@ const messages = {
           status: 'Status',
           expiry: 'Expiry',
           overdueDays: 'Overdue by {days} days',
-          engagement: 'Engagement',
+          engagement: 'Engagement score',
+          engagementScoreValue: '{score} / 100',
           viewRenewal: 'View renewal',
           cycleStatus: {
             upcoming: 'Upcoming',
@@ -99,7 +100,7 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
       viewHref: '/admin/renewals',
     });
     expect(screen.getByText('Awaiting payment')).toBeInTheDocument();
-    expect(screen.getByText('82')).toBeInTheDocument();
+    expect(screen.getByText('82 / 100')).toBeInTheDocument();
     expect(screen.queryByText('Expiry')).not.toBeInTheDocument();
     expect(screen.queryByText(/days remaining/)).not.toBeInTheDocument();
     expect(screen.queryByText('Healthy')).not.toBeInTheDocument();
@@ -116,7 +117,7 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
     });
     expect(screen.getByText('Upcoming')).toBeInTheDocument();
     // No engagement label rendered when score+band are both null.
-    expect(screen.queryByText('Engagement')).not.toBeInTheDocument();
+    expect(screen.queryByText('Engagement score')).not.toBeInTheDocument();
   });
 
   // Cluster 7 (G18) — a FAILED renewal read must render a distinct
@@ -160,8 +161,8 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
       screen.getByText("We couldn't load this member's renewal status. Please try again."),
     ).toBeInTheDocument();
     // The loaded engagement value + band are still shown.
-    expect(screen.getByText('Engagement')).toBeInTheDocument();
-    expect(screen.getByText('82')).toBeInTheDocument();
+    expect(screen.getByText('Engagement score')).toBeInTheDocument();
+    expect(screen.getByText('82 / 100')).toBeInTheDocument();
   });
 
   it('still renders the empty state when readFailed is false and status is null (regression guard)', () => {

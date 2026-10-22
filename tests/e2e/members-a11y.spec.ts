@@ -115,14 +115,18 @@ test.describe('F3 admin comprehensive a11y scan @f3 @a11y', () => {
     expect(results.violations).toEqual([]);
 
     // Layout B — the full company record opens in a Drawer; scan it open.
-    await page.getByRole('button', { name: /all company details/i }).click();
+    const trigger = page.getByTestId('company-details-open');
+    await trigger.click();
     const drawer = page.getByRole('dialog');
     await expect(drawer).toBeVisible();
-    const drawerResults = await new AxeBuilder({ page })
-      .include('[role="dialog"]')
-      .withTags([...AXE_TAGS])
-      .analyze();
+    // Scan once the slide-in has finished, the whole page with it open.
+    await drawer.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+    const drawerResults = await new AxeBuilder({ page }).withTags([...AXE_TAGS]).analyze();
     expect(drawerResults.violations).toEqual([]);
+    // Esc closes it and focus returns to its trigger.
+    await page.keyboard.press('Escape');
+    await expect(drawer).toHaveCount(0);
+    await expect(trigger).toBeFocused();
   });
 
   test('4. /admin/members/:id/edit — no axe violations', async ({ page }) => {

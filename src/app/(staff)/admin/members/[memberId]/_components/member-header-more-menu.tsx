@@ -35,6 +35,8 @@ export function MemberHeaderMoreMenu({
     ...(canArchive
       ? [{ label: t('archive.archiveCta'), icon: <ArchiveIcon aria-hidden="true" />, tone: 'danger' as const, onSelect: () => setArchiveOpen(true) }]
       : []),
+    // Erase cannot be undone (Archive can, within its window): set apart.
+    ...(canArchive ? [{ separator: true as const }] : []),
     { label: t('erase.eraseCta'), icon: <ShieldXIcon aria-hidden="true" />, tone: 'danger', onSelect: () => setEraseOpen(true) },
   ];
   return (

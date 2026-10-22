@@ -286,10 +286,12 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
     expect(company).toHaveTextContent('0105561234567');
     expect(company).toHaveTextContent('Company Limited');
     expect(company).toHaveTextContent('Premium Corporate');
-    expect(within(company).getByRole('heading', { level: 3, name: D.fields.billingAddress })).toBeInTheDocument();
+    expect(company).toHaveTextContent(D.fields.billingAddress);
+    expect(within(company).queryByRole('heading', { level: 3 })).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
     fireEvent.click(within(company).getByRole('button', { name: D.companyDetails.open }));
-    expect(screen.getByRole('dialog', { name: member.companyName })).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: D.companyDetails.title });
+    expect(dialog).toHaveTextContent(member.companyName);
   });
 
   // UX review (board): Organisation and Membership are h3 inside the full
@@ -305,16 +307,17 @@ describe('renderMemberDetailView — sections and "On this page" (T553)', () => 
   // figures carry no currency; the website shows its host.
   it('turnover and capital read as plain figures; the website as its host', async () => {
     await openCompanyDetails({ member: { ...member, turnoverThb: 184000000, registeredCapitalThb: 20000000 } });
-    const company = screen.getByRole('dialog', { name: member.companyName });
+    const company = screen.getByRole('dialog', { name: enMessages.admin.members.detail.companyDetails.title });
     expect(company).toHaveTextContent('184,000,000');
     expect(company).not.toHaveTextContent(/THB\s?184|฿184/);
     expect(screen.getByRole('link', { name: /^siamnordic\.example/ })).toHaveAttribute('href', 'https://siamnordic.example');
   });
 
   // Board `Admin-member-detail`: Address and "Billing address (tax
-  // documents)" are groups of their own; an unset billing address reads "—".
+  // documents)" are groups of their own in the full record; an unset billing
+  // address reads "—".
   it('shows the billing address group with a dash when none is set', async () => {
-    await renderView();
+    await openCompanyDetails();
     const D = enMessages.admin.members.detail;
     const heading = screen.getByRole('heading', { level: 3, name: D.fields.billingAddress });
     expect(heading.parentElement).toHaveTextContent('—');

@@ -170,6 +170,9 @@ export async function MemberChangeRequestsCard({
   const tField = await getTranslations('portal.changeRequests.diff.labels');
   const locale = await getLocale();
   const fmt = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium' });
+  // The hidden part of a row's link name: with the time, so two requests on
+  // the same day still read apart (UX review M7).
+  const fmtFull = (iso: string) => formatLocalisedDate(iso, locale, { dateStyle: 'medium', timeStyle: 'short' });
   const fields = (keys: readonly string[]) => keys.map((k) => tField(k as never)).join(', ');
 
   const pending = rows.filter((r) => r.status.state === 'pending');
@@ -183,6 +186,16 @@ export async function MemberChangeRequestsCard({
       title={t('title')}
       titleId="member-change-requests-heading"
       headingLevel={2}
+      // The queue is its own read: offered even when this card failed to
+      // load, as the Timeline card offers its page.
+      actions={
+        rows.length > 0 || loadFailed ? (
+          <Link href={viewAllHref} className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true })}>
+            {t('viewAll')}
+            <ArrowRightIcon className="size-4" aria-hidden="true" />
+          </Link>
+        ) : undefined
+      }
     >
       {loadFailed ? (
         // `status`, not `alert`: the page rendered, one section did not —
@@ -218,7 +231,7 @@ export async function MemberChangeRequestsCard({
                   >
                     {t('review')}
                     {/* Each row has one: the date tells them apart (UX review M7). */}
-                    <span className="sr-only">{`, ${t('submittedOn', { submittedAt: fmt(r.submittedAtIso) })}`}</span>
+                    <span className="sr-only">{`, ${t('submittedOn', { submittedAt: fmtFull(r.submittedAtIso) })}`}</span>
                   </Link>
                 </li>
               ))}
@@ -228,38 +241,38 @@ export async function MemberChangeRequestsCard({
             <ul
               className={`flex flex-col divide-y divide-[var(--aura-border-default)] ${pending.length > 0 ? 'border-t border-[var(--aura-border-default)]' : ''}`}
             >
-              {history.map((r) => (
-                <li
-                  key={r.id}
-                  className="flex items-start justify-between gap-3 py-3"
-                  data-testid="member-change-request-history"
-                  data-request-id={r.id}
-                >
-                  <div className="min-w-0 space-y-1 text-sm">
-                    <Link
-                      href={`/admin/change-requests/${r.id}`}
-                      className="font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline"
-                    >
-                      {fields(r.fieldKeys)}
-                    </Link>
-                    <p className="text-xs text-[var(--aura-fg-secondary)]">
-                      {r.decidedByName && r.decidedAtIso
-                        ? tReview('decidedBy', { name: r.decidedByName, decidedAt: fmt(r.decidedAtIso) })
-                        : t('submittedOn', { submittedAt: fmt(r.submittedAtIso) })}
-                    </p>
-                  </div>
-                  <ChangeRequestStatusBadge status={r.status} audience="staff" className="shrink-0" />
-                </li>
-              ))}
+              {history.map((r) => {
+                const when =
+                  r.decidedByName && r.decidedAtIso
+                    ? tReview('decidedBy', { name: r.decidedByName, decidedAt: fmt(r.decidedAtIso) })
+                    : t('submittedOn', { submittedAt: fmt(r.submittedAtIso) });
+                return (
+                  // The whole row is the link's target (a stretched link,
+                  // 44px+ on a phone); its ring follows the row.
+                  <li
+                    key={r.id}
+                    className={`relative flex flex-wrap items-start justify-between gap-x-3 gap-y-1 py-3 ${pending.length > 0 ? '' : 'first:pt-0'}`}
+                    data-testid="member-change-request-history"
+                    data-request-id={r.id}
+                  >
+                    <div className="min-w-0 flex-1 space-y-1 text-sm">
+                      <Link
+                        href={`/admin/change-requests/${r.id}`}
+                        className="font-medium text-[var(--aura-fg-accent)] [overflow-wrap:anywhere] underline-offset-4 outline-none after:absolute after:inset-0 after:rounded-[var(--aura-radius-md)] hover:underline focus-visible:after:outline-2 focus-visible:after:outline-[var(--aura-focus-ring)]"
+                      >
+                        {fields(r.fieldKeys)}
+                        <span className="sr-only">{`, ${when}`}</span>
+                      </Link>
+                      <p className="text-xs text-[var(--aura-fg-secondary)]" aria-hidden="true">
+                        {when}
+                      </p>
+                    </div>
+                    <ChangeRequestStatusBadge status={r.status} audience="staff" className="shrink-0" />
+                  </li>
+                );
+              })}
             </ul>
           )}
-          <Link
-            href={viewAllHref}
-            className="inline-flex min-h-11 items-center gap-1.5 self-start text-sm font-medium text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
-          >
-            {t('viewAll')}
-            <ArrowRightIcon className="size-4" aria-hidden="true" />
-          </Link>
         </div>
       )}
     </Card>

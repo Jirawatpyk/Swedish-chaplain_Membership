@@ -83,10 +83,10 @@ export function RenewalHealthCard({
   const t = useTranslations('admin.members.detail.renewalHealth');
   const format = useFormatter();
 
-  // The band is the strip's; the score beside the status is the card's own.
+  // The band is the strip's; the score (out of 100) is the card's own.
   const engagementValue =
     engagementScore !== null && engagementBand !== null ? (
-      <span className="text-sm tabular-nums">{format.number(engagementScore)}</span>
+      <span className="text-sm tabular-nums">{t('engagementScoreValue', { score: format.number(engagementScore) })}</span>
     ) : null;
 
   // Layout B — an AURA Card in the page's aside: Status and the engagement
