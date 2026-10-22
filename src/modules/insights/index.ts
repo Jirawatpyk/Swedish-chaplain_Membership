@@ -304,6 +304,7 @@ export {
   OLDEST_OVERDUE_DEFAULT_LIMIT,
   type AmountAndCount,
   type InvoiceDashboardAging,
+  type InvoiceDashboardAgingListQuery,
   type InvoiceDashboardAgingRow,
   type InvoiceDashboardAttention,
   type InvoiceDashboardAttentionReadOnly,

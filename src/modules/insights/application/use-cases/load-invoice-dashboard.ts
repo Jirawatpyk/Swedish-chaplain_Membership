@@ -97,8 +97,17 @@ export interface InvoiceDashboardAgingRow {
   readonly count: number;
   /** Largest-remainder share of AMOUNT; the five add up to 100 when any is non-zero. */
   readonly sharePercent: number;
-  /** The list's `dueAfter` / `dueBefore` for this bucket's drill-down. */
-  readonly dueRange: DueDateRange;
+  /** The `/admin/invoices` query this bucket's row links to (US2.2). */
+  readonly listQuery: InvoiceDashboardAgingListQuery;
+}
+
+/**
+ * An aging bucket's drill-down: `issued` for "Not yet due", `overdue` for the
+ * rest, plus the bucket's due-date range, so a link can never list paid or
+ * void invoices.
+ */
+export interface InvoiceDashboardAgingListQuery extends DueDateRange {
+  readonly status: 'issued' | 'overdue';
 }
 
 export interface InvoiceDashboardAging {
@@ -218,7 +227,10 @@ async function readAging(
     buckets: rows.map((r, i) => ({
       ...r,
       sharePercent: shares[i] ?? 0,
-      dueRange: agingBucketDueRange(r.bucket, input.today),
+      listQuery: {
+        status: r.bucket === 'not_yet_due' ? ('issued' as const) : ('overdue' as const),
+        ...agingBucketDueRange(r.bucket, input.today),
+      },
     })),
   };
 }
