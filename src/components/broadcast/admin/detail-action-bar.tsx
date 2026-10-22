@@ -36,7 +36,7 @@ export function DetailActionBar({
   return (
     <div className="contents" data-testid="eblast-action-row">
       <DetailMoreMenuProvider>
-        <ActionBar className={cn('chamber-viewport-actionbar eblast-detail-actions', className)} start={start} status={status} touchHeight>
+        <ActionBar className={cn('chamber-viewport-actionbar eblast-detail-actions', className)} start={start} status={status}>
           {children}
           <DetailMoreMenu label={moreLabel} />
         </ActionBar>

@@ -376,10 +376,10 @@ export function BulkMarkPaidConfirmDialog({
       description={t('confirmMarkPaidDescription')}
       footer={
         <>
-          <Button touchHeight variant="secondary" data-autofocus="" onClick={close} disabled={submitting}>
+          <Button variant="secondary" data-autofocus="" onClick={close} disabled={submitting}>
             {t('cancel')}
           </Button>
-          <Button touchHeight onClick={() => void handleConfirm()} loading={submitting} disabled={confirmDisabled}>
+          <Button onClick={() => void handleConfirm()} loading={submitting} disabled={confirmDisabled}>
             {t('confirmMarkPaidAction')}
           </Button>
         </>

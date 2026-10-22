@@ -121,10 +121,10 @@ export function DowngradeConfirmDialog({
       {...(hasOverQuota ? { 'aria-describedby': DOWNGRADE_DIALOG_OVERQUOTA_ID } : {})}
       footer={
         <>
-          <Button touchHeight variant="secondary" data-autofocus onClick={onCancel} disabled={submitting}>
+          <Button variant="secondary" data-autofocus onClick={onCancel} disabled={submitting}>
             {t('cancelCta')}
           </Button>
-          <Button touchHeight onClick={onConfirm} loading={submitting}>
+          <Button onClick={onConfirm} loading={submitting}>
             {t('confirmCta')}
           </Button>
         </>

@@ -65,6 +65,8 @@ export function DetailMoreMenu({ label }: { readonly label: string }): React.Rea
           ...(e.danger ? { tone: 'danger' as const } : {}),
           onSelect: () => select(e.id),
         }))}
+        // Keep touchHeight: DropdownMenu adds a second wrapper, past AURA's
+        // ActionBar IconButton rule (direct, or one wrapper deep).
         trigger={<IconButton icon="ellipsis" label={label} touchHeight data-testid="eblast-more-actions" />}
       />
     </span>

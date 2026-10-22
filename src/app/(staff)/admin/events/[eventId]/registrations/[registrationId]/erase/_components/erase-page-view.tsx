@@ -26,7 +26,7 @@ export async function renderErasePageBody({ eventId, registrationId, attendeeNam
   return (
     <>
       <PageHeader title={t('pageTitle', { attendeeName })} subtitle={t('pageHint')} />
-      <div className="flex flex-wrap items-center gap-[var(--aura-space-4)] max-sm:flex-col max-sm:items-stretch max-sm:[&>button]:w-full">
+      <div className="flex flex-wrap items-center gap-[var(--aura-space-4)] max-sm:flex-col max-sm:items-stretch">
         <ErasePageDialog eventId={eventId} registrationId={registrationId} attendeeName={attendeeName} />
         <Link
           href={`/admin/events/${eventId}`}

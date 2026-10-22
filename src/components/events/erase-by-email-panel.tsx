@@ -217,11 +217,11 @@ export function EraseByEmailPanel({ email, matchCount, showCount = false }: Eras
               description={t('eraseAllConfirmBody', { count: matchCount })}
               footer={
                 <>
-                  <Button touchHeight variant="secondary" data-autofocus disabled={pending} onClick={close}>
+                  <Button variant="secondary" data-autofocus disabled={pending} onClick={close}>
                     {t('cancel')}
                   </Button>
                   {/* Reachable but refused until the reason is valid (AURA #102). */}
-                  <Button touchHeight
+                  <Button
                     variant="danger"
                     icon={<Eraser aria-hidden="true" />}
                     loading={pending}

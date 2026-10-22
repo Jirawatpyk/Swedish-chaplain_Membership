@@ -205,10 +205,13 @@ describe('one Save at a time', () => {
 });
 
 describe('in-form Save on AURA', () => {
-  it('is an AURA Button at 44px', () => {
+  // The Save shown while nothing has changed sits in the form body: AURA's
+  // full width below sm (5.53) makes it 44px and full width on a phone.
+  it('is an AURA Button, full width and 44px on a phone (fullWidth="below-sm")', () => {
     const { container } = renderForm();
     const submit = container.querySelector('button[type="submit"]')!;
-    expect(submit).toHaveClass('aura-btn', 'min-h-11');
+    expect(submit).toHaveClass('aura-btn', 'aura-btn--full-below-sm');
+    expect(submit).not.toHaveClass('min-h-11');
   });
 });
 

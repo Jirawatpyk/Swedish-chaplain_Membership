@@ -309,10 +309,10 @@ export function ApproveDialog({
       }
       footer={
         <>
-          <Button touchHeight variant="secondary" disabled={pending} onClick={() => handleOpenChange(false)}>
+          <Button variant="secondary" disabled={pending} onClick={() => handleOpenChange(false)}>
             {t('cancel')}
           </Button>
-          <Button touchHeight
+          <Button
             variant="primary"
             icon="circle-check"
             disabled={submitDisabled}

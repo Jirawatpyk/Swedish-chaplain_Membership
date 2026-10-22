@@ -49,14 +49,15 @@ export async function renderEventDetailView({
   canErase,
 }: EventDetailViewProps) {
   const t = await getTranslations('admin.events.detail');
-  const renderActions = () => (
+  const renderActions = (fullWidth = false) => (
     <>
       <EventCategoryToggles
         eventId={event.eventId}
         isPartnerBenefit={event.isPartnerBenefit}
         isCulturalEvent={event.isCulturalEvent}
+        fullWidth={fullWidth}
       />
-      <ArchiveEventButton eventId={event.eventId} />
+      <ArchiveEventButton eventId={event.eventId} fullWidth={fullWidth} />
     </>
   );
 
@@ -114,7 +115,7 @@ export async function renderEventDetailView({
           <h2 id="event-actions-heading" className="aura-text-label text-[var(--aura-fg-secondary)]">
             {t('header.actionsLabel')}
           </h2>
-          <div className="flex flex-col gap-2 [&_button]:w-full">{renderActions()}</div>
+          <div className="flex flex-col gap-2">{renderActions(true)}</div>
         </section>
       ) : null}
     </>

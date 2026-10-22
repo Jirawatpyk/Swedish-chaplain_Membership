@@ -294,6 +294,15 @@ html:has(.chamber-shell) {
 html:has(.chamber-viewport-actionbar) {
   scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem + env(safe-area-inset-bottom, 0px));
 }
+/* Spec 122 follow-up (maintainer, 22 Oct) — the members and renewal pipeline
+   bulk bars keep the count and the buttons on one line when they fit. The
+   status cell (the bar's first cell) asks for at least 8rem; "1 selected" is
+   about half that, so at 1440 the members bar's count dropped onto a line of
+   its own (8rem + 917px of buttons > its 1041px row). It takes its text's
+   width; a narrower bar still wraps. */
+.chamber-bulk-actionbar > div > :first-child {
+  flex-basis: auto;
+}
 /* Spec 122 US5b-2 — the member form's action bar (boards `Admin-member-new`,
    `-edit`, each with `-mobile`), and US6 the plan forms' (`Admin-plan-new`,
    `-edit`, `Admin-plans-clone`, each with `-mobile`). On a phone it is pinned edge to edge to the
@@ -370,7 +379,9 @@ html:has(.chamber-viewport-actionbar) {
     flex-wrap: nowrap;
     min-width: 0;
   }
-  /* Approve sits inside ReviewActions' wrapper: it stretches too. */
+  /* Approve sits inside ReviewActions' wrapper: it stretches too. A wrapped
+     label grows the button (`height: auto`); AURA 5.54 keeps it at least
+     44px, as on every other bar (#166). */
   .eblast-detail-actions > div > :last-child > div {
     flex: 1 1 auto;
     min-width: 0;
@@ -380,7 +391,6 @@ html:has(.chamber-viewport-actionbar) {
     flex: 1 1 auto;
     min-width: 0;
     height: auto;
-    min-height: 2.75rem;
     white-space: normal;
   }
   /* Design state: ⋯ is the end's only control, so Reject takes the free
@@ -401,7 +411,6 @@ html:has(.chamber-viewport-actionbar) {
     flex: 1 1 auto;
     min-width: 0;
     height: auto;
-    min-height: 2.75rem;
     white-space: normal;
   }
   html:has(.eblast-detail-actions) {

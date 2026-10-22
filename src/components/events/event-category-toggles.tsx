@@ -42,6 +42,8 @@ interface EventCategoryTogglesProps {
   readonly isCulturalEvent: boolean;
   /** Disable both toggles when the event is archived. */
   readonly disabled?: boolean;
+  /** Stretch both buttons to their container (the phone actions section). */
+  readonly fullWidth?: boolean;
 }
 
 async function postToggle(
@@ -75,6 +77,7 @@ export function EventCategoryToggles({
   isPartnerBenefit,
   isCulturalEvent,
   disabled = false,
+  fullWidth = false,
 }: EventCategoryTogglesProps) {
   const t = useTranslations('admin.events.detail.toggles');
   const router = useRouter();
@@ -134,6 +137,7 @@ export function EventCategoryToggles({
         variant="secondary"
         icon={<Award aria-hidden />}
         touchHeight
+        fullWidth={fullWidth}
         disabled={disabled}
         loading={activeFlag === 'partner_benefit'}
         // NEW-I1 (wave-6): the trigger stays focusable during a POST; a
@@ -147,6 +151,7 @@ export function EventCategoryToggles({
         variant="secondary"
         icon={<Sparkles aria-hidden />}
         touchHeight
+        fullWidth={fullWidth}
         disabled={disabled}
         loading={activeFlag === 'cultural_event'}
         onClick={() => !busy && setOpenDialog('cultural_event')}

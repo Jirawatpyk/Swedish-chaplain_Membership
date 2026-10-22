@@ -77,6 +77,7 @@ export function PreviewDialog({ state }: PreviewDialogProps): React.ReactElement
                 key={value}
                 type="button"
                 size="sm"
+                touchHeight
                 variant={width === value ? 'secondary' : 'ghost'}
                 aria-pressed={width === value}
                 onClick={() => setWidth(value)}

@@ -44,13 +44,14 @@ export function StickySaveBar({
       // UX review M5: Discard sits in the start slot as a ghost button, away
       // from the primary Save, so a stray Enter on the wrong button is less likely.
       start={
-        <Button type="button" variant="ghost" className="min-h-11" disabled={submitting || discardDisabled} onClick={onDiscard}>
+        <Button type="button" variant="ghost" disabled={submitting || discardDisabled} onClick={onDiscard}>
           {t('stickyBar.discard')}
         </Button>
       }
     >
-      {/* 088 FR-036 — 44px at every width, also in the compact staff density. */}
-      <Button type="submit" className="min-h-11" loading={submitting}>
+      {/* 088 FR-036 (44px on phones): the ActionBar sizes its Buttons below
+          640px since AURA 5.54, as on every other save bar. */}
+      <Button type="submit" loading={submitting}>
         {exists ? t('actions.save') : t('actions.create')}
       </Button>
     </ActionBar>

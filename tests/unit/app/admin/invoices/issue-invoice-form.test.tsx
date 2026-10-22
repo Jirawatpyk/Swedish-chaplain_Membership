@@ -617,7 +617,7 @@ describe('IssueInvoiceForm — the buttons stay in view (spec 122 US8b, UX revie
     // so the confirm's label, which names the total, wraps at 320px instead
     // of running out of the button (spec 122 follow-up 5).
     for (const button of row.querySelectorAll('button')) {
-      expect(button).toHaveClass('aura-btn--full', 'aura-btn--touch', 'sm:w-auto');
+      expect(button).toHaveClass('aura-btn--full-below-sm');
     }
   });
 });

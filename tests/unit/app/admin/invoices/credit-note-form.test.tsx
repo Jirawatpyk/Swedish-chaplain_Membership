@@ -432,6 +432,7 @@ describe('CreditNoteForm — AURA layout', () => {
   it('on a phone stacks the buttons full width, the primary action on top (ux-standards § 11.1, as the void page)', () => {
     renderForm();
     const row = screen.getByRole('button', { name: cnMessages.cancel }).parentElement!;
-    expect(row).toHaveClass('max-sm:flex-col-reverse', 'max-sm:[&>*]:w-full');
+    expect(row).toHaveClass('max-sm:flex-col-reverse');
+    for (const button of row.querySelectorAll('button')) expect(button).toHaveClass('aura-btn--full-below-sm');
   });
 });
