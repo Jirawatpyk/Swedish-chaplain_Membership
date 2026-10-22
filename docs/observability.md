@@ -1995,7 +1995,7 @@ grown, not the network.
 | Alert | Condition | Severity | Runbook |
 |-------|-----------|----------|---------|
 | Dashboard query slow | `insights_invoice_dashboard_query_duration_ms` p95 > **200 ms** over 30 min for any `card` | P3 | EXPLAIN that card's query on a dev branch at the tenant's volume (plan.md § Risks: the tax-point range is a Filter under RLS; the leakproof rewrite is the fix). D-a: add a cache only if a query misses its budget |
-| Dashboard query errors | `outcome=error` > 2 % of a card's samples over 15 min | P2 | The failing card shows its reference id; find the `insights.invoice_dashboard.<card>.failed` log line by it (`err` = error class only) |
+| Dashboard query errors | `outcome=error` > 2 % of a card's samples over 15 min | P2 | The failing card shows its reference id; find the loader's `insights.invoice_dashboard.<loader card>.failed` log line by it (loader cards: tiles, aging, attention, oldest_overdue, trend, methods; `err` = error class only) |
 
 No alerting backend is bound in code: these conditions are for the
 metrics drain; until one is wired, the per-card error log with its reference
