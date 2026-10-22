@@ -23,6 +23,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { runInTenant } from '@/lib/db';
+import { addDays } from '@/lib/fiscal-year';
 import { parseBigintColumn } from '@/lib/money';
 import { creditNotesTable, invoicesTable, invoiceTaxPointSql } from '@/modules/invoicing';
 import {
@@ -91,12 +92,25 @@ function inRange(expr: SQL, range: DashboardDateRange): SQL {
 }
 
 /**
+ * `range` as a half-open instant range `[from 00:00, to + 1 day 00:00)` in
+ * Bangkok (+07:00, no DST), for a timestamptz column. Comparing the column
+ * itself keeps the predicate leakproof, so under RLS it can be an index
+ * condition, unlike a range on `(col AT TIME ZONE 'Asia/Bangkok')::date`.
+ */
+function inBangkokInstantRange(column: SQL, range: DashboardDateRange): SQL {
+  const fromTs = `${range.from}T00:00:00+07:00`;
+  const toNextTs = `${addDays(range.to, 1)}T00:00:00+07:00`;
+  return sql`${column} >= ${fromTs}::timestamptz AND ${column} < ${toNextTs}::timestamptz`;
+}
+
+/**
  * Collected's three terms over `range` (spec D-d), one signed row each, all
  * through a paid-family invoice and the row filters:
  *   `gross`         + invoice total, by tax point;
  *   `credit_note`   − credit note total, by `issue_date`;
  *   `waived_refund` − succeeded refund with `credit_note_waived_at`, by its
- *                     Bangkok `completed_at` date.
+ *                     Bangkok `completed_at` date (filtered on the instant
+ *                     range, grouped by the date).
  * Columns: term, term_date, invoice_id, payment_id (the waived refund's own
  * payment, else NULL), invoice_payment_method, amount.
  */
@@ -123,7 +137,7 @@ function collectedTermsSql(t: string, range: DashboardDateRange, scope: SQL): SQ
     FROM ${refundsJoin(t)}
       AND ${rf.status} = 'succeeded' AND ${rf.creditNoteWaivedAt} IS NOT NULL
       AND ${paidFamily}
-      AND ${inRange(waivedOn, range)}${scope}`;
+      AND ${inBangkokInstantRange(sql`${rf.completedAt}`, range)}${scope}`;
 }
 
 type Row = Record<string, unknown>;

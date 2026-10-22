@@ -78,6 +78,6 @@ describe('the waived-refund term — a leakproof, index-usable completed_at rang
     expect(params[Number(range?.[2]) - 1]).toBe('2026-05-01T00:00:00+07:00');
     // The Bangkok date is only the grouping column, never the range predicate
     // (timezone() is not leakproof, so under RLS it can never be an index condition).
-    expect(text).not.toMatch(/AT TIME ZONE 'Asia\/Bangkok'\)::date\) >=/);
+    expect(text).not.toMatch(/\("refunds"\."completed_at" AT TIME ZONE 'Asia\/Bangkok'\)::date\) >=/);
   });
 });
