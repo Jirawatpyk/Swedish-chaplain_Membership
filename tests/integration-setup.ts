@@ -5,8 +5,42 @@
  * missing we skip the entire suite via a top-level error, surfacing the
  * reason clearly rather than silently passing.
  */
-import { beforeAll } from 'vitest';
+import { beforeAll, vi } from 'vitest';
 import { assertDbHostNotBlocklisted } from './helpers/db-host-guard';
+
+// No integration test sends real transactional email. The outbox dispatcher
+// (`/api/cron/outbox-dispatch`) drains up to 50 pending rows from the WHOLE
+// database per call, so one suite calling it sent every row that e2e runs had
+// queued on the shared dev branch through the real Resend key (80 sends to
+// test.example.com / swecham.test on 2026-10-20): quota spent, and bounces
+// against the sender domain. A suite that needs to see or fail sends mocks
+// this module itself; its own `vi.mock` replaces this default.
+vi.mock('@/modules/auth/infrastructure/email/resend-client', () => ({
+  emailSender: {
+    send: vi.fn(async () => ({
+      ok: true,
+      value: { messageId: `integration-mock-${crypto.randomUUID()}` },
+    })),
+  },
+}));
+// Senders that build their own client (the F8 renewal gateway) go through the
+// SDK directly: replace `emails.send` / `batch.send` on every `Resend`, and
+// keep the rest of the SDK (Broadcasts, contacts) as it is.
+vi.mock('resend', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('resend')>();
+  const fakeSend = vi.fn(async () => ({
+    data: { id: `integration-mock-${crypto.randomUUID()}` },
+    error: null,
+  }));
+  class Resend extends actual.Resend {
+    constructor(...args: ConstructorParameters<typeof actual.Resend>) {
+      super(...args);
+      Object.assign(this.emails, { send: fakeSend });
+      Object.assign(this.batch, { send: fakeSend });
+    }
+  }
+  return { ...actual, Resend };
+});
 
 // Pin STRIPE_API_VERSION for F5 webhook integration tests so the
 // fixture `api_version: '2024-06-20'` in tests/integration/payments/*
