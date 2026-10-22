@@ -7,8 +7,9 @@
  *     (RLS + FORCE) AND every table it reads — joins and subqueries included —
  *     carries an explicit `tenant_id = ctx.slug` predicate.
  *   - Collected's three terms are written once (`collectedTermsSql`); the
- *     Collected tile, By method and the trend's Collected all aggregate them,
- *     so the method rows and the months add up to the tile.
+ *     Collected tile, By method and the trend's Collected all aggregate them
+ *     over the same range the caller hands in (the FY clamped to today), so
+ *     the method rows and the months add up to the tile.
  *   - Status literals are inlined (`sql.raw` of constants, never input) and the
  *     tax point is `invoiceTaxPointSql` (the expression migration 0318
  *     indexes), so the planner can match the partial indexes.
@@ -209,7 +210,12 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     }));
   },
 
-  async monthlyBilledCollected(ctx, filters, range): Promise<readonly MonthlyBilledCollected[]> {
+  async monthlyBilledCollected(
+    ctx,
+    filters,
+    range,
+    collectedRange,
+  ): Promise<readonly MonthlyBilledCollected[]> {
     const { inv, cn } = tables();
     const t = ctx.slug;
     const scope = scopeOf(filters);
@@ -218,7 +224,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     const result = await rows(
       ctx,
       sql`
-      WITH collected AS (${collectedTermsSql(t, range, scope)}),
+      WITH collected AS (${collectedTermsSql(t, collectedRange, scope)}),
       terms AS (
         SELECT ${month(sql`${inv.issueDate}`)} AS month, ${inv.totalSatang} AS billed, 0::bigint AS collected
         FROM ${inv}

@@ -5,9 +5,10 @@
  * Each loader returns its own `Result`, so one failing query blanks one card,
  * never the page (US5.3); the fault is logged as `err: errKind(e)` (a DB
  * message can carry SQL) beside the reference id the card shows. `today` and
- * `now` are taken once per request by the caller. Collected in FY and By
- * method read the same FY range clamped to `today`, so the rows add up to
- * the tile. The role cut is made here (US4): without `invoicing.write` the
+ * `now` are taken once per request by the caller. Collected in FY, By method
+ * and the trend's Collected read the same FY range clamped to `today`, so the
+ * rows and the months add up to the tile (the trend's Billed keeps the whole
+ * FY). The role cut is made here (US4): without `invoicing.write` the
  * draft counts are ABSENT, not zeroed, and Record payment is not offered.
  */
 import { ok, err, type Result } from '@/lib/result';
@@ -268,7 +269,7 @@ export function loadInvoiceDashboardOldestOverdue(
       : OLDEST_OVERDUE_DEFAULT_LIMIT;
   return guarded('oldest_overdue', ctx, deps, async () => ({
     rows: await deps.source.oldestOverdue(ctx, input.filters, input.today, safeLimit),
-    canRecordPayment: input.canWrite === true,
+    canRecordPayment: input.canWrite,
   }));
 }
 
@@ -280,7 +281,8 @@ export function loadInvoiceDashboardTrend(
   return guarded('trend', ctx, deps, async () => {
     const { fiscalYear, from, to } = input.fiscalYearRange;
     const range = { from, to };
-    const months = await deps.source.monthlyBilledCollected(ctx, input.filters, range);
+    const collected = fiscalYearToDate(input.fiscalYearRange, input.today);
+    const months = await deps.source.monthlyBilledCollected(ctx, input.filters, range, collected.range);
     const byMonth = new Map(months.map((m) => [m.monthKey, m]));
     const startMonth = Number(from.slice(5, 7)) as FiscalYearStartMonth;
     const slots = fiscalYearMonthSlots(fiscalYear, startMonth, input.today).map((slot) => {

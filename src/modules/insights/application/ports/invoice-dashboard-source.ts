@@ -107,11 +107,16 @@ export interface InvoiceDashboardSource {
     filters: InvoiceDashboardFilters,
     range: DashboardDateRange,
   ): Promise<readonly CollectedMethodTotal[]>;
-  /** Billed (`issue_date`, D-e) and Collected per month inside `range`; months with neither are absent. */
+  /**
+   * Billed (`issue_date`, D-e) per month inside `range` and Collected per month
+   * inside `collectedRange` (the FY clamped to today, as Collected in FY reads
+   * it, so the months add up to the tile); months with neither are absent.
+   */
   monthlyBilledCollected(
     ctx: TenantContext,
     filters: InvoiceDashboardFilters,
     range: DashboardDateRange,
+    collectedRange: DashboardDateRange,
   ): Promise<readonly MonthlyBilledCollected[]>;
   /** The five Needs-attention counts, as of `now` (the request instant; no date range). */
   attentionCounts(
