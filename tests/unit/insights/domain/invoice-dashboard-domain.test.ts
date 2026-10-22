@@ -15,6 +15,7 @@ import {
   agingBucketOf,
 } from '@/modules/insights/domain/invoice-dashboard-aging';
 import {
+  calendarMonthRange,
   fiscalYearDateRange,
   fiscalYearMonthSlots,
 } from '@/modules/insights/domain/invoice-dashboard-fiscal-year';
@@ -179,6 +180,24 @@ describe('fiscalYearDateRange', () => {
 
   it('March start ends on a leap day when the next February has one', () => {
     expect(fiscalYearDateRange(2027, 3)).toEqual({ fiscalYear: 2027, from: '2027-03-01', to: '2028-02-29' });
+  });
+});
+
+describe('calendarMonthRange', () => {
+  it('February of a leap year ends on the 29th', () => {
+    expect(calendarMonthRange('2024-02-10')).toEqual({ from: '2024-02-01', to: '2024-02-29' });
+  });
+
+  it('February of a common year ends on the 28th', () => {
+    expect(calendarMonthRange('2023-02-28')).toEqual({ from: '2023-02-01', to: '2023-02-28' });
+  });
+
+  it('December ends on the 31st of the same year', () => {
+    expect(calendarMonthRange('2025-12-01')).toEqual({ from: '2025-12-01', to: '2025-12-31' });
+  });
+
+  it('a 30-day month ends on the 30th', () => {
+    expect(calendarMonthRange('2026-06-15')).toEqual({ from: '2026-06-01', to: '2026-06-30' });
   });
 });
 
