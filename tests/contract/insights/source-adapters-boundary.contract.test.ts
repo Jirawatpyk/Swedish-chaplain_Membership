@@ -44,6 +44,8 @@ import { invoiceSourceAdapter } from '@/modules/insights/infrastructure/sources/
 import { memberSourceAdapter } from '@/modules/insights/infrastructure/sources/member-source-adapter';
 import { broadcastSourceAdapter } from '@/modules/insights/infrastructure/sources/broadcast-source-adapter';
 import { waivedRefundSourceAdapter } from '@/modules/insights/infrastructure/sources/waived-refund-source-adapter';
+import { invoiceDashboardSourceAdapter } from '@/modules/insights/infrastructure/sources/invoice-dashboard-source-adapter';
+import type { InvoiceDashboardSource } from '@/modules/insights/application/ports/invoice-dashboard-source';
 import type {
   InvoiceSource,
   MemberSource,
@@ -165,6 +167,16 @@ describe('F9 inter-module boundary contract [T017a / analyze R2-M1]', () => {
     it('exports the tax-point expression as SQL', () => {
       expect(typeof invoiceTaxPointSql).toBe('object');
       expect(typeof invoiceTaxPointSql.getSQL).toBe('function');
+    });
+
+    it('invoiceDashboardSourceAdapter satisfies the InvoiceDashboardSource port (one method per card)', () => {
+      const port: InvoiceDashboardSource = invoiceDashboardSourceAdapter;
+      expect(typeof port.outstandingByAgingBucket).toBe('function');
+      expect(typeof port.collectedInRange).toBe('function');
+      expect(typeof port.collectedByMethod).toBe('function');
+      expect(typeof port.monthlyBilledCollected).toBe('function');
+      expect(typeof port.attentionCounts).toBe('function');
+      expect(typeof port.oldestOverdue).toBe('function');
     });
   });
 
