@@ -4,8 +4,8 @@
  * keyboard focus there, so the next Tab continues inside it (2.4.3) — the
  * observer alone left an earlier tall section current.
  */
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { SectionLinks } from '@/app/(staff)/admin/members/[memberId]/_components/section-links';
 
 afterEach(cleanup);
@@ -42,5 +42,62 @@ describe('SectionLinks', () => {
     const { container } = render(<SectionLinks label="On this page" links={links} />);
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'location');
     expect(container.firstElementChild?.className).toContain('top-[var(--aura-shell-bar-height)]');
+  });
+});
+
+// Layout B (two columns): the current section is the one whose top most
+// recently passed under the tabs, by position on the page, not by the
+// links' order (the aside's Company passes the band before the main
+// column's Timeline). A followed link stays current through the scroll it
+// starts, even at the end of the page.
+describe('SectionLinks scroll-spy in two columns', () => {
+  const twoColumn = [
+    { id: 'contacts', label: 'Contacts' },
+    { id: 'timeline', label: 'Timeline' },
+    { id: 'company', label: 'Company' },
+    { id: 'data-export', label: 'Data export' },
+  ];
+  const tops: Record<string, number> = { contacts: -600, timeline: 60, company: -200, 'data-export': 400 };
+
+  function renderAt(scrollHeight: number) {
+    Object.defineProperty(document.documentElement, 'scrollHeight', { value: scrollHeight, configurable: true });
+    const utils = render(
+      <>
+        <SectionLinks label="On this page" links={twoColumn} />
+        {twoColumn.map((l) => (
+          <section key={l.id} id={l.id} aria-label={l.label} />
+        ))}
+      </>,
+    );
+    for (const l of twoColumn) {
+      document.getElementById(l.id)!.getBoundingClientRect = () => ({ top: tops[l.id]! }) as DOMRect;
+    }
+    (utils.container.firstElementChild as HTMLElement).getBoundingClientRect = () => ({ bottom: 100 }) as DOMRect;
+    return utils;
+  }
+  // The spy runs on the next animation frame (setTimeout is faked here, so
+  // run frames at once).
+  beforeEach(() => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+      cb(0);
+      return 0;
+    });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+  const frame = () => act(async () => {});
+
+  it('marks the section that most recently passed the tabs, by position', async () => {
+    renderAt(10_000);
+    fireEvent.scroll(window);
+    await frame();
+    expect(screen.getByRole('link', { name: 'Timeline' })).toHaveAttribute('aria-current', 'location');
+  });
+
+  it('keeps a followed link current through its own scroll, even at the end of the page', async () => {
+    renderAt(0); // already at the end
+    fireEvent.click(screen.getByRole('link', { name: 'Timeline' }));
+    fireEvent.scroll(window);
+    await frame();
+    expect(screen.getByRole('link', { name: 'Timeline' })).toHaveAttribute('aria-current', 'location');
   });
 });
