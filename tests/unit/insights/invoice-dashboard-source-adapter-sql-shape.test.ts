@@ -96,3 +96,71 @@ describe('Billed — the billable statuses as a positive list', () => {
     expect(text).not.toMatch(/NOT IN/);
   });
 });
+
+/**
+ * Principle I, the second wall: every table reference after FROM / JOIN —
+ * CTE bodies, subqueries and the `later_attempt` alias included — carries its
+ * own `"<name>"."tenant_id" = $n` predicate. Counted per reference, so a
+ * predicate dropped from one UNION branch of a table read four times fails.
+ * Drizzle quotes table names; CTE names (`terms`, `invoice_pass`, …) are bare,
+ * so they are not table references.
+ */
+const TABLE_REF = /\b(?:FROM|JOIN)\s+"([a-z_]+)"(?:\s+(?:AS\s+)?"([a-z_]+)")?/g;
+
+function tenancyViolations(text: string): { refs: string[]; tables: Set<string>; violations: string[] } {
+  const refs: string[] = [];
+  const tables = new Set<string>();
+  for (const m of text.matchAll(TABLE_REF)) {
+    tables.add(m[1]!);
+    refs.push(m[2] ?? m[1]!);
+  }
+  const violations: string[] = [];
+  for (const ref of new Set(refs)) {
+    const uses = refs.filter((r) => r === ref).length;
+    const fenced = text.match(new RegExp(String.raw`"${ref}"\."tenant_id" = \$\d+`, 'g'))?.length ?? 0;
+    if (fenced < uses) violations.push(`${ref}: ${uses} reference(s), ${fenced} tenant predicate(s)`);
+  }
+  // A comma join would hide its second table from the parse above.
+  if (/\b(?:FROM|JOIN)\s+"[a-z_]+"(?:\s+(?:AS\s+)?"[a-z_]+")?\s*,/.test(text)) {
+    violations.push('comma join after a table reference');
+  }
+  return { refs, tables, violations };
+}
+
+describe('tenancy — every table reference carries its own tenant_id predicate', () => {
+  it('the checker itself: a statement missing one predicate is caught (negative control)', () => {
+    const bad = `SELECT 1 FROM "invoices" WHERE "invoices"."tenant_id" = $1
+      UNION ALL SELECT 1 FROM "invoices" WHERE "invoices"."status" = 'paid'`;
+    expect(tenancyViolations(bad).violations).toEqual(['invoices: 2 reference(s), 1 tenant predicate(s)']);
+    expect(tenancyViolations(`SELECT 1 FROM "refunds" AS "later_attempt"`).violations).toEqual([
+      'later_attempt: 1 reference(s), 0 tenant predicate(s)',
+    ]);
+  });
+
+  it('all six adapter statements', async () => {
+    queries.length = 0;
+    const range = { from: '2026-01-01', to: '2026-06-15' };
+    const a = invoiceDashboardSourceAdapter;
+    await a.outstandingByAgingBucket(CTX, FILTERS, '2026-06-15');
+    await a.collectedInRange(CTX, FILTERS, range);
+    await a.collectedByMethod(CTX, FILTERS, range);
+    await a.monthlyBilledCollected(CTX, FILTERS, range, range);
+    await a.attentionCounts(CTX, FILTERS, new Date('2026-06-15T05:00:00Z'));
+    await a.oldestOverdue(CTX, FILTERS, '2026-06-15', 6);
+    expect(queries).toHaveLength(6);
+
+    const allTables = new Set<string>();
+    const allRefs: string[] = [];
+    for (const { sql: text } of queries) {
+      const { refs, tables, violations } = tenancyViolations(text);
+      // Positive control: each statement's parse finds at least one table.
+      expect(refs.length).toBeGreaterThan(0);
+      expect(violations).toEqual([]);
+      for (const t of tables) allTables.add(t);
+      allRefs.push(...refs);
+    }
+    // Positive control: the parse sees every money table and the alias.
+    expect([...allTables].sort()).toEqual(['credit_notes', 'invoices', 'payments', 'refunds']);
+    expect(allRefs).toContain('later_attempt');
+  });
+});
