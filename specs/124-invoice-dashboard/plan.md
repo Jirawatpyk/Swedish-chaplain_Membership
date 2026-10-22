@@ -29,8 +29,8 @@ No new tables or columns. Migration **0318** (slice 2, `new-migration` skill; ap
 
 | # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
-| 1 | `dueAfter` and `plan` on `/admin/invoices` (additive, unflagged) | US2 lines 3–4 | financial-integrity-reviewer, enterprise-ux-designer, i18n-translation-reviewer | `124-invoice-dashboard-s1` | — · open |
-| 2 | migration 0318, barrel exports, insights port / adapter / per-card loaders, domain helpers; the page reads nothing yet | US1 lines 1–6 (figures), US3 lines 2–4 (filter semantics), US4 line 1 (projection), US6 lines 4–5 | financial-integrity-reviewer, financial-reporting-analyst, security-engineer, drizzle-migration-reviewer, performance-slo-guardian | `124-invoice-dashboard-s2` | — · open |
+| 1 | `dueAfter` and `plan` on `/admin/invoices` (additive, unflagged) | US2 lines 3–4 | financial-integrity-reviewer, enterprise-ux-designer, i18n-translation-reviewer | `124-invoice-dashboard-s1` | #617 · done |
+| 2 | migration 0318, barrel exports, insights port / adapter / per-card loaders, domain helpers; the page reads nothing yet. Carried from slice 1 (maintainer, 22 Oct): the invoice-list use case checks `dueBefore` with `parseIsoCalendarDate` as it does `dueAfter`; the popover's read-only rows tie their label to the value (`role="group"` + `aria-labelledby`) | US1 lines 1–6 (figures), US3 lines 2–4 (filter semantics), US4 line 1 (projection), US6 lines 4–5 | financial-integrity-reviewer, financial-reporting-analyst, security-engineer, drizzle-migration-reviewer, performance-slo-guardian | `124-invoice-dashboard-s2` | — · open |
 | 3 | flag, nav, route, filters, six cards, states, i18n, bundle budget, e2e | US1 line 7, US2 lines 1–2 and 5–6, US3 lines 1 and 5, US4, US5, US6 lines 1–3 | enterprise-ux-designer, mobile-a11y-ux-reviewer, security-engineer, i18n-translation-reviewer, thai-tax-compliance-auditor (Billed caption wording) | `124-invoice-dashboard-s3` | — · open |
 
 Each slice is cut from `origin/main` after the previous one merged, in a short `%TEMP%` worktree with a real `pnpm install`. Slice 1 merges `origin/main` and reinstalls before Verify if the AURA 5.54 bump lands first.
@@ -101,7 +101,7 @@ Each slice is cut from `origin/main` after the previous one merged, in a short `
 
 1. Slices merge in order, each on the user's word (D-006). Each is safe to deploy alone: slice 1 is additive, slice 2 is a migration plus unused code, slice 3 is behind `FEATURE_INVOICE_DASHBOARD` (default off).
 2. Turning the flag on is a production deploy (D-007): only on the user's word, recorded in `docs/operational-state.md`.
-3. Follow-up issues: the CSV export labels a refunded Stripe invoice "other"; `listInvoicesPaged` passes `dueBefore` through on a regex only, so a non-page caller's `2026-02-30` would still reach Postgres (pre-existing; `dueAfter` is now checked in the use case).
+3. Follow-up issue: the CSV export labels a refunded Stripe invoice "other". (The `dueBefore` use-case check moved into slice 2.)
 
 ## Risks
 
