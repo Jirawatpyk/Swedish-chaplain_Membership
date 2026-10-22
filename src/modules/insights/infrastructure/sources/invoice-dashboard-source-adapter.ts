@@ -30,9 +30,9 @@
  *     − Σ waived refunds (`status = 'succeeded' AND credit_note_waived_at IS
  *         NOT NULL`) by `(completed_at AT TIME ZONE 'Asia/Bangkok')::date` in
  *         range, joined via `refunds.invoice_id`, same status set and filters.
- *     A refund on a void invoice therefore never subtracts; a `failed` refund
- *     (`f4_bridge_%` included) is never subtracted; `payments.amount_satang`
- *     is never summed.
+ *     A refund on a void invoice therefore never subtracts; a `failed` or
+ *     `pending` refund is never subtracted; `payments.amount_satang` is never
+ *     summed.
  *   - By method: an invoice's method is its latest `payments` row in
  *     succeeded | partially_refunded | refunded (`DISTINCT ON (invoice_id)`,
  *     `completed_at DESC`), else `invoices.payment_method`; a credit note takes
@@ -43,7 +43,9 @@
  *     the paid family, so never draft or void). Collected per month as above.
  *   - Needs attention: drafts by origin; `receipt_pdf_status = 'failed'`;
  *     payments whose LATEST refund attempt (by `initiated_at`) is `failed` with
- *     `stripe_refund_%`; refunds `failed` with `f4_bridge_%`.
+ *     `stripe_refund_%`; refunds `pending` whose `initiated_at` is strictly
+ *     older than `now − STALE_REFUND_ESCALATION_AGE_MS` (the payments sweep's
+ *     own constant and column, D-k). `now` is the caller's instant.
  *   - Oldest overdue: issued, `due_date < today`, by `due_date`, then amount
  *     desc, then document number.
  *
@@ -59,7 +61,11 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { creditNotesTable, invoicesTable, invoiceTaxPointSql } from '@/modules/invoicing';
-import { paymentsTable, refundsTable } from '@/modules/payments';
+import {
+  paymentsTable,
+  refundsTable,
+  STALE_REFUND_ESCALATION_AGE_MS,
+} from '@/modules/payments';
 import type { TenantContext } from '@/modules/tenants';
 import { agingBucketDueRange, type AgingBucket } from '../../domain/invoice-dashboard-aging';
 import type { InvoiceDashboardFilters } from '../../domain/invoice-dashboard-filters';
@@ -284,10 +290,14 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     }));
   },
 
-  async attentionCounts(ctx, filters): Promise<AttentionCounts> {
+  async attentionCounts(ctx, filters, now): Promise<AttentionCounts> {
     const { inv, rf } = tables();
     const t = ctx.slug;
     const scope = scopeOf(filters);
+    // Read per call like `tables()`: a partial mock of the payments barrel
+    // must not crash this module at load. Strictly older, as the sweep's
+    // `ageMs <= ESCALATION_AGE_MS → not yet` reads.
+    const pendingBefore = new Date(now.getTime() - STALE_REFUND_ESCALATION_AGE_MS).toISOString();
     const result = await rows(
       ctx,
       sql`
@@ -309,8 +319,8 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
          WHERE latest.status = 'failed' AND latest.code LIKE 'stripe_refund_%'
         ) AS refunds_failed_at_stripe,
         (SELECT COUNT(*)::int FROM ${refundsJoin(t)}
-          AND ${rf.status} = 'failed' AND ${rf.failureReasonCode} LIKE 'f4_bridge_%'${scope}
-        ) AS refunds_settled_unbooked`,
+          AND ${rf.status} = 'pending' AND ${rf.initiatedAt} < ${pendingBefore}::timestamptz${scope}
+        ) AS refunds_pending_over_threshold`,
     );
     const r = result[0] ?? {};
     return {
@@ -318,7 +328,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
       autoRenewalDrafts: Number(r.auto_renewal_drafts ?? 0),
       receiptPdfFailed: Number(r.receipt_pdf_failed ?? 0),
       refundsFailedAtStripe: Number(r.refunds_failed_at_stripe ?? 0),
-      refundsSettledUnbooked: Number(r.refunds_settled_unbooked ?? 0),
+      refundsPendingOverThreshold: Number(r.refunds_pending_over_threshold ?? 0),
     };
   },
 

@@ -71,8 +71,12 @@ export interface AttentionCounts {
   readonly receiptPdfFailed: number;
   /** Payments whose LATEST refund attempt failed at Stripe (`stripe_refund_%`). */
   readonly refundsFailedAtStripe: number;
-  /** Refunds paid out by Stripe but not booked (`failed` + `f4_bridge_%`). */
-  readonly refundsSettledUnbooked: number;
+  /**
+   * Refunds still `pending` whose `initiated_at` is strictly older than the
+   * stale-refund sweep's escalation age (3 days) before `now` (spec D-k):
+   * paid out by Stripe but not booked, or outcome unknown.
+   */
+  readonly refundsPendingOverThreshold: number;
 }
 
 export interface OverdueInvoiceRow {
@@ -111,8 +115,12 @@ export interface InvoiceDashboardSource {
     filters: InvoiceDashboardFilters,
     range: DashboardDateRange,
   ): Promise<readonly MonthlyBilledCollected[]>;
-  /** The five Needs-attention counts, as of now (no date range). */
-  attentionCounts(ctx: TenantContext, filters: InvoiceDashboardFilters): Promise<AttentionCounts>;
+  /** The five Needs-attention counts, as of `now` (the request instant; no date range). */
+  attentionCounts(
+    ctx: TenantContext,
+    filters: InvoiceDashboardFilters,
+    now: Date,
+  ): Promise<AttentionCounts>;
   /** The overdue set, longest past due first (then amount desc, then number), at most `limit` rows. */
   oldestOverdue(
     ctx: TenantContext,

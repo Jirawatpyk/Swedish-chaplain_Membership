@@ -139,8 +139,12 @@ const SWEEP_TOTAL_BUDGET_MS = 35_000;
  * `pending`/`requires_action`, or the row has no `processor_refund_id`)
  * escalates to an ops signal once older than this. Signal ONLY — never a
  * state change; the row stays `pending`.
+ *
+ * Exported (barrel: `STALE_REFUND_ESCALATION_AGE_MS`) so the invoice
+ * dashboard's Needs-attention row ages pending refunds by the same rule
+ * (spec 124 D-k): strictly older than this, measured on `initiated_at`.
  */
-const ESCALATION_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+export const ESCALATION_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

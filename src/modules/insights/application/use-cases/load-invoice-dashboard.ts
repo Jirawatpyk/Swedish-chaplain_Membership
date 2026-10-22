@@ -53,6 +53,11 @@ export interface InvoiceDashboardLoadInput {
   readonly filters: InvoiceDashboardFilters;
   /** Bangkok today, `YYYY-MM-DD`, computed once per request (`bangkokLocalDate`). */
   readonly today: string;
+  /**
+   * The request instant, taken once with `today`; the pending-refund age in
+   * Needs attention is measured from it, never the database's clock.
+   */
+  readonly now: Date;
   /** The selected FY, from `fiscalYearDateRange(filters.fiscalYear, startMonth)`. */
   readonly fiscalYearRange: FiscalYearDateRange;
   /** The viewer holds `invoicing.write` (decided by the caller via `canPerform`). */
@@ -114,7 +119,7 @@ export interface InvoiceDashboardAging {
 export interface InvoiceDashboardAttentionReadOnly {
   readonly receiptPdfFailed: number;
   readonly refundsFailedAtStripe: number;
-  readonly refundsSettledUnbooked: number;
+  readonly refundsPendingOverThreshold: number;
 }
 
 /** Needs attention for a viewer holding `invoicing.write`. */
@@ -259,11 +264,11 @@ export function loadInvoiceDashboardAttention(
   deps: LoadInvoiceDashboardDeps,
 ): Promise<InvoiceDashboardResult<InvoiceDashboardAttention>> {
   return guarded('attention', ctx, deps, async () => {
-    const counts = await deps.source.attentionCounts(ctx, input.filters);
+    const counts = await deps.source.attentionCounts(ctx, input.filters, input.now);
     const readOnly: InvoiceDashboardAttentionReadOnly = {
       receiptPdfFailed: counts.receiptPdfFailed,
       refundsFailedAtStripe: counts.refundsFailedAtStripe,
-      refundsSettledUnbooked: counts.refundsSettledUnbooked,
+      refundsPendingOverThreshold: counts.refundsPendingOverThreshold,
     };
     // `!== true`: the safe direction if the flag ever arrives loosely typed.
     if (input.canWrite !== true) return readOnly;
