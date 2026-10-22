@@ -278,6 +278,11 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
     // `stripe_refund_%` failures has no LATER succeeded or pending attempt
     // (initiated_at, created_at, id — the order the latest attempt is chosen by).
     // A later failure of another kind does not clear it.
+    // Row 5 (D-k) also counts legacy `failed` + `f4_bridge_%` refunds: Stripe
+    // paid out, the credit note was never booked, nothing was subtracted.
+    // Receipt PDF failed: paid-family invoices only (a stale status on a
+    // voided invoice is no receipt to re-render).
+    const receiptFailed = sql`${inv.receiptPdfStatus} = 'failed' AND ${inv.status} IN ${PAID_FAMILY}`;
     const result = await rows(
       ctx,
       sql`
@@ -286,10 +291,10 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
           COUNT(*) FILTER (WHERE ${inv.status} = 'draft' AND ${inv.origin} = 'manual')::int AS manual_drafts,
           COUNT(*) FILTER (WHERE ${inv.status} = 'draft' AND ${inv.origin} = 'auto_renewal')::int
             AS auto_renewal_drafts,
-          COUNT(*) FILTER (WHERE ${inv.receiptPdfStatus} = 'failed')::int AS receipt_pdf_failed
+          COUNT(*) FILTER (WHERE ${receiptFailed})::int AS receipt_pdf_failed
         FROM ${inv}
         WHERE ${inv.tenantId} = ${t}
-          AND (${inv.status} = 'draft' OR ${inv.receiptPdfStatus} = 'failed')${scope}
+          AND (${inv.status} = 'draft' OR (${receiptFailed}))${scope}
       ), refund_pass AS (
         SELECT
           COUNT(DISTINCT ${rf.paymentId}) FILTER (
@@ -303,7 +308,8 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
               )
           )::int AS refunds_failed_at_stripe,
           COUNT(*) FILTER (
-            WHERE ${rf.status} = 'pending' AND ${rf.initiatedAt} < ${pendingBefore}::timestamptz
+            WHERE (${rf.status} = 'pending' AND ${rf.initiatedAt} < ${pendingBefore}::timestamptz)
+               OR (${rf.status} = 'failed' AND ${rf.failureReasonCode} LIKE 'f4_bridge_%')
           )::int AS refunds_pending_over_threshold
         FROM ${refundsJoin(t)}
           AND ${rf.status} IN ('failed', 'pending')${scope}

@@ -63,6 +63,7 @@ export interface MonthlyBilledCollected {
 export interface AttentionCounts {
   readonly manualDrafts: number;
   readonly autoRenewalDrafts: number;
+  /** Paid-family invoices (`paid | partially_credited | credited`) whose receipt PDF failed to render. */
   readonly receiptPdfFailed: number;
   /**
    * Payments with a refund attempt failed at Stripe (`stripe_refund_%`) and no
@@ -72,7 +73,9 @@ export interface AttentionCounts {
   /**
    * Refunds still `pending` whose `initiated_at` is strictly older than the
    * stale-refund sweep's escalation age (3 days) before `now` (spec D-k):
-   * paid out by Stripe but not booked, or outcome unknown.
+   * paid out by Stripe but not booked, or outcome unknown; plus legacy
+   * `failed` refunds with `failure_reason_code LIKE 'f4_bridge_%'` (paid out,
+   * never booked, never subtracted).
    */
   readonly refundsPendingOverThreshold: number;
 }
