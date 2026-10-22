@@ -216,9 +216,13 @@ async function guarded<T>(
   }
 }
 
-/** The FY range cut at `today` when today falls inside it. */
-function fiscalYearToDate(
-  range: FiscalYearDateRange,
+/**
+ * `range` cut at `today` when today falls inside it (`toDate`); otherwise the
+ * whole range. The one clamp behind every "to date" figure: the FY cards and
+ * the this-month tile.
+ */
+function rangeToDate(
+  range: DashboardDateRange,
   today: string,
 ): { readonly range: DashboardDateRange; readonly toDate: boolean } {
   const toDate = today >= range.from && today <= range.to;
@@ -261,9 +265,9 @@ export function loadInvoiceDashboardTiles(
 ): Promise<InvoiceDashboardResult<InvoiceDashboardTiles>> {
   return guarded('tiles', ctx, deps, async () => {
     // Today's calendar month, cut at today ("{Month} to date"); today always
-    // lies inside its own month.
-    const month = { from: calendarMonthRange(input.today).from, to: input.today };
-    const fy = fiscalYearToDate(input.fiscalYearRange, input.today);
+    // lies inside its own month, so `toDate` is always true there.
+    const month = rangeToDate(calendarMonthRange(input.today), input.today).range;
+    const fy = rangeToDate(input.fiscalYearRange, input.today);
     const [aging, collectedMonth, collectedFy] = await Promise.all([
       readAging(ctx, input, deps),
       deps.source.collectedInRange(ctx, input.filters, month),
@@ -334,7 +338,7 @@ export function loadInvoiceDashboardTrend(
   return guarded('trend', ctx, deps, async () => {
     const { fiscalYear, from, to } = input.fiscalYearRange;
     const range = { from, to };
-    const collected = fiscalYearToDate(input.fiscalYearRange, input.today);
+    const collected = rangeToDate(input.fiscalYearRange, input.today);
     const months = await deps.source.monthlyBilledCollected(ctx, input.filters, range, collected.range);
     const byMonth = new Map(months.map((m) => [m.monthKey, m]));
     const startMonth = Number(from.slice(5, 7)) as FiscalYearStartMonth;
@@ -361,7 +365,7 @@ export function loadInvoiceDashboardMethods(
   deps: LoadInvoiceDashboardDeps,
 ): Promise<InvoiceDashboardResult<InvoiceDashboardMethods>> {
   return guarded('methods', ctx, deps, async () => {
-    const { range, toDate } = fiscalYearToDate(input.fiscalYearRange, input.today);
+    const { range, toDate } = rangeToDate(input.fiscalYearRange, input.today);
     const raw = await deps.source.collectedByMethod(ctx, input.filters, range);
     const sums = new Map<InvoiceDashboardMethod, bigint>();
     for (const r of raw) {
