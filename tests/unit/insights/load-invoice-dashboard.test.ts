@@ -103,7 +103,7 @@ describe('loadInvoiceDashboardTiles', () => {
     expect(source.outstandingByAgingBucket).toHaveBeenCalledWith(ctx, FILTERS, '2026-06-15');
   });
 
-  it('Collected this month is the calendar month of today, whatever fiscal year is selected', async () => {
+  it('Collected this month is the calendar month of today, 1st to today, whatever fiscal year is selected', async () => {
     const collectedInRange = vi
       .fn()
       .mockResolvedValueOnce({ amountSatang: 50_00n, invoiceCount: 2 })
@@ -117,14 +117,16 @@ describe('loadInvoiceDashboardTiles', () => {
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    // "{Month} to date": the month is cut at today, never read to its last day.
     expect(collectedInRange).toHaveBeenNthCalledWith(1, ctx, FILTERS, {
       from: '2026-06-01',
-      to: '2026-06-30',
+      to: '2026-06-15',
     });
     expect(result.value.collectedThisMonth).toEqual({
       amountSatang: 50_00n,
       invoiceCount: 2,
-      range: { from: '2026-06-01', to: '2026-06-30' },
+      range: { from: '2026-06-01', to: '2026-06-15' },
+      toDate: true,
     });
     // A finished FY is read whole and is not "to date".
     expect(collectedInRange).toHaveBeenNthCalledWith(2, ctx, FILTERS, {
