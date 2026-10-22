@@ -17,6 +17,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
+import { openSeedClient } from './open-seed-client';
 
 const TENANT_ID = process.env.E2E_TENANT_SLUG ?? 'swecham';
 
@@ -62,45 +63,65 @@ export interface WipeF8RenewalsResult {
  * Delete the rows this seed owns for one member: open + lapsed cycles (with
  * their reminder events and escalation tasks, whose FKs are NO ACTION) and
  * open tier-upgrade suggestions. Terminal cycles and suggestions created by
- * real flows stay so audit history is preserved. A cycle still referenced by
- * `scheduled_plan_changes` (FK RESTRICT) makes the cycle delete throw.
+ * real flows stay so audit history is preserved. One transaction: a cycle
+ * still referenced by `scheduled_plan_changes` (FK RESTRICT) makes the whole
+ * delete roll back and throw, rather than leaving the cycle without its
+ * reminder and task history.
  */
 async function deleteSeedOwnedRows(
   sql: postgres.Sql,
   memberId: string,
 ): Promise<WipeF8RenewalsResult> {
-  const seedCycles = sql`
-    SELECT cycle_id FROM renewal_cycles
-    WHERE tenant_id = ${TENANT_ID}
-      AND member_id = ${memberId}::uuid
-      AND status IN ('upcoming', 'reminded', 'awaiting_payment', 'lapsed')
+  return sql.begin(async (tx) => {
+    const seedCycles = tx`
+      SELECT cycle_id FROM renewal_cycles
+      WHERE tenant_id = ${TENANT_ID}
+        AND member_id = ${memberId}::uuid
+        AND status IN ('upcoming', 'reminded', 'awaiting_payment', 'lapsed')
+    `;
+    const reminderEvents = await tx`
+      DELETE FROM renewal_reminder_events
+      WHERE tenant_id = ${TENANT_ID} AND cycle_id IN (${seedCycles})
+    `;
+    const escalationTasks = await tx`
+      DELETE FROM renewal_escalation_tasks
+      WHERE tenant_id = ${TENANT_ID} AND cycle_id IN (${seedCycles})
+    `;
+    const cycles = await tx`
+      DELETE FROM renewal_cycles
+      WHERE tenant_id = ${TENANT_ID} AND cycle_id IN (${seedCycles})
+    `;
+    const suggestions = await tx`
+      DELETE FROM tier_upgrade_suggestions
+      WHERE tenant_id = ${TENANT_ID}
+        AND member_id = ${memberId}::uuid
+        AND status IN ('open', 'accepted_pending_apply')
+    `;
+    return {
+      reminderEvents: reminderEvents.count,
+      escalationTasks: escalationTasks.count,
+      cycles: cycles.count,
+      suggestions: suggestions.count,
+    };
+  });
+}
+
+/** The e2e-member's `members.member_id`, or null when the persona is absent. */
+async function resolveE2EMemberId(
+  sql: postgres.Sql,
+  memberEmail: string,
+): Promise<string | null> {
+  const rows = await sql<Array<{ member_id: string }>>`
+    SELECT m.member_id::text AS member_id
+    FROM users u
+    JOIN contacts c
+      ON c.linked_user_id = u.id AND c.tenant_id = ${TENANT_ID}
+    JOIN members m
+      ON m.member_id = c.member_id AND m.tenant_id = ${TENANT_ID}
+    WHERE u.email = ${memberEmail}
+    LIMIT 1
   `;
-  const reminderEvents = await sql`
-    DELETE FROM renewal_reminder_events
-    WHERE tenant_id = ${TENANT_ID} AND cycle_id IN (${seedCycles})
-  `;
-  const escalationTasks = await sql`
-    DELETE FROM renewal_escalation_tasks
-    WHERE tenant_id = ${TENANT_ID} AND cycle_id IN (${seedCycles})
-  `;
-  const cycles = await sql`
-    DELETE FROM renewal_cycles
-    WHERE tenant_id = ${TENANT_ID}
-      AND member_id = ${memberId}::uuid
-      AND status IN ('upcoming', 'reminded', 'awaiting_payment', 'lapsed')
-  `;
-  const suggestions = await sql`
-    DELETE FROM tier_upgrade_suggestions
-    WHERE tenant_id = ${TENANT_ID}
-      AND member_id = ${memberId}::uuid
-      AND status IN ('open', 'accepted_pending_apply')
-  `;
-  return {
-    reminderEvents: reminderEvents.count,
-    escalationTasks: escalationTasks.count,
-    cycles: cycles.count,
-    suggestions: suggestions.count,
-  };
+  return rows[0]?.member_id ?? null;
 }
 
 /**
@@ -113,30 +134,21 @@ async function deleteSeedOwnedRows(
  * database, so a teardown in one shard would delete the seed under the others.
  * Call it from a local run's cleanup step instead.
  *
- * No-op (returns null) when DATABASE_URL or E2E_MEMBER_EMAIL is missing, or
- * when the e2e-member is not found.
+ * Opens its client through `openSeedClient`, so a host in
+ * TEST_DB_HOST_BLOCKLIST (or an empty list) refuses before anything is
+ * deleted. No-op (returns null) when DATABASE_URL or E2E_MEMBER_EMAIL is
+ * missing, or when the e2e-member is not found.
  */
 export async function wipeF8Renewals(): Promise<WipeF8RenewalsResult | null> {
-  const dbUrl = process.env.DATABASE_URL;
   const memberEmail = process.env.E2E_MEMBER_EMAIL;
-  if (!dbUrl || !memberEmail) return null;
-  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  if (!memberEmail) return null;
+  const client = openSeedClient('e2e wipe renewals');
+  if (!client) return null;
   try {
-    const memberRows = await sql<Array<{ member_id: string }>>`
-      SELECT m.member_id::text AS member_id
-      FROM users u
-      JOIN contacts c
-        ON c.linked_user_id = u.id AND c.tenant_id = ${TENANT_ID}
-      JOIN members m
-        ON m.member_id = c.member_id AND m.tenant_id = ${TENANT_ID}
-      WHERE u.email = ${memberEmail}
-      LIMIT 1
-    `;
-    const memberId = memberRows[0]?.member_id;
-    if (!memberId) return null;
-    return await deleteSeedOwnedRows(sql, memberId);
+    const memberId = await resolveE2EMemberId(client.sql, memberEmail);
+    return memberId ? await deleteSeedOwnedRows(client.sql, memberId) : null;
   } finally {
-    await sql.end({ timeout: 5 });
+    await client.end();
   }
 }
 
@@ -157,20 +169,8 @@ export async function seedF8Renewals(
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   try {
     // Resolve member from existing e2e seed.
-    const memberRows = await sql<
-      Array<{ member_id: string; plan_uuid: string }>
-    >`
-      SELECT m.member_id::text AS member_id, m.plan_id AS plan_uuid
-      FROM users u
-      JOIN contacts c
-        ON c.linked_user_id = u.id AND c.tenant_id = ${TENANT_ID}
-      JOIN members m
-        ON m.member_id = c.member_id AND m.tenant_id = ${TENANT_ID}
-      WHERE u.email = ${memberEmail}
-      LIMIT 1
-    `;
-    const member = memberRows[0];
-    if (!member) {
+    const memberId = await resolveE2EMemberId(sql, memberEmail);
+    if (!memberId) {
       console.warn(
         `[e2e seed renewals] e2e-member not found in tenant ${TENANT_ID}; skipping seed`,
       );
@@ -179,7 +179,7 @@ export async function seedF8Renewals(
 
     // Idempotency: drop the rows a previous E2E run seeded for this member
     // (open + lapsed cycles, open tier suggestions) before re-inserting.
-    await deleteSeedOwnedRows(sql, member.member_id);
+    await deleteSeedOwnedRows(sql, memberId);
 
     // Mint a fresh upcoming cycle 30 days from now (drives AS1/AS2 +
     // T113 row-action tests).
@@ -242,7 +242,7 @@ export async function seedF8Renewals(
         frozen_plan_term_months, frozen_plan_currency
       )
       VALUES (
-        ${TENANT_ID}, ${cycleId}::uuid, ${member.member_id}::uuid, 'upcoming',
+        ${TENANT_ID}, ${cycleId}::uuid, ${memberId}::uuid, 'upcoming',
         ${periodFrom.toISOString()}::timestamptz, ${expiresAt.toISOString()}::timestamptz, ${expiresAt.toISOString()}::timestamptz,
         12, ${tierAtCycleStart},
         ${planIdAtCycleStart}, ${frozenPlanPriceThb},
@@ -268,7 +268,7 @@ export async function seedF8Renewals(
         closed_at, closed_reason
       )
       VALUES (
-        ${TENANT_ID}, ${lapsedCycleId}::uuid, ${member.member_id}::uuid, 'lapsed',
+        ${TENANT_ID}, ${lapsedCycleId}::uuid, ${memberId}::uuid, 'lapsed',
         ${lapsedPeriodFrom.toISOString()}::timestamptz, ${lapsedExpiresAt.toISOString()}::timestamptz, ${lapsedExpiresAt.toISOString()}::timestamptz,
         12, 'regular',
         'regular', '50000.00',
@@ -289,7 +289,7 @@ export async function seedF8Renewals(
         reason_code, evidence_jsonb, status
       )
       VALUES (
-        ${TENANT_ID}, ${suggestionId}::uuid, ${member.member_id}::uuid,
+        ${TENANT_ID}, ${suggestionId}::uuid, ${memberId}::uuid,
         'regular', 'premium',
         'declared_turnover_above_threshold',
         ${JSON.stringify({
@@ -301,9 +301,9 @@ export async function seedF8Renewals(
       )
     `;
     console.log(
-      `[e2e seed renewals] OK upcoming=${cycleId} lapsed=${lapsedCycleId} suggestion=${suggestionId} member=${member.member_id} expires=${expiresAt.toISOString()}`,
+      `[e2e seed renewals] OK upcoming=${cycleId} lapsed=${lapsedCycleId} suggestion=${suggestionId} member=${memberId} expires=${expiresAt.toISOString()}`,
     );
-    return { cycleId, memberId: member.member_id };
+    return { cycleId, memberId };
   } finally {
     await sql.end({ timeout: 5 });
   }
