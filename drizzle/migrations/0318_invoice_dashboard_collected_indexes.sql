@@ -17,11 +17,17 @@
 --    expression index only when the query's expression matches.
 --    tests/unit/invoicing/invoice-tax-point-migration-guard.test.ts fails if
 --    the two drift. Partial on the paid family, the only rows with a tax point
---    the dashboard sums.
+--    the dashboard sums. Under RLS (FORCE, chamber_app) the tax-point RANGE is
+--    a Filter, not an index condition: timezone() is not leakproof, so the
+--    planner may not push it below the policy. The index narrows tenant +
+--    status and the range filters what it returns (accepted at SweCham's
+--    volume; plan.md § Risks names the leakproof rewrite if it grows).
 -- 2. credit_notes_tenant_issue_date_idx — (tenant_id, issue_date).
 -- 3. refunds_tenant_completed_succeeded_idx — (tenant_id, completed_at),
 --    partial on status = 'succeeded' (pending and failed rows are never
---    subtracted).
+--    subtracted). The dashboard ranges waived refunds on completed_at itself
+--    (Bangkok-midnight instants computed in the app, a leakproof timestamptz
+--    comparison), so this range can be an index condition under RLS.
 --
 -- Indexes only: no rows change. Safe before the code that uses them deploys
 -- (the register's plan can only gain an option). Unflagged on deploy.
@@ -29,9 +35,11 @@
 -- Plain CREATE INDEX (not CONCURRENTLY), per the 0021 / 0305 precedent: the
 -- migration runner wraps the pending batch in one transaction. The tables are
 -- small (hundreds to low thousands of rows per tenant), so the SHARE lock is
--- brief; lock_timeout makes a deploy that meets a long transaction abort and
--- retry instead of queueing every invoice write behind it. SET LOCAL lives to
--- the end of the batch, so the default is handed back as the LAST statement.
+-- brief; lock_timeout makes a deploy that meets a long transaction ABORT
+-- instead of queueing every invoice write behind it. Nothing retries it: the
+-- batch rolls back, the deploy fails, and it is re-run by redeploying. SET
+-- LOCAL lives to the end of the batch, so the default is handed back as the
+-- LAST statement.
 --
 -- Rollback: DROP INDEX IF EXISTS invoices_tenant_tax_point_paid_idx,
 -- credit_notes_tenant_issue_date_idx, refunds_tenant_completed_succeeded_idx;

@@ -225,9 +225,11 @@ async function main(): Promise<void> {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure
         // indexes. The tax-point one is asserted by its expression: an index
         // of that name on another expression would silently stop matching
-        // `invoiceTaxPointSql` and the dashboard would seq-scan.
+        // `invoiceTaxPointSql` and the dashboard would seq-scan. The other two
+        // are asserted by their definitions too (columns, and the refunds
+        // partial predicate as Postgres renders it), not only their names.
         name: 'invoices_tenant_tax_point_paid_idx (tax-point expression) + credit_notes_tenant_issue_date_idx + refunds_tenant_completed_succeeded_idx (mig 0318)',
-        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'invoices_tenant_tax_point_paid_idx' AND indexdef LIKE '%COALESCE(payment_date, ((paid_at AT TIME ZONE ''Asia/Bangkok''::text))::date)%' AND indexdef LIKE '%WHERE%') AND (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public' AND indexname IN ('credit_notes_tenant_issue_date_idx', 'refunds_tenant_completed_succeeded_idx')) = 2`,
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'invoices_tenant_tax_point_paid_idx' AND indexdef LIKE '%COALESCE(payment_date, ((paid_at AT TIME ZONE ''Asia/Bangkok''::text))::date)%' AND indexdef LIKE '%WHERE%') AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'credit_notes' AND indexname = 'credit_notes_tenant_issue_date_idx' AND indexdef LIKE '%(tenant_id, issue_date)') AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'refunds' AND indexname = 'refunds_tenant_completed_succeeded_idx' AND indexdef LIKE '%(tenant_id, completed_at) WHERE (status = ''succeeded''::text)')`,
       },
     ];
     let failures = 0;
