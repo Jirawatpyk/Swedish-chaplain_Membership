@@ -20,6 +20,7 @@
  *     loader, which logs it with a reference id.
  */
 import { sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { runInTenant } from '@/lib/db';
 import { parseBigintColumn } from '@/lib/money';
 import { creditNotesTable, invoicesTable, invoiceTaxPointSql } from '@/modules/invoicing';
@@ -245,33 +246,43 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
 
   async attentionCounts(ctx, filters, now): Promise<AttentionCounts> {
     const { inv, rf } = tables();
+    const later = alias(rf, 'later_attempt');
     const t = ctx.slug;
     const scope = scopeOf(filters);
     // Strictly older, as the sweep's `ageMs <= ESCALATION_AGE_MS → not yet` reads.
     const pendingBefore = new Date(now.getTime() - STALE_REFUND_ESCALATION_AGE_MS).toISOString();
+    // A failed attempt counts only while no later attempt exists on its payment
+    // (initiated_at, created_at, id — the order the latest attempt is chosen by).
     const result = await rows(
       ctx,
       sql`
-      SELECT
-        (SELECT COUNT(*)::int FROM ${inv}
-          WHERE ${inv.tenantId} = ${t} AND ${inv.status} = 'draft' AND ${inv.origin} = 'manual'${scope}
-        ) AS manual_drafts,
-        (SELECT COUNT(*)::int FROM ${inv}
-          WHERE ${inv.tenantId} = ${t} AND ${inv.status} = 'draft' AND ${inv.origin} = 'auto_renewal'${scope}
-        ) AS auto_renewal_drafts,
-        (SELECT COUNT(*)::int FROM ${inv}
-          WHERE ${inv.tenantId} = ${t} AND ${inv.receiptPdfStatus} = 'failed'${scope}
-        ) AS receipt_pdf_failed,
-        (SELECT COUNT(*)::int FROM (
-           SELECT DISTINCT ON (${rf.paymentId}) ${rf.status} AS status, ${rf.failureReasonCode} AS code
-           FROM ${refundsJoin(t)}${scope}
-           ORDER BY ${rf.paymentId}, ${rf.initiatedAt} DESC, ${rf.createdAt} DESC, ${rf.id} DESC
-         ) latest
-         WHERE latest.status = 'failed' AND latest.code LIKE 'stripe_refund_%'
-        ) AS refunds_failed_at_stripe,
-        (SELECT COUNT(*)::int FROM ${refundsJoin(t)}
-          AND ${rf.status} = 'pending' AND ${rf.initiatedAt} < ${pendingBefore}::timestamptz${scope}
-        ) AS refunds_pending_over_threshold`,
+      WITH invoice_pass AS (
+        SELECT
+          COUNT(*) FILTER (WHERE ${inv.status} = 'draft' AND ${inv.origin} = 'manual')::int AS manual_drafts,
+          COUNT(*) FILTER (WHERE ${inv.status} = 'draft' AND ${inv.origin} = 'auto_renewal')::int
+            AS auto_renewal_drafts,
+          COUNT(*) FILTER (WHERE ${inv.receiptPdfStatus} = 'failed')::int AS receipt_pdf_failed
+        FROM ${inv}
+        WHERE ${inv.tenantId} = ${t}
+          AND (${inv.status} = 'draft' OR ${inv.receiptPdfStatus} = 'failed')${scope}
+      ), refund_pass AS (
+        SELECT
+          COUNT(*) FILTER (
+            WHERE ${rf.status} = 'failed' AND ${rf.failureReasonCode} LIKE 'stripe_refund_%'
+              AND NOT EXISTS (
+                SELECT 1 FROM ${rf} AS ${later}
+                WHERE ${later.tenantId} = ${t} AND ${later.paymentId} = ${rf.paymentId}
+                  AND (${later.initiatedAt}, ${later.createdAt}, ${later.id})
+                    > (${rf.initiatedAt}, ${rf.createdAt}, ${rf.id})
+              )
+          )::int AS refunds_failed_at_stripe,
+          COUNT(*) FILTER (
+            WHERE ${rf.status} = 'pending' AND ${rf.initiatedAt} < ${pendingBefore}::timestamptz
+          )::int AS refunds_pending_over_threshold
+        FROM ${refundsJoin(t)}
+          AND ${rf.status} IN ('failed', 'pending')${scope}
+      )
+      SELECT * FROM invoice_pass, refund_pass`,
     );
     const r = result[0] ?? {};
     return {
