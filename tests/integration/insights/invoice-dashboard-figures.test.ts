@@ -299,8 +299,8 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
       expect(unwrap(await loadInvoiceDashboardAttention(tenant.ctx, i, deps))).toEqual({
         receiptPdfFailed: 0,
         refundsFailedAtStripe: 0,
-        // pF4's failed f4_bridge_% refund (silver) is no longer row 5 (D-k).
-        refundsPendingOverThreshold: 0,
+        // pF4's legacy failed f4_bridge_% refund (silver) is row 5 (D-k).
+        refundsPendingOverThreshold: 1,
         drafts: { manual: 1, autoRenewal: 0 },
       });
     });

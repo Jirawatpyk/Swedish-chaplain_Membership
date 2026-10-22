@@ -354,6 +354,9 @@ export async function seedInvoiceDashboardScenario(
     netDaysSnapshot: 30,
     tenantIdentitySnapshot: SNAP_TENANT,
     memberIdentitySnapshot: snapMember('Buyer vVoid'),
+    // A stale receipt-render failure on a non-paid invoice is not a receipt
+    // to re-render: Needs attention counts paid-family invoices only.
+    receiptPdfStatus: 'failed',
     pdfBlobKey: 'invoicing/db/vVoid.pdf',
     pdfSha256: 'd'.repeat(64),
     pdfTemplateVersion: 1,
@@ -392,8 +395,8 @@ export async function seedInvoiceDashboardScenario(
     issueDate: '2026-04-05', total: 642_000, paymentDate: '2026-04-10',
     paidAt: '2026-04-10T05:00:00Z', method: 'other',
   });
-  // A legacy `failed` + f4_bridge_% refund: never netted, and since D-k not a
-  // Needs-attention row either (row 5 counts refunds `pending` past 3 days).
+  // A legacy `failed` + f4_bridge_% refund: Stripe paid out, never booked,
+  // never netted; Needs attention row 5 counts it (D-k) so it is not invisible.
   paid('pF4', membership(SILVER), {
     issueDate: '2026-05-15', total: 856_000, paymentDate: '2026-05-20',
     paidAt: '2026-05-20T05:00:00Z', method: 'other',
@@ -609,11 +612,12 @@ export const EXPECTED = {
   attention: {
     manualDrafts: 2,
     autoRenewalDrafts: 1,
+    // aX (paid); vVoid's stale `failed` receipt status is not counted.
     receiptPdfFailed: 1,
     // payX and payZ; not payY (later pending) nor payW (later succeeded).
     refundsFailedAtStripe: 2,
-    // payY's pending attempt (gold); pF4's failed f4_bridge_% refund is not counted.
-    refundsPendingOverThreshold: 1,
+    // payY's pending attempt (gold) + pF4's legacy failed f4_bridge_% refund (silver, D-k).
+    refundsPendingOverThreshold: 2,
   },
   /** Overdue set, longest past due first, then amount desc, then number asc. */
   oldestOverdueOrder: ['iD91', 'iD61', 'iD31b', 'iD31c', 'iD31', 'iD30', 'iD1'],
