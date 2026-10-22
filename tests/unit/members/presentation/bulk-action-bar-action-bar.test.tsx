@@ -78,7 +78,11 @@ describe('BulkActionBar on AURA ActionBar (T504)', () => {
     renderBar(ids);
     expect(screen.getByRole('button', { name: BULK.actions.send_portal_invite })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: BULK.moreActions }));
-    for (const item of screen.getAllByRole('menuitem')) expect(item).toHaveAttribute('aria-disabled', 'true');
+    for (const item of screen.getAllByRole('menuitem')) {
+      expect(item).toHaveAttribute('aria-disabled', 'true');
+      // The reason is read with the item, since the bar's alert was announced at selection time.
+      expect(item).toHaveAccessibleDescription(BULK.overCap.replace('{max}', '100'));
+    }
   });
 
   // WCAG 2.5.5: since AURA 5.55 (#167) the bar itself makes every Button in

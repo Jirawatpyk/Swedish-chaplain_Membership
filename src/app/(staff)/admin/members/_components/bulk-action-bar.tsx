@@ -413,6 +413,9 @@ export function BulkActionBar({
   );
 
   // Opens a dialog from the ⋯ menu, on the same focus refs as the buttons.
+  // Over the cap the items say why they are dimmed: the bar's alert was
+  // announced when the rows were selected, not when the menu opens.
+  const overCapReason = overCap ? { disabledReason: t('overCap', { max: BULK_CAP }) } : {};
   const openFromMenu = (open: (next: boolean) => void) => () => {
     lastTriggerRef.current = moreRef.current;
     closedViaSuccessRef.current = false;
@@ -428,12 +431,14 @@ export function BulkActionBar({
       label: t('actions.enrol_auto_invoice'),
       icon: <FileTextIcon aria-hidden="true" />,
       disabled: overCap,
+      ...overCapReason,
       onSelect: openFromMenu(setEnrolDialogOpen),
     },
     {
       label: t('actions.unenrol_auto_invoice'),
       icon: <FileMinusIcon aria-hidden="true" />,
       disabled: overCap,
+      ...overCapReason,
       onSelect: openFromMenu(setUnenrolDialogOpen),
     },
     { separator: true },
@@ -442,6 +447,7 @@ export function BulkActionBar({
       icon: <ArchiveIcon aria-hidden="true" />,
       tone: 'danger',
       disabled: overCap,
+      ...overCapReason,
       onSelect: openFromMenu(setArchiveDialogOpen),
     },
   ];
