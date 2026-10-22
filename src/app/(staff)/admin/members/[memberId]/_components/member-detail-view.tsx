@@ -187,8 +187,8 @@ export async function renderMemberDetailView({
     ...(slots.invoices ? [{ id: 'invoices', label: t('sectionLinks.invoices') }] : []),
     ...(slots.changeRequests ? [{ id: 'change-requests', label: t('sectionLinks.changeRequests') }] : []),
     { id: 'timeline', label: t('sectionLinks.timeline') },
-    { id: 'company', label: t('sectionLinks.company') },
-    ...(slots.dataExport ? [{ id: 'data-export', label: t('sectionLinks.dataExport') }] : []),
+    { id: 'company', label: t('sectionLinks.company'), aside: true },
+    ...(slots.dataExport ? [{ id: 'data-export', label: t('sectionLinks.dataExport'), aside: true }] : []),
   ];
 
   return (

@@ -23,23 +23,34 @@ import { useSectionTabsScrollPadding } from '@/hooks/use-section-tabs-scroll-pad
 export interface SectionLink {
   readonly id: string;
   readonly label: string;
+  /**
+   * In the page's aside from lg: left out of the scroll-spy there, since it
+   * passes the tabs while the main column is still being read. A followed
+   * link to it still marks it.
+   */
+  readonly aside?: boolean;
 }
+
+/** Where the member page splits into two columns (Tailwind `lg`). */
+const TWO_COLUMNS = '(min-width: 1024px)';
 
 /** A section counts as reached a little below this row's bottom edge. */
 const BAND_SLACK_PX = 8;
 
 /**
  * The section whose top most recently passed the band, by position, not by
- * the links' order: in two columns the aside's sections pass it between the
- * main column's. At the end of the page, the lowest section (a short final
- * section never reaches the band).
+ * the links' order. In two columns only the main column's sections count.
+ * At the end of the page, the lowest section (a short final section never
+ * reaches the band).
  */
 function sectionInView(links: readonly SectionLink[], bandTop: number): string | undefined {
   const doc = document.documentElement;
   const atEnd = window.innerHeight + window.scrollY >= doc.scrollHeight - 2;
+  const twoColumns = typeof window.matchMedia === 'function' && window.matchMedia(TWO_COLUMNS).matches;
   let current: string | undefined;
   let best = -Infinity;
   for (const l of links) {
+    if (twoColumns && l.aside) continue;
     const top = document.getElementById(l.id)?.getBoundingClientRect().top;
     if (top === undefined || (!atEnd && top > bandTop)) continue;
     if (top > best) {
