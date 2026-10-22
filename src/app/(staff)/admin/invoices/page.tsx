@@ -51,9 +51,9 @@ import { formatCalendarYear } from '@/lib/format-date-localised';
 import { parseThbDecimal, parseThbDecimalToSatang } from '@/lib/money';
 import { parseIsoCalendarDate } from '@/lib/iso-calendar-date';
 import type { TenantContext } from '@/modules/tenants';
-import { asPlanYear, listPlans } from '@/modules/plans';
+import { asPlanYear, listPlanNames } from '@/modules/plans';
 import { buildPlansDeps } from '@/modules/plans/plans-deps';
-import { resolvePlanFilter, type PlanFilter } from './_lib/plan-filter';
+import { parsePlanIdParam, resolvePlanFilter, type PlanFilter } from './_lib/plan-filter';
 import { TableContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { LoadErrorCard } from '@/components/shell/load-error-card';
@@ -217,8 +217,8 @@ async function loadPlanFilter(
   locale: string,
   todayBkk: string,
 ): Promise<PlanFilter | undefined> {
-  const plans = await listPlans(
-    { filter: { year: asPlanYear(Number(todayBkk.slice(0, 4))) } },
+  const plans = await listPlanNames(
+    { year: asPlanYear(Number(todayBkk.slice(0, 4))) },
     buildPlansDeps(tenant),
   );
   if (!plans.ok) {
@@ -227,7 +227,7 @@ async function loadPlanFilter(
       '[admin-invoices-list] plan name lookup failed; the chip shows the plan id',
     );
   }
-  return resolvePlanFilter(raw, plans.ok ? plans.value.data : undefined, locale);
+  return resolvePlanFilter(raw, plans.ok ? plans.value : undefined, locale);
 }
 
 export default async function AdminInvoicesPage({
@@ -336,12 +336,14 @@ export default async function AdminInvoicesPage({
   // bound (NOT flag-gated: a plain date filter any admin can use/bookmark).
   const dueBeforeFilter = parseIsoCalendarDate(query.dueBefore);
   // 124 slice 1 — the inclusive lower bound and the plan, both from the
-  // invoice dashboard's drill-down links. The plan-name lookup runs only when
-  // the param is present, and its failure never fails the list.
+  // invoice dashboard's drill-down links. The plan id filters as given; its
+  // name only labels the chip, so that lookup runs alongside the list read
+  // (awaited after it) and its failure never fails the list.
   const dueAfterFilter = parseIsoCalendarDate(query.dueAfter);
-  const planFilter = query.plan
-    ? await loadPlanFilter(query.plan, tenantCtx, locale, bangkokLocalDate(new Date().toISOString()))
-    : undefined;
+  const planIdFilter = parsePlanIdParam(query.plan);
+  const planFilterPromise = planIdFilter
+    ? loadPlanFilter(planIdFilter, tenantCtx, locale, bangkokLocalDate(new Date().toISOString()))
+    : Promise.resolve(undefined);
   const hasFilters =
     Boolean(qTrim) ||
     Boolean(statusFilter) ||
@@ -353,7 +355,7 @@ export default async function AdminInvoicesPage({
     Boolean(originFilter) ||
     Boolean(dueBeforeFilter) ||
     Boolean(dueAfterFilter) ||
-    Boolean(planFilter);
+    Boolean(planIdFilter);
 
   const rawPage = Number.parseInt(query.page ?? '1', 10);
   const page = Number.isFinite(rawPage) && rawPage > 0 ? Math.min(rawPage, 10_000) : 1;
@@ -432,12 +434,14 @@ export default async function AdminInvoicesPage({
       ...(originFilter ? { origin: originFilter } : {}),
       ...(dueBeforeFilter ? { dueBefore: dueBeforeFilter } : {}),
       ...(dueAfterFilter ? { dueAfter: dueAfterFilter } : {}),
-      ...(planFilter ? { planId: planFilter.id } : {}),
+      ...(planIdFilter ? { planId: planIdFilter } : {}),
     });
   } catch (e) {
     return renderLoadError(e);
   }
   if (!invoicesResult.ok) return renderLoadError(invoicesResult.error);
+  // Never rejects: `listPlanNames` turns a repo fault into a Result.
+  const planFilter = await planFilterPromise;
 
   // G-2 — batched CN count per invoice on the current page. Single
   // GROUP BY query keyed by original_invoice_id so we avoid N+1

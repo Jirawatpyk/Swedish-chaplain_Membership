@@ -37,6 +37,12 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import {
+  events,
+  eventRegistrations,
+  type NewEventRow,
+  type NewEventRegistrationRow,
+} from '@/modules/events/infrastructure/schema';
 import { listInvoicesPaged, makeListInvoicesDeps } from '@/modules/invoicing';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
@@ -93,6 +99,10 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
   // Due on Bangkok today: "not yet due" (issued + dueAfter=today), never overdue.
   const dueTodayInv = randomUUID();
   const todayBkk = bangkokLocalDate(new Date().toISOString());
+  // An event invoice carries no plan (plan_id NULL): a Plan filter never matches it.
+  const eventId = randomUUID();
+  const eventRegId = randomUUID();
+  const eventInv = randomUUID();
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -190,7 +200,63 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
         planId: 'other-plan',
         planYear: 2026,
       });
+      await tx.insert(events).values({
+        tenantId: tenant.ctx.slug,
+        eventId,
+        source: 'eventcreate',
+        externalId: 'evt_plan_filter',
+        name: 'Plan Filter Gala',
+        startDate: new Date('2025-01-15T11:00:00Z'),
+      } satisfies NewEventRow);
+      await tx.insert(eventRegistrations).values({
+        tenantId: tenant.ctx.slug,
+        registrationId: eventRegId,
+        eventId,
+        externalId: 'att_plan_filter',
+        attendeeEmail: 'guest@example.com',
+        attendeeName: 'Walk-in Guest',
+        attendeeCompany: 'Walk-in Guest Ltd',
+        matchType: 'non_member',
+        ticketType: 'VIP',
+        ticketPriceThb: 3500,
+        paymentStatus: 'paid',
+        registeredAt: new Date('2025-01-10T03:00:00Z'),
+      } satisfies NewEventRegistrationRow);
       await tx.insert(invoices).values([
+        {
+          tenantId: tenant.ctx.slug,
+          invoiceId: eventInv,
+          invoiceSubject: 'event',
+          eventId,
+          eventRegistrationId: eventRegId,
+          vatInclusive: true,
+          memberId: null,
+          planId: null,
+          planYear: null,
+          draftByUserId: user.userId,
+          status: 'paid',
+          receiptDocumentNumberRaw: 'RE-2025-000001',
+          receiptPdfStatus: 'rendered',
+          paidAt: new Date('2025-01-15T04:00:00Z'),
+          paymentMethod: 'bank_transfer',
+          paymentDate: '2025-01-15',
+          fiscalYear: 2025,
+          issueDate: '2025-01-15',
+          dueDate: '2025-01-15',
+          subtotalSatang: 327_103n,
+          vatRateSnapshot: '0.0700',
+          vatSatang: 22_897n,
+          totalSatang: 350_000n,
+          creditedTotalSatang: 0n,
+          proRatePolicySnapshot: null,
+          netDaysSnapshot: 30,
+          tenantIdentitySnapshot: SNAP_TENANT,
+          memberIdentitySnapshot: SNAP_MEMBER,
+          pdfDocKind: 'receipt_separate',
+          pdfBlobKey: 'invoicing/of/re/1.pdf',
+          pdfSha256: 'f'.repeat(64),
+          pdfTemplateVersion: 8,
+        },
         // origin='auto_renewal', status='draft' — the review-queue row.
         {
           tenantId: tenant.ctx.slug,
@@ -585,11 +651,22 @@ describe('listInvoicesPaged — origin filter (107-auto-invoice Task 13, BUG-015
       });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      // Every plan year: the 2025-year invoice of the same plan id matches too.
+      // Every plan year: the 2025-year invoice of the same plan id matches too;
+      // the plan-less event invoice never does.
       expect(result.value.rows.map((r) => r.invoiceId).sort()).toEqual(
         [otherPlanIssuedInv, otherPlanPriorYearInv, dueTodayInv].sort(),
       );
       expect(result.value.total).toBe(3);
+      expect(result.value.rows.map((r) => r.invoiceId)).not.toContain(eventInv);
+      // …and it is in the tenant's list, so its absence above means something.
+      const unfiltered = await listInvoicesPaged(makeListInvoicesDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug,
+        offset: 0,
+        pageSize: 50,
+        includeDrafts: false,
+        status: 'all',
+      });
+      expect(unfiltered.ok && unfiltered.value.rows.map((r) => r.invoiceId)).toContain(eventInv);
     });
 
     it('composes with dueAfter and the derived overdue status', async () => {
