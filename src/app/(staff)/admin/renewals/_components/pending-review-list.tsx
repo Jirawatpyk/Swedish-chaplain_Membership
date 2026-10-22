@@ -312,7 +312,7 @@ export function PendingReviewList({
                 ) : (
                   <Link
                     href={`/admin/renewals/${row.cycleId}`}
-                    className={buttonClass({ variant: 'secondary', size: 'sm' })}
+                    className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
                   >
                     {/* UX-A Bug 2: read-only "View" for a decided row. */}
                     {row.refundSettling ? t('viewAction') : t('openAction')}

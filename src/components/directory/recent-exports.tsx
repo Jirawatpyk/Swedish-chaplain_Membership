@@ -89,7 +89,7 @@ export function RecentExports({
                         <a
                           href={downloadHref(row)}
                           aria-label={downloadLabel(row)}
-                          className={buttonClass({ variant: 'secondary', size: 'sm' })}
+                          className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
                         >
                           <DownloadIcon aria-hidden="true" className="size-4" />
                           {labels.download}

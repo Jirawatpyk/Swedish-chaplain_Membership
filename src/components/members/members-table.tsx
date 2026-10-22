@@ -450,7 +450,7 @@ function RowMenu({ row, canEdit }: { row: MembersTableRow; canEdit: boolean }) {
     <DropdownMenu
       label={label}
       items={items}
-      trigger={<IconButton icon="ellipsis" label={label} size="sm" />}
+      trigger={<IconButton icon="ellipsis" label={label} size="sm" touchHeight />}
     />
   );
 }

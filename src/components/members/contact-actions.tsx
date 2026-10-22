@@ -128,7 +128,7 @@ export function ContactActions({ memberId, contact, isPrimary }: Props) {
           <span className="max-sm:absolute max-sm:end-0 max-sm:top-0">
             <DropdownMenu
               label={t('moreActions', { name: contactName })}
-              trigger={<IconButton icon="ellipsis" size="sm" label={t('moreActions', { name: contactName })} />}
+              trigger={<IconButton icon="ellipsis" size="sm" touchHeight label={t('moreActions', { name: contactName })} />}
               items={[{ label: t('remove'), icon: 'trash-2', tone: 'danger', onSelect: () => setRemoveOpen(true) }]}
             />
           </span>

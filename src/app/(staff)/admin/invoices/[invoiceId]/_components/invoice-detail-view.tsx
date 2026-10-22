@@ -609,14 +609,14 @@ export async function renderInvoiceDetailView({
                         href={`/api/credit-notes/${cn.creditNoteId}/pdf`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={buttonClass({ variant: 'secondary', size: 'sm' })}
+                        className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
                         aria-label={t('creditNotesSection.action.pdfAria', { number: cn.documentNumber.raw })}
                       >
                         {t('creditNotesSection.action.pdf')}
                       </a>
                       <Link
                         href={`/admin/credit-notes/${cn.creditNoteId}`}
-                        className={buttonClass({ variant: 'ghost', size: 'sm' })}
+                        className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true })}
                         aria-label={t('creditNotesSection.action.viewAria', { number: cn.documentNumber.raw })}
                       >
                         {t('creditNotesSection.action.view')}
