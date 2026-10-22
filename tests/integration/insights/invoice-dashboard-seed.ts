@@ -134,7 +134,7 @@ export async function seedInvoiceDashboardScenario(
       pdfDocKind: 'invoice',
       fiscalYear: Number(o.issueDate.slice(0, 4)),
       sequenceNumber: seq,
-      documentNumber: o.docNo ?? `DB-${String(seq).padStart(4, '0')}`,
+      documentNumber: o.docNo ?? `DB-2026-${String(seq).padStart(6, '0')}`,
       issueDate: o.issueDate,
       dueDate: o.dueDate,
       subtotalSatang: s(o.total),
@@ -175,7 +175,9 @@ export async function seedInvoiceDashboardScenario(
       ...subject,
       draftByUserId: user.userId,
       status: o.status ?? 'paid',
-      receiptDocumentNumberRaw: `RE-DB-${String(seq).padStart(4, '0')}`,
+      // 088 shape: a pre-payment bill number plus the receipt number.
+      billDocumentNumberRaw: `BL-2026-${String(seq).padStart(6, '0')}`,
+      receiptDocumentNumberRaw: `RE-2026-${String(seq).padStart(6, '0')}`,
       receiptPdfStatus: o.receiptPdfStatus ?? 'rendered',
       paidAt: new Date(o.paidAt),
       paymentMethod: o.method,
@@ -286,7 +288,7 @@ export async function seedInvoiceDashboardScenario(
       originalInvoiceId: ids[invoiceKey]!,
       fiscalYear: Number(o.issueDate.slice(0, 4)),
       sequenceNumber: seq,
-      documentNumber: `CN-DB-${String(seq).padStart(4, '0')}`,
+      documentNumber: `CN-2026-${String(seq).padStart(6, '0')}`,
       issueDate: o.issueDate,
       issuedByUserId: user.userId,
       reason: 'dashboard scenario',
@@ -310,9 +312,9 @@ export async function seedInvoiceDashboardScenario(
   issued('iD1', membership(GOLD), { issueDate: '2026-05-15', dueDate: '2026-06-14', total: 10_000 });
   issued('iD30', membership(SILVER), { issueDate: '2026-04-16', dueDate: '2026-05-16', total: 20_000 });
   // Three due the same day: amount desc, then document number asc.
-  issued('iD31', membership(GOLD), { issueDate: '2026-04-15', dueDate: '2026-05-15', total: 40_000, docNo: 'DB-ZZ-0003' });
-  issued('iD31b', membership(GOLD), { issueDate: '2026-04-15', dueDate: '2026-05-15', total: 50_000, docNo: 'DB-ZZ-0009' });
-  issued('iD31c', membership(SILVER), { issueDate: '2026-04-15', dueDate: '2026-05-15', total: 40_000, docNo: 'DB-ZZ-0002' });
+  issued('iD31', membership(GOLD), { issueDate: '2026-04-15', dueDate: '2026-05-15', total: 40_000, docNo: 'DB-2026-900003' });
+  issued('iD31b', membership(GOLD), { issueDate: '2026-04-15', dueDate: '2026-05-15', total: 50_000, docNo: 'DB-2026-900009' });
+  issued('iD31c', membership(SILVER), { issueDate: '2026-04-15', dueDate: '2026-05-15', total: 40_000, docNo: 'DB-2026-900002' });
   // Auto-renewal, on the 2025 row of plan `gold` (a Plan filter matches every plan year).
   issued('iD61', membership(GOLD_2025, 'auto_renewal'), { issueDate: '2026-03-16', dueDate: '2026-04-15', total: 80_000 });
   // Event invoice, issued in the prior FY, still unpaid.
@@ -338,7 +340,7 @@ export async function seedInvoiceDashboardScenario(
     pdfDocKind: 'invoice',
     fiscalYear: 2026,
     sequenceNumber: seq,
-    documentNumber: `DB-${String(seq).padStart(4, '0')}`,
+    documentNumber: `DB-2026-${String(seq).padStart(6, '0')}`,
     issueDate: '2026-02-10',
     dueDate: '2026-03-10',
     subtotalSatang: s(30_000),

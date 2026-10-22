@@ -206,7 +206,7 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
       );
       expect(result.rows[0]).toEqual({
         invoiceId: seeded.ids.iD91,
-        documentNumber: 'DB-0009',
+        documentNumber: 'DB-2026-000009',
         buyerName: 'Buyer iD91',
         dueDate: '2026-03-16',
         daysPastDue: 91,
