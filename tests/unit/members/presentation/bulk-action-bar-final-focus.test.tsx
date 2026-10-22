@@ -111,6 +111,25 @@ vi.mock('@/components/shell/confirmation-dialog', () => ({
 
 import { BulkActionBar } from '@/app/(staff)/admin/members/_components/bulk-action-bar';
 
+const MORE = enMessages.admin.members.bulk.moreActions;
+
+/**
+ * Opens an action and returns the element focus must come back to: the
+ * button itself, or — for an action in the bar's ⋯ menu — the ⋯ trigger
+ * (the menu item is gone once the menu closes).
+ */
+function openAction(label: RegExp, via: 'button' | 'menu'): HTMLElement {
+  if (via === 'button') {
+    const trigger = screen.getByRole('button', { name: label });
+    fireEvent.click(trigger);
+    return trigger;
+  }
+  const more = screen.getByRole('button', { name: MORE });
+  fireEvent.click(more);
+  fireEvent.click(screen.getByRole('menuitem', { name: label }));
+  return more;
+}
+
 const MEMBER_UUID = '11111111-2222-3333-4444-555555555555';
 
 /** Real stateful parent — `onClear` genuinely removes the selection. */
@@ -184,30 +203,29 @@ afterEach(() => {
 });
 
 describe('BulkActionBar — focus survives the bar unmounting (SC 2.4.3)', () => {
+  // Enrol, Stop and Archive sit in the bar's ⋯ menu (maintainer, 22 Oct).
   const ACTIONS = [
-    { label: /^Archive$/, name: 'archive' },
-    { label: /^Send invite$/, name: 'send_portal_invite' },
-    { label: /^Enrol in auto-invoicing$/, name: 'enrol_auto_invoice' },
+    { label: /^Archive$/, name: 'archive', via: 'menu' },
+    { label: /^Send invite$/, name: 'send_portal_invite', via: 'button' },
+    { label: /^Enrol in auto-invoicing$/, name: 'enrol_auto_invoice', via: 'menu' },
     // Task 18 — the fourth trigger vanishes on success exactly like the
     // other three, so it needs the same shared `finalFocus`.
-    { label: /^Stop auto-invoicing$/, name: 'unenrol_auto_invoice' },
+    { label: /^Stop auto-invoicing$/, name: 'unenrol_auto_invoice', via: 'menu' },
   ] as const;
 
-  for (const { label, name } of ACTIONS) {
+  for (const { label, name, via } of ACTIONS) {
     it(`${name}: focus lands on a real element, not <body>, after success`, async () => {
       render(<Harness />);
 
-      const trigger = screen.getByRole('button', { name: label });
-      fireEvent.click(trigger);
+      const trigger = openAction(label, via);
 
       fireEvent.click(screen.getByTestId('confirm-dialog'));
 
       // The whole bar must actually be gone — otherwise this test would
       // pass against the unfixed code.
       await waitFor(() => {
-        expect(screen.queryByRole('button', { name: label })).toBeNull();
+        expect(trigger.isConnected).toBe(false);
       });
-      expect(trigger.isConnected).toBe(false);
 
       // The actual regression guard.
       expect(document.activeElement).not.toBe(document.body);
@@ -226,25 +244,19 @@ describe('BulkActionBar — focus survives the bar unmounting (SC 2.4.3)', () =>
     render(<Harness />);
 
     // 1. Succeed once.
-    fireEvent.click(
-      screen.getByRole('button', { name: /^Enrol in auto-invoicing$/ }),
-    );
+    const first = openAction(/^Enrol in auto-invoicing$/, 'menu');
     fireEvent.click(screen.getByTestId('confirm-dialog'));
     await waitFor(() => {
-      expect(
-        screen.queryByRole('button', { name: /^Enrol in auto-invoicing$/ }),
-      ).toBeNull();
+      expect(first.isConnected).toBe(false);
     });
     expect(document.activeElement).toBe(mainContent);
 
     // 2. Select rows again — the bar (same fiber, same refs) comes back.
     fireEvent.click(screen.getByTestId('reselect'));
-    const trigger = await screen.findByRole('button', {
-      name: /^Enrol in auto-invoicing$/,
-    });
+    await screen.findByRole('button', { name: MORE });
 
-    // 3. Open, then DISMISS. The trigger is alive, so focus must return to it.
-    fireEvent.click(trigger);
+    // 3. Open, then DISMISS. The ⋯ trigger is alive, so focus must return to it.
+    const trigger = openAction(/^Enrol in auto-invoicing$/, 'menu');
     fireEvent.click(screen.getByTestId('confirm-dialog-cancel'));
 
     await waitFor(() => {
@@ -256,8 +268,7 @@ describe('BulkActionBar — focus survives the bar unmounting (SC 2.4.3)', () =>
 
   it('N1: a plain Cancel with no prior action returns focus to the trigger', async () => {
     render(<Harness />);
-    const trigger = screen.getByRole('button', { name: /^Archive$/ });
-    fireEvent.click(trigger);
+    const trigger = openAction(/^Archive$/, 'menu');
     fireEvent.click(screen.getByTestId('confirm-dialog-cancel'));
 
     await waitFor(() => {
@@ -281,10 +292,7 @@ describe('BulkActionBar — focus survives the bar unmounting (SC 2.4.3)', () =>
     );
     render(<Harness />);
 
-    const trigger = screen.getByRole('button', {
-      name: /^Enrol in auto-invoicing$/,
-    });
-    fireEvent.click(trigger);
+    const trigger = openAction(/^Enrol in auto-invoicing$/, 'menu');
     fireEvent.click(screen.getByTestId('confirm-dialog'));
 
     await waitFor(() => {
