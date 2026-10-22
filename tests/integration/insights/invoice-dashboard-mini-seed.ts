@@ -52,6 +52,8 @@ export interface MiniPaidInvoice {
   /** Default `paid`; a credited status needs `credited` (invoices_credited_status_matches). */
   readonly status?: 'paid' | 'partially_credited' | 'credited';
   readonly credited?: number;
+  /** Default `rendered`. */
+  readonly receiptPdfStatus?: 'rendered' | 'failed';
 }
 
 /** A voided invoice (void of an issued bill, the main seed's shape). */
@@ -130,7 +132,7 @@ export async function seedMiniScenario(
       status: o.status ?? ('paid' as const),
       billDocumentNumberRaw: `BL-2026-${String(seq).padStart(6, '0')}`,
       receiptDocumentNumberRaw: `RE-2026-${String(seq).padStart(6, '0')}`,
-      receiptPdfStatus: 'rendered' as const,
+      receiptPdfStatus: o.receiptPdfStatus ?? ('rendered' as const),
       paidAt: new Date(`${o.paymentDate}T05:00:00Z`),
       paymentMethod: o.method,
       paymentDate: o.paymentDate,
