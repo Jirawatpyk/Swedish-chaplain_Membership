@@ -2017,6 +2017,7 @@
       },
       "bulk": {
         "toolbarLabel": "Bulk actions",
+        "moreActions": "More bulk actions",
         "selectedCount": "{count, plural, one {# selected} other {# selected}}",
         "overCap": "Maximum {max} members per batch. Split the selection.",
         "overCapHelper": "{count} of {total} selected — only {max} can be processed at once. Deselect rows past row {max}, or use filters to narrow the list before re-selecting.",

@@ -2017,6 +2017,7 @@
       },
       "bulk": {
         "toolbarLabel": "Massåtgärder",
+        "moreActions": "Fler massåtgärder",
         "selectedCount": "{count, plural, one {# vald} other {# valda}}",
         "overCap": "Max {max} medlemmar per omgång. Dela upp urvalet.",
         "overCapHelper": "{count} av {total} valda — endast {max} kan behandlas åt gången. Avmarkera rader efter rad {max}, eller använd filter för att smalna av listan innan du markerar om.",
