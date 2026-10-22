@@ -731,6 +731,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The invoice filter row shows only above 10 invoices (or while a filter is in the URL).
 - **Change requests on the member page are a summary.** Pending requests with Review, up to three decided ones on one line each, and "View all" to the queue filtered to the member. This replaces Session 2026-09-29's "the full history stays": the diff and the reason are on each request's review page.
 - **Phone order follows the DOM (maintainer, 22 Oct).** Below 1024px the columns stack: Contacts → Invoices → Change requests → Timeline → Renewal → Benefits → Company → Data export. The board's Renewal-second order would have needed a CSS reorder, so focus order would not match what is on screen (WCAG 2.4.3).
+- **No pending count on the Change requests tab, no phone accordion (maintainer, 22 Oct: "ทำตามแนะนำ").** The count would repeat the alert above the figures and the card's own badges; an accordion would hide the Company card's Tax ID, which a call needs. The summary card + record Drawer is recorded as `docs/ux-patterns.md` § 6.
 - **Anchors clear the sticky tabs by measurement.** The section tabs publish their height (`--chamber-section-tabs-height`), which `scroll-padding-top` adds to the shell bar and a gap. Pages without tabs keep 88px.
 
 ## User Scenarios & Testing *(mandatory)*
