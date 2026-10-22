@@ -8,9 +8,10 @@
  *    (#166) the same for the Buttons in an ActionBar's `children` and
  *    `start`. The per-button `touchHeight` stand-ins came out (maintainer:
  *    "ถอดออก"; a touch tablet from 640px already gets 44px default buttons
- *    from the coarse-pointer density, and `size="sm"` keeps a 44px hit
- *    area); this keeps them from creeping back, and checks every footer
- *    Button sits where AURA's rule reaches it.
+ *    from the coarse-pointer density); this keeps them from creeping back,
+ *    and checks every footer Button sits where AURA's rule reaches it.
+ *    AURA's rules are viewport-based, so a `size="sm"` button there keeps
+ *    `touchHeight` for 44px on a touch tablet (#123; R69, 22 Oct).
  * 2. A stretched button set with a `w-full` class — on the button or from its
  *    container (`[&>*]:w-full`) — keeps AURA's fixed height and `nowrap`, so a
  *    long label overflows instead of wrapping. `fullWidth` (or
