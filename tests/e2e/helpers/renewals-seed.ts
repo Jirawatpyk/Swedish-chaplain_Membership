@@ -54,6 +54,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** Rows removed by {@link wipeF8Renewals}. */
 export interface WipeF8RenewalsResult {
   readonly reminderEvents: number;
+  /** Tasks detached from a deleted cycle (cycle_id set NULL), not deleted. */
   readonly escalationTasks: number;
   readonly cycles: number;
   readonly suggestions: number;
@@ -61,8 +62,8 @@ export interface WipeF8RenewalsResult {
 
 /**
  * Delete the rows this seed owns for one member: open + lapsed cycles (with
- * their reminder events and escalation tasks, whose FKs are NO ACTION) and
- * open tier-upgrade suggestions. Terminal cycles and suggestions created by
+ * their reminder events; their escalation tasks are detached, not deleted)
+ * and open tier-upgrade suggestions. Terminal cycles and suggestions created by
  * real flows stay so audit history is preserved. One transaction: a cycle
  * still referenced by `scheduled_plan_changes` (FK RESTRICT) makes the whole
  * delete roll back and throw, rather than leaving the cycle without its
@@ -83,8 +84,10 @@ async function deleteSeedOwnedRows(
       DELETE FROM renewal_reminder_events
       WHERE tenant_id = ${TENANT_ID} AND cycle_id IN (${seedCycles})
     `;
+    // Detach, don't delete: 0092 keeps task history after a cycle goes
+    // (FK NO ACTION, nullable cycle_id), so the task stays with no cycle.
     const escalationTasks = await tx`
-      DELETE FROM renewal_escalation_tasks
+      UPDATE renewal_escalation_tasks SET cycle_id = NULL
       WHERE tenant_id = ${TENANT_ID} AND cycle_id IN (${seedCycles})
     `;
     const cycles = await tx`
