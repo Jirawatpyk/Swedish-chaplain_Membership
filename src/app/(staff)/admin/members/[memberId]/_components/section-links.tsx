@@ -28,20 +28,34 @@ export interface SectionLink {
 /** A section counts as reached a little below this row's bottom edge. */
 const BAND_SLACK_PX = 8;
 
+/**
+ * The section whose top most recently passed the band, by position, not by
+ * the links' order: in two columns the aside's sections pass it between the
+ * main column's. At the end of the page, the lowest section (a short final
+ * section never reaches the band).
+ */
 function sectionInView(links: readonly SectionLink[], bandTop: number): string | undefined {
   const doc = document.documentElement;
-  if (window.innerHeight + window.scrollY >= doc.scrollHeight - 2) return links.at(-1)?.id;
-  let current = links[0]?.id;
+  const atEnd = window.innerHeight + window.scrollY >= doc.scrollHeight - 2;
+  let current: string | undefined;
+  let best = -Infinity;
   for (const l of links) {
-    const el = document.getElementById(l.id);
-    if (el && el.getBoundingClientRect().top <= bandTop) current = l.id;
+    const top = document.getElementById(l.id)?.getBoundingClientRect().top;
+    if (top === undefined || (!atEnd && top > bandTop)) continue;
+    if (top > best) {
+      best = top;
+      current = l.id;
+    }
   }
-  return current;
+  return current ?? links[0]?.id;
 }
 
 export function SectionLinks({ label, links }: { readonly label: string; readonly links: readonly SectionLink[] }) {
   const [current, setCurrent] = useState(links[0]?.id);
   const rowRef = useRef<HTMLDivElement>(null);
+  // A followed link stays current through the scroll it starts, until the
+  // user scrolls on their own (wheel, touch or a key).
+  const followedRef = useRef<string | null>(null);
   // The row's height feeds `scroll-padding-top`, so an anchored section lands
   // below the shell bar and this row at any width, locale or zoom.
   useSectionTabsScrollPadding(rowRef);
@@ -51,19 +65,32 @@ export function SectionLinks({ label, links }: { readonly label: string; readonl
     const update = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        // While stuck, the row's bottom is the shell bar plus the row.
-        const bandTop = (rowRef.current?.getBoundingClientRect().bottom ?? 0) + BAND_SLACK_PX;
+        if (followedRef.current) return;
+        // Where an anchored section lands: `scroll-padding-top` (the shell
+        // bar, this row and a gap), else just below this row.
+        const padding = parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop);
+        const rowBottom = rowRef.current?.getBoundingClientRect().bottom ?? 0;
+        const bandTop = Number.isFinite(padding) ? padding + 1 : rowBottom + BAND_SLACK_PX;
         const id = sectionInView(links, bandTop);
         if (id) setCurrent(id);
       });
     };
+    const release = () => {
+      followedRef.current = null;
+    };
     window.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update);
+    window.addEventListener('wheel', release, { passive: true });
+    window.addEventListener('touchstart', release, { passive: true });
+    window.addEventListener('keydown', release);
     update();
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener('scroll', update);
       window.removeEventListener('resize', update);
+      window.removeEventListener('wheel', release);
+      window.removeEventListener('touchstart', release);
+      window.removeEventListener('keydown', release);
     };
   }, [links]);
 
@@ -72,6 +99,7 @@ export function SectionLinks({ label, links }: { readonly label: string; readonl
     const id = anchor?.getAttribute('href')?.slice(1);
     const section = id ? document.getElementById(id) : null;
     if (!id || !section) return;
+    followedRef.current = id;
     setCurrent(id);
     // The browser scrolls to the anchor; focus follows without a second jump.
     if (!section.hasAttribute('tabindex')) section.setAttribute('tabindex', '-1');
