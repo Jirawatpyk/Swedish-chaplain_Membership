@@ -53,7 +53,9 @@ Each slice is cut from `origin/main` after the previous one merged, in a short `
 | US1.4 Collected on the document basis: tax point with `paid_at` fallback; CN by `issue_date`; waived refund by Bangkok `completed_at` (23:30 UTC lands in the Bangkok month); current month ignores `fy` | loader test + integration | unit, integration |
 | US1.4 refund with an `invoice_voided` waiver on a void invoice → 0, not negative; offline invoice with a manual CN is netted; a succeeded refund with its CN is netted once; `f4_bridge_%` is not subtracted | integration | integration |
 | US1.5 Stripe invoice → card / PromptPay; two payment rows → one method; method rows add up to the tile | integration | integration |
-| US1.6 five attention counts, latest-attempt refund rule | integration | integration |
+| US1.6 five attention counts, latest-attempt refund rule | `tests/integration/insights/invoice-dashboard-figures.test.ts` § Needs attention | integration |
+| US1.6 row 5 (D-k): `pending` refund with `initiated_at` strictly older than `now − STALE_REFUND_ESCALATION_AGE_MS` counts (4 d yes; 1 d, exactly 3 d, succeeded no); filters via the refund's invoice; tenant B stays out | `tests/integration/insights/invoice-dashboard-pending-refunds.test.ts` | integration |
+| US1.5 no payments row: a stored `invoices.payment_method` of `card` / `promptpay` lands on card / PromptPay, not other (characterisation, green on arrival) | `tests/integration/insights/invoice-dashboard-method-fallback.test.ts` | integration |
 | Billed: CN in a later month lands in its own month; void excluded | integration | integration |
 | US3.2/3.4 filters narrow every query, subtractions included; plan ⇒ membership only; bad params fall back | domain + integration | unit, integration |
 | US4.1 manager projection drops draft rows and actions | loader test | unit |
