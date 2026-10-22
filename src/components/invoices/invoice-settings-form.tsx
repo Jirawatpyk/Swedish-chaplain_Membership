@@ -835,10 +835,11 @@ function InvoiceSettingsFormBody({
         {canEdit && !dirty ? (
           <Button
             type="submit"
-            // T072b (FR-036) — the primary Save is the key mobile action: ≥44px
-            // at every width (the compact staff density is 36px), full width
-            // on a phone so it stays a reachable tap target at 320px.
-            className="min-h-11 max-sm:w-full sm:self-end"
+            // T072b (FR-036) — the primary Save is the key mobile action: full
+            // width and 44px on a phone (AURA's `below-sm`), so it stays a
+            // reachable tap target at 320px.
+            fullWidth="below-sm"
+            className="sm:self-end"
             // Minor — nothing to save once settings already exist and the
             // form matches its last-saved snapshot. `exists` gates this so
             // first-time creation stays enabled even though a fresh form

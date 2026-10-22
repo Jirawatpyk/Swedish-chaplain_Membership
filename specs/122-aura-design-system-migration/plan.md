@@ -309,7 +309,6 @@ AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `to
   - Body buttons AURA does not cover gain `touchHeight`: the preview width toggles and the invoice form rows.
   - The guard flips: it refuses a `touchHeight` stand-in where AURA sizes the button, and any container `w-full` stretch.
 - **Kept, deliberately:**
-  - `sticky-save-bar.tsx` `min-h-11`: 088 FR-036 asks for 44px at every width.
   - The `.eblast-detail-actions` CSS: it also lays out the wrapping row, not only the height.
 - **RED** (commit `10f0ab703`, guard only): 2 failed, 4 passed (both positive controls held).
   - "no Button in a Dialog/Drawer footer or an ActionBar carries touchHeight" → 88 hits, for example `src/components/shell/confirmation-dialog.tsx:166`, `src/app/(staff)/admin/members/_components/bulk-action-bar.tsx:440`.
@@ -322,3 +321,7 @@ AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `to
   - Both confirmed that every Button whose stand-in came out is sized by AURA's selectors. The ActionBar rule is a descendant selector, so it reaches Buttons at any depth.
   - The tablet wording was corrected: default buttons are 44px on a coarse pointer in compact density.
   - The E-Blast ⋯ IconButton keeps `touchHeight`, now with a comment: DropdownMenu puts it two wrappers deep.
+- **Save bar consistency (maintainer, 22 Oct: "ควรแก้ให้ consist" — make it consistent).**
+  - The invoice-settings save bar dropped its `min-h-11` as well: the ActionBar gives 44px below 640px. 088 FR-036 asks for touch targets of at least 44px and a reachable Save at 320px. The earlier note that it meant "44px at every width" was wrong.
+  - The Save shown while nothing has changed (in the form body) moves from `min-h-11 max-sm:w-full` to `fullWidth="below-sm"`.
+  - Failing run first (D-023 UI, shared commit): `invoice-settings-discard.test.tsx` › "is an AURA Button…" and `invoice-settings-form.test.tsx` › "the primary Save button…" both gave `expect(element).not.toHaveClass("min-h-11")`.
