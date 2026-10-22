@@ -411,6 +411,27 @@ describe('loadInvoiceDashboardMethods', () => {
     expect(result.value.toDate).toBe(false);
   });
 
+  it('a negative row (credit notes on last FY invoices) gets 0; the positive rows share 100', async () => {
+    const source = stubSource({
+      collectedByMethod: vi.fn().mockResolvedValue([
+        { method: 'card', amountSatang: 200_000n },
+        { method: 'promptpay', amountSatang: 100_000n },
+        { method: 'bank_transfer', amountSatang: -50_000n },
+      ]),
+    });
+    const result = await loadInvoiceDashboardMethods(ctx, input(), deps(source));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const share = (m: string) => result.value.rows.find((r) => r.method === m)?.sharePercent;
+    expect(share('card')).toBe(67);
+    expect(share('promptpay')).toBe(33);
+    expect(share('bank_transfer')).toBe(0);
+    const positives = result.value.rows.filter((r) => r.amountSatang > 0n);
+    expect(positives.reduce((s, r) => s + r.sharePercent, 0)).toBe(100);
+    // The amounts are untouched: the rows still add up to the tile.
+    expect(result.value.totalSatang).toBe(250_000n);
+  });
+
   it('no money collected: every share is 0', async () => {
     const result = await loadInvoiceDashboardMethods(ctx, input(), deps(stubSource()));
     expect(result.ok).toBe(true);
