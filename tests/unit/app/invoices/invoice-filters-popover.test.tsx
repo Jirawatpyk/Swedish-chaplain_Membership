@@ -353,6 +353,17 @@ describe('<InvoiceFilters> — dueAfter and plan chips (124)', () => {
     expect(url).toContain('subject=membership');
   });
 
+  it('dueAfter alone, or a plan alone, still offers Clear filters', () => {
+    searchParamsStub = new URLSearchParams('dueAfter=2026-01-01');
+    const { unmount } = renderWith({ show088Filters: false });
+    expect(screen.getByRole('button', { name: f.clearAll })).toBeInTheDocument();
+    unmount();
+
+    searchParamsStub = new URLSearchParams('plan=corporate-gold');
+    renderWith({ show088Filters: false, planFilter: { id: 'corporate-gold', label: 'Corporate Gold' } });
+    expect(screen.getByRole('button', { name: f.clearAll })).toBeInTheDocument();
+  });
+
   it('Clear filters drops dueAfter and plan with the rest', () => {
     searchParamsStub = new URLSearchParams('dueAfter=2026-01-01&plan=corporate-gold&status=overdue');
     renderWith({ show088Filters: false, planFilter: { id: 'corporate-gold', label: 'Corporate Gold' } });

@@ -294,7 +294,9 @@ export function InvoiceFilters({
     currentTaxPoint !== 'all' ||
     currentVat !== 'all' ||
     currentOrigin !== 'all' ||
-    currentDueBefore !== null;
+    currentDueBefore !== undefined ||
+    currentDueAfter !== undefined ||
+    currentPlan !== undefined;
 
   const togglePaidOnline = () => {
     pushUrl({ paidOnline: paidOnlineActive ? null : '1' });
