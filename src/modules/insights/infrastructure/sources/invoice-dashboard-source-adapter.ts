@@ -176,9 +176,10 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
   async collectedByMethod(ctx, filters, range): Promise<readonly CollectedMethodTotal[]> {
     const { pay } = tables();
     const t = ctx.slug;
-    // An invoice's method is its latest payment in the method set (looked up
-    // only for the invoices the terms touch), else `invoices.payment_method`;
-    // a waived refund takes its own payment's method.
+    // Every term lands on a row, so the rows add up to the tile. A waived
+    // refund takes its own payment's method; failing that (and for the
+    // invoice terms) the invoice's latest payment in the method set (looked
+    // up only for the invoices the terms touch), else `invoices.payment_method`.
     const result = await rows(
       ctx,
       sql`
@@ -187,7 +188,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
         SELECT DISTINCT ON (${pay.invoiceId}) ${pay.invoiceId} AS invoice_id, ${pay.method} AS method
         FROM ${pay}
         WHERE ${pay.tenantId} = ${t} AND ${pay.status} IN ${METHOD_PAYMENT_STATUSES}
-          AND ${pay.invoiceId} IN (SELECT invoice_id FROM terms WHERE term <> 'waived_refund')
+          AND ${pay.invoiceId} IN (SELECT invoice_id FROM terms)
         ORDER BY ${pay.invoiceId}, ${pay.completedAt} DESC NULLS LAST, ${pay.id} DESC
       ), own_method AS (
         SELECT ${pay.id} AS payment_id, ${pay.method} AS method
@@ -195,14 +196,11 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
         WHERE ${pay.tenantId} = ${t}
           AND ${pay.id} IN (SELECT payment_id FROM terms WHERE term = 'waived_refund')
       )
-      SELECT CASE WHEN terms.term = 'waived_refund' THEN own_method.method
-                  ELSE COALESCE(latest_method.method, terms.invoice_payment_method)
-             END AS method,
+      SELECT COALESCE(own_method.method, latest_method.method, terms.invoice_payment_method) AS method,
              SUM(terms.amount)::bigint AS amount
       FROM terms
       LEFT JOIN latest_method ON latest_method.invoice_id = terms.invoice_id
       LEFT JOIN own_method ON own_method.payment_id = terms.payment_id
-      WHERE terms.term <> 'waived_refund' OR own_method.payment_id IS NOT NULL
       GROUP BY 1`,
     );
     return result.map((r) => ({
