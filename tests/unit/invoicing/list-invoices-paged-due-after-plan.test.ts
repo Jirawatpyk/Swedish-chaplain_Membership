@@ -39,9 +39,9 @@ describe('listInvoicesPagedSchema — 124 dueAfter + planId', () => {
 });
 
 // The use case never parses the schema, so the use case itself must drop a
-// non-calendar dueAfter (Postgres would raise 22008 on `due_date >= '2026-02-30'`).
-describe('listInvoicesPaged — 124 dueAfter reaching the repo', () => {
-  function run(dueAfter: string) {
+// non-calendar dueAfter or dueBefore (Postgres would raise 22008 on `due_date >= '2026-02-30'`).
+describe('listInvoicesPaged — 124 dueAfter / dueBefore reaching the repo', () => {
+  function run(dates: { dueAfter?: string; dueBefore?: string }) {
     const listPaged = vi.fn().mockResolvedValue({ rows: [], total: 0 });
     const invoiceRepo = { listPaged } as unknown as InvoiceRepo;
     return listInvoicesPaged({ invoiceRepo }, {
@@ -49,16 +49,24 @@ describe('listInvoicesPaged — 124 dueAfter reaching the repo', () => {
       offset: 0,
       pageSize: 50,
       includeDrafts: false,
-      dueAfter,
-    }).then(() => listPaged.mock.calls[0]?.[1] as { dueAfter?: string });
+      ...dates,
+    }).then(() => listPaged.mock.calls[0]?.[1] as { dueAfter?: string; dueBefore?: string });
   }
 
   it('passes a calendar date through', async () => {
-    expect((await run('2026-01-01')).dueAfter).toBe('2026-01-01');
+    expect((await run({ dueAfter: '2026-01-01' })).dueAfter).toBe('2026-01-01');
   });
 
   it('drops a non-calendar date instead of sending it to Postgres', async () => {
-    expect((await run('2026-02-30')).dueAfter).toBeUndefined();
+    expect((await run({ dueAfter: '2026-02-30' })).dueAfter).toBeUndefined();
+  });
+
+  it('passes a calendar dueBefore through', async () => {
+    expect((await run({ dueBefore: '2026-01-01' })).dueBefore).toBe('2026-01-01');
+  });
+
+  it('drops a non-calendar dueBefore instead of sending it to Postgres', async () => {
+    expect((await run({ dueBefore: '2026-02-30' })).dueBefore).toBeUndefined();
   });
 });
 
