@@ -234,7 +234,7 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
       expect(tiles.collectedInFiscalYear).toMatchObject({ amountSatang: 963_000n, invoiceCount: 1 });
       const methods = unwrap(await loadInvoiceDashboardMethods(tenant.ctx, i, deps));
       expect(methods.rows.filter((r) => r.amountSatang !== 0n)).toEqual([
-        { method: 'bank_transfer', amountSatang: 963_000n },
+        { method: 'bank_transfer', amountSatang: 963_000n, sharePercent: 100 },
       ]);
       const trend = unwrap(await loadInvoiceDashboardTrend(tenant.ctx, i, deps));
       expect(trend.slots.filter((s) => (s.billedSatang ?? 0n) !== 0n || (s.collectedSatang ?? 0n) !== 0n)).toEqual([

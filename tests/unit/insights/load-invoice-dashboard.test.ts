@@ -321,6 +321,9 @@ describe('loadInvoiceDashboardTrend', () => {
       { from: '2026-04-01', to: '2026-06-15' },
     );
     expect(result.value.range).toEqual({ from: '2026-04-01', to: '2027-03-31' });
+    // The caption needs the Collected series' own range, cut at today.
+    expect(result.value.collectedRange).toEqual({ from: '2026-04-01', to: '2026-06-15' });
+    expect(result.value.toDate).toBe(true);
     const { slots } = result.value;
     expect(slots).toHaveLength(12);
     expect(slots[0]).toMatchObject({ monthKey: '2026-04', state: 'past', billedSatang: 500n, collectedSatang: 300n });
@@ -328,6 +331,21 @@ describe('loadInvoiceDashboardTrend', () => {
     expect(slots[2]).toMatchObject({ monthKey: '2026-06', state: 'current', billedSatang: -20n, collectedSatang: 40n });
     expect(slots[3]).toMatchObject({ monthKey: '2026-07', state: 'future', billedSatang: null, collectedSatang: null });
     expect(slots[11]).toMatchObject({ monthKey: '2027-03', state: 'future', billedSatang: null });
+  });
+});
+
+describe('loadInvoiceDashboardTrend — a finished FY', () => {
+  it('reads Collected over the whole FY and is not "to date"', async () => {
+    const source = stubSource();
+    const result = await loadInvoiceDashboardTrend(
+      ctx,
+      input({ fiscalYearRange: fiscalYearDateRange(2024, 4) }),
+      deps(source),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.collectedRange).toEqual({ from: '2024-04-01', to: '2025-03-31' });
+    expect(result.value.toDate).toBe(false);
   });
 });
 
@@ -353,15 +371,45 @@ describe('loadInvoiceDashboardMethods', () => {
       to: '2026-06-15',
     });
     expect(result.value.rows).toEqual([
-      { method: 'bank_transfer', amountSatang: 5_000n },
-      { method: 'promptpay', amountSatang: 300n },
-      { method: 'card', amountSatang: 1_000n },
-      { method: 'cheque', amountSatang: 0n },
-      { method: 'cash', amountSatang: -200n },
-      { method: 'other', amountSatang: 20n },
+      { method: 'bank_transfer', amountSatang: 5_000n, sharePercent: 0 },
+      { method: 'promptpay', amountSatang: 300n, sharePercent: 0 },
+      { method: 'card', amountSatang: 1_000n, sharePercent: 0 },
+      { method: 'cheque', amountSatang: 0n, sharePercent: 0 },
+      { method: 'cash', amountSatang: -200n, sharePercent: 0 },
+      { method: 'other', amountSatang: 20n, sharePercent: 0 },
     ]);
     expect(result.value.totalSatang).toBe(6_120n);
     expect(result.value.range).toEqual({ from: '2026-04-01', to: '2026-06-15' });
+    expect(result.value.toDate).toBe(true);
+    // A negative row has no part-to-whole reading: allocatePercentages refuses
+    // the whole allocation, so every share is 0 (never a share above 100%).
+    expect(result.value.rows.map((r) => r.sharePercent)).toEqual([0, 0, 0, 0, 0, 0]);
+  });
+
+  it('each row carries its largest-remainder share of AMOUNT, adding to 100', async () => {
+    const source = stubSource({
+      collectedByMethod: vi.fn().mockResolvedValue([
+        { method: 'bank_transfer', amountSatang: 1n },
+        { method: 'promptpay', amountSatang: 1n },
+        { method: 'card', amountSatang: 1n },
+      ]),
+    });
+    const result = await loadInvoiceDashboardMethods(
+      ctx,
+      input({ fiscalYearRange: fiscalYearDateRange(2024, 4) }),
+      deps(source),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.rows.map((r) => r.sharePercent)).toEqual([34, 33, 33, 0, 0, 0]);
+    expect(result.value.toDate).toBe(false);
+  });
+
+  it('no money collected: every share is 0', async () => {
+    const result = await loadInvoiceDashboardMethods(ctx, input(), deps(stubSource()));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.rows.every((r) => r.sharePercent === 0)).toBe(true);
   });
 });
 
