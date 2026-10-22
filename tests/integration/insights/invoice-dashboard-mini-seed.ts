@@ -15,6 +15,7 @@ import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { invoices } from '@/modules/invoicing/infrastructure/db/schema-invoices';
+import { creditNotes } from '@/modules/invoicing/infrastructure/db/schema-credit-notes';
 import { payments, refunds } from '@/modules/payments/infrastructure/schema';
 import type { TestTenant } from '../helpers/test-tenant';
 import type { TestUser } from '../helpers/test-users';
@@ -48,6 +49,23 @@ export interface MiniPaidInvoice {
   /** `invoices.payment_method` — the fallback when no payments row stands for the invoice. */
   readonly method: string;
   readonly paymentDate: string;
+  /** Default `paid`; a credited status needs `credited` (invoices_credited_status_matches). */
+  readonly status?: 'paid' | 'partially_credited' | 'credited';
+  readonly credited?: number;
+}
+
+/** A voided invoice (void of an issued bill, the main seed's shape). */
+export interface MiniVoidInvoice {
+  readonly key: string;
+  readonly total: number;
+  readonly issueDate: string;
+}
+
+export interface MiniCreditNote {
+  readonly key: string;
+  readonly invoiceKey: string;
+  readonly issueDate: string;
+  readonly total: number;
 }
 
 export interface MiniPayment {
@@ -56,18 +74,31 @@ export interface MiniPayment {
   readonly method: 'card' | 'promptpay';
   readonly amount: number;
   readonly completedAt: string;
+  /** Default `succeeded`. */
+  readonly status?: 'succeeded' | 'partially_refunded' | 'refunded';
 }
 
 export interface MiniRefund {
   readonly paymentKey: string;
   readonly invoiceKey: string;
-  readonly status: 'pending' | 'succeeded';
+  /** A `succeeded` refund is a §105 waiver (no credit note). */
+  readonly status: 'pending' | 'succeeded' | 'failed';
   readonly amount: number;
   readonly initiatedAt: Date;
+  /** For `failed`; default `stripe_refund_failed`. */
+  readonly failureReasonCode?: string;
+  /** Default: one hour after `initiatedAt` (for a non-pending refund). */
+  readonly completedAt?: Date;
+  /** Default: the database's `now()`. */
+  readonly createdAt?: Date;
+  /** Default: `rf_<uuid>`; set it to decide an ordering tie by id. */
+  readonly id?: string;
 }
 
 export interface MiniScenario {
   readonly invoices: readonly MiniPaidInvoice[];
+  readonly voids?: readonly MiniVoidInvoice[];
+  readonly creditNotes?: readonly MiniCreditNote[];
   readonly payments?: readonly MiniPayment[];
   readonly refunds?: readonly MiniRefund[];
 }
@@ -96,7 +127,7 @@ export async function seedMiniScenario(
       planYear: 2026,
       origin: 'manual' as const,
       draftByUserId: user.userId,
-      status: 'paid' as const,
+      status: o.status ?? ('paid' as const),
       billDocumentNumberRaw: `BL-2026-${String(seq).padStart(6, '0')}`,
       receiptDocumentNumberRaw: `RE-2026-${String(seq).padStart(6, '0')}`,
       receiptPdfStatus: 'rendered' as const,
@@ -110,7 +141,7 @@ export async function seedMiniScenario(
       vatRateSnapshot: '0.0700',
       vatSatang: 0n,
       totalSatang: BigInt(o.total),
-      creditedTotalSatang: 0n,
+      creditedTotalSatang: BigInt(o.credited ?? 0),
       proRatePolicySnapshot: 'monthly' as const,
       netDaysSnapshot: 30,
       tenantIdentitySnapshot: SNAP_TENANT,
@@ -128,6 +159,81 @@ export async function seedMiniScenario(
     };
   });
 
+  const voidRows = (scenario.voids ?? []).map((o) => {
+    seq += 1;
+    const invoiceId = randomUUID();
+    ids[o.key] = invoiceId;
+    return {
+      tenantId: slug,
+      invoiceId,
+      invoiceSubject: 'membership' as const,
+      memberId,
+      planId: 'gold',
+      planYear: 2026,
+      origin: 'manual' as const,
+      draftByUserId: user.userId,
+      status: 'void' as const,
+      voidedAt: new Date(`${o.issueDate}T08:00:00Z`),
+      voidReason: 'dashboard edge case',
+      voidedByUserId: user.userId,
+      pdfDocKind: 'invoice' as const,
+      fiscalYear: Number(o.issueDate.slice(0, 4)),
+      sequenceNumber: seq,
+      documentNumber: `MV-2026-${String(seq).padStart(6, '0')}`,
+      issueDate: o.issueDate,
+      dueDate: o.issueDate,
+      subtotalSatang: BigInt(o.total),
+      vatRateSnapshot: '0.0700',
+      vatSatang: 0n,
+      totalSatang: BigInt(o.total),
+      creditedTotalSatang: 0n,
+      proRatePolicySnapshot: 'monthly' as const,
+      netDaysSnapshot: 30,
+      tenantIdentitySnapshot: SNAP_TENANT,
+      memberIdentitySnapshot: {
+        legal_name: `Buyer ${o.key}`,
+        tax_id: '1234567890123',
+        address: 'Bangkok',
+        primary_contact_name: 'n',
+        primary_contact_email: 'test@example.com',
+      },
+      pdfBlobKey: `invoicing/mini/${o.key}.pdf`,
+      pdfSha256: 'd'.repeat(64),
+      pdfTemplateVersion: 1,
+    };
+  });
+
+  const creditNoteRows = (scenario.creditNotes ?? []).map((o) => {
+    seq += 1;
+    const creditNoteId = randomUUID();
+    ids[o.key] = creditNoteId;
+    return {
+      tenantId: slug,
+      creditNoteId,
+      originalInvoiceId: ids[o.invoiceKey]!,
+      fiscalYear: Number(o.issueDate.slice(0, 4)),
+      sequenceNumber: seq,
+      documentNumber: `CN-2026-${String(seq).padStart(6, '0')}`,
+      issueDate: o.issueDate,
+      issuedByUserId: user.userId,
+      reason: 'dashboard edge case',
+      creditAmountSatang: BigInt(o.total),
+      vatSatang: 0n,
+      totalSatang: BigInt(o.total),
+      tenantIdentitySnapshot: SNAP_TENANT,
+      memberIdentitySnapshot: {
+        legal_name: `Buyer ${o.key}`,
+        tax_id: '1234567890123',
+        address: 'Bangkok',
+        primary_contact_name: 'n',
+        primary_contact_email: 'test@example.com',
+      },
+      pdfBlobKey: `invoicing/mini/${o.key}.pdf`,
+      pdfSha256: 'c'.repeat(64),
+      pdfTemplateVersion: 8,
+    };
+  });
+
   const paymentRows = (scenario.payments ?? []).map((o) => {
     const id = `pay_${randomUUID()}`;
     ids[o.key] = id;
@@ -138,7 +244,7 @@ export async function seedMiniScenario(
       invoiceId: ids[o.invoiceKey]!,
       memberId,
       method: o.method,
-      status: 'succeeded',
+      status: o.status ?? 'succeeded',
       amountSatang: BigInt(o.amount),
       processorPaymentIntentId: `pi_mini_${randomUUID()}`,
       processorEnvironment: 'test',
@@ -155,9 +261,10 @@ export async function seedMiniScenario(
 
   const refundRows = (scenario.refunds ?? []).map((o) => {
     const succeeded = o.status === 'succeeded';
-    const completedAt = succeeded ? new Date(o.initiatedAt.getTime() + 60 * 60 * 1000) : null;
+    const completedAt =
+      o.status === 'pending' ? null : (o.completedAt ?? new Date(o.initiatedAt.getTime() + 60 * 60 * 1000));
     return {
-      id: `rf_${randomUUID()}`,
+      id: o.id ?? `rf_${randomUUID()}`,
       tenantId: slug,
       paymentId: ids[o.paymentKey]!,
       invoiceId: ids[o.invoiceKey]!,
@@ -165,14 +272,15 @@ export async function seedMiniScenario(
       reason: 'dashboard edge case',
       status: o.status,
       processorRefundId: succeeded ? `re_mini_${randomUUID()}` : null,
-      failureReasonCode: null,
+      failureReasonCode: o.status === 'failed' ? (o.failureReasonCode ?? 'stripe_refund_failed') : null,
       creditNoteId: null,
       creditNoteWaiverReason: succeeded ? ('section_105_receipt' as const) : null,
-      creditNoteWaivedAt: completedAt,
+      creditNoteWaivedAt: succeeded ? completedAt : null,
       initiatedAt: o.initiatedAt,
       completedAt,
       initiatorUserId: user.userId,
       correlationId: 'corr-dashboard-mini',
+      ...(o.createdAt ? { createdAt: o.createdAt } : {}),
     };
   });
 
@@ -206,7 +314,9 @@ export async function seedMiniScenario(
       planId: 'gold',
       planYear: 2026,
     });
-    await tx.insert(invoices).values(invoiceRows);
+    if (invoiceRows.length > 0) await tx.insert(invoices).values(invoiceRows);
+    if (voidRows.length > 0) await tx.insert(invoices).values(voidRows);
+    if (creditNoteRows.length > 0) await tx.insert(creditNotes).values(creditNoteRows);
     if (paymentRows.length > 0) await tx.insert(payments).values(paymentRows);
     if (refundRows.length > 0) await tx.insert(refunds).values(refundRows);
   });
