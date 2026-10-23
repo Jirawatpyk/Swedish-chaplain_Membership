@@ -726,6 +726,14 @@ const schema = z.object({
   // add it only after the RoPA update (quickstart § 3.2).
   FEATURE_EBLAST_MEMBER_APPROVAL: booleanFromString.default(false),
 
+  // --- 124 Invoice dashboard -------------------------------------------------
+  // OFF (default — ships dark): `/admin/finance` is notFound() and its nav
+  // item is absent. Read-only page; no write path depends on it. Readers: the
+  // page and the admin layout (nav) — `grep -rn features.invoiceDashboard src/`.
+  // Setting this variable IS the flip on this repo (no `ignoreCommand`) —
+  // add it only when ready to redeploy immediately.
+  FEATURE_INVOICE_DASHBOARD: booleanFromString.default(false),
+
   // --- ClamAV virus scanner (US2 dependency) -------------------------------
   // Network address of the clamd daemon. Empty string in dev = US2 disabled.
   // In prod, points at the Fly.io private 6PN address (e.g.
@@ -1189,6 +1197,8 @@ export const env = {
     // F119 — E-Blast member-approval round: gates the submitted → in_design
     // edge and the five hand-off emails at the drainer (never the exits).
     eblastMemberApproval: raw.FEATURE_EBLAST_MEMBER_APPROVAL,
+    // 124 — the invoice dashboard page (`/admin/finance`) and its nav item.
+    invoiceDashboard: raw.FEATURE_INVOICE_DASHBOARD,
     f8Renewals: raw.FEATURE_F8_RENEWALS,
     f8AtRiskDisabled: raw.FEATURE_F8_AT_RISK_DISABLED,
     // COMP-1 US2d — member-erasure reconciliation sweep kill-switch.

@@ -134,4 +134,10 @@ export interface InvoiceDashboardSource {
     today: string,
     limit: number,
   ): Promise<readonly OverdueInvoiceRow[]>;
+  /**
+   * Whether the tenant has ever issued an invoice (any status but `draft`; a
+   * voided bill was issued). Unfiltered: the page's "No invoices yet" state is
+   * about the tenant, never about the filters (US5.2).
+   */
+  hasNonDraftInvoice(ctx: TenantContext): Promise<boolean>;
 }
