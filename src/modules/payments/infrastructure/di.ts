@@ -30,6 +30,7 @@ import type { SweepPendingOnUnpayableDeps } from '../application/use-cases/sweep
 import { drizzleUnpayablePendingFinder } from './repos/drizzle-unpayable-pending-finder';
 import type { HandleCancelEventDeps } from '../application/use-cases/handle-cancel-event';
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
+import type { ListCollectedPaymentMethodsDeps } from '../application/use-cases/list-collected-payment-methods';
 import type { ListWaivedRefundTotalsByInvoiceDeps } from '../application/use-cases/list-waived-refund-totals-by-invoice';
 import type { CountPendingRefundsForInvoiceDeps } from '../application/use-cases/count-pending-refunds-for-invoice';
 import type { LoadInvoicePaymentActivityDeps } from '../application/use-cases/load-invoice-payment-activity';
@@ -315,6 +316,15 @@ export function makeHandleCancelEventDeps(tenantId: string): HandleCancelEventDe
 export function makeListSucceededPaymentMethodsDeps(
   tenantId: string,
 ): ListSucceededPaymentMethodsDeps {
+  return {
+    paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
+  };
+}
+
+// Spec 124 follow-up — listCollectedPaymentMethods (the CSV export's lookup).
+export function makeListCollectedPaymentMethodsDeps(
+  tenantId: string,
+): ListCollectedPaymentMethodsDeps {
   return {
     paymentsRepo: makeDrizzlePaymentsRepo(tenantId),
   };

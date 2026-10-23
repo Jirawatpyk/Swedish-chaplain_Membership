@@ -284,6 +284,18 @@ export interface PaymentsRepo {
   ): Promise<ReadonlyMap<string, PaymentMethod>>;
 
   /**
+   * Spec 124 follow-up — the method that COLLECTED each invoice: its latest
+   * payment in `succeeded | partially_refunded | refunded` (a refund does not
+   * change how the money came in). Latest by `completed_at`, then `id`, so the
+   * pick is deterministic. Invoices with no such payment are ABSENT. The rule
+   * `.claude/rules/modules/payments.md` states for one method row per invoice.
+   */
+  listCollectedMethodByInvoiceIds(
+    tenantId: string,
+    invoiceIds: readonly string[],
+  ): Promise<ReadonlyMap<string, PaymentMethod>>;
+
+  /**
    * F5 US3 timeline panel — return all payment + refund rows tied to
    * the invoice, ordered by initiation time ascending. Refunds carry
    * the parent paymentId; UI groups refunds under their parent in the

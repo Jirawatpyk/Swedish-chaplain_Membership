@@ -72,12 +72,24 @@ export interface MiniCreditNote {
 
 export interface MiniPayment {
   readonly key: string;
+  /** Fixed id, to pin the `id DESC` tiebreak; default `pay_<uuid>`. */
+  readonly id?: string;
   readonly invoiceKey: string;
   readonly method: 'card' | 'promptpay';
   readonly amount: number;
   readonly completedAt: string;
-  /** Default `succeeded`. */
-  readonly status?: 'succeeded' | 'partially_refunded' | 'refunded';
+  /**
+   * Default `succeeded`. The others are attempts that never collected the
+   * invoice: `pending` has no `completed_at`, `failed` gets a reason code.
+   */
+  readonly status?:
+    | 'succeeded'
+    | 'partially_refunded'
+    | 'refunded'
+    | 'pending'
+    | 'failed'
+    | 'canceled'
+    | 'auto_refunded';
 }
 
 export interface MiniRefund {
@@ -260,7 +272,7 @@ export async function seedMiniScenario(
   });
 
   const paymentRows = (scenario.payments ?? []).map((o) => {
-    const id = `pay_${randomUUID()}`;
+    const id = o.id ?? `pay_${randomUUID()}`;
     ids[o.key] = id;
     const card = o.method === 'card';
     return {
@@ -278,7 +290,8 @@ export async function seedMiniScenario(
       cardExpMonth: card ? 12 : null,
       cardExpYear: card ? 2030 : null,
       initiatedAt: new Date(o.completedAt),
-      completedAt: new Date(o.completedAt),
+      completedAt: o.status === 'pending' ? null : new Date(o.completedAt),
+      failureReasonCode: o.status === 'failed' ? 'card_declined' : null,
       actorUserId: user.userId,
       correlationId: `corr-${o.key}`,
     };

@@ -31,6 +31,7 @@ import {
   paymentsTable,
   refundsTable,
   STALE_REFUND_ESCALATION_AGE_MS,
+  SUCCEEDED_LINEAGE,
 } from '@/modules/payments';
 import type { TenantContext } from '@/modules/tenants';
 import { agingBucketDueRange, type AgingBucket } from '../../domain/invoice-dashboard-aging';
@@ -63,8 +64,13 @@ const PAID_FAMILY = sql.raw(`('paid', 'partially_credited', 'credited')`);
  * list (the same rows; a list the planner can match, unlike `NOT IN`).
  */
 const BILLABLE = sql.raw(`('issued', 'paid', 'partially_credited', 'credited')`);
-/** Payment rows whose method stands for the invoice. */
-const METHOD_PAYMENT_STATUSES = sql.raw(`('succeeded', 'partially_refunded', 'refunded')`);
+/**
+ * Payment rows whose method stands for the invoice — the payments barrel's
+ * list, shared with the CSV export. A function: barrel values are read per call.
+ */
+function methodPaymentStatuses() {
+  return sql.raw(`(${SUCCEEDED_LINEAGE.map((s) => `'${s}'`).join(', ')})`);
+}
 const BANGKOK = sql.raw(`'Asia/Bangkok'`);
 
 /** `AND`-prefixed type / plan / origin predicates on `invoices`, or nothing. */
@@ -226,7 +232,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
       latest_method AS (
         SELECT DISTINCT ON (${pay.invoiceId}) ${pay.invoiceId} AS invoice_id, ${pay.method} AS method
         FROM ${pay}
-        WHERE ${pay.tenantId} = ${t} AND ${pay.status} IN ${METHOD_PAYMENT_STATUSES}
+        WHERE ${pay.tenantId} = ${t} AND ${pay.status} IN ${methodPaymentStatuses()}
           AND ${pay.invoiceId} IN (SELECT invoice_id FROM terms)
         ORDER BY ${pay.invoiceId}, ${pay.completedAt} DESC NULLS LAST, ${pay.id} DESC
       ), own_method AS (

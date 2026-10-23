@@ -32,6 +32,7 @@ import {
   type PaymentMethod,
 } from '../../domain/value-objects/payment-method';
 import { REFUND_STATUSES, type RefundStatus } from '../../domain/refund';
+import { SUCCEEDED_LINEAGE } from '../../domain/invariants/one-succeeded-payment-per-invoice';
 import { payments, refunds, type PaymentRow, type RefundRow } from '../schema';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
@@ -153,6 +154,48 @@ function toDomain(row: PaymentRow): Payment {
     actorUserId: row.actorUserId,
     correlationId: row.correlationId,
   };
+}
+
+/** `status IN (...)` lists for `latestMethodByInvoiceIds` (enum literals). */
+const SUCCEEDED_ONLY = sql.raw(`('succeeded')`);
+const COLLECTED_STATUSES = sql.raw(`(${SUCCEEDED_LINEAGE.map((st) => `'${st}'`).join(', ')})`);
+/** Ids per statement: far under Postgres's 65,535 bind-parameter limit. */
+const METHOD_LOOKUP_CHUNK = 1000;
+
+/**
+ * Each invoice's method from its latest payment in `statuses` (latest by
+ * `completed_at`, then `id`, so the pick is deterministic). Invoices with no
+ * such payment are absent. Tenant scoping comes from RLS first; the explicit
+ * `tenant_id =` clause is defence-in-depth.
+ */
+async function latestMethodByInvoiceIds(
+  ctx: ReturnType<typeof asTenantContext>,
+  tenantIdArg: string,
+  invoiceIds: readonly string[],
+  statuses: ReturnType<typeof sql.raw>,
+): Promise<ReadonlyMap<string, PaymentMethod>> {
+  const result = new Map<string, PaymentMethod>();
+  if (invoiceIds.length === 0) return result;
+  return runInTenant(ctx, async (tx) => {
+    for (let i = 0; i < invoiceIds.length; i += METHOD_LOOKUP_CHUNK) {
+      const chunk = invoiceIds.slice(i, i + METHOD_LOOKUP_CHUNK);
+      const rows = (await tx.execute(sql`
+        SELECT DISTINCT ON (invoice_id) invoice_id, method
+          FROM payments
+         WHERE tenant_id = ${tenantIdArg}
+           AND status IN ${statuses}
+           AND invoice_id IN (${sql.join(
+             chunk.map((id) => sql`${id}`),
+             sql`, `,
+           )})
+         ORDER BY invoice_id, completed_at DESC NULLS LAST, id DESC
+      `)) as unknown as Array<{ invoice_id: string; method: PaymentMethod }>;
+      for (const row of rows) {
+        result.set(row.invoice_id, row.method);
+      }
+    }
+    return result;
+  });
 }
 
 export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
@@ -539,33 +582,18 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       tenantIdArg: string,
       invoiceIds: readonly string[],
     ): Promise<ReadonlyMap<string, PaymentMethod>> {
-      if (invoiceIds.length === 0) {
-        return new Map<string, PaymentMethod>();
-      }
-      return runInTenant(ctx, async (tx) => {
-        // DISTINCT ON (invoice_id) ORDER BY completed_at DESC picks the
-        // latest succeeded payment per invoice. The
-        // one-succeeded-per-invoice invariant typically guarantees
-        // single-row, but this ordering survives historical lineage
-        // (refund + re-attempt). Tenant scoping comes from RLS first;
-        // the explicit `tenant_id =` clause is defence-in-depth.
-        const rows = (await tx.execute(sql`
-          SELECT DISTINCT ON (invoice_id) invoice_id, method
-            FROM payments
-           WHERE tenant_id = ${tenantIdArg}
-             AND status = 'succeeded'
-             AND invoice_id IN (${sql.join(
-               invoiceIds.map((id) => sql`${id}`),
-               sql`, `,
-             )})
-           ORDER BY invoice_id, completed_at DESC
-        `)) as unknown as Array<{ invoice_id: string; method: PaymentMethod }>;
-        const result = new Map<string, PaymentMethod>();
-        for (const row of rows) {
-          result.set(row.invoice_id, row.method);
-        }
-        return result;
-      });
+      // The one-succeeded-per-invoice invariant typically guarantees a
+      // single row; the latest-first pick survives historical lineage
+      // (refund + re-attempt).
+      return latestMethodByInvoiceIds(ctx, tenantIdArg, invoiceIds, SUCCEEDED_ONLY);
+    },
+
+    async listCollectedMethodByInvoiceIds(
+      tenantIdArg: string,
+      invoiceIds: readonly string[],
+    ): Promise<ReadonlyMap<string, PaymentMethod>> {
+      // One method per invoice: its latest collected payment, refunded or not.
+      return latestMethodByInvoiceIds(ctx, tenantIdArg, invoiceIds, COLLECTED_STATUSES);
     },
 
     /**

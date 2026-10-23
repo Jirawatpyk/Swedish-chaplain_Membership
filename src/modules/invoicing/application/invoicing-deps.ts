@@ -55,8 +55,8 @@ import type { GetZeroRateCertSignedUrlDeps } from './use-cases/get-zero-rate-cer
 import type { GetReceiptPdfSignedUrlDeps } from './use-cases/get-receipt-pdf-signed-url';
 import type { ExportPaidInvoicesCsvDeps } from './use-cases/export-paid-invoices-csv';
 import {
-  listSucceededPaymentMethods,
-  makeListSucceededPaymentMethodsDeps,
+  listCollectedPaymentMethods,
+  makeListCollectedPaymentMethodsDeps,
   countPendingRefundsForInvoice,
   makeCountPendingRefundsForInvoiceDeps,
   loadInvoicePaymentActivity,
@@ -276,11 +276,15 @@ export function makeGetReceiptPdfSignedUrlDeps(tenantId: string): GetReceiptPdfS
 /**
  * Phase 3 (F4 receipt-surface plan) — composition for the CSV export
  * use-case. The `paymentMethodLookup` port is wired here with the F5
- * `listSucceededPaymentMethods` use-case so that the use-case file
+ * `listCollectedPaymentMethods` use-case so that the use-case file
  * itself imports zero F5 symbols (Constitution III: cross-module
  * wiring belongs to the composition root, not the use-case).
  *
- * Lookup-port failure semantics: F5's `listSucceededPaymentMethods`
+ * Spec 124 follow-up: `listCollectedPaymentMethods`, not succeeded-only, so a
+ * card or PromptPay payment that was later refunded still names its method
+ * (succeeded-only dropped it and the row printed `manual`).
+ *
+ * Lookup-port failure semantics: F5's `listCollectedPaymentMethods`
  * returns a `Result` whose error union is `never`, so this closure
  * cannot throw under current types. If F5 ever widens the error, the
  * `result.ok` check below short-circuits to an empty map — the CSV
@@ -294,8 +298,8 @@ export function makeExportPaidInvoicesCsvDeps(
     registerRepo: makeDrizzleTaxRegisterRepo(tenantId),
     audit: f4AuditAdapter,
     paymentMethodLookup: async (tid, invoiceIds) => {
-      const result = await listSucceededPaymentMethods(
-        makeListSucceededPaymentMethodsDeps(tid),
+      const result = await listCollectedPaymentMethods(
+        makeListCollectedPaymentMethodsDeps(tid),
         { tenantId: tid, invoiceIds },
       );
       return result.ok
