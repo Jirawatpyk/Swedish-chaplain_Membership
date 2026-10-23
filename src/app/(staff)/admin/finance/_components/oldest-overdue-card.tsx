@@ -15,7 +15,8 @@
  */
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
-import { Card } from '@jirawatpyk/aura-react/server';
+import { ArrowRightIcon } from 'lucide-react';
+import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import type { InvoiceDashboardOldestOverdue, InvoiceDashboardResult } from '@/modules/insights';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { RecordPaymentDialog } from '../../invoices/_components/record-payment-dialog';
@@ -29,7 +30,7 @@ export const OLDEST_OVERDUE_TITLE_ID = 'oldest-overdue-title';
 /** Shown on a phone; the rest of the six are hidden there. */
 const PHONE_ROWS = 3;
 
-/** 44px below 640px or on a coarse pointer, where these links stand alone (US6.2). */
+/** 44px below 640px or on a coarse pointer for the document-number link, a text link in the row title (US6.2). */
 const PHONE_TARGET =
   'max-sm:inline-flex max-sm:min-h-11 max-sm:items-center pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center';
 
@@ -84,10 +85,16 @@ export async function OldestOverdueCard({
     );
   }
 
+  // AURA's button-link (ghost, sm): 44px on a phone or a touch screen comes
+  // from its own `touchHeight`, and the arrow is the board's.
   const footer = (
-    <Link href={invoiceListHref({ status: 'overdue', ...listFilters })} className={`text-sm font-medium ${PHONE_TARGET}`}>
+    <Link
+      href={invoiceListHref({ status: 'overdue', ...listFilters })}
+      className={buttonClass({ variant: 'ghost', size: 'sm', touchHeight: true })}
+    >
       {/* No count when the tiles failed: six rows are not the overdue total. */}
       {overdueCount === null ? t('oldest.allOverdueNoCount') : t('oldest.allOverdue', { count: overdueCount })}
+      <ArrowRightIcon aria-hidden="true" className="size-4" />
     </Link>
   );
 
