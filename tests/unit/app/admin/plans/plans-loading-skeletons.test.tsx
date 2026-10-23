@@ -121,6 +121,7 @@ describe('plans list loading on a phone', () => {
     const cells = [...row.querySelectorAll('td')];
     expect(cells[0]).toHaveAttribute('data-card', 'title');
     expect(cells[5]).toHaveAttribute('data-card', 'action');
-    expect(cells[4]?.className).toContain('@max-[640px]/aura-tbl:hidden');
+    // the year steps aside below an 800px table box, so the phone card leaves it out too
+    expect(cells[4]?.className).toContain('@max-[800px]/aura-tbl:hidden');
   });
 });
