@@ -4,7 +4,9 @@
  * under the shell bar publishes its measured height as
  * `--chamber-section-tabs-height` on the root, which `globals.css` adds to
  * `scroll-padding-top`, so an anchored section lands below the row without a
- * fixed number. The variable goes away when the row unmounts.
+ * fixed number. The variable goes away when the row unmounts. A row that is
+ * not sticky at this width (the invoice settings tabs on a phone) adds
+ * nothing, since it scrolls away with the page.
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
@@ -39,8 +41,9 @@ afterEach(() => {
   document.documentElement.style.removeProperty(VAR);
 });
 
-function rowOfHeight(h: { value: number }): HTMLElement {
+function rowOfHeight(h: { value: number }, position = 'sticky'): HTMLElement {
   const el = document.createElement('div');
+  el.style.position = position;
   el.getBoundingClientRect = () => ({ height: h.value }) as DOMRect;
   return el;
 }
@@ -65,6 +68,20 @@ describe('useSectionTabsScrollPadding', () => {
     unmount();
     expect(read()).toBe('');
     expect(disconnect).toHaveBeenCalled();
+  });
+
+  it('publishes 0px while the row is not sticky', () => {
+    renderHook(() => useSectionTabsScrollPadding({ current: rowOfHeight({ value: 48 }, 'static') }));
+    expect(read()).toBe('0px');
+  });
+
+  it('follows a change of stickiness on window resize (crossing a breakpoint)', () => {
+    const el = rowOfHeight({ value: 48 }, 'static');
+    renderHook(() => useSectionTabsScrollPadding({ current: el }));
+    expect(read()).toBe('0px');
+    el.style.position = 'sticky';
+    window.dispatchEvent(new Event('resize'));
+    expect(read()).toBe('48px');
   });
 
   it('does nothing without a row', () => {
