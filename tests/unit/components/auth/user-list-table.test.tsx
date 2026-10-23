@@ -124,6 +124,13 @@ afterEach(() => {
   vi.useFakeTimers();
 });
 
+describe('UserListTable — layout', () => {
+  it('AURA 5.60 (#174): an email may break anywhere, so a long address never widens the table', () => {
+    renderTable([ACTIVE_USER]);
+    expect(screen.getAllByText('active@example.com')[0]!.closest('td')).toHaveClass('is-wrap-anywhere');
+  });
+});
+
 describe('UserListTable — resend + revoke invitation actions', () => {
   it('shows Resend invitation in the row and Revoke as a danger item in its ⋯ menu on a pending row', async () => {
     renderTable([PENDING_USER]);

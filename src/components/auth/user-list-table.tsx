@@ -523,7 +523,7 @@ export function UserListTable({
                 const none = !view.canDisable && !view.canEnable && !view.canManageInvite && !view.canChangeRole;
                 return (
                   <Tr key={user.id} data-user-id={user.id} data-user-email={user.email.toLowerCase()}>
-                    <Td>{user.email}</Td>
+                    <Td wrap="anywhere">{user.email}</Td>
                     <Td className="whitespace-nowrap">{user.displayName ?? '—'}</Td>
                     <Td>{roleBadgeFor(user)}</Td>
                     <Td>

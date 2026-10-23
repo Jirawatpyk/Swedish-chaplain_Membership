@@ -44,12 +44,9 @@ type FilterMode = 'all' | 'starter' | 'authored';
  * The subject follows the table box, not the viewport: it steps aside in a
  * narrow grid (up to 820px: a tablet, or a 1024 laptop beside the sidebar),
  * is cut at 12rem up to 1000px (a tablet in landscape), and at 24rem beyond;
- * the phone card shows it whole. Text cells
- * in the grid wrap between words only, so AURA's `overflow-wrap: anywhere`
- * cannot squeeze a name to a few letters a line; phone cards keep it
- * (stand-in until AURA #174).
+ * the phone card shows it whole.
+ * AURA app content: which column gives way, by the table box.
  */
-const GRID_WORD_WRAP = '@min-[640px]/aura-tbl:[overflow-wrap:normal]';
 const HIDE_IN_NARROW_GRID = '@min-[640px]/aura-tbl:@max-[820px]/aura-tbl:hidden';
 
 export interface TemplateLibraryRow {
@@ -231,7 +228,7 @@ export function AdminTemplateLibrary({
             ) : (
               filtered.map((tpl) => (
                 <Tr key={tpl.id}>
-                  <Td card="title" className={GRID_WORD_WRAP}>
+                  <Td card="title">
                     {/* Board parity: on a phone card the badge sits at the
                         right end of the title row; in the table it follows
                         the name. */}
@@ -251,12 +248,12 @@ export function AdminTemplateLibrary({
                     {/* A block span so `truncate` works under the table's
                         auto layout (M8 Round 2); on a phone card the subject
                         wraps instead of being cut (UX M2); 12rem in a
-                        narrow grid. stand-in until AURA #174 */}
+                        narrow grid. AURA app content: the cut follows the table box */}
                     <span className="block max-sm:[overflow-wrap:anywhere] sm:max-w-[24rem] sm:truncate @min-[821px]/aura-tbl:@max-[1000px]/aura-tbl:max-w-[12rem]">
                       {tpl.subjectPreview ?? '—'}
                     </span>
                   </Td>
-                  <Td className={`text-[var(--aura-fg-secondary)] ${GRID_WORD_WRAP}`}>
+                  <Td className="text-[var(--aura-fg-secondary)]">
                     {tLang(`languageOptions.${tpl.locale}`)}
                   </Td>
                   <Td numeric>{tpl.startedFromCount}</Td>

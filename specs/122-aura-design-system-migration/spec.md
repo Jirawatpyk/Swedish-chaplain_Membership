@@ -817,6 +817,24 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - Change requests and plans first ran 9–51px past a 655–695px box (a 720–760px tablet, such as an iPad mini in portrait). The maintainer asked for that fixed too ("แก้เลย"). `TIGHT_CELLS_IN_NARROWEST_GRID` (`src/components/shell/aura-classes.ts`, on both tables' rows) sets the cells 8px apart instead of 16px while the box is 640–720px; the outer edges keep AURA's padding. All four tables now fit at every width.
 - **Ratchet repair:** the open-items rows #173–#175 in `docs/aura-adoption.md` were written `| #173 (Addendum 74) |`. The ratchet's parser reads only `| #173 |`, so it stopped there and none of the three counted as open. They now read `| #173 | Addendum 74: …`.
 
+### Session 2026-10-23 (adopt AURA 5.60: #173–#175)
+
+- **What shipped:** AURA 5.60.0 closes all three items filed from #629 and #630.
+  - #173: a `touchHeight` link is laid out at every width.
+  - #174: a static cell wraps between words by default, and `Td` / `Th` take `wrap`.
+  - #175: a wide sticky header no longer covers the first row.
+  - They are adopted in the same branch as the table sweep above, before it was pushed, so its #174 stand-ins never shipped.
+- **Removed:**
+  - the hand-written link layout on the picker and portal profile links;
+  - `[overflow-wrap:normal]` on six cell types;
+  - `whitespace-nowrap` on three cells, which now use `wrap="none"`.
+- **Kept, now labelled as app content:**
+  - `self-start`, where a flex parent stretches a link;
+  - the picker's child-span label type;
+  - the narrow-grid column drops, the Subject cut, Overdue below the wait, and the tighter cells.
+- **Found adopting it:** with `break-word` as the default, the audit log's event codes and IDs and the users list's email widened their tables (audit ran 326px past its box at 768). They take `wrap="anywhere"`, as AURA's note advises.
+- **Seen, not caused here:** the credit-note detail page scrolls sideways by about 250px at 390. A sr-only label in the page-header actions computes 636px wide. The 5.59 → 5.60 CSS diff touches only `.aura-link`, so this is left for its own fix.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

@@ -300,7 +300,7 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
 
   // UX review (US6): the plan name is the only way into a plan from a phone
   // card, so its link fills a 44px touch target there.
-  it('#174 stand-in: in the narrowest grid (640–720px box) the cells sit closer, so the row menu stays in view', () => {
+  it('box fit: in the narrowest grid (640–720px box) the cells sit closer, so the row menu stays in view', () => {
     renderRows();
     const header = screen.getAllByRole('row')[0]!;
     const row = screen.getByRole('link', { name: 'Premium Corporate' }).closest('tr')!;
@@ -317,7 +317,7 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     expect(screen.getByRole('link', { name: 'Premium Corporate' })).toHaveClass('aura-link', 'aura-link--touch');
     // AURA's cell wraps anywhere, which squeezed the name column at 768px until
     // the name broke mid-word ("Diamo/nd"); the name wraps between words only
-    expect(screen.getByRole('link', { name: 'Premium Corporate' }).closest('td')).toHaveClass('@min-[640px]/aura-tbl:[overflow-wrap:normal]');
+    expect(screen.getByRole('link', { name: 'Premium Corporate' }).closest('td')!.className).not.toContain('overflow-wrap');
     // the year steps aside when the table box is narrow (the filter already shows it),
     // so the row's ⋯ menu stays in view at tablet width
     expect(screen.getByRole('columnheader', { name: /year/i })).toHaveClass('@max-[800px]/aura-tbl:hidden');

@@ -29,14 +29,11 @@ import {
 /**
  * Submitted steps aside while the box is a narrow grid (Waiting says how long
  * the request has waited), and there "Overdue" sits below the wait; the phone
- * card and the wide table keep both on one line. Text cells in the grid wrap
- * between words only, so AURA's `overflow-wrap: anywhere` cannot squeeze a
- * company name to a few letters a line; phone cards keep it.
- * stand-in until AURA #174
+ * card and the wide table keep both on one line.
+ * AURA app content: which column gives way, by the table box.
  */
 const NARROW_GRID = '@min-[640px]/aura-tbl:@max-[900px]/aura-tbl';
 const HIDE_IN_NARROW_GRID = `${NARROW_GRID}:hidden`;
-const GRID_WORD_WRAP = '@min-[640px]/aura-tbl:[overflow-wrap:normal]';
 
 /** Whole days / hours for the waiting column — the exact seconds are not what a reviewer scans for. */
 function waitingParts(seconds: number): { days: number; hours: number } {
@@ -75,7 +72,7 @@ export async function ChangeRequestQueueTable({
           return (
             <Tr key={r.id} className={TIGHT_CELLS_IN_NARROWEST_GRID} data-testid="queue-row" data-request-id={r.id} data-overdue={item.overdue ? 'true' : undefined}>
               {/* No card label: the company is the card's title. */}
-              <Td card="title" className={GRID_WORD_WRAP}>
+              <Td card="title">
                 <div className="font-medium">{item.row.member.companyName}</div>
                 {/* Muted in the table, bold in the phone card's title (boards).
                     AURA app content: the number's weight on a stacked card. */}
@@ -84,11 +81,11 @@ export async function ChangeRequestQueueTable({
                   {item.row.member.archived ? ` · ${t('archivedMember')}` : null}
                 </div>
               </Td>
-              <Td label={t('columns.submitter')} className={GRID_WORD_WRAP}>
+              <Td label={t('columns.submitter')}>
                 <div>{item.row.submitter.displayName}</div>
                 <div className="text-xs text-[var(--aura-fg-secondary)]">{tReview(`roles.${r.submitterRoleAtSubmission}`)}</div>
               </Td>
-              <Td label={t('columns.fields')} className={GRID_WORD_WRAP}>
+              <Td label={t('columns.fields')}>
                 <div>{t('fieldCount', { count: r.fields.length })}</div>
                 {r.fields.some((f) => f.affectsTaxDocuments) ? (
                   <div className="text-xs text-[var(--aura-fg-secondary)]">
@@ -96,9 +93,9 @@ export async function ChangeRequestQueueTable({
                   </div>
                 ) : null}
               </Td>
-              <Td className={`whitespace-nowrap ${HIDE_IN_NARROW_GRID}`} label={t('columns.submitted')}>{fmt(r.submittedAt)}</Td>
+              <Td wrap="none" className={HIDE_IN_NARROW_GRID} label={t('columns.submitted')}>{fmt(r.submittedAt)}</Td>
               <Td label={t('columns.waiting')}>
-                {/* stand-in until AURA #174: Overdue below the wait in a narrow grid */}
+                {/* AURA app content: Overdue below the wait in a narrow grid */}
                 <span className="inline-flex flex-nowrap items-center gap-2 whitespace-nowrap @min-[640px]/aura-tbl:@max-[900px]/aura-tbl:flex-col @min-[640px]/aura-tbl:@max-[900px]/aura-tbl:items-start">
                   <span id={`${rowId}-waiting`}>{wait.days > 0 ? t('waitingDays', { count: wait.days }) : t('waitingHours', { count: wait.hours })}</span>
                   {item.overdue ? (

@@ -503,6 +503,23 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
   - `change-request history view > gives each request card an anchor the profile can link to`: "Expected the element to have attribute: id".
   - `recent change requests … > reads the two most recent requests …`: "Expected the element to have attribute: href".
 
+### Evidence: adopt AURA 5.60.0 (#173–#175) with the static-table sweep, part 2 (size S–M, plan agreed 2026-10-23)
+
+- **RED** (D-023 shared commit, presentation): with 5.60 installed and the stand-ins still in place, these failed with `Expected the element not to have class` or `Expected the element to have class`:
+  - plans "gives the plan name link a 44px touch target";
+  - finance "an admin gets Record payment per row";
+  - change requests "box fit: Submitted hides …";
+  - templates "box fit: the subject follows the table box …";
+  - event picker "draws Create new event as an AURA text link";
+  - portal profile "folds the secondary Organisation fields" and "puts email and phone on one wrapping row";
+  - audit "AURA 5.60 (#174): codes, ids and payload values may break anywhere";
+  - users "AURA 5.60 (#174): an email may break anywhere".
+- **Measured** on a production build:
+  - the plans, finance, change-requests and templates tables at every 20px from 660 to 1440 in EN/SV/TH: no breaks inside a word, no box overflow, no page scroll;
+  - every fixture view at 390/768/1024/1280 in SV;
+  - the links at 390, 768 touch and 1280: 44px on touch, text at the start, the picker label 13px/500, the summary hugging its text.
+- **Not changed:** the brand theme. `aura-theme` on 5.60 regenerates byte-identical.
+
 ### Evidence: adopt AURA 5.59.0, `linkClass` on nine text links (#171, #172, size S–M, plan agreed 2026-10-23)
 
 - **RED** (D-023 shared commit, presentation): with 5.59 installed and the hand-written classes still in place, the eight new or updated assertions failed with `expect(element).toHaveClass("aura-link aura-link--touch")`:

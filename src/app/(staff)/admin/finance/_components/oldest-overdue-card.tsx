@@ -131,14 +131,14 @@ export async function OldestOverdueCard({
             return (
               <Tr key={row.invoiceId} data-testid="oldest-overdue-row" className={i >= PHONE_ROWS ? 'max-sm:hidden' : undefined}>
                 {/* one line, so a narrow column never splits the number at its hyphen */}
-                <Td card="title" mono className="whitespace-nowrap">
+                <Td card="title" mono wrap="none">
                   <Link href={`/admin/invoices/${row.invoiceId}`} className={DOCUMENT_LINK}>
                     {document}
                   </Link>
                 </Td>
                 {/* between words only: AURA's cell wraps anywhere ("Hospital/ity") */}
-                <Td label={t('oldest.buyer')} className="@min-[640px]/aura-tbl:[overflow-wrap:normal]">{row.buyerName ?? '—'}</Td>
-                <Td label={t('oldest.due')} className={`whitespace-nowrap ${HIDE_IN_NARROW_GRID}`}>
+                <Td label={t('oldest.buyer')}>{row.buyerName ?? '—'}</Td>
+                <Td label={t('oldest.due')} wrap="none" className={HIDE_IN_NARROW_GRID}>
                   {formatDay(row.dueDate, locale)}
                 </Td>
                 <Td

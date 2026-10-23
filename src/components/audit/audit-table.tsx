@@ -107,15 +107,15 @@ export function AuditTable({
                 {r.occurredAtUtc}
               </span>
             </Td>
-            <Td>
+            <Td wrap="anywhere">
               <span className="block font-medium">{r.eventTypeLabel}</span>
               <span className={code}>{r.eventType}</span>
             </Td>
-            <Td>
+            <Td wrap="anywhere">
               <span className="block">{r.actorLabel}</span>
               {r.actorLabel !== r.actorUserId ? <span className={`${code} break-all`}>{r.actorUserId}</span> : null}
             </Td>
-            <Td>
+            <Td wrap="anywhere">
               {r.targetUserId === null ? (
                 '—'
               ) : (
@@ -128,7 +128,7 @@ export function AuditTable({
               )}
             </Td>
             <Td className="max-w-sm break-words">{r.summary}</Td>
-            <Td>
+            <Td wrap="anywhere">
               {r.payloadEntries.length > 0 ? (
                 <dl className="grid max-w-xs gap-0.5 aura-text-caption">
                   {r.payloadEntries.map((e) => (
