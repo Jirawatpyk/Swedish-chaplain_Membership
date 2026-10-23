@@ -138,6 +138,7 @@ import { renderMemberChangesView } from '@/app/(staff)/admin/settings/member-cha
 import { renderStaffAccountView } from '@/app/(staff)/admin/account/page';
 import { OpenSwitchOffDialog, ShowReadOnlyRefusal } from './settings-previews';
 import { renderDashboardPreview } from './dashboard-previews';
+import { renderFinancePreview } from './finance-previews';
 import type { GroupedEvidence } from '@/modules/insights';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
@@ -184,8 +185,9 @@ export const dynamic = 'force-dynamic';
  *   ?view=eventcreate&state=fresh|reveal|configured|grace|empty · &dialog=rotate (US9c)
  *   ?view=settings&state=default|none · ?view=account&state=super-admin|admin   (US10c)
  *   ?view=member-changes&state=on|off|idle|readonly · &dialog=off
+ *   ?view=finance&state=default|events|manager|card-error|empty   (124)
  *   ?view=loading&state=members|plans|invoices|invoice|invoice-void|credit-note-new|
- *         credit-notes|credit-note|registers|invoice-settings|events|event|…
+ *         credit-notes|credit-note|registers|invoice-settings|events|event|finance|…
  *
  * The payment activity streams from the database, so a paid state shows its
  * skeleton in that slot; its states are covered by its own unit tests.
@@ -408,6 +410,7 @@ const LOADING_ROUTES = {
   members: { path: '/admin/members', load: async () => (await import('@/app/(staff)/admin/members/loading')).default() },
   plans: { path: '/admin/plans', load: async () => (await import('@/app/(staff)/admin/plans/loading')).default() },
   invoices: { path: '/admin/invoices', load: async () => (await import('@/app/(staff)/admin/invoices/loading')).default() },
+  finance: { path: '/admin/finance', load: async () => (await import('@/app/(staff)/admin/finance/loading')).default() },
   'change-requests': {
     path: '/admin/change-requests',
     load: async () => (await import('@/app/(staff)/admin/change-requests/loading')).default(),
@@ -1745,6 +1748,13 @@ export default async function AuraAdminPreviewPage({
   // insights-empty | forbidden | error | flag-off.
   if (view === 'dashboard') {
     return <StaffFrame path="/admin">{await renderDashboardPreview(state)}</StaffFrame>;
+  }
+
+  // 124 — the invoice dashboard (boards Admin-finance, -events, -manager,
+  // -mobile, -card-error, -empty): default | events | manager | card-error |
+  // empty. The loading board is view=loading&state=finance.
+  if (view === 'finance') {
+    return <StaffFrame path="/admin/finance">{await renderFinancePreview(state)}</StaffFrame>;
   }
 
   // 122 US10c (T1027) — the settings hub (boards Admin-settings, -mobile,

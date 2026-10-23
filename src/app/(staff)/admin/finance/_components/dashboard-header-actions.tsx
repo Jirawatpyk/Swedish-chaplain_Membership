@@ -28,7 +28,7 @@ export function DashboardHeaderActions({
         href={exportHref}
         download
         data-testid="dashboard-export-csv"
-        className={buttonClass({ variant: 'secondary', size: 'sm', className: 'max-sm:hidden' })}
+        className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'max-sm:hidden' })}
       >
         {exportLabel}
       </a>

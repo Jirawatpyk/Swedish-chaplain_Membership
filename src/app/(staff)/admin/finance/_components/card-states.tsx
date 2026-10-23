@@ -7,7 +7,7 @@
  * page-level empty state).
  */
 import { Card, EmptyState } from '@jirawatpyk/aura-react/server';
-import { Skeleton } from '@jirawatpyk/aura-react';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { TryAgainButton } from './try-again-button';
 
 export interface CardErrorCopy {
@@ -65,7 +65,7 @@ export function CardSkeleton({
     <Card title={title} headingLevel={2} {...(description ? { description } : {})} aria-busy="true">
       <div className="flex flex-col gap-[var(--aura-space-3)]">
         {SKELETONS[kind].map(([width, height], i) => (
-          <Skeleton key={i} variant="rect" width={width} height={height} />
+          <SkeletonBlock key={i} style={{ width, height, maxWidth: '100%' }} />
         ))}
       </div>
     </Card>
