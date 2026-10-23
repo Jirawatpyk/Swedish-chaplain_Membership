@@ -414,13 +414,7 @@ export function PlansTable({
                   data-plan-year={plan.plan_year}
                 >
                   <Td card="title">
-                    {/* touchHeight on a static Table's grid cell breaks the name mid-word on a
-                        touch tablet (AURA's cell exception names DataTable's cell only), so the
-                        44px target is phone-only, in the stacked card. Stand-in until AURA #173. */}
-                    <Link
-                      href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`}
-                      className={linkClass({ underline: 'hover', className: 'max-sm:inline-flex max-sm:min-h-11 max-sm:items-center' })}
-                    >
+                    <Link href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`} className={linkClass({ underline: 'hover', touchHeight: true })}>
                       <LocaleTextDisplay
                         value={plan.plan_name}
                         showMissingBadge={canWritePlans}

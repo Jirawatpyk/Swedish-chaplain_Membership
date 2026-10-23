@@ -30,14 +30,8 @@ export const OLDEST_OVERDUE_TITLE_ID = 'oldest-overdue-title';
 /** Shown on a phone; the rest of the six are hidden there. */
 const PHONE_ROWS = 3;
 
-/** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2).
- *  Not linkClass's touchHeight: in a static Table's grid cell it breaks the number mid-word on a touch
- *  tablet (AURA's cell exception names DataTable's cell only). Stand-in until AURA #173. */
-const DOCUMENT_LINK = linkClass({
-  underline: 'hover',
-  className:
-    'font-medium max-sm:inline-flex max-sm:min-h-11 max-sm:items-center pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center',
-});
+/** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2, AURA #172). */
+const DOCUMENT_LINK = linkClass({ underline: 'hover', touchHeight: true, className: 'font-medium' });
 
 function triggerIdOf(invoiceId: string): string {
   return `oldest-overdue-pay-${invoiceId}`;
