@@ -103,6 +103,13 @@ export {
   type ListSucceededPaymentMethodsDeps,
 } from './application/use-cases/list-succeeded-payment-methods';
 export {
+  listCollectedPaymentMethods,
+  type ListCollectedPaymentMethodsInput,
+  type ListCollectedPaymentMethodsOutput,
+  type ListCollectedPaymentMethodsError,
+  type ListCollectedPaymentMethodsDeps,
+} from './application/use-cases/list-collected-payment-methods';
+export {
   loadInvoicePaymentActivity,
   computeRemainingRefundable,
   type LoadInvoicePaymentActivityInput,
@@ -187,6 +194,7 @@ export {
   makeSweepPendingOnUnpayableDeps,
   makeHandleCancelEventDeps,
   makeListSucceededPaymentMethodsDeps,
+  makeListCollectedPaymentMethodsDeps,
   makeLoadInvoicePaymentActivityDeps,
   makeIssueRefundDeps,
   makeResolveFailedAutoRefundDeps,

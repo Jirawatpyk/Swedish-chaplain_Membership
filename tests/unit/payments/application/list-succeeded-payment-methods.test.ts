@@ -31,6 +31,7 @@ function makeStubRepo(
     listSiblingStatusesForInvariant: vi.fn(),
     nextAttemptSeq: vi.fn(),
     listSucceededMethodByInvoiceIds: vi.fn().mockResolvedValue(new Map()),
+    listCollectedMethodByInvoiceIds: vi.fn().mockResolvedValue(new Map()),
     listInvoiceActivity: vi.fn(),
     findStaleInvoiceAutoRefund: vi.fn().mockResolvedValue(null),
     findFailedAutoRefundForInvoice: vi.fn().mockResolvedValue(null),

@@ -34,12 +34,13 @@
  *
  * --- Cross-module port for F5 payment methods --------------------
  * `paymentMethodLookup` is a F4-owned port; the composition root
- * wires it with F5's `listSucceededPaymentMethods` so this Application
+ * wires it with F5's `listCollectedPaymentMethods` so this Application
  * layer file does NOT import `@/modules/payments` directly
- * (Constitution Principle III). Invoices with no successful F5
- * payment fall back to `'manual'` (in-band cash/bank-transfer recorded
- * by an admin) — distinguishes the two reconciliation classes in the
- * bookkeeper's downstream Excel review.
+ * (Constitution Principle III). An invoice collected by an F5 payment
+ * names card or PromptPay — refunded later or not (spec 124 follow-up);
+ * one with no F5 payment falls back to `'manual'` (in-band
+ * cash/bank-transfer recorded by an admin) — distinguishes the two
+ * reconciliation classes in the bookkeeper's downstream Excel review.
  *
  * --- Audit ---------------------------------------------------------
  * Emits `invoices_csv_exported` (5y retention) on success, including

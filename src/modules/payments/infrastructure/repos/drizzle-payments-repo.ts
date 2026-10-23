@@ -568,6 +568,35 @@ export function makeDrizzlePaymentsRepo(tenantId: string): PaymentsRepo {
       });
     },
 
+    async listCollectedMethodByInvoiceIds(
+      tenantIdArg: string,
+      invoiceIds: readonly string[],
+    ): Promise<ReadonlyMap<string, PaymentMethod>> {
+      if (invoiceIds.length === 0) {
+        return new Map<string, PaymentMethod>();
+      }
+      return runInTenant(ctx, async (tx) => {
+        // One method per invoice: its latest collected payment, refunded or
+        // not. RLS scopes the tenant first; `tenant_id =` is defence-in-depth.
+        const rows = (await tx.execute(sql`
+          SELECT DISTINCT ON (invoice_id) invoice_id, method
+            FROM payments
+           WHERE tenant_id = ${tenantIdArg}
+             AND status IN ('succeeded', 'partially_refunded', 'refunded')
+             AND invoice_id IN (${sql.join(
+               invoiceIds.map((id) => sql`${id}`),
+               sql`, `,
+             )})
+           ORDER BY invoice_id, completed_at DESC NULLS LAST, id DESC
+        `)) as unknown as Array<{ invoice_id: string; method: PaymentMethod }>;
+        const result = new Map<string, PaymentMethod>();
+        for (const row of rows) {
+          result.set(row.invoice_id, row.method);
+        }
+        return result;
+      });
+    },
+
     /**
      * H-8 — read the most-recent auto-refund audit row for this
      * invoice (member-portal display lookup, keyed by invoiceId).

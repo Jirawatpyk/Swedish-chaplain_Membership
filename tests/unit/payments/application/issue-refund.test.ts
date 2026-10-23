@@ -125,6 +125,7 @@ function makeDeps(
     listSiblingStatusesForInvariant: vi.fn(),
     nextAttemptSeq: vi.fn(),
     listSucceededMethodByInvoiceIds: vi.fn(),
+    listCollectedMethodByInvoiceIds: vi.fn().mockResolvedValue(new Map()),
     listInvoiceActivity: vi.fn(),
   };
   const refundsRepo = {
