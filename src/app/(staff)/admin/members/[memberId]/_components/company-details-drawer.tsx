@@ -7,11 +7,9 @@
  * server-rendered and arrives as `children`; this island only owns the
  * open state. Focus returns to the trigger when it closes, also where a
  * click does not focus the button (Safari): AURA's Drawer would otherwise
- * restore the `body` it saw at open. It opens with focus on its Close button:
- * AURA would focus the record's first control, which on a member with no Tax
- * ID or website is a copy button inside the closed Technical disclosure, and
- * Chromium does not focus that, so focus stayed on the trigger and Esc did
- * nothing (R73c). Stand-in until AURA #169.
+ * restore the `body` it saw at open. It opens on the record's first visible
+ * control; on a member with no Tax ID or website that is the closed Technical
+ * disclosure's summary, never a copy button hidden inside it (AURA 5.57, #169).
  */
 import { useRef, useState, type ReactNode } from 'react';
 import { Button, Drawer } from '@jirawatpyk/aura-react';
@@ -54,7 +52,7 @@ export function CompanyDetailsDrawer({
         title={title}
         description={description}
         closeLabel={closeLabel}
-        closeProps={{ touchHeight: true, 'data-autofocus': true }}
+        closeProps={{ touchHeight: true }}
         data-testid="company-details-drawer"
       >
         {children}

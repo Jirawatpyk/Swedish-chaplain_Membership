@@ -5,6 +5,10 @@
  * It stands alone (not a live region), so it is a `note`; its visible title
  * is its text, so no `aria-label` repeats it (read twice — the I18 fix). Strings live
  * under `portal.renewal.onboarding.*` in the EN/TH/SV message files.
+ *
+ * AURA 5.57 (#170) names a titled note by its title. The `/server` entry can't
+ * generate an id, so without one it falls back to an `aria-label`; the `id`
+ * lets it point `aria-labelledby` at the title instead.
  */
 import { useTranslations } from 'next-intl';
 import { Alert } from '@jirawatpyk/aura-react/server';
@@ -12,7 +16,7 @@ import { Alert } from '@jirawatpyk/aura-react/server';
 export function OnboardingBanner() {
   const t = useTranslations('portal.renewal.onboarding');
   return (
-    <Alert tone="info" role="note" title={t('heading')}>
+    <Alert id="renewal-onboarding" tone="info" role="note" title={t('heading')}>
       {t('body')}
     </Alert>
   );

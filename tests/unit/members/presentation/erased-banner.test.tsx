@@ -79,6 +79,16 @@ describe('ErasedBanner focus after an erase (#240)', () => {
     expect(banner()).toHaveAccessibleName(expect.stringContaining('Personal data erased on'));
   });
 
+  // AURA 5.57 (#170) names a titled Alert by its title; the app passes no
+  // label of its own.
+  it('takes its name from the rendered title, not an aria-label of its own', () => {
+    renderBanner();
+    expect(banner()).not.toHaveAttribute('aria-label');
+    const titleId = banner().getAttribute('aria-labelledby');
+    expect(titleId).toBeTruthy();
+    expect(document.getElementById(titleId!)).toHaveTextContent(/^Personal data erased on/);
+  });
+
   it('takes it once: the next visit stays put', () => {
     requestErasedBannerFocus('m-1');
     renderBanner();
