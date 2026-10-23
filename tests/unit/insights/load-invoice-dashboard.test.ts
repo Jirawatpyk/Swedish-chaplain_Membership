@@ -186,6 +186,35 @@ describe('loadInvoiceDashboardTiles', () => {
 
   // US5.2: "No invoices yet" is about the tenant, not the filters: the check
   // ignores them, so a filter that matches nothing never shows it.
+  // #623 review: the probe only decides the empty state; it must never cost
+  // the tiles, and it is not run when the figures already show invoices.
+  it('a failing any-invoice probe leaves the tiles standing (reads as "has invoices")', async () => {
+    const result = await loadInvoiceDashboardTiles(
+      ctx,
+      input(),
+      deps(stubSource({ hasNonDraftInvoice: vi.fn().mockRejectedValue(new TypeError('connection reset')) })),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.anyNonDraftInvoice).toBe(true);
+  });
+
+  it('skips the any-invoice probe when the figures already count an invoice', async () => {
+    const hasNonDraftInvoice = vi.fn().mockResolvedValue(false);
+    const result = await loadInvoiceDashboardTiles(
+      ctx,
+      input(),
+      deps(
+        stubSource({
+          hasNonDraftInvoice,
+          outstandingByAgingBucket: vi.fn().mockResolvedValue([{ bucket: 'days_1_30', amountSatang: 1n, count: 1 }]),
+        }),
+      ),
+    );
+    expect(hasNonDraftInvoice).not.toHaveBeenCalled();
+    expect(result.ok && result.value.anyNonDraftInvoice).toBe(true);
+  });
+
   it('reports whether the tenant has any non-draft invoice, unfiltered', async () => {
     const hasNonDraftInvoice = vi.fn().mockResolvedValue(false);
     const result = await loadInvoiceDashboardTiles(ctx, input(), deps(stubSource({ hasNonDraftInvoice })));
@@ -508,7 +537,6 @@ describe('a DB fault never throws: typed error + logged reference id', () => {
   const cases = [
     ['tiles', (s: InvoiceDashboardSource) => loadInvoiceDashboardTiles(ctx, input(), deps(s)), { outstandingByAgingBucket: boom() }],
     ['tiles (collected)', (s: InvoiceDashboardSource) => loadInvoiceDashboardTiles(ctx, input(), deps(s)), { collectedInRange: boom() }],
-    ['tiles (any invoice)', (s: InvoiceDashboardSource) => loadInvoiceDashboardTiles(ctx, input(), deps(s)), { hasNonDraftInvoice: boom() }],
     ['aging', (s: InvoiceDashboardSource) => loadInvoiceDashboardAging(ctx, input(), deps(s)), { outstandingByAgingBucket: boom() }],
     ['attention', (s: InvoiceDashboardSource) => loadInvoiceDashboardAttention(ctx, input(), deps(s)), { attentionCounts: boom() }],
     ['oldest overdue', (s: InvoiceDashboardSource) => loadInvoiceDashboardOldestOverdue(ctx, input(), deps(s)), { oldestOverdue: boom() }],
