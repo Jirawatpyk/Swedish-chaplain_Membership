@@ -1456,7 +1456,7 @@ export default async function AuraAdminPreviewPage({
     const action = state === 'dirty' ? 'dirty' : state === 'prefix-confirm' ? 'prefix-confirm' : null;
     return (
       <StaffFrame path="/admin/settings/invoicing">
-        <DetailContainer>
+        <FormContainer align="start">
           <InvoiceSettingsPreviewDriver action={action}>
             {await renderInvoiceSettingsView({
               initialValues,
@@ -1464,7 +1464,7 @@ export default async function AuraAdminPreviewPage({
               exists: !firstTime,
             })}
           </InvoiceSettingsPreviewDriver>
-        </DetailContainer>
+        </FormContainer>
       </StaffFrame>
     );
   }

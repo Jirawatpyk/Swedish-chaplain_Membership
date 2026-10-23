@@ -427,3 +427,21 @@ After a successful erase, the header ⋯ menu that opened the dialog unmounts wi
   - **Window:** the request lasts 60 s, not 10 s, so a slow refresh on a phone still lands. The case `still takes a request 30 seconds old` failed.
   - **`finalFocus`:** the erase Dialog sets `finalFocus`: the caller's opener (the ⋯ button, through `MemberHeaderMoreMenu`), else its own trigger. The cases `Cancel returns focus to the opener the caller names` and `with its own trigger, Cancel returns focus to it` failed: focus was on `<body>`.
   - GREEN: 99/99 in the touched files.
+
+### Evidence: invoice settings, section tabs on top (size M, plan agreed 2026-10-23)
+
+The US8c-2 rail becomes the member page's section tabs above a one-column, start-aligned form (spec Session 2026-10-23).
+
+- **Behaviour, RED first** (`54409b36e`): `useSectionTabsScrollPadding > publishes 0px while the row is not sticky` and `> follows a change of stickiness on window resize` both failed (the hook published the height whatever the row's `position`). GREEN in `c07c4417c`.
+- **Presentation, D-023 shared commit** (the failing lines below were taken before the code changed):
+  - `SectionLinks > sticks from sm only when asked…` failed: "expected [ 'sticky', …(5) ] to include 'sm:sticky'".
+  - `invoice settings page frame > has the page header, the note, the section tabs…` failed: "TypeError: Cannot read properties of undefined (reading 'organization')" (no `tabs.*` keys yet).
+  - `> has no side rail and no jump-to select any more` failed: "expected <button type="button" …(1)></button> to be null" (the rail button).
+- **Removed:** `section-nav.tsx`, `use-scroll-spy.ts` and their unit tests (the shared row carries its own spy, covered in `section-links.test.tsx`). Also the `IntersectionObserver` stand-ins in three form tests, `nav.jumpTo` in EN/TH/SV, and `scroll-mt-24` on the six cards (it would add to `scroll-padding-top`).
+- **Measured on the fixture** (production build, `view=invoice-settings`):
+  - The heading's left edge equals the member form's: 16 / 272 / 272 at 390 / 1024 / 1440.
+  - The form is 656px wide from 1024.
+  - The row is static on a phone (`--chamber-section-tabs-height: 0px`, padding 88px) and sticky from 1024 (36px, padding 124px).
+  - A Payment tab click lands the card at 124px, under the row's bottom at 92, with focus on `#payment`.
+  - Six tabs fit one row at 1024 in EN, TH and SV, and scroll sideways at 390.
+  - No horizontal page scroll; Tax ID is 318px wide.

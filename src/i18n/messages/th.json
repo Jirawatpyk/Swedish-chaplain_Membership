@@ -2337,8 +2337,15 @@
         "branding": "แบรนด์"
       },
       "nav": {
-        "label": "หมวดการตั้งค่า",
-        "jumpTo": "ไปที่หมวด…"
+        "label": "หมวดการตั้งค่า"
+      },
+      "tabs": {
+        "organization": "องค์กร",
+        "tax": "ภาษี",
+        "numbering": "เลขเอกสาร",
+        "notes": "หมายเหตุ",
+        "payment": "การชำระเงิน",
+        "branding": "แบรนด์"
       },
       "labels": {
         "currencyCode": "รหัสสกุลเงิน",

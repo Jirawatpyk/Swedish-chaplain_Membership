@@ -24,18 +24,7 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-// jsdom has no real IntersectionObserver — the orchestrator now mounts
-// <SectionNav>, which mounts the real (un-mocked) useScrollSpy hook. Same
-// no-op stand-in as tests/unit/components/invoices/section-nav.test.tsx;
-// this test doesn't depend on scroll-driven active-section updates.
-class NoopIntersectionObserver {
-  observe() {}
-  disconnect() {}
-  unobserve() {}
-}
 beforeEach(() => {
-  (globalThis as unknown as { IntersectionObserver: typeof NoopIntersectionObserver }).IntersectionObserver =
-    NoopIntersectionObserver;
   // tests/setup.ts installs fake timers globally (shouldAdvanceTime: false).
   // `findByRole`/`waitFor` poll via a real setTimeout internally, which
   // would otherwise hang until the suite's own 30s timeout — same fix as

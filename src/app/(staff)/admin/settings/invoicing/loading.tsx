@@ -2,9 +2,9 @@
  * R7-B2 — loading skeleton for /admin/settings/invoicing.
  *
  * Spec 122 US8c-2 (T854) — the `Admin-invoice-settings` shape on AURA, for
- * CLS 0: the header, the note, then the section rail (from `xl`, as the real
- * `SectionNav`; a 44px "Jump to section" select below it) beside one AURA
- * card per section. Section titles and visible fieldset legends render as
+ * CLS 0: the header, the note, the 44px row of section tabs (maintainer,
+ * 22 Oct: the rail became tabs above the form), then one AURA card per
+ * section, in the start-aligned form column. Section titles and visible fieldset legends render as
  * real (translated) text per the skeleton convention across /admin; only the
  * field labels and boxes are bars.
  *
@@ -14,7 +14,7 @@
  */
 import { getTranslations } from 'next-intl/server';
 import { Alert, Card } from '@jirawatpyk/aura-react/server';
-import { DetailContainer } from '@/components/layout';
+import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageSkeletonShell, SkeletonBlock } from '@/components/shell/page-skeletons';
 
@@ -82,50 +82,45 @@ export default async function Loading() {
   const tLayout = await getTranslations('layout');
   return (
     <PageSkeletonShell ariaLabel={tLayout('loadingForm')}>
-      <DetailContainer>
+      <FormContainer align="start">
         <PageHeader title={t('title')} subtitle={t('subtitle')} />
         <Alert tone="info" role="note">
           {t('card.description')}
         </Alert>
-        <div className="flex flex-col gap-[var(--page-section-gap)] xl:flex-row xl:items-start xl:gap-8">
-          {/* The rail (six 44px buttons and their gaps) from xl; the labelled
-              jump-to select below it. */}
-          <SkeletonBlock className="h-72 w-56 shrink-0 max-xl:hidden" />
-          <SkeletonBlock className="h-[4.25rem] w-full xl:hidden" />
-
-          <div className="flex min-w-0 flex-1 flex-col gap-[var(--page-section-gap)]">
-            {SECTION_SKELETONS.map((section) => (
-              <Card key={section.id} title={t(section.labelKey)} headingLevel={2}>
-                <div className="flex flex-col gap-[var(--aura-space-6)]">
-                  {section.fieldsets.map((fieldset, i) => (
-                    <div key={i} className="flex flex-col gap-[var(--aura-space-3)]">
-                      {fieldset.legendKey ? (
-                        <p className="text-sm font-semibold">{t(fieldset.legendKey)}</p>
-                      ) : null}
-                      <div
-                        className={
-                          fieldset.singleColumn
-                            ? 'sm:max-w-xs'
-                            : 'grid grid-cols-1 gap-[var(--aura-space-4)] sm:grid-cols-2'
-                        }
-                      >
-                        {Array.from({ length: fieldset.fieldCount }).map((_, j) => (
-                          <div key={j} className="flex flex-col gap-[var(--aura-space-2)]">
-                            <SkeletonBlock className="h-4 w-28" />
-                            <SkeletonBlock className="h-11 w-full" />
-                          </div>
-                        ))}
-                      </div>
+        {/* The section tabs: one 44px row. */}
+        <SkeletonBlock className="h-11 w-full" />
+        <div className="flex min-w-0 flex-col gap-[var(--page-section-gap)]">
+          {SECTION_SKELETONS.map((section) => (
+            <Card key={section.id} title={t(section.labelKey)} headingLevel={2}>
+              <div className="flex flex-col gap-[var(--aura-space-6)]">
+                {section.fieldsets.map((fieldset, i) => (
+                  <div key={i} className="flex flex-col gap-[var(--aura-space-3)]">
+                    {fieldset.legendKey ? (
+                      <p className="text-sm font-semibold">{t(fieldset.legendKey)}</p>
+                    ) : null}
+                    <div
+                      className={
+                        fieldset.singleColumn
+                          ? 'sm:max-w-xs'
+                          : 'grid grid-cols-1 gap-[var(--aura-space-4)] sm:grid-cols-2'
+                      }
+                    >
+                      {Array.from({ length: fieldset.fieldCount }).map((_, j) => (
+                        <div key={j} className="flex flex-col gap-[var(--aura-space-2)]">
+                          <SkeletonBlock className="h-4 w-28" />
+                          <SkeletonBlock className="h-11 w-full" />
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                  {section.hasSwitchRow ? <SkeletonBlock className="h-12 w-full" /> : null}
-                </div>
-              </Card>
-            ))}
-            <SkeletonBlock className="h-11 w-full sm:w-36 sm:self-end" />
-          </div>
+                  </div>
+                ))}
+                {section.hasSwitchRow ? <SkeletonBlock className="h-12 w-full" /> : null}
+              </div>
+            </Card>
+          ))}
+          <SkeletonBlock className="h-11 w-full sm:w-36 sm:self-end" />
         </div>
-      </DetailContainer>
+      </FormContainer>
     </PageSkeletonShell>
   );
 }

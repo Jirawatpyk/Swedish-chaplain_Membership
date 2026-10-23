@@ -45,7 +45,7 @@ export function InvoiceSettingsPreviewDriver({
     }, 100);
     return () => window.clearInterval(id);
   }, [action]);
-  // `contents` keeps the page's own column gaps (DetailContainer lays out its children).
+  // `contents` keeps the page's own column gaps (FormContainer lays out its children).
   return (
     <div ref={ref} className="contents">
       {children}

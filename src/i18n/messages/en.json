@@ -2337,8 +2337,15 @@
         "branding": "Branding"
       },
       "nav": {
-        "label": "Settings sections",
-        "jumpTo": "Jump to section…"
+        "label": "Settings sections"
+      },
+      "tabs": {
+        "organization": "Organization",
+        "tax": "Tax",
+        "numbering": "Numbering",
+        "notes": "Notes",
+        "payment": "Payment",
+        "branding": "Branding"
       },
       "labels": {
         "currencyCode": "Currency code",

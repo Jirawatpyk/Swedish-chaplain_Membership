@@ -2337,8 +2337,15 @@
         "branding": "Varumärke"
       },
       "nav": {
-        "label": "Inställningssektioner",
-        "jumpTo": "Gå till sektion…"
+        "label": "Inställningssektioner"
+      },
+      "tabs": {
+        "organization": "Organisation",
+        "tax": "Skatt",
+        "numbering": "Numrering",
+        "notes": "Anteckningar",
+        "payment": "Betalning",
+        "branding": "Varumärke"
       },
       "labels": {
         "currencyCode": "Valutakod",

@@ -2,9 +2,9 @@
  * R7-B2 — InvoiceSettingsForm (F4 US4 / FR-009 / FR-034).
  *
  * Task 7 (settings-ux-invoice-reminders) — this is now a thin
- * orchestrator over the two-column sticky-nav shell: `SectionNav` (left
- * rail) + the six presentational `<*Section>` components (Task 6) for
- * the field JSX, plus `StickySaveBar` (Task 3) for a persistently
+ * orchestrator over one column of six presentational `<*Section>`
+ * components (Task 6) for the field JSX (the section tabs above it are the
+ * page's, maintainer 22 Oct), plus `StickySaveBar` (Task 3) for a persistently
  * reachable Save once the form is dirty. ALL field state, `handleSubmit`
  * (validation + the PATCH body-building object), `doPatch`, and the
  * prefix-change `AlertDialog` are unchanged from the pre-refactor flat
@@ -57,10 +57,7 @@ import { isThaiTaxId } from '@/lib/thai-tax-id';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { isDirty } from '@/components/invoices/invoice-settings/form-dirty';
 import { useUnsavedGuard } from '@/components/invoices/invoice-settings/use-unsaved-guard';
-import {
-  SectionNav,
-  type SectionNavItem,
-} from '@/components/invoices/invoice-settings/section-nav';
+import { INVOICE_SETTINGS_SECTION_IDS } from '@/components/invoices/invoice-settings/section-ids';
 import { StickySaveBar } from '@/components/invoices/invoice-settings/sticky-save-bar';
 import { OrganizationSection } from '@/components/invoices/invoice-settings/sections/organization-section';
 import { TaxVatSection } from '@/components/invoices/invoice-settings/sections/tax-vat-section';
@@ -163,19 +160,6 @@ function trimUpper(v: string): string {
   return v.trim().toUpperCase();
 }
 
-// Task 7 — two-column sticky-nav section map (spec §4.3). Module-scope so
-// the array reference is stable across renders: `SectionNav` memoises its
-// derived `sectionIds` on this reference, and a fresh array every render
-// would tear down + rebuild its IntersectionObserver on every keystroke.
-const SECTIONS: ReadonlyArray<SectionNavItem> = [
-  { id: 'organization', labelKey: 'sections.organization' },
-  { id: 'tax', labelKey: 'sections.tax' },
-  { id: 'numbering', labelKey: 'sections.numbering' },
-  { id: 'notes', labelKey: 'sections.documentNotes' },
-  { id: 'payment', labelKey: 'sections.payment' },
-  { id: 'branding', labelKey: 'sections.branding' },
-];
-
 export interface InvoiceSettingsFormProps {
   readonly initialValues: InvoiceSettingsFormInitialValues;
   /**
@@ -199,7 +183,7 @@ export function InvoiceSettingsForm(props: InvoiceSettingsFormProps) {
   useEffect(() => {
     if (!focusFirstSection.current) return;
     focusFirstSection.current = false;
-    document.getElementById(SECTIONS[0]!.id)?.focus();
+    document.getElementById(INVOICE_SETTINGS_SECTION_IDS[0])?.focus();
   }, [generation]);
   // Financial review M1: after a successful save the page's values are stale
   // until router.refresh() delivers the saved ones. Discard would remount from
@@ -726,15 +710,13 @@ function InvoiceSettingsFormBody({
       }}
       // method="post" — CWE-598; see tests/unit/components/pii-forms-post-method.test.tsx
       method="post"
-      className="flex flex-col gap-[var(--page-section-gap)] xl:flex-row xl:items-start xl:gap-8"
       noValidate
     >
-      <SectionNav sections={SECTIONS} />
-
-      {/* C3 — the save bar is the column's last child: a viewport ActionBar
+      {/* One column (maintainer, 22 Oct: the section tabs sit above the form).
+          C3 — the save bar is the column's last child: a viewport ActionBar
           sticks to the bottom of the screen while the column is on screen and
           stays in the flow at its end, so it never covers the last section. */}
-      <div className="flex min-w-0 flex-1 flex-col gap-[var(--page-section-gap)]">
+      <div className="flex min-w-0 flex-col gap-[var(--page-section-gap)]">
         <OrganizationSection
           currencyCode={currencyCode}
           onCurrencyCodeChange={setCurrencyCode}

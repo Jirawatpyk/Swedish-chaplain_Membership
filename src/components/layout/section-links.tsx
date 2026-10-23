@@ -1,6 +1,9 @@
 'use client';
 
 /**
+ * In-page section tabs, shared by the member detail page and the invoice
+ * settings form (maintainer, 22 Oct: the settings rail moves to the top).
+ *
  * 122 US5b-1 (T553) — the member detail page's "On this page" links (board
  * `Admin-member-detail`; Clarifications, Session 2026-09-28: the board's tab
  * row becomes in-page links and every card stays on the page).
@@ -19,6 +22,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Tabs } from '@jirawatpyk/aura-react';
 import { useSectionTabsScrollPadding } from '@/hooks/use-section-tabs-scroll-padding';
+import { cn } from '@/lib/utils';
 
 export interface SectionLink {
   readonly id: string;
@@ -61,7 +65,19 @@ function sectionInView(links: readonly SectionLink[], bandTop: number): string |
   return current ?? links[0]?.id;
 }
 
-export function SectionLinks({ label, links }: { readonly label: string; readonly links: readonly SectionLink[] }) {
+export function SectionLinks({
+  label,
+  links,
+  stickyFrom = 'base',
+}: {
+  readonly label: string;
+  readonly links: readonly SectionLink[];
+  /**
+   * `sm`: the row scrolls away with the page below 640px (invoice settings:
+   * shell bar, tabs and save bar would take a fifth of a phone screen).
+   */
+  readonly stickyFrom?: 'base' | 'sm';
+}) {
   const [current, setCurrent] = useState(links[0]?.id);
   const rowRef = useRef<HTMLDivElement>(null);
   // A followed link stays current through the scroll it starts, until the
@@ -120,7 +136,10 @@ export function SectionLinks({ label, links }: { readonly label: string; readonl
   return (
     <div
       ref={rowRef}
-      className="sticky top-[var(--aura-shell-bar-height)] z-[5] -mx-[var(--page-padding-x)] bg-[var(--aura-bg-canvas)] px-[var(--page-padding-x)]"
+      className={cn(
+        stickyFrom === 'sm' ? 'sm:sticky' : 'sticky',
+        'top-[var(--aura-shell-bar-height)] z-[5] -mx-[var(--page-padding-x)] bg-[var(--aura-bg-canvas)] px-[var(--page-padding-x)]',
+      )}
       onClick={onClick}
     >
       <Tabs

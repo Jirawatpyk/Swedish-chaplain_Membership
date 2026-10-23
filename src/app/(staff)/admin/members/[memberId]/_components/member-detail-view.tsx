@@ -37,7 +37,7 @@ import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-
 import { ErasedBanner } from '@/components/members/erased-banner';
 import { AddContactButton } from './add-contact-button';
 import { ContactBlock, type PendingInvitation } from './contact-block';
-import { SectionLinks, type SectionLink } from './section-links';
+import { SectionLinks, type SectionLink } from '@/components/layout/section-links';
 import { MemberHeaderMoreMenu } from './member-header-more-menu';
 import { CompanyDetailsDrawer } from './company-details-drawer';
 

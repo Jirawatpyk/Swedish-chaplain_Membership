@@ -73,7 +73,7 @@ export function OrganizationSection({
       as="section"
       id="organization"
       tabIndex={-1}
-      className="scroll-mt-24 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
+      className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
       title={t('sections.organization')}
       titleId="organization-heading"
       headingLevel={2}
@@ -144,7 +144,10 @@ export function OrganizationSection({
               pattern="\d{13}"
               maxLength={13}
               inputMode="numeric"
-              className="sm:col-span-2 [&_input]:font-mono"
+              // Its own row, as wide as its 13 digits need (maintainer, 22 Oct:
+              // the one-column form no longer stretches short fields), like
+              // the currency code and the branch code.
+              className="sm:col-span-2 sm:max-w-xs [&_input]:font-mono"
             />
             {/* Multi-line so the admin controls exactly where the §86/4 address
                 wraps on the invoice/receipt PDF — each newline becomes a line break
