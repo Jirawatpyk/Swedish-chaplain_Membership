@@ -2,9 +2,10 @@
  * R7-B2 — loading skeleton for /admin/settings/invoicing.
  *
  * Spec 122 US8c-2 (T854) — the `Admin-invoice-settings` shape on AURA, for
- * CLS 0: the header, the note, the 44px row of section tabs (maintainer,
- * 22 Oct: the rail became tabs above the form), then one AURA card per
- * section, in the start-aligned form column. Section titles and visible fieldset legends render as
+ * CLS 0: the header, the note, the row of section tabs (44px on a phone,
+ * 36px from sm with a mouse; maintainer, 22 Oct: the rail became tabs above
+ * the form), then one AURA card per section, in the start-aligned form
+ * column. Section titles and visible fieldset legends render as
  * real (translated) text per the skeleton convention across /admin; only the
  * field labels and boxes are bars.
  *
@@ -87,8 +88,8 @@ export default async function Loading() {
         <Alert tone="info" role="note">
           {t('card.description')}
         </Alert>
-        {/* The section tabs: one 44px row. */}
-        <SkeletonBlock className="h-11 w-full" />
+        {/* The section tabs: one row, 44px on a phone and 36px from sm. */}
+        <SkeletonBlock className="h-11 w-full sm:h-9" />
         <div className="flex min-w-0 flex-col gap-[var(--page-section-gap)]">
           {SECTION_SKELETONS.map((section) => (
             <Card key={section.id} title={t(section.labelKey)} headingLevel={2}>

@@ -74,7 +74,7 @@ const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 const SETTINGS_PATH = '/admin/settings/invoicing';
 
-test.describe('invoice settings: section-nav focus + sticky-save prefix guard @f4', () => {
+test.describe('invoice settings: section-tab focus + sticky-save prefix guard @f4', () => {
   test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_SUPER_ADMIN_* not set');
 
   // Cold Turbopack compile of /admin/settings/invoicing on first hit
