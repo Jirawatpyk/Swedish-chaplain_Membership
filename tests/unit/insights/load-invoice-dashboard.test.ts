@@ -74,6 +74,7 @@ function stubSource(over: Partial<InvoiceDashboardSource> = {}): InvoiceDashboar
       refundsPendingOverThreshold: 0,
     }),
     oldestOverdue: vi.fn().mockResolvedValue([]),
+    hasNonDraftInvoice: vi.fn().mockResolvedValue(true),
     ...over,
   };
 }
@@ -155,6 +156,43 @@ describe('loadInvoiceDashboardTiles', () => {
       to: '2026-06-15',
     });
     expect(result.value.collectedInFiscalYear.toDate).toBe(true);
+  });
+
+  // Slice 3: the page reads aging once and hands it to both cards, so the
+  // aging rows always add up to the Outstanding tile (two reads in two
+  // transactions could straddle a write).
+  it('given the aging card’s result, Outstanding and Overdue come from it and aging is not read again', async () => {
+    const source = stubSource();
+    const aging = await loadInvoiceDashboardAging(
+      ctx,
+      input(),
+      deps(
+        stubSource({
+          outstandingByAgingBucket: vi.fn().mockResolvedValue([
+            { bucket: 'not_yet_due', amountSatang: 100_00n, count: 1 },
+            { bucket: 'days_31_60', amountSatang: 300_00n, count: 2 },
+          ]),
+        }),
+      ),
+    );
+    if (!aging.ok) throw new Error('aging stub failed');
+    const result = await loadInvoiceDashboardTiles(ctx, input(), deps(source), aging.value);
+    expect(source.outstandingByAgingBucket).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.outstanding).toEqual({ amountSatang: 400_00n, count: 3 });
+    expect(result.value.overdue).toEqual({ amountSatang: 300_00n, count: 2 });
+  });
+
+  // US5.2: "No invoices yet" is about the tenant, not the filters: the check
+  // ignores them, so a filter that matches nothing never shows it.
+  it('reports whether the tenant has any non-draft invoice, unfiltered', async () => {
+    const hasNonDraftInvoice = vi.fn().mockResolvedValue(false);
+    const result = await loadInvoiceDashboardTiles(ctx, input(), deps(stubSource({ hasNonDraftInvoice })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.anyNonDraftInvoice).toBe(false);
+    expect(hasNonDraftInvoice).toHaveBeenCalledWith(ctx);
   });
 
   it('December rolls the month range into the next year correctly', async () => {
@@ -470,6 +508,7 @@ describe('a DB fault never throws: typed error + logged reference id', () => {
   const cases = [
     ['tiles', (s: InvoiceDashboardSource) => loadInvoiceDashboardTiles(ctx, input(), deps(s)), { outstandingByAgingBucket: boom() }],
     ['tiles (collected)', (s: InvoiceDashboardSource) => loadInvoiceDashboardTiles(ctx, input(), deps(s)), { collectedInRange: boom() }],
+    ['tiles (any invoice)', (s: InvoiceDashboardSource) => loadInvoiceDashboardTiles(ctx, input(), deps(s)), { hasNonDraftInvoice: boom() }],
     ['aging', (s: InvoiceDashboardSource) => loadInvoiceDashboardAging(ctx, input(), deps(s)), { outstandingByAgingBucket: boom() }],
     ['attention', (s: InvoiceDashboardSource) => loadInvoiceDashboardAttention(ctx, input(), deps(s)), { attentionCounts: boom() }],
     ['oldest overdue', (s: InvoiceDashboardSource) => loadInvoiceDashboardOldestOverdue(ctx, input(), deps(s)), { oldestOverdue: boom() }],
