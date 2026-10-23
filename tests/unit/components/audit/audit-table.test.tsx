@@ -72,11 +72,13 @@ describe('<AuditTable> on AURA', () => {
     expect(within(cards()).queryByText(/^Target:/)).toBeNull();
   });
 
-  it('AURA 5.60 (#174): codes, ids and payload values may break anywhere, so they never widen the table', () => {
+  it('AURA 5.60 (#174): only codes, ids and payload values break anywhere; the labels wrap between words', () => {
     render(<AuditTable rows={[ROW]} labels={labels} />);
-    const row = within(screen.getByRole('table')).getAllByRole('row')[1]!;
-    const [, event, actor, target, , payload] = within(row).getAllByRole('cell');
-    for (const cell of [event, actor, target, payload]) expect(cell).toHaveClass('is-wrap-anywhere');
+    const table = screen.getByRole('table');
+    const row = within(table).getAllByRole('row')[1]!;
+    for (const cell of within(row).getAllByRole('cell')) expect(cell).not.toHaveClass('is-wrap-anywhere');
+    expect(within(table).getByText(ROW.eventType)).toHaveClass('[overflow-wrap:anywhere]');
+    expect(within(table).getByText('partially approved')).toHaveClass('[overflow-wrap:anywhere]');
   });
 
   it('the table keeps the event with its raw code under it', () => {

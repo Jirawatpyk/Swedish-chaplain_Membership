@@ -832,7 +832,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - `self-start`, where a flex parent stretches a link;
   - the picker's child-span label type;
   - the narrow-grid column drops, the Subject cut, Overdue below the wait, and the tighter cells.
-- **Found adopting it:** with `break-word` as the default, the audit log's event codes and IDs and the users list's email widened their tables (audit ran 326px past its box at 768). They take `wrap="anywhere"`, as AURA's note advises.
+- **Found adopting it:** with `break-word` as the default, the audit log's event codes and IDs and the users list's email widened their tables (audit ran 326px past its box at 768). The codes, ids and detail values take `[overflow-wrap:anywhere]` on their own spans, so the labels beside them still wrap between words; the email breaks after its `@` (`<wbr>`). Audit now runs 49px past its box at 768 (64 on 5.59), users 0.
 - **Seen, not caused here:** the credit-note detail page scrolls sideways by about 250px at 390. A sr-only label in the page-header actions computes 636px wide. The 5.59 → 5.60 CSS diff touches only `.aura-link`, so this is left for its own fix.
 
 ## User Scenarios & Testing *(mandatory)*

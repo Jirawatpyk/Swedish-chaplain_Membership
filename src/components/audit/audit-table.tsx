@@ -80,7 +80,9 @@ export function AuditTable({
   // cells. Below 640px, board `Admin-audit-mobile`'s compact cards instead
   // (maintainer, parity comments 13 Oct); the raw codes stay in the table.
   // A client file: AURA's Table is not in `/server`.
-  const code = 'block font-mono aura-text-caption text-[var(--aura-fg-secondary)]';
+  // codes and ids have no break points, so they alone may break anywhere (AURA 5.60 wraps
+  // the cell between words, #174)
+  const code = 'block font-mono aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]';
   return (
     <>
     <div className="max-sm:hidden">
@@ -107,15 +109,15 @@ export function AuditTable({
                 {r.occurredAtUtc}
               </span>
             </Td>
-            <Td wrap="anywhere">
+            <Td>
               <span className="block font-medium">{r.eventTypeLabel}</span>
               <span className={code}>{r.eventType}</span>
             </Td>
-            <Td wrap="anywhere">
+            <Td>
               <span className="block">{r.actorLabel}</span>
               {r.actorLabel !== r.actorUserId ? <span className={`${code} break-all`}>{r.actorUserId}</span> : null}
             </Td>
-            <Td wrap="anywhere">
+            <Td>
               {r.targetUserId === null ? (
                 '—'
               ) : (
@@ -128,13 +130,13 @@ export function AuditTable({
               )}
             </Td>
             <Td className="max-w-sm break-words">{r.summary}</Td>
-            <Td wrap="anywhere">
+            <Td>
               {r.payloadEntries.length > 0 ? (
                 <dl className="grid max-w-xs gap-0.5 aura-text-caption">
                   {r.payloadEntries.map((e) => (
                     <div key={e.label} className="flex gap-1.5">
                       <dt className="shrink-0 text-[var(--aura-fg-secondary)]">{e.label}:</dt>
-                      <dd className="break-words">{e.value}</dd>
+                      <dd className="[overflow-wrap:anywhere]">{e.value}</dd>
                     </div>
                   ))}
                 </dl>

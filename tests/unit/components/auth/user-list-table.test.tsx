@@ -125,9 +125,11 @@ afterEach(() => {
 });
 
 describe('UserListTable — layout', () => {
-  it('AURA 5.60 (#174): an email may break anywhere, so a long address never widens the table', () => {
+  it('AURA 5.60 (#174): an email breaks only after its @, so a long address never widens the table', () => {
     renderTable([ACTIVE_USER]);
-    expect(screen.getAllByText('active@example.com')[0]!.closest('td')).toHaveClass('is-wrap-anywhere');
+    const cell = screen.getAllByRole('cell').find((td) => td.textContent === 'active@example.com')!;
+    expect(cell).not.toHaveClass('is-wrap-anywhere');
+    expect(cell.innerHTML).toContain('active@<wbr>example.com');
   });
 });
 
