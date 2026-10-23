@@ -2620,8 +2620,8 @@
         "title": "แดชบอร์ดใบแจ้งหนี้"
       },
       "title": "แดชบอร์ดใบแจ้งหนี้",
-      "asOf": "ข้อมูล ณ {dateTime} · {fiscalYear} · ทุกยอดรวม VAT แล้ว",
-      "asOfEmpty": "{fiscalYear} · ทุกยอดรวม VAT แล้ว",
+      "asOf": "ข้อมูล ณ {dateTime} · {fiscalYear} · ทุกยอดรวมภาษีมูลค่าเพิ่มแล้ว",
+      "asOfEmpty": "{fiscalYear} · ทุกยอดรวมภาษีมูลค่าเพิ่มแล้ว",
       "fiscalYearLabel": "ปีบัญชี {year} ({fromMonth}–{toMonth})",
       "fiscalYearShort": "ปีบัญชี {year}",
       "actions": {
@@ -2646,16 +2646,17 @@
         "chip": "{label}: {value}"
       },
       "tiles": {
-        "sectionLabel": "ตัวเลขสำคัญ ทุกยอดรวม VAT แล้ว",
+        "sectionLabel": "ตัวเลขสำคัญ ทุกยอดรวมภาษีมูลค่าเพิ่มแล้ว",
         "outstanding": "ยอดค้างชำระ",
         "outstandingCaption": "ใบแจ้งหนี้ยังไม่ชำระ {count} ฉบับ · ณ วันนี้",
-        "overdue": "เกินกำหนดชำระ",
+        "overdue": "เกินกำหนด",
         "overdueCaption": "ใบแจ้งหนี้เลยกำหนด {count} ฉบับ · ณ วันนี้",
         "collectedMonth": "รับชำระเดือนนี้",
         "collectedMonthCaption": "{month} ถึงวันนี้ · ไม่ขึ้นกับตัวกรองปีบัญชี",
         "collectedFiscalYear": "รับชำระใน{fiscalYear}",
         "collectedFiscalYearToDate": "{fiscalYear} ถึงวันนี้",
-        "collectedFiscalYearWhole": "{from} – {to}"
+        "collectedFiscalYearWhole": "{from} – {to}",
+        "title": "ตัวเลขสำคัญ"
       },
       "aging": {
         "title": "ใบแจ้งหนี้ค้างชำระตามอายุหนี้",
@@ -2692,21 +2693,19 @@
         "document": "เอกสาร",
         "buyer": "ผู้ซื้อ",
         "due": "ครบกำหนด",
-        "overdue": "เลยกำหนด",
+        "overdue": "เกินกำหนด",
         "amount": "จำนวนเงิน",
         "actions": "การดำเนินการ",
         "days": "{days} วัน",
-        "daysOverdue": "เลยกำหนด {days} วัน",
-        "dueOn": "ครบกำหนด {date}",
         "recordPayment": "บันทึกการชำระ…",
         "recordPaymentAria": "บันทึกการชำระของ {document}",
         "allOverdue": "ใบแจ้งหนี้เกินกำหนดทั้งหมด ({count})",
-      "none": "ไม่มีใบแจ้งหนี้ที่เกินกำหนด"
+        "none": "ไม่มีใบแจ้งหนี้ที่เกินกำหนด"
       },
       "trend": {
         "title": "ยอดออกใบแจ้งหนี้เทียบยอดรับชำระ",
-        "description": "{fiscalYear} รายเดือน · ยอดออกใบแจ้งหนี้ตามวันที่ออก ไม่รวมใบที่ยกเลิก หักใบลดหนี้ที่ออกในเดือนนั้น · ยอดรับชำระตามวันที่ชำระ หักการคืนเงิน",
-        "vatNote": "ยอดของเดือนที่ผ่านมาอาจเปลี่ยนเมื่อมีการยกเลิกใบแจ้งหนี้ของเดือนนั้น สำหรับภาษีมูลค่าเพิ่ม ให้ใช้ทะเบียนเอกสารภาษี",
+        "description": "{fiscalYear} รายเดือน · ยอดออกใบแจ้งหนี้ตามวันที่ออก ไม่รวมใบแจ้งหนี้ที่ยกเลิก หักใบลดหนี้ที่ออกในเดือนนั้น · ยอดรับชำระตามวันที่ชำระ หักใบลดหนี้ที่ออกในเดือนนั้นและการคืนเงินที่ไม่มีใบลดหนี้",
+        "vatNote": "นี่คือมุมมองการเรียกเก็บเงิน ไม่ใช่รายงานภาษีมูลค่าเพิ่ม ยอดของเดือนที่ผ่านมาอาจเปลี่ยนเมื่อมีการยกเลิกใบแจ้งหนี้ของเดือนนั้น ตัวเลขภาษีมูลค่าเพิ่มดูที่ทะเบียนเอกสารภาษี",
         "totalBilled": "ยอดออกใบแจ้งหนี้ {range}",
         "totalCollected": "ยอดรับชำระ {range}",
         "legendBilled": "ยอดออกใบแจ้งหนี้",
@@ -2723,7 +2722,6 @@
         "descriptionWhole": "{fiscalYear} · ตามวันที่ชำระ",
         "listLabel": "ยอดรับชำระตามช่องทางชำระเงิน",
         "footer": "รวม {amount} บัตรและ PromptPay ชำระออนไลน์ผ่าน Stripe ก่อนหักค่าธรรมเนียม Stripe ช่องทางอื่นเจ้าหน้าที่เป็นผู้บันทึก",
-        "lessThanOne": "<1%",
         "method": {
           "bank_transfer": "โอนเงิน",
           "promptpay": "PromptPay",
@@ -2736,13 +2734,14 @@
       "states": {
         "noMatch": "ไม่มีใบแจ้งหนี้ที่ตรงกับตัวกรองนี้",
         "cardError": "โหลด{card}ไม่สำเร็จ",
-        "cardErrorDescription": "ตัวเลขอื่นในหน้านี้เป็นข้อมูลล่าสุด เลขอ้างอิง: {referenceId}",
+        "cardErrorDescription": "ตัวเลขอื่นในหน้านี้ไม่ได้รับผลกระทบ เลขอ้างอิง: {referenceId}",
         "tryAgain": "ลองใหม่",
         "loading": "กำลังโหลดแดชบอร์ดใบแจ้งหนี้",
         "loadingAsOf": "กำลังโหลดตัวเลข…",
         "emptyTitle": "ยังไม่มีใบแจ้งหนี้",
         "emptyDescription": "ตัวเลขจะแสดงที่นี่ทันทีที่ออกใบแจ้งหนี้ฉบับแรก ไม่นับฉบับร่าง",
-        "newInvoice": "สร้างใบแจ้งหนี้"
+        "newInvoice": "สร้างใบแจ้งหนี้",
+        "loadingCard": "กำลังโหลด…"
       }
     },
     "invoices": {

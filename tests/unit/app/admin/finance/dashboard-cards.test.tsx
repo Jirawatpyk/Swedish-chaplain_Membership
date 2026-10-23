@@ -179,16 +179,28 @@ describe('OldestOverdueCard', () => {
   ];
   const base = { overdueCount: 9, filtered: false, listFilters: {}, locale: 'en', today: '2026-10-19' };
 
-  it('an admin gets Record payment per row; focus after a payment goes to the next row, then the footer link', async () => {
+  it('an admin gets Record payment per row; focus after a payment goes to the next row, from the last to the card title', async () => {
     mount(await OldestOverdueCard({ ...base, result: ok({ rows, canRecordPayment: true }) }));
     const first = screen.getByRole('button', { name: 'Record payment for SC-000071' });
     const second = screen.getByRole('button', { name: 'Record payment for SC-000088' });
     expect(first).toHaveAttribute('data-fallback', second.id);
-    expect(second).toHaveAttribute('data-fallback', 'oldest-overdue-all');
+    expect(second).toHaveAttribute('data-fallback', 'oldest-overdue-title');
+    // The title is a focus target in every state of the card.
+    expect(document.getElementById('oldest-overdue-title')).toHaveAttribute('tabindex', '-1');
     expect(screen.getByRole('link', { name: D.oldest.allOverdue.replace('{count}', '9') })).toHaveAttribute(
       'href',
       '/admin/invoices?status=overdue',
     );
+  });
+
+  it('the third row’s next row is hidden on a phone, so focus goes to the title; the title survives an emptied list', async () => {
+    const four = [0, 1, 2, 3].map((i) => ({ ...rows[0]!, invoiceId: `inv-${i}`, documentNumber: `SC-00010${i}` }));
+    const { unmount } = mount(await OldestOverdueCard({ ...base, result: ok({ rows: four, canRecordPayment: true }) }));
+    expect(screen.getByRole('button', { name: 'Record payment for SC-000101' })).toHaveAttribute('data-fallback', 'oldest-overdue-pay-inv-2');
+    expect(screen.getByRole('button', { name: 'Record payment for SC-000102' })).toHaveAttribute('data-fallback', 'oldest-overdue-title');
+    unmount();
+    mount(await OldestOverdueCard({ ...base, result: ok({ rows: [], canRecordPayment: true }) }));
+    expect(document.getElementById('oldest-overdue-title')).toBeInTheDocument();
   });
 
   it('a manager sees the rows with no Record payment and no Actions column', async () => {
@@ -249,6 +261,7 @@ describe('TrendCard', () => {
         }),
         locale: 'en',
         fiscalYearShort: 'FY 2026',
+        filtered: false,
       }),
     );
     expect(screen.getByRole('heading', { level: 2, name: D.trend.title })).toBeInTheDocument();
@@ -262,5 +275,23 @@ describe('TrendCard', () => {
     expect(screen.getByTestId('trend-total-billed')).toHaveTextContent('120.00 THB');
     expect(screen.getByText(/^FY 2026 by month · billed by issue date, voided invoices left out/)).toBeInTheDocument();
     expect(document.body.innerHTML).not.toMatch(/revenue|net of credit notes/i);
+  });
+
+  it('filtered to nothing: the card’s own “No invoices match”, no zero bars', async () => {
+    mount(
+      await TrendCard({
+        result: ok({
+          range: { from: '2026-01-01', to: '2026-12-31' },
+          collectedRange: { from: '2026-01-01', to: '2026-10-19' },
+          toDate: true,
+          slots: [{ monthKey: '2026-10', from: '2026-10-01', to: '2026-10-31', state: 'current' as const, billedSatang: 0n, collectedSatang: 0n }],
+        }),
+        locale: 'en',
+        fiscalYearShort: 'FY 2026',
+        filtered: true,
+      }),
+    );
+    expect(screen.getByTestId('dashboard-no-match')).toHaveTextContent(D.states.noMatch);
+    expect(screen.queryByRole('table')).toBeNull();
   });
 });

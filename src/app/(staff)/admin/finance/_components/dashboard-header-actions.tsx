@@ -13,11 +13,14 @@ import { DropdownMenu, IconButton, buttonClass } from '@jirawatpyk/aura-react';
 
 export function DashboardHeaderActions({
   exportHref,
+  invoicesHref,
   exportLabel,
   viewInvoicesLabel,
   moreLabel,
 }: {
   readonly exportHref: string;
+  /** The invoice list under the active filters (US2.5). */
+  readonly invoicesHref: string;
   readonly exportLabel: string;
   readonly viewInvoicesLabel: string;
   readonly moreLabel: string;
@@ -33,7 +36,7 @@ export function DashboardHeaderActions({
         {exportLabel}
       </a>
       <Link
-        href="/admin/invoices"
+        href={invoicesHref}
         className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, fullWidth: 'below-sm' })}
       >
         {viewInvoicesLabel}

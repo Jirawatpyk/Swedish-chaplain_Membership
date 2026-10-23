@@ -56,13 +56,17 @@ export function CardSkeleton({
   kind,
   title,
   description,
+  loadingLabel,
 }: {
   readonly kind: DashboardCardKind;
   readonly title: string;
   readonly description?: string;
+  /** Said after the title (no live region: the page's skeleton shell owns that). */
+  readonly loadingLabel: string;
 }) {
   return (
     <Card title={title} headingLevel={2} {...(description ? { description } : {})} aria-busy="true">
+      <span className="sr-only">{loadingLabel}</span>
       <div className="flex flex-col gap-[var(--aura-space-3)]">
         {SKELETONS[kind].map(([width, height], i) => (
           <SkeletonBlock key={i} style={{ width, height, maxWidth: '100%' }} />

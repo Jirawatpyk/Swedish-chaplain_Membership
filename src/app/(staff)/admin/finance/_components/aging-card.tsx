@@ -63,6 +63,9 @@ export async function AgingCard({
   const overdue = aging.buckets.filter((b) => b.bucket !== 'not_yet_due');
   const overduePercent = overdue.reduce((sum, b) => sum + b.sharePercent, 0);
   const overdueCount = overdue.reduce((sum, b) => sum + b.count, 0);
+  // A real overdue amount that rounds to 0% reads "<1%", as the rows do; none
+  // at all is not an alarm.
+  const overdueLabel = overduePercent === 0 && overdueCount > 0 ? '<1' : String(overduePercent);
 
   return (
     <Card
@@ -72,7 +75,9 @@ export async function AgingCard({
       footer={<p className="m-0 text-sm text-[var(--aura-fg-secondary)]">{t('aging.footer', { amount: formatAmount(aging.totalSatang) })}</p>}
     >
       <p className="m-0 mb-[var(--aura-space-3)] text-sm">
-        <span className="font-semibold text-[var(--aura-fg-danger)]">{t('aging.lead', { percent: overduePercent })}</span>
+        <span className={overdueCount > 0 ? 'font-semibold text-[var(--aura-fg-danger)]' : 'font-semibold text-[var(--aura-fg-secondary)]'}>
+          {t('aging.lead', { percent: overdueLabel })}
+        </span>
         <span className="text-[var(--aura-fg-secondary)]">
           {' · '}
           {t('aging.leadOf', { overdue: overdueCount, total: aging.count })}

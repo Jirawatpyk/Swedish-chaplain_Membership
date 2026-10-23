@@ -14,7 +14,7 @@ import { ChartDataTable } from '@/components/dashboard/chart-data-table';
 import type { InvoiceDashboardResult, InvoiceDashboardTrend } from '@/modules/insights';
 import { formatAmount, formatMonthLong, formatMonthShort, formatMonthYear, toBaht } from '../_lib/dashboard-format';
 import { BILLED_SERIES, COLLECTED_SERIES } from '../_lib/trend-series';
-import { CardError } from './card-states';
+import { CardError, NoMatch } from './card-states';
 import { TrendChart } from './trend-chart';
 import type { TrendChartPoint } from './trend-chart-canvas';
 
@@ -32,11 +32,14 @@ export async function TrendCard({
   result,
   locale,
   fiscalYearShort,
+  filtered,
 }: {
   readonly result: Promise<InvoiceDashboardResult<InvoiceDashboardTrend>> | InvoiceDashboardResult<InvoiceDashboardTrend>;
   readonly locale: string;
   /** "FY 2026", the caption's first words (US3.3). */
   readonly fiscalYearShort: string;
+  /** A Type, Plan or Origin filter is set (US3.5: the card's own "No invoices match"). */
+  readonly filtered: boolean;
 }) {
   const t = await getTranslations('admin.invoiceDashboard');
   const loaded = await result;
@@ -60,6 +63,13 @@ export async function TrendCard({
   const known = slots.filter((s) => s.state !== 'future');
   const billedTotal = known.reduce((sum, s) => sum + (s.billedSatang ?? 0n), 0n);
   const collectedTotal = known.reduce((sum, s) => sum + (s.collectedSatang ?? 0n), 0n);
+  if (filtered && known.every((s) => (s.billedSatang ?? 0n) === 0n && (s.collectedSatang ?? 0n) === 0n)) {
+    return (
+      <Card title={title} description={description} headingLevel={2}>
+        <NoMatch label={t('states.noMatch')} />
+      </Card>
+    );
+  }
   const range = `${formatMonthShort(trend.range.from, locale)}–${formatMonthShort(trend.collectedRange.to, locale)}`;
   const current = slots.find((s) => s.state === 'current');
   const future = slots.filter((s) => s.state === 'future');
@@ -110,7 +120,8 @@ export async function TrendCard({
         billedName={t('trend.legendBilled')}
         collectedName={t('trend.legendCollected')}
       />
-      <ul aria-hidden="true" className="m-0 mt-[var(--aura-space-3)] flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-xs text-[var(--aura-fg-secondary)]">
+      {/* Read aloud: the partial and future months are said only here. */}
+      <ul className="m-0 mt-[var(--aura-space-3)] flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-xs text-[var(--aura-fg-secondary)]">
         <li className="flex items-center gap-1.5">
           <Swatch color={BILLED_SERIES} />
           {t('trend.legendBilled')}

@@ -101,6 +101,7 @@ export async function renderInvoiceDashboardView(props: InvoiceDashboardViewProp
         noInvoicesYet ? null : (
           <DashboardHeaderActions
             exportHref={exportCsvHref(input.fiscalYearRange, today)}
+            invoicesHref={invoiceListHref(listFilters)}
             exportLabel={t('actions.exportCsv')}
             viewInvoicesLabel={t('actions.viewInvoices')}
             moreLabel={t('actions.more')}
@@ -155,10 +156,10 @@ export async function renderInvoiceDashboardView(props: InvoiceDashboardViewProp
       {tiles.ok ? (
         <TileRow tiles={tiles.value} t={t} locale={locale} listFilters={listFilters} fiscalYearShort={fiscalYearShort} today={today} />
       ) : (
-        <Card title={t('tiles.sectionLabel')} headingLevel={2}>
+        <Card title={t('tiles.title')} headingLevel={2}>
           <CardError
             copy={{
-              title: t('states.cardError', { card: t('tiles.sectionLabel') }),
+              title: t('states.cardError', { card: t('tiles.title') }),
               description: t('states.cardErrorDescription', { referenceId: tiles.error.referenceId }),
               tryAgain: t('states.tryAgain'),
             }}
@@ -166,19 +167,19 @@ export async function renderInvoiceDashboardView(props: InvoiceDashboardViewProp
         </Card>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-10">
+      <div className="grid gap-4 lg:grid-cols-10">
         <div className="order-2 lg:order-none lg:col-span-5">
-          <Suspense fallback={<CardSkeleton kind="aging" title={t('aging.title')} description={t('aging.description')} />}>
+          <Suspense fallback={<CardSkeleton loadingLabel={t('states.loadingCard')} kind="aging" title={t('aging.title')} description={t('aging.description')} />}>
             <AgingCard result={props.aging} filtered={filtered} />
           </Suspense>
         </div>
         <div className="order-1 lg:order-none lg:col-span-5">
-          <Suspense fallback={<CardSkeleton kind="attention" title={t('attention.title')} />}>
+          <Suspense fallback={<CardSkeleton loadingLabel={t('states.loadingCard')} kind="attention" title={t('attention.title')} />}>
             <AttentionCard result={props.attention} filtered={filtered} listFilters={listFilters} />
           </Suspense>
         </div>
         <div className="order-3 lg:order-none lg:col-span-10">
-          <Suspense fallback={<CardSkeleton kind="oldestOverdue" title={t('oldest.title')} description={t('oldest.description')} />}>
+          <Suspense fallback={<CardSkeleton loadingLabel={t('states.loadingCard')} kind="oldestOverdue" title={t('oldest.title')} description={t('oldest.description')} />}>
             <OldestOverdueCard
               result={props.oldestOverdue}
               overdueCount={tiles.ok ? tiles.value.overdue.count : null}
@@ -190,12 +191,12 @@ export async function renderInvoiceDashboardView(props: InvoiceDashboardViewProp
           </Suspense>
         </div>
         <div className="order-4 lg:order-none lg:col-span-6">
-          <Suspense fallback={<CardSkeleton kind="trend" title={t('trend.title')} />}>
-            <TrendCard result={props.trend} locale={locale} fiscalYearShort={fiscalYearShort} />
+          <Suspense fallback={<CardSkeleton loadingLabel={t('states.loadingCard')} kind="trend" title={t('trend.title')} />}>
+            <TrendCard result={props.trend} locale={locale} fiscalYearShort={fiscalYearShort} filtered={filtered} />
           </Suspense>
         </div>
         <div className="order-5 lg:order-none lg:col-span-4">
-          <Suspense fallback={<CardSkeleton kind="methods" title={t('methods.title')} />}>
+          <Suspense fallback={<CardSkeleton loadingLabel={t('states.loadingCard')} kind="methods" title={t('methods.title')} />}>
             <MethodsCard result={props.methods} filtered={filtered} fiscalYearShort={fiscalYearShort} />
           </Suspense>
         </div>

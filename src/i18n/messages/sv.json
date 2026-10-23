@@ -2636,8 +2636,8 @@
         "typeMembership": "Medlemskap",
         "typeEvent": "Evenemang",
         "fiscalYear": "Räkenskapsår",
-        "plan": "Medlemsplan",
-        "planAll": "Alla planer",
+        "plan": "Paket",
+        "planAll": "Alla paket",
         "origin": "Ursprung",
         "originAll": "Alla ursprung",
         "originManual": "Skapad av personal",
@@ -2648,18 +2648,19 @@
       "tiles": {
         "sectionLabel": "Nyckeltal, alla inkl. moms",
         "outstanding": "Utestående",
-        "outstandingCaption": "{count, plural, one {# obetald faktura} other {# obetalda fakturor}} · i dag",
+        "outstandingCaption": "{count, plural, one {# obetald faktura} other {# obetalda fakturor}} · idag",
         "overdue": "Förfallet",
-        "overdueCaption": "{count, plural, one {# faktura} other {# fakturor}} efter förfallodag · i dag",
+        "overdueCaption": "{count, plural, one {# faktura} other {# fakturor}} efter förfallodag · idag",
         "collectedMonth": "Inbetalt denna månad",
         "collectedMonthCaption": "{month} hittills · påverkas inte av räkenskapsårsfiltret",
         "collectedFiscalYear": "Inbetalt {fiscalYear}",
         "collectedFiscalYearToDate": "{fiscalYear} hittills",
-        "collectedFiscalYearWhole": "{from} – {to}"
+        "collectedFiscalYearWhole": "{from} – {to}",
+        "title": "Nyckeltal"
       },
       "aging": {
         "title": "Obetalda fakturor efter ålder",
-        "description": "I dag · alla år · dagar efter förfallodagen",
+        "description": "Idag · alla år · dagar efter förfallodagen",
         "lead": "{percent} % förfallet",
         "leadOf": "{overdue} av {total, plural, one {# obetald faktura} other {# obetalda fakturor}}",
         "listLabel": "Obetalda fakturor efter dagar efter förfallodagen",
@@ -2681,32 +2682,30 @@
         "rowName": "{label}: {count}",
         "manualDrafts": "Fakturautkast som inte utfärdats",
         "autoRenewalDrafts": "Utkast från automatisk förnyelse att granska",
-        "receiptPdfFailed": "Kvittots PDF kunde inte skapas",
+        "receiptPdfFailed": "PDF för kvittot kunde inte skapas",
         "refundsFailedAtStripe": "Återbetalningar som misslyckades hos Stripe",
         "refundsPendingOverThreshold": "Återbetalningar som väntat hos Stripe i mer än 3 dagar"
       },
       "oldest": {
         "title": "Äldst förfallna",
-        "description": "I dag · längst efter förfallodagen först",
+        "description": "Idag · längst efter förfallodagen först",
         "caption": "Äldst förfallna fakturor",
         "document": "Dokument",
         "buyer": "Köpare",
         "due": "Förfaller",
-        "overdue": "Försenad",
+        "overdue": "Förfallen",
         "amount": "Belopp",
         "actions": "Åtgärder",
         "days": "{days, plural, one {# dag} other {# dagar}}",
-        "daysOverdue": "{days, plural, one {# dag försenad} other {# dagar försenad}}",
-        "dueOn": "förföll {date}",
         "recordPayment": "Bokför betalning…",
         "recordPaymentAria": "Bokför betalning för {document}",
         "allOverdue": "Alla förfallna fakturor ({count})",
-      "none": "Inga fakturor är förfallna"
+        "none": "Inga fakturor är förfallna"
       },
       "trend": {
         "title": "Fakturerat mot inbetalt",
-        "description": "{fiscalYear} per månad · fakturerat efter fakturadatum, makulerade fakturor ej medräknade, minus kreditnotor utfärdade samma månad · inbetalt efter betaldatum, minus återbetalningar",
-        "vatNote": "En tidigare månad kan ändras när en av dess fakturor makuleras. Använd skattedokumentregistret för moms.",
+        "description": "{fiscalYear} per månad · fakturerat per fakturadatum utan annullerade fakturor, minus kreditnotor utfärdade samma månad · inbetalt per betaldatum, minus kreditnotor utfärdade samma månad och återbetalningar utan kreditnota",
+        "vatNote": "Det här är en faktureringsvy, inte en momsrapport. En tidigare månad kan ändras när en av dess fakturor annulleras. Momsuppgifter finns i skattedokumentregistret.",
         "totalBilled": "Fakturerat, {range}",
         "totalCollected": "Inbetalt, {range}",
         "legendBilled": "Fakturerat",
@@ -2723,7 +2722,6 @@
         "descriptionWhole": "{fiscalYear} · efter betaldatum",
         "listLabel": "Inbetalt per betalsätt",
         "footer": "Totalt {amount}. Kort och PromptPay betalas online via Stripe, före Stripes avgifter. Övriga bokförs av personalen.",
-        "lessThanOne": "<1 %",
         "method": {
           "bank_transfer": "Banköverföring",
           "promptpay": "PromptPay",
@@ -2736,13 +2734,14 @@
       "states": {
         "noMatch": "Inga fakturor matchar dessa filter",
         "cardError": "{card} kunde inte läsas in.",
-        "cardErrorDescription": "Övriga siffror på sidan är aktuella. Referens: {referenceId}.",
+        "cardErrorDescription": "Övriga siffror på sidan påverkas inte. Referens: {referenceId}.",
         "tryAgain": "Försök igen",
         "loading": "Läser in fakturaöversikten",
         "loadingAsOf": "Läser in siffror…",
         "emptyTitle": "Inga fakturor ännu",
         "emptyDescription": "Siffrorna visas här så snart den första fakturan utfärdas. Utkast räknas inte.",
-        "newInvoice": "Ny faktura"
+        "newInvoice": "Ny faktura",
+        "loadingCard": "Läser in…"
       }
     },
     "invoices": {

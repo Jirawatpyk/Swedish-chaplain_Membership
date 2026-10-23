@@ -2655,7 +2655,8 @@
         "collectedMonthCaption": "{month} to date · not affected by the fiscal-year filter",
         "collectedFiscalYear": "Collected in {fiscalYear}",
         "collectedFiscalYearToDate": "{fiscalYear} to date",
-        "collectedFiscalYearWhole": "{from} – {to}"
+        "collectedFiscalYearWhole": "{from} – {to}",
+        "title": "Key figures"
       },
       "aging": {
         "title": "Unpaid invoices by age",
@@ -2696,17 +2697,15 @@
         "amount": "Amount",
         "actions": "Actions",
         "days": "{days, plural, one {# day} other {# days}}",
-        "daysOverdue": "{days, plural, one {# day overdue} other {# days overdue}}",
-        "dueOn": "due {date}",
         "recordPayment": "Record payment…",
         "recordPaymentAria": "Record payment for {document}",
         "allOverdue": "All overdue invoices ({count})",
-      "none": "No invoices are overdue"
+        "none": "No invoices are overdue"
       },
       "trend": {
         "title": "Billed vs collected",
-        "description": "{fiscalYear} by month · billed by issue date, voided invoices left out, less credit notes issued that month · collected by payment date, less refunds",
-        "vatNote": "A past month can change when one of its invoices is voided. For VAT, use the tax-document register.",
+        "description": "{fiscalYear} by month · billed by issue date, voided invoices left out, less credit notes issued that month · collected by payment date, less credit notes issued that month and refunds without a credit note",
+        "vatNote": "This is a billing view, not a VAT report. A past month can change when one of its invoices is voided. VAT figures are in the tax-document register.",
         "totalBilled": "Billed, {range}",
         "totalCollected": "Collected, {range}",
         "legendBilled": "Billed",
@@ -2723,7 +2722,6 @@
         "descriptionWhole": "{fiscalYear} · by payment date",
         "listLabel": "Collected by payment method",
         "footer": "Total {amount}. Card and PromptPay are paid online via Stripe, before Stripe fees. The others are recorded by staff.",
-        "lessThanOne": "<1%",
         "method": {
           "bank_transfer": "Bank transfer",
           "promptpay": "PromptPay",
@@ -2736,13 +2734,14 @@
       "states": {
         "noMatch": "No invoices match these filters",
         "cardError": "{card} could not be loaded.",
-        "cardErrorDescription": "The other figures on this page are up to date. Reference: {referenceId}.",
+        "cardErrorDescription": "Other figures on this page are not affected. Reference: {referenceId}.",
         "tryAgain": "Try again",
         "loading": "Loading the invoice dashboard",
         "loadingAsOf": "Loading figures…",
         "emptyTitle": "No invoices yet",
         "emptyDescription": "Figures appear here as soon as the first invoice is issued. Drafts are not counted.",
-        "newInvoice": "New invoice"
+        "newInvoice": "New invoice",
+        "loadingCard": "Loading…"
       }
     },
     "invoices": {
