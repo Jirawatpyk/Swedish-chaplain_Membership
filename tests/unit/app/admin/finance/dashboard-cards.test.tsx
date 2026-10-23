@@ -203,6 +203,11 @@ describe('OldestOverdueCard', () => {
     expect(document.getElementById('oldest-overdue-title')).toBeInTheDocument();
   });
 
+  it('with the tiles failed the footer link carries no count (six rows are not the total)', async () => {
+    mount(await OldestOverdueCard({ ...base, overdueCount: null, result: ok({ rows, canRecordPayment: false }) }));
+    expect(screen.getByRole('link', { name: D.oldest.allOverdueNoCount })).toBeInTheDocument();
+  });
+
   it('a manager sees the rows with no Record payment and no Actions column', async () => {
     const { container } = mount(await OldestOverdueCard({ ...base, result: ok({ rows, canRecordPayment: false }) }));
     expect(screen.getAllByTestId('oldest-overdue-row')).toHaveLength(2);

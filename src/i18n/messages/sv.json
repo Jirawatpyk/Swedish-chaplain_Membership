@@ -2700,6 +2700,7 @@
         "recordPayment": "Bokför betalning…",
         "recordPaymentAria": "Bokför betalning för {document}",
         "allOverdue": "Alla förfallna fakturor ({count})",
+        "allOverdueNoCount": "Alla förfallna fakturor",
         "none": "Inga fakturor är förfallna"
       },
       "trend": {

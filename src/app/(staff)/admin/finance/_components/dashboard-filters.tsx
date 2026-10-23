@@ -73,8 +73,10 @@ export function DashboardFilters({ values, currentFiscalYear, fiscalYears, plans
   const fyLabel = (fy: number) => fiscalYears.find((f) => f.value === fy)?.label ?? String(fy);
   const planLabel = (id: string) => plans.find((p) => p.id === id)?.label ?? id;
 
+  // Membership keeps only the plan the figures apply (a `plan` the server
+  // dropped under Events must not come back); any other type drops it.
   const onType = (v: string) =>
-    pushUrl(v === 'membership' ? { type: v } : { type: v === 'event' ? v : null, plan: null });
+    pushUrl(v === 'membership' ? { type: v, plan: values.planId } : { type: v === 'event' ? v : null, plan: null });
   const onPlan = (v: string) => pushUrl(v === 'all' ? { plan: null } : { plan: v, type: 'membership' });
   const onFiscalYear = (v: string) => pushUrl({ fy: v === String(currentFiscalYear) ? null : v });
   const onOrigin = (v: string) => pushUrl({ origin: v === 'all' ? null : v });

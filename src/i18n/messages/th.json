@@ -2700,6 +2700,7 @@
         "recordPayment": "บันทึกการชำระ…",
         "recordPaymentAria": "บันทึกการชำระของ {document}",
         "allOverdue": "ใบแจ้งหนี้เกินกำหนดทั้งหมด ({count})",
+        "allOverdueNoCount": "ใบแจ้งหนี้เกินกำหนดทั้งหมด",
         "none": "ไม่มีใบแจ้งหนี้ที่เกินกำหนด"
       },
       "trend": {

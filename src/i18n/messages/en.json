@@ -2700,6 +2700,7 @@
         "recordPayment": "Record payment…",
         "recordPaymentAria": "Record payment for {document}",
         "allOverdue": "All overdue invoices ({count})",
+        "allOverdueNoCount": "All overdue invoices",
         "none": "No invoices are overdue"
       },
       "trend": {

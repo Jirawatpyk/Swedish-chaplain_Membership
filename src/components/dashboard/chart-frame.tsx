@@ -24,6 +24,23 @@ export const CHART_SERIES = 'var(--aura-chart-1)';
 /** Grid and reference lines. */
 export const CHART_GRID = 'var(--aura-chart-grid)';
 
+export const CHART_MARGIN = { top: 8, right: 8, bottom: 0, left: 0 };
+// 11px at the default size, in rem so it grows with the browser text size
+// (UX review M5); colour is the AA axis token.
+export const CHART_AXIS_TICK = { fontSize: '0.6875rem', fill: 'var(--aura-chart-axis)' };
+
+/** Spec 122 US11 (parity, 17 Oct) — the board's value axis: four ticks from
+ * zero on a "nice" step (1, 2, 2.5 or 5 × a power of ten), so the top tick
+ * sits just above the largest value. The baseline stays at zero for both
+ * charts, so bar heights and the filled area stay proportional. */
+export function niceTicks(max: number): number[] {
+  if (max <= 0) return [0];
+  const raw = max / 3;
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s * 3 >= max) ?? 10 * pow;
+  return [0, step, step * 2, step * 3];
+}
+
 const INITIAL_DIMENSION = { width: 320, height: 200 } as const;
 
 export function ChartFrame({

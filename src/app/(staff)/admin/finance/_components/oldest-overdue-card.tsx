@@ -85,7 +85,8 @@ export async function OldestOverdueCard({
 
   const footer = (
     <Link href={invoiceListHref({ status: 'overdue', ...listFilters })} className={`text-sm font-medium ${PHONE_TARGET}`}>
-      {t('oldest.allOverdue', { count: overdueCount ?? rows.length })}
+      {/* No count when the tiles failed: six rows are not the overdue total. */}
+      {overdueCount === null ? t('oldest.allOverdueNoCount') : t('oldest.allOverdue', { count: overdueCount })}
     </Link>
   );
 

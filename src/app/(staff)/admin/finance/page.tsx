@@ -71,13 +71,14 @@ export default async function InvoiceDashboardPage({
   const now = new Date();
   const today = bangkokLocalDate(now.toISOString());
 
-  const [storedStartMonth, plansResult, params] = await Promise.all([
+  // The Plan filter offers this Bangkok year's active plans. Only the filter
+  // bar needs them, so the loaders do not wait for this read.
+  const plansPromise = listPlans(
+    { filter: { year: asPlanYear(Number(today.slice(0, 4))), activeOnly: true } },
+    buildPlansDeps(tenantCtx),
+  );
+  const [storedStartMonth, params] = await Promise.all([
     runInTenant(ctx, (tx) => readFiscalYearStartMonthInTx(tx, tenantCtx.slug)),
-    // The Plan filter offers this Bangkok year's active plans.
-    listPlans(
-      { filter: { year: asPlanYear(Number(today.slice(0, 4))), activeOnly: true } },
-      buildPlansDeps(tenantCtx),
-    ),
     searchParams,
   ]);
   const startMonth = asStartMonth(storedStartMonth);
@@ -102,6 +103,7 @@ export default async function InvoiceDashboardPage({
   const trend = loadInvoiceDashboardTrend(ctx, input, deps);
   const methods = loadInvoiceDashboardMethods(ctx, input, deps);
 
+  const plansResult = await plansPromise;
   const plans = plansResult.ok
     ? plansResult.value.data.map((p) => ({ id: p.plan_id, label: resolvePlanName(p.plan_name, p.plan_id, locale) }))
     : [];

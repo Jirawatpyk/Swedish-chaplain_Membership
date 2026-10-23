@@ -9,7 +9,15 @@
 'use client';
 
 import { Bar, BarChart, CartesianGrid, Cell, Tooltip, XAxis, YAxis } from 'recharts';
-import { CHART_GRID, ChartFrame, ChartTooltipCard, ChartTooltipLine } from '@/components/dashboard/chart-frame';
+import {
+  CHART_AXIS_TICK,
+  CHART_GRID,
+  CHART_MARGIN,
+  ChartFrame,
+  ChartTooltipCard,
+  ChartTooltipLine,
+  niceTicks,
+} from '@/components/dashboard/chart-frame';
 import { BILLED_SERIES, COLLECTED_SERIES } from '../_lib/trend-series';
 
 export interface TrendChartPoint {
@@ -24,18 +32,6 @@ export interface TrendChartPoint {
   readonly collected: number | null;
   readonly billedLabel: string;
   readonly collectedLabel: string;
-}
-
-const CHART_MARGIN = { top: 8, right: 8, bottom: 0, left: 0 };
-const AXIS_TICK = { fontSize: '0.6875rem', fill: 'var(--aura-chart-axis)' };
-
-/** Four ticks from zero on a 1 / 2 / 2.5 / 5 × 10ⁿ step, as the home charts draw them. */
-function niceTicks(max: number): number[] {
-  if (max <= 0) return [0];
-  const raw = max / 3;
-  const pow = 10 ** Math.floor(Math.log10(raw));
-  const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s * 3 >= max) ?? 10 * pow;
-  return [0, step, step * 2, step * 3];
 }
 
 function TrendTooltip({
@@ -89,12 +85,19 @@ export function TrendChartCanvas({
             domain={[0, ticks.at(-1) ?? 0]}
             ticks={ticks}
             tickFormatter={(v: number) => tickFmt.format(v)}
-            tick={AXIS_TICK}
+            tick={CHART_AXIS_TICK}
             tickLine={false}
             axisLine={false}
             width={44}
           />
-          <XAxis dataKey="axisLabel" tick={AXIS_TICK} tickLine={false} axisLine={false} interval={0} minTickGap={0} />
+          <XAxis
+            dataKey="axisLabel"
+            tick={CHART_AXIS_TICK}
+            tickLine={false}
+            axisLine={false}
+            interval="preserveStartEnd"
+            minTickGap={8}
+          />
           <Tooltip cursor={false} content={<TrendTooltip billedName={billedName} collectedName={collectedName} />} />
           <Bar dataKey="billed" radius={[2, 2, 0, 0]} maxBarSize={16} isAnimationActive={false}>
             {cellsFor(BILLED_SERIES)}

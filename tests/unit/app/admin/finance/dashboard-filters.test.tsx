@@ -98,6 +98,13 @@ describe('<DashboardFilters> — the URL (US3.1, US3.2)', () => {
     expect(lastUrl()).toBe('/admin/finance');
   });
 
+  it('a plan the server dropped under Events does not come back with Membership', () => {
+    url.current = new URLSearchParams('type=event&plan=premium');
+    renderFilters({ type: 'event', planId: null });
+    fireEvent.change(selectOf(F.type), { target: { value: 'membership' } });
+    expect(lastUrl()).toBe('/admin/finance?type=membership');
+  });
+
   it('the current FY clears ?fy=; another FY writes it', () => {
     url.current = new URLSearchParams('fy=2025');
     renderFilters({ fiscalYear: 2025 });

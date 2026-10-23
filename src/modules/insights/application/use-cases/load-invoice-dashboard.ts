@@ -277,12 +277,18 @@ export function loadInvoiceDashboardTiles(
     // lies inside its own month, so `toDate` is always true there.
     const month = rangeToDate(calendarMonthRange(input.today), input.today).range;
     const fy = rangeToDate(input.fiscalYearRange, input.today);
-    const [agingRead, collectedMonth, collectedFy, anyNonDraftInvoice] = await Promise.all([
+    const [agingRead, collectedMonth, collectedFy] = await Promise.all([
       aging ?? readAging(ctx, input, deps),
       deps.source.collectedInRange(ctx, input.filters, month),
       deps.source.collectedInRange(ctx, input.filters, fy.range),
-      deps.source.hasNonDraftInvoice(ctx),
     ]);
+    // The "No invoices yet" probe: skipped when the figures already count an
+    // invoice, and it fails soft (reads as "has invoices") so it never costs
+    // the tiles their figures.
+    const anyNonDraftInvoice =
+      agingRead.count > 0 || collectedMonth.invoiceCount > 0 || collectedFy.invoiceCount > 0
+        ? true
+        : await deps.source.hasNonDraftInvoice(ctx).catch(() => true);
     const overdueRows = agingRead.buckets.filter((b) => b.bucket !== 'not_yet_due');
     return {
       outstanding: { amountSatang: agingRead.totalSatang, count: agingRead.count },
