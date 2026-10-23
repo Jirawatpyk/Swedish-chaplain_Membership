@@ -4,7 +4,8 @@
  * at full value, so the CSV used to overstate the money kept by the refunded
  * amount with no trace of the refund. Each such refund is now a NEGATIVE row
  * in the month the refund completed (Bangkok date), like a credit-note row:
- * Status `Refund (no credit note)`, Total −amount, no VAT, the original
+ * Status `Refund (no credit note)`, Total −amount, no VAT and no tax point
+ * (a refund has none under §78/1 — thai-tax-compliance-auditor), the original
  * receipt in Reference Document No., the refunded payment's method.
  *
  * Runs the real `makeExportPaidInvoicesCsvDeps` wiring.
@@ -115,7 +116,7 @@ describe('CSV export — refunds with no credit note', () => {
         Currency: 'THB',
         'Paid At': '',
         'Payment Method': 'card',
-        'Tax Point Date': '2026-06-10',
+        'Tax Point Date': '',
         Status: REFUND_STATUS,
         'Reference Document No.': 'RE-2026-000001',
       },

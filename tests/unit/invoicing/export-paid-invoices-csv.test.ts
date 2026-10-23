@@ -15,7 +15,11 @@ import {
 import { asInvoiceId, type Invoice } from '@/modules/invoicing/domain/invoice';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
-import type { CreditNoteExportRow } from '@/modules/invoicing/application/ports/tax-register-repo';
+import type {
+  CreditNoteExportRow,
+  RefundReferenceExportRow,
+} from '@/modules/invoicing/application/ports/tax-register-repo';
+import type { WaivedRefundForExport } from '@/modules/invoicing/application/use-cases/export-paid-invoices-csv';
 
 const BOM = '﻿';
 const HEADER_LINE =
@@ -95,16 +99,34 @@ function makeCreditNote(overrides: Partial<CreditNoteExportRow> = {}): CreditNot
   };
 }
 
+function makeRefundReference(
+  overrides: Partial<RefundReferenceExportRow> = {},
+): RefundReferenceExportRow {
+  return {
+    legalName: 'ACME Co., Ltd.',
+    taxId: '0123456789012',
+    currency: 'THB',
+    receiptDocumentNumberRaw: 'RE-2026-000003',
+    documentNumberRaw: null,
+    billDocumentNumberRaw: 'SC-2026-000003',
+    ...overrides,
+  };
+}
+
 function makeDeps(
   paidInvoices: readonly Invoice[],
   paymentMethodMap: ReadonlyMap<string, 'card' | 'promptpay'> = new Map(),
   creditNotes: readonly CreditNoteExportRow[] = [],
+  waivedRefunds: readonly WaivedRefundForExport[] = [],
+  refundReferences: ReadonlyMap<string, RefundReferenceExportRow> = new Map(),
 ): ExportPaidInvoicesCsvDeps & {
   audit: { emit: ReturnType<typeof vi.fn> };
   registerRepo: {
     listForExport: ReturnType<typeof vi.fn>;
     listCreditNotesForExport: ReturnType<typeof vi.fn>;
+    listRefundReferencesForExport: ReturnType<typeof vi.fn>;
   };
+  waivedRefundLookup: ReturnType<typeof vi.fn>;
 } {
   const audit = { emit: vi.fn(async () => {}) };
   return {
@@ -114,10 +136,12 @@ function makeDeps(
       // use-case writes whatever it returns. Only `listForExport` is used.
       listForExport: vi.fn(async () => paidInvoices),
       listCreditNotesForExport: vi.fn(async () => creditNotes),
+      listRefundReferencesForExport: vi.fn(async () => refundReferences),
       listForPeriod: vi.fn(),
       sumPeriodOutputVat: vi.fn(),
     },
     paymentMethodLookup: vi.fn(async () => paymentMethodMap),
+    waivedRefundLookup: vi.fn(async () => waivedRefunds),
   };
 }
 
@@ -459,6 +483,87 @@ describe('exportPaidInvoicesCsv', () => {
     // row_count = every data row in the file (= X-Row-Count); the credit
     // notes are the negative subset.
     expect(event.payload).toMatchObject({ row_count: 3, credit_note_count: 2 });
+  });
+
+  it('writes a refund settled with no credit note as a negative row after the credit notes', async () => {
+    // Spec 124 D-p — dated by the refund (Bangkok), no VAT, the original
+    // receipt referenced, the channel the money went back to.
+    const deps = makeDeps(
+      [],
+      new Map(),
+      [makeCreditNote()],
+      [{ invoiceId: 'inv-9', amountSatang: 53_500n, completedDate: '2026-05-28', method: 'promptpay' }],
+      new Map([['inv-9', makeRefundReference()]]),
+    );
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    if (!result.ok) throw new Error('expected ok');
+    expect(deps.waivedRefundLookup).toHaveBeenCalledWith('t', { from: '2026-05-01', to: '2026-05-31' });
+    expect(deps.registerRepo.listRefundReferencesForExport).toHaveBeenCalledWith('t', ['inv-9']);
+    const lines = result.value.csv.replace(BOM, '').trimEnd().split('\r\n');
+    expect(lines).toHaveLength(3); // header, credit note, refund
+    expect(lines[2]).toBe(
+      '2026-05-28,,,"ACME Co., Ltd.",0123456789012,,,,-535.00,THB,,promptpay,,Refund (no credit note),RE-2026-000003',
+    );
+    expect(result.value.rowCount).toBe(2);
+    const [, event] = deps.audit.emit.mock.calls[0]!;
+    expect(event.payload).toMatchObject({ row_count: 2, credit_note_count: 1, waived_refund_count: 1 });
+  });
+
+  it('a refunded combined-mode invoice with no receipt references its INV', async () => {
+    const deps = makeDeps(
+      [],
+      new Map(),
+      [],
+      [{ invoiceId: 'inv-7', amountSatang: 10_000n, completedDate: '2026-05-28', method: 'card' }],
+      new Map([
+        ['inv-7', makeRefundReference({ receiptDocumentNumberRaw: null, documentNumberRaw: 'INV-2026-000052', billDocumentNumberRaw: null })],
+      ]),
+    );
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.csv).toMatch(/,Refund \(no credit note\),INV-2026-000052\r\n$/);
+  });
+
+  it('drops a refund whose invoice has no reference row (a voided invoice)', async () => {
+    const deps = makeDeps(
+      [],
+      new Map(),
+      [],
+      [{ invoiceId: 'inv-void', amountSatang: 10_000n, completedDate: '2026-05-28', method: 'card' }],
+      new Map(),
+    );
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    if (!result.ok) throw new Error('expected ok');
+    expect(result.value.rowCount).toBe(0);
+    expect(result.value.csv).not.toContain('Refund (no credit note)');
+  });
+
+  it('returns list_failed when the refund read fails', async () => {
+    const deps = makeDeps([makeInvoice()]);
+    deps.waivedRefundLookup.mockRejectedValueOnce(new Error('neon down'));
+    const result = await exportPaidInvoicesCsv(deps, {
+      tenantId: 't',
+      actorUserId: 'u',
+      from: '2026-05-01',
+      to: '2026-05-31',
+    });
+    expect(result).toEqual({ ok: false, error: { code: 'list_failed' } });
+    expect(deps.audit.emit).not.toHaveBeenCalled();
   });
 
   it('returns list_failed when the credit-note read fails', async () => {
