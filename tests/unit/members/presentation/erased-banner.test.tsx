@@ -50,11 +50,33 @@ describe('ErasedBanner focus after an erase (#240)', () => {
     expect(banner()).not.toHaveFocus();
   });
 
-  it('ignores a request older than 10 seconds', () => {
+  it('still takes a request 30 seconds old (a slow refresh on a phone)', () => {
     requestErasedBannerFocus('m-1');
-    vi.setSystemTime(new Date('2026-10-23T02:00:11.000Z'));
+    vi.setSystemTime(new Date('2026-10-23T02:00:30.000Z'));
+    renderBanner();
+    expect(banner()).toHaveFocus();
+  });
+
+  it('ignores a request older than 60 seconds', () => {
+    requestErasedBannerFocus('m-1');
+    vi.setSystemTime(new Date('2026-10-23T02:01:01.000Z'));
     renderBanner();
     expect(banner()).not.toHaveFocus();
+  });
+
+  it('leaves focus where the user put it during the refresh', () => {
+    const other = document.createElement('button');
+    document.body.appendChild(other);
+    other.focus();
+    requestErasedBannerFocus('m-1');
+    renderBanner();
+    expect(other).toHaveFocus();
+    other.remove();
+  });
+
+  it('is named by its title, so a screen reader announces what happened first', () => {
+    renderBanner();
+    expect(banner()).toHaveAccessibleName(expect.stringContaining('Personal data erased on'));
   });
 
   it('takes it once: the next visit stays put', () => {
