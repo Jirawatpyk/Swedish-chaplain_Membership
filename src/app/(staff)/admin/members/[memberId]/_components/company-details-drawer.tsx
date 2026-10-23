@@ -11,7 +11,7 @@
  * AURA would focus the record's first control, which on a member with no Tax
  * ID or website is a copy button inside the closed Technical disclosure, and
  * Chromium does not focus that, so focus stayed on the trigger and Esc did
- * nothing (R73c).
+ * nothing (R73c). Stand-in until AURA #169.
  */
 import { useRef, useState, type ReactNode } from 'react';
 import { Button, Drawer } from '@jirawatpyk/aura-react';
