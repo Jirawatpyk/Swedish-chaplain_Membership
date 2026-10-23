@@ -514,6 +514,7 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
   - `BrandSettingsForm — the logo is read-only > shows its source and a Manage link …`;
   - `renderCycleDetailView — cards > shows the linked invoice …`;
   - `OldestOverdueCard > an admin gets Record payment per row; …`.
-- **GREEN:** each link takes `linkClass({ underline: 'hover', touchHeight: true, className })`, with no `flex`, `min-w-0` or `min-h-*` utility beside it (a utility layer beats `aura`). The touched files' 38 test files pass (328 tests); typecheck and lint are clean.
+- **GREEN:** each link takes `linkClass({ underline: 'hover', touchHeight: true, className })`. No `min-h-*` utility under 44px sits beside it on touch (a utility layer beats `aura`).
+- **Review fixes** (`ab545aa4a`, enterprise-ux-designer): `linkClass` lays a link out only on touch and resets its font, so the website link keeps `inline-flex min-w-0` to truncate, the summary is `flex w-fit`, contacts and the audience company align to the start, and the picker's label type moves to a span (`min-h-6` keeps its 24px row with a mouse). `min-w-0` is safe there because the text is wider than 44px. The touched files' 38 test files pass (328 tests); typecheck and lint are clean.
 - **#171:** no app change (the section tabs already pass `touchHeight`).
 - **Not changed:** the brand theme. `aura-theme --brand "#10487A"` on 5.59 regenerates `src/styles/aura-theme.css` byte-identical below its header.

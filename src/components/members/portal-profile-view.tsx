@@ -216,7 +216,7 @@ export async function renderPortalProfileView({
                 className={linkClass({
                   underline: 'hover',
                   touchHeight: true,
-                  className: 'flex w-fit cursor-pointer list-none items-center gap-1 text-sm font-medium [&::-webkit-details-marker]:hidden',
+                  className: 'flex w-fit list-none items-center gap-1 text-sm font-medium [&::-webkit-details-marker]:hidden',
                 })}
               >
                 {t('moreDetails')}
