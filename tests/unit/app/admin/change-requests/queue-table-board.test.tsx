@@ -20,6 +20,7 @@ vi.mock('next-intl/server', () => ({
 }));
 
 import { ChangeRequestQueueTable } from '@/app/(staff)/admin/change-requests/_components/queue-table';
+import { TIGHT_CELLS_IN_NARROWEST_GRID } from '@/components/shell/aura-classes';
 
 const item = {
   row: {
@@ -73,6 +74,17 @@ describe('change-request queue as on the board (US5a)', () => {
     for (const el of [memberCell, submitterCell, fieldsCell]) expect(el).toHaveClass('@min-[640px]/aura-tbl:[overflow-wrap:normal]');
   });
 
+  it('#174 stand-in: in the narrowest grid (640–720px box) the cells sit closer, so Review stays in view', async () => {
+    render(await ChangeRequestQueueTable({ items: [item] }));
+    const table = screen.getByTestId('queue-table');
+    for (const row of within(table).getAllByRole('row')) {
+      expect(row).toHaveClass(
+        '@min-[640px]/aura-tbl:@max-[720px]/aura-tbl:[&>:not(:first-child)]:pl-[var(--aura-space-2)]',
+        '@min-[640px]/aura-tbl:@max-[720px]/aura-tbl:[&>:not(:last-child)]:pr-[var(--aura-space-2)]',
+      );
+    }
+  });
+
   it('keeps "Overdue" on the line of the waiting time', async () => {
     render(await ChangeRequestQueueTable({ items: [item] }));
     const badge = screen.getByTestId('overdue-badge');
@@ -98,8 +110,9 @@ describe('change-request queue as on the board (US5a)', () => {
     render(await ChangeRequestQueueTable({ items: [item] }));
     expect(screen.getByTestId('queue-table')).toHaveClass('aura-tbl--cards');
     const row = screen.getByTestId('queue-row');
-    // no frame of our own on the row, no reach into the table's wrap
-    expect(row.className).not.toContain('aura-tbl:');
+    // no frame of our own on the row; its only reach into the table's box is
+    // the narrowest-grid cell spacing (#174 stand-in), not a card style
+    expect(row.className.replace(TIGHT_CELLS_IN_NARROWEST_GRID, '')).not.toContain('aura-tbl:');
     expect(within(row).getByRole('link')).toHaveClass('aura-btn--sm', 'aura-btn--touch');
   });
 });

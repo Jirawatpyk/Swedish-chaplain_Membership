@@ -300,6 +300,18 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
 
   // UX review (US6): the plan name is the only way into a plan from a phone
   // card, so its link fills a 44px touch target there.
+  it('#174 stand-in: in the narrowest grid (640–720px box) the cells sit closer, so the row menu stays in view', () => {
+    renderRows();
+    const header = screen.getAllByRole('row')[0]!;
+    const row = screen.getByRole('link', { name: 'Premium Corporate' }).closest('tr')!;
+    for (const el of [header, row]) {
+      expect(el).toHaveClass(
+        '@min-[640px]/aura-tbl:@max-[720px]/aura-tbl:[&>:not(:first-child)]:pl-[var(--aura-space-2)]',
+        '@min-[640px]/aura-tbl:@max-[720px]/aura-tbl:[&>:not(:last-child)]:pr-[var(--aura-space-2)]',
+      );
+    }
+  });
+
   it('gives the plan name link a 44px touch target on phones', () => {
     renderRows();
     expect(screen.getByRole('link', { name: 'Premium Corporate' })).toHaveClass('aura-link', 'aura-link--touch');

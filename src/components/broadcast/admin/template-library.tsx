@@ -250,7 +250,8 @@ export function AdminTemplateLibrary({
                   <Td className={`text-[var(--aura-fg-secondary)] ${HIDE_IN_NARROW_GRID}`}>
                     {/* A block span so `truncate` works under the table's
                         auto layout (M8 Round 2); on a phone card the subject
-                        wraps instead of being cut (UX M2). */}
+                        wraps instead of being cut (UX M2); 12rem in a
+                        narrow grid. stand-in until AURA #174 */}
                     <span className="block max-sm:[overflow-wrap:anywhere] sm:max-w-[24rem] sm:truncate @min-[821px]/aura-tbl:@max-[1000px]/aura-tbl:max-w-[12rem]">
                       {tpl.subjectPreview ?? '—'}
                     </span>

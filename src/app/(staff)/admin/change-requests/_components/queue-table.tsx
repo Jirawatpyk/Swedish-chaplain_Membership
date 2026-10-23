@@ -15,6 +15,7 @@ import { Badge, buttonClass } from '@jirawatpyk/aura-react/server';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 import type { ChangeRequestQueueItem } from '@/modules/members';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
+import { TIGHT_CELLS_IN_NARROWEST_GRID } from '@/components/shell/aura-classes';
 import {
   ChangeRequestStatusBadge,
   changeRequestStatusOf,
@@ -30,8 +31,8 @@ import {
  * the request has waited), and there "Overdue" sits below the wait; the phone
  * card and the wide table keep both on one line. Text cells in the grid wrap
  * between words only, so AURA's `overflow-wrap: anywhere` cannot squeeze a
- * company name to a few letters a line; phone cards keep it (stand-in until
- * AURA #174).
+ * company name to a few letters a line; phone cards keep it.
+ * stand-in until AURA #174
  */
 const NARROW_GRID = '@min-[640px]/aura-tbl:@max-[900px]/aura-tbl';
 const HIDE_IN_NARROW_GRID = `${NARROW_GRID}:hidden`;
@@ -56,7 +57,7 @@ export async function ChangeRequestQueueTable({
     // "Next" link can follow, so it does not end the card.
     <Table data-testid="queue-table" caption={t('tableCaption')} captionHidden stackBelow="sm" stackStyle="cards" align="middle" bleed>
       <THead>
-        <Tr>
+        <Tr className={TIGHT_CELLS_IN_NARROWEST_GRID}>
           <Th>{t('columns.member')}</Th>
           <Th>{t('columns.submitter')}</Th>
           <Th>{t('columns.fields')}</Th>
@@ -72,7 +73,7 @@ export async function ChangeRequestQueueTable({
           const wait = waitingParts(item.waitingSeconds);
           const rowId = `cr-row-${r.id}`;
           return (
-            <Tr key={r.id} data-testid="queue-row" data-request-id={r.id} data-overdue={item.overdue ? 'true' : undefined}>
+            <Tr key={r.id} className={TIGHT_CELLS_IN_NARROWEST_GRID} data-testid="queue-row" data-request-id={r.id} data-overdue={item.overdue ? 'true' : undefined}>
               {/* No card label: the company is the card's title. */}
               <Td card="title" className={GRID_WORD_WRAP}>
                 <div className="font-medium">{item.row.member.companyName}</div>
@@ -97,6 +98,7 @@ export async function ChangeRequestQueueTable({
               </Td>
               <Td className={`whitespace-nowrap ${HIDE_IN_NARROW_GRID}`} label={t('columns.submitted')}>{fmt(r.submittedAt)}</Td>
               <Td label={t('columns.waiting')}>
+                {/* stand-in until AURA #174: Overdue below the wait in a narrow grid */}
                 <span className="inline-flex flex-nowrap items-center gap-2 whitespace-nowrap @min-[640px]/aura-tbl:@max-[900px]/aura-tbl:flex-col @min-[640px]/aura-tbl:@max-[900px]/aura-tbl:items-start">
                   <span id={`${rowId}-waiting`}>{wait.days > 0 ? t('waitingDays', { count: wait.days }) : t('waitingHours', { count: wait.hours })}</span>
                   {item.overdue ? (

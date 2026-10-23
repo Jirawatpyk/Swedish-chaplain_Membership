@@ -56,6 +56,7 @@ import {
 import type { Role } from '@/modules/auth/domain/role';
 import { hasPermission } from '@/modules/auth/domain/permissions/evaluator';
 import { EmptyState } from '@/components/shell/empty-state';
+import { TIGHT_CELLS_IN_NARROWEST_GRID } from '@/components/shell/aura-classes';
 import { MoneyDisplay } from './money-display';
 import { LocaleTextDisplay } from './locale-text-display';
 import { usePlanActions } from './use-plan-actions';
@@ -347,7 +348,7 @@ export function PlansTable({
         bleed
       >
         <THead>
-          <Tr>
+          <Tr className={TIGHT_CELLS_IN_NARROWEST_GRID}>
             <Th>{t('columns.name')}</Th>
             <Th>{t('columns.category')}</Th>
             <Th numeric>{t('columns.annualFee')}</Th>
@@ -410,12 +411,13 @@ export function PlansTable({
               return (
                 <Tr
                   key={`${plan.plan_year}-${plan.plan_id}`}
+                  className={TIGHT_CELLS_IN_NARROWEST_GRID}
                   data-plan-id={plan.plan_id}
                   data-plan-year={plan.plan_year}
                 >
                   {/* AURA's cell wraps anywhere, which let the table squeeze this
                       column at 768px until the name broke mid-word; wrap between
-                      words only */}
+                      words only in the grid. stand-in until AURA #174 */}
                   <Td card="title" className="@min-[640px]/aura-tbl:[overflow-wrap:normal]">
                     <Link href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`} className={linkClass({ underline: 'hover', touchHeight: true })}>
                       <LocaleTextDisplay

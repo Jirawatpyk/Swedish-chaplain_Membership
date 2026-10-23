@@ -814,7 +814,8 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **Result** (enterprise-ux-designer sweep, then mine, every 20px from 660 to 1440px in EN/SV/TH):
   - No word breaks in any of the four tables.
   - Templates and finance fit their box at every width.
-  - Change requests and plans still run 9–51px past a 655–695px box (a 720–760px tablet, such as an iPad mini in portrait). That overflow was already on main. The box scrolls inside its card and the page does not scroll.
+  - Change requests and plans first ran 9–51px past a 655–695px box (a 720–760px tablet, such as an iPad mini in portrait). The maintainer asked for that fixed too ("แก้เลย"). `TIGHT_CELLS_IN_NARROWEST_GRID` (`src/components/shell/aura-classes.ts`, on both tables' rows) sets the cells 8px apart instead of 16px while the box is 640–720px; the outer edges keep AURA's padding. All four tables now fit at every width.
+- **Ratchet repair:** the open-items rows #173–#175 in `docs/aura-adoption.md` were written `| #173 (Addendum 74) |`. The ratchet's parser reads only `| #173 |`, so it stopped there and none of the three counted as open. They now read `| #173 | Addendum 74: …`.
 
 ## User Scenarios & Testing *(mandatory)*
 
