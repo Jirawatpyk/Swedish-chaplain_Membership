@@ -209,6 +209,12 @@ describe('OldestOverdueCard', () => {
     expect(document.getElementById('oldest-overdue-title')).toHaveAttribute('tabindex', '-1');
     // the document number is a text link with AURA's touch rule (#172)
     expect(screen.getAllByRole('link', { name: 'SC-000071' })[0]).toHaveClass('aura-link', 'aura-link--touch');
+    // one line, so the number never splits at its hyphen in a narrow column ("SC-/000071")
+    expect(screen.getAllByRole('link', { name: 'SC-000071' })[0]!.closest('td')).toHaveClass('whitespace-nowrap');
+    // in a narrow grid the due date steps aside (the days overdue say the same) and the
+    // buyer wraps between words only; the phone card keeps both
+    expect(screen.getByRole('columnheader', { name: 'Due' })).toHaveClass('@min-[641px]/aura-tbl:@max-[800px]/aura-tbl:hidden');
+    expect(screen.getAllByText('Nordic Freight')[0]!.closest('td')).toHaveClass('[overflow-wrap:normal]');
     expect(screen.getByRole('link', { name: D.oldest.allOverdue.replace('{count}', '9') })).toHaveAttribute(
       'href',
       '/admin/invoices?status=overdue',

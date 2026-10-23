@@ -31,6 +31,9 @@ export const OLDEST_OVERDUE_TITLE_ID = 'oldest-overdue-title';
 const PHONE_ROWS = 3;
 
 /** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2, AURA #172). */
+/** The due date steps aside in a narrow grid (the days overdue say the same); the phone card keeps it. */
+const HIDE_IN_NARROW_GRID = '@min-[641px]/aura-tbl:@max-[800px]/aura-tbl:hidden';
+
 const DOCUMENT_LINK = linkClass({ underline: 'hover', touchHeight: true, className: 'font-medium' });
 
 function triggerIdOf(invoiceId: string): string {
@@ -112,7 +115,7 @@ export async function OldestOverdueCard({
           <Tr>
             <Th>{t('oldest.document')}</Th>
             <Th>{t('oldest.buyer')}</Th>
-            <Th>{t('oldest.due')}</Th>
+            <Th className={HIDE_IN_NARROW_GRID}>{t('oldest.due')}</Th>
             <Th numeric>{t('oldest.overdue')}</Th>
             <Th numeric>{t('oldest.amount')}</Th>
             {canRecordPayment ? <Th className="sr-only">{t('oldest.actions')}</Th> : null}
@@ -127,13 +130,15 @@ export async function OldestOverdueCard({
             const fallback = next && i < PHONE_ROWS - 1 ? triggerIdOf(next.invoiceId) : OLDEST_OVERDUE_TITLE_ID;
             return (
               <Tr key={row.invoiceId} data-testid="oldest-overdue-row" className={i >= PHONE_ROWS ? 'max-sm:hidden' : undefined}>
-                <Td card="title" mono>
+                {/* one line, so a narrow column never splits the number at its hyphen */}
+                <Td card="title" mono className="whitespace-nowrap">
                   <Link href={`/admin/invoices/${row.invoiceId}`} className={DOCUMENT_LINK}>
                     {document}
                   </Link>
                 </Td>
-                <Td label={t('oldest.buyer')}>{row.buyerName ?? '—'}</Td>
-                <Td label={t('oldest.due')} className="whitespace-nowrap">
+                {/* between words only: AURA's cell wraps anywhere ("Hospital/ity") */}
+                <Td label={t('oldest.buyer')} className="[overflow-wrap:normal]">{row.buyerName ?? '—'}</Td>
+                <Td label={t('oldest.due')} className={`whitespace-nowrap ${HIDE_IN_NARROW_GRID}`}>
                   {formatDay(row.dueDate, locale)}
                 </Td>
                 <Td
