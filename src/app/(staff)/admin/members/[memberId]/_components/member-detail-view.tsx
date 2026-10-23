@@ -257,7 +257,7 @@ export async function renderMemberDetailView({
       />
 
       {isErased && erasure.erasedAt && (
-        <ErasedBanner erasedAtIso={erasure.erasedAt.toISOString()} completed={erasure.completed} />
+        <ErasedBanner memberId={member.memberId} erasedAtIso={erasure.erasedAt.toISOString()} completed={erasure.completed} />
       )}
       {!isErased &&
         member.status === 'archived' &&

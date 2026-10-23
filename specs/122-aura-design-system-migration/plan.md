@@ -409,3 +409,21 @@ AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `to
 - **Relay R73c** (focus trace): AURA's open effect focused "Copy member number". On a member with no Tax ID copy button or website, that is the record's first control, and it sits inside the closed Technical disclosure. Chromium 147 does not focus it: no `focusin`, focus stays on the trigger, and Esc has no target. Nothing closes or remounts the Drawer. Fix: the Drawer opens with focus on its Close button (`closeProps` `data-autofocus`), which is always shown.
   - RED (`103be50bc`): `CompanyDetailsDrawer > moves focus to its Close button when it opens`, failing at "Expected element with focus: …Close company details… Received element with focus: <div role="dialog" …>" (jsdom falls back to the panel).
   - GREEN: the same test passes; fixture `view=member` in `next dev`: mouse and Enter opens both land on "Close company details", and Esc returns focus to the trigger.
+- **Relay R73d** (`da85151dc` vs `d050fd784`): `members-a11y` 6/6 on chromium and 5 + 1 skipped on mobile-chrome; `member-number` 7/7 on both, on branch and base. Keyboard and mouse open/Esc pass on members with and without a Tax ID copy button. Merged as `ad56ee80d` (#619).
+
+### Evidence: Erase-success focus to the Erased banner (#240, size S, plan agreed 2026-10-23)
+
+After a successful erase, the header ⋯ menu that opened the dialog unmounts with the refresh (an erased member has no actions), so focus fell to `<body>` (2.4.3). The dialog now leaves a one-shot request (`erased-banner-focus.ts`: one member, taken once, lapses after 10 s), and `ErasedBanner` takes focus when it mounts with that request. On a plain visit to an erased member, focus is not moved.
+
+- RED (`303c470eb`), with a no-op stub of the hand-off:
+  - `ErasedBanner focus after an erase (#240) > takes focus when the erase dialog asked for it for this member` failed at `expect(banner()).toHaveFocus()`.
+  - `EraseMemberButton (T555) > once complete, POSTs …` failed at "AssertionError: expected false to be true".
+- GREEN: both pass, as do the other four banner cases (no request, another member's request, older than 10 s, taken once) and the refusal case (no request is left).
+- Totals: 94/94 in the touched files, 2745/2745 in `tests/unit/architecture` + `tests/unit/members`; `pnpm check` exit 0.
+- No e2e: `members-erase.spec.ts` deliberately never completes an erase, because an erase is permanent.
+- Review Lows fixed (maintainer, 23 Oct: "แก้ low เลย"). RED `158a2f916`, 5 failing:
+  - **Name:** the banner is named by its title (`aria-label`, stand-in until AURA #170, Addendum 71). The case `is named by its title…` failed on `toHaveAccessibleName`.
+  - **Kept focus:** the banner only takes focus when focus fell to `<body>` with the ⋯ menu. If the user moved focus during the refresh, it stays put. The case `leaves focus where the user put it…` failed: the banner took focus.
+  - **Window:** the request lasts 60 s, not 10 s, so a slow refresh on a phone still lands. The case `still takes a request 30 seconds old` failed.
+  - **`finalFocus`:** the erase Dialog sets `finalFocus`: the caller's opener (the ⋯ button, through `MemberHeaderMoreMenu`), else its own trigger. The cases `Cancel returns focus to the opener the caller names` and `with its own trigger, Cancel returns focus to it` failed: focus was on `<body>`.
+  - GREEN: 99/99 in the touched files.
