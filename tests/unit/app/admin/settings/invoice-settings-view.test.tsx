@@ -81,8 +81,8 @@ const VALUES: InvoiceSettingsFormInitialValues = {
   payment_instructions_en: null,
 };
 
-async function renderView(exists: boolean) {
-  const ui = (await renderInvoiceSettingsView({ initialValues: VALUES, canEdit: true, exists })) as ReactElement;
+async function renderView(exists: boolean, canEdit = true) {
+  const ui = (await renderInvoiceSettingsView({ initialValues: VALUES, canEdit, exists })) as ReactElement;
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
       {ui}
@@ -131,5 +131,15 @@ describe('invoice settings page frame (board Admin-invoice-settings)', () => {
     await renderView(false);
     expect(screen.getByText(s.card.firstTimeDescription).closest('.aura-alert')).not.toBeNull();
     expect(screen.queryByText(s.card.description)).toBeNull();
+  });
+
+  it('tells a view-only reader why the fields are locked', async () => {
+    await renderView(true, false);
+    expect(screen.getByText(s.readOnlyNote).closest('.aura-alert')).not.toBeNull();
+  });
+
+  it('shows no view-only note to someone who can edit', async () => {
+    await renderView(true);
+    expect(screen.queryByText(s.readOnlyNote)).toBeNull();
   });
 });

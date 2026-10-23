@@ -452,4 +452,5 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
     - The TH card title is now "การออกเลขเอกสาร" (was "การเลขเอกสาร"), in the subtitle too.
     - The e2e describe is now named "section-tab".
     - The tab target size goes to the AURA handoff as #171: "Tax" is 22px wide, both here and on the member page.
-  - **Not changed:** no way back to the tabs on a phone (a recorded decision), no read-only explanation and the skeleton's existing-settings note (both pre-existing), and no scroll hint at 320 (AURA `Tabs`).
+    - A reader without write access now gets a first note, "You can view these settings but not change them." (EN/TH/SV `readOnlyNote`), as an info note, since AURA's `Alert` has no neutral tone. This was pre-existing; the maintainer asked for it in this PR. D-023 shared commit: `invoice settings page frame > tells a view-only reader why the fields are locked` failed before the view changed: "Unable to find an element with the text: You can view these settings but not change them.".
+  - **Not changed:** no way back to the tabs on a phone (a recorded decision), the skeleton's existing-settings note (pre-existing), and no scroll hint at 320 (AURA `Tabs`).

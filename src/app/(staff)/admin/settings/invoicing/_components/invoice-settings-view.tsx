@@ -16,6 +16,10 @@
  *
  * The legacy wrapper card and its "Invoice configuration" title go: the board
  * has none, and the note keeps its two descriptions.
+ *
+ * A reader without write access (`canEdit` false) gets a first note saying the
+ * page is view-only, so the disabled fields and the missing save bar read as
+ * intended rather than broken. AURA's Alert has no neutral tone, so it is info.
  */
 import { getTranslations } from 'next-intl/server';
 import { Alert } from '@jirawatpyk/aura-react/server';
@@ -40,6 +44,11 @@ export async function renderInvoiceSettingsView({ initialValues, canEdit, exists
   return (
     <>
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
+      {canEdit ? null : (
+        <Alert tone="info" role="note">
+          {t('readOnlyNote')}
+        </Alert>
+      )}
       <Alert tone="info" role="note">
         {exists ? t('card.description') : t('card.firstTimeDescription')}
       </Alert>

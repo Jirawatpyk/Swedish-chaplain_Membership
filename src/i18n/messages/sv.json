@@ -2319,6 +2319,7 @@
         "description": "Ändringar gäller endast framtida fakturor. Redan utfärdade fakturor behåller sin ursprungliga snapshot.",
         "firstTimeDescription": "Inga inställningar ännu. Fyll i obligatoriska fält för att låsa upp fakturering."
       },
+      "readOnlyNote": "Du kan se de här inställningarna men inte ändra dem.",
       "sections": {
         "currency": "Valuta",
         "identity": "Juridisk identitet",
