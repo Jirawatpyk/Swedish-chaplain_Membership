@@ -16,6 +16,7 @@ import { exportPaidInvoicesCsv, makeExportPaidInvoicesCsvDeps } from '@/modules/
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
 import { seedMiniScenario } from '../insights/invoice-dashboard-mini-seed';
+import { invoiceDashboardSourceAdapter } from '@/modules/insights/infrastructure/sources/invoice-dashboard-source-adapter';
 
 const REFUND_STATUS = 'Refund (no credit note)';
 
@@ -136,6 +137,23 @@ describe('CSV export — refunds with no credit note', () => {
     expect(july.map((r) => [r['Issue Date'], r['Customer Legal Name']])).toEqual([
       ['2026-07-01', 'Buyer edgeOut'],
     ]);
+  });
+
+  it('each month nets to the dashboard Collected for the same month (no filters)', async () => {
+    const satang = (total: string) => BigInt(Math.round(Number(total) * 100));
+    for (const [from, to] of [
+      ['2026-05-01', '2026-05-31'],
+      ['2026-06-01', '2026-06-30'],
+      ['2026-07-01', '2026-07-31'],
+    ] as const) {
+      const fileNet = (await rows(from, to)).reduce((sum, r) => sum + satang(r['Total']!), 0n);
+      const collected = await invoiceDashboardSourceAdapter.collectedInRange(
+        tenant.ctx,
+        { type: 'all', fiscalYear: 2026, planId: null, origin: 'all' },
+        { from, to },
+      );
+      expect({ from, fileNet }).toEqual({ from, fileNet: collected.amountSatang });
+    }
   });
 
   it('a credit-note refund keeps only its credit-note row', async () => {

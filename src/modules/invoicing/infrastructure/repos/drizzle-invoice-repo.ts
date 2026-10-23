@@ -2046,7 +2046,7 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
           .where(
             and(
               eq(invoices.tenantId, tenantIdArg),
-              ne(invoices.status, 'void'),
+              inArray(invoices.status, ['paid', 'partially_credited', 'credited']),
               inArray(invoices.invoiceId, [...invoiceIds]),
             ),
           );

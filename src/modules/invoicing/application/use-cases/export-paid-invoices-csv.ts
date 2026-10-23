@@ -37,12 +37,24 @@
  * document in `Reference Document No.`. Subtotal, VAT % and VAT stay BLANK —
  * no document reduced output VAT, so the VAT column still sums to the
  * register's net figure — and so does Tax Point Date: a refund has no §78/1
- * tax point (thai-tax-compliance-auditor, 23 Oct). A refund on a VOID
- * invoice gets no row: its receipt is never in the file.
+ * tax point (thai-tax-compliance-auditor, 23 Oct). The refund date sits in
+ * `Issue Date` though no document was issued that day, and Total is NOT
+ * Subtotal + VAT on this row by design. Only a refund on a paid-family
+ * invoice gets a row (the dashboard's Collected uses the same set); a voided
+ * invoice's refund gets none: its receipt is never in the file.
+ *
+ * Period of a row, for a bookkeeper splitting a multi-month file:
+ * `Tax Point Date` when present, else `Issue Date` — this holds for every row
+ * type (receipt, combined-mode INV, credit note, refund). Without filters the
+ * file's net Total per period reconciles to the invoice dashboard's Collected
+ * for that period, except a combined-mode INV issued in one month and paid in
+ * another (the file buckets it by issue date, the dashboard by payment).
  *
  * `Status` is the invoice's status AS OF THE EXPORT, not as of the period:
  * re-exporting June after a July credit note shows the June receipt as
- * `Credited`, still positive — its reduction is the July negative row.
+ * `Credited`, still positive — its reduction is the July negative row. A
+ * receipt with a refund settled without a credit note stays `Paid`; its
+ * reduction is the refund row in the month the refund completed.
  *
  * --- Cross-module port for F5 payment methods --------------------
  * `paymentMethodLookup` is a F4-owned port; the composition root
@@ -56,8 +68,8 @@
  *
  * --- Audit ---------------------------------------------------------
  * Emits `invoices_csv_exported` (5y retention) on success, including
- * `row_count` (every data row) and `credit_note_count` (the negative
- * subset) so an RD audit can correlate the bookkeeper's filing
+ * `row_count` (every data row), `credit_note_count` and
+ * `waived_refund_count` (the negative subsets) so an RD audit can correlate the bookkeeper's filing
  * spreadsheet to the export action without reconstructing the byte
  * stream. Failure paths return a typed Result and DO NOT emit (the
  * caller surfaces 5xx).
@@ -170,10 +182,11 @@ const CSV_HEADERS: readonly string[] = [
   // Appended last so existing column positions stay put; it explains why a
   // back-dated row sits in this month.
   'Tax Point Date',
-  // `Paid` / `Credited` / `Partially credited`, or `Credit note` on a
-  // negative §86/10 row — see `STATUS_LABEL`.
+  // `Paid` / `Credited` / `Partially credited`, or on a negative row
+  // `Credit note` (§86/10) / `Refund (no credit note)` — see `STATUS_LABEL`.
   'Status',
-  // Credit-note rows only: the original tax invoice the note reduces.
+  // Credit-note and refund rows only: the original document (tax invoice or
+  // §105 receipt) the row reduces.
   'Reference Document No.',
 ];
 
@@ -261,7 +274,8 @@ export async function exportPaidInvoicesCsv(
   for (const cn of creditNotes) {
     lines.push(buildCreditNoteRow(cn));
   }
-  // A refund whose invoice has no reference row is on a VOID invoice.
+  // A refund whose invoice has no reference row is not on a paid-family
+  // invoice (in practice: a voided one).
   let waivedRefundCount = 0;
   for (const refund of waivedRefunds) {
     const reference = refundReferences.get(refund.invoiceId);

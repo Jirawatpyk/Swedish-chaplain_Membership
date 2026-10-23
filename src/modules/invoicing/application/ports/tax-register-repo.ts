@@ -211,10 +211,11 @@ export interface TaxRegisterRepo {
 
   /**
    * Spec 124 (D-p) — the refunded invoices' reference rows, keyed by invoice
-   * id. VOID invoices are left out: a voided receipt is never in the file, so
-   * its refund gets no row either (the register drops it the same way). No
-   * other predicate — a combined-mode INV with no receipt number still
-   * resolves, so a refund never drops out silently. RLS-scoped via
+   * id. Paid-family invoices only (`paid` / `partially_credited` /
+   * `credited`) — the set the dashboard's Collected nets a waived refund
+   * through; a voided receipt is never in the file, so its refund gets no row
+   * either. No receipt-number predicate — a combined-mode INV with no receipt
+   * still resolves, so a refund never drops out silently. RLS-scoped via
    * `runInTenant`.
    */
   listRefundReferencesForExport(
