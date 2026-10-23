@@ -421,3 +421,9 @@ After a successful erase, the header ⋯ menu that opened the dialog unmounts wi
 - GREEN: both pass, as do the other four banner cases (no request, another member's request, older than 10 s, taken once) and the refusal case (no request is left).
 - Totals: 94/94 in the touched files, 2745/2745 in `tests/unit/architecture` + `tests/unit/members`; `pnpm check` exit 0.
 - No e2e: `members-erase.spec.ts` deliberately never completes an erase, because an erase is permanent.
+- Review Lows fixed (maintainer, 23 Oct: "แก้ low เลย"). RED `158a2f916`, 5 failing:
+  - **Name:** the banner is named by its title (`aria-label`, stand-in until AURA #170, Addendum 71). The case `is named by its title…` failed on `toHaveAccessibleName`.
+  - **Kept focus:** the banner only takes focus when focus fell to `<body>` with the ⋯ menu. If the user moved focus during the refresh, it stays put. The case `leaves focus where the user put it…` failed: the banner took focus.
+  - **Window:** the request lasts 60 s, not 10 s, so a slow refresh on a phone still lands. The case `still takes a request 30 seconds old` failed.
+  - **`finalFocus`:** the erase Dialog sets `finalFocus`: the caller's opener (the ⋯ button, through `MemberHeaderMoreMenu`), else its own trigger. The cases `Cancel returns focus to the opener the caller names` and `with its own trigger, Cancel returns focus to it` failed: focus was on `<body>`.
+  - GREEN: 99/99 in the touched files.

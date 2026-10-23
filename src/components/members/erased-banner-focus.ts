@@ -8,10 +8,11 @@
  * that refresh, so the dialog leaves a request here and the banner takes it
  * when it mounts. Module state, not storage: `router.refresh()` keeps the JS,
  * and nothing should outlive the tab. The request is for one member, is
- * taken once, and lapses after 10 s, so a refresh that never lands cannot
- * steal focus on a later visit.
+ * taken once, and lapses after 60 s: long enough for a slow refresh on a
+ * phone, short enough that a refresh that never lands cannot steal focus on
+ * a later visit.
  */
-const REQUEST_TTL_MS = 10_000;
+const REQUEST_TTL_MS = 60_000;
 
 let pending: { readonly memberId: string; readonly at: number } | null = null;
 
@@ -19,7 +20,7 @@ export function requestErasedBannerFocus(memberId: string): void {
   pending = { memberId, at: Date.now() };
 }
 
-/** True once for the member the request names, within 10 s; clears the request. */
+/** True once for the member the request names, within 60 s; clears the request. */
 export function takeErasedBannerFocus(memberId: string): boolean {
   const request = pending;
   pending = null;

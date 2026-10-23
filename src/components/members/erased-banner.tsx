@@ -32,7 +32,11 @@ export function ErasedBanner({ memberId, erasedAtIso, completed }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (takeErasedBannerFocus(memberId)) ref.current?.focus();
+    if (!takeErasedBannerFocus(memberId)) return;
+    // Only where focus was lost with the ⋯ menu: if the user moved it during
+    // the refresh, it stays where they put it.
+    const active = document.activeElement;
+    if (active === null || active === document.body) ref.current?.focus();
   }, [memberId]);
 
   // BE display for th-TH per CLAUDE.md (display-only); storage stays Gregorian.
@@ -52,10 +56,20 @@ export function ErasedBanner({ memberId, erasedAtIso, completed }: Props) {
     formattedDate = erasedDate.toISOString().slice(0, 10);
   }
 
+  const title = t('bannerTitle', { date: formattedDate });
   // Spec 122 US5b-1 — an AURA danger Alert. A note, not a live region: it is
   // part of the page's first render, not a change to announce.
   return (
-    <Alert ref={ref} tabIndex={-1} tone="danger" role="note" title={t('bannerTitle', { date: formattedDate })}>
+    // `aria-label`: AURA renders the title as a plain <p>, so the note has no
+    // name of its own. Stand-in until AURA #170.
+    <Alert
+      ref={ref}
+      tabIndex={-1}
+      tone="danger"
+      role="note"
+      title={title}
+      aria-label={title}
+    >
       <p>{t('bannerBody')}</p>
       {!completed && <p className="mt-1">{t('bannerPending')}</p>}
     </Alert>

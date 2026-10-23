@@ -21,7 +21,7 @@
  * and `TextField`. Behaviour and gates unchanged.
  */
 
-import { useState, useTransition, useCallback, useEffect, useRef } from 'react';
+import { useState, useTransition, useCallback, useEffect, useRef, type RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ShieldXIcon } from 'lucide-react';
@@ -79,6 +79,11 @@ type Props = {
   readonly open?: boolean;
   readonly onOpenChange?: (open: boolean) => void;
   readonly showTrigger?: boolean;
+  /**
+   * Where focus returns when the dialog closes: the caller's opener (the ⋯
+   * menu's button). Defaults to this component's own trigger.
+   */
+  readonly finalFocus?: RefObject<HTMLElement | null>;
 };
 
 export function EraseMemberButton({
@@ -88,6 +93,7 @@ export function EraseMemberButton({
   open: openProp,
   onOpenChange,
   showTrigger = true,
+  finalFocus,
 }: Props) {
   const t = useTranslations('admin.members.erase');
   const router = useRouter();
@@ -111,6 +117,7 @@ export function EraseMemberButton({
   const [error, setError] = useState<string | null>(null);
   const errorRef = useRef<HTMLDivElement>(null);
   const [, startTransition] = useTransition();
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (error) errorRef.current?.focus();
@@ -186,7 +193,7 @@ export function EraseMemberButton({
   return (
     <>
       {showTrigger && (
-        <Button variant="danger-secondary" onClick={() => handleOpenChange(true)}>
+        <Button ref={triggerRef} variant="danger-secondary" onClick={() => handleOpenChange(true)}>
           <ShieldXIcon className="size-4" aria-hidden="true" />
           {t('eraseCta')}
         </Button>
@@ -195,6 +202,10 @@ export function EraseMemberButton({
         role="alertdialog"
         open={open}
         onClose={() => handleOpenChange(false)}
+        // Back to the opener, also where a click did not focus it (Safari).
+        // After a successful erase the opener unmounts and the Erased banner
+        // takes focus instead (#240).
+        finalFocus={finalFocus ?? triggerRef}
         // No Escape / close while the erasure runs.
         dismissible={!loading}
         title={t('dialogTitle')}

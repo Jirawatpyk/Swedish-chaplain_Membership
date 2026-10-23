@@ -7,7 +7,7 @@
  * dialog, unchanged; AURA returns focus to ⋯ when it closes. The page
  * decides who gets it; Erase, the most destructive, comes last.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ArchiveIcon, ShieldXIcon } from 'lucide-react';
 import { DropdownMenu, IconButton, type MenuItem } from '@jirawatpyk/aura-react';
@@ -29,6 +29,7 @@ export function MemberHeaderMoreMenu({
   const t = useTranslations('admin.members');
   const [eraseOpen, setEraseOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const label = t('detail.headerMoreActions');
   // The same lucide icons as the visible buttons (AURA's set has neither).
   const items: MenuItem[] = [
@@ -41,7 +42,7 @@ export function MemberHeaderMoreMenu({
   ];
   return (
     <span className="flex-none!">
-      <DropdownMenu label={label} trigger={<IconButton icon="ellipsis" label={label} touchHeight />} items={items} />
+      <DropdownMenu label={label} trigger={<IconButton ref={moreRef} icon="ellipsis" label={label} touchHeight />} items={items} />
       <EraseMemberButton
         memberId={memberId}
         companyName={companyName}
@@ -49,6 +50,7 @@ export function MemberHeaderMoreMenu({
         showTrigger={false}
         open={eraseOpen}
         onOpenChange={setEraseOpen}
+        finalFocus={moreRef}
       />
       {canArchive && (
         <ArchiveMemberButton
