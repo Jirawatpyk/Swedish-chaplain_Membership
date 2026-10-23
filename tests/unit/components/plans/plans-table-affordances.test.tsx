@@ -305,7 +305,7 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
     expect(screen.getByRole('link', { name: 'Premium Corporate' })).toHaveClass('aura-link', 'aura-link--touch');
     // AURA's cell wraps anywhere, which squeezed the name column at 768px until
     // the name broke mid-word ("Diamo/nd"); the name wraps between words only
-    expect(screen.getByRole('link', { name: 'Premium Corporate' }).closest('td')).toHaveClass('[overflow-wrap:normal]');
+    expect(screen.getByRole('link', { name: 'Premium Corporate' }).closest('td')).toHaveClass('@min-[640px]/aura-tbl:[overflow-wrap:normal]');
     // the year steps aside when the table box is narrow (the filter already shows it),
     // so the row's ⋯ menu stays in view at tablet width
     expect(screen.getByRole('columnheader', { name: /year/i })).toHaveClass('@max-[800px]/aura-tbl:hidden');

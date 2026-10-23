@@ -41,13 +41,16 @@ import {
 type FilterMode = 'all' | 'starter' | 'authored';
 
 /**
- * Subject steps aside while the table box is a narrow grid (641–900px: a
- * tablet, or a laptop beside the sidebar) and shows on the phone card and the
- * wide table. The text cells wrap between words only, so AURA's
- * `overflow-wrap: anywhere` cannot squeeze a name to a few letters a line
+ * The subject follows the table box, not the viewport: it steps aside in a
+ * narrow grid (up to 820px: a tablet, or a 1024 laptop beside the sidebar),
+ * is cut at 12rem up to 1000px (a tablet in landscape), and at 24rem beyond;
+ * the phone card shows it whole. Text cells
+ * in the grid wrap between words only, so AURA's `overflow-wrap: anywhere`
+ * cannot squeeze a name to a few letters a line; phone cards keep it
  * (stand-in until AURA #174).
  */
-const HIDE_IN_NARROW_GRID = '@min-[641px]/aura-tbl:@max-[900px]/aura-tbl:hidden';
+const GRID_WORD_WRAP = '@min-[640px]/aura-tbl:[overflow-wrap:normal]';
+const HIDE_IN_NARROW_GRID = '@min-[640px]/aura-tbl:@max-[820px]/aura-tbl:hidden';
 
 export interface TemplateLibraryRow {
   readonly id: string;
@@ -228,12 +231,12 @@ export function AdminTemplateLibrary({
             ) : (
               filtered.map((tpl) => (
                 <Tr key={tpl.id}>
-                  <Td card="title" className="[overflow-wrap:normal]">
+                  <Td card="title" className={GRID_WORD_WRAP}>
                     {/* Board parity: on a phone card the badge sits at the
                         right end of the title row; in the table it follows
                         the name. */}
                     <span className="inline-flex flex-wrap items-center gap-2 max-sm:flex max-sm:w-full max-sm:flex-nowrap max-sm:items-start max-sm:justify-between">
-                      <span className="min-w-0 font-medium @max-[640px]/aura-tbl:[overflow-wrap:anywhere]">{tpl.name}</span>
+                      <span className="min-w-0 font-medium">{tpl.name}</span>
                       {tpl.isSeeded ? (
                         // UX L3 — a span cannot carry an aria-label, so the
                         // fuller name rides in sr-only text.
@@ -248,11 +251,11 @@ export function AdminTemplateLibrary({
                     {/* A block span so `truncate` works under the table's
                         auto layout (M8 Round 2); on a phone card the subject
                         wraps instead of being cut (UX M2). */}
-                    <span className="block max-sm:[overflow-wrap:anywhere] sm:max-w-[24rem] sm:truncate">
+                    <span className="block max-sm:[overflow-wrap:anywhere] sm:max-w-[24rem] sm:truncate @min-[821px]/aura-tbl:@max-[1000px]/aura-tbl:max-w-[12rem]">
                       {tpl.subjectPreview ?? '—'}
                     </span>
                   </Td>
-                  <Td className="text-[var(--aura-fg-secondary)] [overflow-wrap:normal]">
+                  <Td className={`text-[var(--aura-fg-secondary)] ${GRID_WORD_WRAP}`}>
                     {tLang(`languageOptions.${tpl.locale}`)}
                   </Td>
                   <Td numeric>{tpl.startedFromCount}</Td>

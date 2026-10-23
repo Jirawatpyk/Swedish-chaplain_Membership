@@ -799,14 +799,22 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - Two tables broke:
     - **Templates** at 1024 with the sidebar: "Newslet/ter", "Svensk/a". The box overflowed by 130–196px and the page scrolled 47px. The cause: Subject (a 24rem truncated cell) showed by viewport (≥ 1024), not by box.
     - **Change requests** at 768 and 1024: "Midso/mmar", "docume/nts". The box overflowed by 56–142px. The cause: three nowrap cells (Submitted, Waiting with its pill, Status).
-- **The fix** (#174 stand-in, maintainer's choices, 23 Oct). While the table box is a narrow grid (641–900px):
-  - Templates **Subject** steps aside. It shows on phone cards and in the wide table.
-  - Change requests **Submitted** steps aside; Waiting says the same.
-  - The **Overdue** pill drops below the wait. The phone card and the wide table keep it on one line.
-  - Name, locale, member, submitter and fields cells take `[overflow-wrap:normal]`.
-- **Result:** no word breaks in either table.
-  - Templates fits its box.
-  - Change requests fits, except SV at 1024 with a fine pointer, where it is 3px over and nothing is clipped.
+- **The fix** (#174 stand-in, maintainer's choices, 23 Oct). Everything below follows the table box, not the viewport.
+  - Templates **Subject**:
+    - steps aside while the box is 640–820px;
+    - is cut at 12rem up to 1000px (a tablet in landscape);
+    - is cut at 24rem beyond that;
+    - shows in full on the phone card.
+  - Change requests, while the box is 640–900px:
+    - **Submitted** steps aside; Waiting says the same.
+    - The **Overdue** pill sits below the wait on every row.
+    - The phone card and the wide table keep the pill on one line.
+  - Text cells in the grid wrap between words only (`@min-[640px]/aura-tbl:[overflow-wrap:normal]`), and phone cards keep AURA's `anywhere`. The same scoping now applies to the #630 plans and finance cells.
+  - The narrow-grid range starts at 640px, where AURA's card stack ends, on all three tables.
+- **Result** (enterprise-ux-designer sweep, then mine, every 20px from 660 to 1440px in EN/SV/TH):
+  - No word breaks in any of the four tables.
+  - Templates and finance fit their box at every width.
+  - Change requests and plans still run 9–51px past a 655–695px box (a 720–760px tablet, such as an iPad mini in portrait). That overflow was already on main. The box scrolls inside its card and the page does not scroll.
 
 ## User Scenarios & Testing *(mandatory)*
 

@@ -31,7 +31,7 @@ export const OLDEST_OVERDUE_TITLE_ID = 'oldest-overdue-title';
 const PHONE_ROWS = 3;
 
 /** The due date steps aside in a narrow grid (the days overdue say the same); the phone card keeps it. */
-const HIDE_IN_NARROW_GRID = '@min-[641px]/aura-tbl:@max-[800px]/aura-tbl:hidden';
+const HIDE_IN_NARROW_GRID = '@min-[640px]/aura-tbl:@max-[800px]/aura-tbl:hidden';
 
 /** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2, AURA #172). */
 const DOCUMENT_LINK = linkClass({ underline: 'hover', touchHeight: true, className: 'font-medium' });
@@ -137,7 +137,7 @@ export async function OldestOverdueCard({
                   </Link>
                 </Td>
                 {/* between words only: AURA's cell wraps anywhere ("Hospital/ity") */}
-                <Td label={t('oldest.buyer')} className="[overflow-wrap:normal]">{row.buyerName ?? '—'}</Td>
+                <Td label={t('oldest.buyer')} className="@min-[640px]/aura-tbl:[overflow-wrap:normal]">{row.buyerName ?? '—'}</Td>
                 <Td label={t('oldest.due')} className={`whitespace-nowrap ${HIDE_IN_NARROW_GRID}`}>
                   {formatDay(row.dueDate, locale)}
                 </Td>
