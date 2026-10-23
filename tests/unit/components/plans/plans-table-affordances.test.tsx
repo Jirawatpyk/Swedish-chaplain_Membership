@@ -303,6 +303,9 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
   it('gives the plan name link a 44px touch target on phones', () => {
     renderRows();
     expect(screen.getByRole('link', { name: 'Premium Corporate' })).toHaveClass('aura-link', 'aura-link--touch');
+    // AURA's cell wraps anywhere, which squeezed the name column at 768px until
+    // the name broke mid-word ("Diamo/nd"); the name wraps between words only
+    expect(screen.getByRole('link', { name: 'Premium Corporate' }).closest('td')).toHaveClass('[overflow-wrap:normal]');
   });
 
   it('centres the status pill on the name line of a phone card', () => {

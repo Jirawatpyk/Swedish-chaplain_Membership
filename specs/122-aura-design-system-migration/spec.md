@@ -777,6 +777,13 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **`linkClass` sets the layout only on touch** (inline-flex, centred) and resets the font (`font: inherit` in the `aura` layer beats an `aura-text-*` class on the same element). So a link with an icon or `truncate` adds `inline-flex items-center` (and `min-w-0` to truncate) itself, a link stretched in a flex column or grid adds `self-start` or `justify-start`, and a type class goes on a child `span` (enterprise-ux-designer review of #629).
   - In a static Table's grid cell the link stays inline (the row is the target); in the stacked phone card it is 44px.
 
+### Session 2026-10-23 (static tables: no mid-word break at tablet width)
+
+- **The break:** at 768px the static AURA `Table` squeezed its first column until the label broke inside a word. The plans list showed "Diamo/nd Partne/rship" and the finance oldest-overdue card showed "SC-/000071".
+- **The cause:** `.aura-tbl__td { overflow-wrap: anywhere }` makes a cell's min-content one character wide, so `table-layout: auto` gives that width to the money and status columns. It predates 5.59 (R79, #629 reviews).
+- **The fix:** the plan-name cell takes `[overflow-wrap:normal]`, so it wraps between words only, and the document-number cell takes `whitespace-nowrap`, as its due-date cell already did. Phone cards are unchanged.
+- **AURA #173 (Addendum 74) filed:** `linkClass` lays a link out only on touch. Listed open in `docs/aura-adoption.md`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

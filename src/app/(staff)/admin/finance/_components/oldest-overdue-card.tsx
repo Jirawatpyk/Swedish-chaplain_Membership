@@ -127,7 +127,8 @@ export async function OldestOverdueCard({
             const fallback = next && i < PHONE_ROWS - 1 ? triggerIdOf(next.invoiceId) : OLDEST_OVERDUE_TITLE_ID;
             return (
               <Tr key={row.invoiceId} data-testid="oldest-overdue-row" className={i >= PHONE_ROWS ? 'max-sm:hidden' : undefined}>
-                <Td card="title" mono>
+                {/* one line, so a narrow column never splits the number at its hyphen */}
+                <Td card="title" mono className="whitespace-nowrap">
                   <Link href={`/admin/invoices/${row.invoiceId}`} className={DOCUMENT_LINK}>
                     {document}
                   </Link>

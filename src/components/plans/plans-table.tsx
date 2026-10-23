@@ -413,7 +413,10 @@ export function PlansTable({
                   data-plan-id={plan.plan_id}
                   data-plan-year={plan.plan_year}
                 >
-                  <Td card="title">
+                  {/* AURA's cell wraps anywhere, which let the table squeeze this
+                      column at 768px until the name broke mid-word; wrap between
+                      words only */}
+                  <Td card="title" className="[overflow-wrap:normal]">
                     <Link href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`} className={linkClass({ underline: 'hover', touchHeight: true })}>
                       <LocaleTextDisplay
                         value={plan.plan_name}

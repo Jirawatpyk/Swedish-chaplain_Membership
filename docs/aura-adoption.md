@@ -196,6 +196,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #173 (Addendum 74) | `linkClass` lays a link out (`inline-flex`, centred) only under the touch query, centres its label there, and its `font: inherit` (layer `aura`) beats an `aura-text-*` class on the same element | From #629: `inline-flex items-center` on links with an icon, `min-w-0` on the truncating website link, `self-start` / `justify-start` on stretched links, `flex w-fit` on the profile's More details summary, and the event picker's label type on a child span |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
