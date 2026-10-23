@@ -492,7 +492,7 @@ describe('exportPaidInvoicesCsv', () => {
       [],
       new Map(),
       [makeCreditNote()],
-      [{ invoiceId: 'inv-9', amountSatang: 53_500n, completedDate: '2026-05-28', method: 'promptpay' }],
+      [{ refundId: 'rf-9', invoiceId: 'inv-9', amountSatang: 53_500n, completedDate: '2026-05-28', method: 'promptpay' }],
       new Map([['inv-9', makeRefundReference()]]),
     );
     const result = await exportPaidInvoicesCsv(deps, {
@@ -507,7 +507,7 @@ describe('exportPaidInvoicesCsv', () => {
     const lines = result.value.csv.replace(BOM, '').trimEnd().split('\r\n');
     expect(lines).toHaveLength(3); // header, credit note, refund
     expect(lines[2]).toBe(
-      '2026-05-28,,,"ACME Co., Ltd.",0123456789012,,,,-535.00,THB,,promptpay,,Refund (no credit note),RE-2026-000003',
+      '2026-05-28,rf-9,,"ACME Co., Ltd.",0123456789012,,,,-535.00,THB,,promptpay,,Refund (no credit note),RE-2026-000003',
     );
     expect(result.value.rowCount).toBe(2);
     const [, event] = deps.audit.emit.mock.calls[0]!;
@@ -519,7 +519,7 @@ describe('exportPaidInvoicesCsv', () => {
       [],
       new Map(),
       [],
-      [{ invoiceId: 'inv-7', amountSatang: 10_000n, completedDate: '2026-05-28', method: 'card' }],
+      [{ refundId: 'rf-7', invoiceId: 'inv-7', amountSatang: 10_000n, completedDate: '2026-05-28', method: 'card' }],
       new Map([
         ['inv-7', makeRefundReference({ receiptDocumentNumberRaw: null, documentNumberRaw: 'INV-2026-000052', billDocumentNumberRaw: null })],
       ]),
@@ -539,7 +539,7 @@ describe('exportPaidInvoicesCsv', () => {
       [],
       new Map(),
       [],
-      [{ invoiceId: 'inv-void', amountSatang: 10_000n, completedDate: '2026-05-28', method: 'card' }],
+      [{ refundId: 'rf-void', invoiceId: 'inv-void', amountSatang: 10_000n, completedDate: '2026-05-28', method: 'card' }],
       new Map(),
     );
     const result = await exportPaidInvoicesCsv(deps, {

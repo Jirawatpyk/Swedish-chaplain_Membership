@@ -1833,6 +1833,12 @@ function creditNotesIssuedBetween(tenantIdArg: string, from: string, to: string)
   ];
 }
 
+/** The buyer's legal name and tax id from a member snapshot (`''` when absent). */
+function snapshotBuyer(snapshot: unknown): { legalName: string; taxId: string } {
+  const snap = snapshot as { legal_name?: string; tax_id?: string | null } | null;
+  return { legalName: snap?.legal_name ?? '', taxId: snap?.tax_id ?? '' };
+}
+
 /** Per-row tax point for ordering the export: issue date for combined rows. */
 const ROW_TAX_POINT = sql`CASE WHEN ${invoices.receiptDocumentNumberRaw} IS NULL THEN ${invoices.issueDate} ELSE ${invoiceTaxPointSql} END`;
 
@@ -2007,15 +2013,12 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
           .orderBy(asc(creditNotes.issueDate), asc(creditNotes.documentNumber));
 
         return rows.map((r) => {
-          const snap = r.memberIdentitySnapshot as {
-            legal_name?: string;
-            tax_id?: string | null;
-          } | null;
+          const buyer = snapshotBuyer(r.memberIdentitySnapshot);
           return {
             creditNoteNumberRaw: r.creditNoteNumberRaw,
             issueDate: r.issueDate,
-            legalName: snap?.legal_name ?? '',
-            taxId: snap?.tax_id ?? '',
+            legalName: buyer.legalName,
+            taxId: buyer.taxId,
             creditAmountSatang: r.creditAmountSatang,
             vatSatang: r.vatSatang,
             totalSatang: r.totalSatang,
@@ -2051,13 +2054,8 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
             ),
           );
         for (const r of rows) {
-          const snap = r.memberIdentitySnapshot as {
-            legal_name?: string;
-            tax_id?: string | null;
-          } | null;
           out.set(r.invoiceId, {
-            legalName: snap?.legal_name ?? '',
-            taxId: snap?.tax_id ?? '',
+            ...snapshotBuyer(r.memberIdentitySnapshot),
             currency: r.currency,
             receiptDocumentNumberRaw: r.receiptDocumentNumberRaw,
             documentNumberRaw: r.documentNumberRaw,

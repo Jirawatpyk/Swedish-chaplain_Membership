@@ -33,8 +33,9 @@
  * the receipt `paid` at full value: no §86/10 note, so no credit-note row.
  * Each one completed in the range (Bangkok day of `completed_at`) follows the
  * credit-note rows as a negative row: Total −amount, Status
- * `Refund (no credit note)`, the refunded payment's method, and the original
- * document in `Reference Document No.`. Subtotal, VAT % and VAT stay BLANK —
+ * `Refund (no credit note)`, the refund's own id in `Invoice No.` (as a credit
+ * note's number sits there; runbook Query A `refund_id`), the refunded
+ * payment's method, and the original document in `Reference Document No.`. Subtotal, VAT % and VAT stay BLANK —
  * no document reduced output VAT, so the VAT column still sums to the
  * register's net figure — and so does Tax Point Date: a refund has no §78/1
  * tax point (thai-tax-compliance-auditor, 23 Oct). The refund date sits in
@@ -138,6 +139,8 @@ export type PaymentMethodLookupPort = (
 
 /** One refund settled with no credit note, as the export's refund row needs it. */
 export interface WaivedRefundForExport {
+  /** The row's own identifier — two equal refunds on one day stay apart. */
+  readonly refundId: string;
   readonly invoiceId: string;
   readonly amountSatang: bigint;
   /** Bangkok-local `YYYY-MM-DD` the refund completed. */
@@ -232,18 +235,24 @@ export async function exportPaidInvoicesCsv(
   let refundReferences: ReadonlyMap<string, RefundReferenceExportRow>;
   try {
     const range = { from: input.from, to: input.to };
-    [inRange, creditNotes, waivedRefunds] = await Promise.all([
+    // The refunds' invoice references need the refund rows, so they chain
+    // on that read while the receipt and credit-note reads run alongside.
+    [inRange, creditNotes, [waivedRefunds, refundReferences]] = await Promise.all([
       deps.registerRepo.listForExport(input.tenantId, range),
       deps.registerRepo.listCreditNotesForExport(input.tenantId, range),
-      deps.waivedRefundLookup(input.tenantId, range),
+      deps.waivedRefundLookup(input.tenantId, range).then(
+        async (refunds) =>
+          [
+            refunds,
+            refunds.length > 0
+              ? await deps.registerRepo.listRefundReferencesForExport(
+                  input.tenantId,
+                  [...new Set(refunds.map((r) => r.invoiceId))],
+                )
+              : new Map<string, RefundReferenceExportRow>(),
+          ] as const,
+      ),
     ]);
-    refundReferences =
-      waivedRefunds.length > 0
-        ? await deps.registerRepo.listRefundReferencesForExport(
-            input.tenantId,
-            [...new Set(waivedRefunds.map((r) => r.invoiceId))],
-          )
-        : new Map();
   } catch (e) {
     // P2 Wave-0 — the use-case RETURNS `list_failed` (does not re-throw), so the
     // route never sees `e`; without this log a Neon transient during the paid-
@@ -401,7 +410,7 @@ function buildCreditNoteRow(cn: CreditNoteExportRow): string {
 
 /**
  * Spec 124 (D-p) — a refund settled with no credit note as a NEGATIVE row:
- * dated by the refund, Total only (no Subtotal / VAT: no document reduced
+ * dated by the refund, numbered by its refund id, Total only (no Subtotal / VAT: no document reduced
  * output VAT), no tax point, and the original document — resolved like a
  * credit note's — in `Reference Document No.`.
  */
@@ -416,7 +425,7 @@ function buildWaivedRefundRow(
   });
   const cells: readonly string[] = [
     refund.completedDate,
-    '',
+    refund.refundId,
     '',
     reference.legalName,
     reference.taxId,

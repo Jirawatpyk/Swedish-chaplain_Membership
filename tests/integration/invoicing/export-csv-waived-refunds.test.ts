@@ -19,6 +19,8 @@ import { seedMiniScenario } from '../insights/invoice-dashboard-mini-seed';
 import { invoiceDashboardSourceAdapter } from '@/modules/insights/infrastructure/sources/invoice-dashboard-source-adapter';
 
 const REFUND_STATUS = 'Refund (no credit note)';
+/** The waived refund whose row is pinned cell by cell. */
+const REMAY_REFUND_ID = `rf_csv_${randomUUID()}`;
 
 type Row = Record<string, string>;
 
@@ -75,7 +77,7 @@ describe('CSV export — refunds with no credit note', () => {
       ],
       refunds: [
         // The waived refund: completed 10 June, Bangkok noon.
-        { paymentKey: 'p1', invoiceKey: 'reMay', status: 'succeeded', amount: 107_000, initiatedAt: new Date('2026-06-10T04:00:00Z'), completedAt: new Date('2026-06-10T05:00:00Z') },
+        { id: REMAY_REFUND_ID, paymentKey: 'p1', invoiceKey: 'reMay', status: 'succeeded', amount: 107_000, initiatedAt: new Date('2026-06-10T04:00:00Z'), completedAt: new Date('2026-06-10T05:00:00Z') },
         // Never moved money / not yet: no row.
         { paymentKey: 'p2', invoiceKey: 'pend', status: 'pending', amount: 50_000, initiatedAt: new Date('2026-06-11T04:00:00Z') },
         { paymentKey: 'p2', invoiceKey: 'pend', status: 'failed', amount: 60_000, initiatedAt: new Date('2026-06-11T05:00:00Z') },
@@ -129,7 +131,7 @@ describe('CSV export — refunds with no credit note', () => {
     expect(june).toEqual([
       {
         'Issue Date': '2026-06-10',
-        'Invoice No.': '',
+        'Invoice No.': REMAY_REFUND_ID,
         'Receipt No.': '',
         'Customer Legal Name': 'Buyer reMay',
         'Customer Tax ID': '1234567890123',

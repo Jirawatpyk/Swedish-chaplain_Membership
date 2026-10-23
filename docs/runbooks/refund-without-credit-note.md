@@ -230,7 +230,8 @@ accountant receives shows it without running Query A:
   VAT % and VAT are blank (no document reduced output VAT).
 - The refund's date is in `Issue Date` — the Bangkok date it completed — though
   no document was issued that day; `Tax Point Date` is blank (a refund has no
-  §78/1 tax point). `Reference Document No.` is the original receipt or INV.
+  §78/1 tax point). `Invoice No.` holds the refund's id (Query A's
+  `refund_id`); `Reference Document No.` is the original receipt or INV.
 - To split a multi-month file by month, use `Tax Point Date`, and `Issue Date`
   where it is blank. That rule holds for every row type in the file.
 
