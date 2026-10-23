@@ -74,6 +74,7 @@ function stubSource(over: Partial<InvoiceDashboardSource> = {}): InvoiceDashboar
       refundsPendingOverThreshold: 0,
     }),
     oldestOverdue: vi.fn().mockResolvedValue([]),
+    hasNonDraftInvoice: vi.fn().mockResolvedValue(true),
     ...over,
   };
 }
@@ -155,6 +156,72 @@ describe('loadInvoiceDashboardTiles', () => {
       to: '2026-06-15',
     });
     expect(result.value.collectedInFiscalYear.toDate).toBe(true);
+  });
+
+  // Slice 3: the page reads aging once and hands it to both cards, so the
+  // aging rows always add up to the Outstanding tile (two reads in two
+  // transactions could straddle a write).
+  it('given the aging card’s result, Outstanding and Overdue come from it and aging is not read again', async () => {
+    const source = stubSource();
+    const aging = await loadInvoiceDashboardAging(
+      ctx,
+      input(),
+      deps(
+        stubSource({
+          outstandingByAgingBucket: vi.fn().mockResolvedValue([
+            { bucket: 'not_yet_due', amountSatang: 100_00n, count: 1 },
+            { bucket: 'days_31_60', amountSatang: 300_00n, count: 2 },
+          ]),
+        }),
+      ),
+    );
+    if (!aging.ok) throw new Error('aging stub failed');
+    const result = await loadInvoiceDashboardTiles(ctx, input(), deps(source), aging.value);
+    expect(source.outstandingByAgingBucket).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.outstanding).toEqual({ amountSatang: 400_00n, count: 3 });
+    expect(result.value.overdue).toEqual({ amountSatang: 300_00n, count: 2 });
+  });
+
+  // US5.2: "No invoices yet" is about the tenant, not the filters: the check
+  // ignores them, so a filter that matches nothing never shows it.
+  // #623 review: the probe only decides the empty state; it must never cost
+  // the tiles, and it is not run when the figures already show invoices.
+  it('a failing any-invoice probe leaves the tiles standing (reads as "has invoices")', async () => {
+    const result = await loadInvoiceDashboardTiles(
+      ctx,
+      input(),
+      deps(stubSource({ hasNonDraftInvoice: vi.fn().mockRejectedValue(new TypeError('connection reset')) })),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.anyNonDraftInvoice).toBe(true);
+  });
+
+  it('skips the any-invoice probe when the figures already count an invoice', async () => {
+    const hasNonDraftInvoice = vi.fn().mockResolvedValue(false);
+    const result = await loadInvoiceDashboardTiles(
+      ctx,
+      input(),
+      deps(
+        stubSource({
+          hasNonDraftInvoice,
+          outstandingByAgingBucket: vi.fn().mockResolvedValue([{ bucket: 'days_1_30', amountSatang: 1n, count: 1 }]),
+        }),
+      ),
+    );
+    expect(hasNonDraftInvoice).not.toHaveBeenCalled();
+    expect(result.ok && result.value.anyNonDraftInvoice).toBe(true);
+  });
+
+  it('reports whether the tenant has any non-draft invoice, unfiltered', async () => {
+    const hasNonDraftInvoice = vi.fn().mockResolvedValue(false);
+    const result = await loadInvoiceDashboardTiles(ctx, input(), deps(stubSource({ hasNonDraftInvoice })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.anyNonDraftInvoice).toBe(false);
+    expect(hasNonDraftInvoice).toHaveBeenCalledWith(ctx);
   });
 
   it('December rolls the month range into the next year correctly', async () => {

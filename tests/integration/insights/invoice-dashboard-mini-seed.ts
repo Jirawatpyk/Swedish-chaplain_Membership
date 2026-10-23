@@ -105,6 +105,8 @@ export interface MiniRefund {
 export interface MiniScenario {
   readonly invoices: readonly MiniPaidInvoice[];
   readonly voids?: readonly MiniVoidInvoice[];
+  /** Draft invoices (keys only): never issued, so never a figure. */
+  readonly drafts?: readonly { readonly key: string }[];
   readonly creditNotes?: readonly MiniCreditNote[];
   readonly payments?: readonly MiniPayment[];
   readonly refunds?: readonly MiniRefund[];
@@ -207,6 +209,22 @@ export async function seedMiniScenario(
       pdfBlobKey: `invoicing/mini/${o.key}.pdf`,
       pdfSha256: 'd'.repeat(64),
       pdfTemplateVersion: 1,
+    };
+  });
+
+  const draftRows = (scenario.drafts ?? []).map((o) => {
+    const invoiceId = randomUUID();
+    ids[o.key] = invoiceId;
+    return {
+      tenantId: slug,
+      invoiceId,
+      invoiceSubject: 'membership' as const,
+      memberId,
+      planId: 'gold',
+      planYear: 2026,
+      origin: 'manual' as const,
+      draftByUserId: user.userId,
+      dueDate: '2026-07-15',
     };
   });
 
@@ -326,6 +344,7 @@ export async function seedMiniScenario(
     });
     if (invoiceRows.length > 0) await tx.insert(invoices).values(invoiceRows);
     if (voidRows.length > 0) await tx.insert(invoices).values(voidRows);
+    if (draftRows.length > 0) await tx.insert(invoices).values(draftRows);
     if (creditNoteRows.length > 0) await tx.insert(creditNotes).values(creditNoteRows);
     if (paymentRows.length > 0) await tx.insert(payments).values(paymentRows);
     if (refundRows.length > 0) await tx.insert(refunds).values(refundRows);

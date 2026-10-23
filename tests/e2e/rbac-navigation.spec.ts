@@ -71,6 +71,8 @@ const MUST_NOT_SEE: Readonly<Record<string, readonly string[]>> = {
     '/admin/settings/integrations/eventcreate',
   ],
   marketing: [
+    // 124 — the invoice dashboard (`invoicing.read` + `insights.finance`).
+    '/admin/finance',
     '/admin/invoices',
     '/admin/credit-notes',
     '/admin/renewals',

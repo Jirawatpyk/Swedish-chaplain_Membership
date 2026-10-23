@@ -9,6 +9,7 @@ import {
 import { MARKETING_TURN_QUEUE_HREF } from '@/app/(staff)/admin/broadcasts/_lib/queue-view';
 import {
   LayoutDashboardIcon,
+  ChartColumnIcon,
   FileTextIcon,
   UsersIcon,
   UserCircleIcon,
@@ -144,6 +145,9 @@ export type NavVisibilityFlag =
   // F114 — `env.features.memberChangeApproval`: the change-request queue
   // 404s while the platform flag is OFF, so its nav item is dropped too.
   | 'memberChangeApproval'
+  // 124 — `env.features.invoiceDashboard`: `/admin/finance` 404s while the
+  // flag is OFF, so its nav item is dropped too.
+  | 'invoiceDashboard'
   // F119 #400 U2 — the E-Blast approval round is VISIBLE (R18: the flag is on,
   // or a row still sits in a round-only stage). Resolved by the staff layout
   // from the nav badge's own read; gates a link target, never an item.
@@ -408,11 +412,22 @@ export const staffNavConfig: NavConfig = {
         },
       ],
     },
-    // Finance — billing surfaces (invoices + credit notes). Payments live
-    // inside the invoice flow; promote here if they ever become top-level.
+    // Finance — billing surfaces (dashboard, invoices, credit notes). Payments
+    // live inside the invoice flow; promote here if they ever become top-level.
     {
       titleKey: 'nav.staff.sections.finance',
       items: [
+        // 124 — the invoice dashboard (receivables and collections). Its page
+        // also needs `insights.finance` (checked inside, notFound otherwise);
+        // every role holding `invoicing.read` holds that too.
+        {
+          titleKey: 'nav.staff.invoiceDashboard',
+          icon: ChartColumnIcon,
+          href: '/admin/finance',
+          guard: defineGuard('invoicing.read'),
+          activePattern: '/admin/finance',
+          visibilityFlag: 'invoiceDashboard',
+        },
         {
           titleKey: 'nav.staff.invoices',
           icon: ReceiptIcon,

@@ -1974,7 +1974,7 @@ on both outcomes, so a query that is slow and then fails still counts.
 
 | Metric | Type | Labels | Emitted from | Purpose |
 |--------|------|--------|--------------|---------|
-| `insights_invoice_dashboard_query_duration_ms` | histogram | `card` (aging \| collected \| methods \| trend \| attention \| oldest_overdue), `outcome` (ok \| error) | `invoiceDashboardSourceAdapter` (`rows()`) | Per-query latency behind the D-j budget; error rate per card |
+| `insights_invoice_dashboard_query_duration_ms` | histogram | `card` (aging \| collected \| methods \| trend \| attention \| oldest_overdue \| any_invoice), `outcome` (ok \| error) | `invoiceDashboardSourceAdapter` (`rows()`) | Per-query latency behind the D-j budget; error rate per card |
 
 No tenant label (one tenant per deployment, MTA+STD) and no PII. `collected`
 is recorded twice per page load (this month and this fiscal year).

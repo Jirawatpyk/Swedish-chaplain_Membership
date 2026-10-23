@@ -149,7 +149,7 @@ function collectedTermsSql(t: string, range: DashboardDateRange, scope: SQL): SQ
 type Row = Record<string, unknown>;
 
 /** The `card` label of `insights_invoice_dashboard_query_duration_ms`: one per query. */
-type QueryCard = 'aging' | 'collected' | 'methods' | 'trend' | 'attention' | 'oldest_overdue';
+type QueryCard = 'aging' | 'collected' | 'methods' | 'trend' | 'attention' | 'oldest_overdue' | 'any_invoice';
 
 /**
  * One statement in its own `runInTenant`, timed from here (the transaction's
@@ -382,5 +382,19 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
       daysPastDue: Number(r.days_past_due),
       amountSatang: parseBigintColumn(r.amount, 'overdue_amount'),
     }));
+  },
+
+  async hasNonDraftInvoice(ctx): Promise<boolean> {
+    const { inv } = tables();
+    const result = await rows(
+      ctx,
+      'any_invoice',
+      sql`
+      SELECT EXISTS (
+        SELECT 1 FROM ${inv}
+        WHERE ${inv.tenantId} = ${ctx.slug} AND ${inv.status} <> 'draft'
+      ) AS any`,
+    );
+    return result[0]?.any === true;
   },
 };

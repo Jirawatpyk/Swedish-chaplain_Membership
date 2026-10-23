@@ -137,7 +137,7 @@ describe('tenancy — every table reference carries its own tenant_id predicate'
     ]);
   });
 
-  it('all six adapter statements', async () => {
+  it('all seven adapter statements', async () => {
     queries.length = 0;
     const range = { from: '2026-01-01', to: '2026-06-15' };
     const a = invoiceDashboardSourceAdapter;
@@ -147,7 +147,8 @@ describe('tenancy — every table reference carries its own tenant_id predicate'
     await a.monthlyBilledCollected(CTX, FILTERS, range, range);
     await a.attentionCounts(CTX, FILTERS, new Date('2026-06-15T05:00:00Z'));
     await a.oldestOverdue(CTX, FILTERS, '2026-06-15', 6);
-    expect(queries).toHaveLength(6);
+    await a.hasNonDraftInvoice(CTX);
+    expect(queries).toHaveLength(7);
 
     const allTables = new Set<string>();
     const allRefs: string[] = [];

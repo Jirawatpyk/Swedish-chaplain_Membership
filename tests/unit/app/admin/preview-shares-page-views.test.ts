@@ -10,6 +10,13 @@ import { describe, expect, it } from 'vitest';
 const preview = readFileSync('src/app/test-fixtures/aura-admin/page.tsx', 'utf8');
 
 describe('aura-admin preview renders the pages’ own views', () => {
+  it('the invoice dashboard through renderInvoiceDashboardView, framed at its real path (124)', () => {
+    const finance = readFileSync('src/app/test-fixtures/aura-admin/finance-previews.tsx', 'utf8');
+    expect(finance).toContain('renderInvoiceDashboardView(');
+    expect(finance).not.toContain('<AgingCard');
+    expect(preview).toContain('<StaffFrame path="/admin/finance">');
+  });
+
   it('the queue through renderChangeRequestQueueView', () => {
     expect(preview).toContain('renderChangeRequestQueueView(');
     expect(preview).not.toContain('<ChangeRequestQueueTable');

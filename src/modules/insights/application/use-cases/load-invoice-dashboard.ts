@@ -89,6 +89,8 @@ export interface InvoiceDashboardTiles {
     /** True when the range was cut at `today` (the current FY). */
     readonly toDate: boolean;
   };
+  /** The tenant has issued at least one invoice, whatever the filters (US5.2 "No invoices yet"). */
+  readonly anyNonDraftInvoice: boolean;
 }
 
 export interface InvoiceDashboardAgingRow {
@@ -116,7 +118,7 @@ export interface InvoiceDashboardAgingListQuery extends DueDateRange {
 }
 
 /** The active filters as `/admin/invoices` query keys, unfiltered keys absent. */
-function listFilterQuery(
+export function invoiceListFilterQuery(
   filters: InvoiceDashboardFilters,
 ): Pick<InvoiceDashboardAgingListQuery, 'subject' | 'plan' | 'origin'> {
   return {
@@ -242,7 +244,7 @@ async function readAging(
     count: byBucket.get(bucket)?.count ?? 0,
   }));
   const shares = allocatePercentages(rows.map((r) => Number(r.amountSatang)));
-  const filterQuery = listFilterQuery(input.filters);
+  const filterQuery = invoiceListFilterQuery(input.filters);
   return {
     totalSatang: rows.reduce((sum, r) => sum + r.amountSatang, 0n),
     count: rows.reduce((sum, r) => sum + r.count, 0),
@@ -258,30 +260,45 @@ async function readAging(
   };
 }
 
+/**
+ * `aging`, when given, is the aging card's own result for the same input: the
+ * page reads aging once and hands it to both cards, so the aging rows always
+ * add up to Outstanding (two reads could straddle a write). Without it (the
+ * aging card failed) the tiles read it themselves.
+ */
 export function loadInvoiceDashboardTiles(
   ctx: TenantContext,
   input: InvoiceDashboardLoadInput,
   deps: LoadInvoiceDashboardDeps,
+  aging?: InvoiceDashboardAging,
 ): Promise<InvoiceDashboardResult<InvoiceDashboardTiles>> {
   return guarded('tiles', ctx, deps, async () => {
     // Today's calendar month, cut at today ("{Month} to date"); today always
     // lies inside its own month, so `toDate` is always true there.
     const month = rangeToDate(calendarMonthRange(input.today), input.today).range;
     const fy = rangeToDate(input.fiscalYearRange, input.today);
-    const [aging, collectedMonth, collectedFy] = await Promise.all([
-      readAging(ctx, input, deps),
+    const [agingRead, collectedMonth, collectedFy] = await Promise.all([
+      aging ?? readAging(ctx, input, deps),
       deps.source.collectedInRange(ctx, input.filters, month),
       deps.source.collectedInRange(ctx, input.filters, fy.range),
     ]);
-    const overdueRows = aging.buckets.filter((b) => b.bucket !== 'not_yet_due');
+    // The "No invoices yet" probe: skipped when the figures already count an
+    // invoice, and it fails soft (reads as "has invoices") so it never costs
+    // the tiles their figures.
+    const anyNonDraftInvoice =
+      agingRead.count > 0 || collectedMonth.invoiceCount > 0 || collectedFy.invoiceCount > 0
+        ? true
+        : await deps.source.hasNonDraftInvoice(ctx).catch(() => true);
+    const overdueRows = agingRead.buckets.filter((b) => b.bucket !== 'not_yet_due');
     return {
-      outstanding: { amountSatang: aging.totalSatang, count: aging.count },
+      outstanding: { amountSatang: agingRead.totalSatang, count: agingRead.count },
       overdue: {
         amountSatang: overdueRows.reduce((sum, b) => sum + b.amountSatang, 0n),
         count: overdueRows.reduce((sum, b) => sum + b.count, 0),
       },
       collectedThisMonth: { ...collectedMonth, range: month, toDate: true },
       collectedInFiscalYear: { ...collectedFy, range: fy.range, toDate: fy.toDate },
+      anyNonDraftInvoice,
     };
   });
 }

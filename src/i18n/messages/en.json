@@ -2627,6 +2627,136 @@
         }
       }
     },
+    "invoiceDashboard": {
+      "meta": {
+        "title": "Invoice dashboard"
+      },
+      "title": "Invoice dashboard",
+      "asOf": "As of {dateTime} · {fiscalYear} · all amounts incl. VAT",
+      "asOfEmpty": "{fiscalYear} · all amounts incl. VAT",
+      "fiscalYearLabel": "FY {year} ({fromMonth}–{toMonth})",
+      "fiscalYearShort": "FY {year}",
+      "actions": {
+        "exportCsv": "Export CSV",
+        "viewInvoices": "View invoices",
+        "more": "More actions (Export CSV)"
+      },
+      "filters": {
+        "groupLabel": "Dashboard filters",
+        "type": "Invoice type",
+        "typeAll": "All invoices",
+        "typeMembership": "Membership",
+        "typeEvent": "Events",
+        "fiscalYear": "Fiscal year",
+        "plan": "Plan",
+        "planAll": "All plans",
+        "origin": "Origin",
+        "originAll": "All origins",
+        "originManual": "Created by staff",
+        "originAutoRenewal": "Auto-renewal",
+        "allShort": "All",
+        "chip": "{label}: {value}"
+      },
+      "tiles": {
+        "sectionLabel": "Key figures, all incl. VAT",
+        "outstanding": "Outstanding",
+        "outstandingCaption": "{count, plural, one {# unpaid invoice} other {# unpaid invoices}} · as of today",
+        "overdue": "Overdue",
+        "overdueCaption": "{count, plural, one {# invoice} other {# invoices}} past due · as of today",
+        "collectedMonth": "Collected this month",
+        "collectedMonthCaption": "{month} to date · not affected by the fiscal-year filter",
+        "collectedFiscalYear": "Collected in {fiscalYear}",
+        "collectedFiscalYearToDate": "{fiscalYear} to date",
+        "collectedFiscalYearWhole": "{fiscalYear} · {from} – {to}",
+        "title": "Key figures"
+      },
+      "aging": {
+        "title": "Unpaid invoices by age",
+        "description": "As of today · all years · days past the due date",
+        "lead": "{percent}% overdue",
+        "leadOf": "{overdue} of {total, plural, one {# unpaid invoice} other {# unpaid invoices}}",
+        "listLabel": "Unpaid invoices by days past due",
+        "rowName": "{bucket}: {amount}, {count, plural, one {# invoice} other {# invoices}}",
+        "footer": "Total {amount}. Each row opens the invoices in that range.",
+        "bucket": {
+          "not_yet_due": "Not yet due",
+          "days_1_30": "1–30 days",
+          "days_31_60": "31–60 days",
+          "days_61_90": "61–90 days",
+          "over_90": "Over 90 days"
+        }
+      },
+      "attention": {
+        "title": "Needs attention",
+        "underFilters": "Under these filters",
+        "nothing": "Nothing needs attention",
+        "nothingFiltered": "Nothing needs attention under these filters",
+        "rowName": "{label}: {count}",
+        "manualDrafts": "Draft invoices not issued",
+        "autoRenewalDrafts": "Auto-renewal drafts to review",
+        "receiptPdfFailed": "Receipt PDF could not be created",
+        "refundsFailedAtStripe": "Refunds failed at Stripe",
+        "refundsPendingOverThreshold": "Refunds pending at Stripe for more than 3 days"
+      },
+      "oldest": {
+        "title": "Oldest overdue",
+        "description": "As of today · longest past due first",
+        "caption": "Oldest overdue invoices",
+        "document": "Document",
+        "buyer": "Buyer",
+        "due": "Due",
+        "overdue": "Overdue",
+        "amount": "Amount",
+        "actions": "Actions",
+        "days": "{days, plural, one {# day} other {# days}}",
+        "recordPayment": "Record payment…",
+        "recordPaymentAria": "Record payment for {document}",
+        "allOverdue": "All overdue invoices ({count})",
+        "allOverdueNoCount": "All overdue invoices",
+        "none": "No invoices are overdue"
+      },
+      "trend": {
+        "title": "Billed vs collected",
+        "description": "{fiscalYear} by month · billed by issue date, voided invoices left out, less credit notes issued that month · collected by payment date, less credit notes issued that month and refunds without a credit note",
+        "vatNote": "This is a billing view, not a VAT report. A past month can change when one of its invoices is voided. VAT figures are in the tax-document register.",
+        "totalBilled": "Billed, {range}",
+        "totalCollected": "Collected, {range}",
+        "legendBilled": "Billed",
+        "legendCollected": "Collected",
+        "legendPartial": "{month} so far (lighter)",
+        "legendFuture": "{months} not yet",
+        "tableCaption": "Billed and collected by month",
+        "month": "Month",
+        "notYet": "Not yet"
+      },
+      "methods": {
+        "title": "Collected by payment method",
+        "descriptionToDate": "{fiscalYear} to date · by payment date",
+        "descriptionWhole": "{fiscalYear} · by payment date",
+        "listLabel": "Collected by payment method",
+        "footer": "Total {amount}. Card and PromptPay are paid online via Stripe, before Stripe fees. The others are recorded by staff.",
+        "method": {
+          "bank_transfer": "Bank transfer",
+          "promptpay": "PromptPay",
+          "card": "Card",
+          "cheque": "Cheque",
+          "cash": "Cash",
+          "other": "Other"
+        }
+      },
+      "states": {
+        "noMatch": "No invoices match these filters",
+        "cardError": "{card} could not be loaded.",
+        "cardErrorDescription": "Other figures on this page are not affected. Reference: {referenceId}.",
+        "tryAgain": "Try again",
+        "loading": "Loading the invoice dashboard",
+        "loadingAsOf": "Loading figures…",
+        "emptyTitle": "No invoices yet",
+        "emptyDescription": "Figures appear here as soon as the first invoice is issued. Drafts are not counted.",
+        "newInvoice": "New invoice",
+        "loadingCard": "Loading…"
+      }
+    },
     "invoices": {
       "tax088": {
         "taxReceiptTitle": "ใบกำกับภาษี/ใบเสร็จรับเงิน / Tax Invoice & Receipt",
@@ -6194,6 +6324,7 @@
       "expand": "Expand sidebar",
       "ariaLabel": "Staff navigation",
       "members": "Members",
+      "invoiceDashboard": "Invoice dashboard",
       "invoices": "Invoices",
       "creditNotes": "Credit Notes",
       "broadcasts": "Broadcasts",
@@ -6236,6 +6367,7 @@
     "newMember": "New Member",
     "editMember": "Edit",
     "invoices": "Invoices",
+    "finance": "Invoice dashboard",
     "invoiceDetail": "Details",
     "newInvoice": "New Invoice",
     "credit-notes": "Credit Notes",

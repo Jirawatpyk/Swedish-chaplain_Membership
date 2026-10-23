@@ -372,6 +372,8 @@ describe('buildBreadcrumbStaticLabels (real en.json breadcrumb copy)', () => {
       ['Events', 'Event', 'Registrations', 'Registration', 'Erase personal data'],
     ],
     ['/admin/invoices/registers', ['Invoices', 'Tax registers']],
+    // 124 — the invoice dashboard read "finance" in the top bar.
+    ['/admin/finance', ['Invoice dashboard']],
     ['/admin/renewals/tasks', ['Renewals', 'Escalation tasks']],
     ['/admin/renewals/tier-upgrades', ['Renewals', 'Tier upgrade queue']],
     ['/admin/settings/member-changes', ['Settings', 'Member change approval']],

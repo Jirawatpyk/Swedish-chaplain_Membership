@@ -245,6 +245,8 @@ const STATIC_LABEL_KEYS = {
   fees: 'fees',
   account: 'account',
   invoices: 'invoices',
+  // 124 — `/admin/finance`, the invoice dashboard.
+  finance: 'finance',
   'credit-notes': 'credit-notes',
   void: 'void',
   pay: 'pay',

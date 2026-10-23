@@ -13,4 +13,5 @@ Present-tense state of production flags and cutovers. Hand-curated and updated i
   - `e2e-nightly.yml` runs the full suite on chromium at 19:00 UTC (02:00 Bangkok), in four shards with one retry. It migrates from zero, and a failure opens or comments on an `e2e-nightly` issue.
   - `ci-e2e-parent-refresh.yml` migrates the CI parent branch on every push to `main`. Its first run is the first push after #586 merges.
   - `ci-e2e-branch-sweep.yml` runs daily at 22:00 UTC and is a **dry run** until the repo variable `CI_E2E_SWEEP_ENABLED` is set to `true`.
+- **Invoice dashboard (spec 124)**: slice 3 adds `/admin/finance` behind `FEATURE_INVOICE_DASHBOARD`, **OFF** (absent from Vercel) at merge: the route 404s and the nav item is hidden. Turning it on is a production deploy, on the maintainer's word. Slices 1–2 (the list's `dueAfter` / `plan` filters, the insights loaders, migration 0318) are live and unflagged.
 - **AURA migration (spec 122)**: in progress, one PR per phase. The pinned version is in `package.json`; the ledger and open handoff items are in `docs/aura-adoption.md`.

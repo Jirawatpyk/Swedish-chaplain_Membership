@@ -31,6 +31,7 @@ export const OBSERVED_PAGES: readonly ObservedSurface[] = [
   { surface: '/admin/broadcasts/[id]', kind: 'page', key: 'broadcasts.read' },
   { surface: '/admin/credit-notes/[creditNoteId]', kind: 'page', key: 'invoicing.read' },
   { surface: '/admin/directory', kind: 'page', key: 'directory.export' },
+  { surface: '/admin/finance', kind: 'page', key: 'invoicing.read' },
   { surface: '/admin/invoices', kind: 'page', key: 'invoicing.read' },
   { surface: '/admin/invoices/[invoiceId]', kind: 'page', key: 'invoicing.read' },
   { surface: '/admin/members', kind: 'page', key: 'members.read' },

@@ -92,6 +92,7 @@ export default async function StaffLayout({ children }: { children: ReactNode })
             broadcastsEnabled: env.features.f7Broadcasts,
             eventsEnabled: env.features.f6EventCreate,
             memberChangeApproval: env.features.memberChangeApproval,
+            invoiceDashboard: env.features.invoiceDashboard,
             // #400 U2 — `ok` is exactly R18's "flag on, or a row in the
             // round" (the read answers `hidden`/flag_off otherwise). A failed
             // or timed-out read cannot show the round is visible, so the
