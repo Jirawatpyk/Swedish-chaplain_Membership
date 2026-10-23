@@ -22,6 +22,7 @@ vi.mock('@/lib/toast', () => ({ toast }));
 
 const { ArchiveMemberButton } = await import('@/components/members/archive-member-button');
 const { EraseMemberButton } = await import('@/components/members/erase-member-button');
+const { takeErasedBannerFocus } = await import('@/components/members/erased-banner-focus');
 
 const AR = enMessages.admin.members.archive;
 const ER = enMessages.admin.members.erase;
@@ -155,6 +156,10 @@ describe('EraseMemberButton (T555)', () => {
       verificationMethod: 'in_person',
       note: 'DPO-7',
     });
+    // #240: the ⋯ menu unmounts with the refresh, so the success hands focus
+    // to the Erased banner that replaces it.
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(takeErasedBannerFocus('m-1')).toBe(true);
   });
 
   // UX review M5 (ux-standards § 6.4): a refusal is said inside the dialog,
@@ -177,5 +182,6 @@ describe('EraseMemberButton (T555)', () => {
     expect(alert).toHaveTextContent(ER.eraseNotFound);
     await waitFor(() => expect(document.activeElement).toBe(alert));
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(takeErasedBannerFocus('m-1')).toBe(false);
   });
 });
