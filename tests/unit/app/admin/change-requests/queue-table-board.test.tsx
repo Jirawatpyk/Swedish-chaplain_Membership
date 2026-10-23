@@ -61,10 +61,24 @@ describe('change-request queue as on the board (US5a)', () => {
     expect(screen.getByTestId('queue-table')).toHaveClass('aura-tbl--middle');
   });
 
+  it('#174 stand-in: Submitted hides while the box is a narrow grid; text cells wrap between words', async () => {
+    render(await ChangeRequestQueueTable({ items: [item] }));
+    const head = screen.getByRole('columnheader', { name: 'admin.changeRequests.queue.columns.submitted' });
+    const row = screen.getByTestId('queue-row');
+    const [memberCell, submitterCell, fieldsCell, submittedCell] = within(row).getAllByRole('cell');
+    for (const el of [head, submittedCell]) {
+      expect(el).toHaveClass('@min-[641px]/aura-tbl:@max-[900px]/aura-tbl:hidden');
+    }
+    expect(submittedCell).toHaveClass('whitespace-nowrap');
+    for (const el of [memberCell, submitterCell, fieldsCell]) expect(el).toHaveClass('[overflow-wrap:normal]');
+  });
+
   it('keeps "Overdue" on the line of the waiting time', async () => {
     render(await ChangeRequestQueueTable({ items: [item] }));
     const badge = screen.getByTestId('overdue-badge');
     expect(badge.parentElement).toHaveClass('flex-nowrap');
+    // #174 stand-in: only while the box is a narrow grid it drops below.
+    expect(badge.parentElement).toHaveClass('@min-[641px]/aura-tbl:@max-[900px]/aura-tbl:flex-wrap');
   });
 
   it('lays out the phone card with AURA’s card slots: the company as title, Review as action', async () => {

@@ -791,6 +791,23 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - #175 (76): the sticky header covering the first row of a wide table.
   - All three are listed open in `docs/aura-adoption.md`.
 
+### Session 2026-10-23 (static tables, part 2: templates and change requests)
+
+- **The sweep:** I measured the other `Td card="title"` tables in EN/SV/TH at 768, 1024 and 1280 for words broken across lines and for box overflow.
+  - At-risk and invoice detail were clean.
+  - Lapsed and pending review have no fixture view, but they have 4–5 short columns.
+  - Two tables broke:
+    - **Templates** at 1024 with the sidebar: "Newslet/ter", "Svensk/a". The box overflowed by 130–196px and the page scrolled 47px. The cause: Subject (a 24rem truncated cell) showed by viewport (≥ 1024), not by box.
+    - **Change requests** at 768 and 1024: "Midso/mmar", "docume/nts". The box overflowed by 56–142px. The cause: three nowrap cells (Submitted, Waiting with its pill, Status).
+- **The fix** (#174 stand-in, maintainer's choices, 23 Oct). While the table box is a narrow grid (641–900px):
+  - Templates **Subject** steps aside. It shows on phone cards and in the wide table.
+  - Change requests **Submitted** steps aside; Waiting says the same.
+  - The **Overdue** pill drops below the wait. The phone card and the wide table keep it on one line.
+  - Name, locale, member, submitter and fields cells take `[overflow-wrap:normal]`.
+- **Result:** no word breaks in either table.
+  - Templates fits its box.
+  - Change requests fits, except SV at 1024 with a fine pointer, where it is 3px over and nothing is clipped.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

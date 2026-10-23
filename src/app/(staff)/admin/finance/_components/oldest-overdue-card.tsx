@@ -30,10 +30,10 @@ export const OLDEST_OVERDUE_TITLE_ID = 'oldest-overdue-title';
 /** Shown on a phone; the rest of the six are hidden there. */
 const PHONE_ROWS = 3;
 
-/** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2, AURA #172). */
 /** The due date steps aside in a narrow grid (the days overdue say the same); the phone card keeps it. */
 const HIDE_IN_NARROW_GRID = '@min-[641px]/aura-tbl:@max-[800px]/aura-tbl:hidden';
 
+/** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2, AURA #172). */
 const DOCUMENT_LINK = linkClass({ underline: 'hover', touchHeight: true, className: 'font-medium' });
 
 function triggerIdOf(invoiceId: string): string {
