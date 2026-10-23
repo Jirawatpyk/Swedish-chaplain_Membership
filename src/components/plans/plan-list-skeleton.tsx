@@ -19,7 +19,7 @@
  */
 import { Table, TBody, THead, Td, Th, Tr } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
-import { HIDE_IN_CARD } from './plans-table-card';
+import { HIDE_IN_CARD, HIDE_WHEN_NARROW } from './plans-table-card';
 
 const DEFAULT_ROW_COUNT = 9; // matches the SweCham 2026 seed row count
 
@@ -41,7 +41,7 @@ const CELL_PROPS = [
   {},
   { numeric: true },
   {},
-  { className: HIDE_IN_CARD },
+  { className: HIDE_WHEN_NARROW },
   { card: 'action', className: 'self-center' },
   { className: HIDE_IN_CARD },
 ] as const;
@@ -53,7 +53,7 @@ export function PlanListSkeleton({ caption, heads, rowCount = DEFAULT_ROW_COUNT 
         <THead>
           <Tr>
             {heads.map((head, i) => (
-              <Th key={head} style={{ width: COLUMN_SHARES[i] }} {...(i === 2 ? { numeric: true } : {})}>
+              <Th key={head} style={{ width: COLUMN_SHARES[i] }} {...(i === 2 ? { numeric: true } : {})} {...(i === 4 ? { className: HIDE_WHEN_NARROW } : {})}>
                 {head}
               </Th>
             ))}

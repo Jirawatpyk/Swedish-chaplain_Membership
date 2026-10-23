@@ -62,7 +62,7 @@ import { usePlanActions } from './use-plan-actions';
 import type { PlanListItem } from '@/modules/plans';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { formatVatRateBps } from '@/lib/format-vat-rate';
-import { HIDE_IN_CARD } from './plans-table-card';
+import { HIDE_WHEN_NARROW } from './plans-table-card';
 
 export interface PlansTableProps {
   readonly plans: ReadonlyArray<PlanListItem>;
@@ -352,7 +352,7 @@ export function PlansTable({
             <Th>{t('columns.category')}</Th>
             <Th numeric>{t('columns.annualFee')}</Th>
             <Th>{t('columns.memberType')}</Th>
-            <Th>{t('columns.year')}</Th>
+            <Th className={HIDE_WHEN_NARROW}>{t('columns.year')}</Th>
             <Th>{t('columns.status')}</Th>
             {canWritePlans ? <Th>{t('columns.actions')}</Th> : null}
           </Tr>
@@ -437,7 +437,7 @@ export function PlansTable({
                     />
                   </Td>
                   <Td>{tOptions(`memberTypeScope.${plan.member_type_scope}`)}</Td>
-                  <Td className={HIDE_IN_CARD}>{formatCalendarYear(plan.plan_year, locale)}</Td>
+                  <Td className={HIDE_WHEN_NARROW}>{formatCalendarYear(plan.plan_year, locale)}</Td>
                   {/* Beside the name on a card, as the phone board draws it,
                       centred on the name's 44px line (AURA's card row aligns
                       its items to the top). */}
