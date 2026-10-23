@@ -104,6 +104,21 @@ export interface CreditNoteExportRow {
   readonly originalVatRateRaw: string | null;
 }
 
+/**
+ * Spec 124 (D-p) — what a refund-with-no-credit-note CSV row takes from the
+ * refunded invoice: the buyer as the invoice's member snapshot recorded it,
+ * and the document numbers `resolveCreditNoteOriginalDocuments` picks the
+ * reference from (RC/RE, else the combined-mode INV).
+ */
+export interface RefundReferenceExportRow {
+  readonly legalName: string;
+  readonly taxId: string;
+  readonly currency: string;
+  readonly receiptDocumentNumberRaw: string | null;
+  readonly documentNumberRaw: string | null;
+  readonly billDocumentNumberRaw: string | null;
+}
+
 export interface TaxRegisterRepo {
   /**
    * Return every receipt whose PAYMENT date (`payment_date` tax point, else
@@ -193,4 +208,18 @@ export interface TaxRegisterRepo {
       readonly to: string;
     },
   ): Promise<readonly CreditNoteExportRow[]>;
+
+  /**
+   * Spec 124 (D-p) — the refunded invoices' reference rows, keyed by invoice
+   * id. Paid-family invoices only (`paid` / `partially_credited` /
+   * `credited`) — the set the dashboard's Collected nets a waived refund
+   * through; a voided receipt is never in the file, so its refund gets no row
+   * either. No receipt-number predicate — a combined-mode INV with no receipt
+   * still resolves, so a refund never drops out silently. RLS-scoped via
+   * `runInTenant`.
+   */
+  listRefundReferencesForExport(
+    tenantId: string,
+    invoiceIds: readonly string[],
+  ): Promise<ReadonlyMap<string, RefundReferenceExportRow>>;
 }

@@ -32,6 +32,7 @@ import type { HandleCancelEventDeps } from '../application/use-cases/handle-canc
 import type { ListSucceededPaymentMethodsDeps } from '../application/use-cases/list-succeeded-payment-methods';
 import type { ListCollectedPaymentMethodsDeps } from '../application/use-cases/list-collected-payment-methods';
 import type { ListWaivedRefundTotalsByInvoiceDeps } from '../application/use-cases/list-waived-refund-totals-by-invoice';
+import type { ListWaivedRefundsCompletedBetweenDeps } from '../application/use-cases/list-waived-refunds-completed-between';
 import type { CountPendingRefundsForInvoiceDeps } from '../application/use-cases/count-pending-refunds-for-invoice';
 import type { LoadInvoicePaymentActivityDeps } from '../application/use-cases/load-invoice-payment-activity';
 import type { IssueRefundDeps } from '../application/use-cases/issue-refund';
@@ -338,6 +339,15 @@ export function makeListCollectedPaymentMethodsDeps(
 export function makeListWaivedRefundTotalsByInvoiceDeps(
   tenantId: string,
 ): ListWaivedRefundTotalsByInvoiceDeps {
+  return {
+    refundsRepo: makeDrizzleRefundsRepo(tenantId),
+  };
+}
+
+// Spec 124 (D-p) — the CSV export's waived-refund rows.
+export function makeListWaivedRefundsCompletedBetweenDeps(
+  tenantId: string,
+): ListWaivedRefundsCompletedBetweenDeps {
   return {
     refundsRepo: makeDrizzleRefundsRepo(tenantId),
   };

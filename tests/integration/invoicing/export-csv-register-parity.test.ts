@@ -262,6 +262,7 @@ describe('paid-invoices CSV export ↔ ภ.พ.30 register parity (live Neon)', 
       registerRepo: makeDrizzleTaxRegisterRepo(tenant.ctx.slug),
       audit: f4AuditAdapter,
       paymentMethodLookup: async () => new Map<string, 'card' | 'promptpay'>(),
+      waivedRefundLookup: async () => [],
     };
   }
 

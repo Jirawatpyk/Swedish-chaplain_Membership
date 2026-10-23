@@ -129,6 +129,17 @@ export type {
   ListWaivedRefundTotalsByInvoiceDeps,
 } from './application/use-cases/list-waived-refund-totals-by-invoice';
 export { makeListWaivedRefundTotalsByInvoiceDeps } from './infrastructure/di';
+// Spec 124 (D-p) — the paid-invoices CSV's negative rows for waived refunds.
+export {
+  listWaivedRefundsCompletedBetween,
+} from './application/use-cases/list-waived-refunds-completed-between';
+export type {
+  ListWaivedRefundsCompletedBetweenInput,
+  ListWaivedRefundsCompletedBetweenOutput,
+  ListWaivedRefundsCompletedBetweenDeps,
+} from './application/use-cases/list-waived-refunds-completed-between';
+export type { WaivedRefundExportRow } from './application/ports/refunds-repo';
+export { makeListWaivedRefundsCompletedBetweenDeps } from './infrastructure/di';
 // 8A — F4 (issueCreditNote / voidInvoice) reads the pending-refund guard count
 // through this facade, never through the repo port (Principle III).
 export {

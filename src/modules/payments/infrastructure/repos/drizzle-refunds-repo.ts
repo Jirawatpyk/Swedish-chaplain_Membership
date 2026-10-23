@@ -24,7 +24,9 @@ import type {
   RefundsRepo,
   RefundRow as DomainRefundRow,
   RefundStatus,
+  WaivedRefundExportRow,
 } from '../../application/ports/refunds-repo';
+import type { PaymentMethod } from '../../domain/value-objects/payment-method';
 import { asPaymentId, type PaymentId } from '../../domain/payment';
 import {
   asRefundId,
@@ -612,6 +614,48 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
           out.set(row.invoice_id, BigInt(raw));
         }
         return out;
+      });
+    },
+
+    async listWaivedCompletedBetween(
+      inputTenantId: string,
+      range: { readonly from: string; readonly to: string },
+    ): Promise<readonly WaivedRefundExportRow[]> {
+      // Same waived predicate as `sumWaivedByInvoice` (the timestamp, never
+      // the reason). The Bangkok day of `completed_at` puts the row in its
+      // month, written as a half-open instant range (Bangkok midnight of
+      // `from` to Bangkok midnight after `to`) so an index on `completed_at`
+      // can serve it; the payment join names the channel the money went
+      // back to.
+      return runInTenant(ctx, async (tx) => {
+        const rows = (await tx.execute(sql`
+          SELECT r.id AS refund_id,
+                 r.invoice_id,
+                 r.amount_satang::text AS amount_satang,
+                 to_char(r.completed_at AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD') AS completed_date,
+                 p.method
+            FROM refunds r
+            JOIN payments p ON p.tenant_id = r.tenant_id AND p.id = r.payment_id
+           WHERE r.tenant_id = ${inputTenantId}
+             AND r.status = 'succeeded'
+             AND r.credit_note_waived_at IS NOT NULL
+             AND r.completed_at >= (${range.from}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+             AND r.completed_at < (${range.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'
+           ORDER BY r.completed_at, r.id
+        `)) as unknown as Array<{
+          refund_id: string;
+          invoice_id: string;
+          amount_satang: string;
+          completed_date: string;
+          method: PaymentMethod;
+        }>;
+        return rows.map((r) => ({
+          refundId: r.refund_id,
+          invoiceId: r.invoice_id,
+          amountSatang: BigInt(r.amount_satang),
+          completedDate: r.completed_date,
+          method: r.method,
+        }));
       });
     },
 

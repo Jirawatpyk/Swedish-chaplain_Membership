@@ -8,7 +8,9 @@
  *   2. the use case passes the repo's map through as `ok(map)` (the export
  *      treats `!ok` as "no methods", which would print `manual` everywhere);
  *   3. the "collected" status list is succeeded / partially_refunded /
- *      refunded — the same list the invoice dashboard's method card reads.
+ *      refunded — the same list the invoice dashboard's method card reads;
+ *   4. spec 124 (D-p): the waived-refund read the export's
+ *      `waivedRefundLookup` port is wired with passes the repo rows through.
  *
  * The SQL itself (statuses, latest-first pick, tenant scope) is exercised
  * against Postgres in
@@ -19,8 +21,11 @@ import {
   listCollectedPaymentMethods,
   makeListCollectedPaymentMethodsDeps,
   SUCCEEDED_LINEAGE,
+  listWaivedRefundsCompletedBetween,
+  makeListWaivedRefundsCompletedBetweenDeps,
 } from '@/modules/payments';
 import type { PaymentsRepo } from '@/modules/payments/application/ports/payments-repo';
+import type { RefundsRepo } from '@/modules/payments/application/ports/refunds-repo';
 import { makeExportPaidInvoicesCsvDeps } from '@/modules/invoicing';
 
 describe('CSV export → payments method lookup contract', () => {
@@ -42,6 +47,22 @@ describe('CSV export → payments method lookup contract', () => {
       { tenantId: 'test-tenant', invoiceIds: ['inv-1'] },
     );
     expect(result).toEqual({ ok: true, value: map });
+  });
+
+  it('the waived-refund read passes the repo rows through for the range', async () => {
+    expect(typeof makeListWaivedRefundsCompletedBetweenDeps).toBe('function');
+    expect(typeof makeExportPaidInvoicesCsvDeps('test-tenant').waivedRefundLookup).toBe('function');
+    const rows = [
+      { refundId: 'rf-1', invoiceId: 'inv-1', amountSatang: 100n, completedDate: '2026-06-10', method: 'card' as const },
+    ];
+    const listWaivedCompletedBetween = vi.fn().mockResolvedValue(rows);
+    const refundsRepo = { listWaivedCompletedBetween } as unknown as RefundsRepo;
+    const result = await listWaivedRefundsCompletedBetween(
+      { refundsRepo },
+      { tenantId: 'test-tenant', from: '2026-06-01', to: '2026-06-30' },
+    );
+    expect(result).toEqual({ ok: true, value: rows });
+    expect(listWaivedCompletedBetween).toHaveBeenCalledWith('test-tenant', { from: '2026-06-01', to: '2026-06-30' });
   });
 
   it('a refunded or partially refunded payment still counts as collected', () => {
