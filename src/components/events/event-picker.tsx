@@ -387,7 +387,9 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
       </div>
 
       {props.onCreateNew !== undefined ? (
-        // Board: an accent text link, 44px tall on touch.
+        // Board: an accent text link, 44px tall on touch. AURA has no
+        // text-link style yet, so the colour, focus ring and touch height
+        // are written here. Stand-in until AURA #172.
         <button
           type="button"
           onClick={props.onCreateNew}

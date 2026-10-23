@@ -196,6 +196,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | 171 (Addendum 72) | With `touchHeight`, a tab is only as wide as its label ("Tax" is 22×44 at 390px); 2.5.8 is met through the 16px gap, but not the 44×44 mobile target | None: no reach into `.aura-tabs*` (section tabs on member detail and invoice settings) |
+| 172 (Addendum 73) | No text-link style: a link or button that should read as accent text gets no touch height, focus ring or button reset from AURA (`touchHeight` is on Button, IconButton, Tabs, Tag and the fields only) | The event picker's "+ Create new event" (`event-picker.tsx`) writes the accent colour, focus ring, hover underline and `max-sm:min-h-11 pointer-coarse:min-h-11` by hand |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
