@@ -51,15 +51,20 @@ describe('staffNavConfig', () => {
     ]);
   });
 
-  it('section 2 (Finance) holds Invoices, Credit Notes', () => {
+  it('section 2 (Finance) holds Invoice dashboard, Invoices, Credit Notes', () => {
     const finance = staffNavConfig.sections[2]!;
     expect(finance.titleKey).toBe('nav.staff.sections.finance');
     expect(finance.items.map((i) => i.titleKey)).toEqual([
+      'nav.staff.invoiceDashboard',
       'nav.staff.invoices',
       'nav.staff.creditNotes',
     ]);
-    expect((finance.items[0]! as NavItem).href).toBe('/admin/invoices');
-    expect((finance.items[1]! as NavItem).href).toBe('/admin/credit-notes');
+    const dashboard = finance.items[0]! as NavItem;
+    expect(dashboard.href).toBe('/admin/finance');
+    // 124 — the page notFound()s while FEATURE_INVOICE_DASHBOARD is off.
+    expect(dashboard.visibilityFlag).toBe('invoiceDashboard');
+    expect((finance.items[1]! as NavItem).href).toBe('/admin/invoices');
+    expect((finance.items[2]! as NavItem).href).toBe('/admin/credit-notes');
   });
 
   it('section 3 (Engagement) groups Broadcasts, Events, Marketing audience', () => {
@@ -344,6 +349,12 @@ describe('filterNavConfig — F6/F7 feature-flag nav gating (016, live config)',
     expect(all).not.toContain('/admin/change-requests');
     // …and so does its Settings entry (US6), which 404s on the same flag.
     expect(all).not.toContain('/admin/settings/member-changes');
+    // 124 — the invoice dashboard ships dark the same way.
+    expect(all).not.toContain('/admin/finance');
+  });
+
+  it('invoiceDashboard ON → the Finance dashboard entry is present', () => {
+    expect(staffHrefs({ invoiceDashboard: true })).toContain('/admin/finance');
   });
 
   // F114 US6 — the approval SETTING shares `memberChangeApproval` with the

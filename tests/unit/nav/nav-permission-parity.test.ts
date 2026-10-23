@@ -152,7 +152,12 @@ describe('every staff nav entry matches its target page guard (T063)', () => {
 });
 
 describe('filterNavConfig filters on the server-computed allow-list (T063)', () => {
-  const ALL_FLAGS = { broadcastsEnabled: true, eventsEnabled: true, memberChangeApproval: true };
+  const ALL_FLAGS = {
+    broadcastsEnabled: true,
+    eventsEnabled: true,
+    memberChangeApproval: true,
+    invoiceDashboard: true,
+  };
 
   function hrefsFor(allowed: readonly string[] | undefined): readonly string[] {
     const filtered = filterNavConfig(
@@ -242,6 +247,7 @@ describe('ON-leg sidebar per role (T063)', () => {
   it('marketing sees NO money, compliance, user-admin or settings surface', () => {
     const hrefs = sidebarFor('marketing');
     for (const denied of [
+      '/admin/finance',
       '/admin/invoices',
       '/admin/credit-notes',
       '/admin/renewals',
