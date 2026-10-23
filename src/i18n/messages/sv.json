@@ -7246,7 +7246,8 @@
         "status": "Status"
       },
       "youSuffix": "(du)",
-      "moreAboutProfile": "Mer om din profil"
+      "moreAboutProfile": "Mer om din profil",
+      "moreDetails": "Fler uppgifter"
     },
     "changeRequests": {
       "history": {

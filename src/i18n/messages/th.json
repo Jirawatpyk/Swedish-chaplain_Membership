@@ -7246,7 +7246,8 @@
         "status": "สถานะ"
       },
       "youSuffix": "(คุณ)",
-      "moreAboutProfile": "เพิ่มเติมเกี่ยวกับโปรไฟล์ของคุณ"
+      "moreAboutProfile": "เพิ่มเติมเกี่ยวกับโปรไฟล์ของคุณ",
+      "moreDetails": "รายละเอียดเพิ่มเติม"
     },
     "changeRequests": {
       "history": {

@@ -462,3 +462,56 @@ describe('recent change requests on the history card (#239)', () => {
     expect(html).toContain('contactsSection');
   });
 });
+
+/**
+ * #239 — a shorter profile on phones. Below 768px (where the Organisation
+ * grid is one column) the record keeps the invoice fields in view and folds
+ * legal entity, country, website, founded year and description into a
+ * "More details" disclosure; from 768px the grid shows them as before. Email
+ * and phone share one wrapping row on phones, each still a 44px target.
+ */
+describe('a shorter profile on phones (#239)', () => {
+  const FOLDED = ['fields.legalEntityType', 'fields.country', 'fields.website', 'fields.foundedYear'];
+
+  async function renderEl() {
+    const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+    const el = document.createElement('div');
+    el.innerHTML = renderToStaticMarkup(tree as ReactElement);
+    return el;
+  }
+
+  it('folds the secondary Organisation fields into a phone-only disclosure', async () => {
+    const el = await renderEl();
+    const org = el.querySelector('section[aria-labelledby="portal-profile-org-heading"]')!;
+    const details = org.querySelector('details');
+    expect(details).toHaveClass('md:hidden');
+    const summary = details!.querySelector('summary');
+    expect(summary?.textContent).toBe('moreDetails');
+    expect(summary).toHaveClass('min-h-11');
+    for (const key of FOLDED) {
+      const inDisclosure = [...details!.querySelectorAll('dt')].find((dt) => dt.textContent === key);
+      expect(inDisclosure, `${key} in the disclosure`).toBeDefined();
+      const inGrid = [...org.querySelectorAll('dl')[0]!.children].find((c) => c.querySelector('dt')?.textContent === key);
+      expect(inGrid, `${key} in the grid`).toHaveClass('max-md:hidden');
+    }
+    // the invoice fields stay in view on phones
+    for (const key of ['fields.memberNumber', 'fields.companyName', 'fields.taxId', 'fields.address', 'fields.billingAddress']) {
+      const inGrid = [...org.querySelectorAll('dl')[0]!.children].find((c) => c.querySelector('dt')?.textContent === key);
+      expect(inGrid, key).not.toHaveClass('max-md:hidden');
+    }
+  });
+
+  it('puts email and phone on one wrapping row on phones, each a 44px target', async () => {
+    getMemberMock.mockResolvedValueOnce({
+      ok: true,
+      value: { member, contacts: [{ ...ownContact, phone: '+66 81 234 5678' }] },
+    });
+    const el = await renderEl();
+    const email = el.querySelector('a[href="mailto:member@a.example"]')!;
+    const phone = el.querySelector('a[href^="tel:"]')!;
+    expect(email.parentElement).toBe(phone.parentElement);
+    expect(email.parentElement).toHaveClass('flex-wrap');
+    expect(email).toHaveClass('min-h-11');
+    expect(phone).toHaveClass('min-h-11');
+  });
+});

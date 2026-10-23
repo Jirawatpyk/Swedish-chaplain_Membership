@@ -743,6 +743,20 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **Not sticky on a phone.** Below 640px the tabs scroll away with the page: shell bar, tabs and save bar together would take about a fifth of the screen. From `sm` they stick under the shell bar. The row adds its height to `scroll-padding-top` only while it is sticky.
 - **Short fields stay short.** Tax ID keeps its own row in the identity fieldset, at most 20rem wide, like the currency and branch codes. The mockup's Currency + Tax ID pair would have taken Tax ID out from under its "Tenant legal identity" legend.
 
+### Session 2026-10-23 (portal profile: shorter on phones, #239)
+
+- **Organisation folds on phones.** Below 768px, where the record grid is one column:
+  - The card shows the fields a member checks against an invoice: number, company, Tax ID, address, billing address.
+  - Legal entity, country, website and founded year sit under a "More details" disclosure.
+  - So does the description, when set (it is long and rarely checked).
+  - From 768px the grid shows everything as before.
+  - The summary is 44px by hand. Stand-in until AURA #172 (no text-link touch rule).
+- **Recent change requests on the history card.**
+  - The "Change request history" card lists the member's two most recent requests as one-line rows. Each row shows the first field, "+N more", the status, and the date it was decided, withdrawn or sent. It never shows the values, which stay on the history page.
+  - "View all" opens the history page. The card shows at every width.
+  - The newest row may repeat the pending or decided banner at the top. It stays: the card is "your recent requests", whatever the banner shows.
+- **Contacts on phones.** Email and phone share one wrapping row. Each is still a 44px target, and a long email wraps onto its own line.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

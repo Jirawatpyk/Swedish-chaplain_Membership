@@ -88,6 +88,41 @@ export async function renderPortalProfileView({
   const rowDate = (r: ChangeRequestView) =>
     r.state === 'decided' && r.decidedAt ? r.decidedAt : r.state === 'withdrawn' && r.withdrawnAt ? r.withdrawnAt : r.submittedAt;
 
+  // #239 — the Organisation fields a phone folds under "More details". Each
+  // renders in the grid (from 768px) and in the disclosure (below it).
+  const secondary = {
+    legalEntity: (className: string) =>
+      isIndividual ? null : <DetailField label={t('fields.legalEntityType')} value={legalEntityLabel} className={className} />,
+    country: (className: string) => (
+      <DetailField label={t('fields.country')} value={null} className={className} extra={<CountryDisplay code={m.country} />} />
+    ),
+    website: (className: string) =>
+      websiteHref ? (
+        <DetailField
+          label={t('fields.website')}
+          value={null}
+          className={className}
+          extra={
+            <a
+              href={websiteHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex min-w-0 items-center gap-1 text-sm text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+            >
+              <span className="truncate">{m.website}</span>
+              <Icon name={<ExternalLinkIcon />} size={14} />
+            </a>
+          }
+        />
+      ) : (
+        <DetailField label={t('fields.website')} value={m.website || null} className={className} />
+      ),
+    founded: (className: string) =>
+      isIndividual ? null : <DetailField label={t('fields.foundedYear')} value={m.foundedYear} className={className} />,
+    description: (className: string) =>
+      m.description ? <DetailField label={t('fields.description')} value={m.description} className={className} /> : null,
+  };
+
   return (
     <DetailContainer>
       <PageHeader
@@ -126,7 +161,11 @@ export async function renderPortalProfileView({
 
       {/* Organisation — who the member is. The `Portal-profile` board's
           grid: one field per cell, three across from 1024px (two from 768px),
-          16px between rows and 24px between columns. */}
+          16px between rows and 24px between columns. #239: below 768px, where
+          the grid is one column, the card keeps the fields a member checks
+          against an invoice (number, company, Tax ID, the two addresses) and
+          folds the rest into "More details"; the folded fields render twice,
+          once per width, and only one copy is ever displayed. */}
       <Card title={t('organisationSection')} titleId="portal-profile-org-heading" headingLevel={2}>
             <dl className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2 lg:grid-cols-3">
               <DetailField
@@ -142,56 +181,36 @@ export async function renderPortalProfileView({
                 }
               />
               <DetailField label={t('fields.companyName')} value={m.companyName} className={FIELD} />
-              {!isIndividual && (
-                <DetailField label={t('fields.legalEntityType')} value={legalEntityLabel} className={FIELD} />
-              )}
+              {secondary.legalEntity(`${FIELD} max-md:hidden`)}
               {/* 067 — members get their tax_id on every issued tax invoice;
                   surface it here so they can verify the value the chamber has
                   on file (and notice when it is missing — the §86/4 buyer TIN).
                   Own-profile PII, member-visible by design. DetailField shows
                   the "—" placeholder when null (no-TIN members). */}
               <DetailField label={t('fields.taxId')} value={m.taxId} mono className={FIELD} />
-              <DetailField
-                label={t('fields.country')}
-                value={null}
-                className={FIELD}
-                extra={<CountryDisplay code={m.country} />}
-              />
-              {websiteHref ? (
-                <DetailField
-                  label={t('fields.website')}
-                  value={null}
-                  className={FIELD}
-                  extra={
-                    <a
-                      href={websiteHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex min-w-0 items-center gap-1 text-sm text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
-                    >
-                      <span className="truncate">{m.website}</span>
-                      <Icon name={<ExternalLinkIcon />} size={14} />
-                    </a>
-                  }
-                />
-              ) : (
-                <DetailField label={t('fields.website')} value={m.website || null} className={FIELD} />
-              )}
-              {!isIndividual && (
-                <DetailField label={t('fields.foundedYear')} value={m.foundedYear} className={FIELD} />
-              )}
+              {secondary.country(`${FIELD} max-md:hidden`)}
+              {secondary.website(`${FIELD} max-md:hidden`)}
+              {secondary.founded(`${FIELD} max-md:hidden`)}
               {/* 069 — §86/4 buyer address on file (read-only; admin-managed). */}
               <DetailField label={t('fields.address')} value={addressText} className={FIELD} />
               {/* member-billing-address (0284) — "—" when none is set, as the board draws the row. */}
               <DetailField label={t('fields.billingAddress')} value={billingAddressText} className={FIELD} />
-              {m.description ? (
-                <DetailField
-                  label={t('fields.description')}
-                  value={m.description}
-                  className={`${FIELD} md:col-span-2 lg:col-span-3`}
-                />
-              ) : null}
+              {secondary.description(`${FIELD} max-md:hidden md:col-span-2 lg:col-span-3`)}
             </dl>
+            <details className="mt-1 md:hidden">
+              {/* 44px on phones by hand: AURA has no text-link touch rule yet.
+                  Stand-in until AURA #172. */}
+              <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-[var(--aura-fg-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]">
+                {t('moreDetails')}
+              </summary>
+              <dl className="mt-2 grid grid-cols-1 gap-y-4">
+                {secondary.legalEntity(FIELD)}
+                {secondary.country(FIELD)}
+                {secondary.website(FIELD)}
+                {secondary.founded(FIELD)}
+                {secondary.description(FIELD)}
+              </dl>
+            </details>
       </Card>
 
       {/* Membership — the chamber relationship. */}
@@ -273,22 +292,27 @@ export async function renderPortalProfileView({
                     ) : (
                       <span className="max-md:hidden md:order-last" aria-hidden />
                     )}
-                    <a
-                      href={`mailto:${contact.email}`}
-                      className="flex min-h-11 min-w-0 items-center text-sm text-[var(--aura-fg-accent)] no-underline [overflow-wrap:anywhere] hover:underline md:min-h-0 md:text-[var(--aura-fg-primary)]"
-                    >
-                      {contact.email}
-                    </a>
-                    {contact.phone ? (
+                    {/* #239: email and phone share one wrapping row on phones,
+                        each still a 44px target; from 768px the wrapper steps
+                        aside and they are grid columns again. */}
+                    <div className="flex flex-wrap gap-x-4 md:contents">
                       <a
-                        href={`tel:${contact.phone.replace(/\s+/g, '')}`}
-                        className="flex min-h-11 items-center text-sm text-[var(--aura-fg-accent)] no-underline hover:underline md:min-h-0 md:text-[var(--aura-fg-primary)]"
+                        href={`mailto:${contact.email}`}
+                        className="flex min-h-11 min-w-0 items-center text-sm text-[var(--aura-fg-accent)] no-underline [overflow-wrap:anywhere] hover:underline md:min-h-0 md:text-[var(--aura-fg-primary)]"
                       >
-                        {contact.phone}
+                        {contact.email}
                       </a>
-                    ) : (
-                      <span className="max-md:hidden" aria-hidden />
-                    )}
+                      {contact.phone ? (
+                        <a
+                          href={`tel:${contact.phone.replace(/\s+/g, '')}`}
+                          className="flex min-h-11 items-center text-sm text-[var(--aura-fg-accent)] no-underline hover:underline md:min-h-0 md:text-[var(--aura-fg-primary)]"
+                        >
+                          {contact.phone}
+                        </a>
+                      ) : (
+                        <span className="max-md:hidden" aria-hidden />
+                      )}
+                    </div>
                   </div>
                   {/* 108 PR-D (US6) — the signed-in contact's OWN marketing
                       control, under the row at its full width; never rendered

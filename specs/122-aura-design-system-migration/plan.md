@@ -468,3 +468,14 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
   - The test failed: `RenewalPageView > shows the first-renewal welcome as an AURA info alert, only for a first renewal`, with `expect(element).not.toHaveAttribute("aria-label")`.
   - Fixed: the Alert takes `id="renewal-onboarding"`, so AURA names it through `aria-labelledby`, the way the addendum advises. The test now also asserts that the note is named by its title.
 - **Not changed:** the brand theme. `aura-theme --brand "#10487A"` on 5.57 regenerates `src/styles/aura-theme.css` byte-identical below its header.
+
+### Evidence: portal profile shorter on phones (#239, size M, plan agreed 2026-10-23)
+
+- **Behaviour, RED first** (`5708ff4bb`):
+  - `recent change requests on the history card (#239) > reads the two most recent requests and draws one row each` failed: "expected "spy" to be called with arguments: [ Anything, ObjectContaining{…} ]". The page did not read them.
+  - `> keeps the card with its link when the read fails` failed: "to have a length of 1 but got 2". The desktop card and the phone list row each carried `profile-history-link`.
+  - GREEN in `43a5e0c98`.
+- **Presentation, D-023 shared commit** (failing lines taken before the code changed):
+  - `a shorter profile on phones (#239) > folds the secondary Organisation fields into a phone-only disclosure` failed: "expect(received).toHaveClass()". There was no `details`.
+  - `> puts email and phone on one wrapping row on phones, each a 44px target` failed: "Expected the element to have class: flex-wrap / Received: flex flex-col gap-1 md:grid …".
+
