@@ -13,6 +13,7 @@ import {
   formatMemberNumber,
   resolveMemberNumberPrefix,
   deriveMarketingState,
+  listPortalChangeRequests,
   type MarketingState,
 } from '@/modules/members';
 import { makeMarketingSuppressionLookup } from '@/lib/contact-marketing-deps';
@@ -20,7 +21,7 @@ import { env } from '@/lib/env';
 // F114 — the caller's OWN pending change request (never another contact's).
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
-import { asMembersUserId } from '@/lib/members-change-request-deps';
+import { asMembersUserId, buildChangeRequestDeps } from '@/lib/members-change-request-deps';
 import { serialiseChangeRequestForPortal, type ChangeRequestView } from '@/lib/change-request-portal-view';
 
 /**
@@ -190,11 +191,49 @@ export async function PortalProfileBody({
     }
   }
 
-  // Both reads are independent (plan lookup vs. member-settings row) —
-  // collapse to ~1 RTT. Mirrors the Promise.all on the admin detail page.
-  const [planLookup, memberPrefix] = await Promise.all([
+  // #239 — the history card's two most recent requests, read with the history
+  // page's own use case (so the same visibility rules apply). Best-effort like
+  // the banner reads: a failure logs and the card keeps its link only.
+  const viewerId = asMembersUserId(user.id);
+  const loadRecentRequests = async (): Promise<ChangeRequestView[] | null> => {
+    if (!env.features.memberChangeApproval) return null;
+    try {
+      const recent = await listPortalChangeRequests(buildChangeRequestDeps(tenant), {
+        userId: viewerId,
+        memberId: m.memberId,
+        cursor: null,
+        limit: RECENT_REQUESTS,
+      });
+      if (!recent.ok) {
+        logger.error(
+          { errorId: 'M114.portal.profile.recent_read_failed', err: recent.error.type, tenantId: tenant.slug },
+          'portal.profile.recent_read_failed',
+        );
+        return null;
+      }
+      return recent.value.items.map((row) =>
+        serialiseChangeRequestForPortal(row.request, {
+          contactId: row.request.submittedByContactId,
+          displayName: row.submitter.displayName,
+          isMe: row.request.submittedByUserId === viewerId,
+        }),
+      );
+    } catch (e) {
+      logger.error(
+        { errorId: 'M114.portal.profile.recent_read_failed', err: errKind(e), tenantId: tenant.slug },
+        'portal.profile.recent_read_failed',
+      );
+      return null;
+    }
+  };
+
+  // The reads are independent (plan lookup, member-settings row, recent
+  // requests) — collapse to ~1 RTT. Mirrors the Promise.all on the admin
+  // detail page.
+  const [planLookup, memberPrefix, recentRequests] = await Promise.all([
     deps.plans.getPlan(tenant, m.planId, m.planYear),
     resolveMemberNumberPrefix(tenant, deps.memberSettings),
+    loadRecentRequests(),
   ]);
   const planDisplayName = planLookup.ok ? planLookup.value.planNameEn : m.planId;
   // 067 — natural-person members (individual / student plans) have no company
@@ -264,6 +303,7 @@ export async function PortalProfileBody({
     pendingRequest,
     decidedRequest,
     ownRequestReadFailed,
+    recentRequests,
     planDisplayName,
     isIndividual,
     memberNumberFormatted,
@@ -275,6 +315,9 @@ export async function PortalProfileBody({
     showDirectoryLink: env.features.f9Dashboard,
   });
 }
+
+/** #239 — how many recent change requests the history card lists. */
+const RECENT_REQUESTS = 2;
 
 export default async function PortalProfilePage() {
   const { user } = await requireSession('member');

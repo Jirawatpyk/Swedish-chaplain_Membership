@@ -7246,7 +7246,8 @@
         "status": "Status"
       },
       "youSuffix": "(du)",
-      "moreAboutProfile": "Mer om din profil"
+      "moreAboutProfile": "Mer om din profil",
+      "moreDetails": "Fler uppgifter"
     },
     "changeRequests": {
       "history": {
@@ -7281,7 +7282,13 @@
           "profileCard": {
             "title": "Historik över ändringsbegäranden",
             "subtitle": "Se varje ändring du föreslagit och vad kammaren beslutade.",
-            "link": "Visa historik"
+            "viewAll": "Visa alla",
+            "moreFields": "+{count} till",
+            "viewHistory": "Visa historik",
+            "empty": "Du har inte föreslagit några ändringar än.",
+            "dateSent": "Skickad",
+            "dateDecided": "Beslutad",
+            "dateWithdrawn": "Återkallad"
           },
           "colleagueNote": "Ändringar som en kollega gör i sina egna kontaktuppgifter visas aldrig här.",
           "withdrawnOn": "återkallad {withdrawnAt}"

@@ -29,7 +29,9 @@ vi.mock('@/lib/logger', () => ({
 // module graph boots the Upstash client via `@/lib/auth-deps` at import.
 vi.mock('@/lib/members-change-request-deps', () => ({
   asMembersUserId: (id: string) => id,
+  buildChangeRequestDeps: () => ({ changeRequestRepo: {} }),
 }));
+const listPortalChangeRequestsMock = vi.fn();
 
 const findByLinkedUserIdMock = vi.fn();
 const getMemberMock = vi.fn();
@@ -50,6 +52,8 @@ vi.mock('@/modules/members/members-deps', () => ({
     audit: {},
     memberSettings: {},
     plans: { getPlan: (...args: unknown[]) => getPlanMock(...args) },
+    // F114: the tenant takes changes directly, so no pending/decided banner read.
+    memberChangeGate: { resolve: async () => 'direct' },
   }),
 }));
 
@@ -61,6 +65,8 @@ vi.mock('@/modules/members', () => ({
     resolveMemberNumberPrefixMock(...args),
   // 108 PR-D — the page derives the OWN contact's marketing state.
   deriveMarketingState: () => 'on',
+  // #239 — the profile's recent change requests (the history page's use case).
+  listPortalChangeRequests: (...args: unknown[]) => listPortalChangeRequestsMock(...args),
 }));
 // 108 PR-D — the suppression lookup composes the broadcasts barrel (whose
 // logger reads env.log); stub it so this page-boundary test stays DB- and
@@ -75,7 +81,7 @@ vi.mock('@/components/members/portal-marketing-toggle', () => ({
 }));
 
 vi.mock('@/lib/env', () => ({
-  env: { features: { f9Dashboard: false } },
+  env: { features: { f9Dashboard: false, memberChangeApproval: false } },
 }));
 
 // next-intl server: identity translator (returns the key) + fixed locale.
@@ -357,5 +363,159 @@ describe('PortalProfileBody — heading order + DetailField + dates (057 G4)', (
       expect(html).toContain('fields.legalEntityType');
       expect(html).toContain('fields.foundedYear');
     });
+  });
+});
+
+/**
+ * #239 — the history card lists the member's two most recent change requests
+ * as one-line rows (field, status, date; never the values), read with the
+ * history page's own use case, limit 2. Best-effort: a failed read leaves the
+ * card with its link only, never a broken page.
+ */
+describe('recent change requests on the history card (#239)', () => {
+  function request(id: string, over: Record<string, unknown>) {
+    return {
+      request: {
+        id,
+        memberId: 'mem-a',
+        scope: 'company',
+        state: 'pending',
+        outcome: null,
+        withdrawnReason: null,
+        withdrawnAt: null,
+        submittedAt: new Date('2026-10-20T03:00:00Z'),
+        submittedByUserId: 'user-a',
+        submittedByContactId: 'con-a',
+        decidedAt: null,
+        decisionReason: null,
+        outcomeAcknowledgedAt: null,
+        fields: [
+          { key: 'address_line1', target: null, seen: 'Old', proposed: 'New', affectsTaxDocuments: true, outcome: null, appliedAt: null },
+        ],
+        ...over,
+      },
+      submitter: { displayName: 'Test User' },
+    };
+  }
+
+  async function withApprovalFlag<T>(fn: () => Promise<T>): Promise<T> {
+    const envMod = await import('@/lib/env');
+    // @ts-expect-error — override readonly features for test isolation
+    envMod.env.features.memberChangeApproval = true;
+    try {
+      return await fn();
+    } finally {
+      // @ts-expect-error — restore
+      envMod.env.features.memberChangeApproval = false;
+    }
+  }
+
+  it('reads the two most recent requests and draws one row each: field, "+N more", status', async () => {
+    listPortalChangeRequestsMock.mockResolvedValueOnce({
+      ok: true,
+      value: {
+        items: [
+          request('cr-1', {
+            state: 'decided',
+            outcome: 'approved',
+            decidedAt: new Date('2026-10-21T03:00:00Z'),
+            fields: [
+              { key: 'phone', target: null, seen: '1', proposed: '2', affectsTaxDocuments: false, outcome: 'approved', appliedAt: null },
+              { key: 'website', target: null, seen: 'a', proposed: 'b', affectsTaxDocuments: false, outcome: 'approved', appliedAt: null },
+            ],
+          }),
+          request('cr-2', {}),
+        ],
+        nextCursor: 'next',
+      },
+    });
+    const html = await withApprovalFlag(async () =>
+      renderToStaticMarkup((await PortalProfileBody({ user: { id: 'user-a' } })) as ReactElement),
+    );
+    expect(listPortalChangeRequestsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: 'user-a', memberId: 'mem-a', cursor: null, limit: 2 }),
+    );
+    const el = document.createElement('div');
+    el.innerHTML = html;
+    const rows = el.querySelectorAll('[data-testid="profile-recent-request"]');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain('labels.phone');
+    expect(rows[0]?.textContent).toContain('profileCard.moreFields');
+    expect(rows[0]?.querySelector('[data-outcome="approved"]')).not.toBeNull();
+    expect(rows[1]?.textContent).toContain('labels.address_line1');
+    // each row opens its request on the history page, a 44px target
+    const link = rows[0]?.querySelector('a');
+    expect(link).toHaveAttribute('href', '/portal/change-requests#request-cr-1');
+    expect(link).toHaveClass('min-h-11');
+    expect(rows[1]?.textContent).not.toContain('profileCard.moreFields');
+    // the values stay on the history page
+    expect(html).not.toContain('New');
+    expect(el.querySelectorAll('[data-testid="profile-history-link"]')).toHaveLength(1);
+  });
+
+  it('keeps the card with its link when the read fails', async () => {
+    listPortalChangeRequestsMock.mockResolvedValueOnce({ ok: false, error: { type: 'server_error', message: 'x' } });
+    const html = await withApprovalFlag(async () =>
+      renderToStaticMarkup((await PortalProfileBody({ user: { id: 'user-a' } })) as ReactElement),
+    );
+    const el = document.createElement('div');
+    el.innerHTML = html;
+    expect(el.querySelectorAll('[data-testid="profile-recent-request"]')).toHaveLength(0);
+    expect(el.querySelectorAll('[data-testid="profile-history-link"]')).toHaveLength(1);
+    expect(html).toContain('contactsSection');
+  });
+});
+
+/**
+ * #239 — a shorter profile on phones. Below 768px (where the Organisation
+ * grid is one column) the record keeps the invoice fields in view and folds
+ * legal entity, country, website, founded year and description into a
+ * "More details" disclosure; from 768px the grid shows them as before. Email
+ * and phone share one wrapping row on phones, each still a 44px target.
+ */
+describe('a shorter profile on phones (#239)', () => {
+  const FOLDED = ['fields.legalEntityType', 'fields.country', 'fields.website', 'fields.foundedYear'];
+
+  async function renderEl() {
+    const tree = await PortalProfileBody({ user: { id: 'user-a' } });
+    const el = document.createElement('div');
+    el.innerHTML = renderToStaticMarkup(tree as ReactElement);
+    return el;
+  }
+
+  it('folds the secondary Organisation fields into a phone-only disclosure', async () => {
+    const el = await renderEl();
+    const org = el.querySelector('section[aria-labelledby="portal-profile-org-heading"]')!;
+    const details = org.querySelector('details');
+    expect(details).toHaveClass('md:hidden');
+    const summary = details!.querySelector('summary');
+    expect(summary?.textContent).toBe('moreDetails');
+    expect(summary).toHaveClass('min-h-11');
+    for (const key of FOLDED) {
+      const inDisclosure = [...details!.querySelectorAll('dt')].find((dt) => dt.textContent === key);
+      expect(inDisclosure, `${key} in the disclosure`).toBeDefined();
+      const inGrid = [...org.querySelectorAll('dl')[0]!.children].find((c) => c.querySelector('dt')?.textContent === key);
+      expect(inGrid, `${key} in the grid`).toHaveClass('max-md:hidden');
+    }
+    // the invoice fields stay in view on phones
+    for (const key of ['fields.memberNumber', 'fields.companyName', 'fields.taxId', 'fields.address', 'fields.billingAddress']) {
+      const inGrid = [...org.querySelectorAll('dl')[0]!.children].find((c) => c.querySelector('dt')?.textContent === key);
+      expect(inGrid, key).not.toHaveClass('max-md:hidden');
+    }
+  });
+
+  it('puts email and phone on one wrapping row on phones, each a 44px target', async () => {
+    getMemberMock.mockResolvedValueOnce({
+      ok: true,
+      value: { member, contacts: [{ ...ownContact, phone: '+66 81 234 5678' }] },
+    });
+    const el = await renderEl();
+    const email = el.querySelector('a[href="mailto:member@a.example"]')!;
+    const phone = el.querySelector('a[href^="tel:"]')!;
+    expect(email.parentElement).toBe(phone.parentElement);
+    expect(email.parentElement).toHaveClass('flex-wrap');
+    expect(email).toHaveClass('min-h-11');
+    expect(phone).toHaveClass('min-h-11');
   });
 });

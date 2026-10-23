@@ -43,4 +43,16 @@ describe('change-request history view', () => {
     );
     expect(html).toContain('Submitted by you · withdrawn 12 May 2026');
   });
+
+  // #239: the profile's recent-request rows link here, one anchor per request.
+  it('gives each request card an anchor the profile can link to', async () => {
+    const tree = await renderChangeRequestHistoryView({ items: [WITHDRAWN], nextCursor: null, isFirstPage: true });
+    const el = document.createElement('div');
+    el.innerHTML = renderToStaticMarkup(
+      <NextIntlClientProvider locale="en" messages={enMessages} timeZone="Asia/Bangkok">
+        {tree as ReactElement}
+      </NextIntlClientProvider>,
+    );
+    expect(el.querySelector('[data-testid="history-item"]')).toHaveAttribute('id', `request-${WITHDRAWN.id}`);
+  });
 });

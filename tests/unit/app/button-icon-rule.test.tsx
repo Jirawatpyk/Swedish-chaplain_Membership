@@ -108,6 +108,7 @@ describe('button icon rule (T809 audit)', () => {
       pendingRequest: null,
       decidedRequest: null,
       ownRequestReadFailed: false,
+      recentRequests: null,
       planDisplayName: 'Premium Corporate',
       isIndividual: false,
       memberNumberFormatted: 'TSCC-0042',
