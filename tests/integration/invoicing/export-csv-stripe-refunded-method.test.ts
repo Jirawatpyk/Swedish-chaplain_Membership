@@ -37,6 +37,7 @@ describe('CSV export — Payment Method of a refunded Stripe invoice', () => {
         { key: 'cardPaid', total: 321_000, method: 'other', paymentDate: '2026-05-06' },
         { key: 'transfer', total: 428_000, method: 'bank_transfer', paymentDate: '2026-05-07' },
         { key: 'retried', total: 535_000, method: 'other', paymentDate: '2026-05-08' },
+        { key: 'cashAfterAttempts', total: 642_000, method: 'cash', paymentDate: '2026-05-09' },
       ],
       payments: [
         { key: 'p1', invoiceKey: 'cardRefunded', method: 'card', amount: 107_000, completedAt: '2026-05-04T05:00:00Z', status: 'refunded' },
@@ -45,6 +46,12 @@ describe('CSV export — Payment Method of a refunded Stripe invoice', () => {
         // Paid by card, refunded, then paid again by PromptPay: the latest wins.
         { key: 'p4', invoiceKey: 'retried', method: 'card', amount: 535_000, completedAt: '2026-05-08T01:00:00Z', status: 'refunded' },
         { key: 'p5', invoiceKey: 'retried', method: 'promptpay', amount: 535_000, completedAt: '2026-05-08T05:00:00Z' },
+        // Settled in cash after Stripe attempts that never collected it: none
+        // of these may lend a method (financial-integrity review M-1).
+        { key: 'a1', invoiceKey: 'cashAfterAttempts', method: 'card', amount: 642_000, completedAt: '2026-05-09T01:00:00Z', status: 'failed' },
+        { key: 'a2', invoiceKey: 'cashAfterAttempts', method: 'card', amount: 642_000, completedAt: '2026-05-09T02:00:00Z', status: 'canceled' },
+        { key: 'a3', invoiceKey: 'cashAfterAttempts', method: 'promptpay', amount: 642_000, completedAt: '2026-05-09T03:00:00Z', status: 'pending' },
+        { key: 'a4', invoiceKey: 'cashAfterAttempts', method: 'promptpay', amount: 642_000, completedAt: '2026-05-09T04:00:00Z', status: 'auto_refunded' },
       ],
     });
     // Another tenant's PromptPay payment never lends its method.
@@ -83,6 +90,7 @@ describe('CSV export — Payment Method of a refunded Stripe invoice', () => {
       'Buyer cardPaid': 'card',
       'Buyer transfer': 'manual',
       'Buyer retried': 'promptpay',
+      'Buyer cashAfterAttempts': 'manual',
     });
   });
 
