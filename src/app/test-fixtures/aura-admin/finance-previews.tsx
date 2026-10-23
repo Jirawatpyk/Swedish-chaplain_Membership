@@ -116,7 +116,8 @@ function oldest(events: boolean, canWrite: boolean): InvoiceDashboardOldestOverd
 }
 
 function trend(events: boolean): InvoiceDashboardTrend {
-  const scale = events ? 1n : 10n;
+  // Ten-thousands of baht per month, in satang (events a tenth of that).
+  const unit = events ? 1_000_00n : 10_000_00n;
   const billed = [42, 38, 45, 31, 36, 40, 29, 33, 41, 18];
   const collected = [35, 33, 39, 30, 31, 34, 27, 30, 33, 14];
   return {
@@ -131,8 +132,8 @@ function trend(events: boolean): InvoiceDashboardTrend {
         from: `2026-${m}-01`,
         to: `2026-${m}-28`,
         state,
-        billedSatang: state === 'future' ? null : BigInt(billed[i] ?? 0) * 100_000_00n * scale / 10n,
-        collectedSatang: state === 'future' ? null : BigInt(collected[i] ?? 0) * 100_000_00n * scale / 10n,
+        billedSatang: state === 'future' ? null : BigInt(billed[i] ?? 0) * unit,
+        collectedSatang: state === 'future' ? null : BigInt(collected[i] ?? 0) * unit,
       };
     }),
   };

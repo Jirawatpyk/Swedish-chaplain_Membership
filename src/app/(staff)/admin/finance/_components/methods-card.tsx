@@ -61,14 +61,16 @@ export async function MethodsCard({
         </p>
       }
     >
-      <ul aria-label={t('methods.listLabel')} className="m-0 list-none p-0" data-testid="method-rows">
+      {/* The card is narrow beside the chart: its own width, not the viewport's,
+          decides whether the bar shares the line or sits under it. */}
+      <ul aria-label={t('methods.listLabel')} className="@container m-0 list-none p-0" data-testid="method-rows">
         {methods.rows.map((row, i) => (
           <li
             key={row.method}
-            className="grid min-h-9 grid-cols-[6.5rem_1fr_max-content_2.5rem] items-center gap-x-3 text-sm max-sm:grid-cols-[1fr_max-content_2.5rem] max-sm:gap-y-1.5 max-sm:py-1"
+            className="grid min-h-9 grid-cols-[1fr_max-content_2.5rem] items-center gap-x-3 gap-y-1.5 py-1 text-sm @lg:grid-cols-[6.5rem_1fr_max-content_2.5rem] @lg:gap-y-0 @lg:py-0"
           >
             <span>{t(`methods.method.${row.method}`)}</span>
-            <span aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-[var(--aura-bg-surface-hover)] max-sm:col-span-3 max-sm:row-start-2">
+            <span aria-hidden="true" className="col-span-3 row-start-2 h-2 overflow-hidden rounded-full bg-[var(--aura-bg-surface-hover)] @lg:col-span-1 @lg:row-start-auto">
               <span className="block h-full rounded-full bg-[var(--aura-chart-1)]" style={{ width: `${row.sharePercent}%` }} />
             </span>
             <span className="text-right tabular-nums">{formatAmount(row.amountSatang)}</span>

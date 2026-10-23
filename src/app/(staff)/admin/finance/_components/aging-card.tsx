@@ -24,7 +24,7 @@ const BAR: Record<AgingBucket, string> = {
   over_90: 'var(--aura-fg-danger)',
 };
 
-const ROW = 'grid min-h-11 grid-cols-[6.5rem_1fr_max-content_3.75rem] items-center gap-x-3 text-sm max-sm:grid-cols-[1fr_max-content_3rem] max-sm:gap-y-1.5';
+const ROW = 'grid min-h-11 grid-cols-[6.5rem_1fr_max-content_5.5rem] items-center gap-x-3 text-sm max-sm:grid-cols-[1fr_max-content_5rem] max-sm:gap-y-1.5';
 
 export async function AgingCard({
   result,
@@ -89,7 +89,7 @@ export async function AgingCard({
                 <span className="block h-full rounded-full" style={{ width: `${row.sharePercent}%`, background: BAR[row.bucket] }} />
               </span>
               <span className="text-right tabular-nums">{amount}</span>
-              <span className="text-right tabular-nums text-[var(--aura-fg-secondary)]">
+              <span className="whitespace-nowrap text-right tabular-nums text-[var(--aura-fg-secondary)]">
                 {row.count} · {shares[i]}
               </span>
             </>
