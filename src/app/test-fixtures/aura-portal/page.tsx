@@ -261,6 +261,8 @@ export default async function AuraPortalPreviewPage({
           pendingRequest: PENDING,
           decidedRequest: null,
           ownRequestReadFailed: false,
+          // #239 — `state=no-requests` shows the history card's empty copy
+          recentRequests: sp.state === 'no-requests' ? [] : [PENDING, DECIDED],
           planDisplayName: 'Premium Corporate',
           isIndividual: false,
           memberNumberFormatted: 'TSCC-0042',

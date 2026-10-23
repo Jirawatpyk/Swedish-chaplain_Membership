@@ -7281,7 +7281,8 @@
           "profileCard": {
             "title": "Historik över ändringsbegäranden",
             "subtitle": "Se varje ändring du föreslagit och vad kammaren beslutade.",
-            "link": "Visa historik"
+            "viewAll": "Visa alla",
+            "moreFields": "+{count, plural, one {# till} other {# till}}"
           },
           "colleagueNote": "Ändringar som en kollega gör i sina egna kontaktuppgifter visas aldrig här.",
           "withdrawnOn": "återkallad {withdrawnAt}"

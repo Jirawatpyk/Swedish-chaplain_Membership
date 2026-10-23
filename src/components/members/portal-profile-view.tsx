@@ -10,6 +10,7 @@ import { DetailField } from '@/components/members/detail-field';
 import { PortalMarketingToggle } from '@/components/members/portal-marketing-toggle';
 import { PendingRequestBanner } from '@/components/members/change-requests/pending-request-banner';
 import { DecisionOutcomeBanner } from '@/components/members/change-requests/decision-outcome-banner';
+import { ChangeRequestStatusBadge, changeRequestStatusOf } from '@/components/members/change-requests/change-request-status-badge';
 import { formatCalendarYear, formatLocalisedDate } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
 import type { ChangeRequestView } from '@/lib/change-request-portal-view';
@@ -37,6 +38,11 @@ export interface PortalProfileViewProps {
   readonly pendingRequest: ChangeRequestView | null;
   readonly decidedRequest: ChangeRequestView | null;
   readonly ownRequestReadFailed: boolean;
+  /**
+   * #239 — the history card's most recent requests (newest first); null when
+   * the read did not run or failed, and the card then shows its subtitle.
+   */
+  readonly recentRequests: readonly ChangeRequestView[] | null;
   readonly planDisplayName: string;
   readonly isIndividual: boolean;
   readonly memberNumberFormatted: string;
@@ -60,6 +66,7 @@ export async function renderPortalProfileView({
   pendingRequest,
   decidedRequest,
   ownRequestReadFailed,
+  recentRequests,
   planDisplayName,
   isIndividual,
   memberNumberFormatted,
@@ -74,34 +81,12 @@ export async function renderPortalProfileView({
   const tDir = await getTranslations('directorySettings');
   const tHistory = await getTranslations('portal.changeRequests.history');
   const tPending = await getTranslations('portal.changeRequests.pending');
+  const tDiff = await getTranslations('portal.changeRequests.diff');
   const locale = await getLocale();
 
-  const moreLinks = [
-    ...(showHistoryLink
-      ? [
-          {
-            href: '/portal/change-requests',
-            title: tHistory('profileCard.title'),
-            subtitle: tHistory('profileCard.subtitle'),
-            action: tHistory('profileCard.link'),
-            headingId: 'portal-profile-change-requests-heading',
-            testId: { 'data-testid': 'profile-history-link' },
-          },
-        ]
-      : []),
-    ...(showDirectoryLink
-      ? [
-          {
-            href: '/portal/profile/directory',
-            title: tDir('title'),
-            subtitle: tDir('subtitle'),
-            action: tDir('manage'),
-            headingId: 'portal-profile-directory-heading',
-            testId: {},
-          },
-        ]
-      : []),
-  ];
+  // #239 — a request's row date: when it was decided or withdrawn, else sent.
+  const rowDate = (r: ChangeRequestView) =>
+    r.state === 'decided' && r.decidedAt ? r.decidedAt : r.state === 'withdrawn' && r.withdrawnAt ? r.withdrawnAt : r.submittedAt;
 
   return (
     <DetailContainer>
@@ -323,49 +308,93 @@ export async function renderPortalProfileView({
       </Card>
 
       {/* The two cards under the record: side by side from 768px (the
-          `Portal-profile` board), one list card on phones (`Portal-profile-
-          mobile`). F114 US4 (FR-029) history is gated on the platform flag
-          (the page notFounds when dark; shown regardless of the tenant
-          setting); the F9 directory card on the F9 flag. Real <h2>s. */}
-      {moreLinks.length > 0 ? (
-        <>
-          <div className="hidden gap-4 md:grid md:grid-cols-2 [&>*:only-child]:md:col-span-2">
-            {moreLinks.map((link) => (
-              <Card
-                key={link.href}
-                title={link.title}
-                titleId={link.headingId}
-                headingLevel={2}
-                actions={
-                  <Link href={link.href} className={buttonClass({ variant: 'secondary' })} {...link.testId}>
-                    {link.action}
-                  </Link>
-                }
-              >
-                <p className="text-[var(--aura-fg-secondary)]">{link.subtitle}</p>
-              </Card>
-            ))}
-          </div>
-          <Card as="nav" aria-label={t('moreAboutProfile')} className="md:hidden">
-            <ul className="flex flex-col">
-              {moreLinks.map((link, i) => (
-                <li key={link.href} className={i > 0 ? 'border-t border-[var(--aura-border-default)]' : undefined}>
-                  <Link
-                    href={link.href}
-                    className="flex min-h-14 items-center gap-3 px-4 py-3 text-[var(--aura-fg-primary)] no-underline"
-                    {...link.testId}
-                  >
-                    <span className="flex min-w-0 flex-1 flex-col">
-                      <span className="font-semibold">{link.title}</span>
-                      <span className="text-xs text-[var(--aura-fg-secondary)]">{link.subtitle}</span>
-                    </span>
-                    <Icon name={<ChevronRightIcon />} size={16} className="text-[var(--aura-fg-secondary)]" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        </>
+          `Portal-profile` board). F114 US4 (FR-029) history is gated on the
+          platform flag (the page notFounds when dark; shown regardless of the
+          tenant setting); the F9 directory card on the F9 flag. Real <h2>s.
+          #239: the history card lists the two most recent requests as one-line
+          rows — field, status, date, never the values — at every width, with
+          View all to the history page. Phones keep the directory as a list row
+          (`Portal-profile-mobile`). */}
+      {showHistoryLink || showDirectoryLink ? (
+        <div className="grid gap-4 md:grid-cols-2 [&>*:only-child]:md:col-span-2">
+          {showHistoryLink ? (
+            <Card
+              title={tHistory('profileCard.title')}
+              titleId="portal-profile-change-requests-heading"
+              headingLevel={2}
+              actions={
+                <Link
+                  href="/portal/change-requests"
+                  className={cn(buttonClass({ variant: 'secondary' }), 'max-sm:h-11')}
+                  data-testid="profile-history-link"
+                >
+                  {tHistory('profileCard.viewAll')}
+                </Link>
+              }
+            >
+              {recentRequests && recentRequests.length > 0 ? (
+                <ul className="flex flex-col">
+                  {recentRequests.map((r) => {
+                    const [first, ...rest] = r.fields;
+                    const date = rowDate(r);
+                    return (
+                      <li
+                        key={r.id}
+                        data-testid="profile-recent-request"
+                        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--aura-border-default)] py-2.5 first:border-t-0 first:pt-0 last:pb-0"
+                      >
+                        <span className="min-w-0 flex-1 font-medium">
+                          {first ? tDiff(`labels.${first.key}`) : null}
+                          {rest.length > 0 ? (
+                            <span className="font-normal text-[var(--aura-fg-secondary)]">
+                              {' '}
+                              {tHistory('profileCard.moreFields', { count: rest.length })}
+                            </span>
+                          ) : null}
+                        </span>
+                        <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />
+                        <time dateTime={date} className="aura-text-table-cell text-[var(--aura-fg-secondary)] tabular-nums">
+                          {formatLocalisedDate(date, locale, { dateStyle: 'medium' })}
+                        </time>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-[var(--aura-fg-secondary)]">{tHistory('profileCard.subtitle')}</p>
+              )}
+            </Card>
+          ) : null}
+          {showDirectoryLink ? (
+            <Card
+              title={tDir('title')}
+              titleId="portal-profile-directory-heading"
+              headingLevel={2}
+              className="max-md:hidden"
+              actions={
+                <Link href="/portal/profile/directory" className={buttonClass({ variant: 'secondary' })}>
+                  {tDir('manage')}
+                </Link>
+              }
+            >
+              <p className="text-[var(--aura-fg-secondary)]">{tDir('subtitle')}</p>
+            </Card>
+          ) : null}
+        </div>
+      ) : null}
+      {showDirectoryLink ? (
+        <Card as="nav" aria-label={t('moreAboutProfile')} className="md:hidden">
+          <Link
+            href="/portal/profile/directory"
+            className="flex min-h-14 items-center gap-3 px-4 py-3 text-[var(--aura-fg-primary)] no-underline"
+          >
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="font-semibold">{tDir('title')}</span>
+              <span className="text-xs text-[var(--aura-fg-secondary)]">{tDir('subtitle')}</span>
+            </span>
+            <Icon name={<ChevronRightIcon />} size={16} className="text-[var(--aura-fg-secondary)]" />
+          </Link>
+        </Card>
       ) : null}
     </DetailContainer>
   );
