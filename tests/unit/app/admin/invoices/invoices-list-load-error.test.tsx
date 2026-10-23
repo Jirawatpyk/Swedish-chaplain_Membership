@@ -238,3 +238,25 @@ describe('AdminInvoicesPage — the drafts hint (US8 T809)', () => {
     }
   });
 });
+
+// Spec 124 follow-up — the Overdue filter and the row badges read ONE clock:
+// the page takes the instant once and hands the list its Bangkok date.
+describe('AdminInvoicesPage — one clock for the overdue filter', () => {
+  it.each([
+    ['2026-06-30T16:59:59Z', '2026-06-30'],
+    ['2026-06-30T17:00:00Z', '2026-07-01'],
+  ])('at %s the list call receives today=%s', async (instant, bangkokDate) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(instant));
+    try {
+      await renderPage({ status: 'overdue' });
+      expect(listInvoicesPagedMock).toHaveBeenCalledTimes(1);
+      expect(listInvoicesPagedMock.mock.calls[0]![1]).toMatchObject({
+        status: 'overdue',
+        today: bangkokDate,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
