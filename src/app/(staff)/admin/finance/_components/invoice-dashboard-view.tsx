@@ -175,7 +175,12 @@ export async function renderInvoiceDashboardView(props: InvoiceDashboardViewProp
         </div>
         <div className="order-1 lg:order-none lg:col-span-5">
           <Suspense fallback={<CardSkeleton loadingLabel={t('states.loadingCard')} kind="attention" title={t('attention.title')} />}>
-            <AttentionCard result={props.attention} filtered={filtered} listFilters={listFilters} />
+            <AttentionCard
+              result={props.attention}
+              filtered={filtered}
+              listFilters={listFilters}
+              linkDrafts={autoInvoiceEnabled}
+            />
           </Suspense>
         </div>
         <div className="order-3 lg:order-none lg:col-span-10">
@@ -257,7 +262,11 @@ function TileRow({
         caption={
           fy.toDate
             ? t('tiles.collectedFiscalYearToDate', { fiscalYear: fiscalYearShort })
-            : t('tiles.collectedFiscalYearWhole', { from: formatDay(fy.range.from, locale), to: formatDay(fy.range.to, locale) })
+            : t('tiles.collectedFiscalYearWhole', {
+                fiscalYear: fiscalYearShort,
+                from: formatDay(fy.range.from, locale),
+                to: formatDay(fy.range.to, locale),
+              })
         }
         icon="trending-up"
         value={money(fy.amountSatang)}

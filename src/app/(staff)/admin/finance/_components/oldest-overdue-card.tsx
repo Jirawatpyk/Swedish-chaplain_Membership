@@ -29,8 +29,9 @@ export const OLDEST_OVERDUE_TITLE_ID = 'oldest-overdue-title';
 /** Shown on a phone; the rest of the six are hidden there. */
 const PHONE_ROWS = 3;
 
-/** 44px on a phone, where these links stand alone (US6.2). */
-const PHONE_TARGET = 'max-sm:inline-flex max-sm:min-h-11 max-sm:items-center';
+/** 44px below 640px or on a coarse pointer, where these links stand alone (US6.2). */
+const PHONE_TARGET =
+  'max-sm:inline-flex max-sm:min-h-11 max-sm:items-center pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center';
 
 function triggerIdOf(invoiceId: string): string {
   return `oldest-overdue-pay-${invoiceId}`;

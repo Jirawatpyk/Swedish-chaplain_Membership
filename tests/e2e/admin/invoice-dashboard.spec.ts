@@ -83,6 +83,14 @@ test.describe('124 — Invoice dashboard @a11y @i18n', () => {
     await tiles.getByRole('link', { name: new RegExp(D.tiles.outstanding) }).click();
     await expect(page).toHaveURL(/\/admin\/invoices\?status=issued/);
     expect(await listCount(page)).toBe(outstanding);
+
+    // US2.1's other half: the Overdue tile against the list's own overdue.
+    await openDashboard(page);
+    const overdueCaption = await tiles.getByText(/past due · as of today/).innerText();
+    const overdue = Number(overdueCaption.replace(/[^\d]/g, ''));
+    await tiles.getByRole('link', { name: new RegExp(`^${D.tiles.overdue}`) }).click();
+    await expect(page).toHaveURL(/\/admin\/invoices\?status=overdue/);
+    expect(await listCount(page)).toBe(overdue);
   });
 
   test('2. manager: figures, but no Record payment and no draft rows', async ({ page }) => {

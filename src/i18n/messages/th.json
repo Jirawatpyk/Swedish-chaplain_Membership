@@ -2655,7 +2655,7 @@
         "collectedMonthCaption": "{month} ถึงวันนี้ · ไม่ขึ้นกับตัวกรองปีบัญชี",
         "collectedFiscalYear": "รับชำระใน{fiscalYear}",
         "collectedFiscalYearToDate": "{fiscalYear} ถึงวันนี้",
-        "collectedFiscalYearWhole": "{from} – {to}",
+        "collectedFiscalYearWhole": "{fiscalYear} · {from} – {to}",
         "title": "ตัวเลขสำคัญ"
       },
       "aging": {

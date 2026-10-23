@@ -2655,7 +2655,7 @@
         "collectedMonthCaption": "{month} to date · not affected by the fiscal-year filter",
         "collectedFiscalYear": "Collected in {fiscalYear}",
         "collectedFiscalYearToDate": "{fiscalYear} to date",
-        "collectedFiscalYearWhole": "{from} – {to}",
+        "collectedFiscalYearWhole": "{fiscalYear} · {from} – {to}",
         "title": "Key figures"
       },
       "aging": {

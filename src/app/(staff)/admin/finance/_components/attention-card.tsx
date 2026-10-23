@@ -26,7 +26,7 @@ interface AttentionRow {
   readonly key: AttentionKey;
   readonly count: number;
   readonly tone: Tone;
-  readonly href?: string;
+  readonly href?: string | undefined;
 }
 
 const ROW =
@@ -36,12 +36,19 @@ export async function AttentionCard({
   result,
   filtered,
   listFilters,
+  linkDrafts,
 }: {
   readonly result: Promise<InvoiceDashboardResult<InvoiceDashboardAttention>> | InvoiceDashboardResult<InvoiceDashboardAttention>;
   /** A Type, Plan or Origin filter is set. */
   readonly filtered: boolean;
   /** The active filters as invoice-list keys (`subject`, `plan`, `origin`). */
   readonly listFilters: Pick<InvoiceListQuery, 'subject' | 'plan' | 'origin'>;
+  /**
+   * `FEATURE_AUTO_INVOICE` is on. The list reads `origin` only then; without
+   * it a draft link would open every draft, not the count it names, so the
+   * draft rows stay plain rows.
+   */
+  readonly linkDrafts: boolean;
 }) {
   const t = await getTranslations('admin.invoiceDashboard');
   const loaded = await result;
@@ -64,14 +71,16 @@ export async function AttentionCard({
   const a = loaded.value;
   // A draft row only opens a draft view the active Origin filter allows.
   const draftHref = (origin: 'manual' | 'auto_renewal') =>
-    invoiceListHref({ status: 'draft', ...listFilters, origin });
-  const rows: AttentionRow[] = [
-    ...('drafts' in a
+    linkDrafts ? invoiceListHref({ status: 'draft', ...listFilters, origin }) : undefined;
+  const draftRows: AttentionRow[] =
+    'drafts' in a
       ? [
-          { key: 'manualDrafts', count: a.drafts.manual, tone: 'accent', href: draftHref('manual') } as const,
-          { key: 'autoRenewalDrafts', count: a.drafts.autoRenewal, tone: 'accent', href: draftHref('auto_renewal') } as const,
+          { key: 'manualDrafts', count: a.drafts.manual, tone: 'accent', href: draftHref('manual') },
+          { key: 'autoRenewalDrafts', count: a.drafts.autoRenewal, tone: 'accent', href: draftHref('auto_renewal') },
         ]
-      : []),
+      : [];
+  const rows: AttentionRow[] = [
+    ...draftRows,
     { key: 'receiptPdfFailed', count: a.receiptPdfFailed, tone: 'danger' },
     { key: 'refundsFailedAtStripe', count: a.refundsFailedAtStripe, tone: 'danger' },
     { key: 'refundsPendingOverThreshold', count: a.refundsPendingOverThreshold, tone: 'warning' },

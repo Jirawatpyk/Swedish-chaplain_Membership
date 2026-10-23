@@ -124,7 +124,10 @@ describe('renderInvoiceDashboardView — tiles', () => {
       },
     });
     expect(screen.queryByText('FY 2025 to date')).toBeNull();
-    expect(screen.getByText(`${formatDay('2025-01-01', 'en')} – ${formatDay('2025-12-31', 'en')}`)).toBeInTheDocument();
+    // A past FY's caption still starts with its FY label (US3.3).
+    expect(
+      screen.getByText(`FY 2025 · ${formatDay('2025-01-01', 'en')} – ${formatDay('2025-12-31', 'en')}`),
+    ).toBeInTheDocument();
   });
 
   it('Export CSV covers the selected FY up to today', async () => {

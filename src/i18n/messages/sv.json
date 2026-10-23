@@ -2655,7 +2655,7 @@
         "collectedMonthCaption": "{month} hittills · påverkas inte av räkenskapsårsfiltret",
         "collectedFiscalYear": "Inbetalt {fiscalYear}",
         "collectedFiscalYearToDate": "{fiscalYear} hittills",
-        "collectedFiscalYearWhole": "{from} – {to}",
+        "collectedFiscalYearWhole": "{fiscalYear} · {from} – {to}",
         "title": "Nyckeltal"
       },
       "aging": {

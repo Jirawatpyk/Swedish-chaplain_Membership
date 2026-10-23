@@ -136,6 +136,7 @@ describe('AttentionCard', () => {
         }),
         filtered: true,
         listFilters,
+        linkDrafts: true,
       }),
     );
     const rows = within(screen.getByTestId('attention-rows')).getAllByRole('listitem');
@@ -149,12 +150,31 @@ describe('AttentionCard', () => {
     expect(screen.getByText(D.attention.underFilters)).toBeInTheDocument();
   });
 
+  it('with auto-invoice off the list ignores origin, so the draft rows are not links', async () => {
+    mount(
+      await AttentionCard({
+        result: ok({
+          receiptPdfFailed: 0,
+          refundsFailedAtStripe: 0,
+          refundsPendingOverThreshold: 0,
+          drafts: { manual: 2, autoRenewal: 1 },
+        }),
+        filtered: false,
+        listFilters: {},
+        linkDrafts: false,
+      }),
+    );
+    expect(screen.getByText(D.attention.manualDrafts)).toBeInTheDocument();
+    expect(within(screen.getByTestId('attention-rows')).queryByRole('link')).toBeNull();
+  });
+
   it('without write access the draft rows are absent from the HTML', async () => {
     const { container } = mount(
       await AttentionCard({
         result: ok({ receiptPdfFailed: 2, refundsFailedAtStripe: 0, refundsPendingOverThreshold: 1 }),
         filtered: false,
         listFilters: {},
+        linkDrafts: true,
       }),
     );
     expect(container.innerHTML).not.toContain(D.attention.manualDrafts);
@@ -164,10 +184,10 @@ describe('AttentionCard', () => {
 
   it('all zero: one line, filtered or not', async () => {
     const zeros = { receiptPdfFailed: 0, refundsFailedAtStripe: 0, refundsPendingOverThreshold: 0 };
-    const { unmount } = mount(await AttentionCard({ result: ok(zeros), filtered: false, listFilters: {} }));
+    const { unmount } = mount(await AttentionCard({ result: ok(zeros), filtered: false, listFilters: {}, linkDrafts: true }));
     expect(screen.getByTestId('attention-nothing')).toHaveTextContent(D.attention.nothing);
     unmount();
-    mount(await AttentionCard({ result: ok(zeros), filtered: true, listFilters }));
+    mount(await AttentionCard({ result: ok(zeros), filtered: true, listFilters, linkDrafts: true }));
     expect(screen.getByTestId('attention-nothing')).toHaveTextContent(D.attention.nothingFiltered);
   });
 });
