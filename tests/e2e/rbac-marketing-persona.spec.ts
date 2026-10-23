@@ -34,6 +34,8 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 /** Money + PII-sensitive + compliance surfaces marketing must never reach. */
 const DENIED_ROUTES = [
+  // 124 — 404 whether FEATURE_INVOICE_DASHBOARD is on (no insights.finance) or off.
+  '/admin/finance',
   '/admin/invoices',
   '/admin/credit-notes',
   '/admin/renewals',
