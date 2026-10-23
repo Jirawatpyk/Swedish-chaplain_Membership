@@ -6,7 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { SectionLinks } from '@/app/(staff)/admin/members/[memberId]/_components/section-links';
+import { SectionLinks } from '@/components/layout/section-links';
 
 afterEach(cleanup);
 
@@ -42,6 +42,17 @@ describe('SectionLinks', () => {
     const { container } = render(<SectionLinks label="On this page" links={links} />);
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('aria-current', 'location');
     expect(container.firstElementChild?.className).toContain('top-[var(--aura-shell-bar-height)]');
+  });
+
+  // Invoice settings (maintainer, 22 Oct): on a phone the row scrolls away
+  // with the page, so shell bar + tabs + save bar don't take a fifth of it.
+  it('sticks from sm only when asked, and at every width by default', () => {
+    const { container, rerender } = render(<SectionLinks label="On this page" links={links} stickyFrom="sm" />);
+    const classes = container.firstElementChild!.className.split(/\s+/);
+    expect(classes).toContain('sm:sticky');
+    expect(classes).not.toContain('sticky');
+    rerender(<SectionLinks label="On this page" links={links} />);
+    expect(container.firstElementChild!.className.split(/\s+/)).toContain('sticky');
   });
 });
 

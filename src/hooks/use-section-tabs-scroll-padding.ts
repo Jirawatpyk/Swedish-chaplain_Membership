@@ -7,6 +7,10 @@
  * reached by its anchor lands below the shell bar AND the row, whatever
  * height the row has at this width, locale or zoom — no fixed number.
  *
+ * A row that is not sticky at this width (the invoice settings tabs on a
+ * phone) publishes 0, since it scrolls away with the page; crossing the
+ * breakpoint changes its `position`, not its size, so window resizes count too.
+ *
  * The variable is removed on unmount, so a page without tabs keeps the plain
  * shell-bar offset. Assumes one tab row per page.
  */
@@ -20,13 +24,18 @@ export function useSectionTabsScrollPadding(ref: RefObject<HTMLElement | null>):
     const el = ref.current;
     if (!el) return;
     const root = document.documentElement;
-    const publish = () => root.style.setProperty(VAR, `${Math.ceil(el.getBoundingClientRect().height)}px`);
+    const publish = () => {
+      const sticky = getComputedStyle(el).position === 'sticky';
+      root.style.setProperty(VAR, `${sticky ? Math.ceil(el.getBoundingClientRect().height) : 0}px`);
+    };
     publish();
-    // Measured once where ResizeObserver is missing (jsdom), else on resize.
+    // The row's own size where ResizeObserver exists (not in jsdom).
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publish);
     observer?.observe(el);
+    window.addEventListener('resize', publish);
     return () => {
       observer?.disconnect();
+      window.removeEventListener('resize', publish);
       root.style.removeProperty(VAR);
     };
   }, [ref]);

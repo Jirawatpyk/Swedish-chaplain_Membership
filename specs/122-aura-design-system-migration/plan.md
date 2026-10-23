@@ -427,3 +427,30 @@ After a successful erase, the header ⋯ menu that opened the dialog unmounts wi
   - **Window:** the request lasts 60 s, not 10 s, so a slow refresh on a phone still lands. The case `still takes a request 30 seconds old` failed.
   - **`finalFocus`:** the erase Dialog sets `finalFocus`: the caller's opener (the ⋯ button, through `MemberHeaderMoreMenu`), else its own trigger. The cases `Cancel returns focus to the opener the caller names` and `with its own trigger, Cancel returns focus to it` failed: focus was on `<body>`.
   - GREEN: 99/99 in the touched files.
+
+### Evidence: invoice settings, section tabs on top (size M, plan agreed 2026-10-23)
+
+The US8c-2 rail becomes the member page's section tabs above a one-column, start-aligned form (spec Session 2026-10-23).
+
+- **Behaviour, RED first** (`54409b36e`): `useSectionTabsScrollPadding > publishes 0px while the row is not sticky` and `> follows a change of stickiness on window resize` both failed (the hook published the height whatever the row's `position`). GREEN in `c07c4417c`.
+- **Presentation, D-023 shared commit** (the failing lines below were taken before the code changed):
+  - `SectionLinks > sticks from sm only when asked…` failed: "expected [ 'sticky', …(5) ] to include 'sm:sticky'".
+  - `invoice settings page frame > has the page header, the note, the section tabs…` failed: "TypeError: Cannot read properties of undefined (reading 'organization')" (no `tabs.*` keys yet).
+  - `> has no side rail and no jump-to select any more` failed: "expected <button type="button" …(1)></button> to be null" (the rail button).
+- **Removed:** `section-nav.tsx`, `use-scroll-spy.ts` and their unit tests (the shared row carries its own spy, covered in `section-links.test.tsx`). Also the `IntersectionObserver` stand-ins in three form tests, `nav.jumpTo` in EN/TH/SV, and `scroll-mt-24` on the six cards (it would add to `scroll-padding-top`).
+- **Measured on the fixture** (production build, `view=invoice-settings`):
+  - The heading's left edge equals the member form's: 16 / 272 / 272 at 390 / 1024 / 1440.
+  - The form is 656px wide from 1024.
+  - The row is static on a phone (`--chamber-section-tabs-height: 0px`, padding 88px) and sticky from 1024 (36px, padding 124px).
+  - A Payment tab click lands the card at 124px, under the row's bottom at 92, with focus on `#payment`.
+  - Six tabs fit one row at 1024 in EN, TH and SV, and scroll sideways at 390.
+  - No horizontal page scroll; Tax ID is 318px wide.
+- **Reviews:** `enterprise-ux-designer` and `mobile-a11y-ux-reviewer` found no BLOCKER or HIGH.
+  - **MEDIUM, save bar over a focused field (2.4.11):** the bar wraps to 103px on a phone, more than the stylesheet's 5.5rem, so a focused field could slide under it. Fixed: the bar keeps its measured height, its bottom offset and a 16px gap clear through `scroll-padding-bottom` while it shows. RED `b83c1c7ac` (`keeps its measured height clear…` failed: "expected '' to be '119px'"), GREEN `4fc55eea1`.
+  - **MEDIUM, skeleton tab row:** it was 44px at every width but the real row is 36px from `sm` with a mouse, so the page shifted 8px on load. It is now `h-11 sm:h-9`.
+  - **LOW:**
+    - The TH card title is now "การออกเลขเอกสาร" (was "การเลขเอกสาร"), in the subtitle too.
+    - The e2e describe is now named "section-tab".
+    - The tab target size goes to the AURA handoff as #171: "Tax" is 22px wide, both here and on the member page.
+    - A reader without write access now gets a first note, "You can view these settings but not change them." (EN/TH/SV `readOnlyNote`), as an info note, since AURA's `Alert` has no neutral tone. This was pre-existing; the maintainer asked for it in this PR. D-023 shared commit: `invoice settings page frame > tells a view-only reader why the fields are locked` failed before the view changed: "Unable to find an element with the text: You can view these settings but not change them.".
+  - **Not changed:** no way back to the tabs on a phone (a recorded decision), the skeleton's existing-settings note (pre-existing), and no scroll hint at 320 (AURA `Tabs`).

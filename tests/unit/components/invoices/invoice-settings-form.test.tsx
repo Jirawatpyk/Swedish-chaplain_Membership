@@ -27,19 +27,6 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-// Task 7 — the orchestrator now mounts <SectionNav>, which mounts the real
-// (un-mocked) useScrollSpy hook. jsdom has no real IntersectionObserver;
-// same no-op stand-in as section-nav.test.tsx — this file's assertions
-// don't depend on scroll-driven active-section updates.
-class NoopIntersectionObserver {
-  observe() {}
-  disconnect() {}
-  unobserve() {}
-}
-beforeEach(() => {
-  (globalThis as unknown as { IntersectionObserver: typeof NoopIntersectionObserver }).IntersectionObserver =
-    NoopIntersectionObserver;
-});
 
 const BASE_VALUES: InvoiceSettingsFormInitialValues = {
   currency_code: 'THB',

@@ -585,7 +585,6 @@ describe('UI import ratchet (spec 122)', () => {
       'src/app/(staff)/admin/settings/invoicing/loading.tsx',
       'src/app/(staff)/admin/settings/invoicing/_components/invoice-settings-view.tsx',
       'src/components/invoices/invoice-settings-form.tsx',
-      'src/components/invoices/invoice-settings/section-nav.tsx',
       'src/components/invoices/invoice-settings/sticky-save-bar.tsx',
       'src/components/invoices/invoice-settings/sections/organization-section.tsx',
       'src/components/invoices/invoice-settings/sections/branding-section.tsx',

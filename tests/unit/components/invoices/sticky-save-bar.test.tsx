@@ -37,3 +37,19 @@ it('calls onDiscard when Discard is clicked, and Discard is disabled while savin
   );
   expect(within(bar).getByRole('button', { name: /discard/i })).toBeDisabled();
 });
+
+// Review 23 Oct (WCAG 2.4.11): with the form in one column the save bar is
+// taller than the 5.5rem the stylesheet keeps clear (103px at 390, its status
+// and buttons wrap), so a focused field slid under it. The bar keeps its own
+// measured height clear while it shows, and gives the offset back when it goes.
+it('keeps its measured height clear below a focused field while it shows', () => {
+  const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    return { height: this.classList.contains('chamber-viewport-actionbar') ? 103 : 0 } as DOMRect;
+  });
+  const root = document.documentElement;
+  const { unmount } = wrap(<StickySaveBar visible submitting={false} exists onDiscard={vi.fn()} />);
+  expect(root.style.scrollPaddingBottom).toBe('119px');
+  unmount();
+  expect(root.style.scrollPaddingBottom).toBe('');
+  spy.mockRestore();
+});

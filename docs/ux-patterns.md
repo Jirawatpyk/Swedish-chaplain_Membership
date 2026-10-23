@@ -247,6 +247,7 @@ Step 4 — Confirm (pattern 1 TIER 1) → streaming progress (pattern 2.2) → r
 
 - The trigger carries `aria-haspopup="dialog"`; the Drawer sets `finalFocus` to it, so focus returns there even where a click does not focus a button (Safari).
 - A detail page with sticky section tabs leaves aside sections out of the scroll-spy from `lg` (`SectionLink.aside`); a followed link to one still marks it.
+- The same tab row (`src/components/layout/section-links.tsx`) jumps between the sections of a long form (invoice settings). There it scrolls away with the page below 640px (`stickyFrom="sm"`), so the save bar keeps its room.
 
 Reference: `src/app/(staff)/admin/members/[memberId]/_components/company-details-drawer.tsx` (spec 122, Session 2026-10-22, layout B).
 

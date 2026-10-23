@@ -1,16 +1,17 @@
 /**
  * Task 10 (settings-ux-invoice-reminders) — Invoice Settings E2E.
  *
- * Verifies the Task 7-9 two-column sticky-nav redesign of
+ * Verifies the Task 7-9 sticky-nav redesign (since 22 Oct, tabs above a
+ * one-column form) of
  * `/admin/settings/invoicing` did not regress the §87 prefix-change safety
  * guard (088 US5 T043a) when Save is triggered from the sticky bar's
  * `requestSubmit()` re-entry path instead of the in-form primary Save
  * button — design contract spec §4.3 (nav) + §6.3 (single-submit path).
  *
- *   (a) clicking a section-nav rail button moves focus to the target
- *       section's `<h2 data-section-heading tabIndex={-1}>`
- *       (`section-nav.tsx` `goToSection`) — the focus-management contract
- *       survived the Task 7 nav extraction.
+ *   (a) following a section tab moves focus to the target section card
+ *       (`<section tabIndex={-1}>` labelled by its h2; the shared
+ *       `SectionLinks` row, maintainer 22 Oct: the rail became tabs above
+ *       the form).
  *   (b) editing the invoice-number prefix and clicking Save FROM the
  *       sticky bar (not the in-form primary button) still routes through
  *       the SAME `handleSubmit` (`formRef.current?.requestSubmit()`,
@@ -73,7 +74,7 @@ const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 const SETTINGS_PATH = '/admin/settings/invoicing';
 
-test.describe('invoice settings: section-nav focus + sticky-save prefix guard @f4', () => {
+test.describe('invoice settings: section-tab focus + sticky-save prefix guard @f4', () => {
   test.skip(!ADMIN_EMAIL || !ADMIN_PASSWORD, 'E2E_SUPER_ADMIN_* not set');
 
   // Cold Turbopack compile of /admin/settings/invoicing on first hit
@@ -86,9 +87,7 @@ test.describe('invoice settings: section-nav focus + sticky-save prefix guard @f
   }, testInfo) => {
     await signInAsSuperAdmin(page);
 
-    // Desktop viewport — the section-nav rail (`section-nav.tsx`) is
-    // `hidden md:block`; below the `md` breakpoint only the mobile
-    // `<select>` jump-menu renders and there is no nav BUTTON to click.
+    // Desktop viewport, where the section tabs stick under the shell bar.
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(SETTINGS_PATH);
     await waitForLayoutContainer(page);
@@ -110,12 +109,13 @@ test.describe('invoice settings: section-nav focus + sticky-save prefix guard @f
     // interactions below change the DOM.
     await runAxeScan(page, testInfo);
 
-    // (a) nav → focus the section card (section-nav.tsx `goToSection`; spec
-    // 122 US8c-2: the AURA card is a `<section tabIndex={-1}>` labelled by its
-    // h2). Both the h2 (role=heading) and this nav rail button (role=button)
-    // read "Document numbering" (`sections.numbering` in en.json) — the
-    // explicit role scopes the match to the button.
-    await page.getByRole('button', { name: /^document numbering$/i }).click();
+    // (a) tab → focus the section card (the AURA card is a
+    // `<section tabIndex={-1}>` labelled by its h2). The tab reads the short
+    // "Numbering" (`tabs.numbering`); the card keeps "Document numbering".
+    await page
+      .getByRole('navigation', { name: /^settings sections$/i })
+      .getByRole('link', { name: /^numbering$/i })
+      .click();
     await expect(page.locator('section#numbering')).toBeFocused();
 
     // (b) change the invoice prefix, Save FROM the sticky bar. Read the

@@ -2319,6 +2319,7 @@
         "description": "Changes apply to future invoices only. Already-issued invoices retain their original snapshot.",
         "firstTimeDescription": "No settings yet. Fill in the required fields to unlock invoice issuance."
       },
+      "readOnlyNote": "You can view these settings but not change them.",
       "sections": {
         "currency": "Currency",
         "identity": "Tenant legal identity",
@@ -2337,8 +2338,15 @@
         "branding": "Branding"
       },
       "nav": {
-        "label": "Settings sections",
-        "jumpTo": "Jump to section…"
+        "label": "Settings sections"
+      },
+      "tabs": {
+        "organization": "Organization",
+        "tax": "Tax",
+        "numbering": "Numbering",
+        "notes": "Notes",
+        "payment": "Payment",
+        "branding": "Branding"
       },
       "labels": {
         "currencyCode": "Currency code",

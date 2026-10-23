@@ -13,9 +13,39 @@
  * Enter in a field submits too, and it re-enters the form's own
  * `handleSubmit` and its guards. Discard (maintainer, 3 Oct) resets the form
  * in the browser and sends nothing.
+ *
+ * Review 23 Oct (WCAG 2.4.11): the bar keeps its own measured height (and its
+ * gap above the screen edge) clear below a focused field while it shows. On a
+ * phone its status and buttons wrap to about 103px, more than the 5.5rem the
+ * stylesheet keeps for every viewport bar, so a field slid under it.
  */
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ActionBar, Button } from '@jirawatpyk/aura-react';
+import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
+
+const BAR_SELECTOR = '.chamber-viewport-actionbar';
+/** Room between the bar's top and a focused field. */
+const FOCUS_GAP_PX = 16;
+
+/** The bar's height plus its offset from the screen's bottom edge, while it shows. */
+function useBarClearance(visible: boolean): number {
+  const [clearance, setClearance] = useState(0);
+  useEffect(() => {
+    if (!visible) return;
+    const bar = document.querySelector<HTMLElement>(BAR_SELECTOR);
+    if (!bar) return;
+    const measure = () => {
+      const offset = parseFloat(getComputedStyle(bar).bottom);
+      setClearance(Math.ceil(bar.getBoundingClientRect().height + (Number.isFinite(offset) ? offset : 0) + FOCUS_GAP_PX));
+    };
+    measure();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    observer?.observe(bar);
+    return () => observer?.disconnect();
+  }, [visible]);
+  return clearance;
+}
 
 export function StickySaveBar({
   visible,
@@ -33,6 +63,8 @@ export function StickySaveBar({
   readonly discardDisabled?: boolean;
 }) {
   const t = useTranslations('admin.invoiceSettings');
+  const clearance = useBarClearance(visible);
+  useFixedBarScrollPadding(visible && clearance > 0, clearance);
   if (!visible) return null;
   return (
     <ActionBar

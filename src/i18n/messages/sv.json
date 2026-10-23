@@ -2319,6 +2319,7 @@
         "description": "Ändringar gäller endast framtida fakturor. Redan utfärdade fakturor behåller sin ursprungliga snapshot.",
         "firstTimeDescription": "Inga inställningar ännu. Fyll i obligatoriska fält för att låsa upp fakturering."
       },
+      "readOnlyNote": "Du kan se de här inställningarna men inte ändra dem.",
       "sections": {
         "currency": "Valuta",
         "identity": "Juridisk identitet",
@@ -2337,8 +2338,15 @@
         "branding": "Varumärke"
       },
       "nav": {
-        "label": "Inställningssektioner",
-        "jumpTo": "Gå till sektion…"
+        "label": "Inställningssektioner"
+      },
+      "tabs": {
+        "organization": "Organisation",
+        "tax": "Skatt",
+        "numbering": "Numrering",
+        "notes": "Anteckningar",
+        "payment": "Betalning",
+        "branding": "Varumärke"
       },
       "labels": {
         "currencyCode": "Valutakod",

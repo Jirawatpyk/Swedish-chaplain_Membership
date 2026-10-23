@@ -734,6 +734,15 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **No pending count on the Change requests tab, no phone accordion (maintainer, 22 Oct: "ทำตามแนะนำ").** The count would repeat the alert above the figures and the card's own badges; an accordion would hide the Company card's Tax ID, which a call needs. The summary card + record Drawer is recorded as `docs/ux-patterns.md` § 6.
 - **Anchors clear the sticky tabs by measurement.** The section tabs publish their height (`--chamber-section-tabs-height`), which `scroll-padding-top` adds to the shell bar and a gap. Pages without tabs keep 88px.
 
+### Session 2026-10-23 (invoice settings: section tabs on top)
+
+- **The US8c-2 side rail moves to the top as section tabs (maintainer, 22 Oct: "เอาแถบด้านข้างไปไว้ด้านบน เหมือน member"; boards `InvoiceSettings` and `InvoiceSettingsMobile` on the member-detail canvas).**
+  - `/admin/settings/invoicing` is one column in the start-aligned form container, like the other forms. It replaces the rail + 1,121px cards; the "Jump to section" select goes too.
+  - The tabs are the member page's `SectionLinks`, now shared (`src/components/layout/section-links.tsx`): in-page links, a scroll-spy, and focus moving into the section.
+- **Short tab labels.** The tabs read Organization · Tax · Numbering · Notes · Payment · Branding (`tabs.*`; TH and SV too), so six fit one row in the 656px column. The cards keep their full titles ("Document numbering", "Document notes").
+- **Not sticky on a phone.** Below 640px the tabs scroll away with the page: shell bar, tabs and save bar together would take about a fifth of the screen. From `sm` they stick under the shell bar. The row adds its height to `scroll-padding-top` only while it is sticky.
+- **Short fields stay short.** Tax ID keeps its own row in the identity fieldset, at most 20rem wide, like the currency and branch codes. The mockup's Currency + Tax ID pair would have taken Tax ID out from under its "Tenant legal identity" legend.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

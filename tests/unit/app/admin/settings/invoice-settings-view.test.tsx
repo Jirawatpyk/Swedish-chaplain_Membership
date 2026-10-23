@@ -4,7 +4,12 @@
  * render (spec Clarifications, Session 2026-10-03, US8c-2 start):
  *
  *   the page header → the "future invoices only" note (the first-time copy
- *   when no settings exist yet) → the section rail and one card per section.
+ *   when no settings exist yet) → the section tabs and one card per section.
+ *
+ * Maintainer, 22 Oct: the US8c-2 side rail moves to the top as in-page tabs
+ * (the member page's pattern), so the form is one column aligned to the start
+ * like the other forms. The tabs carry short labels; the cards keep the full
+ * names.
  *
  * The legacy wrapper card ("Invoice configuration") goes: the board has none.
  */
@@ -76,8 +81,8 @@ const VALUES: InvoiceSettingsFormInitialValues = {
   payment_instructions_en: null,
 };
 
-async function renderView(exists: boolean) {
-  const ui = (await renderInvoiceSettingsView({ initialValues: VALUES, canEdit: true, exists })) as ReactElement;
+async function renderView(exists: boolean, canEdit = true) {
+  const ui = (await renderInvoiceSettingsView({ initialValues: VALUES, canEdit, exists })) as ReactElement;
   return render(
     <NextIntlClientProvider locale="en" messages={en}>
       {ui}
@@ -86,18 +91,34 @@ async function renderView(exists: boolean) {
 }
 
 describe('invoice settings page frame (board Admin-invoice-settings)', () => {
-  it('has the page header, the note, the section rail and six section cards', async () => {
+  it('has the page header, the note, the section tabs and six section cards', async () => {
     await renderView(true);
     expect(screen.getByRole('heading', { level: 1, name: s.title })).toBeInTheDocument();
     expect(screen.getByText(s.subtitle)).toBeInTheDocument();
     const note = screen.getByText(s.card.description).closest('.aura-alert');
     expect(note).not.toBeNull();
-    const rail = screen.getByRole('navigation', { name: s.nav.label });
-    for (const key of ['organization', 'tax', 'numbering', 'documentNotes', 'payment', 'branding'] as const) {
-      expect(within(rail).getByRole('button', { name: s.sections[key] })).toBeInTheDocument();
-      const heading = screen.getByRole('heading', { level: 2, name: s.sections[key] });
-      expect(heading.closest('.aura-card')).not.toBeNull();
+    const tabs = screen.getByRole('navigation', { name: s.nav.label });
+    const sections = [
+      ['organization', 'organization', 'organization'],
+      ['tax', 'tax', 'tax'],
+      ['numbering', 'numbering', 'numbering'],
+      ['notes', 'notes', 'documentNotes'],
+      ['payment', 'payment', 'payment'],
+      ['branding', 'branding', 'branding'],
+    ] as const;
+    for (const [id, tabKey, titleKey] of sections) {
+      const link = within(tabs).getByRole('link', { name: s.tabs[tabKey] });
+      expect(link).toHaveAttribute('href', `#${id}`);
+      const heading = screen.getByRole('heading', { level: 2, name: s.sections[titleKey] });
+      expect(heading.closest('section')).toHaveAttribute('id', id);
     }
+    expect(within(tabs).getByRole('link', { name: s.tabs.organization })).toHaveAttribute('aria-current', 'location');
+  });
+
+  it('has no side rail and no jump-to select any more', async () => {
+    await renderView(true);
+    expect(screen.queryByRole('button', { name: s.sections.numbering })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /jump to section/i })).toBeNull();
   });
 
   it('drops the legacy "Invoice configuration" wrapper card', async () => {
@@ -110,5 +131,15 @@ describe('invoice settings page frame (board Admin-invoice-settings)', () => {
     await renderView(false);
     expect(screen.getByText(s.card.firstTimeDescription).closest('.aura-alert')).not.toBeNull();
     expect(screen.queryByText(s.card.description)).toBeNull();
+  });
+
+  it('tells a view-only reader why the fields are locked', async () => {
+    await renderView(true, false);
+    expect(screen.getByText(s.readOnlyNote).closest('.aura-alert')).not.toBeNull();
+  });
+
+  it('shows no view-only note to someone who can edit', async () => {
+    await renderView(true);
+    expect(screen.queryByText(s.readOnlyNote)).toBeNull();
   });
 });
