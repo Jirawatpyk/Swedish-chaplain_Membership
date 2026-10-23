@@ -32,9 +32,10 @@ describe('CompanyDetailsDrawer', () => {
 
   // R73c: on a member with no Tax ID or website the record's first focusable is
   // a copy button inside the closed Technical disclosure, which Chromium will not
-  // focus, so focus stayed on the trigger and Esc did nothing. The Close button
-  // is always shown, so the Drawer opens with focus there.
-  it('moves focus to its Close button when it opens', async () => {
+  // focus, so focus stayed on the trigger and Esc did nothing. AURA 5.57 (#169)
+  // skips a control in a closed <details> and counts its summary, so the
+  // Drawer opens on the disclosure itself.
+  it('opens with focus on the closed disclosure, not a control hidden inside it', async () => {
     render(
       <CompanyDetailsDrawer triggerLabel="All company details" title="Siam Nordic" closeLabel="Close company details">
         <details>
@@ -45,6 +46,6 @@ describe('CompanyDetailsDrawer', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'All company details' }));
     await screen.findByRole('dialog', { name: 'Siam Nordic' });
-    expect(screen.getByRole('button', { name: 'Close company details' })).toHaveFocus();
+    expect(screen.getByText('Technical details')).toHaveFocus();
   });
 });
