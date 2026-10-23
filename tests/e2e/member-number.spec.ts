@@ -232,8 +232,10 @@ test.describe('Member-number column + portal badge @f-mn @layout @i18n', () => {
     await page.waitForLoadState('networkidle');
 
     // The member-number field sits in the collapsed "Technical" <details>
-    // (056 layout C), so open it first.
-    await page.locator('summary', { hasText: /technical/i }).click();
+    // (056 layout C) inside the company record Drawer (layout B), so open
+    // both first.
+    await page.getByRole('button', { name: /all company details/i }).click();
+    await page.getByRole('dialog').locator('summary', { hasText: /technical/i }).click();
 
     // CopyButton renders aria-label = "Copy member number" (EN locale).
     const copyButton = page

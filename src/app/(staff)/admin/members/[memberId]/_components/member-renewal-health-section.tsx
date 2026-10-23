@@ -55,8 +55,6 @@ export async function MemberRenewalHealthSection({
       // NOT the empty state.
       readFailed={health.readFailed}
       status={health.status}
-      expiryIso={health.expiryIso}
-      daysRemaining={health.daysRemaining}
       engagementScore={health.engagementScore}
       engagementBand={health.engagementBand}
       // Deep-link to the renewals dashboard. A specific-cycle deep link is a

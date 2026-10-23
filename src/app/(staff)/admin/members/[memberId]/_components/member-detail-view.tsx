@@ -4,9 +4,12 @@
  * (the US3–US5a pattern). Board `Admin-member-detail`:
  *
  *   header (status, member number and badges above the name; plan · year;
- *   Benefits · Erase · Archive · Edit) → state banners → figures strip →
- *   sticky "On this page" links → Company + Contacts beside Renewal & Health
- *   and Benefits → Invoices → Change requests → Timeline beside Data export.
+ *   Benefits · Edit · ⋯ with Archive and Erase) → state banners → figures
+ *   strip → sticky "On this page" links → the main column (Contacts,
+ *   Invoices, Change requests, Timeline) beside the aside (Renewal,
+ *   Benefits, a Company summary whose full record opens in a Drawer, Data
+ *   export). Layout B, maintainer 22 Oct. Below lg the two columns stack in
+ *   that DOM order, so focus order matches what is on screen.
  *
  * The sections that read their own data arrive as `slots` (the page wraps
  * each in its own Suspense); a slot the viewer does not get is `null`, and
@@ -31,13 +34,12 @@ import { MemberNumberField } from '@/components/members/member-number-field';
 import { CountryDisplay } from '@/components/members/country-display';
 import { ArchivedBanner } from '@/components/members/archived-banner';
 import { NoPrimaryContactBanner } from '@/components/members/no-primary-contact-banner';
-import { ArchiveMemberButton } from '@/components/members/archive-member-button';
-import { EraseMemberButton } from '@/components/members/erase-member-button';
 import { ErasedBanner } from '@/components/members/erased-banner';
 import { AddContactButton } from './add-contact-button';
 import { ContactBlock, type PendingInvitation } from './contact-block';
 import { SectionLinks, type SectionLink } from './section-links';
 import { MemberHeaderMoreMenu } from './member-header-more-menu';
+import { CompanyDetailsDrawer } from './company-details-drawer';
 
 export interface MemberDetailSlots {
   readonly strip: ReactNode;
@@ -77,9 +79,6 @@ export interface MemberDetailViewProps {
   readonly locale: string;
   readonly slots: MemberDetailSlots;
 }
-
-/** Anchored sections clear the sticky shell bar and the links (56 + 44 px). */
-const ANCHOR = 'scroll-mt-28';
 
 /** A group inside the company card: an h3 under the card's h2, as the board has it. */
 function SubGroupLabel({ children }: { readonly children: ReactNode }) {
@@ -184,12 +183,12 @@ export async function renderMemberDetailView({
   );
 
   const links: SectionLink[] = [
-    { id: 'overview', label: t('sectionLinks.overview') },
     { id: 'contacts', label: t('sectionLinks.contacts') },
     ...(slots.invoices ? [{ id: 'invoices', label: t('sectionLinks.invoices') }] : []),
     ...(slots.changeRequests ? [{ id: 'change-requests', label: t('sectionLinks.changeRequests') }] : []),
     { id: 'timeline', label: t('sectionLinks.timeline') },
-    ...(slots.dataExport ? [{ id: 'data-export', label: t('sectionLinks.dataExport') }] : []),
+    { id: 'company', label: t('sectionLinks.company'), aside: true },
+    ...(slots.dataExport ? [{ id: 'data-export', label: t('sectionLinks.dataExport'), aside: true }] : []),
   ];
 
   return (
@@ -235,41 +234,23 @@ export async function renderMemberDetailView({
                 {t('sections.benefits')}
               </Link>
             )}
-            {/* Erase sits left of Archive and Edit (most destructive first,
-                Edit rightmost), and shows for an archived member too —
-                erasure is orthogonal to archive (UX M2). */}
+            {canModify && notArchived && (
+              // Edit leads on a phone, as the mobile board has it.
+              <Link href={`/admin/members/${member.memberId}/edit`} className={`${buttonClass()} max-sm:order-first`}>
+                <PencilIcon className="size-4" aria-hidden="true" />
+                {t('editCta')}
+              </Link>
+            )}
+            {/* Archive and Erase open from ⋯ at every width (layout B), each
+                behind its confirmation dialog. Erase shows for an archived
+                member too — erasure is orthogonal to archive (UX M2). */}
             {canModify && (
-              <>
-                {/* From sm up Erase and Archive are visible buttons; on a
-                    phone they open from the ⋯ menu, as the mobile board has
-                    it (maintainer, 29 Sep — a narrow ux-standards § 19
-                    exception, both behind their confirmation dialogs). */}
-                <span className="contents max-sm:hidden">
-                  <EraseMemberButton
-                    memberId={member.memberId}
-                    companyName={member.companyName}
-                    memberNumberDisplay={memberNumberDisplay}
-                  />
-                </span>
-                <MemberHeaderMoreMenu
-                  memberId={member.memberId}
-                  companyName={member.companyName}
-                  memberNumberDisplay={memberNumberDisplay}
-                  canArchive={notArchived}
-                />
-                {notArchived && (
-                  <>
-                    <span className="contents max-sm:hidden">
-                      <ArchiveMemberButton memberId={member.memberId} companyName={member.companyName} />
-                    </span>
-                    {/* Edit leads on a phone, as the mobile board has it. */}
-                    <Link href={`/admin/members/${member.memberId}/edit`} className={`${buttonClass()} max-sm:order-first`}>
-                      <PencilIcon className="size-4" aria-hidden="true" />
-                      {t('editCta')}
-                    </Link>
-                  </>
-                )}
-              </>
+              <MemberHeaderMoreMenu
+                memberId={member.memberId}
+                companyName={member.companyName}
+                memberNumberDisplay={memberNumberDisplay}
+                canArchive={notArchived}
+              />
             )}
           </>
         }
@@ -296,20 +277,100 @@ export async function renderMemberDetailView({
       {slots.strip}
       <SectionLinks label={t('sectionLinks.label')} links={links} />
 
-      <div className="grid grid-cols-1 items-start gap-[var(--page-section-gap)] lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-[var(--page-section-gap)] lg:grid-cols-[minmax(0,1fr)_clamp(280px,30%,340px)]">
         <div className="flex min-w-0 flex-col gap-[var(--page-section-gap)]">
           <Card
             as="section"
-            id="overview"
-            className={ANCHOR}
+            id="contacts"
+            title={t('sections.contacts')}
+            titleId="member-contacts-heading"
+            headingLevel={2}
+            // Only Add contact beside the title: AURA's card head does not
+            // wrap, so more would squeeze the title on a phone.
+            actions={canModify && notArchived ? <AddContactButton memberId={member.memberId} /> : undefined}
+          >
+            <div className="flex flex-col gap-6">
+              <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                {/* T097 — the two-step emergency primary transfer, as a
+                    popover so it reaches touch users. */}
+                <InfoHint ariaLabel={t('emergencyPrimary.ariaLabel')} triggerClassName="-my-1">
+                  <strong className="block">{t('emergencyPrimary.title')}</strong>
+                  {t('emergencyPrimary.body')}
+                </InfoHint>
+                {/* 108 PR-D (US4 s8) — the marketing audience filtered to this
+                    member; gated like the page it links to. */}
+                {features.f7Broadcasts && (
+                  <Link
+                    href={`/admin/marketing/audience?member_id=${encodeURIComponent(member.memberId)}&eligible=0`}
+                    className="inline-flex min-h-6 items-center text-sm font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline"
+                  >
+                    {t('marketing.audienceLink')}
+                  </Link>
+                )}
+              </div>
+              {primary ? contactBlock(primary) : null}
+              {secondary.length > 0 && (
+                <div className="flex flex-col gap-6 border-t border-[var(--aura-border-default)] pt-6">
+                  <h3 className="text-sm font-medium text-[var(--aura-fg-secondary)]">{t('sections.secondary')}</h3>
+                  {secondary.map((c, i) => (
+                    <div
+                      key={c.contactId}
+                      className={i > 0 ? 'border-t border-[var(--aura-border-default)] pt-6' : undefined}
+                    >
+                      {contactBlock(c)}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* 056 fix #6 — no primary and no other contact. */}
+              {!primary && secondary.length === 0 && (
+                <p className="py-2 text-sm text-[var(--aura-fg-secondary)]">{t('sections.contactsEmpty')}</p>
+              )}
+            </div>
+          </Card>
+          {slots.invoices && <div id="invoices">{slots.invoices}</div>}
+          {slots.changeRequests && <div id="change-requests">{slots.changeRequests}</div>}
+          <div id="timeline" className="min-w-0">
+            {slots.timeline}
+          </div>
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-[var(--page-section-gap)]">
+          {slots.renewal}
+          {slots.benefits}
+          <Card
+            as="section"
+            id="company"
             title={t('sections.company')}
             titleId="member-company-heading"
             headingLevel={2}
           >
+            {/* The record a call needs — the §86/4 buyer facts and the plan —
+                with the rest one click away in the Drawer. */}
+            <div className="flex flex-col gap-4">
+              <dl className="flex flex-col gap-1">
+                <DetailField
+                  label={t('fields.taxId')}
+                  value={member.taxId}
+                  mono
+                  {...(member.taxId ? { extra: <CopyButton value={member.taxId} label={t('copy.copyTaxId')} /> } : {})}
+                />
+                <DetailField label={t('fields.legalEntityType')} value={legalEntityLabel} />
+                <DetailField label={t('fields.plan')} value={planDisplayName} />
+              </dl>
+              {/* One level with the fields above (dt/dd); the h3 groups are the Drawer's. */}
+              <TextBlock label={t('fields.address')} lines={addressLines.length > 0 ? [addressLines.join('\n')] : []} />
+              <TextBlock label={t('fields.billingAddress')} lines={billingLines ? [billingLines.join('\n')] : []} />
+              <CompanyDetailsDrawer
+                triggerLabel={t('companyDetails.open')}
+                title={t('companyDetails.title')}
+                description={member.companyName}
+                closeLabel={t('companyDetails.close')}
+              >
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2">
                 <SubGroupLabel>{t('sections.organisation')}</SubGroupLabel>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 md:gap-x-8 xl:grid-cols-3">
+                <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
                   <DetailField label={t('fields.country')} value={null} extra={<CountryDisplay code={member.country} />} />
                   <DetailField label={t('fields.legalEntityType')} value={legalEntityLabel} />
                   <DetailField
@@ -366,7 +427,7 @@ export async function renderMemberDetailView({
 
               <div className="flex flex-col gap-2 border-t border-[var(--aura-border-default)] pt-4">
                 <SubGroupLabel>{t('sections.membership')}</SubGroupLabel>
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 md:gap-x-8 xl:grid-cols-3">
+                <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
                   <DetailField label={t('fields.plan')} value={planDisplayName} />
                   <DetailField label={t('fields.planYear')} value={year} />
                   <DetailField
@@ -406,7 +467,7 @@ export async function renderMemberDetailView({
 
               {/* Board: Address and Billing address (tax documents) are groups
                   of their own; an unset one reads "—". */}
-              <div className="grid grid-cols-1 gap-4 border-t border-[var(--aura-border-default)] pt-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 border-t border-[var(--aura-border-default)] pt-4 sm:grid-cols-2">
                 <AddressGroup label={t('fields.address')} lines={addressLines} />
                 <AddressGroup label={t('fields.billingAddress')} lines={billingLines ?? []} />
               </div>
@@ -427,7 +488,7 @@ export async function renderMemberDetailView({
                 <summary className="cursor-pointer text-xs font-medium uppercase tracking-wide text-[var(--aura-fg-secondary)]">
                   {t('sections.technical')}
                 </summary>
-                <dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-1 md:grid-cols-2 xl:grid-cols-3">
+                <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
                   <MemberNumberField formatted={memberNumberDisplay} />
                   <DetailField
                     label={t('fields.memberId')}
@@ -439,89 +500,15 @@ export async function renderMemberDetailView({
                 </dl>
               </details>
             </div>
-          </Card>
-
-          <Card
-            as="section"
-            id="contacts"
-            className={ANCHOR}
-            title={t('sections.contacts')}
-            titleId="member-contacts-heading"
-            headingLevel={2}
-            // Only Add contact beside the title: AURA's card head does not
-            // wrap, so more would squeeze the title on a phone.
-            actions={canModify && notArchived ? <AddContactButton memberId={member.memberId} /> : undefined}
-          >
-            <div className="flex flex-col gap-6">
-              <div className="-mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                {/* T097 — the two-step emergency primary transfer, as a
-                    popover so it reaches touch users. */}
-                <InfoHint ariaLabel={t('emergencyPrimary.ariaLabel')} triggerClassName="-my-1">
-                  <strong className="block">{t('emergencyPrimary.title')}</strong>
-                  {t('emergencyPrimary.body')}
-                </InfoHint>
-                {/* 108 PR-D (US4 s8) — the marketing audience filtered to this
-                    member; gated like the page it links to. */}
-                {features.f7Broadcasts && (
-                  <Link
-                    href={`/admin/marketing/audience?member_id=${encodeURIComponent(member.memberId)}&eligible=0`}
-                    className="inline-flex min-h-6 items-center text-sm font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline"
-                  >
-                    {t('marketing.audienceLink')}
-                  </Link>
-                )}
-              </div>
-              {primary ? contactBlock(primary) : null}
-              {secondary.length > 0 && (
-                <div className="flex flex-col gap-6 border-t border-[var(--aura-border-default)] pt-6">
-                  <h3 className="text-sm font-medium text-[var(--aura-fg-secondary)]">{t('sections.secondary')}</h3>
-                  {secondary.map((c, i) => (
-                    <div
-                      key={c.contactId}
-                      className={i > 0 ? 'border-t border-[var(--aura-border-default)] pt-6' : undefined}
-                    >
-                      {contactBlock(c)}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {/* 056 fix #6 — no primary and no other contact. */}
-              {!primary && secondary.length === 0 && (
-                <p className="py-2 text-sm text-[var(--aura-fg-secondary)]">{t('sections.contactsEmpty')}</p>
-              )}
+              </CompanyDetailsDrawer>
             </div>
           </Card>
+          {slots.dataExport && (
+            <div id="data-export" className="min-w-0">
+              {slots.dataExport}
+            </div>
+          )}
         </div>
-
-        <div className="flex min-w-0 flex-col gap-[var(--page-section-gap)]">
-          {slots.renewal}
-          {slots.benefits}
-        </div>
-      </div>
-
-      {slots.invoices && (
-        <div id="invoices" className={ANCHOR}>
-          {slots.invoices}
-        </div>
-      )}
-      {slots.changeRequests && (
-        <div id="change-requests" className={ANCHOR}>
-          {slots.changeRequests}
-        </div>
-      )}
-      <div
-        className={`grid grid-cols-1 items-start gap-[var(--page-section-gap)] ${
-          slots.dataExport ? 'lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]' : ''
-        }`}
-      >
-        <div id="timeline" className={`min-w-0 ${ANCHOR}`}>
-          {slots.timeline}
-        </div>
-        {slots.dataExport && (
-          <div id="data-export" className={`min-w-0 ${ANCHOR}`}>
-            {slots.dataExport}
-          </div>
-        )}
       </div>
     </DetailContainer>
   );

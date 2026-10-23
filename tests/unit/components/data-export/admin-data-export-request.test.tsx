@@ -97,3 +97,13 @@ describe('AdminDataExportRequest', () => {
     expect(screen.getByRole('columnheader', { name: 'Prepared for' })).toBeTruthy();
   });
 });
+
+// Relay R73: in the member page's 280–340px aside the table pushed the page
+// sideways from 1024px. Rows stack by the table's own width (AURA's
+// container query), not the viewport.
+describe('AdminDataExportRequest in a narrow column', () => {
+  it('stacks the recent requests by the table width', () => {
+    renderIt();
+    expect(screen.getByRole('table', { name: 'Recent requests' })).toHaveClass('aura-tbl--stack-sm');
+  });
+});

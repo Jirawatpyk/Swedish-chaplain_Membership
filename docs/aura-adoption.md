@@ -194,6 +194,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| 169 (Addendum 70) | A Dialog or Drawer opens without taking focus when its first body control sits in a closed `<details>`: Chromium does not focus it, so focus stays on the trigger and Esc does nothing | The company details Drawer (`company-details-drawer.tsx`) opens on its Close button through `closeProps` `data-autofocus` |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

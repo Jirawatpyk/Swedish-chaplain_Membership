@@ -1291,14 +1291,13 @@
     "members": {
         "changeRequests": {
             "title": "Ändringsbegäranden",
-          "viewQueue": "Öppna i kön",
+          "viewAll": "Visa alla",
           "loadFailed": "Ändringsbegärandena kunde inte läsas in. Ladda om sidan för att försöka igen.",
           "empty": "Inga ändringsbegäranden för den här medlemmen ännu.",
           "submittedBy": "Skickad av {name} ({role})",
           "submittedOn": "Skickad {submittedAt}",
           "review": "Granska",
-          "pendingAlert": "Ändringsbegäran väntar på granskning",
-          "open": "Öppna"
+          "pendingAlert": "Ändringsbegäran väntar på granskning"
         },
       "title": "Medlemmar",
       "overrideReason": {
@@ -1497,10 +1496,10 @@
           "empty": "Ingen aktiv förnyelsecykel",
           "readFailed": "Vi kunde inte läsa in den här medlemmens förnyelsestatus. Försök igen.",
           "status": "Status",
-          "expiry": "Utgångsdatum",
           "daysRemaining": "{days} dagar kvar",
           "overdueDays": "Försenad med {days} dagar",
-          "engagement": "Engagemang",
+          "engagement": "Engagemangspoäng",
+          "engagementScoreValue": "{score} / 100",
           "viewRenewal": "Visa förnyelse",
           "cycleStatus": {
             "upcoming": "Kommande",
@@ -1661,6 +1660,11 @@
         },
         "editCta": "Redigera",
         "headerMoreActions": "Fler åtgärder",
+        "companyDetails": {
+          "title": "Företagsuppgifter",
+          "open": "Visa alla företagsuppgifter",
+          "close": "Stäng företagsuppgifter"
+        },
         "contactActions": {
           "add": "Lägg till kontakt",
           "edit": "Redigera",
@@ -1711,11 +1715,11 @@
         },
         "sectionLinks": {
           "label": "På den här sidan",
-          "overview": "Översikt",
           "contacts": "Kontakter",
           "invoices": "Fakturor",
           "changeRequests": "Ändringsbegäranden",
           "timeline": "Tidslinje",
+          "company": "Företag",
           "dataExport": "Dataexport"
         }
       },
