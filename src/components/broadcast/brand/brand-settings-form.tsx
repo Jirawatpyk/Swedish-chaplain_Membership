@@ -48,7 +48,7 @@ import Link from 'next/link';
 import { useId, useMemo, useState, useTransition } from 'react';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { useTranslations } from 'next-intl';
-import { Alert, Button, Card, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { Alert, Button, Card, TextField, Textarea, linkClass } from '@jirawatpyk/aura-react';
 import { FIELD_BOX_OFFSET } from '@/components/shell/field-box-offset';
 import { toast } from '@/lib/toast';
 import { TRANSPARENCY_CHECKER_STYLE } from '@/components/shell/transparency-checker';
@@ -360,7 +360,7 @@ export function BrandSettingsForm({ initial, tenantDisplayName }: Props): React.
             ) : (
               <Link
                 href={view.logo.manageHref}
-                className="aura-text-body font-medium text-[var(--aura-fg-accent)] underline-offset-4 hover:underline max-sm:inline-flex max-sm:min-h-11 max-sm:items-center"
+                className={linkClass({ underline: 'hover', touchHeight: true, className: 'self-start font-medium' })}
               >
                 {t('logo.manage')}
               </Link>

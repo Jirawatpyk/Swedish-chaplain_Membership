@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { ChevronDownIcon, ChevronRightIcon, ExternalLinkIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
-import { Alert, Badge, Card, Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Badge, Card, Icon, StatusPill, buttonClass, linkClass } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { CopyButton } from '@/components/members/copy-button';
@@ -114,7 +114,13 @@ export async function renderPortalProfileView({
               href={websiteHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex min-w-0 items-center gap-1 text-sm text-[var(--aura-fg-accent)] no-underline hover:text-[var(--aura-fg-primary)] hover:underline"
+              className={linkClass({
+                underline: 'hover',
+                touchHeight: true,
+                // linkClass lays the link out only on touch: inline-flex + min-w-0 keep the
+                // icon gap and let a long URL truncate with a mouse too
+                className: 'inline-flex max-w-full min-w-0 items-center gap-1 text-sm',
+              })}
             >
               <span className="truncate">{m.website}</span>
               <Icon name={<ExternalLinkIcon />} size={14} />
@@ -205,9 +211,14 @@ export async function renderPortalProfileView({
               {secondary.description(`${FIELD} max-md:hidden md:col-span-2 lg:col-span-3`)}
             </dl>
             <details className="group mt-1 md:hidden">
-              {/* 44px on phones by hand: AURA has no text-link touch rule yet.
-                  Stand-in until AURA #172. */}
-              <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1 rounded-[var(--aura-radius-sm)] text-sm font-medium text-[var(--aura-fg-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] [&::-webkit-details-marker]:hidden">
+              {/* an accent text link, 44px on touch (AURA linkClass, #172) */}
+              <summary
+                className={linkClass({
+                  underline: 'hover',
+                  touchHeight: true,
+                  className: 'flex w-fit list-none items-center gap-1 text-sm font-medium [&::-webkit-details-marker]:hidden',
+                })}
+              >
                 {t('moreDetails')}
                 <Icon name={<ChevronDownIcon />} size={16} className="transition-transform group-open:rotate-180 motion-reduce:transition-none" />
               </summary>
@@ -306,14 +317,14 @@ export async function renderPortalProfileView({
                     <div className="flex flex-wrap gap-x-4 gap-y-2 md:contents">
                       <a
                         href={`mailto:${contact.email}`}
-                        className="flex min-h-11 min-w-0 items-center text-sm text-[var(--aura-fg-accent)] no-underline [overflow-wrap:anywhere] hover:underline md:min-h-0 md:text-[var(--aura-fg-primary)]"
+                        className={linkClass({ underline: 'hover', touchHeight: true, className: CONTACT_LINK })}
                       >
                         {contact.email}
                       </a>
                       {contact.phone ? (
                         <a
                           href={`tel:${contact.phone.replace(/\s+/g, '')}`}
-                          className="flex min-h-11 items-center text-sm text-[var(--aura-fg-accent)] no-underline hover:underline md:min-h-0 md:text-[var(--aura-fg-primary)]"
+                          className={linkClass({ underline: 'hover', touchHeight: true, className: CONTACT_LINK })}
                         >
                           {contact.phone}
                         </a>
@@ -451,3 +462,5 @@ export async function renderPortalProfileView({
  * line height, no padding of its own (the grid's gaps space them).
  */
 const FIELD = 'gap-0.5 py-0 [&>dt]:leading-[1.7] [&>dd]:leading-[1.7]';
+/** A contact's email or phone: accent on phones, plain text in the desktop grid (with linkClass). */
+const CONTACT_LINK = 'justify-start text-sm [overflow-wrap:anywhere] md:text-[var(--aura-fg-primary)]';

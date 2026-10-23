@@ -16,7 +16,7 @@
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { ArrowRightIcon } from 'lucide-react';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Card, buttonClass, linkClass } from '@jirawatpyk/aura-react/server';
 import type { InvoiceDashboardOldestOverdue, InvoiceDashboardResult } from '@/modules/insights';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { RecordPaymentDialog } from '../../invoices/_components/record-payment-dialog';
@@ -30,9 +30,8 @@ export const OLDEST_OVERDUE_TITLE_ID = 'oldest-overdue-title';
 /** Shown on a phone; the rest of the six are hidden there. */
 const PHONE_ROWS = 3;
 
-/** 44px below 640px or on a coarse pointer for the document-number link, a text link in the row title (US6.2). */
-const PHONE_TARGET =
-  'max-sm:inline-flex max-sm:min-h-11 max-sm:items-center pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:items-center';
+/** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2, AURA #172). */
+const DOCUMENT_LINK = linkClass({ underline: 'hover', touchHeight: true, className: 'font-medium' });
 
 function triggerIdOf(invoiceId: string): string {
   return `oldest-overdue-pay-${invoiceId}`;
@@ -129,7 +128,7 @@ export async function OldestOverdueCard({
             return (
               <Tr key={row.invoiceId} data-testid="oldest-overdue-row" className={i >= PHONE_ROWS ? 'max-sm:hidden' : undefined}>
                 <Td card="title" mono>
-                  <Link href={`/admin/invoices/${row.invoiceId}`} className={`font-medium ${PHONE_TARGET}`}>
+                  <Link href={`/admin/invoices/${row.invoiceId}`} className={DOCUMENT_LINK}>
                     {document}
                   </Link>
                 </Td>

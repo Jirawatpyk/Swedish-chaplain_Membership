@@ -111,6 +111,16 @@ describe('EventPicker on AURA Combobox (US9b-2)', () => {
     ).toBeInTheDocument();
   });
 
+  it('draws "Create new event" as an AURA text link with the touch rule (#172)', () => {
+    render(wrap(<Harness events={[AGM, GALA]} />));
+    const create = screen.getByRole('button', {
+      name: enMessages.admin.events.import.eventPicker.createNewCta,
+    });
+    expect(create).toHaveClass('aura-link', 'aura-link--touch');
+    // a bare min-h-* utility would beat AURA's 44px touch rule (a later layer)
+    expect([...create.classList].filter((c) => /^min-h-/.test(c))).toEqual([]);
+  });
+
   it('selects the filename suggestion when nothing is chosen', async () => {
     const onChange = vi.fn();
     render(

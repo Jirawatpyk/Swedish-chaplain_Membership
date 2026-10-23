@@ -491,7 +491,8 @@ describe('a shorter profile on phones (#239)', () => {
     expect(details).toHaveClass('md:hidden');
     const summary = details!.querySelector('summary');
     expect(summary?.textContent).toBe('moreDetails');
-    expect(summary).toHaveClass('min-h-11');
+    // AURA 5.59 linkClass: accent text, 44px on touch (#172)
+    expect(summary).toHaveClass('aura-link', 'aura-link--touch');
     for (const key of FOLDED) {
       const inDisclosure = [...details!.querySelectorAll('dt')].find((dt) => dt.textContent === key);
       expect(inDisclosure, `${key} in the disclosure`).toBeDefined();
@@ -515,7 +516,7 @@ describe('a shorter profile on phones (#239)', () => {
     const phone = el.querySelector('a[href^="tel:"]')!;
     expect(email.parentElement).toBe(phone.parentElement);
     expect(email.parentElement).toHaveClass('flex-wrap');
-    expect(email).toHaveClass('min-h-11');
-    expect(phone).toHaveClass('min-h-11');
+    expect(email).toHaveClass('aura-link', 'aura-link--touch');
+    expect(phone).toHaveClass('aura-link', 'aura-link--touch');
   });
 });

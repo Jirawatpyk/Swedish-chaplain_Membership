@@ -750,12 +750,32 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - Legal entity, country, website and founded year sit under a "More details" disclosure.
   - So does the description, when set (it is long and rarely checked).
   - From 768px the grid shows everything as before.
-  - The summary is 44px by hand. Stand-in until AURA #172 (no text-link touch rule).
+  - The summary is 44px by hand. Stand-in until AURA #172 (no text-link touch rule); replaced by `linkClass` on 5.59.
 - **Recent change requests on the history card.**
   - The "Change request history" card lists the member's two most recent requests as compact two-line rows. Line 1 is the first field and "+N more"; line 2 is the status and the date it was decided, withdrawn or sent. One line does not fit beside a status pill at 390px or in the half-width card at 768px. It never shows the values, which stay on the history page.
   - "View all" opens the history page. The card shows at every width.
   - The newest row may repeat the pending or decided banner at the top. It stays: the card is "your recent requests", whatever the banner shows.
 - **Contacts on phones.** Email and phone share one wrapping row. Each is still a 44px target, and a long email wraps onto its own line.
+
+### Session 2026-10-23 (adopt AURA 5.59, #171 and #172)
+
+- **Pin 5.59.0** (5.58 closed #171, 5.59 closed #172). The brand theme regenerates byte-identical below its header, so it is unchanged.
+- **#171 (short tabs 44×44 on touch):** no app change. The section tabs on member detail and invoice settings already pass `touchHeight`.
+- **#172 (`linkClass`):** every text link that wrote its own accent colour, focus ring and 44px touch height now uses `linkClass({ underline: 'hover', touchHeight: true })`. That is nine sites:
+  - event picker "Create new event";
+  - portal profile "More details", website, email and phone;
+  - plans list plan name;
+  - marketing audience card company;
+  - brand settings "Manage";
+  - renewal cycle invoice link;
+  - finance oldest-overdue document number.
+  - The "More details" stand-in label (#239) is gone.
+- **What changes for a user:**
+  - the 44px target follows AURA's query (below 640px or on a coarse pointer), so the profile website, email and phone links are now 44px on a tablet as well (the #239 review's 768px finding);
+  - with a mouse from 640px they keep their text height, as every `touchHeight` control does.
+  - the oldest-overdue document number takes the accent link colour (it was body text), like the other table links.
+- **`linkClass` sets the layout only on touch** (inline-flex, centred) and resets the font (`font: inherit` in the `aura` layer beats an `aura-text-*` class on the same element). So a link with an icon or `truncate` adds `inline-flex items-center` (and `min-w-0` to truncate) itself, a link stretched in a flex column or grid adds `self-start` or `justify-start`, and a type class goes on a child `span` (enterprise-ux-designer review of #629).
+  - In a static Table's grid cell the link stays inline (the row is the target); in the stacked phone card it is 44px.
 
 ## User Scenarios & Testing *(mandatory)*
 

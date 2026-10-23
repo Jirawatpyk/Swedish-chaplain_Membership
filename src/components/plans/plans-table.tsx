@@ -49,6 +49,7 @@ import {
   THead,
   Tr,
   buttonClass,
+  linkClass,
   type MenuItem,
 } from '@jirawatpyk/aura-react';
 // Deep PURE-Domain imports (never the auth barrel — this is a client bundle).
@@ -413,7 +414,7 @@ export function PlansTable({
                   data-plan-year={plan.plan_year}
                 >
                   <Td card="title">
-                    <Link href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`} className="text-[var(--aura-fg-accent)] underline-offset-4 hover:underline max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">
+                    <Link href={`/admin/plans/${plan.plan_year}/${plan.plan_id}`} className={linkClass({ underline: 'hover', touchHeight: true })}>
                       <LocaleTextDisplay
                         value={plan.plan_name}
                         showMissingBadge={canWritePlans}

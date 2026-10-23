@@ -20,7 +20,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
-import { Combobox, Icon, IconButton } from '@jirawatpyk/aura-react';
+import { Combobox, Icon, IconButton, linkClass } from '@jirawatpyk/aura-react';
 import { formatDatePreset } from '@/lib/format-date-localised';
 
 export interface EventPickerOption {
@@ -387,16 +387,20 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
       </div>
 
       {props.onCreateNew !== undefined ? (
-        // Board: an accent text link, 44px tall on touch. AURA has no
-        // text-link style yet, so the colour, focus ring and touch height
-        // are written here. Stand-in until AURA #172.
+        // Board: an accent text link, 44px tall on touch (AURA linkClass, #172).
+        // linkClass sets the layout only on touch and resets the font, so the
+        // icon row and the label type are set here.
         <button
           type="button"
           onClick={props.onCreateNew}
-          className="aura-text-label inline-flex items-center gap-[var(--aura-space-1)] self-start rounded-[var(--aura-radius-sm)] text-[var(--aura-fg-accent)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] max-sm:min-h-11 pointer-coarse:min-h-11"
+          className={linkClass({
+            underline: 'hover',
+            touchHeight: true,
+            className: 'inline-flex items-center gap-[var(--aura-space-1)] self-start',
+          })}
         >
           <Icon name="plus" size={14} />
-          {t('createNewCta')}
+          <span className="aura-text-label">{t('createNewCta')}</span>
         </button>
       ) : null}
     </div>
