@@ -72,6 +72,8 @@ export interface MiniCreditNote {
 
 export interface MiniPayment {
   readonly key: string;
+  /** Fixed id, to pin the `id DESC` tiebreak; default `pay_<uuid>`. */
+  readonly id?: string;
   readonly invoiceKey: string;
   readonly method: 'card' | 'promptpay';
   readonly amount: number;
@@ -270,7 +272,7 @@ export async function seedMiniScenario(
   });
 
   const paymentRows = (scenario.payments ?? []).map((o) => {
-    const id = `pay_${randomUUID()}`;
+    const id = o.id ?? `pay_${randomUUID()}`;
     ids[o.key] = id;
     const card = o.method === 'card';
     return {

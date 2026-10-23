@@ -167,6 +167,9 @@ export {
   type SweepStalePendingRefundsDeps,
 } from './application/use-cases/sweep-stale-pending-refunds';
 export { STALE_REFUND_ESCALATION_AGE_MS } from './domain/refund-escalation';
+// Spec 124 — the statuses whose payment names the invoice's collection method
+// (the CSV export and the invoice dashboard read the same list).
+export { SUCCEEDED_LINEAGE } from './domain/invariants/one-succeeded-payment-per-invoice';
 export {
   REFUND_STATUSES,
   TERMINAL_REFUND_STATUSES,

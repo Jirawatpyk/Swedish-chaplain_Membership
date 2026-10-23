@@ -38,6 +38,7 @@ describe('CSV export — Payment Method of a refunded Stripe invoice', () => {
         { key: 'transfer', total: 428_000, method: 'bank_transfer', paymentDate: '2026-05-07' },
         { key: 'retried', total: 535_000, method: 'other', paymentDate: '2026-05-08' },
         { key: 'cashAfterAttempts', total: 642_000, method: 'cash', paymentDate: '2026-05-09' },
+        { key: 'tie', total: 749_000, method: 'other', paymentDate: '2026-05-10' },
       ],
       payments: [
         { key: 'p1', invoiceKey: 'cardRefunded', method: 'card', amount: 107_000, completedAt: '2026-05-04T05:00:00Z', status: 'refunded' },
@@ -52,6 +53,10 @@ describe('CSV export — Payment Method of a refunded Stripe invoice', () => {
         { key: 'a2', invoiceKey: 'cashAfterAttempts', method: 'card', amount: 642_000, completedAt: '2026-05-09T02:00:00Z', status: 'canceled' },
         { key: 'a3', invoiceKey: 'cashAfterAttempts', method: 'promptpay', amount: 642_000, completedAt: '2026-05-09T03:00:00Z', status: 'pending' },
         { key: 'a4', invoiceKey: 'cashAfterAttempts', method: 'promptpay', amount: 642_000, completedAt: '2026-05-09T04:00:00Z', status: 'auto_refunded' },
+        // Same completed_at: the higher id wins (`id DESC`). Ids carry a random
+        // suffix so reruns never collide; the prefixes fix the order.
+        { key: 't1', id: `pay_tie_a_${randomUUID()}`, invoiceKey: 'tie', method: 'card', amount: 749_000, completedAt: '2026-05-10T05:00:00Z', status: 'refunded' },
+        { key: 't2', id: `pay_tie_b_${randomUUID()}`, invoiceKey: 'tie', method: 'promptpay', amount: 749_000, completedAt: '2026-05-10T05:00:00Z' },
       ],
     });
     // Another tenant's PromptPay payment never lends its method.
@@ -91,6 +96,7 @@ describe('CSV export — Payment Method of a refunded Stripe invoice', () => {
       'Buyer transfer': 'manual',
       'Buyer retried': 'promptpay',
       'Buyer cashAfterAttempts': 'manual',
+      'Buyer tie': 'promptpay',
     });
   });
 

@@ -100,7 +100,7 @@ export interface ExportPaidInvoicesCsvOutput {
 
 /**
  * F4-owned port for the F5 cross-module payment-method projection.
- * The composition root wires this with `listSucceededPaymentMethods`
+ * The composition root wires this with `listCollectedPaymentMethods`
  * from `@/modules/payments` so the use case stays pure-F4.
  */
 export type PaymentMethodLookupPort = (
