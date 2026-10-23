@@ -22,6 +22,29 @@ const REFUND_STATUS = 'Refund (no credit note)';
 
 type Row = Record<string, string>;
 
+/** One RFC-4180 line → cells (quoted cells may hold commas and `""`). */
+function parseCsvLine(line: string): string[] {
+  const cells: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i]!;
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') {
+        cell += '"';
+        i += 1;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') {
+      cells.push(cell);
+      cell = '';
+    } else cell += ch;
+  }
+  cells.push(cell);
+  return cells;
+}
+
 describe('CSV export — refunds with no credit note', () => {
   let user: TestUser;
   let tenant: TestTenant;
@@ -95,7 +118,7 @@ describe('CSV export — refunds with no credit note', () => {
       .replace(/^﻿/, '')
       .trim()
       .split(/\r?\n/)
-      .map((line) => line.split(','));
+      .map(parseCsvLine);
     return body.map((cells) => Object.fromEntries(header!.map((h, i) => [h, cells[i] ?? ''])));
   }
 

@@ -69,9 +69,9 @@
  * --- Audit ---------------------------------------------------------
  * Emits `invoices_csv_exported` (5y retention) on success, including
  * `row_count` (every data row), `credit_note_count` and
- * `waived_refund_count` (the negative subsets) so an RD audit can correlate the bookkeeper's filing
- * spreadsheet to the export action without reconstructing the byte
- * stream. Failure paths return a typed Result and DO NOT emit (the
+ * `waived_refund_count` (the negative subsets) so an RD audit can
+ * correlate the bookkeeper's filing spreadsheet to the export action
+ * without reconstructing the byte stream. Failure paths return a typed Result and DO NOT emit (the
  * caller surfaces 5xx).
  */
 import { err, ok, type Result } from '@/lib/result';

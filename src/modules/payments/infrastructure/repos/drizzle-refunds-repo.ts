@@ -623,7 +623,10 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
     ): Promise<readonly WaivedRefundExportRow[]> {
       // Same waived predicate as `sumWaivedByInvoice` (the timestamp, never
       // the reason). The Bangkok day of `completed_at` puts the row in its
-      // month; the payment join names the channel the money went back to.
+      // month, written as a half-open instant range (Bangkok midnight of
+      // `from` to Bangkok midnight after `to`) so an index on `completed_at`
+      // can serve it; the payment join names the channel the money went
+      // back to.
       return runInTenant(ctx, async (tx) => {
         const rows = (await tx.execute(sql`
           SELECT r.id AS refund_id,
@@ -636,8 +639,8 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
            WHERE r.tenant_id = ${inputTenantId}
              AND r.status = 'succeeded'
              AND r.credit_note_waived_at IS NOT NULL
-             AND (r.completed_at AT TIME ZONE 'Asia/Bangkok')::date >= ${range.from}::date
-             AND (r.completed_at AT TIME ZONE 'Asia/Bangkok')::date <= ${range.to}::date
+             AND r.completed_at >= (${range.from}::date)::timestamp AT TIME ZONE 'Asia/Bangkok'
+             AND r.completed_at < (${range.to}::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'
            ORDER BY r.completed_at, r.id
         `)) as unknown as Array<{
           refund_id: string;
