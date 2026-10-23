@@ -773,7 +773,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **What changes for a user:**
   - the 44px target follows AURA's query (below 640px or on a coarse pointer), so the profile website, email and phone links are now 44px on a tablet as well (the #239 review's 768px finding);
   - with a mouse from 640px they keep their text height, as every `touchHeight` control does.
-  - In a static Table's grid cell the link stays inline (the row is the target); in the stacked phone card it is 44px.
+  - **Exception, AURA #173 (Addendum 74):** AURA's table-cell exception names DataTable's cell only. In a static `Table`'s grid row on a touch tablet, `touchHeight` made the plans list's plan name and the finance oldest-overdue document number 44px-wide boxes that broke mid-word ("Diamo/nd", "SC-/000071" at 768px). Those two leave `touchHeight` off and keep their hand-written phone (and, on finance, touch) target until #173 ships.
 
 ## User Scenarios & Testing *(mandatory)*
 

@@ -302,7 +302,7 @@ describe('PlansTable on AURA (board Admin-plans)', () => {
   // card, so its link fills a 44px touch target there.
   it('gives the plan name link a 44px touch target on phones', () => {
     renderRows();
-    expect(screen.getByRole('link', { name: 'Premium Corporate' })).toHaveClass('aura-link', 'aura-link--touch');
+    expect(screen.getByRole('link', { name: 'Premium Corporate' })).toHaveClass('aura-link', 'max-sm:min-h-11');
   });
 
   it('centres the status pill on the name line of a phone card', () => {
