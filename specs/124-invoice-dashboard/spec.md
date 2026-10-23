@@ -1,7 +1,7 @@
 # 124 — Invoice dashboard (`/admin/finance`)
 
 **Size**: L (insights + payments + invoicing list + renewals count; money figures; a migration; a new flag; an RBAC gate).
-**Status**: spec agreed with the maintainer; plan approved 22 Oct 2026; slices 1–3 not built.
+**Status**: spec agreed with the maintainer; plan approved 22 Oct 2026; slice 1 merged (#617, 22 Oct); slice 2 (loaders, migration 0318) built 23 Oct; slice 3 (the page) not built.
 **Sources**: the maintainer's design spec "Invoice dashboard — design spec" (Claude Docs, rev 19, decisions 1–10 of 19 and 22 Oct 2026) and the 7 `Admin-finance*` boards on the "Chamber-OS Portal — Aura" canvas (page `finance`). Where this file and the design spec disagree, this file wins: its § Premises records each correction made against the code.
 
 ## Summary
@@ -18,9 +18,9 @@ Done when:
 - Outstanding shows Σ `total_satang` and the count of invoices with `status = 'issued'`, whole baht, and the caption "{count} unpaid invoices · as of today"; the words "net of credit notes" do not appear.
 - Overdue shows the subset whose `due_date` is before Bangkok today (an invoice due today is not overdue), matching `computeIsOverdue`.
 - The aging card shows five rows (Not yet due, 1–30, 31–60, 61–90, Over 90 days) whose amounts add to Outstanding and whose shares add to 100% (a non-zero share under 1% reads `<1%`).
-- Collected this month is the current Bangkok calendar month on the **document basis** (§ Figure definitions), whatever fiscal year is selected; its caption says "as of today · all fiscal years".
+- Collected this month is the current Bangkok calendar month on the **document basis** (§ Figure definitions), from the 1st to today, whatever fiscal year is selected; its caption says "{Month} to date · not affected by the fiscal-year filter".
 - Collected in {FY} is the same over the selected fiscal year ("to date" only for the current FY); By payment method splits it into bank transfer, PromptPay, card, cheque, cash, other, the rows add up to the tile, and a Stripe-paid invoice is counted as card or PromptPay, never other, and once only.
-- Needs attention shows five counts: manual drafts not issued, auto-renewal drafts awaiting review, receipt PDF failed, refunds failed at Stripe (latest attempt per payment failed with `stripe_refund_%`, no later succeeded or pending attempt), and refunds paid out by Stripe but not booked (`failed` with `f4_bridge_%`).
+- Needs attention shows five counts: manual drafts not issued, auto-renewal drafts awaiting review, receipt PDF failed on a paid invoice (`status = 'paid'` only — the receipt worker re-renders no other status, so a credited invoice's failure would never clear), refunds failed at Stripe (payments with a `failed` refund whose code is `stripe_refund_%` and no later `succeeded` or `pending` attempt, each payment counted once), and refunds pending at Stripe for more than 3 days (`status = 'pending'` older than the stale-refund sweep's escalation age, D-k).
 - Oldest overdue lists the overdue set longest past due first (ties by amount, then document number), each row with a Record payment… button that opens the existing dialog; after success the figures refresh and focus moves to the next row's button (or the card title when the list empties).
 
 ### US2 — Every figure drills into the list it summarises (P1)
@@ -40,8 +40,8 @@ Four filters in one FilterBar row: Invoice type (All · Membership · Events), F
 Done when:
 - Each filter applies on pick, writes the URL (`type`, `fy`, `plan`, `origin`), and shows a chip; Clear all resets them; the default FY shows no chip.
 - Picking a Plan sets Invoice type to Membership and both chips show; with Invoice type = Events the Plan filter is hidden and any `plan` param is dropped.
-- As-of-today figures (Outstanding, Overdue, Collected this month, aging, Oldest overdue) ignore `fy`; Collected this year, the trend chart and By payment method follow it, and their captions start with the FY label.
-- An unknown plan or an FY outside the list falls back to the default without an error page.
+- As-of-today figures (Outstanding, Overdue, Collected this month, aging, Oldest overdue, Needs attention) ignore `fy` but follow type, plan and origin (Needs attention's caption says "under these filters" when any is set); Collected this year, the trend chart and By payment method follow it, and their captions start with the FY label.
+- An FY outside the list falls back to the current FY, and an unknown value of type or origin to All, without an error page; a well-formed but unknown plan id still filters (D-i), so the dashboard and the list it links to show the same nothing rather than different everythings.
 - Filtered to nothing, each card shows its own zero with "No invoices match these filters"; the page-level empty state never shows.
 
 ### US4 — Manager reads, never acts (P1)
@@ -64,7 +64,7 @@ Done when:
 - The 7 boards match at 390 and 1280 px in light and dark.
 - Each chart has an sr-only ChartDataTable and an `aria-hidden` drawing; card titles are h2 under the page h1; touch targets are 44 px below 640 px or on a coarse pointer; the `@a11y` axe scan passes in light and dark.
 - EN, TH and SV render with no missing key; TH shows the Buddhist year for display only.
-- Each dashboard query runs ≤ 150 ms p95 on the Neon dev branch (measured as D-h); recharts is out of first-load JS; `/admin/finance` has a bundle budget.
+- Each dashboard query runs ≤ 150 ms p95 on the Neon dev branch (server time, D-j); recharts is out of first-load JS; `/admin/finance` has a bundle budget.
 - Tenant B's invoices, payments and refunds never appear in tenant A's figures (cross-tenant integration test, Principle I).
 
 ## Figure definitions
@@ -72,8 +72,8 @@ Done when:
 As the design spec § Figure definitions, with the corrections in § Premises and these definitions, which replace the design spec's where they differ:
 
 - **Tax point** = `COALESCE(payment_date, (paid_at AT TIME ZONE 'Asia/Bangkok')::date)`, the register's own expression, exported from the invoicing barrel and used by the dashboard and migration 0318 alike.
-- **Collected (document basis, D-d)** for a period = Σ `total_satang` of invoices in `paid | partially_credited | credited` whose tax point falls in it, − Σ `credit_notes.total_satang` issued in it (by `issue_date`), − Σ waived refunds (`status = 'succeeded' AND credit_note_waived_at IS NOT NULL`) by `(completed_at AT TIME ZONE 'Asia/Bangkok')::date`. Every subtraction joins its invoice and is restricted to the same status set and the four filters, so a refund on a void invoice never subtracts. Per invoice there is either a credit note or a waiver, never both, so nothing is subtracted twice. A Stripe refund paid out but not booked (`f4_bridge_%`) is not subtracted until reconciled; Needs attention shows it.
-- **By payment method**: each invoice's method is its `payments` row in `succeeded | partially_refunded | refunded` (`DISTINCT ON (invoice_id)`, latest `completed_at`), else `invoices.payment_method`; amounts always from `invoices`, never `payments.amount_satang`; each subtraction carries its invoice's method, so the rows add up to the tile.
+- **Collected (document basis, D-d)** for a period = Σ `total_satang` of invoices in `paid | partially_credited | credited` whose tax point falls in it, − Σ `credit_notes.total_satang` issued in it (by `issue_date`), − Σ waived refunds (`status = 'succeeded' AND credit_note_waived_at IS NOT NULL`) by `(completed_at AT TIME ZONE 'Asia/Bangkok')::date`. Every subtraction joins its invoice and is restricted to the same status set and the four filters, so a refund on a void invoice never subtracts. Per invoice there is either a credit note or a waiver, never both, so nothing is subtracted twice. A refund Stripe paid out whose credit note could not be booked stays `pending` (with a `refund_cn_deferred` audit event) and is not subtracted until the hourly sweep books it; Needs attention counts refunds pending for more than 3 days (D-k).
+- **By payment method**: each invoice's method is its `payments` row in `succeeded | partially_refunded | refunded` (`DISTINCT ON (invoice_id)`, latest `completed_at`), else `invoices.payment_method`; amounts always from `invoices`, never `payments.amount_satang`; a credit note carries its invoice's method and a waived refund the method of the payment it returned money through (the channel the cash left by; with one method payment per invoice, as on SweCham today, the two agree), so the rows add up to the tile. A row's share is of the positive rows' total: a negative or zero row (this FY's credit notes on last FY's invoices) shows 0%, and the positive rows' shares add up to 100.
 - **Invoiced (Billed)** for a month = Σ `total_satang` of invoices issued in it (`issue_date`) whose status is neither `draft` nor `void` (D-e: voided invoices are excluded outright, so a past month can change when one of its invoices is voided; the caption says so), − credit notes by `issue_date`.
 - **Fiscal year** filters are date ranges from `fiscal_year_start_month` (Bangkok): `issue_date` for Billed, tax point for Collected and By method. Never `invoices.fiscal_year`, which is the issue-date FY.
 - The words "revenue" and "net of credit notes" appear nowhere on the page; the series are Billed and Collected. Aging shares are shares of amount, not of count.
@@ -90,8 +90,11 @@ Decisions 1–10 of the design spec stand. Added in this session (22 Oct 2026):
 - D-e: **Voided invoices are excluded** from Billed outright; past months may change, and the caption says so.
 - D-f: **The invoice list gains `plan`** in slice 1, so drill-downs match under a Plan filter.
 - D-g (OQ1 closed): the Billed bar stays on `issue_date`; it is a billing view, not the ภ.พ.30 basis, and its caption says to use the tax-document register for VAT.
+- D-j: **The 150 ms p95 budget is per-query server execution time** (`EXPLAIN (ANALYZE)` planning + execution inside `runInTenant`, RLS on), measured at 2k invoices; this replaces D-h's client-side timing; the page's wall-clock TTFB is measured on the Vercel preview in slice 3 (22 Oct, after the slice 2 measurement: client time from Bangkok is ~185 ms of round trip to Singapore).
+- D-k: **Needs attention row 5 = refunds `pending` longer than the stale-refund sweep's escalation age (3 days)**, the payments module's own constant. Since the money-remediation F-3 change, a refund Stripe paid out whose credit note was not booked stays `pending` (never `failed + f4_bridge_%`, which only legacy rows carry); the row covers it and the unknown-outcome case, and also counts legacy `failed` refunds with `failure_reason_code LIKE 'f4_bridge_%'` and a `processor_refund_id` (Stripe paid out, never booked, never subtracted — the payments module's settled-unbooked shape) so no such refund is invisible (22 Oct, slice 2 review). Such a row cannot drop off by itself: a `failed` refund can carry neither a credit note nor a waiver (CHECK `refunds_succeeded_iff_documented`), and the out-of-band-refund runbook (§ 2.3 Option A) reconciles with a credit note on the invoice, never on the refund row (23 Oct, round-2 review).
+- D-l: **The dashboard's Plan filter follows D-i too**: a well-formed but unknown plan id filters (the cards show zero) rather than falling back to All, so a figure and the list it links to agree. This closes the slice-3 question about US3.4 (23 Oct, after the slice 2 spec audit; reversible at slice 3).
 - D-i: **An unknown `?plan=` id still filters** (chip shows the id), so a link from another plan year or a lookup failure never widens the list unmarked (22 Oct, after the slice 1 review).
-- D-h (OQ3 closed, maintainer may override): p95 measured at 2k invoices on a disposable tenant, serially and warm (≥ 20 runs), with the client location and row counts stated; `EXPLAIN` under `SET enable_seqscan = off` proves the tax-point index matches the query.
+- D-h (OQ3 closed; the timing method is superseded by D-j): p95 measured at 2k invoices on a disposable tenant, serially and warm (≥ 20 runs), with row counts stated; `EXPLAIN` under `SET enable_seqscan = off` proves the tax-point index matches the query.
 
 ## Premises checked against the code
 
@@ -99,7 +102,7 @@ Decisions 1–10 of the design spec stand. Added in this session (22 Oct 2026):
 |---|---|---|
 | refunds `status = 'completed'` | `pending \| succeeded \| failed` (`src/modules/payments/domain/refund.ts:35`) | D-d: only waived `succeeded` refunds are subtracted; credited ones are covered by their credit note |
 | Collected = receipts less refunds | a refund with an `invoice_voided` waiver sits on a void invoice never counted in (`refund-credit-note-requirement.ts:38`); an offline refund leaves only a manual credit note (`refunds.payment_id` NOT NULL) | D-d document basis |
-| refunds "failed at Stripe" | `failed` + `f4_bridge_%` means Stripe paid out but booking failed (`drizzle-refunds-repo.ts:546`); `failed` is terminal and a retry is a new row | two attention rows; count by latest attempt |
+| refunds "failed at Stripe" | `failed` + `f4_bridge_%` with a `processor_refund_id` means Stripe paid out but booking failed (`drizzle-refunds-repo.ts:546-548`; legacy rows only — reconciliation per `docs/runbooks/out-of-band-refund.md` books a credit note on the invoice and leaves the refund row as it is, and `refunds_succeeded_iff_documented` forbids linking one, so a reconciled legacy row keeps counting); `failed` is terminal and a retry is a new row | attention counts payments with a Stripe-failed refund and no later succeeded or pending attempt; row 5 became D-k |
 | one payment method per invoice | `payments_one_active_per_invoice` (0033:166) does not cover `refunded` | `DISTINCT ON (invoice_id)` + a two-row integration test |
 | auto-refunded payments might double-subtract | `confirm-payment` auto-refunds create **no** `refunds` row (`process-charge-refunded.ts:297`) | nothing to exclude |
 | home revenue chart still on paid date (design spec follow-up) | moved to payment date by #596 | follow-up dropped; the charts still differ: home is ex-VAT, nets credit notes into the paid month, and falls back to `issue_date` |

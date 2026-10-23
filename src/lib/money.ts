@@ -286,3 +286,19 @@ export function parseThbDecimalToSatang(thb: ThbDecimal): Satang {
   const frac = (fracRaw + '00').slice(0, 2);
   return asSatang(BigInt(`${intPart}${frac}`));
 }
+
+/**
+ * A money column read back from raw SQL (`tx.execute`): bigint, a safe
+ * integer number, or a signed integer string (how the driver returns
+ * `bigint` / `numeric`). Signed — a netted figure can be negative. Anything
+ * else throws, naming the column, instead of reading a NULL as 0: COALESCE
+ * in the SQL where zero is meant.
+ */
+export function parseBigintColumn(raw: unknown, column: string): bigint {
+  if (typeof raw === 'bigint') return raw;
+  if (typeof raw === 'number' && Number.isSafeInteger(raw)) return BigInt(raw);
+  if (typeof raw === 'string' && /^-?\d+$/.test(raw)) return BigInt(raw);
+  throw new Error(
+    `parseBigintColumn: column "${column}" is not an integer amount (got ${typeof raw})`,
+  );
+}

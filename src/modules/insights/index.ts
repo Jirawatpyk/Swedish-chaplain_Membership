@@ -49,6 +49,32 @@ export {
 } from './domain/dashboard-snapshot';
 export { UNASSIGNED_TIER_KEY } from './domain/tier-distribution';
 
+// --- Domain (124 — invoice dashboard) ---------------------------------------
+export {
+  parseInvoiceDashboardFilters,
+  selectableFiscalYears,
+  type DashboardSearchParam,
+  type InvoiceDashboardFilterContext,
+  type InvoiceDashboardFilters,
+  type InvoiceDashboardOrigin,
+  type InvoiceDashboardSearchParams,
+  type InvoiceDashboardType,
+} from './domain/invoice-dashboard-filters';
+export {
+  AGING_BUCKETS,
+  agingBucketDueRange,
+  agingBucketOf,
+  type AgingBucket,
+  type DueDateRange,
+} from './domain/invoice-dashboard-aging';
+export {
+  fiscalYearDateRange,
+  fiscalYearMonthSlots,
+  type FiscalMonthSlot,
+  type FiscalMonthSlotState,
+  type FiscalYearDateRange,
+} from './domain/invoice-dashboard-fiscal-year';
+
 // --- Domain (US4 — benefit usage) -----------------------------------------
 export {
   UNDER_USE_WARNING_THRESHOLD_PCT,
@@ -267,6 +293,39 @@ export {
   DEFAULT_DISPLAY_CAP,
 } from './application/erasure-evidence';
 
+// --- Application use-cases (124 — invoice dashboard, one loader per card) ---
+export {
+  loadInvoiceDashboardAging,
+  loadInvoiceDashboardAttention,
+  loadInvoiceDashboardMethods,
+  loadInvoiceDashboardOldestOverdue,
+  loadInvoiceDashboardTiles,
+  loadInvoiceDashboardTrend,
+  OLDEST_OVERDUE_DEFAULT_LIMIT,
+  type AmountAndCount,
+  type InvoiceDashboardAging,
+  type InvoiceDashboardAgingListQuery,
+  type InvoiceDashboardAgingRow,
+  type InvoiceDashboardAttention,
+  type InvoiceDashboardAttentionReadOnly,
+  type InvoiceDashboardAttentionWithDrafts,
+  type InvoiceDashboardLoadError,
+  type InvoiceDashboardLoadInput,
+  type InvoiceDashboardMethods,
+  type InvoiceDashboardOldestOverdue,
+  type InvoiceDashboardResult,
+  type InvoiceDashboardTiles,
+  type InvoiceDashboardTrend,
+  type InvoiceDashboardTrendSlot,
+  type LoadInvoiceDashboardDeps,
+} from './application/use-cases/load-invoice-dashboard';
+export {
+  INVOICE_DASHBOARD_METHODS,
+  type DashboardDateRange,
+  type InvoiceDashboardMethod,
+  type OverdueInvoiceRow,
+} from './application/ports/invoice-dashboard-source';
+
 // --- Composition root factories (US1) -------------------------------------
 export {
   makeDismissInsightDeps,
@@ -287,6 +346,7 @@ export {
   makeGetErasureEvidenceLogDeps,
   listMemberDataExports,
   makeExportMembersBackupDeps,
+  makeLoadInvoiceDashboardDeps,
   systemClock,
 } from './infrastructure/insights-deps';
 

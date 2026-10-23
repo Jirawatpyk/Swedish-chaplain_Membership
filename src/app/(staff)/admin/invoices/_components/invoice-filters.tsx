@@ -38,7 +38,16 @@
  * unchanged.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -155,6 +164,8 @@ export function InvoiceFilters({
   resultCount,
 }: InvoiceFiltersProps = {}) {
   const t = useTranslations('admin.invoices.list');
+  // Stable prefix for the popover's read-only rows' label ids.
+  const urlOnlyRowId = useId();
   const tStatus = useTranslations('admin.invoices.list.statuses');
   const router = useRouter();
   const pathname = usePathname();
@@ -580,9 +591,16 @@ export function InvoiceFilters({
     { value: 'standard', label: t('filters.vatTreatment.standard') },
     { value: 'zero_rated_80_1_5', label: t('filters.vatTreatment.zeroRated') },
   ];
-  const field = (label: string, control: React.ReactNode) => (
-    <div className="grid gap-1.5">
-      <span className="text-xs font-medium text-[var(--aura-fg-primary)]">{label}</span>
+  // With `labelId` the row is a group named by its label, so a read-only
+  // value (no control of its own to carry a name) is announced with it.
+  const field = (label: string, control: React.ReactNode, labelId?: string) => (
+    <div
+      className="grid gap-1.5"
+      {...(labelId ? { role: 'group', 'aria-labelledby': labelId } : {})}
+    >
+      <span id={labelId} className="text-xs font-medium text-[var(--aura-fg-primary)]">
+        {label}
+      </span>
       {control}
     </div>
   );
@@ -698,6 +716,7 @@ export function InvoiceFilters({
                   {f.clearLabel}
                 </Button>
               </div>,
+              `${urlOnlyRowId}-${f.id}-label`,
             )}
           </Fragment>
         ))}

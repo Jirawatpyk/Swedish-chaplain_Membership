@@ -1966,6 +1966,41 @@ occurred event is visible regardless of snapshot age.
 
 Tracer name (when traces are added): `swecham.insights`.
 
+### 25.4 Invoice dashboard (`/admin/finance`, spec 124)
+
+One SQL aggregate per card, each in its own `runInTenant`
+(`invoice-dashboard-source-adapter.ts`). Every query records one sample,
+on both outcomes, so a query that is slow and then fails still counts.
+
+| Metric | Type | Labels | Emitted from | Purpose |
+|--------|------|--------|--------------|---------|
+| `insights_invoice_dashboard_query_duration_ms` | histogram | `card` (aging \| collected \| methods \| trend \| attention \| oldest_overdue), `outcome` (ok \| error) | `invoiceDashboardSourceAdapter` (`rows()`) | Per-query latency behind the D-j budget; error rate per card |
+
+No tenant label (one tenant per deployment, MTA+STD) and no PII. `collected`
+is recorded twice per page load (this month and this fiscal year).
+
+| SLO | Target | Window | Source |
+|-----|--------|--------|--------|
+| Dashboard query server time (spec 124 D-j) | p95 ≤ 150 ms per query (`EXPLAIN (ANALYZE)` planning + execution inside `runInTenant`, RLS on) | 30 d | measured at 2k invoices per slice (`specs/124-invoice-dashboard/plan.md` § Evidence); in production tracked through the histogram below |
+
+**Threshold for the histogram: p95 > 200 ms over 30 min, per `card`.** The
+histogram is wall time from the adapter, not server time: each sample also
+holds the transaction's six round trips to Neon (BEGIN, the three `SET
+LOCAL`s of `runInTenant`, the statement, COMMIT) plus pool acquisition.
+Vercel `sin1` and Neon `ap-southeast-1` sit in one region (low single-digit
+ms per round trip), so 50 ms over the 150 ms server budget covers the round
+trips with room for jitter; a breach therefore means the query itself has
+grown, not the network.
+
+| Alert | Condition | Severity | Runbook |
+|-------|-----------|----------|---------|
+| Dashboard query slow | `insights_invoice_dashboard_query_duration_ms` p95 > **200 ms** over 30 min for any `card` | P3 | EXPLAIN that card's query on a dev branch at the tenant's volume (plan.md § Risks: the tax-point range is a Filter under RLS; the leakproof rewrite is the fix). D-a: add a cache only if a query misses its budget |
+| Dashboard query errors | `outcome=error` > 2 % of a card's samples over 15 min | P2 | The failing card shows its reference id; find the loader's `insights.invoice_dashboard.<loader card>.failed` log line by it (loader cards: tiles, aging, attention, oldest_overdue, trend, methods; `err` = error class only) |
+
+No alerting backend is bound in code: these conditions are for the
+metrics drain; until one is wired, the per-card error log with its reference
+id is the durable signal.
+
 
 ---
 

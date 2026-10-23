@@ -41,3 +41,4 @@ export {
   liveMembershipBillWhere,
   type LiveMembershipBillKey,
 } from './live-membership-bill-predicate';
+export { invoiceTaxPointSql } from './invoice-tax-point';

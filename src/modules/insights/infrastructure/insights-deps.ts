@@ -12,6 +12,7 @@
  * import Infrastructure values directly.
  */
 
+import { randomUUID } from 'node:crypto';
 import { env } from '@/lib/env';
 import type { Role } from '@/modules/auth/domain/role';
 import { insightsMetrics } from '@/lib/metrics';
@@ -35,6 +36,7 @@ import { activityFeedSourceAdapter } from './sources/activity-feed-adapter';
 import { auditEventSourceAdapter } from './sources/audit-source-adapter';
 import { actorDirectoryAdapter } from './sources/actor-directory-adapter';
 import { membersBackupSourceAdapter } from './sources/members-backup-source-adapter';
+import { invoiceDashboardSourceAdapter } from './sources/invoice-dashboard-source-adapter';
 import { zipCsvFiles } from './zip/csv-zip-adapter';
 import { computeDashboardSnapshot } from '../application/use-cases/compute-dashboard-snapshot';
 import type { DismissInsightDeps } from '../application/use-cases/dismiss-insight';
@@ -55,6 +57,7 @@ import type { RequestDataExportDeps } from '../application/use-cases/request-dat
 import type { ExportJobRecord } from '../application/ports/export-job-repo';
 import type { GetErasureEvidenceLogDeps } from '../application/erasure-evidence';
 import type { ExportMembersBackupDeps } from '../application/use-cases/export-members-backup';
+import type { LoadInvoiceDashboardDeps } from '../application/use-cases/load-invoice-dashboard';
 import {
   listErasedMembers,
   listMemberLinkedUserIds,
@@ -344,5 +347,17 @@ export function makeExportMembersBackupDeps(): ExportMembersBackupDeps {
     audit: insightsAuditAdapter,
     zip: zipCsvFiles,
     clock: systemClock,
+  };
+}
+
+/**
+ * 124 invoice dashboard — deps for the six per-card loaders. Stateless: the
+ * adapter scopes every query by the `ctx` each loader passes, and the role
+ * cut (`canWrite`) travels in the loader input, decided by the page.
+ */
+export function makeLoadInvoiceDashboardDeps(): LoadInvoiceDashboardDeps {
+  return {
+    source: invoiceDashboardSourceAdapter,
+    newReferenceId: () => randomUUID(),
   };
 }

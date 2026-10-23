@@ -21,6 +21,7 @@ import {
   asSatang,
   asSatangUnchecked,
   formatSatangAsBaht,
+  parseBigintColumn,
   parseSatang,
   parseThbDecimal,
   parseThbDecimalToSatang,
@@ -300,5 +301,29 @@ describe('parseThbDecimalToSatang (F8 FR-022 frozen-price parse)', () => {
       RangeError,
     );
     expect(() => parseThbDecimalToSatang('' as ThbDecimal)).toThrow(RangeError);
+  });
+});
+
+describe('parseBigintColumn — a SQL money column read strictly (signed)', () => {
+  it('passes a bigint through, sign included', () => {
+    expect(parseBigintColumn(-42n, 'amount')).toBe(-42n);
+  });
+  it('accepts an integer number and a signed integer string', () => {
+    expect(parseBigintColumn(1_070_000, 'amount')).toBe(1_070_000n);
+    expect(parseBigintColumn('-64200', 'amount')).toBe(-64_200n);
+    expect(parseBigintColumn('9007199254740993', 'amount')).toBe(9_007_199_254_740_993n);
+  });
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['a fraction', 1.5],
+    ['an unsafe integer', 2 ** 53 + 2],
+    ['NaN', Number.NaN],
+    ['a decimal string', '10.00'],
+    ['an empty string', ''],
+    ['a non-numeric string', 'abc'],
+    ['an object', {}],
+  ])('throws on %s, naming the column', (_label, raw) => {
+    expect(() => parseBigintColumn(raw, 'collected')).toThrow(/collected/);
   });
 });

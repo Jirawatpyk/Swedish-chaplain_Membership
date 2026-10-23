@@ -2164,6 +2164,13 @@
       "when": 1798545000000,
       "tag": "0317_backfill_legacy_migration_rows_0110_0113",
       "breakpoints": true
+    },
+    {
+      "idx": 319,
+      "version": "7",
+      "when": 1798545100000,
+      "tag": "0318_invoice_dashboard_collected_indexes",
+      "breakpoints": true
     }
   ]
 }

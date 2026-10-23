@@ -8,17 +8,11 @@
  * nothing. Empty or over-long values are IGNORED.
  */
 import { resolvePlanName } from '@/lib/resolve-plan-name';
+import { parsePlanIdParam } from '@/lib/plan-id-param';
 
 export interface PlanFilter {
   readonly id: string;
   readonly label: string;
-}
-
-const MAX_PLAN_ID_LENGTH = 64;
-
-/** The `?plan=` value the list filters by, or undefined when it is ignored. */
-export function parsePlanIdParam(raw: string | undefined): string | undefined {
-  return raw && raw.length <= MAX_PLAN_ID_LENGTH ? raw : undefined;
 }
 
 export function resolvePlanFilter(
