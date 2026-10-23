@@ -11,20 +11,29 @@
  *
  * Presentational only — receives the ISO date + completed flag as props; BE
  * display for th-TH via the shared locale-aware formatter (storage stays
- * Gregorian ISO).
+ * Gregorian ISO). Right after an erase from this page it takes focus (#240),
+ * because the ⋯ menu that held focus is gone; on a plain visit it does not.
  */
+import { useEffect, useRef } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import { takeErasedBannerFocus } from '@/components/members/erased-banner-focus';
 import { getDateFormatLocale } from '@/lib/format-date-localised';
 import { Alert } from '@jirawatpyk/aura-react';
 
 type Props = {
+  readonly memberId: string;
   readonly erasedAtIso: string;
   readonly completed: boolean;
 };
 
-export function ErasedBanner({ erasedAtIso, completed }: Props) {
+export function ErasedBanner({ memberId, erasedAtIso, completed }: Props) {
   const t = useTranslations('admin.members.erase');
   const locale = useLocale();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (takeErasedBannerFocus(memberId)) ref.current?.focus();
+  }, [memberId]);
 
   // BE display for th-TH per CLAUDE.md (display-only); storage stays Gregorian.
   const erasedDate = new Date(erasedAtIso);
@@ -46,7 +55,7 @@ export function ErasedBanner({ erasedAtIso, completed }: Props) {
   // Spec 122 US5b-1 — an AURA danger Alert. A note, not a live region: it is
   // part of the page's first render, not a change to announce.
   return (
-    <Alert tone="danger" role="note" title={t('bannerTitle', { date: formattedDate })}>
+    <Alert ref={ref} tabIndex={-1} tone="danger" role="note" title={t('bannerTitle', { date: formattedDate })}>
       <p>{t('bannerBody')}</p>
       {!completed && <p className="mt-1">{t('bannerPending')}</p>}
     </Alert>

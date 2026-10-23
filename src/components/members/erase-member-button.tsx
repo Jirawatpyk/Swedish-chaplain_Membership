@@ -27,6 +27,7 @@ import { useTranslations } from 'next-intl';
 import { ShieldXIcon } from 'lucide-react';
 import { Alert, Button, Checkbox, Dialog, RadioGroup, Select, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
+import { requestErasedBannerFocus } from '@/components/members/erased-banner-focus';
 // TYPE-ONLY import — erased by SWC, so it pulls ZERO runtime code from the
 // barrel. The runtime `VERIFICATION_METHODS` value CANNOT be imported here: the
 // `@/modules/members` barrel re-exports server-only infrastructure (the Drizzle
@@ -163,6 +164,9 @@ export function EraseMemberButton({
             ? t('eraseSuccessPending', { companyName })
             : t('eraseSuccess', { companyName }),
         );
+        // #240: the ⋯ menu that opened this unmounts with the refresh; the
+        // Erased banner that replaces it takes focus.
+        requestErasedBannerFocus(memberId);
         setOpen(false);
         resetState();
         startTransition(() => router.refresh());
