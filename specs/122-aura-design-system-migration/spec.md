@@ -773,6 +773,8 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **What changes for a user:**
   - the 44px target follows AURA's query (below 640px or on a coarse pointer), so the profile website, email and phone links are now 44px on a tablet as well (the #239 review's 768px finding);
   - with a mouse from 640px they keep their text height, as every `touchHeight` control does.
+  - the oldest-overdue document number takes the accent link colour (it was body text), like the other table links.
+- **`linkClass` sets the layout only on touch** (inline-flex, centred) and resets the font (`font: inherit` in the `aura` layer beats an `aura-text-*` class on the same element). So a link with an icon or `truncate` adds `inline-flex items-center` (and `min-w-0` to truncate) itself, a link stretched in a flex column or grid adds `self-start` or `justify-start`, and a type class goes on a child `span` (enterprise-ux-designer review of #629).
   - In a static Table's grid cell the link stays inline (the row is the target); in the stacked phone card it is 44px.
 
 ## User Scenarios & Testing *(mandatory)*

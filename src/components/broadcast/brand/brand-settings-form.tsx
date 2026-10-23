@@ -360,7 +360,7 @@ export function BrandSettingsForm({ initial, tenantDisplayName }: Props): React.
             ) : (
               <Link
                 href={view.logo.manageHref}
-                className={linkClass({ underline: 'hover', touchHeight: true, className: 'aura-text-body self-start font-medium' })}
+                className={linkClass({ underline: 'hover', touchHeight: true, className: 'self-start font-medium' })}
               >
                 {t('logo.manage')}
               </Link>

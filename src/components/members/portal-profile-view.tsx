@@ -114,7 +114,13 @@ export async function renderPortalProfileView({
               href={websiteHref}
               target="_blank"
               rel="noopener noreferrer"
-              className={linkClass({ underline: 'hover', touchHeight: true, className: 'max-w-full gap-1 text-sm' })}
+              className={linkClass({
+                underline: 'hover',
+                touchHeight: true,
+                // linkClass lays the link out only on touch: inline-flex + min-w-0 keep the
+                // icon gap and let a long URL truncate with a mouse too
+                className: 'inline-flex max-w-full min-w-0 items-center gap-1 text-sm',
+              })}
             >
               <span className="truncate">{m.website}</span>
               <Icon name={<ExternalLinkIcon />} size={14} />
@@ -210,7 +216,7 @@ export async function renderPortalProfileView({
                 className={linkClass({
                   underline: 'hover',
                   touchHeight: true,
-                  className: 'cursor-pointer list-none gap-1 text-sm font-medium [&::-webkit-details-marker]:hidden',
+                  className: 'flex w-fit cursor-pointer list-none items-center gap-1 text-sm font-medium [&::-webkit-details-marker]:hidden',
                 })}
               >
                 {t('moreDetails')}
@@ -457,4 +463,4 @@ export async function renderPortalProfileView({
  */
 const FIELD = 'gap-0.5 py-0 [&>dt]:leading-[1.7] [&>dd]:leading-[1.7]';
 /** A contact's email or phone: accent on phones, plain text in the desktop grid (with linkClass). */
-const CONTACT_LINK = 'text-sm [overflow-wrap:anywhere] md:text-[var(--aura-fg-primary)]';
+const CONTACT_LINK = 'justify-start text-sm [overflow-wrap:anywhere] md:text-[var(--aura-fg-primary)]';

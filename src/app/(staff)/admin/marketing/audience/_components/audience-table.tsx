@@ -227,7 +227,7 @@ function AudienceCards({
           <span className="aura-text-body [overflow-wrap:anywhere]">{row.email}</span>
           <Link
             href={`/admin/members/${encodeURIComponent(row.memberId)}`}
-            className={linkClass({ underline: 'hover', touchHeight: true, className: '[overflow-wrap:anywhere]' })}
+            className={linkClass({ underline: 'hover', touchHeight: true, className: 'self-start [overflow-wrap:anywhere]' })}
           >
             {row.companyName}
           </Link>

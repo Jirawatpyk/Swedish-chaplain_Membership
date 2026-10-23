@@ -388,17 +388,19 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
 
       {props.onCreateNew !== undefined ? (
         // Board: an accent text link, 44px tall on touch (AURA linkClass, #172).
+        // linkClass sets the layout only on touch and resets the font, so the
+        // icon row and the label type are set here.
         <button
           type="button"
           onClick={props.onCreateNew}
           className={linkClass({
             underline: 'hover',
             touchHeight: true,
-            className: 'aura-text-label gap-[var(--aura-space-1)] self-start',
+            className: 'inline-flex items-center gap-[var(--aura-space-1)] self-start',
           })}
         >
           <Icon name="plus" size={14} />
-          {t('createNewCta')}
+          <span className="aura-text-label">{t('createNewCta')}</span>
         </button>
       ) : null}
     </div>
