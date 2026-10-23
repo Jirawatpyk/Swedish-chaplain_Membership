@@ -284,6 +284,10 @@ const BUDGETS: ReadonlyArray<RouteBudget> = [
   // --- Spec 122 US8a invoicing (AURA) — see docblock --------------------
   { route: '/admin/invoices', maxKb: 960 },
   { route: '/admin/invoices/new', maxKb: 940 },
+  // --- 124 invoice dashboard ---------------------------------------------
+  // 848.5 KB measured (23 Oct 2026); recharts stays behind the trend
+  // canvas's `next/dynamic`, as on /admin.
+  { route: '/admin/finance', maxKb: 950 },
   // --- Spec 122 US8b invoice detail (AURA) — see docblock ---------------
   { route: '/admin/invoices/[invoiceId]', maxKb: 1070 },
   { route: '/admin/invoices/[invoiceId]/void', maxKb: 920 },
