@@ -47,6 +47,7 @@ describe('exportPaidInvoicesCsv — integration (live Neon)', () => {
       audit: f4AuditAdapter,
       paymentMethodLookup: async () =>
         new Map<string, 'card' | 'promptpay'>(),
+      waivedRefundLookup: async () => [],
     };
 
     const result = await runInTenant(tenant.ctx, async () =>

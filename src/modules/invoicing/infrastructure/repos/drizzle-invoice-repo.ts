@@ -5,9 +5,12 @@
  * role via `runInTenant(ctx, fn)` so RLS policies enforce tenant
  * scoping even on paths that forget an explicit WHERE filter.
  */
-import { and, asc, desc, eq, isNotNull, isNull, lt, ne, or, sql, ilike } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql, ilike } from 'drizzle-orm';
 import type { InvoiceRepo } from '../../application/ports/invoice-repo';
-import type { TaxRegisterRepo } from '../../application/ports/tax-register-repo';
+import type {
+  RefundReferenceExportRow,
+  TaxRegisterRepo,
+} from '../../application/ports/tax-register-repo';
 import {
   asInvoiceId,
   type Invoice,
@@ -2023,6 +2026,45 @@ export function makeDrizzleTaxRegisterRepo(tenantId: string): TaxRegisterRepo {
             originalVatRateRaw: r.originalVatRateRaw,
           };
         });
+      });
+    },
+
+    async listRefundReferencesForExport(tenantIdArg, invoiceIds) {
+      const out = new Map<string, RefundReferenceExportRow>();
+      if (invoiceIds.length === 0) return out;
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select({
+            invoiceId: invoices.invoiceId,
+            memberIdentitySnapshot: invoices.memberIdentitySnapshot,
+            currency: invoices.currency,
+            receiptDocumentNumberRaw: invoices.receiptDocumentNumberRaw,
+            documentNumberRaw: invoices.documentNumber,
+            billDocumentNumberRaw: invoices.billDocumentNumberRaw,
+          })
+          .from(invoices)
+          .where(
+            and(
+              eq(invoices.tenantId, tenantIdArg),
+              ne(invoices.status, 'void'),
+              inArray(invoices.invoiceId, [...invoiceIds]),
+            ),
+          );
+        for (const r of rows) {
+          const snap = r.memberIdentitySnapshot as {
+            legal_name?: string;
+            tax_id?: string | null;
+          } | null;
+          out.set(r.invoiceId, {
+            legalName: snap?.legal_name ?? '',
+            taxId: snap?.tax_id ?? '',
+            currency: r.currency,
+            receiptDocumentNumberRaw: r.receiptDocumentNumberRaw,
+            documentNumberRaw: r.documentNumberRaw,
+            billDocumentNumberRaw: r.billDocumentNumberRaw,
+          });
+        }
+        return out;
       });
     },
   };

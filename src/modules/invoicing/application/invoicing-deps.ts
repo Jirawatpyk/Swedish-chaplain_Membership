@@ -57,6 +57,8 @@ import type { ExportPaidInvoicesCsvDeps } from './use-cases/export-paid-invoices
 import {
   listCollectedPaymentMethods,
   makeListCollectedPaymentMethodsDeps,
+  listWaivedRefundsCompletedBetween,
+  makeListWaivedRefundsCompletedBetweenDeps,
   countPendingRefundsForInvoice,
   makeCountPendingRefundsForInvoiceDeps,
   loadInvoicePaymentActivity,
@@ -305,6 +307,17 @@ export function makeExportPaidInvoicesCsvDeps(
       return result.ok
         ? result.value
         : new Map<string, 'card' | 'promptpay'>();
+    },
+    // Spec 124 (D-p). Unlike the method lookup, a failure must not degrade
+    // to "no refunds": the file would overstate the money kept. Throwing makes
+    // the use case return `list_failed`.
+    waivedRefundLookup: async (tid, range) => {
+      const result = await listWaivedRefundsCompletedBetween(
+        makeListWaivedRefundsCompletedBetweenDeps(tid),
+        { tenantId: tid, from: range.from, to: range.to },
+      );
+      if (!result.ok) throw new Error('waived refund lookup failed');
+      return result.value;
     },
   };
 }

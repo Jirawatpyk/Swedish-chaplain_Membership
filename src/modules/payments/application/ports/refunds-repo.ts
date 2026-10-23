@@ -12,6 +12,7 @@ import type { PaymentId } from '../../domain/payment';
 import type { Refund, RefundMembershipEffect, RefundStatus } from '../../domain/refund';
 import type { RejectionProof } from '../../domain/settlement/money-moved';
 import type { Satang } from '@/lib/money';
+import type { PaymentMethod } from '../../domain/value-objects/payment-method';
 // Track B — the waiver vocabulary is owned by F4 Domain (it encodes §86/10
 // rules), consumed here through the published barrel.
 import type { CreditNoteWaiverReason } from '@/modules/invoicing';
@@ -105,6 +106,16 @@ export type UpdateRefundStatusInput =
       readonly nextStatus: 'failed';
       readonly rejectionProof: RejectionProof;
     });
+
+/** One waived refund, as the CSV export's refund row needs it. */
+export interface WaivedRefundExportRow {
+  readonly refundId: string;
+  readonly invoiceId: string;
+  readonly amountSatang: bigint;
+  /** Bangkok-local `YYYY-MM-DD` of `completed_at`. */
+  readonly completedDate: string;
+  readonly method: PaymentMethod;
+}
 
 export interface RefundsRepo {
   insert(
@@ -379,6 +390,19 @@ export interface RefundsRepo {
    * held is the deadlock shape this codebase has already paid for once.
    */
   sumWaivedByInvoice(tenantId: string): Promise<ReadonlyMap<string, bigint>>;
+
+  /**
+   * Spec 124 (D-p) — every refund settled with NO credit note (the same
+   * `status = 'succeeded' AND credit_note_waived_at IS NOT NULL` predicate as
+   * {@link sumWaivedByInvoice}) whose `completed_at` falls on a Bangkok-local
+   * day in the inclusive `[from, to]` range, for the paid-invoices CSV's
+   * negative refund rows. Each carries the refunded payment's method. Ordered
+   * by `completed_at`, then id. Opens its own `runInTenant`.
+   */
+  listWaivedCompletedBetween(
+    tenantId: string,
+    range: { readonly from: string; readonly to: string },
+  ): Promise<readonly WaivedRefundExportRow[]>;
 
   /**
    * 8A — count `status='pending'` refunds for `(tenantId, invoiceId)`. Powers

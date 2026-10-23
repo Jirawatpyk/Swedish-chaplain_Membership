@@ -28,6 +28,18 @@
  * ones, which the register leaves out, and the register flags such a month
  * `closed_month_incomplete` (`legacyCombinedCount`).
  *
+ * --- Refunds with no credit note (spec 124 D-p) -------------------
+ * A refund settled under a credit-note waiver (the §105 receipt class) leaves
+ * the receipt `paid` at full value: no §86/10 note, so no credit-note row.
+ * Each one completed in the range (Bangkok day of `completed_at`) follows the
+ * credit-note rows as a negative row: Total −amount, Status
+ * `Refund (no credit note)`, the refunded payment's method, and the original
+ * document in `Reference Document No.`. Subtotal, VAT % and VAT stay BLANK —
+ * no document reduced output VAT, so the VAT column still sums to the
+ * register's net figure — and so does Tax Point Date: a refund has no §78/1
+ * tax point (thai-tax-compliance-auditor, 23 Oct). A refund on a VOID
+ * invoice gets no row: its receipt is never in the file.
+ *
  * `Status` is the invoice's status AS OF THE EXPORT, not as of the period:
  * re-exporting June after a July credit note shows the June receipt as
  * `Credited`, still positive — its reduction is the July negative row.
@@ -54,7 +66,11 @@ import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { z } from 'zod';
 import { bangkokLocalDate, isValidCalendarDate } from '@/lib/fiscal-year';
-import type { CreditNoteExportRow, TaxRegisterRepo } from '../ports/tax-register-repo';
+import type {
+  CreditNoteExportRow,
+  RefundReferenceExportRow,
+  TaxRegisterRepo,
+} from '../ports/tax-register-repo';
 import type { AuditPort } from '../ports/audit-port';
 import { billFirstDocumentNumber, type Invoice } from '../../domain/invoice';
 import { resolveCreditNoteOriginalDocuments } from '../../domain/credit-note';
@@ -92,7 +108,7 @@ export type ExportPaidInvoicesCsvError =
 export interface ExportPaidInvoicesCsvOutput {
   readonly csv: string;
   readonly filename: string;
-  /** Every data row — invoice rows plus credit-note rows. */
+  /** Every data row — invoice, credit-note and waived-refund rows. */
   readonly rowCount: number;
 }
 
@@ -108,10 +124,30 @@ export type PaymentMethodLookupPort = (
   invoiceIds: readonly string[],
 ) => Promise<ReadonlyMap<string, 'card' | 'promptpay'>>;
 
+/** One refund settled with no credit note, as the export's refund row needs it. */
+export interface WaivedRefundForExport {
+  readonly invoiceId: string;
+  readonly amountSatang: bigint;
+  /** Bangkok-local `YYYY-MM-DD` the refund completed. */
+  readonly completedDate: string;
+  readonly method: 'card' | 'promptpay';
+}
+
+/**
+ * Spec 124 (D-p) — F4-owned port for the F5 waived-refund read, wired at the
+ * composition root with `listWaivedRefundsCompletedBetween` (same reason as
+ * {@link PaymentMethodLookupPort}).
+ */
+export type WaivedRefundLookupPort = (
+  tenantId: string,
+  range: { readonly from: string; readonly to: string },
+) => Promise<readonly WaivedRefundForExport[]>;
+
 export interface ExportPaidInvoicesCsvDeps {
   readonly registerRepo: TaxRegisterRepo;
   readonly audit: AuditPort;
   readonly paymentMethodLookup: PaymentMethodLookupPort;
+  readonly waivedRefundLookup: WaivedRefundLookupPort;
 }
 
 // --- Constants ---------------------------------------------------------
@@ -151,6 +187,8 @@ const STATUS_LABEL: Partial<Record<Invoice['status'], string>> = {
   partially_credited: 'Partially credited',
 };
 const CREDIT_NOTE_STATUS = 'Credit note';
+/** The Status of a refund settled with no credit note (spec 124 D-p). */
+const WAIVED_REFUND_STATUS = 'Refund (no credit note)';
 
 // --- Public use-case ---------------------------------------------------
 
@@ -177,12 +215,22 @@ export async function exportPaidInvoicesCsv(
   // `code: 'list_failed'` to 500 + `logger.error`.
   let inRange: readonly Invoice[];
   let creditNotes: readonly CreditNoteExportRow[];
+  let waivedRefunds: readonly WaivedRefundForExport[];
+  let refundReferences: ReadonlyMap<string, RefundReferenceExportRow>;
   try {
     const range = { from: input.from, to: input.to };
-    [inRange, creditNotes] = await Promise.all([
+    [inRange, creditNotes, waivedRefunds] = await Promise.all([
       deps.registerRepo.listForExport(input.tenantId, range),
       deps.registerRepo.listCreditNotesForExport(input.tenantId, range),
+      deps.waivedRefundLookup(input.tenantId, range),
     ]);
+    refundReferences =
+      waivedRefunds.length > 0
+        ? await deps.registerRepo.listRefundReferencesForExport(
+            input.tenantId,
+            [...new Set(waivedRefunds.map((r) => r.invoiceId))],
+          )
+        : new Map();
   } catch (e) {
     // P2 Wave-0 — the use-case RETURNS `list_failed` (does not re-throw), so the
     // route never sees `e`; without this log a Neon transient during the paid-
@@ -213,8 +261,16 @@ export async function exportPaidInvoicesCsv(
   for (const cn of creditNotes) {
     lines.push(buildCreditNoteRow(cn));
   }
+  // A refund whose invoice has no reference row is on a VOID invoice.
+  let waivedRefundCount = 0;
+  for (const refund of waivedRefunds) {
+    const reference = refundReferences.get(refund.invoiceId);
+    if (reference === undefined) continue;
+    lines.push(buildWaivedRefundRow(refund, reference));
+    waivedRefundCount += 1;
+  }
   const csv = '﻿' + lines.join('\r\n') + '\r\n';
-  const rowCount = inRange.length + creditNotes.length;
+  const rowCount = inRange.length + creditNotes.length + waivedRefundCount;
 
   // 5. Audit emit (best-effort but propagating per AuditPort contract —
   //    the route layer wraps for 5xx mapping; same convention as
@@ -227,12 +283,13 @@ export async function exportPaidInvoicesCsv(
     requestId: input.requestId ?? null,
     eventType: 'invoices_csv_exported',
     actorUserId: input.actorUserId,
-    summary: `CSV export ${input.from} → ${input.to} (${rowCount} rows, ${creditNotes.length} credit notes)`,
+    summary: `CSV export ${input.from} → ${input.to} (${rowCount} rows, ${creditNotes.length} credit notes, ${waivedRefundCount} waived refunds)`,
     payload: {
       from: input.from,
       to: input.to,
       row_count: rowCount,
       credit_note_count: creditNotes.length,
+      waived_refund_count: waivedRefundCount,
       actor_user_id: input.actorUserId,
       route: 'export-paid-invoices-csv',
     },
@@ -323,6 +380,41 @@ function buildCreditNoteRow(cn: CreditNoteExportRow): string {
     '',
     cn.issueDate,
     CREDIT_NOTE_STATUS,
+    original.receiptNumberRaw ?? '',
+  ];
+  return cells.map(escapeCsv).join(',');
+}
+
+/**
+ * Spec 124 (D-p) — a refund settled with no credit note as a NEGATIVE row:
+ * dated by the refund, Total only (no Subtotal / VAT: no document reduced
+ * output VAT), no tax point, and the original document — resolved like a
+ * credit note's — in `Reference Document No.`.
+ */
+function buildWaivedRefundRow(
+  refund: WaivedRefundForExport,
+  reference: RefundReferenceExportRow,
+): string {
+  const original = resolveCreditNoteOriginalDocuments({
+    receiptDocumentNumberRaw: reference.receiptDocumentNumberRaw,
+    documentNumberRaw: reference.documentNumberRaw,
+    billDocumentNumberRaw: reference.billDocumentNumberRaw,
+  });
+  const cells: readonly string[] = [
+    refund.completedDate,
+    '',
+    '',
+    reference.legalName,
+    reference.taxId,
+    '',
+    '',
+    '',
+    formatMoney(-refund.amountSatang),
+    reference.currency,
+    '',
+    refund.method,
+    '',
+    WAIVED_REFUND_STATUS,
     original.receiptNumberRaw ?? '',
   ];
   return cells.map(escapeCsv).join(',');
