@@ -219,6 +219,24 @@ The real control is a **month-close checklist item**, not the alert:
 > closed month. If either returns rows, hand them to the accountant and log the
 > outcome in the correction register.
 
+### In the paid-invoices CSV (spec 124 D-p)
+
+The admin invoice CSV export (Invoices → Export CSV, or Export CSV on the
+invoice dashboard) carries each waived refund as its own row, so the file the
+accountant receives shows it without running Query A:
+
+- A row with Status `Refund (no credit note)` is money returned with no credit
+  note; the refunded amount is the negative figure in `Total`, and Subtotal,
+  VAT % and VAT are blank (no document reduced output VAT).
+- The refund's date is in `Issue Date` — the Bangkok date it completed — though
+  no document was issued that day; `Tax Point Date` is blank (a refund has no
+  §78/1 tax point). `Reference Document No.` is the original receipt or INV.
+- To split a multi-month file by month, use `Tax Point Date`, and `Issue Date`
+  where it is blank. That rule holds for every row type in the file.
+
+The receipt itself stays `Paid` in its own month; whether its output VAT may be
+reduced is still Open Questions 1–3 below.
+
 ---
 
 ## Open questions — for the chamber's accountant

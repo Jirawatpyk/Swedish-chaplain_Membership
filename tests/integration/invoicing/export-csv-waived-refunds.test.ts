@@ -156,6 +156,29 @@ describe('CSV export — refunds with no credit note', () => {
     }
   });
 
+  it('one multi-month file, split by Tax Point Date else Issue Date, nets to Collected per month', async () => {
+    // The period rule the runbook gives the accountant (D-p), on the file the
+    // dashboard's Export CSV hands over: several months in one file.
+    const satang = (total: string) => BigInt(Math.round(Number(total) * 100));
+    const byMonth = new Map<string, bigint>();
+    for (const r of await rows('2026-05-01', '2026-07-31')) {
+      const month = (r['Tax Point Date'] || r['Issue Date'])!.slice(0, 7);
+      byMonth.set(month, (byMonth.get(month) ?? 0n) + satang(r['Total']!));
+    }
+    for (const [month, from, to] of [
+      ['2026-05', '2026-05-01', '2026-05-31'],
+      ['2026-06', '2026-06-01', '2026-06-30'],
+      ['2026-07', '2026-07-01', '2026-07-31'],
+    ] as const) {
+      const collected = await invoiceDashboardSourceAdapter.collectedInRange(
+        tenant.ctx,
+        { type: 'all', fiscalYear: 2026, planId: null, origin: 'all' },
+        { from, to },
+      );
+      expect({ month, net: byMonth.get(month) ?? 0n }).toEqual({ month, net: collected.amountSatang });
+    }
+  });
+
   it('a credit-note refund keeps only its credit-note row', async () => {
     const june = await rows('2026-06-01', '2026-06-30');
     expect(june.filter((r) => r['Status'] === 'Credit note')).toHaveLength(1);
