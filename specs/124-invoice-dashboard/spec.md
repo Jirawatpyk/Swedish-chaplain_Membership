@@ -126,7 +126,7 @@ Decisions 1–10 of the design spec stand. Added in this session (22 Oct 2026):
 - Any new money mutation, export, or schema change other than migration 0318's indexes.
 - Median days to pay; collection rate; largest debtors; recognising membership revenue over the coverage period (design spec § Follow-ups).
 - Making the home chart and this page's chart agree month by month (decision 5).
-- The CSV export labelling a refunded Stripe invoice "other" (follow-up issue).
+- ~~The CSV export labelling a refunded Stripe invoice "other"~~ — it actually printed `manual` (a missing succeeded payment fell back to the literal); fixed in the follow-up branch `124-csv-refunded-stripe-method` (23 Oct): refunded / partially refunded card or PromptPay rows name their method, every other row keeps `manual`.
 
 ## Open questions
 
