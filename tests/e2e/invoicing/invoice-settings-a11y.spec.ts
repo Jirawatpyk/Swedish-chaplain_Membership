@@ -5,9 +5,11 @@
  * WHT footer note, offline-payment bank block) plus the form's grouping + Save:
  *
  *   1. axe-core WCAG 2.0/2.1 A+AA — zero violations on the settings page;
- *   2. WCAG 2.5.5 Target Size — the new bank-block inputs + the primary Save are
- *      ≥44×44px (the seller branch input, shown only when the tenant is a branch,
- *      is measured when present);
+ *   2. Target size — the new bank-block inputs are ≥44×44px everywhere (the
+ *      seller branch input, shown only when the tenant is a branch, is measured
+ *      when present); the primary Save is ≥44px where docs/ux-standards.md § 9.1
+ *      asks for it (a phone width or a coarse pointer, WCAG 2.5.5) and ≥24px
+ *      with a mouse on a wider screen (WCAG 2.5.8);
  *   3. WCAG 1.4.10 Reflow / SC-011 — at 320 and 375 CSS px, no horizontal scroll;
  *   4. WCAG 1.4.4 Resize Text 200% — Save stays visible, no page h-scroll;
  *   5. FR-036 grouping + reachable Save — every section is a <fieldset><legend>
@@ -31,18 +33,20 @@ const ADMIN_PASSWORD = process.env.E2E_SUPER_ADMIN_PASSWORD;
 
 const AXE_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] as const;
 const MIN_TARGET = 44;
+/** WCAG 2.5.8 (AA) minimum, for a mouse on a screen 640px or wider. */
+const MIN_TARGET_FINE_POINTER = 24;
 const SETTINGS_PATH = '/admin/settings/invoicing';
 
-async function expectTargetSize(locator: Locator, label: string): Promise<void> {
+async function expectTargetSize(
+  locator: Locator,
+  label: string,
+  min: number = MIN_TARGET,
+): Promise<void> {
   await expect(locator, `${label} visible`).toBeVisible();
   const box = await locator.boundingBox();
   expect(box, `${label} has a bounding box`).not.toBeNull();
-  expect(box!.height, `${label} height ≥ ${MIN_TARGET}px`).toBeGreaterThanOrEqual(
-    MIN_TARGET - 0.5,
-  );
-  expect(box!.width, `${label} width ≥ ${MIN_TARGET}px`).toBeGreaterThanOrEqual(
-    MIN_TARGET - 0.5,
-  );
+  expect(box!.height, `${label} height ≥ ${min}px`).toBeGreaterThanOrEqual(min - 0.5);
+  expect(box!.width, `${label} width ≥ ${min}px`).toBeGreaterThanOrEqual(min - 0.5);
 }
 
 test.describe('088 invoice-settings form a11y @a11y @f088', () => {
@@ -73,7 +77,7 @@ test.describe('088 invoice-settings form a11y @a11y @f088', () => {
     ).toEqual([]);
   });
 
-  test('new US5 controls + Save meet the WCAG 2.5.5 ≥44px target size', async ({
+  test('new US5 controls are ≥44px; Save meets the target size for the pointer in use', async ({
     page,
   }) => {
     await signInViaForm(
@@ -97,9 +101,16 @@ test.describe('088 invoice-settings form a11y @a11y @f088', () => {
     await expectTargetSize(fieldBox(/SWIFT/i), 'bank SWIFT input');
     await expectTargetSize(fieldBox(/Account number/i), 'bank account-no input');
     await expectTargetSize(fieldBox(/Invoice number prefix/i), 'invoice prefix input');
+    // Save is an AURA button with `touchHeight`: 44px below 640px or on a
+    // coarse pointer (5.24, handoff #123), 36px with a mouse on a wider screen
+    // by design. Ask the page which rule applies, as renewal-a11y does.
+    const touchRule = await page.evaluate(
+      () => window.matchMedia('(max-width: 639.98px), (pointer: coarse)').matches,
+    );
     await expectTargetSize(
       page.getByRole('button', { name: /Save settings/i }),
       'Save button',
+      touchRule ? MIN_TARGET : MIN_TARGET_FINE_POINTER,
     );
 
     // Seller branch input only shows when the tenant is a branch (not HO).
