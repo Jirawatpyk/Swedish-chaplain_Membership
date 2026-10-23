@@ -781,8 +781,15 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 
 - **The break:** at 768px the static AURA `Table` squeezed its first column until the label broke inside a word. The plans list showed "Diamo/nd Partne/rship" and the finance oldest-overdue card showed "SC-/000071".
 - **The cause:** `.aura-tbl__td { overflow-wrap: anywhere }` makes a cell's min-content one character wide, so `table-layout: auto` gives that width to the money and status columns. It predates 5.59 (R79, #629 reviews).
-- **The fix:** the plan-name cell takes `[overflow-wrap:normal]`, so it wraps between words only, and the document-number cell takes `whitespace-nowrap`, as its due-date cell already did. Phone cards are unchanged.
-- **AURA #173 (Addendum 74) filed:** `linkClass` lays a link out only on touch. Listed open in `docs/aura-adoption.md`.
+- **The fix:**
+  - the plan-name and overdue buyer cells take `[overflow-wrap:normal]`, so they wrap between words only;
+  - the document-number cell takes `whitespace-nowrap`, as its due-date cell already did.
+- **Room for the wider name column** (maintainer, 23 Oct): while the table box is under 800px (`@max-[800px]/aura-tbl`, a 768px tablet or 1024px with the sidebar open), the plans **Year** column steps aside (the filter bar shows the year) and so does the overdue **Due** date (the days overdue say the same). The phone card keeps Due; it already hid Year. Without this, the plans table ran 50–70px past its box and its row ⋯ menu left the view (enterprise-ux-designer review).
+- **AURA items filed:**
+  - #173 (Addendum 74): `linkClass` lays a link out only on touch;
+  - #174 (75): a static Table cell's `overflow-wrap: anywhere`;
+  - #175 (76): the sticky header covering the first row of a wide table.
+  - All three are listed open in `docs/aura-adoption.md`.
 
 ## User Scenarios & Testing *(mandatory)*
 
