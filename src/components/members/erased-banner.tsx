@@ -58,17 +58,15 @@ export function ErasedBanner({ memberId, erasedAtIso, completed }: Props) {
 
   const title = t('bannerTitle', { date: formattedDate });
   // Spec 122 US5b-1 — an AURA danger Alert. A note, not a live region: it is
-  // part of the page's first render, not a change to announce.
+  // part of the page's first render, not a change to announce. AURA names it
+  // by its title (5.57, #170).
   return (
-    // `aria-label`: AURA renders the title as a plain <p>, so the note has no
-    // name of its own. Stand-in until AURA #170.
     <Alert
       ref={ref}
       tabIndex={-1}
       tone="danger"
       role="note"
       title={title}
-      aria-label={title}
     >
       <p>{t('bannerBody')}</p>
       {!completed && <p className="mt-1">{t('bannerPending')}</p>}

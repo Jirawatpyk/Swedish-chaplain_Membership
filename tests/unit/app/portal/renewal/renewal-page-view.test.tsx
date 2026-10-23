@@ -82,7 +82,10 @@ describe('<RenewalPageView> (board Portal-renewal, US7c)', () => {
     expect(welcome.textContent).toContain('Welcome to your first renewal');
     expect(welcome.textContent).toContain('Your renewal price is locked at the rate');
     // UX review: no aria-label repeating the visible title (read twice).
+    // AURA 5.57 (#170) names the note by its title instead.
     expect(welcome).not.toHaveAttribute('aria-label');
+    expect(welcome).toHaveAttribute('aria-labelledby', 'renewal-onboarding-title');
+    expect(welcome).toHaveAccessibleName('Welcome to your first renewal');
     first.unmount();
     renderView();
     expect(screen.queryByRole('note')).toBeNull();

@@ -454,3 +454,17 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
     - The tab target size goes to the AURA handoff as #171: "Tax" is 22px wide, both here and on the member page.
     - A reader without write access now gets a first note, "You can view these settings but not change them." (EN/TH/SV `readOnlyNote`), as an info note, since AURA's `Alert` has no neutral tone. This was pre-existing; the maintainer asked for it in this PR. D-023 shared commit: `invoice settings page frame > tells a view-only reader why the fields are locked` failed before the view changed: "Unable to find an element with the text: You can view these settings but not change them.".
   - **Not changed:** no way back to the tabs on a phone (a recorded decision), the skeleton's existing-settings note (pre-existing), and no scroll hint at 320 (AURA `Tabs`).
+
+### Evidence: adopt AURA 5.57.0, drop the #169 and #170 stand-ins (size S, plan agreed 2026-10-23)
+
+- **RED** (`a8f7fd437`, the bump plus tests, stand-ins still in place):
+  - `CompanyDetailsDrawer > opens with focus on the closed disclosure, not a control hidden inside it` failed: "Expected element with focus: `<summary>Technical details</summary>` / Received element with focus: `<button aria-label="Close company details" … data-autofocus="true">`".
+  - `ErasedBanner … > takes its name from the rendered title, not an aria-label of its own` failed: "Expected the element not to have attribute: aria-label / Received: aria-label="Personal data erased on 23 Oct 2026"".
+- **GREEN:**
+  - The Drawer's Close button loses `data-autofocus`, and `ErasedBanner` loses `aria-label={title}`.
+  - jsdom has no layout, so the Drawer case stubs `getClientRects` with one rect per element. Without the stub, AURA counts every control as hidden and focuses the panel.
+- **Ride-along, found by the full unit run on 5.57:**
+  - The renewal page's first-renewal welcome (`onboarding-banner.tsx`, a `/server` Alert) now gets an `aria-label` from AURA. The `/server` entry cannot generate an id, so it falls back to `aria-label` for a plain-text title.
+  - The test failed: `RenewalPageView > shows the first-renewal welcome as an AURA info alert, only for a first renewal`, with `expect(element).not.toHaveAttribute("aria-label")`.
+  - Fixed: the Alert takes `id="renewal-onboarding"`, so AURA names it through `aria-labelledby`, the way the addendum advises. The test now also asserts that the note is named by its title.
+- **Not changed:** the brand theme. `aura-theme --brand "#10487A"` on 5.57 regenerates `src/styles/aura-theme.css` byte-identical below its header.

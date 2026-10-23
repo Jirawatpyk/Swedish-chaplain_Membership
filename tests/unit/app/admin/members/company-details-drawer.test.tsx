@@ -36,6 +36,12 @@ describe('CompanyDetailsDrawer', () => {
   // skips a control in a closed <details> and counts its summary, so the
   // Drawer opens on the disclosure itself.
   it('opens with focus on the closed disclosure, not a control hidden inside it', async () => {
+    // jsdom has no layout, so every control reports no client rects and AURA
+    // would count them all as hidden. Give each element one rect, as a browser
+    // does for a rendered control; the closed <details> rule is AURA's own.
+    const rects = vi
+      .spyOn(Element.prototype, 'getClientRects')
+      .mockImplementation(() => [new DOMRect(0, 0, 10, 10)] as unknown as DOMRectList);
     render(
       <CompanyDetailsDrawer triggerLabel="All company details" title="Siam Nordic" closeLabel="Close company details">
         <details>
@@ -47,5 +53,6 @@ describe('CompanyDetailsDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'All company details' }));
     await screen.findByRole('dialog', { name: 'Siam Nordic' });
     expect(screen.getByText('Technical details')).toHaveFocus();
+    rects.mockRestore();
   });
 });
