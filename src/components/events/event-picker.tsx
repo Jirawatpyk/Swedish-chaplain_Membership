@@ -396,7 +396,7 @@ export function EventPicker(props: EventPickerProps): React.JSX.Element {
           className={linkClass({
             underline: 'hover',
             touchHeight: true,
-            className: 'inline-flex min-h-6 items-center gap-[var(--aura-space-1)] self-start',
+            className: 'inline-flex items-center gap-[var(--aura-space-1)] self-start sm:pointer-fine:min-h-6',
           })}
         >
           <Icon name="plus" size={14} />

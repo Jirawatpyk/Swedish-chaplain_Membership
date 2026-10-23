@@ -117,6 +117,8 @@ describe('EventPicker on AURA Combobox (US9b-2)', () => {
       name: enMessages.admin.events.import.eventPicker.createNewCta,
     });
     expect(create).toHaveClass('aura-link', 'aura-link--touch');
+    // a bare min-h-* utility would beat AURA's 44px touch rule (a later layer)
+    expect([...create.classList].filter((c) => /^min-h-/.test(c))).toEqual([]);
   });
 
   it('selects the filename suggestion when nothing is chosen', async () => {
