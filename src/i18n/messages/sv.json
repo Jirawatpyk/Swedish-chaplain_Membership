@@ -2615,6 +2615,136 @@
         }
       }
     },
+    "invoiceDashboard": {
+      "meta": {
+        "title": "Fakturaöversikt"
+      },
+      "title": "Fakturaöversikt",
+      "asOf": "Per {dateTime} · {fiscalYear} · alla belopp inkl. moms",
+      "asOfEmpty": "{fiscalYear} · alla belopp inkl. moms",
+      "fiscalYearLabel": "Räkenskapsår {year} ({fromMonth}–{toMonth})",
+      "fiscalYearShort": "Räkenskapsår {year}",
+      "actions": {
+        "exportCsv": "Exportera CSV",
+        "viewInvoices": "Visa fakturor",
+        "more": "Fler åtgärder (Exportera CSV)"
+      },
+      "filters": {
+        "groupLabel": "Filter för översikten",
+        "type": "Fakturatyp",
+        "typeAll": "Alla fakturor",
+        "typeMembership": "Medlemskap",
+        "typeEvent": "Evenemang",
+        "fiscalYear": "Räkenskapsår",
+        "plan": "Medlemsplan",
+        "planAll": "Alla planer",
+        "origin": "Ursprung",
+        "originAll": "Alla ursprung",
+        "originManual": "Skapad av personal",
+        "originAutoRenewal": "Automatisk förnyelse",
+        "allShort": "Alla",
+        "chip": "{label}: {value}"
+      },
+      "tiles": {
+        "sectionLabel": "Nyckeltal, alla inkl. moms",
+        "outstanding": "Utestående",
+        "outstandingCaption": "{count, plural, one {# obetald faktura} other {# obetalda fakturor}} · i dag",
+        "overdue": "Förfallet",
+        "overdueCaption": "{count, plural, one {# faktura} other {# fakturor}} efter förfallodag · i dag",
+        "collectedMonth": "Inbetalt denna månad",
+        "collectedMonthCaption": "{month} hittills · påverkas inte av räkenskapsårsfiltret",
+        "collectedFiscalYear": "Inbetalt {fiscalYear}",
+        "collectedFiscalYearToDate": "{fiscalYear} hittills",
+        "collectedFiscalYearWhole": "{from} – {to}"
+      },
+      "aging": {
+        "title": "Obetalda fakturor efter ålder",
+        "description": "I dag · alla år · dagar efter förfallodagen",
+        "lead": "{percent} % förfallet",
+        "leadOf": "{overdue} av {total, plural, one {# obetald faktura} other {# obetalda fakturor}}",
+        "listLabel": "Obetalda fakturor efter dagar efter förfallodagen",
+        "rowName": "{bucket}: {amount}, {count, plural, one {# faktura} other {# fakturor}}",
+        "footer": "Totalt {amount}. Varje rad öppnar fakturorna i det intervallet.",
+        "bucket": {
+          "not_yet_due": "Ej förfallet",
+          "days_1_30": "1–30 dagar",
+          "days_31_60": "31–60 dagar",
+          "days_61_90": "61–90 dagar",
+          "over_90": "Över 90 dagar"
+        }
+      },
+      "attention": {
+        "title": "Kräver åtgärd",
+        "underFilters": "Med dessa filter",
+        "nothing": "Inget kräver åtgärd",
+        "nothingFiltered": "Inget kräver åtgärd med dessa filter",
+        "rowName": "{label}: {count}",
+        "manualDrafts": "Fakturautkast som inte utfärdats",
+        "autoRenewalDrafts": "Utkast från automatisk förnyelse att granska",
+        "receiptPdfFailed": "Kvittots PDF kunde inte skapas",
+        "refundsFailedAtStripe": "Återbetalningar som misslyckades hos Stripe",
+        "refundsPendingOverThreshold": "Återbetalningar som väntat hos Stripe i mer än 3 dagar"
+      },
+      "oldest": {
+        "title": "Äldst förfallna",
+        "description": "I dag · längst efter förfallodagen först",
+        "caption": "Äldst förfallna fakturor",
+        "document": "Dokument",
+        "buyer": "Köpare",
+        "due": "Förfaller",
+        "overdue": "Försenad",
+        "amount": "Belopp",
+        "actions": "Åtgärder",
+        "days": "{days, plural, one {# dag} other {# dagar}}",
+        "daysOverdue": "{days, plural, one {# dag försenad} other {# dagar försenad}}",
+        "dueOn": "förföll {date}",
+        "recordPayment": "Bokför betalning…",
+        "recordPaymentAria": "Bokför betalning för {document}",
+        "allOverdue": "Alla förfallna fakturor ({count})",
+      "none": "Inga fakturor är förfallna"
+      },
+      "trend": {
+        "title": "Fakturerat mot inbetalt",
+        "description": "{fiscalYear} per månad · fakturerat efter fakturadatum, makulerade fakturor ej medräknade, minus kreditnotor utfärdade samma månad · inbetalt efter betaldatum, minus återbetalningar",
+        "vatNote": "En tidigare månad kan ändras när en av dess fakturor makuleras. Använd skattedokumentregistret för moms.",
+        "totalBilled": "Fakturerat, {range}",
+        "totalCollected": "Inbetalt, {range}",
+        "legendBilled": "Fakturerat",
+        "legendCollected": "Inbetalt",
+        "legendPartial": "{month} hittills (ljusare)",
+        "legendFuture": "{months} ännu inte",
+        "tableCaption": "Fakturerat och inbetalt per månad",
+        "month": "Månad",
+        "notYet": "Ännu inte"
+      },
+      "methods": {
+        "title": "Inbetalt per betalsätt",
+        "descriptionToDate": "{fiscalYear} hittills · efter betaldatum",
+        "descriptionWhole": "{fiscalYear} · efter betaldatum",
+        "listLabel": "Inbetalt per betalsätt",
+        "footer": "Totalt {amount}. Kort och PromptPay betalas online via Stripe, före Stripes avgifter. Övriga bokförs av personalen.",
+        "lessThanOne": "<1 %",
+        "method": {
+          "bank_transfer": "Banköverföring",
+          "promptpay": "PromptPay",
+          "card": "Kort",
+          "cheque": "Check",
+          "cash": "Kontant",
+          "other": "Övrigt"
+        }
+      },
+      "states": {
+        "noMatch": "Inga fakturor matchar dessa filter",
+        "cardError": "{card} kunde inte läsas in.",
+        "cardErrorDescription": "Övriga siffror på sidan är aktuella. Referens: {referenceId}.",
+        "tryAgain": "Försök igen",
+        "loading": "Läser in fakturaöversikten",
+        "loadingAsOf": "Läser in siffror…",
+        "emptyTitle": "Inga fakturor ännu",
+        "emptyDescription": "Siffrorna visas här så snart den första fakturan utfärdas. Utkast räknas inte.",
+        "newInvoice": "Ny faktura"
+      }
+    },
     "invoices": {
       "tax088": {
         "taxReceiptTitle": "ใบกำกับภาษี/ใบเสร็จรับเงิน (Skattefaktura/Kvitto)",
@@ -6182,6 +6312,7 @@
       "expand": "Expandera sidofältet",
       "ariaLabel": "Personalnavigering",
       "members": "Medlemmar",
+      "invoiceDashboard": "Fakturaöversikt",
       "invoices": "Fakturor",
       "creditNotes": "Kreditnotor",
       "broadcasts": "Utskick",

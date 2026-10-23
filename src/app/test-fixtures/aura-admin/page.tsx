@@ -524,7 +524,12 @@ function StaffFrame({ path, children }: { readonly path: string; readonly childr
         nav={{
           tenantName: 'SweCham',
           allowedHrefs: flattenNavItems(staffNavConfig).map((item) => item.href),
-          navVisibilityFlags: { broadcastsEnabled: true, eventsEnabled: true, memberChangeApproval: true },
+          navVisibilityFlags: {
+            broadcastsEnabled: true,
+            eventsEnabled: true,
+            memberChangeApproval: true,
+            invoiceDashboard: true,
+          },
           navBadgeCounts: { '/admin/change-requests': 3 },
           currentPath: path,
           defaultCollapsed: false,

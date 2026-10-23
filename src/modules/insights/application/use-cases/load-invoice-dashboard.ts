@@ -118,7 +118,7 @@ export interface InvoiceDashboardAgingListQuery extends DueDateRange {
 }
 
 /** The active filters as `/admin/invoices` query keys, unfiltered keys absent. */
-function listFilterQuery(
+export function invoiceListFilterQuery(
   filters: InvoiceDashboardFilters,
 ): Pick<InvoiceDashboardAgingListQuery, 'subject' | 'plan' | 'origin'> {
   return {
@@ -244,7 +244,7 @@ async function readAging(
     count: byBucket.get(bucket)?.count ?? 0,
   }));
   const shares = allocatePercentages(rows.map((r) => Number(r.amountSatang)));
-  const filterQuery = listFilterQuery(input.filters);
+  const filterQuery = invoiceListFilterQuery(input.filters);
   return {
     totalSatang: rows.reduce((sum, r) => sum + r.amountSatang, 0n),
     count: rows.reduce((sum, r) => sum + r.count, 0),

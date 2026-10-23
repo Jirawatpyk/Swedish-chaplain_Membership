@@ -2615,6 +2615,136 @@
         }
       }
     },
+    "invoiceDashboard": {
+      "meta": {
+        "title": "แดชบอร์ดใบแจ้งหนี้"
+      },
+      "title": "แดชบอร์ดใบแจ้งหนี้",
+      "asOf": "ข้อมูล ณ {dateTime} · {fiscalYear} · ทุกยอดรวม VAT แล้ว",
+      "asOfEmpty": "{fiscalYear} · ทุกยอดรวม VAT แล้ว",
+      "fiscalYearLabel": "ปีบัญชี {year} ({fromMonth}–{toMonth})",
+      "fiscalYearShort": "ปีบัญชี {year}",
+      "actions": {
+        "exportCsv": "ส่งออก CSV",
+        "viewInvoices": "ดูใบแจ้งหนี้",
+        "more": "การดำเนินการเพิ่มเติม (ส่งออก CSV)"
+      },
+      "filters": {
+        "groupLabel": "ตัวกรองแดชบอร์ด",
+        "type": "ประเภทใบแจ้งหนี้",
+        "typeAll": "ใบแจ้งหนี้ทั้งหมด",
+        "typeMembership": "ค่าสมาชิก",
+        "typeEvent": "ค่าอีเวนต์",
+        "fiscalYear": "ปีบัญชี",
+        "plan": "แพ็กเกจ",
+        "planAll": "ทุกแพ็กเกจ",
+        "origin": "ที่มา",
+        "originAll": "ทุกที่มา",
+        "originManual": "เจ้าหน้าที่สร้าง",
+        "originAutoRenewal": "ต่ออายุอัตโนมัติ",
+        "allShort": "ทั้งหมด",
+        "chip": "{label}: {value}"
+      },
+      "tiles": {
+        "sectionLabel": "ตัวเลขสำคัญ ทุกยอดรวม VAT แล้ว",
+        "outstanding": "ยอดค้างชำระ",
+        "outstandingCaption": "ใบแจ้งหนี้ยังไม่ชำระ {count} ฉบับ · ณ วันนี้",
+        "overdue": "เกินกำหนดชำระ",
+        "overdueCaption": "ใบแจ้งหนี้เลยกำหนด {count} ฉบับ · ณ วันนี้",
+        "collectedMonth": "รับชำระเดือนนี้",
+        "collectedMonthCaption": "{month} ถึงวันนี้ · ไม่ขึ้นกับตัวกรองปีบัญชี",
+        "collectedFiscalYear": "รับชำระใน{fiscalYear}",
+        "collectedFiscalYearToDate": "{fiscalYear} ถึงวันนี้",
+        "collectedFiscalYearWhole": "{from} – {to}"
+      },
+      "aging": {
+        "title": "ใบแจ้งหนี้ค้างชำระตามอายุหนี้",
+        "description": "ณ วันนี้ · ทุกปี · จำนวนวันที่เลยกำหนดชำระ",
+        "lead": "เกินกำหนด {percent}%",
+        "leadOf": "{overdue} จากใบแจ้งหนี้ค้างชำระ {total} ฉบับ",
+        "listLabel": "ใบแจ้งหนี้ค้างชำระตามจำนวนวันที่เลยกำหนด",
+        "rowName": "{bucket}: {amount}, {count} ฉบับ",
+        "footer": "รวม {amount} แต่ละแถวเปิดรายการใบแจ้งหนี้ในช่วงนั้น",
+        "bucket": {
+          "not_yet_due": "ยังไม่ถึงกำหนด",
+          "days_1_30": "1–30 วัน",
+          "days_31_60": "31–60 วัน",
+          "days_61_90": "61–90 วัน",
+          "over_90": "เกิน 90 วัน"
+        }
+      },
+      "attention": {
+        "title": "ต้องดำเนินการ",
+        "underFilters": "ตามตัวกรองนี้",
+        "nothing": "ไม่มีรายการที่ต้องดำเนินการ",
+        "nothingFiltered": "ไม่มีรายการที่ต้องดำเนินการตามตัวกรองนี้",
+        "rowName": "{label}: {count}",
+        "manualDrafts": "ใบแจ้งหนี้ฉบับร่างที่ยังไม่ออก",
+        "autoRenewalDrafts": "ฉบับร่างต่ออายุอัตโนมัติที่รอตรวจ",
+        "receiptPdfFailed": "สร้าง PDF ใบเสร็จไม่สำเร็จ",
+        "refundsFailedAtStripe": "คืนเงินผ่าน Stripe ไม่สำเร็จ",
+        "refundsPendingOverThreshold": "คืนเงินผ่าน Stripe ค้างนานเกิน 3 วัน"
+      },
+      "oldest": {
+        "title": "ค้างชำระนานที่สุด",
+        "description": "ณ วันนี้ · เรียงจากเลยกำหนดนานที่สุด",
+        "caption": "ใบแจ้งหนี้ที่ค้างชำระนานที่สุด",
+        "document": "เอกสาร",
+        "buyer": "ผู้ซื้อ",
+        "due": "ครบกำหนด",
+        "overdue": "เลยกำหนด",
+        "amount": "จำนวนเงิน",
+        "actions": "การดำเนินการ",
+        "days": "{days} วัน",
+        "daysOverdue": "เลยกำหนด {days} วัน",
+        "dueOn": "ครบกำหนด {date}",
+        "recordPayment": "บันทึกการชำระ…",
+        "recordPaymentAria": "บันทึกการชำระของ {document}",
+        "allOverdue": "ใบแจ้งหนี้เกินกำหนดทั้งหมด ({count})",
+      "none": "ไม่มีใบแจ้งหนี้ที่เกินกำหนด"
+      },
+      "trend": {
+        "title": "ยอดออกใบแจ้งหนี้เทียบยอดรับชำระ",
+        "description": "{fiscalYear} รายเดือน · ยอดออกใบแจ้งหนี้ตามวันที่ออก ไม่รวมใบที่ยกเลิก หักใบลดหนี้ที่ออกในเดือนนั้น · ยอดรับชำระตามวันที่ชำระ หักการคืนเงิน",
+        "vatNote": "ยอดของเดือนที่ผ่านมาอาจเปลี่ยนเมื่อมีการยกเลิกใบแจ้งหนี้ของเดือนนั้น สำหรับภาษีมูลค่าเพิ่ม ให้ใช้ทะเบียนเอกสารภาษี",
+        "totalBilled": "ยอดออกใบแจ้งหนี้ {range}",
+        "totalCollected": "ยอดรับชำระ {range}",
+        "legendBilled": "ยอดออกใบแจ้งหนี้",
+        "legendCollected": "ยอดรับชำระ",
+        "legendPartial": "{month} ถึงวันนี้ (สีอ่อน)",
+        "legendFuture": "{months} ยังไม่ถึง",
+        "tableCaption": "ยอดออกใบแจ้งหนี้และยอดรับชำระรายเดือน",
+        "month": "เดือน",
+        "notYet": "ยังไม่ถึง"
+      },
+      "methods": {
+        "title": "ยอดรับชำระตามช่องทางชำระเงิน",
+        "descriptionToDate": "{fiscalYear} ถึงวันนี้ · ตามวันที่ชำระ",
+        "descriptionWhole": "{fiscalYear} · ตามวันที่ชำระ",
+        "listLabel": "ยอดรับชำระตามช่องทางชำระเงิน",
+        "footer": "รวม {amount} บัตรและ PromptPay ชำระออนไลน์ผ่าน Stripe ก่อนหักค่าธรรมเนียม Stripe ช่องทางอื่นเจ้าหน้าที่เป็นผู้บันทึก",
+        "lessThanOne": "<1%",
+        "method": {
+          "bank_transfer": "โอนเงิน",
+          "promptpay": "PromptPay",
+          "card": "บัตร",
+          "cheque": "เช็ค",
+          "cash": "เงินสด",
+          "other": "อื่น ๆ"
+        }
+      },
+      "states": {
+        "noMatch": "ไม่มีใบแจ้งหนี้ที่ตรงกับตัวกรองนี้",
+        "cardError": "โหลด{card}ไม่สำเร็จ",
+        "cardErrorDescription": "ตัวเลขอื่นในหน้านี้เป็นข้อมูลล่าสุด เลขอ้างอิง: {referenceId}",
+        "tryAgain": "ลองใหม่",
+        "loading": "กำลังโหลดแดชบอร์ดใบแจ้งหนี้",
+        "loadingAsOf": "กำลังโหลดตัวเลข…",
+        "emptyTitle": "ยังไม่มีใบแจ้งหนี้",
+        "emptyDescription": "ตัวเลขจะแสดงที่นี่ทันทีที่ออกใบแจ้งหนี้ฉบับแรก ไม่นับฉบับร่าง",
+        "newInvoice": "สร้างใบแจ้งหนี้"
+      }
+    },
     "invoices": {
       "tax088": {
         "taxReceiptTitle": "ใบกำกับภาษี/ใบเสร็จรับเงิน",
@@ -6182,6 +6312,7 @@
       "expand": "ขยายแถบด้านข้าง",
       "ariaLabel": "เมนูนำทางสำหรับเจ้าหน้าที่",
       "members": "สมาชิก",
+      "invoiceDashboard": "แดชบอร์ดใบแจ้งหนี้",
       "invoices": "ใบแจ้งหนี้",
       "creditNotes": "ใบลดหนี้",
       "broadcasts": "E-Blast",

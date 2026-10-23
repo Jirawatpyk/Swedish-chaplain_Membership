@@ -72,7 +72,8 @@ describe('staff nav declares a permission for every entry (T061)', () => {
     // F114 US6: +1 — the member-change approval SETTING under Settings, which
     // shipped reachable only from the /admin/settings hub card.
     // F119 T029: +1 — the chamber brand page under Settings.
-    expect(STAFF_ITEMS).toHaveLength(20);
+    // 124: +1 — the invoice dashboard under Finance.
+    expect(STAFF_ITEMS).toHaveLength(21);
   });
 
   it('every staff nav item declares a guard', () => {
@@ -212,7 +213,12 @@ describe('filterNavConfig filters on the server-computed allow-list (T063)', () 
  * invoice, credit-note, plan, renewal and settings link on the staff sidebar.
  */
 describe('ON-leg sidebar per role (T063)', () => {
-  const ALL_FLAGS = { broadcastsEnabled: true, eventsEnabled: true, memberChangeApproval: true };
+  const ALL_FLAGS = {
+    broadcastsEnabled: true,
+    eventsEnabled: true,
+    memberChangeApproval: true,
+    invoiceDashboard: true,
+  };
 
   function sidebarFor(role: Parameters<typeof staffNavAllowedHrefs>[0]): readonly string[] {
     return flattenNavItems(

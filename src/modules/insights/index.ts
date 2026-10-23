@@ -295,6 +295,7 @@ export {
 
 // --- Application use-cases (124 — invoice dashboard, one loader per card) ---
 export {
+  invoiceListFilterQuery,
   loadInvoiceDashboardAging,
   loadInvoiceDashboardAttention,
   loadInvoiceDashboardMethods,

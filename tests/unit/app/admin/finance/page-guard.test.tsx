@@ -28,6 +28,7 @@ vi.mock('@/lib/rbac', async (importActual) => ({
     user: { id: 'staff-1', email: 'a@example.com', role: role.current },
   })),
 }));
+vi.mock('@/lib/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() } }));
 vi.mock('@/lib/tenant-context', () => ({ resolveTenantFromHeaders: () => ({ slug: 'swecham' }) }));
 vi.mock('@/lib/db', () => ({ runInTenant: vi.fn(async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn({})) }));
 const startMonth = vi.hoisted(() => ({ current: 1 as number | null }));
@@ -36,8 +37,9 @@ vi.mock('@/modules/invoicing', () => ({
 }));
 vi.mock('@/modules/plans', () => ({
   asPlanYear: (y: number) => y,
-  listPlanNames: vi.fn(async () => ({ ok: true, value: [] })),
+  listPlans: vi.fn(async () => ({ ok: true, value: { data: [] } })),
 }));
+vi.mock('@/modules/tenants', () => ({ asTenantContext: (slug: string) => ({ slug }) }));
 vi.mock('@/modules/plans/plans-deps', () => ({ buildPlansDeps: vi.fn(() => ({})) }));
 
 const loaders = vi.hoisted(() => {
@@ -52,12 +54,14 @@ const loaders = vi.hoisted(() => {
     loadInvoiceDashboardMethods: vi.fn(async () => ({ ok: true, value: {} })),
   };
 });
-vi.mock('@/modules/insights', async (importActual) => {
-  const actual = await importActual<typeof import('@/modules/insights')>();
+vi.mock('@/modules/insights', async () => {
+  // The real domain helpers; the barrel itself would load the DB adapters.
+  const filters = await import('@/modules/insights/domain/invoice-dashboard-filters');
+  const fiscalYear = await import('@/modules/insights/domain/invoice-dashboard-fiscal-year');
   return {
-    parseInvoiceDashboardFilters: actual.parseInvoiceDashboardFilters,
-    selectableFiscalYears: actual.selectableFiscalYears,
-    fiscalYearDateRange: actual.fiscalYearDateRange,
+    parseInvoiceDashboardFilters: filters.parseInvoiceDashboardFilters,
+    selectableFiscalYears: filters.selectableFiscalYears,
+    fiscalYearDateRange: fiscalYear.fiscalYearDateRange,
     makeLoadInvoiceDashboardDeps: () => ({ source: {}, newReferenceId: () => 'ref' }),
     loadInvoiceDashboardAging: loaders.loadInvoiceDashboardAging,
     loadInvoiceDashboardTiles: loaders.loadInvoiceDashboardTiles,
