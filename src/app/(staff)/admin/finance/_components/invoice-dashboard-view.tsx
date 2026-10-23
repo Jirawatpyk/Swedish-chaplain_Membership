@@ -11,7 +11,7 @@
  * and fails alone (US5.3). With no invoice ever issued the page shows one
  * empty state instead (US5.2); a filter that matches nothing never does.
  */
-import type { ReactNode } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
@@ -67,6 +67,13 @@ export interface InvoiceDashboardViewProps {
 }
 
 const TILE_GRID = 'grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4 sm:grid-cols-2 lg:grid-cols-4';
+/**
+ * The amount stays on one line, so every tile's caption starts at the same
+ * height. A tile narrower than 16rem (four across beside the sidebar at
+ * 1280px) steps the amount down a size instead of wrapping "THB" onto its own
+ * line; the phone tiles keep their compact amount at full size.
+ */
+const TILE_AMOUNT = 'whitespace-nowrap sm:@max-[16rem]:text-[1.375rem]';
 
 export async function renderInvoiceDashboardView(props: InvoiceDashboardViewProps): Promise<ReactNode> {
   const { locale, now, input, currentFiscalYear, startMonth, autoInvoiceEnabled, plans, tiles } = props;
@@ -210,6 +217,15 @@ export async function renderInvoiceDashboardView(props: InvoiceDashboardViewProp
   );
 }
 
+/** One key-figure tile: AURA's Stat in its own size container (TILE_AMOUNT). */
+function Tile(props: ComponentProps<typeof Stat>) {
+  return (
+    <div className="@container">
+      <Stat {...props} className="h-full" />
+    </div>
+  );
+}
+
 type DashboardT = Awaited<ReturnType<typeof getTranslations<'admin.invoiceDashboard'>>>;
 
 /**
@@ -233,31 +249,31 @@ function TileRow({
 }) {
   const fy = tiles.collectedInFiscalYear;
   const money = (satang: bigint) => (
-    <CountUp value={toBaht(satang)} locale={locale} variant="thb" compactBelowSm />
+    <CountUp value={toBaht(satang)} locale={locale} variant="thb" compactBelowSm className={TILE_AMOUNT} />
   );
   return (
     <section aria-label={t('tiles.sectionLabel')} className={TILE_GRID} data-testid="dashboard-tiles">
-      <Stat
+      <Tile
         label={t('tiles.outstanding')}
         caption={t('tiles.outstandingCaption', { count: tiles.outstanding.count })}
         icon="file-text"
         href={invoiceListHref({ status: 'issued', ...listFilters })}
         value={money(tiles.outstanding.amountSatang)}
       />
-      <Stat
+      <Tile
         label={t('tiles.overdue')}
         caption={t('tiles.overdueCaption', { count: tiles.overdue.count })}
         icon="triangle-alert"
         href={invoiceListHref({ status: 'overdue', ...listFilters })}
         value={money(tiles.overdue.amountSatang)}
       />
-      <Stat
+      <Tile
         label={t('tiles.collectedMonth')}
         caption={t('tiles.collectedMonthCaption', { month: formatMonthLong(today, locale) })}
         icon="circle-check"
         value={money(tiles.collectedThisMonth.amountSatang)}
       />
-      <Stat
+      <Tile
         label={t('tiles.collectedFiscalYear', { fiscalYear: fiscalYearShort })}
         caption={
           fy.toDate
