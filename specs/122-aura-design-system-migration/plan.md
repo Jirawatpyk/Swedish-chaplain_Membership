@@ -502,3 +502,18 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
 - **Rows link to their request** (maintainer, 23 Oct: "แก้เลย"). Each history card has the anchor `request-<id>`, and each profile row is a 44px link to `/portal/change-requests#request-<id>`; the two newest requests are always on the history's first page. D-023 shared commit, failing lines taken first:
   - `change-request history view > gives each request card an anchor the profile can link to`: "Expected the element to have attribute: id".
   - `recent change requests … > reads the two most recent requests …`: "Expected the element to have attribute: href".
+
+### Evidence: adopt AURA 5.59.0, `linkClass` on nine text links (#171, #172, size S–M, plan agreed 2026-10-23)
+
+- **RED** (D-023 shared commit, presentation): with 5.59 installed and the hand-written classes still in place, the eight new or updated assertions failed with `expect(element).toHaveClass("aura-link aura-link--touch")`:
+  - `a shorter profile on phones (#239) > folds the secondary Organisation fields into a phone-only disclosure` (summary);
+  - `… > puts email and phone on one wrapping row on phones, each a 44px target`;
+  - `EventPicker on AURA Combobox (US9b-2) > draws "Create new event" as an AURA text link with the touch rule (#172)`;
+  - `PlansTable on AURA (board Admin-plans) > gives the plan name link a 44px touch target on phones`;
+  - `AudienceTable — phone cards … > a card reads: …`;
+  - `BrandSettingsForm — the logo is read-only > shows its source and a Manage link …`;
+  - `renderCycleDetailView — cards > shows the linked invoice …`;
+  - `OldestOverdueCard > an admin gets Record payment per row; …`.
+- **GREEN:** each link takes `linkClass({ underline: 'hover', touchHeight: true, className })`, with no `flex`, `min-w-0` or `min-h-*` utility beside it (a utility layer beats `aura`). The touched files' 38 test files pass (328 tests); typecheck and lint are clean.
+- **#171:** no app change (the section tabs already pass `touchHeight`).
+- **Not changed:** the brand theme. `aura-theme --brand "#10487A"` on 5.59 regenerates `src/styles/aura-theme.css` byte-identical below its header.

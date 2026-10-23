@@ -14,7 +14,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
 import { BellOff } from 'lucide-react';
-import { Alert, Badge, Card, StatusPill, type StatusPillProps } from '@jirawatpyk/aura-react/server';
+import { Alert, Badge, Card, StatusPill, linkClass, type StatusPillProps } from '@jirawatpyk/aura-react/server';
 import { EmptyState } from '@/components/shell/empty-state';
 import { TierBadge } from '@/components/renewals/tier-badge';
 import type { CycleStatus, TierBucket } from '@/modules/renewals/client';
@@ -193,7 +193,7 @@ export async function renderCycleDetailView({
                   <span className="font-semibold tabular-nums">{invoice.total}</span>
                 </Field>
               </FieldList>
-              <Link href={invoice.href} className={`inline-flex self-start text-sm max-sm:min-h-11 max-sm:items-center ${LINK_CLASS}`}>
+              <Link href={invoice.href} className={linkClass({ underline: 'hover', touchHeight: true, className: 'self-start text-sm font-medium' })}>
                 {t('fields.viewInvoice', { number: invoice.number })}
               </Link>
             </div>

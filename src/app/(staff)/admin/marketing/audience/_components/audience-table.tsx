@@ -40,7 +40,7 @@ import {
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Badge, Table, TBody, Td, Th, THead, Tr } from '@jirawatpyk/aura-react';
+import { Badge, Table, TBody, Td, Th, THead, Tr, linkClass } from '@jirawatpyk/aura-react';
 import { MarketingStateBadge } from '@/components/members/marketing-state-badge';
 import { MarketingSwitch } from '@/components/members/marketing-switch';
 import type { MarketingReason, MarketingState } from '@/modules/members';
@@ -227,7 +227,7 @@ function AudienceCards({
           <span className="aura-text-body [overflow-wrap:anywhere]">{row.email}</span>
           <Link
             href={`/admin/members/${encodeURIComponent(row.memberId)}`}
-            className="text-[var(--aura-fg-accent)] underline-offset-4 [overflow-wrap:anywhere] hover:underline max-sm:inline-flex max-sm:min-h-11 max-sm:items-center"
+            className={linkClass({ underline: 'hover', touchHeight: true, className: '[overflow-wrap:anywhere]' })}
           >
             {row.companyName}
           </Link>

@@ -133,6 +133,8 @@ describe('renderCycleDetailView — cards', () => {
     expect(within(region).getByText('THB 107,000.00')).toBeInTheDocument();
     expect(within(region).getByText('Issued').closest('.aura-pill')).toHaveClass('aura-pill--progress');
     expect(within(region).getByRole('link', { name: 'View invoice SC-2026-000130' })).toHaveAttribute('href', '/admin/invoices/i-1');
+    // AURA 5.59 linkClass: a text link with the 44px touch rule (#172)
+    expect(within(region).getByRole('link', { name: 'View invoice SC-2026-000130' })).toHaveClass('aura-link', 'aura-link--touch');
   });
 
   it('explains a missing invoice instead of hiding the card', async () => {

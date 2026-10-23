@@ -163,7 +163,7 @@ describe('AudienceTable — phone cards follow board Admin-marketing-audience-mo
     expect(card).toHaveAttribute('data-card-contact-id', row.contactId);
     expect(within(card).getByText('Jane Doe')).toBeInTheDocument();
     expect(within(card).getByText(t.kind.secondary)).toHaveClass('aura-badge');
-    expect(within(card).getByRole('link', { name: row.companyName })).toBeInTheDocument();
+    expect(within(card).getByRole('link', { name: row.companyName })).toHaveClass('aura-link', 'aura-link--touch');
     expect(within(card).getByText(`${t.columns.lastChange}: Staff Member · 6 Sep 2026, 10:00`)).toBeInTheDocument();
     expect(within(card).getByText(t.card.receives)).toBeInTheDocument();
     expect(within(card).getByRole('switch')).toBeInTheDocument();

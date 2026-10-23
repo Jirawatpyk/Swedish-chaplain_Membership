@@ -207,6 +207,8 @@ describe('OldestOverdueCard', () => {
     expect(second).toHaveAttribute('data-fallback', 'oldest-overdue-title');
     // The title is a focus target in every state of the card.
     expect(document.getElementById('oldest-overdue-title')).toHaveAttribute('tabindex', '-1');
+    // the document number is a text link with AURA's touch rule (#172)
+    expect(screen.getAllByRole('link', { name: 'SC-000071' })[0]).toHaveClass('aura-link', 'aura-link--touch');
     expect(screen.getByRole('link', { name: D.oldest.allOverdue.replace('{count}', '9') })).toHaveAttribute(
       'href',
       '/admin/invoices?status=overdue',

@@ -195,6 +195,7 @@ describe('BrandSettingsForm — the logo is read-only', () => {
     expect(screen.getByText(/from invoice settings/i)).toBeInTheDocument();
     const link = screen.getByRole('link', { name: /manage/i });
     expect(link).toHaveAttribute('href', '/admin/settings/invoicing');
+    expect(link).toHaveClass('aura-link', 'aura-link--touch');
   });
 
   it('manageHref null → the hint tells the user to ask an administrator, with no link', () => {
