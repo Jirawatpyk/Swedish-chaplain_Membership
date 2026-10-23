@@ -752,7 +752,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - From 768px the grid shows everything as before.
   - The summary is 44px by hand. Stand-in until AURA #172 (no text-link touch rule).
 - **Recent change requests on the history card.**
-  - The "Change request history" card lists the member's two most recent requests as one-line rows. Each row shows the first field, "+N more", the status, and the date it was decided, withdrawn or sent. It never shows the values, which stay on the history page.
+  - The "Change request history" card lists the member's two most recent requests as compact two-line rows. Line 1 is the first field and "+N more"; line 2 is the status and the date it was decided, withdrawn or sent. One line does not fit beside a status pill at 390px or in the half-width card at 768px. It never shows the values, which stay on the history page.
   - "View all" opens the history page. The card shows at every width.
   - The newest row may repeat the pending or decided banner at the top. It stays: the card is "your recent requests", whatever the banner shows.
 - **Contacts on phones.** Email and phone share one wrapping row. Each is still a 44px target, and a long email wraps onto its own line.

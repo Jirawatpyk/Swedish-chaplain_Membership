@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { ChevronRightIcon, ExternalLinkIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
+import { ChevronDownIcon, ChevronRightIcon, ExternalLinkIcon, PencilIcon, UserPlusIcon } from 'lucide-react';
 import { Alert, Badge, Card, Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
@@ -197,11 +197,12 @@ export async function renderPortalProfileView({
               <DetailField label={t('fields.billingAddress')} value={billingAddressText} className={FIELD} />
               {secondary.description(`${FIELD} max-md:hidden md:col-span-2 lg:col-span-3`)}
             </dl>
-            <details className="mt-1 md:hidden">
+            <details className="group mt-1 md:hidden">
               {/* 44px on phones by hand: AURA has no text-link touch rule yet.
                   Stand-in until AURA #172. */}
-              <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-[var(--aura-fg-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]">
+              <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1 rounded-[var(--aura-radius-sm)] text-sm font-medium text-[var(--aura-fg-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] [&::-webkit-details-marker]:hidden">
                 {t('moreDetails')}
+                <Icon name={<ChevronDownIcon />} size={16} className="transition-transform group-open:rotate-180" />
               </summary>
               <dl className="mt-2 grid grid-cols-1 gap-y-4">
                 {secondary.legalEntity(FIELD)}
@@ -335,8 +336,8 @@ export async function renderPortalProfileView({
           `Portal-profile` board). F114 US4 (FR-029) history is gated on the
           platform flag (the page notFounds when dark; shown regardless of the
           tenant setting); the F9 directory card on the F9 flag. Real <h2>s.
-          #239: the history card lists the two most recent requests as one-line
-          rows — field, status, date, never the values — at every width, with
+          #239: the history card lists the two most recent requests as compact
+          rows (the field, then status · date; never the values) at every width, with
           View all to the history page. Phones keep the directory as a list row
           (`Portal-profile-mobile`). */}
       {showHistoryLink || showDirectoryLink ? (
@@ -365,9 +366,9 @@ export async function renderPortalProfileView({
                       <li
                         key={r.id}
                         data-testid="profile-recent-request"
-                        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-[var(--aura-border-default)] py-2.5 first:border-t-0 first:pt-0 last:pb-0"
+                        className="flex flex-col gap-1 border-t border-[var(--aura-border-default)] py-2.5 first:border-t-0 first:pt-0 last:pb-0"
                       >
-                        <span className="min-w-0 flex-1 font-medium">
+                        <span className="min-w-0 font-medium">
                           {first ? tDiff(`labels.${first.key}`) : null}
                           {rest.length > 0 ? (
                             <span className="font-normal text-[var(--aura-fg-secondary)]">
@@ -376,10 +377,12 @@ export async function renderPortalProfileView({
                             </span>
                           ) : null}
                         </span>
-                        <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />
-                        <time dateTime={date} className="aura-text-table-cell text-[var(--aura-fg-secondary)] tabular-nums">
-                          {formatLocalisedDate(date, locale, { dateStyle: 'medium' })}
-                        </time>
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />
+                          <time dateTime={date} className="aura-text-table-cell text-[var(--aura-fg-secondary)] tabular-nums">
+                            {formatLocalisedDate(date, locale, { dateStyle: 'medium' })}
+                          </time>
+                        </span>
                       </li>
                     );
                   })}
