@@ -479,3 +479,23 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
   - `a shorter profile on phones (#239) > folds the secondary Organisation fields into a phone-only disclosure` failed: "expect(received).toHaveClass()". There was no `details`.
   - `> puts email and phone on one wrapping row on phones, each a 44px target` failed: "Expected the element to have class: flex-wrap / Received: flex flex-col gap-1 md:grid …".
 
+- **Measured** (production build, fixture `view=profile`): Organisation at 390 is 453px (the earlier audit put it at about 660px). The summary is 44px; Enter opens it, Space closes it. Recent-request rows are 60px at 390, 768 and 1440 in EN/TH/SV. No horizontal scroll. One visible `profile-history-link` at every width.
+  - The first cut drew one-line rows, which wrapped raggedly (59–81px). They became two lines, field, then status · date, in `f1bb88d50`.
+  - The contacts row only saves height for a short email; the fixture's `anna.lindqvist@lindqvist.example` still wraps under the phone.
+- **Reviews:** `enterprise-ux-designer` and `mobile-a11y-ux-reviewer` found no BLOCKER or HIGH. axe was clean at 320, 390, 768 and 1440, and the duplicate fields never reach the a11y tree. Fixed:
+  - **MEDIUM, empty card:** "View all" sat over no rows. Now:
+    - an empty list reads "You haven't proposed any changes yet." and its link "View history" (EN/TH/SV);
+    - a read that did not run keeps the description.
+  - **MEDIUM, contacts:** stacked email and phone 44px targets touched with no gap. They now have `gap-y-2` (8px).
+  - **LOW:**
+    - the row date gets a screen-reader word (Sent / Decided / Withdrawn);
+    - the chevron honours reduced motion;
+    - a request with no fields is skipped;
+    - `moreFields` loses its identical plural branches;
+    - with history off, the phone has no empty grid gap above the directory row;
+    - the e2e comment about the history link rendering twice is updated.
+  - **Not changed:**
+    - the rows are not links (a follow-up once the history page has per-request anchors);
+    - `aura-text-table-cell` outside a table is used as elsewhere in this file;
+    - the website link and the 768px tel link are under 44px (pre-existing);
+    - `ul` keeps no `role="list"`.

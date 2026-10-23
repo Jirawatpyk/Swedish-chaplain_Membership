@@ -575,8 +575,7 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     await signIn(page, MEMBER_EMAIL!, MEMBER_PASSWORD!);
     await skipUnlessFlagOn(page);
     await page.goto('/portal/profile');
-    // the link renders twice — a card on desktop, a list row on phones — and
-    // only one of them is shown at any width
+    // #239: the history card's one "View all" link, shown at every width
     await page.getByTestId('profile-history-link').filter({ visible: true }).click();
     await page.waitForURL('**/portal/change-requests');
     await expect(page.getByRole('heading', { level: 1, name: copy.history.title })).toBeVisible();

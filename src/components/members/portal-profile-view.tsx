@@ -84,9 +84,16 @@ export async function renderPortalProfileView({
   const tDiff = await getTranslations('portal.changeRequests.diff');
   const locale = await getLocale();
 
-  // #239 — a request's row date: when it was decided or withdrawn, else sent.
-  const rowDate = (r: ChangeRequestView) =>
-    r.state === 'decided' && r.decidedAt ? r.decidedAt : r.state === 'withdrawn' && r.withdrawnAt ? r.withdrawnAt : r.submittedAt;
+  // #239 — a request's row date: when it was decided or withdrawn, else sent,
+  // with the screen-reader word that says which.
+  const rowDate = (r: ChangeRequestView): { iso: string; label: 'dateDecided' | 'dateWithdrawn' | 'dateSent' } =>
+    r.state === 'decided' && r.decidedAt
+      ? { iso: r.decidedAt, label: 'dateDecided' }
+      : r.state === 'withdrawn' && r.withdrawnAt
+        ? { iso: r.withdrawnAt, label: 'dateWithdrawn' }
+        : { iso: r.submittedAt, label: 'dateSent' };
+  // a request always carries a field; one that does not has nothing to name
+  const recentRows = recentRequests?.filter((r) => r.fields.length > 0) ?? null;
 
   // #239 — the Organisation fields a phone folds under "More details". Each
   // renders in the grid (from 768px) and in the disclosure (below it).
@@ -202,7 +209,7 @@ export async function renderPortalProfileView({
                   Stand-in until AURA #172. */}
               <summary className="flex min-h-11 w-fit cursor-pointer list-none items-center gap-1 rounded-[var(--aura-radius-sm)] text-sm font-medium text-[var(--aura-fg-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] [&::-webkit-details-marker]:hidden">
                 {t('moreDetails')}
-                <Icon name={<ChevronDownIcon />} size={16} className="transition-transform group-open:rotate-180" />
+                <Icon name={<ChevronDownIcon />} size={16} className="transition-transform group-open:rotate-180 motion-reduce:transition-none" />
               </summary>
               <dl className="mt-2 grid grid-cols-1 gap-y-4">
                 {secondary.legalEntity(FIELD)}
@@ -296,7 +303,7 @@ export async function renderPortalProfileView({
                     {/* #239: email and phone share one wrapping row on phones,
                         each still a 44px target; from 768px the wrapper steps
                         aside and they are grid columns again. */}
-                    <div className="flex flex-wrap gap-x-4 md:contents">
+                    <div className="flex flex-wrap gap-x-4 gap-y-2 md:contents">
                       <a
                         href={`mailto:${contact.email}`}
                         className="flex min-h-11 min-w-0 items-center text-sm text-[var(--aura-fg-accent)] no-underline [overflow-wrap:anywhere] hover:underline md:min-h-0 md:text-[var(--aura-fg-primary)]"
@@ -341,7 +348,9 @@ export async function renderPortalProfileView({
           View all to the history page. Phones keep the directory as a list row
           (`Portal-profile-mobile`). */}
       {showHistoryLink || showDirectoryLink ? (
-        <div className="grid gap-4 md:grid-cols-2 [&>*:only-child]:md:col-span-2">
+        // with history off, the grid only holds the desktop directory card:
+        // hide it on phones so it adds no empty section gap there
+        <div className={cn('grid gap-4 md:grid-cols-2 [&>*:only-child]:md:col-span-2', !showHistoryLink && 'max-md:hidden')}>
           {showHistoryLink ? (
             <Card
               title={tHistory('profileCard.title')}
@@ -353,13 +362,13 @@ export async function renderPortalProfileView({
                   className={cn(buttonClass({ variant: 'secondary' }), 'max-sm:h-11')}
                   data-testid="profile-history-link"
                 >
-                  {tHistory('profileCard.viewAll')}
+                  {recentRows && recentRows.length > 0 ? tHistory('profileCard.viewAll') : tHistory('profileCard.viewHistory')}
                 </Link>
               }
             >
-              {recentRequests && recentRequests.length > 0 ? (
+              {recentRows && recentRows.length > 0 ? (
                 <ul className="flex flex-col">
-                  {recentRequests.map((r) => {
+                  {recentRows.map((r) => {
                     const [first, ...rest] = r.fields;
                     const date = rowDate(r);
                     return (
@@ -379,16 +388,20 @@ export async function renderPortalProfileView({
                         </span>
                         <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
                           <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />
-                          <time dateTime={date} className="aura-text-table-cell text-[var(--aura-fg-secondary)] tabular-nums">
-                            {formatLocalisedDate(date, locale, { dateStyle: 'medium' })}
-                          </time>
+                          <span className="aura-text-table-cell text-[var(--aura-fg-secondary)] tabular-nums">
+                            <span className="sr-only">{tHistory(`profileCard.${date.label}`)} </span>
+                            <time dateTime={date.iso}>{formatLocalisedDate(date.iso, locale, { dateStyle: 'medium' })}</time>
+                          </span>
                         </span>
                       </li>
                     );
                   })}
                 </ul>
               ) : (
-                <p className="text-[var(--aura-fg-secondary)]">{tHistory('profileCard.subtitle')}</p>
+                // no requests yet says so; a read that did not run keeps the card's description
+                <p className="text-[var(--aura-fg-secondary)]">
+                  {recentRows ? tHistory('profileCard.empty') : tHistory('profileCard.subtitle')}
+                </p>
               )}
             </Card>
           ) : null}

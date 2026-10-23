@@ -7283,7 +7283,12 @@
             "title": "Change request history",
             "subtitle": "See every change you proposed and what the chamber decided.",
             "viewAll": "View all",
-            "moreFields": "+{count, plural, one {# more} other {# more}}"
+            "moreFields": "+{count} more",
+            "viewHistory": "View history",
+            "empty": "You haven't proposed any changes yet.",
+            "dateSent": "Sent",
+            "dateDecided": "Decided",
+            "dateWithdrawn": "Withdrawn"
           },
           "colleagueNote": "A colleague's changes to their own contact details are never shown here.",
           "withdrawnOn": "withdrawn {withdrawnAt}"
