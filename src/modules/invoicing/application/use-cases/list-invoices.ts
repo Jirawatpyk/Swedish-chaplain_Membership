@@ -129,6 +129,13 @@ export const listInvoicesPagedSchema = z.object({
   // 124 slice 1 — membership plan (`invoices.plan_id`), the dashboard's Plan
   // filter; event invoices carry no plan and never match.
   planId: z.string().min(1).max(64).optional(),
+  // Spec 124 follow-up — the request's Bangkok date the Overdue cut-off uses,
+  // so the filter and the row badges read one clock. Absent = the database
+  // clock. A non-calendar value is dropped by the use case, as `dueAfter`.
+  today: z
+    .string()
+    .refine((v) => parseIsoCalendarDate(v) !== undefined)
+    .optional(),
 });
 
 export type ListInvoicesPagedInput = z.infer<typeof listInvoicesPagedSchema>;
@@ -175,6 +182,7 @@ export async function listInvoicesPaged(
     dueBefore: parseIsoCalendarDate(input.dueBefore),
     dueAfter: parseIsoCalendarDate(input.dueAfter),
     planId: input.planId,
+    today: parseIsoCalendarDate(input.today),
   });
   return ok({ rows, total });
 }

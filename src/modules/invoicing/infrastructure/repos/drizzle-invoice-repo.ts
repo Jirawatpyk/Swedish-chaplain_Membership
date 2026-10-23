@@ -879,10 +879,13 @@ export function makeDrizzleInvoiceRepo(
           // old `eq(status,'overdue')` matched zero rows. Mirror the
           // computeIsOverdue rule (status='issued' AND Bangkok-today > dueDate,
           // strict) in SQL so this filter agrees with the per-row overdue badge.
+          // Spec 124 follow-up: "today" is the caller's request date when
+          // given — the same instant its badges use — else the database clock.
+          const today = opts.today
+            ? sql`${opts.today}::date`
+            : sql`(now() AT TIME ZONE 'Asia/Bangkok')::date`;
           filters.push(eq(invoices.status, 'issued'));
-          filters.push(
-            sql`${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < (now() AT TIME ZONE 'Asia/Bangkok')::date`,
-          );
+          filters.push(sql`${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < ${today}`);
         } else if (opts.status && opts.status !== 'all') {
           filters.push(eq(invoices.status, opts.status));
         }
