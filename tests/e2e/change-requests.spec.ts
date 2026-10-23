@@ -53,6 +53,7 @@ const MANAGER_PASSWORD = process.env.E2E_MANAGER_PASSWORD;
 
 const copy = en.portal.changeRequests;
 const adminCopy = en.admin.changeRequests;
+const adminMembersCopy = en.admin.members;
 
 /**
  * The filter pattern (spec 122): the queue's filters are one FilterBar row
@@ -556,13 +557,17 @@ test.describe('@change-requests US4 — history is complete and visible', () => 
     await row.getByRole('link', { name: adminCopy.queue.view }).click();
     await page.waitForURL(`**/admin/change-requests/${decided!.requestId}`);
 
-    // the member record section lists both, newest first, with the reason
+    // the member record card lists both (layout B: one line per decided
+    // request, its reason on the review page) and links to the full list
     await page.goto(`/admin/members/${member!.memberId}`);
     const section = page.getByTestId('member-change-requests-section');
     await expect(section).toBeVisible();
     await expect(section.locator(`[data-request-id="${pending!.requestId}"]`)).toBeVisible();
-    await expect(section.locator(`[data-request-id="${decided!.requestId}"]`)).toContainText(REASON);
     await expect(section.locator(`[data-request-id="${decided!.requestId}"]`)).toContainText(adminCopy.review.outcome.partially_approved);
+    await expect(section.getByRole('link', { name: adminMembersCopy.changeRequests.viewAll })).toHaveAttribute(
+      'href',
+      `/admin/change-requests?memberId=${member!.memberId}`,
+    );
   });
 
   test('member: the profile links to the history, which lists both requests with the outcome and the reason', async ({ page }) => {

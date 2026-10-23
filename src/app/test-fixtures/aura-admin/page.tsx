@@ -23,10 +23,10 @@ import { RenewalHealthCard } from '@/components/members/renewal-health-card';
 import { BenefitUsageCard } from '@/components/benefits/benefit-usage-card';
 import { renderMemberDetailView } from '@/app/(staff)/admin/members/[memberId]/_components/member-detail-view';
 import { MemberSummaryStrip } from '@/app/(staff)/admin/members/[memberId]/_components/member-summary-strip';
-import { MemberInvoicesCard } from '@/app/(staff)/admin/members/[memberId]/_components/member-invoices-section';
+import { INVOICE_FILTER_THRESHOLD, MemberInvoicesCard } from '@/app/(staff)/admin/members/[memberId]/_components/member-invoices-section';
 import { TimelinePreviewCard } from '@/app/(staff)/admin/members/[memberId]/_components/timeline-preview-section';
 import { MemberDataExportCard } from '@/app/(staff)/admin/members/[memberId]/_components/member-data-export-section';
-import { PendingChangeRequestAlert } from '@/app/(staff)/admin/members/[memberId]/_components/member-change-requests-section';
+import { MemberChangeRequestsCard, PendingChangeRequestAlert, type MemberChangeRequestRow } from '@/app/(staff)/admin/members/[memberId]/_components/member-change-requests-section';
 import { renderMemberTimelineView } from '@/app/(staff)/admin/members/[memberId]/_components/member-timeline-view';
 import { renderMemberBenefitsView } from '@/app/(staff)/admin/members/[memberId]/_components/member-benefits-view';
 import { MemberFormFrame } from '@/app/(staff)/admin/members/_components/member-form-frame';
@@ -139,7 +139,7 @@ import { renderStaffAccountView } from '@/app/(staff)/admin/account/page';
 import { OpenSwitchOffDialog, ShowReadOnlyRefusal } from './settings-previews';
 import { renderDashboardPreview } from './dashboard-previews';
 import { renderFinancePreview } from './finance-previews';
-import type { GroupedEvidence } from '@/modules/insights';
+import type { ExportJobRecord, GroupedEvidence } from '@/modules/insights';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -611,6 +611,19 @@ const MEMBER_EVENTS: TimelineItemProps[] = [
   { id: 't3', timestamp: ago(12), source: 'renewal', eventType: 'reminded', actorKind: 'system', actorDisplayName: null, payload: null },
 ];
 
+// `view=member&state=exports`: the Data export card with recent requests, so
+// its table can be seen in the page's 280–340px aside (relay R73).
+const exportJob = (id: string, status: ExportJobRecord['status'], contactId: string | null, daysAgo: number): ExportJobRecord => ({
+  id, tenantId: 'swecham', kind: 'gdpr_member_archive', subjectMemberId: MEMBER_ID, requestedBy: 'u-admin', requestedForPeriod: null,
+  requesterLocale: 'en', subjectContactId: contactId, status, idempotencyKey: id, blobKey: null, downloadTokenHash: null,
+  expiresAt: null, errorCode: null, createdAt: new Date(Date.now() - daysAgo * DAY), updatedAt: new Date(Date.now() - daysAgo * DAY),
+});
+const EXPORT_JOBS: readonly ExportJobRecord[] = [
+  exportJob('job-1', 'ready', 'c-erik', 1),
+  exportJob('job-2', 'processing', null, 0),
+  exportJob('job-3', 'expired', null, 40),
+];
+
 export default async function AuraAdminPreviewPage({
   searchParams,
 }: {
@@ -634,11 +647,30 @@ export default async function AuraAdminPreviewPage({
       ? { ...MEMBER, status: 'archived', archivedAt: new Date(Date.now() - 12 * DAY) }
       : MEMBER) as Member;
     const contacts = state === 'no-primary' ? MEMBER_CONTACTS.filter((c) => !c.isPrimary) : MEMBER_CONTACTS;
-    const invoiceRows = [
+    const baseInvoiceRows = [
       { invoiceId: 'i1', number: 'SC-2026-000123', status: 'issued' as const, statusLabel: 'Issued', issued: '15 Sep 2026', due: '15 Oct 2026', paid: null, total: '38,520.00 THB', remaining: '38,520.00 THB', owing: true },
       { invoiceId: 'i2', number: 'SC-2026-000045', status: 'paid' as const, statusLabel: 'Paid', issued: '12 Mar 2026', due: '11 Apr 2026', paid: '20 Mar 2026', total: '2,140.00 THB', remaining: '0.00 THB', owing: false },
       { invoiceId: 'i3', number: 'SC-2025-000087', status: 'paid' as const, statusLabel: 'Paid', issued: '15 Sep 2025', due: '15 Oct 2025', paid: '30 Sep 2025', total: '38,520.00 THB', remaining: '0.00 THB', owing: false },
     ];
+    // `many-invoices`: above INVOICE_FILTER_THRESHOLD, so the filter row shows.
+    const manyInvoices = state === 'many-invoices';
+    const invoiceRows = manyInvoices
+      ? Array.from({ length: INVOICE_FILTER_THRESHOLD + 1 }, (_, i) => ({
+          ...baseInvoiceRows[2]!,
+          invoiceId: `i-old-${i}`,
+          number: `SC-${2024 - i}-0000${String(87 - i).padStart(2, '0')}`,
+        }))
+      : baseInvoiceRows;
+    const tReview = await getTranslations('admin.changeRequests.review');
+    // `cr-empty`: no requests yet; otherwise one pending and two decided.
+    const changeRequestRows: MemberChangeRequestRow[] =
+      state === 'cr-empty'
+        ? []
+        : [
+            { id: 'cr-1', status: { state: 'pending' }, fieldKeys: ['billing_address'], submitterName: 'Erik Johansson', submitterRole: tReview('roles.primary'), submittedAtIso: ago(2), decidedByName: null, decidedAtIso: null },
+            { id: 'cr-0', status: { state: 'decided', outcome: 'approved' }, fieldKeys: ['phone'], submitterName: 'Erik Johansson', submitterRole: tReview('roles.primary'), submittedAtIso: ago(42), decidedByName: 'Malin Berg', decidedAtIso: ago(40) },
+            { id: 'cr-00', status: { state: 'decided', outcome: 'rejected' }, fieldKeys: ['company_name', 'website'], submitterName: 'Ploy Srisuk', submitterRole: tReview('roles.secondary'), submittedAtIso: ago(90), decidedByName: 'Malin Berg', decidedAtIso: ago(88) },
+          ];
     return (
       <StaffFrame path={`/admin/members/${MEMBER_ID}`}>
         {await renderMemberDetailView({
@@ -658,7 +690,7 @@ export default async function AuraAdminPreviewPage({
           features: { f9Dashboard: true, f7Broadcasts: true },
           locale: await getLocale(),
           slots: {
-            pendingChangeRequest: state === 'default' ? await PendingChangeRequestAlert({ requestId: 'cr-1', submitterName: 'Erik Johansson', submitterRole: (await getTranslations('admin.changeRequests.review'))('roles.primary') }) : null,
+            pendingChangeRequest: changeRequestRows.some((r) => r.status.state === 'pending') ? await PendingChangeRequestAlert({ requestId: 'cr-1', submitterName: 'Erik Johansson', submitterRole: tReview('roles.primary') }) : null,
             strip: (
               <MemberSummaryStrip
                 outstanding={{ state: 'ok', sumSatang: 3852000n, count: 1, earliestDueIso: '2026-10-15', partial: false }}
@@ -672,8 +704,6 @@ export default async function AuraAdminPreviewPage({
               <RenewalHealthCard
                 headingId="member-renewal-health-heading"
                 status="awaiting_payment"
-                expiryIso="2026-12-31T16:59:59Z"
-                daysRemaining={98}
                 engagementScore={82}
                 engagementBand="healthy"
                 viewHref="/admin/renewals"
@@ -702,11 +732,11 @@ export default async function AuraAdminPreviewPage({
               />
             ),
             invoices: (
-              <MemberInvoicesCard memberId={MEMBER_ID} total={3} rows={invoiceRows} canMutate={!manager} hasFilter={false} showFilters />
+              <MemberInvoicesCard memberId={MEMBER_ID} total={invoiceRows.length} rows={invoiceRows} canMutate={!manager} hasFilter={false} showFilters={invoiceRows.length > INVOICE_FILTER_THRESHOLD} />
             ),
             timeline: <TimelinePreviewCard memberId={MEMBER_ID} events={MEMBER_EVENTS} loadFailed={false} />,
-            changeRequests: null,
-            dataExport: manager || erased ? null : <MemberDataExportCard memberId={MEMBER_ID} contacts={contacts} jobs={[]} />,
+            changeRequests: <MemberChangeRequestsCard memberId={MEMBER_ID} rows={changeRequestRows} loadFailed={false} />,
+            dataExport: manager || erased ? null : <MemberDataExportCard memberId={MEMBER_ID} contacts={contacts} jobs={state === 'exports' ? EXPORT_JOBS : []} />,
           },
         })}
       </StaffFrame>
@@ -1434,7 +1464,7 @@ export default async function AuraAdminPreviewPage({
     const action = state === 'dirty' ? 'dirty' : state === 'prefix-confirm' ? 'prefix-confirm' : null;
     return (
       <StaffFrame path="/admin/settings/invoicing">
-        <DetailContainer>
+        <FormContainer align="start">
           <InvoiceSettingsPreviewDriver action={action}>
             {await renderInvoiceSettingsView({
               initialValues,
@@ -1442,7 +1472,7 @@ export default async function AuraAdminPreviewPage({
               exists: !firstTime,
             })}
           </InvoiceSettingsPreviewDriver>
-        </DetailContainer>
+        </FormContainer>
       </StaffFrame>
     );
   }

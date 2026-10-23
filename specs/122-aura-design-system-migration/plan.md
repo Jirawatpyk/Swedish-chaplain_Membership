@@ -373,3 +373,84 @@ AURA shipped #165 (5.53) and #166 (5.54). The maintainer chose to remove the `to
   - **GREEN**: 126 test files, 1694 tests pass (members presentation, parity cleanup, architecture).
   - **Preview** (production build): the bar is one row, 62px tall, at 1024 and 1280 with a mouse and with touch. Keyboard: ⋯ → Enter opens the menu, a chosen item opens its dialog, Esc returns focus to ⋯.
   - **UX review** (`enterprise-ux-designer`, Ship): MEDIUM, over the cap the dimmed menu items gave no reason. Each now carries `disabledReason` (the bar's `overCap` copy), read with the item. Failing run before the fix: "over the cap, the menu items are disabled like the buttons" → `Expected element to have accessible description` (received none).
+
+### Evidence: member detail layout B (size M, plan agreed 2026-10-22)
+
+- **Scope:** the header ⋯ menu at every width, the two-column body, the Company summary + Drawer, the compact Change requests card, the Renewal card without the strip's figures, the invoice filter threshold, and measured scroll padding under the sticky section tabs. Decisions in spec Clarifications, Session 2026-10-22 (member detail layout B).
+- **RED** (`60ece6f95`, behaviour, so no shared commit): 9 failed, 27 passed, and the hook's file failed to import.
+  - `member-detail-view.test.tsx` "a writer gets Benefits, Edit and the ⋯ menu, in that order" → `expected [ 'Benefits', …(4) ] to deeply equal [ 'Benefits', 'Edit', 'More actions' ]`; "Erase and Archive live in the ⋯ menu at every width" → `expected <span …(1)>…(1)</span> to be null` (the menu's `sm:hidden` wrapper).
+  - `member-invoices-section.test.ts` "hides the filters at 10 invoices" → `expected true to be false`.
+  - `member-change-requests-card.test.tsx` (5 cases) → `MemberChangeRequestsCard is not a function`.
+  - `renewal-health-card.test.tsx` "renders the status and the engagement score, not the expiry or the band" → `expected document not to contain element, found <dt`.
+  - `use-section-tabs-scroll-padding.test.ts` → `Failed to resolve import "@/hooks/use-section-tabs-scroll-padding"`.
+- **Shared commit (D-023, presentation only)**, `member-detail-view.test.tsx` before the test change:
+  - "links every section the viewer has" → `expected [ 'Contacts', 'Invoices', …(4) ] to deeply equal [ undefined, 'Contacts', …(4) ]` (no Overview link any more);
+  - "renders the strip above the links, and the sections in the board order" → `expected +0 to be truthy` (the new DOM order);
+  - "the company card groups are h3 headings" → `Unable to find an accessible element with the role "heading" and name "Organisation"` (the record is in the Drawer).
+- **GREEN:** `tests/unit/app/admin/members/` 75 passed; the hook, the renewal card and the change-requests card pass.
+
+- **Preview (production build, fixture `view=member`):** no horizontal scroll at 390, 1024 or 1440; 1024 keeps two columns (main 409, aside 280); `scroll-padding-top` 124px (56 + measured tabs 36 + 32); header actions Benefits, Edit, ⋯; the Drawer opens and closes to its trigger. It also showed the scroll-spy marking the wrong tab after a click (below).
+- **Scroll-spy, found in the preview and by both reviews (HIGH):** after a tab click the band (row bottom + 8) sat above the landing line (124px), so the next scroll marked the previous section; the spy took the last link in list order, so in two columns the aside's Company won; and the end-of-page rule marked Data export.
+  - **RED** (`1e7dad9db`): `section-links.test.tsx` "marks the section that most recently passed the tabs, by position" and "keeps a followed link current through its own scroll, even at the end of the page" → `expect(element).toHaveAttribute("aria-current", "location")`, received `null`.
+  - **GREEN** (`9a4dcb8ea`): the band is `scroll-padding-top`, the spy picks by position, and a followed link holds until the user scrolls on their own.
+  - **RED** (`254d314fe`, `enterprise-ux-designer` H1): "from lg, an aside section does not take over while the main column is read" → same failure; and `mobile-a11y-ux-reviewer` M2, `company-details-drawer.test.tsx` "returns focus to the trigger after a mouse open and an Escape close" → `Expected element with focus` (focus on body).
+  - **GREEN** (`a139d7011`): aside links are left out of the spy from 1024px; the Drawer sets `finalFocus` to its trigger.
+- **Review copy and presentation (D-023 shared commit).** Failing run before the test change: "renders the status and the engagement score…" → `Unable to find an element with the text: 82`; "the company card summarises the tax facts…" → `Unable to find an accessible element with the role "heading" and name "Billing address (tax documents)"`.
+  - The Renewal card reads "Engagement score" with "{score} / 100" (both reviews M4).
+  - The Company summary uses one level of dt/dd; the h3 groups stay in the Drawer (UX M5). The Drawer is titled "Company details" with the company's name as its description (UX L1); its trigger reads "Show all company details" and carries `aria-haspopup="dialog"` (UX L2).
+  - Change requests: "View all" moves to the card head as the Timeline card has it, also offered when the card failed to load (UX M2); the TH copy uses "คำขอแก้ไขข้อมูล" (UX M3, now "ดูทั้งหมด"). History rows are whole-row links (a11y M3) with the decision in their name (a11y L5), wrap at 320 (a11y L6) and lose the extra top padding (a11y L7). The pending Review's hidden date carries the time (UX L6).
+  - The ⋯ menu sets Erase apart with a separator (UX L5). The unused `renewalHealth.expiry` key is gone (UX L9); the hook's comment no longer names invoice settings (both L).
+  - `members-a11y` case 3 scans the whole page once the Drawer has finished opening, then checks Esc returns focus to its trigger (a11y L11).
+- **Not changed, with reasons:** no pending count on the Change requests tab and no phone accordion (UX review: both would duplicate what is already on screen); no static default for the tabs height (a cold deep link lands a few pixels short until the hook runs, still clear of the bar); Erase-success focus (pre-existing, a separate fix).
+- **Relay R73** (`7a57cbe8b` vs `1b61e1d79`): no branch-only red in the five specs. Two manual checks failed.
+  - **Horizontal scroll at 1024–1280** from the Data export "Recent requests" table, 394px wide in the 280–340px aside. The fixture passed no export jobs, so the preview never drew the table; `view=member&state=exports` now draws three. Failing run in the preview before the fix: `scrollWidth` 1100 at 1024, 1348 at 1280, 1460 at 1440. Fix (UI presentation, D-023): the table stacks below 640px of its own width (AURA `stackBelow="sm"`, a container query), the request row wraps by the space it has, and a row with nothing to download shows no empty "Download" label. After: 1009/1024, 1265/1280, 1425/1440, 375/390. The portal Account page (wider card) keeps its table. Unit failing line before the change: "stacks the recent requests by the table width" → `expect(element).toHaveClass("aura-tbl--stack-sm")`.
+  - **Keyboard open of the company Drawer**: the relay reported that Enter on the focused trigger left focus on the button and Esc did not close it. It does not reproduce on the fixture, in a production build or in `next dev`, including the relay's sequence (mouse open, Esc, then Enter): focus lands on "Copy tax ID" and Esc closes back to the trigger. This environment cannot sign in to a real member, so `members-a11y` case 3 now also opens the Drawer with Enter and asserts focus inside and Esc back to the trigger, on the real page, in relay R73b.
+- **Relay R73b** (`68e77b88b`): the Data export overflow is fixed (1009/1024, 1265/1280, 1425/1440). `members-a11y` case 3 is red on the branch only, at `:128`: the Drawer did not close on Esc.
+- **Relay R73c** (focus trace): AURA's open effect focused "Copy member number". On a member with no Tax ID copy button or website, that is the record's first control, and it sits inside the closed Technical disclosure. Chromium 147 does not focus it: no `focusin`, focus stays on the trigger, and Esc has no target. Nothing closes or remounts the Drawer. Fix: the Drawer opens with focus on its Close button (`closeProps` `data-autofocus`), which is always shown.
+  - RED (`103be50bc`): `CompanyDetailsDrawer > moves focus to its Close button when it opens`, failing at "Expected element with focus: …Close company details… Received element with focus: <div role="dialog" …>" (jsdom falls back to the panel).
+  - GREEN: the same test passes; fixture `view=member` in `next dev`: mouse and Enter opens both land on "Close company details", and Esc returns focus to the trigger.
+- **Relay R73d** (`da85151dc` vs `d050fd784`): `members-a11y` 6/6 on chromium and 5 + 1 skipped on mobile-chrome; `member-number` 7/7 on both, on branch and base. Keyboard and mouse open/Esc pass on members with and without a Tax ID copy button. Merged as `ad56ee80d` (#619).
+
+### Evidence: Erase-success focus to the Erased banner (#240, size S, plan agreed 2026-10-23)
+
+After a successful erase, the header ⋯ menu that opened the dialog unmounts with the refresh (an erased member has no actions), so focus fell to `<body>` (2.4.3). The dialog now leaves a one-shot request (`erased-banner-focus.ts`: one member, taken once, lapses after 10 s), and `ErasedBanner` takes focus when it mounts with that request. On a plain visit to an erased member, focus is not moved.
+
+- RED (`303c470eb`), with a no-op stub of the hand-off:
+  - `ErasedBanner focus after an erase (#240) > takes focus when the erase dialog asked for it for this member` failed at `expect(banner()).toHaveFocus()`.
+  - `EraseMemberButton (T555) > once complete, POSTs …` failed at "AssertionError: expected false to be true".
+- GREEN: both pass, as do the other four banner cases (no request, another member's request, older than 10 s, taken once) and the refusal case (no request is left).
+- Totals: 94/94 in the touched files, 2745/2745 in `tests/unit/architecture` + `tests/unit/members`; `pnpm check` exit 0.
+- No e2e: `members-erase.spec.ts` deliberately never completes an erase, because an erase is permanent.
+- Review Lows fixed (maintainer, 23 Oct: "แก้ low เลย"). RED `158a2f916`, 5 failing:
+  - **Name:** the banner is named by its title (`aria-label`, stand-in until AURA #170, Addendum 71). The case `is named by its title…` failed on `toHaveAccessibleName`.
+  - **Kept focus:** the banner only takes focus when focus fell to `<body>` with the ⋯ menu. If the user moved focus during the refresh, it stays put. The case `leaves focus where the user put it…` failed: the banner took focus.
+  - **Window:** the request lasts 60 s, not 10 s, so a slow refresh on a phone still lands. The case `still takes a request 30 seconds old` failed.
+  - **`finalFocus`:** the erase Dialog sets `finalFocus`: the caller's opener (the ⋯ button, through `MemberHeaderMoreMenu`), else its own trigger. The cases `Cancel returns focus to the opener the caller names` and `with its own trigger, Cancel returns focus to it` failed: focus was on `<body>`.
+  - GREEN: 99/99 in the touched files.
+
+### Evidence: invoice settings, section tabs on top (size M, plan agreed 2026-10-23)
+
+The US8c-2 rail becomes the member page's section tabs above a one-column, start-aligned form (spec Session 2026-10-23).
+
+- **Behaviour, RED first** (`54409b36e`): `useSectionTabsScrollPadding > publishes 0px while the row is not sticky` and `> follows a change of stickiness on window resize` both failed (the hook published the height whatever the row's `position`). GREEN in `c07c4417c`.
+- **Presentation, D-023 shared commit** (the failing lines below were taken before the code changed):
+  - `SectionLinks > sticks from sm only when asked…` failed: "expected [ 'sticky', …(5) ] to include 'sm:sticky'".
+  - `invoice settings page frame > has the page header, the note, the section tabs…` failed: "TypeError: Cannot read properties of undefined (reading 'organization')" (no `tabs.*` keys yet).
+  - `> has no side rail and no jump-to select any more` failed: "expected <button type="button" …(1)></button> to be null" (the rail button).
+- **Removed:** `section-nav.tsx`, `use-scroll-spy.ts` and their unit tests (the shared row carries its own spy, covered in `section-links.test.tsx`). Also the `IntersectionObserver` stand-ins in three form tests, `nav.jumpTo` in EN/TH/SV, and `scroll-mt-24` on the six cards (it would add to `scroll-padding-top`).
+- **Measured on the fixture** (production build, `view=invoice-settings`):
+  - The heading's left edge equals the member form's: 16 / 272 / 272 at 390 / 1024 / 1440.
+  - The form is 656px wide from 1024.
+  - The row is static on a phone (`--chamber-section-tabs-height: 0px`, padding 88px) and sticky from 1024 (36px, padding 124px).
+  - A Payment tab click lands the card at 124px, under the row's bottom at 92, with focus on `#payment`.
+  - Six tabs fit one row at 1024 in EN, TH and SV, and scroll sideways at 390.
+  - No horizontal page scroll; Tax ID is 318px wide.
+- **Reviews:** `enterprise-ux-designer` and `mobile-a11y-ux-reviewer` found no BLOCKER or HIGH.
+  - **MEDIUM, save bar over a focused field (2.4.11):** the bar wraps to 103px on a phone, more than the stylesheet's 5.5rem, so a focused field could slide under it. Fixed: the bar keeps its measured height, its bottom offset and a 16px gap clear through `scroll-padding-bottom` while it shows. RED `b83c1c7ac` (`keeps its measured height clear…` failed: "expected '' to be '119px'"), GREEN `4fc55eea1`.
+  - **MEDIUM, skeleton tab row:** it was 44px at every width but the real row is 36px from `sm` with a mouse, so the page shifted 8px on load. It is now `h-11 sm:h-9`.
+  - **LOW:**
+    - The TH card title is now "การออกเลขเอกสาร" (was "การเลขเอกสาร"), in the subtitle too.
+    - The e2e describe is now named "section-tab".
+    - The tab target size goes to the AURA handoff as #171: "Tax" is 22px wide, both here and on the member page.
+    - A reader without write access now gets a first note, "You can view these settings but not change them." (EN/TH/SV `readOnlyNote`), as an info note, since AURA's `Alert` has no neutral tone. This was pre-existing; the maintainer asked for it in this PR. D-023 shared commit: `invoice settings page frame > tells a view-only reader why the fields are locked` failed before the view changed: "Unable to find an element with the text: You can view these settings but not change them.".
+  - **Not changed:** no way back to the tabs on a phone (a recorded decision), the skeleton's existing-settings note (pre-existing), and no scroll hint at 320 (AURA `Tabs`).

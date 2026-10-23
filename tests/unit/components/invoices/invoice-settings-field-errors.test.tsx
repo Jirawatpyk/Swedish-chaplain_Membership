@@ -41,17 +41,7 @@ vi.mock('next/navigation', () => ({
 }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-// jsdom has no real IntersectionObserver — the orchestrator mounts
-// <SectionNav>, which mounts the real (un-mocked) useScrollSpy hook. Same
-// no-op stand-in as invoice-settings-fullbody.test.tsx.
-class NoopIntersectionObserver {
-  observe() {}
-  disconnect() {}
-  unobserve() {}
-}
 beforeEach(() => {
-  (globalThis as unknown as { IntersectionObserver: typeof NoopIntersectionObserver }).IntersectionObserver =
-    NoopIntersectionObserver;
   // tests/setup.ts installs fake timers globally — the fieldErrors test
   // awaits a mocked fetch(), which needs real timers (same fix as
   // invoice-settings-fullbody.test.tsx).

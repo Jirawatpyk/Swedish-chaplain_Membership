@@ -721,6 +721,28 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - Body buttons AURA does not cover keep `touchHeight`.
 - **Phone-only stretch is `fullWidth="below-sm"`.** A row that stacks on phones sets it on each button, never `[&>*]:w-full` on the container (which keeps the fixed height and `nowrap`). A guard enforces both rules.
 
+### Session 2026-10-22 (member detail layout B)
+
+- **Layout B (maintainer, 22 Oct: "แบบ B โอเค", boards `Main` and `MobileB` on the member-detail canvas).**
+  - The header keeps Benefits and Edit; Archive and Erase open from ⋯ at every width (until now only below 640px, Session 2026-09-29).
+  - The body is two columns from 1024px: Contacts, Invoices, Change requests and Timeline in the main column; Renewal, Benefits, a Company summary and Data export in the aside (`minmax(0,1fr)` beside `clamp(280px,30%,340px)`, so 1024 keeps two columns: 416 + 280).
+  - The Company card shows Tax ID, legal entity, plan, address and billing address; "All company details" opens the full record in a side Drawer.
+  - The Renewal card drops the expiry, days left and engagement band, which the figures strip already shows.
+  - The invoice filter row shows only above 10 invoices (or while a filter is in the URL).
+- **Change requests on the member page are a summary.** Pending requests with Review, up to three decided ones on one line each, and "View all" to the queue filtered to the member. This replaces Session 2026-09-29's "the full history stays": the diff and the reason are on each request's review page.
+- **Phone order follows the DOM (maintainer, 22 Oct).** Below 1024px the columns stack: Contacts → Invoices → Change requests → Timeline → Renewal → Benefits → Company → Data export. The board's Renewal-second order would have needed a CSS reorder, so focus order would not match what is on screen (WCAG 2.4.3).
+- **No pending count on the Change requests tab, no phone accordion (maintainer, 22 Oct: "ทำตามแนะนำ").** The count would repeat the alert above the figures and the card's own badges; an accordion would hide the Company card's Tax ID, which a call needs. The summary card + record Drawer is recorded as `docs/ux-patterns.md` § 6.
+- **Anchors clear the sticky tabs by measurement.** The section tabs publish their height (`--chamber-section-tabs-height`), which `scroll-padding-top` adds to the shell bar and a gap. Pages without tabs keep 88px.
+
+### Session 2026-10-23 (invoice settings: section tabs on top)
+
+- **The US8c-2 side rail moves to the top as section tabs (maintainer, 22 Oct: "เอาแถบด้านข้างไปไว้ด้านบน เหมือน member"; boards `InvoiceSettings` and `InvoiceSettingsMobile` on the member-detail canvas).**
+  - `/admin/settings/invoicing` is one column in the start-aligned form container, like the other forms. It replaces the rail + 1,121px cards; the "Jump to section" select goes too.
+  - The tabs are the member page's `SectionLinks`, now shared (`src/components/layout/section-links.tsx`): in-page links, a scroll-spy, and focus moving into the section.
+- **Short tab labels.** The tabs read Organization · Tax · Numbering · Notes · Payment · Branding (`tabs.*`; TH and SV too), so six fit one row in the 656px column. The cards keep their full titles ("Document numbering", "Document notes").
+- **Not sticky on a phone.** Below 640px the tabs scroll away with the page: shell bar, tabs and save bar together would take about a fifth of the screen. From `sm` they stick under the shell bar. The row adds its height to `scroll-padding-top` only while it is sticky.
+- **Short fields stay short.** Tax ID keeps its own row in the identity fieldset, at most 20rem wide, like the currency and branch codes. The mockup's Currency + Tax ID pair would have taken Tax ID out from under its "Tenant legal identity" legend.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

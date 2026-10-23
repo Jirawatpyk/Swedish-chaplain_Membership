@@ -61,6 +61,12 @@ interface MemberInvoicesSectionProps {
 }
 
 /** Difference between invoice total and credited total = amount owing. */
+/**
+ * Layout B (maintainer, 22 Oct) — the filter row shows only above this many
+ * invoices (unfiltered): fewer fit on one screen and need no filtering.
+ */
+export const INVOICE_FILTER_THRESHOLD = 10;
+
 function remainingSatang(inv: Invoice): bigint | null {
   if (!inv.total) return null;
   return inv.total.satang - inv.creditedTotal.satang;
@@ -171,7 +177,8 @@ export async function MemberInvoicesSection({
       rows={tableRows}
       canMutate={canMutate}
       hasFilter={hasFilter}
-      showFilters={allYearsResult.ok && allYearsResult.value.total > 0}
+      // A filter already in the URL keeps its row, so it can be cleared.
+      showFilters={hasFilter || (allYearsResult.ok && allYearsResult.value.total > INVOICE_FILTER_THRESHOLD)}
     />
   );
 }
@@ -193,7 +200,7 @@ export async function MemberInvoicesCard({
   readonly rows: readonly MemberInvoiceRow[];
   readonly canMutate: boolean;
   readonly hasFilter: boolean;
-  /** G-U7F — only when the member has any invoice at all. */
+  /** Only above `INVOICE_FILTER_THRESHOLD` invoices, unfiltered. */
   readonly showFilters: boolean;
 }): Promise<React.ReactElement> {
   const t = await getTranslations('admin.members.invoices');
@@ -225,8 +232,7 @@ export async function MemberInvoicesCard({
       }
     >
       <div data-testid="member-invoices-content">
-        {/* G-U7F — only when the unfiltered set is non-empty: with ZERO
-            invoices there is nothing to filter. */}
+        {/* Only above INVOICE_FILTER_THRESHOLD unfiltered invoices (layout B). */}
         {showFilters && <MemberInvoicesFilters />}
         {tableRows.length === 0 ? (
           <EmptyState

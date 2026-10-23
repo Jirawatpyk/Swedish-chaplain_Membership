@@ -11,6 +11,7 @@
  *   met, then POSTs /erase with them.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useRef, useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -22,6 +23,7 @@ vi.mock('@/lib/toast', () => ({ toast }));
 
 const { ArchiveMemberButton } = await import('@/components/members/archive-member-button');
 const { EraseMemberButton } = await import('@/components/members/erase-member-button');
+const { takeErasedBannerFocus } = await import('@/components/members/erased-banner-focus');
 
 const AR = enMessages.admin.members.archive;
 const ER = enMessages.admin.members.erase;
@@ -95,6 +97,39 @@ describe('Archive / Erase opened by a caller', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  // ux-standards: every dialog sets `finalFocus`. Opened from the ⋯ menu,
+  // Cancel returns focus to the opener even where a click did not focus it
+  // (Safari), not to the <body> AURA saw at open.
+  it('EraseMemberButton: Cancel returns focus to the opener the caller names', async () => {
+    function Opener() {
+      const ref = useRef<HTMLButtonElement>(null);
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button ref={ref} type="button" onClick={() => setOpen(true)}>More</button>
+          <EraseMemberButton memberId="m-1" companyName="Siam Nordic" memberNumberDisplay="TSCC-0003" showTrigger={false} open={open} onOpenChange={setOpen} finalFocus={ref} />
+        </>
+      );
+    }
+    wrap(<Opener />);
+    const more = screen.getByRole('button', { name: 'More' });
+    fireEvent.click(more);
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: ER.cancel }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(more).toHaveFocus();
+  });
+
+  it('EraseMemberButton: with its own trigger, Cancel returns focus to it', async () => {
+    wrap(<EraseMemberButton memberId="m-1" companyName="Siam Nordic" memberNumberDisplay="TSCC-0003" />);
+    const trigger = screen.getByRole('button', { name: ER.eraseCta });
+    fireEvent.click(trigger);
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: ER.cancel }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(trigger).toHaveFocus();
+  });
+
   it('EraseMemberButton: open without a trigger, Cancel reports the close', () => {
     const onOpenChange = vi.fn();
     wrap(<EraseMemberButton memberId="m-1" companyName="Siam Nordic" memberNumberDisplay="TSCC-0003" showTrigger={false} open onOpenChange={onOpenChange} />);
@@ -155,6 +190,10 @@ describe('EraseMemberButton (T555)', () => {
       verificationMethod: 'in_person',
       note: 'DPO-7',
     });
+    // #240: the ⋯ menu unmounts with the refresh, so the success hands focus
+    // to the Erased banner that replaces it.
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(takeErasedBannerFocus('m-1')).toBe(true);
   });
 
   // UX review M5 (ux-standards § 6.4): a refusal is said inside the dialog,
@@ -177,5 +216,6 @@ describe('EraseMemberButton (T555)', () => {
     expect(alert).toHaveTextContent(ER.eraseNotFound);
     await waitFor(() => expect(document.activeElement).toBe(alert));
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(takeErasedBannerFocus('m-1')).toBe(false);
   });
 });

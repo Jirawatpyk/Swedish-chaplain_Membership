@@ -1,8 +1,8 @@
 /**
- * Spec 122 US5b-1 (maintainer, 29 Sep): on a phone the member header shows
- * Edit, Benefits and ⋯; Erase and Archive open from that menu. From 640px up
- * they are visible buttons. These helpers reach an action either way, so a
- * spec runs the same on chromium and mobile-chrome (Pixel 5, 393px).
+ * Layout B (maintainer, 22 Oct; first on phones only, 29 Sep): the member
+ * header shows Benefits, Edit and ⋯; Archive and Erase open from that menu
+ * at every width. These helpers still accept a visible button too, so a
+ * spec reads the same whichever way the header offers an action.
  */
 import { expect, type Page } from '@playwright/test';
 

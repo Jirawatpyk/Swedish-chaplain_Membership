@@ -3,8 +3,8 @@
  *
  * Pure client component fed plain serializable props by the async server
  * wrapper (`MemberRenewalHealthSection`). Covers the three render states
- * the card must handle: empty (no cycle), populated (status + expiry +
- * days remaining + engagement), and engagement-absent (F9 flag off).
+ * the card must handle: empty (no cycle), populated (status + engagement
+ * score; the strip carries expiry and band), and engagement-absent (F9 flag off).
  *
  * Accessibility: status + engagement band carry a visible TEXT label
  * (never colour-alone) per FR-035 / WCAG 1.4.1.
@@ -35,9 +35,9 @@ const messages = {
           readFailed: "We couldn't load this member's renewal status. Please try again.",
           status: 'Status',
           expiry: 'Expiry',
-          daysRemaining: '{days} days remaining',
           overdueDays: 'Overdue by {days} days',
-          engagement: 'Engagement',
+          engagement: 'Engagement score',
+          engagementScoreValue: '{score} / 100',
           viewRenewal: 'View renewal',
           cycleStatus: {
             upcoming: 'Upcoming',
@@ -80,8 +80,6 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
   it('renders the empty state when there is no cycle', () => {
     renderCard({
       status: null,
-      expiryIso: null,
-      daysRemaining: null,
       engagementScore: null,
       engagementBand: null,
       viewHref: '/admin/renewals',
@@ -91,50 +89,35 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
     expect(screen.queryByText('Awaiting payment')).not.toBeInTheDocument();
   });
 
-  it('renders status, expiry, days remaining, and engagement when populated', () => {
+  // Layout B (maintainer, 22 Oct): the figures strip above already shows the
+  // expiry, the days left and the engagement band, so the card keeps what
+  // only it has: the cycle status, the score and the actions.
+  it('renders the status and the engagement score, not the expiry or the band, when populated', () => {
     renderCard({
       status: 'awaiting_payment',
-      expiryIso: '2026-07-15T00:00:00.000Z',
-      daysRemaining: 20,
       engagementScore: 82,
       engagementBand: 'healthy',
       viewHref: '/admin/renewals',
     });
     expect(screen.getByText('Awaiting payment')).toBeInTheDocument();
-    expect(screen.getByText('20 days remaining')).toBeInTheDocument();
-    // Engagement score + band text (band is a text label, not colour-only).
-    expect(screen.getByText('82')).toBeInTheDocument();
-    expect(screen.getByText('Healthy')).toBeInTheDocument();
-    // View-renewal link present.
+    expect(screen.getByText('82 / 100')).toBeInTheDocument();
+    expect(screen.queryByText('Expiry')).not.toBeInTheDocument();
+    expect(screen.queryByText(/days remaining/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Healthy')).not.toBeInTheDocument();
     const link = screen.getByRole('link', { name: /View renewal/ });
     expect(link).toHaveAttribute('href', '/admin/renewals');
-  });
-
-  it('shows an overdue label when days remaining is negative', () => {
-    renderCard({
-      status: 'lapsed',
-      expiryIso: '2026-05-01T00:00:00.000Z',
-      daysRemaining: -12,
-      engagementScore: null,
-      engagementBand: null,
-      viewHref: '/admin/renewals',
-    });
-    expect(screen.getByText('Lapsed')).toBeInTheDocument();
-    expect(screen.getByText('Overdue by 12 days')).toBeInTheDocument();
   });
 
   it('omits the engagement line when engagement is absent (F9 flag off)', () => {
     renderCard({
       status: 'upcoming',
-      expiryIso: '2026-09-01T00:00:00.000Z',
-      daysRemaining: 90,
       engagementScore: null,
       engagementBand: null,
       viewHref: '/admin/renewals',
     });
     expect(screen.getByText('Upcoming')).toBeInTheDocument();
     // No engagement label rendered when score+band are both null.
-    expect(screen.queryByText('Engagement')).not.toBeInTheDocument();
+    expect(screen.queryByText('Engagement score')).not.toBeInTheDocument();
   });
 
   // Cluster 7 (G18) — a FAILED renewal read must render a distinct
@@ -149,8 +132,6 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
       canRenew: true,
       memberId: 'm1',
       status: null,
-      expiryIso: null,
-      daysRemaining: null,
       engagementScore: null,
       engagementBand: null,
       viewHref: '/admin/renewals',
@@ -172,8 +153,6 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
     renderCard({
       readFailed: true,
       status: null,
-      expiryIso: null,
-      daysRemaining: null,
       engagementScore: 82,
       engagementBand: 'healthy',
       viewHref: '/admin/renewals',
@@ -182,17 +161,14 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
       screen.getByText("We couldn't load this member's renewal status. Please try again."),
     ).toBeInTheDocument();
     // The loaded engagement value + band are still shown.
-    expect(screen.getByText('Engagement')).toBeInTheDocument();
-    expect(screen.getByText('82')).toBeInTheDocument();
-    expect(screen.getByText('Healthy')).toBeInTheDocument();
+    expect(screen.getByText('Engagement score')).toBeInTheDocument();
+    expect(screen.getByText('82 / 100')).toBeInTheDocument();
   });
 
   it('still renders the empty state when readFailed is false and status is null (regression guard)', () => {
     renderCard({
       readFailed: false,
       status: null,
-      expiryIso: null,
-      daysRemaining: null,
       engagementScore: null,
       engagementBand: null,
       viewHref: '/admin/renewals',
@@ -208,8 +184,6 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
   it('renders the title as a real <h2> heading with the supplied id', () => {
     renderCard({
       status: 'upcoming',
-      expiryIso: '2026-09-01T00:00:00.000Z',
-      daysRemaining: 90,
       engagementScore: null,
       engagementBand: null,
       viewHref: '/admin/renewals',
@@ -226,8 +200,6 @@ describe('RenewalHealthCard (Pass A · Section 1)', () => {
   it('puts View renewal in the body, not the card head', () => {
     const { container } = renderCard({
       status: 'awaiting_payment',
-      expiryIso: '2026-07-15T00:00:00.000Z',
-      daysRemaining: 20,
       engagementScore: null,
       engagementBand: null,
       viewHref: '/admin/renewals',

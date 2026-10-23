@@ -2,7 +2,7 @@
 
 **Purpose**: canonical flows for recurring interactions so every feature treats destructive actions, bulk operations, multi-step wizards, unsaved changes, and bulk import/export consistently. Pairs with `docs/ux-standards.md` (visual primitives) and `docs/shadcn-customizations.md` (component deviations).
 
-**Last updated**: 2026-04-24 — design-system audit C1 (P0)
+**Last updated**: 2026-10-22 — § 6 summary card + record Drawer (member detail layout B)
 
 **Status**: v0.1 — initial landing. Patterns evolve as features ship; each addition MUST update this file in the same PR.
 
@@ -218,7 +218,42 @@ Step 4 — Confirm (pattern 1 TIER 1) → streaming progress (pattern 2.2) → r
 
 ---
 
-## 6. Cross-references
+## 6. Summary card + record Drawer
+
+**When to use**: a detail page shows a long record (company details, settings, technical ids) that staff need only now and then, beside things they act on (contacts, invoices, requests).
+**When NOT to use**: the fields are edited on this page, or every field is needed on every visit — keep them on the page.
+
+### 6.0 Canonical shape
+
+```
+┌ Company ─────────────────┐        ┌ Company details ──────── ✕ ┐
+│ Tax ID      0105561234567 │        │ Siam Nordic Trading Co.    │
+│ Legal entity  Co., Ltd.   │  ───▶  │ ORGANISATION               │
+│ Plan     Premium Corporate│        │ …every field, h3 groups…   │
+│ Address / Billing address │        │ MEMBERSHIP · ADDRESS · …   │
+│ [Show all company details]│        └────────────────────────────┘
+└───────────────────────────┘          AURA Drawer, side right, md
+```
+
+### 6.1 Rules
+
+- The card shows only what a call or an action needs (on member detail: the §86/4 buyer facts and the plan), as one level of label/value pairs.
+- The full record moves to the Drawer unchanged; its h3 groups live there, under the Drawer's h2 title.
+- The Drawer is titled by what it holds ("Company details") with the record's name as its description; the trigger starts with a verb ("Show all company details").
+- The record is server-rendered and passed in as `children`; the client island owns only the open state.
+- No collapse on phones: the card is already short, and an accordion would hide the facts it exists for.
+
+### 6.2 Accessibility
+
+- The trigger carries `aria-haspopup="dialog"`; the Drawer sets `finalFocus` to it, so focus returns there even where a click does not focus a button (Safari).
+- A detail page with sticky section tabs leaves aside sections out of the scroll-spy from `lg` (`SectionLink.aside`); a followed link to one still marks it.
+- The same tab row (`src/components/layout/section-links.tsx`) jumps between the sections of a long form (invoice settings). There it scrolls away with the page below 640px (`stickyFrom="sm"`), so the save bar keeps its room.
+
+Reference: `src/app/(staff)/admin/members/[memberId]/_components/company-details-drawer.tsx` (spec 122, Session 2026-10-22, layout B).
+
+---
+
+## 7. Cross-references
 
 - `docs/ux-standards.md` — §§ 2, 7, 15 (shimmer, focus, merge-gate checklist)
 - `docs/shadcn-customizations.md` — primitive deviations
@@ -231,7 +266,7 @@ Step 4 — Confirm (pattern 1 TIER 1) → streaming progress (pattern 2.2) → r
 
 ---
 
-## 7. Contributing
+## 8. Contributing
 
 When a new pattern recurs ≥2 features, land it here before the second use. Template:
 

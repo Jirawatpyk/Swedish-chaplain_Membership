@@ -1291,14 +1291,13 @@
     "members": {
         "changeRequests": {
             "title": "Change requests",
-          "viewQueue": "Open in queue",
+          "viewAll": "View all",
           "loadFailed": "Change requests could not be loaded. Reload the page to try again.",
           "empty": "No change requests for this member yet.",
           "submittedBy": "Submitted by {name} ({role})",
           "submittedOn": "Submitted {submittedAt}",
           "review": "Review",
-          "pendingAlert": "Change request awaiting review",
-          "open": "Open"
+          "pendingAlert": "Change request awaiting review"
         },
       "title": "Members",
       "overrideReason": {
@@ -1497,10 +1496,10 @@
           "empty": "No active renewal cycle",
           "readFailed": "We couldn't load this member's renewal status. Please try again.",
           "status": "Status",
-          "expiry": "Expiry",
           "daysRemaining": "{days} days remaining",
           "overdueDays": "Overdue by {days} days",
-          "engagement": "Engagement",
+          "engagement": "Engagement score",
+          "engagementScoreValue": "{score} / 100",
           "viewRenewal": "View renewal",
           "cycleStatus": {
             "upcoming": "Upcoming",
@@ -1661,6 +1660,11 @@
         },
         "editCta": "Edit",
         "headerMoreActions": "More actions",
+        "companyDetails": {
+          "title": "Company details",
+          "open": "Show all company details",
+          "close": "Close company details"
+        },
         "contactActions": {
           "add": "Add contact",
           "edit": "Edit",
@@ -1711,11 +1715,11 @@
         },
         "sectionLinks": {
           "label": "On this page",
-          "overview": "Overview",
           "contacts": "Contacts",
           "invoices": "Invoices",
           "changeRequests": "Change requests",
           "timeline": "Timeline",
+          "company": "Company",
           "dataExport": "Data export"
         }
       },
@@ -2315,6 +2319,7 @@
         "description": "Changes apply to future invoices only. Already-issued invoices retain their original snapshot.",
         "firstTimeDescription": "No settings yet. Fill in the required fields to unlock invoice issuance."
       },
+      "readOnlyNote": "You can view these settings but not change them.",
       "sections": {
         "currency": "Currency",
         "identity": "Tenant legal identity",
@@ -2333,8 +2338,15 @@
         "branding": "Branding"
       },
       "nav": {
-        "label": "Settings sections",
-        "jumpTo": "Jump to section…"
+        "label": "Settings sections"
+      },
+      "tabs": {
+        "organization": "Organization",
+        "tax": "Tax",
+        "numbering": "Numbering",
+        "notes": "Notes",
+        "payment": "Payment",
+        "branding": "Branding"
       },
       "labels": {
         "currencyCode": "Currency code",

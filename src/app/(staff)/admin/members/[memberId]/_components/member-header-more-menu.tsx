@@ -1,14 +1,13 @@
 'use client';
 
 /**
- * 122 US5b-1 — the member header's ⋯ menu on a phone (board
- * `Admin-member-detail-mobile`; maintainer, 29 Sep): Erase and Archive sit
- * here below `sm`, where the visible buttons would stack into rows of their
- * own. Each item opens the same dialog the visible button does, with its
- * confirmation unchanged; AURA returns focus to ⋯ when it closes. The page
- * decides who gets it (same gates as the buttons).
+ * The member header's ⋯ menu (layout B, maintainer 22 Oct; first on phones
+ * only, 29 Sep): Archive and Erase sit here at every width, so the header
+ * keeps Benefits and Edit beside it. Each item opens its own confirmation
+ * dialog, unchanged; AURA returns focus to ⋯ when it closes. The page
+ * decides who gets it; Erase, the most destructive, comes last.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { ArchiveIcon, ShieldXIcon } from 'lucide-react';
 import { DropdownMenu, IconButton, type MenuItem } from '@jirawatpyk/aura-react';
@@ -30,17 +29,20 @@ export function MemberHeaderMoreMenu({
   const t = useTranslations('admin.members');
   const [eraseOpen, setEraseOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const label = t('detail.headerMoreActions');
   // The same lucide icons as the visible buttons (AURA's set has neither).
   const items: MenuItem[] = [
-    { label: t('erase.eraseCta'), icon: <ShieldXIcon aria-hidden="true" />, tone: 'danger', onSelect: () => setEraseOpen(true) },
     ...(canArchive
       ? [{ label: t('archive.archiveCta'), icon: <ArchiveIcon aria-hidden="true" />, tone: 'danger' as const, onSelect: () => setArchiveOpen(true) }]
       : []),
+    // Erase cannot be undone (Archive can, within its window): set apart.
+    ...(canArchive ? [{ separator: true as const }] : []),
+    { label: t('erase.eraseCta'), icon: <ShieldXIcon aria-hidden="true" />, tone: 'danger', onSelect: () => setEraseOpen(true) },
   ];
   return (
-    <span className="flex-none! sm:hidden">
-      <DropdownMenu label={label} trigger={<IconButton icon="ellipsis" label={label} touchHeight />} items={items} />
+    <span className="flex-none!">
+      <DropdownMenu label={label} trigger={<IconButton ref={moreRef} icon="ellipsis" label={label} touchHeight />} items={items} />
       <EraseMemberButton
         memberId={memberId}
         companyName={companyName}
@@ -48,6 +50,7 @@ export function MemberHeaderMoreMenu({
         showTrigger={false}
         open={eraseOpen}
         onOpenChange={setEraseOpen}
+        finalFocus={moreRef}
       />
       {canArchive && (
         <ArchiveMemberButton

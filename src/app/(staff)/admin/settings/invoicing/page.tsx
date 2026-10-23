@@ -21,7 +21,7 @@ import { getTranslations } from 'next-intl/server';
 import { canPerform, requirePagePermission } from '@/lib/rbac';
 import { resolveTenantFromHeaders } from '@/lib/tenant-context';
 import { headers } from 'next/headers';
-import { DetailContainer } from '@/components/layout';
+import { FormContainer } from '@/components/layout';
 import type { InvoiceSettingsFormInitialValues } from '@/components/invoices/invoice-settings-form';
 import { renderInvoiceSettingsView } from './_components/invoice-settings-view';
 // Direct infra import — same escape-hatch pattern used by
@@ -127,8 +127,10 @@ export default async function InvoiceSettingsPage() {
       }
     : DEFAULTS;
 
+  // One column at the page's start edge, as the other forms (maintainer,
+  // 22 Oct: the section rail became tabs above the form).
   return (
-    <DetailContainer>
+    <FormContainer align="start">
       {await renderInvoiceSettingsView({
         initialValues,
         // Server-derived write authorization (never a role literal in the
@@ -138,6 +140,6 @@ export default async function InvoiceSettingsPage() {
         canEdit: canPerform(currentUser.role, 'settings.invoicing'),
         exists: existing !== null,
       })}
-    </DetailContainer>
+    </FormContainer>
   );
 }
