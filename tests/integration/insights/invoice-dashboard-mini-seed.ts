@@ -112,6 +112,11 @@ export interface MiniRefund {
   readonly createdAt?: Date;
   /** Default: `rf_<uuid>`; set it to decide an ordering tie by id. */
   readonly id?: string;
+  /**
+   * A `succeeded` refund settled by this credit note (`creditNotes` key)
+   * instead of the §105 waiver.
+   */
+  readonly creditNoteKey?: string;
 }
 
 export interface MiniScenario {
@@ -314,9 +319,10 @@ export async function seedMiniScenario(
           ? `re_mini_${randomUUID()}`
           : null,
       failureReasonCode: o.status === 'failed' ? (o.failureReasonCode ?? 'stripe_refund_failed') : null,
-      creditNoteId: null,
-      creditNoteWaiverReason: succeeded ? ('section_105_receipt' as const) : null,
-      creditNoteWaivedAt: succeeded ? completedAt : null,
+      creditNoteId: o.creditNoteKey !== undefined ? ids[o.creditNoteKey]! : null,
+      creditNoteWaiverReason:
+        succeeded && o.creditNoteKey === undefined ? ('section_105_receipt' as const) : null,
+      creditNoteWaivedAt: succeeded && o.creditNoteKey === undefined ? completedAt : null,
       initiatedAt: o.initiatedAt,
       completedAt,
       initiatorUserId: user.userId,
