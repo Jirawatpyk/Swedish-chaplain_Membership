@@ -54,6 +54,8 @@ export async function renderChangeRequestHistoryView({ items, nextCursor, isFirs
                   heading of its own. */}
               <Card
                 as="section"
+                // #239: the profile's recent-request rows link to this anchor
+                id={`request-${r.id}`}
                 data-testid="history-item"
                 data-request-id={r.id}
                 aria-labelledby={`history-${r.id}-heading`}

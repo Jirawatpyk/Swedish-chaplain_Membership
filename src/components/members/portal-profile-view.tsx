@@ -375,24 +375,30 @@ export async function renderPortalProfileView({
                       <li
                         key={r.id}
                         data-testid="profile-recent-request"
-                        className="flex flex-col gap-1 border-t border-[var(--aura-border-default)] py-2.5 first:border-t-0 first:pt-0 last:pb-0"
+                        className="border-t border-[var(--aura-border-default)] first:border-t-0"
                       >
-                        <span className="min-w-0 font-medium">
-                          {first ? tDiff(`labels.${first.key}`) : null}
-                          {rest.length > 0 ? (
-                            <span className="font-normal text-[var(--aura-fg-secondary)]">
-                              {' '}
-                              {tHistory('profileCard.moreFields', { count: rest.length })}
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />
-                          <span className="aura-text-table-cell text-[var(--aura-fg-secondary)] tabular-nums">
-                            <span className="sr-only">{tHistory(`profileCard.${date.label}`)} </span>
-                            <time dateTime={date.iso}>{formatLocalisedDate(date.iso, locale, { dateStyle: 'medium' })}</time>
+                        {/* the row opens its request on the history page (a 44px target) */}
+                        <Link
+                          href={`/portal/change-requests#request-${r.id}`}
+                          className="-mx-2 flex min-h-11 flex-col justify-center gap-1 rounded-[var(--aura-radius-sm)] px-2 py-2.5 text-[var(--aura-fg-primary)] no-underline hover:bg-[var(--aura-bg-surface-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)]"
+                        >
+                          <span className="min-w-0 font-medium">
+                            {first ? tDiff(`labels.${first.key}`) : null}
+                            {rest.length > 0 ? (
+                              <span className="font-normal text-[var(--aura-fg-secondary)]">
+                                {' '}
+                                {tHistory('profileCard.moreFields', { count: rest.length })}
+                              </span>
+                            ) : null}
                           </span>
-                        </span>
+                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <ChangeRequestStatusBadge status={changeRequestStatusOf(r)} audience="portal" />
+                            <span className="aura-text-table-cell text-[var(--aura-fg-secondary)] tabular-nums">
+                              <span className="sr-only">{tHistory(`profileCard.${date.label}`)} </span>
+                              <time dateTime={date.iso}>{formatLocalisedDate(date.iso, locale, { dateStyle: 'medium' })}</time>
+                            </span>
+                          </span>
+                        </Link>
                       </li>
                     );
                   })}

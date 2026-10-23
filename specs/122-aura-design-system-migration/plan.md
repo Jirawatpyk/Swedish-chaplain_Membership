@@ -499,3 +499,6 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
     - `aura-text-table-cell` outside a table is used as elsewhere in this file;
     - the website link and the 768px tel link are under 44px (pre-existing);
     - `ul` keeps no `role="list"`.
+- **Rows link to their request** (maintainer, 23 Oct: "แก้เลย"). Each history card has the anchor `request-<id>`, and each profile row is a 44px link to `/portal/change-requests#request-<id>`; the two newest requests are always on the history's first page. D-023 shared commit, failing lines taken first:
+  - `change-request history view > gives each request card an anchor the profile can link to`: "Expected the element to have attribute: id".
+  - `recent change requests … > reads the two most recent requests …`: "Expected the element to have attribute: href".

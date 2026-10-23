@@ -444,6 +444,10 @@ describe('recent change requests on the history card (#239)', () => {
     expect(rows[0]?.textContent).toContain('profileCard.moreFields');
     expect(rows[0]?.querySelector('[data-outcome="approved"]')).not.toBeNull();
     expect(rows[1]?.textContent).toContain('labels.address_line1');
+    // each row opens its request on the history page, a 44px target
+    const link = rows[0]?.querySelector('a');
+    expect(link).toHaveAttribute('href', '/portal/change-requests#request-cr-1');
+    expect(link).toHaveClass('min-h-11');
     expect(rows[1]?.textContent).not.toContain('profileCard.moreFields');
     // the values stay on the history page
     expect(html).not.toContain('New');
