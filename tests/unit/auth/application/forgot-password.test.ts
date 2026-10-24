@@ -109,6 +109,8 @@ function makeDeps(
       html: '<p>reset</p>',
       text: 'reset',
     })) as unknown as ForgotPasswordDeps['buildResetPasswordEmail'],
+    // 125 — inline by default; the route overrides with next/server `after`.
+    defer: (task) => task(),
     now: () => NOW,
     ...overrides,
   };
@@ -284,5 +286,79 @@ describe('forgotPassword — B5 password_reset_email_failed emit', () => {
     expect(limiterCheck).toHaveBeenCalledTimes(2);
     expect(emailSend).not.toHaveBeenCalled();
     expect(deps.audit.append).not.toHaveBeenCalled();
+  });
+
+  // 125 — the WHOLE active-user branch (token tx + email + audit) runs in
+  // `deps.defer` (the route wires next/server `after`), so a registered
+  // address does no awaited work an unknown one skips (FR-016 timing).
+  it('hands the token tx, email send and audit to deps.defer instead of awaiting them', async () => {
+    const deferred: Array<() => Promise<void>> = [];
+    const deps = makeDeps({
+      defer: (task) => {
+        deferred.push(task);
+      },
+    });
+
+    const result = await forgotPassword(
+      { email: FAKE_EMAIL, sourceIp: '203.0.113.7', requestId: 'req-deferred' },
+      deps,
+    );
+
+    expect(result.ok).toBe(true);
+    // Nothing beyond the lookup ran before the response.
+    expect(deps.tokens.invalidateAllUnconsumedForUserInTx).not.toHaveBeenCalled();
+    expect(deps.tokens.createResetInTx).not.toHaveBeenCalled();
+    expect(deps.email.send).not.toHaveBeenCalled();
+    expect(deps.audit.append).not.toHaveBeenCalled();
+    expect(deferred).toHaveLength(1);
+
+    await deferred[0]!();
+    expect(deps.tokens.createResetInTx).toHaveBeenCalledOnce();
+    expect(deps.email.send).toHaveBeenCalledOnce();
+    expect(deps.audit.append).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'password_reset_requested' }),
+    );
+  });
+
+  it('an unknown email never reaches deps.defer', async () => {
+    const defer = vi.fn();
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue(null),
+      } as unknown as ForgotPasswordDeps['users'],
+      defer,
+    });
+    const result = await forgotPassword(
+      { email: FAKE_EMAIL, sourceIp: '203.0.113.9', requestId: 'req-unknown-defer' },
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    expect(defer).not.toHaveBeenCalled();
+  });
+
+  it('a throw inside the deferred task (token tx included) is logged, not propagated', async () => {
+    const { logger } = await import('@/lib/logger');
+    const deferred: Array<() => Promise<void>> = [];
+    const deps = makeDeps({
+      tokens: {
+        invalidateAllUnconsumedForUserInTx: vi.fn().mockRejectedValue(new TypeError('neon down')),
+        createResetInTx: vi.fn(),
+      } as unknown as ForgotPasswordDeps['tokens'],
+      defer: (task) => {
+        deferred.push(task);
+      },
+    });
+
+    await forgotPassword(
+      { email: FAKE_EMAIL, sourceIp: '203.0.113.8', requestId: 'req-deferred-throw' },
+      deps,
+    );
+
+    await expect(deferred[0]!()).resolves.toBeUndefined();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: 'TypeError', requestId: 'req-deferred-throw' }),
+      'forgot_password.deferred_failed',
+    );
+    expect(deps.email.send).not.toHaveBeenCalled();
   });
 });

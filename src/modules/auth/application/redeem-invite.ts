@@ -30,6 +30,7 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 import { db } from '@/lib/db';
 import type { InvitationTokenId } from '@/modules/auth/domain/branded';
@@ -179,7 +180,20 @@ export async function redeemInvite(
     outcome = await db.transaction(async (tx) => {
       // 5a. Consume token FIRST — mirrors W-01 ordering from
       //     reset-password. Replay-window defense in depth.
-      await deps.tokens.markInvitationConsumedInTx(tx, input.token, now);
+      //     125 — guarded consume (live row only): a lost race or a link
+      //     that expired since the pre-tx read aborts here on its own,
+      //     not via the unrelated status='pending' re-read below.
+      const consumed = await deps.tokens.markInvitationConsumedInTx(
+        tx,
+        input.token,
+        now,
+      );
+      if (!consumed) {
+        throw new TxAbort<RedeemInviteError>({
+          code: 'link-invalid',
+          reason: 'used',
+        });
+      }
 
       // 5b. Re-read user inside the tx (locks the row).
       const user = await deps.users.findByIdInTx(tx, invitation.userId);
@@ -244,7 +258,7 @@ export async function redeemInvite(
     // Unexpected DB / network — surface as 500. Log so operators can
     // correlate with Neon dashboards.
     logger.error(
-      { err: e, requestId: input.requestId },
+      { err: errKind(e), requestId: input.requestId },
       'redeem_invite.tx_failed',
     );
     throw e;

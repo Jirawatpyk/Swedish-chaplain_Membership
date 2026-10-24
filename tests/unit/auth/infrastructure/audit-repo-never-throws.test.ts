@@ -78,7 +78,8 @@ describe('audit-repo never-throws contract (A1)', () => {
       eventType: 'sign_in_success',
       requestId: '01HV99999999999999999999',
     });
-    expect(bindings.err).toBeInstanceOf(Error);
+    // 125 — only the error class name is logged (rules.md: `err: errKind(e)`).
+    expect(typeof bindings.err).toBe('string');
     expect(msg).toBe('audit.append.failed');
   });
 

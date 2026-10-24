@@ -321,4 +321,65 @@ describe('integration: change-password (US6)', () => {
     );
     expect(stillVerifies).toBe(true);
   });
+  // 125 — the hash write, session rotation and audit rows are one tx: a fault
+  // after `setPasswordHashInTx` must roll the password back and keep every
+  // old session (never "new password, hijacker still signed in").
+  it('rolls the whole change back when a write inside the tx fails', async () => {
+    const requestId = `it-change-pw-rollback-${Date.now()}`;
+    const { userRepo } = await import(
+      '@/modules/auth/infrastructure/db/user-repo'
+    );
+    const account = await userRepo.findById(user.userId);
+    if (!account) throw new Error('setup: user not found');
+
+    const faultySessions = {
+      ...sessionRepo,
+      deleteByUserIdInTx: async () => {
+        throw new Error('injected: session revoke failed mid-tx');
+      },
+    };
+    await expect(
+      changePassword(
+        {
+          user: account,
+          currentSessionId: currentSessionId as never,
+          currentPassword: user.password,
+          newPassword: `Rollback-${Date.now()}-Xy!2026`,
+          sourceIp: '203.0.113.72',
+          requestId,
+        },
+        {
+          ...defaultChangePasswordDeps,
+          limiter: unlimitedLimiter as never,
+          sessions: faultySessions,
+        },
+      ),
+    ).rejects.toThrow('injected: session revoke failed mid-tx');
+
+    // Password unchanged — the old one still verifies.
+    const userRows = await db
+      .select({ hash: users.passwordHash })
+      .from(users)
+      .where(eq(users.id, user.userId));
+    expect(
+      await argon2Hasher.verify(asPasswordHash(userRows[0]!.hash!), user.password),
+    ).toBe(true);
+
+    // Both old sessions survive and no password_changed row committed.
+    const sessionRows = await db
+      .select()
+      .from(sessionsTable)
+      .where(eq(sessionsTable.userId, user.userId));
+    expect(sessionRows.length).toBe(2);
+    const auditRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.requestId, requestId),
+          eq(auditLog.eventType, 'password_changed'),
+        ),
+      );
+    expect(auditRows).toHaveLength(0);
+  });
 });

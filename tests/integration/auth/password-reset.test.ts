@@ -312,6 +312,45 @@ describe('integration: forgot-password → reset-password happy path', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('link-invalid');
   });
+
+  // 125 — two concurrent redemptions of ONE token: both pass the pre-tx
+  // validity read, but the guarded consume (`consumed_at IS NULL`) lets
+  // exactly one commit; the loser's UPDATE waits on the row lock, then
+  // matches 0 rows and aborts with link-invalid.
+  it('concurrent redemptions of one token: exactly one succeeds', async () => {
+    const capture = makeCapturingEmailBuilder();
+    const forgotResult = await forgotPassword(
+      {
+        email: user.rawEmail,
+        sourceIp: '203.0.113.9',
+        requestId: `it-race-forgot-${Date.now()}`,
+      },
+      {
+        ...defaultForgotPasswordDeps,
+        email: stubEmailSender,
+        limiter: unlimitedLimiter as never,
+        buildResetPasswordEmail: capture.builder as never,
+      },
+    );
+    expect(forgotResult.ok).toBe(true);
+    const plaintext = capture.getPlaintext();
+
+    const redeem = (who: string) =>
+      resetPassword(
+        {
+          token: plaintext,
+          newPassword: `Race-${who}-${Date.now()}-Zq!2026`,
+          sourceIp: '203.0.113.9',
+          requestId: `it-race-${who}-${Date.now()}`,
+        },
+        { ...defaultResetPasswordDeps, limiter: unlimitedLimiter as never },
+      );
+    const results = await Promise.all([redeem('a'), redeem('b')]);
+
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    const loser = results.find((r) => !r.ok);
+    expect(loser && !loser.ok && loser.error.code).toBe('link-invalid');
+  });
 });
 
 describe('integration: forgot-password enumeration safety', () => {
