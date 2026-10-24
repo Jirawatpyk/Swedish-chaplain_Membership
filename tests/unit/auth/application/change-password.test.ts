@@ -21,6 +21,14 @@ vi.mock('@/lib/metrics', () => ({
     passwordResetCompleted: vi.fn(),
   },
 }));
+// 125 — the success path runs in `db.transaction(...)`; the stub hands
+// the callback a sentinel tx so the tests can assert every write got it.
+const { TX } = vi.hoisted(() => ({ TX: { __tx: 'change-password' } }));
+vi.mock('@/lib/db', () => ({
+  db: {
+    transaction: vi.fn(async (fn: (tx: unknown) => unknown) => fn(TX)),
+  },
+}));
 vi.mock('@/lib/auth-deps', () => ({
   defaultSignInDeps: {},
   defaultChangePasswordDeps: {},
@@ -49,6 +57,15 @@ const OLD_SESSION_ID = asSessionToken('old-sess-001');
 const NEW_SESSION_ID = asSessionToken('new-sess-002');
 const PASS_HASH = asPasswordHash('$argon2id$v=19$stored-hash');
 const NEW_HASH = asPasswordHash('$argon2id$v=19$new-hash');
+// 125 — two atomic buckets: the generous policy bucket (HIBP calls) and the
+// strict guess bucket (argon2 verify of the current password).
+const POLICY_KEY = `change-pw-policy:user:${USER_ID}`;
+const GUESS_KEY = `change-pw:user:${USER_ID}`;
+
+/** Keys the limiter was charged on, in call order. */
+function checkedKeys(deps: ChangePasswordDeps): string[] {
+  return vi.mocked(deps.limiter.check).mock.calls.map((c) => c[0]);
+}
 
 function makeUser(overrides: Partial<UserAccount> = {}): UserAccount {
   return {
@@ -93,25 +110,22 @@ function makeDeps(overrides: Partial<ChangePasswordDeps> = {}): ChangePasswordDe
   return {
     users: {
       findByEmail: vi.fn().mockResolvedValue({ user: makeUser(), passwordHash: PASS_HASH }),
-      setPasswordHash: vi.fn().mockResolvedValue(undefined),
+      setPasswordHashInTx: vi.fn().mockResolvedValue(undefined),
     } as unknown as ChangePasswordDeps['users'],
     sessions: {
-      deleteByUserId: vi.fn().mockResolvedValue(1), // 1 session deleted (the current one)
-      create: vi.fn().mockResolvedValue(makeNewSession()),
+      deleteByUserIdInTx: vi.fn().mockResolvedValue(1), // 1 session deleted (the current one)
+      createInTx: vi.fn().mockResolvedValue(makeNewSession()),
     } as unknown as ChangePasswordDeps['sessions'],
     audit: {
       append: vi.fn().mockResolvedValue(undefined),
+      appendInTx: vi.fn().mockResolvedValue(undefined),
     } as unknown as ChangePasswordDeps['audit'],
     hasher: {
       verify: vi.fn().mockResolvedValue(true),
       hash: vi.fn().mockResolvedValue(NEW_HASH),
     } as unknown as ChangePasswordDeps['hasher'],
     limiter: {
-      // B2 — peek default success; check default success (only invoked
-      // on wrong-current branch).
-      peek: vi
-        .fn()
-        .mockResolvedValue({ success: true, reset: Date.now() + 900_000 }),
+      // 125 — an atomic check() is the gate; RateLimiter has no peek.
       check: vi
         .fn()
         .mockResolvedValue({ success: true, reset: Date.now() + 900_000 }),
@@ -134,14 +148,16 @@ describe('changePassword use case', () => {
     vi.mocked(weakPasswordMetricBucket).mockReturnValue(null);
   });
 
-  // ── Rate limiting (B2 — peek-then-consume) ──────────────────────────────
-  it('returns rate-limited when the per-user limiter peek is exhausted', async () => {
+  // ── Rate limiting (125 — atomic check before verify) ────────────────────
+  it('returns rate-limited when the per-user guess bucket is exhausted', async () => {
     const deps = makeDeps({
       limiter: {
-        peek: vi
-          .fn()
-          .mockResolvedValue({ success: false, reset: Date.now() + 10_000 }),
-        check: vi.fn(),
+        // Only the guess bucket is exhausted; the policy bucket has room.
+        check: vi.fn().mockImplementation(async (key: string) =>
+          key === GUESS_KEY
+            ? { success: false, reset: Date.now() + 10_000 }
+            : { success: true, reset: Date.now() + 900_000 },
+        ),
       } as unknown as ChangePasswordDeps['limiter'],
     });
     const result = await changePassword(BASE_INPUT, deps);
@@ -152,18 +168,19 @@ describe('changePassword use case', () => {
         expect(result.error.retryAfterSeconds).toBeGreaterThanOrEqual(1);
       }
     }
-    // peek-only — check() (the consuming op) must NOT fire when peek
-    // already rejected.
-    expect(deps.limiter.check).not.toHaveBeenCalled();
+    // Blocked before argon2 runs.
+    expect(deps.hasher.verify).not.toHaveBeenCalled();
   });
 
   it('uses minimum of 1 second for retryAfterSeconds when reset is in the past', async () => {
     const deps = makeDeps({
       limiter: {
-        peek: vi
-          .fn()
-          .mockResolvedValue({ success: false, reset: Date.now() - 500 }),
-        check: vi.fn(),
+        // Only the guess bucket is exhausted; the policy bucket has room.
+        check: vi.fn().mockImplementation(async (key: string) =>
+          key === GUESS_KEY
+            ? { success: false, reset: Date.now() - 500 }
+            : { success: true, reset: Date.now() + 900_000 },
+        ),
       } as unknown as ChangePasswordDeps['limiter'],
     });
     const result = await changePassword(BASE_INPUT, deps);
@@ -173,16 +190,30 @@ describe('changePassword use case', () => {
     }
   });
 
-  // B2 — success path must NOT consume the rate-limit bucket.
-  it('does NOT call limiter.check() on the happy path (success leaves bucket untouched)', async () => {
-    const deps = makeDeps();
+  // 125 — every attempt consumes the bucket BEFORE argon2 verify, so a
+  // concurrent burst cannot all pass a non-consuming gate.
+  it('charges the policy bucket, then the guess bucket, before verify on the happy path', async () => {
+    const order: string[] = [];
+    const deps = makeDeps({
+      limiter: {
+        check: vi.fn().mockImplementation(async (key: string) => {
+          order.push(`check:${key}`);
+          return { success: true, reset: Date.now() + 900_000 };
+        }),
+      } as unknown as ChangePasswordDeps['limiter'],
+      hasher: {
+        verify: vi.fn().mockImplementation(async () => {
+          order.push('verify');
+          return true;
+        }),
+        hash: vi.fn().mockResolvedValue(NEW_HASH),
+      } as unknown as ChangePasswordDeps['hasher'],
+    });
     const result = await changePassword(BASE_INPUT, deps);
     expect(result.ok).toBe(true);
-    expect(deps.limiter.peek).toHaveBeenCalledTimes(1);
-    expect(deps.limiter.check).not.toHaveBeenCalled();
+    expect(order).toEqual([`check:${POLICY_KEY}`, `check:${GUESS_KEY}`, 'verify']);
   });
 
-  // B2 — wrong-current consumes the rate-limit bucket.
   it('calls limiter.check() exactly once on the wrong-current branch', async () => {
     const deps = makeDeps({
       hasher: {
@@ -193,8 +224,7 @@ describe('changePassword use case', () => {
     const result = await changePassword(BASE_INPUT, deps);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('wrong-current-password');
-    expect(deps.limiter.peek).toHaveBeenCalledTimes(1);
-    expect(deps.limiter.check).toHaveBeenCalledTimes(1);
+    expect(checkedKeys(deps).filter((k) => k === GUESS_KEY)).toHaveLength(1);
   });
 
   // ── User not found / no password hash ─────────────────────────────────────
@@ -287,11 +317,11 @@ describe('changePassword use case', () => {
 
   // ── Success: 0 extra sessions (just the current one) ──────────────────────
   it('succeeds and does NOT emit concurrent_sessions_revoked when only 1 session existed', async () => {
-    // deleteByUserId returns 1 → killed = max(1-1, 0) = 0, no extra audit
+    // deleteByUserIdInTx returns 1 → killed = max(1-1, 0) = 0, no extra audit
     const deps = makeDeps({
       sessions: {
-        deleteByUserId: vi.fn().mockResolvedValue(1),
-        create: vi.fn().mockResolvedValue(makeNewSession()),
+        deleteByUserIdInTx: vi.fn().mockResolvedValue(1),
+        createInTx: vi.fn().mockResolvedValue(makeNewSession()),
       } as unknown as ChangePasswordDeps['sessions'],
     });
     const result = await changePassword(BASE_INPUT, deps);
@@ -299,8 +329,8 @@ describe('changePassword use case', () => {
     if (result.ok) {
       expect(result.value.newSession.id).toBe(NEW_SESSION_ID);
     }
-    const auditCalls = vi.mocked(deps.audit.append).mock.calls.map(
-      (c) => (c[0] as { eventType: string }).eventType,
+    const auditCalls = vi.mocked(deps.audit.appendInTx).mock.calls.map(
+      (c) => (c[1] as { eventType: string }).eventType,
     );
     expect(auditCalls).toContain('password_changed');
     expect(auditCalls).not.toContain('concurrent_sessions_revoked');
@@ -309,53 +339,51 @@ describe('changePassword use case', () => {
 
   // ── Success: multiple sessions → fires concurrent_sessions_revoked ─────────
   it('succeeds and emits concurrent_sessions_revoked when multiple sessions existed', async () => {
-    // deleteByUserId returns 3 → killed = max(3-1, 0) = 2 (2 other devices)
+    // deleteByUserIdInTx returns 3 → killed = max(3-1, 0) = 2 (2 other devices)
     const deps = makeDeps({
       sessions: {
-        deleteByUserId: vi.fn().mockResolvedValue(3),
-        create: vi.fn().mockResolvedValue(makeNewSession()),
+        deleteByUserIdInTx: vi.fn().mockResolvedValue(3),
+        createInTx: vi.fn().mockResolvedValue(makeNewSession()),
       } as unknown as ChangePasswordDeps['sessions'],
     });
     const result = await changePassword(BASE_INPUT, deps);
     expect(result.ok).toBe(true);
-    const auditCalls = vi.mocked(deps.audit.append).mock.calls.map(
-      (c) => (c[0] as { eventType: string }).eventType,
+    const auditCalls = vi.mocked(deps.audit.appendInTx).mock.calls.map(
+      (c) => (c[1] as { eventType: string }).eventType,
     );
     expect(auditCalls).toContain('password_changed');
     expect(auditCalls).toContain('concurrent_sessions_revoked');
 
     // Verify the summary mentions the correct count
-    const revokedCall = vi.mocked(deps.audit.append).mock.calls.find(
-      (c) => (c[0] as { eventType: string }).eventType === 'concurrent_sessions_revoked',
+    const revokedCall = vi.mocked(deps.audit.appendInTx).mock.calls.find(
+      (c) => (c[1] as { eventType: string }).eventType === 'concurrent_sessions_revoked',
     );
-    expect((revokedCall?.[0] as { summary: string }).summary).toContain('2 session(s)');
+    expect((revokedCall?.[1] as { summary: string }).summary).toContain('2 session(s)');
     expect(authMetrics.passwordChanged).toHaveBeenCalledWith('self');
   });
 
-  it('works when deleteByUserId returns 0 (edge case)', async () => {
+  it('works when deleteByUserIdInTx returns 0 (edge case)', async () => {
     // 0 sessions deleted → killed = max(0-1, 0) = 0
     const deps = makeDeps({
       sessions: {
-        deleteByUserId: vi.fn().mockResolvedValue(0),
-        create: vi.fn().mockResolvedValue(makeNewSession()),
+        deleteByUserIdInTx: vi.fn().mockResolvedValue(0),
+        createInTx: vi.fn().mockResolvedValue(makeNewSession()),
       } as unknown as ChangePasswordDeps['sessions'],
     });
     const result = await changePassword(BASE_INPUT, deps);
     expect(result.ok).toBe(true);
-    const auditCalls = vi.mocked(deps.audit.append).mock.calls.map(
-      (c) => (c[0] as { eventType: string }).eventType,
+    const auditCalls = vi.mocked(deps.audit.appendInTx).mock.calls.map(
+      (c) => (c[1] as { eventType: string }).eventType,
     );
     expect(auditCalls).not.toContain('concurrent_sessions_revoked');
   });
 
   // ── N1 (Round 3): MalformedHashError branch ─────────────────────────────
   // When the stored hash is corrupted, change-password MUST:
-  //   1. NOT consume the rate-limit bucket (peek already passed; this
-  //      is not a wrong-current event)
-  //   2. NOT increment any failed-count (change-password has no
-  //      failed-count, but limiter.check is the equivalent)
-  //   3. Emit `password_malformed_hash_detected` audit (operator signal)
-  //   4. Return `wrong-current-password` (UX consistent with sign-in's
+  //   1. Consume exactly the one gate check() every attempt pays (125);
+  //      no second debit for the malformed hash
+  //   2. Emit `password_malformed_hash_detected` audit (operator signal)
+  //   3. Return `wrong-current-password` (UX consistent with sign-in's
   //      invalid-credentials — user can use /forgot-password to fix)
   // Pre-F3 the throw bubbled to the route's B3 catch → opaque 500 +
   // zero audit trail.
@@ -368,10 +396,6 @@ describe('changePassword use case', () => {
       success: true,
       reset: Date.now() + 900_000,
     });
-    const peekSpy = vi.fn().mockResolvedValue({
-      success: true,
-      reset: Date.now() + 900_000,
-    });
     const deps = makeDeps({
       hasher: {
         verify: vi.fn().mockRejectedValue(
@@ -381,7 +405,6 @@ describe('changePassword use case', () => {
       } as unknown as ChangePasswordDeps['hasher'],
       audit: { append: auditSpy } as unknown as ChangePasswordDeps['audit'],
       limiter: {
-        peek: peekSpy,
         check: checkSpy,
       } as unknown as ChangePasswordDeps['limiter'],
     });
@@ -392,10 +415,8 @@ describe('changePassword use case', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('wrong-current-password');
 
-    // peek ran (gate), check did NOT (bucket only debits on real
-    // wrong-current, not on DB-corruption malformed-hash)
-    expect(peekSpy).toHaveBeenCalledTimes(1);
-    expect(checkSpy).not.toHaveBeenCalled();
+    // The gate check() ran once; no extra debit.
+    expect(checkSpy.mock.calls.filter((c) => c[0] === GUESS_KEY)).toHaveLength(1);
 
     // Dedicated audit event emitted
     expect(auditSpy).toHaveBeenCalledWith(
@@ -427,19 +448,113 @@ describe('changePassword use case', () => {
   });
 
   // ── Correct wiring of calls ────────────────────────────────────────────────
-  it('calls setPasswordHash with the new hash and now timestamp', async () => {
+  it('calls setPasswordHashInTx with the tx, the new hash and now timestamp', async () => {
     const deps = makeDeps();
     await changePassword(BASE_INPUT, deps);
-    expect(deps.users.setPasswordHash).toHaveBeenCalledWith(USER_ID, NEW_HASH, NOW);
+    expect(deps.users.setPasswordHashInTx).toHaveBeenCalledWith(TX, USER_ID, NEW_HASH, NOW);
   });
 
-  it('creates a new session with the correct userId and sourceIp', async () => {
+  it('creates a new session in the same tx with the correct userId and sourceIp', async () => {
     const deps = makeDeps();
     await changePassword(BASE_INPUT, deps);
-    expect(deps.sessions.create).toHaveBeenCalledWith({
+    expect(deps.sessions.createInTx).toHaveBeenCalledWith(TX, {
       userId: USER_ID,
       sourceIp: BASE_INPUT.sourceIp,
       now: NOW,
     });
+  });
+
+  // 125 — password write, session revoke, new session and audit commit
+  // together: a failure in any step must surface (and roll back), never
+  // leave the password changed with the old sessions alive.
+  it('runs every success-path write inside one db.transaction and propagates a failure', async () => {
+    const { db } = await import('@/lib/db');
+    const deps = makeDeps({
+      sessions: {
+        deleteByUserIdInTx: vi.fn().mockRejectedValue(new Error('neon: connection dropped')),
+        createInTx: vi.fn(),
+      } as unknown as ChangePasswordDeps['sessions'],
+    });
+    await expect(changePassword(BASE_INPUT, deps)).rejects.toThrow('neon: connection dropped');
+    expect(db.transaction).toHaveBeenCalledOnce();
+    expect(deps.users.setPasswordHashInTx).toHaveBeenCalledWith(TX, USER_ID, NEW_HASH, NOW);
+    expect(deps.sessions.createInTx).not.toHaveBeenCalled();
+    expect(deps.audit.appendInTx).not.toHaveBeenCalled();
+  });
+
+  // 125 (round 2) — a rejected NEW password (same / weak) is not a guess of
+  // the current one, so it must not spend the brute-force budget.
+  it('does not debit the limiter when the new password equals the current one', async () => {
+    const deps = makeDeps();
+    const result = await changePassword(
+      { ...BASE_INPUT, currentPassword: 'SamePassword!123', newPassword: 'SamePassword!123' },
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('same-password');
+    expect(checkedKeys(deps)).not.toContain(GUESS_KEY);
+    expect(deps.hasher.verify).not.toHaveBeenCalled();
+  });
+
+  it('does not debit the limiter when the policy rejects the new password', async () => {
+    vi.mocked(checkPasswordPolicy).mockResolvedValue({
+      ok: false,
+      errors: [{ code: 'too-short' as const, minLength: 12 }],
+      strength: 'weak',
+    });
+    const deps = makeDeps();
+    const result = await changePassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('weak-password');
+    expect(checkedKeys(deps)).not.toContain(GUESS_KEY);
+    expect(deps.hasher.verify).not.toHaveBeenCalled();
+  });
+
+  // 125 (security-engineer N1) — the policy steps make an outbound HIBP call,
+  // so they sit behind their own, more generous atomic bucket: a session
+  // holder cannot drive unlimited HIBP traffic (which fails open, T-11).
+  it('charges the policy bucket before the HIBP-backed policy check', async () => {
+    const order: string[] = [];
+    vi.mocked(checkPasswordPolicy).mockImplementation(async () => {
+      order.push('policy');
+      return { ok: true, errors: [], strength: 'strong' };
+    });
+    const deps = makeDeps({
+      limiter: {
+        check: vi.fn().mockImplementation(async (key: string) => {
+          order.push(`check:${key}`);
+          return { success: true, reset: Date.now() + 900_000 };
+        }),
+      } as unknown as ChangePasswordDeps['limiter'],
+    });
+    await changePassword(BASE_INPUT, deps);
+    expect(order.slice(0, 2)).toEqual([`check:${POLICY_KEY}`, 'policy']);
+    expect(deps.limiter.check).toHaveBeenCalledWith(POLICY_KEY, 30, 15 * 60);
+  });
+
+  it('returns rate-limited without calling the policy when the policy bucket is exhausted', async () => {
+    const deps = makeDeps({
+      limiter: {
+        check: vi.fn().mockImplementation(async (key: string) =>
+          key === POLICY_KEY
+            ? { success: false, reset: Date.now() + 60_000 }
+            : { success: true, reset: Date.now() + 900_000 },
+        ),
+      } as unknown as ChangePasswordDeps['limiter'],
+    });
+    const result = await changePassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('rate-limited');
+      // Retry-After comes from the POLICY bucket's reset (~60 s), not the
+      // guess bucket's (~900 s).
+      if (result.error.code === 'rate-limited') {
+        expect(result.error.retryAfterSeconds).toBeGreaterThanOrEqual(59);
+        expect(result.error.retryAfterSeconds).toBeLessThanOrEqual(60);
+      }
+    }
+    expect(vi.mocked(checkPasswordPolicy)).not.toHaveBeenCalled();
+    expect(checkedKeys(deps)).not.toContain(GUESS_KEY);
+    expect(deps.hasher.verify).not.toHaveBeenCalled();
   });
 });

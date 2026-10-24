@@ -145,6 +145,9 @@ export const defaultForgotPasswordDeps: ForgotPasswordDeps = {
   limiter: rateLimiter,
   email: emailSender,
   buildResetPasswordEmail,
+  // 125 — inline by default (scripts, tests); the forgot-password route
+  // overrides it with next/server `after` so the work runs post-response.
+  defer: (task) => task(),
   now: wallClock,
 };
 

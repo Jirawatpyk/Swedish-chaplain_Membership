@@ -16,6 +16,7 @@ import {
   inArray,
   isNull,
   lt,
+  lte,
   notExists,
   or,
   sql,
@@ -116,6 +117,15 @@ export interface UserRepo {
   clearFailedCount(id: UserId): Promise<void>;
   setLocked(id: UserId, until: Date): Promise<void>;
   clearLock(id: UserId): Promise<void>;
+  /**
+   * Reset `failed_sign_in_count` + `locked_until` ONLY while the lock has
+   * expired at `now` (125, L1). Sign-in's post-expiry reset must not use
+   * the unconditional `clearFailedCount`: a request that read an expired
+   * lock could otherwise wipe a fresh lock a parallel burst set meanwhile.
+   * Returns whether THIS call reset the row; `false` = no expired lock was
+   * there any more (already reset, or re-locked by a parallel burst).
+   */
+  clearExpiredLock(id: UserId, now: Date): Promise<boolean>;
   countActiveAdministrators(roles: readonly Role[]): Promise<number>;
   createPending(args: {
     email: EmailAddress;
@@ -396,6 +406,15 @@ export const userRepo: UserRepo = {
 
   async setLocked(id: UserId, until: Date): Promise<void> {
     await db.update(users).set({ lockedUntil: until }).where(eq(users.id, id));
+  },
+
+  async clearExpiredLock(id: UserId, now: Date): Promise<boolean> {
+    const rows = await db
+      .update(users)
+      .set({ failedSignInCount: 0, lockedUntil: null })
+      .where(and(eq(users.id, id), lte(users.lockedUntil, now)))
+      .returning({ id: users.id });
+    return rows.length === 1;
   },
 
   async clearLock(id: UserId): Promise<void> {

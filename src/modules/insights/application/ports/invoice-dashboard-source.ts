@@ -89,6 +89,12 @@ export interface OverdueInvoiceRow {
   readonly dueDate: string;
   readonly daysPastDue: number;
   readonly amountSatang: bigint;
+  /** What the invoice is for (the boards' For column). */
+  readonly subject: 'membership' | 'event';
+  /** A membership invoice's plan year; null for an event invoice. */
+  readonly planYear: number | null;
+  /** An event invoice's event name, from the tenant's own event; null otherwise or when missing. */
+  readonly eventName: string | null;
 }
 
 export interface InvoiceDashboardSource {
@@ -140,4 +146,9 @@ export interface InvoiceDashboardSource {
    * about the tenant, never about the filters (US5.2).
    */
   hasNonDraftInvoice(ctx: TenantContext): Promise<boolean>;
+  /**
+   * Drafts under the type / plan / origin filters — the rows Needs attention
+   * splits into manual and auto-renewal — for the header's "drafts not counted".
+   */
+  draftCount(ctx: TenantContext, filters: InvoiceDashboardFilters): Promise<number>;
 }

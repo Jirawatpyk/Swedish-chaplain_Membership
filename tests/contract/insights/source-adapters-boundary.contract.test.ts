@@ -38,6 +38,7 @@ import {
   paymentsTable,
   refundsTable,
 } from '@/modules/payments';
+import { eventsTable } from '@/modules/events';
 
 // The F9 adapters under contract + the F9-owned ports they must satisfy.
 import { invoiceSourceAdapter } from '@/modules/insights/infrastructure/sources/invoice-source-adapter';
@@ -162,6 +163,12 @@ describe('F9 inter-module boundary contract [T017a / analyze R2-M1]', () => {
         expect(typeof table).toBe('object');
         expect(typeof table.tenantId).toBe('object');
       }
+    });
+
+    it('exports the events table the Oldest overdue card names event invoices from', () => {
+      expect(typeof eventsTable).toBe('object');
+      expect(typeof eventsTable.tenantId).toBe('object');
+      expect(typeof eventsTable.name).toBe('object');
     });
 
     it('exports the tax-point expression as SQL', () => {

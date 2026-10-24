@@ -59,6 +59,7 @@ const TILES = {
   collectedThisMonth: { amountSatang: 21_400_000n, invoiceCount: 12, range: { from: '2026-10-01', to: '2026-10-19' }, toDate: true as const },
   collectedInFiscalYear: { amountSatang: 311_000_000n, invoiceCount: 140, range: { from: '2026-01-01', to: '2026-10-19' }, toDate: true },
   anyNonDraftInvoice: true,
+  draftsNotCounted: 0,
 };
 
 const pending = <T,>() => Promise.resolve({ ok: true as const, value: {} as T });
@@ -92,6 +93,16 @@ async function view(over: { tiles?: unknown; canWrite?: boolean; type?: 'all' | 
     </NextIntlClientProvider>,
   );
 }
+
+describe('renderInvoiceDashboardView — header', () => {
+  it('says how many drafts the figures leave out, as the boards do; nothing at 0', async () => {
+    const { unmount } = await view({ tiles: { ok: true, value: { ...TILES, draftsNotCounted: 3 } } });
+    expect(screen.getByText(/· 3 drafts not counted$/)).toBeInTheDocument();
+    unmount();
+    await view();
+    expect(screen.queryByText(/drafts? not counted/)).toBeNull();
+  });
+});
 
 describe('renderInvoiceDashboardView — tiles', () => {
   it('Outstanding and Overdue link to the list they count, carrying the filters', async () => {

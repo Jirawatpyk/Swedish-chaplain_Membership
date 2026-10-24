@@ -77,6 +77,8 @@ function tiles(events: boolean, a: InvoiceDashboardAging, any = true): InvoiceDa
       toDate: true,
     },
     anyNonDraftInvoice: any,
+    // The boards' header note, "· 3 drafts not counted".
+    draftsNotCounted: any ? 3 : 0,
   };
 }
 
@@ -111,6 +113,10 @@ function oldest(events: boolean, canWrite: boolean): InvoiceDashboardOldestOverd
       dueDate: new Date(Date.UTC(2026, 9, 19 - (days[i] ?? 30))).toISOString().slice(0, 10),
       daysPastDue: days[i] ?? 30,
       amountSatang: events ? 1_070_000n : (amounts[i] ?? 1_070_000n),
+      // The boards' For column.
+      subject: events ? ('event' as const) : ('membership' as const),
+      planYear: events ? null : 2026,
+      eventName: events ? 'Midsommar Gala 2026' : null,
     })),
   };
 }
