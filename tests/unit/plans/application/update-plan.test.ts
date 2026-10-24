@@ -221,6 +221,21 @@ describe('updatePlan', () => {
     });
   });
 
+  // 126 #6 — a soft-deleted plan is not editable (findOne returns it).
+  describe('soft-deleted plan', () => {
+    it('returns not_found and never writes', async () => {
+      const planRepo = makePlanRepo({
+        findOne: { ...EXISTING_PLAN, is_active: false, deleted_at: new Date('2026-03-01T00:00:00Z') },
+      });
+      const deps = makeDeps({ planRepo });
+
+      const result = await updatePlan(BASE_INPUT, deps);
+
+      expect(result).toEqual({ ok: false, error: { type: 'not_found' } });
+      expect(planRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
   // 3. Invalid patch — shape fault → invalid_body
   describe('invalid patch — shape fault', () => {
     it('returns invalid_body for a bad sort_order value', async () => {
