@@ -37,6 +37,14 @@ vi.mock('@/app/(staff)/admin/invoices/_components/record-payment-dialog', () => 
   ),
 }));
 
+// The animated amount reads matchMedia (its own tests cover it); render its
+// final whole-baht text, as the real component's sr-only copy reads.
+vi.mock('@/components/dashboard/count-up', () => ({
+  CountUp: ({ value, locale }: { value: number; locale: string }) => (
+    <span>{new Intl.NumberFormat(locale, { style: 'currency', currency: 'THB', maximumFractionDigits: 0 }).format(value)}</span>
+  ),
+}));
+
 import { AgingCard } from '@/app/(staff)/admin/finance/_components/aging-card';
 import { AttentionCard } from '@/app/(staff)/admin/finance/_components/attention-card';
 import { OldestOverdueCard } from '@/app/(staff)/admin/finance/_components/oldest-overdue-card';
@@ -307,7 +315,9 @@ describe('TrendCard', () => {
       'October 202620.00 THB10.00 THB',
       `November 2026${D.trend.notYet}${D.trend.notYet}`,
     ]);
-    expect(screen.getByTestId('trend-total-billed')).toHaveTextContent('120.00 THB');
+    // Spec line 81 / board: a card headline is whole baht, written like the tiles.
+    expect(screen.getByTestId('trend-total-billed')).toHaveTextContent('THB 120');
+    expect(screen.getByTestId('trend-total-billed')).not.toHaveTextContent('.00');
     expect(screen.getByText(/^FY 2026 by month · billed by issue date, voided invoices left out/)).toBeInTheDocument();
     expect(document.body.innerHTML).not.toMatch(/revenue|net of credit notes/i);
   });

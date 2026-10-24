@@ -11,6 +11,7 @@
 import { getTranslations } from 'next-intl/server';
 import { Card } from '@jirawatpyk/aura-react/server';
 import { ChartDataTable } from '@/components/dashboard/chart-data-table';
+import { CountUp } from '@/components/dashboard/count-up';
 import type { InvoiceDashboardResult, InvoiceDashboardTrend } from '@/modules/insights';
 import { formatAmount, formatMonthLong, formatMonthShort, formatMonthYear, toBaht } from '../_lib/dashboard-format';
 import { BILLED_SERIES, COLLECTED_SERIES } from '../_lib/trend-series';
@@ -104,13 +105,14 @@ export async function TrendCard({
         <div>
           <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('trend.totalBilled', { range })}</dt>
           <dd className="m-0 text-lg font-semibold tabular-nums" data-testid="trend-total-billed">
-            {formatAmount(billedTotal)}
+            {/* A card headline: whole baht like the tiles, compact on a phone (spec § Figure definitions). */}
+            <CountUp value={toBaht(billedTotal)} locale={locale} variant="thb" compactBelowSm />
           </dd>
         </div>
         <div>
           <dt className="text-xs text-[var(--aura-fg-secondary)]">{t('trend.totalCollected', { range })}</dt>
           <dd className="m-0 text-lg font-semibold tabular-nums" data-testid="trend-total-collected">
-            {formatAmount(collectedTotal)}
+            <CountUp value={toBaht(collectedTotal)} locale={locale} variant="thb" compactBelowSm />
           </dd>
         </div>
       </dl>
