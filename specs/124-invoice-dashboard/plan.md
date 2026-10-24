@@ -153,6 +153,12 @@ Built in four subagent batches (A migration, B pure code, C money SQL + loaders,
 - `invoice-dashboard.spec.ts` 8/8 on chromium and mobile-chrome on the same server.
 - Last follow-ups (24 Oct, branch `124-portal-alert-clock-palette-keywords`): the `/portal/invoices` membership alert takes the page's Bangkok `today` (the list filter's and badges' day; RED `25e2d70a6`); ⌘K navigate entries take English `keywords` like actions, and the invoice dashboard's are revenue, collected, collections, billed, billing, aging, ageing, receivables, finance, and the invoice list's overdue, unpaid, outstanding (UX pass: those mean the list) (RED in `search-plans.test.ts`).
 
+### Board parity, re-checked on prod (24 Oct, branch `124-dashboard-board-parity`)
+
+- Slice 3's "the 7 boards match" (spec US6 Done-when) was proved by layout screenshots and missed three board elements, found by comparing the boards' text with prod: the trend card's headline in 2 decimals (spec § Figure definitions says whole baht), the Oldest overdue **For** column, and the header's "· N drafts not counted". Fixed as D-q, D-r, D-s; retro in `docs/retro.md`, and `.claude/rules/ui-aura.md` now asks for a text-level comparison.
+- RED → GREEN: the trend headline (D-023, one commit with the failing run recorded); `9e4130fa3` → `fbee32eb0` (For: loader, adapter join on the tenant's own event, card); `575fcc872` → `13eb54cfe` (drafts count: tiles loader, `drafts` query, header). The SQL-shape test caught the first draft of the events join (joined on the invoice's tenant column, not its own `tenant_id = $n`).
+- Verify on :3401 preview views against the board text: header "As of 19 Oct 2026, 09:30 · FY 2026 (Jan–Dec) · all amounts incl. VAT · 3 drafts not counted" (board identical); For "Membership 2026" / Events "Midsommar Gala 2026", one line at 1280; trend totals "THB 3,530,000"; 375 px `innerWidth` = `scrollWidth` 375, the phone card shows For; 768 px For and Due step aside, no overflow; th: "ค่าสมาชิกปี 2569", "ไม่นับฉบับร่าง 3 ใบ", "฿3,530,000", no missing key.
+
 ## Rollout
 
 1. Slices merge in order, each on the user's word (D-006). Each is safe to deploy alone: slice 1 is additive, slice 2 is a migration plus unused code, slice 3 is behind `FEATURE_INVOICE_DASHBOARD` (default off).

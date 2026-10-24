@@ -37,6 +37,22 @@ vi.mock('@/app/(staff)/admin/invoices/_components/record-payment-dialog', () => 
   ),
 }));
 
+// The real CountUp renders; it reads matchMedia, which jsdom lacks. Reduced
+// motion makes it paint the final figure at once.
+Object.defineProperty(window, 'matchMedia', {
+  configurable: true,
+  value: (query: string) => ({
+    matches: query.includes('prefers-reduced-motion: reduce'),
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  }),
+});
+
 import { AgingCard } from '@/app/(staff)/admin/finance/_components/aging-card';
 import { AttentionCard } from '@/app/(staff)/admin/finance/_components/attention-card';
 import { OldestOverdueCard } from '@/app/(staff)/admin/finance/_components/oldest-overdue-card';
@@ -194,10 +210,22 @@ describe('AttentionCard', () => {
 
 describe('OldestOverdueCard', () => {
   const rows = [
-    { invoiceId: 'inv-a', documentNumber: 'SC-000071', buyerName: 'Nordic Freight', dueDate: '2026-06-12', daysPastDue: 129, amountSatang: 2_996_000n },
-    { invoiceId: 'inv-b', documentNumber: 'SC-000088', buyerName: 'Siam Nordic', dueDate: '2026-07-01', daysPastDue: 110, amountSatang: 1_070_000n },
+    { invoiceId: 'inv-a', documentNumber: 'SC-000071', buyerName: 'Nordic Freight', dueDate: '2026-06-12', daysPastDue: 129, amountSatang: 2_996_000n, subject: 'membership' as const, planYear: 2026, eventName: null },
+    { invoiceId: 'inv-b', documentNumber: 'SC-000088', buyerName: 'Siam Nordic', dueDate: '2026-07-01', daysPastDue: 110, amountSatang: 1_070_000n, subject: 'event' as const, planYear: null, eventName: 'Midsommar Gala 2026' },
   ];
   const base = { overdueCount: 9, filtered: false, listFilters: {}, locale: 'en', today: '2026-10-19' };
+
+  it('the For column names the plan year or the event, as the boards draw it', async () => {
+    mount(await OldestOverdueCard({ ...base, result: ok({ rows, canRecordPayment: true }) }));
+    expect(screen.getByRole('columnheader', { name: D.oldest.for })).toBeInTheDocument();
+    expect(screen.getAllByText('Membership 2026').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Midsommar Gala 2026').length).toBeGreaterThan(0);
+    // one line, as the boards draw it; steps aside with Due in a 640-800 px grid
+    const cell = screen.getAllByText('Membership 2026')[0]!.closest('td')!;
+    expect(cell).toHaveClass('is-nowrap', '@min-[640px]/aura-tbl:@max-[800px]/aura-tbl:hidden');
+    // a free-text event name wraps between words, so a long one never widens the table
+    expect(screen.getAllByText('Midsommar Gala 2026')[0]!.closest('td')).not.toHaveClass('is-nowrap');
+  });
 
   it('an admin gets Record payment per row; focus after a payment goes to the next row, from the last to the card title', async () => {
     mount(await OldestOverdueCard({ ...base, result: ok({ rows, canRecordPayment: true }) }));
@@ -307,7 +335,11 @@ describe('TrendCard', () => {
       'October 202620.00 THB10.00 THB',
       `November 2026${D.trend.notYet}${D.trend.notYet}`,
     ]);
-    expect(screen.getByTestId('trend-total-billed')).toHaveTextContent('120.00 THB');
+    // Spec line 81 / board: a card headline is whole baht, written like the tiles.
+    // The accessible copy: the compact phone copy always shows the currency, so
+    // only this one tells the THB variant from a bare integer.
+    const billed = screen.getByTestId('trend-total-billed').querySelector('.sr-only');
+    expect(billed?.textContent?.replace(/\s/g, ' ')).toBe('THB 120');
     expect(screen.getByText(/^FY 2026 by month · billed by issue date, voided invoices left out/)).toBeInTheDocument();
     expect(document.body.innerHTML).not.toMatch(/revenue|net of credit notes/i);
   });
