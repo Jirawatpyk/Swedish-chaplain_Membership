@@ -13,6 +13,7 @@
 import { Resend } from 'resend';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { type Result, err, ok } from '@/lib/result';
 
 const resend = new Resend(env.resend.apiKey);
@@ -125,7 +126,7 @@ class ResendEmailSender implements EmailSender {
         }
       } catch (error) {
         lastError = error;
-        logger.warn({ err: error, attempt }, 'resend send failed, will retry');
+        logger.warn({ err: errKind(error), attempt }, 'resend send failed, will retry');
       }
 
       const delayMs = RETRY_DELAYS_MS[attempt];

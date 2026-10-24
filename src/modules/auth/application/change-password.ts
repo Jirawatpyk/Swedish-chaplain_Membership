@@ -2,18 +2,23 @@
  * change-password use case (T151, spec US6 AS1-AS3, contracts § 5).
  *
  * Algorithm:
- *   1. Rate-limit by USER (5 wrong-current / 15 min) — the key is
- *      `change-pw:user:<id>` so IP pivots don't bypass the counter.
- *   2. Look up the current user (caller provides session, route
- *      handler re-hydrates via getCurrentSession).
- *   3. Verify `currentPassword` against the stored hash. On miss,
- *      bump the per-user rate counter and return wrong-current.
- *   4. Reject if `newPassword === currentPassword` (same-password).
+ *   0. Rate-limit the policy steps by USER (30 / 15 min, atomic) — they
+ *      make an outbound HIBP call (125, N1).
+ *   1. Reject if `newPassword === currentPassword` (same-password).
  *      This short-circuits BEFORE HIBP so the user never sees the
  *      breached-password error for their own current (otherwise-OK)
  *      password.
- *   5. Run the password policy on `newPassword` (length + common +
+ *   2. Run the password policy on `newPassword` (length + common +
  *      HIBP). Weak → weak-password with which rule failed.
+ *      (125 — steps 1–2 run before the limiter: a rejected NEW password
+ *      is not a guess of the current one.)
+ *   3. Rate-limit by USER (5 attempts / 15 min, debited atomically
+ *      before verify) — the key is `change-pw:user:<id>` so IP pivots
+ *      don't bypass the counter.
+ *   4. Look up the current user (caller provides session, route
+ *      handler re-hydrates via getCurrentSession).
+ *   5. Verify `currentPassword` against the stored hash. On miss,
+ *      return wrong-current.
  *   6. Hash and persist the new password, update
  *      `last_password_changed_at`.
  *   7. Rotate the current session: create a fresh session id, delete
@@ -29,6 +34,9 @@ import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { hashId } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
+// Owner-role tx — `users` / `sessions` are cross-tenant F1 tables (same
+// Path-C rationale as reset-password.ts).
+import { db } from '@/lib/db';
 import type { UserAccount } from '@/modules/auth/domain/user';
 import type { Session } from '@/modules/auth/domain/session';
 import {
@@ -73,6 +81,10 @@ export type ChangePasswordError =
 // --- Tunables ----------------------------------------------------------------
 
 const RATE_LIMIT_PER_USER = { max: 5, windowSeconds: 15 * 60 };
+// 125 (N1) — caps the same-password + HIBP-backed policy steps, which run
+// before the guess bucket. Generous: a rejected new password is a typo, not
+// a guess, but each one is an outbound HIBP call (and HIBP fails open, T-11).
+const POLICY_RATE_LIMIT_PER_USER = { max: 30, windowSeconds: 15 * 60 };
 
 // --- Dependencies ------------------------------------------------------------
 
@@ -94,24 +106,61 @@ export async function changePassword(
   input: ChangePasswordInput,
   deps: ChangePasswordDeps = defaultChangePasswordDeps,
 ): Promise<Result<ChangePasswordSuccess, ChangePasswordError>> {
-  // 1. Per-user rate limit — peek-then-consume (B2). Peek to gate;
-  //    the bucket is only debited on the wrong-current branch below,
-  //    so legitimate password rotations do not trip the cap. See
-  //    review-20260517-post-ship-hardening.md § B2 for rationale.
-  const bucketKey = `change-pw:user:${input.user.id}`;
-  const peek = await deps.limiter.peek(
-    bucketKey,
-    RATE_LIMIT_PER_USER.max,
-    RATE_LIMIT_PER_USER.windowSeconds,
+  // 0. Policy-step rate limit (125, N1) — its own atomic bucket so a
+  //    session holder cannot drive unlimited HIBP calls through steps 1–2.
+  const policyLimit = await deps.limiter.check(
+    `change-pw-policy:user:${input.user.id}`,
+    POLICY_RATE_LIMIT_PER_USER.max,
+    POLICY_RATE_LIMIT_PER_USER.windowSeconds,
   );
-  if (!peek.success) {
+  if (!policyLimit.success) {
     return err({
       code: 'rate-limited',
-      retryAfterSeconds: retryAfterSeconds(peek),
+      retryAfterSeconds: retryAfterSeconds(policyLimit),
     });
   }
 
-  // 2. Re-fetch to get the stored passwordHash (the user param has
+  // 1. Same-password guard (short-circuits before HIBP). 125 — steps 1–2
+  //    judge only the NEW password, so they run BEFORE the guess limiter:
+  //    a rejected new password is not a guess of the current one and must
+  //    not spend the brute-force budget. They reveal nothing about the
+  //    current password (a plain string compare + the public policy).
+  if (input.newPassword === input.currentPassword) {
+    authMetrics.passwordWeakRejected('same');
+    return err({ code: 'same-password' });
+  }
+
+  // 2. Policy check
+  const policy = await deps.checkPolicy(input.newPassword);
+  if (!policy.ok) {
+    // Shared bucket mapping — see reset-password.ts for the rationale.
+    // The `'same'` bucket is handled separately above (step 1) because
+    // it's not a policy error but a short-circuit before HIBP.
+    const bucket = weakPasswordMetricBucket(policy.errors);
+    if (bucket) authMetrics.passwordWeakRejected(bucket);
+    return err({ code: 'weak-password', errors: policy.errors });
+  }
+
+  // 3. Per-user rate limit — an atomic check() that debits every attempt
+  //    that reaches argon2 verify (125). The B2 peek-then-consume gate
+  //    (review-20260517-post-ship-hardening.md § B2) spared legitimate
+  //    rotations a debit, but a parallel burst of guesses all passed
+  //    the non-consuming peek before any wrong guess was charged. The
+  //    trade-off: a user who completes 5 changes in 15 min is
+  //    rate-limited on the 6th — acceptable for a rare action.
+  const limit = await deps.limiter.check(
+    `change-pw:user:${input.user.id}`,
+    RATE_LIMIT_PER_USER.max,
+    RATE_LIMIT_PER_USER.windowSeconds,
+  );
+  if (!limit.success) {
+    return err({
+      code: 'rate-limited',
+      retryAfterSeconds: retryAfterSeconds(limit),
+    });
+  }
+
+  // 4. Re-fetch to get the stored passwordHash (the user param has
   //    domain-level info but not the secret).
   const found = await deps.users.findByEmail(input.user.email);
   if (!found || !found.passwordHash) {
@@ -120,7 +169,7 @@ export async function changePassword(
     return err({ code: 'wrong-current-password' });
   }
 
-  // 3. Verify current password. Round 2 (post-ship review § E-HIGH1
+  // 5. Verify current password. Round 2 (post-ship review § E-HIGH1
   //    silent-failure, 2026-05-17) — catch
   //    MalformedHashError separately so a DB-corruption incident does
   //    NOT bubble as an opaque 500 with no audit row. Pre-fix the
@@ -152,15 +201,6 @@ export async function changePassword(
     throw verifyError;
   }
   if (!currentOk) {
-    // 3a. NOW consume the bucket (B2). Wrong-current is the only
-    //     event that should count against the user's brute-force
-    //     budget. If `check` here pushes the count over `max`, the
-    //     NEXT call's peek will return rate-limited.
-    await deps.limiter.check(
-      bucketKey,
-      RATE_LIMIT_PER_USER.max,
-      RATE_LIMIT_PER_USER.windowSeconds,
-    );
     logger.warn(
       { userIdHash: hashId(input.user.id), requestId: input.requestId },
       'change_password.wrong_current',
@@ -181,63 +221,52 @@ export async function changePassword(
     return err({ code: 'wrong-current-password' });
   }
 
-  // 4. Same-password guard (short-circuits before HIBP)
-  if (input.newPassword === input.currentPassword) {
-    authMetrics.passwordWeakRejected('same');
-    return err({ code: 'same-password' });
-  }
-
-  // 5. Policy check
-  const policy = await deps.checkPolicy(input.newPassword);
-  if (!policy.ok) {
-    // Shared bucket mapping — see reset-password.ts for the rationale.
-    // The `'same'` bucket is handled separately above (step 4) because
-    // it's not a policy error but a short-circuit before HIBP.
-    const bucket = weakPasswordMetricBucket(policy.errors);
-    if (bucket) authMetrics.passwordWeakRejected(bucket);
-    return err({ code: 'weak-password', errors: policy.errors });
-  }
-
-  // 6. Hash + persist
+  // 6. Hash (pre-tx — argon2id is CPU-bound, see reset-password.ts).
   const now = deps.now();
   const newHash = await deps.hasher.hash(input.newPassword);
-  await deps.users.setPasswordHash(input.user.id, newHash, now);
 
-  // 7. Rotate session — delete ALL existing sessions for this user
-  //    (including the current one the caller is using) and create a
-  //    fresh one. The caller (route handler) sets the new cookie so
-  //    the user stays signed in on their current device.
+  // 7. Atomic state transition (125 — Path C, mirrors reset-password
+  //    §6): persist the hash, rotate the session — delete ALL existing
+  //    sessions for this user (including the current one) and create a
+  //    fresh one the route handler sets as the new cookie — and write the
+  //    audit rows in ONE tx. Pre-125 these were separate autocommits, so
+  //    a drop after the hash write left every old session (a hijacker's
+  //    included) alive under the new password.
   //
   //    The "killed" count for the audit event excludes the current
   //    session because that one was rotated, not revoked — the user
   //    is still in control of that device.
-  const deletedCount = await deps.sessions.deleteByUserId(input.user.id);
-  const newSession = await deps.sessions.create({
-    userId: input.user.id,
-    sourceIp: input.sourceIp,
-    now,
-  });
-  const killed = Math.max(deletedCount - 1, 0);
+  const newSession = await db.transaction(async (tx) => {
+    await deps.users.setPasswordHashInTx(tx, input.user.id, newHash, now);
+    const deletedCount = await deps.sessions.deleteByUserIdInTx(tx, input.user.id);
+    const session = await deps.sessions.createInTx(tx, {
+      userId: input.user.id,
+      sourceIp: input.sourceIp,
+      now,
+    });
+    const killed = Math.max(deletedCount - 1, 0);
 
-  // 8. Audit
-  await deps.audit.append({
-    eventType: 'password_changed',
-    actorUserId: input.user.id,
-    targetUserId: input.user.id,
-    sourceIp: input.sourceIp,
-    summary: 'password changed while signed in',
-    requestId: input.requestId,
-  });
-  if (killed > 0) {
-    await deps.audit.append({
-      eventType: 'concurrent_sessions_revoked',
+    // 8. Audit — in-tx so the rows commit with the state change.
+    await deps.audit.appendInTx(tx, {
+      eventType: 'password_changed',
       actorUserId: input.user.id,
       targetUserId: input.user.id,
       sourceIp: input.sourceIp,
-      summary: `${killed} session(s) revoked on password change`,
+      summary: 'password changed while signed in',
       requestId: input.requestId,
     });
-  }
+    if (killed > 0) {
+      await deps.audit.appendInTx(tx, {
+        eventType: 'concurrent_sessions_revoked',
+        actorUserId: input.user.id,
+        targetUserId: input.user.id,
+        sourceIp: input.sourceIp,
+        summary: `${killed} session(s) revoked on password change`,
+        requestId: input.requestId,
+      });
+    }
+    return session;
+  });
 
   // observability.md § 4.5 — trigger breakdown (self vs reset).
   authMetrics.passwordChanged('self');

@@ -58,6 +58,7 @@ function oneAdminRepo(): UserRepo {
     clearFailedCount: (id) => userRepo.clearFailedCount(id),
     setLocked: (id, until) => userRepo.setLocked(id, until),
     clearLock: (id) => userRepo.clearLock(id),
+    clearExpiredLock: (id, now) => userRepo.clearExpiredLock(id, now),
     // THE POINT of this wrapper: pretend there is only one admin.
     countActiveAdministrators: async () => 1,
     createPending: (args) => userRepo.createPending(args),

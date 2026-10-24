@@ -82,7 +82,7 @@ async function runRedeem(userRole: Role, invitationRole: Role) {
     },
     tokens: {
       findInvitationById: async () => invitation(invitationRole),
-      markInvitationConsumedInTx: async () => {},
+      markInvitationConsumedInTx: async () => true,
     },
     sessions: { createInTx: async () => ({ id: 'sess-1' }) },
     audit: { append: async () => {}, appendInTx: async () => {} },

@@ -30,6 +30,7 @@ import {
   type PasswordHash,
 } from '@/modules/auth/domain/branded';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 // S1-P1-13: `MalformedHashError` moved to the Application layer (use-cases
 // inspect it; Principle III forbids them importing an Infrastructure VALUE).
 // The hasher throws it + re-exports it here for existing consumers/tests.
@@ -119,7 +120,7 @@ class Argon2Hasher implements PasswordHasher {
       // kept typing wrong passwords. Log at ERROR (not WARN) so it
       // crosses the default alerting threshold; the audit event in
       // sign-in completes the 5-year forensic trail.
-      logger.error({ err: error }, 'argon2.verify.malformed_hash');
+      logger.error({ err: errKind(error) }, 'argon2.verify.malformed_hash');
       throw new MalformedHashError(error);
     }
   }
@@ -133,7 +134,7 @@ class Argon2Hasher implements PasswordHasher {
     // "no hash ran" which only matters if it happens on every call,
     // and a warn log makes that observable to the oncall dashboard.
     await verify(dummy, suppliedPassword).catch((error: unknown) => {
-      logger.warn({ err: error }, 'argon2.verifyDummy.failed');
+      logger.warn({ err: errKind(error) }, 'argon2.verifyDummy.failed');
       return false;
     });
   }
