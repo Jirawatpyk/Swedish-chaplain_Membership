@@ -52,7 +52,7 @@ import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-local
 import { env } from '@/lib/env';
 import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import { getPortalBroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
-import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
+import type { BroadcastStatus } from '@/modules/broadcasts';
 import {
   BroadcastHistoryCardList,
   type BroadcastHistoryRowView,
