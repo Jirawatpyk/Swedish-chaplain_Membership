@@ -33,7 +33,7 @@ import { Card, Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/serv
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { EmptyState } from '@/components/shell/empty-state';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
-import { QuotaDisplay } from '@/components/broadcast/quota-display';
+import { QuotaDisplay, type QuotaSnapshot } from '@/components/broadcast/quota-display';
 import { ComposeButtonWithTooltip } from '@/components/broadcast/compose-button-with-tooltip';
 import { logger } from '@/lib/logger';
 import { errKind, hashId, rootCause } from '@/lib/log-id';
@@ -76,11 +76,8 @@ export async function BroadcastsPanel({
    */
   readonly memberId: MemberId;
 }): Promise<React.ReactElement> {
-  const t = await getTranslations('portal.broadcasts.list');
   const tStatus = await getTranslations('portal.broadcasts.list.status');
-  const tCompose = await getTranslations('portal.broadcasts.compose');
   const tQuota = await getTranslations('portal.broadcasts.quota');
-  const tPagination = await getTranslations('portal.broadcasts.list.pagination');
   const locale = await getLocale();
   // Tenant-TZ pin (#315 follow-up, server-UTC display class): sent/created
   // instants rendered by the UTC Vercel runtime were 7h off (wrong day past
@@ -260,8 +257,6 @@ export async function BroadcastsPanel({
     }
   }
 
-  const composeDisabled = quota !== null && quota.remaining === 0;
-
   // U37 — formatted ONCE for both the desktop table and the phone card list,
   // so the two representations cannot drift apart.
   const historyRows: ReadonlyArray<BroadcastHistoryRowView> = history.map((row) => {
@@ -282,6 +277,46 @@ export async function BroadcastsPanel({
       sent: row.sentAt !== null ? dateFormatter.format(new Date(row.sentAt)) : '—',
     };
   });
+
+  // Called, not mounted: the panel's output stays one resolved tree.
+  return BroadcastsPanelView({
+    quota,
+    nextResetCopy,
+    planChangedExplainer,
+    historyRows,
+    historyFailed,
+    pagination,
+  });
+}
+
+/**
+ * Spec 122 US12d-1 (T1237) — the panel's render, apart from its reads, so the
+ * preview harness (`aura-portal?view=benefits-eblasts`) shows the tab in each
+ * state with the page's own markup. Presentation only.
+ */
+export async function BroadcastsPanelView({
+  quota,
+  nextResetCopy,
+  planChangedExplainer,
+  historyRows,
+  historyFailed,
+  pagination,
+  quotaLive = true,
+}: {
+  readonly quota: QuotaSnapshot | null;
+  readonly nextResetCopy: string | null;
+  readonly planChangedExplainer: string | null;
+  readonly historyRows: ReadonlyArray<BroadcastHistoryRowView>;
+  readonly historyFailed: boolean;
+  readonly pagination: { readonly page: number; readonly totalPages: number; readonly total: number };
+  /** `false` only in the preview harness: the quota card shows `quota` and never fetches. */
+  readonly quotaLive?: boolean;
+}): Promise<React.ReactElement> {
+  const t = await getTranslations('portal.broadcasts.list');
+  const tCompose = await getTranslations('portal.broadcasts.compose');
+  const tPagination = await getTranslations('portal.broadcasts.list.pagination');
+  const locale = await getLocale();
+  const composeDisabled = quota !== null && quota.remaining === 0;
 
   return (
     <section aria-labelledby="broadcasts-panel-heading" className="flex flex-col gap-6">
@@ -324,6 +359,7 @@ export async function BroadcastsPanel({
           heading floating between cards. */}
       <QuotaDisplay
         initial={quota}
+        live={quotaLive}
         nextResetCopy={nextResetCopy}
         planChangedExplainer={planChangedExplainer}
       />

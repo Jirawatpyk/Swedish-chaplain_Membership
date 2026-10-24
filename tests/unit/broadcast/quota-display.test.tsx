@@ -88,4 +88,13 @@ describe('QuotaDisplay on AURA', () => {
     expect(card.querySelectorAll('[data-slot="skeleton-block"]').length).toBeGreaterThanOrEqual(6);
     expect(card.querySelector('[data-slot="skeleton"]')).toBeNull();
   });
+
+  it('live={false} renders the given snapshot and never fetches (preview harness)', () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    renderQuota({ live: false });
+    expect(screen.getByTestId('quota-display')).toHaveAttribute('aria-busy', 'false');
+    expect(screen.getByText(q.used, { selector: 'span' }).nextElementSibling).toHaveTextContent('2');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

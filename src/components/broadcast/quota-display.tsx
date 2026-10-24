@@ -59,6 +59,11 @@ export interface QuotaDisplayProps {
    * rather than a stale one.
    */
   readonly endpoint?: string;
+  /**
+   * Spec 122 US12d-1 — `false` renders `initial` as given and never fetches:
+   * the preview harness shows the card without a session. Pages leave it on.
+   */
+  readonly live?: boolean;
 }
 
 export function QuotaDisplay({
@@ -68,6 +73,7 @@ export function QuotaDisplay({
   nextResetCopy = null,
   planChangedExplainer = null,
   endpoint = '/api/broadcasts/quota',
+  live = true,
 }: QuotaDisplayProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.quota');
   const tCompose = useTranslations('portal.broadcasts.compose');
@@ -76,11 +82,12 @@ export function QuotaDisplay({
   // BE date. Storage is untouched (CLAUDE.md § Conventions).
   const locale = useLocale();
   const [snap, setSnap] = useState<QuotaSnapshot | null>(initial);
-  const [loading, setLoading] = useState<boolean>(initial === null);
+  const [loading, setLoading] = useState<boolean>(live && initial === null);
   const [error, setError] = useState<boolean>(false);
   const [retryNonce, setRetryNonce] = useState<number>(0);
 
   useEffect(() => {
+    if (!live) return;
     let cancelled = false;
     async function load() {
       setLoading(true);
@@ -124,7 +131,7 @@ export function QuotaDisplay({
     return () => {
       cancelled = true;
     };
-  }, [endpoint, refreshKey, retryNonce]);
+  }, [endpoint, live, refreshKey, retryNonce]);
 
   // Clamp percentage at 100 to avoid race conditions where used+reserved
   // briefly exceeds cap (P6 finding).

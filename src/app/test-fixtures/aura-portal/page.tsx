@@ -33,6 +33,8 @@ import type { ChangeRequestView } from '@/lib/change-request-portal-view';
 import { RecentActivityList } from '@/app/(member)/portal/_components/recent-activity-list';
 import { MembershipInvoiceAlert } from '@/app/(member)/portal/_components/membership-invoice-alert';
 import { BenefitsTabs } from '@/app/(member)/portal/benefits/_components/benefits-tabs';
+import { BroadcastsPanelView } from '@/app/(member)/portal/benefits/_components/broadcasts-panel';
+import { getPortalBroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
 import PortalNotFound from '@/app/(member)/portal/not-found';
 import { renderPortalInvoicesView } from '@/app/(member)/portal/invoices/page';
 import { renderPortalInvoiceDetailView } from '@/app/(member)/portal/invoices/[invoiceId]/page';
@@ -188,6 +190,70 @@ export default async function AuraPortalPreviewPage({
   if (view === 'broadcast-detail-loading') {
     const Loading = (await import('@/app/(member)/portal/broadcasts/[id]/loading')).default;
     return <MemberFrame path="/portal/benefits">{await Loading()}</MemberFrame>;
+  }
+
+  // Spec 122 US12d-1 — the benefits page's E-Blast tab (boards
+  // `Portal-broadcasts`, `-mobile`, `-empty`), through the panel's own view:
+  // `?view=benefits-eblasts&state=default|empty|exhausted|load-error|paged`.
+  if (view === 'benefits-eblasts') {
+    const t = await getTranslations('benefits.page');
+    const tStatus = await getTranslations('portal.broadcasts.list.status');
+    const tQuota = await getTranslations('portal.broadcasts.quota');
+    const state = sp.state ?? 'default';
+    const exhausted = state === 'exhausted';
+    const rows = (
+      [
+        ['b1', 'Nordic Leadership Breakfast — 15 October', 'awaiting_member_approval', 130, '25 Sep 2026, 09:12', '—'],
+        ['b2', 'We are hiring: Senior Consultant, Bangkok', 'draft', 130, '—', '—'],
+        ['b3', 'Autumn tax seminar — 8 October', 'approved', 38, '12 Sep 2026, 14:03', '—'],
+        ['b4', 'New office on Wireless Road', 'sent', 126, '1 Jul 2026, 10:00', '3 Jul 2026, 09:00'],
+        ['b5', 'Midsummer thank-you from Lindqvist & Partners', 'cancelled', 172, '18 Jun 2026, 16:40', '—'],
+        ['b6', 'Tax update seminar for Swedish SMEs', 'sent', 41, '2 Mar 2026, 11:15', '4 Mar 2026, 09:00'],
+      ] as const
+    ).map(([broadcastId, subject, status, count, submitted, sent]) => ({
+      broadcastId,
+      subject,
+      statusLabel: tStatus(status),
+      statusTone: getPortalBroadcastStatusTone(status),
+      estimatedRecipientCount: count,
+      submitted,
+      sent,
+    }));
+    const panel = await BroadcastsPanelView({
+      quota: {
+        used: exhausted ? 4 : state === 'empty' ? 0 : 2,
+        reserved: exhausted ? 2 : state === 'empty' ? 0 : 2,
+        remaining: exhausted ? 0 : state === 'empty' ? 6 : 2,
+        cap: 6,
+        quotaYear: 2026,
+        planName: 'Premium Corporate',
+      },
+      nextResetCopy: tQuota('nextReset', { date: '1 January 2027' }),
+      planChangedExplainer: null,
+      historyRows: state === 'empty' || state === 'load-error' ? [] : rows,
+      historyFailed: state === 'load-error',
+      pagination:
+        state === 'paged' ? { page: 2, totalPages: 3, total: 26 } : { page: 1, totalPages: 1, total: 6 },
+      quotaLive: false,
+    });
+    return (
+      <MemberFrame path="/portal/benefits">
+        <DetailContainer>
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitlePlanEblasts', { plan: 'Premium Corporate' })}
+            size="hero-lg"
+            meta={
+              <>
+                <Badge tone="accent" variant="solid">Premium Corporate</Badge>
+                <StatusPill tone="ready">{t('statusFull')}</StatusPill>
+              </>
+            }
+          />
+          <BenefitsTabs showBroadcastsTab active="broadcasts" broadcastsPanel={panel} benefitsPanel={null} />
+        </DetailContainer>
+      </MemberFrame>
+    );
   }
 
   if (view === 'benefits') {
