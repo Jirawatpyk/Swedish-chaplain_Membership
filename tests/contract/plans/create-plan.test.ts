@@ -245,9 +245,9 @@ describe('contract: POST /api/plans (T092)', () => {
     );
   });
 
-  // 117 — `audit_failed` answers 500 AFTER the plan row has committed. It is
-  // still a 5xx, so it must never be remembered and must release the key:
-  // the operator-guided retry has to reach the route, not a 24 h conflict.
+  // 117 / 126 #7 — `audit_failed` answers 500 and the insert ROLLED BACK with
+  // the audit (D-027): the copy must not claim the plan exists, and the key is
+  // released so the client's retry reaches the route, not a 24 h conflict.
   it('117: releases the idempotency reservation on the audit_failed 500 arm', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildPlansDepsMock.mockReturnValueOnce({ tenant: { slug: 'test-swecham' } });
@@ -259,6 +259,8 @@ describe('contract: POST /api/plans (T092)', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error?.code).toBe('audit_failed');
+    expect(body.error?.message).toMatch(/not (created|cloned)/i);
+    expect(body.error?.message).not.toMatch(/was created|were cloned|contact ops/i);
     const idem = await import('@/lib/idempotency');
     expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
     expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
