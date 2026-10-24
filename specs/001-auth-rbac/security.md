@@ -95,6 +95,20 @@ site; tries them all against our sign-in endpoint.
   `e2e-member@swecham.test` disposable account so production
   admins are never affected.
 
+**Accepted residual risk — disabled account confirms a correct password
+(125, PR #642, security-engineer L3; accepted in the
+PR #642 review 2026-10-24)**: since 125 the `account-disabled` response is returned only
+AFTER the password verifies (a wrong password takes the normal
+invalid-credentials + failed-count + lockout path). A stuffing list that
+contains a former member's or staff member's real password therefore
+learns "this password is correct" for a disabled account, and could
+replay it on other sites. Accepted because the disabled message is a
+deliberate UX (the holder is told why they cannot sign in), the
+existence of the account is no longer disclosed without the password,
+and the attempt is still rate-limited and audited (`sign_in_failure`,
+summary "sign-in attempt on disabled account"). Revisit if a disabled
+account's credential reuse is ever reported.
+
 ### T-02. Brute force (single-account)
 
 **Attack**: attacker targets one known account and tries millions of passwords.
@@ -144,6 +158,20 @@ export async function signIn(input: SignInInput): Promise<SignInResult> {
   email + wrong password. Asserts the P95 latency difference is < 5 ms.
 - `tests/integration/auth/enumeration-message.test.ts` — asserts the 401
   response body is byte-identical across all three failure modes.
+
+**Accepted residual risk — `account-locked` (403) reveals that an account
+exists (pre-existing; 125, PR #642, security-engineer M2; accepted in the
+PR #642 review 2026-10-24)**: an unknown email can never be locked, so a
+403 `account-locked` confirms the address has an account. An attacker
+must first spend five wrong passwords on that address and time the sixth
+past the per-email rate-limit window while the 15-minute lock is still
+live. 125 closed the timing half (the locked branch now pays
+`verifyDummy`, so it answers in argon2 time like every other branch);
+the distinct response shape stays. Accepted because the "account locked,
+try again in N minutes" message is the FR-013 recovery UX for the real
+owner and the probe costs a lockout of the target account per address.
+The alternative — a generic 401 plus an owner notification email — is
+deferred (needs the account-notification email, see § 4).
 
 ### T-04. Email enumeration via password reset
 

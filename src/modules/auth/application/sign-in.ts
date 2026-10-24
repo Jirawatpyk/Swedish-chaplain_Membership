@@ -282,8 +282,10 @@ async function signInImpl(
   // 4b. An earlier lock has expired — FR-013 counts 5 failures within
   //     ONE window, so the post-lock count restarts. Without this the
   //     count stays at ≥5 and the next single wrong password re-locks.
+  //     The guarded clear (`locked_until <= now`) cannot wipe a fresh
+  //     lock a parallel burst set after this request read the row (L1).
   if (user.lockedUntil !== null) {
-    await deps.users.clearFailedCount(user.id);
+    await deps.users.clearExpiredLock(user.id, now);
   }
 
   // 5. Verify password (B4 — catch MalformedHashError separately so a
