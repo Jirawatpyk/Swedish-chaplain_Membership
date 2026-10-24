@@ -147,7 +147,7 @@ export async function OldestOverdueCard({
                 {/* between words only: AURA's cell wraps anywhere ("Hospital/ity") */}
                 <Td label={t('oldest.buyer')}>{row.buyerName ?? '—'}</Td>
                 {/* steps aside in a narrow grid with Due, so the row never breaks words; the phone card keeps it */}
-                <Td label={t('oldest.for')} className={HIDE_IN_NARROW_GRID}>
+                <Td label={t('oldest.for')} wrap="none" className={HIDE_IN_NARROW_GRID}>
                   {forLabel(row)}
                 </Td>
                 <Td label={t('oldest.due')} wrap="none" className={HIDE_IN_NARROW_GRID}>

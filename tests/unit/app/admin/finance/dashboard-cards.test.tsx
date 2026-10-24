@@ -212,6 +212,9 @@ describe('OldestOverdueCard', () => {
     expect(screen.getByRole('columnheader', { name: D.oldest.for })).toBeInTheDocument();
     expect(screen.getAllByText('Membership 2026').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Midsommar Gala 2026').length).toBeGreaterThan(0);
+    // one line, as the boards draw it; steps aside with Due in a 640-800 px grid
+    const cell = screen.getAllByText('Membership 2026')[0]!.closest('td')!;
+    expect(cell).toHaveClass('is-nowrap', '@min-[640px]/aura-tbl:@max-[800px]/aura-tbl:hidden');
   });
 
   it('an admin gets Record payment per row; focus after a payment goes to the next row, from the last to the card title', async () => {
