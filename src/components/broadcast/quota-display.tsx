@@ -14,13 +14,18 @@
  *   - I2 — error state has actionable Retry button instead of muted
  *     destructive text
  *   - Smart-4 — plan name + compose CTA when `remaining > 0`
+ *
+ * 122 US12d-1 (T1235, board `Portal-broadcasts`): an AURA card. The head reads
+ * the year on the left and "plan · renewal" on the right; each counter is a
+ * label above its number; the bar, live region, testids and retry are kept.
+ * The board's hatched reserved segment and its legend need new copy and are
+ * not drawn (FR-011).
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { Card, CardContent } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button, Card, buttonClass } from '@jirawatpyk/aura-react';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
 
@@ -128,31 +133,38 @@ export function QuotaDisplay({
   const exhausted = snap !== null && snap.remaining === 0;
   const ariaValueNow = snap ? Math.min(snap.cap, snap.used + snap.reserved) : 0;
 
+  const showReset = nextResetCopy !== null && snap !== null && !error;
+
   return (
     <Card aria-busy={loading} data-testid="quota-display" data-compose-feature="quota">
-      <CardContent className="space-y-3">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <div className="text-sm font-medium">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <span className="font-semibold">
             {t('headerLabel', {
               year: formatCalendarYear(
                 snap === null ? new Date().getFullYear() : snap.quotaYear,
                 locale,
               ),
             })}
-          </div>
-          {snap?.planName ? (
-            <span className="text-xs text-muted-foreground">
-              {t('planLabel', { plan: snap.planName })}
+          </span>
+          {snap?.planName || showReset ? (
+            <span className="aura-text-caption text-[var(--aura-fg-secondary)]">
+              {snap?.planName ? t('planLabel', { plan: snap.planName }) : null}
+              {snap?.planName && showReset ? ' · ' : null}
+              {/* AS1 reset-date copy: quota metadata, beside the plan
+                  (board `Portal-broadcasts`). */}
+              {showReset ? <span data-testid="quota-next-reset">{nextResetCopy}</span> : null}
             </span>
           ) : null}
         </div>
         {error ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-destructive">{t('fetchError')}</p>
+            <p className="aura-text-caption text-[var(--aura-fg-danger)]">{t('fetchError')}</p>
             <Button
               type="button"
               size="sm"
               variant="ghost"
+              touchHeight
               onClick={() => setRetryNonce((n) => n + 1)}
             >
               {t('retry')}
@@ -160,17 +172,14 @@ export function QuotaDisplay({
           </div>
         ) : snap !== null ? (
           <>
-            <div
-              className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4 sm:gap-2"
-              aria-live="polite"
-            >
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4" aria-live="polite">
               <Counter label={t('used')} value={snap.used} />
               <Counter label={t('reserved')} value={snap.reserved} />
               <Counter label={t('remaining')} value={snap.remaining} emphasise={exhausted} />
               <Counter label={t('cap')} value={snap.cap} />
             </div>
             <div
-              className="h-2 w-full overflow-hidden rounded-full bg-muted"
+              className="h-2 w-full overflow-hidden rounded-full bg-[var(--aura-bg-surface-hover)]"
               role="progressbar"
               aria-valuenow={ariaValueNow}
               aria-valuemax={snap.cap}
@@ -178,12 +187,15 @@ export function QuotaDisplay({
               aria-label={t('progressLabel')}
             >
               <div
-                className={cn('h-full transition-all', exhausted ? 'bg-destructive' : 'bg-primary')}
+                className={cn(
+                  'h-full motion-safe:transition-all',
+                  exhausted ? 'bg-[var(--aura-fg-danger)]' : 'bg-[var(--aura-fg-accent)]',
+                )}
                 style={{ width: `${pct}%` }}
               />
             </div>
             {exhausted ? (
-              <p className="text-xs text-destructive">
+              <p className="aura-text-caption text-[var(--aura-fg-danger)]">
                 {t('exhausted', {
                   year: formatCalendarYear(snap.quotaYear, locale),
                 })}
@@ -191,21 +203,17 @@ export function QuotaDisplay({
             ) : showComposeCta ? (
               <Link
                 href="/portal/broadcasts/new"
-                className={cn(buttonVariants({ size: 'sm' }), 'mt-2')}
+                className={buttonClass({ size: 'sm', touchHeight: true, className: 'self-start' })}
               >
                 {tCompose('title')}
               </Link>
             ) : null}
-            {/* AS1 reset-date copy + AS2 plan-changed explainer — moved
-                inside the Card footer so they read as quota metadata
-                rather than a heading floating between cards. */}
-            {nextResetCopy !== null ? (
-              <p data-testid="quota-next-reset" className="text-xs text-muted-foreground">
-                {nextResetCopy}
-              </p>
-            ) : null}
+            {/* AS2 plan-changed explainer — quota metadata inside the card. */}
             {planChangedExplainer !== null ? (
-              <p data-testid="quota-plan-changed-explainer" className="text-xs text-warning">
+              <p
+                data-testid="quota-plan-changed-explainer"
+                className="aura-text-caption text-[var(--aura-fg-warning)]"
+              >
                 {planChangedExplainer}
               </p>
             ) : null}
@@ -213,20 +221,19 @@ export function QuotaDisplay({
         ) : (
           // G1 UX hardening — skeleton MUST mirror the real layout
           // (4-counter grid + progress bar + footer line) or the
-          // page jumps when data arrives (CLS). Previous single h-12
-          // bar was ~48 px while the populated state is ~120-140 px.
+          // page jumps when data arrives (CLS).
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-2" aria-hidden="true">
-              <Skeleton className="h-14 w-full" />
-              <Skeleton className="h-14 w-full" />
-              <Skeleton className="h-14 w-full" />
-              <Skeleton className="h-14 w-full" />
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4" aria-hidden="true">
+              <SkeletonBlock className="h-14 w-full" />
+              <SkeletonBlock className="h-14 w-full" />
+              <SkeletonBlock className="h-14 w-full" />
+              <SkeletonBlock className="h-14 w-full" />
             </div>
-            <Skeleton className="h-2 w-full" aria-hidden="true" />
-            <Skeleton className="h-4 w-48" aria-hidden="true" />
+            <SkeletonBlock className="h-2 w-full" aria-hidden="true" />
+            <SkeletonBlock className="h-4 w-48" aria-hidden="true" />
           </>
         )}
-      </CardContent>
+      </div>
     </Card>
   );
 }
@@ -240,12 +247,18 @@ function Counter({
   readonly value: number;
   readonly emphasise?: boolean;
 }): React.ReactElement {
+  // Board `Portal-broadcasts`: the label above its number, left-aligned.
   return (
-    <div>
-      <div className={cn('text-2xl font-semibold tabular-nums', emphasise && 'text-destructive')}>
+    <div className="flex flex-col gap-0.5">
+      <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{label}</span>
+      <span
+        className={cn(
+          'text-2xl font-semibold tabular-nums',
+          emphasise && 'text-[var(--aura-fg-danger)]',
+        )}
+      >
         {value}
-      </div>
-      <div className="text-xs text-muted-foreground">{label}</div>
+      </span>
     </div>
   );
 }
