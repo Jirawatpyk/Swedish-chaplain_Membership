@@ -298,7 +298,16 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     label: 'palette.navigate.invoicesList',
     url: '/admin/invoices',
     permission: 'invoicing.read',
-    keywords: ['overdue', 'unpaid', 'outstanding'],
+    keywords: ['unpaid', 'outstanding'],
+  },
+  {
+    // Spec 124 follow-up — "overdue" lands on the list already filtered to
+    // overdue (the derived `issued` + past-due view), not the whole list.
+    id: 'nav.invoicesOverdue',
+    label: 'palette.navigate.invoicesOverdue',
+    url: '/admin/invoices?status=overdue',
+    permission: 'invoicing.read',
+    keywords: ['past due', 'late'],
   },
   {
     // Verify-fix S1 (2026-04-26): F5 Phase 5 paid-online reconciliation
