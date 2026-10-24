@@ -833,19 +833,5 @@ describe('updatePlan', () => {
       // No is_active gate — update-plan does not block on inactive plans
       expect(result.ok).toBe(true);
     });
-
-    it('allows PATCH on a soft-deleted plan (no special gate in update-plan)', async () => {
-      const deletedPlan: Plan = { ...EXISTING_PLAN, deleted_at: new Date('2026-03-01T00:00:00Z') };
-      const deletedUpdated: Plan = {
-        ...deletedPlan,
-        plan_name: { en: 'Premium Corporate v2' },
-      };
-      const planRepo = makePlanRepo({ findOne: deletedPlan, updateResult: deletedUpdated });
-      const deps = makeDeps({ planRepo });
-
-      const result = await updatePlan(BASE_INPUT, deps);
-
-      expect(result.ok).toBe(true);
-    });
   });
 });

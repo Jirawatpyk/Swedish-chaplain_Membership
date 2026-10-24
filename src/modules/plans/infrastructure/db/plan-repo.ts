@@ -227,6 +227,8 @@ export const planRepo: PlanRepo = {
   // because throwing from a repo is a bigger ergonomic hazard.
   async update(tenant, planId, year, patch, updatedBy) {
     return runInTenant(tenant, async (tx) => {
+      // 126 #6 — both statements skip a soft-deleted row (as `setActive`
+      // does), so a delete that commits after the use case's read wins.
       // Defence-in-depth: SELECT the row before UPDATE to re-verify
       // the lock rule against fresh state. The rule needs the current
       // year; we use the wall clock here because the repo does not
@@ -238,6 +240,7 @@ export const planRepo: PlanRepo = {
           and(
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
+            sql`${membershipPlans.deletedAt} IS NULL`,
           ),
         )
         .limit(1);
@@ -298,6 +301,7 @@ export const planRepo: PlanRepo = {
           and(
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
+            sql`${membershipPlans.deletedAt} IS NULL`,
           ),
         )
         .returning();

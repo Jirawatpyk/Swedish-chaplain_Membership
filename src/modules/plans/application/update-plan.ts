@@ -158,7 +158,9 @@ export async function updatePlan(
       message: e instanceof Error ? e.message : String(e),
     });
   }
-  if (!existing) {
+  // 126 #6 — `findOne` returns soft-deleted rows (undelete needs them); a
+  // deleted plan is not editable, the same 404 as a missing one.
+  if (!existing || existing.deleted_at !== null) {
     return err({ type: 'not_found' });
   }
 
