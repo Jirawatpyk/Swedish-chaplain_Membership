@@ -15,6 +15,7 @@ import {
   makeFakeBroadcastImagesRepo,
   makeFakeEblastOutbox,
   makeFakeMarketingDirectory,
+  makeMarketingRecipient,
 } from '../../../helpers/eblast-approval-fakes';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { asTenantContext, type TenantContext } from '@/modules/tenants';
@@ -364,6 +365,20 @@ describe('cancel-broadcast โ€” Wave 6 GREEN (T103)', () => {
     );
     expect(result.ok).toBe(false);
     expect(directory.reportEmptyRoster).not.toHaveBeenCalled();
+  });
+
+  it('a member withdrawal hands off to the whole roster in ONE batched insert, never one round trip per recipient', async () => {
+    const roster = [makeMarketingRecipient(), makeMarketingRecipient({ userId: '88888888-8888-4888-8888-888888888888', email: 'marketing-2@swecham.test' })];
+    const eblastOutbox = makeFakeEblastOutbox();
+    const result = await cancelBroadcast(
+      { tenant, broadcastsRepo: makeRepo({ existing: makeBroadcast('submitted', 'm-1') }).port, ...t081Deps(), marketingDirectory: makeFakeMarketingDirectory(roster), eblastOutbox, audit: makeAudit().port, clock },
+      { ...baseInput, actor: { kind: 'member', memberId: 'm-1', userId: 'u-1' }, cancellationReason: null },
+    );
+    expect(result.ok).toBe(true);
+    expect(eblastOutbox.enqueueManyInTx).toHaveBeenCalledTimes(1);
+    expect(eblastOutbox.enqueueInTx).not.toHaveBeenCalled();
+    expect(eblastOutbox.rows().map((r) => r.toEmail)).toEqual(roster.map((r) => r.email));
+    expect(eblastOutbox.rows().every((r) => r.type === 'eblast_member_decided_marketing' && (r.contextData as Readonly<Record<string, unknown>>).decision === 'withdrawn')).toBe(true);
   });
 
   it('D1 G2: member self-cancel ALSO sends notification (gap fix)', async () => {

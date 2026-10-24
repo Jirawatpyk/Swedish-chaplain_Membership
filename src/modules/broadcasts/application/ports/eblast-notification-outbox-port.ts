@@ -102,4 +102,10 @@ export type EblastNotificationEnqueue = {
 export interface EblastNotificationOutboxPort {
   /** Insert one pending outbox row on the caller's `runInTenant` tx — REQUIRED, never the pool-global `db`. */
   enqueueInTx(tx: unknown, tenant: TenantContext, request: EblastNotificationEnqueue): Promise<void>;
+  /**
+   * Insert one pending row PER request on the caller's tx in one round trip
+   * (a per-recipient hand-off): a loop of `enqueueInTx` grows with the roster
+   * (R81). The tx is REQUIRED; an empty list is a no-op; a short insert throws.
+   */
+  enqueueManyInTx(tx: unknown, tenant: TenantContext, requests: readonly EblastNotificationEnqueue[]): Promise<void>;
 }

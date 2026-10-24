@@ -716,7 +716,10 @@ describe('SC-004 — every hand-off enqueues its outbox row inside the state-cha
       store.failNextCommit();
       const result = await decide();
       expect(result.ok).toBe(false);
-      expect(store.outbox.enqueueInTx).toHaveBeenCalledTimes(roster.length); // the enqueues DID run inside the tx…
+      // ONE batched insert for the whole roster (R81: a per-recipient loop grew with the roster)…
+      expect(store.outbox.enqueueManyInTx).toHaveBeenCalledTimes(1);
+      expect(store.outbox.enqueueManyInTx.mock.calls[0]![2]).toHaveLength(roster.length);
+      expect(store.outbox.enqueueInTx).not.toHaveBeenCalled(); // …which DID run inside the tx…
       expect(store.outbox.rows()).toHaveLength(0); // …and rolled back with it
       expect(store.decisionsRepo.rows()).toHaveLength(0);
       expect(store.state.broadcasts).toEqual(before);
