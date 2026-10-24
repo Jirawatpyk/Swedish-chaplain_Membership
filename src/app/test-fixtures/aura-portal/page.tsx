@@ -347,7 +347,7 @@ export default async function AuraPortalPreviewPage({
       <MemberFrame path="/portal/edit">
         {/* the page's 880px column (portal/edit/page.tsx) */}
         <FormContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
-          <PageHeader title={t('pageTitle')} size="hero" />
+          <PageHeader title={t('pageTitle')} />
           <PortalEditForm
             initialValues={{ firstName: 'Anna', lastName: 'Lindqvist', phone: '+66 81 234 5678', website: 'https://nordic.example', description: '' }}
           />
@@ -362,7 +362,7 @@ export default async function AuraPortalPreviewPage({
     return (
       <MemberFrame path="/portal/edit">
         <FormContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
-          <PageHeader title={t('pageTitle')} subtitle={t('pageSubtitle')} size="hero" />
+          <PageHeader title={t('pageTitle')} subtitle={t('pageSubtitle')} />
           <PortalChangeRequestForm
             initialValues={CR_VALUES}
             canProposeCompanyFields

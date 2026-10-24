@@ -856,7 +856,8 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The phone row leaves out Submitted or Sent while its value is "—". The table still shows the dash.
 - **The Benefits page header (the user, 24 Oct: "the title sits too far down"):**
   - The two Benefits boards disagree. `Benefits` (the Plan benefits tab) draws the hero header: 40px down and a 36px title. `Portal-broadcasts` (the E-Blasts tab) draws the ordinary one: 32px and a 32px title, and 20px on phones, where the hero drew 24.
-  - One page cannot carry both without jumping between tabs, so both tabs take the ordinary header. Home and Edit keep their hero, as their boards draw it.
+  - One page cannot carry both without jumping between tabs, so both tabs take the ordinary header.
+  - Then one header size across the portal (the user, 24 Oct: "ทำตามแนะนำ", do what you recommended): only the Dashboard, the welcome page, keeps the hero header (40px down, 24 on phones). Edit, Change request and Renewal drop their hero and take the ordinary header like every other page (32px, 20 on phones). The renewal-success card is centred on the page, so it keeps its hero title. `tests/unit/app/portal/portal-header-sizes.test.ts` refuses a hero header anywhere else in the portal.
   - Consistency check of the staff error and not-found pages:
     - All 32 staff `error.tsx` use the shared `RouteErrorPanel`, with its dashed EmptyState, so the root boundary now matches them.
     - The staff not-found pages were already mixed: a dashed EmptyState on the root page and change-requests, a header with a back link on invoices and credit notes. The portal side uses solid cards.

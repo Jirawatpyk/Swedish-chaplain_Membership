@@ -60,7 +60,7 @@ export async function generateMetadata(): Promise<Metadata> {
 function loadFailed(title: string, message: string) {
   return (
     <FormContainer>
-      <PageHeader title={title} size="hero" />
+      <PageHeader title={title} />
       <div role="alert" className="py-12 text-center">
         <p className="text-body">{message}</p>
       </div>
@@ -141,7 +141,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
   if (gate === 'immediate') {
     return (
       <FormContainer>
-        <PageHeader title={t('pageTitle')} subtitle={member.companyName} size="hero" />
+        <PageHeader title={t('pageTitle')} subtitle={member.companyName} />
         <PortalEditForm
           initialValues={{
             firstName: ownContact.firstName,
@@ -210,7 +210,7 @@ export default async function PortalEditPage({ searchParams }: PageProps) {
     // The `Portal-edit` boards' 880px column; a pending request is the form's
     // own info alert (its diff and Withdraw live on the profile page).
     <FormContainer className="max-w-[calc(55rem+2*var(--page-padding-x))]">
-      <PageHeader title={tCr('pageTitle')} subtitle={tCr('pageSubtitle')} size="hero" />
+      <PageHeader title={tCr('pageTitle')} subtitle={tCr('pageSubtitle')} />
       <PortalChangeRequestForm
         initialValues={initialValues}
         canProposeCompanyFields={ownContact.isPrimary}
