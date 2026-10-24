@@ -59,3 +59,36 @@ describe('<MembershipInvoiceAlertSection> membership access', () => {
     expect(screen.getByRole('link', { name: /Pay now/ })).toBeInTheDocument();
   });
 });
+
+// Spec 124 follow-up — on /portal/invoices the alert reads the page's own
+// Bangkok date (the one the list's Overdue filter and row badges use), so
+// across midnight it never calls a bill overdue above a list that does not.
+describe('<MembershipInvoiceAlertSection> today', () => {
+  // tests/setup.ts pins the clock at 2026-04-09, before the bill's due date.
+  afterEach(() => {
+    cleanup();
+    vi.setSystemTime(new Date('2026-04-09T12:00:00.000Z'));
+  });
+
+  async function showOn(today: string) {
+    access.mockResolvedValue({ access: 'full', reason: 'in_good_standing' });
+    const el = await MembershipInvoiceAlertSection({ tenantId: 't', memberId: 'm', today });
+    return render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        {el}
+      </NextIntlClientProvider>,
+    );
+  }
+
+  it('the day after the due date is overdue, though the server clock is earlier', async () => {
+    await showOn('2026-05-16');
+    expect(screen.getByText(/was due/)).toBeInTheDocument();
+  });
+
+  it('on the due date it is not, whatever the server clock says', async () => {
+    vi.setSystemTime(new Date('2026-06-30T05:00:00Z'));
+    await showOn('2026-05-15');
+    expect(screen.queryByText(/was due/)).toBeNull();
+    expect(screen.getByText(/ due /)).toBeInTheDocument();
+  });
+});
