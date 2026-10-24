@@ -53,7 +53,9 @@ export interface EmailPort {
    * Enqueue many rows in ONE statement inside the caller's transaction (a
    * per-recipient fan-out). One round trip, so the cost does not grow with
    * the recipient count: R81 measured 60–83 s for ~1,400 sequential inserts.
-   * An empty list is a no-op.
+   * An empty list is a no-op. `outboxRowIds` holds one id per request but
+   * in no guaranteed order (`INSERT … RETURNING`), so do not zip it with
+   * `requests`.
    */
   enqueueManyInTx(
     tx: TenantTx,
