@@ -57,6 +57,15 @@ const OLD_SESSION_ID = asSessionToken('old-sess-001');
 const NEW_SESSION_ID = asSessionToken('new-sess-002');
 const PASS_HASH = asPasswordHash('$argon2id$v=19$stored-hash');
 const NEW_HASH = asPasswordHash('$argon2id$v=19$new-hash');
+// 125 — two atomic buckets: the generous policy bucket (HIBP calls) and the
+// strict guess bucket (argon2 verify of the current password).
+const POLICY_KEY = `change-pw-policy:user:${USER_ID}`;
+const GUESS_KEY = `change-pw:user:${USER_ID}`;
+
+/** Keys the limiter was charged on, in call order. */
+function checkedKeys(deps: ChangePasswordDeps): string[] {
+  return vi.mocked(deps.limiter.check).mock.calls.map((c) => c[0]);
+}
 
 function makeUser(overrides: Partial<UserAccount> = {}): UserAccount {
   return {
@@ -177,12 +186,12 @@ describe('changePassword use case', () => {
 
   // 125 — every attempt consumes the bucket BEFORE argon2 verify, so a
   // concurrent burst cannot all pass a non-consuming gate.
-  it('consumes limiter.check() once before verify on the happy path', async () => {
+  it('charges the policy bucket, then the guess bucket, before verify on the happy path', async () => {
     const order: string[] = [];
     const deps = makeDeps({
       limiter: {
-        check: vi.fn().mockImplementation(async () => {
-          order.push('check');
+        check: vi.fn().mockImplementation(async (key: string) => {
+          order.push(`check:${key}`);
           return { success: true, reset: Date.now() + 900_000 };
         }),
       } as unknown as ChangePasswordDeps['limiter'],
@@ -196,7 +205,7 @@ describe('changePassword use case', () => {
     });
     const result = await changePassword(BASE_INPUT, deps);
     expect(result.ok).toBe(true);
-    expect(order).toEqual(['check', 'verify']);
+    expect(order).toEqual([`check:${POLICY_KEY}`, `check:${GUESS_KEY}`, 'verify']);
   });
 
   it('calls limiter.check() exactly once on the wrong-current branch', async () => {
@@ -209,7 +218,7 @@ describe('changePassword use case', () => {
     const result = await changePassword(BASE_INPUT, deps);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('wrong-current-password');
-    expect(deps.limiter.check).toHaveBeenCalledTimes(1);
+    expect(checkedKeys(deps).filter((k) => k === GUESS_KEY)).toHaveLength(1);
   });
 
   // ── User not found / no password hash ─────────────────────────────────────
@@ -401,7 +410,7 @@ describe('changePassword use case', () => {
     expect(result.error.code).toBe('wrong-current-password');
 
     // The gate check() ran once; no extra debit.
-    expect(checkSpy).toHaveBeenCalledTimes(1);
+    expect(checkSpy.mock.calls.filter((c) => c[0] === GUESS_KEY)).toHaveLength(1);
 
     // Dedicated audit event emitted
     expect(auditSpy).toHaveBeenCalledWith(
@@ -477,7 +486,7 @@ describe('changePassword use case', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('same-password');
-    expect(deps.limiter.check).not.toHaveBeenCalled();
+    expect(checkedKeys(deps)).not.toContain(GUESS_KEY);
     expect(deps.hasher.verify).not.toHaveBeenCalled();
   });
 
@@ -491,7 +500,47 @@ describe('changePassword use case', () => {
     const result = await changePassword(BASE_INPUT, deps);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('weak-password');
-    expect(deps.limiter.check).not.toHaveBeenCalled();
+    expect(checkedKeys(deps)).not.toContain(GUESS_KEY);
+    expect(deps.hasher.verify).not.toHaveBeenCalled();
+  });
+
+  // 125 (security-engineer N1) — the policy steps make an outbound HIBP call,
+  // so they sit behind their own, more generous atomic bucket: a session
+  // holder cannot drive unlimited HIBP traffic (which fails open, T-11).
+  it('charges the policy bucket before the HIBP-backed policy check', async () => {
+    const order: string[] = [];
+    vi.mocked(checkPasswordPolicy).mockImplementation(async () => {
+      order.push('policy');
+      return { ok: true, errors: [], strength: 'strong' };
+    });
+    const deps = makeDeps({
+      limiter: {
+        check: vi.fn().mockImplementation(async (key: string) => {
+          order.push(`check:${key}`);
+          return { success: true, reset: Date.now() + 900_000 };
+        }),
+      } as unknown as ChangePasswordDeps['limiter'],
+    });
+    await changePassword(BASE_INPUT, deps);
+    expect(order.slice(0, 2)).toEqual([`check:${POLICY_KEY}`, 'policy']);
+    expect(deps.limiter.check).toHaveBeenCalledWith(POLICY_KEY, 30, 15 * 60);
+  });
+
+  it('returns rate-limited without calling the policy when the policy bucket is exhausted', async () => {
+    const deps = makeDeps({
+      limiter: {
+        check: vi.fn().mockImplementation(async (key: string) =>
+          key === POLICY_KEY
+            ? { success: false, reset: Date.now() + 60_000 }
+            : { success: true, reset: Date.now() + 900_000 },
+        ),
+      } as unknown as ChangePasswordDeps['limiter'],
+    });
+    const result = await changePassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('rate-limited');
+    expect(vi.mocked(checkPasswordPolicy)).not.toHaveBeenCalled();
+    expect(checkedKeys(deps)).not.toContain(GUESS_KEY);
     expect(deps.hasher.verify).not.toHaveBeenCalled();
   });
 });
