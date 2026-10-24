@@ -67,6 +67,9 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
       const tiles = unwrap(await loadInvoiceDashboardTiles(tenant.ctx, input(), deps));
       const aging = unwrap(await loadInvoiceDashboardAging(tenant.ctx, input(), deps));
       expect(tiles.outstanding).toEqual(EXPECTED.outstanding);
+      // The header's "drafts not counted": every draft under the filters, the
+      // same rows Needs attention splits into manual and auto-renewal.
+      expect(tiles.draftsNotCounted).toBe(EXPECTED.attention.manualDrafts + EXPECTED.attention.autoRenewalDrafts);
       expect(aging.totalSatang).toBe(EXPECTED.outstanding.amountSatang);
       expect(aging.count).toBe(EXPECTED.outstanding.count);
       for (const row of aging.buckets) {
