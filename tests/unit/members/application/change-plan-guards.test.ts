@@ -152,6 +152,30 @@ describe('changePlan guards (126)', () => {
     if (!r.ok) expect(r.error.type).toBe('bundle_change_requires_confirmation');
   });
 
+  it('#9 (review) — an old-plan lookup ERROR is a server_error, not a skipped bundle check', async () => {
+    const deps = buildDeps({});
+    deps.plans.getPlan.mockImplementation(async (_t: unknown, id: string) =>
+      id === 'plan-old'
+        ? { ok: false as const, error: { code: 'repo.unexpected' } }
+        : ok(plan()),
+    );
+    const r = await changePlan(memberId, BODY, meta, deps);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.type).toBe('server_error');
+    expect(deps.memberRepo.updateFieldsInTx).not.toHaveBeenCalled();
+  });
+
+  it('#9 (review) — a missing old plan row still lets the change through (no bundle to leave)', async () => {
+    const deps = buildDeps({});
+    deps.plans.getPlan.mockImplementation(async (_t: unknown, id: string) =>
+      id === 'plan-old'
+        ? { ok: false as const, error: { code: 'repo.not_found' } }
+        : ok(plan()),
+    );
+    const r = await changePlan(memberId, BODY, meta, deps);
+    expect(r.ok).toBe(true);
+  });
+
   it('#10 logs the listener failure as errKind, never the message', async () => {
     const deps = buildDeps({
       listeners: [
