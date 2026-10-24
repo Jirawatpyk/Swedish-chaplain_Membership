@@ -81,8 +81,13 @@ export function AuditTable({
   // (maintainer, parity comments 13 Oct); the raw codes stay in the table.
   // A client file: AURA's Table is not in `/server`.
   // codes and ids have no break points, so they alone may break anywhere (AURA 5.60 wraps
-  // the cell between words, #174)
+  // the cell between words, #174). A payload value breaks anywhere only when it is a long
+  // token (a uuid, an email): `anywhere` also shrinks the column's min-content to one letter,
+  // which split short values such as `admin` mid-word (R81). The value wraps under its
+  // label when the column is narrow, so the pair never forces the column wider
   const code = 'block font-mono aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]';
+  const payloadWrap = (value: string) =>
+    value.length > 16 && !/\s/.test(value) ? '[overflow-wrap:anywhere]' : 'break-words';
   return (
     <>
     <div className="max-sm:hidden">
@@ -134,9 +139,9 @@ export function AuditTable({
               {r.payloadEntries.length > 0 ? (
                 <dl className="grid max-w-xs gap-0.5 aura-text-caption">
                   {r.payloadEntries.map((e) => (
-                    <div key={e.label} className="flex gap-1.5">
+                    <div key={e.label} className="flex flex-wrap gap-x-1.5">
                       <dt className="shrink-0 text-[var(--aura-fg-secondary)]">{e.label}:</dt>
-                      <dd className="[overflow-wrap:anywhere]">{e.value}</dd>
+                      <dd className={payloadWrap(e.value)}>{e.value}</dd>
                     </div>
                   ))}
                 </dl>

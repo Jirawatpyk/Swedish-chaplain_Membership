@@ -72,13 +72,29 @@ describe('<AuditTable> on AURA', () => {
     expect(within(cards()).queryByText(/^Target:/)).toBeNull();
   });
 
-  it('AURA 5.60 (#174): only codes, ids and payload values break anywhere; the labels wrap between words', () => {
+  it('AURA 5.60 (#174): only codes, ids and long payload tokens break anywhere; the labels wrap between words', () => {
     render(<AuditTable rows={[ROW]} labels={labels} />);
     const table = screen.getByRole('table');
     const row = within(table).getAllByRole('row')[1]!;
     for (const cell of within(row).getAllByRole('cell')) expect(cell).not.toHaveClass('is-wrap-anywhere');
     expect(within(table).getByText(ROW.eventType)).toHaveClass('[overflow-wrap:anywhere]');
-    expect(within(table).getByText('partially approved')).toHaveClass('[overflow-wrap:anywhere]');
+  });
+
+  it('R81: short payload values keep their words whole, so the Details column is never squeezed to one letter', () => {
+    const uuid = '5f0c2e8a-6b1d-4c3e-9a7f-2d8e1b4c6a90';
+    const payloadEntries = [
+      { label: 'Outcome', value: 'partially approved' },
+      { label: 'Role', value: 'admin' },
+      { label: 'Member', value: uuid },
+    ];
+    render(<AuditTable rows={[{ ...ROW, payloadEntries }]} labels={labels} />);
+    for (const value of ['partially approved', 'admin']) {
+      const dd = within(table()).getByText(value);
+      expect(dd).toHaveClass('break-words');
+      expect(dd).not.toHaveClass('[overflow-wrap:anywhere]');
+    }
+    expect(within(table()).getByText(uuid)).toHaveClass('[overflow-wrap:anywhere]');
+    expect(within(table()).getByText('admin').parentElement).toHaveClass('flex-wrap');
   });
 
   it('the table keeps the event with its raw code under it', () => {
