@@ -555,6 +555,8 @@ function makeCreateMemberDeps(options: {
       recordInTx: vi.fn(async () => auditCalls.shift() ?? ok(undefined)),
     } as unknown as CreateMemberDeps['audit'],
     clock: { now: () => new Date('2026-04-17') },
+    // 126 #8 — the plan soft-delete lock + in-tx re-check.
+    planAdvisoryLock: { acquire: vi.fn().mockResolvedValue(undefined), isPlanSoftDeletedInTx: vi.fn().mockResolvedValue(false) },
     memberNumberAllocator: {
       allocate: vi.fn().mockResolvedValue(asMemberNumber(1)),
     },

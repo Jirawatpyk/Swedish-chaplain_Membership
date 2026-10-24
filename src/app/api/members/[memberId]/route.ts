@@ -303,6 +303,42 @@ export async function PATCH(
             },
             { status: 422 },
           );
+        // 126 #5 — the plan age and member-type rules. 422 like the other
+        // policy gates: the edit client opens its override-reason dialog.
+        case 'age_not_eligible':
+          return NextResponse.json(
+            {
+              error: {
+                code: 'age_warning',
+                message: 'Primary contact does not meet the new plan age requirement.',
+                details: result.error,
+              },
+            },
+            { status: 422 },
+          );
+        case 'member_type_out_of_scope':
+          return NextResponse.json(
+            {
+              error: {
+                code: 'member_type_warning',
+                message: 'The member type is outside the new plan scope.',
+                details: result.error,
+              },
+            },
+            { status: 422 },
+          );
+        // 126 #4 — an archived member's plan is immutable until undelete.
+        case 'member_archived':
+          return NextResponse.json(
+            {
+              error: {
+                code: 'state_error',
+                message: 'An archived member cannot change plan.',
+                details: { code: 'state.cannot_change_plan_archived' },
+              },
+            },
+            { status: 409 },
+          );
         case 'server_error':
         default:
           logger.error(

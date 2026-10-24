@@ -271,6 +271,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           },
           { status: 422 },
         );
+      // 126 #5 — 422 like the other policy gates (the create form's
+      // override-reason dialog handles any 422).
+      case 'member_type_out_of_scope':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'member_type_warning',
+              message: 'The member type is outside the plan scope.',
+              details: result.error,
+            },
+          },
+          { status: 422 },
+        );
       case 'age_not_eligible':
         return NextResponse.json(
           {
