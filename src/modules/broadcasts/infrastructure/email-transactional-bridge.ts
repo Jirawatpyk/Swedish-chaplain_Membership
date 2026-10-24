@@ -232,14 +232,25 @@ export const emailTransactionalBridge: EmailTransactionalPort = {
  * roll back with the state change — SC-004), and `context_data` is written
  * exactly as given, ids only — no `subject`, no `event_type` spread in.
  */
+function requireTenantTx(tx: unknown, method: 'enqueueInTx' | 'enqueueManyInTx'): TenantTx {
+  const verifiedTx = assertTenantTxOrNull(tx);
+  if (verifiedTx === null) {
+    throw new TypeError(
+      `EblastNotificationOutboxPort.${method}: a TenantTx is required — the row must share the transaction of the state change.`,
+    );
+  }
+  return verifiedTx;
+}
+
+/**
+ * Rows per INSERT in `enqueueManyInTx`. Each row binds 5 parameters and
+ * Postgres caps a statement at 65,535, so a chunk stays far below the cap.
+ */
+export const EBLAST_ENQUEUE_MANY_CHUNK = 1_000;
+
 export const eblastNotificationOutbox: EblastNotificationOutboxPort = {
   async enqueueInTx(tx, tenantCtx, request) {
-    const verifiedTx = assertTenantTxOrNull(tx);
-    if (verifiedTx === null) {
-      throw new TypeError(
-        'EblastNotificationOutboxPort.enqueueInTx: a TenantTx is required — the row must share the transaction of the state change.',
-      );
-    }
+    const verifiedTx = requireTenantTx(tx, 'enqueueInTx');
     await enqueueOutboxRow(verifiedTx, tenantCtx.slug, request.type, request.toEmail, request.locale, request.contextData);
     logger.info(
       {
@@ -250,5 +261,32 @@ export const eblastNotificationOutbox: EblastNotificationOutboxPort = {
       },
       'broadcasts.eblast_notification.enqueued',
     );
+  },
+
+  // The same row as `enqueueInTx`, many per statement: one multi-row INSERT
+  // per `EBLAST_ENQUEUE_MANY_CHUNK` requests, and one log line per call.
+  async enqueueManyInTx(tx, tenantCtx, requests) {
+    const verifiedTx = requireTenantTx(tx, 'enqueueManyInTx');
+    for (let start = 0; start < requests.length; start += EBLAST_ENQUEUE_MANY_CHUNK) {
+      const chunk = requests.slice(start, start + EBLAST_ENQUEUE_MANY_CHUNK);
+      const values = chunk.map(
+        (r) => sql`(${tenantCtx.slug}, ${r.type}::notification_type, ${r.toEmail}, ${r.locale}, ${JSON.stringify(r.contextData)}::jsonb, 'pending'::outbox_status, 0, now())`,
+      );
+      const rows = (await verifiedTx.execute(sql`
+        INSERT INTO notifications_outbox
+          (tenant_id, notification_type, to_email, locale, context_data, status, attempts, next_retry_at)
+        VALUES ${sql.join(values, sql`, `)}
+        RETURNING id
+      `)) as unknown as Array<{ id: string }>;
+      if (rows.length !== chunk.length) {
+        throw new Error(`EblastNotificationOutboxPort.enqueueManyInTx: outbox insert returned ${rows.length} rows for ${chunk.length} requests`);
+      }
+    }
+    if (requests.length > 0) {
+      logger.info(
+        { tenantId: tenantCtx.slug, notificationType: requests[0]!.type, count: requests.length },
+        'broadcasts.eblast_notification.enqueued_many',
+      );
+    }
   },
 };

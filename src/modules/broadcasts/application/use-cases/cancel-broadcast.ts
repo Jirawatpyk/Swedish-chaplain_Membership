@@ -382,10 +382,13 @@ export async function cancelBroadcast(
       );
 
       // F119 T081 — a member withdrawal is a hand-off to marketing (FR-021).
-      if (input.actor.kind === 'member') {
-        for (const recipient of roster) {
-          await deps.eblastOutbox.enqueueInTx(tx, deps.tenant, {
-            type: 'eblast_member_decided_marketing',
+      // One batched insert for the roster (R81).
+      if (input.actor.kind === 'member' && roster.length > 0) {
+        await deps.eblastOutbox.enqueueManyInTx(
+          tx,
+          deps.tenant,
+          roster.map((recipient) => ({
+            type: 'eblast_member_decided_marketing' as const,
             toEmail: recipient.email,
             locale: recipient.locale,
             contextData: {
@@ -393,11 +396,11 @@ export async function cancelBroadcast(
               broadcastId: input.broadcastId as string,
               versionId: null,
               round: existing.currentRound >= 1 ? existing.currentRound : null,
-              decision: 'withdrawn',
+              decision: 'withdrawn' as const,
               recipientUserId: recipient.userId,
             },
-          });
-        }
+          })),
+        );
       }
 
       // G2 closure (verify-fix 2026-05-02 — US2 wire-up) — notify the

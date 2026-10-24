@@ -362,14 +362,19 @@ async function notify(
       enqueued += 1;
     }
   }
-  for (const recipient of to.staff) {
-    await deps.outbox.enqueueInTx(tx, deps.tenant, {
-      type: 'eblast_approval_lifecycle',
-      toEmail: recipient.email,
-      locale: recipient.locale,
-      contextData: { ...base, audience: 'staff', recipientUserId: recipient.userId },
-    });
-    enqueued += 1;
+  // The staff rows go in ONE batched insert (a per-recipient loop grows with the roster, R81).
+  if (to.staff.length > 0) {
+    await deps.outbox.enqueueManyInTx(
+      tx,
+      deps.tenant,
+      to.staff.map((recipient) => ({
+        type: 'eblast_approval_lifecycle' as const,
+        toEmail: recipient.email,
+        locale: recipient.locale,
+        contextData: { ...base, audience: 'staff' as const, recipientUserId: recipient.userId },
+      })),
+    );
+    enqueued += to.staff.length;
   }
   return enqueued;
 }

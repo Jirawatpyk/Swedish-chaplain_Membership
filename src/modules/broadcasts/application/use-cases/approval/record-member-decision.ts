@@ -252,21 +252,26 @@ export async function recordMemberDecision(
       }
 
       // FR-021 — the hand-off to marketing, one row per recipient, ids only,
-      // to the roster read before the tx (T166 R-L3).
-      for (const recipient of roster) {
-        await deps.outbox.enqueueInTx(tx, deps.tenant, {
-          type: 'eblast_member_decided_marketing',
-          toEmail: recipient.email,
-          locale: recipient.locale,
-          contextData: {
-            tenantId: slug,
-            broadcastId: input.broadcastId as string,
-            versionId: input.versionId,
-            round,
-            decision: input.decision,
-            recipientUserId: recipient.userId,
-          },
-        });
+      // to the roster read before the tx (T166 R-L3), in ONE batched insert
+      // (a per-recipient loop grows with the roster, R81).
+      if (roster.length > 0) {
+        await deps.outbox.enqueueManyInTx(
+          tx,
+          deps.tenant,
+          roster.map((recipient) => ({
+            type: 'eblast_member_decided_marketing' as const,
+            toEmail: recipient.email,
+            locale: recipient.locale,
+            contextData: {
+              tenantId: slug,
+              broadcastId: input.broadcastId as string,
+              versionId: input.versionId,
+              round,
+              decision: input.decision,
+              recipientUserId: recipient.userId,
+            },
+          })),
+        );
       }
 
       return { status: target, whoseTurn: 'marketing' as const, round, decision };
