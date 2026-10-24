@@ -307,7 +307,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     label: 'palette.navigate.invoicesOverdue',
     url: '/admin/invoices?status=overdue',
     permission: 'invoicing.read',
-    keywords: ['past due', 'late'],
+    keywords: ['overdue', 'past due', 'late'],
   },
   {
     // Verify-fix S1 (2026-04-26): F5 Phase 5 paid-online reconciliation
@@ -502,6 +502,20 @@ function matches(haystack: string, needle: string): boolean {
   return haystack.toLowerCase().includes(needle.toLowerCase());
 }
 
+/**
+ * A navigate synonym matches when the query is part of it ("rev" → revenue)
+ * or a word of the query starts with it ("finances", "overdue invoices") —
+ * word starts only, so "template" never matches "late".
+ */
+function matchesKeyword(keyword: string, q: string): boolean {
+  if (matches(keyword, q)) return true;
+  const k = keyword.toLowerCase();
+  return q
+    .toLowerCase()
+    .split(/\s+/)
+    .some((word) => word.startsWith(k));
+}
+
 // --- Use case ---------------------------------------------------------------
 
 export async function searchPlans(
@@ -571,8 +585,10 @@ export async function searchPlans(
       (n) =>
         matches(n.label, q) ||
         matches(n.id, q) ||
-        (n.keywords?.some((k) => matches(k, q)) ?? false),
+        (n.keywords?.some((k) => matchesKeyword(k, q)) ?? false),
     )
+    // Synonyms are a server-side search aid; the client never reads them.
+    .map(({ keywords: _keywords, ...entry }) => entry)
     .slice(0, limit);
 
   return ok({
