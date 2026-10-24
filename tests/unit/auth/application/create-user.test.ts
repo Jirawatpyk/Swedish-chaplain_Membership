@@ -99,7 +99,6 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
   } as unknown as CreateUserDeps['users'];
 
   const tokens = {
-    createInvitation: vi.fn(),
     createInvitationInTx: vi
       .fn()
       .mockResolvedValue({
@@ -109,10 +108,7 @@ function makeDeps(overrides: Partial<CreateUserDeps> = {}): CreateUserDeps {
         invitation: { id: INVITATION_ID, userId: PENDING_USER.id },
       }),
     findInvitationById: vi.fn(),
-    markInvitationConsumed: vi.fn(),
-    createReset: vi.fn(),
     findResetById: vi.fn(),
-    markResetConsumed: vi.fn(),
     invalidateAllUnconsumedForUser: vi.fn(),
   } as unknown as CreateUserDeps['tokens'];
 

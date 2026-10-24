@@ -125,10 +125,9 @@ export interface CreateInvitationResult {
 }
 
 export interface TokenRepo {
-  /** Mint a reset token. Returns plaintext (for email) + Domain entity. */
-  createReset(args: { userId: UserId; now: Date }): Promise<CreateResetResult>;
   /**
-   * Tx-scoped variant of `createReset` (P2 Wave-0). Used by `forgotPassword`
+   * Mint a reset token inside the caller's tx (P2 Wave-0). Returns plaintext
+   * (for email) + Domain entity. Used by `forgotPassword`
    * so the stale-token invalidation + the fresh-token insert commit atomically
    * — a crash between them would strand the user with no live reset link and
    * no email.
@@ -139,18 +138,11 @@ export interface TokenRepo {
   ): Promise<CreateResetResult>;
   /** Look up a reset token by its user-supplied plaintext id (hashed internally). */
   findResetById(plaintext: ResetTokenId): Promise<PasswordResetToken | null>;
-  /** Tx-scoped variant of `findResetById` (Path C — A4). */
-  findResetByIdInTx(
-    tx: DbTx,
-    plaintext: ResetTokenId,
-  ): Promise<PasswordResetToken | null>;
   /**
-   * Consume a live (unconsumed, unexpired) reset token. Returns `false`
-   * when no live row matched — already used, expired, or a concurrent
-   * redemption won the race (125).
+   * Consume a live (unconsumed, unexpired) reset token inside the caller's
+   * tx (Path C — A4). Returns `false` when no live row matched — already
+   * used, expired, or a concurrent redemption won the race (125).
    */
-  markResetConsumed(plaintext: ResetTokenId, now: Date): Promise<boolean>;
-  /** Tx-scoped variant of `markResetConsumed` (Path C — A4). */
   markResetConsumedInTx(
     tx: DbTx,
     plaintext: ResetTokenId,
@@ -172,14 +164,8 @@ export interface TokenRepo {
   ): Promise<number>;
 
   // --- Invitation tokens (T121, spec US4) ---
-  createInvitation(args: {
-    userId: UserId;
-    invitedByUserId: UserId;
-    intendedRole: Role;
-    now: Date;
-  }): Promise<CreateInvitationResult>;
   /**
-   * Tx-scoped variant of `createInvitation`. Used by `createUser` so
+   * Mint an invitation inside the caller's tx. Used by `createUser` so
    * the invitation insert commits atomically with the matching user +
    * outbox rows.
    */
@@ -200,12 +186,10 @@ export interface TokenRepo {
     tx: DbTx,
     plaintext: InvitationTokenId,
   ): Promise<Invitation | null>;
-  /** Guarded single-use consume; `false` = no live row matched (125). */
-  markInvitationConsumed(
-    plaintext: InvitationTokenId,
-    now: Date,
-  ): Promise<boolean>;
-  /** Tx-scoped variant of `markInvitationConsumed` (Path C — A3). */
+  /**
+   * Guarded single-use consume inside the caller's tx (Path C — A3);
+   * `false` = no live row matched (125).
+   */
   markInvitationConsumedInTx(
     tx: DbTx,
     plaintext: InvitationTokenId,
@@ -235,7 +219,7 @@ async function createResetQ(
     })
     .returning();
   const row = rows[0];
-  if (!row) throw new Error('token-repo.createReset: no row returned');
+  if (!row) throw new Error('token-repo.createResetInTx: no row returned');
   return {
     plaintext: asResetTokenId(plaintext),
     token: toDomainReset(row),
@@ -322,7 +306,7 @@ async function createInvitationQ(
     })
     .returning();
   const row = rows[0];
-  if (!row) throw new Error('token-repo.createInvitation: no row returned');
+  if (!row) throw new Error('token-repo.createInvitationInTx: no row returned');
   return {
     plaintext: asInvitationTokenId(plaintext),
     invitation: toDomainInvitation(row),
@@ -365,24 +349,18 @@ async function markInvitationConsumedQ(
 // Object-literal implementation — no class wrapper; see audit-repo.ts
 // for the rationale.
 export const tokenRepo: TokenRepo = {
-  createReset: (args) => createResetQ(db, args),
   createResetInTx: (tx, args) => createResetQ(tx, args),
   findResetById: (plaintext) => findResetByIdQ(db, plaintext),
-  findResetByIdInTx: (tx, plaintext) => findResetByIdQ(tx, plaintext),
-  markResetConsumed: (plaintext, now) => markResetConsumedQ(db, plaintext, now),
   markResetConsumedInTx: (tx, plaintext, now) =>
     markResetConsumedQ(tx, plaintext, now),
   invalidateAllUnconsumedForUser: (userId, now) =>
     invalidateAllUnconsumedForUserQ(db, userId, now),
   invalidateAllUnconsumedForUserInTx: (tx, userId, now) =>
     invalidateAllUnconsumedForUserQ(tx, userId, now),
-  createInvitation: (args) => createInvitationQ(db, args),
   createInvitationInTx: (tx, args) => createInvitationQ(tx, args),
   findInvitationById: (plaintext) => findInvitationByIdQ(db, plaintext),
   findInvitationByIdInTx: (tx, plaintext) =>
     findInvitationByIdQ(tx, plaintext),
-  markInvitationConsumed: (plaintext, now) =>
-    markInvitationConsumedQ(db, plaintext, now),
   markInvitationConsumedInTx: (tx, plaintext, now) =>
     markInvitationConsumedQ(tx, plaintext, now),
 };

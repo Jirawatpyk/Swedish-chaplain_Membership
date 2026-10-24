@@ -556,6 +556,15 @@ describe('resetPassword use case', () => {
     expect(deps.sessions.deleteByUserIdInTx).not.toHaveBeenCalled();
   });
 
+  it('aborts with link-invalid when the user row is gone by the time the tx locks it', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.users.findByIdInTx).mockResolvedValueOnce(null);
+    const result = await resetPassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toEqual({ code: 'link-invalid', reason: 'used' });
+    expect(deps.users.setPasswordHashInTx).not.toHaveBeenCalled();
+  });
+
   it('checks token expiry against the clock read inside the tx, not at request start', async () => {
     const LATER = new Date(NOW.getTime() + 5_000);
     const deps = makeDeps({ now: vi.fn().mockReturnValueOnce(NOW).mockReturnValue(LATER) });

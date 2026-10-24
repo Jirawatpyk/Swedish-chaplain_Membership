@@ -8,14 +8,20 @@
  *      We do NOT emit an audit event in these branches to avoid
  *      log-side enumeration (anyone with audit access could otherwise
  *      confirm whether a given email corresponds to an account).
- *   4. For active users:
- *      - Invalidate any previously-issued unconsumed reset tokens
- *        (spec FR-005: exactly one live reset token per user at a time).
- *      - Create a fresh 64-hex reset token with 1-hour TTL.
- *      - Send the reset email via Resend. On email failure we still
- *        return ok(true) to preserve enumeration safety — the operator
- *        sees the delivery failure in logs.
- *      - Emit `password_reset_requested` audit event.
+ *   4. For active users, schedule ONE task via `deps.defer` and return ok.
+ *      The route wires next/server `after`, so the task runs AFTER the
+ *      response (125 — a registered address does no awaited work an
+ *      unknown one skips; FR-016 timing). The task:
+ *      - Invalidates any previously-issued unconsumed reset tokens
+ *        (spec FR-005: exactly one live reset token per user at a time)
+ *        and creates a fresh 64-hex reset token with 1-hour TTL (one tx).
+ *      - Sends the reset email via Resend. A delivery failure is logged
+ *        and audited (`password_reset_email_failed`).
+ *      - Emits the `password_reset_requested` audit event.
+ *      Any throw inside the task (token tx included) is logged as
+ *      `forgot_password.deferred_failed` — there is no caller to surface
+ *      it to once the response has gone. "I never got the email": look
+ *      for that log line or `password_reset_email_failed`.
  *
  * ALWAYS returns 200 at the HTTP layer regardless of the outcome
  * (spec FR-016 "if the email is registered, a link has been sent" is
@@ -61,13 +67,6 @@ export interface ForgotPasswordInput {
   readonly sourceIp: string;
   readonly requestId: string;
   readonly locale?: EmailLocale | undefined;
-  /**
-   * 125 — schedules the email send + audit rows. The route passes
-   * next/server `after`, so they run AFTER the response and a registered
-   * address answers in the same time as an unknown one (FR-016 timing).
-   * Default: run the task inline and await it (scripts, tests).
-   */
-  readonly defer?: ((task: () => Promise<void>) => void | Promise<void>) | undefined;
 }
 
 export type ForgotPasswordSuccess = { readonly ok: true };
@@ -91,6 +90,12 @@ export interface ForgotPasswordDeps {
   readonly limiter: RateLimiter;
   readonly email: EmailSender;
   readonly buildResetPasswordEmail: typeof BuildResetPasswordEmailFn;
+  /**
+   * 125 — schedules the active-user work (token tx + email + audit). The
+   * default (auth-deps) runs it inline and awaits it (scripts, tests); the
+   * route overrides it with next/server `after` so it runs post-response.
+   */
+  readonly defer: (task: () => Promise<void>) => void | Promise<void>;
   readonly now: () => Date;
 }
 
@@ -164,29 +169,28 @@ export async function forgotPassword(
   }
   authMetrics.passwordResetRequested(true);
 
-  const now = deps.now();
-
-  // 4. Invalidate existing unconsumed tokens and create a fresh one — ATOMICALLY
-  //    (P2 Wave-0). The invalidate + insert run in ONE owner-role tx so a crash
-  //    between them can't strand the user with every prior token invalidated and
-  //    none created (no live reset link AND no email). Email send + audit stay
-  //    POST-commit below — a transient send/audit failure must never roll back
-  //    the freshly-minted token.
-  //    E2 — `createResetInTx` returns `{ plaintext, token }`. The plaintext is
-  //    delivered in the email URL; the persisted row stores `sha256(plaintext)`
-  //    as id. We only log the hash via `token.id` (safe for audit correlation).
-  const { plaintext, token } = await db.transaction(async (tx) => {
-    await deps.tokens.invalidateAllUnconsumedForUserInTx(tx, user.id, now);
-    return deps.tokens.createResetInTx(tx, { userId: user.id, now });
-  });
-  void token; // referenced by audit emit below; keep for clarity.
-
-  // 5–6. Email send + audit run through `defer` (125): awaited inline
-  //      they made a registered address measurably slower than an
-  //      unknown one (Resend round-trip + retries). A throw inside the
-  //      task has no caller once the response is gone, so it is logged.
+  // 4–6. Token tx + email + audit run through `deps.defer` (125): awaited
+  //      inline, even the token tx alone made a registered address
+  //      measurably slower than an unknown one. A throw inside the task has
+  //      no caller once the response is gone, so it is logged.
   const deliver = async (): Promise<void> => {
     try {
+      const now = deps.now();
+
+      // 4. Invalidate existing unconsumed tokens and create a fresh one —
+      //    ATOMICALLY (P2 Wave-0). The invalidate + insert run in ONE
+      //    owner-role tx so a crash between them can't strand the user with
+      //    every prior token invalidated and none created (no live reset link
+      //    AND no email). Email send + audit stay POST-commit below — a
+      //    transient send/audit failure must never roll back the token.
+      //    E2 — `createResetInTx` returns `{ plaintext, token }`. The
+      //    plaintext is delivered in the email URL; the persisted row stores
+      //    `sha256(plaintext)` as id.
+      const { plaintext } = await db.transaction(async (tx) => {
+        await deps.tokens.invalidateAllUnconsumedForUserInTx(tx, user.id, now);
+        return deps.tokens.createResetInTx(tx, { userId: user.id, now });
+      });
+
       // 5. Send the email. Failure is logged but does NOT change the
       //    HTTP response (enumeration safety).
       const built = deps.buildResetPasswordEmail({
@@ -239,8 +243,7 @@ export async function forgotPassword(
       );
     }
   };
-  const defer = input.defer ?? ((task: () => Promise<void>) => task());
-  await defer(deliver);
+  await deps.defer(deliver);
 
   return ok({ ok: true });
 }

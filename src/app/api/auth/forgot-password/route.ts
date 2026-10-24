@@ -8,6 +8,7 @@
 import { NextResponse, after, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { forgotPassword, type EmailLocale } from '@/modules/auth';
+import { defaultForgotPasswordDeps } from '@/lib/auth-deps';
 import { getClientIp } from '@/lib/client-ip';
 import { logger } from '@/lib/logger';
 import { requestIdFromHeaders } from '@/lib/request-id';
@@ -46,14 +47,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   const locale: EmailLocale | undefined = parsed.data.locale;
-  const result = await forgotPassword({
-    email: parsed.data.email,
-    sourceIp: getClientIp(request),
-    requestId,
-    locale,
-    // 125 — email send + audit run after the response (FR-016 timing).
-    defer: after,
-  });
+  const result = await forgotPassword(
+    {
+      email: parsed.data.email,
+      sourceIp: getClientIp(request),
+      requestId,
+      locale,
+    },
+    // 125 — token tx + email + audit run after the response (FR-016 timing).
+    { ...defaultForgotPasswordDeps, defer: after },
+  );
 
   if (!result.ok) {
     const { error } = result;

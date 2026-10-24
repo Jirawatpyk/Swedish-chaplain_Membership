@@ -189,21 +189,35 @@ export async function resetPassword(
   let killed: number;
   try {
     killed = await db.transaction(async (tx) => {
+      // 125 — re-read the clock: the HIBP fetch + argon2 above can take
+      //     seconds, and the expiry guard must judge the token at commit
+      //     time, not at request start.
+      const txNow = deps.now();
+
       // 6a. Consume token FIRST (W-01 ordering preserved). If a later
       //     step in the tx throws, the markResetConsumedInTx is rolled
       //     back atomically. 125 — the consume is guarded (live row
       //     only), so a concurrent redemption of the same link that
       //     passed the pre-tx read loses here instead of also committing.
-      const consumed = await deps.tokens.markResetConsumedInTx(tx, input.token, now);
+      const consumed = await deps.tokens.markResetConsumedInTx(tx, input.token, txNow);
       if (!consumed) {
         throw new TxAbort<ResetPasswordError>({ code: 'link-invalid', reason: 'used' });
       }
-      await deps.tokens.invalidateAllUnconsumedForUserInTx(tx, user.id, now);
+
+      // 125 — re-read the user FOR UPDATE (as redeem-invite does): an
+      //     admin disable that landed after the pre-tx read must win, or
+      //     the new password would wait on a disabled account for its
+      //     re-enable.
+      const locked = await deps.users.findByIdInTx(tx, user.id);
+      if (!locked || locked.status !== 'active') {
+        throw new TxAbort<ResetPasswordError>({ code: 'link-invalid', reason: 'used' });
+      }
+      await deps.tokens.invalidateAllUnconsumedForUserInTx(tx, user.id, txNow);
 
       // 6b. Persist new password + clear lockout state (G8 — single
       //     UPDATE for lockedUntil+failedSignInCount; pre-G8 the two
       //     calls below issued byte-identical UPDATEs back-to-back).
-      await deps.users.setPasswordHashInTx(tx, user.id, hashed, now);
+      await deps.users.setPasswordHashInTx(tx, user.id, hashed, txNow);
       await deps.users.clearLockAndFailedCountInTx(tx, user.id);
 
       // 6c. Revoke every existing session for this user.

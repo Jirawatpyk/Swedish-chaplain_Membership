@@ -2,19 +2,21 @@
  * change-password use case (T151, spec US6 AS1-AS3, contracts § 5).
  *
  * Algorithm:
- *   1. Rate-limit by USER (5 attempts / 15 min, debited atomically
- *      before verify) — the key is `change-pw:user:<id>` so IP pivots
- *      don't bypass the counter.
- *   2. Look up the current user (caller provides session, route
- *      handler re-hydrates via getCurrentSession).
- *   3. Verify `currentPassword` against the stored hash. On miss,
- *      return wrong-current.
- *   4. Reject if `newPassword === currentPassword` (same-password).
+ *   1. Reject if `newPassword === currentPassword` (same-password).
  *      This short-circuits BEFORE HIBP so the user never sees the
  *      breached-password error for their own current (otherwise-OK)
  *      password.
- *   5. Run the password policy on `newPassword` (length + common +
+ *   2. Run the password policy on `newPassword` (length + common +
  *      HIBP). Weak → weak-password with which rule failed.
+ *      (125 — steps 1–2 run before the limiter: a rejected NEW password
+ *      is not a guess of the current one.)
+ *   3. Rate-limit by USER (5 attempts / 15 min, debited atomically
+ *      before verify) — the key is `change-pw:user:<id>` so IP pivots
+ *      don't bypass the counter.
+ *   4. Look up the current user (caller provides session, route
+ *      handler re-hydrates via getCurrentSession).
+ *   5. Verify `currentPassword` against the stored hash. On miss,
+ *      return wrong-current.
  *   6. Hash and persist the new password, update
  *      `last_password_changed_at`.
  *   7. Rotate the current session: create a fresh session id, delete
@@ -98,13 +100,34 @@ export async function changePassword(
   input: ChangePasswordInput,
   deps: ChangePasswordDeps = defaultChangePasswordDeps,
 ): Promise<Result<ChangePasswordSuccess, ChangePasswordError>> {
-  // 1. Per-user rate limit — an atomic check() that debits EVERY
-  //    attempt before argon2 runs (125). The B2 peek-then-consume gate
+  // 1. Same-password guard (short-circuits before HIBP). 125 — steps 1–2
+  //    judge only the NEW password, so they run BEFORE the limiter: a
+  //    rejected new password is not a guess of the current one and must
+  //    not spend the brute-force budget. They reveal nothing about the
+  //    current password (a plain string compare + the public policy).
+  if (input.newPassword === input.currentPassword) {
+    authMetrics.passwordWeakRejected('same');
+    return err({ code: 'same-password' });
+  }
+
+  // 2. Policy check
+  const policy = await deps.checkPolicy(input.newPassword);
+  if (!policy.ok) {
+    // Shared bucket mapping — see reset-password.ts for the rationale.
+    // The `'same'` bucket is handled separately above (step 1) because
+    // it's not a policy error but a short-circuit before HIBP.
+    const bucket = weakPasswordMetricBucket(policy.errors);
+    if (bucket) authMetrics.passwordWeakRejected(bucket);
+    return err({ code: 'weak-password', errors: policy.errors });
+  }
+
+  // 3. Per-user rate limit — an atomic check() that debits every attempt
+  //    that reaches argon2 verify (125). The B2 peek-then-consume gate
   //    (review-20260517-post-ship-hardening.md § B2) spared legitimate
   //    rotations a debit, but a parallel burst of guesses all passed
   //    the non-consuming peek before any wrong guess was charged. The
-  //    trade-off: a user who changes their password 5 times in 15 min
-  //    is rate-limited on the 6th — acceptable for a rare action.
+  //    trade-off: a user who completes 5 changes in 15 min is
+  //    rate-limited on the 6th — acceptable for a rare action.
   const limit = await deps.limiter.check(
     `change-pw:user:${input.user.id}`,
     RATE_LIMIT_PER_USER.max,
@@ -117,7 +140,7 @@ export async function changePassword(
     });
   }
 
-  // 2. Re-fetch to get the stored passwordHash (the user param has
+  // 4. Re-fetch to get the stored passwordHash (the user param has
   //    domain-level info but not the secret).
   const found = await deps.users.findByEmail(input.user.email);
   if (!found || !found.passwordHash) {
@@ -126,7 +149,7 @@ export async function changePassword(
     return err({ code: 'wrong-current-password' });
   }
 
-  // 3. Verify current password. Round 2 (post-ship review § E-HIGH1
+  // 5. Verify current password. Round 2 (post-ship review § E-HIGH1
   //    silent-failure, 2026-05-17) — catch
   //    MalformedHashError separately so a DB-corruption incident does
   //    NOT bubble as an opaque 500 with no audit row. Pre-fix the
@@ -176,23 +199,6 @@ export async function changePassword(
       requestId: input.requestId,
     });
     return err({ code: 'wrong-current-password' });
-  }
-
-  // 4. Same-password guard (short-circuits before HIBP)
-  if (input.newPassword === input.currentPassword) {
-    authMetrics.passwordWeakRejected('same');
-    return err({ code: 'same-password' });
-  }
-
-  // 5. Policy check
-  const policy = await deps.checkPolicy(input.newPassword);
-  if (!policy.ok) {
-    // Shared bucket mapping — see reset-password.ts for the rationale.
-    // The `'same'` bucket is handled separately above (step 4) because
-    // it's not a policy error but a short-circuit before HIBP.
-    const bucket = weakPasswordMetricBucket(policy.errors);
-    if (bucket) authMetrics.passwordWeakRejected(bucket);
-    return err({ code: 'weak-password', errors: policy.errors });
   }
 
   // 6. Hash (pre-tx — argon2id is CPU-bound, see reset-password.ts).

@@ -116,6 +116,9 @@ type Queryable = typeof db | DbTx;
 async function createQ(
   q: Queryable,
   args: { userId: UserId; sourceIp: string; now: Date },
+  // Names the caller's path in the no-row error so a failure inside a tx
+  // (redeem-invite, change-password) is distinguishable from sign-in's.
+  method: 'create' | 'createInTx',
 ): Promise<Session> {
   const plaintext = generatePlaintextSessionId();
   const hash = sha256Hex(plaintext);
@@ -132,7 +135,7 @@ async function createQ(
     })
     .returning();
   const row = rows[0];
-  if (!row) throw new Error('session-repo.create: no row returned');
+  if (!row) throw new Error(`session-repo.${method}: no row returned`);
   return toDomainCreated(row, plaintext);
 }
 
@@ -147,8 +150,8 @@ async function deleteByUserIdQ(q: Queryable, userId: UserId): Promise<number> {
 // Object-literal implementation — no class wrapper; see audit-repo.ts
 // for the rationale. Matches the rest of the codebase's adapter style.
 export const sessionRepo: SessionRepo = {
-  create: (args) => createQ(db, args),
-  createInTx: (tx, args) => createQ(tx, args),
+  create: (args) => createQ(db, args, 'create'),
+  createInTx: (tx, args) => createQ(tx, args, 'createInTx'),
 
   async findById(plaintext) {
     const rows = await db
