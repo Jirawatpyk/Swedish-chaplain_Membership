@@ -809,6 +809,11 @@ export function makeFakeApprovalStore(
     enqueueInTx: vi.fn(async (tx: unknown, tenant: TenantContext, request: EblastNotificationEnqueue): Promise<void> => {
       state.outbox = [...state.outbox, { ...request, tx, tenantId: tenant.slug as string }];
     }),
+    enqueueManyInTx: vi.fn(
+      async (tx: unknown, tenant: TenantContext, requests: readonly EblastNotificationEnqueue[]): Promise<void> => {
+        state.outbox = [...state.outbox, ...requests.map((r) => ({ ...r, tx, tenantId: tenant.slug as string }))];
+      },
+    ),
   } satisfies EblastNotificationOutboxPort & { rows: () => readonly FakeOutboxRow[] };
 
   return Object.assign(store, {

@@ -148,9 +148,11 @@ describe('F119 T123 — the submit hands off to marketing, one outbox row per re
     const draftId = randomUUID();
     const deps = {
       ...makeSubmitBroadcastDeps(tenant.ctx.slug, makeMarketingDirectory(tenant.ctx.slug)),
+      // The submit hands off in ONE batched insert, so the fault rides that call.
       eblastOutbox: {
-        async enqueueInTx(tx: unknown, t: Parameters<typeof eblastNotificationOutbox.enqueueInTx>[1], r: Parameters<typeof eblastNotificationOutbox.enqueueInTx>[2]) {
-          await eblastNotificationOutbox.enqueueInTx(tx, t, r); // the REAL insert…
+        ...eblastNotificationOutbox,
+        async enqueueManyInTx(tx: unknown, t: Parameters<typeof eblastNotificationOutbox.enqueueManyInTx>[1], r: Parameters<typeof eblastNotificationOutbox.enqueueManyInTx>[2]) {
+          await eblastNotificationOutbox.enqueueManyInTx(tx, t, r); // the REAL insert…
           throw new Error('fault after the enqueue'); // …then the tx fails
         },
       },

@@ -963,10 +963,14 @@ export async function submitBroadcast(
       // THIS tx, so a rollback leaves none (SC-004). Unconditional — the flag
       // lives at the drainer (T152a), which holds the rows while it is off
       // (FR-034: today nobody is emailed on submit, and with the flag off
-      // nobody is). The roster was read before the tx (T166 R-L3).
-      for (const recipient of roster) {
-        await deps.eblastOutbox.enqueueInTx(tx, deps.tenant, {
-          type: 'eblast_submitted_marketing',
+      // nobody is). The roster was read before the tx (T166 R-L3). ONE
+      // batched insert: a per-recipient loop grows with the roster (R81);
+      // an empty roster is the adapter's no-op.
+      await deps.eblastOutbox.enqueueManyInTx(
+        tx,
+        deps.tenant,
+        roster.map((recipient) => ({
+          type: 'eblast_submitted_marketing' as const,
           toEmail: recipient.email,
           locale: recipient.locale,
           contextData: {
@@ -974,8 +978,8 @@ export async function submitBroadcast(
             broadcastId: broadcastId as string,
             recipientUserId: recipient.userId,
           },
-        });
-      }
+        })),
+      );
 
       // T172 — emit-site wiring (Phase 9). Counter + audit-volume per
       // SC-010 / SLO-F7-002 dashboards. Duration histogram emitted by

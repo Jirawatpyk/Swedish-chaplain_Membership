@@ -312,6 +312,7 @@ describe('F119 send + promotion + the stage clock — real composition on live P
       {
         ...makeSendVersionToMemberDeps(tenant.ctx.slug),
         outbox: {
+          ...eblastNotificationOutbox,
           async enqueueInTx(tx, t, request) {
             await eblastNotificationOutbox.enqueueInTx(tx, t, request); // the REAL insert, on the REAL tx
             enqueued += 1;
