@@ -18,22 +18,19 @@
  * lookup `member_plan_changed`-event timestamp. If the most recent change
  * falls within the current quota year, the explainer microcopy renders;
  * otherwise the row is suppressed.
+ *
+ * Spec 122 US12d-1 (T1236, boards `Portal-broadcasts`, `-mobile`, `-empty`):
+ * the "My broadcasts" heading with a primary Compose E-Blast button (plus
+ * icon); the history as an AURA table in a card from `md` up, each status an
+ * AURA `StatusPill` in the portal tones; the phone list below `md`; the empty
+ * history as the shared EmptyState with the same button. Pagination keeps its
+ * own `?tab=broadcasts&page=N` links, on AURA `buttonClass`.
  */
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { Mail } from 'lucide-react';
-import { buttonVariants } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Mail, PlusIcon } from 'lucide-react';
+import { Card, Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { EmptyState } from '@/components/shell/empty-state';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
 import { QuotaDisplay } from '@/components/broadcast/quota-display';
@@ -54,6 +51,8 @@ import { shouldShowPlanChangedExplainer } from '@/components/broadcast/quota-ban
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { env } from '@/lib/env';
 import { keepTermTogether } from '@/components/broadcast/keep-term-together';
+import { getPortalBroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
+import type { BroadcastStatus } from '@/modules/broadcasts/domain/value-objects/broadcast-status';
 import {
   BroadcastHistoryCardList,
   type BroadcastHistoryRowView,
@@ -270,10 +269,13 @@ export async function BroadcastsPanel({
     // `status.*` key would otherwise throw at render (next-intl). Fall back
     // to the raw status so a future enum value degrades gracefully.
     const statusKey = row.status as Parameters<typeof tStatus>[0];
+    const known = tStatus.has(statusKey);
     return {
       broadcastId: row.broadcastId,
       subject: row.subject,
-      statusLabel: tStatus.has(statusKey) ? tStatus(statusKey) : row.status,
+      statusLabel: known ? tStatus(statusKey) : row.status,
+      // An unknown status (no label either) degrades to the neutral pill.
+      statusTone: known ? getPortalBroadcastStatusTone(row.status as BroadcastStatus) : 'neutral',
       estimatedRecipientCount: row.estimatedRecipientCount,
       submitted:
         row.submittedAt !== null ? dateFormatter.format(new Date(row.submittedAt)) : '—',
@@ -287,12 +289,12 @@ export async function BroadcastsPanel({
           PageHeader title (058 G1 change (d)); the Compose CTA preserves
           the e-blasts PageHeader.actions slot logic verbatim (enabled
           <Link> vs disabled-with-tooltip when quota is exhausted). */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h2 id="broadcasts-panel-heading" className="text-lg font-semibold">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2 id="broadcasts-panel-heading" className="text-xl font-semibold">
             {keepTermTogether(t('title'))}
           </h2>
-          <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
+          <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('subtitle')}</p>
         </div>
         {composeDisabled ? (
           <ComposeButtonWithTooltip
@@ -307,7 +309,11 @@ export async function BroadcastsPanel({
             })}
           />
         ) : (
-          <Link href="/portal/broadcasts/new" className={buttonVariants({ variant: 'default' })}>
+          <Link
+            href="/portal/broadcasts/new"
+            className={buttonClass({ variant: 'primary', touchHeight: true, fullWidth: 'below-sm' })}
+          >
+            <Icon name={<PlusIcon />} size={16} />
             {tCompose('title')}
           </Link>
         )}
@@ -337,7 +343,11 @@ export async function BroadcastsPanel({
           description={t('empty')}
           action={
             composeDisabled ? undefined : (
-              <Link href="/portal/broadcasts/new" className={buttonVariants({ size: 'sm' })}>
+              <Link
+                href="/portal/broadcasts/new"
+                className={buttonClass({ variant: 'primary', touchHeight: true })}
+              >
+                <Icon name={<PlusIcon />} size={16} />
                 {t('emptyCta')}
               </Link>
             )
@@ -349,49 +359,47 @@ export async function BroadcastsPanel({
           {/* U37 — dual-render: the table from `md` up, the card list below it
               (at 320 px the table was 729 px wide inside a 209 px box). */}
           <Card className="hidden md:flex">
-            <CardContent>
-              <Table
-                data-testid="broadcast-history-table"
-                aria-label={t('title')}
-                className="min-w-[640px]"
-              >
-                {/* U31 — the shared `Table` primitive pulls `aria-label` off and
-                    names the scroll REGION with it, so the <table> itself was
-                    anonymous to a screen reader listing tables (SC 1.3.1). Same
-                    class as the F7.1a US1 missing-caption blocker; same fix, and
-                    it reuses the key the region already carries. */}
-                <TableCaption className="sr-only">{t('title')}</TableCaption>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead scope="col">{t('columns.subject')}</TableHead>
-                    <TableHead scope="col">{t('columns.status')}</TableHead>
-                    <TableHead scope="col">{t('columns.audience')}</TableHead>
-                    <TableHead scope="col">{t('columns.submittedAt')}</TableHead>
-                    <TableHead scope="col">{t('columns.sentAt')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {historyRows.map((row) => (
-                    <TableRow key={row.broadcastId}>
-                      <TableCell>
-                        <Link
-                          href={`/portal/broadcasts/${row.broadcastId}`}
-                          className="font-medium text-primary hover:underline"
-                        >
-                          {row.subject}
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{row.statusLabel}</Badge>
-                      </TableCell>
-                      <TableCell className="tabular-nums">{row.estimatedRecipientCount}</TableCell>
-                      <TableCell className="text-muted-foreground">{row.submitted}</TableCell>
-                      <TableCell className="text-muted-foreground">{row.sent}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
+            <Table
+              data-testid="broadcast-history-table"
+              caption={t('title')}
+              captionHidden
+              bleed
+              className="[&_td]:align-middle"
+            >
+              {/* U31 — the <table> itself is named by its (hidden) caption, so a
+                  screen reader listing the page's tables finds it (SC 1.3.1). */}
+              <THead>
+                <Tr>
+                  <Th>{t('columns.subject')}</Th>
+                  <Th>{t('columns.status')}</Th>
+                  <Th>{t('columns.audience')}</Th>
+                  <Th>{t('columns.submittedAt')}</Th>
+                  <Th>{t('columns.sentAt')}</Th>
+                </Tr>
+              </THead>
+              <TBody>
+                {historyRows.map((row) => (
+                  <Tr key={row.broadcastId}>
+                    <Td>
+                      <Link
+                        href={`/portal/broadcasts/${row.broadcastId}`}
+                        className="font-medium text-[var(--aura-fg-primary)] no-underline hover:underline"
+                      >
+                        {row.subject}
+                      </Link>
+                    </Td>
+                    <Td>
+                      <StatusPill tone={row.statusTone} wrap className="max-w-full">
+                        {row.statusLabel}
+                      </StatusPill>
+                    </Td>
+                    <Td className="tabular-nums">{row.estimatedRecipientCount}</Td>
+                    <Td className="whitespace-nowrap text-[var(--aura-fg-secondary)]">{row.submitted}</Td>
+                    <Td className="whitespace-nowrap text-[var(--aura-fg-secondary)]">{row.sent}</Td>
+                  </Tr>
+                ))}
+              </TBody>
+            </Table>
           </Card>
           <BroadcastHistoryCardList
             rows={historyRows}
@@ -415,12 +423,12 @@ export async function BroadcastsPanel({
         <nav
           data-testid="broadcast-history-pagination"
           aria-label={tPagination('ariaLabel')}
-          className="flex items-center justify-between text-sm"
+          className="flex items-center justify-between gap-3 aura-text-caption"
         >
           {pagination.page > 1 ? (
             <Link
               href={`/portal/benefits?tab=broadcasts&page=${pagination.page - 1}`}
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
               data-testid="pagination-prev"
             >
               {tPagination('previous')}
@@ -429,12 +437,12 @@ export async function BroadcastsPanel({
             <span
               aria-disabled="true"
               data-testid="pagination-prev"
-              className={`${buttonVariants({ variant: 'outline', size: 'sm' })} cursor-not-allowed opacity-50 pointer-events-none`}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'pointer-events-none cursor-not-allowed opacity-50' })}
             >
               {tPagination('previous')}
             </span>
           )}
-          <span className="text-muted-foreground">
+          <span className="text-[var(--aura-fg-secondary)]">
             {tPagination('pageOf', {
               page: pagination.page,
               total: pagination.totalPages,
@@ -443,7 +451,7 @@ export async function BroadcastsPanel({
           {pagination.page < pagination.totalPages ? (
             <Link
               href={`/portal/benefits?tab=broadcasts&page=${pagination.page + 1}`}
-              className={buttonVariants({ variant: 'outline', size: 'sm' })}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true })}
               data-testid="pagination-next"
             >
               {tPagination('next')}
@@ -452,7 +460,7 @@ export async function BroadcastsPanel({
             <span
               aria-disabled="true"
               data-testid="pagination-next"
-              className={`${buttonVariants({ variant: 'outline', size: 'sm' })} cursor-not-allowed opacity-50 pointer-events-none`}
+              className={buttonClass({ variant: 'secondary', size: 'sm', touchHeight: true, className: 'pointer-events-none cursor-not-allowed opacity-50' })}
             >
               {tPagination('next')}
             </span>

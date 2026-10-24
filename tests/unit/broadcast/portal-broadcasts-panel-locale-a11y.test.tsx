@@ -213,7 +213,8 @@ describe('U37 — the history renders as a card list below md', () => {
     const card = items[0]!;
     // Same detail link as the table row.
     const tableLink = within(table).getByRole('link', { name: 'Spring mixer' });
-    const cardLink = within(card).getByRole('link', { name: 'Spring mixer' });
+    // US12d-1: the phone row is one link, named by the whole row (subject first).
+    const cardLink = within(card).getByRole('link', { name: /^Spring mixer/ });
     expect(cardLink).toHaveAttribute('href', tableLink.getAttribute('href'));
     // Same status badge text, audience count and formatted dates.
     const sent = enMessages.portal.broadcasts.list.status.sent;
@@ -226,21 +227,46 @@ describe('U37 — the history renders as a card list below md', () => {
     }
   });
 
-  // F119 UX review — at 320 px the `shrink-0` badge beside the subject
-  // squeezed a long subject into a narrow column. Below `sm` the badge stacks
-  // under the subject; the subject link is a full-row tap target.
-  it('stacks the status badge under the subject below sm, with a block tap target', async () => {
+  // Spec 122 US12d-1 (T1236, board `Portal-broadcasts-mobile`): one bordered
+  // list; each row is a link that fills the row (the old full-row subject tap
+  // target, now the whole row), with the status pill and the meta under the
+  // subject.
+  it('each phone row is one link holding the subject, the status pill and the dates', async () => {
     await renderPanel('en');
 
     const card = within(screen.getByTestId('broadcast-history-card-list')).getAllByRole(
       'listitem',
     )[0]!;
-    const link = within(card).getByRole('link', { name: 'Spring mixer' });
-    expect(link.className).toMatch(/(^|\s)block(\s|$)/);
-    expect(link.className).toMatch(/(^|\s)py-2(\s|$)/);
-    const row = link.parentElement!;
-    expect(row.className).toMatch(/(^|\s)flex-col(\s|$)/);
-    expect(row.className).toMatch(/(^|\s)sm:flex-row(\s|$)/);
+    const links = within(card).getAllByRole('link');
+    expect(links).toHaveLength(1);
+    const link = links[0]!;
+    expect(link).toHaveAttribute('href', '/portal/broadcasts/b-1');
+    expect(link.className).toMatch(/(^|\s)flex(\s|$)/);
+    expect(link).toHaveTextContent('Spring mixer');
+    const sent = enMessages.portal.broadcasts.list.status.sent;
+    expect(within(link).getByText(sent, { selector: 'span' }).closest('.aura-pill')).not.toBeNull();
+  });
+});
+
+describe('Spec 122 US12d-1 (T1236) — the E-Blast tab on AURA', () => {
+  it('the compose link is an AURA primary button when quota remains', async () => {
+    setQuota(2);
+    await renderPanel('en');
+
+    const compose = screen.getByRole('link', {
+      name: enMessages.portal.broadcasts.compose.title,
+    });
+    expect(compose).toHaveAttribute('href', '/portal/broadcasts/new');
+    expect(compose).toHaveClass('aura-btn', 'aura-btn--primary');
+  });
+
+  it('the table shows each status as an AURA status pill', async () => {
+    await renderPanel('en');
+
+    const table = screen.getByRole('table', { name: /my broadcasts/i });
+    const sent = enMessages.portal.broadcasts.list.status.sent;
+    expect(within(table).getByText(sent, { selector: 'span' }).closest('.aura-pill')).not.toBeNull();
+    expect(table.closest('.aura-card')).not.toBeNull();
   });
 });
 
