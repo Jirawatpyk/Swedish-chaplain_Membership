@@ -16,9 +16,12 @@
  *
  * `DetailContainer` matches `page.tsx` + `error.tsx` (`check:layout` pins the
  * page/loading pair).
+ *
+ * 122 US12d-1 (T1233): the header bars are the shared `SkeletonBlock`s; the
+ * form's shape moves with the form (US12d-3).
  */
 import { DetailContainer } from '@/components/layout';
-import { Skeleton } from '@/components/ui/skeleton';
+import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { ComposeFormSkeleton } from '@/components/broadcast/compose-form-skeleton';
 import { env } from '@/lib/env';
 
@@ -26,8 +29,8 @@ export default function ComposeLoading(): React.ReactElement {
   return (
     <DetailContainer>
       <header className="space-y-2">
-        <Skeleton className="h-7 w-48" />
-        <Skeleton className="h-4 w-72" />
+        <SkeletonBlock className="h-7 w-48" />
+        <SkeletonBlock className="h-4 w-72" />
       </header>
       <ComposeFormSkeleton variant="member" imageControls={env.features.f71aUs2Images} />
     </DetailContainer>

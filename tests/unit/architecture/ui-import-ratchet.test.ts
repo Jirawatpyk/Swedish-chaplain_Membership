@@ -152,10 +152,13 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it("except the benefits page's E-Blast tab, which moves with US12", async () => {
-      expect(
-        await ratchetHits(legacy, 'src/app/(member)/portal/benefits/_components/broadcasts-panel.tsx'),
-      ).toEqual([]);
+    it("and the benefits page's E-Blast tab, since US12d-1", async () => {
+      for (const path of [
+        'src/app/(member)/portal/benefits/_components/broadcasts-panel.tsx',
+        'src/app/(member)/portal/benefits/_components/broadcast-history-card-list.tsx',
+      ]) {
+        expect(await ratchetHits(legacy, path)).toHaveLength(1);
+      }
     });
 
   });
@@ -370,7 +373,7 @@ describe('UI import ratchet (spec 122)', () => {
     });
 
     it('control: the staff compose route keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/error.tsx')).toEqual([]);
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/page.tsx')).toEqual([]);
     });
   });
 
@@ -496,7 +499,7 @@ describe('UI import ratchet (spec 122)', () => {
     });
 
     it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/error.tsx')).toEqual([]);
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/page.tsx')).toEqual([]);
     });
   });
 
@@ -518,7 +521,7 @@ describe('UI import ratchet (spec 122)', () => {
     });
 
     it('control: the staff compose route keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/error.tsx')).toEqual([]);
+      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/page.tsx')).toEqual([]);
     });
   });
 
@@ -776,6 +779,31 @@ describe('UI import ratchet (spec 122)', () => {
       'src/components/broadcast/email-frame.tsx',
     ])('%s cannot import the legacy kit', async (path) => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+  });
+
+  describe('the US12d-1 frames, quota card, compose buttons and the three last non-E-Blast files are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+    it.each([
+      'src/app/(staff)/admin/error.tsx',
+      'src/app/(staff)/admin/not-found.tsx',
+      'src/components/portal/portal-sign-out-button.tsx',
+      'src/app/(staff)/admin/broadcasts/new/error.tsx',
+      'src/app/(member)/portal/broadcasts/new/error.tsx',
+      'src/app/(member)/portal/broadcasts/new/loading.tsx',
+      'src/components/broadcast/quota-display.tsx',
+      'src/components/broadcast/compose-button-with-tooltip.tsx',
+      'src/components/broadcast/submit-button.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the editor toolbar keeps the legacy kit until US12d-2', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/tiptap-toolbar.tsx')).toEqual([]);
+    });
+
+    it('control: E-Blast compose keeps the legacy kit until US12d-3', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/compose-form.tsx')).toEqual([]);
     });
   });
 });

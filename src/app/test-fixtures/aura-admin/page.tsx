@@ -131,6 +131,7 @@ import { ArrowLeftIcon } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PlanBreadcrumbLabel } from '@/components/layout/plan-breadcrumb-label';
 import { renderAuditListView } from '@/app/(staff)/admin/audit/page';
+import { RootErrorPreview } from './root-boundary-previews';
 import { AuditFilters } from '@/components/audit/audit-filters';
 import { renderErasureLogView } from '@/app/(staff)/admin/compliance/erasure-log/page';
 import { CATEGORIES as SETTINGS_CATEGORIES, renderSettingsHubView } from '@/app/(staff)/admin/settings/page';
@@ -1830,6 +1831,20 @@ export default async function AuraAdminPreviewPage({
         })}
       </StaffFrame>
     );
+  }
+
+  // Spec 122 US12d-1 — the staff root boundaries (boards `Admin-state-error`,
+  // `Admin-state-not-available`).
+  if (view === 'root-error') {
+    return (
+      <StaffFrame path="/admin/members">
+        <RootErrorPreview />
+      </StaffFrame>
+    );
+  }
+  if (view === 'root-not-found') {
+    const StaffNotFound = (await import('@/app/(staff)/admin/not-found')).default;
+    return <StaffFrame path="/admin">{await StaffNotFound()}</StaffFrame>;
   }
 
   if (view === 'audit') {

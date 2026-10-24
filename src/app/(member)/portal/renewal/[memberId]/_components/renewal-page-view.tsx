@@ -53,7 +53,7 @@ export function RenewalPageView({
 
   return (
     <>
-      <PageHeader title={t('title')} subtitle={t('subtitle')} size="hero" />
+      <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
       {/* After the h1, so the heading order stays h1 → h2 (I18). */}
       {isFirstTimeRenewer && <OnboardingBanner />}

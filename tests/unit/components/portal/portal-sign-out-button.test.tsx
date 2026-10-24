@@ -35,6 +35,12 @@ describe('<PortalSignOutButton>', () => {
     vi.useFakeTimers();
   });
 
+  it('spec 122 US12d-1 (T1232): is an AURA secondary button with the 44px touch height', () => {
+    renderButton();
+    const button = screen.getByRole('button', { name: /sign out/i });
+    expect(button).toHaveClass('aura-btn', 'aura-btn--secondary', 'aura-btn--touch');
+  });
+
   it('POSTs to /api/auth/sign-out and routes to /portal/sign-in on success', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')

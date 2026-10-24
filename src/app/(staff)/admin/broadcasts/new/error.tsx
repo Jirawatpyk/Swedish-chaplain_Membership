@@ -2,11 +2,9 @@
 
 import { useEffect } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertCircleIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { RouteErrorPanel } from '@/components/shell/route-error-panel';
 
 /**
  * T155 finding U10 — segment-scoped error boundary for staff
@@ -20,6 +18,8 @@ import { PageHeader } from '@/components/layout/page-header';
  * on. Same shape as its `templates/error.tsx` sibling: the page's own
  * container (`check:layout` pins the trio), the shared `errors.*` /
  * `buttons.retry` copy, and a route-scoped Retry.
+ *
+ * 122 US12d-1 (T1233): the body is the shared AURA RouteErrorPanel.
  */
 export default function BroadcastProxyComposeError({
   error,
@@ -28,8 +28,6 @@ export default function BroadcastProxyComposeError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  const t = useTranslations('errors');
-  const tButtons = useTranslations('buttons');
   // The page's OWN title — the point of U10 is that the inherited boundary
   // named another page.
   const tProxy = useTranslations('admin.broadcasts.proxySubmitDialog');
@@ -41,20 +39,7 @@ export default function BroadcastProxyComposeError({
   return (
     <DetailContainer>
       <PageHeader title={tProxy('title')} />
-      <Card>
-        <CardHeader className="flex flex-row items-start gap-3">
-          <AlertCircleIcon className="size-6 text-destructive" aria-hidden />
-          <div>
-            <CardTitle>{t('generic')}</CardTitle>
-            <CardDescription>
-              {error.digest ? t('errorId', { id: error.digest }) : null}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Button onClick={reset}>{tButtons('retry')}</Button>
-        </CardContent>
-      </Card>
+      <RouteErrorPanel digest={error.digest} onRetry={reset} />
     </DetailContainer>
   );
 }

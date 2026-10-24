@@ -10,12 +10,15 @@
  *
  * 8s spinner timeout (CHK053): when `submitting === true` for ≥ 8s,
  * fire a toast hinting the request is taking longer than expected.
+ *
+ * 122 US12d-1 (T1234): an AURA primary Button; `loading` draws the
+ * spinner and sets aria-busy; the disabled and described-by states are
+ * unchanged.
  */
 import { useEffect, useRef } from 'react';
-import { Loader2Icon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 
 const TIMEOUT_MS = 8000;
 
@@ -67,20 +70,15 @@ export function SubmitButton({
   return (
     <Button
       type="button"
+      variant="primary"
       data-compose-feature="submit"
       onClick={onClick}
       disabled={disabled || submitting}
-      aria-busy={submitting}
+      // AURA's spinner and aria-busy while the request runs.
+      loading={submitting}
       {...(describedBy !== undefined ? { 'aria-describedby': describedBy } : {})}
     >
-      {submitting ? (
-        <>
-          <Loader2Icon className="size-4 motion-safe:animate-spin" aria-hidden="true" />
-          {t('toast.submitting')}
-        </>
-      ) : (
-        t('button.submit')
-      )}
+      {submitting ? t('toast.submitting') : t('button.submit')}
     </Button>
   );
 }
