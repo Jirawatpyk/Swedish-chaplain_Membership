@@ -86,6 +86,12 @@ export type PaletteNavigateItem = {
   readonly id: string;
   readonly label: string;
   readonly url: string;
+  /**
+   * English search synonyms, as on actions: the backend matches the id and the
+   * i18n KEY, never the localized label, so a word a user types for the page
+   * ("revenue" for the invoice dashboard) needs to be listed here.
+   */
+  readonly keywords?: readonly string[];
   /** See {@link PaletteFeatureFlag} — stripped by the route when the flag is OFF. */
   readonly feature?: PaletteFeatureFlag;
 };
@@ -284,6 +290,7 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/finance',
     permission: 'invoicing.read',
     feature: 'invoiceDashboard',
+    keywords: ['revenue', 'collected', 'collections', 'billed', 'outstanding', 'overdue', 'aging', 'receivables'],
   },
   {
     id: 'nav.invoices',
@@ -547,10 +554,14 @@ export async function searchPlans(
         (a.keywords?.some((k) => matches(k, q)) ?? false),
     )
     .slice(0, limit);
-  // Navigate entries carry no search synonyms (unlike actions), so a plain
-  // key + id match is sufficient.
+  // Navigate entries match the same way: key, id, or an English synonym.
   const navigate = navigatePool
-    .filter((n) => matches(n.label, q) || matches(n.id, q))
+    .filter(
+      (n) =>
+        matches(n.label, q) ||
+        matches(n.id, q) ||
+        (n.keywords?.some((k) => matches(k, q)) ?? false),
+    )
     .slice(0, limit);
 
   return ok({
