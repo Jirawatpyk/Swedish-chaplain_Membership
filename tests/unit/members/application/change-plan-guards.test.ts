@@ -154,7 +154,7 @@ describe('changePlan guards (126)', () => {
 
   it('#9 (review) — an old-plan lookup ERROR is a server_error, not a skipped bundle check', async () => {
     const deps = buildDeps({});
-    deps.plans.getPlan.mockImplementation(async (_t: unknown, id: string) =>
+    (deps.plans.getPlan as ReturnType<typeof vi.fn>).mockImplementation(async (_t: unknown, id: string) =>
       id === 'plan-old'
         ? { ok: false as const, error: { code: 'repo.unexpected' } }
         : ok(plan()),
@@ -167,7 +167,7 @@ describe('changePlan guards (126)', () => {
 
   it('#9 (review) — a missing old plan row still lets the change through (no bundle to leave)', async () => {
     const deps = buildDeps({});
-    deps.plans.getPlan.mockImplementation(async (_t: unknown, id: string) =>
+    (deps.plans.getPlan as ReturnType<typeof vi.fn>).mockImplementation(async (_t: unknown, id: string) =>
       id === 'plan-old'
         ? { ok: false as const, error: { code: 'repo.not_found' } }
         : ok(plan()),

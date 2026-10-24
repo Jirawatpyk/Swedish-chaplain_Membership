@@ -212,6 +212,12 @@ export async function changePlan(
     deps.plans.getPlan(deps.tenant, asPlanId(data.new_plan_id), data.new_plan_year),
   ]);
   if (!newPlan.ok) return err({ type: 'plan_not_found' });
+  // 126 review — the old plan feeds the bundle-exit check (#9). A missing row
+  // has no bundle to leave; any other lookup failure must not silently skip
+  // the confirmation, so it is an infra error.
+  if (!oldPlan.ok && oldPlan.error.code !== 'repo.not_found') {
+    return err({ type: 'server_error', message: `old plan lookup: ${oldPlan.error.code}` });
+  }
 
   // 126 #5 — the primary contact's DOB, read only when the new plan has an
   // age cap (the Thai Alumni tier). A read failure is an infra fault.

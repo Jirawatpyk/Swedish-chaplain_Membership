@@ -24,3 +24,8 @@ Closes the integrity and audit gaps the review found in plan assignment, bulk me
 
 - F8 `accept-tier-upgrade` and `finalise-f2-plan-change-on-paid` still emit their F2 audit after their own tx (D-027 follow-up).
 - New copy for `member_type_warning` — the override dialog shows its generic "outside the plan limits" line.
+- From the PR #645 review, moved to the next PR:
+  - Undo of a bulk archive (and the single archive → undelete) leaves an issued invoice on the cancelled cycle while the restored cycle is unlinked (financial-integrity M-1).
+  - Editing `legal_entity_type` is not checked against the current plan's member-type scope (needs a block-or-warn product call and an override path on member edit).
+  - The plan-change age check measures "today", not the plan start (needs the plan-year start defined for fiscal-year tenants).
+  - Bulk post-commit cascades run serially per member with no `maxDuration`; a shared linked user is revoked user-wide (parity with the single archive).

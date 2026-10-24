@@ -576,7 +576,7 @@ export async function createMember(
         throw new PlanGoneAbort();
       }
 
-      // FIRST statement: allocate under the tenant RLS session. Running this
+      // After the plan lock above (126 #8): allocate under the tenant RLS session. Running this
       // outside the tx would use a pool-fresh connection without
       // SET LOCAL app.current_tenant → silent RLS bypass (F7.1a US2 class).
       const memberNumber = await deps.memberNumberAllocator.allocate(
