@@ -835,6 +835,15 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **Found adopting it:** with `break-word` as the default, the audit log's event codes and IDs and the users list's email widened their tables (audit ran 326px past its box at 768). The codes, ids and detail values take `[overflow-wrap:anywhere]` on their own spans, so the labels beside them still wrap between words; the email breaks after its `@` (`<wbr>`). Audit now runs 49px past its box at 768 (64 on 5.59), users 0.
 - **Seen, not caused here:** the credit-note detail page scrolls sideways by about 250px at 390. A sr-only label in the page-header actions computes 636px wide. The 5.59 → 5.60 CSS diff touches only `.aura-link`, so this is left for its own fix.
 
+### Session 2026-10-24 (credit-note page: no sideways scroll on phones)
+
+- **The bug:** at 390 the admin credit-note detail page scrolled sideways by about 250px.
+  - The "Email a copy" button's hidden description (`<span class="sr-only">`, its `aria-describedby`) sits directly in AURA's page-header actions.
+  - Below 640px, AURA gives every child there `min-width: max-content`, which beat the span's 1px width and made it 636px wide.
+- **The fix:** AURA 5.61.0, which shipped #176 (Addendum 77) the same day. The share rule now skips visually hidden children (`.sr-only`, `[hidden]`, an inline `position: absolute` and similar).
+  - The `.sr-only { min-width: 0 }` stand-in drafted in #634 was dropped before merge.
+  - A test guards that `globals.css` keeps no such rule.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).
