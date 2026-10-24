@@ -17,7 +17,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
-vi.mock('@/lib/log-id', () => ({ hashId: vi.fn((s: string) => s) }));
+vi.mock('@/lib/log-id', () => ({
+  hashId: vi.fn((s: string) => s),
+  errKind: (e: unknown) => (e instanceof Error ? e.constructor.name : 'unknown'),
+}));
 vi.mock('@/lib/metrics', () => ({
   authMetrics: {
     signInAttempt: vi.fn(),
@@ -139,7 +142,8 @@ function makeDeps(
     } as unknown as ResetPasswordDeps['users'],
     tokens: {
       findResetById: vi.fn().mockResolvedValue(makeToken()),
-      markResetConsumedInTx: vi.fn().mockResolvedValue(undefined),
+      // 125 — `true` = the guarded UPDATE matched a live token row.
+      markResetConsumedInTx: vi.fn().mockResolvedValue(true),
       invalidateAllUnconsumedForUserInTx: vi.fn().mockResolvedValue(0),
     } as unknown as ResetPasswordDeps['tokens'],
     sessions: {
@@ -415,6 +419,7 @@ describe('resetPassword use case', () => {
         findResetById: vi.fn().mockResolvedValue(makeToken()),
         markResetConsumedInTx: vi.fn().mockImplementation(async () => {
           callOrder.push('markResetConsumedInTx');
+          return true;
         }),
         invalidateAllUnconsumedForUserInTx: vi
           .fn()
@@ -515,9 +520,23 @@ describe('resetPassword use case', () => {
       'neon: connection reset mid-tx',
     );
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ requestId: BASE_INPUT.requestId }),
+      // 125 — only the error class is logged (rules.md: `err: errKind(e)`);
+      // a Drizzle error object would carry the new hash in its params.
+      { err: 'Error', requestId: BASE_INPUT.requestId },
       'reset_password.tx_failed',
     );
+    expect(authMetrics.passwordResetCompleted).not.toHaveBeenCalled();
+  });
+
+  // ── 125: single-use under concurrency ─────────────────────────────────────
+  it('aborts with link-invalid when the guarded consume matches no live row (lost race)', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.tokens.markResetConsumedInTx).mockResolvedValueOnce(false);
+    const result = await resetPassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toEqual({ code: 'link-invalid', reason: 'used' });
+    expect(deps.users.setPasswordHashInTx).not.toHaveBeenCalled();
+    expect(deps.sessions.deleteByUserIdInTx).not.toHaveBeenCalled();
     expect(authMetrics.passwordResetCompleted).not.toHaveBeenCalled();
   });
 });

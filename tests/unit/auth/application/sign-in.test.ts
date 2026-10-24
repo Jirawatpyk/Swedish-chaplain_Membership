@@ -665,4 +665,69 @@ describe('signIn use case', () => {
       'argon2: native module crashed',
     );
   });
+
+  // ── 125: lockout window restarts after the lock expires (FR-013) ──────────
+  it('restarts the failed-attempt count once an earlier lock has expired', async () => {
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue({
+          user: makeUser({
+            failedSignInCount: 5,
+            lockedUntil: new Date(NOW.getTime() - 1000),
+          }),
+          passwordHash: PASS_HASH,
+        }),
+        clearFailedCount: vi.fn().mockResolvedValue(undefined),
+        incrementFailedCount: vi.fn().mockResolvedValue(1),
+        setLocked: vi.fn(),
+      } as unknown as SignInDeps['users'],
+      hasher: {
+        verify: vi.fn().mockResolvedValue(false),
+        verifyDummy: vi.fn(),
+      } as unknown as SignInDeps['hasher'],
+    });
+    const result = await signIn(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('invalid-credentials');
+    expect(deps.users.clearFailedCount).toHaveBeenCalledWith(USER_ID);
+    expect(deps.users.setLocked).not.toHaveBeenCalled();
+  });
+
+  // ── 125: no account-state oracle without the password (FR-016) ────────────
+  it('returns invalid-credentials for a disabled user with the wrong password', async () => {
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue({
+          user: makeUser({ status: 'disabled' }),
+          passwordHash: PASS_HASH,
+        }),
+        incrementFailedCount: vi.fn().mockResolvedValue(1),
+        setLocked: vi.fn(),
+      } as unknown as SignInDeps['users'],
+      hasher: {
+        verify: vi.fn().mockResolvedValue(false),
+        verifyDummy: vi.fn(),
+      } as unknown as SignInDeps['hasher'],
+    });
+    const result = await signIn(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('invalid-credentials');
+    expect(deps.hasher.verify).toHaveBeenCalledOnce();
+  });
+
+  it('pays the argon2 cost (verifyDummy) on a locked account', async () => {
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue({
+          user: makeUser({ lockedUntil: new Date(NOW.getTime() + 60_000) }),
+          passwordHash: PASS_HASH,
+        }),
+      } as unknown as SignInDeps['users'],
+    });
+    const result = await signIn(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('account-locked');
+    expect(deps.hasher.verifyDummy).toHaveBeenCalledOnce();
+    expect(deps.hasher.verify).not.toHaveBeenCalled();
+  });
 });

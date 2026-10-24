@@ -285,4 +285,66 @@ describe('forgotPassword — B5 password_reset_email_failed emit', () => {
     expect(emailSend).not.toHaveBeenCalled();
     expect(deps.audit.append).not.toHaveBeenCalled();
   });
+
+  // 125 — the email send + audit run AFTER the response (the route passes
+  // next/server `after`), so a registered address answers in the same time
+  // as an unknown one (FR-016 timing).
+  it('hands the email send + audit to input.defer instead of awaiting them', async () => {
+    const deferred: Array<() => Promise<void>> = [];
+    const deps = makeDeps();
+
+    const result = await forgotPassword(
+      {
+        email: FAKE_EMAIL,
+        sourceIp: '203.0.113.7',
+        requestId: 'req-deferred',
+        defer: (task) => {
+          deferred.push(task);
+        },
+      },
+      deps,
+    );
+
+    expect(result.ok).toBe(true);
+    // The token tx committed before the response …
+    expect(deps.tokens.createResetInTx).toHaveBeenCalledOnce();
+    // … but nothing slow ran yet.
+    expect(deps.email.send).not.toHaveBeenCalled();
+    expect(deps.audit.append).not.toHaveBeenCalled();
+    expect(deferred).toHaveLength(1);
+
+    await deferred[0]!();
+    expect(deps.email.send).toHaveBeenCalledOnce();
+    expect(deps.audit.append).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'password_reset_requested' }),
+    );
+  });
+
+  it('a throw inside the deferred task is logged, not propagated', async () => {
+    const { logger } = await import('@/lib/logger');
+    const deferred: Array<() => Promise<void>> = [];
+    const deps = makeDeps({
+      email: {
+        send: vi.fn().mockRejectedValue(new TypeError('fetch failed')),
+      } as unknown as ForgotPasswordDeps['email'],
+    });
+
+    await forgotPassword(
+      {
+        email: FAKE_EMAIL,
+        sourceIp: '203.0.113.8',
+        requestId: 'req-deferred-throw',
+        defer: (task) => {
+          deferred.push(task);
+        },
+      },
+      deps,
+    );
+
+    await expect(deferred[0]!()).resolves.toBeUndefined();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: 'TypeError', requestId: 'req-deferred-throw' }),
+      'forgot_password.deferred_failed',
+    );
+  });
 });
