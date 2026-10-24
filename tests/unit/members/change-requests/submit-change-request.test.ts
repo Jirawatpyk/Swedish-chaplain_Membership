@@ -404,6 +404,16 @@ describe('submitChangeRequest — the happy path in ONE transaction', () => {
     expect(runInTenant).toHaveBeenCalledTimes(1);
   });
 
+  it('queues every reviewer\'s email in ONE outbox statement, not one round trip per reviewer (R81: 1,400 reviewers took 60–83 s)', async () => {
+    const { deps, emails } = makeDeps({ reviewers: 5 });
+    const result = await submitChangeRequest(deps, input({ contact: { phone: '+66 89 999 9999' } }));
+    expect(result.ok).toBe(true);
+    expect(emails.enqueueManyInTx).toHaveBeenCalledTimes(1);
+    expect(emails.enqueueManyInTx.mock.calls[0]![2]).toHaveLength(5);
+    expect(emails.enqueueInTx).not.toHaveBeenCalled();
+    expect(emails.enqueued).toHaveLength(5);
+  });
+
   it('a secondary contact proposing own fields → scope own_contact, submitter role secondary', async () => {
     const { deps } = makeDeps({ contact: contact({ isPrimary: false }) });
     const r = await submitChangeRequest(deps, input({ contact: { role_title: 'CFO' } }));

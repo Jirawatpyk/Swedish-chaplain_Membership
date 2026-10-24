@@ -521,20 +521,26 @@ export async function submitChangeRequest(
         });
         if (!audited.ok) throw new UseCaseAbort<RepoError>(audited.error);
 
-        for (const reviewer of coalesced ? [] : reviewers) {
-          const queued = await deps.emails.enqueueInTx(tx, deps.tenant, {
-            type: 'member_change_request_submitted_staff',
-            toEmail: reviewer.email,
-            locale: reviewer.locale,
-            contextData: {
-              tenantId,
-              requestId: newId,
-              memberId: input.memberId,
-              submitterUserId: input.actorUserId,
-              reviewerUserId: reviewer.userId,
-              fieldKeys,
-            },
-          });
+        // One statement for every reviewer: a per-reviewer round trip made the
+        // submit linear in the staff count (R81: 60–83 s for ~1,400 reviewers).
+        if (!coalesced && reviewers.length > 0) {
+          const queued = await deps.emails.enqueueManyInTx(
+            tx,
+            deps.tenant,
+            reviewers.map((reviewer) => ({
+              type: 'member_change_request_submitted_staff' as const,
+              toEmail: reviewer.email,
+              locale: reviewer.locale,
+              contextData: {
+                tenantId,
+                requestId: newId,
+                memberId: input.memberId,
+                submitterUserId: input.actorUserId,
+                reviewerUserId: reviewer.userId,
+                fieldKeys,
+              },
+            })),
+          );
           if (!queued.ok) throw new UseCaseAbort<RepoError>(queued.error);
         }
 
