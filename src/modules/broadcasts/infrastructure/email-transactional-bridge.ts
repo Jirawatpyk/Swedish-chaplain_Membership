@@ -134,6 +134,21 @@ function resolveNotificationType(templateKey: string): F7NotificationType {
 }
 
 /**
+ * The `VALUES` tuple of one pending outbox row, in `OUTBOX_COLUMNS` order —
+ * the one definition of the row both the single and the batched INSERT write.
+ */
+const OUTBOX_COLUMNS = sql`(tenant_id, notification_type, to_email, locale, context_data, status, attempts, next_retry_at)`;
+function outboxRowValues(
+  tenantId: string,
+  notificationType: F7NotificationType | F119NotificationType,
+  toEmail: string,
+  locale: 'en' | 'th' | 'sv',
+  contextData: Readonly<Record<string, unknown>>,
+) {
+  return sql`(${tenantId}, ${notificationType}::notification_type, ${toEmail}, ${locale}, ${JSON.stringify(contextData)}::jsonb, 'pending'::outbox_status, 0, now())`;
+}
+
+/**
  * Enqueue a notification row into `notifications_outbox`. Mirrors the
  * F4 adapter's INSERT-on-tenant-tx pattern.
  */
@@ -147,17 +162,8 @@ async function enqueueOutboxRow(
 ): Promise<void> {
   const target = (tx as TenantTx | null) ?? db;
   await target.execute(sql`
-    INSERT INTO notifications_outbox
-      (tenant_id, notification_type, to_email, locale, context_data, status, attempts, next_retry_at)
-    VALUES
-      (${tenantId},
-       ${notificationType}::notification_type,
-       ${toEmail},
-       ${locale},
-       ${JSON.stringify(contextData)}::jsonb,
-       'pending'::outbox_status,
-       0,
-       now())
+    INSERT INTO notifications_outbox ${OUTBOX_COLUMNS}
+    VALUES ${outboxRowValues(tenantId, notificationType, toEmail, locale, contextData)}
   `);
 }
 
@@ -225,6 +231,22 @@ export const emailTransactionalBridge: EmailTransactionalPort = {
   },
 };
 
+function requireTenantTx(tx: unknown, method: 'enqueueInTx' | 'enqueueManyInTx'): TenantTx {
+  const verifiedTx = assertTenantTxOrNull(tx);
+  if (verifiedTx === null) {
+    throw new TypeError(
+      `EblastNotificationOutboxPort.${method}: a TenantTx is required — the row must share the transaction of the state change.`,
+    );
+  }
+  return verifiedTx;
+}
+
+/**
+ * Rows per INSERT in `enqueueManyInTx`. Each row binds 5 parameters and
+ * Postgres caps a statement at 65,535, so a chunk stays far below the cap.
+ */
+export const EBLAST_ENQUEUE_MANY_CHUNK = 1_000;
+
 /**
  * F119 — the approval-round hand-off rows (`EblastNotificationOutboxPort`).
  * Same INSERT as the F7 member emails above, with two differences that are
@@ -234,12 +256,7 @@ export const emailTransactionalBridge: EmailTransactionalPort = {
  */
 export const eblastNotificationOutbox: EblastNotificationOutboxPort = {
   async enqueueInTx(tx, tenantCtx, request) {
-    const verifiedTx = assertTenantTxOrNull(tx);
-    if (verifiedTx === null) {
-      throw new TypeError(
-        'EblastNotificationOutboxPort.enqueueInTx: a TenantTx is required — the row must share the transaction of the state change.',
-      );
-    }
+    const verifiedTx = requireTenantTx(tx, 'enqueueInTx');
     await enqueueOutboxRow(verifiedTx, tenantCtx.slug, request.type, request.toEmail, request.locale, request.contextData);
     logger.info(
       {
@@ -250,5 +267,36 @@ export const eblastNotificationOutbox: EblastNotificationOutboxPort = {
       },
       'broadcasts.eblast_notification.enqueued',
     );
+  },
+
+  // The same row as `enqueueInTx`, many per statement: one multi-row INSERT
+  // per `EBLAST_ENQUEUE_MANY_CHUNK` requests, and one log line per call.
+  async enqueueManyInTx(tx, tenantCtx, requests) {
+    const verifiedTx = requireTenantTx(tx, 'enqueueManyInTx');
+    for (let start = 0; start < requests.length; start += EBLAST_ENQUEUE_MANY_CHUNK) {
+      const chunk = requests.slice(start, start + EBLAST_ENQUEUE_MANY_CHUNK);
+      const values = chunk.map((r) => outboxRowValues(tenantCtx.slug, r.type, r.toEmail, r.locale, r.contextData));
+      const rows = (await verifiedTx.execute(sql`
+        INSERT INTO notifications_outbox ${OUTBOX_COLUMNS}
+        VALUES ${sql.join(values, sql`, `)}
+        RETURNING id
+      `)) as unknown as Array<{ id: string }>;
+      if (rows.length !== chunk.length) {
+        throw new Error(
+          `EblastNotificationOutboxPort.enqueueManyInTx: outbox insert returned ${rows.length} rows for ${chunk.length} requests (tenant=${tenantCtx.slug}, chunkStart=${start})`,
+        );
+      }
+    }
+    if (requests.length > 0) {
+      logger.info(
+        {
+          tenantId: tenantCtx.slug,
+          notificationTypes: [...new Set(requests.map((r) => r.type))],
+          count: requests.length,
+          toHashes: requests.map((r) => recipientLogHash(r.toEmail)),
+        },
+        'broadcasts.eblast_notification.enqueued_many',
+      );
+    }
   },
 };

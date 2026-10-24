@@ -2146,6 +2146,9 @@ describe('submitBroadcast — F119 T129 marketing hand-off on submit', () => {
       });
     }
     expect(JSON.stringify(eblastOutbox.rows())).not.toMatch(/SECRET/);
+    // One batched insert for the roster, never one round trip per recipient (R81).
+    expect(eblastOutbox.enqueueManyInTx).toHaveBeenCalledTimes(1);
+    expect(eblastOutbox.enqueueInTx).not.toHaveBeenCalled();
   });
 
   it('an admin_proxy submit hands off the same way', async () => {
@@ -2211,7 +2214,7 @@ describe('submitBroadcast — F119 T129 marketing hand-off on submit', () => {
 
   it('an enqueue that throws fails the submit (the tx rolls back with it) — never a submit without its hand-off', async () => {
     const { deps, eblastOutbox } = ready(MARKETERS);
-    eblastOutbox.enqueueInTx.mockRejectedValueOnce(new Error('outbox insert failed'));
+    eblastOutbox.enqueueManyInTx.mockRejectedValueOnce(new Error('outbox insert failed'));
     const result = await submitBroadcast(deps, baseInput);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.kind).toBe('submit.server_error');
