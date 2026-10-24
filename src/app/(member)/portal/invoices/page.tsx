@@ -207,6 +207,7 @@ export default async function PortalInvoicesPage({
   // row badges (`toInvoiceRowViewModel` below) both read it, so a page served
   // across Bangkok midnight never filters on one day and badges on the other.
   const nowUtcIso = new Date().toISOString();
+  const todayBangkok = bangkokLocalDate(nowUtcIso);
   let pageData: ListInvoicesPagedOutput;
   try {
     const invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
@@ -218,7 +219,7 @@ export default async function PortalInvoicesPage({
       search: searchTerm.length > 0 ? searchTerm : undefined,
       status: statusFilter,
       ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
-      today: bangkokLocalDate(nowUtcIso),
+      today: todayBangkok,
     });
     // If `listInvoicesPaged` ever gains a real Err variant, branch on
     // `invoicesResult.error` here instead of re-throwing — re-throwing would
@@ -274,7 +275,11 @@ export default async function PortalInvoicesPage({
     // alert (US3's section: same outstanding read, same access gating).
     alert: (
       <Suspense fallback={null}>
-        <MembershipInvoiceAlertSection tenantId={tenantCtx.slug} memberId={member.memberId} />
+        <MembershipInvoiceAlertSection
+          tenantId={tenantCtx.slug}
+          memberId={member.memberId}
+          today={todayBangkok}
+        />
       </Suspense>
     ),
   });

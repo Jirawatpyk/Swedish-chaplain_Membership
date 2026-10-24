@@ -140,7 +140,8 @@ describe('palette registries declare a permission (T064)', () => {
     // 108 PR-D: +1 — `nav.marketingAudience`.
     // F114 PR-2: +1 — `nav.changeRequests` (feature-gated `memberChangeApproval`).
     // 124 follow-up: +1 — `nav.financeDashboard` (feature-gated `invoiceDashboard`).
-    expect(ENTRIES).toHaveLength(35);
+    // 124 follow-up: +1 — `nav.invoicesOverdue` (the list filtered to overdue).
+    expect(ENTRIES).toHaveLength(36);
   });
 
   it('no entry still carries the two-tier `requires` tag', () => {
@@ -219,6 +220,7 @@ describe('ON-leg palette reach per role (T064)', () => {
       'refund.issue',
       'nav.invoices',
       'nav.financeDashboard',
+      'nav.invoicesOverdue',
       'nav.creditNotes',
       'nav.invoiceSettings',
       'nav.users',

@@ -22,9 +22,12 @@ import { loadDashboardOutstanding } from './dashboard-reads';
 export async function OutstandingStatSection({
   tenantId,
   memberId,
+  today,
 }: {
   readonly tenantId: string;
   readonly memberId: string;
+  /** The page's Bangkok `YYYY-MM-DD`, shared with the membership alert. Absent = now. */
+  readonly today?: string;
 }): Promise<React.JSX.Element> {
   const t = await getTranslations('portal.dashboard.outstanding');
   const locale = await getLocale();
@@ -47,7 +50,7 @@ export async function OutstandingStatSection({
 
   // Bangkok-local "today" for overdue classification — display/derive only;
   // storage stays UTC Gregorian (Constitution Conventions § Timestamps).
-  const todayBkk = bangkokLocalDate(new Date().toISOString());
+  const todayBkk = today ?? bangkokLocalDate(new Date().toISOString());
   const stat = deriveOutstandingStat(read.inputs, todayBkk);
 
   if (stat.kind === 'clear') {

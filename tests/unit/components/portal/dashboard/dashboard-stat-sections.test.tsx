@@ -426,6 +426,18 @@ describe('OutstandingStatSection — every stat.kind resolves real en keys', () 
     expect(html).toContain('href="/portal/invoices"');
   });
 
+  it('classifies against the given today, not the clock (spec 124 follow-up)', async () => {
+    // tests/setup.ts pins the clock at 2026-04-09, before this due date.
+    outstandingRead.mockResolvedValue(
+      outstanding({
+        inputs: [{ status: 'issued', totalSatang: 53_50n, dueDate: '2026-05-15', id: 'inv-3', invoiceSubject: 'membership' }],
+        total: 1,
+      }),
+    );
+    const tree = await OutstandingStatSection({ tenantId: 'tenant-a', memberId: 'm1', today: '2026-05-16' });
+    expect(renderToStaticMarkup(tree as ReactElement)).toContain('overdue invoice');
+  });
+
   it('overdue (past-due present) — resolves overdueSub variantLabel', async () => {
     outstandingRead.mockResolvedValue(
       outstanding({

@@ -21,6 +21,7 @@ import { OutstandingStatSection } from '../_components/outstanding-stat-section'
 import { BenefitsStatSection } from '../_components/benefits-stat-section';
 import { BenefitsPanelSection } from '../_components/benefits-panel-section';
 import { MembershipInvoiceAlertSection } from '../_components/membership-invoice-alert-section';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import {
   RecentActivitySection,
   RecentActivitySkeleton,
@@ -85,6 +86,10 @@ export default async function MemberPortalHomePage() {
 
   const member = memberRes.value;
   const memberId = member.memberId;
+  // Spec 124 follow-up — ONE Bangkok date for the page's two overdue surfaces
+  // (the membership alert and the Outstanding stat), so across midnight they
+  // never disagree about the same bill.
+  const todayBangkok = bangkokLocalDate(new Date().toISOString());
 
   // Resolve the member number for the header chip (RLS-safe prefix resolver).
   // `member.memberNumber` is already a branded MemberNumber (validated by
@@ -139,7 +144,7 @@ export default async function MemberPortalHomePage() {
       {/* Spec 122 US3 (`Main` board): the unpaid membership invoice leads the
           page, with Pay now. Its own boundary; renders nothing when none is due. */}
       <Suspense fallback={null}>
-        <MembershipInvoiceAlertSection tenantId={tenant.slug} memberId={memberId} />
+        <MembershipInvoiceAlertSection tenantId={tenant.slug} memberId={memberId} today={todayBangkok} />
       </Suspense>
 
       {/* 3 stat cards — 1 col mobile, 3-up desktop. Each in its own Suspense
@@ -150,7 +155,7 @@ export default async function MemberPortalHomePage() {
           <MembershipStatSection tenantId={tenant.slug} memberId={memberId} />
         </Suspense>
         <Suspense fallback={<StatSkeleton label={t('outstanding.label')} />}>
-          <OutstandingStatSection tenantId={tenant.slug} memberId={memberId} />
+          <OutstandingStatSection tenantId={tenant.slug} memberId={memberId} today={todayBangkok} />
         </Suspense>
         <Suspense fallback={<StatSkeleton label={t('benefits.label')} />}>
           <BenefitsStatSection ctx={tenant} memberId={memberId} />
