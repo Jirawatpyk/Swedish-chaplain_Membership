@@ -93,6 +93,10 @@ export async function renderInvoiceDashboardView(props: InvoiceDashboardViewProp
   const listFilters = invoiceListFilterQuery(filters);
   const noInvoicesYet = tiles.ok && !tiles.value.anyNonDraftInvoice;
 
+  // The boards' "· 3 drafts not counted": every draft under the filters is
+  // left out of every figure; the note shows only when there is one.
+  const drafts = tiles.ok ? tiles.value.draftsNotCounted : 0;
+  const draftsNote = drafts > 0 ? ` · ${t('draftsNotCounted', { count: drafts })}` : '';
   const header = (
     <PageHeader
       title={t('title')}
@@ -102,7 +106,7 @@ export async function renderInvoiceDashboardView(props: InvoiceDashboardViewProp
           : t('asOf', {
               dateTime: formatLocalisedDate(now, locale, { dateStyle: 'medium', timeStyle: 'short' }),
               fiscalYear: fyLabel(filters.fiscalYear),
-            })
+            }) + draftsNote
       }
       actions={
         noInvoicesYet ? null : (

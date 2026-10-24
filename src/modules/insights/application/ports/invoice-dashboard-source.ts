@@ -146,4 +146,9 @@ export interface InvoiceDashboardSource {
    * about the tenant, never about the filters (US5.2).
    */
   hasNonDraftInvoice(ctx: TenantContext): Promise<boolean>;
+  /**
+   * Drafts under the type / plan / origin filters — the rows Needs attention
+   * splits into manual and auto-renewal — for the header's "drafts not counted".
+   */
+  draftCount(ctx: TenantContext, filters: InvoiceDashboardFilters): Promise<number>;
 }

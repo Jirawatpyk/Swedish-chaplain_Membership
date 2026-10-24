@@ -91,6 +91,8 @@ export interface InvoiceDashboardTiles {
   };
   /** The tenant has issued at least one invoice, whatever the filters (US5.2 "No invoices yet"). */
   readonly anyNonDraftInvoice: boolean;
+  /** Drafts under the filters, which no figure counts (the header's note; 0 hides it). */
+  readonly draftsNotCounted: number;
 }
 
 export interface InvoiceDashboardAgingRow {
@@ -277,10 +279,12 @@ export function loadInvoiceDashboardTiles(
     // lies inside its own month, so `toDate` is always true there.
     const month = rangeToDate(calendarMonthRange(input.today), input.today).range;
     const fy = rangeToDate(input.fiscalYearRange, input.today);
-    const [agingRead, collectedMonth, collectedFy] = await Promise.all([
+    const [agingRead, collectedMonth, collectedFy, draftsNotCounted] = await Promise.all([
       aging ?? readAging(ctx, input, deps),
       deps.source.collectedInRange(ctx, input.filters, month),
       deps.source.collectedInRange(ctx, input.filters, fy.range),
+      // The header note only: a failed count hides it rather than cost the tiles.
+      deps.source.draftCount(ctx, input.filters).catch(() => 0),
     ]);
     // The "No invoices yet" probe: skipped when the figures already count an
     // invoice, and it fails soft (reads as "has invoices") so it never costs
@@ -299,6 +303,7 @@ export function loadInvoiceDashboardTiles(
       collectedThisMonth: { ...collectedMonth, range: month, toDate: true },
       collectedInFiscalYear: { ...collectedFy, range: fy.range, toDate: fy.toDate },
       anyNonDraftInvoice,
+      draftsNotCounted,
     };
   });
 }

@@ -156,7 +156,15 @@ function collectedTermsSql(t: string, range: DashboardDateRange, scope: SQL): SQ
 type Row = Record<string, unknown>;
 
 /** The `card` label of `insights_invoice_dashboard_query_duration_ms`: one per query. */
-type QueryCard = 'aging' | 'collected' | 'methods' | 'trend' | 'attention' | 'oldest_overdue' | 'any_invoice';
+type QueryCard =
+  | 'aging'
+  | 'collected'
+  | 'methods'
+  | 'trend'
+  | 'attention'
+  | 'oldest_overdue'
+  | 'any_invoice'
+  | 'drafts';
 
 /**
  * One statement in its own `runInTenant`, timed from here (the transaction's
@@ -411,5 +419,18 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
       ) AS any`,
     );
     return result[0]?.any === true;
+  },
+
+  async draftCount(ctx, filters): Promise<number> {
+    const { inv } = tables();
+    const result = await rows(
+      ctx,
+      'drafts',
+      sql`
+      SELECT COUNT(*)::int AS drafts
+      FROM ${inv}
+      WHERE ${inv.tenantId} = ${ctx.slug} AND ${inv.status} = 'draft'${scopeOf(filters)}`,
+    );
+    return Number(result[0]?.drafts ?? 0);
   },
 };

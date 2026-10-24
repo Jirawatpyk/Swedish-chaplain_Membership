@@ -2633,6 +2633,7 @@
       },
       "title": "แดชบอร์ดใบแจ้งหนี้",
       "asOf": "ข้อมูล ณ {dateTime} · {fiscalYear} · ทุกยอดรวมภาษีมูลค่าเพิ่มแล้ว",
+      "draftsNotCounted": "ไม่นับฉบับร่าง {count} ใบ",
       "asOfEmpty": "{fiscalYear} · ทุกยอดรวมภาษีมูลค่าเพิ่มแล้ว",
       "fiscalYearLabel": "ปีบัญชี {year} ({fromMonth}–{toMonth})",
       "fiscalYearShort": "ปีบัญชี {year}",

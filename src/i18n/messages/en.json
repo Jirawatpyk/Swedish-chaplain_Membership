@@ -2633,6 +2633,7 @@
       },
       "title": "Invoice dashboard",
       "asOf": "As of {dateTime} · {fiscalYear} · all amounts incl. VAT",
+      "draftsNotCounted": "{count, plural, one {# draft not counted} other {# drafts not counted}}",
       "asOfEmpty": "{fiscalYear} · all amounts incl. VAT",
       "fiscalYearLabel": "FY {year} ({fromMonth}–{toMonth})",
       "fiscalYearShort": "FY {year}",

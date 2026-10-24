@@ -77,6 +77,8 @@ function tiles(events: boolean, a: InvoiceDashboardAging, any = true): InvoiceDa
       toDate: true,
     },
     anyNonDraftInvoice: any,
+    // The boards' header note, "· 3 drafts not counted".
+    draftsNotCounted: any ? 3 : 0,
   };
 }
 
