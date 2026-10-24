@@ -221,6 +221,42 @@ describe('integration: invitation flow (happy path + replay)', () => {
     if (replayResult.ok) return;
     expect(replayResult.error.code).toBe('link-invalid');
   });
+  // 125 — two concurrent redemptions of ONE invitation: the guarded consume
+  // (`consumed_at IS NULL`) lets exactly one commit; the loser waits on the
+  // row lock, matches 0 rows and aborts link-invalid.
+  it('concurrent redemptions of one invitation: exactly one succeeds', async () => {
+    const capture = makeCapturingEnqueueStub();
+    const inviteResult = await createUser(
+      {
+        email: inviteeEmail,
+        role: 'manager',
+        displayName: 'Race Manager',
+        actorUserId: admin.userId,
+        sourceIp: '203.0.113.13',
+        requestId: `it-invite-race-${Date.now()}`,
+        tenantId: asTenantSlug('swecham'),
+      },
+      { ...defaultCreateUserDeps, enqueueInvitationInTx: capture.stub },
+    );
+    expect(inviteResult.ok).toBe(true);
+    const token = capture.getPlaintext();
+
+    const redeem = (who: string) =>
+      redeemInvite(
+        {
+          token,
+          password: `Race-${who}-${Date.now()}-Xy!2026`,
+          sourceIp: '203.0.113.14',
+          requestId: `it-redeem-race-${who}-${Date.now()}`,
+        },
+        { ...defaultRedeemInviteDeps, limiter: unlimitedLimiter as never },
+      );
+    const results = await Promise.all([redeem('a'), redeem('b')]);
+
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    const loser = results.find((r) => !r.ok);
+    expect(loser && !loser.ok && loser.error.code).toBe('link-invalid');
+  });
 });
 
 describe('integration: disable + role change lifecycle', () => {

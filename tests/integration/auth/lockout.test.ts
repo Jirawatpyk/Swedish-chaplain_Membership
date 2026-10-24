@@ -40,9 +40,6 @@ const noOpLimiter: RateLimiter = {
   async check() {
     return { success: true, remaining: 999, reset: Date.now() + 60_000, fellBack: false };
   },
-  async peek() {
-    return { success: true, remaining: 999, reset: Date.now() + 60_000, fellBack: false };
-  },
 };
 
 const testDeps: SignInDeps = {
@@ -126,5 +123,38 @@ describe('integration: lockout after 5 failed sign-ins', () => {
       expect(sixth.error.retryAfterSeconds).toBeGreaterThan(0);
       expect(sixth.error.retryAfterSeconds).toBeLessThanOrEqual(15 * 60);
     }
+  });
+
+  // 125 (security-engineer L1) — the post-expiry reset is a guarded UPDATE:
+  // a request that read the row while an old lock had expired must not wipe
+  // a FRESH lock a parallel burst set in between.
+  it('clearExpiredLock clears an expired lock but leaves a live one untouched', async () => {
+    const now = new Date();
+    const live = new Date(now.getTime() + 10 * 60 * 1000);
+    await db
+      .update(users)
+      .set({ failedSignInCount: 5, lockedUntil: live })
+      .where(eq(users.id, testUser.userId));
+
+    expect(await userRepo.clearExpiredLock(testUser.userId, now)).toBe(false);
+    const [afterLive] = await db
+      .select({ failedSignInCount: users.failedSignInCount, lockedUntil: users.lockedUntil })
+      .from(users)
+      .where(eq(users.id, testUser.userId));
+    expect(afterLive?.failedSignInCount).toBe(5);
+    expect(afterLive?.lockedUntil?.getTime()).toBe(live.getTime());
+
+    const expired = new Date(now.getTime() - 1000);
+    await db
+      .update(users)
+      .set({ lockedUntil: expired })
+      .where(eq(users.id, testUser.userId));
+    expect(await userRepo.clearExpiredLock(testUser.userId, now)).toBe(true);
+    const [afterExpired] = await db
+      .select({ failedSignInCount: users.failedSignInCount, lockedUntil: users.lockedUntil })
+      .from(users)
+      .where(eq(users.id, testUser.userId));
+    expect(afterExpired?.failedSignInCount).toBe(0);
+    expect(afterExpired?.lockedUntil).toBeNull();
   });
 });

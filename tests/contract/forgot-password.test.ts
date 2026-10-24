@@ -101,6 +101,18 @@ describe('POST /api/auth/forgot-password', () => {
     expect(response.status).toBe(200);
     expect(forgotMock).toHaveBeenCalledWith(
       expect.objectContaining({ locale: 'th' }),
+      expect.anything(),
+    );
+  });
+
+  // 125 — the route runs the active-user work after the response.
+  it('wires next/server `after` as the forgot-password defer dep', async () => {
+    const { after } = await import('next/server');
+    forgotMock.mockResolvedValueOnce(ok({ ok: true }));
+    await POST(makeRequest({ email: 'jane@example.com' }));
+    expect(forgotMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ defer: after }),
     );
   });
 
