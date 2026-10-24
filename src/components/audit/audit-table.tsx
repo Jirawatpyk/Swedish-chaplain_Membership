@@ -60,6 +60,9 @@ export interface AuditTableLabels {
   readonly cardBy: string;
 }
 
+// a payload token longer than this (a uuid, an email) has no break points of its own
+const LONG_TOKEN = 16;
+
 export function AuditTable({
   rows,
   labels,
@@ -81,8 +84,16 @@ export function AuditTable({
   // (maintainer, parity comments 13 Oct); the raw codes stay in the table.
   // A client file: AURA's Table is not in `/server`.
   // codes and ids have no break points, so they alone may break anywhere (AURA 5.60 wraps
-  // the cell between words, #174)
+  // the cell between words, #174). A payload value breaks anywhere only when it holds a
+  // long token (a uuid, an email, a list of them): `anywhere` also shrinks the column's
+  // min-content to one letter, which split short values such as `admin` mid-word (R81).
+  // The value wraps under its label when the column is narrow, so the pair never forces
+  // the column wider
   const code = 'block font-mono aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]';
+  const payloadWrap = (value: string) =>
+    value.split(/\s+/).some((token) => token.length > LONG_TOKEN)
+      ? '[overflow-wrap:anywhere]'
+      : 'break-words';
   return (
     <>
     <div className="max-sm:hidden">
@@ -132,11 +143,11 @@ export function AuditTable({
             <Td className="max-w-sm break-words">{r.summary}</Td>
             <Td>
               {r.payloadEntries.length > 0 ? (
-                <dl className="grid max-w-xs gap-0.5 aura-text-caption">
+                <dl className="grid max-w-xs gap-1 aura-text-caption">
                   {r.payloadEntries.map((e) => (
-                    <div key={e.label} className="flex gap-1.5">
-                      <dt className="shrink-0 text-[var(--aura-fg-secondary)]">{e.label}:</dt>
-                      <dd className="[overflow-wrap:anywhere]">{e.value}</dd>
+                    <div key={e.label} className="flex flex-wrap gap-x-1.5">
+                      <dt className="min-w-0 break-words text-[var(--aura-fg-secondary)]">{e.label}:</dt>
+                      <dd className={payloadWrap(e.value)}>{e.value}</dd>
                     </div>
                   ))}
                 </dl>
