@@ -382,8 +382,8 @@ export async function cancelBroadcast(
       );
 
       // F119 T081 — a member withdrawal is a hand-off to marketing (FR-021).
-      // One batched insert for the roster (R81).
-      if (input.actor.kind === 'member' && roster.length > 0) {
+      // One batched insert for the roster (R81); an empty one is the adapter's no-op.
+      if (input.actor.kind === 'member') {
         await deps.eblastOutbox.enqueueManyInTx(
           tx,
           deps.tenant,

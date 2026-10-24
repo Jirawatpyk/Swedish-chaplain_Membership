@@ -64,7 +64,7 @@ import type { ApprovalLifecycleScanPort, AwaitingApprovalCandidate } from '../..
 import type { AuditPort } from '../../ports/audit-port';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
 import type { ClockPort } from '../../ports/clock-port';
-import type { EblastApprovalLifecycleKind, EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
+import type { EblastApprovalLifecycleKind, EblastNotificationEnqueue, EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
 import type { MarketingDirectoryPort, MarketingRecipient } from '../../ports/marketing-directory-port';
 import type { MemberPortalRecipientPort } from '../../ports/member-portal-recipient-port';
 import { ApprovalDependencyError, approvalErrKind } from '../../approval-dependency-error';
@@ -348,33 +348,29 @@ async function notify(
     round: broadcast.currentRound,
     kind: KIND_OF[step],
   };
-  let enqueued = 0;
+  const rows: EblastNotificationEnqueue[] = [];
   if (to.member) {
     const contacts = await deps.portalRecipients.listActivePortalContacts(deps.tenant, ownerMemberId(broadcast), tx);
     const recipient = chooseApprovalRecipient(contacts, broadcast.submittedByUserId);
     if (recipient !== null) {
-      await deps.outbox.enqueueInTx(tx, deps.tenant, {
+      rows.push({
         type: 'eblast_approval_lifecycle',
         toEmail: recipient.email,
         locale: recipient.locale,
         contextData: { ...base, audience: 'member' },
       });
-      enqueued += 1;
     }
   }
-  // The staff rows go in ONE batched insert (a per-recipient loop grows with the roster, R81).
-  if (to.staff.length > 0) {
-    await deps.outbox.enqueueManyInTx(
-      tx,
-      deps.tenant,
-      to.staff.map((recipient) => ({
-        type: 'eblast_approval_lifecycle' as const,
-        toEmail: recipient.email,
-        locale: recipient.locale,
-        contextData: { ...base, audience: 'staff' as const, recipientUserId: recipient.userId },
-      })),
-    );
-    enqueued += to.staff.length;
+  for (const recipient of to.staff) {
+    rows.push({
+      type: 'eblast_approval_lifecycle',
+      toEmail: recipient.email,
+      locale: recipient.locale,
+      contextData: { ...base, audience: 'staff', recipientUserId: recipient.userId },
+    });
   }
-  return enqueued;
+  // The member row and the staff rows go in ONE batched insert (a per-recipient
+  // loop grows with the roster, R81); an empty list is the adapter's no-op.
+  await deps.outbox.enqueueManyInTx(tx, deps.tenant, rows);
+  return rows.length;
 }
