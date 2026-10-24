@@ -53,7 +53,7 @@ describe('compose route frames on AURA', () => {
     render(withIntl(<PortalComposeError error={error} reset={vi.fn()} />));
     const back = screen.getByRole('link', { name: en.portal.broadcasts.detail.back });
     expect(back).toHaveAttribute('href', '/portal/benefits?tab=broadcasts');
-    expect(back).toHaveClass('aura-btn', 'aura-btn--secondary');
+    expect(back).toHaveClass('aura-btn', 'aura-btn--secondary', 'aura-btn--touch');
   });
 
   it('member compose loading: the header bars are the shared skeleton blocks', () => {

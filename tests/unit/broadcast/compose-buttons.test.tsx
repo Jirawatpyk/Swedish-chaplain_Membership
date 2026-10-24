@@ -62,5 +62,8 @@ describe('ComposeButtonWithTooltip on AURA', () => {
     expect(button).not.toBeDisabled();
     button.focus();
     expect(button).toHaveFocus();
+    // UX review #1: AURA's Tooltip wraps the trigger in an inline span, so the
+    // row-filling wrapper must stretch that span below 640px.
+    expect(button.closest('div')).toHaveClass('w-full', 'sm:w-auto', '[&>span]:w-full');
   });
 });

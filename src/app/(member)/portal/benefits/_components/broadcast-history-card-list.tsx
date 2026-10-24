@@ -14,9 +14,10 @@
  * status label, audience count and dates can never drift between them.
  *
  * a11y: `<ul role="list">` (Safari drops list semantics under
- * `list-style: none`) of `<li>`, each named "{subject}, {status}" for an
- * at-a-glance summary; the status is badge TEXT (WCAG 1.4.1); the table's
- * column headers become visible labels, since a row has no `<th>`.
+ * `list-style: none`) of `<li>`, each holding one link named by its row
+ * (subject, then status) for an at-a-glance summary; the status is badge
+ * TEXT (WCAG 1.4.1); the table's column headers become visible labels, since
+ * a row has no `<th>`.
  *
  * Spec 122 US12d-1 (T1236, board `Portal-broadcasts-mobile`): one bordered
  * list; each row is a link filling the row — the subject, then the status as
@@ -70,9 +71,10 @@ export function BroadcastHistoryCardList({
       )}
     >
       {rows.map((row) => (
+        // No `aria-label` on the item: its one link, named by the row (subject
+        // and status first), already gives the summary; a label read it twice.
         <li
           key={row.broadcastId}
-          aria-label={`${row.subject}, ${row.statusLabel}`}
           className="border-t border-[var(--aura-border-default)] first:border-t-0"
         >
           <Link

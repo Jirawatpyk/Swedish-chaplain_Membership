@@ -34,7 +34,7 @@ export default function ComposeBroadcastError(props: {
       actions={
         <Link
           href="/portal/benefits?tab=broadcasts"
-          className={buttonClass({ variant: 'secondary' })}
+          className={buttonClass({ variant: 'secondary', touchHeight: true })}
         >
           {tBack('back')}
         </Link>

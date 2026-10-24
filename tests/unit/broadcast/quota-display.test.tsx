@@ -67,6 +67,11 @@ describe('QuotaDisplay on AURA', () => {
       const labelEl = screen.getByText(label, { selector: 'span' });
       expect(labelEl.nextElementSibling).toHaveTextContent(value);
     }
+    // UX review #2: two per row below 360px, where a label broke mid-word.
+    expect(screen.getByText(q.used, { selector: 'span' }).closest('[aria-live]')).toHaveClass(
+      'grid-cols-4',
+      'max-[359px]:grid-cols-2',
+    );
     expect(screen.getByRole('progressbar', { name: q.progressLabel })).toHaveAttribute(
       'aria-valuenow',
       '3',

@@ -30,6 +30,9 @@ export function ComposeButtonWithTooltip({
     // label + tooltip hint so SR users hear "Compose your first E-Blast —
     // Renews January 1…" instead of bare "Compose, dimmed" (a tooltip only
     // describes the trigger while it is open).
+    // AURA's Tooltip wraps its trigger in an inline span; below 640px the
+    // span (and so the button) fills the row, as the enabled Compose does.
+    <div className="w-full sm:w-auto [&>span]:flex [&>span]:w-full sm:[&>span]:inline-flex sm:[&>span]:w-auto">
     <Tooltip content={tooltipText}>
       <Button
         type="button"
@@ -43,5 +46,6 @@ export function ComposeButtonWithTooltip({
         {label}
       </Button>
     </Tooltip>
+    </div>
   );
 }

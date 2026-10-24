@@ -852,6 +852,8 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The Audience column keeps the recipient count only. The board's segment name is not in the list's read model.
   - The quota bar stays one `progressbar` for used plus reserved. The board's hatched reserved segment, its legend and its footnote need new copy.
   - Pagination stays the panel's own previous/next links on `?tab=broadcasts&page=N` (testids kept), on AURA `buttonClass`.
+  - Below 360px the quota counters sit two per row, not four. At 320, "Remaining" (EN) and "Reserverat" and "Paketgräns" (SV) broke mid-word (UX review, 24 Oct).
+  - The phone row leaves out Submitted or Sent while its value is "—". The table still shows the dash.
 - **The three extras:**
   - The staff root error boundary moves to the shared `RouteErrorPanel`.
   - The staff not-found boundary keeps its cause-neutral copy, with the back link on AURA `buttonClass`.

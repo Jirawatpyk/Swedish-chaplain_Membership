@@ -236,6 +236,9 @@ describe('U37 — the history renders as a card list below md', () => {
     const card = within(screen.getByTestId('broadcast-history-card-list')).getAllByRole(
       'listitem',
     )[0]!;
+    // UX review #3: the item carries no label of its own; its one link,
+    // named by the row, is the summary (a label read it twice).
+    expect(card).not.toHaveAttribute('aria-label');
     const links = within(card).getAllByRole('link');
     expect(links).toHaveLength(1);
     const link = links[0]!;
