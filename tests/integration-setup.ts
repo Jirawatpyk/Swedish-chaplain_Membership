@@ -7,6 +7,7 @@
  */
 import { afterAll, beforeAll, vi } from 'vitest';
 import { assertDbHostNotBlocklisted } from './helpers/db-host-guard';
+import { LIVE_TEST_USERS_KEY } from './integration/helpers/live-test-users-key';
 
 // No integration test sends real transactional email. The outbox dispatcher
 // (`/api/cron/outbox-dispatch`) drains up to 50 pending rows from the WHOLE
@@ -100,13 +101,12 @@ beforeAll(() => {
 });
 
 // Remove the test users this file created and did not delete. Registered here,
-// it runs after the file's own afterAll teardowns (hooks run in stack order).
-// The registry lives on globalThis, so a file that never created a user does
-// not import the helper (or the db) just to find nothing.
+// it runs after the file's own afterAll teardowns (`sequence.hooks: 'stack'`,
+// pinned in vitest.integration.config.ts). The registry lives on globalThis, so
+// a file that never created a user does not import the helper (or the db) just
+// to find nothing.
 afterAll(async () => {
-  const live = (globalThis as Record<symbol, Map<string, unknown> | undefined>)[
-    Symbol.for('chamber-os.integration.liveTestUsers')
-  ];
+  const live = (globalThis as Record<symbol, Map<string, unknown> | undefined>)[LIVE_TEST_USERS_KEY];
   if (!live || live.size === 0) return;
   const { sweepLeftoverTestUsers } = await import('./integration/helpers/test-users');
   await sweepLeftoverTestUsers();

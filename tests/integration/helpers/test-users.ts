@@ -27,6 +27,7 @@ import {
   type UserId,
 } from '@/modules/auth/domain/branded';
 import type { Role } from '@/modules/auth/domain/role';
+import { LIVE_TEST_USERS_KEY } from './live-test-users-key';
 
 export interface TestUser {
   readonly userId: UserId;
@@ -44,11 +45,10 @@ export interface TestUser {
  * what is left after each test file. Kept on `globalThis` so the setup file
  * can see it without importing this module (and the db) into every file.
  */
-const LIVE_KEY = Symbol.for('chamber-os.integration.liveTestUsers');
 type LiveRegistry = Map<string, TestUser>;
 function liveTestUsers(): LiveRegistry {
-  const g = globalThis as { [LIVE_KEY]?: LiveRegistry };
-  return (g[LIVE_KEY] ??= new Map());
+  const g = globalThis as { [LIVE_TEST_USERS_KEY]?: LiveRegistry };
+  return (g[LIVE_TEST_USERS_KEY] ??= new Map());
 }
 
 /**
@@ -158,6 +158,9 @@ export async function sweepLeftoverTestUsers(): Promise<number> {
       await deleteTestUser(user);
       swept += 1;
     } catch (e) {
+      // Dropped from the registry either way: under singleFork the registry
+      // outlives the file, and a retry from every later file only repeats the warning.
+      liveTestUsers().delete(user.userId);
       console.warn(`[test-users] sweep: could not remove ${user.rawEmail}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }

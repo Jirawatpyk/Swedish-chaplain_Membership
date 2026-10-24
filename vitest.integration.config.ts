@@ -70,6 +70,10 @@ export default defineConfig({
     // the same fork. Do NOT set `isolate: false` — module-registry isolation
     // is still needed independent of the env concern.
     isolate: true,
+    // Pinned, not left to the default: tests/integration-setup.ts registers an
+    // afterAll that sweeps the test users a file never deleted, and it must run
+    // AFTER the file's own afterAll teardowns (stack = reverse registration).
+    sequence: { hooks: 'stack' },
   },
   resolve: {
     alias: {
