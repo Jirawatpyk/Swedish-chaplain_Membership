@@ -677,6 +677,7 @@ describe('signIn use case', () => {
           }),
           passwordHash: PASS_HASH,
         }),
+        clearExpiredLock: vi.fn().mockResolvedValue(undefined),
         clearFailedCount: vi.fn().mockResolvedValue(undefined),
         incrementFailedCount: vi.fn().mockResolvedValue(1),
         setLocked: vi.fn(),
@@ -689,7 +690,9 @@ describe('signIn use case', () => {
     const result = await signIn(BASE_INPUT, deps);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('invalid-credentials');
-    expect(deps.users.clearFailedCount).toHaveBeenCalledWith(USER_ID);
+    // L1 — the guarded variant (keyed on `now`), never the unconditional clear.
+    expect(deps.users.clearExpiredLock).toHaveBeenCalledWith(USER_ID, NOW);
+    expect(deps.users.clearFailedCount).not.toHaveBeenCalled();
     expect(deps.users.setLocked).not.toHaveBeenCalled();
   });
 
