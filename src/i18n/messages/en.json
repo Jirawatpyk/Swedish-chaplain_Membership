@@ -6954,7 +6954,9 @@
         "fetchError": "Could not load quota.",
         "retry": "Retry",
         "nextReset": "Renews {date}",
-        "planChangedExplainer": "Plan changed on {date} — current year quota reflects the new plan."
+        "planChangedExplainer": "Plan changed on {date} — current year quota reflects the new plan.",
+        "reservedLegend": "Reserved (in review or scheduled)",
+        "footnote": "A slot is reserved when you submit and used when the E-Blast is sent. It is given back if the E-Blast is rejected, cancelled, expires without your approval, or cannot be sent."
       },
       "banner": {
         "acknowledgement": {

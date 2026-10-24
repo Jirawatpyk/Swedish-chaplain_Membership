@@ -29,6 +29,9 @@ function renderQuota(props: Partial<React.ComponentProps<typeof QuotaDisplay>> =
   );
 }
 
+/** The four counters (the live region); the legend repeats "Used" outside it. */
+const counters = () => screen.getByTestId('quota-display').querySelector('[aria-live]') as HTMLElement;
+
 beforeEach(() => {
   vi.useRealTimers();
 });
@@ -64,11 +67,11 @@ describe('QuotaDisplay on AURA', () => {
       [q.remaining, '3'],
       [q.cap, '6'],
     ] as const) {
-      const labelEl = screen.getByText(label, { selector: 'span' });
+      const labelEl = within(counters()).getByText(label, { selector: 'span' });
       expect(labelEl.nextElementSibling).toHaveTextContent(value);
     }
     // UX review #2: two per row below 360px, where a label broke mid-word.
-    expect(screen.getByText(q.used, { selector: 'span' }).closest('[aria-live]')).toHaveClass(
+    expect(counters()).toHaveClass(
       'grid-cols-4',
       'max-[359px]:grid-cols-2',
     );
@@ -99,7 +102,31 @@ describe('QuotaDisplay on AURA', () => {
     vi.stubGlobal('fetch', fetchSpy);
     renderQuota({ live: false });
     expect(screen.getByTestId('quota-display')).toHaveAttribute('aria-busy', 'false');
-    expect(screen.getByText(q.used, { selector: 'span' }).nextElementSibling).toHaveTextContent('2');
+    expect(within(counters()).getByText(q.used, { selector: 'span' }).nextElementSibling).toHaveTextContent('2');
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it('draws the reserved part hatched beside the used part, with a legend and the footnote (board)', () => {
+    renderQuota({ live: false });
+    const bar = screen.getByRole('progressbar', { name: q.progressLabel });
+    const used = bar.querySelector('[data-segment="used"]') as HTMLElement;
+    const reserved = bar.querySelector('[data-segment="reserved"]') as HTMLElement;
+    // SNAP: 2 used and 1 reserved of 6.
+    expect(used.style.width).toBe(`${(2 / 6) * 100}%`);
+    expect(reserved.style.width).toBe(`${(1 / 6) * 100}%`);
+    expect(reserved.style.backgroundImage).toContain('repeating-linear-gradient');
+    // The counters already state the numbers, so the legend is not read twice.
+    const legend = screen.getByText(q.reservedLegend).closest('[aria-hidden="true"]');
+    expect(legend).not.toBeNull();
+    expect(screen.getByText(q.footnote)).toBeInTheDocument();
+  });
+
+  it('caps the two parts at the whole bar when used plus reserved runs over the cap', () => {
+    renderQuota({ live: false, initial: { ...SNAP, used: 5, reserved: 3, remaining: 0 } });
+    const bar = screen.getByRole('progressbar', { name: q.progressLabel });
+    const used = parseFloat((bar.querySelector('[data-segment="used"]') as HTMLElement).style.width);
+    const reserved = parseFloat((bar.querySelector('[data-segment="reserved"]') as HTMLElement).style.width);
+    expect(used + reserved).toBeLessThanOrEqual(100);
+  });
 });
+

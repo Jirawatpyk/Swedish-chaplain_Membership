@@ -18,8 +18,8 @@
  * 122 US12d-1 (T1235, board `Portal-broadcasts`): an AURA card. The head reads
  * the year on the left and "plan · renewal" on the right; each counter is a
  * label above its number; the bar, live region, testids and retry are kept.
- * The board's hatched reserved segment and its legend need new copy and are
- * not drawn (FR-011).
+ * The reserved part is drawn hatched beside the used part, with a legend and
+ * the board's footnote (copy added with the user's approval, 24 Oct).
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -135,8 +135,11 @@ export function QuotaDisplay({
 
   // Clamp percentage at 100 to avoid race conditions where used+reserved
   // briefly exceeds cap (P6 finding).
-  const rawPct = snap && snap.cap > 0 ? ((snap.used + snap.reserved) / snap.cap) * 100 : 0;
-  const pct = Math.min(100, rawPct);
+  // Board `Portal-broadcasts`: the used part solid, the reserved part hatched
+  // beside it. Both clamp so they never run past the bar together.
+  const usedPct = snap && snap.cap > 0 ? Math.min(100, (snap.used / snap.cap) * 100) : 0;
+  const reservedPct =
+    snap && snap.cap > 0 ? Math.min(100 - usedPct, (snap.reserved / snap.cap) * 100) : 0;
   const exhausted = snap !== null && snap.remaining === 0;
   const ariaValueNow = snap ? Math.min(snap.cap, snap.used + snap.reserved) : 0;
 
@@ -195,11 +198,46 @@ export function QuotaDisplay({
             >
               <div
                 className={cn(
-                  'h-full motion-safe:transition-all',
-                  exhausted ? 'bg-[var(--aura-fg-danger)]' : 'bg-[var(--aura-fg-accent)]',
+                  'flex h-full',
+                  exhausted ? '[--quota-fill:var(--aura-fg-danger)]' : '[--quota-fill:var(--aura-fg-accent)]',
                 )}
-                style={{ width: `${pct}%` }}
-              />
+              >
+                <span
+                  data-segment="used"
+                  className="h-full bg-[var(--quota-fill)] motion-safe:transition-all"
+                  style={{ width: `${usedPct}%` }}
+                />
+                <span
+                  data-segment="reserved"
+                  className="h-full opacity-60 motion-safe:transition-all"
+                  style={{
+                    width: `${reservedPct}%`,
+                    backgroundImage:
+                      'repeating-linear-gradient(45deg, var(--quota-fill) 0 3px, transparent 3px 6px)',
+                  }}
+                />
+              </div>
+            </div>
+            {/* The legend repeats what the counters above already say, so it
+                is not read twice. */}
+            <div
+              aria-hidden="true"
+              className="flex flex-wrap gap-x-4 gap-y-1 aura-text-caption text-[var(--aura-fg-secondary)]"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-2.5 shrink-0 rounded-[2px] bg-[var(--aura-fg-accent)]" />
+                {t('used')}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="size-2.5 shrink-0 rounded-[2px]"
+                  style={{
+                    backgroundImage:
+                      'repeating-linear-gradient(45deg, var(--aura-fg-accent) 0 3px, transparent 3px 6px)',
+                  }}
+                />
+                {t('reservedLegend')}
+              </span>
             </div>
             {exhausted ? (
               <p className="aura-text-caption text-[var(--aura-fg-danger)]">
@@ -215,6 +253,7 @@ export function QuotaDisplay({
                 {tCompose('title')}
               </Link>
             ) : null}
+            <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('footnote')}</p>
             {/* AS2 plan-changed explainer — quota metadata inside the card. */}
             {planChangedExplainer !== null ? (
               <p

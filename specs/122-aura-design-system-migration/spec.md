@@ -850,10 +850,17 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The empty history is an AURA `EmptyState` with the "compose your first" button.
 - **Kept, against the boards (FR-011, no copy change):**
   - The Audience column keeps the recipient count only. The board's segment name is not in the list's read model.
-  - The quota bar stays one `progressbar` for used plus reserved. The board's hatched reserved segment, its legend and its footnote need new copy.
+  - (Reversed by the user, 24 Oct.) The quota bar now draws the board's hatched reserved part beside the used part, with a legend and the footnote. That adds two strings in EN/TH/SV (`quota.reservedLegend`, `quota.footnote`). The legend is `aria-hidden` because the counters already state the numbers.
   - Pagination stays the panel's own previous/next links on `?tab=broadcasts&page=N` (testids kept), on AURA `buttonClass`.
   - Below 360px the quota counters sit two per row, not four. At 320, "Remaining" (EN) and "Reserverat" and "Paketgräns" (SV) broke mid-word (UX review, 24 Oct).
   - The phone row leaves out Submitted or Sent while its value is "—". The table still shows the dash.
+- **The Benefits page header (the user, 24 Oct: "the title sits too far down"):**
+  - The two Benefits boards disagree. `Benefits` (the Plan benefits tab) draws the hero header: 40px down and a 36px title. `Portal-broadcasts` (the E-Blasts tab) draws the ordinary one: 32px and a 32px title, and 20px on phones, where the hero drew 24.
+  - One page cannot carry both without jumping between tabs, so both tabs take the ordinary header. Home and Edit keep their hero, as their boards draw it.
+  - Consistency check of the staff error and not-found pages:
+    - All 32 staff `error.tsx` use the shared `RouteErrorPanel`, with its dashed EmptyState, so the root boundary now matches them.
+    - The staff not-found pages were already mixed: a dashed EmptyState on the root page and change-requests, a header with a back link on invoices and credit notes. The portal side uses solid cards.
+    - Moving staff to the board's solid card is a change to `RouteErrorPanel` across 32 routes, not part of this slice.
 - **The three extras:**
   - The staff root error boundary moves to the shared `RouteErrorPanel`.
   - The staff not-found boundary keeps its cause-neutral copy, with the back link on AURA `buttonClass`.
