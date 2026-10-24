@@ -799,3 +799,14 @@ summary,
      between evidence sections — restore inter-section spacing in print. */
   details[data-evidence] > :not(summary) > * + * { margin-top: 1.5rem !important; }
 }
+
+/* stand-in until AURA #176: below 640px AURA's full-width page-header actions
+   give every direct child `min-width: max-content`, which beat the 1px
+   `.sr-only` width of a hidden button description (the credit note's
+   "Email a copy" hint ran 636px wide and scrolled the page sideways). A
+   visually hidden element never needs a minimum width. */
+@layer utilities {
+  .sr-only {
+    min-width: 0;
+  }
+}

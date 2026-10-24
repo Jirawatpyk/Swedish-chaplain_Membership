@@ -197,6 +197,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #176 | Addendum 77: below 640px `.aura-page-header--actions-full-below-sm > .aura-page-header__actions > *` sets `min-width: max-content` on every direct child, so a visually hidden child (`.sr-only`, an absolutely positioned button description) grows to its text's width and scrolls the page sideways | `.sr-only { min-width: 0 }` in `src/app/globals.css` (layer `utilities`); found on the admin credit-note page, whose "Email a copy" hint ran 636px wide at 390 |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
