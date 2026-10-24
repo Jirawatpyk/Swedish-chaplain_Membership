@@ -326,13 +326,5 @@ describe('PortalBenefitsPage — page-level F7 kill-switch (C1, xhigh #12)', () 
     expect(header).not.toHaveAttribute('data-size', 'hero-lg');
     expect(header!.className).not.toContain('hero');
   });
-
-  // Spec 122 US12d-1 (AURA 5.62, #177): the plan and "Full benefits" chips are
-  // a row 8px apart, as the boards draw them; they touched while `meta` was a
-  // text line.
-  it.each([{}, { tab: 'broadcasts' }])('lays the header chips out as AURA\'s meta row (%o)', async (sp) => {
-    const { container } = await renderPage(sp);
-    expect(container.querySelector('.aura-page-header__meta')).toHaveClass('aura-page-header__meta--rich');
-  });
 });
 

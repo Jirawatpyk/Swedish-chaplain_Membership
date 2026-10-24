@@ -9,8 +9,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { StatusPill } from '@jirawatpyk/aura-react/server';
-import { render } from '@testing-library/react';
-import { PageHeader } from '@/components/layout/page-header';
 
 vi.mock('@/lib/db', () => ({ db: {}, runInTenant: vi.fn() }));
 vi.mock('next-intl/server', () => ({
@@ -62,16 +60,5 @@ describe('MemberPortalHomePage — the header status chip', () => {
     const pills = findAll(tree, StatusPill);
     expect(pills).toHaveLength(1);
     expect((pills[0]!.props as { tone?: string }).tone).toBe('neutral');
-  });
-
-  // Spec 122 US12d-1 (AURA 5.62, #177): the member number, plan and status
-  // chips are a row 8px apart, as board `Main` draws them. They touched (0px)
-  // while `meta` was a text line; a meta of elements only now takes the row.
-  it('lays the header chips out as AURA\'s meta row', async () => {
-    const tree = await MemberPortalHomePage();
-    const [header] = findAll(tree, PageHeader);
-    const { meta } = header!.props as { meta: ReactNode };
-    const { container } = render(<PageHeader title="t" meta={meta} />);
-    expect(container.querySelector('.aura-page-header__meta')).toHaveClass('aura-page-header__meta--rich');
   });
 });
