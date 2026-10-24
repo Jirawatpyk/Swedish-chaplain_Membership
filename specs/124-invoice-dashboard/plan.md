@@ -144,6 +144,13 @@ Built in four subagent batches (A migration, B pure code, C money SQL + loaders,
 
 - **Production (2026-10-23, after #623 deployed as `d4ec4e797` with the flag set ON by the maintainer)**: `/admin/finance` renders for an admin, no card error, not the empty state. Document fetch from the signed-in browser in Bangkok: cold first hit 3.9 s to the end of the stream; then five warm runs 496 / 196 / 196 / 150 / 142 ms to headers and 588 / 391 / 278 / 208 / 220 ms to the end of the stream. Same method, same session: `/admin` 133–265 ms to headers, `/admin/invoices` 137–151 ms. Per-query server time (D-j's own measure) is the `insights_invoice_dashboard_query_duration_ms` histogram; not read here.
 
+### Follow-ups (2026-10-24, branch `124-palette-and-e2e`, cut from `185a1ea4e`)
+
+- ⌘K: `nav.financeDashboard` → `/admin/finance`, behind `invoiceDashboard` (stripped while the flag is off), permission `invoicing.read` = the page guard. RED `6abd7f0a1` (parity count 34 → 35, the "finance" query). In the browser on the branch server: Ctrl+K, "finance" → "Invoice dashboard" → `/admin/finance`.
+- US1.7 / D-o end to end — `tests/e2e/admin/invoice-dashboard-record-payment.spec.ts` on a throwaway tenant (two bills due 40 and 30 days ago): Record payment… on row 1 → the success toast, the row leaves the card, the Overdue tile 2 → 1, focus on row 2's Record payment…, the invoice `paid` with a receipt number. chromium and mobile-chrome green on :3401 (flag on, `E2E_X_TENANT_HEADER_ENABLED=1`); CI skips it (no X-Tenant header there).
+- US6.2 on a tablet (1024 × 768, `hasTouch`, `(pointer: coarse)` true): document-number link 117 × 44, "All overdue invoices" 192 × 44.
+- `invoice-dashboard.spec.ts` 8/8 on chromium and mobile-chrome on the same server.
+
 ## Rollout
 
 1. Slices merge in order, each on the user's word (D-006). Each is safe to deploy alone: slice 1 is additive, slice 2 is a migration plus unused code, slice 3 is behind `FEATURE_INVOICE_DASHBOARD` (default off).

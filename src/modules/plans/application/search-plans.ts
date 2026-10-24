@@ -61,7 +61,9 @@ export type PaletteFeatureFlag =
   | 'f7Broadcasts'
   | 'f088TaxAtPayment'
   // F114 — the change-request queue (404 while the flag is off)
-  | 'memberChangeApproval';
+  | 'memberChangeApproval'
+  // Spec 124 — the invoice dashboard, /admin/finance (404 while the flag is off)
+  | 'invoiceDashboard';
 
 export type PaletteActionItem = {
   readonly id: string;
@@ -272,6 +274,16 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/change-requests',
     permission: 'members.read',
     feature: 'memberChangeApproval',
+  },
+  // Spec 124 follow-up — the invoice dashboard. Feature-gated like its route
+  // (404 while the flag is off); `invoicing.read` mirrors the page guard (the
+  // page then also needs `insights.finance`, which every such role holds).
+  {
+    id: 'nav.financeDashboard',
+    label: 'palette.navigate.invoiceDashboard',
+    url: '/admin/finance',
+    permission: 'invoicing.read',
+    feature: 'invoiceDashboard',
   },
   {
     id: 'nav.invoices',
