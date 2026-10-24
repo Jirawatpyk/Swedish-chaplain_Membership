@@ -402,7 +402,7 @@ describe('searchPlans — kill-switch feature tags', () => {
     },
   );
 
-  it.each(['overdue', 'unpaid', 'outstanding'])(
+  it.each(['unpaid', 'outstanding'])(
     '"%s" leads to the invoice list, not the dashboard',
     async (q) => {
       const deps = makeDeps({ plans: [] });
@@ -413,6 +413,15 @@ describe('searchPlans — kill-switch feature tags', () => {
       expect(ids).not.toContain('nav.financeDashboard');
     },
   );
+
+  it('"overdue" opens the invoice list already filtered to overdue', async () => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'overdue' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    const entry = result.value.results.navigate.find((e) => e.id === 'nav.invoicesOverdue');
+    expect(entry).toMatchObject({ url: '/admin/invoices?status=overdue', label: 'palette.navigate.invoicesOverdue' });
+    expect(result.value.results.navigate.map((e) => e.id)).not.toContain('nav.financeDashboard');
+  });
 
   it('a word in no id, key or keyword finds no navigate entry', async () => {
     const deps = makeDeps({ plans: [] });
