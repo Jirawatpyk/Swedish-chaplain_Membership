@@ -20,6 +20,7 @@ vi.mock('next-intl/server', () => ({
 }));
 
 import { ChangeRequestQueueTable } from '@/app/(staff)/admin/change-requests/_components/queue-table';
+import { TIGHT_CELLS_IN_NARROWEST_GRID } from '@/components/shell/aura-classes';
 
 const item = {
   row: {
@@ -61,10 +62,38 @@ describe('change-request queue as on the board (US5a)', () => {
     expect(screen.getByTestId('queue-table')).toHaveClass('aura-tbl--middle');
   });
 
+  it('box fit: Submitted hides while the box is a narrow grid; AURA 5.60 wraps the text cells between words', async () => {
+    render(await ChangeRequestQueueTable({ items: [item] }));
+    const head = screen.getByRole('columnheader', { name: 'admin.changeRequests.queue.columns.submitted' });
+    const row = screen.getByTestId('queue-row');
+    const [memberCell, submitterCell, fieldsCell, submittedCell] = within(row).getAllByRole('cell');
+    for (const el of [head, submittedCell]) {
+      expect(el).toHaveClass('@min-[640px]/aura-tbl:@max-[900px]/aura-tbl:hidden');
+    }
+    expect(submittedCell).toHaveClass('is-nowrap');
+    for (const el of [memberCell, submitterCell, fieldsCell]) expect(el!.className).not.toContain('overflow-wrap');
+  });
+
+  it('box fit: in the narrowest grid (640–720px box) the cells sit closer, so Review stays in view', async () => {
+    render(await ChangeRequestQueueTable({ items: [item] }));
+    const table = screen.getByTestId('queue-table');
+    for (const row of within(table).getAllByRole('row')) {
+      expect(row).toHaveClass(
+        '@min-[640px]/aura-tbl:@max-[720px]/aura-tbl:[&>:not(:first-child)]:pl-[var(--aura-space-2)]',
+        '@min-[640px]/aura-tbl:@max-[720px]/aura-tbl:[&>:not(:last-child)]:pr-[var(--aura-space-2)]',
+      );
+    }
+  });
+
   it('keeps "Overdue" on the line of the waiting time', async () => {
     render(await ChangeRequestQueueTable({ items: [item] }));
     const badge = screen.getByTestId('overdue-badge');
     expect(badge.parentElement).toHaveClass('flex-nowrap');
+    // only while the box is a narrow grid it sits below, on every row alike.
+    expect(badge.parentElement).toHaveClass(
+      '@min-[640px]/aura-tbl:@max-[900px]/aura-tbl:flex-col',
+      '@min-[640px]/aura-tbl:@max-[900px]/aura-tbl:items-start',
+    );
   });
 
   it('lays out the phone card with AURA’s card slots: the company as title, Review as action', async () => {
@@ -81,8 +110,9 @@ describe('change-request queue as on the board (US5a)', () => {
     render(await ChangeRequestQueueTable({ items: [item] }));
     expect(screen.getByTestId('queue-table')).toHaveClass('aura-tbl--cards');
     const row = screen.getByTestId('queue-row');
-    // no frame of our own on the row, no reach into the table's wrap
-    expect(row.className).not.toContain('aura-tbl:');
+    // no frame of our own on the row; its only reach into the table's box is
+    // the narrowest-grid cell spacing (our column count), not a card style
+    expect(row.className.replace(TIGHT_CELLS_IN_NARROWEST_GRID, '')).not.toContain('aura-tbl:');
     expect(within(row).getByRole('link')).toHaveClass('aura-btn--sm', 'aura-btn--touch');
   });
 });

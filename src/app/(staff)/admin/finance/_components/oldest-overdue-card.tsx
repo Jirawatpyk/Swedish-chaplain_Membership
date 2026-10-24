@@ -30,10 +30,10 @@ export const OLDEST_OVERDUE_TITLE_ID = 'oldest-overdue-title';
 /** Shown on a phone; the rest of the six are hidden there. */
 const PHONE_ROWS = 3;
 
-/** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2, AURA #172). */
 /** The due date steps aside in a narrow grid (the days overdue say the same); the phone card keeps it. */
-const HIDE_IN_NARROW_GRID = '@min-[641px]/aura-tbl:@max-[800px]/aura-tbl:hidden';
+const HIDE_IN_NARROW_GRID = '@min-[640px]/aura-tbl:@max-[800px]/aura-tbl:hidden';
 
+/** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2, AURA #172). */
 const DOCUMENT_LINK = linkClass({ underline: 'hover', touchHeight: true, className: 'font-medium' });
 
 function triggerIdOf(invoiceId: string): string {
@@ -131,14 +131,14 @@ export async function OldestOverdueCard({
             return (
               <Tr key={row.invoiceId} data-testid="oldest-overdue-row" className={i >= PHONE_ROWS ? 'max-sm:hidden' : undefined}>
                 {/* one line, so a narrow column never splits the number at its hyphen */}
-                <Td card="title" mono className="whitespace-nowrap">
+                <Td card="title" mono wrap="none">
                   <Link href={`/admin/invoices/${row.invoiceId}`} className={DOCUMENT_LINK}>
                     {document}
                   </Link>
                 </Td>
                 {/* between words only: AURA's cell wraps anywhere ("Hospital/ity") */}
-                <Td label={t('oldest.buyer')} className="[overflow-wrap:normal]">{row.buyerName ?? '—'}</Td>
-                <Td label={t('oldest.due')} className={`whitespace-nowrap ${HIDE_IN_NARROW_GRID}`}>
+                <Td label={t('oldest.buyer')}>{row.buyerName ?? '—'}</Td>
+                <Td label={t('oldest.due')} wrap="none" className={HIDE_IN_NARROW_GRID}>
                   {formatDay(row.dueDate, locale)}
                 </Td>
                 <Td

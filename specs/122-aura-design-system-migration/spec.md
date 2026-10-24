@@ -791,6 +791,50 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - #175 (76): the sticky header covering the first row of a wide table.
   - All three are listed open in `docs/aura-adoption.md`.
 
+### Session 2026-10-23 (static tables, part 2: templates and change requests)
+
+- **The sweep:** I measured the other `Td card="title"` tables in EN/SV/TH at 768, 1024 and 1280 for words broken across lines and for box overflow.
+  - At-risk and invoice detail were clean.
+  - Lapsed and pending review have no fixture view, but they have 4–5 short columns.
+  - Two tables broke:
+    - **Templates** at 1024 with the sidebar: "Newslet/ter", "Svensk/a". The box overflowed by 130–196px and the page scrolled 47px. The cause: Subject (a 24rem truncated cell) showed by viewport (≥ 1024), not by box.
+    - **Change requests** at 768 and 1024: "Midso/mmar", "docume/nts". The box overflowed by 56–142px. The cause: three nowrap cells (Submitted, Waiting with its pill, Status).
+- **The fix** (#174 stand-in, maintainer's choices, 23 Oct). Everything below follows the table box, not the viewport.
+  - Templates **Subject**:
+    - steps aside while the box is 640–820px;
+    - is cut at 12rem up to 1000px (a tablet in landscape);
+    - is cut at 24rem beyond that;
+    - shows in full on the phone card.
+  - Change requests, while the box is 640–900px:
+    - **Submitted** steps aside; Waiting says the same.
+    - The **Overdue** pill sits below the wait on every row.
+    - The phone card and the wide table keep the pill on one line.
+  - Text cells in the grid wrap between words only (`@min-[640px]/aura-tbl:[overflow-wrap:normal]`), and phone cards keep AURA's `anywhere`. The same scoping now applies to the #630 plans and finance cells.
+  - The narrow-grid range starts at 640px, where AURA's card stack ends, on all three tables.
+- **Result** (enterprise-ux-designer sweep, then mine, every 20px from 660 to 1440px in EN/SV/TH):
+  - No word breaks in any of the four tables.
+  - Templates and finance fit their box at every width.
+  - Change requests and plans first ran 9–51px past a 655–695px box (a 720–760px tablet, such as an iPad mini in portrait). The maintainer asked for that fixed too ("แก้เลย"). `TIGHT_CELLS_IN_NARROWEST_GRID` (`src/components/shell/aura-classes.ts`, on both tables' rows) sets the cells 8px apart instead of 16px while the box is 640–720px; the outer edges keep AURA's padding. All four tables now fit at every width.
+- **Ratchet repair:** the open-items rows #173–#175 in `docs/aura-adoption.md` were written `| #173 (Addendum 74) |`. The ratchet's parser reads only `| #173 |`, so it stopped there and none of the three counted as open. They now read `| #173 | Addendum 74: …`.
+
+### Session 2026-10-23 (adopt AURA 5.60: #173–#175)
+
+- **What shipped:** AURA 5.60.0 closes all three items filed from #629 and #630.
+  - #173: a `touchHeight` link is laid out at every width.
+  - #174: a static cell wraps between words by default, and `Td` / `Th` take `wrap`.
+  - #175: a wide sticky header no longer covers the first row.
+  - They are adopted in the same branch as the table sweep above, before it was pushed, so its #174 stand-ins never shipped.
+- **Removed:**
+  - the hand-written link layout on the picker and portal profile links;
+  - `[overflow-wrap:normal]` on six cell types;
+  - `whitespace-nowrap` on three cells, which now use `wrap="none"`.
+- **Kept, now labelled as app content:**
+  - `self-start`, where a flex parent stretches a link;
+  - the picker's child-span label type;
+  - the narrow-grid column drops, the Subject cut, Overdue below the wait, and the tighter cells.
+- **Found adopting it:** with `break-word` as the default, the audit log's event codes and IDs and the users list's email widened their tables (audit ran 326px past its box at 768). The codes, ids and detail values take `[overflow-wrap:anywhere]` on their own spans, so the labels beside them still wrap between words; the email breaks after its `@` (`<wbr>`). Audit now runs 49px past its box at 768 (64 on 5.59), users 0.
+- **Seen, not caused here:** the credit-note detail page scrolls sideways by about 250px at 390. A sr-only label in the page-header actions computes 636px wide. The 5.59 → 5.60 CSS diff touches only `.aura-link`, so this is left for its own fix.
+
 ## User Scenarios & Testing *(mandatory)*
 
 Every story below is one phase and one pull request. A story is done when its screens use only AURA components, match their canvas boards, and pass the per-module definition of done (FR-010).

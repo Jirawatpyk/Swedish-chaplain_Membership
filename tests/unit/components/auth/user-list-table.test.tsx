@@ -124,6 +124,15 @@ afterEach(() => {
   vi.useFakeTimers();
 });
 
+describe('UserListTable — layout', () => {
+  it('AURA 5.60 (#174): an email breaks only after its @, so a long address never widens the table', () => {
+    renderTable([ACTIVE_USER]);
+    const cell = screen.getAllByRole('cell').find((td) => td.textContent === 'active@example.com')!;
+    expect(cell).not.toHaveClass('is-wrap-anywhere');
+    expect(cell.innerHTML).toContain('active@<wbr>example.com');
+  });
+});
+
 describe('UserListTable — resend + revoke invitation actions', () => {
   it('shows Resend invitation in the row and Revoke as a danger item in its ⋯ menu on a pending row', async () => {
     renderTable([PENDING_USER]);

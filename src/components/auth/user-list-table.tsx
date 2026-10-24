@@ -130,6 +130,23 @@ function daysUntil(expiresAt: Date, now: Date): number {
   return Math.ceil((expiresAt.getTime() - now.getTime()) / MS_PER_DAY);
 }
 
+/**
+ * An email with a break opportunity after its `@`, so a narrow column wraps it as
+ * "name@ / domain" instead of mid-word (AURA 5.60 wraps cells between words, #174).
+ * `<wbr>` adds nothing to a copy or to what a screen reader reads.
+ */
+function emailWithBreak(email: string): ReactNode {
+  const at = email.indexOf('@');
+  if (at < 0) return email;
+  return (
+    <>
+      {email.slice(0, at + 1)}
+      <wbr />
+      {email.slice(at + 1)}
+    </>
+  );
+}
+
 export function UserListTable({
   users,
   currentUserId,
@@ -523,7 +540,7 @@ export function UserListTable({
                 const none = !view.canDisable && !view.canEnable && !view.canManageInvite && !view.canChangeRole;
                 return (
                   <Tr key={user.id} data-user-id={user.id} data-user-email={user.email.toLowerCase()}>
-                    <Td>{user.email}</Td>
+                    <Td>{emailWithBreak(user.email)}</Td>
                     <Td className="whitespace-nowrap">{user.displayName ?? '—'}</Td>
                     <Td>{roleBadgeFor(user)}</Td>
                     <Td>

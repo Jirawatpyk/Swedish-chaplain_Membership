@@ -493,6 +493,8 @@ describe('a shorter profile on phones (#239)', () => {
     expect(summary?.textContent).toBe('moreDetails');
     // AURA 5.59 linkClass: accent text, 44px on touch (#172)
     expect(summary).toHaveClass('aura-link', 'aura-link--touch');
+    // AURA 5.60 (#173): the summary hugs its text itself; no layout of our own
+    for (const c of ['inline-flex', 'flex', 'items-center', 'min-w-0', 'max-w-full', 'w-fit', 'justify-start', 'list-none']) expect(summary).not.toHaveClass(c);
     for (const key of FOLDED) {
       const inDisclosure = [...details!.querySelectorAll('dt')].find((dt) => dt.textContent === key);
       expect(inDisclosure, `${key} in the disclosure`).toBeDefined();
@@ -518,5 +520,7 @@ describe('a shorter profile on phones (#239)', () => {
     expect(email.parentElement).toHaveClass('flex-wrap');
     expect(email).toHaveClass('aura-link', 'aura-link--touch');
     expect(phone).toHaveClass('aura-link', 'aura-link--touch');
+    // AURA 5.60 (#173) keeps a stretched link's text at the start itself
+    for (const link of [email, phone]) expect(link).not.toHaveClass('justify-start');
   });
 });

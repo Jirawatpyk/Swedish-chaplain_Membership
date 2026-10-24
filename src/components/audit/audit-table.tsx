@@ -80,7 +80,9 @@ export function AuditTable({
   // cells. Below 640px, board `Admin-audit-mobile`'s compact cards instead
   // (maintainer, parity comments 13 Oct); the raw codes stay in the table.
   // A client file: AURA's Table is not in `/server`.
-  const code = 'block font-mono aura-text-caption text-[var(--aura-fg-secondary)]';
+  // codes and ids have no break points, so they alone may break anywhere (AURA 5.60 wraps
+  // the cell between words, #174)
+  const code = 'block font-mono aura-text-caption text-[var(--aura-fg-secondary)] [overflow-wrap:anywhere]';
   return (
     <>
     <div className="max-sm:hidden">
@@ -134,7 +136,7 @@ export function AuditTable({
                   {r.payloadEntries.map((e) => (
                     <div key={e.label} className="flex gap-1.5">
                       <dt className="shrink-0 text-[var(--aura-fg-secondary)]">{e.label}:</dt>
-                      <dd className="break-words">{e.value}</dd>
+                      <dd className="[overflow-wrap:anywhere]">{e.value}</dd>
                     </div>
                   ))}
                 </dl>

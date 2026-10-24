@@ -151,6 +151,23 @@ describe('<AdminTemplateLibrary> — R2.1 H-test-4', () => {
     expect(subject).toHaveClass('sm:truncate', 'sm:max-w-[24rem]', 'max-sm:[overflow-wrap:anywhere]');
   });
 
+  it('box fit: the subject follows the table box (hidden to 820px, 12rem to 1000px); AURA 5.60 wraps names between words', () => {
+    renderLibrary();
+    const table = screen.getByRole('table');
+    const head = within(table).getByRole('columnheader', { name: /subject/i });
+    const subject = screen.getByText('Q2 newsletter from your chamber');
+    for (const el of [head, subject.closest('td')!]) {
+      expect(el).toHaveClass('@min-[640px]/aura-tbl:@max-[820px]/aura-tbl:hidden');
+      expect(el).not.toHaveClass('max-lg:hidden');
+      expect(el).not.toHaveClass('sm:max-lg:hidden');
+    }
+    expect(subject).toHaveClass('@min-[821px]/aura-tbl:@max-[1000px]/aura-tbl:max-w-[12rem]');
+    const row = within(table).getAllByRole('row')[1]!;
+    const [nameCell] = within(row).getAllByRole('cell');
+    expect(nameCell!.className).not.toContain('overflow-wrap');
+    for (const el of nameCell!.querySelectorAll('*')) expect(el.className).not.toContain('overflow-wrap');
+  });
+
   it('board parity: on phone cards Edit is a full-width outline button at the foot; desktop keeps the ghost link', () => {
     renderLibrary();
     const row = within(screen.getByRole('table')).getAllByRole('row')[1]!;

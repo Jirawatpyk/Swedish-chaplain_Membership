@@ -40,6 +40,15 @@ import {
 
 type FilterMode = 'all' | 'starter' | 'authored';
 
+/**
+ * The subject follows the table box, not the viewport: it steps aside in a
+ * narrow grid (up to 820px: a tablet, or a 1024 laptop beside the sidebar),
+ * is cut at 12rem up to 1000px (a tablet in landscape), and at 24rem beyond;
+ * the phone card shows it whole.
+ * AURA app content: which column gives way, by the table box.
+ */
+const HIDE_IN_NARROW_GRID = '@min-[640px]/aura-tbl:@max-[820px]/aura-tbl:hidden';
+
 export interface TemplateLibraryRow {
   readonly id: string;
   readonly name: string;
@@ -193,7 +202,7 @@ export function AdminTemplateLibrary({
           <THead>
             <Tr>
               <Th scope="col">{t('columns.name')}</Th>
-              <Th scope="col" className="max-lg:hidden">
+              <Th scope="col" className={HIDE_IN_NARROW_GRID}>
                 {t('columns.subjectPreview')}
               </Th>
               <Th scope="col">{t('columns.locale')}</Th>
@@ -224,7 +233,7 @@ export function AdminTemplateLibrary({
                         right end of the title row; in the table it follows
                         the name. */}
                     <span className="inline-flex flex-wrap items-center gap-2 max-sm:flex max-sm:w-full max-sm:flex-nowrap max-sm:items-start max-sm:justify-between">
-                      <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{tpl.name}</span>
+                      <span className="min-w-0 font-medium">{tpl.name}</span>
                       {tpl.isSeeded ? (
                         // UX L3 — a span cannot carry an aria-label, so the
                         // fuller name rides in sr-only text.
@@ -235,11 +244,12 @@ export function AdminTemplateLibrary({
                       ) : null}
                     </span>
                   </Td>
-                  <Td className="text-[var(--aura-fg-secondary)] sm:max-lg:hidden">
+                  <Td className={`text-[var(--aura-fg-secondary)] ${HIDE_IN_NARROW_GRID}`}>
                     {/* A block span so `truncate` works under the table's
                         auto layout (M8 Round 2); on a phone card the subject
-                        wraps instead of being cut (UX M2). */}
-                    <span className="block max-sm:[overflow-wrap:anywhere] sm:max-w-[24rem] sm:truncate">
+                        wraps instead of being cut (UX M2); 12rem in a
+                        narrow grid. AURA app content: the cut follows the table box */}
+                    <span className="block max-sm:[overflow-wrap:anywhere] sm:max-w-[24rem] sm:truncate @min-[821px]/aura-tbl:@max-[1000px]/aura-tbl:max-w-[12rem]">
                       {tpl.subjectPreview ?? '—'}
                     </span>
                   </Td>
