@@ -116,11 +116,7 @@ function makeDeps(overrides: Partial<ChangePasswordDeps> = {}): ChangePasswordDe
       hash: vi.fn().mockResolvedValue(NEW_HASH),
     } as unknown as ChangePasswordDeps['hasher'],
     limiter: {
-      // 125 — check() is the gate on every attempt; peek() must never
-      // be called (a peek gate lets a parallel burst through).
-      peek: vi
-        .fn()
-        .mockResolvedValue({ success: true, reset: Date.now() + 900_000 }),
+      // 125 — an atomic check() is the gate; RateLimiter has no peek.
       check: vi
         .fn()
         .mockResolvedValue({ success: true, reset: Date.now() + 900_000 }),
@@ -147,7 +143,6 @@ describe('changePassword use case', () => {
   it('returns rate-limited when the per-user limiter check is exhausted', async () => {
     const deps = makeDeps({
       limiter: {
-        peek: vi.fn(),
         check: vi
           .fn()
           .mockResolvedValue({ success: false, reset: Date.now() + 10_000 }),
@@ -163,13 +158,11 @@ describe('changePassword use case', () => {
     }
     // Blocked before argon2 runs.
     expect(deps.hasher.verify).not.toHaveBeenCalled();
-    expect(deps.limiter.peek).not.toHaveBeenCalled();
   });
 
   it('uses minimum of 1 second for retryAfterSeconds when reset is in the past', async () => {
     const deps = makeDeps({
       limiter: {
-        peek: vi.fn(),
         check: vi
           .fn()
           .mockResolvedValue({ success: false, reset: Date.now() - 500 }),
@@ -184,11 +177,10 @@ describe('changePassword use case', () => {
 
   // 125 — every attempt consumes the bucket BEFORE argon2 verify, so a
   // concurrent burst cannot all pass a non-consuming gate.
-  it('consumes limiter.check() once before verify on the happy path, never peeks', async () => {
+  it('consumes limiter.check() once before verify on the happy path', async () => {
     const order: string[] = [];
     const deps = makeDeps({
       limiter: {
-        peek: vi.fn(),
         check: vi.fn().mockImplementation(async () => {
           order.push('check');
           return { success: true, reset: Date.now() + 900_000 };
@@ -205,7 +197,6 @@ describe('changePassword use case', () => {
     const result = await changePassword(BASE_INPUT, deps);
     expect(result.ok).toBe(true);
     expect(order).toEqual(['check', 'verify']);
-    expect(deps.limiter.peek).not.toHaveBeenCalled();
   });
 
   it('calls limiter.check() exactly once on the wrong-current branch', async () => {
@@ -218,7 +209,6 @@ describe('changePassword use case', () => {
     const result = await changePassword(BASE_INPUT, deps);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('wrong-current-password');
-    expect(deps.limiter.peek).not.toHaveBeenCalled();
     expect(deps.limiter.check).toHaveBeenCalledTimes(1);
   });
 
@@ -391,10 +381,6 @@ describe('changePassword use case', () => {
       success: true,
       reset: Date.now() + 900_000,
     });
-    const peekSpy = vi.fn().mockResolvedValue({
-      success: true,
-      reset: Date.now() + 900_000,
-    });
     const deps = makeDeps({
       hasher: {
         verify: vi.fn().mockRejectedValue(
@@ -404,7 +390,6 @@ describe('changePassword use case', () => {
       } as unknown as ChangePasswordDeps['hasher'],
       audit: { append: auditSpy } as unknown as ChangePasswordDeps['audit'],
       limiter: {
-        peek: peekSpy,
         check: checkSpy,
       } as unknown as ChangePasswordDeps['limiter'],
     });
@@ -415,8 +400,7 @@ describe('changePassword use case', () => {
     if (result.ok) return;
     expect(result.error.code).toBe('wrong-current-password');
 
-    // The gate check() ran once; no peek, no extra debit.
-    expect(peekSpy).not.toHaveBeenCalled();
+    // The gate check() ran once; no extra debit.
     expect(checkSpy).toHaveBeenCalledTimes(1);
 
     // Dedicated audit event emitted
@@ -481,5 +465,33 @@ describe('changePassword use case', () => {
     expect(deps.users.setPasswordHashInTx).toHaveBeenCalledWith(TX, USER_ID, NEW_HASH, NOW);
     expect(deps.sessions.createInTx).not.toHaveBeenCalled();
     expect(deps.audit.appendInTx).not.toHaveBeenCalled();
+  });
+
+  // 125 (round 2) — a rejected NEW password (same / weak) is not a guess of
+  // the current one, so it must not spend the brute-force budget.
+  it('does not debit the limiter when the new password equals the current one', async () => {
+    const deps = makeDeps();
+    const result = await changePassword(
+      { ...BASE_INPUT, currentPassword: 'SamePassword!123', newPassword: 'SamePassword!123' },
+      deps,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('same-password');
+    expect(deps.limiter.check).not.toHaveBeenCalled();
+    expect(deps.hasher.verify).not.toHaveBeenCalled();
+  });
+
+  it('does not debit the limiter when the policy rejects the new password', async () => {
+    vi.mocked(checkPasswordPolicy).mockResolvedValue({
+      ok: false,
+      errors: [{ code: 'too-short' as const, minLength: 12 }],
+      strength: 'weak',
+    });
+    const deps = makeDeps();
+    const result = await changePassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('weak-password');
+    expect(deps.limiter.check).not.toHaveBeenCalled();
+    expect(deps.hasher.verify).not.toHaveBeenCalled();
   });
 });

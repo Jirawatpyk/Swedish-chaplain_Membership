@@ -136,6 +136,7 @@ function makeDeps(
   return {
     users: {
       findById: vi.fn().mockResolvedValue(makeUser()),
+      findByIdInTx: vi.fn().mockResolvedValue(makeUser()),
       // *InTx variants used inside the tx
       setPasswordHashInTx: vi.fn().mockResolvedValue(undefined),
       clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
@@ -430,6 +431,7 @@ describe('resetPassword use case', () => {
       } as unknown as ResetPasswordDeps['tokens'],
       users: {
         findById: vi.fn().mockResolvedValue(makeUser()),
+        findByIdInTx: vi.fn().mockResolvedValue(makeUser()),
         setPasswordHashInTx: vi.fn().mockImplementation(async () => {
           callOrder.push('setPasswordHashInTx');
         }),
@@ -470,6 +472,7 @@ describe('resetPassword use case', () => {
     const deps = makeDeps({
       users: {
         findById: vi.fn().mockResolvedValue(makeUser({ role: 'admin' })),
+        findByIdInTx: vi.fn().mockResolvedValue(makeUser({ role: 'admin' })),
         setPasswordHashInTx: vi.fn().mockResolvedValue(undefined),
         clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
       } as unknown as ResetPasswordDeps['users'],
@@ -486,6 +489,7 @@ describe('resetPassword use case', () => {
     const deps = makeDeps({
       users: {
         findById: vi.fn().mockResolvedValue(makeUser({ role: 'manager' })),
+        findByIdInTx: vi.fn().mockResolvedValue(makeUser({ role: 'manager' })),
         setPasswordHashInTx: vi.fn().mockResolvedValue(undefined),
         clearLockAndFailedCountInTx: vi.fn().mockResolvedValue(undefined),
       } as unknown as ResetPasswordDeps['users'],
@@ -538,5 +542,28 @@ describe('resetPassword use case', () => {
     expect(deps.users.setPasswordHashInTx).not.toHaveBeenCalled();
     expect(deps.sessions.deleteByUserIdInTx).not.toHaveBeenCalled();
     expect(authMetrics.passwordResetCompleted).not.toHaveBeenCalled();
+  });
+
+  // ── 125: in-tx re-checks (code-review round 2) ────────────────────────────
+  it('aborts with link-invalid when the user was disabled between the pre-tx read and the tx', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.users.findByIdInTx).mockResolvedValueOnce(makeUser({ status: 'disabled' }));
+    const result = await resetPassword(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toEqual({ code: 'link-invalid', reason: 'used' });
+    expect(deps.users.findByIdInTx).toHaveBeenCalledWith(expect.anything(), USER_ID);
+    expect(deps.users.setPasswordHashInTx).not.toHaveBeenCalled();
+    expect(deps.sessions.deleteByUserIdInTx).not.toHaveBeenCalled();
+  });
+
+  it('checks token expiry against the clock read inside the tx, not at request start', async () => {
+    const LATER = new Date(NOW.getTime() + 5_000);
+    const deps = makeDeps({ now: vi.fn().mockReturnValueOnce(NOW).mockReturnValue(LATER) });
+    await resetPassword(BASE_INPUT, deps);
+    expect(deps.tokens.markResetConsumedInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      PLAINTEXT_TOKEN,
+      LATER,
+    );
   });
 });

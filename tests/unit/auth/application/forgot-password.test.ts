@@ -109,6 +109,8 @@ function makeDeps(
       html: '<p>reset</p>',
       text: 'reset',
     })) as unknown as ForgotPasswordDeps['buildResetPasswordEmail'],
+    // 125 — inline by default; the route overrides with next/server `after`.
+    defer: (task) => task(),
     now: () => NOW,
     ...overrides,
   };
@@ -286,58 +288,69 @@ describe('forgotPassword — B5 password_reset_email_failed emit', () => {
     expect(deps.audit.append).not.toHaveBeenCalled();
   });
 
-  // 125 — the email send + audit run AFTER the response (the route passes
-  // next/server `after`), so a registered address answers in the same time
-  // as an unknown one (FR-016 timing).
-  it('hands the email send + audit to input.defer instead of awaiting them', async () => {
+  // 125 — the WHOLE active-user branch (token tx + email + audit) runs in
+  // `deps.defer` (the route wires next/server `after`), so a registered
+  // address does no awaited work an unknown one skips (FR-016 timing).
+  it('hands the token tx, email send and audit to deps.defer instead of awaiting them', async () => {
     const deferred: Array<() => Promise<void>> = [];
-    const deps = makeDeps();
+    const deps = makeDeps({
+      defer: (task) => {
+        deferred.push(task);
+      },
+    });
 
     const result = await forgotPassword(
-      {
-        email: FAKE_EMAIL,
-        sourceIp: '203.0.113.7',
-        requestId: 'req-deferred',
-        defer: (task) => {
-          deferred.push(task);
-        },
-      },
+      { email: FAKE_EMAIL, sourceIp: '203.0.113.7', requestId: 'req-deferred' },
       deps,
     );
 
     expect(result.ok).toBe(true);
-    // The token tx committed before the response …
-    expect(deps.tokens.createResetInTx).toHaveBeenCalledOnce();
-    // … but nothing slow ran yet.
+    // Nothing beyond the lookup ran before the response.
+    expect(deps.tokens.invalidateAllUnconsumedForUserInTx).not.toHaveBeenCalled();
+    expect(deps.tokens.createResetInTx).not.toHaveBeenCalled();
     expect(deps.email.send).not.toHaveBeenCalled();
     expect(deps.audit.append).not.toHaveBeenCalled();
     expect(deferred).toHaveLength(1);
 
     await deferred[0]!();
+    expect(deps.tokens.createResetInTx).toHaveBeenCalledOnce();
     expect(deps.email.send).toHaveBeenCalledOnce();
     expect(deps.audit.append).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'password_reset_requested' }),
     );
   });
 
-  it('a throw inside the deferred task is logged, not propagated', async () => {
+  it('an unknown email never reaches deps.defer', async () => {
+    const defer = vi.fn();
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue(null),
+      } as unknown as ForgotPasswordDeps['users'],
+      defer,
+    });
+    const result = await forgotPassword(
+      { email: FAKE_EMAIL, sourceIp: '203.0.113.9', requestId: 'req-unknown-defer' },
+      deps,
+    );
+    expect(result.ok).toBe(true);
+    expect(defer).not.toHaveBeenCalled();
+  });
+
+  it('a throw inside the deferred task (token tx included) is logged, not propagated', async () => {
     const { logger } = await import('@/lib/logger');
     const deferred: Array<() => Promise<void>> = [];
     const deps = makeDeps({
-      email: {
-        send: vi.fn().mockRejectedValue(new TypeError('fetch failed')),
-      } as unknown as ForgotPasswordDeps['email'],
+      tokens: {
+        invalidateAllUnconsumedForUserInTx: vi.fn().mockRejectedValue(new TypeError('neon down')),
+        createResetInTx: vi.fn(),
+      } as unknown as ForgotPasswordDeps['tokens'],
+      defer: (task) => {
+        deferred.push(task);
+      },
     });
 
     await forgotPassword(
-      {
-        email: FAKE_EMAIL,
-        sourceIp: '203.0.113.8',
-        requestId: 'req-deferred-throw',
-        defer: (task) => {
-          deferred.push(task);
-        },
-      },
+      { email: FAKE_EMAIL, sourceIp: '203.0.113.8', requestId: 'req-deferred-throw' },
       deps,
     );
 
@@ -346,5 +359,6 @@ describe('forgotPassword — B5 password_reset_email_failed emit', () => {
       expect.objectContaining({ err: 'TypeError', requestId: 'req-deferred-throw' }),
       'forgot_password.deferred_failed',
     );
+    expect(deps.email.send).not.toHaveBeenCalled();
   });
 });
