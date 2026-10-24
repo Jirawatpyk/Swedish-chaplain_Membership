@@ -136,7 +136,7 @@ describe('integration: lockout after 5 failed sign-ins', () => {
       .set({ failedSignInCount: 5, lockedUntil: live })
       .where(eq(users.id, testUser.userId));
 
-    await userRepo.clearExpiredLock(testUser.userId, now);
+    expect(await userRepo.clearExpiredLock(testUser.userId, now)).toBe(false);
     const [afterLive] = await db
       .select({ failedSignInCount: users.failedSignInCount, lockedUntil: users.lockedUntil })
       .from(users)
@@ -149,7 +149,7 @@ describe('integration: lockout after 5 failed sign-ins', () => {
       .update(users)
       .set({ lockedUntil: expired })
       .where(eq(users.id, testUser.userId));
-    await userRepo.clearExpiredLock(testUser.userId, now);
+    expect(await userRepo.clearExpiredLock(testUser.userId, now)).toBe(true);
     const [afterExpired] = await db
       .select({ failedSignInCount: users.failedSignInCount, lockedUntil: users.lockedUntil })
       .from(users)

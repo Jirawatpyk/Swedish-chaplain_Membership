@@ -544,7 +544,15 @@ describe('changePassword use case', () => {
     });
     const result = await changePassword(BASE_INPUT, deps);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('rate-limited');
+    if (!result.ok) {
+      expect(result.error.code).toBe('rate-limited');
+      // Retry-After comes from the POLICY bucket's reset (~60 s), not the
+      // guess bucket's (~900 s).
+      if (result.error.code === 'rate-limited') {
+        expect(result.error.retryAfterSeconds).toBeGreaterThanOrEqual(59);
+        expect(result.error.retryAfterSeconds).toBeLessThanOrEqual(60);
+      }
+    }
     expect(vi.mocked(checkPasswordPolicy)).not.toHaveBeenCalled();
     expect(checkedKeys(deps)).not.toContain(GUESS_KEY);
     expect(deps.hasher.verify).not.toHaveBeenCalled();
