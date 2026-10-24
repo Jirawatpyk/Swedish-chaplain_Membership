@@ -36,6 +36,22 @@ export interface TestUser {
 }
 
 /**
+ * Every user this file's suite created and has not yet deleted. Many suites
+ * never call `deleteTestUser` (or a timed-out teardown skips it), and each
+ * leaked ACTIVE admin is one more outbox row in every per-reviewer fan-out on
+ * the shared dev branch: 1,327 leaked between 2026-10-20 and 10-24, and a
+ * change-request submit took 60–83 s. `tests/integration-setup.ts` sweeps
+ * what is left after each test file. Kept on `globalThis` so the setup file
+ * can see it without importing this module (and the db) into every file.
+ */
+const LIVE_KEY = Symbol.for('chamber-os.integration.liveTestUsers');
+type LiveRegistry = Map<string, TestUser>;
+function liveTestUsers(): LiveRegistry {
+  const g = globalThis as { [LIVE_KEY]?: LiveRegistry };
+  return (g[LIVE_KEY] ??= new Map());
+}
+
+/**
  * Create a unique active test user with a known password.
  *
  * The email has the form `test-<timestamp>-<rand>@swecham.test` so
@@ -65,12 +81,14 @@ export async function createActiveTestUser(role: Role = 'admin'): Promise<TestUs
   const row = rows[0];
   if (!row) throw new Error('createActiveTestUser: insert returned no row');
 
-  return {
+  const user: TestUser = {
     userId: asUserId(row.id),
     email,
     rawEmail,
     password,
   };
+  liveTestUsers().set(row.id, user);
+  return user;
 }
 
 /** Postgres SQLSTATE 23503 — foreign_key_violation. */
@@ -122,4 +140,29 @@ export async function deleteTestUser(user: TestUser): Promise<void> {
         'disabled instead of deleted; delete that dependent in the suite teardown to remove the row',
     );
   }
+  liveTestUsers().delete(user.userId);
+}
+
+/**
+ * Remove every user this test file created and did not delete: the same
+ * delete-or-disable as `deleteTestUser`, one user at a time so one failure
+ * cannot strand the rest. Called from `afterAll` in `tests/integration-setup.ts`;
+ * returns how many it removed. A killed worker never reaches it, so a crash
+ * can still leave users behind.
+ */
+export async function sweepLeftoverTestUsers(): Promise<number> {
+  const left = [...liveTestUsers().values()];
+  let swept = 0;
+  for (const user of left) {
+    try {
+      await deleteTestUser(user);
+      swept += 1;
+    } catch (e) {
+      console.warn(`[test-users] sweep: could not remove ${user.rawEmail}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  if (swept > 0) {
+    console.warn(`[test-users] sweep: removed ${swept} test user(s) this file created but never deleted`);
+  }
+  return swept;
 }
