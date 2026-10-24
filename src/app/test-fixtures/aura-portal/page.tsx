@@ -243,10 +243,10 @@ export default async function AuraPortalPreviewPage({
             title={t('title')}
             subtitle={t('subtitlePlanEblasts', { plan: 'Premium Corporate' })}
             meta={
-              <>
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge tone="accent" variant="solid">Premium Corporate</Badge>
                 <StatusPill tone="ready">{t('statusFull')}</StatusPill>
-              </>
+              </div>
             }
           />
           <BenefitsTabs showBroadcastsTab active="broadcasts" broadcastsPanel={panel} benefitsPanel={null} />
@@ -265,10 +265,10 @@ export default async function AuraPortalPreviewPage({
             title={t('title')}
             subtitle={t('subtitlePlanEblasts', { plan: 'Premium Corporate' })}
             meta={
-              <>
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge tone="accent" variant="solid">Premium Corporate</Badge>
                 <StatusPill tone="ready">{t('statusFull')}</StatusPill>
-              </>
+              </div>
             }
           />
           <BenefitsTabs
@@ -741,11 +741,11 @@ export default async function AuraPortalPreviewPage({
           subtitle={t('intro')}
           size="hero"
           meta={
-            <>
+            <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline" className="font-mono">TSCC-0042</Badge>
               <Badge tone="accent" variant="solid">Premium Corporate</Badge>
               <StatusPill tone="neutral">{t('statusChip.active')}</StatusPill>
-            </>
+            </div>
           }
         />
         <MembershipInvoiceAlert

@@ -198,6 +198,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #177 | `PageHeader` `meta` is a text line, so chips in it sit 0px apart; boards `Main` and `Benefits` draw them as a wrapping row 8px apart (Addendum 78, 24 Oct) | The portal Dashboard and Benefits headers wrap their chips in `<div className="flex flex-wrap items-center gap-2">`; `tests/unit/app/portal/portal-header-meta-chips.test.ts` asks for that row on every portal `meta` with a Badge or StatusPill |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

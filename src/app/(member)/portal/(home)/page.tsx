@@ -116,7 +116,9 @@ export default async function MemberPortalHomePage() {
         subtitle={t('intro')}
         size="hero"
         meta={
-          <>
+          // The chips as a row 8px apart, as the board draws them: AURA's
+          // `meta` is a text line (stand-in until AURA #177).
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className="font-mono">
               {memberNumberLabel}
             </Badge>
@@ -132,7 +134,7 @@ export default async function MemberPortalHomePage() {
             <StatusPill tone="neutral">
               {t(`statusChip.${statusChipKey}`)}
             </StatusPill>
-          </>
+          </div>
         }
       />
 
