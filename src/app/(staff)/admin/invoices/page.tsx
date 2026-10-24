@@ -342,8 +342,13 @@ export default async function AdminInvoicesPage({
   // (awaited after it) and its failure never fails the list.
   const dueAfterFilter = parseIsoCalendarDate(query.dueAfter);
   const planIdFilter = parsePlanIdParam(query.plan);
+  // Spec 124 follow-up — ONE instant per request: the Overdue filter, the
+  // row badges, the plan lookup's year and the payment-date clamp all read
+  // it, so a page served across Bangkok midnight never mixes two days.
+  const nowUtcIso = new Date().toISOString();
+  const todayBangkok = bangkokLocalDate(nowUtcIso);
   const planFilterPromise = planIdFilter
-    ? loadPlanFilter(planIdFilter, tenantCtx, locale, bangkokLocalDate(new Date().toISOString()))
+    ? loadPlanFilter(planIdFilter, tenantCtx, locale, todayBangkok)
     : Promise.resolve(undefined);
   const hasFilters =
     Boolean(qTrim) ||
@@ -436,6 +441,7 @@ export default async function AdminInvoicesPage({
       ...(dueBeforeFilter ? { dueBefore: dueBeforeFilter } : {}),
       ...(dueAfterFilter ? { dueAfter: dueAfterFilter } : {}),
       ...(planIdFilter ? { planId: planIdFilter } : {}),
+      today: todayBangkok,
     });
   } catch (e) {
     return renderLoadError(e);
@@ -631,8 +637,8 @@ export default async function AdminInvoicesPage({
   // or voiding immediately returns the row to its stored status on
   // the next fetch.
   // R8-H1-SF — a failed read no longer reaches here: it returns the
-  // load-error card right after `listInvoicesPaged` above.
-  const nowUtcIso = new Date().toISOString();
+  // load-error card right after `listInvoicesPaged` above. `nowUtcIso` is the
+  // instant the list's Overdue filter used (taken once, above).
   // 088 (T065 / FR-016) — `f088TaxAtPayment` (hoisted to the filter-parse block
   // above) gates the SC-bill ↔ RC-tax-receipt disambiguation, baked into each
   // row's `taxDocumentKind` server-side so the client table renders it without
@@ -805,7 +811,7 @@ export default async function AdminInvoicesPage({
         // The tenant-timezone (Bangkok) today — the SAME value the detail
         // page threads to the dialog, so the payment-date clamp never
         // off-by-ones for ~7h/day.
-        todayIso: bangkokLocalDate(nowUtcIso),
+        todayIso: todayBangkok,
         planFilter,
       })}
     </TableContainer>

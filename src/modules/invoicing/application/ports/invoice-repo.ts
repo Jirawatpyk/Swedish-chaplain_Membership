@@ -293,6 +293,14 @@ export interface InvoiceRepo {
       readonly dueAfter?: string | undefined;
       /** 124 slice 1 — `invoices.plan_id = planId` (membership only). */
       readonly planId?: string | undefined;
+      /**
+       * Spec 124 follow-up — the request's Bangkok calendar date
+       * (`YYYY-MM-DD`) the `'overdue'` cut-off compares against
+       * (`due_date < today`, strict), so the filter and the row badges
+       * (`computeIsOverdue` on the same instant) read ONE clock. Absent =
+       * the database clock, `(now() AT TIME ZONE 'Asia/Bangkok')::date`.
+       */
+      readonly today?: string | undefined;
     },
   ): Promise<{ readonly rows: readonly Invoice[]; readonly total: number }>;
 

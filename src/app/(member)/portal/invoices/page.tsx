@@ -20,6 +20,7 @@ import { getTranslations, getLocale } from 'next-intl/server';
 import { requireSession } from '@/lib/auth-session';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { env } from '@/lib/env';
+import { bangkokLocalDate } from '@/lib/fiscal-year';
 import { logger } from '@/lib/logger';
 import { errKind, hashId, rootCause } from '@/lib/log-id';
 import {
@@ -202,6 +203,10 @@ export default async function PortalInvoicesPage({
   // (errKind — never the raw error / SQL / PII). The `!ok` narrow is kept for
   // type-completeness (the union still carries `Err<never>`) but is
   // unreachable-by-design: it throws into the same catch.
+  // Spec 124 follow-up — ONE instant per request: the Overdue filter and the
+  // row badges (`toInvoiceRowViewModel` below) both read it, so a page served
+  // across Bangkok midnight never filters on one day and badges on the other.
+  const nowUtcIso = new Date().toISOString();
   let pageData: ListInvoicesPagedOutput;
   try {
     const invoicesResult = await listInvoicesPaged(makeListInvoicesDeps(tenantCtx.slug), {
@@ -213,6 +218,7 @@ export default async function PortalInvoicesPage({
       search: searchTerm.length > 0 ? searchTerm : undefined,
       status: statusFilter,
       ...(subjectFilter ? { invoiceSubject: subjectFilter } : {}),
+      today: bangkokLocalDate(nowUtcIso),
     });
     // If `listInvoicesPaged` ever gains a real Err variant, branch on
     // `invoicesResult.error` here instead of re-throwing — re-throwing would
@@ -248,7 +254,6 @@ export default async function PortalInvoicesPage({
   // stale). The raw repo row is NOT carried on these entries — every
   // action/label/hint/sentinel decision on both surfaces reads `vm.*` only,
   // so the card can never re-derive a flag the table didn't (and vice versa).
-  const nowUtcIso = new Date().toISOString();
   const rows = rawRows.map((r) => ({
     vm: toInvoiceRowViewModel(r, nowUtcIso, f088TaxAtPayment),
   }));

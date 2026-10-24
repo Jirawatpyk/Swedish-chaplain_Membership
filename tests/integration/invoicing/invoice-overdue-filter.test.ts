@@ -9,6 +9,11 @@
  *
  * Uses fixed far-past / far-future dueDates so the result is stable regardless
  * of the run date (the SQL cutoff is `(now() AT TIME ZONE 'Asia/Bangkok')::date`).
+ *
+ * Spec 124 follow-up: a caller may pass `today` (the request's Bangkok date)
+ * so the filter and the row badges read ONE clock. The 2098 invoices are
+ * future-due by the database clock and decide the cut-off only when `today`
+ * is given.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
@@ -55,6 +60,8 @@ const SNAP_MEMBER = {
 const PAST_A = '2020-01-01';
 const PAST_B = '2020-06-01';
 const FUTURE = '2099-12-31';
+/** The request's Bangkok date in the `today` cases — far ahead of the DB clock. */
+const APP_TODAY = '2098-06-15';
 const MEMBER_ID = '00000000-0000-4000-8000-0000000000d8';
 
 describe('invoice listPaged — overdue filter (S1-P1-8)', () => {
@@ -64,6 +71,8 @@ describe('invoice listPaged — overdue filter (S1-P1-8)', () => {
   const overdue2 = randomUUID();
   const futureDue = randomUUID();
   const draftPastDue = randomUUID();
+  const dueDayBefore = randomUUID();
+  const dueToday = randomUUID();
 
   beforeAll(async () => {
     user = await createActiveTestUser('admin');
@@ -149,6 +158,8 @@ describe('invoice listPaged — overdue filter (S1-P1-8)', () => {
         issued(overdue1, 1, '2026-01-05', PAST_A), // overdue
         issued(overdue2, 2, '2026-01-04', PAST_B), // overdue
         issued(futureDue, 3, '2026-01-03', FUTURE), // issued, NOT overdue
+        issued(dueDayBefore, 4, '2026-01-02', '2098-06-14'), // overdue on APP_TODAY only
+        issued(dueToday, 5, '2026-01-01', APP_TODAY), // due on APP_TODAY: not yet overdue
         {
           // draft, past-due — excluded (status != 'issued')
           tenantId: tenant.ctx.slug,
@@ -188,5 +199,26 @@ describe('invoice listPaged — overdue filter (S1-P1-8)', () => {
     }
     expect(ids).not.toContain(futureDue);
     expect(ids).not.toContain(draftPastDue);
+  });
+
+  async function overdueIds(today?: string): Promise<string[]> {
+    const result = await listInvoicesPaged(makeListInvoicesDeps(tenant.ctx.slug), {
+      tenantId: tenant.ctx.slug,
+      offset: 0,
+      pageSize: 50,
+      includeDrafts: false,
+      status: 'overdue',
+      ...(today !== undefined ? { today } : {}),
+    });
+    if (!result.ok) throw new Error('expected ok');
+    return result.value.rows.map((r) => r.invoiceId).sort();
+  }
+
+  it('with `today`, cuts off on that Bangkok date, not the database clock (strict)', async () => {
+    expect(await overdueIds(APP_TODAY)).toEqual([overdue1, overdue2, dueDayBefore].sort());
+  });
+
+  it('a malformed `today` falls back to the database clock', async () => {
+    expect(await overdueIds('2098-02-30')).toEqual([overdue1, overdue2].sort());
   });
 });
