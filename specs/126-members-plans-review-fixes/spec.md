@@ -2,7 +2,7 @@
 
 **Size**: M (members + plans application code, two repos, one route contract change, a decision; no migration, no UI, no flag).
 **Status**: built on `126-members-plans-review-fixes`, 24 Oct 2026.
-**Source**: `/code-review` of `src/modules/members` + `src/modules/plans` (24 Oct 2026), 10 findings. The maintainer chose: fix all 10 with TDD; move plans audit into the write tx (#7, D-026); delete bulk `change_plan` rather than rebuild it (#1/#3).
+**Source**: `/code-review` of `src/modules/members` + `src/modules/plans` (24 Oct 2026), 10 findings. The maintainer chose: fix all 10 with TDD; move plans audit into the write tx (#7, D-027); delete bulk `change_plan` rather than rebuild it (#1/#3).
 
 ## Summary
 
@@ -22,5 +22,5 @@ Closes the integrity and audit gaps the review found in plan assignment, bulk me
 
 ## Out of scope
 
-- F8 `accept-tier-upgrade` and `finalise-f2-plan-change-on-paid` still emit their F2 audit after their own tx (D-026 follow-up).
+- F8 `accept-tier-upgrade` and `finalise-f2-plan-change-on-paid` still emit their F2 audit after their own tx (D-027 follow-up).
 - New copy for `member_type_warning` — the override dialog shows its generic "outside the plan limits" line.

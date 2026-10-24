@@ -44,6 +44,23 @@ import type {
 } from '../../application/ports/email-port';
 import type { RepoError } from '../../application/ports/member-repo';
 
+/** The outbox row for one request: shared by the single and the batched insert. */
+function toOutboxInsert(ctx: TenantContext, request: EmailEnqueue): NotificationsOutboxInsert {
+  return {
+    tenantId: ctx.slug,
+    notificationType: request.type,
+    toEmail: request.toEmail.toLowerCase(),
+    locale: request.locale,
+    contextData: request.contextData,
+  };
+}
+
+/**
+ * Rows per INSERT in `enqueueManyInTx`. Each row binds 5 parameters and
+ * Postgres caps a statement at 65,535, so a chunk stays far below the cap.
+ */
+export const ENQUEUE_MANY_CHUNK = 1_000;
+
 /**
  * Insert one outbox row inside the caller's transaction. The row is
  * created in `pending` state with `attempts = 0` and `next_retry_at =
@@ -55,16 +72,9 @@ export async function enqueueInTx(
   request: EmailEnqueue,
 ): Promise<Result<{ outboxRowId: string }, RepoError>> {
   try {
-    const insert: NotificationsOutboxInsert = {
-      tenantId: ctx.slug,
-      notificationType: request.type,
-      toEmail: request.toEmail.toLowerCase(),
-      locale: request.locale,
-      contextData: request.contextData,
-    };
     const [row] = await tx
       .insert(notificationsOutbox)
-      .values(insert)
+      .values(toOutboxInsert(ctx, request))
       .returning({ id: notificationsOutbox.id });
     if (!row) {
       return err({
@@ -73,6 +83,37 @@ export async function enqueueInTx(
       });
     }
     return ok({ outboxRowId: row.id });
+  } catch (e) {
+    return err({ code: 'repo.unexpected', cause: e });
+  }
+}
+
+/**
+ * Insert many outbox rows inside the caller's transaction: one multi-row
+ * INSERT per `ENQUEUE_MANY_CHUNK` requests. Same row shape as `enqueueInTx`.
+ */
+export async function enqueueManyInTx(
+  tx: TenantTx,
+  ctx: TenantContext,
+  requests: readonly EmailEnqueue[],
+): Promise<Result<{ outboxRowIds: readonly string[] }, RepoError>> {
+  const outboxRowIds: string[] = [];
+  try {
+    for (let start = 0; start < requests.length; start += ENQUEUE_MANY_CHUNK) {
+      const chunk = requests.slice(start, start + ENQUEUE_MANY_CHUNK);
+      const rows = await tx
+        .insert(notificationsOutbox)
+        .values(chunk.map((request) => toOutboxInsert(ctx, request)))
+        .returning({ id: notificationsOutbox.id });
+      if (rows.length !== chunk.length) {
+        return err({
+          code: 'repo.unexpected',
+          cause: `outbox insert returned ${rows.length} rows for ${chunk.length} requests`,
+        });
+      }
+      outboxRowIds.push(...rows.map((r) => r.id));
+    }
+    return ok({ outboxRowIds });
   } catch (e) {
     return err({ code: 'repo.unexpected', cause: e });
   }
@@ -93,4 +134,5 @@ export const resendEmailPort: EmailPort = {
   },
 
   enqueueInTx,
+  enqueueManyInTx,
 };

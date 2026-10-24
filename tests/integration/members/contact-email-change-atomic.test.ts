@@ -292,6 +292,9 @@ describe('change-contact-email atomic tx (T072, FR-012a)', () => {
       enqueueInTx: async () => {
         throw new Error('CHAOS_OUTBOX_FAILURE');
       },
+      enqueueManyInTx: async () => {
+        throw new Error('CHAOS_OUTBOX_FAILURE');
+      },
     };
 
     const result = await changeContactEmail(

@@ -333,7 +333,8 @@ export interface EmailPortFake extends EmailPort {
   readonly enqueued: EmailEnqueue[];
   enqueue: MockedFunction<EmailPort['enqueue']>;
   enqueueInTx: MockedFunction<EmailPort['enqueueInTx']>;
-  /** Make the next enqueueInTx fail (fault injection). */
+  enqueueManyInTx: MockedFunction<EmailPort['enqueueManyInTx']>;
+  /** Make the next enqueueInTx / enqueueManyInTx fail (fault injection). */
   failNext(): void;
 }
 
@@ -350,10 +351,23 @@ export function makeEmailPortFake(): EmailPortFake {
     seq += 1;
     return ok({ outboxRowId: `outbox-${seq}` });
   };
+  const enqueueManyImpl = async (_tx: TenantTx, _ctx: TenantContext, requests: readonly EmailEnqueue[]) => {
+    if (fail) {
+      fail = false;
+      return err({ code: 'repo.unexpected' as const, cause: new Error('outbox insert failed') });
+    }
+    const outboxRowIds = requests.map((request) => {
+      enqueued.push(request);
+      seq += 1;
+      return `outbox-${seq}`;
+    });
+    return ok({ outboxRowIds });
+  };
   return {
     enqueued,
     enqueue: vi.fn(async (ctx, request) => enqueueImpl(FAKE_TX, ctx, request)),
     enqueueInTx: vi.fn(enqueueImpl),
+    enqueueManyInTx: vi.fn(enqueueManyImpl),
     failNext() {
       fail = true;
     },

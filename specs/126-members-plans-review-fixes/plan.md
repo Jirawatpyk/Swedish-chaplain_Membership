@@ -7,7 +7,7 @@
 - **#4/#5/#9**: `application/use-cases/plan-change-core.ts` `validatePlanChange` (pure) + `domain/policies/member-type-scope-policy.ts`. `changePlan` gains `contactRepo` + `clock` deps (primary DOB, today) and an archived check on the locked row.
 - **#8**: `createMember` takes `planAdvisoryLock` (already in `buildMembersDeps`) and re-checks deletion under it.
 - **#6**: use-case gate + `deleted_at IS NULL` on the repo update's SELECT and UPDATE.
-- **#7** (D-026): `InTxHook<T>` on every mutating `PlanRepo` / `ScheduledPlanChangeRepo` method; `AuditPort.recordInTx`; `auditInTx(...)` builds the hook and throws `PlanAuditAbort` on failure. Unit doubles: `tests/unit/plans/application/in-tx-hook-mocks.ts`.
+- **#7** (D-027): `InTxHook<T>` on every mutating `PlanRepo` / `ScheduledPlanChangeRepo` method; `AuditPort.recordInTx`; `auditInTx(...)` builds the hook and throws `PlanAuditAbort` on failure. Unit doubles: `tests/unit/plans/application/in-tx-hook-mocks.ts`.
 
 ## Complexity Tracking
 
