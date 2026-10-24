@@ -242,6 +242,7 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
       errorSpy.mockClear();
       const idem = await import('@/lib/idempotency');
       vi.mocked(idem.rememberIdempotentResponse).mockClear();
+      vi.mocked(idem.releaseIdempotencyRecord).mockClear();
 
       const { POST } = await import(
         '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
@@ -256,6 +257,12 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
       const [structured] = errorSpy.mock.calls[0]! as [{ errorId: string }, string];
       expect(structured.errorId).toBe(errorId);
       expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
+      // The reservation is released, so the client's retry (same key, same
+      // body) is not refused as a conflict — the cancel never happened.
+      expect(vi.mocked(idem.releaseIdempotencyRecord)).toHaveBeenCalledWith(
+        expect.anything(),
+        'idem-cancel-1',
+      );
     });
   }
 

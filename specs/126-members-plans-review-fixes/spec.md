@@ -22,5 +22,5 @@ Closes the integrity and audit gaps the review found in plan assignment, bulk me
 
 ## Out of scope
 
-- F8 `accept-tier-upgrade` still emits its F2 audit after its own tx (D-026 follow-up).
+- F8 `accept-tier-upgrade` and `finalise-f2-plan-change-on-paid` still emit their F2 audit after their own tx (D-026 follow-up).
 - New copy for `member_type_warning` — the override dialog shows its generic "outside the plan limits" line.

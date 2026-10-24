@@ -218,4 +218,4 @@ onPaid bridge. The rest are log-only: alert on the errorId.
 Since 126 (#7) every F2 plans mutation writes its audit row in the same transaction as the state change, so a failed
 audit rolls the change back: there is no audit-less state to backfill, and the former
 `plans_cancel_audit_backfill_required_total` counter and `X-Audit-Backfill-Required` header are gone. F8
-`accept-tier-upgrade` still emits its F2 audit after its tx (the remaining follow-up).
+`accept-tier-upgrade` and `finalise-f2-plan-change-on-paid` still emit their F2 audit after their tx (the remaining follow-up).
