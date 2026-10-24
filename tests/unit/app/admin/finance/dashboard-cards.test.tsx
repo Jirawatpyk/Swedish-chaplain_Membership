@@ -202,10 +202,17 @@ describe('AttentionCard', () => {
 
 describe('OldestOverdueCard', () => {
   const rows = [
-    { invoiceId: 'inv-a', documentNumber: 'SC-000071', buyerName: 'Nordic Freight', dueDate: '2026-06-12', daysPastDue: 129, amountSatang: 2_996_000n },
-    { invoiceId: 'inv-b', documentNumber: 'SC-000088', buyerName: 'Siam Nordic', dueDate: '2026-07-01', daysPastDue: 110, amountSatang: 1_070_000n },
+    { invoiceId: 'inv-a', documentNumber: 'SC-000071', buyerName: 'Nordic Freight', dueDate: '2026-06-12', daysPastDue: 129, amountSatang: 2_996_000n, subject: 'membership' as const, planYear: 2026, eventName: null },
+    { invoiceId: 'inv-b', documentNumber: 'SC-000088', buyerName: 'Siam Nordic', dueDate: '2026-07-01', daysPastDue: 110, amountSatang: 1_070_000n, subject: 'event' as const, planYear: null, eventName: 'Midsommar Gala 2026' },
   ];
   const base = { overdueCount: 9, filtered: false, listFilters: {}, locale: 'en', today: '2026-10-19' };
+
+  it('the For column names the plan year or the event, as the boards draw it', async () => {
+    mount(await OldestOverdueCard({ ...base, result: ok({ rows, canRecordPayment: true }) }));
+    expect(screen.getByRole('columnheader', { name: D.oldest.for })).toBeInTheDocument();
+    expect(screen.getAllByText('Membership 2026').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Midsommar Gala 2026').length).toBeGreaterThan(0);
+  });
 
   it('an admin gets Record payment per row; focus after a payment goes to the next row, from the last to the card title', async () => {
     mount(await OldestOverdueCard({ ...base, result: ok({ rows, canRecordPayment: true }) }));

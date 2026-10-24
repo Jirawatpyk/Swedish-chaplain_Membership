@@ -214,6 +214,17 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
         dueDate: '2026-03-16',
         daysPastDue: 91,
         amountSatang: 160_000n,
+        // The board's For column: an event invoice names its event.
+        subject: 'event',
+        planYear: null,
+        eventName: 'Dashboard Gala',
+      });
+      // A membership invoice gives its plan year (rendered "Membership 2025").
+      expect(result.rows[1]).toMatchObject({
+        invoiceId: seeded.ids.iD61,
+        subject: 'membership',
+        planYear: 2025,
+        eventName: null,
       });
     });
 
