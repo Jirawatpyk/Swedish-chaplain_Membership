@@ -26,6 +26,7 @@
 
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import {
@@ -159,7 +160,7 @@ function persistFailed(
       tenant: ctx.tenant.slug,
       actor_user_id: ctx.actorUserId,
       request_id: ctx.requestId,
-      err: message,
+      err: errKind(e),
     },
     'plan-audit-adapter: persist failed — F13 cross-tenant-probe correlation pipeline at risk if event_type=plan_not_found',
   );

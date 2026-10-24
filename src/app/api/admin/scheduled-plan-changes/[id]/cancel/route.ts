@@ -191,7 +191,7 @@ export async function POST(
                 ? 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'
                 : 'F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED',
             requestId: ctx.requestId,
-            err: result.error,
+            auditErrorType: result.error.auditErrorType,
           },
           'cancel-scheduled-plan-change: audit write failed — cancel rolled back',
         );
