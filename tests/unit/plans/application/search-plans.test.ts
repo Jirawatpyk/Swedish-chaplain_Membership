@@ -391,6 +391,24 @@ describe('searchPlans — kill-switch feature tags', () => {
     });
   });
 
+  it.each(['revenue', 'aging', 'overdue', 'receivables'])(
+    'finds the invoice dashboard by the synonym "%s" (navigate keywords)',
+    async (q) => {
+      const deps = makeDeps({ plans: [] });
+      const result = await searchPlans({ ...baseInput, q }, deps);
+      if (!result.ok) throw new Error('unreachable');
+      const entry = result.value.results.navigate.find((e) => e.id === 'nav.financeDashboard');
+      expect(entry?.feature).toBe('invoiceDashboard');
+    },
+  );
+
+  it('a word in no id, key or keyword finds no navigate entry', async () => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'zzqx' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.results.navigate).toEqual([]);
+  });
+
   it('leaves feature-less entries (e.g. nav.dashboard) untagged', async () => {
     const deps = makeDeps({ plans: [] });
     const result = await searchPlans({ ...baseInput, q: 'dashboard' }, deps);
