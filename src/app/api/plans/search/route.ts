@@ -345,6 +345,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       f7Broadcasts: env.features.f7Broadcasts,
       f088TaxAtPayment: env.features.f088TaxAtPayment,
       memberChangeApproval: env.features.memberChangeApproval,
+      invoiceDashboard: env.features.invoiceDashboard,
     };
     const actions = filterPaletteEntriesByFeature(
       result.value.results.actions,
