@@ -37,13 +37,21 @@ vi.mock('@/app/(staff)/admin/invoices/_components/record-payment-dialog', () => 
   ),
 }));
 
-// The animated amount reads matchMedia (its own tests cover it); render its
-// final whole-baht text, as the real component's sr-only copy reads.
-vi.mock('@/components/dashboard/count-up', () => ({
-  CountUp: ({ value, locale }: { value: number; locale: string }) => (
-    <span>{new Intl.NumberFormat(locale, { style: 'currency', currency: 'THB', maximumFractionDigits: 0 }).format(value)}</span>
-  ),
-}));
+// The real CountUp renders; it reads matchMedia, which jsdom lacks. Reduced
+// motion makes it paint the final figure at once.
+Object.defineProperty(window, 'matchMedia', {
+  configurable: true,
+  value: (query: string) => ({
+    matches: query.includes('prefers-reduced-motion: reduce'),
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  }),
+});
 
 import { AgingCard } from '@/app/(staff)/admin/finance/_components/aging-card';
 import { AttentionCard } from '@/app/(staff)/admin/finance/_components/attention-card';
@@ -328,8 +336,10 @@ describe('TrendCard', () => {
       `November 2026${D.trend.notYet}${D.trend.notYet}`,
     ]);
     // Spec line 81 / board: a card headline is whole baht, written like the tiles.
-    expect(screen.getByTestId('trend-total-billed')).toHaveTextContent('THB 120');
-    expect(screen.getByTestId('trend-total-billed')).not.toHaveTextContent('.00');
+    // The accessible copy: the compact phone copy always shows the currency, so
+    // only this one tells the THB variant from a bare integer.
+    const billed = screen.getByTestId('trend-total-billed').querySelector('.sr-only');
+    expect(billed?.textContent?.replace(/\s/g, ' ')).toBe('THB 120');
     expect(screen.getByText(/^FY 2026 by month · billed by issue date, voided invoices left out/)).toBeInTheDocument();
     expect(document.body.innerHTML).not.toMatch(/revenue|net of credit notes/i);
   });

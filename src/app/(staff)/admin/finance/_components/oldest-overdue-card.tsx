@@ -148,13 +148,15 @@ export async function OldestOverdueCard({
                 <Td label={t('oldest.buyer')}>{row.buyerName ?? '—'}</Td>
                 {/* steps aside in a narrow grid with Due, so the row never breaks words; the phone card keeps it.
                     "Membership 2026" stays on one line; a free-text event name wraps between words. */}
-                <Td
-                  label={t('oldest.for')}
-                  {...(row.subject === 'membership' ? { wrap: 'none' as const } : {})}
-                  className={HIDE_IN_NARROW_GRID}
-                >
-                  {forLabel(row)}
-                </Td>
+                {row.subject === 'membership' ? (
+                  <Td label={t('oldest.for')} wrap="none" className={HIDE_IN_NARROW_GRID}>
+                    {forLabel(row)}
+                  </Td>
+                ) : (
+                  <Td label={t('oldest.for')} className={HIDE_IN_NARROW_GRID}>
+                    {forLabel(row)}
+                  </Td>
+                )}
                 <Td label={t('oldest.due')} wrap="none" className={HIDE_IN_NARROW_GRID}>
                   {formatDay(row.dueDate, locale)}
                 </Td>
