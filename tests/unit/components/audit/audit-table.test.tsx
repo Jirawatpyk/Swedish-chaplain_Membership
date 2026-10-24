@@ -97,6 +97,12 @@ describe('<AuditTable> on AURA', () => {
     expect(within(table()).getByText('admin').parentElement).toHaveClass('flex-wrap');
   });
 
+  it('R81: a list of long tokens (joined with ", ") still breaks anywhere', () => {
+    const list = '5f0c2e8a-6b1d-4c3e-9a7f-2d8e1b4c6a90, 0b7e1d2c-3a4f-4e5d-8c9b-1a2b3c4d5e6f';
+    render(<AuditTable rows={[{ ...ROW, payloadEntries: [{ label: 'Members', value: list }] }]} labels={labels} />);
+    expect(within(table()).getByText(list)).toHaveClass('[overflow-wrap:anywhere]');
+  });
+
   it('the table keeps the event with its raw code under it', () => {
     render(<AuditTable rows={[ROW]} labels={labels} />);
     const cell = within(table()).getByText(ROW.eventTypeLabel).closest('td')!;
