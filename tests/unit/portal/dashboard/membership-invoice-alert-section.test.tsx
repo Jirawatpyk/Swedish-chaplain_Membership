@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
+import { FIXED_NOW } from '../../../helpers/fixed-now';
 
 const access = vi.fn();
 vi.mock('@/lib/load-membership-access', () => ({ loadMembershipAccess: (...a: unknown[]) => access(...a) }));
@@ -67,7 +68,7 @@ describe('<MembershipInvoiceAlertSection> today', () => {
   // tests/setup.ts pins the clock at 2026-04-09, before the bill's due date.
   afterEach(() => {
     cleanup();
-    vi.setSystemTime(new Date('2026-04-09T12:00:00.000Z'));
+    vi.setSystemTime(FIXED_NOW);
   });
 
   async function showOn(today: string) {

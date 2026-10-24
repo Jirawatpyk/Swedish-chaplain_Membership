@@ -423,6 +423,33 @@ describe('searchPlans — kill-switch feature tags', () => {
     expect(result.value.results.navigate.map((e) => e.id)).not.toContain('nav.financeDashboard');
   });
 
+  it.each([
+    ['finances', 'nav.financeDashboard'],
+    ['overdue invoices', 'nav.invoicesOverdue'],
+    ['revenue report', 'nav.financeDashboard'],
+  ])('a word of "%s" that starts with a keyword finds %s', async (q, id) => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.results.navigate.map((e) => e.id)).toContain(id);
+  });
+
+  it('a keyword inside a longer word does not match ("template" is not "late")', async () => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'template' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    expect(result.value.results.navigate.map((e) => e.id)).not.toContain('nav.invoicesOverdue');
+  });
+
+  it('navigate results do not carry keywords to the client', async () => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'revenue' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    const entry = result.value.results.navigate.find((e) => e.id === 'nav.financeDashboard');
+    expect(entry).toBeDefined();
+    expect(entry).not.toHaveProperty('keywords');
+  });
+
   it('a word in no id, key or keyword finds no navigate entry', async () => {
     const deps = makeDeps({ plans: [] });
     const result = await searchPlans({ ...baseInput, q: 'zzqx' }, deps);

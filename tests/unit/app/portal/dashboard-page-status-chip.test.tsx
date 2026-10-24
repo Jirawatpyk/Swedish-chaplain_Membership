@@ -6,7 +6,7 @@
  * fine" above the "Membership lapsed" card (found on the dev branch,
  * 2026-09-27). The lapse itself is the Membership stat card's job.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import { StatusPill } from '@jirawatpyk/aura-react/server';
 
@@ -43,6 +43,9 @@ vi.mock('@/app/(member)/portal/_components/benefits-panel-section', () => ({ Ben
 vi.mock('@/app/(member)/portal/_components/recent-activity-section', () => ({ RecentActivitySection: () => null, RecentActivitySkeleton: () => null }));
 
 import MemberPortalHomePage from '@/app/(member)/portal/(home)/page';
+import { MembershipInvoiceAlertSection } from '@/app/(member)/portal/_components/membership-invoice-alert-section';
+import { OutstandingStatSection } from '@/app/(member)/portal/_components/outstanding-stat-section';
+import { FIXED_NOW } from '../../../helpers/fixed-now';
 
 function findAll(node: ReactNode, type: unknown, out: ReactElement[] = []): ReactElement[] {
   if (Array.isArray(node)) node.forEach((n) => findAll(n, type, out));
@@ -60,5 +63,26 @@ describe('MemberPortalHomePage — the header status chip', () => {
     const pills = findAll(tree, StatusPill);
     expect(pills).toHaveLength(1);
     expect((pills[0]!.props as { tone?: string }).tone).toBe('neutral');
+  });
+});
+
+// Spec 124 follow-up — the home page's two overdue surfaces (the unpaid-
+// membership alert and the Outstanding stat) read ONE Bangkok date, so across
+// midnight they never disagree about the same bill.
+describe('MemberPortalHomePage — one clock for the overdue surfaces', () => {
+  afterEach(() => vi.setSystemTime(FIXED_NOW));
+
+  it.each([
+    ['2026-06-30T16:59:59Z', '2026-06-30'],
+    ['2026-06-30T17:00:00Z', '2026-07-01'],
+  ])('at %s the alert and the Outstanding stat both get today=%s', async (instant, bangkokDate) => {
+    vi.setSystemTime(new Date(instant));
+    const tree = await MemberPortalHomePage();
+    const alert = findAll(tree, MembershipInvoiceAlertSection);
+    const outstanding = findAll(tree, OutstandingStatSection);
+    expect(alert).toHaveLength(1);
+    expect(outstanding).toHaveLength(1);
+    expect((alert[0]!.props as { today?: string }).today).toBe(bangkokDate);
+    expect((outstanding[0]!.props as { today?: string }).today).toBe(bangkokDate);
   });
 });

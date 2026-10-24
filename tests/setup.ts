@@ -107,6 +107,7 @@ import '@testing-library/jest-dom/vitest';
 import { registerIcons } from '@jirawatpyk/aura-react';
 import { registerIcons as registerServerIcons } from '@jirawatpyk/aura-react/server';
 import { allIcons } from '@jirawatpyk/aura-react/icons';
+import { FIXED_NOW } from './helpers/fixed-now';
 
 // Spec 122 T006 — an AURA development warning (`[AURA] …`: a Select with no
 // accessible name, …) is a misuse that would otherwise only reach the console.
@@ -126,7 +127,6 @@ registerServerIcons(allIcons);
 
 // Fixed clock for deterministic TTL tests. Individual tests can override
 // by calling `vi.setSystemTime(...)` themselves.
-const FIXED_NOW = new Date('2026-04-09T12:00:00.000Z');
 
 beforeAll(() => {
   vi.useFakeTimers({
