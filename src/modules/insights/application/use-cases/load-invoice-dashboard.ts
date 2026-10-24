@@ -9,7 +9,9 @@
  * and the trend's Collected read the same FY range clamped to `today`, so the
  * rows and the months add up to the tile (the trend's Billed keeps the whole
  * FY). The role cut is made here (US4): without `invoicing.write` the
- * draft counts are ABSENT, not zeroed, and Record payment is not offered.
+ * per-kind draft ROWS of Needs attention (actions) are ABSENT, not zeroed,
+ * and Record payment is not offered; the header's total drafts count is a
+ * figure every role sees (spec D-s).
  */
 import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';

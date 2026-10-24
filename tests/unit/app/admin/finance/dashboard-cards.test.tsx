@@ -215,6 +215,8 @@ describe('OldestOverdueCard', () => {
     // one line, as the boards draw it; steps aside with Due in a 640-800 px grid
     const cell = screen.getAllByText('Membership 2026')[0]!.closest('td')!;
     expect(cell).toHaveClass('is-nowrap', '@min-[640px]/aura-tbl:@max-[800px]/aura-tbl:hidden');
+    // a free-text event name wraps between words, so a long one never widens the table
+    expect(screen.getAllByText('Midsommar Gala 2026')[0]!.closest('td')).not.toHaveClass('is-nowrap');
   });
 
   it('an admin gets Record payment per row; focus after a payment goes to the next row, from the last to the card title', async () => {

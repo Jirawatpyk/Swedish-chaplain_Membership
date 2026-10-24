@@ -80,6 +80,8 @@ export async function seedInvoiceDashboardScenario(
   tenant: TestTenant,
   user: TestUser,
   scale: bigint,
+  /** The seeded event's name; a cross-tenant test gives each tenant its own. */
+  eventName = 'Dashboard Gala',
 ): Promise<SeededScenario> {
   const slug = tenant.ctx.slug;
   const s = (satang: number): bigint => BigInt(satang) * scale;
@@ -541,7 +543,7 @@ export async function seedInvoiceDashboardScenario(
       eventId,
       source: 'eventcreate',
       externalId: `evt_db_${randomUUID()}`,
-      name: 'Dashboard Gala',
+      name: eventName,
       startDate: new Date('2026-05-01T11:00:00Z'),
     });
     await tx.insert(eventRegistrations).values(
