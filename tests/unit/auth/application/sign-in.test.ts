@@ -665,4 +665,127 @@ describe('signIn use case', () => {
       'argon2: native module crashed',
     );
   });
+
+  // ── 125: lockout window restarts after the lock expires (FR-013) ──────────
+  it('restarts the failed-attempt count once an earlier lock has expired', async () => {
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue({
+          user: makeUser({
+            failedSignInCount: 5,
+            lockedUntil: new Date(NOW.getTime() - 1000),
+          }),
+          passwordHash: PASS_HASH,
+        }),
+        clearExpiredLock: vi.fn().mockResolvedValue(true),
+        clearFailedCount: vi.fn().mockResolvedValue(undefined),
+        incrementFailedCount: vi.fn().mockResolvedValue(1),
+        setLocked: vi.fn(),
+      } as unknown as SignInDeps['users'],
+      hasher: {
+        verify: vi.fn().mockResolvedValue(false),
+        verifyDummy: vi.fn(),
+      } as unknown as SignInDeps['hasher'],
+    });
+    const result = await signIn(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('invalid-credentials');
+    // L1 — the guarded variant (keyed on `now`), never the unconditional clear.
+    expect(deps.users.clearExpiredLock).toHaveBeenCalledWith(USER_ID, NOW);
+    expect(deps.users.clearFailedCount).not.toHaveBeenCalled();
+    expect(deps.users.setLocked).not.toHaveBeenCalled();
+  });
+
+  // ── 125: no account-state oracle without the password (FR-016) ────────────
+  it('returns invalid-credentials for a disabled user with the wrong password', async () => {
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue({
+          user: makeUser({ status: 'disabled' }),
+          passwordHash: PASS_HASH,
+        }),
+        incrementFailedCount: vi.fn().mockResolvedValue(1),
+        setLocked: vi.fn(),
+      } as unknown as SignInDeps['users'],
+      hasher: {
+        verify: vi.fn().mockResolvedValue(false),
+        verifyDummy: vi.fn(),
+      } as unknown as SignInDeps['hasher'],
+    });
+    const result = await signIn(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('invalid-credentials');
+    expect(deps.hasher.verify).toHaveBeenCalledOnce();
+  });
+
+  it('pays the argon2 cost (verifyDummy) on a locked account', async () => {
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue({
+          user: makeUser({ lockedUntil: new Date(NOW.getTime() + 60_000) }),
+          passwordHash: PASS_HASH,
+        }),
+      } as unknown as SignInDeps['users'],
+    });
+    const result = await signIn(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('account-locked');
+    expect(deps.hasher.verifyDummy).toHaveBeenCalledOnce();
+    expect(deps.hasher.verify).not.toHaveBeenCalled();
+  });
+
+  // ── 125 (final review) — the guarded clear's result is honoured ──────────
+  const EXPIRED_LOCK_USER = () =>
+    makeUser({ failedSignInCount: 5, lockedUntil: new Date(NOW.getTime() - 1000) });
+
+  it('treats a no-op expired-lock clear as locked when a fresh lock landed meanwhile', async () => {
+    const freshLock = new Date(NOW.getTime() + 15 * 60 * 1000);
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue({ user: EXPIRED_LOCK_USER(), passwordHash: PASS_HASH }),
+        clearExpiredLock: vi.fn().mockResolvedValue(false),
+        findById: vi.fn().mockResolvedValue(makeUser({ lockedUntil: freshLock })),
+        clearFailedCount: vi.fn(),
+        incrementFailedCount: vi.fn(),
+        setLocked: vi.fn(),
+      } as unknown as SignInDeps['users'],
+    });
+    const result = await signIn(BASE_INPUT, deps);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('account-locked');
+    // No guess is evaluated past the fresh lock, and the lock is not wiped.
+    expect(deps.hasher.verify).not.toHaveBeenCalled();
+    expect(deps.hasher.verifyDummy).toHaveBeenCalledOnce();
+    expect(deps.users.clearFailedCount).not.toHaveBeenCalled();
+  });
+
+  it('continues normally when the no-op clear means another request already reset the lock', async () => {
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue({ user: EXPIRED_LOCK_USER(), passwordHash: PASS_HASH }),
+        clearExpiredLock: vi.fn().mockResolvedValue(false),
+        findById: vi.fn().mockResolvedValue(makeUser({ lockedUntil: null })),
+        clearFailedCount: vi.fn().mockResolvedValue(undefined),
+        updateLastSignIn: vi.fn().mockResolvedValue(undefined),
+      } as unknown as SignInDeps['users'],
+    });
+    const result = await signIn(BASE_INPUT, deps);
+    expect(result.ok).toBe(true);
+    expect(deps.hasher.verify).toHaveBeenCalledOnce();
+  });
+
+  it('does not write the reset twice on a successful sign-in right after an expired lock', async () => {
+    const deps = makeDeps({
+      users: {
+        findByEmail: vi.fn().mockResolvedValue({ user: EXPIRED_LOCK_USER(), passwordHash: PASS_HASH }),
+        clearExpiredLock: vi.fn().mockResolvedValue(true),
+        clearFailedCount: vi.fn().mockResolvedValue(undefined),
+        updateLastSignIn: vi.fn().mockResolvedValue(undefined),
+      } as unknown as SignInDeps['users'],
+    });
+    const result = await signIn(BASE_INPUT, deps);
+    expect(result.ok).toBe(true);
+    expect(deps.users.clearExpiredLock).toHaveBeenCalledOnce();
+    expect(deps.users.clearFailedCount).not.toHaveBeenCalled();
+  });
 });

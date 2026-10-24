@@ -47,6 +47,7 @@ import {
 } from '@/modules/auth/domain/audit-event';
 import type { UserId } from '@/modules/auth/domain/branded';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 
 export interface AppendAuditEvent {
@@ -134,7 +135,7 @@ async function tryAppend(
     await inserter();
   } catch (error) {
     logger.error(
-      { err: error, eventType: event.eventType, requestId: event.requestId },
+      { err: errKind(error), eventType: event.eventType, requestId: event.requestId },
       `audit.${op}.failed`,
     );
     authMetrics.auditMissing(event.eventType);
