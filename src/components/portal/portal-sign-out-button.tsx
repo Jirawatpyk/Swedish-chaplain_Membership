@@ -12,7 +12,7 @@ import { LogOutIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
-import { Button } from '@/components/ui/button';
+import { Button } from '@jirawatpyk/aura-react';
 
 export function PortalSignOutButton() {
   const t = useTranslations('shell.userMenu');
@@ -33,9 +33,9 @@ export function PortalSignOutButton() {
   };
 
   return (
-    // min-h-11 = 44px tap target — member-portal CTAs are ≥44px
-    // (ux-standards § 9.1, WCAG 2.5.5 AAA on mobile).
-    <Button variant="outline" className="min-h-11" onClick={handleSignOut}>
+    // 44px tap target — member-portal CTAs are ≥44px (ux-standards § 9.1,
+    // WCAG 2.5.5 AAA on mobile); 122 US12d-1 (T1232): AURA's touchHeight.
+    <Button variant="secondary" touchHeight onClick={handleSignOut}>
       <LogOutIcon className="size-4" aria-hidden />
       {t('signOut')}
     </Button>
