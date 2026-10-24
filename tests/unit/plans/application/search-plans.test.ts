@@ -379,6 +379,18 @@ describe('searchPlans — kill-switch feature tags', () => {
     }
   });
 
+  it('finds the invoice dashboard by "finance", tagged "invoiceDashboard"', async () => {
+    const deps = makeDeps({ plans: [] });
+    const result = await searchPlans({ ...baseInput, q: 'finance' }, deps);
+    if (!result.ok) throw new Error('unreachable');
+    const entry = result.value.results.navigate.find((e) => e.id === 'nav.financeDashboard');
+    expect(entry).toMatchObject({
+      url: '/admin/finance',
+      label: 'palette.navigate.invoiceDashboard',
+      feature: 'invoiceDashboard',
+    });
+  });
+
   it('leaves feature-less entries (e.g. nav.dashboard) untagged', async () => {
     const deps = makeDeps({ plans: [] });
     const result = await searchPlans({ ...baseInput, q: 'dashboard' }, deps);
@@ -417,6 +429,7 @@ describe('filterPaletteEntriesByFeature — kill-switch strip', () => {
     { id: 'nav.broadcasts', feature: 'f7Broadcasts' },
     { id: 'nav.events', feature: 'f6EventCreate' },
     { id: 'invoice.rerenderReceipt', feature: 'f088TaxAtPayment' },
+    { id: 'nav.financeDashboard', feature: 'invoiceDashboard' },
   ];
 
   it('keeps every entry when all flags are ON', () => {
@@ -425,6 +438,7 @@ describe('filterPaletteEntriesByFeature — kill-switch strip', () => {
       f7Broadcasts: true,
       f088TaxAtPayment: true,
       memberChangeApproval: false,
+      invoiceDashboard: false,
     }).map((e) => e.id);
     expect(kept).toEqual([
       'untagged.dashboard',
@@ -440,6 +454,7 @@ describe('filterPaletteEntriesByFeature — kill-switch strip', () => {
       f7Broadcasts: false,
       f088TaxAtPayment: true,
       memberChangeApproval: false,
+      invoiceDashboard: false,
     }).map((e) => e.id);
     expect(kept).toEqual([
       'untagged.dashboard',
@@ -454,6 +469,7 @@ describe('filterPaletteEntriesByFeature — kill-switch strip', () => {
       f7Broadcasts: true,
       f088TaxAtPayment: true,
       memberChangeApproval: false,
+      invoiceDashboard: false,
     }).map((e) => e.id);
     expect(kept).not.toContain('nav.events');
     expect(kept).toContain('nav.broadcasts');
@@ -466,6 +482,7 @@ describe('filterPaletteEntriesByFeature — kill-switch strip', () => {
       f7Broadcasts: false,
       f088TaxAtPayment: false,
       memberChangeApproval: false,
+      invoiceDashboard: false,
     }).map((e) => e.id);
     expect(kept).toEqual(['untagged.dashboard']);
   });
