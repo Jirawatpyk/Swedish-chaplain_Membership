@@ -6278,6 +6278,7 @@
       "membersList": "Members list",
       "invoiceDashboard": "Invoice dashboard",
       "invoicesList": "Invoices list",
+      "invoicesOverdue": "Invoices: overdue",
       "invoicesPaidOnline": "Invoices: paid online (reconciliation)",
       "creditNotesList": "Credit notes list",
       "broadcastsQueue": "E-Blast review queue",
