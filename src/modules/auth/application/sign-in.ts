@@ -262,12 +262,14 @@ async function signInImpl(
 
   // 4. Lockout check — `isLocked` narrows the type so `lockedUntil` is
   //    `Date`, not `Date | null`. No non-null assertion needed.
-  if (isLocked(user, now)) {
-    // 125 — pay the argon2 cost so a locked account answers in the same
-    // time as every other branch (T-03). The password is NOT verified:
-    // a lockout must not keep serving as a guess oracle.
+  //    125 — pay the argon2 cost so a locked account answers in the same
+  //    time as every other branch (T-03). The password is NOT verified:
+  //    a lockout must not keep serving as a guess oracle.
+  const lockedResponse = async (
+    lockedUntil: Date,
+  ): Promise<Result<SignInSuccess, SignInError>> => {
     await deps.hasher.verifyDummy(input.password);
-    const retryAfter = Math.ceil((user.lockedUntil.getTime() - now.getTime()) / 1000);
+    const retryAfter = Math.ceil((lockedUntil.getTime() - now.getTime()) / 1000);
     await deps.audit.append({
       eventType: 'sign_in_failure',
       actorUserId: user.id,
@@ -277,15 +279,27 @@ async function signInImpl(
       requestId: input.requestId,
     });
     return err({ code: 'account-locked', retryAfterSeconds: retryAfter });
+  };
+  if (isLocked(user, now)) {
+    return lockedResponse(user.lockedUntil);
   }
 
   // 4b. An earlier lock has expired — FR-013 counts 5 failures within
   //     ONE window, so the post-lock count restarts. Without this the
   //     count stays at ≥5 and the next single wrong password re-locks.
   //     The guarded clear (`locked_until <= now`) cannot wipe a fresh
-  //     lock a parallel burst set after this request read the row (L1).
+  //     lock a parallel burst set after this request read the row (L1);
+  //     when it matches nothing, re-read the row: a fresh lock means this
+  //     request is locked out too, and must not verify a guess (125).
+  let lockJustReset = false;
   if (user.lockedUntil !== null) {
-    await deps.users.clearExpiredLock(user.id, now);
+    lockJustReset = await deps.users.clearExpiredLock(user.id, now);
+    if (!lockJustReset) {
+      const fresh = await deps.users.findById(user.id);
+      if (fresh && isLocked(fresh, now)) {
+        return lockedResponse(fresh.lockedUntil);
+      }
+    }
   }
 
   // 5. Verify password (B4 — catch MalformedHashError separately so a
@@ -369,8 +383,10 @@ async function signInImpl(
     return err({ code: 'invalid-credentials' });
   }
 
-  // 7. Success path
-  await deps.users.clearFailedCount(user.id);
+  // 7. Success path — skip the clear when step 4b just reset the row.
+  if (!lockJustReset) {
+    await deps.users.clearFailedCount(user.id);
+  }
   const session = await deps.sessions.create({
     userId: user.id,
     sourceIp: input.sourceIp,

@@ -462,10 +462,10 @@ the argon2id verify capacity of the function instances.
 
 | Threat | Mitigation | Test file |
 |---|---|---|
-| T-01 Credential stuffing | Lockout + rate limit + HIBP | lockout.test, rate-limit.test, signin-lockout.spec |
-| T-02 Brute force single-account | argon2id + lockout | brute-force.test |
-| T-03 Enumeration via sign-in | Generic 401 + dummy-hash timing | enumeration-timing.test, enumeration-message.test |
-| T-04 Enumeration via reset | Always-200 + timing | forgot-password.test, reset-enumeration-timing.test |
+| T-01 Credential stuffing | Lockout (5 within one window; guarded post-expiry reset, 125) + rate limit + HIBP; residual: disabled + correct password accepted (125) | lockout.test (incl. clearExpiredLock live/expired), rate-limit.test, signin-lockout.spec |
+| T-02 Brute force single-account | argon2id + lockout; change-password guess bucket atomic `check` before verify (125) | brute-force.test, change-password-rate-limit.test |
+| T-03 Enumeration via sign-in | Generic 401 + dummy-hash timing (locked branch too, 125); `account-disabled` only after a correct password (125); residual: `account-locked` 403 accepted (125) | enumeration-timing.test, enumeration-message.test, sign-in unit (125 cases) |
+| T-04 Enumeration via reset | Always-200; active-user work (token tx + email + audit) runs in `after()` (125) | forgot-password.test (unit + contract `defer: after`), reset-enumeration-timing.test |
 | T-05 Session hijacking | HttpOnly + Secure + SameSite + idle + rotation | auth-cookies.test (flag contract), sign-in.test, session-revocation.spec |
 | T-06 Session fixation | New session ID on sign-in/password/role change | session-rotation.test |
 | T-07 CSRF | Origin header allow-list + SameSite + no state-GET | csrf.test |
@@ -476,8 +476,8 @@ the argon2id verify capacity of the function instances.
 | T-12 Token predictability | 32-byte CSPRNG | tests/integration/auth/token-generation.test.ts |
 | T-13 Audit log tampering | DB role grants (INSERT only) | tests/integration/audit/append-only.test.ts |
 | T-14 Secret leakage in logs | pino redaction + ESLint + CI grep | tests/unit/lib/logger-redaction.test.ts |
-| T-15 Invitation link interception | Single-use + short TTL | password-reset.test (happy+replay+expired), account-lifecycle.test (invite replay) |
-| T-16 DoS via argon2 | Rate limit + fail-open cap | dos-rate-limit.test |
+| T-15 Invitation link interception | Single-use (guarded consume `consumed_at IS NULL AND expires_at > now`, 125) + short TTL | password-reset.test (happy+replay+expired+concurrent), account-lifecycle.test (invite replay + concurrent) |
+| T-16 DoS via argon2 | Rate limit + fail-open cap; change-password policy bucket caps HIBP calls (125) | dos-rate-limit.test, change-password unit (policy bucket) |
 
 **All 16 threats have at least one test.** The Review Gate security reviewer
 MUST verify this table is complete before approving the F1 PR.
