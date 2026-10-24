@@ -276,6 +276,9 @@ describe('T124 — exactly one reminder per threshold across a 40-day clock', ()
       expect(h.deps.marketingDirectory.listRecipients).not.toHaveBeenCalled();
       expect(order).toEqual(['roster', 'lock', 'lock']);
       expect(h.store.outbox.rows().filter((r) => contextOf(r).audience === 'staff')).toHaveLength(2);
+      // Each row's staff notice is ONE batched insert for the roster; the member row stays a single insert.
+      expect(h.store.outbox.enqueueManyInTx).toHaveBeenCalledTimes(2);
+      for (const call of h.store.outbox.enqueueInTx.mock.calls) expect((call[2].contextData as Readonly<Record<string, unknown>>).audience).toBe('member');
       spy.mockRestore();
     });
 
