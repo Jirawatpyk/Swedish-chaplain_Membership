@@ -21,7 +21,7 @@ import type { InvoiceDashboardOldestOverdue, InvoiceDashboardResult } from '@/mo
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { RecordPaymentDialog } from '../../invoices/_components/record-payment-dialog';
 import { invoiceListHref, type InvoiceListQuery } from '../_lib/dashboard-links';
-import { formatAmount, formatDay } from '../_lib/dashboard-format';
+import { formatAmount, formatDay, formatYear } from '../_lib/dashboard-format';
 import { CardError, NoMatch } from './card-states';
 
 /** The card title's focus target (see the docblock). */
@@ -30,7 +30,7 @@ export const OLDEST_OVERDUE_TITLE_ID = 'oldest-overdue-title';
 /** Shown on a phone; the rest of the six are hidden there. */
 const PHONE_ROWS = 3;
 
-/** The due date steps aside in a narrow grid (the days overdue say the same); the phone card keeps it. */
+/** Due and For step aside in a narrow grid (the days overdue say the same); the phone card keeps both. */
 const HIDE_IN_NARROW_GRID = '@min-[640px]/aura-tbl:@max-[800px]/aura-tbl:hidden';
 
 /** The document-number link: a text link in the row title, 44px below 640px or on a coarse pointer (US6.2, AURA #172). */
@@ -57,6 +57,13 @@ export async function OldestOverdueCard({
   readonly today: string;
 }) {
   const t = await getTranslations('admin.invoiceDashboard');
+  // The boards' For column: "Membership 2026" (the plan year, BE on th) or the event's name.
+  const forLabel = (row: InvoiceDashboardOldestOverdue['rows'][number]): string =>
+    row.subject === 'event'
+      ? (row.eventName ?? t('oldest.forEvent'))
+      : row.planYear === null
+        ? '—'
+        : t('oldest.forMembership', { year: formatYear(row.planYear, locale) });
   const loaded = await result;
   const titleText = t('oldest.title');
   const title = (
@@ -115,6 +122,7 @@ export async function OldestOverdueCard({
           <Tr>
             <Th>{t('oldest.document')}</Th>
             <Th>{t('oldest.buyer')}</Th>
+            <Th className={HIDE_IN_NARROW_GRID}>{t('oldest.for')}</Th>
             <Th className={HIDE_IN_NARROW_GRID}>{t('oldest.due')}</Th>
             <Th numeric>{t('oldest.overdue')}</Th>
             <Th numeric>{t('oldest.amount')}</Th>
@@ -138,6 +146,10 @@ export async function OldestOverdueCard({
                 </Td>
                 {/* between words only: AURA's cell wraps anywhere ("Hospital/ity") */}
                 <Td label={t('oldest.buyer')}>{row.buyerName ?? '—'}</Td>
+                {/* steps aside in a narrow grid with Due, so the row never breaks words; the phone card keeps it */}
+                <Td label={t('oldest.for')} className={HIDE_IN_NARROW_GRID}>
+                  {forLabel(row)}
+                </Td>
                 <Td label={t('oldest.due')} wrap="none" className={HIDE_IN_NARROW_GRID}>
                   {formatDay(row.dueDate, locale)}
                 </Td>

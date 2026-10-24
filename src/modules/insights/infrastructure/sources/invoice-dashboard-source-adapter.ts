@@ -33,6 +33,7 @@ import {
   STALE_REFUND_ESCALATION_AGE_MS,
   SUCCEEDED_LINEAGE,
 } from '@/modules/payments';
+import { eventsTable } from '@/modules/events';
 import type { TenantContext } from '@/modules/tenants';
 import { agingBucketDueRange, type AgingBucket } from '../../domain/invoice-dashboard-aging';
 import type { InvoiceDashboardFilters } from '../../domain/invoice-dashboard-filters';
@@ -362,6 +363,7 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
 
   async oldestOverdue(ctx, filters, today, limit): Promise<readonly OverdueInvoiceRow[]> {
     const { inv } = tables();
+    const ev = eventsTable;
     const t = ctx.slug;
     const docNo = sql`COALESCE(${inv.documentNumber}, ${inv.billDocumentNumberRaw})`;
     const result = await rows(
@@ -373,8 +375,12 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
              ${inv.memberIdentitySnapshot} ->> 'legal_name' AS buyer_name,
              ${inv.dueDate}::text AS due_date,
              (${today}::date - ${inv.dueDate})::int AS days_past_due,
-             ${inv.totalSatang}::bigint AS amount
+             ${inv.totalSatang}::bigint AS amount,
+             ${inv.invoiceSubject} AS subject,
+             ${inv.planYear} AS plan_year,
+             ${ev.name} AS event_name
       FROM ${inv}
+      LEFT JOIN ${ev} ON ${ev.tenantId} = ${t} AND ${ev.eventId} = ${inv.eventId}
       WHERE ${inv.tenantId} = ${t} AND ${inv.status} = 'issued'
         AND ${inv.dueDate} < ${today}::date${scopeOf(filters)}
       ORDER BY ${inv.dueDate} ASC, ${inv.totalSatang} DESC, ${docNo} ASC NULLS LAST, ${inv.invoiceId} ASC
@@ -387,6 +393,9 @@ export const invoiceDashboardSourceAdapter: InvoiceDashboardSource = {
       dueDate: String(r.due_date),
       daysPastDue: Number(r.days_past_due),
       amountSatang: parseBigintColumn(r.amount, 'overdue_amount'),
+      subject: r.subject === 'event' ? ('event' as const) : ('membership' as const),
+      planYear: r.plan_year === null ? null : Number(r.plan_year),
+      eventName: r.event_name === null ? null : String(r.event_name),
     }));
   },
 

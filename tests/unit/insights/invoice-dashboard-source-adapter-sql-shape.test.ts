@@ -161,7 +161,8 @@ describe('tenancy — every table reference carries its own tenant_id predicate'
       allRefs.push(...refs);
     }
     // Positive control: the parse sees every money table and the alias.
-    expect([...allTables].sort()).toEqual(['credit_notes', 'invoices', 'payments', 'refunds']);
+    // `events` (124 follow-up): Oldest overdue names an event invoice by its event.
+    expect([...allTables].sort()).toEqual(['credit_notes', 'events', 'invoices', 'payments', 'refunds']);
     expect(allRefs).toContain('later_attempt');
   });
 });
