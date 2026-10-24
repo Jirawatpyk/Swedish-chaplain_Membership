@@ -242,7 +242,6 @@ export default async function AuraPortalPreviewPage({
           <PageHeader
             title={t('title')}
             subtitle={t('subtitlePlanEblasts', { plan: 'Premium Corporate' })}
-            size="hero-lg"
             meta={
               <>
                 <Badge tone="accent" variant="solid">Premium Corporate</Badge>
@@ -265,7 +264,6 @@ export default async function AuraPortalPreviewPage({
           <PageHeader
             title={t('title')}
             subtitle={t('subtitlePlanEblasts', { plan: 'Premium Corporate' })}
-            size="hero-lg"
             meta={
               <>
                 <Badge tone="accent" variant="solid">Premium Corporate</Badge>

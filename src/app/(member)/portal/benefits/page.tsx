@@ -90,7 +90,7 @@ export default async function PortalBenefitsPage(props: {
     }
     return (
       <DetailContainer>
-        <PageHeader title={t('title')} subtitle={t('subtitleMember')} size="hero-lg" />
+        <PageHeader title={t('title')} subtitle={t('subtitleMember')} />
         {/* AURA empty state (spec 122 US3). Review 2026-09-07 round 2
             (C13 / UX M-3): the compose page sends a member with no profile
             here — the extra line says that is why. */}
@@ -229,7 +229,9 @@ export default async function PortalBenefitsPage(props: {
               ? t('subtitlePlanEblasts', { plan: planName })
               : t('subtitlePlan', { plan: planName })
         }
-        size="hero-lg"
+        // Spec 122 US12d-1: the ordinary header on both tabs (board
+        // `Portal-broadcasts`); the Plan benefits board's hero made the two
+        // tabs disagree.
         meta={
           <>
             {planName !== null ? (
