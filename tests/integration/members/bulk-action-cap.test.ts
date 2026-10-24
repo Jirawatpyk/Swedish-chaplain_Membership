@@ -79,22 +79,6 @@ function stubDeps(): BulkActionDeps {
       recordInTx: vi.fn().mockResolvedValue(ok(undefined)),
     },
     clock: { now: () => new Date('2026-04-16T10:00:00Z') },
-    plans: {
-      getPlan: vi.fn().mockResolvedValue(ok({
-        tenantId: 'test-tenant',
-        planId: 'plan-1',
-        planYear: 2026,
-        planNameEn: 'Test Plan',
-        planCategory: 'corporate' as const,
-        memberTypeScope: 'company' as const,
-        minTurnoverThb: null,
-        maxTurnoverThb: null,
-        maxDurationYears: null,
-        maxMemberAge: null,
-        includesCorporatePlanId: null,
-      })),
-      countAffectedMembers: vi.fn().mockResolvedValue(ok({ count: 0 })),
-    },
   };
 }
 
@@ -166,67 +150,4 @@ describe('integration: bulk action cap (T100)', () => {
     }
   });
 
-  it('round-2 C-4: rejects change_plan without new_plan_id via zod superRefine', async () => {
-    const deps = stubDeps();
-    const result = await bulkAction(
-      {
-        action: 'change_plan',
-        member_ids: ['00000000-0000-0000-0000-000000000001'],
-        params: { new_plan_year: 2026 }, // missing new_plan_id
-      },
-      meta,
-      deps,
-    );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      // Round-2 C-4 fix: should be invalid_body (400), not server_error (500)
-      expect(result.error.type).toBe('invalid_body');
-    }
-  });
-
-  it('round-2 C-4: rejects change_plan without new_plan_year via zod superRefine', async () => {
-    const deps = stubDeps();
-    const result = await bulkAction(
-      {
-        action: 'change_plan',
-        member_ids: ['00000000-0000-0000-0000-000000000001'],
-        params: { new_plan_id: '11111111-2222-3333-4444-555555555555' },
-      },
-      meta,
-      deps,
-    );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.type).toBe('invalid_body');
-    }
-  });
-
-  it('round-2 I-5: rejects change_plan when target plan not in tenant', async () => {
-    const deps = stubDeps();
-    // Plan lookup returns not_found — cross-tenant or invalid plan_id
-    (deps.plans.getPlan as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-      ok: false,
-      error: { code: 'repo.not_found' },
-    });
-
-    const result = await bulkAction(
-      {
-        action: 'change_plan',
-        member_ids: ['00000000-0000-0000-0000-000000000001'],
-        params: {
-          new_plan_id: '11111111-2222-3333-4444-555555555555',
-          new_plan_year: 2026,
-        },
-      },
-      meta,
-      deps,
-    );
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.type).toBe('plan_not_found');
-    }
-    // Verify member mutation NEVER attempted — plan validation happens
-    // BEFORE transaction opens.
-    expect(deps.memberRepo.findById).not.toHaveBeenCalled();
-  });
 });

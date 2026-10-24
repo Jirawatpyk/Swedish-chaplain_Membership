@@ -120,7 +120,6 @@ describe('bulk-action TOCTOU row lock (staff-review SB-1)', () => {
       memberRepo: full.memberRepo,
       audit: full.audit,
       clock: full.clock,
-      plans: full.plans,
     };
 
     // Kick off BOTH bulk archive actions simultaneously. The batched
@@ -183,7 +182,6 @@ describe('bulk-action TOCTOU row lock (staff-review SB-1)', () => {
       memberRepo: full.memberRepo,
       audit: full.audit,
       clock: full.clock,
-      plans: full.plans,
     };
 
     const [first, second] = await Promise.all([

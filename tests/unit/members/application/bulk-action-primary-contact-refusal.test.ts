@@ -50,7 +50,6 @@ function makeDeps(): BulkActionDeps {
     memberRepo: {} as never,
     audit: { record: vi.fn(), recordInTx: vi.fn().mockResolvedValue(ok(undefined)) } as never,
     clock: { now: () => new Date('2026-09-05T00:00:00Z') },
-    plans: {} as never,
   };
 }
 

@@ -1,7 +1,7 @@
 /**
  * `bulk-action` use case (T104, US4 FR-018/019/019a/019b).
  *
- * Applies a bulk action (change_plan, archive) to ≤100 members in a
+ * Applies a bulk action (archive, unarchive) to ≤100 members in a
  * single all-or-nothing transaction. (send_portal_invite moved to the
  * dedicated `bulkSendPortalInvite` use case — go-live P1-17 — because
  * invites are best-effort per member + run in F1's owner-role tx, which
@@ -14,9 +14,10 @@
  * Each affected member produces one audit event; the entire batch
  * commits or rolls back atomically (FR-019 — no partial state).
  *
- * `change_plan` validates plan tenant ownership via PlanLookupPort
- * before assignment (round-2 review I-5 — prevents cross-tenant plan
- * assignment, Principle I violation).
+ * 126 — there is no bulk `change_plan`. The former arm skipped every
+ * `changePlan` rule (soft-deleted plan, advisory lock, policy gates, the
+ * F8 audit + listeners) and was unreachable anyway (a UUID schema for slug
+ * plan ids, no UI button). A bulk plan change must reuse `changePlan`.
  */
 
 import { z } from 'zod';
@@ -28,14 +29,12 @@ import type { TenantContext } from '@/modules/tenants';
 import {
   archive,
   asMemberId,
-  asPlanId,
   undelete,
   type MemberId,
 } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
-import type { PlanLookupPort } from '../ports/plan-lookup-port';
 
 // --- Constants ---------------------------------------------------------------
 
@@ -44,46 +43,16 @@ export const BULK_RATE_MAX = 10;
 export const BULK_RATE_WINDOW_SECONDS = 600; // 10 minutes
 
 // --- Input schema ------------------------------------------------------------
-//
-// `.superRefine()` enforces that `change_plan` always carries both
-// `new_plan_id` AND `new_plan_year` together (round-2 review C-4).
-// Without this, the runtime guard in the action handler threw a plain
-// Error that bubbled up as `server_error` (500) instead of
-// `invalid_body` (400).
 export const bulkActionSchema = z
   .object({
-    action: z.enum(['change_plan', 'archive', 'unarchive']),
+    action: z.enum(['archive', 'unarchive']),
     member_ids: z
       .array(z.string().uuid())
       .min(1, 'At least one member_id is required')
       .max(BULK_CAP, `Cannot exceed ${BULK_CAP} members per batch`),
-    params: z
-      .object({
-        new_plan_id: z.string().uuid().optional(),
-        new_plan_year: z.number().int().min(2020).max(2100).optional(),
-        override_reason_code: z.string().nullable().optional(),
-        override_reason_note: z.string().max(500).nullable().optional(),
-      })
-      .optional(),
   })
   .strict()
   .superRefine((data, ctx) => {
-    if (data.action === 'change_plan') {
-      if (!data.params?.new_plan_id) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['params', 'new_plan_id'],
-          message: 'change_plan requires params.new_plan_id',
-        });
-      }
-      if (!data.params?.new_plan_year) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['params', 'new_plan_year'],
-          message: 'change_plan requires params.new_plan_year',
-        });
-      }
-    }
     // Staff-review SW-2: duplicate member_ids cause audit bloat (same change
     // logged twice) and subtle all-or-nothing oddities (e.g. archive fails
     // on 2nd iter because 1st iter already moved state to 'archived').
@@ -109,7 +78,6 @@ export type BulkActionError =
     }
   | { type: 'bulk_cap_exceeded'; count: number }
   | { type: 'not_found'; memberId: string }
-  | { type: 'plan_not_found'; planId: string }
   | { type: 'state_error'; memberId: string; code: string }
   | { type: 'server_error'; message: string };
 
@@ -123,7 +91,6 @@ export type BulkActionDeps = {
   memberRepo: MemberRepo;
   audit: AuditPort;
   clock: ClockPort;
-  plans: PlanLookupPort;
 };
 
 export type BulkActionMeta = {
@@ -167,20 +134,7 @@ export async function bulkAction(
     return err({ type: 'bulk_cap_exceeded', count: data.member_ids.length });
   }
 
-  // 3. For change_plan: validate plan tenant ownership BEFORE opening
-  //    the transaction (round-2 review I-5 — cross-tenant probe defence).
-  if (data.action === 'change_plan' && data.params?.new_plan_id && data.params.new_plan_year) {
-    const planResult = await deps.plans.getPlan(
-      deps.tenant,
-      asPlanId(data.params.new_plan_id),
-      data.params.new_plan_year,
-    );
-    if (!planResult.ok) {
-      return err({ type: 'plan_not_found', planId: data.params.new_plan_id });
-    }
-  }
-
-  // 4. Execute all-or-nothing transaction
+  // 3. Execute all-or-nothing transaction
   const now = deps.clock.now();
   try {
     const result = await runInTenant(deps.tenant, async (tx) => {
@@ -277,60 +231,6 @@ export async function bulkAction(
                 payload: {
                   member_id: memberId,
                   action: 'archive',
-                  bulk_request_id: meta.requestId,
-                },
-              },
-            );
-            if (!auditResult.ok) throw new Error('audit_failed');
-            updatedCount++;
-            auditEventCount++;
-            break;
-          }
-
-          case 'change_plan': {
-            // Zod superRefine has already enforced that both fields are
-            // present for change_plan — but narrow TS here explicitly.
-            if (!data.params?.new_plan_id || !data.params?.new_plan_year) {
-              // Unreachable in practice — guarded by zod. Defensive only.
-              throw new Error('change_plan requires new_plan_id and new_plan_year');
-            }
-            // Staff-review SW-5: archived members MUST NOT be re-planned
-            // in bulk — consistent with inline-edit's state_error on
-            // archived members + domain `archive()`'s re-archive guard.
-            if (current.status === 'archived') {
-              throw new BulkStateError(
-                memberId,
-                'state.cannot_change_plan_archived',
-              );
-            }
-            const newPlanId = asPlanId(data.params.new_plan_id);
-            const patch = {
-              planId: newPlanId,
-              planYear: data.params.new_plan_year,
-            };
-            const persistResult = await deps.memberRepo.updateFieldsInTx(
-              tx,
-              memberId,
-              patch,
-            );
-            if (!persistResult.ok) {
-              throw new Error(`persist:${persistResult.error.code}`);
-            }
-
-            const auditResult = await deps.audit.recordInTx(
-              tx,
-              deps.tenant,
-              {
-                type: 'member_plan_changed',
-                actorUserId: meta.actorUserId,
-                requestId: meta.requestId,
-                summary: `bulk change plan for member ${memberId}`,
-                payload: {
-                  member_id: memberId,
-                  old_plan_id: current.planId,
-                  new_plan_id: newPlanId,
-                  new_plan_year: data.params.new_plan_year,
-                  action: 'change_plan',
                   bulk_request_id: meta.requestId,
                 },
               },
