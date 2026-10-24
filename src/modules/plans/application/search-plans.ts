@@ -290,13 +290,15 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/finance',
     permission: 'invoicing.read',
     feature: 'invoiceDashboard',
-    keywords: ['revenue', 'collected', 'collections', 'billed', 'outstanding', 'overdue', 'aging', 'receivables'],
+    // Words for its figures; "overdue" / "unpaid" lead to the invoice list instead.
+    keywords: ['revenue', 'collected', 'collections', 'billed', 'billing', 'aging', 'ageing', 'receivables', 'finance'],
   },
   {
     id: 'nav.invoices',
     label: 'palette.navigate.invoicesList',
     url: '/admin/invoices',
     permission: 'invoicing.read',
+    keywords: ['overdue', 'unpaid', 'outstanding'],
   },
   {
     // Verify-fix S1 (2026-04-26): F5 Phase 5 paid-online reconciliation

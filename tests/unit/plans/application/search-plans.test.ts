@@ -391,7 +391,7 @@ describe('searchPlans — kill-switch feature tags', () => {
     });
   });
 
-  it.each(['revenue', 'aging', 'overdue', 'receivables'])(
+  it.each(['revenue', 'aging', 'ageing', 'billing', 'receivables'])(
     'finds the invoice dashboard by the synonym "%s" (navigate keywords)',
     async (q) => {
       const deps = makeDeps({ plans: [] });
@@ -399,6 +399,18 @@ describe('searchPlans — kill-switch feature tags', () => {
       if (!result.ok) throw new Error('unreachable');
       const entry = result.value.results.navigate.find((e) => e.id === 'nav.financeDashboard');
       expect(entry?.feature).toBe('invoiceDashboard');
+    },
+  );
+
+  it.each(['overdue', 'unpaid', 'outstanding'])(
+    '"%s" leads to the invoice list, not the dashboard',
+    async (q) => {
+      const deps = makeDeps({ plans: [] });
+      const result = await searchPlans({ ...baseInput, q }, deps);
+      if (!result.ok) throw new Error('unreachable');
+      const ids = result.value.results.navigate.map((e) => e.id);
+      expect(ids).toContain('nav.invoices');
+      expect(ids).not.toContain('nav.financeDashboard');
     },
   );
 
