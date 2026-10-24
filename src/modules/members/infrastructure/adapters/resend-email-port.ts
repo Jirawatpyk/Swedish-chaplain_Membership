@@ -79,6 +79,43 @@ export async function enqueueInTx(
 }
 
 /**
+ * Insert many outbox rows in one multi-row INSERT inside the caller's
+ * transaction. Same row shape as `enqueueInTx`.
+ */
+export async function enqueueManyInTx(
+  tx: TenantTx,
+  ctx: TenantContext,
+  requests: readonly EmailEnqueue[],
+): Promise<Result<{ outboxRowIds: readonly string[] }, RepoError>> {
+  if (requests.length === 0) return ok({ outboxRowIds: [] });
+  try {
+    const rows = await tx
+      .insert(notificationsOutbox)
+      .values(
+        requests.map(
+          (request): NotificationsOutboxInsert => ({
+            tenantId: ctx.slug,
+            notificationType: request.type,
+            toEmail: request.toEmail.toLowerCase(),
+            locale: request.locale,
+            contextData: request.contextData,
+          }),
+        ),
+      )
+      .returning({ id: notificationsOutbox.id });
+    if (rows.length !== requests.length) {
+      return err({
+        code: 'repo.unexpected',
+        cause: `outbox insert returned ${rows.length} rows for ${requests.length} requests`,
+      });
+    }
+    return ok({ outboxRowIds: rows.map((r) => r.id) });
+  } catch (e) {
+    return err({ code: 'repo.unexpected', cause: e });
+  }
+}
+
+/**
  * Public port implementation — standalone enqueue that opens its own
  * tenant-scoped transaction. Use this when the caller has no
  * pre-existing tx (e.g. re-send verification, stand-alone invitation).
@@ -93,4 +130,5 @@ export const resendEmailPort: EmailPort = {
   },
 
   enqueueInTx,
+  enqueueManyInTx,
 };
