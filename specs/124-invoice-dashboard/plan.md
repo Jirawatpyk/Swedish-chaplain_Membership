@@ -150,6 +150,7 @@ Built in four subagent batches (A migration, B pure code, C money SQL + loaders,
 - US1.7 / D-o end to end — `tests/e2e/admin/invoice-dashboard-record-payment.spec.ts` on a throwaway tenant (two bills due 40 and 30 days ago): Record payment… on row 1 → the success toast, the row leaves the card, the Overdue tile 2 → 1, focus on row 2's Record payment…, the invoice `paid` with a receipt number. chromium and mobile-chrome green on :3401 (flag on, `E2E_X_TENANT_HEADER_ENABLED=1`); CI skips it (no X-Tenant header there).
 - US6.2 on a tablet (1024 × 768, `hasTouch`, `(pointer: coarse)` true): document-number link 117 × 44, "All overdue invoices" 192 × 44.
 - `invoice-dashboard.spec.ts` 8/8 on chromium and mobile-chrome on the same server.
+- Last follow-ups (24 Oct, branch `124-portal-alert-clock-palette-keywords`): the `/portal/invoices` membership alert takes the page's Bangkok `today` (the list filter's and badges' day; RED `25e2d70a6`); ⌘K navigate entries take English `keywords` like actions, and the invoice dashboard's are revenue, collected, collections, billed, outstanding, overdue, aging, receivables (RED in `search-plans.test.ts`).
 
 ## Rollout
 
