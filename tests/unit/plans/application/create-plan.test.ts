@@ -13,6 +13,7 @@ import {
 import { asTenantContext } from '@/modules/tenants';
 import { asPlanSlug, asPlanYear, type Plan } from '@/modules/plans/domain/plan';
 import type { PlanSchemaInput } from '@/modules/plans/domain/plan-validators';
+import { hooked, inTxAudit } from './in-tx-hook-mocks';
 
 const tenant = asTenantContext('swecham');
 const NOW = new Date('2026-04-17T10:00:00.000Z');
@@ -95,7 +96,7 @@ function makeDeps(overrides: DepsOverrides = {}): CreatePlanDeps {
       if (r instanceof Error) throw r;
       return r;
     }),
-    insert: vi.fn(async () => {
+    insert: hooked(async () => {
       const r = overrides.insertResult ?? makePlan();
       if (r instanceof Error) throw r;
       return r;
@@ -107,7 +108,7 @@ function makeDeps(overrides: DepsOverrides = {}): CreatePlanDeps {
     cloneYear: vi.fn(),
   };
 
-  const audit = {
+  const audit = inTxAudit({
     record: vi.fn(async () => {
       if (overrides.auditFail === 'persist_failed') {
         return err({ type: 'persist_failed' as const, message: 'write failed' });
@@ -117,7 +118,7 @@ function makeDeps(overrides: DepsOverrides = {}): CreatePlanDeps {
       }
       return ok(undefined as void);
     }),
-  };
+  });
 
   return {
     tenant,

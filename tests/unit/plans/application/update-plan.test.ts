@@ -26,6 +26,7 @@ import {
 } from '@/modules/plans/domain/plan';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { ok, err } from '@/lib/result';
+import { hooked, inTxAudit } from './in-tx-hook-mocks';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -104,7 +105,7 @@ const BASE_INPUT: UpdatePlanInput = {
 // ---------------------------------------------------------------------------
 
 function makeAuditStub(opts: { ok: boolean; errorType?: 'invalid_payload' | 'persist_failed' } = { ok: true }) {
-  return {
+  return inTxAudit({
     record: vi.fn(async () => {
       if (opts.ok) return ok(undefined);
       if (opts.errorType === 'invalid_payload') {
@@ -112,7 +113,7 @@ function makeAuditStub(opts: { ok: boolean; errorType?: 'invalid_payload' | 'per
       }
       return err({ type: 'persist_failed' as const, message: 'Audit DB unavailable' });
     }),
-  };
+  });
 }
 
 const FIND_ONE_NOT_SET = Symbol('FIND_ONE_NOT_SET');
@@ -143,7 +144,7 @@ function makePlanRepo(overrides?: {
       return findOneResult === FIND_ONE_NOT_SET ? EXISTING_PLAN : findOneResult;
     }),
     insert: vi.fn(),
-    update: vi.fn(async () => {
+    update: hooked(async () => {
       if (overrides?.updateThrows) {
         const msg = typeof overrides.updateThrows === 'string'
           ? overrides.updateThrows
@@ -443,7 +444,7 @@ describe('updatePlan', () => {
     it('returns server_error with stringified value when non-Error is thrown', async () => {
       const planRepo = {
         ...makePlanRepo(),
-        update: vi.fn(async () => { throw { code: 'P2002' }; }),
+        update: hooked(async () => { throw { code: 'P2002' }; }),
       };
       const deps = makeDeps({ planRepo });
 
@@ -566,6 +567,7 @@ describe('updatePlan', () => {
         PLAN_YEAR,
         expect.objectContaining({ plan_name: { en: 'Premium Corporate v2' } }),
         ACTOR,
+        expect.any(Function),
       );
     });
 

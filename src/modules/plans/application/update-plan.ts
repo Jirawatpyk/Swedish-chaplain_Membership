@@ -42,7 +42,7 @@ import type {
   MemberAttachmentChecker,
   PlanRepo,
 } from './ports';
-import { recordAuditEvent } from './record-audit-event';
+import { auditFailureMessage, auditInTx, PlanAuditAbort } from './record-audit-event';
 import { classifyZodIssues } from './classify-zod-issues';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
 import {
@@ -209,7 +209,9 @@ export async function updatePlan(
     return ok(existing);
   }
 
-  // 5. Apply patch via repo (defence-in-depth guard re-runs inside tx)
+  // 5. Apply patch via repo (defence-in-depth guard re-runs inside tx).
+  //    126 #7 — the plan_updated audit is appended in the SAME tx, so an
+  //    audit failure rolls the patch back (and a retry re-applies it).
   let updated: Plan | undefined;
   try {
     updated = await deps.planRepo.update(
@@ -218,8 +220,28 @@ export async function updatePlan(
       input.year,
       patch,
       input.actorUserId,
+      auditInTx(
+        deps.audit,
+        {
+          tenant: deps.tenant,
+          actorUserId: input.actorUserId,
+          requestId: input.requestId,
+          sourceIp: input.sourceIp,
+        },
+        {
+          event_type: 'plan_updated',
+          payload: {
+            plan_id: input.planId,
+            plan_year: input.year,
+            diff,
+          },
+        },
+      ),
     );
   } catch (e) {
+    if (e instanceof PlanAuditAbort) {
+      return err({ type: 'audit_failed', message: auditFailureMessage(e.error) });
+    }
     return err({
       type: 'server_error',
       message: e instanceof Error ? e.message : String(e),
@@ -228,36 +250,6 @@ export async function updatePlan(
   if (!updated) {
     // Row vanished between findOne and update — racy delete, treat as not_found
     return err({ type: 'not_found' });
-  }
-
-  // 6. Append plan_updated audit event with the diff. Always emits when
-  //    `planRepo.update` ran — empty-diff short-circuit above ensures
-  //    write+audit stay paired.
-  const auditResult = await recordAuditEvent(
-    deps.audit,
-    {
-      tenant: deps.tenant,
-      actorUserId: input.actorUserId,
-      requestId: input.requestId,
-      sourceIp: input.sourceIp,
-    },
-    {
-      event_type: 'plan_updated',
-      payload: {
-        plan_id: input.planId,
-        plan_year: input.year,
-        diff,
-      },
-    },
-  );
-  if (!auditResult.ok) {
-    return err({
-      type: 'audit_failed',
-      message:
-        auditResult.error.type === 'invalid_payload'
-          ? auditResult.error.issues.join('; ')
-          : auditResult.error.message,
-    });
   }
 
   return ok(updated);

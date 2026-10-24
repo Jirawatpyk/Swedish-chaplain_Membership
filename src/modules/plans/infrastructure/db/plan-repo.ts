@@ -182,7 +182,7 @@ export const planRepo: PlanRepo = {
   },
 
   // -- insert (US2 create + seed) --------------------------------------------
-  async insert(tenant, draft: PlanDraftInput) {
+  async insert(tenant, draft: PlanDraftInput, afterWrite) {
     return runInTenant(tenant, async (tx) => {
       const row: typeof membershipPlans.$inferInsert = {
         tenantId: tenant.slug,
@@ -210,7 +210,10 @@ export const planRepo: PlanRepo = {
         .insert(membershipPlans)
         .values(row)
         .returning();
-      return rowToPlan(inserted[0]!);
+      const plan = rowToPlan(inserted[0]!);
+      // 126 #7 — the audit row commits (or rolls back) with this write.
+      if (afterWrite) await afterWrite(tx, plan);
+      return plan;
     });
   },
 
@@ -225,7 +228,7 @@ export const planRepo: PlanRepo = {
   // seed script) that forgot to run the guard. We don't throw — we
   // return `undefined` which the Application layer maps to not_found,
   // because throwing from a repo is a bigger ergonomic hazard.
-  async update(tenant, planId, year, patch, updatedBy) {
+  async update(tenant, planId, year, patch, updatedBy, afterWrite) {
     return runInTenant(tenant, async (tx) => {
       // 126 #6 — both statements skip a soft-deleted row (as `setActive`
       // does), so a delete that commits after the use case's read wins.
@@ -306,7 +309,10 @@ export const planRepo: PlanRepo = {
         )
         .returning();
       const row = updated[0];
-      return row ? rowToPlan(row) : undefined;
+      if (!row) return undefined;
+      const plan = rowToPlan(row);
+      if (afterWrite) await afterWrite(tx, plan);
+      return plan;
     });
   },
 
@@ -318,7 +324,7 @@ export const planRepo: PlanRepo = {
   // leaving a deleted-yet-active row. A soft-delete in flight holds the row
   // lock (softDeleteGuarded's FOR UPDATE); this UPDATE waits on it and then
   // re-evaluates the predicate against the committed row.
-  async setActive(tenant, planId, year, active, updatedBy) {
+  async setActive(tenant, planId, year, active, updatedBy, afterWrite) {
     return runInTenant(tenant, async (tx) => {
       const updated = await tx
         .update(membershipPlans)
@@ -332,7 +338,10 @@ export const planRepo: PlanRepo = {
         )
         .returning();
       const row = updated[0];
-      return row ? rowToPlan(row) : undefined;
+      if (!row) return undefined;
+      const plan = rowToPlan(row);
+      if (afterWrite) await afterWrite(tx, plan);
+      return plan;
     });
   },
 
@@ -342,7 +351,7 @@ export const planRepo: PlanRepo = {
   // Lock key: `plans:softdelete:<tenantSlug>:<planId>:<planYear>`.
   // The same key is acquired by `changePlan` (members module) BEFORE
   // assigning a member to the plan, serialising the two competing paths.
-  async softDeleteGuarded(tenant, planId, year, deletedAt, updatedBy) {
+  async softDeleteGuarded(tenant, planId, year, deletedAt, updatedBy, afterWrite) {
     return runInTenant(tenant, async (tx) => {
       // 1. Acquire Postgres transaction-scoped advisory lock.
       const lockKey = planSoftDeleteLockKey(tenant.slug, planId as string, year as number);
@@ -407,7 +416,9 @@ export const planRepo: PlanRepo = {
       if (!row) {
         return { kind: 'not_found' as const };
       }
-      return { kind: 'deleted' as const, plan: rowToPlan(row) };
+      const plan = rowToPlan(row);
+      if (afterWrite) await afterWrite(tx, plan);
+      return { kind: 'deleted' as const, plan };
     });
   },
 
@@ -417,7 +428,7 @@ export const planRepo: PlanRepo = {
   // tx. If a concurrent undelete already restored it (and an admin may have
   // re-activated it since), this is a no-op returning undefined — never a
   // second restore that forces a live plan back to inactive.
-  async undelete(tenant, planId, year, updatedBy) {
+  async undelete(tenant, planId, year, updatedBy, afterWrite) {
     return runInTenant(tenant, async (tx) => {
       const updated = await tx
         .update(membershipPlans)
@@ -437,7 +448,10 @@ export const planRepo: PlanRepo = {
         )
         .returning();
       const row = updated[0];
-      return row ? rowToPlan(row) : undefined;
+      if (!row) return undefined;
+      const plan = rowToPlan(row);
+      if (afterWrite) await afterWrite(tx, plan);
+      return plan;
     });
   },
 
@@ -454,7 +468,7 @@ export const planRepo: PlanRepo = {
   // disjoint from F4 `invoicing:` / F5 `payments:` / F7 `broadcasts:`
   // / F8 `renewals:`. Released automatically when the tx commits or
   // rolls back (`pg_advisory_xact_lock`).
-  async cloneYear(tenant, sourceYear, targetYear, activateCloned, createdBy) {
+  async cloneYear(tenant, sourceYear, targetYear, activateCloned, createdBy, afterWrite) {
     return runInTenant(tenant, async (tx): Promise<Result<CloneYearSummary, CloneYearError>> => {
       const lockKey = `plans:clone:${tenant.slug}:${targetYear as number}`;
       await tx.execute(
@@ -515,12 +529,14 @@ export const planRepo: PlanRepo = {
         .values(values)
         .returning({ planId: membershipPlans.planId });
 
-      return ok({
+      const summary = {
         sourceYear,
         targetYear,
         clonedPlanIds: inserted.map((r) => asPlanSlug(r.planId)),
         count: inserted.length,
-      });
+      };
+      if (afterWrite) await afterWrite(tx, summary);
+      return ok(summary);
     });
   },
 };

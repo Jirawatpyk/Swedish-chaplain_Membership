@@ -5,9 +5,8 @@
  * Covers the full error mapping from `cancelScheduledPlanChange`
  * Result error union to HTTP status codes:
  *   - 200 happy path (cancelled row returned)
- *   - 200 audit_failed — R3 Batch 4d (R3-S4): row IS cancelled, audit
- *     emit failed; return 200 with body + `X-Audit-Backfill-Required: 1`
- *     header (NOT 500 — mis-leads UI into retry).
+ *   - 500 audit_failed — 126 #7: the audit is written in the cancel's
+ *     tx, so the cancel rolled back and a retry is safe.
  *   - 400 invalid_path / invalid_body / invalid_input
  *   - 401 unauthenticated
  *   - 403 manager attempts (admin-only)
@@ -64,32 +63,6 @@ vi.mock('@/lib/idempotency', () => ({
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
-// Observe the planMetrics.cancelAuditBackfillRequired counter via a
-// partial mock of `@/lib/metrics`. `vi.importActual` + spread preserves
-// every other planMetrics method; we replace only the specific counter
-// with `vi.fn()` so call-args can be asserted.
-//
-// R5-S7 fragility note: this mock pins the CALL-ARGS shape
-// (tenantId: string, auditErrorType: 'invalid_payload' | 'persist_failed').
-// If the production signature is refactored to e.g. an object-form
-// payload (`{tenant, errorType}`), the route's call-site MUST be
-// updated AND this mock will silently accept the new shape without
-// failing the test — until the assertions below also break.
-// `pnpm typecheck` over the route's import of `@/lib/metrics`
-// catches signature drift first; this mock + assertions are
-// behaviour-level coverage layered on top.
-vi.mock('@/lib/metrics', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/metrics')>(
-    '@/lib/metrics',
-  );
-  return {
-    ...actual,
-    planMetrics: {
-      ...actual.planMetrics,
-      cancelAuditBackfillRequired: vi.fn(),
-    },
-  };
-});
 
 const adminContext = {
   current: {
@@ -251,96 +224,40 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     expect(body.error.details.status).toBe('applied');
   });
 
-  // R3 Batch 4d (R3-S4) — audit_failed now returns 200 + diagnostic
-  // header because the row IS cancelled at this point. The previous
-  // 500 mis-led the UI into retrying a successful mutation. SRE alert
-  // routing picks up the F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED
-  // errorId on the logger.error emit.
-  const cancelledRow = {
-    tenantId: 'test-swecham',
-    scheduledChangeId: SCHEDULED_ID,
-    memberId: MEMBER_ID,
-    effectiveAtCycleId: CYCLE_ID,
-    fromPlanId: 'corporate-regular',
-    toPlanId: 'corporate-premier',
-    scheduledByUserId: 'other-admin',
-    reason: null,
-    status: 'cancelled' as const,
-    scheduledAt: '2026-05-01T00:00:00Z',
-    appliedAt: null,
-    supersededAt: null,
-    cancelledAt: '2026-05-19T10:00:00Z',
-  };
+  // 126 #7 — the audit row is written in the cancel's tx, so audit_failed
+  // means the cancel ROLLED BACK: a plain retryable 500 (no body to cache,
+  // reservation released), never the old 200 + X-Audit-Backfill-Required.
+  // The errorId still splits zod-rejection from DB-rejection for alerting.
+  for (const [auditErrorType, errorId] of [
+    ['persist_failed', 'F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED'],
+    ['invalid_payload', 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'],
+  ] as const) {
+    it(`500 audit_failed (${auditErrorType}) — rolled back, logged ${errorId}, not cached`, async () => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      cancelScheduledPlanChangeMock.mockResolvedValueOnce(
+        err({ code: 'audit_failed', auditErrorType, message: 'simulated' }),
+      );
+      const loggerMod = await import('@/lib/logger');
+      const errorSpy = vi.mocked(loggerMod.logger.error);
+      errorSpy.mockClear();
+      const idem = await import('@/lib/idempotency');
+      vi.mocked(idem.rememberIdempotentResponse).mockClear();
 
-  it('200 audit_failed (auditErrorType=persist_failed) + X-Audit-Backfill-Required header', async () => {
-    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
-    cancelScheduledPlanChangeMock.mockResolvedValueOnce(
-      err({
-        code: 'audit_failed',
-        auditErrorType: 'persist_failed' as const,
-        message: 'DB connection refused',
-        transitioned: cancelledRow,
-      }),
-    );
-    const { POST } = await import(
-      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
-    );
-    const res = await POST(makeRequest(validBody), {
-      params: params(SCHEDULED_ID),
+      const { POST } = await import(
+        '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
+      );
+      const res = await POST(makeRequest(validBody), {
+        params: params(SCHEDULED_ID),
+      });
+      expect(res.status).toBe(500);
+      expect(res.headers.get('X-Audit-Backfill-Required')).toBeNull();
+      const body = await res.json();
+      expect(body.error.code).toBe('audit_failed');
+      const [structured] = errorSpy.mock.calls[0]! as [{ errorId: string }, string];
+      expect(structured.errorId).toBe(errorId);
+      expect(vi.mocked(idem.rememberIdempotentResponse)).not.toHaveBeenCalled();
     });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('X-Audit-Backfill-Required')).toBe('1');
-    expect(res.headers.get('X-Audit-Error-Type')).toBe('persist_failed');
-    const body = await res.json();
-    expect(body).toEqual({
-      scheduled_change_id: SCHEDULED_ID,
-      status: 'cancelled',
-      cancelled_at: '2026-05-19T10:00:00Z',
-    });
-    // R4-I2 — metric counter increments with the audit_error_type label
-    // so SRE backfill SLO can be graphed from OTel directly.
-    const metricsMod = await import('@/lib/metrics');
-    expect(metricsMod.planMetrics.cancelAuditBackfillRequired).toHaveBeenCalledWith(
-      'test-swecham',
-      'persist_failed',
-    );
-  });
-
-  // invalid_payload discriminator maps to a distinct errorId in the
-  // log + distinct X-Audit-Error-Type header.
-  it('200 audit_failed (auditErrorType=invalid_payload) + X-Audit-Backfill-Required header', async () => {
-    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
-    cancelScheduledPlanChangeMock.mockResolvedValueOnce(
-      err({
-        code: 'audit_failed',
-        auditErrorType: 'invalid_payload' as const,
-        message: 'payload.member_id: invalid',
-        transitioned: cancelledRow,
-      }),
-    );
-    const { POST } = await import(
-      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
-    );
-    const res = await POST(makeRequest(validBody), {
-      params: params(SCHEDULED_ID),
-    });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('X-Audit-Backfill-Required')).toBe('1');
-    expect(res.headers.get('X-Audit-Error-Type')).toBe('invalid_payload');
-    const body = await res.json();
-    expect(body).toEqual({
-      scheduled_change_id: SCHEDULED_ID,
-      status: 'cancelled',
-      cancelled_at: '2026-05-19T10:00:00Z',
-    });
-    // R4-I2 — metric counter label = 'invalid_payload' splits the
-    // SRE dashboard differently from the persist_failed case above.
-    const metricsMod = await import('@/lib/metrics');
-    expect(metricsMod.planMetrics.cancelAuditBackfillRequired).toHaveBeenCalledWith(
-      'test-swecham',
-      'invalid_payload',
-    );
-  });
+  }
 
   // R5-I1 + R5-I11 — `case 'server_error':` now emits a SINGLE
   // logger.error with `errorId: 'F2.PLAN_CHANGE.CANCEL_SERVER_ERROR'`
@@ -465,93 +382,6 @@ describe('contract: POST /api/admin/scheduled-plan-changes/[id]/cancel (R2-S3)',
     expect(structuredRecheck.recheckErrMessage).toBe(
       'rls: connection-pool exhausted',
     );
-  });
-
-  // R5-S6 — production write-path of the diagnostic headers.
-  // Asserts that when audit_failed fires for the FIRST time (no
-  // replay), `rememberIdempotentResponse` is called with a `.headers`
-  // payload populated. The R4-I10 replay test (below) pre-seeds the
-  // headers in the mock — this complementary test verifies they
-  // actually flow into the cache on the write side. Without this,
-  // a regression that silently drops `.headers` from
-  // `rememberIdempotentResponse(... { status, body, headers })` would
-  // ship green.
-  it('R5-S6: rememberIdempotentResponse receives the diagnostic headers on audit_failed write', async () => {
-    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
-    cancelScheduledPlanChangeMock.mockResolvedValueOnce(
-      err({
-        code: 'audit_failed',
-        auditErrorType: 'persist_failed' as const,
-        message: 'DB connection refused',
-        transitioned: cancelledRow,
-      }),
-    );
-    const idem = await import('@/lib/idempotency');
-    vi.mocked(idem.rememberIdempotentResponse).mockClear();
-
-    const { POST } = await import(
-      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
-    );
-    const res = await POST(makeRequest(validBody), {
-      params: params(SCHEDULED_ID),
-    });
-    expect(res.status).toBe(200);
-
-    // Inspect the captured argument shape — the headers field MUST
-    // be present + populated with the diagnostic header pair.
-    expect(idem.rememberIdempotentResponse).toHaveBeenCalledTimes(1);
-    const call = vi.mocked(idem.rememberIdempotentResponse).mock.calls[0]!;
-    const [, , , response] = call;
-    expect(response.status).toBe(200);
-    expect(response.headers).toEqual({
-      'X-Audit-Backfill-Required': '1',
-      'X-Audit-Error-Type': 'persist_failed',
-    });
-  });
-
-  // R4-I10 — idempotent replay of the audit_failed 200 response.
-  // Stub classifyIdempotencyRequest to return `kind:'replay'` with a
-  // cached envelope INCLUDING the diagnostic headers. Assert the
-  // replay response re-emits the headers verbatim. Without this, SRE
-  // alert routing keyed on `X-Audit-Backfill-Required` silently
-  // loses the discriminator on retry.
-  it('R4-I10: replay of cached audit_failed response re-emits diagnostic headers', async () => {
-    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
-    const idem = await import('@/lib/idempotency');
-    vi.mocked(idem.classifyIdempotencyRequest).mockResolvedValueOnce({
-      kind: 'replay',
-      previousResponse: {
-        status: 200,
-        body: {
-          scheduled_change_id: SCHEDULED_ID,
-          status: 'cancelled',
-          cancelled_at: '2026-05-19T10:00:00Z',
-        },
-        headers: {
-          'X-Audit-Backfill-Required': '1',
-          'X-Audit-Error-Type': 'persist_failed',
-        },
-      },
-    });
-
-    const { POST } = await import(
-      '@/app/api/admin/scheduled-plan-changes/[id]/cancel/route'
-    );
-    const res = await POST(makeRequest(validBody), {
-      params: params(SCHEDULED_ID),
-    });
-
-    expect(res.status).toBe(200);
-    expect(res.headers.get('X-Audit-Backfill-Required')).toBe('1');
-    expect(res.headers.get('X-Audit-Error-Type')).toBe('persist_failed');
-    const body = await res.json();
-    expect(body).toEqual({
-      scheduled_change_id: SCHEDULED_ID,
-      status: 'cancelled',
-      cancelled_at: '2026-05-19T10:00:00Z',
-    });
-    // The use-case mock was NOT invoked — short-circuit on replay.
-    expect(cancelScheduledPlanChangeMock).not.toHaveBeenCalled();
   });
 
   it('503 idempotency_reservation_failed when Upstash reserve returns err', async () => {

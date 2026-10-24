@@ -208,10 +208,8 @@ describe('Integration — cancelScheduledPlanChange audit-failed rolls back (126
   });
 
   // R5-I8 — coverage parity for the `invalid_payload` audit-error
-  // variant. The persist_failed branch above proves the row-persists
-  // contract for one error type; this proves the same contract for
-  // the zod-rejection branch (R3-I5 discriminator preserved end-to-end).
-  it('R5-I8: row is cancelled in DB but audit row absent when audit-port returns invalid_payload', async () => {
+  // discriminator: it rolls back exactly like `persist_failed`.
+  it('R5-I8 / 126: an invalid_payload audit rejection also rolls the cancel back', async () => {
     const tenant = await createTestTenant('test-swecham');
     cleanups.push(tenant.cleanup);
 
@@ -236,21 +234,22 @@ describe('Integration — cancelScheduledPlanChange audit-failed rolls back (126
     const scheduledChangeId = seeded.inserted.scheduledChangeId;
 
     let auditCallCount = 0;
-    const invalidPayloadAudit: AuditPort = {
-      record: async (): Promise<
-        Result<
-          void,
-          | { type: 'persist_failed'; message: string }
-          | { type: 'invalid_payload'; issues: string[] }
-        >
-      > => {
+    const invalidPayloadAudit = {
+      record: async () => {
         auditCallCount += 1;
         return err({
           type: 'invalid_payload' as const,
           issues: ['simulated zod rejection on payload.member_id'],
         });
       },
-    };
+      recordInTx: async () => {
+        auditCallCount += 1;
+        return err({
+          type: 'invalid_payload' as const,
+          issues: ['simulated zod rejection on payload.member_id'],
+        });
+      },
+    } as unknown as AuditPort;
 
     const result = await cancelScheduledPlanChange(
       {
@@ -275,9 +274,8 @@ describe('Integration — cancelScheduledPlanChange audit-failed rolls back (126
     expect(result.error.code).toBe('audit_failed');
     if (result.error.code !== 'audit_failed') throw new Error('unreachable');
     expect(result.error.auditErrorType).toBe('invalid_payload');
-    expect(result.error.transitioned.status).toBe('cancelled');
 
-    // Row IS cancelled despite the audit invalid_payload rejection.
+    // 126 #7 — the row is still pending: the rejection rolled it back.
     const dbRows = await runInTenant(tenant.ctx, async (tx) =>
       tx
         .select()
@@ -290,8 +288,8 @@ describe('Integration — cancelScheduledPlanChange audit-failed rolls back (126
         ),
     );
     expect(dbRows.length).toBe(1);
-    expect(dbRows[0]!.status).toBe('cancelled');
-    expect(dbRows[0]!.cancelledAt).not.toBeNull();
+    expect(dbRows[0]!.status).toBe('pending');
+    expect(dbRows[0]!.cancelledAt).toBeNull();
 
     // No audit row exists — confirmed via tenant-scoped query.
     const auditRows = await runInTenant(tenant.ctx, async (tx) =>

@@ -17,18 +17,13 @@
  *   - invalid_input (zod path or body) → 400
  *   - not_found                         → 404
  *   - already_terminal                  → 409
- *   - audit_failed                      → 200 + X-Audit-Backfill-Required: 1
- *                                        (the row IS already cancelled;
- *                                        surfacing 500 mis-leads the UI
- *                                        into a retry on a successful
- *                                        mutation. Mirrors F5
- *                                        `payment_environment_mismatch`
- *                                        UX pattern: 200 body +
- *                                        diagnostic header. Alert
- *                                        routing picks up the
+ *   - audit_failed                      → 500 (126 #7 — the audit is
+ *                                        written in the cancel's tx, so
+ *                                        the cancel rolled back and a
+ *                                        retry is safe. Alert routing
+ *                                        keys on the
  *                                        F2.PLAN_CHANGE.CANCEL_AUDIT_*
- *                                        errorId on the logger.error
- *                                        emit.)
+ *                                        errorId.)
  *   - server_error                      → 500
  *   - idempotency_conflict              → 409
  *   - idempotency_reservation_failed    → 503 + Retry-After: 5
@@ -39,7 +34,6 @@ import { requireApiPermission } from '@/lib/rbac';
 import { assertNever } from '@/lib/assert-never';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { planMetrics } from '@/lib/metrics';
 import { cancelScheduledPlanChange } from '@/modules/plans';
 import {
   drizzleScheduledPlanChangeRepo,
@@ -188,7 +182,8 @@ export async function POST(
         // Attach errorId mapped from the preserved auditErrorType
         // discriminator. Alert routing can distinguish zod-rejection
         // (deploy-skew) from DB-rejection (column drift / pgEnum drift
-        // / RLS).
+        // / RLS). 126 #7 — the cancel rolled back with the audit, so
+        // this is a plain retryable 500 (not cached: 5xx stays retryable).
         logger.error(
           {
             errorId:
@@ -196,37 +191,19 @@ export async function POST(
                 ? 'F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD'
                 : 'F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED',
             requestId: ctx.requestId,
-            err: { ...result.error, transitioned: undefined },
+            err: result.error,
           },
-          'cancel-scheduled-plan-change: audit write failed',
+          'cancel-scheduled-plan-change: audit write failed — cancel rolled back',
         );
-        // Emit metric counter so SRE backfill SLO can be graphed
-        // (log-based attribution would be lossy on sampled pipelines).
-        planMetrics.cancelAuditBackfillRequired(
-          tenant.slug,
-          result.error.auditErrorType,
+        return NextResponse.json(
+          {
+            error: {
+              code: 'audit_failed',
+              message: 'The cancellation could not be recorded and was not applied. Retry.',
+            },
+          },
+          { status: 500 },
         );
-        // The row IS cancelled (transitionStatus
-        // landed). Return 200 with the cancelled-row body + diagnostic
-        // header so the UI does not retry a successful mutation. SRE
-        // backfills the audit row out-of-band by alerting on the errorId
-        // above. Mirrors F5 `payment_environment_mismatch` UX pattern.
-        const body = {
-          scheduled_change_id: result.error.transitioned.scheduledChangeId,
-          status: result.error.transitioned.status,
-          cancelled_at: result.error.transitioned.cancelledAt,
-        };
-        // Cache the diagnostic headers alongside body+status so
-        // idempotent replay re-emits them. SRE alert routing keyed on
-        // `X-Audit-Backfill-Required` / `X-Audit-Error-Type` would
-        // otherwise silently lose the discriminator on retry.
-        const headerEntries: Record<string, string> = {
-          'X-Audit-Backfill-Required': '1',
-          'X-Audit-Error-Type': result.error.auditErrorType,
-        };
-        const headers = new Headers(headerEntries);
-        await remember({ status: 200, body, headers: headerEntries });
-        return NextResponse.json(body, { status: 200, headers });
       }
       case 'server_error': {
         // R5-S12 — narrow via the `recheckFailed` boolean discriminator.

@@ -348,15 +348,13 @@ export type CancelScheduledPlanChangeError =
       // audit row was rejected by zod (deploy-skew) or by the DB
       // (column drift / pgEnum drift / RLS) without raw stdout.
       //
-      // Carry the transitioned-row context so the route can return 200
-      // with the cancelled-row body + the `X-Audit-Backfill-Required: 1`
-      // diagnostic header. The row IS already cancelled at this point;
-      // surfacing 500 would mis-lead the UI into retrying a successful
-      // mutation.
+      // 126 #7 — the audit row is written in the cancel's tx, so this
+      // error means the cancel ROLLED BACK: the row is still pending and
+      // a retry is safe. (It used to carry the cancelled row for a 200 +
+      // `X-Audit-Backfill-Required` answer; that path is gone.)
       readonly code: 'audit_failed';
       readonly auditErrorType: 'invalid_payload' | 'persist_failed';
       readonly message: string;
-      readonly transitioned: ScheduledPlanChange;
     }
   /**
    * R5-S12 — `server_error` is a discriminated union over the
