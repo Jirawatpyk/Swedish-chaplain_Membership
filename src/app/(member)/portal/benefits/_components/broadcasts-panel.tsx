@@ -21,7 +21,7 @@
  *
  * Spec 122 US12d-1 (T1236, boards `Portal-broadcasts`, `-mobile`, `-empty`):
  * the "My broadcasts" heading with a primary Compose E-Blast button (plus
- * icon); the history as an AURA table in a card from `md` up, each status an
+ * icon); the history as an AURA table (its own frame) from `md` up, each status an
  * AURA `StatusPill` in the portal tones; the phone list below `md`; the empty
  * history as the shared EmptyState with the same button. Pagination keeps its
  * own `?tab=broadcasts&page=N` links, on AURA `buttonClass`.
@@ -29,7 +29,7 @@
 import Link from 'next/link';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { Mail, PlusIcon } from 'lucide-react';
-import { Card, Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Icon, StatusPill, buttonClass } from '@jirawatpyk/aura-react/server';
 import { Table, TBody, THead, Td, Th, Tr } from '@/components/shell/aura-table';
 import { EmptyState } from '@/components/shell/empty-state';
 import { DashboardErrorState } from '@/components/dashboard/dashboard-error-state';
@@ -394,12 +394,13 @@ export async function BroadcastsPanelView({
         <>
           {/* U37 — dual-render: the table from `md` up, the card list below it
               (at 320 px the table was 729 px wide inside a 209 px box). */}
-          <Card className="hidden md:flex">
+          {/* The table draws its own frame (board `Portal-broadcasts`: the
+              list alone, no card head above it). */}
+          <div className="hidden md:block">
             <Table
               data-testid="broadcast-history-table"
               caption={t('title')}
               captionHidden
-              bleed
               className="[&_td]:align-middle"
             >
               {/* U31 — the <table> itself is named by its (hidden) caption, so a
@@ -436,7 +437,7 @@ export async function BroadcastsPanelView({
                 ))}
               </TBody>
             </Table>
-          </Card>
+          </div>
           <BroadcastHistoryCardList
             rows={historyRows}
             labels={{

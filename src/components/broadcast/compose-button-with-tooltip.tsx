@@ -35,6 +35,8 @@ export function ComposeButtonWithTooltip({
         type="button"
         variant="primary"
         icon="plus"
+        touchHeight
+        fullWidth="below-sm"
         aria-disabled="true"
         aria-label={`${label} — ${tooltipText}`}
       >

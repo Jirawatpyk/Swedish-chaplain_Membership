@@ -205,8 +205,7 @@ describe('U37 — the history renders as a card list below md', () => {
     const list = screen.getByTestId('broadcast-history-card-list');
     expect(list).toHaveAttribute('role', 'list');
     expect(list.className).toMatch(/\bmd:hidden\b/);
-    // `md:flex`, not `md:block` — Card's own display is `flex flex-col`.
-    expect(table.closest('.hidden.md\\:flex')).not.toBeNull();
+    expect(table.closest('.hidden.md\\:block')).not.toBeNull();
 
     const items = within(list).getAllByRole('listitem');
     expect(items).toHaveLength(1);
@@ -266,7 +265,8 @@ describe('Spec 122 US12d-1 (T1236) — the E-Blast tab on AURA', () => {
     const table = screen.getByRole('table', { name: /my broadcasts/i });
     const sent = enMessages.portal.broadcasts.list.status.sent;
     expect(within(table).getByText(sent, { selector: 'span' }).closest('.aura-pill')).not.toBeNull();
-    expect(table.closest('.aura-card')).not.toBeNull();
+    // The table draws its own frame; no card head above it (board).
+    expect(table.closest('.aura-tbl-wrap')).not.toBeNull();
   });
 });
 

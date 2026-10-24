@@ -179,7 +179,7 @@ export function QuotaDisplay({
           </div>
         ) : snap !== null ? (
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4" aria-live="polite">
+            <div className="grid grid-cols-4 gap-2 sm:gap-4" aria-live="polite">
               <Counter label={t('used')} value={snap.used} />
               <Counter label={t('reserved')} value={snap.reserved} />
               <Counter label={t('remaining')} value={snap.remaining} emphasise={exhausted} />
@@ -230,7 +230,7 @@ export function QuotaDisplay({
           // (4-counter grid + progress bar + footer line) or the
           // page jumps when data arrives (CLS).
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4" aria-hidden="true">
+            <div className="grid grid-cols-4 gap-2 sm:gap-4" aria-hidden="true">
               <SkeletonBlock className="h-14 w-full" />
               <SkeletonBlock className="h-14 w-full" />
               <SkeletonBlock className="h-14 w-full" />
@@ -254,13 +254,14 @@ function Counter({
   readonly value: number;
   readonly emphasise?: boolean;
 }): React.ReactElement {
-  // Board `Portal-broadcasts`: the label above its number, left-aligned.
+  // Board `Portal-broadcasts`: the label above its number, left-aligned; four
+  // in a row at every width (`-mobile`), the number a step smaller on phones.
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="aura-text-caption text-[var(--aura-fg-secondary)]">{label}</span>
+      <span className="aura-text-caption break-words text-[var(--aura-fg-secondary)]">{label}</span>
       <span
         className={cn(
-          'text-2xl font-semibold tabular-nums',
+          'text-xl font-semibold tabular-nums sm:text-2xl',
           emphasise && 'text-[var(--aura-fg-danger)]',
         )}
       >

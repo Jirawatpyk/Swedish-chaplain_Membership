@@ -57,7 +57,7 @@ describe('ComposeButtonWithTooltip on AURA', () => {
   it('is a focusable AURA button named with its reason, inert to clicks', () => {
     render(<ComposeButtonWithTooltip label="Compose E-Blast" tooltipText="Renews 1 January 2027" />);
     const button = screen.getByRole('button', { name: 'Compose E-Blast — Renews 1 January 2027' });
-    expect(button).toHaveClass('aura-btn');
+    expect(button).toHaveClass('aura-btn', 'aura-btn--touch');
     expect(button).toHaveAttribute('aria-disabled', 'true');
     expect(button).not.toBeDisabled();
     button.focus();
