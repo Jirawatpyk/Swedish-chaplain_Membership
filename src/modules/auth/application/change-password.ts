@@ -2,6 +2,8 @@
  * change-password use case (T151, spec US6 AS1-AS3, contracts § 5).
  *
  * Algorithm:
+ *   0. Rate-limit the policy steps by USER (30 / 15 min, atomic) — they
+ *      make an outbound HIBP call (125, N1).
  *   1. Reject if `newPassword === currentPassword` (same-password).
  *      This short-circuits BEFORE HIBP so the user never sees the
  *      breached-password error for their own current (otherwise-OK)
@@ -79,6 +81,10 @@ export type ChangePasswordError =
 // --- Tunables ----------------------------------------------------------------
 
 const RATE_LIMIT_PER_USER = { max: 5, windowSeconds: 15 * 60 };
+// 125 (N1) — caps the same-password + HIBP-backed policy steps, which run
+// before the guess bucket. Generous: a rejected new password is a typo, not
+// a guess, but each one is an outbound HIBP call (and HIBP fails open, T-11).
+const POLICY_RATE_LIMIT_PER_USER = { max: 30, windowSeconds: 15 * 60 };
 
 // --- Dependencies ------------------------------------------------------------
 
@@ -100,9 +106,23 @@ export async function changePassword(
   input: ChangePasswordInput,
   deps: ChangePasswordDeps = defaultChangePasswordDeps,
 ): Promise<Result<ChangePasswordSuccess, ChangePasswordError>> {
+  // 0. Policy-step rate limit (125, N1) — its own atomic bucket so a
+  //    session holder cannot drive unlimited HIBP calls through steps 1–2.
+  const policyLimit = await deps.limiter.check(
+    `change-pw-policy:user:${input.user.id}`,
+    POLICY_RATE_LIMIT_PER_USER.max,
+    POLICY_RATE_LIMIT_PER_USER.windowSeconds,
+  );
+  if (!policyLimit.success) {
+    return err({
+      code: 'rate-limited',
+      retryAfterSeconds: retryAfterSeconds(policyLimit),
+    });
+  }
+
   // 1. Same-password guard (short-circuits before HIBP). 125 — steps 1–2
-  //    judge only the NEW password, so they run BEFORE the limiter: a
-  //    rejected new password is not a guess of the current one and must
+  //    judge only the NEW password, so they run BEFORE the guess limiter:
+  //    a rejected new password is not a guess of the current one and must
   //    not spend the brute-force budget. They reveal nothing about the
   //    current password (a plain string compare + the public policy).
   if (input.newPassword === input.currentPassword) {

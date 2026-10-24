@@ -149,12 +149,15 @@ describe('changePassword use case', () => {
   });
 
   // ── Rate limiting (125 — atomic check before verify) ────────────────────
-  it('returns rate-limited when the per-user limiter check is exhausted', async () => {
+  it('returns rate-limited when the per-user guess bucket is exhausted', async () => {
     const deps = makeDeps({
       limiter: {
-        check: vi
-          .fn()
-          .mockResolvedValue({ success: false, reset: Date.now() + 10_000 }),
+        // Only the guess bucket is exhausted; the policy bucket has room.
+        check: vi.fn().mockImplementation(async (key: string) =>
+          key === GUESS_KEY
+            ? { success: false, reset: Date.now() + 10_000 }
+            : { success: true, reset: Date.now() + 900_000 },
+        ),
       } as unknown as ChangePasswordDeps['limiter'],
     });
     const result = await changePassword(BASE_INPUT, deps);
@@ -172,9 +175,12 @@ describe('changePassword use case', () => {
   it('uses minimum of 1 second for retryAfterSeconds when reset is in the past', async () => {
     const deps = makeDeps({
       limiter: {
-        check: vi
-          .fn()
-          .mockResolvedValue({ success: false, reset: Date.now() - 500 }),
+        // Only the guess bucket is exhausted; the policy bucket has room.
+        check: vi.fn().mockImplementation(async (key: string) =>
+          key === GUESS_KEY
+            ? { success: false, reset: Date.now() - 500 }
+            : { success: true, reset: Date.now() + 900_000 },
+        ),
       } as unknown as ChangePasswordDeps['limiter'],
     });
     const result = await changePassword(BASE_INPUT, deps);
