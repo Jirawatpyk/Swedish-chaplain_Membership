@@ -35,6 +35,13 @@ import {
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
+import {
+  revokeMemberAccessInTx,
+  runPostArchiveCascades,
+  runRenewalsRestoreCascade,
+  type MemberAccessCascadeDeps,
+  type PostArchiveCascadeDeps,
+} from './archive-cascade';
 
 // --- Constants ---------------------------------------------------------------
 
@@ -86,12 +93,13 @@ export type BulkActionError =
 // RateLimitPort removed per round-2 review C-1. Rate limiting is a
 // transport-layer concern and lives in the route handler only.
 
-export type BulkActionDeps = {
-  tenant: TenantContext;
-  memberRepo: MemberRepo;
-  audit: AuditPort;
-  clock: ClockPort;
-};
+export type BulkActionDeps = MemberAccessCascadeDeps &
+  PostArchiveCascadeDeps & {
+    tenant: TenantContext;
+    memberRepo: MemberRepo;
+    audit: AuditPort;
+    clock: ClockPort;
+  };
 
 export type BulkActionMeta = {
   actorUserId: string;
@@ -220,6 +228,10 @@ export async function bulkAction(
               throw new Error(`persist:${persistResult.error.code}`);
             }
 
+            // 126 #2 — the single-archive in-tx cascade: revoke every linked
+            // portal user's sessions and soft-consume their invitations.
+            const cascade = await revokeMemberAccessInTx(tx, memberId, now, meta, deps);
+
             const auditResult = await deps.audit.recordInTx(
               tx,
               deps.tenant,
@@ -232,32 +244,26 @@ export async function bulkAction(
                   member_id: memberId,
                   action: 'archive',
                   bulk_request_id: meta.requestId,
+                  cascaded_user_ids: cascade.cascadedUserIds,
+                  sessions_revoked_total: cascade.sessionsRevokedTotal,
+                  invitations_revoked_count: cascade.invitationsRevokedCount,
                 },
               },
             );
             if (!auditResult.ok) throw new Error('audit_failed');
             updatedCount++;
-            auditEventCount++;
+            // member_archived + one user_sessions_revoked per linked user.
+            auditEventCount += 1 + cascade.cascadedUserIds.length;
             break;
           }
 
           case 'unarchive': {
             // Inverse of `archive` — restores archived → active within the
-            // 90-day undelete window (domain `undelete`). Symmetric with the
-            // bulk archive arm above: status + audit ONLY.
-            //
-            // ⚠️ UNDO-OF-BULK-ARCHIVE ONLY. This arm intentionally omits the
-            // renewals-RESTORE cascade that the single `undeleteMember` use case
-            // runs (`renewalsCascade.restoreForMember`). That is correct here
-            // because bulk `archive` never CANCELS a renewal cycle (it has no
-            // `sessions`/`renewalsCascade` deps), so there is nothing to restore
-            // when undoing it. The only caller today is the bulk-archive success
-            // toast's Undo, which posts exactly the ids it just bulk-archived.
-            // DO NOT surface this arm as a general "Restore" (e.g. a standalone
-            // bulk-restore button) without first wiring the renewals-restore
-            // cascade — a member archived via the SINGLE archive path (which
-            // DOES cancel the cycle) would otherwise come back `active` with no
-            // active renewal cycle (silent pipeline drop). See undelete-member.ts.
+            // 90-day undelete window (domain `undelete`). 126 #2 — bulk archive
+            // now cancels the renewal cycle, so this arm runs the single
+            // undelete's renewals-RESTORE cascade after the commit (below).
+            // It still skips the single undelete's primary-contact designate
+            // flow: the gates above refuse a member with no live primary.
             const undeleteResult = undelete(current, now);
             if (!undeleteResult.ok) {
               throw new BulkStateError(memberId, undeleteResult.error.code);
@@ -303,6 +309,18 @@ export async function bulkAction(
 
       return { updatedCount, auditEventCount, updatedIds };
     });
+
+    // 126 #2 — the single paths' POST-COMMIT cascades, per member, in their
+    // own txs. Best-effort: the helpers log + count a failure and never fail
+    // the batch that already committed.
+    for (const id of result.updatedIds) {
+      const memberId = asMemberId(id);
+      if (data.action === 'archive') {
+        await runPostArchiveCascades(memberId, meta, deps);
+      } else {
+        await runRenewalsRestoreCascade(memberId, meta, deps);
+      }
+    }
 
     return ok(result);
   } catch (e) {

@@ -624,6 +624,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         memberRepo: deps.memberRepo,
         audit: deps.audit,
         clock: deps.clock,
+        // 126 #2 — the single-archive cascade (sessions, invitations,
+        // broadcasts, renewal cycle) and the undelete restore cascade.
+        contactRepo: deps.contactRepo,
+        sessions: deps.sessions,
+        invitations: deps.invitations,
+        broadcastsCascade: deps.broadcastsCascade,
+        renewalsCascade: deps.renewalsCascade,
       },
     );
 

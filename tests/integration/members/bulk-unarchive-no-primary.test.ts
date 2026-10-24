@@ -13,6 +13,8 @@ import { eq } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import { bulkAction } from '@/modules/members/application/use-cases/bulk-action';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { noopBroadcastsCascadeAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-cascade-adapter';
+import { noopRenewalsCascadeAdapter } from '@/modules/members/infrastructure/adapters/renewals-cascade-adapter';
 import type { MemberId } from '@/modules/members';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
@@ -117,7 +119,11 @@ describe('bulk unarchive — no live primary → refused, member stays archived 
       memberRepo: full.memberRepo,
       audit: full.audit,
       clock: full.clock,
-      plans: full.plans,
+      contactRepo: full.contactRepo,
+      sessions: full.sessions,
+      invitations: full.invitations,
+      broadcastsCascade: noopBroadcastsCascadeAdapter,
+      renewalsCascade: noopRenewalsCascadeAdapter,
     };
   }
 

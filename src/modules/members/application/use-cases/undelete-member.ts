@@ -47,12 +47,12 @@
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { primaryContactTriggerViolation } from '@/lib/db-errors';
 import { logger } from '@/lib/logger';
-import { renewalsMetrics } from '@/lib/metrics';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { ContactId } from '../../domain/contact';
 import { undelete, type Member, type MemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
+import { runRenewalsRestoreCascade } from './archive-cascade';
 import type { ContactRepo } from '../ports/contact-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
@@ -303,72 +303,7 @@ export async function undeleteMember(
       return { member: persistResult.value, designatedContactId };
     });
 
-    // Cluster 4 (2026-07-12) — F8 renewal-cycle RESTORE cascade. Runs AFTER
-    // the F3 undelete tx commits (mirrors archive-member's cancel cascade):
-    // opens its own tx to idempotently re-create ONE active cycle anchored at
-    // the member's PAID-THROUGH frontier (so it never overlaps an already-paid
-    // period → double-bill; review-fix), so the restored member re-appears in
-    // the renewal pipeline. Best-effort: a failure logs + emits a metric but
-    // does NOT fail the undelete (the member row is already restored durably;
-    // ops can re-attempt via admin "renew" if the cycle restore failed — e.g.
-    // the member's plan is no longer offered).
-    {
-      try {
-        const restore = await deps.renewalsCascade.restoreForMember(
-          deps.tenant,
-          memberId,
-          {
-            initiatedByUserId: meta.actorUserId,
-            requestId: meta.requestId,
-          },
-        );
-        renewalsMetrics.restoreOutcome(deps.tenant.slug, restore.outcome);
-        if (restore.outcome === 'restore_failed') {
-          // The member is restored but has NO active cycle — a "member
-          // silently dropped from the renewal pipeline" state. Structured
-          // log keyed by memberId so ops can grep + re-attempt (admin renew).
-          logger.error(
-            {
-              tenantId: deps.tenant.slug,
-              memberId,
-              requestId: meta.requestId,
-              cascade: 'f8_undelete_cycle_restore',
-            },
-            'undelete-member: renewals restore failed — member restored WITHOUT an active cycle (re-attempt via admin renew)',
-          );
-        } else if (restore.outcome === 'skipped_member_absent') {
-          logger.warn(
-            {
-              tenantId: deps.tenant.slug,
-              memberId,
-              requestId: meta.requestId,
-              cascade: 'f8_undelete_cycle_restore',
-            },
-            'undelete-member: renewals restore skipped — member unreadable post-commit',
-          );
-        }
-      } catch (restoreErr) {
-        // The adapter is supposed to translate failures into typed outcomes;
-        // a throw here means the adapter itself blew up (composition-root
-        // mis-wire). Emit the failed metric + structured log; the member
-        // undelete still committed and remains successful.
-        renewalsMetrics.restoreOutcome(deps.tenant.slug, 'restore_failed');
-        logger.error(
-          {
-            err:
-              restoreErr instanceof Error
-                ? restoreErr.message
-                : String(restoreErr),
-            errName:
-              restoreErr instanceof Error ? restoreErr.name : undefined,
-            memberId,
-            requestId: meta.requestId,
-            cascade: 'f8_undelete_cycle_restore',
-          },
-          'undelete-member: renewals restore threw — member undelete succeeded',
-        );
-      }
-    }
+    await runRenewalsRestoreCascade(memberId, meta, deps);
 
     return ok(restored);
   } catch (e) {

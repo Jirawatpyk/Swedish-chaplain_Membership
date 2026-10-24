@@ -79,6 +79,15 @@ function stubDeps(): BulkActionDeps {
       recordInTx: vi.fn().mockResolvedValue(ok(undefined)),
     },
     clock: { now: () => new Date('2026-04-16T10:00:00Z') },
+    // 126 #2 — archive runs the single-archive cascade.
+    contactRepo: { listLinkedUserIdsForMemberInTx: vi.fn().mockResolvedValue([]) },
+    sessions: { revokeAllForInTx: vi.fn() },
+    invitations: { softConsumePendingForUsersInTx: vi.fn().mockResolvedValue({ revokedCount: 0 }) },
+    broadcastsCascade: { cancelInFlightForMember: vi.fn().mockResolvedValue({ outcome: 'ok', cancelledCount: 0 }) },
+    renewalsCascade: {
+      cancelInFlightForMember: vi.fn().mockResolvedValue({ outcome: 'ok', cancelledCount: 0 }),
+      restoreForMember: vi.fn().mockResolvedValue({ outcome: 'skipped_active_exists' }),
+    },
   };
 }
 

@@ -19,6 +19,8 @@ import { eq } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { bulkAction } from '@/modules/members/application/use-cases/bulk-action';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { noopBroadcastsCascadeAdapter } from '@/modules/members/infrastructure/adapters/broadcasts-cascade-adapter';
+import { noopRenewalsCascadeAdapter } from '@/modules/members/infrastructure/adapters/renewals-cascade-adapter';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { membershipPlans } from '@/modules/plans/infrastructure/db/schema';
 import { tenantInvoiceSettings } from '@/modules/invoicing/infrastructure/db/schema-tenant-invoice-settings';
@@ -120,6 +122,11 @@ describe('bulk-action TOCTOU row lock (staff-review SB-1)', () => {
       memberRepo: full.memberRepo,
       audit: full.audit,
       clock: full.clock,
+      contactRepo: full.contactRepo,
+      sessions: full.sessions,
+      invitations: full.invitations,
+      broadcastsCascade: noopBroadcastsCascadeAdapter,
+      renewalsCascade: noopRenewalsCascadeAdapter,
     };
 
     // Kick off BOTH bulk archive actions simultaneously. The batched
@@ -182,6 +189,11 @@ describe('bulk-action TOCTOU row lock (staff-review SB-1)', () => {
       memberRepo: full.memberRepo,
       audit: full.audit,
       clock: full.clock,
+      contactRepo: full.contactRepo,
+      sessions: full.sessions,
+      invitations: full.invitations,
+      broadcastsCascade: noopBroadcastsCascadeAdapter,
+      renewalsCascade: noopRenewalsCascadeAdapter,
     };
 
     const [first, second] = await Promise.all([
