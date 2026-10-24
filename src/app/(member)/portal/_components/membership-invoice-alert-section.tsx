@@ -25,13 +25,23 @@ const PAYMENT_INITIATE_PATH = '/api/payments/initiate';
 export async function MembershipInvoiceAlertSection({
   tenantId,
   memberId,
+  today,
 }: {
   readonly tenantId: string;
   readonly memberId: string;
+  /**
+   * The page's Bangkok `YYYY-MM-DD` (spec 124 follow-up): /portal/invoices
+   * passes the day its list filter and row badges use, so the alert never
+   * calls a bill overdue above a list that does not. Absent = now.
+   */
+  readonly today?: string;
 }) {
   const read = await loadDashboardOutstanding(tenantId, memberId);
   if (read.error) return null;
-  const alert = selectMembershipInvoiceAlert(read.inputs, bangkokLocalDate(new Date().toISOString()));
+  const alert = selectMembershipInvoiceAlert(
+    read.inputs,
+    today ?? bangkokLocalDate(new Date().toISOString()),
+  );
   if (alert === null) return null;
   const invoiceHref = `/portal/invoices/${alert.id}`;
   const { access } = await loadMembershipAccess(tenantId, memberId);

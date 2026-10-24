@@ -86,6 +86,12 @@ export type PaletteNavigateItem = {
   readonly id: string;
   readonly label: string;
   readonly url: string;
+  /**
+   * English search synonyms, as on actions: the backend matches the id and the
+   * i18n KEY, never the localized label, so a word a user types for the page
+   * ("revenue" for the invoice dashboard) needs to be listed here.
+   */
+  readonly keywords?: readonly string[];
   /** See {@link PaletteFeatureFlag} — stripped by the route when the flag is OFF. */
   readonly feature?: PaletteFeatureFlag;
 };
@@ -284,12 +290,24 @@ const NAVIGATE_REGISTRY: ReadonlyArray<NavigateEntry> = [
     url: '/admin/finance',
     permission: 'invoicing.read',
     feature: 'invoiceDashboard',
+    // Words for its figures; "overdue" / "unpaid" lead to the invoice list instead.
+    keywords: ['revenue', 'collected', 'collections', 'billed', 'billing', 'aging', 'ageing', 'receivables', 'finance'],
   },
   {
     id: 'nav.invoices',
     label: 'palette.navigate.invoicesList',
     url: '/admin/invoices',
     permission: 'invoicing.read',
+    keywords: ['unpaid', 'outstanding'],
+  },
+  {
+    // Spec 124 follow-up — "overdue" lands on the list already filtered to
+    // overdue (the derived `issued` + past-due view), not the whole list.
+    id: 'nav.invoicesOverdue',
+    label: 'palette.navigate.invoicesOverdue',
+    url: '/admin/invoices?status=overdue',
+    permission: 'invoicing.read',
+    keywords: ['overdue', 'past due', 'late'],
   },
   {
     // Verify-fix S1 (2026-04-26): F5 Phase 5 paid-online reconciliation
@@ -484,6 +502,20 @@ function matches(haystack: string, needle: string): boolean {
   return haystack.toLowerCase().includes(needle.toLowerCase());
 }
 
+/**
+ * A navigate synonym matches when the query is part of it ("rev" → revenue)
+ * or a word of the query starts with it ("finances", "overdue invoices") —
+ * word starts only, so "template" never matches "late".
+ */
+function matchesKeyword(keyword: string, q: string): boolean {
+  if (matches(keyword, q)) return true;
+  const k = keyword.toLowerCase();
+  return q
+    .toLowerCase()
+    .split(/\s+/)
+    .some((word) => word.startsWith(k));
+}
+
 // --- Use case ---------------------------------------------------------------
 
 export async function searchPlans(
@@ -547,10 +579,16 @@ export async function searchPlans(
         (a.keywords?.some((k) => matches(k, q)) ?? false),
     )
     .slice(0, limit);
-  // Navigate entries carry no search synonyms (unlike actions), so a plain
-  // key + id match is sufficient.
+  // Navigate entries match the same way: key, id, or an English synonym.
   const navigate = navigatePool
-    .filter((n) => matches(n.label, q) || matches(n.id, q))
+    .filter(
+      (n) =>
+        matches(n.label, q) ||
+        matches(n.id, q) ||
+        (n.keywords?.some((k) => matchesKeyword(k, q)) ?? false),
+    )
+    // Synonyms are a server-side search aid; the client never reads them.
+    .map(({ keywords: _keywords, ...entry }) => entry)
     .slice(0, limit);
 
   return ok({

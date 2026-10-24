@@ -6278,6 +6278,7 @@
       "membersList": "Medlemslista",
       "invoiceDashboard": "Fakturaöversikt",
       "invoicesList": "Fakturalista",
+      "invoicesOverdue": "Fakturor: förfallna",
       "invoicesPaidOnline": "Fakturor: betalda online (avstämning)",
       "creditNotesList": "Kreditnotalista",
       "broadcastsQueue": "Granskningskö för utskick",

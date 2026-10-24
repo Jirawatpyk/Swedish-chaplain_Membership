@@ -97,9 +97,15 @@ vi.mock('@/app/(staff)/admin/invoices/_components/invoice-filters', () => ({
 // Spec 122 US4 — the unpaid-membership alert section (US3's, its own
 // Suspense + reads) renders as a marker carrying the props it was given.
 vi.mock('@/app/(member)/portal/_components/membership-invoice-alert-section', () => ({
-  MembershipInvoiceAlertSection: ({ tenantId, memberId }: { tenantId: string; memberId: string }) => (
-    <div data-marker="invoice-alert" data-tenant={tenantId} data-member={memberId} />
-  ),
+  MembershipInvoiceAlertSection: ({
+    tenantId,
+    memberId,
+    today,
+  }: {
+    tenantId: string;
+    memberId: string;
+    today?: string;
+  }) => <div data-marker="invoice-alert" data-tenant={tenantId} data-member={memberId} data-today={today} />,
 }));
 
 import PortalInvoicesPage from '@/app/(member)/portal/invoices/page';
@@ -278,12 +284,14 @@ describe('PortalInvoicesPage — one clock for the overdue filter', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(instant));
     try {
-      await renderPage({ status: 'overdue' });
+      const html = await renderPage({ status: 'overdue' });
       expect(listInvoicesPagedMock).toHaveBeenCalledTimes(1);
       expect(listInvoicesPagedMock.mock.calls[0]![1]).toMatchObject({
         status: 'overdue',
         today: bangkokDate,
       });
+      // The unpaid-membership alert reads the same day.
+      expect(html).toContain(`data-today="${bangkokDate}"`);
     } finally {
       vi.useRealTimers();
     }
