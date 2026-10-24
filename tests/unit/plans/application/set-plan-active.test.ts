@@ -17,6 +17,7 @@ import {
 } from '@/modules/plans/application/deactivate-plan';
 import { asTenantContext } from '@/modules/tenants';
 import { asPlanSlug, asPlanYear, type Plan } from '@/modules/plans/domain/plan';
+import { hooked, inTxAudit } from './in-tx-hook-mocks';
 
 const tenant = asTenantContext('swecham');
 const planId = asPlanSlug('corporate-standard');
@@ -71,7 +72,7 @@ function makeDeps(overrides: DepsOverrides = {}): ActivatePlanDeps {
       if (r instanceof Error) throw r;
       return r;
     }),
-    setActive: vi.fn(async () => {
+    setActive: hooked(async () => {
       const r = overrides.setActiveResult;
       if (r instanceof Error) throw r;
       return r;
@@ -83,7 +84,7 @@ function makeDeps(overrides: DepsOverrides = {}): ActivatePlanDeps {
     cloneYear: vi.fn(),
   };
 
-  const audit = {
+  const audit = inTxAudit({
     record: vi.fn(async () => {
       if (overrides.auditFail === 'persist_failed') {
         return err({ type: 'persist_failed' as const, message: 'write error' });
@@ -93,7 +94,7 @@ function makeDeps(overrides: DepsOverrides = {}): ActivatePlanDeps {
       }
       return ok(undefined as void);
     }),
-  };
+  });
 
   return {
     tenant,

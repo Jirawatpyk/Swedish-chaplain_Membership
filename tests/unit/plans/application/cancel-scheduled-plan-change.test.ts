@@ -30,11 +30,11 @@ import {
   assertValidScheduledPlanChange,
   type CancelScheduledPlanChangeDeps,
   type CancelScheduledPlanChangeInput,
-  type AuditPort,
   type MutableScheduledPlanChange,
   type ScheduledPlanChange,
   type ScheduledPlanChangeRepo,
 } from '@/modules/plans';
+import { hooked, inTxAudit } from './in-tx-hook-mocks';
 
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -107,7 +107,7 @@ function makeDeps(
       return (r === undefined ? makePending() : r) ?? null;
     }),
     findPendingForCycle: vi.fn(),
-    transitionStatus: vi.fn(async (_t, _id, nextStatus) => {
+    transitionStatus: hooked(async (_t, _id, nextStatus) => {
       const r = overrides.transitionStatusResult;
       if (r instanceof Error) throw r;
       return (
@@ -123,7 +123,7 @@ function makeDeps(
     listForMember: vi.fn(),
   };
 
-  const audit: AuditPort = {
+  const audit = inTxAudit({
     record: vi.fn(async () => {
       switch (overrides.auditResult) {
         case 'persist_failed':
@@ -140,7 +140,7 @@ function makeDeps(
           return ok(undefined as void);
       }
     }),
-  };
+  });
 
   return {
     tenant,
@@ -176,6 +176,7 @@ describe('cancelScheduledPlanChange — happy path', () => {
       tenant,
       SCHEDULED_ID,
       'cancelled',
+      expect.any(Function),
     );
     // Audit: exactly one call, correct event_type + payload shape + reason: null
     expect(deps.audit.record).toHaveBeenCalledTimes(1);
@@ -508,19 +509,14 @@ describe('cancelScheduledPlanChange — audit_failed paths', () => {
     // R3 Batch 4b (R3-I5) — discriminator preserved for alert routing.
     expect(result.error.auditErrorType).toBe('persist_failed');
     expect(result.error.message).toBe('DB connection refused');
-    // R3 Batch 4d (R3-S4) — transitioned row preserved so the route
-    // can return 200 + diagnostic header (the row IS already cancelled;
-    // a 500 would mis-lead the UI into retrying a successful mutation).
-    expect(result.error.transitioned).toBeDefined();
-    expect(result.error.transitioned.status).toBe('cancelled');
-    expect(result.error.transitioned.scheduledChangeId).toBe(SCHEDULED_ID);
-    // Row IS already cancelled at this point — audit failure is NOT
-    // a rollback trigger, but the typed error surfaces to the caller
-    // for monitoring/logging.
+    // 126 #7 — the audit runs in the transition's tx: the throw rolls the
+    // cancel back, so there is no transitioned row to carry.
+    expect('transitioned' in result.error).toBe(false);
     expect(deps.repo.transitionStatus).toHaveBeenCalledWith(
       tenant,
       SCHEDULED_ID,
       'cancelled',
+      expect.any(Function),
     );
   });
 
@@ -535,8 +531,7 @@ describe('cancelScheduledPlanChange — audit_failed paths', () => {
     // R3 Batch 4b (R3-I5) — discriminator preserved.
     expect(result.error.auditErrorType).toBe('invalid_payload');
     expect(result.error.message).toContain('payload.member_id');
-    // R3 Batch 4d (R3-S4) — transitioned row preserved.
-    expect(result.error.transitioned).toBeDefined();
-    expect(result.error.transitioned.status).toBe('cancelled');
+    // 126 #7 — rolled back; no transitioned row.
+    expect('transitioned' in result.error).toBe(false);
   });
 });

@@ -19,7 +19,7 @@ import { z } from 'zod';
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type { AuditPort, ScheduledPlanChangeRepo } from './ports';
-import { recordAuditEvent } from './record-audit-event';
+import { auditInTx, auditFailureMessage, PlanAuditAbort } from './record-audit-event';
 import {
   isTerminalStatus,
   type CancelScheduledPlanChangeError,
@@ -52,10 +52,9 @@ export interface CancelScheduledPlanChangeDeps {
   readonly tenant: TenantContext;
   readonly repo: ScheduledPlanChangeRepo;
   /**
-   * F2 audit emitter. The use-case calls `recordAuditEvent` after the
-   * repo transition lands. A failed audit write returns an
-   * `audit_failed` typed error to the caller — same compliance rule
-   * `scheduleNextRenewalPlanChange` enforces.
+   * F2 audit emitter. 126 #7 — `plan_change_cancelled` is appended in the
+   * transition's tx; a failed audit write rolls the cancel back and
+   * returns `audit_failed`.
    */
   readonly audit: AuditPort;
   readonly actorUserId: string;
@@ -144,8 +143,35 @@ export async function cancelScheduledPlanChange(
       deps.tenant,
       input.scheduledChangeId,
       'cancelled',
+      auditInTx(
+        deps.audit,
+        {
+          tenant: deps.tenant,
+          actorUserId: deps.actorUserId,
+          requestId: deps.requestId,
+          sourceIp: deps.sourceIp,
+        },
+        {
+          event_type: 'plan_change_cancelled',
+          payload: {
+            member_id: input.memberId,
+            scheduled_change_id: input.scheduledChangeId,
+            effective_at_cycle_id: input.effectiveAtCycleId,
+            reason: input.reason ?? null,
+          },
+        },
+      ),
     );
   } catch (e) {
+    // 126 #7 — the audit append failed inside the tx: the cancel rolled
+    // back, so the row is still pending. No TOCTOU recheck needed.
+    if (e instanceof PlanAuditAbort) {
+      return err({
+        code: 'audit_failed',
+        auditErrorType: e.error.type,
+        message: auditFailureMessage(e.error),
+      });
+    }
     // TOCTOU race classification. Between findById (pending) and
     // transitionStatus UPDATE, a concurrent
     // admin can apply/cancel/supersede the row. The repo's
@@ -192,47 +218,6 @@ export async function cancelScheduledPlanChange(
       code: 'server_error',
       recheckFailed: false,
       message: baseMessage,
-    });
-  }
-
-  // Post-tx audit emit — mirror the same post-tx pattern used by
-  // `scheduleNextRenewalPlanChange` + `accept-tier-upgrade`. Runs
-  // OUTSIDE the repo tx; on failure, return `audit_failed` typed
-  // error. The row IS already cancelled at this point — the audit
-  // failure is surfaced to the caller for logging + monitoring, but
-  // is not a roll-back trigger (Constitution Principle VIII: audit
-  // writes are compliance-critical but not transactional with the
-  // domain mutation; same compromise as the schedule use-case).
-  const auditCtx = {
-    tenant: deps.tenant,
-    actorUserId: deps.actorUserId,
-    requestId: deps.requestId,
-    sourceIp: deps.sourceIp,
-  };
-  const auditResult = await recordAuditEvent(deps.audit, auditCtx, {
-    event_type: 'plan_change_cancelled',
-    payload: {
-      member_id: input.memberId,
-      scheduled_change_id: input.scheduledChangeId,
-      effective_at_cycle_id: input.effectiveAtCycleId,
-      reason: input.reason ?? null,
-    },
-  });
-  if (!auditResult.ok) {
-    // Preserve discriminator so the route can attach
-    // `errorId: 'F2.PLAN_CHANGE.CANCEL_AUDIT_*'` with the specific
-    // failure mode visible to alert routing. Carry `transitioned` so
-    // the route can return 200 + diagnostic header instead of a
-    // misleading 500. The row IS already cancelled; the audit failure
-    // is a separate, async-recoverable observability concern.
-    return err({
-      code: 'audit_failed',
-      auditErrorType: auditResult.error.type,
-      message:
-        auditResult.error.type === 'invalid_payload'
-          ? auditResult.error.issues.join('; ')
-          : auditResult.error.message,
-      transitioned,
     });
   }
 

@@ -50,7 +50,13 @@ function makeDeps(): BulkActionDeps {
     memberRepo: {} as never,
     audit: { record: vi.fn(), recordInTx: vi.fn().mockResolvedValue(ok(undefined)) } as never,
     clock: { now: () => new Date('2026-09-05T00:00:00Z') },
-    plans: {} as never,
+    // 126 #2 — archive's cascade deps; never reached by these unarchive cases
+    // except the post-commit restore.
+    contactRepo: {} as never,
+    sessions: {} as never,
+    invitations: {} as never,
+    broadcastsCascade: {} as never,
+    renewalsCascade: { restoreForMember: vi.fn() } as never,
   };
 }
 

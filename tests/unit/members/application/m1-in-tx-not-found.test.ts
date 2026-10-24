@@ -115,6 +115,9 @@ describe('M1 — changePlan surfaces not_found when the in-tx locked read misses
       audit: { record: vi.fn(), recordInTx: vi.fn() },
       // W0-02: changePlan now acquires the soft-delete advisory lock at tx start
       // and re-checks the new plan's deletion state under the lock (code-review #1).
+      // 126 #5 — the plan age rule's primary-contact DOB + clock.
+      contactRepo: { listByMember: vi.fn().mockResolvedValue(ok([])) },
+      clock: { now: () => new Date('2026-10-24T00:00:00Z') },
       planAdvisoryLock: {
         acquire: vi.fn().mockResolvedValue(undefined),
         isPlanSoftDeletedInTx: vi.fn().mockResolvedValue(false),
@@ -179,6 +182,9 @@ describe('changePlan refuses to assign a member to a soft-deleted plan', () => {
           .mockResolvedValue(ok(planSummary(opts.snapshotSoftDeleted))),
       } as unknown as ChangePlanDeps['plans'],
       audit: { record: vi.fn(), recordInTx: vi.fn().mockResolvedValue(ok(undefined)) },
+      // 126 #5 — the plan age rule's primary-contact DOB + clock.
+      contactRepo: { listByMember: vi.fn().mockResolvedValue(ok([])) },
+      clock: { now: () => new Date('2026-10-24T00:00:00Z') },
       planAdvisoryLock: { acquire, isPlanSoftDeletedInTx },
     } as unknown as ChangePlanDeps;
     return { deps, acquire, isPlanSoftDeletedInTx, updateFieldsInTx };
