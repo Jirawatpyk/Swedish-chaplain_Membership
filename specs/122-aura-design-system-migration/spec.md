@@ -840,7 +840,9 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **The bug:** at 390 the admin credit-note detail page scrolled sideways by about 250px.
   - The "Email a copy" button's hidden description (`<span class="sr-only">`, its `aria-describedby`) sits directly in AURA's page-header actions.
   - Below 640px, AURA gives every child there `min-width: max-content`, which beat the span's 1px width and made it 636px wide.
-- **The fix:** `.sr-only { min-width: 0 }` in the utilities layer of `globals.css`. It is a stand-in until AURA #176 (Addendum 77). It is correct for every visually hidden element, so it also covers any later hint placed in a full-width actions row.
+- **The fix:** AURA 5.61.0, which shipped #176 (Addendum 77) the same day. The share rule now skips visually hidden children (`.sr-only`, `[hidden]`, an inline `position: absolute` and similar).
+  - The `.sr-only { min-width: 0 }` stand-in drafted in #634 was dropped before merge.
+  - A test guards that `globals.css` keeps no such rule.
 
 ## User Scenarios & Testing *(mandatory)*
 
