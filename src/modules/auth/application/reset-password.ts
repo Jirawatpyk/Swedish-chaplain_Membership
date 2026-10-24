@@ -41,6 +41,7 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 import { db } from '@/lib/db';
 import type { ResetTokenId } from '@/modules/auth/domain/branded';
@@ -190,8 +191,13 @@ export async function resetPassword(
     killed = await db.transaction(async (tx) => {
       // 6a. Consume token FIRST (W-01 ordering preserved). If a later
       //     step in the tx throws, the markResetConsumedInTx is rolled
-      //     back atomically.
-      await deps.tokens.markResetConsumedInTx(tx, input.token, now);
+      //     back atomically. 125 — the consume is guarded (live row
+      //     only), so a concurrent redemption of the same link that
+      //     passed the pre-tx read loses here instead of also committing.
+      const consumed = await deps.tokens.markResetConsumedInTx(tx, input.token, now);
+      if (!consumed) {
+        throw new TxAbort<ResetPasswordError>({ code: 'link-invalid', reason: 'used' });
+      }
       await deps.tokens.invalidateAllUnconsumedForUserInTx(tx, user.id, now);
 
       // 6b. Persist new password + clear lockout state (G8 — single
@@ -230,7 +236,7 @@ export async function resetPassword(
       return err(e.error as ResetPasswordError);
     }
     logger.error(
-      { err: e, requestId: input.requestId },
+      { err: errKind(e), requestId: input.requestId },
       'reset_password.tx_failed',
     );
     throw e;

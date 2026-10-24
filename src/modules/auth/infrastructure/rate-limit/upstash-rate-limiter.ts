@@ -24,6 +24,7 @@ import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 import { rateLimitPrefix } from './rate-limit-prefix';
 
@@ -204,7 +205,7 @@ class UpstashRateLimiter implements RateLimiter {
     } catch (error) {
       const keyKind = key.split(':').slice(0, 2).join(':') || 'unknown';
       logger.warn(
-        { err: error, keyKind, max, windowSeconds, fallback: true },
+        { err: errKind(error), keyKind, max, windowSeconds, fallback: true },
         'rate-limit peek upstream unreachable, falling back to in-memory bucket',
       );
       authMetrics.redisFallback();
@@ -237,7 +238,7 @@ class UpstashRateLimiter implements RateLimiter {
       // IDs / emails / user IDs in logs.
       const keyKind = key.split(':').slice(0, 2).join(':') || 'unknown';
       logger.warn(
-        { err: error, keyKind, max, windowSeconds, fallback: true },
+        { err: errKind(error), keyKind, max, windowSeconds, fallback: true },
         'rate-limit upstream unreachable, falling back to in-memory bucket',
       );
       authMetrics.redisFallback();

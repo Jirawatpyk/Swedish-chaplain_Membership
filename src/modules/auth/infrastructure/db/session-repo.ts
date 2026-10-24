@@ -110,48 +110,45 @@ export interface SessionRepo {
   ): Promise<number>;
 }
 
+// 125 — the tx and non-tx variants share one query each (see token-repo.ts).
+type Queryable = typeof db | DbTx;
+
+async function createQ(
+  q: Queryable,
+  args: { userId: UserId; sourceIp: string; now: Date },
+): Promise<Session> {
+  const plaintext = generatePlaintextSessionId();
+  const hash = sha256Hex(plaintext);
+  const expiresAt = new Date(args.now.getTime() + ABSOLUTE_LIFETIME_MS);
+  const rows = await q
+    .insert(sessions)
+    .values({
+      id: hash,
+      userId: args.userId,
+      createdAt: args.now,
+      lastSeenAt: args.now,
+      expiresAt,
+      sourceIp: args.sourceIp,
+    })
+    .returning();
+  const row = rows[0];
+  if (!row) throw new Error('session-repo.create: no row returned');
+  return toDomainCreated(row, plaintext);
+}
+
+async function deleteByUserIdQ(q: Queryable, userId: UserId): Promise<number> {
+  const result = await q
+    .delete(sessions)
+    .where(eq(sessions.userId, userId))
+    .returning({ id: sessions.id });
+  return result.length;
+}
+
 // Object-literal implementation — no class wrapper; see audit-repo.ts
 // for the rationale. Matches the rest of the codebase's adapter style.
 export const sessionRepo: SessionRepo = {
-  async create(args) {
-    const plaintext = generatePlaintextSessionId();
-    const hash = sha256Hex(plaintext);
-    const expiresAt = new Date(args.now.getTime() + ABSOLUTE_LIFETIME_MS);
-    const rows = await db
-      .insert(sessions)
-      .values({
-        id: hash,
-        userId: args.userId,
-        createdAt: args.now,
-        lastSeenAt: args.now,
-        expiresAt,
-        sourceIp: args.sourceIp,
-      })
-      .returning();
-    const row = rows[0];
-    if (!row) throw new Error('session-repo.create: no row returned');
-    return toDomainCreated(row, plaintext);
-  },
-
-  async createInTx(tx, args) {
-    const plaintext = generatePlaintextSessionId();
-    const hash = sha256Hex(plaintext);
-    const expiresAt = new Date(args.now.getTime() + ABSOLUTE_LIFETIME_MS);
-    const rows = await tx
-      .insert(sessions)
-      .values({
-        id: hash,
-        userId: args.userId,
-        createdAt: args.now,
-        lastSeenAt: args.now,
-        expiresAt,
-        sourceIp: args.sourceIp,
-      })
-      .returning();
-    const row = rows[0];
-    if (!row) throw new Error('session-repo.createInTx: no row returned');
-    return toDomainCreated(row, plaintext);
-  },
+  create: (args) => createQ(db, args),
+  createInTx: (tx, args) => createQ(tx, args),
 
   async findById(plaintext) {
     const rows = await db
@@ -174,21 +171,8 @@ export const sessionRepo: SessionRepo = {
     await db.delete(sessions).where(eq(sessions.id, sha256Hex(plaintext)));
   },
 
-  async deleteByUserId(userId) {
-    const result = await db
-      .delete(sessions)
-      .where(eq(sessions.userId, userId))
-      .returning({ id: sessions.id });
-    return result.length;
-  },
-
-  async deleteByUserIdInTx(tx, userId) {
-    const result = await tx
-      .delete(sessions)
-      .where(eq(sessions.userId, userId))
-      .returning({ id: sessions.id });
-    return result.length;
-  },
+  deleteByUserId: (userId) => deleteByUserIdQ(db, userId),
+  deleteByUserIdInTx: (tx, userId) => deleteByUserIdQ(tx, userId),
 
   async deleteByUserIdExcept(userId, keepPlaintext) {
     // Delete every session for this user EXCEPT the one whose hash

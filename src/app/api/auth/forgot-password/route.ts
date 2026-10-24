@@ -5,7 +5,7 @@
  * malformed (400) or the rate limit fires (429). This is spec FR-016
  * enumeration protection.
  */
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, after, type NextRequest } from 'next/server';
 import { z } from 'zod';
 import { forgotPassword, type EmailLocale } from '@/modules/auth';
 import { getClientIp } from '@/lib/client-ip';
@@ -51,6 +51,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     sourceIp: getClientIp(request),
     requestId,
     locale,
+    // 125 — email send + audit run after the response (FR-016 timing).
+    defer: after,
   });
 
   if (!result.ok) {

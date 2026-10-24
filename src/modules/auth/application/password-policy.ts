@@ -19,6 +19,7 @@
  */
 import { createHash } from 'node:crypto';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { hasStrongComposition } from '@/lib/password-composition';
 
 export type PasswordPolicyError =
@@ -157,7 +158,7 @@ async function checkHibp(password: string): Promise<number> {
     return 0;
   } catch (error) {
     logger.warn(
-      { err: error },
+      { err: errKind(error) },
       'HIBP unreachable — failing open on breach check (security.md T-11)',
     );
     return 0;

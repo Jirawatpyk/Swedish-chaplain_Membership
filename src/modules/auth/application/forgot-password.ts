@@ -27,6 +27,7 @@
  */
 import { Result, err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
 // Owner-role tx for the atomic stale-invalidate + fresh-token insert (P2
 // Wave-0). Same Path-C rationale as create-user.ts: password_reset_tokens is a
@@ -60,6 +61,13 @@ export interface ForgotPasswordInput {
   readonly sourceIp: string;
   readonly requestId: string;
   readonly locale?: EmailLocale | undefined;
+  /**
+   * 125 — schedules the email send + audit rows. The route passes
+   * next/server `after`, so they run AFTER the response and a registered
+   * address answers in the same time as an unknown one (FR-016 timing).
+   * Default: run the task inline and await it (scripts, tests).
+   */
+  readonly defer?: ((task: () => Promise<void>) => void | Promise<void>) | undefined;
 }
 
 export type ForgotPasswordSuccess = { readonly ok: true };
@@ -173,51 +181,66 @@ export async function forgotPassword(
   });
   void token; // referenced by audit emit below; keep for clarity.
 
-  // 5. Send the email. Failure is logged but does NOT change the HTTP
-  //    response (enumeration safety).
-  const built = deps.buildResetPasswordEmail({
-    toEmail: user.email,
-    token: plaintext,
-    locale: input.locale,
-  });
-  const sendResult = await deps.email.send({
-    to: user.email,
-    subject: built.subject,
-    html: built.html,
-    text: built.text,
-  });
-  if (!sendResult.ok) {
-    logger.error(
-      {
-        requestId: input.requestId,
-        errCode: sendResult.error.code,
-      },
-      'forgot_password.email_send_failed',
-    );
-    // B5 — dedicated audit event so the trail records the failure
-    // alongside the password_reset_requested row below. Pre-B5 the
-    // audit trail read "request issued + presumed email sent" when
-    // Resend retries had actually exhausted — operators investigating
-    // "I never got the email" had no audit link to the cause.
-    await deps.audit.append({
-      eventType: 'password_reset_email_failed',
-      actorUserId: user.id,
-      targetUserId: user.id,
-      sourceIp: input.sourceIp,
-      summary: `Resend exhausted: ${sendResult.error.code}`,
-      requestId: input.requestId,
-    });
-  }
+  // 5–6. Email send + audit run through `defer` (125): awaited inline
+  //      they made a registered address measurably slower than an
+  //      unknown one (Resend round-trip + retries). A throw inside the
+  //      task has no caller once the response is gone, so it is logged.
+  const deliver = async (): Promise<void> => {
+    try {
+      // 5. Send the email. Failure is logged but does NOT change the
+      //    HTTP response (enumeration safety).
+      const built = deps.buildResetPasswordEmail({
+        toEmail: user.email,
+        token: plaintext,
+        locale: input.locale,
+      });
+      const sendResult = await deps.email.send({
+        to: user.email,
+        subject: built.subject,
+        html: built.html,
+        text: built.text,
+      });
+      if (!sendResult.ok) {
+        logger.error(
+          {
+            requestId: input.requestId,
+            errCode: sendResult.error.code,
+          },
+          'forgot_password.email_send_failed',
+        );
+        // B5 — dedicated audit event so the trail records the failure
+        // alongside the password_reset_requested row below. Pre-B5 the
+        // audit trail read "request issued + presumed email sent" when
+        // Resend retries had actually exhausted — operators investigating
+        // "I never got the email" had no audit link to the cause.
+        await deps.audit.append({
+          eventType: 'password_reset_email_failed',
+          actorUserId: user.id,
+          targetUserId: user.id,
+          sourceIp: input.sourceIp,
+          summary: `Resend exhausted: ${sendResult.error.code}`,
+          requestId: input.requestId,
+        });
+      }
 
-  // 6. Audit (only for existing active accounts)
-  await deps.audit.append({
-    eventType: 'password_reset_requested',
-    actorUserId: user.id,
-    targetUserId: user.id,
-    sourceIp: input.sourceIp,
-    summary: 'password reset requested',
-    requestId: input.requestId,
-  });
+      // 6. Audit (only for existing active accounts)
+      await deps.audit.append({
+        eventType: 'password_reset_requested',
+        actorUserId: user.id,
+        targetUserId: user.id,
+        sourceIp: input.sourceIp,
+        summary: 'password reset requested',
+        requestId: input.requestId,
+      });
+    } catch (e) {
+      logger.error(
+        { err: errKind(e), requestId: input.requestId },
+        'forgot_password.deferred_failed',
+      );
+    }
+  };
+  const defer = input.defer ?? ((task: () => Promise<void>) => task());
+  await defer(deliver);
 
   return ok({ ok: true });
 }

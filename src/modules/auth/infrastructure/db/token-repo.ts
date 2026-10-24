@@ -21,7 +21,7 @@
  * invitations must be re-sent by an admin. Acceptable at SweCham
  * scale (≤1 admin + ~131 members; one-time operational cost).
  */
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import { db, type DbTx } from '@/lib/db';
 import {
   invitations,
@@ -144,13 +144,18 @@ export interface TokenRepo {
     tx: DbTx,
     plaintext: ResetTokenId,
   ): Promise<PasswordResetToken | null>;
-  markResetConsumed(plaintext: ResetTokenId, now: Date): Promise<void>;
+  /**
+   * Consume a live (unconsumed, unexpired) reset token. Returns `false`
+   * when no live row matched — already used, expired, or a concurrent
+   * redemption won the race (125).
+   */
+  markResetConsumed(plaintext: ResetTokenId, now: Date): Promise<boolean>;
   /** Tx-scoped variant of `markResetConsumed` (Path C — A4). */
   markResetConsumedInTx(
     tx: DbTx,
     plaintext: ResetTokenId,
     now: Date,
-  ): Promise<void>;
+  ): Promise<boolean>;
   /**
    * Mark every still-unconsumed reset token for a user as consumed.
    * Used by `forgotPassword` to invalidate a stale token before issuing
@@ -195,206 +200,189 @@ export interface TokenRepo {
     tx: DbTx,
     plaintext: InvitationTokenId,
   ): Promise<Invitation | null>;
+  /** Guarded single-use consume; `false` = no live row matched (125). */
   markInvitationConsumed(
     plaintext: InvitationTokenId,
     now: Date,
-  ): Promise<void>;
+  ): Promise<boolean>;
   /** Tx-scoped variant of `markInvitationConsumed` (Path C — A3). */
   markInvitationConsumedInTx(
     tx: DbTx,
     plaintext: InvitationTokenId,
     now: Date,
-  ): Promise<void>;
+  ): Promise<boolean>;
+}
+
+/// 125 — each query is written ONCE against a `Queryable` (the global `db`
+// or a caller's tx); the non-tx and `*InTx` methods below are thin
+// wrappers, so a guard added to one can no longer be missed in its twin.
+type Queryable = typeof db | DbTx;
+
+async function createResetQ(
+  q: Queryable,
+  args: { userId: UserId; now: Date },
+): Promise<CreateResetResult> {
+  const plaintext = generatePlaintextToken();
+  const hash = sha256Hex(plaintext);
+  const expiresAt = new Date(args.now.getTime() + RESET_TOKEN_TTL_MS);
+  const rows = await q
+    .insert(passwordResetTokens)
+    .values({
+      id: hash,
+      userId: args.userId,
+      createdAt: args.now,
+      expiresAt,
+    })
+    .returning();
+  const row = rows[0];
+  if (!row) throw new Error('token-repo.createReset: no row returned');
+  return {
+    plaintext: asResetTokenId(plaintext),
+    token: toDomainReset(row),
+  };
+}
+
+async function findResetByIdQ(
+  q: Queryable,
+  plaintext: ResetTokenId,
+): Promise<PasswordResetToken | null> {
+  const rows = await q
+    .select()
+    .from(passwordResetTokens)
+    .where(eq(passwordResetTokens.id, sha256Hex(plaintext)))
+    .limit(1);
+  const row = rows[0];
+  return row ? toDomainReset(row) : null;
+}
+
+/**
+ * 125 — guarded single-use consume. Matches only a row that is still
+ * unconsumed AND unexpired at `now`; a concurrent redemption that lost
+ * the race waits on the winner's row lock, then matches 0 rows. Returns
+ * whether THIS call consumed the token.
+ */
+async function markResetConsumedQ(
+  q: Queryable,
+  plaintext: ResetTokenId,
+  now: Date,
+): Promise<boolean> {
+  const rows = await q
+    .update(passwordResetTokens)
+    .set({ consumedAt: now })
+    .where(
+      and(
+        eq(passwordResetTokens.id, sha256Hex(plaintext)),
+        isNull(passwordResetTokens.consumedAt),
+        gt(passwordResetTokens.expiresAt, now),
+      ),
+    )
+    .returning({ id: passwordResetTokens.id });
+  return rows.length === 1;
+}
+
+async function invalidateAllUnconsumedForUserQ(
+  q: Queryable,
+  userId: UserId,
+  now: Date,
+): Promise<number> {
+  const result = await q
+    .update(passwordResetTokens)
+    .set({ consumedAt: now })
+    .where(
+      and(
+        eq(passwordResetTokens.userId, userId),
+        isNull(passwordResetTokens.consumedAt),
+      ),
+    )
+    .returning({ id: passwordResetTokens.id });
+  return result.length;
+}
+
+async function createInvitationQ(
+  q: Queryable,
+  args: {
+    userId: UserId;
+    invitedByUserId: UserId;
+    intendedRole: Role;
+    now: Date;
+  },
+): Promise<CreateInvitationResult> {
+  const plaintext = generatePlaintextToken();
+  const hash = sha256Hex(plaintext);
+  const expiresAt = new Date(args.now.getTime() + INVITATION_TTL_MS);
+  const rows = await q
+    .insert(invitations)
+    .values({
+      id: hash,
+      userId: args.userId,
+      invitedByUserId: args.invitedByUserId,
+      intendedRole: args.intendedRole,
+      createdAt: args.now,
+      expiresAt,
+    })
+    .returning();
+  const row = rows[0];
+  if (!row) throw new Error('token-repo.createInvitation: no row returned');
+  return {
+    plaintext: asInvitationTokenId(plaintext),
+    invitation: toDomainInvitation(row),
+  };
+}
+
+async function findInvitationByIdQ(
+  q: Queryable,
+  plaintext: InvitationTokenId,
+): Promise<Invitation | null> {
+  const rows = await q
+    .select()
+    .from(invitations)
+    .where(eq(invitations.id, sha256Hex(plaintext)))
+    .limit(1);
+  const row = rows[0];
+  return row ? toDomainInvitation(row) : null;
+}
+
+/** 125 — guarded single-use consume; see `markResetConsumedQ`. */
+async function markInvitationConsumedQ(
+  q: Queryable,
+  plaintext: InvitationTokenId,
+  now: Date,
+): Promise<boolean> {
+  const rows = await q
+    .update(invitations)
+    .set({ consumedAt: now })
+    .where(
+      and(
+        eq(invitations.id, sha256Hex(plaintext)),
+        isNull(invitations.consumedAt),
+        gt(invitations.expiresAt, now),
+      ),
+    )
+    .returning({ id: invitations.id });
+  return rows.length === 1;
 }
 
 // Object-literal implementation — no class wrapper; see audit-repo.ts
 // for the rationale.
 export const tokenRepo: TokenRepo = {
-  async createReset(args: {
-    userId: UserId;
-    now: Date;
-  }): Promise<CreateResetResult> {
-    const plaintext = generatePlaintextToken();
-    const hash = sha256Hex(plaintext);
-    const expiresAt = new Date(args.now.getTime() + RESET_TOKEN_TTL_MS);
-    const rows = await db
-      .insert(passwordResetTokens)
-      .values({
-        id: hash,
-        userId: args.userId,
-        createdAt: args.now,
-        expiresAt,
-      })
-      .returning();
-    const row = rows[0];
-    if (!row) throw new Error('token-repo.createReset: no row returned');
-    return {
-      plaintext: asResetTokenId(plaintext),
-      token: toDomainReset(row),
-    };
-  },
-
-  async createResetInTx(tx, args): Promise<CreateResetResult> {
-    const plaintext = generatePlaintextToken();
-    const hash = sha256Hex(plaintext);
-    const expiresAt = new Date(args.now.getTime() + RESET_TOKEN_TTL_MS);
-    const rows = await tx
-      .insert(passwordResetTokens)
-      .values({
-        id: hash,
-        userId: args.userId,
-        createdAt: args.now,
-        expiresAt,
-      })
-      .returning();
-    const row = rows[0];
-    if (!row) throw new Error('token-repo.createResetInTx: no row returned');
-    return {
-      plaintext: asResetTokenId(plaintext),
-      token: toDomainReset(row),
-    };
-  },
-
-  async findResetById(plaintext) {
-    const rows = await db
-      .select()
-      .from(passwordResetTokens)
-      .where(eq(passwordResetTokens.id, sha256Hex(plaintext)))
-      .limit(1);
-    const row = rows[0];
-    return row ? toDomainReset(row) : null;
-  },
-
-  async findResetByIdInTx(tx, plaintext) {
-    const rows = await tx
-      .select()
-      .from(passwordResetTokens)
-      .where(eq(passwordResetTokens.id, sha256Hex(plaintext)))
-      .limit(1);
-    const row = rows[0];
-    return row ? toDomainReset(row) : null;
-  },
-
-  async markResetConsumed(plaintext, now) {
-    await db
-      .update(passwordResetTokens)
-      .set({ consumedAt: now })
-      .where(eq(passwordResetTokens.id, sha256Hex(plaintext)));
-  },
-
-  async markResetConsumedInTx(tx, plaintext, now) {
-    await tx
-      .update(passwordResetTokens)
-      .set({ consumedAt: now })
-      .where(eq(passwordResetTokens.id, sha256Hex(plaintext)));
-  },
-
-  async invalidateAllUnconsumedForUser(userId, now) {
-    const result = await db
-      .update(passwordResetTokens)
-      .set({ consumedAt: now })
-      .where(
-        and(
-          eq(passwordResetTokens.userId, userId),
-          isNull(passwordResetTokens.consumedAt),
-        ),
-      )
-      .returning({ id: passwordResetTokens.id });
-    return result.length;
-  },
-
-  async invalidateAllUnconsumedForUserInTx(tx, userId, now) {
-    const result = await tx
-      .update(passwordResetTokens)
-      .set({ consumedAt: now })
-      .where(
-        and(
-          eq(passwordResetTokens.userId, userId),
-          isNull(passwordResetTokens.consumedAt),
-        ),
-      )
-      .returning({ id: passwordResetTokens.id });
-    return result.length;
-  },
-
-  async createInvitation(args) {
-    const plaintext = generatePlaintextToken();
-    const hash = sha256Hex(plaintext);
-    const expiresAt = new Date(args.now.getTime() + INVITATION_TTL_MS);
-    const rows = await db
-      .insert(invitations)
-      .values({
-        id: hash,
-        userId: args.userId,
-        invitedByUserId: args.invitedByUserId,
-        intendedRole: args.intendedRole,
-        createdAt: args.now,
-        expiresAt,
-      })
-      .returning();
-    const row = rows[0];
-    if (!row) throw new Error('token-repo.createInvitation: no row returned');
-    return {
-      plaintext: asInvitationTokenId(plaintext),
-      invitation: toDomainInvitation(row),
-    };
-  },
-
-  async createInvitationInTx(tx, args) {
-    const plaintext = generatePlaintextToken();
-    const hash = sha256Hex(plaintext);
-    const expiresAt = new Date(args.now.getTime() + INVITATION_TTL_MS);
-    const rows = await tx
-      .insert(invitations)
-      .values({
-        id: hash,
-        userId: args.userId,
-        invitedByUserId: args.invitedByUserId,
-        intendedRole: args.intendedRole,
-        createdAt: args.now,
-        expiresAt,
-      })
-      .returning();
-    const row = rows[0];
-    if (!row)
-      throw new Error('token-repo.createInvitationInTx: no row returned');
-    return {
-      plaintext: asInvitationTokenId(plaintext),
-      invitation: toDomainInvitation(row),
-    };
-  },
-
-  async findInvitationById(plaintext) {
-    const rows = await db
-      .select()
-      .from(invitations)
-      .where(eq(invitations.id, sha256Hex(plaintext)))
-      .limit(1);
-    const row = rows[0];
-    return row ? toDomainInvitation(row) : null;
-  },
-
-  async findInvitationByIdInTx(tx, plaintext) {
-    const rows = await tx
-      .select()
-      .from(invitations)
-      .where(eq(invitations.id, sha256Hex(plaintext)))
-      .limit(1);
-    const row = rows[0];
-    return row ? toDomainInvitation(row) : null;
-  },
-
-  async markInvitationConsumed(plaintext, now) {
-    await db
-      .update(invitations)
-      .set({ consumedAt: now })
-      .where(eq(invitations.id, sha256Hex(plaintext)));
-  },
-
-  async markInvitationConsumedInTx(tx, plaintext, now) {
-    await tx
-      .update(invitations)
-      .set({ consumedAt: now })
-      .where(eq(invitations.id, sha256Hex(plaintext)));
-  },
+  createReset: (args) => createResetQ(db, args),
+  createResetInTx: (tx, args) => createResetQ(tx, args),
+  findResetById: (plaintext) => findResetByIdQ(db, plaintext),
+  findResetByIdInTx: (tx, plaintext) => findResetByIdQ(tx, plaintext),
+  markResetConsumed: (plaintext, now) => markResetConsumedQ(db, plaintext, now),
+  markResetConsumedInTx: (tx, plaintext, now) =>
+    markResetConsumedQ(tx, plaintext, now),
+  invalidateAllUnconsumedForUser: (userId, now) =>
+    invalidateAllUnconsumedForUserQ(db, userId, now),
+  invalidateAllUnconsumedForUserInTx: (tx, userId, now) =>
+    invalidateAllUnconsumedForUserQ(tx, userId, now),
+  createInvitation: (args) => createInvitationQ(db, args),
+  createInvitationInTx: (tx, args) => createInvitationQ(tx, args),
+  findInvitationById: (plaintext) => findInvitationByIdQ(db, plaintext),
+  findInvitationByIdInTx: (tx, plaintext) =>
+    findInvitationByIdQ(tx, plaintext),
+  markInvitationConsumed: (plaintext, now) =>
+    markInvitationConsumedQ(db, plaintext, now),
+  markInvitationConsumedInTx: (tx, plaintext, now) =>
+    markInvitationConsumedQ(tx, plaintext, now),
 };

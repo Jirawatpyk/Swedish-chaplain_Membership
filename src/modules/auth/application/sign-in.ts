@@ -13,15 +13,18 @@
  *      - audit `sign_in_failure` with actor 'anonymous'
  *      - return Err(invalid-credentials) — same generic message as wrong
  *        password (spec FR-016)
- *   4. If user is `disabled` → audit failure, return Err(account-disabled).
- *   5. If user is locked (`lockedUntil > now`) → audit failure, return
- *      Err(account-locked).
+ *   4. (125: the `disabled` check moved below the password check — 6b.)
+ *   5. If user is locked (`lockedUntil > now`) → verifyDummy, audit
+ *      failure, return Err(account-locked). If an earlier lock has
+ *      expired, restart the failed count (FR-013 window).
  *   6. Verify password. On miss:
  *      - increment failed count
  *      - if count >= 5 → set lockedUntil = now + 15 min, audit
  *        `lockout_triggered`
  *      - audit `sign_in_failure`
  *      - return Err(invalid-credentials)
+ *   6b. Password correct but user is `disabled` → audit failure, return
+ *      Err(account-disabled) — only the password holder learns it.
  *   7. Verify portal: admin/manager must sign in via 'staff', member via
  *      'member'. Mismatch → return Err(invalid-credentials) (no portal leak).
  *   8. On success:
@@ -201,18 +204,10 @@ async function signInImpl(
 
   const { user, passwordHash } = found;
 
-  // 3b. Disabled
-  if (user.status === 'disabled') {
-    await deps.audit.append({
-      eventType: 'sign_in_failure',
-      actorUserId: user.id,
-      targetUserId: user.id,
-      sourceIp: input.sourceIp,
-      summary: 'sign-in attempt on disabled account',
-      requestId: input.requestId,
-    });
-    return err({ code: 'account-disabled' });
-  }
+  // 3b. Disabled — checked only AFTER the password verifies (step 5b,
+  //     125): answering `account-disabled` here, without the password
+  //     and without the argon2 cost, confirmed to anyone that the
+  //     address has an account (FR-016 / T-03).
 
   // 3c. Pending (never redeemed invitation) — same generic response.
   // (Truthy check on passwordHash avoids tripping the no-restricted-syntax
@@ -268,6 +263,10 @@ async function signInImpl(
   // 4. Lockout check — `isLocked` narrows the type so `lockedUntil` is
   //    `Date`, not `Date | null`. No non-null assertion needed.
   if (isLocked(user, now)) {
+    // 125 — pay the argon2 cost so a locked account answers in the same
+    // time as every other branch (T-03). The password is NOT verified:
+    // a lockout must not keep serving as a guess oracle.
+    await deps.hasher.verifyDummy(input.password);
     const retryAfter = Math.ceil((user.lockedUntil.getTime() - now.getTime()) / 1000);
     await deps.audit.append({
       eventType: 'sign_in_failure',
@@ -278,6 +277,13 @@ async function signInImpl(
       requestId: input.requestId,
     });
     return err({ code: 'account-locked', retryAfterSeconds: retryAfter });
+  }
+
+  // 4b. An earlier lock has expired — FR-013 counts 5 failures within
+  //     ONE window, so the post-lock count restarts. Without this the
+  //     count stays at ≥5 and the next single wrong password re-locks.
+  if (user.lockedUntil !== null) {
+    await deps.users.clearFailedCount(user.id);
   }
 
   // 5. Verify password (B4 — catch MalformedHashError separately so a
@@ -331,6 +337,21 @@ async function signInImpl(
       requestId: input.requestId,
     });
     return err({ code: 'invalid-credentials' });
+  }
+
+  // 5b. Disabled (125 — moved below the password check): only someone
+  //     who knows the password learns the account is disabled; a wrong
+  //     password took the normal count/lockout path above.
+  if (user.status === 'disabled') {
+    await deps.audit.append({
+      eventType: 'sign_in_failure',
+      actorUserId: user.id,
+      targetUserId: user.id,
+      sourceIp: input.sourceIp,
+      summary: 'sign-in attempt on disabled account',
+      requestId: input.requestId,
+    });
+    return err({ code: 'account-disabled' });
   }
 
   // 6. Portal mismatch — same generic response (no portal leak)
