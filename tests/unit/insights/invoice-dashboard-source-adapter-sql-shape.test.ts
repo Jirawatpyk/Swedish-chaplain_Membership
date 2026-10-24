@@ -137,7 +137,7 @@ describe('tenancy — every table reference carries its own tenant_id predicate'
     ]);
   });
 
-  it('all seven adapter statements', async () => {
+  it('all eight adapter statements', async () => {
     queries.length = 0;
     const range = { from: '2026-01-01', to: '2026-06-15' };
     const a = invoiceDashboardSourceAdapter;
@@ -148,7 +148,8 @@ describe('tenancy — every table reference carries its own tenant_id predicate'
     await a.attentionCounts(CTX, FILTERS, new Date('2026-06-15T05:00:00Z'));
     await a.oldestOverdue(CTX, FILTERS, '2026-06-15', 6);
     await a.hasNonDraftInvoice(CTX);
-    expect(queries).toHaveLength(7);
+    await a.draftCount(CTX, FILTERS);
+    expect(queries).toHaveLength(8);
 
     const allTables = new Set<string>();
     const allRefs: string[] = [];
@@ -161,7 +162,8 @@ describe('tenancy — every table reference carries its own tenant_id predicate'
       allRefs.push(...refs);
     }
     // Positive control: the parse sees every money table and the alias.
-    expect([...allTables].sort()).toEqual(['credit_notes', 'invoices', 'payments', 'refunds']);
+    // `events` (124 follow-up): Oldest overdue names an event invoice by its event.
+    expect([...allTables].sort()).toEqual(['credit_notes', 'events', 'invoices', 'payments', 'refunds']);
     expect(allRefs).toContain('later_attempt');
   });
 });

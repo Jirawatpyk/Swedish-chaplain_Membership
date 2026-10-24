@@ -67,6 +67,9 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
       const tiles = unwrap(await loadInvoiceDashboardTiles(tenant.ctx, input(), deps));
       const aging = unwrap(await loadInvoiceDashboardAging(tenant.ctx, input(), deps));
       expect(tiles.outstanding).toEqual(EXPECTED.outstanding);
+      // The header's "drafts not counted": every draft under the filters, the
+      // same rows Needs attention splits into manual and auto-renewal.
+      expect(tiles.draftsNotCounted).toBe(EXPECTED.attention.manualDrafts + EXPECTED.attention.autoRenewalDrafts);
       expect(aging.totalSatang).toBe(EXPECTED.outstanding.amountSatang);
       expect(aging.count).toBe(EXPECTED.outstanding.count);
       for (const row of aging.buckets) {
@@ -214,6 +217,17 @@ describe('invoice dashboard figures (spec 124 § Figure definitions)', () => {
         dueDate: '2026-03-16',
         daysPastDue: 91,
         amountSatang: 160_000n,
+        // The board's For column: an event invoice names its event.
+        subject: 'event',
+        planYear: null,
+        eventName: 'Dashboard Gala',
+      });
+      // A membership invoice gives its plan year (rendered "Membership 2025").
+      expect(result.rows[1]).toMatchObject({
+        invoiceId: seeded.ids.iD61,
+        subject: 'membership',
+        planYear: 2025,
+        eventName: null,
       });
     });
 

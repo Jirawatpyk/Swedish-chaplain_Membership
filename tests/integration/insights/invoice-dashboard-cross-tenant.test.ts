@@ -55,8 +55,8 @@ describe('invoice dashboard — cross-tenant isolation (Principle I)', () => {
     user = await createActiveTestUser('admin');
     tenantA = await createTestTenant();
     tenantB = await createTestTenant();
-    seededA = await seedInvoiceDashboardScenario(tenantA, user, 1n);
-    seededB = await seedInvoiceDashboardScenario(tenantB, user, 10n);
+    seededA = await seedInvoiceDashboardScenario(tenantA, user, 1n, 'Gala of tenant A');
+    seededB = await seedInvoiceDashboardScenario(tenantB, user, 10n, 'Gala of tenant B');
   });
 
   afterAll(async () => {
@@ -90,6 +90,8 @@ describe('invoice dashboard — cross-tenant isolation (Principle I)', () => {
         amountSatang: EXPECTED.collectedInFiscalYear.amountSatang * scale,
         invoiceCount: EXPECTED.collectedInFiscalYear.invoiceCount,
       });
+      // The header's drafts count: its own drafts only (both together would double it).
+      expect(tiles.draftsNotCounted).toBe(EXPECTED.attention.manualDrafts + EXPECTED.attention.autoRenewalDrafts);
       const aging = unwrap(await loadInvoiceDashboardAging(tenant().ctx, INPUT, deps));
       for (const row of aging.buckets) {
         expect([row.bucket, row.amountSatang, row.count]).toEqual([
@@ -135,6 +137,10 @@ describe('invoice dashboard — cross-tenant isolation (Principle I)', () => {
         expect(own.allInvoiceIds.has(row.invoiceId)).toBe(true);
         expect(other.allInvoiceIds.has(row.invoiceId)).toBe(false);
       }
+      // An event row names its own tenant's event, never the other's.
+      const eventNames = rows.filter((r) => r.subject === 'event').map((r) => r.eventName);
+      expect(eventNames.length).toBeGreaterThan(0);
+      expect(new Set(eventNames)).toEqual(new Set([`Gala of tenant ${name}`]));
     });
   }
 });

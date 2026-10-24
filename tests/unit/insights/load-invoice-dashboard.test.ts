@@ -75,6 +75,7 @@ function stubSource(over: Partial<InvoiceDashboardSource> = {}): InvoiceDashboar
     }),
     oldestOverdue: vi.fn().mockResolvedValue([]),
     hasNonDraftInvoice: vi.fn().mockResolvedValue(true),
+    draftCount: vi.fn().mockResolvedValue(0),
     ...over,
   };
 }
@@ -197,6 +198,22 @@ describe('loadInvoiceDashboardTiles', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.anyNonDraftInvoice).toBe(true);
+  });
+
+  // The boards' header note "· N drafts not counted": the drafts under the
+  // filters; it fails soft to 0 (the note hides) and never costs the tiles.
+  it('carries the drafts count under the filters; a failing count reads as 0', async () => {
+    const draftCount = vi.fn().mockResolvedValue(3);
+    const ok = await loadInvoiceDashboardTiles(ctx, input(), deps(stubSource({ draftCount })));
+    expect(ok.ok && ok.value.draftsNotCounted).toBe(3);
+    expect(draftCount).toHaveBeenCalledWith(ctx, input().filters);
+    const failed = await loadInvoiceDashboardTiles(
+      ctx,
+      input(),
+      deps(stubSource({ draftCount: vi.fn().mockRejectedValue(new TypeError('connection reset')) })),
+    );
+    expect(failed.ok).toBe(true);
+    expect(failed.ok && failed.value.draftsNotCounted).toBe(0);
   });
 
   it('skips the any-invoice probe when the figures already count an invoice', async () => {
