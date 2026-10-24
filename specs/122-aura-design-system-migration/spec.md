@@ -835,6 +835,29 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **Found adopting it:** with `break-word` as the default, the audit log's event codes and IDs and the users list's email widened their tables (audit ran 326px past its box at 768). The codes, ids and detail values take `[overflow-wrap:anywhere]` on their own spans, so the labels beside them still wrap between words; the email breaks after its `@` (`<wbr>`). Audit now runs 49px past its box at 768 (64 on 5.59), users 0.
 - **Seen, not caused here:** the credit-note detail page scrolls sideways by about 250px at 390. A sr-only label in the page-header actions computes 636px wide. The 5.59 → 5.60 CSS diff touches only `.aura-link`, so this is left for its own fix.
 
+### Session 2026-10-24 (US12d start: E-Blast compose in three PRs, plus the last three legacy files)
+
+- **Scope (maintainer, 24 Oct):** US12d takes every file outside `src/components/ui` that still imports the legacy kit, except `test-fixtures/button-matrix` (it tests the legacy `Button` and goes with it in US13). That includes three non-E-Blast files no phase had claimed: `admin/error.tsx`, `admin/not-found.tsx` and `portal-sign-out-button.tsx`.
+- **Three PRs:** US12d-1 covers the route frames, the benefits page's E-Blast tab, the quota card and the three extras. US12d-2 covers the editor: the Tiptap toolbar and its link, button and image-alt dialogs, and the inline image uploader. US12d-3 covers the staff and member compose forms and their pickers. The editor goes first because the forms host it.
+- **Boards:**
+  - US12d-1: `Portal-broadcasts` (+mobile, -sv, -th), `Portal-broadcasts-empty` (+mobile, -variants), `Portal-broadcasts-loading`, `Portal-broadcast-over-limit` (+mobile), `Admin-state-error`, `Admin-state-not-available`.
+  - US12d-3: `Admin-broadcast-new` (+mobile), `Portal-broadcast-new` (+mobile, -sv, -th), `Portal-broadcast-readonly` (+mobile, -submit).
+- **US12d-1 layout from the boards:**
+  - The E-Blast tab heads with "My broadcasts" (h2) and a primary Compose E-Blast button with a plus icon.
+  - The quota card: the year on the left; the plan and the renewal date on the right, joined by " · ". Then four counters, each a label above its number, left-aligned. Then the bar.
+  - The history list is an AURA table in a card from `md` up, with the status as an AURA `StatusPill` in the portal tones (`getPortalBroadcastStatusTone`, as on the detail page).
+  - Below `md` it becomes one bordered list: each row is a link that fills the row, showing the subject, the pill and one line "audience · submitted", with a chevron.
+  - The empty history is an AURA `EmptyState` with the "compose your first" button.
+- **Kept, against the boards (FR-011, no copy change):**
+  - The Audience column keeps the recipient count only. The board's segment name is not in the list's read model.
+  - The quota bar stays one `progressbar` for used plus reserved. The board's hatched reserved segment, its legend and its footnote need new copy.
+  - Pagination stays the panel's own previous/next links on `?tab=broadcasts&page=N` (testids kept), on AURA `buttonClass`.
+- **The three extras:**
+  - The staff root error boundary moves to the shared `RouteErrorPanel`.
+  - The staff not-found boundary keeps its cause-neutral copy, with the back link on AURA `buttonClass`.
+  - The portal sign-out button becomes an AURA `Button` with the 44px touch height.
+  - Requests, toasts and copy are unchanged.
+
 ### Session 2026-10-24 (credit-note page: no sideways scroll on phones)
 
 - **The bug:** at 390 the admin credit-note detail page scrolled sideways by about 250px.
