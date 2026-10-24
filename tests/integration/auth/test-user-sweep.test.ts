@@ -6,6 +6,8 @@
  * 2026-10-20..24; a change-request submit took 60–83 s). Lives in `auth/` so
  * the nightly rotation sweeps it.
  */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { db } from '@/lib/db';
@@ -28,5 +30,13 @@ describe('integration harness: leftover test users are swept', () => {
     const user = await createActiveTestUser();
     await deleteTestUser(user);
     expect(await sweepLeftoverTestUsers()).toBe(0);
+  });
+
+  // The function above only matters if something calls it: the setup file's
+  // afterAll must read the SAME registry key and call the sweep.
+  it('the setup file sweeps in afterAll through the shared registry key', () => {
+    const setup = readFileSync(resolve(process.cwd(), 'tests/integration-setup.ts'), 'utf8');
+    expect(setup).toMatch(/import \{ LIVE_TEST_USERS_KEY \} from '\.\/integration\/helpers\/live-test-users-key'/);
+    expect(setup).toMatch(/afterAll\(async \(\) => \{[\s\S]*?\[LIVE_TEST_USERS_KEY\][\s\S]*?sweepLeftoverTestUsers\(\)/);
   });
 });

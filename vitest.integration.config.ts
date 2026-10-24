@@ -36,6 +36,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/integration-setup.ts'],
+    // Once per run: disable staff test users that earlier runs leaked (crashed
+    // workers, direct `db.insert(users)`), older than a few hours.
+    globalSetup: ['./tests/integration-global-setup.ts'],
     include: ['tests/integration/**/*.test.ts'],
     exclude: ['node_modules', '.next', 'tests/unit/**', 'tests/e2e/**'],
     // Cross-region latency makes CI a different machine class, not just a
