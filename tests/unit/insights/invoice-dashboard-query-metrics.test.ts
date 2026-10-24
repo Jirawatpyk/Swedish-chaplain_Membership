@@ -41,6 +41,7 @@ const CALLS = [
   ['attention', () => adapter.attentionCounts(CTX, FILTERS, new Date('2026-06-15T05:00:00Z'))],
   ['oldest_overdue', () => adapter.oldestOverdue(CTX, FILTERS, '2026-06-15', 6)],
   ['any_invoice', () => adapter.hasNonDraftInvoice(CTX)],
+  ['drafts', () => adapter.draftCount(CTX, FILTERS)],
 ] as const;
 
 beforeEach(() => {

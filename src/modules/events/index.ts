@@ -822,3 +822,8 @@ export { makeDrizzleTenantWebhookConfigRepository } from './infrastructure/drizz
 // failure guard without reaching into `_helpers/`. Pure Application
 // helper — no framework imports (Constitution Principle III).
 export { safeAuditEmit } from './application/use-cases/_helpers/safe-audit-emit';
+
+// Spec 124 follow-up — the invoice dashboard's Oldest overdue card names an
+// event invoice by its event; read-only infra-to-infra schema sharing through
+// the barrel, as payments does for `paymentsTable`.
+export { events as eventsTable } from './infrastructure/schema';
