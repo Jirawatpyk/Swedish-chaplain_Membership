@@ -619,6 +619,22 @@ describe('F3 undelete → F8 cycle restore — Cluster 4', () => {
     expect(restored!.linkedInvoiceId).toBe(issuedInvoiceId);
     expect(rows.filter((r) => r.linkedInvoiceId === issuedInvoiceId)).toHaveLength(1);
 
+    // 129 — the relink audit names the cycle the link moved off.
+    const relinkRows = await db
+      .select({ payload: auditLog.payload })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'renewal_orphan_invoice_relinked' as never),
+        ),
+      );
+    const relink = relinkRows.find(
+      (r) => (r.payload as { invoice_id?: string }).invoice_id === issuedInvoiceId,
+    );
+    expect(relink, 'relink audit row').toBeDefined();
+    expect((relink!.payload as { source_cycle_id?: string }).source_cycle_id).toBe(awaitingCycleId);
+
     // Paying the carried invoice now completes the RESTORED cycle (it used to
     // resolve to the cancelled one → `cycle_not_payable`).
     const paidEvent: F4InvoicePaidEvent = {

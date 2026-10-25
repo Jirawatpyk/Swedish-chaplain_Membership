@@ -384,6 +384,7 @@ async function carryInvoiceToRestoredCycleInTx(
         member_id: restored.memberId as MemberId,
         invoice_id: args.invoiceId,
         previous_cycle_status: 'upcoming',
+        source_cycle_id: cancelled.cycleId,
       },
     },
     {

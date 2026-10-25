@@ -181,6 +181,8 @@ export type UpdateMemberError =
       memberTypeScope: 'company' | 'individual' | 'both';
     }
   | { type: 'invalid_override_reason'; code: string }
+  // 129 — the plan changed between the pre-read and the row lock (409).
+  | { type: 'concurrent_change' }
   | { type: 'not_found' }
   | { type: 'server_error'; message: string };
 
@@ -329,6 +331,10 @@ export async function updateMember(
   type MutablePatch = { -readonly [K in keyof MemberPatch]?: MemberPatch[K] };
   try {
     const outcome = await runInTenant(deps.tenant, async (tx) => {
+      // 129 — true only when the scope check needed the reason; the audit
+      // records the override only then. Scoped to this callback so a re-run
+      // can never inherit it.
+      let overrideApplied = false;
       const currentResult = await deps.memberRepo.findByIdInTx(tx, memberId);
       if (!currentResult.ok) {
         throw new UseCaseAbort<UpdateMemberError>(
@@ -357,11 +363,10 @@ export async function updateMember(
           (current.planId as string) !== (scopePlan.planId as string) ||
           current.planYear !== scopePlan.planYear
         ) {
-          // The type or plan changed between the pre-read and the lock — retry.
-          throw new UseCaseAbort<UpdateMemberError>({
-            type: 'server_error',
-            message: 'plan_changed_concurrently',
-          });
+          // The stored type or the plan changed between the pre-read and the
+          // lock (a null `scopePlan` means the pre-read saw the new type
+          // already stored) — 409, the client retries on fresh data.
+          throw new UseCaseAbort<UpdateMemberError>({ type: 'concurrent_change' });
         }
         const scope = checkMemberTypeScope(data.legal_entity_type, scopePlan.memberTypeScope);
         if (!scope.ok && !data.override_reason_code) {
@@ -371,6 +376,7 @@ export async function updateMember(
             memberTypeScope: scope.error.memberTypeScope,
           });
         }
+        overrideApplied = !scope.ok;
       }
       // 088 US3 — §86/4 branch particular. The zod superRefine above + the DB
       // CHECK enforce the head-office ⇔ branch-code pairing; here we just thread
@@ -600,7 +606,7 @@ export async function updateMember(
           member_id: memberId,
           fields_changed: fieldsChanged,
           diff,
-          ...(data.override_reason_code && {
+          ...(overrideApplied && data.override_reason_code && {
             override_reason_code: data.override_reason_code,
             override_reason_note: data.override_reason_note ?? null,
           }),

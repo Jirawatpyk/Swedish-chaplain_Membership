@@ -118,7 +118,9 @@ those sessions and that member's pending invitation too. Accepted because it is
 the single archive's long-standing behaviour (bulk only made it reachable 100 at
 a time), the sessions come back on the next sign-in, and over-revoking on an
 offboarding event fails safe. Revisit if one person routinely represents several
-member companies.
+member companies. Undelete does not restore what archive revoked (129): a contact
+whose pending invitation was consumed needs a NEW invitation, while a user who
+had already signed up just signs in again.
 
 ### T-02. Brute force (single-account)
 

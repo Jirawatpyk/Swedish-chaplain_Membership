@@ -233,6 +233,20 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
     expect(body.error.details.type).toBe('member_type_out_of_scope');
   });
 
+  // 129 — the plan changed between updateMember's pre-read and its lock.
+  it('409 conflict when the member changed concurrently', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    updateMemberMock.mockResolvedValueOnce(err({ type: 'concurrent_change' }));
+    const { PATCH } = await import('@/app/api/members/[memberId]/route');
+    const res = await PATCH(makeRequest({ legal_entity_type: 'individual' }), {
+      params: routeParams(),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('conflict');
+    expect(body.error.details.reason).toBe('concurrent_change');
+  });
+
   it('409 bundle_change_requires_confirmation', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     changePlanMock.mockResolvedValueOnce(
