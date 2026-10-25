@@ -41,7 +41,7 @@ import type {
   PlanDraftInput,
   PlanRepo,
 } from './ports';
-import { recordAuditEvent } from './record-audit-event';
+import { auditFailureMessage, auditInTx, PlanAuditAbort } from './record-audit-event';
 import { classifyZodIssues } from './classify-zod-issues';
 import {
   asPlanSlug,
@@ -127,8 +127,35 @@ export async function createPlan(
 
   let created: Plan;
   try {
-    created = await deps.planRepo.insert(deps.tenant, planDraft);
+    created = await deps.planRepo.insert(
+      deps.tenant,
+      planDraft,
+      // 126 #7 — the audit row commits (or rolls back) with the insert.
+      auditInTx(
+        deps.audit,
+        {
+          tenant: deps.tenant,
+          actorUserId: input.actorUserId,
+          requestId: input.requestId,
+          sourceIp: input.sourceIp,
+        },
+        {
+          event_type: 'plan_created',
+          payload: {
+            plan_id: planId,
+            plan_year: planYear,
+            plan_name_en: draft.plan_name.en,
+            annual_fee_minor_units: draft.annual_fee_minor_units,
+            category: draft.plan_category,
+            member_type_scope: draft.member_type_scope,
+          },
+        },
+      ),
+    );
   } catch (e) {
+    if (e instanceof PlanAuditAbort) {
+      return err({ type: 'audit_failed', message: auditFailureMessage(e.error) });
+    }
     // Pg unique-violation raced past findOne — surface as duplicate_plan
     const msg = errorChainMessage(e);
     if (
@@ -138,37 +165,6 @@ export async function createPlan(
       return err({ type: 'duplicate_plan' });
     }
     return err({ type: 'server_error', message: msg });
-  }
-
-  // 4. Append audit event — audit failure is a use-case failure
-  const auditResult = await recordAuditEvent(
-    deps.audit,
-    {
-      tenant: deps.tenant,
-      actorUserId: input.actorUserId,
-      requestId: input.requestId,
-      sourceIp: input.sourceIp,
-    },
-    {
-      event_type: 'plan_created',
-      payload: {
-        plan_id: planId,
-        plan_year: planYear,
-        plan_name_en: draft.plan_name.en,
-        annual_fee_minor_units: draft.annual_fee_minor_units,
-        category: draft.plan_category,
-        member_type_scope: draft.member_type_scope,
-      },
-    },
-  );
-  if (!auditResult.ok) {
-    return err({
-      type: 'audit_failed',
-      message:
-        auditResult.error.type === 'invalid_payload'
-          ? auditResult.error.issues.join('; ')
-          : auditResult.error.message,
-    });
   }
 
   return ok(created);

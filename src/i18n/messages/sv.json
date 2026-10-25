@@ -6959,7 +6959,9 @@
         "fetchError": "Kunde inte ladda kvot.",
         "retry": "Försök igen",
         "nextReset": "Återställs {date}",
-        "planChangedExplainer": "Paketet ändrades {date} — årets kvot speglar det nya paketet."
+        "planChangedExplainer": "Paketet ändrades {date} — årets kvot speglar det nya paketet.",
+        "reservedLegend": "Reserverat (under granskning eller schemalagt)",
+        "footnote": "En plats i kvoten reserveras när du skickar in och räknas som använd när utskicket skickas. Den återförs om utskicket avvisas, avbryts, förfaller utan ditt godkännande eller inte kan skickas."
       },
       "banner": {
         "acknowledgement": {

@@ -12,11 +12,13 @@
  * carried a comment asserting the three matched. The two-column compose layout
  * is the reason all three are on the detail tier (FR-050, ux-standards
  * § 18.2 exception).
+ *
+ * 122 US12d-1 (T1233): the back link is an AURA button link.
  */
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { DetailContainer } from '@/components/layout';
-import { buttonVariants } from '@/components/ui/button';
+import { buttonClass } from '@jirawatpyk/aura-react';
 import { PortalRouteError } from '@/components/shell/portal-route-error';
 
 export default function ComposeBroadcastError(props: {
@@ -32,7 +34,7 @@ export default function ComposeBroadcastError(props: {
       actions={
         <Link
           href="/portal/benefits?tab=broadcasts"
-          className={buttonVariants({ variant: 'outline' })}
+          className={buttonClass({ variant: 'secondary', touchHeight: true })}
         >
           {tBack('back')}
         </Link>

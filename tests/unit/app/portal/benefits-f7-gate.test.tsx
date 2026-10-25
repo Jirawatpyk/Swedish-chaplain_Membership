@@ -314,4 +314,17 @@ describe('PortalBenefitsPage — page-level F7 kill-switch (C1, xhigh #12)', () 
     const { container } = await renderPage({ tab: 'broadcasts' });
     expect(container.textContent ?? '').not.toMatch(/MISSING_KEY|MISSING_NS|NOT_STRING/);
   });
+
+  // Spec 122 US12d-1 — both tabs share the board `Portal-broadcasts` header:
+  // the ordinary page header (32px title, the portal's 20 / 32px top padding),
+  // not the larger hero. The Plan benefits board drew a hero; the two tabs
+  // must not differ, or the page jumps when the tab changes.
+  it.each([{}, { tab: 'broadcasts' }])('the page header is the ordinary size, not the hero (%o)', async (sp) => {
+    const { container } = await renderPage(sp);
+    const header = container.querySelector('[data-slot="page-header"]');
+    expect(header).not.toBeNull();
+    expect(header).not.toHaveAttribute('data-size', 'hero-lg');
+    expect(header!.className).not.toContain('hero');
+  });
 });
+

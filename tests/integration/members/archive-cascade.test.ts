@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import { archiveMember, asMemberId } from '@/modules/members';
+import { bulkAction } from '@/modules/members/application/use-cases/bulk-action';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
 import { contacts } from '@/modules/members/infrastructure/db/schema-contacts';
@@ -427,5 +428,47 @@ describe('archive-member integration (T135, US7)', () => {
     } finally {
       await otherTenant.cleanup().catch(() => {});
     }
+  });
+
+  it('126 #2 — BULK archive revokes the linked user sessions like the single archive', async () => {
+    const linkedUser = await createActiveTestUser('member');
+    const { memberId } = await seedMember(tenant, planId, {
+      linkedUserId: linkedUser.userId,
+    });
+    const sessionId = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '');
+    await db.insert(sessions).values({
+      id: sessionId,
+      userId: linkedUser.userId,
+      createdAt: new Date(),
+      lastSeenAt: new Date(),
+      expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000),
+      sourceIp: '127.0.0.1',
+    });
+
+    const result = await bulkAction(
+      { action: 'archive', member_ids: [memberId] },
+      { actorUserId: user.userId, requestId: `rq-bulk-arch-${Date.now()}` },
+      buildMembersDeps(tenant.ctx),
+    );
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+
+    const remaining = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.userId, linkedUser.userId));
+    expect(remaining).toHaveLength(0);
+
+    const revokedAudits = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.tenantId, tenant.ctx.slug),
+          eq(auditLog.eventType, 'user_sessions_revoked'),
+        ),
+      );
+    expect(
+      revokedAudits.some((r) => (r.payload as { member_id?: string })?.member_id === memberId),
+    ).toBe(true);
   });
 });

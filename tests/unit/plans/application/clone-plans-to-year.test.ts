@@ -17,6 +17,7 @@ import {
 import { asTenantContext } from '@/modules/tenants';
 import { asPlanSlug, asPlanYear } from '@/modules/plans/domain/plan';
 import { ok, err } from '@/lib/result';
+import { hooked, inTxAudit } from './in-tx-hook-mocks';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -58,7 +59,7 @@ const BASE_INPUT: ClonePlansToYearInput = {
 // ---------------------------------------------------------------------------
 
 function makeAuditStub(opts: { ok: boolean; errorType?: 'invalid_payload' | 'persist_failed' } = { ok: true }) {
-  return {
+  return inTxAudit({
     record: vi.fn(async () => {
       if (opts.ok) return ok(undefined);
       if (opts.errorType === 'invalid_payload') {
@@ -66,7 +67,7 @@ function makeAuditStub(opts: { ok: boolean; errorType?: 'invalid_payload' | 'per
       }
       return err({ type: 'persist_failed' as const, message: 'DB write failed' });
     }),
-  };
+  });
 }
 
 function makeDeps(overrides: Partial<ClonePlansToYearDeps> = {}): ClonePlansToYearDeps {
@@ -78,7 +79,7 @@ function makeDeps(overrides: Partial<ClonePlansToYearDeps> = {}): ClonePlansToYe
     setActive: vi.fn(),
     softDeleteGuarded: vi.fn(),
     undelete: vi.fn(),
-    cloneYear: vi.fn(async () => ok(CLONE_SUMMARY)),
+    cloneYear: hooked(async () => ok(CLONE_SUMMARY)),
   };
 
   const audit = makeAuditStub();
@@ -124,7 +125,7 @@ describe('clonePlansToYear', () => {
         setActive: vi.fn(),
         softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
-        cloneYear: vi.fn(async () => { throw new Error('Postgres connection lost'); }),
+        cloneYear: hooked(async () => { throw new Error('Postgres connection lost'); }),
       };
       const deps = makeDeps({ planRepo });
 
@@ -147,7 +148,7 @@ describe('clonePlansToYear', () => {
         setActive: vi.fn(),
         softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
-        cloneYear: vi.fn(async () => { throw 'raw string error'; }),
+        cloneYear: hooked(async () => { throw 'raw string error'; }),
       };
       const deps = makeDeps({ planRepo });
 
@@ -171,7 +172,7 @@ describe('clonePlansToYear', () => {
         setActive: vi.fn(),
         softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
-        cloneYear: vi.fn(async () =>
+        cloneYear: hooked(async () =>
           err({ type: 'target_year_populated' as const, existingCount: 7 }),
         ),
       };
@@ -199,7 +200,7 @@ describe('clonePlansToYear', () => {
         setActive: vi.fn(),
         softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
-        cloneYear: vi.fn(async () => err({ type: 'source_year_empty' as const })),
+        cloneYear: hooked(async () => err({ type: 'source_year_empty' as const })),
       };
       const deps = makeDeps({ planRepo });
 
@@ -223,7 +224,7 @@ describe('clonePlansToYear', () => {
         softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
         // Simulate a future repo error type not handled in the use case
-        cloneYear: vi.fn(async () =>
+        cloneYear: hooked(async () =>
           err({ type: 'unexpected_future_error' as unknown as 'source_year_empty' }),
         ),
       };
@@ -302,6 +303,7 @@ describe('clonePlansToYear', () => {
         TARGET_YEAR,
         true,
         ACTOR,
+        expect.any(Function),
       );
     });
 
@@ -341,7 +343,7 @@ describe('clonePlansToYear', () => {
         setActive: vi.fn(),
         softDeleteGuarded: vi.fn(),
         undelete: vi.fn(),
-        cloneYear: vi.fn(async () =>
+        cloneYear: hooked(async () =>
           ok({ sourceYear: SOURCE_YEAR, targetYear: TARGET_YEAR, clonedPlanIds: ordered, count: 3 }),
         ),
       };
@@ -363,6 +365,7 @@ describe('clonePlansToYear', () => {
       await clonePlansToYear({ ...BASE_INPUT, activateCloned: false }, deps);
       expect(deps.planRepo.cloneYear).toHaveBeenCalledWith(
         expect.anything(), expect.anything(), expect.anything(), false, expect.anything(),
+        expect.any(Function),
       );
     });
 
@@ -371,6 +374,7 @@ describe('clonePlansToYear', () => {
       await clonePlansToYear({ ...BASE_INPUT, activateCloned: true }, deps);
       expect(deps.planRepo.cloneYear).toHaveBeenCalledWith(
         expect.anything(), expect.anything(), expect.anything(), true, expect.anything(),
+        expect.any(Function),
       );
     });
   });

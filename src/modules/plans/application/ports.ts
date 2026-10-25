@@ -39,6 +39,19 @@ import type { F2AuditEvent, F2AuditEventType } from '../domain/audit-event';
 import type { PlanPatchOutput, PlanSchemaOutput } from '../domain/plan-validators';
 
 // ---------------------------------------------------------------------------
+// InTxHook — 126 #7: the audit write runs in the state change's tx
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs INSIDE the repo's write transaction, after the write, with what was
+ * written. A throw rolls the write back. Every plans use case passes one
+ * that appends its audit row, so a state change and its audit commit or
+ * roll back together (Constitution VIII). Optional only so seed scripts and
+ * tests can write without an audit.
+ */
+export type InTxHook<T> = (tx: TenantTx, written: T) => Promise<void>;
+
+// ---------------------------------------------------------------------------
 // PlanRepo — read + write plans scoped by TenantContext
 // ---------------------------------------------------------------------------
 
@@ -83,6 +96,7 @@ export interface PlanRepo {
   insert(
     tenant: TenantContext,
     draft: PlanDraftInput,
+    afterWrite?: InTxHook<Plan>,
   ): Promise<Plan>;
 
   /** Partial update. `updatedBy` is the F1 user UUID from the session. */
@@ -92,6 +106,7 @@ export interface PlanRepo {
     year: PlanYear,
     patch: PlanPatchOutput,
     updatedBy: string,
+    afterWrite?: InTxHook<Plan>,
   ): Promise<Plan | undefined>;
 
   /**
@@ -106,6 +121,7 @@ export interface PlanRepo {
     year: PlanYear,
     active: boolean,
     updatedBy: string,
+    afterWrite?: InTxHook<Plan>,
   ): Promise<Plan | undefined>;
 
   /**
@@ -141,6 +157,8 @@ export interface PlanRepo {
     year: PlanYear,
     deletedAt: Date,
     updatedBy: string,
+    /** Called only on the `deleted` outcome. */
+    afterWrite?: InTxHook<Plan>,
   ): Promise<
     | { readonly kind: 'deleted'; readonly plan: Plan }
     | { readonly kind: 'has_active_members'; readonly count: number }
@@ -160,6 +178,7 @@ export interface PlanRepo {
     planId: PlanSlug,
     year: PlanYear,
     updatedBy: string,
+    afterWrite?: InTxHook<Plan>,
   ): Promise<Plan | undefined>;
 
   /**
@@ -174,6 +193,8 @@ export interface PlanRepo {
     targetYear: PlanYear,
     activateCloned: boolean,
     createdBy: string,
+    /** Called only when the clone succeeds. */
+    afterWrite?: InTxHook<CloneYearSummary>,
   ): Promise<Result<CloneYearSummary, CloneYearError>>;
 }
 
@@ -223,6 +244,18 @@ export interface AuditPort {
    * `err({type: 'invalid_payload'})` instead of corrupting the log.
    */
   record(
+    ctx: AuditContext,
+    event: F2AuditEvent,
+  ): Promise<Result<void, AuditError>>;
+
+  /**
+   * 126 #7 — the same append on the caller's tx, so the audit row commits
+   * or rolls back with the state change it records. Every plans use case
+   * uses this through an `InTxHook`; `record` remains for callers outside
+   * a plans write (F8 `acceptTierUpgrade`).
+   */
+  recordInTx(
+    tx: TenantTx,
     ctx: AuditContext,
     event: F2AuditEvent,
   ): Promise<Result<void, AuditError>>;
@@ -358,6 +391,8 @@ export interface ScheduledPlanChangeRepo {
     tenant: TenantContext,
     input: ScheduleNextRenewalPlanChangeInput,
     tx?: TenantTx,
+    /** 126 #7 — runs in the same tx after the insert (audit). */
+    afterWrite?: InTxHook<SupersedeAndInsertResult>,
   ): Promise<SupersedeAndInsertResult>;
 
   /** Find the single pending row for (member, cycle), if any. */
@@ -396,6 +431,8 @@ export interface ScheduledPlanChangeRepo {
     tenant: TenantContext,
     scheduledChangeId: string,
     nextStatus: Exclude<ScheduledPlanChangeStatus, 'pending'>,
+    /** 126 #7 — runs in the same tx after the transition (audit). */
+    afterWrite?: InTxHook<ScheduledPlanChange>,
   ): Promise<ScheduledPlanChange>;
 
   /**

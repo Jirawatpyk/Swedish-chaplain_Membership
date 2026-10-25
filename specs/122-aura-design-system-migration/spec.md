@@ -835,6 +835,40 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **Found adopting it:** with `break-word` as the default, the audit log's event codes and IDs and the users list's email widened their tables (audit ran 326px past its box at 768). The codes, ids and detail values take `[overflow-wrap:anywhere]` on their own spans, so the labels beside them still wrap between words; the email breaks after its `@` (`<wbr>`). Audit now runs 49px past its box at 768 (64 on 5.59), users 0.
 - **Seen, not caused here:** the credit-note detail page scrolls sideways by about 250px at 390. A sr-only label in the page-header actions computes 636px wide. The 5.59 → 5.60 CSS diff touches only `.aura-link`, so this is left for its own fix.
 
+### Session 2026-10-24 (US12d start: E-Blast compose in three PRs, plus the last three legacy files)
+
+- **Scope (maintainer, 24 Oct):** US12d takes every file outside `src/components/ui` that still imports the legacy kit, except `test-fixtures/button-matrix` (it tests the legacy `Button` and goes with it in US13). That includes three non-E-Blast files no phase had claimed: `admin/error.tsx`, `admin/not-found.tsx` and `portal-sign-out-button.tsx`.
+- **Three PRs:** US12d-1 covers the route frames, the benefits page's E-Blast tab, the quota card and the three extras. US12d-2 covers the editor: the Tiptap toolbar and its link, button and image-alt dialogs, and the inline image uploader. US12d-3 covers the staff and member compose forms and their pickers. The editor goes first because the forms host it.
+- **Boards:**
+  - US12d-1: `Portal-broadcasts` (+mobile, -sv, -th), `Portal-broadcasts-empty` (+mobile, -variants), `Portal-broadcasts-loading`, `Portal-broadcast-over-limit` (+mobile), `Admin-state-error`, `Admin-state-not-available`.
+  - US12d-3: `Admin-broadcast-new` (+mobile), `Portal-broadcast-new` (+mobile, -sv, -th), `Portal-broadcast-readonly` (+mobile, -submit).
+- **US12d-1 layout from the boards:**
+  - The E-Blast tab heads with "My broadcasts" (h2) and a primary Compose E-Blast button with a plus icon.
+  - The quota card: the year on the left; the plan and the renewal date on the right, joined by " · ". Then four counters, each a label above its number, left-aligned. Then the bar.
+  - The history list is an AURA table in a card from `md` up, with the status as an AURA `StatusPill` in the portal tones (`getPortalBroadcastStatusTone`, as on the detail page).
+  - Below `md` it becomes one bordered list: each row is a link that fills the row, showing the subject, the pill and one line "audience · submitted", with a chevron.
+  - The empty history is an AURA `EmptyState` with the "compose your first" button.
+- **Kept, against the boards (FR-011, no copy change):**
+  - The Audience column keeps the recipient count only. The board's segment name is not in the list's read model.
+  - (Reversed by the user, 24 Oct.) The quota bar now draws the board's hatched reserved part beside the used part, with a legend and the footnote. That adds two strings in EN/TH/SV (`quota.reservedLegend`, `quota.footnote`). The legend is `aria-hidden` because the counters already state the numbers.
+  - Pagination stays the panel's own previous/next links on `?tab=broadcasts&page=N` (testids kept), on AURA `buttonClass`.
+  - Below 360px the quota counters sit two per row, not four. At 320, "Remaining" (EN) and "Reserverat" and "Paketgräns" (SV) broke mid-word (UX review, 24 Oct).
+  - The phone row leaves out Submitted or Sent while its value is "—". The table still shows the dash.
+- **The Benefits page header (the user, 24 Oct: "the title sits too far down"):**
+  - The two Benefits boards disagree. `Benefits` (the Plan benefits tab) draws the hero header: 40px down and a 36px title. `Portal-broadcasts` (the E-Blasts tab) draws the ordinary one: 32px and a 32px title, and 20px on phones, where the hero drew 24.
+  - One page cannot carry both without jumping between tabs, so both tabs take the ordinary header.
+  - Then one header size across the portal (the user, 24 Oct: "ทำตามแนะนำ", do what you recommended): only the Dashboard, the welcome page, keeps the hero header (40px down, 24 on phones). Edit, Change request and Renewal drop their hero and take the ordinary header like every other page (32px, 20 on phones). The renewal-success card is centred on the page, so it keeps its hero title. `tests/unit/app/portal/portal-header-sizes.test.ts` refuses a hero header anywhere else in the portal.
+  - The header chips (the user, 24 Oct: "the chips touch"): AURA's `meta` is a text line, so the Dashboard's and Benefits' chips sat 0px apart; the boards draw a wrapping row 8px apart. Filed as AURA #177 (Addendum 78); until it ships both pages wrap their chips in that row (measured 8px at 1440, 390 and 320, wrapping at 320 with no sideways scroll), guarded by a test. AURA shipped #177 in 5.62.0 the same day (a `meta` of elements only is a wrapping row); the pin moves to 5.62.0 in this PR. R84 (run on `next dev`) still found the chips touching: there a server-component chip reaches the client as a `react.lazy` node, which AURA's check does not count, while a production build was right. Filed as AURA #178 (Addendum 79); the page-side row stays as its stand-in, guarded by `tests/unit/app/portal/portal-header-meta-chips.test.ts` (measured on a dev server: 8px apart, the chips on one centre line, wrapping at 320).
+  - Consistency check of the staff error and not-found pages:
+    - All 32 staff `error.tsx` use the shared `RouteErrorPanel`, with its dashed EmptyState, so the root boundary now matches them.
+    - The staff not-found pages were already mixed: a dashed EmptyState on the root page and change-requests, a header with a back link on invoices and credit notes. The portal side uses solid cards.
+    - Moving staff to the board's solid card is a change to `RouteErrorPanel` across 32 routes, not part of this slice.
+- **The three extras:**
+  - The staff root error boundary moves to the shared `RouteErrorPanel`.
+  - The staff not-found boundary keeps its cause-neutral copy, with the back link on AURA `buttonClass`.
+  - The portal sign-out button becomes an AURA `Button` with the 44px touch height.
+  - Requests, toasts and copy are unchanged.
+
 ### Session 2026-10-24 (credit-note page: no sideways scroll on phones)
 
 - **The bug:** at 390 the admin credit-note detail page scrolled sideways by about 250px.

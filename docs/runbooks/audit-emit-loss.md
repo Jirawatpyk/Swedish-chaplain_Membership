@@ -98,8 +98,8 @@ The errorId taxonomy is the stable contract:
 |---|---|
 | `F2.PLAN_CHANGE.CANCEL_SERVER_ERROR` | use-case returned `{code:'server_error', recheckFailed:false}` — primary transition error, recheck did NOT also fail |
 | `F2.PLAN_CHANGE.CANCEL_RECHECK_FAILED` | use-case returned `{code:'server_error', recheckFailed:true}` — TOCTOU recheck threw on top of primary transition error |
-| `F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED` | audit DB write failed; route returns 200 + `X-Audit-Backfill-Required: 1` header |
-| `F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD` | audit zod schema rejected the payload (deploy-skew); route returns 200 + `X-Audit-Backfill-Required: 1` header |
+| `F2.PLAN_CHANGE.CANCEL_AUDIT_PERSIST_FAILED` | audit DB write failed; the cancel rolled back with it (126 #7) and the route returns 500 — nothing to backfill, the client retries |
+| `F2.PLAN_CHANGE.CANCEL_AUDIT_INVALID_PAYLOAD` | audit zod schema rejected the payload (deploy-skew); the cancel rolled back and the route returns 500 |
 
 For F8 `accept-tier-upgrade`:
 
@@ -215,5 +215,7 @@ fire for that one. One more route does have a counter:
 a sustained `f4_invoice_create_failed` there is a stop-the-line for the F4
 onPaid bridge. The rest are log-only: alert on the errorId.
 
-The `plans_cancel_audit_backfill_required_total` OTel counter (label `audit_error_type ∈ {persist_failed, invalid_payload}`)
-backs the audit-backfill SLO. Sum the counter against backfilled audit rows to compute SLO depth.
+Since 126 (#7) every F2 plans mutation writes its audit row in the same transaction as the state change, so a failed
+audit rolls the change back: there is no audit-less state to backfill, and the former
+`plans_cancel_audit_backfill_required_total` counter and `X-Audit-Backfill-Required` header are gone. F8
+`accept-tier-upgrade` and `finalise-f2-plan-change-on-paid` still emit their F2 audit after their tx (the remaining follow-up).

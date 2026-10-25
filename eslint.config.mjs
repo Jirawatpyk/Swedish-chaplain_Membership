@@ -539,17 +539,27 @@ export const MIGRATED_PATHS = [
   'src/components/broadcast/approval/use-focus-refusal.ts',
   'src/components/broadcast/cancel-broadcast-dialog.tsx',
   'src/components/broadcast/email-frame.tsx',
+  // US12d-1 — the staff root error and not-found boundaries, the portal
+  // sign-out button, the compose routes' error and loading frames, the quota
+  // card and the compose page's submit and quota-exhausted buttons. (The
+  // benefits page's E-Blast tab, already inside the US3 glob, left
+  // NOT_YET_ON_AURA here.)
+  'src/app/(staff)/admin/error.tsx',
+  'src/app/(staff)/admin/not-found.tsx',
+  'src/components/portal/portal-sign-out-button.tsx',
+  'src/app/(staff)/admin/broadcasts/new/error.tsx',
+  'src/app/(member)/portal/broadcasts/new/error.tsx',
+  'src/app/(member)/portal/broadcasts/new/loading.tsx',
+  'src/components/broadcast/quota-display.tsx',
+  'src/components/broadcast/compose-button-with-tooltip.tsx',
+  'src/components/broadcast/submit-button.tsx',
 ];
 
 /**
  * Files inside MIGRATED_PATHS that still use the legacy kit, each with the
- * phase that moves it. The list only shrinks.
+ * phase that moves it. The list only shrinks; it is empty since US12d-1.
  */
-const NOT_YET_ON_AURA = [
-  // The benefits page's E-Blast tab: the broadcast list moves with US12.
-  'src/app/(member)/portal/benefits/_components/broadcasts-panel.tsx',
-  'src/app/(member)/portal/benefits/_components/broadcast-history-card-list.tsx',
-];
+const NOT_YET_ON_AURA = [];
 
 const eslintConfig = defineConfig([
   ...nextVitals,

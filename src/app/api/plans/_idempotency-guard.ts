@@ -80,10 +80,9 @@ export async function runIdempotencyGuard(
   );
 
   if (classification.kind === 'replay') {
-    // Re-emit cached headers verbatim so diagnostic signals
-    // (X-Audit-Backfill-Required, X-Audit-Error-Type, etc.) survive
-    // the replay. Without this, SRE alert routing keyed on response
-    // headers silently loses the discriminator on retry.
+    // Re-emit cached headers verbatim so any diagnostic header a route
+    // cached with its response survives the replay. (126 #7 retired the
+    // cancel route's X-Audit-Backfill-Required, the original user.)
     const init: ResponseInit = {
       status: classification.previousResponse.status,
     };

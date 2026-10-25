@@ -5,7 +5,7 @@ import { FileQuestionIcon } from 'lucide-react';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/shell/empty-state';
-import { buttonVariants } from '@/components/ui/button';
+import { buttonClass } from '@jirawatpyk/aura-react/server';
 
 /**
  * Staff-shell not-found boundary (016 review, UX H).
@@ -39,6 +39,9 @@ import { buttonVariants } from '@/components/ui/button';
  * enumeration of which pages are restricted: `notFound()` is the deny shape for
  * unknown-id probes too, so naming them would turn every stray 404 into a
  * disclosure.
+ *
+ * 122 US12d-1 (T1232): the way back is an AURA button link (`buttonClass`
+ * from `/server`, as the portal's not-found); the copy is unchanged.
  */
 // Static, so it cannot be localised here (generateMetadata would make this a
 // dynamic segment for a boundary that must stay cheap). Kept deliberately
@@ -57,7 +60,7 @@ export default async function StaffNotFound() {
         title={t('body')}
         description={t('roleHint')}
         action={
-          <Link href="/admin" className={buttonVariants()}>
+          <Link href="/admin" className={buttonClass()}>
             {t('back')}
           </Link>
         }
