@@ -141,4 +141,38 @@ describe('EditMemberClient — override on the member-field step (127)', () => {
     expect(second.override_reason_code).toBe('board_approved');
     expect(second).not.toHaveProperty('new_plan_id');
   });
+  it('drops a confirmed reason the field step did not use, so a later save never carries it (127 review)', async () => {
+    h.values = TYPE_CHANGE;
+    fetchMock
+      .mockResolvedValueOnce(
+        res(422, {
+          error: {
+            code: 'member_type_warning',
+            details: { type: 'member_type_out_of_scope', legalEntityType: 'individual', memberTypeScope: 'company' },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(res(200, { member_id: 'm1' }));
+
+    const view = render(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <EditMemberClient member={MEMBER as any} plans={PLANS} primaryContact={CONTACT} />,
+    );
+    fireEvent.click(screen.getByText('stub-submit'));
+    const confirm = await screen.findByText('confirm-override');
+    // The stored row caught up (another tab saved it), so the re-run has no field diff.
+    view.rerender(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <EditMemberClient member={{ ...MEMBER, legalEntityType: 'individual' } as any} plans={PLANS} primaryContact={CONTACT} />,
+    );
+    fireEvent.click(confirm);
+    await vi.waitFor(() => expect(h.push).toHaveBeenCalled());
+
+    h.values = { ...TYPE_CHANGE, company_name: 'New Co' };
+    fireEvent.click(screen.getByText('stub-submit'));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const second = JSON.parse((fetchMock.mock.calls[1]![1] as { body: string }).body);
+    expect(second.company_name).toBe('New Co');
+    expect(second).not.toHaveProperty('override_reason_code');
+  });
 });
