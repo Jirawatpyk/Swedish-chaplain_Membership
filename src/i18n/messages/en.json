@@ -1309,7 +1309,7 @@
           "startupTooOld": "Founded year {year} exceeds the plan limit of {maxYears} years.",
           "ageNotEligible": "Age {age} exceeds the plan maximum of {maxAge}.",
           "memberTypeCompanyOnly": "This plan is for companies, but the legal entity type is Individual. Provide a reason to proceed.",
-          "memberTypeIndividualOnly": "This plan is for individuals, but the legal entity type is a company type. Provide a reason to proceed.",
+          "memberTypeIndividualOnly": "This plan is for individuals, but the legal entity type is a company or organisation type. Provide a reason to proceed.",
           "generic": "This value is outside the plan limits. Provide a reason to proceed."
         },
         "title": "Reason for bypassing validation",
@@ -1986,7 +1986,8 @@
           "emailTaken": "That email address is already in use.",
           "invalidPhone": "Phone number must be in international format, e.g. +66812345678.",
           "partialSave": "Some changes were saved before an error occurred. Review the member and retry the rest.",
-          "concurrentChange": "This member was changed by someone else. Reload the page and try again."
+          "concurrentChange": "This member was changed by someone else. Reload the page and try again.",
+          "overrideCancelled": "Not saved: this change needs an override reason."
         }
       },
       "contactForm": {

@@ -1308,8 +1308,8 @@
           "turnoverAbove": "Omsättning {turnover} THB överstiger paketets maximum på {max} THB.",
           "startupTooOld": "Grundningsår {year} överskrider paketets gräns på {maxYears} år.",
           "ageNotEligible": "Ålder {age} överstiger paketets maximum på {maxAge}.",
-          "memberTypeCompanyOnly": "Paketet är för företag, men juridisk form är Privatperson. Ange ett skäl för att fortsätta.",
-          "memberTypeIndividualOnly": "Paketet är för privatpersoner, men juridisk form är ett företag. Ange ett skäl för att fortsätta.",
+          "memberTypeCompanyOnly": "Paketet är för företag, men den juridiska formen är Privatperson. Ange ett skäl för att fortsätta.",
+          "memberTypeIndividualOnly": "Paketet är för privatpersoner, men den juridiska formen är en företagsform. Ange ett skäl för att fortsätta.",
           "generic": "Värdet ligger utanför paketets gränser. Ange en anledning för att fortsätta."
         },
         "title": "Anledning till att kringgå validering",
@@ -1986,7 +1986,8 @@
           "emailTaken": "E-postadressen används redan.",
           "invalidPhone": "Telefonnumret måste vara i internationellt format, t.ex. +66812345678.",
           "partialSave": "Vissa ändringar sparades innan ett fel uppstod. Granska medlemmen och försök igen med resten.",
-          "concurrentChange": "Medlemmen har ändrats av någon annan. Ladda om sidan och försök igen."
+          "concurrentChange": "Medlemmen har ändrats av någon annan. Ladda om sidan och försök igen.",
+          "overrideCancelled": "Inte sparat: ändringen kräver ett skäl för undantag."
         }
       },
       "contactForm": {

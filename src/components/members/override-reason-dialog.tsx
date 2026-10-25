@@ -44,6 +44,8 @@ type Props = {
   /** Localised reason for the warning (e.g. "Turnover 500,000 is below plan min 1,000,000"). */
   readonly warningMessage: string | null;
   readonly onConfirm: (result: OverrideReasonResult) => void;
+  /** 129 — where focus goes when the dialog closes (it opens post-request). */
+  readonly finalFocus?: () => HTMLElement | null;
 };
 
 export function OverrideReasonDialog({
@@ -51,6 +53,7 @@ export function OverrideReasonDialog({
   onOpenChange,
   warningMessage,
   onConfirm,
+  finalFocus,
 }: Props) {
   const t = useTranslations('admin.members.overrideReason');
   const [code, setCode] = useState<
@@ -85,6 +88,7 @@ export function OverrideReasonDialog({
       open={open}
       onClose={handleCancel}
       dismissOnScrim={false}
+      {...(finalFocus && { finalFocus })}
       title={t('title')}
       description={t('description')}
       footer={
