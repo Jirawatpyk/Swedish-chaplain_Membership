@@ -38,6 +38,8 @@ export interface BroadcastHistoryRowView {
   /** The portal tone for the status (`getPortalBroadcastStatusTone`). */
   readonly statusTone: BroadcastStatusTone;
   readonly estimatedRecipientCount: number;
+  /** The audience and its size, formatted: "All members · 130". */
+  readonly audience: string;
   /** Formatted in the tenant timezone, or `'—'` when not yet submitted. */
   readonly submitted: string;
   /** Formatted in the tenant timezone, or `'—'` when not yet sent. */
@@ -48,7 +50,6 @@ export interface BroadcastHistoryCardListProps {
   readonly rows: ReadonlyArray<BroadcastHistoryRowView>;
   /** The table's column labels, reused as the row's field labels. */
   readonly labels: {
-    readonly audience: string;
     readonly submittedAt: string;
     readonly sentAt: string;
   };
@@ -88,11 +89,12 @@ export function BroadcastHistoryCardList({
                   {row.statusLabel}
                 </StatusPill>
                 <span className="aura-text-caption text-[var(--aura-fg-secondary)]">
-                  {labels.audience} <span className="tabular-nums">{row.estimatedRecipientCount}</span>
+                  {/* Task #6 (board `Portal-broadcasts-mobile`): "All members · 130". */}
+                  <span className="tabular-nums">{row.audience}</span>
                   {/* Dates never break mid-value ("15 ต.ค. 2569", "15 okt. 2026"). */}
                   {row.submitted !== '—' ? (
                     <>
-                      {' · '}
+                      {'\u00a0· '}
                       <span className="whitespace-nowrap">
                         {labels.submittedAt} {row.submitted}
                       </span>
@@ -100,7 +102,7 @@ export function BroadcastHistoryCardList({
                   ) : null}
                   {row.sent !== '—' ? (
                     <>
-                      {' · '}
+                      {'\u00a0· '}
                       <span className="whitespace-nowrap">
                         {labels.sentAt} {row.sent}
                       </span>

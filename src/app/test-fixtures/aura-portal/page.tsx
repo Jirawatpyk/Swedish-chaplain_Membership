@@ -199,23 +199,26 @@ export default async function AuraPortalPreviewPage({
     const t = await getTranslations('benefits.page');
     const tStatus = await getTranslations('portal.broadcasts.list.status');
     const tQuota = await getTranslations('portal.broadcasts.quota');
+    const tAudience = await getTranslations('portal.broadcasts.list.audience');
+    const tList = await getTranslations('portal.broadcasts.list');
     const state = sp.state ?? 'default';
     const exhausted = state === 'exhausted';
     const rows = (
       [
-        ['b1', 'Nordic Leadership Breakfast — 15 October', 'awaiting_member_approval', 130, '25 Sep 2026, 09:12', '—'],
-        ['b2', 'We are hiring: Senior Consultant, Bangkok', 'draft', 130, '—', '—'],
-        ['b3', 'Autumn tax seminar — 8 October', 'approved', 38, '12 Sep 2026, 14:03', '—'],
-        ['b4', 'New office on Wireless Road', 'sent', 126, '1 Jul 2026, 10:00', '3 Jul 2026, 09:00'],
-        ['b5', 'Midsummer thank-you from Lindqvist & Partners', 'cancelled', 172, '18 Jun 2026, 16:40', '—'],
-        ['b6', 'Tax update seminar for Swedish SMEs', 'sent', 41, '2 Mar 2026, 11:15', '4 Mar 2026, 09:00'],
+        ['b1', 'Nordic Leadership Breakfast — 15 October', 'awaiting_member_approval', 'all_members', 130, '25 Sep 2026, 09:12', '—'],
+        ['b2', 'We are hiring: Senior Consultant, Bangkok', 'draft', 'all_members', 130, '—', '—'],
+        ['b3', 'Autumn tax seminar — 8 October', 'approved', 'tier', 38, '12 Sep 2026, 14:03', '—'],
+        ['b4', 'New office on Wireless Road', 'sent', 'all_members', 126, '1 Jul 2026, 10:00', '3 Jul 2026, 09:00'],
+        ['b5', 'Midsummer thank-you from Lindqvist & Partners', 'cancelled', 'event_attendees_last_90d', 172, '18 Jun 2026, 16:40', '—'],
+        ['b6', 'Tax update seminar for Swedish SMEs', 'sent', 'tier', 41, '2 Mar 2026, 11:15', '4 Mar 2026, 09:00'],
       ] as const
-    ).map(([broadcastId, subject, status, count, submitted, sent]) => ({
+    ).map(([broadcastId, subject, status, segmentType, count, submitted, sent]) => ({
       broadcastId,
       subject,
       statusLabel: tStatus(status),
       statusTone: getPortalBroadcastStatusTone(status),
       estimatedRecipientCount: count,
+      audience: tList('audienceWithCount', { audience: tAudience(segmentType), count }),
       submitted,
       sent,
     }));
@@ -242,11 +245,12 @@ export default async function AuraPortalPreviewPage({
           <PageHeader
             title={t('title')}
             subtitle={t('subtitlePlanEblasts', { plan: 'Premium Corporate' })}
+            metaLayout="row"
             meta={
-              <div className="flex flex-wrap items-center gap-2">
+              <>
                 <Badge tone="accent" variant="solid">Premium Corporate</Badge>
                 <StatusPill tone="ready">{t('statusFull')}</StatusPill>
-              </div>
+              </>
             }
           />
           <BenefitsTabs showBroadcastsTab active="broadcasts" broadcastsPanel={panel} benefitsPanel={null} />
@@ -264,11 +268,12 @@ export default async function AuraPortalPreviewPage({
           <PageHeader
             title={t('title')}
             subtitle={t('subtitlePlanEblasts', { plan: 'Premium Corporate' })}
+            metaLayout="row"
             meta={
-              <div className="flex flex-wrap items-center gap-2">
+              <>
                 <Badge tone="accent" variant="solid">Premium Corporate</Badge>
                 <StatusPill tone="ready">{t('statusFull')}</StatusPill>
-              </div>
+              </>
             }
           />
           <BenefitsTabs
@@ -740,12 +745,13 @@ export default async function AuraPortalPreviewPage({
           title="Hi Anna"
           subtitle={t('intro')}
           size="hero"
+          metaLayout="row"
           meta={
-            <div className="flex flex-wrap items-center gap-2">
+            <>
               <Badge variant="outline" className="font-mono">TSCC-0042</Badge>
               <Badge tone="accent" variant="solid">Premium Corporate</Badge>
               <StatusPill tone="neutral">{t('statusChip.active')}</StatusPill>
-            </div>
+            </>
           }
         />
         <MembershipInvoiceAlert
@@ -768,7 +774,26 @@ export default async function AuraPortalPreviewPage({
             membershipYear={2026}
             fullHref="/portal/benefits"
             quantifiable={[
-              { key: 'eblast', used: 2, entitlement: 6, reserved: 1, lastUsedAt: '2026-07-03T08:00:00.000Z', actionHref: '/portal/broadcasts/new' },
+              // ?state=eblast-full: no E-Blast left (4 used + 2 reserved of 6) — red bar, "View E-Blasts".
+              sp.state === 'eblast-full'
+                ? {
+                    key: 'eblast',
+                    used: 4,
+                    entitlement: 6,
+                    reserved: 2,
+                    lastUsedAt: '2026-07-03T08:00:00.000Z',
+                    actionHref: '/portal/broadcasts/new',
+                    exhaustedActionHref: '/portal/benefits?tab=broadcasts',
+                  }
+                : {
+                    key: 'eblast',
+                    used: 2,
+                    entitlement: 6,
+                    reserved: 1,
+                    lastUsedAt: '2026-07-03T08:00:00.000Z',
+                    actionHref: '/portal/broadcasts/new',
+                    exhaustedActionHref: '/portal/benefits?tab=broadcasts',
+                  },
               { key: 'cultural_tickets', used: 0, entitlement: 2, lastUsedAt: null },
             ]}
           />

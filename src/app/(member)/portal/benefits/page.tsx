@@ -232,11 +232,9 @@ export default async function PortalBenefitsPage(props: {
         // Spec 122 US12d-1: the ordinary header on both tabs (board
         // `Portal-broadcasts`); the Plan benefits board's hero made the two
         // tabs disagree.
+        metaLayout="row"
         meta={
-          // The chips as a row 8px apart, as the board draws them. AURA's own
-          // row (#177) misses a server chip that `next dev` sends as a lazy
-          // node (stand-in until AURA #178).
-          <div className="flex flex-wrap items-center gap-2">
+          <>
             {planName !== null ? (
               <Badge tone="accent" variant="solid">
                 {planName}
@@ -248,7 +246,7 @@ export default async function PortalBenefitsPage(props: {
             ) : (
               <StatusPill tone="ready">{t('statusFull')}</StatusPill>
             )}
-          </div>
+          </>
         }
       />
       <BenefitsTabs {...tabsProps} />

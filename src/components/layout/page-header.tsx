@@ -11,6 +11,8 @@ type PageHeaderProps = {
   badge?: ReactNode;
   /** Chips on their own row under the subtitle (the portal `Main` board's member number, plan and status). */
   meta?: ReactNode;
+  /** How AURA lays `meta` out (5.63, #178): `row` for chips — server chips can reach the client unresolved, so don't let AURA guess. */
+  metaLayout?: 'row' | 'line' | 'auto';
   /** Chips on their own row above the title (the staff `Admin-member-detail` board's status, member number and badges). */
   eyebrow?: ReactNode;
   className?: string;
@@ -58,6 +60,7 @@ export function PageHeader({
   actions,
   badge,
   meta,
+  metaLayout,
   eyebrow,
   className,
   autoFocusTitle = false,
@@ -75,6 +78,7 @@ export function PageHeader({
       subtitle={subtitle}
       titleAddon={badge}
       meta={meta}
+      {...(metaLayout !== undefined ? { metaLayout } : {})}
       eyebrow={eyebrow}
       actions={actions}
       actionsFullWidthBelow="sm"
