@@ -20,11 +20,11 @@ importers:
         specifier: ^3.9.1
         version: 3.10.0(react-hook-form@7.72.1(react@19.2.4))
       '@jirawatpyk/aura-react':
-        specifier: 5.61.0
-        version: 5.61.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+        specifier: 5.62.0
+        version: 5.62.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@jirawatpyk/aura-tokens':
-        specifier: 5.61.0
-        version: 5.61.0
+        specifier: 5.62.0
+        version: 5.62.0
       '@js-joda/core':
         specifier: ^6.0.1
         version: 6.0.1
@@ -1442,15 +1442,15 @@ packages:
     resolution: {integrity: sha512-ZXRY4jNvVgSVQ8DL3LTcakaAtXwTVUxE81hslsyD2AtoXW/wVob10HkOJ1X/pAlcI7D+2YoZKg5do8G/w6RYgA==}
     engines: {node: '>=8'}
 
-  '@jirawatpyk/aura-react@5.61.0':
-    resolution: {integrity: sha512-FcPItKql40+gFhzC3GwGjrzJWMO+JbnyWddo/lJi8E0J4XujHtnUcsj+6e09+686DDxhz1Aeg5Bv7X3h2AKEKA==}
+  '@jirawatpyk/aura-react@5.62.0':
+    resolution: {integrity: sha512-26niNCrMt6UeXd9ZkxCnw3ag+wvOshC+zuFjFLbw3WYL08LLnfYEpNF8Ub2sJuv72T4fsUlyN6SnBWZTvNao6g==}
     hasBin: true
     peerDependencies:
       react: '>=18'
       react-dom: '>=18'
 
-  '@jirawatpyk/aura-tokens@5.61.0':
-    resolution: {integrity: sha512-A7HIZJD9nYdDbsgyWIU23fND6YGdaK+v9yrMzLOmKT93ATFRcgA7dTVZurEzXCV1iFQ7wKbi+9kj4p79lppweA==}
+  '@jirawatpyk/aura-tokens@5.62.0':
+    resolution: {integrity: sha512-wyfNhyYK/2hQTOE02eYOJ+rK3fwt+NgHPHMyYEx0gX8DOMvDlPafQRZwuoYA609o3nq5pfLaSYGe78gjgtzOsg==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1779,6 +1779,7 @@ packages:
   '@opentelemetry/sdk-trace-base@1.30.1':
     resolution: {integrity: sha512-jVPgBbH1gCy2Lb7X0AVQ8XAfgg0pJ4nvl8/IiQA6nxOsPvS+0zMJaFSs2ltXe0J6C8dqjcnpyqINDJmU30+uOg==}
     engines: {node: '>=14'}
+    deprecated: Use @opentelemetry/sdk-trace package
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
 
@@ -7569,12 +7570,12 @@ snapshots:
 
   '@istanbuljs/schema@0.1.3': {}
 
-  '@jirawatpyk/aura-react@5.61.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
+  '@jirawatpyk/aura-react@5.62.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
 
-  '@jirawatpyk/aura-tokens@5.61.0': {}
+  '@jirawatpyk/aura-tokens@5.62.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

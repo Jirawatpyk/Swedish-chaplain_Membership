@@ -66,10 +66,12 @@ function renderView(overrides: Partial<RenewalPageViewProps> = {}) {
 }
 
 describe('<RenewalPageView> (board Portal-renewal, US7c)', () => {
-  it('heads the page "Online renewal" (hero size, as the board) with the board subtitle', () => {
+  // Spec 122 US12d-1 (the user, 24 Oct): only the Dashboard keeps the hero
+  // header; the renewal page takes the ordinary one, as the rest of the portal.
+  it('heads the page "Online renewal" (the ordinary size, as the rest of the portal) with the board subtitle', () => {
     renderView();
     const h1 = screen.getByRole('heading', { level: 1, name: 'Online renewal' });
-    expect(h1.closest('[data-size]')).toHaveAttribute('data-size', 'hero');
+    expect(h1.closest('[data-slot="page-header"]')).not.toHaveAttribute('data-size', 'hero');
     expect(
       screen.getByText('Review your membership and confirm to receive an invoice.'),
     ).toBeInTheDocument();

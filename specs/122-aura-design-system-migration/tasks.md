@@ -713,7 +713,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 ### Later US12 PRs (tasks written when each starts)
 
 - [x] T1210 [US12] US12b spec session "2026-10-18 (US12b start)" and these tasks.
-- [ ] T1211 [US12] Adopt AURA 5.50: the brand colour field uses `invalid` (#156); docs. Test: `brand-settings-form.test.tsx` › UX L4.
+- [x] T1211 [US12] Adopt AURA 5.50: the brand colour field uses `invalid` (#156); docs. Test: `brand-settings-form.test.tsx` › UX L4.
 - [x] T1212 [US12] Queue table on AURA `DataTable` (`selectable`, `isRowSelectable`, controlled selection; clear / reselect / prune kept; announcer and order hint kept; no selection for managers). Test: `queue-table-client-a11y`, `-columns`, `-segment`.
 - [x] T1213 [US12] Phone cards per board `Admin-broadcasts-mobile` (date + chip, subject, member, audience · recipients, full-width Review link; no checkbox, no inline Approve / Reject). Test: `queue-card-list`.
 - [x] T1214 [US12] Bulk bar on AURA `ActionBar` and the bulk-approve dialog on AURA `Dialog` + `RadioGroup`; requests, chunking, cap, toasts and undo unchanged. Test: `queue-bulk-action-bar`, `bulk-approve-confirm-dialog`, `queue-with-bulk`.
@@ -742,7 +742,19 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1247 [US12] First budget for `/portal/broadcasts/[id]`.
 - [x] T1248 [US12] e2e selectors where the swap breaks them (`eblast-approval`, `eblast-a11y`, `member-quota-history`).
 - [x] T1249 [US12] Exit: gates; shots at 1440/390 light and dark and 200% text; UX and security reviews; parity artifact; draft PR; relay R63. Done: parity page, PR #606, R63 green (no branch-only red).
-- [ ] T1230 [US12] US12d: compose (staff proxy and portal), editor toolbar and dialogs, quota display, plus the benefits page's E-Blast tab.
+- [ ] T1230 [US12] US12d: compose (staff proxy and portal), editor toolbar and dialogs, quota display, plus the benefits page's E-Blast tab, in three PRs (spec session "2026-10-24 (US12d start)"). It also takes `admin/error.tsx`, `admin/not-found.tsx` and `portal-sign-out-button.tsx`.
+
+### US12d-1 — frames, the benefits E-Blast tab, quota, and the three extras (PR 1 of 3)
+
+- [x] T1231 [US12] Spec session "2026-10-24 (US12d start)" and tasks T1231–T1239; T1211 ticked (already in the code since 5.50).
+- [ ] T1232 [US12] Staff root error boundary on `RouteErrorPanel`; staff not-found back link on AURA `buttonClass`; portal sign-out on AURA `Button` (`touchHeight`). Tests: `admin-root-boundaries`, `portal-sign-out-button`.
+- [ ] T1233 [US12] Compose route frames: `admin/broadcasts/new/error` on `RouteErrorPanel`; `portal/broadcasts/new/error` back link on `buttonClass`; `portal/broadcasts/new/loading` header on the shared skeleton blocks. Test: `compose-route-frames`.
+- [ ] T1234 [US12] `SubmitButton` and `ComposeButtonWithTooltip` on AURA `Button` / `Tooltip` (aria-disabled kept, the label + reason name kept). Tests: `submit-button`, `compose-button-with-tooltip`.
+- [ ] T1235 [US12] `QuotaDisplay` on AURA `Card`, skeleton and `Button`; header with plan · renewal, label-above-number counters; testids, live region, progressbar and the retry unchanged. Test: `quota-display`.
+- [ ] T1236 [US12] The benefits E-Blast tab: heading + compose button (plus icon), AURA table in a card from `md`, the phone list per `Portal-broadcasts-mobile`, `StatusPill` portal tones, AURA `EmptyState`, pagination links on `buttonClass`. Tests: `broadcasts-panel`, `broadcast-history-card-list`.
+- [ ] T1237 [US12] `MIGRATED_PATHS` and a US12d-1 ratchet block; the `control:` tests move to US12d-2/-3 files; preview views (`aura-portal?view=benefits-eblasts&state=…`) and budgets.
+- [ ] T1238 [US12] e2e selectors the swap breaks (`broadcast-quota-block`, `broadcast-a11y`, `broadcast-i18n`, benefits and sign-out specs).
+- [ ] T1239 [US12] Exit: gates; sweep at 390/768/1024/1280 in EN/SV/TH; shots; UX review; parity artifact; draft PR; relay R84.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
