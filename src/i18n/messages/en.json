@@ -6165,7 +6165,7 @@
     },
     "maintenanceBanner": {
       "title": "Maintenance: changes are paused.",
-      "body": "You can still view and download. Saving, issuing, recording payments and sending are switched off until it ends.",
+      "body": "You can still sign in, view and download. Saving, issuing, recording payments and sending are switched off until it ends.",
       "help": "Help and support"
     },
     "support": {
@@ -6187,7 +6187,7 @@
       },
       "paused": {
         "title": "When changes are paused",
-        "maintenance": "Maintenance: changes are paused for everyone. You can still view and download. Saving, issuing documents, recording payments and sending are switched off until it ends, usually within minutes. Try again in about {minutes} minutes.",
+        "maintenance": "Maintenance: changes are paused for everyone. You can still sign in, view and download. Saving, issuing documents, recording payments and sending are switched off until it ends, usually within minutes. Try again in about {minutes} minutes.",
         "featureOff": "One feature switched off: one area (for example online payments or E-Blasts) is unavailable until it is switched back on. The rest of the system works as usual. If you need it now, email support.",
         "nothingChanged": "A refused action changes nothing, so it is safe to try it again later."
       },

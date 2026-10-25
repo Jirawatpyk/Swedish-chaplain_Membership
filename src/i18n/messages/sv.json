@@ -6165,7 +6165,7 @@
     },
     "maintenanceBanner": {
       "title": "Underhåll: ändringar är pausade.",
-      "body": "Du kan fortfarande visa och ladda ner. Det går inte att spara, utfärda dokument, registrera betalningar eller skicka förrän underhållet är klart.",
+      "body": "Du kan fortfarande logga in, visa och ladda ner. Det går inte att spara, utfärda dokument, registrera betalningar eller skicka förrän underhållet är klart.",
       "help": "Hjälp och support"
     },
     "support": {
@@ -6187,7 +6187,7 @@
       },
       "paused": {
         "title": "När ändringar är pausade",
-        "maintenance": "Underhåll: ändringar är pausade för alla. Du kan fortfarande visa och ladda ner. Det går inte att spara, utfärda dokument, registrera betalningar eller skicka förrän underhållet är klart, oftast inom några minuter. Försök igen om cirka {minutes} minuter.",
+        "maintenance": "Underhåll: ändringar är pausade för alla. Du kan fortfarande logga in, visa och ladda ner. Det går inte att spara, utfärda dokument, registrera betalningar eller skicka förrän underhållet är klart, oftast inom några minuter. Försök igen om cirka {minutes} minuter.",
         "featureOff": "Avstängd funktion: en del av systemet (till exempel onlinebetalningar eller E-Blasts) är otillgänglig tills den slås på igen. Resten av systemet fungerar som vanligt. Mejla supporten om du behöver den nu.",
         "nothingChanged": "En nekad åtgärd ändrar ingenting, så det är säkert att försöka igen senare."
       },

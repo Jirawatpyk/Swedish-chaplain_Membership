@@ -99,7 +99,8 @@ export function matchesF7KillSwitchPath(pathname: string): boolean {
  *
  * Responsibilities:
  *   1. Inject a request ID (UUIDv7) into every request and response.
- *   2. Enforce READ_ONLY_MODE — every state-changing request returns 503.
+ *   2. Enforce READ_ONLY_MODE — every state-changing request returns 503,
+ *      except the sign-in, sign-out and heartbeat POSTs (D-028).
  *   3. Enforce the CSRF Origin allow-list for /api/* state-changing requests
  *      (except `/api/webhooks/*` and `/api/cron/*` which authenticate via
  *      HMAC signature / Bearer token — see src/lib/csrf.ts EXEMPT_PATH_PREFIXES).
@@ -285,6 +286,25 @@ function build503(
   return applySecurityHeaders(response, nonce);
 }
 
+/**
+ * D-028 — the auth POSTs the READ_ONLY_MODE freeze leaves up, matched on
+ * the exact path (no prefix, no trailing slash). Spec 001 quickstart § 7.3
+ * allows sign-in during the freeze (a session row is a tolerated
+ * read-after-write); without it every signed-out user is locked out until
+ * the freeze lifts. Sign-out only deletes the caller's own session, which
+ * reduces access — the right direction during a breach freeze. Heartbeat
+ * writes `last_seen_at`, the same write every page GET already makes in
+ * `getCurrentSession`. Rate limits, lockout and the CSRF Origin check
+ * still apply to all three. Every other auth flow (password reset and
+ * change, invitations, email verification) stays frozen; a new auth
+ * endpoint is frozen unless it is added here with a decision.
+ */
+export const READ_ONLY_EXEMPT_PATHS: ReadonlySet<string> = new Set([
+  '/api/auth/sign-in',
+  '/api/auth/sign-out',
+  '/api/auth/heartbeat',
+]);
+
 export function proxy(request: NextRequest): NextResponse {
   const { method, nextUrl } = request;
   const requestId = requestIdFromHeaders(request.headers);
@@ -309,7 +329,11 @@ export function proxy(request: NextRequest): NextResponse {
   //    § Read-only mode. If a future cron MUST run during a freeze
   //    (e.g. a regulatory deadline), exempt it there with a reason and a
   //    paired Constitution amendment.
-  if (env.flags.readOnlyMode && isStateChanging) {
+  //
+  //    Sign-in, sign-out and heartbeat POSTs pass the freeze
+  //    (`READ_ONLY_EXEMPT_PATHS`, D-028) and still meet the CSRF check below.
+  const readOnlyExempt = method === 'POST' && READ_ONLY_EXEMPT_PATHS.has(nextUrl.pathname);
+  if (env.flags.readOnlyMode && isStateChanging && !readOnlyExempt) {
     return build503(
       'read-only-mode',
       'The system is currently in read-only mode for maintenance.',
