@@ -109,6 +109,9 @@ export function validatePlanChange(input: {
       }
     }
 
+    // 127 (maintainer's decision) — on a plan CHANGE the primary contact's age
+    // is measured on the day of the change (`now`), not at the new plan's
+    // start; createMember measures it on the registration date.
     if (newPlan.maxMemberAge !== null && input.primaryDateOfBirth !== null) {
       const age = checkAgeEligibility(input.primaryDateOfBirth, input.now, newPlan.maxMemberAge);
       if (!age.ok) {
