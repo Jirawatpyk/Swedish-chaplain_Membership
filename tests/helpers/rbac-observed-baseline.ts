@@ -27,6 +27,8 @@ export const OBSERVED_PAGES: readonly ObservedSurface[] = [
   { surface: '/admin', kind: 'page', key: 'dashboard.view' },
   // R84 follow-up — the catch-all for unmatched /admin/* URLs; answers notFound().
   { surface: '/admin/[...unknown]', kind: 'page', key: 'dashboard.view' },
+  // The page the proxy's kill-switch 503 bodies name as `supportUrl`.
+  { surface: '/admin/support', kind: 'page', key: 'dashboard.view' },
   { surface: '/admin/account', kind: 'page', key: 'dashboard.view' },
   { surface: '/admin/audit', kind: 'page', key: 'audit.read' },
   { surface: '/admin/broadcasts', kind: 'page', key: 'broadcasts.read' },
