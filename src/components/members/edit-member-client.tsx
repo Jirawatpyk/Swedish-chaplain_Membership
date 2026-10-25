@@ -390,10 +390,12 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
 
       // 1. Member-company field updates. (First step — a failure here means
       //    nothing has been persisted yet, so no partial-save warning.)
+      // A confirmed reason belongs to THIS run only — take it even when the
+      // field step is skipped, so it can never ride on a later save.
+      const fieldOverride = fieldOverrideRef.current;
+      fieldOverrideRef.current = null;
       if (hasFieldDiff(values, member)) {
         idemKeyRef.current = uuid();
-        const fieldOverride = fieldOverrideRef.current;
-        fieldOverrideRef.current = null;
         const fieldRes = await patch({
           ...fieldPayload(values),
           ...(fieldOverride && {
