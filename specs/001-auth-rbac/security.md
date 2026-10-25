@@ -109,6 +109,17 @@ and the attempt is still rate-limited and audited (`sign_in_failure`,
 summary "sign-in attempt on disabled account"). Revisit if a disabled
 account's credential reuse is ever reported.
 
+**Accepted residual risk — archiving a member revokes a shared portal user
+everywhere (126/127, PR #645 security-engineer L3; accepted 2026-10-25)**:
+archiving a member (single or bulk) revokes every session of each portal user
+linked to it and soft-consumes their pending invitations. `contacts.linked_user_id`
+is not unique, so a user who is also a contact of ANOTHER, active member loses
+those sessions and that member's pending invitation too. Accepted because it is
+the single archive's long-standing behaviour (bulk only made it reachable 100 at
+a time), the sessions come back on the next sign-in, and over-revoking on an
+offboarding event fails safe. Revisit if one person routinely represents several
+member companies.
+
 ### T-02. Brute force (single-account)
 
 **Attack**: attacker targets one known account and tries millions of passwords.
