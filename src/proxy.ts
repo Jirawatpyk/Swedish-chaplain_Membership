@@ -4,6 +4,7 @@ import { checkCsrf } from '@/lib/csrf';
 import { REQUEST_ID_HEADER, requestIdFromHeaders } from '@/lib/request-id';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { KILL_SWITCH_RETRY_AFTER_SECONDS } from '@/lib/kill-switch-retry';
 
 /**
  * Staff-review R2 R023 (2026-04-28) — per-request nonce forwarded to
@@ -249,19 +250,14 @@ function applySecurityHeaders(response: NextResponse, nonce: string): NextRespon
   return response;
 }
 
-/**
- * Retry window for all kill-switch 503s. Mirrored as `Retry-After` header
- * AND `retryAfterSeconds` body field so route handlers + member-portal
- * error boundaries can render a countdown without parsing headers (some
- * fetch wrappers strip them).
- */
-const KILL_SWITCH_RETRY_AFTER_SECONDS = 300;
 
 /**
  * Canonical machine-readable body schema for every 503 kill-switch /
  * read-only block. Phase 3+ route handlers and portal error boundaries
  * branch on `error` (code) to pick the right toast + i18n key, and use
- * `retryAfterSeconds` / `supportUrl` to shape the CTA.
+ * `retryAfterSeconds` / `supportUrl` to shape the CTA. `supportUrl` is the
+ * staff help page `src/app/(staff)/admin/support/page.tsx` (support address,
+ * what a paused change means).
  *
  * `message` is EN-only and is a safety fallback — the caller SHOULD
  * translate `error` via an i18n key instead of rendering `message`

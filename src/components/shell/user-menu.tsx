@@ -21,9 +21,10 @@
  * D2 consolidated these into the single Account hub; the legacy routes
  * (/portal/preferences/renewals, /portal/account/data-export) now redirect to
  * the matching anchors, so renewal-reminder email CTAs keep resolving.
- * Staff (admin/manager) keep the original single account item.
+ * Staff (admin/manager) keep the account item, plus Help and support
+ * (/admin/support, the page the proxy's 503 bodies name).
  */
-import { ChevronDownIcon, LogOutIcon, UserIcon, CalendarClockIcon, ShieldIcon } from 'lucide-react';
+import { ChevronDownIcon, LifeBuoyIcon, LogOutIcon, UserIcon, CalendarClockIcon, ShieldIcon } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -104,7 +105,11 @@ export function UserMenu({
         { label: tHub('renewalPrefs'), icon: <CalendarClockIcon aria-hidden />, href: '/portal/account#renewal-prefs' },
         { label: tHub('dataPrivacy'), icon: <ShieldIcon aria-hidden />, href: '/portal/account#data-privacy' },
       ]
-    : [{ label: t('account'), icon: <UserIcon aria-hidden />, onSelect: () => router.push('/admin/account') }];
+    : [
+        { label: t('account'), icon: <UserIcon aria-hidden />, onSelect: () => router.push('/admin/account') },
+        // The page every kill-switch 503 names as `supportUrl` (src/proxy.ts).
+        { label: t('support'), icon: <LifeBuoyIcon aria-hidden />, onSelect: () => router.push('/admin/support') },
+      ];
 
   const themeChoices: MenuItem[] =
     themeChoicesOnPhone && onPhone

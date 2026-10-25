@@ -163,7 +163,8 @@
       "account": "Account settings",
       "signOut": "Sign out",
       "signOutFailed": "Sign out failed",
-      "signOutNetworkError": "Network error during sign out"
+      "signOutNetworkError": "Network error during sign out",
+      "support": "Help and support"
     },
     "portalLabel": {
       "staff": "Staff",
@@ -6160,6 +6161,40 @@
         }
       }
     },
+    "maintenanceBanner": {
+      "title": "Maintenance: changes are paused.",
+      "body": "You can still view and download. Saving, issuing, recording payments and sending are switched off until it ends.",
+      "help": "Help and support"
+    },
+    "support": {
+      "title": "Help and support",
+      "subtitle": "What it means when a change is paused, and who to contact.",
+      "status": {
+        "ok": "Everything is working right now.",
+        "maintenance": "Maintenance is on: changes are paused.",
+        "maintenanceBody": "Try again in about {minutes} minutes. Viewing and downloads still work.",
+        "featuresOff": "Switched off right now: {features}.",
+        "featuresOffBody": "The rest of the system works as usual."
+      },
+      "feature": {
+        "members": "Members",
+        "invoicing": "Invoicing",
+        "onlinePayment": "Online payments",
+        "broadcasts": "E-Blasts",
+        "renewals": "Renewals"
+      },
+      "paused": {
+        "title": "When changes are paused",
+        "maintenance": "Maintenance: changes are paused for everyone. You can still view and download. Saving, issuing documents, recording payments and sending are switched off until it ends, usually within minutes. Try again in about {minutes} minutes.",
+        "featureOff": "One feature switched off: one area (for example online payments or E-Blasts) is unavailable until it is switched back on. The rest of the system works as usual. If you need it now, email support.",
+        "nothingChanged": "A refused action changes nothing, so it is safe to try it again later."
+      },
+      "contact": {
+        "title": "Contact support",
+        "body": "For a problem with the system, a question about your access, or an error you can't get past, email the support team:",
+        "includeId": "If the message showed an error ID or request ID, include it. It lets us find exactly what happened."
+      }
+    },
     "notFound": {
       "title": "Page not available",
       "body": "This page doesn't exist, the record was removed, or it isn't available to your role. If you reached it from a link or a bookmark, that link may be out of date.",
@@ -6357,6 +6392,7 @@
     }
   },
   "breadcrumb": {
+    "support": "Help and support",
     "brand": "Brand",
     "admin": "Admin",
     "dashboard": "Dashboard",
