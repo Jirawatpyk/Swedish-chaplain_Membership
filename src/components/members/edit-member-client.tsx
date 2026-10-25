@@ -119,6 +119,11 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     useState<ResolvedServerFieldError | null>(null);
   const lastValuesRef = useRef<MemberFormValues | null>(null);
   const idemKeyRef = useRef<string>(uuid());
+  // 127 — which step's 422 opened the override dialog. The member-field step
+  // (a legal entity type outside the plan scope) re-submits the FIELD patch
+  // with the reason; the plan step re-submits the plan payload.
+  const overrideStepRef = useRef<'fields' | 'plan'>('plan');
+  const fieldOverrideRef = useRef<OverrideReasonResult | null>(null);
 
   const patch = async (body: Record<string, unknown>): Promise<Response> => {
     return fetch(`/api/members/${member.memberId}`, {
@@ -387,8 +392,17 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       //    nothing has been persisted yet, so no partial-save warning.)
       if (hasFieldDiff(values, member)) {
         idemKeyRef.current = uuid();
-        const fieldRes = await patch(fieldPayload(values));
+        const fieldOverride = fieldOverrideRef.current;
+        fieldOverrideRef.current = null;
+        const fieldRes = await patch({
+          ...fieldPayload(values),
+          ...(fieldOverride && {
+            override_reason_code: fieldOverride.code,
+            override_reason_note: fieldOverride.note,
+          }),
+        });
         if (!fieldRes.ok) {
+          overrideStepRef.current = 'fields';
           await handleResponse(fieldRes);
           return;
         }
@@ -425,6 +439,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       // 4. Plan change last.
       if (planChanged(values)) {
         idemKeyRef.current = uuid();
+        overrideStepRef.current = 'plan';
         const res = await patch(planPayload(values));
         await handleResponse(res);
         return;
@@ -493,6 +508,13 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
   const onOverrideConfirm = async (result: OverrideReasonResult) => {
     if (!lastValuesRef.current) return;
     setOverrideState(null);
+    if (overrideStepRef.current === 'fields') {
+      // Re-run the whole sequence: the field step now carries the reason,
+      // and the later steps (contacts, plan) run as they would have.
+      fieldOverrideRef.current = result;
+      await runSubmit(lastValuesRef.current);
+      return;
+    }
     setSubmitting(true);
     try {
       idemKeyRef.current = uuid();
