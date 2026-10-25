@@ -75,10 +75,11 @@ describe('QuotaDisplay on AURA', () => {
       'grid-cols-4',
       'max-[359px]:grid-cols-2',
     );
-    expect(screen.getByRole('progressbar', { name: q.progressLabel })).toHaveAttribute(
-      'aria-valuenow',
-      '3',
-    );
+    // AURA Progress: the value is what is used; the reserved part rides in the
+    // value text (one bar with the Dashboard's, the user's ask of 25 Oct).
+    const bar = screen.getByRole('progressbar', { name: q.progressLabel });
+    expect(bar).toHaveAttribute('aria-valuenow', '2');
+    expect(bar).toHaveAttribute('aria-valuetext', '2 used, 1 reserved, 3 remaining of 6');
   });
 
   it('a failed load offers an AURA Retry button', async () => {
@@ -106,27 +107,32 @@ describe('QuotaDisplay on AURA', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('draws the reserved part hatched beside the used part, with a legend and the footnote (board)', () => {
+  it('is AURA Progress with the reserved part striped, the legend and the footnote (board)', () => {
     renderQuota({ live: false });
-    const bar = screen.getByRole('progressbar', { name: q.progressLabel });
-    const used = bar.querySelector('[data-segment="used"]') as HTMLElement;
-    const reserved = bar.querySelector('[data-segment="reserved"]') as HTMLElement;
-    // SNAP: 2 used and 1 reserved of 6.
-    expect(used.style.width).toBe(`${(2 / 6) * 100}%`);
-    expect(reserved.style.width).toBe(`${(1 / 6) * 100}%`);
-    expect(reserved.style.backgroundImage).toContain('repeating-linear-gradient');
+    const card = screen.getByTestId('quota-display');
+    const progress = card.querySelector('.aura-progress') as HTMLElement;
+    expect(progress).toHaveClass('aura-progress--accent');
+    expect(progress.querySelector('.aura-progress__bar--reserved')).not.toBeNull();
+    expect(card.querySelector('[data-segment]')).toBeNull();
     // The counters already state the numbers, so the legend is not read twice.
-    const legend = screen.getByText(q.reservedLegend).closest('[aria-hidden="true"]');
-    expect(legend).not.toBeNull();
+    const legend = screen.getByTestId('quota-legend');
+    expect(legend).toHaveAttribute('aria-hidden', 'true');
+    expect(legend).toHaveTextContent(q.reservedLegend);
     expect(screen.getByText(q.footnote)).toBeInTheDocument();
   });
 
-  it('caps the two parts at the whole bar when used plus reserved runs over the cap', () => {
-    renderQuota({ live: false, initial: { ...SNAP, used: 5, reserved: 3, remaining: 0 } });
-    const bar = screen.getByRole('progressbar', { name: q.progressLabel });
-    const used = parseFloat((bar.querySelector('[data-segment="used"]') as HTMLElement).style.width);
-    const reserved = parseFloat((bar.querySelector('[data-segment="reserved"]') as HTMLElement).style.width);
-    expect(used + reserved).toBeLessThanOrEqual(100);
+  it('shows the legend only while something is reserved', () => {
+    renderQuota({ live: false, initial: { ...SNAP, reserved: 0, remaining: 4 } });
+    expect(screen.queryByTestId('quota-legend')).toBeNull();
+    expect(screen.getByTestId('quota-display').querySelector('.aura-progress__bar--reserved')).toBeNull();
+  });
+
+  it('turns the bar and the legend to danger once the quota is used up', () => {
+    renderQuota({ live: false, initial: { ...SNAP, used: 5, reserved: 1, remaining: 0 } });
+    const card = screen.getByTestId('quota-display');
+    expect(card.querySelector('.aura-progress')).toHaveClass('aura-progress--danger');
+    expect(screen.getByTestId('quota-legend').querySelector('[data-swatch="reserved"]')).toHaveClass(
+      'bg-[var(--aura-fg-danger)]',
+    );
   });
 });
-

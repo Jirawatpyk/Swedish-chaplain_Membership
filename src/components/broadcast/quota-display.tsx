@@ -20,14 +20,20 @@
  * label above its number; the bar, live region, testids and retry are kept.
  * The reserved part is drawn hatched beside the used part, with a legend and
  * the board's footnote (copy added with the user's approval, 24 Oct).
+ *
+ * 25 Oct (the user: one quota bar on the Dashboard and here): the bar is AURA
+ * `Progress` with `secondaryValue`, as the Dashboard's; the legend shows only
+ * while something is reserved (`QuotaLegend`), and the bar turns danger once
+ * the quota is used up.
  */
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
-import { Button, Card, buttonClass } from '@jirawatpyk/aura-react';
+import { Button, Card, Progress, buttonClass } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
+import { QuotaLegend } from './quota-legend';
 
 export interface QuotaSnapshot {
   readonly used: number;
@@ -133,15 +139,7 @@ export function QuotaDisplay({
     };
   }, [endpoint, live, refreshKey, retryNonce]);
 
-  // Clamp percentage at 100 to avoid race conditions where used+reserved
-  // briefly exceeds cap (P6 finding).
-  // Board `Portal-broadcasts`: the used part solid, the reserved part hatched
-  // beside it. Both clamp so they never run past the bar together.
-  const usedPct = snap && snap.cap > 0 ? Math.min(100, (snap.used / snap.cap) * 100) : 0;
-  const reservedPct =
-    snap && snap.cap > 0 ? Math.min(100 - usedPct, (snap.reserved / snap.cap) * 100) : 0;
   const exhausted = snap !== null && snap.remaining === 0;
-  const ariaValueNow = snap ? Math.min(snap.cap, snap.used + snap.reserved) : 0;
 
   const showReset = nextResetCopy !== null && snap !== null && !error;
 
@@ -188,57 +186,27 @@ export function QuotaDisplay({
               <Counter label={t('remaining')} value={snap.remaining} emphasise={exhausted} />
               <Counter label={t('cap')} value={snap.cap} />
             </div>
-            <div
-              className="h-2 w-full overflow-hidden rounded-full bg-[var(--aura-bg-surface-hover)]"
-              role="progressbar"
-              aria-valuenow={ariaValueNow}
-              aria-valuemax={snap.cap}
-              aria-valuemin={0}
+            {/* AURA clamps used + reserved to the bar, as the old hand-drawn one did (P6). */}
+            <Progress
               aria-label={t('progressLabel')}
-            >
-              <div
-                className={cn(
-                  'flex h-full',
-                  exhausted ? '[--quota-fill:var(--aura-fg-danger)]' : '[--quota-fill:var(--aura-fg-accent)]',
-                )}
-              >
-                <span
-                  data-segment="used"
-                  className="h-full bg-[var(--quota-fill)] motion-safe:transition-all"
-                  style={{ width: `${usedPct}%` }}
-                />
-                <span
-                  data-segment="reserved"
-                  className="h-full opacity-60 motion-safe:transition-all"
-                  style={{
-                    width: `${reservedPct}%`,
-                    backgroundImage:
-                      'repeating-linear-gradient(45deg, var(--quota-fill) 0 3px, transparent 3px 6px)',
-                  }}
-                />
-              </div>
-            </div>
-            {/* The legend repeats what the counters above already say, so it
-                is not read twice. */}
-            <div
-              aria-hidden="true"
-              className="flex flex-wrap gap-x-4 gap-y-1 aura-text-caption text-[var(--aura-fg-secondary)]"
-            >
-              <span className="inline-flex items-center gap-1.5">
-                <span className="size-2.5 shrink-0 rounded-[2px] bg-[var(--aura-fg-accent)]" />
-                {t('used')}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span
-                  className="size-2.5 shrink-0 rounded-[2px]"
-                  style={{
-                    backgroundImage:
-                      'repeating-linear-gradient(45deg, var(--aura-fg-accent) 0 3px, transparent 3px 6px)',
-                  }}
-                />
-                {t('reservedLegend')}
-              </span>
-            </div>
+              value={snap.used}
+              secondaryValue={snap.reserved}
+              max={snap.cap}
+              tone={exhausted ? 'danger' : 'accent'}
+              valueText={t('valueText', {
+                used: snap.used,
+                reserved: snap.reserved,
+                remaining: snap.remaining,
+                cap: snap.cap,
+              })}
+            />
+            {snap.reserved > 0 ? (
+              <QuotaLegend
+                usedLabel={t('used')}
+                reservedLabel={t('reservedLegend')}
+                tone={exhausted ? 'danger' : 'accent'}
+              />
+            ) : null}
             {exhausted ? (
               <p className="aura-text-caption text-[var(--aura-fg-danger)]">
                 {t('exhausted', {

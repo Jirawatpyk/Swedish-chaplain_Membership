@@ -76,6 +76,10 @@ describe('<PortalBenefitsSummaryCard> reserved E-Blasts (spec 122 US3, `Main` bo
     // AURA's own Progress (#111, 5.17): its tone class, and the bar named by its label element
     expect(container.querySelector('.aura-progress')).toHaveClass('aura-progress--accent');
     expect(bar).toHaveAttribute('aria-labelledby');
+    // One quota bar with the Benefits / compose card (the user, 25 Oct): the same key under it.
+    const legend = screen.getByTestId('quota-legend');
+    expect(legend).toHaveAttribute('aria-hidden', 'true');
+    expect(legend).toHaveTextContent('Reserved (in review or scheduled)');
   });
 
   it('keeps the plain bar when nothing is reserved', () => {
@@ -91,5 +95,29 @@ describe('<PortalBenefitsSummaryCard> reserved E-Blasts (spec 122 US3, `Main` bo
     );
     expect(screen.getByText('Not used yet this year')).toBeInTheDocument();
     expect(screen.queryByText(/reserved/)).toBeNull();
+    expect(screen.queryByTestId('quota-legend')).toBeNull();
+  });
+
+  it('turns the E-Blast bar and its key to danger once used plus reserved reach the quota, as the Benefits card does', () => {
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <PortalBenefitsSummaryCard
+          locale="en"
+          membershipYear={2026}
+          fullHref="/portal/benefits"
+          quantifiable={[
+            { key: 'eblast', used: 5, entitlement: 6, reserved: 1, lastUsedAt: null },
+            { key: 'cultural_tickets', used: 2, entitlement: 2, lastUsedAt: null },
+          ]}
+        />
+      </NextIntlClientProvider>,
+    );
+    const [eblast, tickets] = container.querySelectorAll('.aura-progress');
+    expect(eblast).toHaveClass('aura-progress--danger');
+    expect(screen.getByTestId('quota-legend').querySelector('[data-swatch="reserved"]')).toHaveClass(
+      'bg-[var(--aura-fg-danger)]',
+    );
+    // A ticket benefit used in full is not an error.
+    expect(tickets).toHaveClass('aura-progress--accent');
   });
 });

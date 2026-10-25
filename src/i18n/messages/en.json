@@ -6997,6 +6997,7 @@
         "nextReset": "Renews {date}",
         "planChangedExplainer": "Plan changed on {date} — current year quota reflects the new plan.",
         "reservedLegend": "Reserved (in review or scheduled)",
+        "valueText": "{used} used, {reserved} reserved, {remaining} remaining of {cap}",
         "footnote": "A slot is reserved when you submit and used when the E-Blast is sent. It is given back if the E-Blast is rejected, cancelled, expires without your approval, or cannot be sent."
       },
       "banner": {
@@ -7029,6 +7030,12 @@
           "submittedAt": "Submitted",
           "sentAt": "Sent",
           "audience": "Audience"
+        },
+        "audience": {
+          "all_members": "All members",
+          "tier": "Specific membership tier",
+          "event_attendees_last_90d": "Event attendees (last 90 days)",
+          "custom": "Custom email list"
         },
         "status": {
           "draft": "Draft",

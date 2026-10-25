@@ -6997,6 +6997,7 @@
         "nextReset": "Återställs {date}",
         "planChangedExplainer": "Paketet ändrades {date} — årets kvot speglar det nya paketet.",
         "reservedLegend": "Reserverat (under granskning eller schemalagt)",
+        "valueText": "{used} använda, {reserved} reserverade, {remaining} kvar av {cap}",
         "footnote": "En plats i kvoten reserveras när du skickar in och räknas som använd när utskicket skickas. Den återförs om utskicket avvisas, avbryts, förfaller utan ditt godkännande eller inte kan skickas."
       },
       "banner": {
@@ -7029,6 +7030,12 @@
           "submittedAt": "Inskickat",
           "sentAt": "Skickat",
           "audience": "Målgrupp"
+        },
+        "audience": {
+          "all_members": "Alla medlemmar",
+          "tier": "Specifik medlemsnivå",
+          "event_attendees_last_90d": "Eventdeltagare (senaste 90 dagarna)",
+          "custom": "Anpassad e-postlista"
         },
         "status": {
           "draft": "Utkast",
