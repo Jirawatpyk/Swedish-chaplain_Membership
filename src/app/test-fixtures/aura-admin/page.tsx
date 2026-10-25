@@ -2017,7 +2017,11 @@ export default async function AuraAdminPreviewPage({
   if (view === 'eblast-editor') {
     return (
       <StaffFrame path="/admin/broadcasts/new">
-        <EditorPreview state={state} />
+        {/* The page container gives the staff page padding, as on the real
+            compose pages; without it the editor sat against the sidebar. */}
+        <FormContainer align="start">
+          <EditorPreview state={state} />
+        </FormContainer>
       </StaffFrame>
     );
   }

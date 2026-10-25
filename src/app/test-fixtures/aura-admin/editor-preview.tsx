@@ -15,7 +15,7 @@ const SAMPLE =
 
 export function EditorPreview({ state }: { readonly state: string | undefined }): React.ReactElement {
   return (
-    <div className="max-w-3xl">
+    <div className="w-full">
       <TiptapEditor
         initialHtml={SAMPLE}
         onChange={() => {}}
