@@ -36,6 +36,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['./tests/integration-setup.ts'],
+    // Once per run: disable staff test users that earlier runs leaked (crashed
+    // workers, direct `db.insert(users)`), older than a few hours.
+    globalSetup: ['./tests/integration-global-setup.ts'],
     include: ['tests/integration/**/*.test.ts'],
     exclude: ['node_modules', '.next', 'tests/unit/**', 'tests/e2e/**'],
     // Cross-region latency makes CI a different machine class, not just a
@@ -70,6 +73,10 @@ export default defineConfig({
     // the same fork. Do NOT set `isolate: false` — module-registry isolation
     // is still needed independent of the env concern.
     isolate: true,
+    // Pinned, not left to the default: tests/integration-setup.ts registers an
+    // afterAll that sweeps the test users a file never deleted, and it must run
+    // AFTER the file's own afterAll teardowns (stack = reverse registration).
+    sequence: { hooks: 'stack' },
   },
   resolve: {
     alias: {
