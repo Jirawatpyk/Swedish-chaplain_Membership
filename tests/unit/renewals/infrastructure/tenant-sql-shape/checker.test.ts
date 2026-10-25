@@ -2,6 +2,8 @@
  * 130 (D-029) — the tenant-predicate checker itself: positive and negative
  * controls, so a parse that silently matches nothing cannot pass a repo.
  */
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { and, eq, sql } from 'drizzle-orm';
 import { recordingDb, tenantPredicateViolations, tenantScopedTables } from '../../../../helpers/tenant-sql-shape';
@@ -48,5 +50,41 @@ describe('tenantPredicateViolations (130)', () => {
     expect(good!.refs.sort()).toEqual(['m', 'rc']);
     expect(good!.violations).toEqual([]);
     expect(bad!.violations).toEqual(['c: 1 reference(s), 0 tenant predicate(s)']);
+  });
+
+  it('a bound predicate counts only when its parameter IS the tenant (review #656)', async () => {
+    const { db, statements } = recordingDb();
+    await db.select().from(renewalCycles).where(eq(renewalCycles.tenantId, 'member-1'));
+    await db.select().from(renewalCycles).where(eq(renewalCycles.tenantId, 'tenant-shape'));
+    const [wrong, right] = statements.map((s) => tenantPredicateViolations(s, TABLES));
+    expect(wrong!.violations).toEqual(['renewal_cycles: 1 reference(s), 0 tenant predicate(s)']);
+    expect(right!.violations).toEqual([]);
+  });
+
+  it('a join correlated only to itself or to an unfenced table does not count (review #656)', () => {
+    const selfOnly = `SELECT 1 FROM renewal_cycles rc JOIN members m ON m.tenant_id = rc.tenant_id
+      WHERE rc.tenant_id = rc.tenant_id`;
+    expect(tenantPredicateViolations(selfOnly, TABLES).violations).toEqual([
+      'rc: 1 reference(s), 0 tenant predicate(s)',
+      'm: 1 reference(s), 0 tenant predicate(s)',
+    ]);
+  });
+
+  it('flags a comma join', () => {
+    expect(tenantPredicateViolations(`SELECT 1 FROM renewal_cycles rc, members m WHERE rc.tenant_id = $1`, TABLES).violations)
+      .toContain('comma join after a table reference');
+  });
+
+  it('every pgTable( file is a schema*.ts the table list reads (review #656)', () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((name) => {
+        const p = join(dir, name);
+        return statSync(p).isDirectory() ? walk(p) : /\.tsx?$/.test(name) ? [p] : [];
+      });
+    const outside = walk('src')
+      .filter((f) => /\bpgTable\(/.test(readFileSync(f, 'utf8')))
+      .map((f) => f.split('\\').join('/'))
+      .filter((f) => !/^src\/modules\/.+\/schema[^/]*\.ts$/.test(f));
+    expect(outside).toEqual([]);
   });
 });

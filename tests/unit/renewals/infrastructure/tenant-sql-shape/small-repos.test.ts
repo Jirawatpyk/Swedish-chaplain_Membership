@@ -20,7 +20,8 @@ vi.mock('@/lib/db', async (importOriginal) => {
   };
 });
 
-const { ANY, SHAPE_TENANT, anyWith, callEach, tenantPredicateViolations, tenantScopedTables } = await import(
+const { ANY, SHAPE_TENANT, anyWith, callEach, isPureInsert, tenantPredicateViolations, tenantScopedTables } =
+  await import(
   '../../../../helpers/tenant-sql-shape'
 );
 const { makeDrizzleRenewalReminderEventRepo } = await import(
@@ -42,24 +43,25 @@ const { makeDrizzleBounceEventQuery } = await import(
 const CTX = { slug: SHAPE_TENANT } as never;
 const TABLES = tenantScopedTables();
 
-/** Runs the calls, then returns every non-insert statement's violations. */
+/** Runs the calls, then returns every statement's violations (pure inserts skipped). */
 async function check(repo: unknown, calls: Record<string, readonly unknown[]>, minStatements: number) {
   rec.statements.length = 0;
   await callEach(repo as never, calls);
-  const checked = rec.statements.filter((s) => !/^\s*insert/i.test(s.sql));
+  const checked = rec.statements.filter((s) => !isPureInsert(s.sql));
   // Positive control: the calls reached the database, and each statement
   // names a tenant-scoped table the parse can see.
   expect(checked.length).toBeGreaterThanOrEqual(minStatements);
-  expect(checked.every((s) => tenantPredicateViolations(s.sql, TABLES).refs.length > 0)).toBe(true);
+  expect(checked.every((s) => tenantPredicateViolations(s, TABLES).refs.length > 0)).toBe(true);
   return checked.flatMap((s) =>
-    tenantPredicateViolations(s.sql, TABLES).violations.map((v) => `${v} :: ${s.sql.slice(0, 80)}`),
+    tenantPredicateViolations(s, TABLES).violations.map((v) => `${v} :: ${s.sql.slice(0, 80)}`),
   );
 }
-
 
 describe('small renewals repos — tenant predicate on every statement (130)', () => {
   it('reminder events', async () => {
     const v = await check(makeDrizzleRenewalReminderEventRepo(CTX), {
+      insertIfAbsent: [rec.db, ANY],
+      bulkInsertIfAbsent: [rec.db, [ANY]],
       transitionStatus: [rec.db, ANY],
       transitionFailedToSent: [rec.db, ANY],
       listForCycle: [SHAPE_TENANT, 'cycle-1'],
@@ -86,6 +88,7 @@ describe('small renewals repos — tenant predicate on every statement (130)', (
     const v = await check(makeDrizzleTenantRenewalSchedulePolicyRepo(CTX), {
       findByBucket: [SHAPE_TENANT, 'regular'],
       listAllForTenant: [SHAPE_TENANT],
+      upsertSteps: [rec.db, SHAPE_TENANT, 'regular', [ANY]],
     }, 2);
     expect(v).toEqual([]);
   });
