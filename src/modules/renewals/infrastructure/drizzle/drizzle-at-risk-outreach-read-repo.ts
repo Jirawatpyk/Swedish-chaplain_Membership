@@ -56,6 +56,7 @@ export function makeDrizzleAtRiskOutreachReadRepo(
           .from(atRiskOutreach)
           .where(
             and(
+              eq(atRiskOutreach.tenantId, tenant.slug),
               eq(atRiskOutreach.memberId, memberId),
               sql`${atRiskOutreach.createdAt} >= NOW() - (${withinDays}::int * INTERVAL '1 day')`,
             ),

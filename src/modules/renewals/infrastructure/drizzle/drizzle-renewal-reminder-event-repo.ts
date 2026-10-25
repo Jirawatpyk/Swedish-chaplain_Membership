@@ -176,6 +176,7 @@ export function makeDrizzleRenewalReminderEventRepo(
         .set(setClause)
         .where(
           and(
+            eq(renewalReminderEvents.tenantId, tenant.slug),
             eq(renewalReminderEvents.reminderEventId, input.reminderEventId),
             eq(renewalReminderEvents.status, 'pending'),
           ),
@@ -212,6 +213,7 @@ export function makeDrizzleRenewalReminderEventRepo(
         })
         .where(
           and(
+            eq(renewalReminderEvents.tenantId, tenant.slug),
             eq(renewalReminderEvents.reminderEventId, input.reminderEventId),
             eq(renewalReminderEvents.status, 'failed'),
             sql`${renewalReminderEvents.retryExhaustedAt} IS NULL`,
@@ -232,7 +234,12 @@ export function makeDrizzleRenewalReminderEventRepo(
         const rows = await tx
           .select()
           .from(renewalReminderEvents)
-          .where(eq(renewalReminderEvents.cycleId, cycleId))
+          .where(
+            and(
+              eq(renewalReminderEvents.tenantId, tenant.slug),
+              eq(renewalReminderEvents.cycleId, cycleId),
+            ),
+          )
           .orderBy(
             sql`${renewalReminderEvents.dispatchedAt} DESC NULLS LAST`,
           );
@@ -251,6 +258,7 @@ export function makeDrizzleRenewalReminderEventRepo(
           .from(renewalReminderEvents)
           .where(
             and(
+              eq(renewalReminderEvents.tenantId, tenant.slug),
               eq(renewalReminderEvents.status, 'failed'),
               sql`${renewalReminderEvents.createdAt} >= ${sinceIso}`,
             ),
@@ -271,6 +279,7 @@ export function makeDrizzleRenewalReminderEventRepo(
           .from(renewalReminderEvents)
           .where(
             and(
+              eq(renewalReminderEvents.tenantId, tenant.slug),
               eq(renewalReminderEvents.status, 'failed'),
               sql`${renewalReminderEvents.retryUntil} > ${args.nowIso}`,
               sql`${renewalReminderEvents.retryExhaustedAt} IS NULL`,
@@ -292,6 +301,7 @@ export function makeDrizzleRenewalReminderEventRepo(
           .from(renewalReminderEvents)
           .where(
             and(
+              eq(renewalReminderEvents.tenantId, tenant.slug),
               eq(renewalReminderEvents.status, 'failed'),
               sql`${renewalReminderEvents.retryUntil} <= ${args.nowIso}`,
               sql`${renewalReminderEvents.retryExhaustedAt} IS NULL`,
@@ -316,6 +326,7 @@ export function makeDrizzleRenewalReminderEventRepo(
         .set({ retryExhaustedAt: new Date(input.exhaustedAtIso) })
         .where(
           and(
+            eq(renewalReminderEvents.tenantId, tenant.slug),
             eq(renewalReminderEvents.reminderEventId, input.reminderEventId),
             sql`${renewalReminderEvents.retryExhaustedAt} IS NULL`,
           ),

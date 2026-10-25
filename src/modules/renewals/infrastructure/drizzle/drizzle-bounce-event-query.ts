@@ -57,6 +57,7 @@ export function makeDrizzleBounceEventQuery(
           .from(contacts)
           .where(
             and(
+              eq(contacts.tenantId, tenant.slug),
               eq(contacts.memberId, memberId),
               eq(contacts.isPrimary, true),
               sql`${contacts.removedAt} IS NULL`,
