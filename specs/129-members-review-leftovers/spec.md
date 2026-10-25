@@ -18,4 +18,4 @@
    - `docs/retro.md` records the Upstash timeout fail-open (#650).
 
 ## Not changed
-- **`findLatestCycleForMemberInTx` ignoring `_tenantId`** (raised by security as a LOW). This is deliberate, per Round 6 S-R5-6 (`drizzle-renewal-cycle-repo.ts:891`): `*InTx` methods get tenant scope from `runInTenant` plus RLS, and a WHERE predicate would mask RLS policy drift. That is the two-layer isolation Principle I asks for.
+- **`findLatestCycleForMemberInTx` ignoring `_tenantId`** (security LOW). This is not changed here, because it follows a repo-wide pattern: Round 6 S-R5-6, about 81 `_tenantId` methods relying on RLS only. That pattern conflicts with Principle I's "every query MUST be scoped by `tenantId`", so it needs a decision plus a sweep, not a one-off. Tracked in issue #653.
