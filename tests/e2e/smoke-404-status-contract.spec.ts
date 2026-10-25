@@ -35,7 +35,6 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
 import { signInAsAdmin } from './helpers/admin-session';
 import { signInAsMember } from './helpers/member-sign-in';
 import { clearE2ERateLimits } from './helpers/rate-limit';
-import en from '@/i18n/messages/en.json';
 
 test.beforeEach(async () => {
   await clearE2ERateLimits();
@@ -177,8 +176,9 @@ test.describe('@smoke unmatched /admin/* URLs reach the staff not-found page', (
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1, name: 'Page not available' })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Back to dashboard' })).toHaveAttribute('href', '/admin');
-      // Inside the admin shell: the staff navigation is there.
-      await expect(page.getByRole('navigation', { name: en.nav.staff.ariaLabel })).toBeAttached();
+      // Inside the admin shell: its top bar is there. (Not the staff
+      // navigation: on a phone it lives in the closed drawer, out of the DOM.)
+      await expect(page.getByRole('banner')).toBeVisible();
       await expect(page.getByText('This page could not be found')).toHaveCount(0);
     });
   }
