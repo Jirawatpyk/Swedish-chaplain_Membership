@@ -48,8 +48,10 @@ import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-
 import { archiveMember, undeleteMember, asMemberId } from '@/modules/members';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { f8RenewalsCascadeAdapter } from '@/modules/members/infrastructure/adapters/renewals-cascade-adapter';
+import type { F4InvoicePaidEvent } from '@/modules/invoicing';
 import {
   cancelInFlightCyclesForMember,
+  markCycleCompleteFromInvoicePaid,
   makeRenewalsDeps,
   isTerminalCycleStatus,
   type CycleStatus,
@@ -616,6 +618,135 @@ describe('F3 undelete → F8 cycle restore — Cluster 4', () => {
     expect(restored!.periodFrom.getTime()).toBe(C_FROM.getTime());
     expect(restored!.linkedInvoiceId).toBe(issuedInvoiceId);
     expect(rows.filter((r) => r.linkedInvoiceId === issuedInvoiceId)).toHaveLength(1);
+
+    // Paying the carried invoice now completes the RESTORED cycle (it used to
+    // resolve to the cancelled one → `cycle_not_payable`).
+    const paidEvent: F4InvoicePaidEvent = {
+      tenantId: tenant.ctx.slug,
+      invoiceId: issuedInvoiceId,
+      memberId: issuedMemberId,
+      paidAt: new Date().toISOString(),
+      amountSatang: asSatang(5_000_000n),
+      vatSatang: asSatang(350_000n),
+      currency: 'THB',
+      invoiceSubject: 'membership',
+      paymentDate: null,
+      paymentMethod: 'stripe_card',
+      triggeredBy: 'webhook',
+    };
+    const paid = await markCycleCompleteFromInvoicePaid(makeRenewalsDeps(tenant.ctx.slug), paidEvent);
+    expect(paid.kind).toBe('completed');
+    const [after] = await db
+      .select({ status: renewalCycles.status })
+      .from(renewalCycles)
+      .where(and(eq(renewalCycles.tenantId, tenant.ctx.slug), eq(renewalCycles.cycleId, restored!.cycleId)));
+    expect(after!.status).toBe('completed');
+  });
+
+  // 127 review — when the bill cannot be carried (the plan term changed since
+  // it was issued, so the restored period would not match the billed one) the
+  // restore must fall back to the normal frontier/anchored cycle, NOT leave an
+  // unlinked cycle on the old billed period.
+  it('archive → undelete falls back to the normal restore when the billed term no longer matches (127)', async () => {
+    const mismatchMemberId = randomUUID();
+    const sixMonthCycleId = randomUUID();
+    const issuedInvoiceId = randomUUID();
+    const now = new Date();
+    const C_FROM = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 8, 1));
+    const C_TO = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1));
+    const REG = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(members).values({
+        tenantId: tenant.ctx.slug,
+        memberId: mismatchMemberId,
+        memberNumber: nextSeedMemberNumber(),
+        companyName: 'Mismatch Restore Co',
+        country: 'TH',
+        planId,
+        planYear: 2026,
+        registrationDate: REG.toISOString().slice(0, 10),
+        status: 'active',
+      });
+      await seedPrimaryContact(tx, tenant.ctx.slug, mismatchMemberId);
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: issuedInvoiceId,
+        memberId: mismatchMemberId,
+        planYear: 2026,
+        planId,
+        status: 'issued',
+        pdfDocKind: 'invoice',
+        draftByUserId: admin.userId,
+        fiscalYear: 2026,
+        sequenceNumber: Math.floor(Math.random() * 1_000_000) + 1,
+        documentNumber: `INV-2026-${String(Math.floor(Math.random() * 900000) + 100000)}`,
+        issueDate: C_FROM.toISOString().slice(0, 10),
+        dueDate: C_FROM.toISOString().slice(0, 10),
+        currency: 'THB',
+        subtotalSatang: asSatang(2_500_000n),
+        vatRateSnapshot: '0.0700',
+        vatSatang: asSatang(175_000n),
+        totalSatang: asSatang(2_675_000n),
+        proRatePolicySnapshot: 'none',
+        netDaysSnapshot: 30,
+        tenantIdentitySnapshot: { legalNameEn: 'Test', taxId: '0' } as unknown,
+        memberIdentitySnapshot: {
+          companyName: 'Mismatch Restore Co',
+          country: 'TH',
+          legal_name: 'Mismatch Restore Co Ltd',
+          address: '1 Test Road, Bangkok 10110',
+          primary_contact_name: 'Test Contact',
+          primary_contact_email: 'mismatch@example.com',
+        } as unknown,
+        pdfBlobKey: `invoicing/${tenant.ctx.slug}/2026/${issuedInvoiceId}.pdf`,
+        pdfSha256: 'c'.repeat(64),
+        pdfTemplateVersion: 1,
+      });
+      // A 6-month cycle billed on a 6-month term; the plan is 12 months now.
+      await tx.insert(renewalCycles).values({
+        tenantId: tenant.ctx.slug,
+        cycleId: sixMonthCycleId,
+        memberId: mismatchMemberId,
+        status: 'awaiting_payment',
+        periodFrom: C_FROM,
+        periodTo: C_TO,
+        expiresAt: C_TO,
+        cycleLengthMonths: 6,
+        tierAtCycleStart: 'regular',
+        planIdAtCycleStart: planId,
+        frozenPlanPriceThb: '25000.00',
+        frozenPlanTermMonths: 6,
+        frozenPlanCurrency: 'THB',
+        linkedInvoiceId: issuedInvoiceId,
+        awaitingEnteredAt: C_FROM,
+      });
+    });
+
+    const deps = buildMembersDeps(tenant.ctx);
+    expect(
+      (await archiveMember(asMemberId(mismatchMemberId), { reason: null }, { actorUserId: admin.userId, requestId: randomUUID() }, deps)).ok,
+    ).toBe(true);
+    expect(
+      (await undeleteMember(asMemberId(mismatchMemberId), { actorUserId: admin.userId, requestId: randomUUID() }, deps)).ok,
+    ).toBe(true);
+
+    const rows = await db
+      .select({
+        cycleId: renewalCycles.cycleId,
+        status: renewalCycles.status,
+        periodFrom: renewalCycles.periodFrom,
+        linkedInvoiceId: renewalCycles.linkedInvoiceId,
+      })
+      .from(renewalCycles)
+      .where(and(eq(renewalCycles.tenantId, tenant.ctx.slug), eq(renewalCycles.memberId, mismatchMemberId)));
+    const restored = rows.find((r) => !isTerminalCycleStatus(r.status as CycleStatus));
+    expect(restored).toBeDefined();
+    // The normal restore: anchored from the registration date, not the stale billed period.
+    expect(restored!.periodFrom.getTime()).toBe(REG.getTime());
+    expect(restored!.linkedInvoiceId).toBeNull();
+    // The bill stays on the cancelled cycle (a payment raises the work item).
+    expect(rows.find((r) => r.cycleId === sixMonthCycleId)!.linkedInvoiceId).toBe(issuedInvoiceId);
   });
 
   // plan-change-ux task #24 (MONEY) — effective-paid frontier on RESTORE. The
