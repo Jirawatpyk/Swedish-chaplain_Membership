@@ -302,15 +302,19 @@ export async function updateMember(
         ? err({ type: 'not_found' })
         : err({ type: 'server_error', message: `lookup: ${snapshot.error.code}` });
     }
-    const planResult = await deps.plans.getPlan(
-      deps.tenant,
-      snapshot.value.planId,
-      snapshot.value.planYear,
-    );
-    if (!planResult.ok) {
-      return err({ type: 'server_error', message: `plan lookup: ${planResult.error.code}` });
+    // The form echoes the field on every save; an unchanged type needs no
+    // plan read (the in-tx check below only fires on a change anyway).
+    if (snapshot.value.legalEntityType !== data.legal_entity_type) {
+      const planResult = await deps.plans.getPlan(
+        deps.tenant,
+        snapshot.value.planId,
+        snapshot.value.planYear,
+      );
+      if (!planResult.ok) {
+        return err({ type: 'server_error', message: `plan lookup: ${planResult.error.code}` });
+      }
+      scopePlan = planResult.value;
     }
-    scopePlan = planResult.value;
   }
 
   // 3. M1 — read+lock current, build patch, persist, and audit in ONE tx.
@@ -347,16 +351,13 @@ export async function updateMember(
         draft.legalEntityType = data.legal_entity_type || null;
       // 127 — a CHANGED legal entity type must fit the plan's member-type
       // scope unless an override reason is given.
-      if (
-        scopePlan !== null &&
-        data.legal_entity_type &&
-        data.legal_entity_type !== current.legalEntityType
-      ) {
+      if (data.legal_entity_type && data.legal_entity_type !== current.legalEntityType) {
         if (
+          scopePlan === null ||
           (current.planId as string) !== (scopePlan.planId as string) ||
           current.planYear !== scopePlan.planYear
         ) {
-          // The plan changed between the pre-read and the lock — retry.
+          // The type or plan changed between the pre-read and the lock — retry.
           throw new UseCaseAbort<UpdateMemberError>({
             type: 'server_error',
             message: 'plan_changed_concurrently',
