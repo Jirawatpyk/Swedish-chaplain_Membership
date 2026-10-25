@@ -200,7 +200,10 @@ export function ComposeInlineImageUploader({
         icon={<ImageIcon aria-hidden />}
         touchHeight
         onClick={handlePick}
-        disabled={uploading}
+        // `loading`, not `disabled`: aria-disabled + aria-busy keep focus on
+        // the button while the file uploads (a native disabled dropped it to
+        // <body>, so "Uploading…" was never heard).
+        loading={uploading}
         aria-describedby="broadcast-image-help broadcast-image-public-notice"
         className="self-start"
       >

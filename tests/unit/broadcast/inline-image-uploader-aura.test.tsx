@@ -56,6 +56,17 @@ describe('the inline image uploader on AURA', () => {
     expect(bar).toHaveClass('aura-progress__track', 'is-indeterminate');
   });
 
+  it('the button stays focusable while it uploads (aria-disabled + aria-busy, not disabled)', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    const container = renderUploader();
+    pickFile(container);
+    await screen.findByRole('progressbar');
+    const button = screen.getByRole('button', { name: new RegExp(copy.uploadingLabel) });
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).toHaveAttribute('aria-busy', 'true');
+  });
+
   it('a refused upload is an AURA danger Alert', async () => {
     vi.stubGlobal(
       'fetch',

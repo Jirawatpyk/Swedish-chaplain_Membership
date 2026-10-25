@@ -6477,8 +6477,7 @@
         "link": "Länk",
         "image": "Bild",
         "cta": "Knapp",
-        "banner": "Bannerbild",
-        "imageNeedsDraft": "Spara utkastet först för att kunna lägga till en bild."
+        "banner": "Bannerbild"
       },
       "altDialog": {
         "title": "Beskriv bilden",

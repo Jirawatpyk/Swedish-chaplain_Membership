@@ -6477,8 +6477,7 @@
         "link": "Link",
         "image": "Image",
         "cta": "Button",
-        "banner": "Banner image",
-        "imageNeedsDraft": "Save this draft first to add an image."
+        "banner": "Banner image"
       },
       "altDialog": {
         "title": "Describe this image",

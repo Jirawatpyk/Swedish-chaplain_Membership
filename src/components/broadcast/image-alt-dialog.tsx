@@ -94,6 +94,8 @@ export function ImageAltDialog({
         ? t('errors.tooLong', { max: BANNER_ALT_MAX })
         : null;
 
+  const counter = t('counter', { count: value.trim().length, max: BANNER_ALT_MAX });
+
   return (
     <Dialog
       open={open}
@@ -139,8 +141,15 @@ export function ImageAltDialog({
               submit();
             }
           }}
-          hint={t('counter', { count: value.trim().length, max: BANNER_ALT_MAX })}
-          error={errorText !== null ? <span role="alert">{errorText}</span> : undefined}
+          hint={counter}
+          // AURA's error replaces the hint, so the counter rides along with it.
+          error={
+            errorText !== null ? (
+              <>
+                <span role="alert">{errorText}</span> {counter}
+              </>
+            ) : undefined
+          }
         />
       </form>
     </Dialog>

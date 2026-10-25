@@ -103,7 +103,7 @@ export function LinkDialog({
           {canRemove && (
             <Button
               variant="ghost"
-              className="sm:mr-auto"
+              className="sm:me-auto"
               onClick={() => {
                 onRemove?.();
                 onOpenChange(false);

@@ -94,9 +94,11 @@ export function CtaButtonDialog({
   const textInvalid = error === 'textRequired' || error === 'textTooLong';
   const hrefInvalid = error === 'required' || error === 'scheme';
 
+  const counter = t('counter', { count: text.trim().length, max: CTA_TEXT_MAX });
   // The refusal is the faulty field's AURA `error`, its text in a
-  // `role="alert"` so it is spoken the moment the insert is refused.
-  const errorNode = errorText !== null ? <span role="alert">{errorText}</span> : undefined;
+  // `role="alert"` so it is spoken the moment the insert is refused. AURA's
+  // error replaces the hint, so the text field's counter rides along with it.
+  const alert = errorText !== null ? <span role="alert">{errorText}</span> : null;
 
   return (
     <Dialog
@@ -134,8 +136,14 @@ export function CtaButtonDialog({
             setText(e.target.value);
             setError(null);
           }}
-          hint={t('counter', { count: text.trim().length, max: CTA_TEXT_MAX })}
-          error={textInvalid ? errorNode : undefined}
+          hint={counter}
+          error={
+            textInvalid ? (
+              <>
+                {alert} {counter}
+              </>
+            ) : undefined
+          }
         />
         <TextField
           label={t('urlLabel')}
@@ -147,7 +155,7 @@ export function CtaButtonDialog({
             setHref(e.target.value);
             setError(null);
           }}
-          error={hrefInvalid ? errorNode : undefined}
+          error={hrefInvalid ? alert : undefined}
         />
       </form>
     </Dialog>

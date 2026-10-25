@@ -126,6 +126,22 @@ describe('T098 — visible focus state and 320 px wrapping', () => {
     expect(pressable.length).toBeGreaterThan(0);
     for (const b of pressable) {
       expect(b.className).toContain('aria-pressed:bg-[var(--aura-bg-selected)]');
+      // UX review H-1: the fill alone is 1.07:1 on white; an accent edge marks
+      // the state at 3:1 or more (AURA's own selected-segment rule), and
+      // forced colours keep it as a Highlight outline.
+      expect(b.className).toContain('aria-pressed:shadow-[inset_0_0_0_1px_var(--aura-fg-accent)]');
+      expect(b.className).toContain('forced-colors:aria-pressed:outline-[Highlight]');
+    }
+  });
+
+  it('the unavailable image controls keep the AURA tooltip (no native title) and the token opacity', () => {
+    const { buttons } = renderToolbar({ imageInsertEnabled: false });
+    const blocked = buttons.filter((b) => b.getAttribute('aria-disabled') === 'true');
+    expect(blocked).toHaveLength(2);
+    for (const b of blocked) {
+      expect(b).not.toHaveAttribute('title');
+      expect(b).toHaveAttribute('data-aura-tip', b.getAttribute('aria-label'));
+      expect(b.className).toContain('opacity-[var(--aura-disabled-opacity)]');
     }
   });
 

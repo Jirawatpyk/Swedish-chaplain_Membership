@@ -154,8 +154,9 @@ export default function TiptapEditor({
     immediatelyRender: false,
     editorProps: {
       attributes: {
-        class:
-          'prose prose-sm dark:prose-invert max-w-none min-h-[240px] px-3 py-2 focus:outline-none',
+        // `eblast-editor-content` (globals.css) draws the headings, lists,
+        // quote, divider, button and banner as the email sends them.
+        class: 'eblast-editor-content min-h-[240px] px-3 py-2 focus:outline-none',
         role: 'textbox',
         'aria-multiline': 'true',
         ...(labelledById !== undefined && { 'aria-labelledby': labelledById }),
@@ -298,13 +299,15 @@ export default function TiptapEditor({
       {imagesEnabled && <ClamavUnreachableBanner />}
       <div
         // Spec 122 US12d-2 — the frame draws as an AURA input: its edge, fill,
-        // radius and focus outline (`.aura-input:focus-within`), danger edge when invalid.
+        // radius, hover edge and focus outline (`.aura-input`), danger edge
+        // when invalid. The outline follows the writing area only, so a focused
+        // toolbar control shows its own ring, not two.
         className={cn(
           'min-w-0 overflow-hidden rounded-[var(--aura-radius-md)] border bg-[var(--aura-bg-input)]',
-          'focus-within:outline-[length:var(--aura-focus-ring-width)] focus-within:outline-offset-1 focus-within:outline-[var(--aura-focus-ring)] focus-within:outline-solid',
+          'has-[.ProseMirror:focus]:outline-[length:var(--aura-focus-ring-width)] has-[.ProseMirror:focus]:outline-offset-1 has-[.ProseMirror:focus]:outline-[var(--aura-focus-ring)] has-[.ProseMirror:focus]:outline-solid',
           invalid
             ? 'border-[var(--aura-border-danger)]'
-            : 'border-[var(--aura-border-control)] focus-within:border-[var(--aura-border-strong)]',
+            : 'border-[var(--aura-border-control)] hover:border-[var(--aura-fg-secondary)] has-[.ProseMirror:focus]:border-[var(--aura-border-strong)]',
         )}
         data-testid="tiptap-editor"
       >

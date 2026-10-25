@@ -33,9 +33,11 @@
  *
  * Spec 122 US12d-2: each control is an AURA `IconButton`, 32px on desktop and
  * 44px on touch / phone widths (`touchHeight`), as the compose boards draw it.
- * Its `label` is the accessible name and AURA's own tooltip; a native `title`
- * (the two unavailable image controls only) turns that tooltip off. AURA has
- * no Toolbar, so the roving tabindex above stays the app's.
+ * Its `label` is the accessible name and AURA's own tooltip, on every control:
+ * the two unavailable image controls give their reason through the visible
+ * hint they are described by, not a hover-only `title` (which would also turn
+ * AURA's tooltip off). AURA has no Toolbar, so the roving tabindex above stays
+ * the app's.
  */
 import { useCallback, useRef, useState } from 'react';
 import { type Editor } from '@tiptap/react';
@@ -106,7 +108,6 @@ interface ToolbarControl {
   readonly pressed?: boolean;
   readonly opensDialog?: boolean;
   readonly unavailable?: boolean;
-  readonly title?: string;
 }
 
 export function TiptapToolbar({
@@ -277,7 +278,6 @@ export function TiptapToolbar({
             Icon: ImageIcon,
             opensDialog: true,
             unavailable: !imageInsertEnabled,
-            ...(imageInsertEnabled ? {} : { title: t('imageNeedsDraft') }),
             onActivate: () => {
               if (imageInsertEnabled) onInsertImage?.();
             },
@@ -299,7 +299,6 @@ export function TiptapToolbar({
             Icon: RectangleHorizontal,
             opensDialog: true,
             unavailable: !imageInsertEnabled,
-            ...(imageInsertEnabled ? {} : { title: t('imageNeedsDraft') }),
             onActivate: () => {
               if (imageInsertEnabled) onInsertBanner?.();
             },
@@ -354,7 +353,7 @@ export function TiptapToolbar({
         role="toolbar"
         aria-label={t('label')}
         onKeyDown={handleKeyDown}
-        className="flex flex-wrap items-center gap-0.5 border-b border-[var(--aura-border-default)] p-1.5"
+        className="flex flex-wrap items-center gap-1 border-b border-[var(--aura-border-default)] p-1.5"
       >
         {controls.map((control, index) => (
           <IconButton
@@ -372,7 +371,6 @@ export function TiptapToolbar({
               // saved, which is exactly when the hint is on the page.
               'aria-describedby': IMAGE_DISABLED_HINT_ID,
             })}
-            {...(control.title !== undefined && { title: control.title })}
             tabIndex={index === tabStop ? 0 : -1}
             onFocus={() => setActiveIndex(index)}
             onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
@@ -381,8 +379,13 @@ export function TiptapToolbar({
             }}
             className={cn(
               // AURA's IconButton has no pressed (toggle) look: stand-in until AURA #180.
+              // The fill alone is ~1.07:1 on white, so an accent edge marks the
+              // state (AURA's selected-segment rule), and forced colours keep
+              // it as a Highlight outline.
               'aria-pressed:bg-[var(--aura-bg-selected)] aria-pressed:text-[var(--aura-fg-accent)]',
-              control.unavailable === true && 'opacity-50',
+              'aria-pressed:shadow-[inset_0_0_0_1px_var(--aura-fg-accent)]',
+              'forced-colors:aria-pressed:outline-2 forced-colors:aria-pressed:outline-[Highlight] forced-colors:aria-pressed:-outline-offset-2',
+              control.unavailable === true && 'opacity-[var(--aura-disabled-opacity)]',
             )}
           />
         ))}

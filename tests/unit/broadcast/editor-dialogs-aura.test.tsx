@@ -6,7 +6,7 @@
  * component layer and that `finalFocus` still decides where focus returns.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { LinkDialog } from '@/components/broadcast/link-dialog';
@@ -97,4 +97,36 @@ describe.each(cases)('the $name dialog on AURA', ({ confirm, fields, el }) => {
 it('the link dialog draws Remove as a ghost button', () => {
   render(wrap(cases[0].el(true)));
   expect(screen.getByRole('button', { name: /remove link/i })).toHaveClass('aura-btn--ghost');
+});
+
+/**
+ * Mobile-a11y review LOW: AURA's field shows its error OR its hint, so the
+ * character counter (the hint) vanished while the refusal showed. The counter
+ * now rides inside the error, so "61 of 60 characters" stays seen and heard.
+ */
+describe('the counter stays with the refusal', () => {
+  it('the button text field keeps its counter under the too-long error', async () => {
+    render(wrap(cases[1].el(true)));
+    const field = screen.getByLabelText(/button text/i);
+    fireEvent.change(field, { target: { value: 'x'.repeat(61) } });
+    fireEvent.click(screen.getByRole('button', { name: /insert button/i }));
+    await screen.findByRole('alert');
+    const described = (field.getAttribute('aria-describedby') ?? '')
+      .split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent ?? '')
+      .join(' ');
+    expect(described).toContain('61 of 60 characters');
+  });
+
+  it('the image description keeps its counter under the empty error', async () => {
+    render(wrap(cases[2].el(true)));
+    fireEvent.click(screen.getByRole('button', { name: /insert image/i }));
+    await screen.findByRole('alert');
+    const field = screen.getByLabelText(/image description/i);
+    const described = (field.getAttribute('aria-describedby') ?? '')
+      .split(/\s+/)
+      .map((id) => document.getElementById(id)?.textContent ?? '')
+      .join(' ');
+    expect(described).toContain('0 of 125 characters');
+  });
 });
