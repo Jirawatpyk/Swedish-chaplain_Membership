@@ -94,4 +94,15 @@ describe('renewal cycle repo — tenant predicate on every statement (130 s2)', 
     );
     expect(violations).toEqual([]);
   });
+
+  it('the month-filtered pipeline page is fenced too (a branch the call map does not reach)', async () => {
+    const repo = makeDrizzleRenewalCycleRepo({ slug: T } as never);
+    rec.statements.length = 0;
+    await repo
+      .loadPipelinePage(T, anyWith({ pageSize: 10, cursor: null, monthFilter: '2026-02', nowIso: '2026-01-01T00:00:00.000Z' }) as never)
+      .catch(() => undefined);
+    const page = rec.statements;
+    expect(page.length).toBeGreaterThan(0);
+    expect(page.flatMap((s) => tenantPredicateViolations(s, TABLES).violations)).toEqual([]);
+  });
 });

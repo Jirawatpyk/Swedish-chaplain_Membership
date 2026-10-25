@@ -36,6 +36,9 @@ const { makeDrizzleTenantRenewalSchedulePolicyRepo } = await import(
 const { makeDrizzleAtRiskOutreachReadRepo } = await import(
   '@/modules/renewals/infrastructure/drizzle/drizzle-at-risk-outreach-read-repo'
 );
+const { makeDrizzleConsumedLinkTokensRepo } = await import(
+  '@/modules/renewals/infrastructure/drizzle/drizzle-consumed-link-tokens-repo'
+);
 const { makeDrizzleBounceEventQuery } = await import(
   '@/modules/renewals/infrastructure/drizzle/drizzle-bounce-event-query'
 );
@@ -104,6 +107,14 @@ describe('small renewals repos — tenant predicate on every statement (130)', (
     const v = await check(makeDrizzleBounceEventQuery(CTX), {
       countBounces: [SHAPE_TENANT, 'member-1', { cycleStartedAt: null, nowIso: '2026-01-01T00:00:00.000Z' }],
     }, 1);
+    expect(v).toEqual([]);
+  });
+
+  it('consumed link tokens (130 s2 — the prune DELETE)', async () => {
+    const v = await check(makeDrizzleConsumedLinkTokensRepo(CTX), {
+      markConsumed: [anyWith({ tokenSha256: Buffer.from('ab', 'hex') })],
+      pruneOlderThan: [new Date('2026-01-01T00:00:00.000Z')],
+    }, 2);
     expect(v).toEqual([]);
   });
 });
