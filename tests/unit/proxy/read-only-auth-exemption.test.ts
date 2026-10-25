@@ -26,7 +26,7 @@ const envMock = {
 };
 vi.mock('@/lib/env', () => ({ env: envMock }));
 
-const { proxy } = await import('@/proxy');
+const { proxy, READ_ONLY_EXEMPT_PATHS } = await import('@/proxy');
 
 function post(path: string, origin = 'http://localhost:3100'): NextRequest {
   return new NextRequest(`http://localhost:3100${path}`, {
@@ -40,6 +40,14 @@ afterEach(() => {
 });
 
 describe('proxy — READ_ONLY_MODE auth exemptions (D-028)', () => {
+  it('exempts exactly these three paths (a fourth needs a decision)', () => {
+    expect([...READ_ONLY_EXEMPT_PATHS].sort()).toEqual([
+      '/api/auth/heartbeat',
+      '/api/auth/sign-in',
+      '/api/auth/sign-out',
+    ]);
+  });
+
   it.each(['/api/auth/sign-in', '/api/auth/sign-out', '/api/auth/heartbeat'])(
     'POST %s passes the freeze',
     (path) => {
@@ -60,12 +68,26 @@ describe('proxy — READ_ONLY_MODE auth exemptions (D-028)', () => {
     expect((await res.json()).error).toBe('read-only-mode');
   });
 
-  it.each(['/api/auth/sign-in/', '/api/auth/sign-in-x', '/api/auth/SIGN-IN', '/api/auth/sign-in/extra'])(
+  it.each([
+    '/api/auth/sign-in/',
+    '/api/auth/sign-in-x',
+    '/api/auth/SIGN-IN',
+    '/api/auth/sign-in/extra',
+    '/api/auth/sign%2Din',
+    '//api/auth/sign-in',
+    '/api/auth/sign-in;x',
+  ])(
     'near-miss POST %s stays frozen (exact match only)',
     (path) => {
       expect(proxy(post(path)).status).toBe(503);
     },
   );
+
+  it('a dot-segment path that resolves to sign-in passes (the router resolves it to the same handler)', () => {
+    const req = post('/api/auth/reset-password/../sign-in');
+    expect(req.nextUrl.pathname).toBe('/api/auth/sign-in');
+    expect(proxy(req).status).toBe(200);
+  });
 
   it('a non-POST verb on an exempt path stays frozen', () => {
     const req = new NextRequest('http://localhost:3100/api/auth/sign-in', {
