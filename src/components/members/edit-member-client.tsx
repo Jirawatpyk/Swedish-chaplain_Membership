@@ -481,6 +481,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
    * therefore can never race or double-prompt with this pre-request gate.
    */
   const onSubmit = async (values: MemberFormValues) => {
+    savedSomethingRef.current = false;
     overrideOpenerRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (planChanged(values)) {

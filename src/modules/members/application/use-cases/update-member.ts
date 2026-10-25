@@ -297,9 +297,6 @@ export async function updateMember(
     if (!r.ok) return err({ type: 'invalid_override_reason', code: r.error.code });
   }
   let scopePlan: PlanSummary | null = null;
-  // 129 — true only when the scope check needed the reason; the audit
-  // records the override only then.
-  let overrideApplied = false;
   if (data.legal_entity_type) {
     const snapshot = await deps.memberRepo.findById(deps.tenant, memberId);
     if (!snapshot.ok) {
@@ -334,6 +331,10 @@ export async function updateMember(
   type MutablePatch = { -readonly [K in keyof MemberPatch]?: MemberPatch[K] };
   try {
     const outcome = await runInTenant(deps.tenant, async (tx) => {
+      // 129 — true only when the scope check needed the reason; the audit
+      // records the override only then. Scoped to this callback so a re-run
+      // can never inherit it.
+      let overrideApplied = false;
       const currentResult = await deps.memberRepo.findByIdInTx(tx, memberId);
       if (!currentResult.ok) {
         throw new UseCaseAbort<UpdateMemberError>(
@@ -362,7 +363,9 @@ export async function updateMember(
           (current.planId as string) !== (scopePlan.planId as string) ||
           current.planYear !== scopePlan.planYear
         ) {
-          // The type or plan changed between the pre-read and the lock — retry.
+          // The stored type or the plan changed between the pre-read and the
+          // lock (a null `scopePlan` means the pre-read saw the new type
+          // already stored) — 409, the client retries on fresh data.
           throw new UseCaseAbort<UpdateMemberError>({ type: 'concurrent_change' });
         }
         const scope = checkMemberTypeScope(data.legal_entity_type, scopePlan.memberTypeScope);

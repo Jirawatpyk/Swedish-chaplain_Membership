@@ -1986,8 +1986,8 @@
           "emailTaken": "That email address is already in use.",
           "invalidPhone": "Phone number must be in international format, e.g. +66812345678.",
           "partialSave": "Some changes were saved before an error occurred. Review the member and retry the rest.",
-          "concurrentChange": "This member was changed by someone else. Reload the page and try again.",
-          "overrideCancelled": "Not saved: this change needs an override reason."
+          "concurrentChange": "This member was changed by someone else. Check your entries and save again.",
+          "overrideCancelled": "Not saved: this change needs a reason for bypassing validation."
         }
       },
       "contactForm": {
