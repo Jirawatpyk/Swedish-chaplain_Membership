@@ -124,6 +124,11 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
   // with the reason; the plan step re-submits the plan payload.
   const overrideStepRef = useRef<'fields' | 'plan'>('plan');
   const fieldOverrideRef = useRef<OverrideReasonResult | null>(null);
+  // 129 — the element that submitted (focus returns there when the override
+  // dialog closes) and whether this run already saved a step (the cancel
+  // toast then warns about a partial save instead).
+  const overrideOpenerRef = useRef<HTMLElement | null>(null);
+  const savedSomethingRef = useRef(false);
 
   const patch = async (body: Record<string, unknown>): Promise<Response> => {
     return fetch(`/api/members/${member.memberId}`, {
@@ -279,6 +284,13 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       });
       return;
     }
+    // 129 — the member changed between load and save (field step only;
+    // change-plan never answers `conflict`).
+    if (res.status === 409 && code === 'conflict') {
+      toast.error(t('errors.concurrentChange'));
+      router.refresh();
+      return;
+    }
     if (res.status === 422) {
       setOverrideState({
         message: formatOverrideWarning(body.error?.details, tOverride),
@@ -374,10 +386,10 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
     // Tracks whether an earlier request already persisted a mutation, so a
     // later-step failure can tell the admin "some changes were saved"
     // instead of leaving them to assume nothing landed.
-    let savedSomething = false;
+    savedSomethingRef.current = false;
     // Shown when a later step fails after an earlier one already committed.
     const reportStepFailure = () => {
-      if (savedSomething) toast.warning(t('errors.partialSave'));
+      if (savedSomethingRef.current) toast.warning(t('errors.partialSave'));
     };
     try {
       // Each mutation is a SEPARATE request with its own idempotency key.
@@ -408,7 +420,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           await handleResponse(fieldRes);
           return;
         }
-        savedSomething = true;
+        savedSomethingRef.current = true;
       }
 
       // 2. Primary-contact non-email fields (name / phone / role /
@@ -420,7 +432,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           reportStepFailure();
           return;
         }
-        savedSomething = true;
+        savedSomethingRef.current = true;
       }
 
       // 3. Primary-contact email change — routed server-side: a portal-linked
@@ -435,7 +447,7 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
           reportStepFailure();
           return;
         }
-        savedSomething = true;
+        savedSomethingRef.current = true;
       }
 
       // 4. Plan change last.
@@ -469,6 +481,9 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
    * therefore can never race or double-prompt with this pre-request gate.
    */
   const onSubmit = async (values: MemberFormValues) => {
+    savedSomethingRef.current = false;
+    overrideOpenerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (planChanged(values)) {
       lastValuesRef.current = values;
       setPlanConfirmState(
@@ -634,10 +649,18 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       <OverrideReasonDialog
         open={overrideState !== null}
         onOpenChange={(next) => {
-          if (!next) setOverrideState(null);
+          if (next) return;
+          setOverrideState(null);
+          // Cancelled: the change needing the reason was not saved.
+          if (savedSomethingRef.current) toast.warning(t('errors.partialSave'));
+          else toast.info(t('errors.overrideCancelled'));
         }}
         warningMessage={overrideState?.message ?? null}
         onConfirm={onOverrideConfirm}
+        finalFocus={() => {
+          const opener = overrideOpenerRef.current;
+          return opener?.isConnected ? opener : document.getElementById('main-content');
+        }}
       />
     </>
   );

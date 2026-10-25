@@ -427,6 +427,19 @@ export async function PATCH(
           },
           { status: 400 },
         );
+      // 129 — the member's plan changed between the pre-read and the lock;
+      // the same `conflict` shape as POST /api/members.
+      case 'concurrent_change':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'conflict',
+              message: 'The member was changed concurrently. Reload and try again.',
+              details: { reason: 'concurrent_change' },
+            },
+          },
+          { status: 409 },
+        );
       case 'not_found':
         return NextResponse.json(
           { error: { code: 'not_found', message: 'Member not found.' } },

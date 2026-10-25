@@ -1421,6 +1421,11 @@ export interface F8AuditPayloadShapes {
     readonly member_id: MemberId;
     readonly invoice_id: string;
     readonly previous_cycle_status: 'upcoming' | 'reminded' | 'awaiting_payment';
+    /**
+     * 129 — set by the undelete carry: the cancelled cycle the link moved
+     * off. The reconcile-orphans repair has no source cycle and omits it.
+     */
+    readonly source_cycle_id?: CycleId;
   };
 }
 
