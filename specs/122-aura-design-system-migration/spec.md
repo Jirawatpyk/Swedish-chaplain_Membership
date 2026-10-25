@@ -871,6 +871,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 
 ### Session 2026-10-25 (US12d-2 start: the E-Blast editor)
 
+- **Migrate and fix (the maintainer, 25 Oct, for this and every later slice):** "fix the old problems too, not just move to AURA". A slice also fixes the problems its files already had: UX, accessibility, mobile, copy and states, found by a whole-file sweep, not only the diff review. A fix that changes server behaviour, stored data, money or an API still ships as its own PR right after the slice (FR-011), and the slice's PR names it.
 - **Scope:** the editor the four compose hosts load through `loadTiptapEditor` (portal compose, staff compose on behalf, the template form, the approval workspace): `tiptap-editor`, `tiptap-toolbar`, the link, button and image-description dialogs, the inline image uploader and the ClamAV banner. A UI swap only: requests, validation, messages and props are unchanged (FR-011).
 - **Boards:** `Portal-broadcast-new` (+mobile), `Admin-broadcast-new` and `Admin-eblast-design` all draw the toolbar the same way. It is `role="toolbar"` named "Formatting", with ghost icon buttons, 32px on desktop and 44px on phones, and no separators. The toggles carry `aria-pressed`. "Upload image" is a secondary button with an image icon, above the hint lines.
 - **Decided from the boards and AURA:**
