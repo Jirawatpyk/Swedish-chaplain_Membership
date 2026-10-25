@@ -635,7 +635,7 @@ boot by a zod schema in `src/lib/env.ts`.
 | `AUTH_COOKIE_SIGNING_SECRET` | HMAC for session cookie integrity | Preview + Prod |
 | `APP_BASE_URL` | Canonical base URL for email links | Preview + Prod |
 | `APP_ALLOWED_ORIGINS` | Comma-separated allow-list for CSRF Origin-header check (§ 4.1). Example: `https://app.swecham.se,https://staging.swecham.se` | Preview + Prod |
-| `READ_ONLY_MODE` | Kill switch: when `true`, all state-changing POST/PUT/PATCH/DELETE routes return 503 `read-only-mode`. Reads continue to work. Set via Vercel dashboard, no code deploy needed. Used as an emergency rollback alternative (see quickstart.md § 7.3). Default: `false`. | Preview + Prod |
+| `READ_ONLY_MODE` | Kill switch: when `true`, all state-changing POST/PUT/PATCH/DELETE routes return 503 `read-only-mode`. Reads continue to work. (Superseded in part by D-028, 2026-10-25: the sign-in, sign-out and heartbeat POSTs pass the freeze, as quickstart § 7.3 always said.) Set via Vercel dashboard, no code deploy needed. Used as an emergency rollback alternative (see quickstart.md § 7.3). Default: `false`. | Preview + Prod |
 | `RESEND_WEBHOOK_SIGNING_SECRET` | HMAC verification for `POST /api/webhooks/resend` (§ 6.1) | Preview + Prod |
 
 **Rotation policy**: all secrets rotated on personnel changes and on
