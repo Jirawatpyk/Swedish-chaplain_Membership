@@ -1307,6 +1307,8 @@
           "turnoverAbove": "Turnover {turnover} THB is above the plan maximum of {max} THB.",
           "startupTooOld": "Founded year {year} exceeds the plan limit of {maxYears} years.",
           "ageNotEligible": "Age {age} exceeds the plan maximum of {maxAge}.",
+          "memberTypeCompanyOnly": "This plan is for companies, but the legal entity type is Individual. Provide a reason to proceed.",
+          "memberTypeIndividualOnly": "This plan is for individuals, but the legal entity type is a company type. Provide a reason to proceed.",
           "generic": "This value is outside the plan limits. Provide a reason to proceed."
         },
         "title": "Reason for bypassing validation",

@@ -29,6 +29,7 @@ type OverrideWarningDetails = {
     | 'turnover_out_of_band'
     | 'startup_too_old'
     | 'age_not_eligible'
+    | 'member_type_out_of_scope'
     | (string & {});
   readonly turnoverThb?: number;
   readonly band?: {
@@ -39,6 +40,7 @@ type OverrideWarningDetails = {
   readonly maxAllowedYears?: number;
   readonly ageYears?: number;
   readonly maxAge?: number;
+  readonly memberTypeScope?: string;
 };
 
 /** Thousands-grouped string, or '' when the value is absent. */
@@ -76,6 +78,11 @@ export function formatOverrideWarning(details: unknown, t: OverrideT): string {
         age: String(d.ageYears ?? ''),
         maxAge: String(d.maxAge ?? ''),
       });
+    // 127 — a legal entity type outside the plan's member-type scope.
+    case 'member_type_out_of_scope':
+      if (d.memberTypeScope === 'company') return t('warnings.memberTypeCompanyOnly');
+      if (d.memberTypeScope === 'individual') return t('warnings.memberTypeIndividualOnly');
+      return t('warnings.generic');
     default:
       return t('warnings.generic');
   }
