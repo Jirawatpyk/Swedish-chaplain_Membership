@@ -142,21 +142,14 @@ function stubDeps(overrides?: Partial<BulkActionDeps>): BulkActionDeps {
       recordInTx: vi.fn().mockResolvedValue(ok(undefined)),
     },
     clock: { now: () => new Date('2026-04-16T10:00:00Z') },
-    plans: {
-      getPlan: vi.fn().mockResolvedValue(ok({
-        tenantId: 'test-tenant',
-        planId: 'plan-1',
-        planYear: 2026,
-        planNameEn: 'Test Plan',
-        planCategory: 'corporate' as const,
-        memberTypeScope: 'company' as const,
-        minTurnoverThb: null,
-        maxTurnoverThb: null,
-        maxDurationYears: null,
-        maxMemberAge: null,
-        includesCorporatePlanId: null,
-      })),
-      countAffectedMembers: vi.fn().mockResolvedValue(ok({ count: 0 })),
+    // 126 #2 — archive runs the single-archive cascade.
+    contactRepo: { listLinkedUserIdsForMemberInTx: vi.fn().mockResolvedValue([]) },
+    sessions: { revokeAllFor: vi.fn(), revokeAllForInTx: vi.fn() },
+    invitations: { softConsumePendingForUsersInTx: vi.fn().mockResolvedValue({ revokedCount: 0 }) },
+    broadcastsCascade: { cancelInFlightForMember: vi.fn().mockResolvedValue({ outcome: 'ok', cancelledCount: 0 }) },
+    renewalsCascade: {
+      cancelInFlightForMember: vi.fn().mockResolvedValue({ outcome: 'ok', cancelledCount: 0 }),
+      restoreForMember: vi.fn().mockResolvedValue({ outcome: 'skipped_active_exists' }),
     },
     ...overrides,
   };
@@ -320,118 +313,6 @@ describe('integration: bulk SW-2 duplicate member_ids rejected', () => {
     }
     // Zod gate rejects BEFORE any DB call
     expect(deps.memberRepo.findManyByIdsInTx).not.toHaveBeenCalled();
-  });
-});
-
-describe('integration: bulk SW-5 change_plan on archived member rejected', () => {
-  it('change_plan on archived member → state_error', async () => {
-    const deps = stubDeps();
-    const archivedMember = {
-      ...stubMember,
-      status: 'archived' as const,
-      archivedAt: new Date('2026-01-05'),
-    };
-    (deps.memberRepo.findManyByIdsInTx as ReturnType<typeof vi.fn>).mockResolvedValue(
-      ok(new Map([['11111111-2222-3333-4444-555555555555', archivedMember]])),
-    );
-
-    const result = await bulkAction(
-      {
-        action: 'change_plan',
-        member_ids: ['11111111-2222-3333-4444-555555555555'],
-        params: {
-          new_plan_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-          new_plan_year: 2026,
-        },
-      },
-      meta,
-      deps,
-    );
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.type).toBe('state_error');
-      if (result.error.type === 'state_error') {
-        expect(result.error.code).toBe('state.cannot_change_plan_archived');
-        expect(result.error.memberId).toBe('11111111-2222-3333-4444-555555555555');
-      }
-    }
-    // No write attempted — archived check runs before updateFieldsInTx.
-    expect(deps.memberRepo.updateFieldsInTx).not.toHaveBeenCalled();
-  });
-});
-
-// --- Package B2 regression guard: change_plan FK-safety ----------------------
-//
-// The composite FK `members_plan_tenant_year_fk` is on
-// (tenant_id, plan_id, plan_year) (migration 0009). Writing `plan_id`
-// WITHOUT a matching `plan_year` would violate it and roll the whole
-// all-or-nothing batch back. These guards pin the two properties that keep
-// bulk `change_plan` FK-safe. They are GREEN as written — bulk-action already
-// (a) validates the plan for the composite key before the tx, (b) writes BOTH
-// plan columns together, and (c) rejects the partial input at the zod layer.
-// No behavior change; this locks in the invariant the Package B1 discovery
-// flagged so a future refactor can't silently drop `plan_year` from the patch.
-describe('integration: bulk change_plan FK-safety (Package B2 regression guard)', () => {
-  it('successful change_plan writes BOTH planId and planYear in the patch (composite FK satisfied)', async () => {
-    const deps = stubDeps();
-
-    const result = await bulkAction(
-      {
-        action: 'change_plan',
-        member_ids: ['11111111-2222-3333-4444-555555555555'],
-        params: {
-          new_plan_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-          new_plan_year: 2027,
-        },
-      },
-      meta,
-      deps,
-    );
-
-    expect(result.ok).toBe(true);
-
-    // Pre-tx plan-ownership validation runs against the FULL composite key
-    // (tenant, plan_id, plan_year) — not just plan_id.
-    expect(deps.plans.getPlan).toHaveBeenCalledWith(
-      expect.anything(),
-      'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-      2027,
-    );
-
-    // The write carries BOTH plan columns → members_plan_tenant_year_fk holds.
-    expect(deps.memberRepo.updateFieldsInTx).toHaveBeenCalledTimes(1);
-    const patch = (deps.memberRepo.updateFieldsInTx as ReturnType<typeof vi.fn>)
-      .mock.calls[0]![2] as { planId?: unknown; planYear?: unknown };
-    expect(patch.planId).toBe('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
-    expect(patch.planYear).toBe(2027);
-  });
-
-  it('change_plan missing new_plan_year → invalid_body, no plan lookup, no write (prevents FK violation)', async () => {
-    const deps = stubDeps();
-
-    const result = await bulkAction(
-      {
-        action: 'change_plan',
-        member_ids: ['11111111-2222-3333-4444-555555555555'],
-        params: {
-          new_plan_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-          // new_plan_year deliberately omitted — the partial that would break
-          // the composite FK if it ever reached the DB write.
-        },
-      },
-      meta,
-      deps,
-    );
-
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error.type).toBe('invalid_body');
-    }
-    // Zod superRefine rejects at the boundary — BEFORE any plan lookup or
-    // write. A `plan_id`-without-`plan_year` can never reach updateFieldsInTx.
-    expect(deps.plans.getPlan).not.toHaveBeenCalled();
-    expect(deps.memberRepo.updateFieldsInTx).not.toHaveBeenCalled();
   });
 });
 

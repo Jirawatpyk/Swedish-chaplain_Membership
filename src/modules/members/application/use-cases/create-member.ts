@@ -47,6 +47,7 @@ import {
 import { checkTurnoverBand } from '../../domain/policies/turnover-policy';
 import { checkAgeEligibility } from '../../domain/policies/age-eligibility-policy';
 import { checkStartupDuration } from '../../domain/policies/startup-duration-policy';
+import { checkMemberTypeScope } from '../../domain/policies/member-type-scope-policy';
 import { asPlanId, BILLING_CYCLES } from '../../domain/member';
 import type { Member, MemberId } from '../../domain/member';
 import type { Contact, ContactId } from '../../domain/contact';
@@ -60,6 +61,8 @@ import type { ClockPort } from '../ports/clock-port';
 import type { PlanLookupPort } from '../ports/plan-lookup-port';
 import type { MemberNumberAllocatorPort } from '../ports/member-number-allocator-port';
 import { UseCaseAbort } from '../tx-abort';
+import type { PlanAdvisoryLockPort } from '../ports/plan-advisory-lock-port';
+import { planSoftDeleteLockKey } from '@/modules/plans';
 
 // --- Input schema ------------------------------------------------------------
 
@@ -202,6 +205,11 @@ export type CreateMemberError =
   | { type: 'invalid_override_reason'; code: string }
   | { type: 'plan_not_found' }
   | {
+      type: 'member_type_out_of_scope';
+      legalEntityType: string;
+      memberTypeScope: 'company' | 'individual' | 'both';
+    }
+  | {
       type: 'turnover_out_of_band';
       turnoverThb: number;
       band: { minThb: number | null; maxThb: number | null };
@@ -260,6 +268,12 @@ export type CreateMemberDeps = {
    * threaded into the member INSERT in the SAME tx (gap-OK on rollback).
    */
   memberNumberAllocator: MemberNumberAllocatorPort;
+  /**
+   * 126 #8 — the W0-02 soft-delete lock, taken on the member's plan as the
+   * first statement of the create tx (as `changePlan` does), then the plan's
+   * deletion state is re-read under it.
+   */
+  planAdvisoryLock: PlanAdvisoryLockPort;
   idFactory: {
     memberId(): MemberId;
     contactId(): ContactId;
@@ -485,6 +499,17 @@ export async function createMember(
     }
   }
 
+  // 126 #5 — the plan's member-type scope against the recorded legal
+  // entity type (override may bypass, like the gates above).
+  const scope = checkMemberTypeScope(data.legal_entity_type || null, plan.memberTypeScope);
+  if (!scope.ok && !overrideAsserted) {
+    return err({
+      type: 'member_type_out_of_scope',
+      legalEntityType: scope.error.legalEntityType,
+      memberTypeScope: scope.error.memberTypeScope,
+    });
+  }
+
   // 5. Soft-duplicate detection (FR-031)
   const dup = await deps.memberRepo.findSoftDuplicate(
     deps.tenant,
@@ -537,7 +562,21 @@ export async function createMember(
   // W1: throw-to-rollback — number allocation + state + audit rows atomic.
   try {
     const created = await runInTenant(deps.tenant, async (tx) => {
-      // FIRST statement: allocate under the tenant RLS session. Running this
+      // 126 #8 — W0-02 for create: take the plan's soft-delete lock (the key
+      // `softDeleteGuarded` holds) and re-read its deletion state under it.
+      // The pre-tx `isSoftDeleted` snapshot can be stale if a soft-delete of
+      // the (0-member) plan committed in between.
+      await deps.planAdvisoryLock.acquire(
+        tx,
+        planSoftDeleteLockKey(deps.tenant.slug, plan.planId as string, data.plan_year),
+      );
+      if (
+        await deps.planAdvisoryLock.isPlanSoftDeletedInTx(tx, plan.planId as string, data.plan_year)
+      ) {
+        throw new PlanGoneAbort();
+      }
+
+      // After the plan lock above (126 #8): allocate under the tenant RLS session. Running this
       // outside the tx would use a pool-fresh connection without
       // SET LOCAL app.current_tenant → silent RLS bypass (F7.1a US2 class).
       const memberNumber = await deps.memberNumberAllocator.allocate(
@@ -735,6 +774,7 @@ export async function createMember(
       contactId: created.contact.contactId,
     });
   } catch (e) {
+    if (e instanceof PlanGoneAbort) return err({ type: 'plan_not_found' });
     if (e instanceof UseCaseAbort) {
       const re = e.error as RepoError;
       if (re.code === 'repo.conflict')
@@ -744,3 +784,6 @@ export async function createMember(
     return err({ type: 'server_error', message: 'create: unexpected' });
   }
 }
+
+/** 126 #8 — the plan was soft-deleted under the lock; rolls the create back. */
+class PlanGoneAbort extends Error {}

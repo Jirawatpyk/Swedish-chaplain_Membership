@@ -47,7 +47,7 @@ import type {
   ClockPort,
   PlanRepo,
 } from './ports';
-import { recordAuditEvent } from './record-audit-event';
+import { auditFailureMessage, auditInTx, PlanAuditAbort } from './record-audit-event';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
 import { canTransition, planStateOf } from '../domain/plan-state';
 
@@ -121,8 +121,34 @@ export async function softDeletePlan(
       input.year,
       deletedAt,
       input.actorUserId,
+      // 126 #7 — the audit row commits (or rolls back) with the delete.
+      auditInTx(
+        deps.audit,
+        {
+          tenant: deps.tenant,
+          actorUserId: input.actorUserId,
+          requestId: input.requestId,
+          sourceIp: input.sourceIp,
+        },
+        {
+          event_type: 'plan_soft_deleted',
+          payload: {
+            plan_id: input.planId,
+            plan_year: input.year,
+            diff: {
+              deleted_at: {
+                before: null,
+                after: deletedAt.toISOString(),
+              },
+            },
+          },
+        },
+      ),
     );
   } catch (e) {
+    if (e instanceof PlanAuditAbort) {
+      return err({ type: 'audit_failed', message: auditFailureMessage(e.error) });
+    }
     return err({
       type: 'server_error',
       message: e instanceof Error ? e.message : String(e),
@@ -140,39 +166,6 @@ export async function softDeletePlan(
   }
 
   const updated = guardResult.plan;
-
-  // 4. Append plan_soft_deleted audit event
-  const auditResult = await recordAuditEvent(
-    deps.audit,
-    {
-      tenant: deps.tenant,
-      actorUserId: input.actorUserId,
-      requestId: input.requestId,
-      sourceIp: input.sourceIp,
-    },
-    {
-      event_type: 'plan_soft_deleted',
-      payload: {
-        plan_id: input.planId,
-        plan_year: input.year,
-        diff: {
-          deleted_at: {
-            before: null,
-            after: deletedAt.toISOString(),
-          },
-        },
-      },
-    },
-  );
-  if (!auditResult.ok) {
-    return err({
-      type: 'audit_failed',
-      message:
-        auditResult.error.type === 'invalid_payload'
-          ? auditResult.error.issues.join('; ')
-          : auditResult.error.message,
-    });
-  }
 
   return ok(updated);
 }

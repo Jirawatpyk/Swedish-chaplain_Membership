@@ -24,7 +24,6 @@ vi.mock('@/modules/members/members-deps', () => ({
     memberRepo: {},
     contactRepo: {},
     audit: { record: auditRecordMock, recordInTx: auditRecordMock },
-    plans: {},
     emails: {},
     sessions: {},
     userEmails: {},

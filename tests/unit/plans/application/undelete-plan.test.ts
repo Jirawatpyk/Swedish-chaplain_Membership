@@ -12,6 +12,7 @@ import {
 } from '@/modules/plans/application/undelete-plan';
 import { asTenantContext } from '@/modules/tenants';
 import { asPlanSlug, asPlanYear, type Plan } from '@/modules/plans/domain/plan';
+import { hooked, inTxAudit } from './in-tx-hook-mocks';
 
 const tenant = asTenantContext('swecham');
 const planId = asPlanSlug('corporate-standard');
@@ -68,7 +69,7 @@ function makeDeps(overrides: DepsOverrides = {}): UndeletePlanDeps {
       if (r instanceof Error) throw r;
       return r;
     }),
-    undelete: vi.fn(async () => {
+    undelete: hooked(async () => {
       const r = overrides.undeleteResult;
       if (r instanceof Error) throw r;
       return r;
@@ -80,7 +81,7 @@ function makeDeps(overrides: DepsOverrides = {}): UndeletePlanDeps {
     cloneYear: vi.fn(),
   };
 
-  const audit = {
+  const audit = inTxAudit({
     record: vi.fn(async () => {
       if (overrides.auditFail === 'persist_failed') {
         return err({ type: 'persist_failed' as const, message: 'write error' });
@@ -90,7 +91,7 @@ function makeDeps(overrides: DepsOverrides = {}): UndeletePlanDeps {
       }
       return ok(undefined as void);
     }),
-  };
+  });
 
   return {
     tenant,

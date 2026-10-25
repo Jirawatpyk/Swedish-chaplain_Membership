@@ -24,6 +24,7 @@ import type { TenantContext } from '@/modules/tenants';
 import { scheduledPlanChanges } from './schema-scheduled-plan-changes';
 import type { ScheduledPlanChangeRow } from './schema-scheduled-plan-changes';
 import type {
+  InTxHook,
   ScheduledPlanChangeRepo,
   SupersedeAndInsertResult,
 } from '../../application/ports';
@@ -137,6 +138,7 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
     tenant: TenantContext,
     input: ScheduleNextRenewalPlanChangeInput,
     tx?: TenantTx,
+    afterWrite?: InTxHook<SupersedeAndInsertResult>,
   ): Promise<SupersedeAndInsertResult> {
     // 065 S8 — when the caller threads an OUTER tx, run on it directly so
     // the supersede+insert is atomic with the caller's subsequent writes
@@ -144,12 +146,14 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
     // with the F8 transition — no orphaned pending row. When no tx is
     // supplied (F2 `scheduleNextRenewalPlanChange`, which runs outside a
     // tx), open our own `runInTenant`.
-    if (tx !== undefined) {
-      return supersedeAndInsertOnTx(tx, tenant.slug, input);
-    }
-    return runInTenant(tenant, (ownTx) =>
-      supersedeAndInsertOnTx(ownTx, tenant.slug, input),
-    );
+    // 126 #7 — `afterWrite` (the F2 audit) runs on the same tx.
+    const run = async (onTx: TenantTx) => {
+      const result = await supersedeAndInsertOnTx(onTx, tenant.slug, input);
+      if (afterWrite) await afterWrite(onTx, result);
+      return result;
+    };
+    if (tx !== undefined) return run(tx);
+    return runInTenant(tenant, run);
   },
 
   async findPendingForCycle(
@@ -194,6 +198,7 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
     tenant: TenantContext,
     scheduledChangeId: string,
     nextStatus: Exclude<ScheduledPlanChangeStatus, 'pending'>,
+    afterWrite?: InTxHook<ScheduledPlanChange>,
   ): Promise<ScheduledPlanChange> {
     return runInTenant(tenant, async (tx) => {
       // Conditional UPDATE: only flip if the source row is still 'pending'.
@@ -223,7 +228,10 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
           `transitionStatus: row ${scheduledChangeId} not found or already terminal`,
         );
       }
-      return rowToDomain(updated[0]!);
+      const transitioned = rowToDomain(updated[0]!);
+      // 126 #7 — the audit row commits (or rolls back) with the transition.
+      if (afterWrite) await afterWrite(tx, transitioned);
+      return transitioned;
     });
   },
 

@@ -38,13 +38,12 @@
  * `t('benefits')` / `t('broadcasts')` / `t('ariaLabel')` resolve to their
  * actual label strings ("Benefits", "Broadcasts", "Benefits sections").
  * A dangling t() ref would surface as a MISSING_MESSAGE error rather than
- * passing silently — identical reasoning to the portal-sign-out-button test.
+ * passing silently.
  *
  * Fake-timers note: setup.ts installs fake timers globally. BenefitsTabs
  * uses `useTransition` (React internals) + `router.replace` (mocked). The
  * real timers bracket (useRealTimers/useFakeTimers in beforeEach/afterEach)
- * is applied to keep waitFor-style promise resolution reliable, matching the
- * pattern in portal-sign-out-button.test.tsx.
+ * is applied to keep waitFor-style promise resolution reliable.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
@@ -130,7 +129,6 @@ describe('<BenefitsTabs> — showBroadcastsTab F7 kill-switch (058)', () => {
   beforeEach(() => {
     // Real timers: setup.ts fakes setTimeout/clearTimeout globally; waitFor
     // and promise-resolution need real timers during async assertions.
-    // Matches portal-sign-out-button.test.tsx pattern.
     vi.useRealTimers();
     replaceSpy.mockClear();
   });

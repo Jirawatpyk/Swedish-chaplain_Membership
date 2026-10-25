@@ -24,12 +24,13 @@
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
 import type {
+  CloneYearSummary,
   AuditPort,
   ClockPort,
   MemberAttachmentChecker,
   PlanRepo,
 } from './ports';
-import { recordAuditEvent } from './record-audit-event';
+import { auditFailureMessage, auditInTx, PlanAuditAbort } from './record-audit-event';
 import type { PlanSlug, PlanYear } from '../domain/plan';
 
 // --- Input / output types ---------------------------------------------------
@@ -93,8 +94,30 @@ export async function clonePlansToYear(
       input.targetYear,
       input.activateCloned,
       input.actorUserId,
+      // 126 #7 — one plan_cloned row for the batch, in the clone's tx.
+      auditInTx<CloneYearSummary>(
+        deps.audit,
+        {
+          tenant: deps.tenant,
+          actorUserId: input.actorUserId,
+          requestId: input.requestId,
+          sourceIp: input.sourceIp,
+        },
+        (summary) => ({
+          event_type: 'plan_cloned',
+          payload: {
+            source_year: summary.sourceYear as number,
+            target_year: summary.targetYear as number,
+            plan_ids: [...summary.clonedPlanIds],
+            count: summary.count,
+          },
+        }),
+      ),
     );
   } catch (e) {
+    if (e instanceof PlanAuditAbort) {
+      return err({ type: 'audit_failed', message: auditFailureMessage(e.error) });
+    }
     return err({
       type: 'server_error',
       message: e instanceof Error ? e.message : String(e),
@@ -123,35 +146,6 @@ export async function clonePlansToYear(
   }
 
   const summary = cloneResult.value;
-
-  // 3. Append one `plan_cloned` audit event for the whole batch
-  const auditResult = await recordAuditEvent(
-    deps.audit,
-    {
-      tenant: deps.tenant,
-      actorUserId: input.actorUserId,
-      requestId: input.requestId,
-      sourceIp: input.sourceIp,
-    },
-    {
-      event_type: 'plan_cloned',
-      payload: {
-        source_year: summary.sourceYear as number,
-        target_year: summary.targetYear as number,
-        plan_ids: [...summary.clonedPlanIds],
-        count: summary.count,
-      },
-    },
-  );
-  if (!auditResult.ok) {
-    return err({
-      type: 'audit_failed',
-      message:
-        auditResult.error.type === 'invalid_payload'
-          ? auditResult.error.issues.join('; ')
-          : auditResult.error.message,
-    });
-  }
 
   // 4. Return envelope
   return ok({
