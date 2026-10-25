@@ -38,7 +38,7 @@ describe('the E-Blast editor styles its own content', () => {
     ['.eblast-editor-content blockquote', /border-left/],
     ['.eblast-editor-content hr', /border-top/],
     ['.eblast-editor-content a', /text-decoration:\s*underline/],
-    ['.eblast-editor-content a[data-eb="cta"]', /background/],
+    ['.eblast-editor-content [data-eb="cta"]', /background/],
     ['.eblast-editor-content img[data-eb="banner"]', /width:\s*100%/],
     // Round 2 (#13): the placeholder the editor passes as `--eblast-placeholder`.
     ['.eblast-editor-content > p:only-child:has(> br:only-child)::before', /content:\s*var\(--eblast-placeholder\)/],

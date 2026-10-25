@@ -94,9 +94,20 @@ describe('the button block is one unit in the editor', () => {
   it('cannot be typed into: its words are not editable in place', () => {
     const ed = mountToolbar(CTA_HTML);
     expect(ed.schema.nodes['ctaButton']!.isAtom).toBe(true);
-    const anchor = ed.view.dom.querySelector('a[data-eb="cta"]');
-    expect(anchor).toHaveAttribute('contenteditable', 'false');
-    expect(anchor).toHaveTextContent('Register now');
+    const block = ed.view.dom.querySelector('[data-eb="cta"]');
+    expect(block).toHaveAttribute('contenteditable', 'false');
+    expect(block).toHaveTextContent('Register now');
+  });
+
+  // A non-editable `<a href>` inside the editor is a real link to the browser:
+  // a click followed it and navigated away from the unsaved message (found in
+  // a browser check of round 2). The editor draws the block without a link.
+  it('is not a link a click could follow', () => {
+    const ed = mountToolbar(CTA_HTML);
+    const block = ed.view.dom.querySelector('[data-eb="cta"]');
+    expect(block?.tagName).not.toBe('A');
+    expect(block).not.toHaveAttribute('href');
+    expect(block).toHaveAttribute('title', 'https://swecham.example/register');
   });
 
   it('Button on a selected button edits its words and link', () => {

@@ -51,10 +51,13 @@ const ctaButtonAsUnit = broadcastCtaButtonExtension.extend({
   atom: true,
   addNodeView() {
     return ({ node }) => {
-      const dom = document.createElement('a');
+      // A `span`, not an `a href`: a non-editable link inside the editor is a
+      // real link to the browser, and a click followed it away from the
+      // unsaved message. The address shows on hover; Button edits it.
+      const dom = document.createElement('span');
       dom.setAttribute(DESIGN_BLOCK_ATTR, 'cta');
       const href: unknown = node.attrs['href'];
-      if (typeof href === 'string') dom.setAttribute('href', href);
+      if (typeof href === 'string') dom.setAttribute('title', href);
       dom.setAttribute('contenteditable', 'false');
       dom.textContent = node.textContent;
       return { dom };

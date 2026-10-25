@@ -861,7 +861,7 @@ summary,
   }
   /* The button block: the email paints it in the chamber's brand colour; here
      AURA's primary button pair, whose contrast holds in both themes. */
-  .eblast-editor-content a[data-eb="cta"] {
+  .eblast-editor-content [data-eb="cta"] {
     display: inline-block;
     padding: 0.75em 1.5em;
     border-radius: 6px;
