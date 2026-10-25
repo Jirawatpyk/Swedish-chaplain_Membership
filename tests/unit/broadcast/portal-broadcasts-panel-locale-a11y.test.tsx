@@ -114,7 +114,7 @@ function setQuota(remaining: number): void {
   });
 }
 
-function setHistory(): void {
+function setHistory(row: { segmentType?: string } = {}): void {
   listMemberBroadcasts.mockResolvedValue({
     page: 1,
     totalPages: 1,
@@ -127,6 +127,8 @@ function setHistory(): void {
         submittedAt: new Date('2026-09-22T13:57:00Z'),
         sentAt: new Date('2026-09-22T14:10:00Z'),
         estimatedRecipientCount: 42,
+        segmentType: 'all_members',
+        ...row,
       },
     ],
   });
@@ -198,6 +200,25 @@ describe('U30 — the Thai quota surface shows ONE calendar', () => {
 describe('U37 — the history renders as a card list below md', () => {
   // jsdom applies no CSS, so BOTH representations mount; the breakpoint
   // classes are what hand each one its viewport.
+  it.each([
+    ['tier', 'en', 'Specific membership tier · 42'],
+    ['event_attendees_last_90d', 'en', 'Event attendees (last 90 days) · 42'],
+    ['custom', 'en', 'Custom email list · 42'],
+    ['all_members', 'th', 'สมาชิกทั้งหมด · 42'],
+  ] as const)('names the %s audience in %s', async (segmentType, locale, text) => {
+    setHistory({ segmentType });
+    await renderPanel(locale);
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('cell')[2]).toHaveTextContent(text);
+  });
+
+  it('an audience without a label still says what the number is', async () => {
+    setHistory({ segmentType: 'some_future_segment' });
+    await renderPanel('en');
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('cell')[2]).toHaveTextContent(/^Audience · 42$/);
+  });
+
   it('the card list carries the same row as the table, with list semantics', async () => {
     await renderPanel('en');
 
@@ -220,7 +241,12 @@ describe('U37 — the history renders as a card list below md', () => {
     // `selector: 'span'` — the badge, not the "Sent" column header / label.
     expect(within(table).getByText(sent, { selector: 'span' })).toBeInTheDocument();
     expect(within(card).getByText(sent, { selector: 'span' })).toBeInTheDocument();
-    expect(within(card).getByText('42')).toBeInTheDocument();
+    // Task #6 (boards `Portal-broadcasts` / `-mobile`): the audience is named
+    // before its count, "All members · 42", in the table and on the phone row.
+    expect(within(table).getAllByRole('cell')[2]).toHaveTextContent(/^All members · 42$/);
+    // UX review: the count never starts a line on its own ("All members\u00a0·\u00a042").
+    expect(card.textContent).toContain('All members\u00a0·\u00a042');
+    expect(card.textContent).not.toContain(enMessages.portal.broadcasts.list.columns.audience);
     for (const cell of within(table).getAllByRole('cell').slice(3)) {
       expect(card.textContent).toContain(cell.textContent);
     }

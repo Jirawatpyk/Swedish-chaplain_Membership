@@ -6992,13 +6992,14 @@
         "reserved": "Reserverat",
         "remaining": "Återstår",
         "cap": "Paketgräns",
-        "exhausted": "Hela utskickskvoten för {year} har använts.",
+        "exhausted": "{reserved, plural, =0 {Hela utskickskvoten för {year} har använts.} one {Inga utskick kvar för {year}. # är fortfarande reserverat och återförs om det inte skickas.} other {Inga utskick kvar för {year}. # är fortfarande reserverade och återförs om de inte skickas.}}",
         "progressLabel": "Använd utskickskvot",
         "fetchError": "Kunde inte ladda kvot.",
         "retry": "Försök igen",
         "nextReset": "Återställs {date}",
         "planChangedExplainer": "Paketet ändrades {date} — årets kvot speglar det nya paketet.",
         "reservedLegend": "Reserverat (under granskning eller schemalagt)",
+        "valueText": "{used, plural, one {# använd} other {# använda}}, {reserved, plural, one {# reserverad} other {# reserverade}}, {remaining} kvar av {cap}",
         "footnote": "En plats i kvoten reserveras när du skickar in och räknas som använd när utskicket skickas. Den återförs om utskicket avvisas, avbryts, förfaller utan ditt godkännande eller inte kan skickas."
       },
       "banner": {
@@ -7031,6 +7032,13 @@
           "submittedAt": "Inskickat",
           "sentAt": "Skickat",
           "audience": "Målgrupp"
+        },
+        "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
+        "audience": {
+          "all_members": "Alla medlemmar",
+          "tier": "Specifik medlemsnivå",
+          "event_attendees_last_90d": "Eventdeltagare (senaste 90 dagarna)",
+          "custom": "Anpassad e-postlista"
         },
         "status": {
           "draft": "Utkast",
@@ -8652,7 +8660,7 @@
       "activeDescriptionPlan": "Ingår i ditt {plan}-paket för {year}",
       "activeDescription": "Ingår i ditt paket för {year}",
       "reservedHint": "{reserved} reserverade · {remaining} kvar{hasDate, select, yes { · senast använd {date}} other {}}",
-      "quotaValueText": "{used} använda, {reserved} reserverade, {remaining} kvar av {total}"
+      "quotaValueText": "{used, plural, one {# använd} other {# använda}}, {reserved, plural, one {# reserverad} other {# reserverade}}, {remaining} kvar av {total}"
     },
     "benefit": {
       "eblast": "Utskick",
@@ -8660,6 +8668,9 @@
       "action": {
         "eblast": "Skriv utskick",
         "cultural_tickets": "Visa evenemang"
+      },
+      "actionExhausted": {
+        "eblast": "Visa utskick"
       },
       "description": {
         "eblast": "E-postkampanjer som skickas till kammarens mottagare för din räkning",

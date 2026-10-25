@@ -9,6 +9,8 @@ import type { PortalBenefitsSummaryItem } from '@/components/benefits/portal-ben
 
 const PORTAL_BENEFITS_HREF = '/portal/benefits';
 const EBLAST_COMPOSE_HREF = '/portal/broadcasts/new';
+/** The E-Blasts tab: the Dashboard's next step once no E-Blast is left. */
+const EBLAST_HISTORY_HREF = '/portal/benefits?tab=broadcasts';
 
 /**
  * 057 portal redesign §4.1 — 2-col benefits quota panel (right column).
@@ -61,7 +63,7 @@ export async function BenefitsPanelSection({
   const quantifiable: PortalBenefitsSummaryItem[] = usage.quantifiable.map((b) => {
     if (b.key !== 'eblast' || !env.features.f7Broadcasts) return b;
     const counted = eblastQuota ? { used: eblastQuota.used, entitlement: eblastQuota.cap, reserved: eblastQuota.reserved } : {};
-    return { ...b, ...counted, actionHref: EBLAST_COMPOSE_HREF };
+    return { ...b, ...counted, actionHref: EBLAST_COMPOSE_HREF, exhaustedActionHref: EBLAST_HISTORY_HREF };
   });
 
   return (

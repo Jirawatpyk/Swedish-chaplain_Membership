@@ -10,6 +10,11 @@
  * `BenefitUsageCard compact`. The under-use warning is left to the Benefits
  * stat beside this card (the board draws none here); the full benefits page
  * still shows it (FR-021).
+ *
+ * 25 Oct (the user: one E-Blast quota bar here and on Benefits / compose):
+ * while E-Blasts are reserved the bar carries the same key as the quota card
+ * (`QuotaLegend`), and the E-Blast bar turns danger once used plus reserved
+ * reach the quota. A ticket benefit used in full stays accent: not an error.
  */
 import Link from 'next/link';
 import { ArrowRight, CalendarDays, Mail, type LucideIcon } from 'lucide-react';
@@ -18,6 +23,7 @@ import { Progress } from '@jirawatpyk/aura-react';
 import { Card, Icon as AuraIcon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
+import { QuotaLegend } from '@/components/broadcast/quota-legend';
 import type { BenefitUsageItem } from './benefit-usage-card';
 
 const ACTION_ICON: Readonly<Record<string, LucideIcon>> = {
@@ -30,7 +36,11 @@ const ACTION_ICON: Readonly<Record<string, LucideIcon>> = {
  * not-yet-sent E-Blasts, from the quota counter: drawn as a striped segment
  * after the used one, with "N reserved · M left" as the hint.
  */
-export type PortalBenefitsSummaryItem = BenefitUsageItem & { readonly reserved?: number };
+export type PortalBenefitsSummaryItem = BenefitUsageItem & {
+  readonly reserved?: number;
+  /** Where the next step goes once the quota is full (E-Blasts: the E-Blasts tab, not a compose dead end). */
+  readonly exhaustedActionHref?: string;
+};
 
 export interface PortalBenefitsSummaryCardProps {
   readonly locale: string;
@@ -49,6 +59,7 @@ export function PortalBenefitsSummaryCard({
   headingId,
 }: PortalBenefitsSummaryCardProps): React.ReactElement {
   const t = useTranslations('benefits');
+  const tQuota = useTranslations('portal.broadcasts.quota');
   // `timeZone` pinned — the server and a Bangkok browser must agree on the day.
   const formatDate = (iso: string) =>
     new Intl.DateTimeFormat(getDateFormatLocale(locale), { dateStyle: 'medium', timeZone: 'Asia/Bangkok' }).format(
@@ -67,35 +78,47 @@ export function PortalBenefitsSummaryCard({
         <ul className="flex flex-col gap-5">
           {quantifiable.map((b) => {
             const Icon = ACTION_ICON[b.key];
+            // `reserved` is set for E-Blasts only: the quota they can run out of.
+            const tone =
+              b.reserved !== undefined && b.entitlement > 0 && b.used + b.reserved >= b.entitlement
+                ? 'danger'
+                : 'accent';
+            const exhaustedHref = tone === 'danger' ? b.exhaustedActionHref : undefined;
+            const exhaustedAction = exhaustedHref !== undefined;
             return (
               <li key={b.key} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <div className="min-w-0 flex-1">
                   {b.reserved !== undefined && b.reserved > 0 ? (
-                    <Progress
-                      label={t(`benefit.${b.key}`)}
-                      value={b.used}
-                      secondaryValue={b.reserved}
-                      max={b.entitlement}
-                      showValue
-                      valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
-                      valueText={t('card.quotaValueText', {
-                        used: b.used,
-                        reserved: b.reserved,
-                        remaining: Math.max(0, b.entitlement - b.used - b.reserved),
-                        total: b.entitlement,
-                      })}
-                      hint={t('card.reservedHint', {
-                        reserved: b.reserved,
-                        remaining: Math.max(0, b.entitlement - b.used - b.reserved),
-                        hasDate: b.lastUsedAt === null ? 'no' : 'yes',
-                        date: b.lastUsedAt === null ? '' : formatDate(b.lastUsedAt),
-                      })}
-                    />
+                    <div className="flex flex-col gap-2">
+                      <Progress
+                        label={t(`benefit.${b.key}`)}
+                        value={b.used}
+                        secondaryValue={b.reserved}
+                        max={b.entitlement}
+                        tone={tone}
+                        showValue
+                        valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
+                        valueText={t('card.quotaValueText', {
+                          used: b.used,
+                          reserved: b.reserved,
+                          remaining: Math.max(0, b.entitlement - b.used - b.reserved),
+                          total: b.entitlement,
+                        })}
+                        hint={t('card.reservedHint', {
+                          reserved: b.reserved,
+                          remaining: Math.max(0, b.entitlement - b.used - b.reserved),
+                          hasDate: b.lastUsedAt === null ? 'no' : 'yes',
+                          date: b.lastUsedAt === null ? '' : formatDate(b.lastUsedAt),
+                        })}
+                      />
+                      <QuotaLegend usedLabel={tQuota('used')} reservedLabel={tQuota('reservedLegend')} tone={tone} />
+                    </div>
                   ) : (
                     <Progress
                       label={t(`benefit.${b.key}`)}
                       value={b.used}
                       max={b.entitlement}
+                      tone={tone}
                       showValue
                       valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
                       hint={b.lastUsedAt === null ? t('card.neverUsed') : t('card.lastUsed', { date: formatDate(b.lastUsedAt) })}
@@ -104,11 +127,11 @@ export function PortalBenefitsSummaryCard({
                 </div>
                 {b.actionHref !== undefined ? (
                   <Link
-                    href={b.actionHref}
+                    href={exhaustedHref ?? b.actionHref}
                     className={cn(buttonClass({ variant: 'secondary' }), 'shrink-0 self-start no-underline sm:w-[148px] sm:self-auto')}
                   >
                     {Icon ? <AuraIcon name={<Icon />} size={16} /> : null}
-                    {t(`benefit.action.${b.key}`)}
+                    {exhaustedAction ? t(`benefit.actionExhausted.${b.key}`) : t(`benefit.action.${b.key}`)}
                   </Link>
                 ) : null}
               </li>

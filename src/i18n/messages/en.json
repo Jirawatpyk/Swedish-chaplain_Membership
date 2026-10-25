@@ -6992,13 +6992,14 @@
         "reserved": "Reserved",
         "remaining": "Remaining",
         "cap": "Plan limit",
-        "exhausted": "All E-Blast quota for {year} has been used.",
+        "exhausted": "{reserved, plural, =0 {All E-Blast quota for {year} has been used.} one {No E-Blasts left for {year}. # is still reserved and is given back if it is not sent.} other {No E-Blasts left for {year}. # are still reserved and are given back if they are not sent.}}",
         "progressLabel": "E-Blast quota used",
         "fetchError": "Could not load quota.",
         "retry": "Retry",
         "nextReset": "Renews {date}",
         "planChangedExplainer": "Plan changed on {date} — current year quota reflects the new plan.",
         "reservedLegend": "Reserved (in review or scheduled)",
+        "valueText": "{used} used, {reserved} reserved, {remaining} remaining of {cap}",
         "footnote": "A slot is reserved when you submit and used when the E-Blast is sent. It is given back if the E-Blast is rejected, cancelled, expires without your approval, or cannot be sent."
       },
       "banner": {
@@ -7031,6 +7032,13 @@
           "submittedAt": "Submitted",
           "sentAt": "Sent",
           "audience": "Audience"
+        },
+        "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
+        "audience": {
+          "all_members": "All members",
+          "tier": "Specific membership tier",
+          "event_attendees_last_90d": "Event attendees (last 90 days)",
+          "custom": "Custom email list"
         },
         "status": {
           "draft": "Draft",
@@ -8660,6 +8668,9 @@
       "action": {
         "eblast": "Compose E-Blast",
         "cultural_tickets": "View events"
+      },
+      "actionExhausted": {
+        "eblast": "View E-Blasts"
       },
       "description": {
         "eblast": "Email campaigns sent to the chamber's audience on your behalf",

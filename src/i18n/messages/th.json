@@ -6992,13 +6992,14 @@
         "reserved": "จองไว้",
         "remaining": "คงเหลือ",
         "cap": "เพดานแพ็กเกจ",
-        "exhausted": "โควตา E-Blast ของปี {year} ถูกใช้หมดแล้ว",
+        "exhausted": "{reserved, plural, =0 {โควตา E-Blast ของปี {year} ถูกใช้หมดแล้ว} other {โควตา E-Blast ของปี {year} หมดแล้ว ยังมี # สิทธิ์ที่จองไว้ ซึ่งระบบจะคืนให้หากไม่ได้ส่งออก}}",
         "progressLabel": "โควตา E-Blast ที่ใช้ไป",
         "fetchError": "ไม่สามารถโหลดโควตาได้",
         "retry": "ลองใหม่",
         "nextReset": "รีเซ็ตโควตา {date}",
         "planChangedExplainer": "เปลี่ยนแพ็กเกจเมื่อ {date} — โควตาปีนี้ใช้ตามแพ็กเกจใหม่",
         "reservedLegend": "จองไว้ (รอตรวจสอบหรือกำหนดส่งแล้ว)",
+        "valueText": "ใช้ไป {used} จองไว้ {reserved} เหลือ {remaining} จาก {cap}",
         "footnote": "ระบบจะจองสิทธิ์ไว้เมื่อคุณส่งตรวจสอบ และนับว่าใช้ไปเมื่อส่ง E-Blast ออกแล้ว หาก E-Blast ถูกปฏิเสธ ถูกยกเลิก หมดอายุโดยที่คุณยังไม่อนุมัติ หรือส่งไม่สำเร็จ ระบบจะคืนสิทธิ์ให้คุณ"
       },
       "banner": {
@@ -7031,6 +7032,13 @@
           "submittedAt": "ส่งตรวจสอบเมื่อ",
           "sentAt": "ส่งสำเร็จเมื่อ",
           "audience": "กลุ่มผู้รับ"
+        },
+        "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
+        "audience": {
+          "all_members": "สมาชิกทั้งหมด",
+          "tier": "เฉพาะระดับสมาชิก",
+          "event_attendees_last_90d": "ผู้เข้าร่วมงาน (90 วันล่าสุด)",
+          "custom": "รายชื่ออีเมลกำหนดเอง"
         },
         "status": {
           "draft": "ฉบับร่าง",
@@ -8660,6 +8668,9 @@
       "action": {
         "eblast": "เขียน E-Blast",
         "cultural_tickets": "ดูกิจกรรม"
+      },
+      "actionExhausted": {
+        "eblast": "ดู E-Blast"
       },
       "description": {
         "eblast": "แคมเปญอีเมลที่หอการค้าส่งถึงกลุ่มผู้รับในนามของคุณ",

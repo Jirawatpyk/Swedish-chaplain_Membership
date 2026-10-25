@@ -78,6 +78,8 @@ export async function BroadcastsPanel({
 }): Promise<React.ReactElement> {
   const tStatus = await getTranslations('portal.broadcasts.list.status');
   const tQuota = await getTranslations('portal.broadcasts.quota');
+  const tAudience = await getTranslations('portal.broadcasts.list.audience');
+  const tList = await getTranslations('portal.broadcasts.list');
   const locale = await getLocale();
   // Tenant-TZ pin (#315 follow-up, server-UTC display class): sent/created
   // instants rendered by the UTC Vercel runtime were 7h off (wrong day past
@@ -123,6 +125,7 @@ export async function BroadcastsPanel({
     submittedAt: Date | null;
     sentAt: Date | null;
     estimatedRecipientCount: number;
+    segmentType: string;
   }> = [];
   let pagination = { page: 1, totalPages: 0, total: 0 };
   // Portal error states #2 — a failed history read is NOT an empty history.
@@ -238,6 +241,7 @@ export async function BroadcastsPanel({
         submittedAt: b.submittedAt,
         sentAt: b.sentAt,
         estimatedRecipientCount: b.estimatedRecipientCount,
+        segmentType: b.segmentType,
       }));
     } else {
       // History query failure must not crash the entire page — quota
@@ -272,6 +276,15 @@ export async function BroadcastsPanel({
       // An unknown status (no label either) degrades to the neutral pill.
       statusTone: known ? getPortalBroadcastStatusTone(row.status as BroadcastStatus) : 'neutral',
       estimatedRecipientCount: row.estimatedRecipientCount,
+      // Task #6 (board `Portal-broadcasts`): "All members · 130", the count
+      // locale-formatted and held to its label by no-break spaces. A segment
+      // type without a label falls back to the column's word, "Audience · 130".
+      audience: tList('audienceWithCount', {
+        audience: tAudience.has(row.segmentType as Parameters<typeof tAudience>[0])
+          ? tAudience(row.segmentType as Parameters<typeof tAudience>[0])
+          : tList('columns.audience'),
+        count: row.estimatedRecipientCount,
+      }),
       submitted:
         row.submittedAt !== null ? dateFormatter.format(new Date(row.submittedAt)) : '—',
       sent: row.sentAt !== null ? dateFormatter.format(new Date(row.sentAt)) : '—',
@@ -430,7 +443,7 @@ export async function BroadcastsPanelView({
                         {row.statusLabel}
                       </StatusPill>
                     </Td>
-                    <Td className="tabular-nums">{row.estimatedRecipientCount}</Td>
+                    <Td className="tabular-nums">{row.audience}</Td>
                     <Td className="whitespace-nowrap text-[var(--aura-fg-secondary)]">{row.submitted}</Td>
                     <Td className="whitespace-nowrap text-[var(--aura-fg-secondary)]">{row.sent}</Td>
                   </Tr>
@@ -441,7 +454,6 @@ export async function BroadcastsPanelView({
           <BroadcastHistoryCardList
             rows={historyRows}
             labels={{
-              audience: t('columns.audience'),
               submittedAt: t('columns.submittedAt'),
               sentAt: t('columns.sentAt'),
             }}
