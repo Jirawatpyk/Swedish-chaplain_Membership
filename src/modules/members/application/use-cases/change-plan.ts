@@ -16,18 +16,20 @@ import { z } from 'zod';
 import { runInTenant } from '@/lib/db';
 import { err, ok, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import {
   asOverrideReason,
   OVERRIDE_REASON_CODES,
 } from '../../domain/value-objects/override-reason';
-import { checkTurnoverBand } from '../../domain/policies/turnover-policy';
-import { checkStartupDuration } from '../../domain/policies/startup-duration-policy';
 import { asPlanId } from '../../domain/member';
 import type { Member, MemberId } from '../../domain/member';
 import type { MemberRepo } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
+import type { ClockPort } from '../ports/clock-port';
+import type { ContactRepo } from '../ports/contact-repo';
 import type { PlanLookupPort } from '../ports/plan-lookup-port';
+import { validatePlanChange, type PlanChangeRefusal } from './plan-change-core';
 import type {
   PlanChangeBillingEffect,
   PlanChangeBillingRemediationPort,
@@ -49,19 +51,10 @@ export type ChangePlanError =
       issues: ReadonlyArray<{ path: string; message: string }>;
     }
   | { type: 'not_found' }
-  | { type: 'plan_not_found' }
   | { type: 'invalid_override_reason'; code: string }
-  | {
-      type: 'bundle_change_requires_confirmation';
-      oldBundleCorporatePlanId: string | null;
-      newBundleCorporatePlanId: string | null;
-    }
-  | {
-      type: 'turnover_out_of_band';
-      turnoverThb: number;
-      band: { minThb: number | null; maxThb: number | null };
-    }
-  | { type: 'startup_too_old'; foundedYear: number; maxAllowedYears: number }
+  // 126 — plan_not_found, member_archived (#4), bundle (#9), turnover,
+  // startup, age + member type (#5): the shared plan-change rules.
+  | PlanChangeRefusal
   | { type: 'server_error'; message: string };
 
 // F8 listener event payload — emitted to `manualPlanChangeListeners`
@@ -98,6 +91,10 @@ export type ChangePlanDeps = {
   memberRepo: MemberRepo;
   plans: PlanLookupPort;
   audit: AuditPort;
+  /** 126 #5 — the primary contact's date of birth for the plan age rule. */
+  contactRepo: Pick<ContactRepo, 'listByMember'>;
+  /** 126 #5 — "today" for the plan age rule. */
+  clock: ClockPort;
   /**
    * W0-02 — Advisory-lock acquirer for the soft-delete TOCTOU fix.
    *
@@ -215,60 +212,41 @@ export async function changePlan(
     deps.plans.getPlan(deps.tenant, asPlanId(data.new_plan_id), data.new_plan_year),
   ]);
   if (!newPlan.ok) return err({ type: 'plan_not_found' });
-  // W0-02 (code-review #1) — `getPlan`/`findOne` deliberately returns
-  // soft-deleted plans, so a `newPlan.ok` row may still be soft-deleted. A
-  // member must never be assigned to a soft-deleted plan. Pre-tx fast-fail;
-  // the in-tx re-check under the advisory lock (below) closes the race where
-  // the plan is soft-deleted after this snapshot but before the FK write.
-  if (newPlan.value.isSoftDeleted) return err({ type: 'plan_not_found' });
-
-  // Bundle-change detection (FR-010): only fires on Partnership tiers
-  // where the bundled corporate plan_id differs between old and new.
-  const oldBundle = oldPlan.ok
-    ? oldPlan.value.includesCorporatePlanId
-    : null;
-  const newBundle = newPlan.value.includesCorporatePlanId;
-  const bundleChanged =
-    newPlan.value.planCategory === 'partnership' &&
-    oldBundle !== newBundle;
-  if (bundleChanged && !data.confirm_bundle_change) {
-    return err({
-      type: 'bundle_change_requires_confirmation',
-      oldBundleCorporatePlanId: oldBundle,
-      newBundleCorporatePlanId: newBundle,
-    });
+  // 126 review — the old plan feeds the bundle-exit check (#9). A missing row
+  // has no bundle to leave; any other lookup failure must not silently skip
+  // the confirmation, so it is an infra error.
+  if (!oldPlan.ok && oldPlan.error.code !== 'repo.not_found') {
+    return err({ type: 'server_error', message: `old plan lookup: ${oldPlan.error.code}` });
   }
 
-  // Turnover + startup checks against NEW plan (override may bypass)
-  const turnoverCheck = checkTurnoverBand(current.turnoverThb, {
-    minThb: newPlan.value.minTurnoverThb,
-    maxThb: newPlan.value.maxTurnoverThb,
-  });
-  if (!turnoverCheck.ok && !overrideAsserted) {
-    return err({
-      type: 'turnover_out_of_band',
-      turnoverThb: turnoverCheck.error.turnoverThb,
-      band: turnoverCheck.error.band,
-    });
-  }
-
-  if (
-    newPlan.value.maxDurationYears !== null &&
-    current.foundedYear !== null
-  ) {
-    const s = checkStartupDuration(
-      current.foundedYear,
-      current.registrationDate,
-      newPlan.value.maxDurationYears,
-    );
-    if (!s.ok && !overrideAsserted) {
-      return err({
-        type: 'startup_too_old',
-        foundedYear: s.error.foundedYear,
-        maxAllowedYears: s.error.maxAllowedYears,
-      });
+  // 126 #5 — the primary contact's DOB, read only when the new plan has an
+  // age cap (the Thai Alumni tier). A read failure is an infra fault.
+  let primaryDateOfBirth: Date | null = null;
+  if (newPlan.value.maxMemberAge !== null) {
+    const contactsResult = await deps.contactRepo.listByMember(deps.tenant, memberId);
+    if (!contactsResult.ok) {
+      return err({ type: 'server_error', message: `contacts: ${contactsResult.error.code}` });
     }
+    primaryDateOfBirth =
+      contactsResult.value.find((c) => c.isPrimary && c.removedAt === null)?.dateOfBirth ?? null;
   }
+
+  // Shared plan-change rules (126): a soft-deleted plan (W0-02 pre-tx
+  // fast-fail; the in-tx re-check under the advisory lock below closes the
+  // race), an archived member (#4), a bundle change in either direction
+  // (#9), and the turnover / startup / age / member-type gates (#5) that an
+  // override reason may bypass.
+  const check = validatePlanChange({
+    member: current,
+    oldPlan: oldPlan.ok ? oldPlan.value : null,
+    newPlan: newPlan.value,
+    confirmBundleChange: data.confirm_bundle_change === true,
+    overrideAsserted,
+    primaryDateOfBirth,
+    now: deps.clock.now(),
+  });
+  if (!check.ok) return err(check.error);
+  const { bundleChanged, oldBundle, newBundle } = check.value;
 
   // Persist + audit atomically (Principle VIII — audit-with-state).
   // Throw-to-rollback: any port err aborts the tx via UpdateFailed /
@@ -329,6 +307,10 @@ export async function changePlan(
         );
       }
       const locked = lockedResult.value;
+      // 126 #4 — an archive committed after the pre-tx read must win.
+      if (locked.status === 'archived') {
+        throw new TxAbort({ type: 'member_archived' });
+      }
       // 063 — capture the pre-flip plan id for the post-commit F8 event.
       lockedOldPlanId = locked.planId as string;
 
@@ -480,7 +462,7 @@ export async function changePlan(
         } catch (e) {
           logger.error(
             {
-              err: e instanceof Error ? e.message : String(e),
+              err: errKind(e),
               tenantId: deps.tenant.slug,
               memberId,
             },
@@ -498,6 +480,9 @@ export async function changePlan(
       }
       if (e.detail.type === 'plan_not_found') {
         return err({ type: 'plan_not_found' });
+      }
+      if (e.detail.type === 'member_archived') {
+        return err({ type: 'member_archived' });
       }
       if (e.detail.type === 'update_failed') {
         return err({
@@ -525,7 +510,8 @@ class TxAbort extends Error {
       | { type: 'update_failed'; code: string }
       | { type: 'audit_failed' }
       | { type: 'not_found' }
-      | { type: 'plan_not_found' },
+      | { type: 'plan_not_found' }
+      | { type: 'member_archived' },
   ) {
     super(`tx-abort: ${detail.type}`);
   }

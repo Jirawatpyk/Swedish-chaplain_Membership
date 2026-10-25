@@ -24,8 +24,9 @@
  *     cannot drift.
  */
 
-import { runInTenant } from '@/lib/db';
+import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { err, ok, type Result } from '@/lib/result';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import {
@@ -95,44 +96,76 @@ export const planAuditAdapter: AuditPort = {
     }
 
     try {
-      await runInTenant(ctx.tenant, async (tx) => {
-        await tx.insert(auditLog).values({
-          eventType: event.event_type,
-          actorUserId: ctx.actorUserId,
-          // targetUserId is F1-specific (sign-in target etc.) — F2 events
-          // operate on plans, not users, so we leave it NULL.
-          targetUserId: null,
-          sourceIp: ctx.sourceIp,
-          summary: summariseEvent(event).slice(0, 500),
-          requestId: ctx.requestId,
-          payload: event.payload,
-          tenantId: ctx.tenant.slug,
-        });
-      });
+      await runInTenant(ctx.tenant, (tx) => insertAuditRow(tx, ctx, event));
       return ok(undefined);
     } catch (e) {
-      // Log at the Infrastructure boundary so audit-write failures are
-      // visible on observability dashboards without pulling pino into
-      // the F2 Application barrel (Application files are re-exported
-      // through `@/modules/plans` and reachable from Client Components
-      // — pino's `worker_threads` import would break the client bundle.
-      // See post-ship R6 C4 fix relocation 2026-05-19).
-      const message = e instanceof Error ? e.message : String(e);
-      logger.error(
-        {
-          event: 'plan_audit_persist_failed',
-          event_type: event.event_type,
-          tenant: ctx.tenant.slug,
-          actor_user_id: ctx.actorUserId,
-          request_id: ctx.requestId,
-          err: message,
-        },
-        'plan-audit-adapter: persist failed — F13 cross-tenant-probe correlation pipeline at risk if event_type=plan_not_found',
-      );
+      return persistFailed(ctx, event, e);
+    }
+  },
+
+  // 126 #7 — the same append on the caller's write tx. A failure here is
+  // returned (not thrown); the use case's hook throws to roll the write back.
+  async recordInTx(
+    tx: TenantTx,
+    ctx: AuditContext,
+    event: F2AuditEvent,
+  ): Promise<Result<void, AuditError>> {
+    const parsed = auditPayloadSchema.safeParse(event);
+    if (!parsed.success) {
       return err({
-        type: 'persist_failed',
-        message,
+        type: 'invalid_payload',
+        issues: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`),
       });
+    }
+    try {
+      await insertAuditRow(tx, ctx, event);
+      return ok(undefined);
+    } catch (e) {
+      return persistFailed(ctx, event, e);
     }
   },
 };
+
+function insertAuditRow(tx: TenantTx, ctx: AuditContext, event: F2AuditEvent) {
+  return tx.insert(auditLog).values({
+    eventType: event.event_type,
+    actorUserId: ctx.actorUserId,
+    // targetUserId is F1-specific (sign-in target etc.) — F2 events
+    // operate on plans, not users, so we leave it NULL.
+    targetUserId: null,
+    sourceIp: ctx.sourceIp,
+    summary: summariseEvent(event).slice(0, 500),
+    requestId: ctx.requestId,
+    payload: event.payload,
+    tenantId: ctx.tenant.slug,
+  });
+}
+
+function persistFailed(
+  ctx: AuditContext,
+  event: F2AuditEvent,
+  e: unknown,
+): Result<void, AuditError> {
+  // Log at the Infrastructure boundary so audit-write failures are
+  // visible on observability dashboards without pulling pino into
+  // the F2 Application barrel (Application files are re-exported
+  // through `@/modules/plans` and reachable from Client Components
+  // — pino's `worker_threads` import would break the client bundle.
+  // See post-ship R6 C4 fix relocation 2026-05-19).
+  const message = e instanceof Error ? e.message : String(e);
+  logger.error(
+    {
+      event: 'plan_audit_persist_failed',
+      event_type: event.event_type,
+      tenant: ctx.tenant.slug,
+      actor_user_id: ctx.actorUserId,
+      request_id: ctx.requestId,
+      err: errKind(e),
+    },
+    'plan-audit-adapter: persist failed — F13 cross-tenant-probe correlation pipeline at risk if event_type=plan_not_found',
+  );
+  return err({
+    type: 'persist_failed',
+    message,
+  });
+}

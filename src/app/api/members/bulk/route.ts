@@ -1,7 +1,7 @@
 /**
  * POST /api/members/bulk (T107, US4).
  *
- * Bulk action endpoint: archive, change_plan, send_portal_invite.
+ * Bulk action endpoint: archive, unarchive, send_portal_invite.
  * Enforces ≤100 row cap (FR-019a), per-actor rate limit of 10 ops /
  * 10 min (FR-019b), and all-or-nothing transaction semantics (FR-019).
  *
@@ -624,7 +624,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         memberRepo: deps.memberRepo,
         audit: deps.audit,
         clock: deps.clock,
-        plans: deps.plans,
+        // 126 #2 — the single-archive cascade (sessions, invitations,
+        // broadcasts, renewal cycle) and the undelete restore cascade.
+        contactRepo: deps.contactRepo,
+        sessions: deps.sessions,
+        invitations: deps.invitations,
+        broadcastsCascade: deps.broadcastsCascade,
+        renewalsCascade: deps.renewalsCascade,
       },
     );
 
@@ -689,22 +695,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           },
           { status: 404 },
         );
-      case 'plan_not_found':
-        return NextResponse.json(
-          {
-            error: {
-              code: 'plan_not_found',
-              message: 'Target plan does not exist in this tenant.',
-              details: { plan_id: result.error.planId },
-            },
-          },
-          { status: 404 },
-        );
       case 'state_error':
         // The client maps `code` → localized copy; the message here is a
         // generic non-leaky fallback (no member UUID / dev-y interpolation).
         // The member id + domain code are preserved under `details` for
-        // observability (parity with the not_found / plan_not_found arms above
+        // observability (parity with the not_found arm above
         // and with the inline-edit route's sanitized state_error).
         return NextResponse.json(
           {

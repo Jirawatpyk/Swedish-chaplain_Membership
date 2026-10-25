@@ -59,6 +59,7 @@ import {
 // the unit suite (`tests/unit/plans/application/...`).
 const stubAudit: AuditPort = {
   record: vi.fn(async () => ok(undefined as void)),
+  recordInTx: vi.fn(async () => ok(undefined as void)),
 };
 
 // ── In-memory repo helpers ────────────────────────────────────────────────────
@@ -290,6 +291,8 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
     expect(repo.supersedeAndInsertPendingAtomically).toHaveBeenCalledWith(
       expect.objectContaining({ slug: 'test-swecham' }),
       expect.any(Object),
+      undefined,
+      expect.any(Function), // 126 #7 — the in-tx audit hook
     );
   });
 
@@ -317,6 +320,8 @@ describe('Contract — F2 scheduleNextRenewalPlanChange', () => {
     expect(repo.supersedeAndInsertPendingAtomically).toHaveBeenLastCalledWith(
       expect.objectContaining({ slug: 'test-swecham' }),
       expect.objectContaining({ toPlanId: 'corporate-premier' }),
+      undefined,
+      expect.any(Function),
     );
     const firstResult = await (
       repo.supersedeAndInsertPendingAtomically as ReturnType<typeof vi.fn>

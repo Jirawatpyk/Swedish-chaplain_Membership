@@ -109,6 +109,9 @@ function buildDeps(
         return ok(undefined);
       }),
     },
+    // 126 #5 — the plan age rule's primary-contact DOB + clock.
+    contactRepo: { listByMember: vi.fn().mockResolvedValue(ok([])) },
+    clock: { now: () => new Date('2026-10-24T00:00:00Z') },
     planAdvisoryLock: {
       acquire: vi.fn().mockResolvedValue(undefined),
       isPlanSoftDeletedInTx: vi.fn().mockResolvedValue(false),

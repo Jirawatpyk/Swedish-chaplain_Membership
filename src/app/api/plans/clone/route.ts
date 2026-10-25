@@ -218,26 +218,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           { status: 409 },
         );
       case 'audit_failed':
-        // clone-plans commits all N rows inside a single Postgres tx
-        // BEFORE emitting audit, so a failure here means the clone fully
-        // succeeded but the audit trail is missing. "may be partial" was
-        // a lie. Surface source/target years so on-call can backfill the
-        // audit row by scanning the affected plans.
+        // 126 #7 (D-027) — the plan_cloned audit row is written in the
+        // clone's tx, so a failure here ROLLED ALL N ROWS BACK: nothing to
+        // backfill, and the client's retry (the key is released) recovers.
         logger.error(
           {
             requestId: ctx.requestId,
             source_year: parsed.data.source_year,
             target_year: parsed.data.target_year,
-            err: result.error,
           },
-          'clone-plans: rows committed but audit write failed — operator backfill needed',
+          'clone-plans: audit write failed — clone rolled back',
         );
         return NextResponse.json(
           {
             error: {
               code: 'audit_failed',
               message:
-                'Plans were cloned but audit trail write failed. Contact ops.',
+                'The plans were not cloned because the audit record could not be written. Retry.',
             },
           },
           { status: 500 },

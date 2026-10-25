@@ -23,12 +23,12 @@ import {
   scheduleNextRenewalPlanChange,
   assertValidScheduledPlanChange,
   type ScheduleNextRenewalPlanChangeDeps,
-  type AuditPort,
   type MutableScheduledPlanChange,
   type ScheduledPlanChange,
   type ScheduledPlanChangeRepo,
   type ScheduleNextRenewalPlanChangeInput,
 } from '@/modules/plans';
+import { hooked, inTxAudit } from './in-tx-hook-mocks';
 
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -81,7 +81,7 @@ type DepsOverrides = {
 
 function makeDeps(overrides: DepsOverrides = {}): ScheduleNextRenewalPlanChangeDeps {
   const repo: ScheduledPlanChangeRepo = {
-    supersedeAndInsertPendingAtomically: vi.fn(async () => {
+    supersedeAndInsertPendingAtomically: hooked(async () => {
       const r = overrides.supersedeResult;
       if (r instanceof Error) throw r;
       return r ?? { inserted: makeRow(), superseded: null };
@@ -93,7 +93,7 @@ function makeDeps(overrides: DepsOverrides = {}): ScheduleNextRenewalPlanChangeD
     listForMember: vi.fn(),
   };
   let auditCallIndex = 0;
-  const audit: AuditPort = {
+  const audit = inTxAudit({
     record: vi.fn(async () => {
       const arr = overrides.auditResults ?? [];
       const r = arr[auditCallIndex] ?? 'ok';
@@ -113,7 +113,7 @@ function makeDeps(overrides: DepsOverrides = {}): ScheduleNextRenewalPlanChangeD
           return ok(undefined as void);
       }
     }),
-  };
+  });
   return {
     tenant,
     repo,

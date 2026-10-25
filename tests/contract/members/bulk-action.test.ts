@@ -3,7 +3,7 @@
  *
  * Covers:
  *   - 200 happy path (archive action)
- *   - 200 happy path (change_plan action)
+ *   - 200 happy path (archive action)
  *   - 400 bulk_cap_exceeded (>100 member_ids)
  *   - 400 missing Idempotency-Key
  *   - 429 rate-limited
@@ -137,7 +137,7 @@ describe('contract: POST /api/members/bulk (T099 / US4)', () => {
     expect(body.audit_event_count).toBe(3);
   });
 
-  it('200 on change_plan action — happy path', async () => {
+  it('200 on archive action — happy path', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     rateLimitCheckMock.mockResolvedValueOnce({
       success: true,
@@ -150,9 +150,8 @@ describe('contract: POST /api/members/bulk (T099 / US4)', () => {
     const { POST } = await import('@/app/api/members/bulk/route');
     const res = await POST(
       makeRequest({
-        action: 'change_plan',
+        action: 'archive',
         member_ids: ['id-1', 'id-2', 'id-3', 'id-4', 'id-5'],
-        params: { new_plan_id: 'plan-premium', new_plan_year: 2026 },
       }),
     );
     expect(res.status).toBe(200);
