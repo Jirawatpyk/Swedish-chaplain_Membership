@@ -4,7 +4,9 @@
  * When `READ_ONLY_MODE=true` is set in the Vercel environment, the
  * proxy MUST return 503 `read-only-mode` on every state-changing
  * HTTP method (POST, PUT, PATCH, DELETE) while keeping GET requests
- * alive. This is the 30-second reversible rollback lever documented
+ * alive — except sign-in, sign-out and heartbeat POSTs, which stay up
+ * (D-028; spec 001 quickstart § 7.3; the exact list is pinned in
+ * `tests/unit/proxy/read-only-auth-exemption.test.ts`). This is the 30-second reversible rollback lever documented
  * in `docs/runbook/auth.md § 3`.
  *
  * Test strategy: import the `proxy` function directly from
@@ -34,7 +36,7 @@ vi.mock('@/lib/env', () => ({
 // Import AFTER the mock so proxy.ts picks up the mocked env.
 const { proxy } = await import('@/proxy');
 
-function makeRequest(method: string, path = '/api/auth/sign-in'): NextRequest {
+function makeRequest(method: string, path = '/api/auth/reset-password'): NextRequest {
   return new NextRequest(`http://localhost:3100${path}`, {
     method,
     headers: {
@@ -49,7 +51,12 @@ describe('integration: proxy READ_ONLY_MODE (T044, FR-007)', () => {
     vi.clearAllMocks();
   });
 
-  it('POST /api/auth/sign-in → 503 read-only-mode with Retry-After', async () => {
+  it('POST /api/auth/sign-in → passes (sign-in stays up, D-028)', () => {
+    const response = proxy(makeRequest('POST', '/api/auth/sign-in'));
+    expect(response.status).toBe(200);
+  });
+
+  it('POST /api/auth/reset-password → 503 read-only-mode with Retry-After', async () => {
     const response = proxy(makeRequest('POST'));
     expect(response.status).toBe(503);
     const body = await response.json();

@@ -94,7 +94,7 @@ Then run the touched e2e specs against the branch's own :3400 server: `E2E_BASE_
 
 One-off: bootstrap the first admin (refuses if any admin exists): `BOOTSTRAP_ADMIN_EMAIL=first.admin@swecham.example pnpm db:seed-admin`.
 
-Vercel: `vercel env pull .env.local` · `vercel logs <deployment-url>` · `vercel promote <old-deployment-url>` (rollback). **Emergency write freeze**: set `READ_ONLY_MODE=true` in Vercel env + redeploy — 503 `read-only-mode` on every state-changing `/api/**` route while sign-in and reads stay up; reversible in ~30 s.
+Vercel: `vercel env pull .env.local` · `vercel logs <deployment-url>` · `vercel promote <old-deployment-url>` (rollback). **Emergency write freeze**: set `READ_ONLY_MODE=true` in Vercel env + redeploy — 503 `read-only-mode` on every state-changing `/api/**` route except the sign-in, sign-out and heartbeat POSTs (D-028), so sign-in and reads stay up; reversible in ~30 s.
 
 ## Precedence
 

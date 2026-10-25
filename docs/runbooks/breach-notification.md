@@ -77,7 +77,7 @@ Failure to notify within these windows triggers regulatory fines + reputational 
 ## Triage steps (in order)
 
 1. **CONTAINMENT FIRST** — don't investigate yet, stop the bleed.
-   - Suspected RLS bypass or app-layer auth bypass: set `READ_ONLY_MODE=true` in Vercel env (3-line redeploy; CLAUDE.md § Emergency write freeze) — blocks all state-changing routes globally; sign-in + reads remain alive.
+   - Suspected RLS bypass or app-layer auth bypass: set `READ_ONLY_MODE=true` in Vercel env (3-line redeploy; CLAUDE.md § Emergency write freeze) — blocks all state-changing routes globally; sign-in + reads remain alive. The freeze stops writes only, not reads, and sign-in, sign-out and heartbeat stay up (D-028): if credentials, sessions or sign-in itself are suspected, also revoke sessions (bulk delete `sessions`), disable the affected accounts, and/or `vercel promote` the last known-good deployment.
    - Suspected F7-specific issue: flip `FEATURE_F7_BROADCASTS=false` to halt all marketing dispatch + new submissions.
    - Suspected F1 credential compromise: revoke all sessions for affected user(s) via `DELETE FROM sessions WHERE user_id = $compromised;` + force password reset.
 
