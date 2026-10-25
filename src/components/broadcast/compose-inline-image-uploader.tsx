@@ -60,6 +60,8 @@ interface Props {
   readonly onUploadingChange?: (uploading: boolean) => void;
   /** While the host saves or submits (round 2, #3). */
   readonly disabled?: boolean;
+  /** The upload button's id, so the editor can point Image and Banner at "Uploading…" while they wait. */
+  readonly buttonId?: string;
   readonly ref?: React.Ref<ComposeInlineImageUploaderHandle>;
 }
 
@@ -70,6 +72,7 @@ export function ComposeInlineImageUploader({
   onPickerCancel,
   onUploadingChange,
   disabled = false,
+  buttonId,
   ref,
 }: Props): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.imageUpload');
@@ -81,6 +84,7 @@ export function ComposeInlineImageUploader({
   const inputId = `${idBase}-file`;
   const helpId = `${idBase}-help`;
   const noticeId = `${idBase}-public-notice`;
+  const alertId = `${idBase}-error`;
 
   // Round 2, #4/#15 — a picker opened from the description never starts a
   // second upload mid-flight, and starting again clears the last refusal.
@@ -221,6 +225,11 @@ export function ComposeInlineImageUploader({
         // hand-off), never reached by Tab: a clipped input was an invisible
         // tab stop beside the button that does the same thing.
         tabIndex={-1}
+        // Round 3 (a11y review): hidden from a screen reader's virtual cursor
+        // too, and refused while the host is busy or a file is uploading, so
+        // it never gets around the Button's guards.
+        aria-hidden="true"
+        disabled={disabled || uploading}
         ref={fileRef}
         type="file"
         accept="image/png,image/jpeg,image/webp,image/gif"
@@ -243,7 +252,9 @@ export function ComposeInlineImageUploader({
         // <body>, so "Uploading…" was never heard).
         loading={uploading}
         {...(disabled && !uploading && { 'aria-disabled': true })}
-        aria-describedby={`${helpId} ${noticeId}`}
+        {...(buttonId !== undefined && { id: buttonId })}
+        // The refusal stays described on the button after its toast is gone.
+        aria-describedby={error ? `${alertId} ${helpId} ${noticeId}` : `${helpId} ${noticeId}`}
         className="self-start"
       >
         {uploading ? t('uploadingLabel') : t('uploadButton')}
@@ -260,7 +271,7 @@ export function ComposeInlineImageUploader({
       {error && (
         // `role="none"`: the toast already announces the refusal (round 2,
         // #15); this keeps it in view after the toast is gone.
-        <Alert tone="danger" role="none">
+        <Alert id={alertId} tone="danger" role="none">
           {error}
         </Alert>
       )}

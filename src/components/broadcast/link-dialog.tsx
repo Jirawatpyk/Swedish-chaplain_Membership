@@ -23,7 +23,7 @@ import { useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, Dialog, TextField } from '@jirawatpyk/aura-react';
 import { BROADCAST_ALLOWED_URI_REGEXP } from '@/lib/broadcast-content-policy';
-import { withDefaultScheme } from './with-default-scheme';
+import { looksLikeEmailAddress, withDefaultScheme } from './with-default-scheme';
 
 export interface BroadcastLink {
   readonly href: string;
@@ -39,6 +39,8 @@ export interface LinkDialogProps {
   readonly onRemove?: () => void;
   readonly initialHref?: string;
   readonly initialText?: string;
+  /** The link or selection has words: a blank text keeps them, not the address. */
+  readonly hasText?: boolean;
   /** A link is under the caret: the dialog edits it ("Edit link"). */
   readonly editing?: boolean;
   /**
@@ -49,7 +51,7 @@ export interface LinkDialogProps {
   readonly finalFocus?: () => HTMLElement | false | null;
 }
 
-type LinkError = 'required' | 'scheme' | null;
+type LinkError = 'required' | 'scheme' | 'mailto' | null;
 
 export function LinkDialog({
   open,
@@ -60,6 +62,7 @@ export function LinkDialog({
   initialHref = '',
   initialText = '',
   editing = false,
+  hasText = false,
   textReadOnly = false,
   finalFocus,
 }: LinkDialogProps): React.ReactElement {
@@ -90,7 +93,7 @@ export function LinkDialog({
       return;
     }
     if (!BROADCAST_ALLOWED_URI_REGEXP.test(trimmedHref)) {
-      setError('scheme');
+      setError(looksLikeEmailAddress(trimmedHref) ? 'mailto' : 'scheme');
       return;
     }
     onConfirm({ href: trimmedHref, text: text.trim() });
@@ -98,7 +101,13 @@ export function LinkDialog({
   };
 
   const errorText =
-    error === 'required' ? t('errors.required') : error === 'scheme' ? t('errors.scheme') : null;
+    error === 'required'
+      ? t('errors.required')
+      : error === 'scheme'
+        ? t('errors.scheme')
+        : error === 'mailto'
+          ? t('errors.mailto', { address: href.trim() })
+          : null;
 
   return (
     <Dialog
@@ -163,7 +172,7 @@ export function LinkDialog({
           touchHeight
           value={text}
           readOnly={textReadOnly}
-          hint={textReadOnly ? t('textReadOnlyHint') : t('textHint')}
+          hint={textReadOnly ? t('textReadOnlyHint') : hasText ? t('textKeepHint') : t('textHint')}
           onChange={(e) => setText(e.target.value)}
         />
       </form>

@@ -10,6 +10,14 @@
 const HAS_SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 const BARE_DOMAIN = /^[^\s/@:]+\.[^\s/@:]+(?:[/?#].*)?$/;
 
+/**
+ * Round 3 (UX review): an email address typed without `mailto:` is refused
+ * like any other unknown scheme; the dialogs say how to write it instead.
+ */
+export function looksLikeEmailAddress(raw: string): boolean {
+  return /^[^\s@/:]+@[^\s@/:]+\.[^\s@/:]+$/.test(raw.trim());
+}
+
 export function withDefaultScheme(raw: string): string {
   const value = raw.trim();
   if (value === '' || HAS_SCHEME.test(value)) return value;

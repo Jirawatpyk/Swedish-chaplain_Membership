@@ -180,11 +180,14 @@ describe('#13/#14 — placeholder and announcements', () => {
     const container = await renderEditor();
     const live = within(container).getByTestId('tiptap-aria-live');
     fireEvent.click(control('Heading'));
-    expect(live).toHaveTextContent(enMessages.portal.broadcasts.compose.editor.announcements.heading2On);
+    // Set on the next frame, so a repeated message is announced again (round 3).
+    await waitFor(() =>
+      expect(live).toHaveTextContent(enMessages.portal.broadcasts.compose.editor.announcements.heading2On),
+    );
     fireEvent.click(control('Bold'));
     await new Promise((r) => setTimeout(r, 1000));
     fireEvent.click(control('Bold'));
-    expect(live).toHaveTextContent('Bold off');
+    await waitFor(() => expect(live).toHaveTextContent('Bold off'));
     await new Promise((r) => setTimeout(r, 700));
     expect(live).toHaveTextContent('Bold off');
   }, 10_000);
@@ -198,7 +201,7 @@ describe('#12 — the loading skeleton', () => {
     render(wrap(<Loading />));
     const status = screen.getByTestId('tiptap-loading');
     expect(within(status).getByText(enMessages.shell.editorLoading)).toHaveClass('sr-only');
-    expect(status.querySelector('[data-slot="skeleton-block"]')).toHaveClass('h-[152px]', 'sm:h-10');
+    expect(status.querySelector('[data-slot="skeleton-block"]')).toHaveClass('h-[152px]', 'sm:h-[104px]');
   });
 });
 

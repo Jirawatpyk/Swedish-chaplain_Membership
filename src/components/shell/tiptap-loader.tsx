@@ -44,7 +44,7 @@
  */
 
 import dynamic from 'next/dynamic';
-import type { ComponentType } from 'react';
+import { useId, type ComponentType } from 'react';
 import { useTranslations } from 'next-intl';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 
@@ -74,20 +74,19 @@ export function loadTiptapEditor<TProps>(
  */
 export function TiptapLoadingSkeleton(): React.ReactElement {
   const t = useTranslations('shell');
+  const labelId = useId();
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      aria-label={t('editorLoading')}
-      data-testid="tiptap-loading"
-      className="space-y-3"
-    >
-      {/* Text as well as the label: a status with no content is not announced
-          by every screen reader (spec 122 US12d-2 round 2). */}
-      <span className="sr-only">{t('editorLoading')}</span>
-      {/* The toolbar wraps to three 44px rows on a phone: reserve that, so
-          the page does not jump when the editor arrives. */}
-      <SkeletonBlock className="h-[152px] w-full sm:h-10" />
+    <div role="status" aria-live="polite" aria-labelledby={labelId} data-testid="tiptap-loading" className="space-y-3">
+      {/* Text that is also the name: a status with no content is not
+          announced by every screen reader, and a separate label read it
+          twice (spec 122 US12d-2 rounds 2–3). */}
+      <span id={labelId} className="sr-only">
+        {t('editorLoading')}
+      </span>
+      {/* The toolbar's real height, so the page does not jump when the editor
+          arrives: three 44px rows on a phone, two on a touch screen from
+          640px (AURA's touch height follows the pointer), one with a mouse. */}
+      <SkeletonBlock className="h-[152px] w-full sm:h-[104px] sm:[@media(pointer:fine)]:h-10" />
       <SkeletonBlock className="h-60 w-full" />
     </div>
   );

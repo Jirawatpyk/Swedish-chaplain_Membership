@@ -52,9 +52,17 @@ export function ClamavUnreachableBanner({
     // the scanner, so it is not reported as "scanner down"; a hidden tab is
     // not polled (it probes again when shown); and a probe that hangs gives
     // up after 10 s.
+    // Round 3 (UX review): one probe at a time, aborted on unmount; going
+    // offline clears a banner already shown.
+    let inFlight: AbortController | null = null;
     const probe = async (): Promise<void> => {
-      if (document.visibilityState === 'hidden' || !navigator.onLine) return;
+      if (!navigator.onLine) {
+        setUnreachable(false);
+        return;
+      }
+      if (document.visibilityState === 'hidden' || inFlight !== null) return;
       const controller = new AbortController();
+      inFlight = controller;
       const timeout = window.setTimeout(() => controller.abort(), 10_000);
       try {
         const res = await fetch(healthEndpoint, {
@@ -91,6 +99,7 @@ export function ClamavUnreachableBanner({
         setUnreachable(true);
       } finally {
         window.clearTimeout(timeout);
+        inFlight = null;
       }
     };
     const probeWhenShown = (): void => {
@@ -102,6 +111,7 @@ export function ClamavUnreachableBanner({
     window.addEventListener('online', probeWhenShown);
     return (): void => {
       cancelled = true;
+      inFlight?.abort();
       window.clearInterval(id);
       document.removeEventListener('visibilitychange', probeWhenShown);
       window.removeEventListener('online', probeWhenShown);

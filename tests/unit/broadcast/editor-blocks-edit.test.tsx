@@ -116,7 +116,8 @@ describe('the button block is one unit in the editor', () => {
       ed.commands.setNodeSelection(posOfNode(ed, 'ctaButton'));
     });
     expect(ed.state.selection).toBeInstanceOf(NodeSelection);
-    fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: 'Button' }));
+    // Named for its edit mode while a button is selected (round 3).
+    fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: 'Edit button' }));
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('heading', { name: 'Edit button' })).toBeInTheDocument();
     expect(within(dialog).getByLabelText(/button text/i)).toHaveValue('Register now');
@@ -159,7 +160,7 @@ describe('an inserted image keeps an editable description', () => {
     act(() => {
       ed.commands.setNodeSelection(posOfNode(ed, 'image'));
     });
-    fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: 'Image' }));
+    fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: 'Edit image description' }));
     const dialog = screen.getByRole('dialog');
     const field = within(dialog).getByLabelText(/image description/i);
     expect(field).toHaveValue('Old words');

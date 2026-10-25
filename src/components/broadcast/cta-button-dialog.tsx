@@ -18,7 +18,7 @@ import { useTranslations } from 'next-intl';
 import { Button, Dialog, TextField } from '@jirawatpyk/aura-react';
 import { BROADCAST_ALLOWED_URI_REGEXP } from '@/lib/broadcast-content-policy';
 import { CTA_TEXT_MAX, CTA_TEXT_MIN } from '@/lib/design-blocks-client';
-import { withDefaultScheme } from './with-default-scheme';
+import { looksLikeEmailAddress, withDefaultScheme } from './with-default-scheme';
 
 export interface CtaButtonDraft {
   readonly href: string;
@@ -34,10 +34,12 @@ export interface CtaButtonDialogProps {
   readonly initialHref?: string;
   /** A button block is selected: the dialog edits it ("Edit button" / "Save button"). */
   readonly editing?: boolean;
+  /** Editing only: removes the button block ("Remove button", round 3). */
+  readonly onRemove?: () => void;
   readonly finalFocus?: () => HTMLElement | false | null;
 }
 
-type CtaError = 'textRequired' | 'textTooLong' | 'required' | 'scheme' | null;
+type CtaError = 'textRequired' | 'textTooLong' | 'required' | 'scheme' | 'mailto' | null;
 
 export function CtaButtonDialog({
   open,
@@ -46,6 +48,7 @@ export function CtaButtonDialog({
   initialText = '',
   initialHref = '',
   editing = false,
+  onRemove,
   finalFocus,
 }: CtaButtonDialogProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.ctaDialog');
@@ -82,7 +85,7 @@ export function CtaButtonDialog({
       return;
     }
     if (!BROADCAST_ALLOWED_URI_REGEXP.test(trimmedHref)) {
-      setError('scheme');
+      setError(looksLikeEmailAddress(trimmedHref) ? 'mailto' : 'scheme');
       return;
     }
     onConfirm({ href: trimmedHref, text: trimmedText });
@@ -98,10 +101,12 @@ export function CtaButtonDialog({
           ? t('errors.required')
           : error === 'scheme'
             ? t('errors.scheme')
-            : null;
+            : error === 'mailto'
+              ? t('errors.mailto', { address: href.trim() })
+              : null;
 
   const textInvalid = error === 'textRequired' || error === 'textTooLong';
-  const hrefInvalid = error === 'required' || error === 'scheme';
+  const hrefInvalid = error === 'required' || error === 'scheme' || error === 'mailto';
 
   const counter = t('counter', { count: text.trim().length, max: CTA_TEXT_MAX });
   // The refusal is the faulty field's AURA `error`, its text in a
@@ -119,6 +124,18 @@ export function CtaButtonDialog({
       description={t('description')}
       footer={
         <>
+          {editing && onRemove !== undefined && (
+            <Button
+              variant="ghost"
+              className="sm:me-auto"
+              onClick={() => {
+                onRemove();
+                onOpenChange(false);
+              }}
+            >
+              {t('remove')}
+            </Button>
+          )}
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>

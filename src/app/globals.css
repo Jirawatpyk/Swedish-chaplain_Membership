@@ -891,8 +891,10 @@ summary,
 @layer components {
   .eblast-editor-content > p:only-child:has(> br:only-child)::before,
   .eblast-editor-content > p:only-child:empty::before {
-    content: var(--eblast-placeholder);
-    float: left;
+    /* `/ ""`: drawn, not read as the message's text (the textbox has
+       aria-placeholder while empty). */
+    content: var(--eblast-placeholder) / "";
+    float: inline-start;
     height: 0;
     color: var(--aura-fg-tertiary);
     pointer-events: none;

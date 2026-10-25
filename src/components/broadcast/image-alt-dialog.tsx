@@ -107,7 +107,7 @@ export function ImageAltDialog({
       onClose={() => onOpenChange(false)}
       finalFocus={() => finalFocus?.() || null}
       size="sm"
-      title={variant === 'banner' ? t('bannerTitle') : t('title')}
+      title={editing ? t('editTitle') : variant === 'banner' ? t('bannerTitle') : t('title')}
       description={t('description')}
       footer={
         <>
