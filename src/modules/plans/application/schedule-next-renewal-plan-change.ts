@@ -31,8 +31,8 @@
  */
 import { err, ok, type Result } from '@/lib/result';
 import type { TenantContext } from '@/modules/tenants';
-import type { AuditPort, ScheduledPlanChangeRepo } from './ports';
-import { recordAuditEvent } from './record-audit-event';
+import type { AuditPort, ScheduledPlanChangeRepo, SupersedeAndInsertResult } from './ports';
+import { auditFailureMessage, auditInTx, PlanAuditAbort } from './record-audit-event';
 import type {
   ScheduledPlanChange,
   ScheduleNextRenewalPlanChangeError,
@@ -74,86 +74,56 @@ export async function scheduleNextRenewalPlanChange(
   if (input.fromPlanId === input.toPlanId)
     return err({ code: 'invalid_input', field: 'toPlanId' });
 
-  let result;
-  try {
-    // Atomic supersede + insert pair (Constitution Principle VIII —
-    // Reliability). The repo's `supersedeAndInsertPendingAtomically`
-    // wraps both writes in a single DB tx; a failure on either statement
-    // rolls both back so the (tenant, member, cycle) never observes a
-    // "no pending row" intermediate state. Resolves Wave B verify-run
-    // finding F1 (the earlier two-call pattern via `transitionStatus`
-    // + `insertPending` had a crash window between calls).
-    //
-    // Terminal rows on the same (member, cycle) are left untouched by
-    // the adapter — the partial unique
-    // `(tenant_id, member_id, effective_at_cycle_id) WHERE status='pending'`
-    // permits any number of terminal rows to coexist alongside one
-    // fresh pending row (data-model.md § 2.9).
-    result = await deps.repo.supersedeAndInsertPendingAtomically(
-      deps.tenant,
-      input,
-    );
-  } catch (e) {
-    return err({
-      code: 'server_error',
-      message: `scheduleNextRenewalPlanChange: ${(e as Error)?.message ?? 'unknown'}`,
-    });
-  }
-
-  // Emit F2-domain audit trail for the state change.
-  // Runs OUTSIDE the repo tx (the repo opens its own runInTenant), so
-  // a failure here leaves the row in place + surfaces a typed error
-  // for the caller to log; the audit-adapter ALSO logs internally at
-  // Infrastructure for the persist_failed branch.
+  // 126 #7 — the supersede + insert AND their F2 audit rows
+  // (`plan_change_scheduled`, plus `plan_change_superseded` when a prior
+  // pending row was bumped) run in ONE tx: an audit failure rolls the
+  // schedule back instead of leaving an unaudited pending row.
   const auditCtx = {
     tenant: deps.tenant,
     actorUserId: deps.actorUserId,
     requestId: deps.requestId,
     sourceIp: deps.sourceIp,
   };
-  const scheduledAuditResult = await recordAuditEvent(deps.audit, auditCtx, {
+  const auditScheduled = auditInTx<SupersedeAndInsertResult>(deps.audit, auditCtx, (r) => ({
     event_type: 'plan_change_scheduled',
     payload: {
       member_id: input.memberId,
-      scheduled_change_id: result.inserted.scheduledChangeId,
+      scheduled_change_id: r.inserted.scheduledChangeId,
       effective_at_cycle_id: input.effectiveAtCycleId,
       from_plan_id: input.fromPlanId,
       to_plan_id: input.toPlanId,
       reason: input.reason ?? null,
     },
-  });
-  if (!scheduledAuditResult.ok) {
-    return err({
-      code: 'audit_failed',
-      message:
-        scheduledAuditResult.error.type === 'invalid_payload'
-          ? scheduledAuditResult.error.issues.join('; ')
-          : scheduledAuditResult.error.message,
-    });
-  }
+  }));
+  const auditSuperseded = auditInTx<SupersedeAndInsertResult>(deps.audit, auditCtx, (r) => ({
+    event_type: 'plan_change_superseded',
+    payload: {
+      member_id: input.memberId,
+      scheduled_change_id: r.superseded!.scheduledChangeId,
+      effective_at_cycle_id: input.effectiveAtCycleId,
+      superseded_by_scheduled_change_id: r.inserted.scheduledChangeId,
+    },
+  }));
 
-  // Emit `plan_change_superseded` for the prior pending row (if any).
-  // The repo only returns a non-null `superseded` row when one was
-  // bumped; new-pending-only inserts skip this branch cleanly.
-  if (result.superseded !== null) {
-    const supersededAuditResult = await recordAuditEvent(deps.audit, auditCtx, {
-      event_type: 'plan_change_superseded',
-      payload: {
-        member_id: input.memberId,
-        scheduled_change_id: result.superseded.scheduledChangeId,
-        effective_at_cycle_id: input.effectiveAtCycleId,
-        superseded_by_scheduled_change_id: result.inserted.scheduledChangeId,
+  let result: SupersedeAndInsertResult;
+  try {
+    result = await deps.repo.supersedeAndInsertPendingAtomically(
+      deps.tenant,
+      input,
+      undefined,
+      async (tx, written) => {
+        await auditScheduled(tx, written);
+        if (written.superseded !== null) await auditSuperseded(tx, written);
       },
-    });
-    if (!supersededAuditResult.ok) {
-      return err({
-        code: 'audit_failed',
-        message:
-          supersededAuditResult.error.type === 'invalid_payload'
-            ? supersededAuditResult.error.issues.join('; ')
-            : supersededAuditResult.error.message,
-      });
+    );
+  } catch (e) {
+    if (e instanceof PlanAuditAbort) {
+      return err({ code: 'audit_failed', message: auditFailureMessage(e.error) });
     }
+    return err({
+      code: 'server_error',
+      message: `scheduleNextRenewalPlanChange: ${(e as Error)?.message ?? 'unknown'}`,
+    });
   }
 
   return ok(result.inserted);

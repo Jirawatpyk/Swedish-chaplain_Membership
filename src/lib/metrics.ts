@@ -624,25 +624,6 @@ export const planMetrics = {
     });
   },
 
-  /**
-   * `cancelScheduledPlanChange` returned 200 + `X-Audit-Backfill-Required: 1`
-   * because the cancel mutation already landed but the audit emit
-   * failed. SRE backfill SLO depth = sum(this counter) - sum(audit
-   * rows successfully backfilled). Labels distinguish the failure
-   * mode (zod-rejection vs DB-rejection) so dashboards can split
-   * deploy-skew investigations from RLS/connection-pool issues.
-   */
-  cancelAuditBackfillRequired(
-    tenantId: string,
-    auditErrorType: 'invalid_payload' | 'persist_failed',
-  ): void {
-    safeMetric(() => {
-      counter(
-        'plans_cancel_audit_backfill_required_total',
-        'F2 cancelScheduledPlanChange returned 200 + X-Audit-Backfill-Required because audit emit failed but the cancel mutation already committed',
-      ).add(1, { tenant: tenantId, audit_error_type: auditErrorType });
-    });
-  },
 };
 
 // ============================================================

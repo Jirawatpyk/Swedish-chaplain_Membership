@@ -32,6 +32,7 @@ import {
 } from '@/modules/plans/application/soft-delete-plan';
 import { asTenantContext } from '@/modules/tenants';
 import { asPlanSlug, asPlanYear, type Plan } from '@/modules/plans/domain/plan';
+import { hooked, inTxAudit } from './in-tx-hook-mocks';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -110,7 +111,7 @@ function makeDeps(overrides: DepsOverrides = {}): SoftDeletePlanDeps {
       if (r instanceof Error) throw r;
       return r;
     }),
-    softDeleteGuarded: vi.fn(async () => {
+    softDeleteGuarded: hooked(async () => {
       const r = overrides.softDeleteGuardedResult;
       if (r instanceof Error) throw r;
       // default: deleted with a plan that has deleted_at = NOW
@@ -126,14 +127,14 @@ function makeDeps(overrides: DepsOverrides = {}): SoftDeletePlanDeps {
   };
 
   const auditFailure = overrides.auditResult === 'persist_failed';
-  const audit = {
+  const audit = inTxAudit({
     record: vi.fn(async () => {
       if (auditFailure) {
         return err({ type: 'persist_failed' as const, message: 'DB write failed' });
       }
       return ok(undefined as void);
     }),
-  };
+  });
 
   const clock = {
     now: vi.fn(() => NOW),
@@ -263,7 +264,7 @@ describe('softDeletePlan use case', () => {
   it('returns server_error with string coercion when softDeleteGuarded throws non-Error', async () => {
     const planRepo = {
       findOne: vi.fn(async () => makePlan()),
-      softDeleteGuarded: vi.fn(async () => { throw { code: 'PG_CONSTRAINT' }; }),
+      softDeleteGuarded: hooked(async () => { throw { code: 'PG_CONSTRAINT' }; }),
       findByTenantAndYear: vi.fn(),
       insert: vi.fn(),
       update: vi.fn(),
@@ -342,6 +343,7 @@ describe('softDeletePlan use case', () => {
       year,
       NOW,
       baseInput.actorUserId,
+      expect.any(Function),
     );
   });
 
@@ -368,14 +370,14 @@ describe('softDeletePlan use case', () => {
   it('returns audit_failed with joined issues when audit.record returns invalid_payload', async () => {
     const updatedPlan = makePlan({ deleted_at: NOW });
     // Stub audit.record to return invalid_payload directly (bypasses recordAuditEvent's own zod)
-    const audit = {
+    const audit = inTxAudit({
       record: vi.fn(async () =>
         err({
           type: 'invalid_payload' as const,
           issues: ['plan_id: too short', 'plan_year: out of range'] as readonly string[],
         }),
       ),
-    };
+    });
     const deps = makeDeps({
       findOneResult: makePlan(),
       softDeleteGuardedResult: { kind: 'deleted', plan: updatedPlan },

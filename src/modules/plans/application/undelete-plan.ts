@@ -30,7 +30,7 @@ import type {
   MemberAttachmentChecker,
   PlanRepo,
 } from './ports';
-import { recordAuditEvent } from './record-audit-event';
+import { auditFailureMessage, auditInTx, PlanAuditAbort } from './record-audit-event';
 import type { AuditDiff, MutableAuditDiff } from '../domain/audit-event';
 import type { Plan, PlanSlug, PlanYear } from '../domain/plan';
 
@@ -82,6 +82,20 @@ export async function undeletePlan(
   const previousDeletedAt = existing.deleted_at;
   const previousActive = existing.is_active;
 
+  // Build diff: always clears deleted_at. If the row happened to be
+  // is_active=true before soft-delete, the repo forces it false per
+  // AS4 — surface that in the audit diff too.
+  const mutableDiff: MutableAuditDiff = {
+    deleted_at: {
+      before: previousDeletedAt.toISOString(),
+      after: null,
+    },
+  };
+  if (previousActive === true) {
+    mutableDiff.is_active = { before: true, after: false };
+  }
+  const diff: AuditDiff = mutableDiff;
+
   let updated: Plan | undefined;
   try {
     updated = await deps.planRepo.undelete(
@@ -89,8 +103,29 @@ export async function undeletePlan(
       input.planId,
       input.year,
       input.actorUserId,
+      // 126 #7 — the audit row commits (or rolls back) with the restore.
+      auditInTx(
+        deps.audit,
+        {
+          tenant: deps.tenant,
+          actorUserId: input.actorUserId,
+          requestId: input.requestId,
+          sourceIp: input.sourceIp,
+        },
+        {
+          event_type: 'plan_undeleted',
+          payload: {
+            plan_id: input.planId,
+            plan_year: input.year,
+            diff,
+          },
+        },
+      ),
     );
   } catch (e) {
+    if (e instanceof PlanAuditAbort) {
+      return err({ type: 'audit_failed', message: auditFailureMessage(e.error) });
+    }
     return err({
       type: 'server_error',
       message: e instanceof Error ? e.message : String(e),
@@ -116,46 +151,6 @@ export async function undeletePlan(
     return err({ type: 'not_found' });
   }
 
-  // Build diff: always clears deleted_at. If the row happened to be
-  // is_active=true before soft-delete, the repo forces it false per
-  // AS4 — surface that in the audit diff too.
-  const mutableDiff: MutableAuditDiff = {
-    deleted_at: {
-      before: previousDeletedAt.toISOString(),
-      after: null,
-    },
-  };
-  if (previousActive === true) {
-    mutableDiff.is_active = { before: true, after: false };
-  }
-  const diff: AuditDiff = mutableDiff;
-
-  const auditResult = await recordAuditEvent(
-    deps.audit,
-    {
-      tenant: deps.tenant,
-      actorUserId: input.actorUserId,
-      requestId: input.requestId,
-      sourceIp: input.sourceIp,
-    },
-    {
-      event_type: 'plan_undeleted',
-      payload: {
-        plan_id: input.planId,
-        plan_year: input.year,
-        diff,
-      },
-    },
-  );
-  if (!auditResult.ok) {
-    return err({
-      type: 'audit_failed',
-      message:
-        auditResult.error.type === 'invalid_payload'
-          ? auditResult.error.issues.join('; ')
-          : auditResult.error.message,
-    });
-  }
 
   return ok(updated);
 }

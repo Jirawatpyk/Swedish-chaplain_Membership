@@ -26,6 +26,7 @@ import {
 } from '@/modules/plans/domain/plan';
 import type { BenefitMatrix } from '@/modules/plans/domain/benefit-matrix';
 import { ok, err } from '@/lib/result';
+import { hooked, inTxAudit } from './in-tx-hook-mocks';
 
 vi.mock('@/lib/logger', () => ({
   logger: {
@@ -104,7 +105,7 @@ const BASE_INPUT: UpdatePlanInput = {
 // ---------------------------------------------------------------------------
 
 function makeAuditStub(opts: { ok: boolean; errorType?: 'invalid_payload' | 'persist_failed' } = { ok: true }) {
-  return {
+  return inTxAudit({
     record: vi.fn(async () => {
       if (opts.ok) return ok(undefined);
       if (opts.errorType === 'invalid_payload') {
@@ -112,7 +113,7 @@ function makeAuditStub(opts: { ok: boolean; errorType?: 'invalid_payload' | 'per
       }
       return err({ type: 'persist_failed' as const, message: 'Audit DB unavailable' });
     }),
-  };
+  });
 }
 
 const FIND_ONE_NOT_SET = Symbol('FIND_ONE_NOT_SET');
@@ -143,7 +144,7 @@ function makePlanRepo(overrides?: {
       return findOneResult === FIND_ONE_NOT_SET ? EXISTING_PLAN : findOneResult;
     }),
     insert: vi.fn(),
-    update: vi.fn(async () => {
+    update: hooked(async () => {
       if (overrides?.updateThrows) {
         const msg = typeof overrides.updateThrows === 'string'
           ? overrides.updateThrows
@@ -218,6 +219,21 @@ describe('updatePlan', () => {
       expect(result.ok).toBe(false);
       if (result.ok) return;
       expect(result.error.type).toBe('not_found');
+    });
+  });
+
+  // 126 #6 — a soft-deleted plan is not editable (findOne returns it).
+  describe('soft-deleted plan', () => {
+    it('returns not_found and never writes', async () => {
+      const planRepo = makePlanRepo({
+        findOne: { ...EXISTING_PLAN, is_active: false, deleted_at: new Date('2026-03-01T00:00:00Z') },
+      });
+      const deps = makeDeps({ planRepo });
+
+      const result = await updatePlan(BASE_INPUT, deps);
+
+      expect(result).toEqual({ ok: false, error: { type: 'not_found' } });
+      expect(planRepo.update).not.toHaveBeenCalled();
     });
   });
 
@@ -428,7 +444,7 @@ describe('updatePlan', () => {
     it('returns server_error with stringified value when non-Error is thrown', async () => {
       const planRepo = {
         ...makePlanRepo(),
-        update: vi.fn(async () => { throw { code: 'P2002' }; }),
+        update: hooked(async () => { throw { code: 'P2002' }; }),
       };
       const deps = makeDeps({ planRepo });
 
@@ -551,6 +567,7 @@ describe('updatePlan', () => {
         PLAN_YEAR,
         expect.objectContaining({ plan_name: { en: 'Premium Corporate v2' } }),
         ACTOR,
+        expect.any(Function),
       );
     });
 
@@ -816,20 +833,6 @@ describe('updatePlan', () => {
       const result = await updatePlan(BASE_INPUT, deps);
 
       // No is_active gate — update-plan does not block on inactive plans
-      expect(result.ok).toBe(true);
-    });
-
-    it('allows PATCH on a soft-deleted plan (no special gate in update-plan)', async () => {
-      const deletedPlan: Plan = { ...EXISTING_PLAN, deleted_at: new Date('2026-03-01T00:00:00Z') };
-      const deletedUpdated: Plan = {
-        ...deletedPlan,
-        plan_name: { en: 'Premium Corporate v2' },
-      };
-      const planRepo = makePlanRepo({ findOne: deletedPlan, updateResult: deletedUpdated });
-      const deps = makeDeps({ planRepo });
-
-      const result = await updatePlan(BASE_INPUT, deps);
-
       expect(result.ok).toBe(true);
     });
   });

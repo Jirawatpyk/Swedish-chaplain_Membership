@@ -1,39 +1,20 @@
 /**
- * R4-I9 — end-to-end regression net for R3-S4 audit_failed UX.
+ * 126 #7 — cancelScheduledPlanChange writes `plan_change_cancelled` in the
+ * SAME tx as the cancel, so an audit failure rolls the cancel back.
  *
- * R3-S4 (Batch 4d) redesigned the cancel-route audit_failed UX:
- * when `cancelScheduledPlanChange` flips the row to `cancelled`
- * but then the audit emit fails (persist_failed or invalid_payload),
- * the route returns 200 + `X-Audit-Backfill-Required: 1` instead of
- * 500. The use-case carries the transitioned row in the typed error
- * variant so the route can render the cancelled-row body verbatim.
- *
- * The contract test at
- * `tests/contract/scheduled-plan-changes/cancel-route.test.ts` mocks
- * everything; this test exercises the canonical path with a LIVE
- * Neon row. Assertions:
- *
- *   1. Seed a pending scheduled_plan_change.
- *   2. Drive `cancelScheduledPlanChange` with a custom audit-port
- *      that always returns `err({type:'persist_failed', message:'simulated'})`.
- *   3. Result must be `err({code:'audit_failed',
- *      auditErrorType:'persist_failed', transitioned:<cancelled row>})`.
- *   4. Direct-DB read shows the row IS cancelled with non-null
- *      `cancelled_at` (the use-case's transitionStatus call DID
- *      commit, separately from the failed audit).
- *   5. NO `plan_change_cancelled` audit row exists for this tenant.
- *
- * Without R3-S4 + R4-I9 regression net, a future refactor could
- * accidentally roll back the cancel mutation when audit fails (the
- * "obvious safe choice" that violates Constitution Principle VIII:
- * audit writes are compliance-critical but NOT transactional with
- * the domain mutation).
+ * This file was R4-I9's regression net for the opposite contract (R3-S4:
+ * the cancel committed, the audit was emitted after it, and the route
+ * answered 200 + `X-Audit-Backfill-Required` so SRE could backfill). 126
+ * supersedes that design — Constitution VIII: "Any database operation that
+ * mutates more than one row or crosses aggregates MUST run inside a
+ * transaction" — so the assertions are inverted, not deleted: the row stays
+ * pending and no audit row exists.
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
-import { err, ok, type Result } from '@/lib/result';
+import { err, ok } from '@/lib/result';
 import { cancelScheduledPlanChange } from '@/modules/plans/application/cancel-scheduled-plan-change';
 import { drizzleScheduledPlanChangeRepo } from '@/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo';
 import { scheduledPlanChanges } from '@/modules/plans/infrastructure/db/schema-scheduled-plan-changes';
@@ -42,14 +23,14 @@ import type { AuditPort } from '@/modules/plans/application/ports';
 import { createTestTenant } from '../helpers/test-tenant';
 import { seedMemberAndRenewalCycle } from '../helpers/seed-renewal-cycle';
 
-describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R4-I9 / R3-S4)', () => {
+describe('Integration — cancelScheduledPlanChange audit-failed rolls back (126 #7, supersedes R4-I9)', () => {
   const cleanups: (() => Promise<void>)[] = [];
 
   afterAll(async () => {
     for (const fn of cleanups) await fn();
   });
 
-  it('R4-I9: row is cancelled in DB but audit row absent when audit-port returns persist_failed', async () => {
+  it('126: the row stays pending and no audit row exists when the audit port fails', async () => {
     const tenant = await createTestTenant('test-swecham');
     cleanups.push(tenant.cleanup);
 
@@ -76,33 +57,18 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
     expect(seeded.inserted.status).toBe('pending');
     const scheduledChangeId = seeded.inserted.scheduledChangeId;
 
-    // R5-S11 coverage note: `planMetrics.cancelAuditBackfillRequired`
-    // fires at the ROUTE-handler level
-    // (`cancel/route.ts:204-208`), not in the use-case. This integration
-    // test calls the use-case directly, so the metric counter is not
-    // exercised here — it's covered by the contract test at
-    // `tests/contract/scheduled-plan-changes/cancel-route.test.ts`
-    // (R4-I2 audit_failed mock assertions). A future route-level
-    // integration test (route + live Neon) would extend coverage; not
-    // implemented today because the route's metric wiring is mechanical.
-
     // Custom audit-port that always returns persist_failed.
     let auditCallCount = 0;
-    const failingAudit: AuditPort = {
-      record: async (): Promise<
-        Result<
-          void,
-          | { type: 'persist_failed'; message: string }
-          | { type: 'invalid_payload'; issues: string[] }
-        >
-      > => {
+    const failingAudit = {
+      record: async () => {
         auditCallCount += 1;
-        return err({
-          type: 'persist_failed' as const,
-          message: 'simulated DB failure for R4-I9 regression net',
-        });
+        return err({ type: 'persist_failed' as const, message: 'simulated DB failure (126)' });
       },
-    };
+      recordInTx: async () => {
+        auditCallCount += 1;
+        return err({ type: 'persist_failed' as const, message: 'simulated DB failure (126)' });
+      },
+    } as unknown as AuditPort;
 
     // Drive the use-case with the failing audit-port.
     const result = await cancelScheduledPlanChange(
@@ -122,24 +88,16 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
       },
     );
 
-    // Audit was called exactly once.
     expect(auditCallCount).toBe(1);
 
-    // The result is the audit_failed typed error variant carrying the
-    // transitioned row.
+    // audit_failed, and nothing to render: the cancel rolled back.
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('unreachable — audit-port must fail');
     expect(result.error.code).toBe('audit_failed');
     if (result.error.code !== 'audit_failed') throw new Error('unreachable');
-    expect(result.error.auditErrorType).toBe('persist_failed');
     expect(result.error.message).toContain('simulated DB failure');
-    expect(result.error.transitioned.scheduledChangeId).toBe(scheduledChangeId);
-    expect(result.error.transitioned.status).toBe('cancelled');
-    expect(result.error.transitioned.cancelledAt).not.toBeNull();
 
-    // Direct-DB verification: the row IS cancelled despite the audit
-    // failure. This is the load-bearing R3-S4 contract — audit emit
-    // is post-tx + non-rollback (Constitution Principle VIII).
+    // Direct-DB verification: the row is STILL pending.
     const dbRows = await runInTenant(tenant.ctx, async (tx) =>
       tx
         .select()
@@ -152,14 +110,10 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
         ),
     );
     expect(dbRows.length).toBe(1);
-    expect(dbRows[0]!.status).toBe('cancelled');
-    expect(dbRows[0]!.cancelledAt).not.toBeNull();
+    expect(dbRows[0]!.status).toBe('pending');
+    expect(dbRows[0]!.cancelledAt).toBeNull();
 
-    // Direct-DB verification: NO `plan_change_cancelled` audit row
-    // exists. The whole point of the R3-S4 + R4-I2 +
-    // `X-Audit-Backfill-Required` design is that SRE backfills this
-    // row out-of-band; the absence here is the signal the route emits
-    // to operators.
+    // Direct-DB verification: NO `plan_change_cancelled` audit row.
     const auditRows = await runInTenant(tenant.ctx, async (tx) =>
       tx
         .select()
@@ -175,7 +129,7 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
     expect(auditRows.length).toBe(0);
   });
 
-  it('R4-I9: happy-path control — audit success path persists both the cancel + the audit row', async () => {
+  it('happy-path control — audit success path persists both the cancel + the audit row', async () => {
     const tenant = await createTestTenant('test-swecham');
     cleanups.push(tenant.cleanup);
 
@@ -201,18 +155,16 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
 
     // Audit-port that always succeeds — exercise the happy path.
     let auditCallCount = 0;
-    const succeedingAudit: AuditPort = {
-      record: async (): Promise<
-        Result<
-          void,
-          | { type: 'persist_failed'; message: string }
-          | { type: 'invalid_payload'; issues: string[] }
-        >
-      > => {
+    const succeedingAudit = {
+      record: async () => {
         auditCallCount += 1;
-        return ok(undefined as void);
+        return ok(undefined);
       },
-    };
+      recordInTx: async () => {
+        auditCallCount += 1;
+        return ok(undefined);
+      },
+    } as unknown as AuditPort;
 
     const result = await cancelScheduledPlanChange(
       {
@@ -256,10 +208,8 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
   });
 
   // R5-I8 — coverage parity for the `invalid_payload` audit-error
-  // variant. The persist_failed branch above proves the row-persists
-  // contract for one error type; this proves the same contract for
-  // the zod-rejection branch (R3-I5 discriminator preserved end-to-end).
-  it('R5-I8: row is cancelled in DB but audit row absent when audit-port returns invalid_payload', async () => {
+  // discriminator: it rolls back exactly like `persist_failed`.
+  it('R5-I8 / 126: an invalid_payload audit rejection also rolls the cancel back', async () => {
     const tenant = await createTestTenant('test-swecham');
     cleanups.push(tenant.cleanup);
 
@@ -284,21 +234,22 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
     const scheduledChangeId = seeded.inserted.scheduledChangeId;
 
     let auditCallCount = 0;
-    const invalidPayloadAudit: AuditPort = {
-      record: async (): Promise<
-        Result<
-          void,
-          | { type: 'persist_failed'; message: string }
-          | { type: 'invalid_payload'; issues: string[] }
-        >
-      > => {
+    const invalidPayloadAudit = {
+      record: async () => {
         auditCallCount += 1;
         return err({
           type: 'invalid_payload' as const,
           issues: ['simulated zod rejection on payload.member_id'],
         });
       },
-    };
+      recordInTx: async () => {
+        auditCallCount += 1;
+        return err({
+          type: 'invalid_payload' as const,
+          issues: ['simulated zod rejection on payload.member_id'],
+        });
+      },
+    } as unknown as AuditPort;
 
     const result = await cancelScheduledPlanChange(
       {
@@ -323,9 +274,8 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
     expect(result.error.code).toBe('audit_failed');
     if (result.error.code !== 'audit_failed') throw new Error('unreachable');
     expect(result.error.auditErrorType).toBe('invalid_payload');
-    expect(result.error.transitioned.status).toBe('cancelled');
 
-    // Row IS cancelled despite the audit invalid_payload rejection.
+    // 126 #7 — the row is still pending: the rejection rolled it back.
     const dbRows = await runInTenant(tenant.ctx, async (tx) =>
       tx
         .select()
@@ -338,8 +288,8 @@ describe('Integration — cancelScheduledPlanChange audit-failed row-persists (R
         ),
     );
     expect(dbRows.length).toBe(1);
-    expect(dbRows[0]!.status).toBe('cancelled');
-    expect(dbRows[0]!.cancelledAt).not.toBeNull();
+    expect(dbRows[0]!.status).toBe('pending');
+    expect(dbRows[0]!.cancelledAt).toBeNull();
 
     // No audit row exists — confirmed via tenant-scoped query.
     const auditRows = await runInTenant(tenant.ctx, async (tx) =>
