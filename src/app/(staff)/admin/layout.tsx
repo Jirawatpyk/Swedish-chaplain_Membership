@@ -7,6 +7,7 @@ import { AuraDensity } from '@/components/providers/aura-bridge';
 import { CommandPaletteRoot } from '@/components/shell/command-palette-root';
 import { OutboxHealthBadge } from '@/components/shell/outbox-health-badge';
 import { StaffShell } from '@/components/layout/staff-shell';
+import { StaffReadOnlyBanner } from '@/components/layout/staff-read-only-banner';
 import { SIDEBAR_COOKIE } from '@/components/layout/sidebar-cookie';
 import { requireSession } from '@/lib/auth-session';
 import { env } from '@/lib/env';
@@ -75,6 +76,8 @@ export default async function StaffLayout({ children }: { children: ReactNode })
       <link rel="preconnect" href="/" crossOrigin="anonymous" />
 
       <StaffShell
+        // READ_ONLY_MODE notice on every staff page (board `State-maintenance`); null while writable.
+        banner={<StaffReadOnlyBanner />}
         nav={{
           // TODO: resolve tenant name from session context when F10 ships (MTA+STD)
           tenantName: process.env.NEXT_PUBLIC_TENANT_NAME ?? 'SweCham',

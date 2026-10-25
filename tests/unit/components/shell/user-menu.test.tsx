@@ -112,6 +112,21 @@ describe('<UserMenu> staff (admin) menu — single Account item, no member extra
     // Sign-out stays available for staff.
     expect(screen.getByRole('menuitem', { name: /sign out/i })).toBeInTheDocument();
   });
+
+  // The proxy's 503 bodies name `/admin/support`; the menu makes it findable.
+  it('routes Help and support to /admin/support on click', async () => {
+    renderMenu('admin');
+    openMenu();
+    fireEvent.click(await screen.findByRole('menuitem', { name: /help and support/i }));
+    expect(pushSpy).toHaveBeenCalledWith('/admin/support');
+  });
+
+  it('has no Help and support item for a member (the page is staff-only)', async () => {
+    renderMenu('member');
+    openMenu();
+    await screen.findByRole('menuitem', { name: /account settings/i });
+    expect(screen.queryByRole('menuitem', { name: /help and support/i })).toBeNull();
+  });
 });
 
 describe('<UserMenu> name on the trigger (spec 122, portal boards)', () => {
