@@ -321,6 +321,16 @@ export async function bulkAction(
         await runRenewalsRestoreCascade(memberId, meta, deps);
       }
     }
+    // 127 — one line per batch once every member's cascade has run. A function
+    // timeout mid-loop shows up as a batch with no completion line.
+    logger.info(
+      {
+        requestId: meta.requestId,
+        action: data.action,
+        cascadesCompleted: result.updatedIds.length,
+      },
+      'bulk-action: post-commit cascades done',
+    );
 
     return ok(result);
   } catch (e) {
