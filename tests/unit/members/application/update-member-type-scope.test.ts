@@ -124,6 +124,18 @@ describe('updateMember — legal entity type vs plan member-type scope (127)', (
     expect(r.ok).toBe(true);
   });
 
+  it('skips the plan lookup when the echoed type equals the stored one (127 review)', async () => {
+    const deps = depsFor({});
+    const r = await updateMember(
+      memberId,
+      { legal_entity_type: 'limited_company', company_name: 'Acme Co Ltd' },
+      meta,
+      deps,
+    );
+    expect(r.ok).toBe(true);
+    expect(deps.plans.getPlan).not.toHaveBeenCalled();
+  });
+
   it('passes a change that fits the plan scope, and any type on a "both" plan', async () => {
     expect((await updateMember(memberId, { legal_entity_type: 'public_company' }, meta, depsFor({}))).ok).toBe(true);
     expect(
