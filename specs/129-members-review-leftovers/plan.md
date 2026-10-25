@@ -19,3 +19,6 @@ RED runs, each committed before its fix:
 
 | Item | RED commit | Failing line |
 |---|---|---|
+| #1, #2 | `933b10924` | `update-member-type-scope.test.ts`: `expected { …(5) } to not have property "override_reason_code"`, `expected 'server_error' to be 'concurrent_change'`; `update-member.test.ts` (contract): `expected 500 to be 409`; `edit-member-client-field-override.test.tsx`: `expected "spy" to be called with arguments` (concurrentChange toast) |
+| #4 | `b9c3cd51d` | `edit-member-client-field-override.test.tsx`: `expected undefined to be <button>` (finalFocus), `expected "spy" to be called with arguments` (overrideCancelled toast); the copy shares the GREEN commit under D-023 |
+| #3 | `164df150d` | `f3-undelete-restore.test.ts` (live Neon): `expected undefined to be '<cancelled cycle id>'` (`source_cycle_id`) |
