@@ -788,6 +788,7 @@ const URGENCY_CASE_SQL = sql<UrgencyBucket>`
  */
 async function countSettledCyclesForMember(
   txDb: typeof db,
+  tenantSlug: string,
   memberId: string,
   excludeCycleId: string,
 ): Promise<number> {
@@ -814,6 +815,7 @@ async function countSettledCyclesForMember(
     )
     .where(
       and(
+        eq(renewalCycles.tenantId, tenantSlug),
         eq(renewalCycles.memberId, memberId),
         ne(renewalCycles.cycleId, excludeCycleId),
         effectivePaidCoverageSql(
@@ -872,7 +874,7 @@ export function makeDrizzleRenewalCycleRepo(
         const rows = await tx
           .select()
           .from(renewalCycles)
-          .where(eq(renewalCycles.cycleId, cycleId))
+          .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.cycleId, cycleId)))
           .limit(1);
         return rows[0] ? rowToDomain(rows[0]) : null;
       });
@@ -906,7 +908,7 @@ export function makeDrizzleRenewalCycleRepo(
       const rows = await txDb
         .select()
         .from(renewalCycles)
-        .where(eq(renewalCycles.cycleId, cycleId))
+        .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.cycleId, cycleId)))
         .limit(1);
       return rows[0] ? rowToDomain(rows[0]) : null;
     },
@@ -926,7 +928,7 @@ export function makeDrizzleRenewalCycleRepo(
       const rows = await txDb
         .select()
         .from(renewalCycles)
-        .where(eq(renewalCycles.linkedInvoiceId, invoiceId))
+        .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.linkedInvoiceId, invoiceId)))
         .limit(1);
       return rows[0] ? rowToDomain(rows[0]) : null;
     },
@@ -941,6 +943,7 @@ export function makeDrizzleRenewalCycleRepo(
           .from(renewalCycles)
           .where(
             and(
+              eq(renewalCycles.tenantId, tenant.slug),
               eq(renewalCycles.memberId, memberId),
               sql`${renewalCycles.status} NOT IN ('lapsed','cancelled','completed')`,
             ),
@@ -964,6 +967,7 @@ export function makeDrizzleRenewalCycleRepo(
           .from(renewalCycles)
           .where(
             and(
+              eq(renewalCycles.tenantId, tenant.slug),
               eq(renewalCycles.memberId, memberId),
               sql`${renewalCycles.status} NOT IN ('lapsed','cancelled')`,
             ),
@@ -998,6 +1002,7 @@ export function makeDrizzleRenewalCycleRepo(
         .from(renewalCycles)
         .where(
           and(
+            eq(renewalCycles.tenantId, tenant.slug),
             eq(renewalCycles.memberId, memberId),
             sql`${renewalCycles.status} NOT IN ('lapsed','cancelled','completed')`,
           ),
@@ -1080,7 +1085,7 @@ export function makeDrizzleRenewalCycleRepo(
       opts: ListRenewalCyclesOpts,
     ): Promise<RenewalCyclePage> {
       return runInTenant(tenant, async (tx) => {
-        const filters: SQL[] = [];
+        const filters: SQL[] = [eq(renewalCycles.tenantId, tenant.slug)];
         if (opts.statusFilter && opts.statusFilter.length > 0) {
           filters.push(inArray(renewalCycles.status, opts.statusFilter as unknown as string[]));
         }
@@ -1164,6 +1169,7 @@ export function makeDrizzleRenewalCycleRepo(
         })
         .where(
           and(
+            eq(renewalCycles.tenantId, tenant.slug),
             eq(renewalCycles.cycleId, cycleId),
             eq(renewalCycles.status, 'awaiting_payment'),
           ),
@@ -1177,7 +1183,7 @@ export function makeDrizzleRenewalCycleRepo(
         const reread = await txDb
           .select({ status: renewalCycles.status })
           .from(renewalCycles)
-          .where(eq(renewalCycles.cycleId, cycleId))
+          .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.cycleId, cycleId)))
           .limit(1);
         const actualStatus = reread[0]?.status;
         if (!actualStatus) {
@@ -1258,6 +1264,7 @@ export function makeDrizzleRenewalCycleRepo(
         .set({ linkedInvoiceId: invoiceId })
         .where(
           and(
+            eq(renewalCycles.tenantId, tenant.slug),
             eq(renewalCycles.cycleId, cycleId),
             or(
               isNull(renewalCycles.linkedInvoiceId),
@@ -1274,7 +1281,7 @@ export function makeDrizzleRenewalCycleRepo(
         const probe = await txDb
           .select({ linkedInvoiceId: renewalCycles.linkedInvoiceId })
           .from(renewalCycles)
-          .where(eq(renewalCycles.cycleId, cycleId))
+          .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.cycleId, cycleId)))
           .limit(1);
         if (probe.length === 0) {
           throw new CycleNotFoundError(cycleId);
@@ -1451,6 +1458,7 @@ export function makeDrizzleRenewalCycleRepo(
         })
         .where(
           and(
+            eq(renewalCycles.tenantId, tenant.slug),
             eq(renewalCycles.cycleId, cycleId),
             eq(renewalCycles.status, 'pending_admin_reactivation'),
             isNull(renewalCycles.rejectRefundInitiatedAt),
@@ -1488,6 +1496,7 @@ export function makeDrizzleRenewalCycleRepo(
         })
         .where(
           and(
+            eq(renewalCycles.tenantId, tenant.slug),
             eq(renewalCycles.cycleId, cycleId),
             eq(renewalCycles.status, 'pending_admin_reactivation'),
             isNotNull(renewalCycles.rejectRefundInitiatedAt),
@@ -1543,6 +1552,7 @@ export function makeDrizzleRenewalCycleRepo(
           .from(renewalCycles)
           .where(
             and(
+              eq(renewalCycles.tenantId, tenant.slug),
               eq(renewalCycles.status, 'awaiting_payment'),
               sql`NOT (${renewalCycles.awaitingEnteredAt} IS NOT NULL AND ${renewalCycles.expiresAt} > NOW())`,
             ),
@@ -1578,6 +1588,7 @@ export function makeDrizzleRenewalCycleRepo(
           .from(renewalCycles)
           .where(
             and(
+              eq(renewalCycles.tenantId, tenant.slug),
               sql`${renewalCycles.status} IN ('upcoming','reminded')`,
               sql`${renewalCycles.expiresAt} <= ${args.nowIso}`,
             ),
@@ -1664,6 +1675,7 @@ export function makeDrizzleRenewalCycleRepo(
           .from(renewalCycles)
           .where(
             and(
+              eq(renewalCycles.tenantId, tenant.slug),
               sql`${renewalCycles.status} IN ('upcoming','reminded')`,
               sql`${renewalCycles.expiresAt} > ${args.nowIso}`,
               eligibleMemberSql,
@@ -1956,7 +1968,7 @@ export function makeDrizzleRenewalCycleRepo(
       await txDb
         .update(renewalCycles)
         .set({ autoDraftInvoiceId: invoiceId })
-        .where(eq(renewalCycles.cycleId, cycleId));
+        .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.cycleId, cycleId)));
     },
 
     async listStaleAutoDrafts(
@@ -2219,7 +2231,12 @@ export function makeDrizzleRenewalCycleRepo(
               eq(invoices.invoiceId, renewalCycles.linkedInvoiceId),
             ),
           )
-          .where(inArray(renewalCycles.cycleId, input.cycleIds));
+          .where(
+            and(
+              eq(renewalCycles.tenantId, tenant.slug),
+              inArray(renewalCycles.cycleId, input.cycleIds),
+            ),
+          );
 
         return rows.map((r): SettlementPreviewRow => {
           const cycleId = asCycleId(r.cycleId);
@@ -2360,11 +2377,11 @@ export function makeDrizzleRenewalCycleRepo(
               anchoredAt: renewalCycles.anchoredAt,
             })
             .from(renewalCycles)
-            .where(eq(renewalCycles.cycleId, cycleId))
+            .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.cycleId, cycleId)))
             .limit(1);
           if (current) {
             const settled = await countSettledCyclesForMember(
-              txDb,
+              txDb, tenant.slug,
               current.memberId,
               cycleId,
             );
@@ -2407,6 +2424,7 @@ export function makeDrizzleRenewalCycleRepo(
         .set(setClause)
         .where(
           and(
+            eq(renewalCycles.tenantId, tenant.slug),
             eq(renewalCycles.cycleId, cycleId),
             eq(renewalCycles.status, args.from),
             ...(linkGuard ? [linkGuard] : []),
@@ -2421,7 +2439,7 @@ export function makeDrizzleRenewalCycleRepo(
         const probe = await txDb
           .select({ status: renewalCycles.status })
           .from(renewalCycles)
-          .where(eq(renewalCycles.cycleId, cycleId))
+          .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.cycleId, cycleId)))
           .limit(1);
         if (probe.length === 0) {
           throw new CycleNotFoundError(cycleId);
@@ -2443,6 +2461,7 @@ export function makeDrizzleRenewalCycleRepo(
       return runInTenant(tenant, async (tx) => {
         const cursor = decodeCursor(args.cursor);
         const filters: SQL[] = [
+          eq(renewalCycles.tenantId, tenant.slug),
           sql`${renewalCycles.status} IN (${sql.raw(OPEN_CYCLE_STATUSES_SQL_LIST)})`,
           sql`${renewalCycles.expiresAt} >= ${args.cutoff}`,
         ];
@@ -2495,6 +2514,7 @@ export function makeDrizzleRenewalCycleRepo(
         )`;
 
         const filters: SQL[] = [
+          eq(members.tenantId, tenant.slug),
           noCycle,
           // Archived members are intentionally hidden — an archived row is
           // not an operational "renewal gap" the admin needs to act on.
@@ -2560,6 +2580,7 @@ export function makeDrizzleRenewalCycleRepo(
         // never fork between the tab badges and the bridge strip.
         const windowEnd = sql`NOW() + INTERVAL '90 days'`;
         const baseFilters: SQL[] = [
+          eq(renewalCycles.tenantId, tenant.slug),
           // COMP-1 H4 — exclude GDPR-erased members from the pipeline
           // window. `markCycleCompleteFromInvoicePaid` routes a paid erased
           // member's cycle to the NON-terminal `pending_admin_reactivation`,
@@ -2597,6 +2618,7 @@ export function makeDrizzleRenewalCycleRepo(
         // active. `summaryFilters` is therefore ALWAYS the non-lapsed 90-day
         // window shape (+ tier), never the terminated-specific restriction.
         const summaryFilters: SQL[] = [
+          eq(renewalCycles.tenantId, tenant.slug),
           MEMBER_NOT_ERASED_SQL,
           sql`${renewalCycles.status} NOT IN ('cancelled','completed')`,
           sql`${renewalCycles.expiresAt} <= ${windowEnd}`,
@@ -2629,6 +2651,7 @@ export function makeDrizzleRenewalCycleRepo(
         // this, the badge silently shows whole-tenant lapsed total
         // even when the user filtered by tier.
         const lapsedFilters: SQL[] = [
+          eq(renewalCycles.tenantId, tenant.slug),
           eq(renewalCycles.status, 'lapsed'),
           // COMP-1 H4 — keep the lapsed badge count in lock-step with the
           // pipeline rows: an erased member's lapsed cycle must not inflate
@@ -2681,7 +2704,7 @@ export function makeDrizzleRenewalCycleRepo(
                 AND ${renewalCycles.expiresAt} > ${windowEnd}))::int`,
           })
           .from(renewalCycles)
-          .where(MEMBER_NOT_ERASED_SQL);
+          .where(and(eq(renewalCycles.tenantId, tenant.slug), MEMBER_NOT_ERASED_SQL));
 
         const [summaryRows, lapsedCountRows, suspendedGlobalRows] =
           await Promise.all([
@@ -2761,7 +2784,12 @@ export function makeDrizzleRenewalCycleRepo(
             ),
           })
           .from(renewalReminderEvents)
-          .where(eq(renewalReminderEvents.status, 'sent'))
+          .where(
+            and(
+              eq(renewalReminderEvents.tenantId, tenant.slug),
+              eq(renewalReminderEvents.status, 'sent'),
+            ),
+          )
           .groupBy(renewalReminderEvents.cycleId)
           .as('lr');
 
@@ -2939,7 +2967,7 @@ export function makeDrizzleRenewalCycleRepo(
             count: sql<number>`count(*)::int`,
           })
           .from(renewalCycles)
-          .where(MONTH_PLANNING_MEMBER_SQL)
+          .where(and(eq(renewalCycles.tenantId, tenant.slug), MONTH_PLANNING_MEMBER_SQL))
           .groupBy(EXPIRY_MONTH_SQL);
         return foldRawMonths(rows, opts.nowIso);
       });
@@ -2960,7 +2988,7 @@ export function makeDrizzleRenewalCycleRepo(
       const rows = await txDb
         .select({ count: sql<number>`count(*)::int` })
         .from(renewalCycles)
-        .where(eq(renewalCycles.memberId, memberId));
+        .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.memberId, memberId)));
       return rows[0]?.count ?? 0;
     },
 
@@ -3022,7 +3050,7 @@ export function makeDrizzleRenewalCycleRepo(
             eq(anchorInvoice.invoiceId, renewalCycles.anchorInvoiceId),
           ),
         )
-        .where(eq(renewalCycles.memberId, memberId));
+        .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.memberId, memberId)));
       // `MAX(timestamptz)` comes back as a Date from postgres.js (like the
       // other timestamptz columns); coerce defensively for a string too.
       const effectiveRaw = rows[0]?.effectiveMax ?? null;
@@ -3066,7 +3094,7 @@ export function makeDrizzleRenewalCycleRepo(
       memberId: string,
       excludeCycleId: string,
     ): Promise<number> {
-      return countSettledCyclesForMember(tx as typeof db, memberId, excludeCycleId);
+      return countSettledCyclesForMember(tx as typeof db, tenant.slug, memberId, excludeCycleId);
     },
 
     /**
@@ -3087,6 +3115,7 @@ export function makeDrizzleRenewalCycleRepo(
         .from(renewalCycles)
         .where(
           and(
+            eq(renewalCycles.tenantId, tenant.slug),
             eq(renewalCycles.memberId, memberId),
             inArray(renewalCycles.status, [...OPEN_CYCLE_STATUSES]),
           ),
@@ -3108,7 +3137,7 @@ export function makeDrizzleRenewalCycleRepo(
       const rows = await txDb
         .select()
         .from(renewalCycles)
-        .where(eq(renewalCycles.memberId, memberId))
+        .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.memberId, memberId)))
         .orderBy(desc(renewalCycles.createdAt), desc(renewalCycles.cycleId))
         .limit(1);
       return rows[0] ? rowToDomain(rows[0]) : null;
@@ -3164,7 +3193,7 @@ export function makeDrizzleRenewalCycleRepo(
       const existing = await txDb
         .select({ periodTo: renewalCycles.periodTo })
         .from(renewalCycles)
-        .where(eq(renewalCycles.cycleId, cycleId))
+        .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.cycleId, cycleId)))
         .limit(1);
       const oldPeriodTo = existing[0]?.periodTo ?? null;
 
@@ -3185,6 +3214,7 @@ export function makeDrizzleRenewalCycleRepo(
         })
         .where(
           and(
+            eq(renewalCycles.tenantId, tenant.slug),
             eq(renewalCycles.cycleId, cycleId),
             inArray(renewalCycles.status, [
               'upcoming',
@@ -3213,7 +3243,12 @@ export function makeDrizzleRenewalCycleRepo(
       }
       const deleted = await txDb
         .delete(renewalReminderEvents)
-        .where(eq(renewalReminderEvents.cycleId, cycleId))
+        .where(
+          and(
+            eq(renewalReminderEvents.tenantId, tenant.slug),
+            eq(renewalReminderEvents.cycleId, cycleId),
+          ),
+        )
         .returning({ id: renewalReminderEvents.reminderEventId });
       return { cycle: rowToDomain(row), reminderEventsReset: deleted.length };
     },

@@ -100,26 +100,37 @@ export function tenantPredicateViolations(
     [...text.matchAll(new RegExp(String.raw`${col(ref)}\s*=\s*\$(\d+)`, 'gi'))].filter((m) => isTenant(m[1]!))
       .length;
 
-  // Pass 1: refs fenced by a bound tenant parameter.
-  const fencedByBound = new Set([...new Set(refs)].filter((r) => bound(r) >= uses(r)));
-  const violations: string[] = [];
-  for (const ref of new Set(refs)) {
-    let fenced = bound(ref);
-    // Pass 2: a join correlated to a DIFFERENT, bound-fenced ref.
-    for (const other of fencedByBound) {
-      if (other === ref) continue;
-      const either = new RegExp(
-        String.raw`${col(ref)}\s*=\s*${col(other)}|${col(other)}\s*=\s*${col(ref)}`,
-        'gi',
-      );
-      fenced += text.match(either)?.length ?? 0;
-    }
+  const correlated = (ref: string, other: string) =>
+    text.match(
+      new RegExp(String.raw`${col(ref)}\s*=\s*${col(other)}|${col(other)}\s*=\s*${col(ref)}`, 'gi'),
+    )?.length ?? 0;
+  const bare = () =>
     // A single-table, single-SELECT statement may name the column bare.
-    if (refs.length === 1 && (text.match(/\bselect\b/gi)?.length ?? 0) <= 1) {
-      fenced += [...text.matchAll(/(?<![."\w])"?tenant_id"?\s*=\s*\$(\d+)/gi)].filter((m) => isTenant(m[1]!))
-        .length;
+    refs.length === 1 && (text.match(/\bselect\b/gi)?.length ?? 0) <= 1
+      ? [...text.matchAll(/(?<![."\w])"?tenant_id"?\s*=\s*\$(\d+)/gi)].filter((m) => isTenant(m[1]!)).length
+      : 0;
+  // A ref is fenced by a bound tenant parameter, or by a join correlated to a
+  // DIFFERENT ref that is itself fenced — resolved to a fixpoint, so a chain
+  // (credit_notes → linked_invoice → renewal_cycles = $1) holds while a ring
+  // with no bound tenant (a = b, b = a) never does.
+  const distinct = [...new Set(refs)];
+  const count = (ref: string, fenced: ReadonlySet<string>) =>
+    bound(ref) + bare() + [...fenced].filter((o) => o !== ref).reduce((n, o) => n + correlated(ref, o), 0);
+  const fenced = new Set<string>();
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const ref of distinct) {
+      if (!fenced.has(ref) && count(ref, fenced) >= uses(ref)) {
+        fenced.add(ref);
+        grew = true;
+      }
     }
-    if (fenced < uses(ref)) violations.push(`${ref}: ${uses(ref)} reference(s), ${fenced} tenant predicate(s)`);
+  }
+  const violations: string[] = [];
+  for (const ref of distinct) {
+    if (!fenced.has(ref)) {
+      violations.push(`${ref}: ${uses(ref)} reference(s), ${count(ref, fenced)} tenant predicate(s)`);
+    }
   }
   // A comma join would hide its second table from the parse above.
   if (/\b(?:from|join)\s+"?[a-z_][a-z0-9_]*"?(?:\s+(?:as\s+)?"?[a-z_][a-z0-9_]*"?)?\s*,/i.test(text)) {
