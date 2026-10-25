@@ -279,6 +279,13 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
       });
       return;
     }
+    // 129 — the member changed between load and save (field step only;
+    // change-plan never answers `conflict`).
+    if (res.status === 409 && code === 'conflict') {
+      toast.error(t('errors.concurrentChange'));
+      router.refresh();
+      return;
+    }
     if (res.status === 422) {
       setOverrideState({
         message: formatOverrideWarning(body.error?.details, tOverride),

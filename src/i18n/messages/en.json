@@ -1985,7 +1985,8 @@
           "cannotRemovePrimary": "Cannot remove the primary contact. Promote another contact first.",
           "emailTaken": "That email address is already in use.",
           "invalidPhone": "Phone number must be in international format, e.g. +66812345678.",
-          "partialSave": "Some changes were saved before an error occurred. Review the member and retry the rest."
+          "partialSave": "Some changes were saved before an error occurred. Review the member and retry the rest.",
+          "concurrentChange": "This member was changed by someone else. Reload the page and try again."
         }
       },
       "contactForm": {

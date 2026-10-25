@@ -181,6 +181,8 @@ export type UpdateMemberError =
       memberTypeScope: 'company' | 'individual' | 'both';
     }
   | { type: 'invalid_override_reason'; code: string }
+  // 129 — the plan changed between the pre-read and the row lock (409).
+  | { type: 'concurrent_change' }
   | { type: 'not_found' }
   | { type: 'server_error'; message: string };
 
@@ -295,6 +297,9 @@ export async function updateMember(
     if (!r.ok) return err({ type: 'invalid_override_reason', code: r.error.code });
   }
   let scopePlan: PlanSummary | null = null;
+  // 129 — true only when the scope check needed the reason; the audit
+  // records the override only then.
+  let overrideApplied = false;
   if (data.legal_entity_type) {
     const snapshot = await deps.memberRepo.findById(deps.tenant, memberId);
     if (!snapshot.ok) {
@@ -358,10 +363,7 @@ export async function updateMember(
           current.planYear !== scopePlan.planYear
         ) {
           // The type or plan changed between the pre-read and the lock — retry.
-          throw new UseCaseAbort<UpdateMemberError>({
-            type: 'server_error',
-            message: 'plan_changed_concurrently',
-          });
+          throw new UseCaseAbort<UpdateMemberError>({ type: 'concurrent_change' });
         }
         const scope = checkMemberTypeScope(data.legal_entity_type, scopePlan.memberTypeScope);
         if (!scope.ok && !data.override_reason_code) {
@@ -371,6 +373,7 @@ export async function updateMember(
             memberTypeScope: scope.error.memberTypeScope,
           });
         }
+        overrideApplied = !scope.ok;
       }
       // 088 US3 — §86/4 branch particular. The zod superRefine above + the DB
       // CHECK enforce the head-office ⇔ branch-code pairing; here we just thread
@@ -600,7 +603,7 @@ export async function updateMember(
           member_id: memberId,
           fields_changed: fieldsChanged,
           diff,
-          ...(data.override_reason_code && {
+          ...(overrideApplied && data.override_reason_code && {
             override_reason_code: data.override_reason_code,
             override_reason_note: data.override_reason_note ?? null,
           }),
