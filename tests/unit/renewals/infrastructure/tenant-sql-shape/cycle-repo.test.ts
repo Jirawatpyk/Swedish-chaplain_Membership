@@ -3,6 +3,7 @@
  * carries a `tenant_id` predicate on each tenant-scoped table it names. The
  * gate calls every repo method (`callEach` refuses an unnamed one).
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import type { RecordedStatement } from '../../../../helpers/tenant-sql-shape';
 
@@ -31,7 +32,22 @@ describe('renewal cycle repo — tenant predicate on every statement (130 s2)', 
   it('every read, update and lock is fenced by tenant_id', async () => {
     const repo = makeDrizzleRenewalCycleRepo({ slug: T } as never);
     const tx = rec.db;
-    const page = anyWith({ pageSize: 10, cursor: null, limit: 10, offset: 0 });
+    // The DEFAULT page path: every optional filter pinned off, so `ANY` does
+    // not switch them on (the month branch has its own case below).
+    const page = anyWith({
+      pageSize: 10,
+      cursor: null,
+      limit: 10,
+      offset: 0,
+      monthFilter: undefined,
+      tier: undefined,
+      urgency: undefined,
+      statusFilter: undefined,
+      memberIdFilter: undefined,
+      excludeCycleId: undefined,
+      maxDaysUntilExpiry: undefined,
+      excludeErasedMembers: undefined,
+    });
     rec.statements.length = 0;
     await callEach(repo as never, {
       insert: [tx, T, ANY],
@@ -83,8 +99,10 @@ describe('renewal cycle repo — tenant predicate on every statement (130 s2)', 
       findLatestCycleForMemberInTx: [tx, T, 'member-1'],
       reanchorPeriodInTx: [tx, T, 'cycle-1', anyWith({ anchorInvoiceId: null })],
     });
-    // Advisory locks name no table (the key is tenant:cycle) — not a read.
-    const checked = rec.statements.filter((s) => !isPureInsert(s.sql) && !/^\s*select pg_advisory/i.test(s.sql));
+    // The cycle advisory lock names no table (its key is tenant:cycle) — not a
+    // read. Matched EXACTLY, so a lock statement that also reads is checked.
+    const LOCK_ONLY = 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))';
+    const checked = rec.statements.filter((s) => !isPureInsert(s.sql) && s.sql.trim() !== LOCK_ONLY);
     // Positive control: the calls reached the database (≥ one statement per
     // non-insert method) and each statement names a tenant-scoped table.
     expect(checked.length).toBeGreaterThanOrEqual(44);
@@ -95,14 +113,56 @@ describe('renewal cycle repo — tenant predicate on every statement (130 s2)', 
     expect(violations).toEqual([]);
   });
 
-  it('the month-filtered pipeline page is fenced too (a branch the call map does not reach)', async () => {
+  it('the filter-ON branches are fenced too (month page, tier, member, erased-member list)', async () => {
     const repo = makeDrizzleRenewalCycleRepo({ slug: T } as never);
     rec.statements.length = 0;
-    await repo
-      .loadPipelinePage(T, anyWith({ pageSize: 10, cursor: null, monthFilter: '2026-02', nowIso: '2026-01-01T00:00:00.000Z' }) as never)
-      .catch(() => undefined);
-    const page = rec.statements;
-    expect(page.length).toBeGreaterThan(0);
-    expect(page.flatMap((s) => tenantPredicateViolations(s, TABLES).violations)).toEqual([]);
+    const filtersOn = anyWith({
+      pageSize: 10,
+      cursor: null,
+      monthFilter: '2026-02',
+      nowIso: '2026-01-01T00:00:00.000Z',
+      tier: 'regular',
+      statusFilter: ['upcoming'],
+      memberIdFilter: 'member-1',
+      excludeCycleId: 'cycle-9',
+      maxDaysUntilExpiry: 30,
+      excludeErasedMembers: true,
+    });
+    await repo.loadPipelinePage(T, filtersOn as never).catch(() => undefined);
+    await repo.list(T, filtersOn as never).catch(() => undefined);
+    const statements = rec.statements;
+    expect(statements.length).toBeGreaterThan(1);
+    expect(statements.flatMap((s) => tenantPredicateViolations(s, TABLES).violations)).toEqual([]);
+  });
+
+  // Row-dependent statements never reach the recording db (it answers no
+  // rows). The source itself closes that: every `.where(` either names a
+  // tenant predicate inline or is one of the composed filters the call-map
+  // cases above prove fenced.
+  it('every .where( in the source names tenant_id or a proven filter list (review #657)', () => {
+    const src = readFileSync('src/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo.ts', 'utf8');
+    const unfenced: string[] = [];
+    for (let at = src.indexOf('.where('); at !== -1; at = src.indexOf('.where(', at + 1)) {
+      let depth = 0;
+      let end = at + '.where'.length;
+      for (; end < src.length; end += 1) {
+        if (src[end] === '(') depth += 1;
+        else if (src[end] === ')' && --depth === 0) break;
+      }
+      const inner = src.slice(at + '.where('.length, end).replace(/\s+/g, ' ').trim();
+      if (!/tenantId|tenant_id/.test(inner)) unfenced.push(inner);
+    }
+    expect(unfenced.sort()).toEqual(
+      [
+        'and(...filters)',
+        'and(...filters)',
+        'and(...filters)',
+        'and(...lapsedFilters)',
+        'and(...pageFilters)',
+        'and(...summaryFilters)',
+        'membership',
+        'whereClause',
+      ].sort(),
+    );
   });
 });

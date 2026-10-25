@@ -926,7 +926,12 @@ export function makeDrizzleRenewalCycleRepo(
       const rows = await txDb
         .select()
         .from(renewalCycles)
-        .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.linkedInvoiceId, invoiceId)))
+        .where(
+          and(
+            eq(renewalCycles.tenantId, tenant.slug),
+            eq(renewalCycles.linkedInvoiceId, invoiceId),
+          ),
+        )
         .limit(1);
       return rows[0] ? rowToDomain(rows[0]) : null;
     },
@@ -2376,7 +2381,8 @@ export function makeDrizzleRenewalCycleRepo(
             .limit(1);
           if (current) {
             const settled = await countSettledCyclesForMember(
-              txDb, tenant.slug,
+              txDb,
+              tenant.slug,
               current.memberId,
               cycleId,
             );
