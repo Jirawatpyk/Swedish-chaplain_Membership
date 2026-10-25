@@ -185,7 +185,10 @@ export async function restoreCycleForMember(
   const correlationId = input.requestId ?? input.correlationId;
 
   try {
-    const outcome = await runInTenant(input.tenant, async (tx) => {
+    // `allowCarry=false` is the plain restore. A carry that cannot apply
+    // throws `CarryNotApplicableError`, rolling its tx back, and the restore
+    // re-runs plainly — never leaving an unlinked cycle on the billed period.
+    const runRestore = (allowCarry: boolean) => runInTenant(input.tenant, async (tx) => {
       // 127 (#645 financial review M-1) — the archive cascade cancels the
       // member's in-flight cycle but leaves its §86/4 linked to the CANCELLED
       // row. When that bill is still unpaid (`issued`), restore the cycle FOR
@@ -202,7 +205,7 @@ export async function restoreCycleForMember(
         input.memberId as string,
       );
       const carried =
-        latest && latest.status === 'cancelled' && latest.linkedInvoiceId !== null
+        allowCarry && latest && latest.status === 'cancelled' && latest.linkedInvoiceId !== null
           ? await deps.cyclesRepo
               .findMembershipInvoiceInTx(tx, input.tenant.slug, latest.linkedInvoiceId, {
                 forUpdate: true,
@@ -237,13 +240,14 @@ export async function restoreCycleForMember(
           correlationId,
         });
         if (created.kind === 'created') {
-          await carryInvoiceToRestoredCycleInTx(deps, tx, {
+          const moved = await carryInvoiceToRestoredCycleInTx(deps, tx, {
             tenantId: input.tenant.slug,
             cancelled: carried.cycle,
             restored: created.cycle,
             invoiceId: carried.invoiceId,
             correlationId,
           });
+          if (!moved) throw new CarryNotApplicableError();
         }
         return created;
       }
@@ -275,6 +279,13 @@ export async function restoreCycleForMember(
         anchorToCurrentPeriod: { nowIso: deps.clock.now().toISOString() },
       });
     });
+    let outcome: Awaited<ReturnType<typeof runRestore>>;
+    try {
+      outcome = await runRestore(true);
+    } catch (e) {
+      if (!(e instanceof CarryNotApplicableError)) throw e;
+      outcome = await runRestore(false);
+    }
 
     if (outcome.kind === 'skipped_active_exists') {
       return ok({ outcome: 'skipped_active_exists' });
@@ -315,10 +326,11 @@ export async function restoreCycleForMember(
  * (`findByInvoiceIdInTx` is a `LIMIT 1` with no status filter), so the
  * cancelled row is cleared first; the restored cycle is reconciled back to the
  * frozen plan the invoice billed, then moved `upcoming → awaiting_payment`
- * (which stamps `awaiting_entered_at` per 0309). When the restored period does
- * not match the billed one (a plan-term change since), nothing is moved and
- * the restored cycle stays a plain `upcoming` one; a payment of the old bill
- * then raises the cancelled-cycle work item.
+ * (which stamps `awaiting_entered_at` per 0309). Returns false when the
+ * restored period does not match the billed one (a plan-term change since) or
+ * a concurrent writer moved the link first; the caller then rolls the tx back
+ * and re-runs the plain restore, and a payment of the old bill raises the
+ * cancelled-cycle work item.
  */
 async function carryInvoiceToRestoredCycleInTx(
   deps: RestoreCycleForMemberDeps,
@@ -330,18 +342,22 @@ async function carryInvoiceToRestoredCycleInTx(
     readonly invoiceId: string;
     readonly correlationId: string;
   },
-): Promise<void> {
+): Promise<boolean> {
   const { cancelled, restored } = args;
-  if (cancelled.periodFrom !== restored.periodFrom || cancelled.periodTo !== restored.periodTo) {
-    return;
+  const sameInstant = (a: string, b: string) => new Date(a).getTime() === new Date(b).getTime();
+  if (!sameInstant(cancelled.periodFrom, restored.periodFrom) || !sameInstant(cancelled.periodTo, restored.periodTo)) {
+    return false;
   }
+  // The cycle lock other `linked_invoice_id` writers (void-unlink,
+  // reconcile-issued-orphans) serialise on; taken after the invoice row lock.
+  await deps.cyclesRepo.acquireCycleLockInTx(tx, args.tenantId, cancelled.cycleId);
   const cleared = await deps.cyclesRepo.clearStaleLinkedInvoiceInTx(
     tx,
     args.tenantId,
     cancelled.cycleId,
     args.invoiceId,
   );
-  if (!cleared) return;
+  if (!cleared) return false;
   await deps.cyclesRepo.linkInvoiceAndReconcileFrozenPlanInTx(
     tx,
     args.tenantId,
@@ -377,4 +393,13 @@ async function carryInvoiceToRestoredCycleInTx(
       correlationId: args.correlationId,
     },
   );
+  return true;
+}
+
+/** 127 review — a found carry that cannot apply; the restore re-runs plainly. */
+class CarryNotApplicableError extends Error {
+  constructor() {
+    super('invoice carry not applicable');
+    this.name = 'CarryNotApplicableError';
+  }
 }
