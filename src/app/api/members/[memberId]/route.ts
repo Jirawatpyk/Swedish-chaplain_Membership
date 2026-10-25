@@ -402,6 +402,31 @@ export async function PATCH(
           },
           { status: 400 },
         );
+      // 127 — a legal-entity-type edit outside the plan's member-type scope:
+      // 422 like the plan-change gates, so the edit form opens its
+      // override-reason dialog and re-submits the field patch with a reason.
+      case 'member_type_out_of_scope':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'member_type_warning',
+              message: 'The legal entity type is outside the plan scope. Provide override_reason_code to confirm.',
+              details: result.error,
+            },
+          },
+          { status: 422 },
+        );
+      case 'invalid_override_reason':
+        return NextResponse.json(
+          {
+            error: {
+              code: 'validation_error',
+              message: 'Invalid override reason.',
+              details: result.error,
+            },
+          },
+          { status: 400 },
+        );
       case 'not_found':
         return NextResponse.json(
           { error: { code: 'not_found', message: 'Member not found.' } },

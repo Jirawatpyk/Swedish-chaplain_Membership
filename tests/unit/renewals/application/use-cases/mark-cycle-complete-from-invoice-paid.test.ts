@@ -337,6 +337,28 @@ describe('markCycleCompleteFromInvoicePaid (T123) — auto-complete branch', () 
     });
   });
 
+  // 127 (#645 financial review M-1) — a payment on a CANCELLED cycle's linked
+  // invoice (member archived, or the bill not carried to a restored cycle)
+  // used to be skipped silently unless the period had expired. Now it always
+  // raises the admin work item: the money arrived and nothing applies it.
+  it('127: payment on a recently CANCELLED cycle’s linked invoice → linked_terminal_skip net', async () => {
+    const cycle = buildCycle({
+      status: 'cancelled',
+      closedReason: 'cancelled',
+      closedAt: '2026-08-01T00:00:00.000Z',
+      periodTo: '2099-01-01T00:00:00.000Z',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    const { deps, emitInTxMock, escalationInsertMock } = fakeDeps({ cycle });
+    const r = await markCycleCompleteFromInvoicePaid(deps, buildEvent());
+    expect(r.kind).toBe('cycle_not_payable');
+    const auditCall = emitInTxMock.mock.calls.find(
+      (c) => (c[1] as { type?: string })?.type === 'payment_on_terminated_member',
+    );
+    expect(auditCall).toBeDefined();
+    expect(escalationInsertMock).toHaveBeenCalledTimes(1);
+  });
+
   it('066 §4.4(2): payment on a COMPLETED cycle (idempotent replay) → NO net', async () => {
     const cycle = buildCycle({
       status: 'completed',

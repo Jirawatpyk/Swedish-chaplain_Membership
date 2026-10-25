@@ -212,6 +212,27 @@ describe('contract: PATCH /api/members/[memberId] (T071 / T090)', () => {
     });
   });
 
+  // 127 — a legal-entity-type edit outside the plan scope is a 422 the
+  // edit form routes to its override-reason dialog (same as changePlan).
+  it('422 member_type_warning when the field update is outside the plan scope', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    updateMemberMock.mockResolvedValueOnce(
+      err({
+        type: 'member_type_out_of_scope',
+        legalEntityType: 'individual',
+        memberTypeScope: 'company',
+      }),
+    );
+    const { PATCH } = await import('@/app/api/members/[memberId]/route');
+    const res = await PATCH(makeRequest({ legal_entity_type: 'individual' }), {
+      params: routeParams(),
+    });
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe('member_type_warning');
+    expect(body.error.details.type).toBe('member_type_out_of_scope');
+  });
+
   it('409 bundle_change_requires_confirmation', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     changePlanMock.mockResolvedValueOnce(

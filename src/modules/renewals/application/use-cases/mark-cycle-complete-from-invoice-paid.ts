@@ -412,7 +412,11 @@ export async function markCycleCompleteInTx(
     // the cycle is terminal (membership terminated), instrument the same
     // net — audit event + metric + idempotent admin work-item — atomically
     // in F4's payment tx, so the residual race is never a silent leak.
-    if (isMembershipLapsed(cycle, new Date(event.paidAt))) {
+    //
+    // 127 — a CANCELLED cycle (member archived, or an admin cancel) raises the
+    // net too, expired or not: the money arrived and nothing will apply it.
+    // A `completed` cycle (idempotent replay) still does not.
+    if (cycle.status === 'cancelled' || isMembershipLapsed(cycle, new Date(event.paidAt))) {
       // 066 §4.4(2) — shared net (audit + admin task + metric), atomic in F4's
       // payment tx. Identical shape to the terminal_only site.
       await emitPaymentOnTerminatedNet(deps, tx, {

@@ -768,6 +768,12 @@ export interface RenewalCycleRepo {
     tx: TenantTx,
     tenantId: string,
     invoiceId: string,
+    /**
+     * 127 — `forUpdate` row-locks the invoice (`SELECT … FOR UPDATE`), so a
+     * caller that moves the invoice's cycle link serialises with a payment of
+     * the same invoice (the payment tx locks the invoice row first too).
+     */
+    opts?: { readonly forUpdate?: boolean },
     // `planId` is returned alongside the ref so `issueAutoDraftedRenewal` can
     // refuse a draft whose stored plan no longer matches the cycle's current
     // frozen plan (a same-term admin plan-change after drafting — audit: tax).

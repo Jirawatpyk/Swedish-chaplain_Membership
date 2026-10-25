@@ -24,6 +24,7 @@ vi.mock('@/lib/db', () => ({
   runInTenant: (...a: unknown[]) => runInTenantMock(...a),
 }));
 
+import { logger } from '@/lib/logger';
 import { bulkAction, type BulkActionDeps } from '@/modules/members/application/use-cases/bulk-action';
 import { asTenantContext } from '@/modules/tenants';
 import { asMemberId } from '@/modules/members/domain/member';
@@ -130,6 +131,15 @@ describe('bulkAction archive — single-archive cascade (126 #2)', () => {
     expect(events.indexOf(`cycle-cancel:${M1}`)).toBeGreaterThan(commitAt);
     expect(events.indexOf(`cycle-cancel:${M2}`)).toBeGreaterThan(commitAt);
     expect(events.indexOf(`broadcasts:${M1}`)).toBeGreaterThan(commitAt);
+  });
+
+  it('127: logs one line per batch with how many members its post-commit cascades ran for', async () => {
+    const deps = makeDeps([row(M1, 'active'), row(M2, 'active')]);
+    await bulkAction({ action: 'archive', member_ids: [M1, M2] }, META, deps);
+    expect(vi.mocked(logger.info)).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'archive', cascadesRun: 2, requestId: 'req-126' }),
+      expect.stringContaining('post-commit cascades done'),
+    );
   });
 
   it('a failed post-commit cascade does not fail the committed archive', async () => {
