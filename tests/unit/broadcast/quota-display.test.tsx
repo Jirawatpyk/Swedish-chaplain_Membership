@@ -139,7 +139,7 @@ describe('QuotaDisplay on AURA', () => {
   it('says what is still reserved when no E-Blast is left (the user, 25 Oct)', () => {
     renderQuota({ live: false, initial: { ...SNAP, used: 4, reserved: 2, remaining: 0 } });
     expect(
-      screen.getByText('No E-Blasts left for 2026. 2 are still reserved and come back if they are not sent.'),
+      screen.getByText('No E-Blasts left for 2026. 2 are still reserved and are given back if they are not sent.'),
     ).toBeInTheDocument();
   });
 

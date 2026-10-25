@@ -6990,7 +6990,7 @@
         "reserved": "Reserverat",
         "remaining": "Återstår",
         "cap": "Paketgräns",
-        "exhausted": "{reserved, plural, =0 {Hela utskickskvoten för {year} har använts.} one {Inga utskick kvar för {year}. # är fortfarande reserverat och frigörs om det inte skickas.} other {Inga utskick kvar för {year}. # är fortfarande reserverade och frigörs om de inte skickas.}}",
+        "exhausted": "{reserved, plural, =0 {Hela utskickskvoten för {year} har använts.} one {Inga utskick kvar för {year}. # är fortfarande reserverat och återförs om det inte skickas.} other {Inga utskick kvar för {year}. # är fortfarande reserverade och återförs om de inte skickas.}}",
         "progressLabel": "Använd utskickskvot",
         "fetchError": "Kunde inte ladda kvot.",
         "retry": "Försök igen",
