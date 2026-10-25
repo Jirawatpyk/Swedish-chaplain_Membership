@@ -47,6 +47,10 @@ function renderToolbar(
   return { toolbar, buttons: within(toolbar).getAllByRole('button') };
 }
 
+/** The two controls that need a saved draft (FR-038). */
+const imageControls = (buttons: HTMLElement[]): HTMLElement[] =>
+  buttons.filter((b) => ['image', 'banner'].includes(b.getAttribute('data-toolbar-control') ?? ''));
+
 afterEach(() => {
   cleanup();
   editor?.destroy();
@@ -136,7 +140,7 @@ describe('T098 — visible focus state and 320 px wrapping', () => {
 
   it('the unavailable image controls keep the AURA tooltip (no native title) and the token opacity', () => {
     const { buttons } = renderToolbar({ imageInsertEnabled: false });
-    const blocked = buttons.filter((b) => b.getAttribute('aria-disabled') === 'true');
+    const blocked = imageControls(buttons).filter((b) => b.getAttribute('aria-disabled') === 'true');
     expect(blocked).toHaveLength(2);
     for (const b of blocked) {
       expect(b).not.toHaveAttribute('title');
@@ -171,8 +175,10 @@ describe('T098 — visible focus state and 320 px wrapping', () => {
  * unassociated. WCAG 3.3.2 (Labels or Instructions) / 1.3.1.
  */
 describe('U6 — the unavailable image controls point at the visible reason', () => {
+  // Undo and Redo are also unavailable on a fresh editor (round 2, #16), for
+  // their own reason, so this looks at the two image controls only.
   const unavailable = (buttons: HTMLElement[]): HTMLElement[] =>
-    buttons.filter((b) => b.getAttribute('aria-disabled') === 'true');
+    imageControls(buttons).filter((b) => b.getAttribute('aria-disabled') === 'true');
 
   it('with no saved draft, image + banner are aria-disabled and describedby the hint', () => {
     const { buttons } = renderToolbar({ imageInsertEnabled: false });

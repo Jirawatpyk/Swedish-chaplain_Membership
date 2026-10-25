@@ -6477,7 +6477,9 @@
         "link": "Link",
         "image": "Image",
         "cta": "Button",
-        "banner": "Banner image"
+        "banner": "Banner image",
+        "undo": "Undo",
+        "redo": "Redo"
       },
       "altDialog": {
         "title": "Describe this image",

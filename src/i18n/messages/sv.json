@@ -6477,7 +6477,9 @@
         "link": "Länk",
         "image": "Bild",
         "cta": "Knapp",
-        "banner": "Bannerbild"
+        "banner": "Bannerbild",
+        "undo": "Ångra",
+        "redo": "Gör om"
       },
       "altDialog": {
         "title": "Beskriv bilden",

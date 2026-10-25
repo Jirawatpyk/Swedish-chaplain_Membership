@@ -41,7 +41,7 @@
  */
 import { useCallback, useRef, useState } from 'react';
 import { getMarkRange } from '@tiptap/core';
-import { type Editor } from '@tiptap/react';
+import { type Editor, useEditorState } from '@tiptap/react';
 import { useLocale, useTranslations } from 'next-intl';
 import {
   Bold,
@@ -56,7 +56,9 @@ import {
   MousePointerClick,
   Quote,
   RectangleHorizontal,
+  Redo2,
   Underline,
+  Undo2,
 } from 'lucide-react';
 import { IconButton } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
@@ -98,6 +100,8 @@ export interface TiptapToolbarProps {
   readonly imageInsertEnabled?: boolean;
   readonly onInsertImage?: () => void;
   readonly onInsertBanner?: () => void;
+  /** While the host saves or submits, every control is unavailable (round 2, #3). */
+  readonly disabled?: boolean;
 }
 
 interface LinkTarget {
@@ -116,6 +120,8 @@ interface ToolbarControl {
   readonly pressed?: boolean;
   readonly opensDialog?: boolean;
   readonly unavailable?: boolean;
+  /** The visible reason a control is unavailable, when it has one. */
+  readonly describedBy?: string;
 }
 
 export function TiptapToolbar({
@@ -125,6 +131,7 @@ export function TiptapToolbar({
   imageInsertEnabled = true,
   onInsertImage,
   onInsertBanner,
+  disabled = false,
 }: TiptapToolbarProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.toolbar');
   const locale = useLocale();
@@ -133,6 +140,31 @@ export function TiptapToolbar({
   const [activeIndex, setActiveIndex] = useState<number>(0);
   const [linkOpen, setLinkOpen] = useState<boolean>(false);
   const [ctaOpen, setCtaOpen] = useState<boolean>(false);
+  // Set by a confirmed link or button dialog, so focus goes back to the text
+  // (round 2, #18); a cancelled dialog returns it to the control.
+  const confirmedRef = useRef<boolean>(false);
+  const dialogFinalFocus = (): HTMLElement | null =>
+    confirmedRef.current ? editor.view.dom : triggerRef.current;
+
+  // Round 2, #7: Tiptap v3 does not re-render on every transaction, so state
+  // read during render went stale as the caret moved (Bold read "off" inside
+  // bold text). `useEditorState` re-renders the toolbar when these change.
+  const active = useEditorState({
+    editor,
+    selector: ({ editor: e }) => ({
+      heading2: e.isActive('heading', { level: 2 }),
+      heading3: e.isActive('heading', { level: 3 }),
+      quote: e.isActive('blockquote'),
+      bulletList: e.isActive('bulletList'),
+      orderedList: e.isActive('orderedList'),
+      bold: e.isActive('bold'),
+      italic: e.isActive('italic'),
+      underline: e.isActive('underline'),
+      link: e.isActive('link'),
+      canUndo: e.can().undo(),
+      canRedo: e.can().redo(),
+    }),
+  });
 
   const toggle = useCallback(
     (isActive: boolean, run: () => void, on: AnnounceKey, off: AnnounceKey) => {
@@ -198,21 +230,21 @@ export function TiptapToolbar({
       key: 'heading2',
       label: t('heading2'),
       Icon: Heading2,
-      pressed: editor.isActive('heading', { level: 2 }),
+      pressed: active.heading2,
       onActivate: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
     },
     {
       key: 'heading3',
       label: t('heading3'),
       Icon: Heading3,
-      pressed: editor.isActive('heading', { level: 3 }),
+      pressed: active.heading3,
       onActivate: () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
     },
     {
       key: 'quote',
       label: t('quote'),
       Icon: Quote,
-      pressed: editor.isActive('blockquote'),
+      pressed: active.quote,
       onActivate: () => editor.chain().focus().toggleBlockquote().run(),
     },
     {
@@ -225,7 +257,7 @@ export function TiptapToolbar({
       key: 'bulletList',
       label: t('bulletList'),
       Icon: List,
-      pressed: editor.isActive('bulletList'),
+      pressed: active.bulletList,
       onActivate: () =>
         toggle(
           editor.isActive('bulletList'),
@@ -238,7 +270,7 @@ export function TiptapToolbar({
       key: 'orderedList',
       label: t('orderedList'),
       Icon: ListOrdered,
-      pressed: editor.isActive('orderedList'),
+      pressed: active.orderedList,
       onActivate: () =>
         toggle(
           editor.isActive('orderedList'),
@@ -251,7 +283,7 @@ export function TiptapToolbar({
       key: 'bold',
       label: t('bold'),
       Icon: Bold,
-      pressed: editor.isActive('bold'),
+      pressed: active.bold,
       onActivate: () =>
         toggle(
           editor.isActive('bold'),
@@ -268,7 +300,7 @@ export function TiptapToolbar({
             key: 'italic',
             label: t('italic'),
             Icon: Italic,
-            pressed: editor.isActive('italic'),
+            pressed: active.italic,
             onActivate: () =>
               toggle(
                 editor.isActive('italic'),
@@ -282,7 +314,7 @@ export function TiptapToolbar({
       key: 'underline',
       label: t('underline'),
       Icon: Underline,
-      pressed: editor.isActive('underline'),
+      pressed: active.underline,
       onActivate: () =>
         toggle(
           editor.isActive('underline'),
@@ -295,9 +327,10 @@ export function TiptapToolbar({
       key: 'link',
       label: t('link'),
       Icon: LinkIcon,
-      pressed: editor.isActive('link'),
+      pressed: active.link,
       opensDialog: true,
       onActivate: () => {
+        confirmedRef.current = false;
         setLinkTarget(captureLinkTarget());
         setLinkOpen(true);
       },
@@ -310,6 +343,7 @@ export function TiptapToolbar({
             Icon: ImageIcon,
             opensDialog: true,
             unavailable: !imageInsertEnabled,
+            describedBy: IMAGE_DISABLED_HINT_ID,
             onActivate: () => {
               if (imageInsertEnabled) onInsertImage?.();
             },
@@ -321,7 +355,10 @@ export function TiptapToolbar({
       label: t('cta'),
       Icon: MousePointerClick,
       opensDialog: true,
-      onActivate: () => setCtaOpen(true),
+      onActivate: () => {
+        confirmedRef.current = false;
+        setCtaOpen(true);
+      },
     },
     ...(imagesEnabled
       ? [
@@ -331,12 +368,34 @@ export function TiptapToolbar({
             Icon: RectangleHorizontal,
             opensDialog: true,
             unavailable: !imageInsertEnabled,
+            describedBy: IMAGE_DISABLED_HINT_ID,
             onActivate: () => {
               if (imageInsertEnabled) onInsertBanner?.();
             },
           } satisfies ToolbarControl,
         ]
       : []),
+    // Round 2, #16 — a visible way back on touch screens, where there is no
+    // Ctrl+Z: a deleted banner or button can be restored. Not on the boards
+    // (spec 122 Session 2026-10-25).
+    {
+      key: 'undo',
+      label: t('undo'),
+      Icon: Undo2,
+      unavailable: !active.canUndo,
+      onActivate: () => {
+        if (editor.can().undo()) editor.chain().focus().undo().run();
+      },
+    },
+    {
+      key: 'redo',
+      label: t('redo'),
+      Icon: Redo2,
+      unavailable: !active.canRedo,
+      onActivate: () => {
+        if (editor.can().redo()) editor.chain().focus().redo().run();
+      },
+    },
   ];
 
   const controlElements = (): HTMLButtonElement[] =>
@@ -385,7 +444,9 @@ export function TiptapToolbar({
         role="toolbar"
         aria-label={t('label')}
         onKeyDown={handleKeyDown}
-        className="flex flex-wrap items-center gap-1 border-b border-[var(--aura-border-default)] p-1.5"
+        // Sticky below the shell bar, so a long message never scrolls the
+        // formatting out of reach (round 2, #11); the frame clips, not scrolls.
+        className="sticky top-[var(--shell-bar-height,0px)] z-10 flex flex-wrap items-center gap-1 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-input)] p-1.5"
       >
         {controls.map((control, index) => (
           <IconButton
@@ -396,16 +457,16 @@ export function TiptapToolbar({
             data-toolbar-control={control.key}
             {...(control.pressed !== undefined && { 'aria-pressed': control.pressed })}
             {...(control.opensDialog === true && { 'aria-haspopup': 'dialog' as const })}
-            {...(control.unavailable === true && {
-              'aria-disabled': true,
-              // U6 — the reason, reachable without a pointer. `unavailable` is
-              // set only by the two image controls, and only while no draft is
-              // saved, which is exactly when the hint is on the page.
-              'aria-describedby': IMAGE_DISABLED_HINT_ID,
-            })}
+            {...((control.unavailable === true || disabled) && { 'aria-disabled': true })}
+            {...(control.unavailable === true &&
+              control.describedBy !== undefined && {
+                // U6 — the reason, reachable without a pointer.
+                'aria-describedby': control.describedBy,
+              })}
             tabIndex={index === tabStop ? 0 : -1}
             onFocus={() => setActiveIndex(index)}
             onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+              if (disabled) return;
               triggerRef.current = event.currentTarget;
               control.onActivate();
             }}
@@ -417,7 +478,7 @@ export function TiptapToolbar({
               'aria-pressed:bg-[var(--aura-bg-selected)] aria-pressed:text-[var(--aura-fg-accent)]',
               'aria-pressed:shadow-[inset_0_0_0_1px_var(--aura-fg-accent)]',
               'forced-colors:aria-pressed:outline-2 forced-colors:aria-pressed:outline-[Highlight] forced-colors:aria-pressed:-outline-offset-2',
-              control.unavailable === true && 'opacity-[var(--aura-disabled-opacity)]',
+              (control.unavailable === true || disabled) && 'opacity-[var(--aura-disabled-opacity)]',
             )}
           />
         ))}
@@ -426,20 +487,29 @@ export function TiptapToolbar({
       <LinkDialog
         open={linkOpen}
         onOpenChange={setLinkOpen}
-        canRemove={editor.isActive('link')}
+        canRemove={active.link}
         initialHref={(editor.getAttributes('link')['href'] as string | undefined) ?? ''}
         initialText={linkTarget.text}
-        editing={editor.isActive('link')}
+        editing={active.link}
         textReadOnly={!linkTarget.sameBlock}
-        onConfirm={applyLink}
-        onRemove={removeLink}
-        finalFocus={() => triggerRef.current}
+        onConfirm={(link) => {
+          confirmedRef.current = true;
+          applyLink(link);
+        }}
+        onRemove={() => {
+          confirmedRef.current = true;
+          removeLink();
+        }}
+        finalFocus={dialogFinalFocus}
       />
       <CtaButtonDialog
         open={ctaOpen}
         onOpenChange={setCtaOpen}
-        onConfirm={({ href, text }) => editor.chain().focus().setCtaButton({ href, text }).run()}
-        finalFocus={() => triggerRef.current}
+        onConfirm={({ href, text }) => {
+          confirmedRef.current = true;
+          editor.chain().focus().setCtaButton({ href, text }).run();
+        }}
+        finalFocus={dialogFinalFocus}
       />
     </>
   );

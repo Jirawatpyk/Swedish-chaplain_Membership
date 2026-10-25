@@ -22,7 +22,7 @@
  *     tells the author ONCE per mounted editor, in a non-blocking toast.
  *   - ARIA-live region announces editor state changes (CHK029)
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
@@ -160,6 +160,8 @@ export default function TiptapEditor({
         class: 'eblast-editor-content min-h-[240px] px-3 py-2 focus:outline-none',
         role: 'textbox',
         'aria-multiline': 'true',
+        // Round 2, #3 — read-only while the host saves or submits.
+        ...(disabled && { 'aria-readonly': 'true' }),
         ...(labelledById !== undefined && { 'aria-labelledby': labelledById }),
         // R3.5 M-13 — describedby + invalid on the contenteditable
         // (not a wrapper) so SR users get the error + help-text on
@@ -181,6 +183,13 @@ export default function TiptapEditor({
       onChange(ed.getHTML());
     },
   });
+
+  // Round 2, #3 — Tiptap reads `editable` once and keeps it on every
+  // re-render, so a host's `disabled` (submitting / pending) that turned on
+  // after mount left the text typeable. Follow the prop.
+  useEffect(() => {
+    if (editor && editor.isEditable === disabled) editor.setEditable(!disabled);
+  }, [editor, disabled]);
 
   const announceState = useCallback(
     (key: AnnounceKey) => {
@@ -313,6 +322,7 @@ export default function TiptapEditor({
         data-testid="tiptap-editor"
       >
         <TiptapToolbar
+          disabled={disabled}
           editor={editor}
           onAnnounce={announceState}
           imagesEnabled={imagesEnabled}
