@@ -797,12 +797,27 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the editor toolbar keeps the legacy kit until US12d-2', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/tiptap-toolbar.tsx')).toEqual([]);
-    });
-
     it('control: E-Blast compose keeps the legacy kit until US12d-3', async () => {
       expect(await ratchetHits(legacy, 'src/components/broadcast/compose-form.tsx')).toEqual([]);
+    });
+  });
+
+  describe('the US12d-2 editor, its dialogs, uploader and banner are on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+    it.each([
+      'src/components/broadcast/tiptap-editor.tsx',
+      'src/components/broadcast/tiptap-toolbar.tsx',
+      'src/components/broadcast/link-dialog.tsx',
+      'src/components/broadcast/cta-button-dialog.tsx',
+      'src/components/broadcast/image-alt-dialog.tsx',
+      'src/components/broadcast/compose-inline-image-uploader.tsx',
+      'src/components/broadcast/clamav-unreachable-banner.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: E-Blast proxy compose keeps the legacy kit until US12d-3', async () => {
+      expect(await ratchetHits(legacy, 'src/components/broadcast/proxy-compose-form.tsx')).toEqual([]);
     });
   });
 });

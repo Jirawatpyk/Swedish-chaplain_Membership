@@ -15,8 +15,8 @@
  */
 import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { Image as ImageIcon } from 'lucide-react';
+import { Alert, Button, Progress } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 
@@ -176,9 +176,9 @@ export function ComposeInlineImageUploader({
 
   return (
     <div className="flex flex-col gap-2">
-      <Label htmlFor="broadcast-image-file" className="sr-only">
+      <label htmlFor="broadcast-image-file" className="sr-only">
         {t('pickerLabel')}
-      </Label>
+      </label>
       <input
         id="broadcast-image-file"
         ref={fileRef}
@@ -193,16 +193,16 @@ export function ComposeInlineImageUploader({
         aria-describedby="broadcast-image-help broadcast-image-public-notice"
         onChange={handleChange}
       />
+      {/* Spec 122 US12d-2 — the boards' "Upload image": a secondary AURA
+          Button with an image icon, 44px on touch (UX-H3's tap target). */}
       <Button
-        type="button"
-        variant="outline"
+        variant="secondary"
+        icon={<ImageIcon aria-hidden />}
+        touchHeight
         onClick={handlePick}
         disabled={uploading}
         aria-describedby="broadcast-image-help broadcast-image-public-notice"
-        // PR-review fix 2026-05-20 UX-H3 — mobile tap target ≥44px
-        // per iOS HIG (default Button height is 36px, fails on file-
-        // picker triggers on mobile Safari).
-        className="min-h-[44px]"
+        className="self-start"
       >
         {uploading ? t('uploadingLabel') : t('uploadButton')}
       </Button>
@@ -213,17 +213,14 @@ export function ComposeInlineImageUploader({
         // implied a percentage; now 'uploadingAria' = "Uploading image
         // — please wait". Real byte-progress would need
         // XMLHttpRequest.upload.onprogress wiring; deferred to F7.1b.
-        <progress
-          aria-label={t('uploadingAria')}
-          className="w-full"
-        />
+        <Progress aria-label={t('uploadingAria')} />
       )}
       {error && (
-        <div role="alert" className="text-destructive text-caption">
+        <Alert tone="danger" role="alert">
           {error}
-        </div>
+        </Alert>
       )}
-      <p id="broadcast-image-help" className="text-caption text-muted-foreground">
+      <p id="broadcast-image-help" className="aura-text-caption text-[var(--aura-fg-secondary)]">
         {t('helpText')}
       </p>
       {/*
@@ -235,7 +232,7 @@ export function ComposeInlineImageUploader({
         sentence sits next to the picker, above it in reading order, not in a
         toast after the upload.
       */}
-      <p id="broadcast-image-public-notice" className="text-caption text-muted-foreground">
+      <p id="broadcast-image-public-notice" className="aura-text-caption text-[var(--aura-fg-secondary)]">
         {t('publicLinkNotice')}
       </p>
     </div>

@@ -26,6 +26,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import { Info } from 'lucide-react';
 import {
   IMAGE_DISABLED_HINT_ID,
@@ -287,18 +288,24 @@ export default function TiptapEditor({
   );
 
   if (!editor) {
-    return <div className="min-h-[280px] rounded-md border bg-muted/40" />;
+    return (
+      <div className="min-h-[280px] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-control)] bg-[var(--aura-bg-input)]" />
+    );
   }
 
   return (
     <div className="space-y-2">
       {imagesEnabled && <ClamavUnreachableBanner />}
       <div
-        className={
+        // Spec 122 US12d-2 — the frame draws as an AURA input: its edge, fill,
+        // radius and focus outline (`.aura-input:focus-within`), danger edge when invalid.
+        className={cn(
+          'min-w-0 overflow-hidden rounded-[var(--aura-radius-md)] border bg-[var(--aura-bg-input)]',
+          'focus-within:outline-[length:var(--aura-focus-ring-width)] focus-within:outline-offset-1 focus-within:outline-[var(--aura-focus-ring)] focus-within:outline-solid',
           invalid
-            ? 'rounded-md border border-destructive focus-within:ring-2 focus-within:ring-destructive min-w-0 overflow-hidden'
-            : 'rounded-md border focus-within:ring-2 focus-within:ring-ring min-w-0 overflow-hidden'
-        }
+            ? 'border-[var(--aura-border-danger)]'
+            : 'border-[var(--aura-border-control)] focus-within:border-[var(--aura-border-strong)]',
+        )}
         data-testid="tiptap-editor"
       >
         <TiptapToolbar
@@ -346,8 +353,8 @@ export default function TiptapEditor({
             // Banner controls point their `aria-describedby` at. This branch
             // renders on the SAME condition that disables them (`draftId ===
             // null`), so the target exists whenever it is referenced.
-            <div className="flex items-start gap-2 text-muted-foreground text-sm">
-              <Info className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+            <div className="flex items-start gap-2 aura-text-caption text-[var(--aura-fg-secondary)]">
+              <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
               <p id={IMAGE_DISABLED_HINT_ID}>{tImage('draftRequiredHint')}</p>
             </div>
           )}

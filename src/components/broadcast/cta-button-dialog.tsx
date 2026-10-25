@@ -15,17 +15,7 @@
  */
 import { useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button, Dialog, TextField } from '@jirawatpyk/aura-react';
 import { BROADCAST_ALLOWED_URI_REGEXP } from '@/lib/broadcast-content-policy';
 import { CTA_TEXT_MAX, CTA_TEXT_MIN } from '@/lib/design-blocks-client';
 
@@ -53,11 +43,7 @@ export function CtaButtonDialog({
   const [text, setText] = useState<string>('');
   const [href, setHref] = useState<string>('');
   const [error, setError] = useState<CtaError>(null);
-  const fieldId = useId();
-  const textId = `${fieldId}-text`;
-  const urlId = `${fieldId}-url`;
-  const counterId = `${fieldId}-counter`;
-  const errorId = `${fieldId}-error`;
+  const formId = `${useId()}-cta-form`;
 
   // Render-time "adjust state when a prop changes" (not an effect), as
   // `reason-confirmation-dialog.tsx` does, to avoid the cascading-render rule.
@@ -108,72 +94,62 @@ export function CtaButtonDialog({
   const textInvalid = error === 'textRequired' || error === 'textTooLong';
   const hrefInvalid = error === 'required' || error === 'scheme';
 
+  // The refusal is the faulty field's AURA `error`, its text in a
+  // `role="alert"` so it is spoken the moment the insert is refused.
+  const errorNode = errorText !== null ? <span role="alert">{errorText}</span> : undefined;
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" finalFocus={finalFocus}>
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-          <DialogDescription>{t('description')}</DialogDescription>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={textId}>{t('textLabel')}</Label>
-            <Input
-              id={textId}
-              type="text"
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                setError(null);
-              }}
-              {...(textInvalid && { 'aria-invalid': true })}
-              aria-describedby={textInvalid ? `${counterId} ${errorId}` : counterId}
-            />
-            <p id={counterId} className="text-caption text-muted-foreground">
-              {t('counter', { count: text.trim().length, max: CTA_TEXT_MAX })}
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={urlId}>{t('urlLabel')}</Label>
-            <Input
-              id={urlId}
-              type="text"
-              inputMode="url"
-              value={href}
-              placeholder={t('urlPlaceholder')}
-              onChange={(e) => {
-                setHref(e.target.value);
-                setError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              {...(hrefInvalid && { 'aria-invalid': true })}
-              {...(hrefInvalid && { 'aria-describedby': errorId })}
-            />
-          </div>
-
-          {errorText !== null && (
-            <p id={errorId} role="alert" className="text-caption text-destructive">
-              {errorText}
-            </p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+    <Dialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      finalFocus={() => finalFocus?.() || null}
+      size="sm"
+      title={t('title')}
+      description={t('description')}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>
-          <Button type="button" onClick={submit}>
+          <Button variant="primary" type="submit" form={formId}>
             {t('confirm')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </>
+      }
+    >
+      <form
+        id={formId}
+        noValidate
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <TextField
+          label={t('textLabel')}
+          touchHeight
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setError(null);
+          }}
+          hint={t('counter', { count: text.trim().length, max: CTA_TEXT_MAX })}
+          error={textInvalid ? errorNode : undefined}
+        />
+        <TextField
+          label={t('urlLabel')}
+          touchHeight
+          inputMode="url"
+          value={href}
+          placeholder={t('urlPlaceholder')}
+          onChange={(e) => {
+            setHref(e.target.value);
+            setError(null);
+          }}
+          error={hrefInvalid ? errorNode : undefined}
+        />
+      </form>
     </Dialog>
   );
 }

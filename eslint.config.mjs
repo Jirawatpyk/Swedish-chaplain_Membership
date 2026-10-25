@@ -552,6 +552,16 @@ export const MIGRATED_PATHS = [
   'src/components/broadcast/quota-display.tsx',
   'src/components/broadcast/compose-button-with-tooltip.tsx',
   'src/components/broadcast/submit-button.tsx',
+  // US12d-2 — the E-Blast editor: the toolbar, its link, button and
+  // image-description dialogs, the inline image uploader and the ClamAV
+  // banner. The four hosts load it through `loadTiptapEditor`.
+  'src/components/broadcast/tiptap-editor.tsx',
+  'src/components/broadcast/tiptap-toolbar.tsx',
+  'src/components/broadcast/link-dialog.tsx',
+  'src/components/broadcast/cta-button-dialog.tsx',
+  'src/components/broadcast/image-alt-dialog.tsx',
+  'src/components/broadcast/compose-inline-image-uploader.tsx',
+  'src/components/broadcast/clamav-unreachable-banner.tsx',
 ];
 
 /**

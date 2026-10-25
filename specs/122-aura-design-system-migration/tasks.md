@@ -756,6 +756,17 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [ ] T1238 [US12] e2e selectors the swap breaks (`broadcast-quota-block`, `broadcast-a11y`, `broadcast-i18n`, benefits and sign-out specs).
 - [ ] T1239 [US12] Exit: gates; sweep at 390/768/1024/1280 in EN/SV/TH; shots; UX review; parity artifact; draft PR; relay R84.
 
+### US12d-2 — the E-Blast editor (PR 2 of 3)
+
+- [x] T1250 [US12] Spec session "2026-10-25 (US12d-2 start: the E-Blast editor)" and tasks T1250–T1257.
+- [x] T1251 [US12] Toolbar controls on AURA `IconButton` (`touchHeight`; `aria-pressed`, `aria-haspopup`, `aria-disabled` + hint, `data-toolbar-control`, roving tabindex kept); the pressed stand-in until AURA #180. Test: `tiptap-toolbar-a11y`.
+- [x] T1252 [US12] Link, button and image-description dialogs on AURA `Dialog`, `TextField` / `Textarea` and footer `Button`s; validation, copy, `finalFocus` and props kept. Test: `editor-dialogs-aura` (+ the dialogs' own tests unchanged).
+- [x] T1253 [US12] Inline image uploader: AURA secondary `Button` with an image icon, indeterminate `Progress`, danger `Alert`. Test: `inline-image-uploader-aura`.
+- [x] T1254 [US12] ClamAV banner on AURA `Alert`; the editor frame on AURA input tokens.
+- [x] T1255 [US12] `MIGRATED_PATHS` gains the seven editor files; a US12d-2 ratchet block; the `control:` moves to `proxy-compose-form.tsx`.
+- [ ] T1256 [US12] e2e the swap may touch (`eblast-a11y`, `admin-proxy-submit`, `image-upload-allowlist`, the specs that type in the editor), run locally (relay R89).
+- [ ] T1257 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV; UX and mobile-a11y reviews; draft PR; relay R89.
+
 ## Later phases (one PR each; tasks written when the phase starts)
 
 - [ ] T1300 [US13] Exit: delete `src/components/ui`; uninstall `@base-ui/react`, `tw-animate-css`, `shadcn`; drop the TanStack table UI; make the old-kit ban global; remove the token bridge; check the facade decision; confirm the date is within 10 weeks of the US0 merge.

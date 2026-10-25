@@ -29,7 +29,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertCircle } from 'lucide-react';
+import { Alert } from '@jirawatpyk/aura-react';
 
 export interface ClamavUnreachableBannerProps {
   /**
@@ -100,24 +100,12 @@ export function ClamavUnreachableBanner({
   return (
     <div role="status" aria-live="polite" aria-atomic="true">
       {unreachable ? (
-        <div className="flex items-start gap-2 p-3 border border-warning rounded bg-warning/10">
-          {/*
-            H5 fix 2026-05-21 (review finding enterprise-ux-designer H-3):
-            `text-warning` on `bg-warning/10` failed WCAG SC 1.4.11
-            (Non-text Contrast ≥3:1 for UI components) at ~2.8:1.
-            `text-foreground` matches the F4 design-system pattern used
-            by `template-edit-confirm-starter.tsx` + `stale-draft-banner.tsx`
-            and clears 4.5:1+ on both light + dark themes. The amber
-            `border-warning` boundary preserves the warning-state
-            semantics; the icon now provides high-contrast emphasis
-            without doubling as the sole semantic indicator.
-          */}
-          <AlertCircle className="w-4 h-4 mt-0.5 text-foreground" aria-hidden />
-          <div>
-            <p className="text-body font-medium">{t('title')}</p>
-            <p className="text-caption">{t('description')}</p>
-          </div>
-        </div>
+        // Spec 122 US12d-2 — an AURA warning Alert (its tokens carry the
+        // contrast H5 fixed by hand). `role="none"`: the wrapper above is
+        // the live region, so the Alert must not be a second one.
+        <Alert tone="warning" role="none" title={t('title')}>
+          {t('description')}
+        </Alert>
       ) : null}
     </div>
   );

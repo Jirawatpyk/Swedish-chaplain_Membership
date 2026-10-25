@@ -869,6 +869,20 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The portal sign-out button becomes an AURA `Button` with the 44px touch height. (R84 then found it mounted nowhere since 063 — sign-out lives in the Account menu — so the follow-up PR deletes it.)
   - Requests, toasts and copy are unchanged.
 
+### Session 2026-10-25 (US12d-2 start: the E-Blast editor)
+
+- **Scope:** the editor the four compose hosts load through `loadTiptapEditor` (portal compose, staff compose on behalf, the template form, the approval workspace): `tiptap-editor`, `tiptap-toolbar`, the link, button and image-description dialogs, the inline image uploader and the ClamAV banner. A UI swap only: requests, validation, messages and props are unchanged (FR-011).
+- **Boards:** `Portal-broadcast-new` (+mobile), `Admin-broadcast-new` and `Admin-eblast-design` all draw the toolbar the same way. It is `role="toolbar"` named "Formatting", with ghost icon buttons, 32px on desktop and 44px on phones, and no separators. The toggles carry `aria-pressed`. "Upload image" is a secondary button with an image icon, above the hint lines.
+- **Decided from the boards and AURA:**
+  - Each toolbar control is an AURA `IconButton` with `touchHeight`. Its label is the accessible name and AURA's tooltip. The two unavailable image controls keep their native `title`, which turns that tooltip off, and their `aria-describedby` hint.
+  - AURA has no Toolbar, so the roving tabindex stays the app's.
+  - AURA's `IconButton` has no pressed look. The pressed toggle takes the selected fill and the accent colour, a stand-in until AURA #180 (Addendum 81).
+  - No board draws the dialogs, so they follow the repo's AURA form dialog: `size="sm"`, AURA fields, a secondary Cancel and a primary submit in the footer. The link dialog's "Remove link" is a ghost button on the left.
+  - A refusal is the faulty field's AURA `error`, its text in a `role="alert"`. The button and description dialogs' character counters are the fields' hints, which the error replaces while it shows: each message names the bound. Enter submits through the form, so it now also submits from the button's text field.
+  - The uploader keeps its hidden native input, because AURA's `FileUpload` is a drop zone and the boards draw a button. The wait is an AURA indeterminate `Progress`, and a refusal is an AURA danger `Alert`.
+  - The ClamAV banner is an AURA warning `Alert` inside the existing live wrapper (`role="none"` on the Alert, so the region is not doubled).
+  - The editor frame draws as an AURA input: its edge, fill, radius and focus outline, with the danger edge when invalid.
+
 ### Session 2026-10-24 (credit-note page: no sideways scroll on phones)
 
 - **The bug:** at 390 the admin credit-note detail page scrolled sideways by about 250px.

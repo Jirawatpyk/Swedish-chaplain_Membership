@@ -110,10 +110,22 @@ describe('T098 — one tab stop; arrows move; Home/End jump to the ends', () => 
 });
 
 describe('T098 — visible focus state and 320 px wrapping', () => {
-  it('every control carries a visible focus ring', () => {
+  // Spec 122 US12d-2: each control is an AURA IconButton, whose focus ring is
+  // AURA's own (`.aura-icon-btn:focus-visible`), 32px on desktop and 44px on
+  // touch / phone widths (`touchHeight`), as the compose boards draw it.
+  it('every control is an AURA IconButton with the touch size (AURA draws the focus ring)', () => {
     const { buttons } = renderToolbar();
     for (const b of buttons) {
-      expect(b.className).toMatch(/focus-visible:ring/);
+      expect(b).toHaveClass('aura-icon-btn', 'aura-icon-btn--touch');
+    }
+  });
+
+  it('a pressed toggle carries the stand-in pressed look (until AURA #180)', () => {
+    const { buttons } = renderToolbar();
+    const pressable = buttons.filter((b) => b.hasAttribute('aria-pressed'));
+    expect(pressable.length).toBeGreaterThan(0);
+    for (const b of pressable) {
+      expect(b.className).toContain('aria-pressed:bg-[var(--aura-bg-selected)]');
     }
   });
 

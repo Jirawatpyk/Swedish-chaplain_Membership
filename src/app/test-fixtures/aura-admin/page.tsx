@@ -140,6 +140,7 @@ import { renderStaffAccountView } from '@/app/(staff)/admin/account/page';
 import { OpenSwitchOffDialog, ShowReadOnlyRefusal } from './settings-previews';
 import { renderDashboardPreview } from './dashboard-previews';
 import { renderFinancePreview } from './finance-previews';
+import { EditorPreview } from './editor-preview';
 import type { ExportJobRecord, GroupedEvidence } from '@/modules/insights';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
@@ -2011,6 +2012,14 @@ export default async function AuraAdminPreviewPage({
   // Admin-settings-brand*, Admin-marketing-audience*, Admin-state-audience-*).
   if (view === 'templates') {
     return <StaffFrame path="/admin/broadcasts/templates">{await renderTemplatesPreview(state)}</StaffFrame>;
+  }
+  // 122 US12d-2 — the E-Blast editor alone (`state=draft|unsaved|invalid`).
+  if (view === 'eblast-editor') {
+    return (
+      <StaffFrame path="/admin/broadcasts/new">
+        <EditorPreview state={state} />
+      </StaffFrame>
+    );
   }
   if (view === 'template-new' || view === 'template-edit') {
     return (

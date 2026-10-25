@@ -201,6 +201,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #179 | `Progress` with `secondaryValue` has no key saying what the striped part is; the E-Blast quota bars need "■ Used · ▨ Reserved (in review or scheduled)" under them (Addendum 80, 25 Oct) | `src/components/broadcast/quota-legend.tsx` draws the key (aria-hidden, the bar's tone, the 135° stripe) under the quota card and the Dashboard's E-Blast bar, only while something is reserved |
+| #180 | `IconButton` has no pressed (toggle) look: a control with `aria-pressed="true"` draws like an unpressed one, so the E-Blast editor's Bold, Italic, lists, headings, quote and link toggles cannot show they are on (Addendum 81, 25 Oct) | `src/components/broadcast/tiptap-toolbar.tsx` adds `aria-pressed:bg-[var(--aura-bg-selected)] aria-pressed:text-[var(--aura-fg-accent)]` to each control |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

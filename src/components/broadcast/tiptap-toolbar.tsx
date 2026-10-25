@@ -30,6 +30,12 @@
  * At 320 px the strip WRAPS onto further rows (`flex-wrap`). There is
  * deliberately no overflow menu: a formatting control hidden behind a "More"
  * button at phone width is a control most authors never find.
+ *
+ * Spec 122 US12d-2: each control is an AURA `IconButton`, 32px on desktop and
+ * 44px on touch / phone widths (`touchHeight`), as the compose boards draw it.
+ * Its `label` is the accessible name and AURA's own tooltip; a native `title`
+ * (the two unavailable image controls only) turns that tooltip off. AURA has
+ * no Toolbar, so the roving tabindex above stays the app's.
  */
 import { useCallback, useRef, useState } from 'react';
 import { type Editor } from '@tiptap/react';
@@ -49,7 +55,7 @@ import {
   RectangleHorizontal,
   Underline,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 import { LinkDialog } from './link-dialog';
 import { CtaButtonDialog } from './cta-button-dialog';
@@ -348,16 +354,15 @@ export function TiptapToolbar({
         role="toolbar"
         aria-label={t('label')}
         onKeyDown={handleKeyDown}
-        className="flex flex-wrap items-center gap-1 border-b bg-muted/30 p-1"
+        className="flex flex-wrap items-center gap-0.5 border-b border-[var(--aura-border-default)] p-1.5"
       >
         {controls.map((control, index) => (
-          <Button
+          <IconButton
             key={control.key}
-            type="button"
-            variant="ghost"
-            size="sm"
+            icon={<control.Icon />}
+            label={control.label}
+            touchHeight
             data-toolbar-control={control.key}
-            aria-label={control.label}
             {...(control.pressed !== undefined && { 'aria-pressed': control.pressed })}
             {...(control.opensDialog === true && { 'aria-haspopup': 'dialog' as const })}
             {...(control.unavailable === true && {
@@ -375,13 +380,11 @@ export function TiptapToolbar({
               control.onActivate();
             }}
             className={cn(
-              'h-11 w-11 min-h-11 min-w-11 p-0',
-              control.pressed === true && 'bg-accent text-accent-foreground',
+              // AURA's IconButton has no pressed (toggle) look: stand-in until AURA #180.
+              'aria-pressed:bg-[var(--aura-bg-selected)] aria-pressed:text-[var(--aura-fg-accent)]',
               control.unavailable === true && 'opacity-50',
             )}
-          >
-            <control.Icon className="h-4 w-4" aria-hidden="true" />
-          </Button>
+          />
         ))}
       </div>
 
