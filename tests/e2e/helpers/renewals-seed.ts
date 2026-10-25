@@ -87,7 +87,14 @@ async function deleteSeedOwnedRows(
         AND member_id = ${memberId}::uuid
         AND (
           status IN ('upcoming', 'reminded', 'awaiting_payment', 'lapsed')
-          OR (status = 'completed' AND linked_invoice_id = ${fixtureInvoiceId}::uuid)
+          -- A pinned one (scheduled_plan_changes, FK RESTRICT) is left alone:
+          -- deleting it would roll the whole seed back for every renewal spec.
+          OR (status = 'completed' AND linked_invoice_id = ${fixtureInvoiceId}::uuid
+              AND NOT EXISTS (
+                SELECT 1 FROM scheduled_plan_changes s
+                WHERE s.tenant_id = renewal_cycles.tenant_id
+                  AND s.effective_at_cycle_id = renewal_cycles.cycle_id
+              ))
         )
     `;
     const reminderEvents = await tx`
