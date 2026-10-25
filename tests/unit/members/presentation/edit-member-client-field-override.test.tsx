@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   refresh: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
   values: {} as Record<string, unknown>,
+  finalFocus: undefined as (() => HTMLElement | null) | undefined,
 }));
 
 vi.mock('next-intl', () => ({
@@ -41,16 +42,25 @@ vi.mock('@/components/members/bundle-change-warning-dialog', () => ({
 vi.mock('@/components/members/override-reason-dialog', () => ({
   OverrideReasonDialog: (props: {
     open: boolean;
+    onOpenChange: (open: boolean) => void;
     onConfirm: (r: { code: string; note: string | null }) => void;
-  }) =>
-    props.open ? (
-      <button
-        type="button"
-        onClick={() => props.onConfirm({ code: 'board_approved', note: 'Sole trader' })}
-      >
-        confirm-override
-      </button>
-    ) : null,
+    finalFocus?: () => HTMLElement | null;
+  }) => {
+    h.finalFocus = props.finalFocus;
+    return props.open ? (
+      <>
+        <button
+          type="button"
+          onClick={() => props.onConfirm({ code: 'board_approved', note: 'Sole trader' })}
+        >
+          confirm-override
+        </button>
+        <button type="button" onClick={() => props.onOpenChange(false)}>
+          cancel-override
+        </button>
+      </>
+    ) : null;
+  },
 }));
 
 import { EditMemberClient } from '@/components/members/edit-member-client';
@@ -189,5 +199,40 @@ describe('EditMemberClient — override on the member-field step (127)', () => {
     fireEvent.click(screen.getByText('stub-submit'));
     await vi.waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('admin.members.edit.errors.concurrentChange'));
     expect(h.refresh).toHaveBeenCalled();
+  });
+
+  const WARNING_422 = {
+    error: {
+      code: 'member_type_warning',
+      details: { type: 'member_type_out_of_scope', legalEntityType: 'individual', memberTypeScope: 'company' },
+    },
+  };
+
+  it('returns focus to the button that submitted the form when the dialog closes (129)', async () => {
+    h.values = TYPE_CHANGE;
+    fetchMock.mockResolvedValueOnce(res(422, WARNING_422));
+    render(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <EditMemberClient member={MEMBER as any} plans={PLANS} primaryContact={CONTACT} />,
+    );
+    const save = screen.getByText('stub-submit');
+    save.focus();
+    fireEvent.click(save);
+    await screen.findByText('confirm-override');
+    expect(h.finalFocus?.()).toBe(save);
+  });
+
+  it('says the change was not saved when the override dialog is cancelled (129)', async () => {
+    h.values = TYPE_CHANGE;
+    h.toast.info.mockClear();
+    fetchMock.mockResolvedValueOnce(res(422, WARNING_422));
+    render(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <EditMemberClient member={MEMBER as any} plans={PLANS} primaryContact={CONTACT} />,
+    );
+    fireEvent.click(screen.getByText('stub-submit'));
+    fireEvent.click(await screen.findByText('cancel-override'));
+    expect(h.toast.info).toHaveBeenCalledWith('admin.members.edit.errors.overrideCancelled');
+    expect(screen.queryByText('confirm-override')).toBeNull();
   });
 });
