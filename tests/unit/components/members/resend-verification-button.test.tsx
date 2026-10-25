@@ -8,7 +8,7 @@ import { ResendVerificationButton } from '@/components/members/resend-verificati
 
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-// Fix 4 — hoist a stable refreshSpy at module scope (mirrors portal-sign-out-button.test.tsx).
+// Fix 4 — hoist a stable refreshSpy at module scope.
 // A fresh vi.fn() per call (previous pattern) made router.refresh unobservable.
 const refreshSpy = vi.fn();
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: refreshSpy }) }));
@@ -23,7 +23,7 @@ function renderButton() {
 
 beforeEach(() => {
   // Real timers required: global setup.ts enables fake timers (setTimeout faked);
-  // waitFor() + Promise resolution needs real timers. Same pattern as portal-sign-out-button.test.tsx.
+  // waitFor() + Promise resolution needs real timers.
   vi.useRealTimers();
   refreshSpy.mockClear();
   (toast.success as ReturnType<typeof vi.fn>).mockClear();
