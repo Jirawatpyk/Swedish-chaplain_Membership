@@ -13,7 +13,7 @@
 export type PausableFeature = 'members' | 'invoicing' | 'onlinePayment' | 'broadcasts' | 'renewals';
 
 export interface PauseState {
-  /** READ_ONLY_MODE: every state-changing request is refused. */
+  /** READ_ONLY_MODE: every state-changing request is refused, except sign-in, sign-out and heartbeat (D-028). */
   readonly readOnly: boolean;
   /** Features whose switch is off, so their requests are refused. */
   readonly featuresOff: readonly PausableFeature[];
