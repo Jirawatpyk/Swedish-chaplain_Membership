@@ -144,6 +144,13 @@ class UpstashRateLimiter implements RateLimiter {
   ): Promise<RateLimitResult> {
     try {
       const result = await getRateLimit(max, windowSeconds).limit(key);
+      // 128 — `@upstash/ratelimit` races `.limit()` against a 5 s timeout
+      // and RESOLVES `{ success: true, reason: 'timeout' }` when it wins, so
+      // a slow (not down) Upstash would otherwise allow every request. Treat
+      // it exactly like an unreachable Upstash: the in-memory bucket decides.
+      if (result.reason === 'timeout') {
+        throw new UpstashTimeoutError();
+      }
       return {
         success: result.success,
         remaining: result.remaining,
@@ -168,6 +175,14 @@ class UpstashRateLimiter implements RateLimiter {
       authMetrics.redisFallback();
       return fallbackCheck(key, max, windowSeconds);
     }
+  }
+}
+
+/** 128 — the library's timeout branch, routed into the fallback below. */
+class UpstashTimeoutError extends Error {
+  constructor() {
+    super('upstash ratelimit timed out');
+    this.name = 'UpstashTimeoutError';
   }
 }
 
