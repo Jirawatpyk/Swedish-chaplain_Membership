@@ -25,6 +25,7 @@
  *
  * No-op when `DATABASE_URL` is missing (returns early with warning).
  */
+import type postgres from 'postgres';
 import { z } from 'zod';
 import { openSeedClient, type SeedClient } from './open-seed-client';
 
@@ -660,6 +661,22 @@ export interface SeedRelinkFixtureResult {
   readonly relinkTargetCompany: string;
 }
 
+/**
+ * The first two steps of the app's member-number allocator
+ * (`drizzle-member-number-allocator.ts`), inside the caller's transaction:
+ * take the tenant's `members:<tenant>` advisory lock, then make sure the
+ * tenant's `tenant_member_sequences` row exists so the `UPDATE … RETURNING`
+ * that follows always yields a number.
+ */
+async function lockMemberNumberSequence(tx: postgres.TransactionSql, tenantSlug: string): Promise<void> {
+  await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`members:${tenantSlug}`}, 0))`;
+  await tx`
+    INSERT INTO tenant_member_sequences (tenant_id, last_number)
+    VALUES (${tenantSlug}, 0)
+    ON CONFLICT (tenant_id) DO NOTHING
+  `;
+}
+
 export async function seedF6RelinkFixture(
   tenantSlug: string = TENANT_ID,
 ): Promise<SeedRelinkFixtureResult | null> {
@@ -931,24 +948,29 @@ export async function seedF6RelinkFixture(
     let relinkTargetMemberId = existingRelinkTarget[0]?.member_id ?? null;
     if (relinkTargetMemberId === null) {
       // `members.member_number` is NOT NULL (migration 0209) with no default —
-      // a raw insert must supply it. High value: never collides with the
-      // allocator's low 1..N in the shared tenant (see lapsed-member-seed.ts).
-      // This branch only runs when the fixture row is absent, which is why the
-      // omission stayed latent until 2026-09-10.
-      const relinkMemberNumber = 980_000 + Math.floor(Math.random() * 9_000);
-      const insertedRelinkTarget = await client.sql<
-        Array<{ member_id: string }>
-      >`
-        INSERT INTO members (
-          member_id, tenant_id, member_number, company_name, country, plan_id, plan_year, status
-        ) VALUES (
-          gen_random_uuid(), ${tenantSlug},
-          ${relinkMemberNumber},
-          ${RELINK_TARGET_COMPANY}, 'TH',
-          ${relinkPlanId}, 2026, 'active'
-        )
-        RETURNING member_id::text AS member_id
-      `;
+      // a raw insert must supply it. Take it from the tenant's allocator, as
+      // the app does: this row is a PERSISTENT fixture (reused, never torn
+      // down), so the high random number the throwaway seeds use would stay
+      // above `tenant_member_sequences.last_number` for good and break the
+      // `migration-0209-post-apply` invariant (it did: 982267 vs 246).
+      const insertedRelinkTarget = await client.sql.begin(async (tx) => {
+        await lockMemberNumberSequence(tx, tenantSlug);
+        return tx<Array<{ member_id: string }>>`
+          WITH next AS (
+            UPDATE tenant_member_sequences
+               SET last_number = last_number + 1, updated_at = now()
+            WHERE tenant_id = ${tenantSlug}
+            RETURNING last_number
+          )
+          INSERT INTO members (
+            member_id, tenant_id, member_number, company_name, country, plan_id, plan_year, status
+          )
+          SELECT gen_random_uuid(), ${tenantSlug}, next.last_number,
+                 ${RELINK_TARGET_COMPANY}, 'TH', ${relinkPlanId}, 2026, 'active'
+          FROM next
+          RETURNING member_id::text AS member_id
+        `;
+      });
       relinkTargetMemberId = insertedRelinkTarget[0]?.member_id ?? null;
     } else {
       // Converge the reused row to the canonical fixture state. Clearing
@@ -956,16 +978,42 @@ export async function seedF6RelinkFixture(
       // members_archived_consistency CHECK (status<>'archived' ⇒
       // archived_at IS NULL); refreshing plan_id/plan_year/country keeps
       // the reuse path identical to a fresh insert.
-      await client.sql`
-        UPDATE members
-          SET status = 'active',
-              archived_at = NULL,
-              plan_id = ${relinkPlanId},
-              plan_year = 2026,
-              country = 'TH'
-          WHERE tenant_id = ${tenantSlug}
-            AND member_id = ${relinkTargetMemberId}::uuid
-      `;
+      //
+      // A row made before the allocator fix carries a random number above the
+      // tenant's high-water mark; give it the next allocated one instead.
+      // One transaction, so the counter only moves with the row it numbers.
+      const reusedId = relinkTargetMemberId;
+      await client.sql.begin(async (tx) => {
+        await lockMemberNumberSequence(tx, tenantSlug);
+        await tx`
+          WITH next AS (
+            UPDATE tenant_member_sequences s
+               SET last_number = s.last_number + 1, updated_at = now()
+            WHERE s.tenant_id = ${tenantSlug}
+              AND EXISTS (
+                SELECT 1 FROM members m
+                WHERE m.tenant_id = ${tenantSlug}
+                  AND m.member_id = ${reusedId}::uuid
+                  AND m.member_number > s.last_number
+              )
+            RETURNING s.last_number
+          )
+          UPDATE members SET member_number = next.last_number
+          FROM next
+          WHERE members.tenant_id = ${tenantSlug}
+            AND members.member_id = ${reusedId}::uuid
+        `;
+        await tx`
+          UPDATE members
+            SET status = 'active',
+                archived_at = NULL,
+                plan_id = ${relinkPlanId},
+                plan_year = 2026,
+                country = 'TH'
+            WHERE tenant_id = ${tenantSlug}
+              AND member_id = ${reusedId}::uuid
+        `;
+      });
     }
     if (!relinkTargetMemberId) {
       throw new Error(
