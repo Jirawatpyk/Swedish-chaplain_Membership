@@ -26,6 +26,7 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { authMetrics } from '@/lib/metrics';
+import { createFallbackBuckets } from './fallback-buckets';
 import { rateLimitPrefix } from './rate-limit-prefix';
 
 // --- Public interface ---------------------------------------------------------
@@ -78,6 +79,7 @@ const redis = new Redis({
 // reusing instances avoids the per-call cost of constructing a new
 // sliding-window driver.
 const rateLimitCache = new Map<string, Ratelimit>();
+const UPSTASH_TIMEOUT_MS = 1000;
 
 function getRateLimit(max: number, windowSeconds: number): Ratelimit {
   const cacheKey = `${max}:${windowSeconds}`;
@@ -88,6 +90,10 @@ function getRateLimit(max: number, windowSeconds: number): Ratelimit {
       limiter: Ratelimit.slidingWindow(max, `${windowSeconds} s`),
       analytics: false,
       prefix: RATE_LIMIT_PREFIX,
+      // 128 — the library default is 5 s; a sign-in should not stall that
+      // long before the in-memory fallback decides. Upstash SG answers in
+      // tens of ms, so 1 s only trips on a real slowdown.
+      timeout: UPSTASH_TIMEOUT_MS,
     });
     rateLimitCache.set(cacheKey, limit);
   }
@@ -96,43 +102,7 @@ function getRateLimit(max: number, windowSeconds: number): Ratelimit {
 
 // --- In-memory fallback -------------------------------------------------------
 
-interface FallbackBucket {
-  count: number;
-  windowStart: number;
-}
-const fallbackBuckets = new Map<string, FallbackBucket>();
-
-function fallbackCheck(
-  key: string,
-  max: number,
-  windowSeconds: number,
-): RateLimitResult {
-  const now = Date.now();
-  const windowMs = windowSeconds * 1000;
-  const bucket = fallbackBuckets.get(key);
-
-  if (!bucket || now - bucket.windowStart >= windowMs) {
-    fallbackBuckets.set(key, { count: 1, windowStart: now });
-    return { success: true, remaining: max - 1, reset: now + windowMs, fellBack: true };
-  }
-
-  if (bucket.count >= max) {
-    return {
-      success: false,
-      remaining: 0,
-      reset: bucket.windowStart + windowMs,
-      fellBack: true,
-    };
-  }
-
-  bucket.count += 1;
-  return {
-    success: true,
-    remaining: max - bucket.count,
-    reset: bucket.windowStart + windowMs,
-    fellBack: true,
-  };
-}
+const fallback = createFallbackBuckets();
 
 // --- Public adapter -----------------------------------------------------------
 
@@ -168,12 +138,15 @@ class UpstashRateLimiter implements RateLimiter {
       // CLAUDE.md § Secrets & confidential data forbids raw session
       // IDs / emails / user IDs in logs.
       const keyKind = key.split(':').slice(0, 2).join(':') || 'unknown';
+      const timeout = error instanceof UpstashTimeoutError;
       logger.warn(
-        { err: errKind(error), keyKind, max, windowSeconds, fallback: true },
-        'rate-limit upstream unreachable, falling back to in-memory bucket',
+        { err: errKind(error), keyKind, max, windowSeconds, fallback: true, timeout },
+        timeout
+          ? 'rate-limit upstream timed out, falling back to in-memory bucket'
+          : 'rate-limit upstream unreachable, falling back to in-memory bucket',
       );
       authMetrics.redisFallback();
-      return fallbackCheck(key, max, windowSeconds);
+      return fallback.check(key, max, windowSeconds);
     }
   }
 }
