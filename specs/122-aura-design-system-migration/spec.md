@@ -918,6 +918,18 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
     - Images are "virus-scanned before they're stored", not "before upload".
     - The announcements use the controls' names.
     - New: "Edit link", "Leave blank to show the address.", "Edit button" / "Save button", "Save description" and "The image was not added to your message."
+  - **Round 3, the reviews of round 2 (UX and mobile-a11y):**
+    - `disabled` no longer reports a change, because a refused submit's error was being wiped.
+    - The button block reads "button, links to …" to a screen reader, and Enter edits it.
+    - Edit-mode names on Button, Image and Banner, and Remove button in its dialog.
+    - The sticky toolbar gives way below 30rem of height and keeps the caret clear (ProseMirror scroll margin).
+    - The placeholder is announced only while the message is empty.
+    - The hidden file input is out of a screen reader's reach.
+    - One announcement per insert ("Image added."); Undo and Redo are announced.
+    - A saved description returns focus to the text.
+    - "Leave blank to keep the current words."; an email address is told to write `mailto:`.
+  - **AURA 5.65 (25 Oct)** shipped #179 (`Progress` `legend`) and #180 (`IconButton` `pressed`). The quota bars and the toolbar use them, and both stand-ins are gone.
+  - **Open, for the maintainer:** an image uploaded and then left out of the message (its description cancelled) stays at its public address. Deleting it is a server change (FR-011), so it is not in this PR.
   - **Undo and Redo** (#16; the maintainer, 25 Oct) sit at the end of the toolbar. They are not on the boards: a phone has no Ctrl+Z, so a deleted banner or button could not be brought back. The boards now draw them.
 
 ### Session 2026-10-24 (credit-note page: no sideways scroll on phones)
