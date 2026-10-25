@@ -931,22 +931,25 @@ export async function seedF6RelinkFixture(
     let relinkTargetMemberId = existingRelinkTarget[0]?.member_id ?? null;
     if (relinkTargetMemberId === null) {
       // `members.member_number` is NOT NULL (migration 0209) with no default —
-      // a raw insert must supply it. High value: never collides with the
-      // allocator's low 1..N in the shared tenant (see lapsed-member-seed.ts).
-      // This branch only runs when the fixture row is absent, which is why the
-      // omission stayed latent until 2026-09-10.
-      const relinkMemberNumber = 980_000 + Math.floor(Math.random() * 9_000);
+      // a raw insert must supply it. Take it from the tenant's allocator, as
+      // the app does: this row is a PERSISTENT fixture (reused, never torn
+      // down), so the high random number the throwaway seeds use would stay
+      // above `tenant_member_sequences.last_number` for good and break the
+      // `migration-0209-post-apply` invariant (it did: 982267 vs 246).
       const insertedRelinkTarget = await client.sql<
         Array<{ member_id: string }>
       >`
+        WITH next AS (
+          UPDATE tenant_member_sequences SET last_number = last_number + 1
+          WHERE tenant_id = ${tenantSlug}
+          RETURNING last_number
+        )
         INSERT INTO members (
           member_id, tenant_id, member_number, company_name, country, plan_id, plan_year, status
-        ) VALUES (
-          gen_random_uuid(), ${tenantSlug},
-          ${relinkMemberNumber},
-          ${RELINK_TARGET_COMPANY}, 'TH',
-          ${relinkPlanId}, 2026, 'active'
         )
+        SELECT gen_random_uuid(), ${tenantSlug}, next.last_number,
+               ${RELINK_TARGET_COMPANY}, 'TH', ${relinkPlanId}, 2026, 'active'
+        FROM next
         RETURNING member_id::text AS member_id
       `;
       relinkTargetMemberId = insertedRelinkTarget[0]?.member_id ?? null;
@@ -956,6 +959,26 @@ export async function seedF6RelinkFixture(
       // members_archived_consistency CHECK (status<>'archived' ⇒
       // archived_at IS NULL); refreshing plan_id/plan_year/country keeps
       // the reuse path identical to a fresh insert.
+      //
+      // A row made before the allocator fix carries a random number above the
+      // tenant's high-water mark; give it the next allocated one instead.
+      await client.sql`
+        WITH next AS (
+          UPDATE tenant_member_sequences s SET last_number = s.last_number + 1
+          WHERE s.tenant_id = ${tenantSlug}
+            AND EXISTS (
+              SELECT 1 FROM members m
+              WHERE m.tenant_id = ${tenantSlug}
+                AND m.member_id = ${relinkTargetMemberId}::uuid
+                AND m.member_number > s.last_number
+            )
+          RETURNING s.last_number
+        )
+        UPDATE members SET member_number = next.last_number
+        FROM next
+        WHERE members.tenant_id = ${tenantSlug}
+          AND members.member_id = ${relinkTargetMemberId}::uuid
+      `;
       await client.sql`
         UPDATE members
           SET status = 'active',
