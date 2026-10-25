@@ -32,3 +32,16 @@ RED runs, each committed before its fix:
 | #3 form | `f7870b361` | `edit-member-client-field-override.test.tsx` — `expected undefined to be 'individual'` (the override re-sent a plan payload) |
 | #3 copy (D-023) | `cf4a90534` | `override-warning-message.test.ts` — `expected 'warnings.generic' to be 'warnings.memberTypeCompanyOnly'` |
 | #5 | `9c99bb7f2` | `bulk-action-archive-cascade.test.ts` — `expected "spy" to be called with arguments` (completion log) |
+
+GREEN gates (25 Oct):
+- `pnpm check` EXIT 0;
+- `pnpm test:coverage` 1,800 files, EXIT 0;
+- live Neon: `f3-undelete-restore` and `f3-archival-cascade` (11 tests), plus the payment-path renewals files (`confirm-lazy-transition`, `create-next-cycle-on-paid`, `mark-paid-offline`, `payment-on-terminated-net`, `rolling-anchor-payment`, `self-service-renewal-tx`: 46 tests with restore);
+- `migration-0209-post-apply` 18/18.
+
+Verify on the branch server (:3410, Neon dev, a throwaway `zz-probe-127` spec, dummy member removed):
+- `PATCH legal_entity_type=individual` on a company-scope plan → 422 `member_type_warning`;
+- with `override_reason_code` → 200, stored `individual`, and the `member_updated` audit carries `board_approved`;
+- echoing the same type with another field → 200.
+
+Item #1 was not probed in the app: it needs an issued §86/4, which cannot be deleted afterwards on the shared dev branch. Its live-Neon integration test drives the real `archiveMember` → `undeleteMember` path.
