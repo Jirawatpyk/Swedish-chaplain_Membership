@@ -7031,6 +7031,7 @@
           "sentAt": "Sent",
           "audience": "Audience"
         },
+        "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
         "audience": {
           "all_members": "All members",
           "tier": "Specific membership tier",

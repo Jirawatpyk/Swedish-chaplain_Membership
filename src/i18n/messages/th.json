@@ -7031,6 +7031,7 @@
           "sentAt": "ส่งสำเร็จเมื่อ",
           "audience": "กลุ่มผู้รับ"
         },
+        "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
         "audience": {
           "all_members": "สมาชิกทั้งหมด",
           "tier": "เฉพาะระดับสมาชิก",

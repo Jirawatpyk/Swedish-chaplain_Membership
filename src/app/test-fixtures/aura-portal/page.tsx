@@ -200,6 +200,7 @@ export default async function AuraPortalPreviewPage({
     const tStatus = await getTranslations('portal.broadcasts.list.status');
     const tQuota = await getTranslations('portal.broadcasts.quota');
     const tAudience = await getTranslations('portal.broadcasts.list.audience');
+    const tList = await getTranslations('portal.broadcasts.list');
     const state = sp.state ?? 'default';
     const exhausted = state === 'exhausted';
     const rows = (
@@ -217,7 +218,7 @@ export default async function AuraPortalPreviewPage({
       statusLabel: tStatus(status),
       statusTone: getPortalBroadcastStatusTone(status),
       estimatedRecipientCount: count,
-      audienceLabel: tAudience(segmentType),
+      audience: tList('audienceWithCount', { audience: tAudience(segmentType), count }),
       submitted,
       sent,
     }));

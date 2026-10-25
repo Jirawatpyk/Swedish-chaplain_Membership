@@ -212,6 +212,13 @@ describe('U37 — the history renders as a card list below md', () => {
     expect(within(table).getAllByRole('cell')[2]).toHaveTextContent(text);
   });
 
+  it('an audience without a label still says what the number is', async () => {
+    setHistory({ segmentType: 'some_future_segment' });
+    await renderPanel('en');
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('cell')[2]).toHaveTextContent(/^Audience · 42$/);
+  });
+
   it('the card list carries the same row as the table, with list semantics', async () => {
     await renderPanel('en');
 
@@ -234,11 +241,11 @@ describe('U37 — the history renders as a card list below md', () => {
     // `selector: 'span'` — the badge, not the "Sent" column header / label.
     expect(within(table).getByText(sent, { selector: 'span' })).toBeInTheDocument();
     expect(within(card).getByText(sent, { selector: 'span' })).toBeInTheDocument();
-    expect(within(card).getByText('42')).toBeInTheDocument();
     // Task #6 (boards `Portal-broadcasts` / `-mobile`): the audience is named
     // before its count, "All members · 42", in the table and on the phone row.
     expect(within(table).getAllByRole('cell')[2]).toHaveTextContent(/^All members · 42$/);
-    expect(card.textContent).toContain('All members · 42');
+    // UX review: the count never starts a line on its own ("All members\u00a0·\u00a042").
+    expect(card.textContent).toContain('All members\u00a0·\u00a042');
     expect(card.textContent).not.toContain(enMessages.portal.broadcasts.list.columns.audience);
     for (const cell of within(table).getAllByRole('cell').slice(3)) {
       expect(card.textContent).toContain(cell.textContent);
