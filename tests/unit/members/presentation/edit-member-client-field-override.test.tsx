@@ -13,7 +13,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 const h = vi.hoisted(() => ({
   push: vi.fn(),
   refresh: vi.fn(),
-  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
   values: {} as Record<string, unknown>,
 }));
 
@@ -174,5 +174,20 @@ describe('EditMemberClient — override on the member-field step (127)', () => {
     const second = JSON.parse((fetchMock.mock.calls[1]![1] as { body: string }).body);
     expect(second.company_name).toBe('New Co');
     expect(second).not.toHaveProperty('override_reason_code');
+  });
+
+  it('a 409 conflict on the field step says the member changed and refreshes (129)', async () => {
+    h.values = TYPE_CHANGE;
+    h.refresh.mockClear();
+    fetchMock.mockResolvedValueOnce(
+      res(409, { error: { code: 'conflict', details: { reason: 'concurrent_change' } } }),
+    );
+    render(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <EditMemberClient member={MEMBER as any} plans={PLANS} primaryContact={CONTACT} />,
+    );
+    fireEvent.click(screen.getByText('stub-submit'));
+    await vi.waitFor(() => expect(h.toast.error).toHaveBeenCalledWith('admin.members.edit.errors.concurrentChange'));
+    expect(h.refresh).toHaveBeenCalled();
   });
 });

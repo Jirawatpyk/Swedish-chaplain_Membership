@@ -136,6 +136,20 @@ describe('updateMember — legal entity type vs plan member-type scope (127)', (
     expect(deps.plans.getPlan).not.toHaveBeenCalled();
   });
 
+  it('does not record an override reason the scope check never needed (129)', async () => {
+    const deps = depsFor({});
+    const r = await updateMember(
+      memberId,
+      { legal_entity_type: 'public_company', override_reason_code: 'board_approved', override_reason_note: 'n/a' },
+      meta,
+      deps,
+    );
+    expect(r.ok).toBe(true);
+    const event = deps.audit.recordInTx.mock.calls[0]?.[2] as { payload: Record<string, unknown> };
+    expect(event.payload).not.toHaveProperty('override_reason_code');
+    expect(event.payload).not.toHaveProperty('override_reason_note');
+  });
+
   it('passes a change that fits the plan scope, and any type on a "both" plan', async () => {
     expect((await updateMember(memberId, { legal_entity_type: 'public_company' }, meta, depsFor({}))).ok).toBe(true);
     expect(
@@ -143,11 +157,11 @@ describe('updateMember — legal entity type vs plan member-type scope (127)', (
     ).toBe(true);
   });
 
-  it('asks for a retry when the plan changed between the pre-read and the lock', async () => {
+  it('asks for a retry when the plan changed between the pre-read and the lock (129: concurrent_change, 409)', async () => {
     const deps = depsFor({ locked: member({ planId: asPlanId('partnership-gold') }) });
     const r = await updateMember(memberId, { legal_entity_type: 'individual' }, meta, deps);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error.type).toBe('server_error');
+    if (!r.ok) expect(r.error.type).toBe('concurrent_change');
     expect(deps.memberRepo.updateFieldsInTx).not.toHaveBeenCalled();
   });
 });
