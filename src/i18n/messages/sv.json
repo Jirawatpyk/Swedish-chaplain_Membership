@@ -6489,6 +6489,7 @@
         "counter": "{count} av {max} tecken",
         "insert": "Infoga bild",
         "bannerInsert": "Infoga banner",
+        "saveEdit": "Spara beskrivning",
         "cancel": "Avbryt",
         "errors": {
           "required": "Ange en beskrivning av bilden, {min} till {max} tecken.",
@@ -6514,12 +6515,14 @@
       },
       "ctaDialog": {
         "title": "Lägg till knapp",
+        "editTitle": "Redigera knapp",
         "description": "Kammarens färg och avstånd tillämpas automatiskt.",
         "textLabel": "Knapptext",
         "urlLabel": "Knapplänk",
         "urlPlaceholder": "https://example.com",
         "counter": "{count} av {max} tecken",
         "confirm": "Infoga knapp",
+        "saveEdit": "Spara knapp",
         "cancel": "Avbryt",
         "errors": {
           "textRequired": "Ange knapptexten, {min} till {max} tecken.",

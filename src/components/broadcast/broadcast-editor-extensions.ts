@@ -37,6 +37,30 @@ import {
   broadcastCtaButtonExtension,
   broadcastImageExtension,
 } from '@/lib/broadcast-editor-extensions';
+import { DESIGN_BLOCK_ATTR } from '@/lib/broadcast-content-policy';
+
+/**
+ * Spec 122 US12d-2 round 2 (#6) — in the editor the button block is ONE unit:
+ * its words are drawn, not typeable, so they change only through the button
+ * dialog and its 1–60 bound (typing in place let an author empty the button or
+ * run it past 60 characters and learn only at submit). The schema's
+ * `renderHTML` is untouched, so the saved HTML is byte-identical to the
+ * server's node (asserted in `editor-blocks-edit.test.tsx`).
+ */
+const ctaButtonAsUnit = broadcastCtaButtonExtension.extend({
+  atom: true,
+  addNodeView() {
+    return ({ node }) => {
+      const dom = document.createElement('a');
+      dom.setAttribute(DESIGN_BLOCK_ATTR, 'cta');
+      const href: unknown = node.attrs['href'];
+      if (typeof href === 'string') dom.setAttribute('href', href);
+      dom.setAttribute('contenteditable', 'false');
+      dom.textContent = node.textContent;
+      return { dom };
+    };
+  },
+});
 
 export function makeBroadcastEditorExtensions(opts: {
   readonly images: boolean;
@@ -55,7 +79,7 @@ export function makeBroadcastEditorExtensions(opts: {
     // [bracketed text] decoration is style-only — no schema mutation, so it is
     // always on (admins author placeholders in templates; members replace them).
     broadcastBracketPlaceholderExtension,
-    broadcastCtaButtonExtension,
+    ctaButtonAsUnit,
   ];
   return opts.images
     ? [...base, broadcastImageExtension, broadcastBannerImageExtension]

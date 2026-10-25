@@ -24,6 +24,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { NodeSelection } from '@tiptap/pm/state';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -122,6 +123,9 @@ export default function TiptapEditor({
   const [announcement, setAnnouncement] = useState<string>('');
   const [altOpen, setAltOpen] = useState<boolean>(false);
   const [altVariant, setAltVariant] = useState<ImageAltVariant>('inline');
+  // Round 2, #6 — an inserted image selected when Image / Banner is used: the
+  // dialog edits its description instead of starting a new image.
+  const [altEdit, setAltEdit] = useState<{ readonly typeName: string; readonly alt: string } | null>(null);
   // A ref, not state: the confirm hands over to the file picker and the upload
   // resolves later, so the half already collected has to survive the dialog's
   // own close render without a re-render racing it.
@@ -233,15 +237,34 @@ export default function TiptapEditor({
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
   };
 
-  const openAltDialog = useCallback((kind: ImageAltVariant): void => {
-    rememberTrigger();
-    pendingImageRef.current = { kind };
-    setAltVariant(kind);
-    setAltOpen(true);
-  }, []);
+  const openAltDialog = useCallback(
+    (kind: ImageAltVariant): void => {
+      rememberTrigger();
+      const selection = editor?.state.selection;
+      const selected = selection instanceof NodeSelection ? selection.node : null;
+      if (selected !== null && (selected.type.name === 'image' || selected.type.name === 'bannerImage')) {
+        const alt: unknown = selected.attrs['alt'];
+        pendingImageRef.current = null;
+        setAltEdit({ typeName: selected.type.name, alt: typeof alt === 'string' ? alt : '' });
+        setAltVariant(selected.type.name === 'bannerImage' ? 'banner' : 'inline');
+        setAltOpen(true);
+        return;
+      }
+      setAltEdit(null);
+      pendingImageRef.current = { kind };
+      setAltVariant(kind);
+      setAltOpen(true);
+    },
+    [editor],
+  );
 
   const handleAltConfirm = useCallback(
     (alt: string): void => {
+      if (altEdit !== null) {
+        editor?.chain().focus().updateAttributes(altEdit.typeName, { alt }).run();
+        setAltEdit(null);
+        return;
+      }
       const pending = pendingImageRef.current;
       if (pending === null) return;
       if (pending.src !== undefined) {
@@ -252,7 +275,7 @@ export default function TiptapEditor({
       pendingImageRef.current = { ...pending, alt };
       uploaderRef.current?.openPicker();
     },
-    [insertImage],
+    [insertImage, altEdit, editor],
   );
 
   /**
@@ -263,6 +286,9 @@ export default function TiptapEditor({
    */
   const handleAltOpenChange = useCallback((next: boolean): void => {
     setAltOpen(next);
+    // A closed edit is over, confirmed or not: a later upload's description
+    // must never be written onto the image that was being edited.
+    if (!next) setAltEdit(null);
     if (!next && pendingImageRef.current?.alt === undefined) {
       pendingImageRef.current = null;
     }
@@ -291,6 +317,7 @@ export default function TiptapEditor({
       // Started from the uploader's own button — collect the description now,
       // before anything is inserted.
       rememberTrigger();
+      setAltEdit(null);
       pendingImageRef.current = { kind: 'inline', src: blobUrl };
       setAltVariant('inline');
       setAltOpen(true);
@@ -345,6 +372,8 @@ export default function TiptapEditor({
           open={altOpen}
           onOpenChange={handleAltOpenChange}
           variant={altVariant}
+          editing={altEdit !== null}
+          initialValue={altEdit?.alt ?? ''}
           onConfirm={handleAltConfirm}
           finalFocus={() => altTriggerRef.current}
         />

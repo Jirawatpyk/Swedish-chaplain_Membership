@@ -6489,6 +6489,7 @@
         "counter": "{count} of {max} characters",
         "insert": "Insert image",
         "bannerInsert": "Insert banner",
+        "saveEdit": "Save description",
         "cancel": "Cancel",
         "errors": {
           "required": "Enter a description of the image, from {min} to {max} characters.",
@@ -6514,12 +6515,14 @@
       },
       "ctaDialog": {
         "title": "Add a button",
+        "editTitle": "Edit button",
         "description": "The chamber brand colour and spacing are applied automatically.",
         "textLabel": "Button text",
         "urlLabel": "Button link",
         "urlPlaceholder": "https://example.com",
         "counter": "{count} of {max} characters",
         "confirm": "Insert button",
+        "saveEdit": "Save button",
         "cancel": "Cancel",
         "errors": {
           "textRequired": "Enter the button text, from {min} to {max} characters.",

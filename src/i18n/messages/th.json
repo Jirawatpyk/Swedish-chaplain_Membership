@@ -6489,6 +6489,7 @@
         "counter": "{count} จาก {max} ตัวอักษร",
         "insert": "แทรกรูปภาพ",
         "bannerInsert": "แทรกภาพแบนเนอร์",
+        "saveEdit": "บันทึกคำอธิบาย",
         "cancel": "ยกเลิก",
         "errors": {
           "required": "กรุณากรอกคำอธิบายรูปภาพ ความยาว {min} ถึง {max} ตัวอักษร",
@@ -6514,12 +6515,14 @@
       },
       "ctaDialog": {
         "title": "เพิ่มปุ่ม",
+        "editTitle": "แก้ไขปุ่ม",
         "description": "สีและระยะห่างของปุ่มใช้ค่าจากแบรนด์ของหอการค้าโดยอัตโนมัติ",
         "textLabel": "ข้อความบนปุ่ม",
         "urlLabel": "ลิงก์ของปุ่ม",
         "urlPlaceholder": "https://example.com",
         "counter": "{count} จาก {max} ตัวอักษร",
         "confirm": "แทรกปุ่ม",
+        "saveEdit": "บันทึกปุ่ม",
         "cancel": "ยกเลิก",
         "errors": {
           "textRequired": "กรุณากรอกข้อความบนปุ่ม ความยาว {min} ถึง {max} ตัวอักษร",

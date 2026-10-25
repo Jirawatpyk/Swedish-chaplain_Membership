@@ -42,6 +42,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { getMarkRange } from '@tiptap/core';
 import { type Editor, useEditorState } from '@tiptap/react';
+import { NodeSelection } from '@tiptap/pm/state';
 import { useLocale, useTranslations } from 'next-intl';
 import {
   Bold,
@@ -102,6 +103,15 @@ export interface TiptapToolbarProps {
   readonly onInsertBanner?: () => void;
   /** While the host saves or submits, every control is unavailable (round 2, #3). */
   readonly disabled?: boolean;
+}
+
+interface CtaTarget {
+  /** The selected button block's position, or null for a new button. */
+  readonly editPos: number | null;
+  readonly from: number;
+  readonly to: number;
+  readonly text: string;
+  readonly href: string;
 }
 
 interface LinkTarget {
@@ -218,6 +228,40 @@ export function TiptapToolbar({
         .run();
     }
     onAnnounce('linkSet');
+  };
+
+  /**
+   * Round 2, #6 — what the button dialog works on: the selected button block
+   * (edited in place), or the selected words in one block, which pre-fill a
+   * new button and are replaced by it. Captured when the dialog opens.
+   */
+  const [ctaTarget, setCtaTarget] = useState<CtaTarget>({ editPos: null, from: 0, to: 0, text: '', href: '' });
+
+  const captureCtaTarget = (): CtaTarget => {
+    const { selection, doc } = editor.state;
+    if (selection instanceof NodeSelection && selection.node.type.name === 'ctaButton') {
+      const href: unknown = selection.node.attrs['href'];
+      return {
+        editPos: selection.from,
+        from: selection.from,
+        to: selection.to,
+        text: selection.node.textContent,
+        href: typeof href === 'string' ? href : '',
+      };
+    }
+    const { from, to, $from, $to } = selection;
+    const words = $from.sameParent($to) ? doc.textBetween(from, to, ' ').trim() : '';
+    return { editPos: null, from, to, text: words, href: '' };
+  };
+
+  const applyCta = ({ href, text }: { href: string; text: string }): void => {
+    const target = ctaTarget;
+    const node = { type: 'ctaButton', attrs: { href }, content: [{ type: 'text', text }] };
+    if (target.editPos !== null || target.text !== '') {
+      editor.chain().focus().insertContentAt({ from: target.from, to: target.to }, node).run();
+    } else {
+      editor.chain().focus().setCtaButton({ href, text }).run();
+    }
   };
 
   const removeLink = (): void => {
@@ -357,6 +401,7 @@ export function TiptapToolbar({
       opensDialog: true,
       onActivate: () => {
         confirmedRef.current = false;
+        setCtaTarget(captureCtaTarget());
         setCtaOpen(true);
       },
     },
@@ -505,9 +550,12 @@ export function TiptapToolbar({
       <CtaButtonDialog
         open={ctaOpen}
         onOpenChange={setCtaOpen}
+        initialText={ctaTarget.text}
+        initialHref={ctaTarget.href}
+        editing={ctaTarget.editPos !== null}
         onConfirm={({ href, text }) => {
           confirmedRef.current = true;
-          editor.chain().focus().setCtaButton({ href, text }).run();
+          applyCta({ href, text });
         }}
         finalFocus={dialogFinalFocus}
       />

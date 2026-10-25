@@ -18,6 +18,7 @@ import { useTranslations } from 'next-intl';
 import { Button, Dialog, TextField } from '@jirawatpyk/aura-react';
 import { BROADCAST_ALLOWED_URI_REGEXP } from '@/lib/broadcast-content-policy';
 import { CTA_TEXT_MAX, CTA_TEXT_MIN } from '@/lib/design-blocks-client';
+import { withDefaultScheme } from './with-default-scheme';
 
 export interface CtaButtonDraft {
   readonly href: string;
@@ -28,6 +29,11 @@ export interface CtaButtonDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (next: boolean) => void;
   readonly onConfirm: (cta: CtaButtonDraft) => void;
+  /** Seeds the fields: the selected words for a new button, or the button being edited. */
+  readonly initialText?: string;
+  readonly initialHref?: string;
+  /** A button block is selected: the dialog edits it ("Edit button" / "Save button"). */
+  readonly editing?: boolean;
   readonly finalFocus?: () => HTMLElement | false | null;
 }
 
@@ -37,6 +43,9 @@ export function CtaButtonDialog({
   open,
   onOpenChange,
   onConfirm,
+  initialText = '',
+  initialHref = '',
+  editing = false,
   finalFocus,
 }: CtaButtonDialogProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.ctaDialog');
@@ -51,15 +60,15 @@ export function CtaButtonDialog({
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (open) {
-      setText('');
-      setHref('');
+      setText(initialText);
+      setHref(initialHref);
       setError(null);
     }
   }
 
   const submit = (): void => {
     const trimmedText = text.trim();
-    const trimmedHref = href.trim();
+    const trimmedHref = withDefaultScheme(href);
     if (trimmedText.length < CTA_TEXT_MIN) {
       setError('textRequired');
       return;
@@ -106,7 +115,7 @@ export function CtaButtonDialog({
       onClose={() => onOpenChange(false)}
       finalFocus={() => finalFocus?.() || null}
       size="sm"
-      title={t('title')}
+      title={editing ? t('editTitle') : t('title')}
       description={t('description')}
       footer={
         <>
@@ -114,7 +123,7 @@ export function CtaButtonDialog({
             {t('cancel')}
           </Button>
           <Button variant="primary" type="submit" form={formId}>
-            {t('confirm')}
+            {editing ? t('saveEdit') : t('confirm')}
           </Button>
         </>
       }

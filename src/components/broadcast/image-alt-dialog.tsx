@@ -34,6 +34,9 @@ export interface ImageAltDialogProps {
   /** Only changes the copy — the rule and the bound are identical for both. */
   readonly variant: ImageAltVariant;
   readonly onConfirm: (alt: string) => void;
+  /** An inserted image is selected: the dialog edits its description ("Save description"). */
+  readonly editing?: boolean;
+  readonly initialValue?: string;
   /** Focus-return target on close; EVERY dialog in this codebase supplies one. */
   readonly finalFocus?: () => HTMLElement | false | null;
 }
@@ -45,6 +48,8 @@ export function ImageAltDialog({
   onOpenChange,
   variant,
   onConfirm,
+  editing = false,
+  initialValue = '',
   finalFocus,
 }: ImageAltDialogProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.altDialog');
@@ -68,7 +73,7 @@ export function ImageAltDialog({
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (open) {
-      setValue('');
+      setValue(initialValue);
       setError(null);
     }
   }
@@ -110,7 +115,7 @@ export function ImageAltDialog({
             {t('cancel')}
           </Button>
           <Button variant="primary" type="submit" form={formId}>
-            {variant === 'banner' ? t('bannerInsert') : t('insert')}
+            {editing ? t('saveEdit') : variant === 'banner' ? t('bannerInsert') : t('insert')}
           </Button>
         </>
       }
