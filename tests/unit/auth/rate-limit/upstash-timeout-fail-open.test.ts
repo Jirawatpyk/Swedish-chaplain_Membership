@@ -14,8 +14,12 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
+const ctorOpts = vi.hoisted(() => [] as Array<Record<string, unknown>>);
 vi.mock('@upstash/ratelimit', () => {
   class MockRatelimit {
+    constructor(opts: Record<string, unknown>) {
+      ctorOpts.push(opts);
+    }
     static slidingWindow() {
       return 'sliding-window-stub';
     }
@@ -46,6 +50,11 @@ vi.mock('@/lib/metrics', () => ({
   authMetrics: { redisFallback: redisFallbackSpy },
 }));
 
+const warnSpy = vi.fn();
+vi.mock('@/lib/logger', () => ({
+  logger: { warn: warnSpy, info: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 const { rateLimiter } = await import(
   '@/modules/auth/infrastructure/rate-limit/upstash-rate-limiter'
 );
@@ -66,5 +75,19 @@ describe('UpstashRateLimiter — a timed-out Upstash call uses the in-memory buc
     const r = await rateLimiter.check(`t128b-${Date.now()}-${Math.random()}`, 3, 60);
     expect(r.fellBack).toBe(true);
     expect(redisFallbackSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('bounds the wait: the Upstash call times out after 1 s, not the 5 s library default', async () => {
+    await rateLimiter.check(`t128c-${Date.now()}-${Math.random()}`, 3, 61);
+    expect(ctorOpts.at(-1)?.timeout).toBe(1000);
+  });
+
+  it('logs a timeout as a timeout, not as an unreachable Upstash', async () => {
+    warnSpy.mockClear();
+    await rateLimiter.check(`t128d-${Date.now()}-${Math.random()}`, 3, 60);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ timeout: true, err: 'UpstashTimeoutError' }),
+      expect.stringContaining('timed out'),
+    );
   });
 });
