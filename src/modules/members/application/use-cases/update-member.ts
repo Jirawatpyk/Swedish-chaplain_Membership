@@ -26,6 +26,11 @@ import { asTaxId } from '../../domain/value-objects/tax-id';
 // catalogue here too (was client-only, see create-member.ts for the
 // full rationale).
 import { LEGAL_ENTITY_TYPES } from '../../domain/value-objects/legal-entity-type';
+import {
+  asOverrideReason,
+  OVERRIDE_REASON_CODES,
+} from '../../domain/value-objects/override-reason';
+import { checkMemberTypeScope } from '../../domain/policies/member-type-scope-policy';
 import { BILLING_CYCLES, type Member, type MemberId } from '../../domain/member';
 // F114 R14 — the Group B rules are shared with the member change-request path
 // (one zod object per key; see the schema comment below).
@@ -37,6 +42,7 @@ import {
 import type { MemberRepo, MemberPatch } from '../ports/member-repo';
 import type { AuditPort } from '../ports/audit-port';
 import type { ClockPort } from '../ports/clock-port';
+import type { PlanLookupPort, PlanSummary } from '../ports/plan-lookup-port';
 import { UseCaseAbort } from '../tx-abort';
 
 // --- Input schema ------------------------------------------------------------
@@ -100,6 +106,10 @@ export const updateMemberSchema = z
       .regex(/^\d{5}$/, 'branch_code must be exactly 5 digits')
       .nullable()
       .optional(),
+    // 127 — the reason an admin gives to keep a legal entity type that is
+    // outside the member's plan scope (the same codes changePlan accepts).
+    override_reason_code: z.enum(OVERRIDE_REASON_CODES).nullable().optional(),
+    override_reason_note: z.string().max(500).nullable().optional(),
   })
   .strict()
   .superRefine((data, ctx) => {
@@ -163,6 +173,14 @@ export type UpdateMemberError =
   // RESULTING state for the same partial-patch reason as the invariants
   // above.
   | { type: 'billing_address_incomplete' }
+  // 127 — the new legal entity type is outside the plan's member-type scope
+  // and no override reason was given (422; the form's override dialog).
+  | {
+      type: 'member_type_out_of_scope';
+      legalEntityType: string;
+      memberTypeScope: 'company' | 'individual' | 'both';
+    }
+  | { type: 'invalid_override_reason'; code: string }
   | { type: 'not_found' }
   | { type: 'server_error'; message: string };
 
@@ -173,6 +191,8 @@ export type UpdateMemberDeps = {
   memberRepo: MemberRepo;
   audit: AuditPort;
   clock: ClockPort;
+  /** 127 — the member's current plan, for the legal-entity-type scope rule. */
+  plans: PlanLookupPort;
 };
 
 export type UpdateMemberCallMeta = {
@@ -265,6 +285,34 @@ export async function updateMember(
     }
   }
 
+  // 2b. 127 — legal entity type vs the plan's member-type scope. Read the
+  //     member's plan BEFORE the tx (a PlanLookupPort read opens its own
+  //     runInTenant, which must not nest under the FOR UPDATE below). Only
+  //     when the patch sets a type; whether it CHANGES is decided in the tx
+  //     against the locked row, since the edit form echoes the field back.
+  if (data.override_reason_code) {
+    const r = asOverrideReason(data.override_reason_code, data.override_reason_note ?? null);
+    if (!r.ok) return err({ type: 'invalid_override_reason', code: r.error.code });
+  }
+  let scopePlan: PlanSummary | null = null;
+  if (data.legal_entity_type) {
+    const snapshot = await deps.memberRepo.findById(deps.tenant, memberId);
+    if (!snapshot.ok) {
+      return snapshot.error.code === 'repo.not_found'
+        ? err({ type: 'not_found' })
+        : err({ type: 'server_error', message: `lookup: ${snapshot.error.code}` });
+    }
+    const planResult = await deps.plans.getPlan(
+      deps.tenant,
+      snapshot.value.planId,
+      snapshot.value.planYear,
+    );
+    if (!planResult.ok) {
+      return err({ type: 'server_error', message: `plan lookup: ${planResult.error.code}` });
+    }
+    scopePlan = planResult.value;
+  }
+
   // 3. M1 — read+lock current, build patch, persist, and audit in ONE tx.
   //    The diff base is read via findByIdInTx (SELECT ... FOR UPDATE) INSIDE
   //    the transaction so a concurrent archive / plan-change between read and
@@ -297,6 +345,32 @@ export async function updateMember(
       // create-member.ts for why `||` is the correct narrowing here.
       if (data.legal_entity_type !== undefined)
         draft.legalEntityType = data.legal_entity_type || null;
+      // 127 — a CHANGED legal entity type must fit the plan's member-type
+      // scope unless an override reason is given.
+      if (
+        scopePlan !== null &&
+        data.legal_entity_type &&
+        data.legal_entity_type !== current.legalEntityType
+      ) {
+        if (
+          (current.planId as string) !== (scopePlan.planId as string) ||
+          current.planYear !== scopePlan.planYear
+        ) {
+          // The plan changed between the pre-read and the lock — retry.
+          throw new UseCaseAbort<UpdateMemberError>({
+            type: 'server_error',
+            message: 'plan_changed_concurrently',
+          });
+        }
+        const scope = checkMemberTypeScope(data.legal_entity_type, scopePlan.memberTypeScope);
+        if (!scope.ok && !data.override_reason_code) {
+          throw new UseCaseAbort<UpdateMemberError>({
+            type: 'member_type_out_of_scope',
+            legalEntityType: scope.error.legalEntityType,
+            memberTypeScope: scope.error.memberTypeScope,
+          });
+        }
+      }
       // 088 US3 — §86/4 branch particular. The zod superRefine above + the DB
       // CHECK enforce the head-office ⇔ branch-code pairing; here we just thread
       // the validated pair into the patch (buildDiff surfaces them on the
@@ -525,6 +599,10 @@ export async function updateMember(
           member_id: memberId,
           fields_changed: fieldsChanged,
           diff,
+          ...(data.override_reason_code && {
+            override_reason_code: data.override_reason_code,
+            override_reason_note: data.override_reason_note ?? null,
+          }),
         },
       });
       if (!auditResult.ok) {
