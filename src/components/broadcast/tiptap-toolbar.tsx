@@ -40,6 +40,7 @@
  * the app's.
  */
 import { useCallback, useRef, useState } from 'react';
+import { getMarkRange } from '@tiptap/core';
 import { type Editor } from '@tiptap/react';
 import { useLocale, useTranslations } from 'next-intl';
 import {
@@ -99,6 +100,13 @@ export interface TiptapToolbarProps {
   readonly onInsertBanner?: () => void;
 }
 
+interface LinkTarget {
+  readonly from: number;
+  readonly to: number;
+  readonly text: string;
+  readonly sameBlock: boolean;
+}
+
 interface ToolbarControl {
   readonly key: string;
   readonly label: string;
@@ -135,26 +143,47 @@ export function TiptapToolbar({
     [onAnnounce],
   );
 
-  const selectionText = (): string => {
-    const { from, to } = editor.state.selection;
-    return editor.state.doc.textBetween(from, to, ' ');
+  /**
+   * What the link dialog works on, captured when it opens (round 2, #2/#9):
+   * with the caret inside a link and nothing selected, the WHOLE link, so its
+   * words pre-fill the dialog and survive an address-only edit (before, the
+   * empty selection made Save replace "our 2026 report" with the URL). A
+   * selection across blocks cannot become one line of text without merging
+   * the paragraphs and dropping any image in it, so there only the mark is set.
+   */
+  const [linkTarget, setLinkTarget] = useState<LinkTarget>({ from: 0, to: 0, text: '', sameBlock: true });
+
+  const captureLinkTarget = (): LinkTarget => {
+    const { state } = editor;
+    const { from, to, empty, $from, $to } = state.selection;
+    const linkType = state.schema.marks['link'];
+    if (empty && linkType !== undefined) {
+      const range = getMarkRange($from, linkType);
+      if (range !== undefined) {
+        return { ...range, text: state.doc.textBetween(range.from, range.to, ' '), sameBlock: true };
+      }
+    }
+    return { from, to, text: state.doc.textBetween(from, to, ' '), sameBlock: $from.sameParent($to) };
   };
 
   const applyLink = ({ href, text }: { href: string; text: string }): void => {
-    const selected = selectionText();
-    const label = text !== '' ? text : selected !== '' ? selected : href;
-    if (label !== selected) {
-      // The author renamed the link (or there was no selection): replace the
-      // range with the label carrying the link mark, so "click here" can become
-      // "our 2026 report" without leaving the dialog.
+    const target = linkTarget;
+    const label = text !== '' ? text : target.text !== '' ? target.text : href;
+    if (!target.sameBlock || (label === target.text && target.from !== target.to)) {
+      editor.chain().focus().setTextSelection({ from: target.from, to: target.to }).setLink({ href }).run();
+    } else {
+      // A new link, or one renamed in the dialog: the label carrying the mark
+      // replaces the range, then the mark is dropped at the caret so the next
+      // character typed is not part of the link (#8).
       editor
         .chain()
         .focus()
-        .extendMarkRange('link')
-        .insertContent({ type: 'text', text: label, marks: [{ type: 'link', attrs: { href } }] })
+        .insertContentAt(
+          { from: target.from, to: target.to },
+          { type: 'text', text: label, marks: [{ type: 'link', attrs: { href } }] },
+        )
+        .unsetMark('link')
         .run();
-    } else {
-      editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
     }
     onAnnounce('linkSet');
   };
@@ -268,7 +297,10 @@ export function TiptapToolbar({
       Icon: LinkIcon,
       pressed: editor.isActive('link'),
       opensDialog: true,
-      onActivate: () => setLinkOpen(true),
+      onActivate: () => {
+        setLinkTarget(captureLinkTarget());
+        setLinkOpen(true);
+      },
     },
     ...(imagesEnabled
       ? [
@@ -396,7 +428,9 @@ export function TiptapToolbar({
         onOpenChange={setLinkOpen}
         canRemove={editor.isActive('link')}
         initialHref={(editor.getAttributes('link')['href'] as string | undefined) ?? ''}
-        initialText={selectionText()}
+        initialText={linkTarget.text}
+        editing={editor.isActive('link')}
+        textReadOnly={!linkTarget.sameBlock}
         onConfirm={applyLink}
         onRemove={removeLink}
         finalFocus={() => triggerRef.current}

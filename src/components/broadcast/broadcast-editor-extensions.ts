@@ -47,6 +47,10 @@ export function makeBroadcastEditorExtensions(opts: {
       code: false,
       codeBlock: false,
       strike: false,
+      // A click in a link places the caret (and selects the link) instead of
+      // opening the page in a new tab, so an author can edit or remove it
+      // (spec 122 US12d-2 round 2). The exported HTML is unchanged.
+      link: { openOnClick: false, enableClickSelection: true },
     }),
     // [bracketed text] decoration is style-only — no schema mutation, so it is
     // always on (admins author placeholders in templates; members replace them).

@@ -6495,10 +6495,13 @@
       },
       "linkDialog": {
         "title": "เพิ่มลิงก์",
+        "editTitle": "แก้ไขลิงก์",
         "description": "ลิงก์จะเปิดในแท็บใหม่",
         "urlLabel": "ที่อยู่ลิงก์",
         "urlPlaceholder": "https://example.com",
         "textLabel": "ข้อความลิงก์",
+        "textHint": "เว้นว่างไว้เพื่อแสดงที่อยู่ลิงก์",
+        "textReadOnlyHint": "ข้อความที่เลือกอยู่หลายย่อหน้า จึงคงข้อความเดิมไว้",
         "confirm": "บันทึกลิงก์",
         "cancel": "ยกเลิก",
         "remove": "ลบลิงก์",

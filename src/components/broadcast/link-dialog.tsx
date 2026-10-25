@@ -23,6 +23,7 @@ import { useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, Dialog, TextField } from '@jirawatpyk/aura-react';
 import { BROADCAST_ALLOWED_URI_REGEXP } from '@/lib/broadcast-content-policy';
+import { withDefaultScheme } from './with-default-scheme';
 
 export interface BroadcastLink {
   readonly href: string;
@@ -38,6 +39,13 @@ export interface LinkDialogProps {
   readonly onRemove?: () => void;
   readonly initialHref?: string;
   readonly initialText?: string;
+  /** A link is under the caret: the dialog edits it ("Edit link"). */
+  readonly editing?: boolean;
+  /**
+   * The selection spans blocks, so its words cannot be replaced by one line
+   * of text without merging paragraphs: the text is shown, not editable.
+   */
+  readonly textReadOnly?: boolean;
   readonly finalFocus?: () => HTMLElement | false | null;
 }
 
@@ -51,6 +59,8 @@ export function LinkDialog({
   onRemove,
   initialHref = '',
   initialText = '',
+  editing = false,
+  textReadOnly = false,
   finalFocus,
 }: LinkDialogProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.linkDialog');
@@ -74,7 +84,7 @@ export function LinkDialog({
   }
 
   const submit = (): void => {
-    const trimmedHref = href.trim();
+    const trimmedHref = withDefaultScheme(href);
     if (trimmedHref === '') {
       setError('required');
       return;
@@ -96,7 +106,7 @@ export function LinkDialog({
       onClose={() => onOpenChange(false)}
       finalFocus={() => finalFocus?.() || null}
       size="sm"
-      title={t('title')}
+      title={editing ? t('editTitle') : t('title')}
       description={t('description')}
       footer={
         <>
@@ -152,6 +162,8 @@ export function LinkDialog({
           label={t('textLabel')}
           touchHeight
           value={text}
+          readOnly={textReadOnly}
+          hint={textReadOnly ? t('textReadOnlyHint') : t('textHint')}
           onChange={(e) => setText(e.target.value)}
         />
       </form>

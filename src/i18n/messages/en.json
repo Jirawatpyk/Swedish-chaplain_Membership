@@ -6495,10 +6495,13 @@
       },
       "linkDialog": {
         "title": "Add a link",
+        "editTitle": "Edit link",
         "description": "Links open in a new tab.",
         "urlLabel": "Link address",
         "urlPlaceholder": "https://example.com",
         "textLabel": "Link text",
+        "textHint": "Leave blank to show the address.",
+        "textReadOnlyHint": "The selection spans more than one paragraph, so its text stays as it is.",
         "confirm": "Save link",
         "cancel": "Cancel",
         "remove": "Remove link",
