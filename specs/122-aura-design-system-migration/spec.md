@@ -866,7 +866,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - **The three extras:**
   - The staff root error boundary moves to the shared `RouteErrorPanel`.
   - The staff not-found boundary keeps its cause-neutral copy, with the back link on AURA `buttonClass`.
-  - The portal sign-out button becomes an AURA `Button` with the 44px touch height.
+  - The portal sign-out button becomes an AURA `Button` with the 44px touch height. (R84 then found it mounted nowhere since 063 — sign-out lives in the Account menu — so the follow-up PR deletes it.)
   - Requests, toasts and copy are unchanged.
 
 ### Session 2026-10-24 (credit-note page: no sideways scroll on phones)
