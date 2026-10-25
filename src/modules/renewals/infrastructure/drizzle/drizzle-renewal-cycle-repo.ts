@@ -5,8 +5,10 @@
  * `renewal_cycles` table (Wave C migration 0087). Tenant isolation is
  * enforced by Postgres RLS+FORCE — every method wraps its query in
  * `runInTenant(ctx, …)` which sets `SET LOCAL ROLE chamber_app` +
- * `SET LOCAL app.current_tenant`. NO explicit `WHERE tenant_id = ?` —
- * the policy adds it automatically (research.md § 7.1).
+ * `SET LOCAL app.current_tenant`, AND every statement carries an explicit
+ * `tenant_id` predicate bound to `tenant.slug` (D-029 — the application
+ * wall; RLS is the database wall). Gate:
+ * `tests/unit/renewals/infrastructure/tenant-sql-shape/cycle-repo.test.ts`.
  *
  * Phase 3 (US1) directly exercises:
  *   - `findById` — for cycle-detail view
@@ -890,14 +892,10 @@ export function makeDrizzleRenewalCycleRepo(
      * scope, so it MUST only be called from inside a `runInTenant`
      * block where `SET LOCAL app.current_tenant` is already set.
      *
-     * Round 6 S-R5-6: `_tenantId` is intentionally unused — RLS
-     * isolation comes from the inherited GUC, not a WHERE clause.
-     * Adding a `WHERE tenant_id = $1` predicate would be redundant
-     * AND would mask future RLS policy changes (the policy is the
-     * single source of truth for tenant scope). Future maintainers:
-     * do NOT add a tenant_id predicate, and do NOT remove the
-     * surrounding `runInTenant` wrapping at the use-case layer — the
-     * GUC chain is load-bearing.
+     * D-029 (supersedes Round 6 S-R5-6): the read carries an explicit
+     * `tenant_id = tenant.slug` predicate alongside the inherited RLS
+     * GUC — do NOT remove either, and do NOT remove the surrounding
+     * `runInTenant` wrapping at the use-case layer.
      */
     async findByIdInTx(
       tx: unknown,
@@ -986,10 +984,8 @@ export function makeDrizzleRenewalCycleRepo(
      * `f8OnPaidCallbacks[0]` before `withTx` commits). Threads the F4
      * tx — NO `runInTenant` (the caller already established the tenant
      * GUC). MUST only be called from inside a `runInTenant` block where
-     * `SET LOCAL app.current_tenant` is already set. Tenant scope comes
-     * from the inherited GUC, NOT a `WHERE tenant_id` predicate — same
-     * RLS precedent as `findByIdInTx`; `_tenantId` is intentionally
-     * unused.
+     * `SET LOCAL app.current_tenant` is already set. Tenant scope is the
+     * explicit `tenant_id` predicate plus the inherited GUC (D-029).
      */
     async findActiveForMemberInTx(
       tx: unknown,
@@ -1430,8 +1426,7 @@ export function makeDrizzleRenewalCycleRepo(
       // F8-RP follow-up (migration 0243). GUARDED write: only stamp the marker
       // while the cycle is STILL `pending_admin_reactivation` (CAS). If the
       // cycle moved out of pending in the race window, 0 rows match → `false`.
-      // RLS scope comes from the inherited GUC; `_tenantId` intentionally
-      // unused (same precedent as findByIdInTx — no WHERE tenant_id predicate).
+      // Tenant scope: the explicit `tenant_id` predicate plus RLS (D-029).
       //
       // M1 fix (reliability review): the additional `reject_refund_initiated_at
       // IS NULL` predicate makes the stamp FIRST-WRITER-WINS at the DB layer.
@@ -2747,6 +2742,7 @@ export function makeDrizzleRenewalCycleRepo(
         let pageFilters: SQL[];
         if (opts.monthFilter && opts.nowIso) {
           pageFilters = [
+            eq(renewalCycles.tenantId, tenant.slug),
             MONTH_PLANNING_MEMBER_SQL,
             monthBoundPredicate(opts.monthFilter, opts.nowIso),
           ];
