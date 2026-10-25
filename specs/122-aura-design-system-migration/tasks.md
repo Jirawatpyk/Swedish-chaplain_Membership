@@ -764,6 +764,8 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1253 [US12] Inline image uploader: AURA secondary `Button` with an image icon, indeterminate `Progress`, danger `Alert`. Test: `inline-image-uploader-aura`.
 - [x] T1254 [US12] ClamAV banner on AURA `Alert`; the editor frame on AURA input tokens; the editor's content styled (`eblast-editor-content`, replacing the uninstalled `prose`). Tests: `editor-content-styles`, `clamav-unreachable-banner`.
 - [x] T1255 [US12] `MIGRATED_PATHS` gains the seven editor files; a US12d-2 ratchet block; the `control:` moves to `proxy-compose-form.tsx`.
+- [x] T1258 [US12] Round 2, the old problems from the whole-file sweep (the maintainer: "fix the old problems too"): links (#1 #2 #8 #9, https://), state (#3 #7 #11 #18, Undo/Redo #16), block editing (#6), upload flow and the rest (#4 #5 #10 #12 #13 #14 #15 #17 #19 #20). Tests: `editor-link-behaviour`, `editor-state-and-history`, `editor-blocks-edit`, `editor-sweep-round2`.
+- [x] T1259 [US12] Boards: Undo and Redo on `Portal-broadcast-new(-mobile)`, `Admin-broadcast-new` and `Admin-eblast-design`.
 - [ ] T1256 [US12] e2e the swap may touch (`eblast-a11y`, `admin-proxy-submit`, `image-upload-allowlist`, the specs that type in the editor), run locally (relay R89).
 - [ ] T1257 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV; UX and mobile-a11y reviews; draft PR; relay R89.
 

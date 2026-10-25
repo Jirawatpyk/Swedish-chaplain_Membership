@@ -6504,7 +6504,7 @@
         "urlPlaceholder": "https://example.com",
         "textLabel": "Länktext",
         "textHint": "Lämna tomt för att visa adressen.",
-        "textReadOnlyHint": "Markeringen omfattar mer än ett stycke, så texten lämnas som den är.",
+        "textReadOnlyHint": "Markeringen omfattar mer än ett stycke, så texten kan inte ändras här.",
         "confirm": "Spara länk",
         "cancel": "Avbryt",
         "remove": "Ta bort länk",

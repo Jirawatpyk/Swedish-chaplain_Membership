@@ -6504,7 +6504,7 @@
         "urlPlaceholder": "https://example.com",
         "textLabel": "Link text",
         "textHint": "Leave blank to show the address.",
-        "textReadOnlyHint": "The selection spans more than one paragraph, so its text stays as it is.",
+        "textReadOnlyHint": "The selection covers more than one paragraph, so its text can't be changed here.",
         "confirm": "Save link",
         "cancel": "Cancel",
         "remove": "Remove link",

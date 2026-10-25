@@ -886,6 +886,40 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - **Three review suggestions, fixed at the user's word (25 Oct: "fix them all"):** the link and button URL fields are URL fields for a phone keyboard (`enterKeyHint="done"`, `autoComplete="url"`, `autoCapitalize="none"`, `spellCheck={false}`); an Enter that commits an IME composition in the image description does not submit it; and until Tiptap has created its editor, the editor shows the loader's pulse skeleton (`TiptapLoadingSkeleton`) instead of a static grey box.
   - **The editor's content is styled (the user, 25 Oct: "fix it").** The writing area carried `prose` classes from `@tailwindcss/typography`, which was never installed, so headings, lists, the quote and the divider showed as plain text (on `main` too). It now carries `eblast-editor-content`, styled in `globals.css` with AURA tokens and no new dependency, near how the email sends it: 15px body at 1.6, H2 22px and H3 18px semibold, bullets and numbers, a quote with a left rule, a divider, underlined links, the button block as a button (AURA's primary pair; the email uses the chamber's brand colour) and the banner full width.
 
+- **Fixed in US12d-2: the old problems (round 2, after a whole-file sweep).** All of them are UI-only; none changes the server, data, money or an API.
+  - **Links:**
+    - A click in a link places the caret instead of opening the page (#1).
+    - With the caret inside a link, the dialog edits the whole link, so changing only its address keeps its words (#2). Before, Save replaced the words with the URL.
+    - Typing after a new link no longer joins it (#8).
+    - A selection across paragraphs is linked, not flattened into one line (#9).
+    - A bare `example.com` gets `https://` before the same allow-list runs.
+  - **State:**
+    - `disabled` that turns on after mount now locks the text and every control (#3).
+    - Pressed states follow the caret through `useEditorState` (#7).
+    - The toolbar is sticky below the shell bar (#11).
+    - Focus returns to the text after Save or Insert, and to the control after Cancel (#18).
+  - **Blocks (#6):**
+    - In the editor, the button block is one unit (a client `atom` with a node view), so its words change only through its dialog and the 1–60 bound. Its saved HTML is byte-identical to the server's node.
+    - Button on a selected button edits its words and link.
+    - Selected words pre-fill a new button and become it.
+    - Image or Banner on a selected image edits its description.
+  - **Upload:**
+    - Image and Banner wait while an upload runs (#4).
+    - "Image uploaded." is said when the image is in the message; a description cancelled after an upload says the image was not added (#5).
+    - The hidden input is out of the Tab order (#10).
+    - A refusal is announced once, by the toast, and clears when the author starts again (#15).
+    - Ids are per instance (#20).
+  - **Loading, empty state and announcements:**
+    - The loading skeleton says "Loading editor" in text and reserves the phone toolbar's height (#12).
+    - An empty editor shows "Write your message…": CSS from `--eblast-placeholder` plus `aria-placeholder`, with no dependency, because `Placeholder` lives in `@tiptap/extensions`, which is not a direct dependency (#13).
+    - One live-region timer at a time. Headings, quote, divider, button and image are announced, and only when the command ran (#14).
+  - **ClamAV probe (#17):** the probe is dormant; no host passes an endpoint until the health route ships (U34). It now skips offline browsers and hidden tabs and times out after 10 s. Blocking uploads while the scanner is down waits for that route.
+  - **Copy (#19):**
+    - Images are "virus-scanned before they're stored", not "before upload".
+    - The announcements use the controls' names.
+    - New: "Edit link", "Leave blank to show the address.", "Edit button" / "Save button", "Save description" and "The image was not added to your message."
+  - **Undo and Redo** (#16; the maintainer, 25 Oct) sit at the end of the toolbar. They are not on the boards: a phone has no Ctrl+Z, so a deleted banner or button could not be brought back. The boards now draw them.
+
 ### Session 2026-10-24 (credit-note page: no sideways scroll on phones)
 
 - **The bug:** at 390 the admin credit-note detail page scrolled sideways by about 250px.
