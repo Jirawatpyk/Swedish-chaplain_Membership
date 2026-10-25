@@ -774,7 +774,26 @@ export default async function AuraPortalPreviewPage({
             membershipYear={2026}
             fullHref="/portal/benefits"
             quantifiable={[
-              { key: 'eblast', used: 2, entitlement: 6, reserved: 1, lastUsedAt: '2026-07-03T08:00:00.000Z', actionHref: '/portal/broadcasts/new' },
+              // ?state=eblast-full: no E-Blast left (4 used + 2 reserved of 6) — red bar, "View E-Blasts".
+              sp.state === 'eblast-full'
+                ? {
+                    key: 'eblast',
+                    used: 4,
+                    entitlement: 6,
+                    reserved: 2,
+                    lastUsedAt: '2026-07-03T08:00:00.000Z',
+                    actionHref: '/portal/broadcasts/new',
+                    exhaustedActionHref: '/portal/benefits?tab=broadcasts',
+                  }
+                : {
+                    key: 'eblast',
+                    used: 2,
+                    entitlement: 6,
+                    reserved: 1,
+                    lastUsedAt: '2026-07-03T08:00:00.000Z',
+                    actionHref: '/portal/broadcasts/new',
+                    exhaustedActionHref: '/portal/benefits?tab=broadcasts',
+                  },
               { key: 'cultural_tickets', used: 0, entitlement: 2, lastUsedAt: null },
             ]}
           />

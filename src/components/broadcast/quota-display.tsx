@@ -209,8 +209,10 @@ export function QuotaDisplay({
             ) : null}
             {exhausted ? (
               <p className="aura-text-caption text-[var(--aura-fg-danger)]">
+                {/* Says what is still reserved, not "all used" (the user, 25 Oct). */}
                 {t('exhausted', {
                   year: formatCalendarYear(snap.quotaYear, locale),
+                  reserved: snap.reserved,
                 })}
               </p>
             ) : showComposeCta ? (

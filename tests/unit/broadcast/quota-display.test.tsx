@@ -135,4 +135,16 @@ describe('QuotaDisplay on AURA', () => {
       'bg-[var(--aura-fg-danger)]',
     );
   });
+
+  it('says what is still reserved when no E-Blast is left (the user, 25 Oct)', () => {
+    renderQuota({ live: false, initial: { ...SNAP, used: 4, reserved: 2, remaining: 0 } });
+    expect(
+      screen.getByText('No E-Blasts left for 2026. 2 are still reserved and come back if they are not sent.'),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps "all used" when nothing is reserved', () => {
+    renderQuota({ live: false, initial: { ...SNAP, used: 6, reserved: 0, remaining: 0 } });
+    expect(screen.getByText('All E-Blast quota for 2026 has been used.')).toBeInTheDocument();
+  });
 });

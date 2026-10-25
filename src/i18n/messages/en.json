@@ -6990,7 +6990,7 @@
         "reserved": "Reserved",
         "remaining": "Remaining",
         "cap": "Plan limit",
-        "exhausted": "All E-Blast quota for {year} has been used.",
+        "exhausted": "{reserved, plural, =0 {All E-Blast quota for {year} has been used.} one {No E-Blasts left for {year}. # is still reserved and comes back if it is not sent.} other {No E-Blasts left for {year}. # are still reserved and come back if they are not sent.}}",
         "progressLabel": "E-Blast quota used",
         "fetchError": "Could not load quota.",
         "retry": "Retry",
@@ -8666,6 +8666,9 @@
       "action": {
         "eblast": "Compose E-Blast",
         "cultural_tickets": "View events"
+      },
+      "actionExhausted": {
+        "eblast": "View E-Blasts"
       },
       "description": {
         "eblast": "Email campaigns sent to the chamber's audience on your behalf",

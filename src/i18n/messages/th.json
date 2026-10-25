@@ -6990,7 +6990,7 @@
         "reserved": "จองไว้",
         "remaining": "คงเหลือ",
         "cap": "เพดานแพ็กเกจ",
-        "exhausted": "โควตา E-Blast ของปี {year} ถูกใช้หมดแล้ว",
+        "exhausted": "{reserved, plural, =0 {โควตา E-Blast ของปี {year} ถูกใช้หมดแล้ว} other {โควตา E-Blast ของปี {year} หมดแล้ว ยังมี # รายการที่จองไว้ ซึ่งจะได้คืนหากไม่ได้ส่งออก}}",
         "progressLabel": "โควตา E-Blast ที่ใช้ไป",
         "fetchError": "ไม่สามารถโหลดโควตาได้",
         "retry": "ลองใหม่",
@@ -8666,6 +8666,9 @@
       "action": {
         "eblast": "เขียน E-Blast",
         "cultural_tickets": "ดูกิจกรรม"
+      },
+      "actionExhausted": {
+        "eblast": "ดู E-Blast"
       },
       "description": {
         "eblast": "แคมเปญอีเมลที่หอการค้าส่งถึงกลุ่มผู้รับในนามของคุณ",

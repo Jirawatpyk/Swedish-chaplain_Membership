@@ -36,7 +36,11 @@ const ACTION_ICON: Readonly<Record<string, LucideIcon>> = {
  * not-yet-sent E-Blasts, from the quota counter: drawn as a striped segment
  * after the used one, with "N reserved · M left" as the hint.
  */
-export type PortalBenefitsSummaryItem = BenefitUsageItem & { readonly reserved?: number };
+export type PortalBenefitsSummaryItem = BenefitUsageItem & {
+  readonly reserved?: number;
+  /** Where the next step goes once the quota is full (E-Blasts: the E-Blasts tab, not a compose dead end). */
+  readonly exhaustedActionHref?: string;
+};
 
 export interface PortalBenefitsSummaryCardProps {
   readonly locale: string;
@@ -79,6 +83,8 @@ export function PortalBenefitsSummaryCard({
               b.reserved !== undefined && b.entitlement > 0 && b.used + b.reserved >= b.entitlement
                 ? 'danger'
                 : 'accent';
+            const exhaustedHref = tone === 'danger' ? b.exhaustedActionHref : undefined;
+            const exhaustedAction = exhaustedHref !== undefined;
             return (
               <li key={b.key} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <div className="min-w-0 flex-1">
@@ -121,11 +127,11 @@ export function PortalBenefitsSummaryCard({
                 </div>
                 {b.actionHref !== undefined ? (
                   <Link
-                    href={b.actionHref}
+                    href={exhaustedHref ?? b.actionHref}
                     className={cn(buttonClass({ variant: 'secondary' }), 'shrink-0 self-start no-underline sm:w-[148px] sm:self-auto')}
                   >
                     {Icon ? <AuraIcon name={<Icon />} size={16} /> : null}
-                    {t(`benefit.action.${b.key}`)}
+                    {exhaustedAction ? t(`benefit.actionExhausted.${b.key}`) : t(`benefit.action.${b.key}`)}
                   </Link>
                 ) : null}
               </li>

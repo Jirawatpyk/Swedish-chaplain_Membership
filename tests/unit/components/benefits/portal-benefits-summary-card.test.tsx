@@ -106,7 +106,15 @@ describe('<PortalBenefitsSummaryCard> reserved E-Blasts (spec 122 US3, `Main` bo
           membershipYear={2026}
           fullHref="/portal/benefits"
           quantifiable={[
-            { key: 'eblast', used: 5, entitlement: 6, reserved: 1, lastUsedAt: null },
+            {
+              key: 'eblast',
+              used: 5,
+              entitlement: 6,
+              reserved: 1,
+              lastUsedAt: null,
+              actionHref: '/portal/broadcasts/new',
+              exhaustedActionHref: '/portal/benefits?tab=broadcasts',
+            },
             { key: 'cultural_tickets', used: 2, entitlement: 2, lastUsedAt: null },
           ]}
         />
@@ -119,5 +127,8 @@ describe('<PortalBenefitsSummaryCard> reserved E-Blasts (spec 122 US3, `Main` bo
     );
     // A ticket benefit used in full is not an error.
     expect(tickets).toHaveClass('aura-progress--accent');
+    // No dead end: with no E-Blast left the next step is the E-Blasts tab, not compose (the user, 25 Oct).
+    expect(screen.queryByRole('link', { name: /compose e-blast/i })).toBeNull();
+    expect(screen.getByRole('link', { name: /view e-blasts/i })).toHaveAttribute('href', '/portal/benefits?tab=broadcasts');
   });
 });
