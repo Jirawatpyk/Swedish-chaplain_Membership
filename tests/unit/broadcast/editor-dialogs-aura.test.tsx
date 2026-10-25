@@ -130,3 +130,36 @@ describe('the counter stays with the refusal', () => {
     expect(described).toContain('0 of 125 characters');
   });
 });
+
+/**
+ * Mobile-a11y review suggestions, fixed at the user's word (25 Oct): the
+ * link fields are URL fields on a phone keyboard (no autocorrect, no
+ * capital first letter, "done" on the return key, the browser's URL
+ * suggestions), and Enter that commits an IME composition in the image
+ * description does not submit it half-typed.
+ */
+describe('mobile keyboards', () => {
+  it.each([
+    ['link', 0, /link address/i],
+    ['button', 1, /button link/i],
+  ] as const)('the %s dialog\'s URL field is a URL field for the keyboard', (_name, index, label) => {
+    render(wrap(cases[index].el(true)));
+    const field = screen.getByLabelText(label);
+    expect(field).toHaveAttribute('inputmode', 'url');
+    expect(field).toHaveAttribute('enterkeyhint', 'done');
+    expect(field).toHaveAttribute('autocomplete', 'url');
+    expect(field).toHaveAttribute('spellcheck', 'false');
+    expect(field).toHaveAttribute('autocapitalize', 'none');
+  });
+
+  it('Enter while an IME is composing does not submit the image description', () => {
+    const onConfirm = vi.fn();
+    render(wrap(<ImageAltDialog open onOpenChange={noop} variant="inline" onConfirm={onConfirm} />));
+    const field = screen.getByLabelText(/image description/i);
+    fireEvent.change(field, { target: { value: 'ทีมงานหอการค้า' } });
+    fireEvent.keyDown(field, { key: 'Enter', isComposing: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(onConfirm).toHaveBeenCalledWith('ทีมงานหอการค้า');
+  });
+});

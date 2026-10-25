@@ -134,6 +134,12 @@ export function LinkDialog({
           label={t('urlLabel')}
           touchHeight
           inputMode="url"
+          // A URL on a phone keyboard: no autocorrect or capital first
+          // letter, the browser's URL suggestions, "done" on the return key.
+          enterKeyHint="done"
+          autoComplete="url"
+          autoCapitalize="none"
+          spellCheck={false}
           value={href}
           placeholder={t('urlPlaceholder')}
           onChange={(e) => {

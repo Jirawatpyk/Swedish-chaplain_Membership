@@ -67,11 +67,12 @@ export function loadTiptapEditor<TProps>(
 }
 
 /**
- * Shimmer skeleton shown while the Tiptap chunk loads. Matches the
+ * Pulse skeleton shown while the Tiptap chunk loads, and by the editor itself
+ * until Tiptap has created its editor (spec 122 US12d-2). Matches the
  * approximate height of the toolbar (≈ 40 px) + editor body
  * (≈ 240 px). Sized to minimise CLS when the real editor mounts.
  */
-function TiptapLoadingSkeleton(): React.ReactElement {
+export function TiptapLoadingSkeleton(): React.ReactElement {
   const t = useTranslations('shell');
   return (
     <div

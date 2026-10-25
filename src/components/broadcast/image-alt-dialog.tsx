@@ -135,8 +135,9 @@ export function ImageAltDialog({
             setError(null);
           }}
           onKeyDown={(e) => {
-            // A textarea does not submit its form on Enter; Shift+Enter is a new line.
-            if (e.key === 'Enter' && !e.shiftKey) {
+            // A textarea does not submit its form on Enter; Shift+Enter is a new
+            // line, and an Enter that commits an IME composition is not a submit.
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
               submit();
             }

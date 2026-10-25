@@ -27,6 +27,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import { useTranslations } from 'next-intl';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { TiptapLoadingSkeleton } from '@/components/shell/tiptap-loader';
 import { Info } from 'lucide-react';
 import {
   IMAGE_DISABLED_HINT_ID,
@@ -289,9 +290,9 @@ export default function TiptapEditor({
   );
 
   if (!editor) {
-    return (
-      <div className="min-h-[280px] rounded-[var(--aura-radius-md)] border border-[var(--aura-border-control)] bg-[var(--aura-bg-input)]" />
-    );
+    // The same pulse skeleton the loader shows while the chunk arrives, so
+    // loading reads as one state rather than a skeleton then a blank box.
+    return <TiptapLoadingSkeleton />;
   }
 
   return (
