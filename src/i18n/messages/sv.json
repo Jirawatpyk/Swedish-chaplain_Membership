@@ -163,7 +163,8 @@
       "account": "Kontoinställningar",
       "signOut": "Logga ut",
       "signOutFailed": "Utloggning misslyckades",
-      "signOutNetworkError": "Nätverksfel vid utloggning"
+      "signOutNetworkError": "Nätverksfel vid utloggning",
+      "support": "Hjälp och support"
     },
     "portalLabel": {
       "staff": "Personal",
@@ -6160,6 +6161,40 @@
         }
       }
     },
+    "maintenanceBanner": {
+      "title": "Underhåll: ändringar är pausade.",
+      "body": "Du kan fortfarande visa och ladda ner. Det går inte att spara, utfärda dokument, registrera betalningar eller skicka förrän underhållet är klart.",
+      "help": "Hjälp och support"
+    },
+    "support": {
+      "title": "Hjälp och support",
+      "subtitle": "Vad det betyder när ändringar är pausade och vem du kontaktar.",
+      "status": {
+        "ok": "Allt fungerar som det ska just nu.",
+        "maintenance": "Underhåll pågår: ändringar är pausade.",
+        "maintenanceBody": "Försök igen om cirka {minutes} minuter. Det går fortfarande att visa och ladda ner.",
+        "featuresOff": "Avstängt just nu: {features}.",
+        "featuresOffBody": "Resten av systemet fungerar som vanligt."
+      },
+      "feature": {
+        "members": "Medlemmar",
+        "invoicing": "Fakturering",
+        "onlinePayment": "Onlinebetalningar",
+        "broadcasts": "E-Blasts",
+        "renewals": "Förnyelser"
+      },
+      "paused": {
+        "title": "När ändringar är pausade",
+        "maintenance": "Underhåll: ändringar är pausade för alla. Du kan fortfarande visa och ladda ner. Det går inte att spara, utfärda dokument, registrera betalningar eller skicka förrän underhållet är klart, oftast inom några minuter. Försök igen om cirka {minutes} minuter.",
+        "featureOff": "Avstängd funktion: en del av systemet (till exempel onlinebetalningar eller E-Blasts) är otillgänglig tills den slås på igen. Resten av systemet fungerar som vanligt. Mejla supporten om du behöver den nu.",
+        "nothingChanged": "En nekad åtgärd ändrar ingenting, så det är säkert att försöka igen senare."
+      },
+      "contact": {
+        "title": "Kontakta support",
+        "body": "Vid problem med systemet, frågor om din behörighet eller ett fel du inte kommer förbi, mejla supportteamet:",
+        "includeId": "Om meddelandet visade ett fel-ID eller begäran-ID, ange det. Då hittar vi exakt vad som hände."
+      }
+    },
     "notFound": {
       "title": "Sidan är inte tillgänglig",
       "body": "Sidan finns inte, posten har tagits bort, eller så är den inte tillgänglig för din roll. Om du kom hit via en länk eller ett bokmärke kan länken vara inaktuell.",
@@ -6357,6 +6392,7 @@
     }
   },
   "breadcrumb": {
+    "support": "Hjälp och support",
     "brand": "Profil",
     "admin": "Admin",
     "dashboard": "Instrumentpanel",

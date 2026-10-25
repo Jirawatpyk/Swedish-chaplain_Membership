@@ -244,6 +244,8 @@ const STATIC_LABEL_KEYS = {
   settings: 'settings',
   fees: 'fees',
   account: 'account',
+  // `/admin/support` — the help page the proxy's 503 bodies name.
+  support: 'support',
   invoices: 'invoices',
   // 124 — `/admin/finance`, the invoice dashboard.
   finance: 'finance',
