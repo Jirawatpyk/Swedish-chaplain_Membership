@@ -29,8 +29,8 @@ import type { Role } from '@/modules/auth/domain/role';
 const allowed = (role: Role, s: ObservedSurface): boolean => hasPermission(role, s.key);
 
 describe('T015 baseline integrity', () => {
-  it('captured 53 guarded pages + 1 exemption = the pinned 54-page inventory (108: +/admin/marketing/audience; F114: +2 change-request pages + the member-changes settings card; F119: +the E-Blast brand page; 124: +/admin/finance; R84: +the /admin/[...unknown] catch-all)', () => {
-    expect(OBSERVED_PAGES).toHaveLength(53);
+  it('captured 54 guarded pages + 1 exemption = the pinned 55-page inventory (108: +/admin/marketing/audience; F114: +2 change-request pages + the member-changes settings card; F119: +the E-Blast brand page; 124: +/admin/finance; R84: +the /admin/[...unknown] catch-all, +/admin/support)', () => {
+    expect(OBSERVED_PAGES).toHaveLength(54);
     expect(GUARD_EXEMPT_PAGES).toHaveLength(1);
   });
 
@@ -230,6 +230,8 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     // R84 follow-up — the catch-all for unmatched /admin/* URLs (`dashboard.view`).
     '/admin/[...unknown]',
     '/admin/account',
+    // The support page the proxy's 503 bodies name (`dashboard.view`).
+    '/admin/support',
     '/admin/broadcasts',
     '/admin/broadcasts/[id]',
     '/admin/broadcasts/new',
@@ -354,7 +356,8 @@ describe('T053 marketing reachable surfaces (US3)', () => {
   // F119 PR-2 — 60 → 63: the three verbs of `…/[id]/version`.
   // F119 PR-2 — 63 → 65: `…/[id]/version/send` and `…/[id]/schedule`.
   // R84 follow-up — 65 → 66: the `/admin/[...unknown]` catch-all page.
-  it('reaches EXACTLY the frozen 66-surface set — nothing more, nothing less', () => {
+  // 66 → 67: `/admin/support`, the page the proxy's 503 bodies name.
+  it('reaches EXACTLY the frozen 67-surface set — nothing more, nothing less', () => {
     const actual = OBSERVED_BASELINE.filter((s) => allowed('marketing', s))
       .map((s) => s.surface)
       .sort();

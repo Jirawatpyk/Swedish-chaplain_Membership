@@ -1842,6 +1842,11 @@ export default async function AuraAdminPreviewPage({
       </StaffFrame>
     );
   }
+  if (view === 'support') {
+    const { renderStaffSupportView } = await import('@/app/(staff)/admin/support/page');
+    return <StaffFrame path="/admin/support">{await renderStaffSupportView()}</StaffFrame>;
+  }
+
   if (view === 'root-not-found') {
     const StaffNotFound = (await import('@/app/(staff)/admin/not-found')).default;
     return <StaffFrame path="/admin">{await StaffNotFound()}</StaffFrame>;
