@@ -32,6 +32,10 @@ RED runs, each committed before its fix:
 | #3 form | `f7870b361` | `edit-member-client-field-override.test.tsx` — `expected undefined to be 'individual'` (the override re-sent a plan payload) |
 | #3 copy (D-023) | `cf4a90534` | `override-warning-message.test.ts` — `expected 'warnings.generic' to be 'warnings.memberTypeCompanyOnly'` |
 | #5 | `9c99bb7f2` | `bulk-action-archive-cascade.test.ts` — `expected "spy" to be called with arguments` (completion log) |
+| review 1–3 | `41f481ebf` | `f3-undelete-restore.test.ts` (live Neon) — the 6-month-term carry left the restored cycle linked off-period |
+| review 4 | `53326f4bd` | `update-member-type-scope.test.ts` — `expected "spy" to not be called` (`getPlan` on an echoed type) |
+| review 5 | `d23081cff` | `bulk-action-archive-cascade.test.ts` — `expected "spy" to be called with arguments` (`cascadesRun`) |
+| review 6 | `3609b43d7` | `edit-member-client-field-override.test.tsx` — `expected {…} to not have property "override_reason_code"` |
 
 GREEN gates (25 Oct):
 - `pnpm check` EXIT 0;
