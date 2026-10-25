@@ -546,7 +546,6 @@ export const MIGRATED_PATHS = [
   // NOT_YET_ON_AURA here.)
   'src/app/(staff)/admin/error.tsx',
   'src/app/(staff)/admin/not-found.tsx',
-  'src/components/portal/portal-sign-out-button.tsx',
   'src/app/(staff)/admin/broadcasts/new/error.tsx',
   'src/app/(member)/portal/broadcasts/new/error.tsx',
   'src/app/(member)/portal/broadcasts/new/loading.tsx',

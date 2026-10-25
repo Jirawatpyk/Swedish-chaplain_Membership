@@ -35,6 +35,7 @@ import { test, expect, type APIRequestContext } from '@playwright/test';
 import { signInAsAdmin } from './helpers/admin-session';
 import { signInAsMember } from './helpers/member-sign-in';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import en from '@/i18n/messages/en.json';
 
 test.beforeEach(async () => {
   await clearE2ERateLimits();
@@ -150,6 +151,30 @@ test.describe('@principle-I @smoke 404 status contract for [id] routes', () => {
       ).toMatch(
         /<meta\s+name="next-error"\s+content="not-found"|NEXT_HTTP_ERROR_FALLBACK;404/,
       );
+    });
+  }
+});
+
+// R84 (after PR #640): an `/admin/*` URL that matches NO route never reached
+// `admin/not-found.tsx` — a segment not-found only catches `notFound()` — so
+// Next served its bare English 404 outside the admin shell. The staff
+// catch-all (`admin/[...unknown]`) answers `notFound()` for them, as the
+// portal's does. `/admin/plans/zz` is the R84 case: `[year]` has no page.
+test.describe('@smoke unmatched /admin/* URLs reach the staff not-found page', () => {
+  test.skip(
+    !process.env.E2E_ADMIN_EMAIL || !process.env.E2E_ADMIN_PASSWORD,
+    'E2E_ADMIN_EMAIL/PASSWORD required',
+  );
+
+  for (const path of ['/admin/zz-no-such-page', '/admin/plans/zz', '/admin/zz/no/such/page']) {
+    test(`${path} → "Page not available" inside the admin shell`, async ({ page }) => {
+      await signInAsAdmin(page);
+      await page.goto(path);
+      await expect(page.getByRole('heading', { level: 1, name: 'Page not available' })).toBeVisible();
+      await expect(page.getByRole('link', { name: 'Back to dashboard' })).toHaveAttribute('href', '/admin');
+      // Inside the admin shell: the staff navigation is there.
+      await expect(page.getByRole('navigation', { name: en.nav.staff.ariaLabel })).toBeAttached();
+      await expect(page.getByText('This page could not be found')).toHaveCount(0);
     });
   }
 });

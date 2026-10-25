@@ -3,11 +3,23 @@
  * `/admin/**` error boundary shows the shared `RouteErrorPanel` (generic
  * copy, error id, a working Retry), and the staff not-found boundary keeps
  * its cause-neutral copy with the way back as an AURA button link.
+ *
+ * An unmatched `/admin/*` URL never reached that page: a segment
+ * `not-found.tsx` only catches `notFound()`, so Next served its bare 404
+ * (R84). The staff catch-all answers `notFound()` for those URLs, the way
+ * `portal/[...unknown]` does for the portal.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
+
+const notFound = vi.hoisted(() =>
+  vi.fn((): never => {
+    throw new Error('NEXT_HTTP_ERROR_FALLBACK;404');
+  }),
+);
+vi.mock('next/navigation', () => ({ notFound }));
 
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn(async (ns: string) => (key: string) => `${ns}.${key}`),
@@ -49,5 +61,13 @@ describe('staff not-found boundary', () => {
     const back = screen.getByRole('link', { name: 'admin.notFound.back' });
     expect(back).toHaveAttribute('href', '/admin');
     expect(back).toHaveClass('aura-btn');
+  });
+});
+
+describe('an unknown /admin/* route', () => {
+  it('is caught by the staff catch-all, which answers notFound()', async () => {
+    const { default: UnknownStaffRoute } = await import('@/app/(staff)/admin/[...unknown]/page');
+    expect(() => UnknownStaffRoute()).toThrow('NEXT_HTTP_ERROR_FALLBACK;404');
+    expect(notFound).toHaveBeenCalledTimes(1);
   });
 });
