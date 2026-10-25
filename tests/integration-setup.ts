@@ -5,8 +5,9 @@
  * missing we skip the entire suite via a top-level error, surfacing the
  * reason clearly rather than silently passing.
  */
-import { beforeAll, vi } from 'vitest';
+import { afterAll, beforeAll, vi } from 'vitest';
 import { assertDbHostNotBlocklisted } from './helpers/db-host-guard';
+import { LIVE_TEST_USERS_KEY } from './integration/helpers/live-test-users-key';
 
 // No integration test sends real transactional email. The outbox dispatcher
 // (`/api/cron/outbox-dispatch`) drains up to 50 pending rows from the WHOLE
@@ -97,4 +98,16 @@ beforeAll(() => {
   // CI. The shared helper fails CLOSED on a match AND on an unset/empty list
   // (108 PR-D review MEDIUM-12). See docs/runbooks/db-environment-branching.md.
   assertDbHostNotBlocklisted(dbUrl, process.env.TEST_DB_HOST_BLOCKLIST, 'integration');
+});
+
+// Remove the test users this file created and did not delete. Registered here,
+// it runs after the file's own afterAll teardowns (`sequence.hooks: 'stack'`,
+// pinned in vitest.integration.config.ts). The registry lives on globalThis, so
+// a file that never created a user does not import the helper (or the db) just
+// to find nothing.
+afterAll(async () => {
+  const live = (globalThis as Record<symbol, Map<string, unknown> | undefined>)[LIVE_TEST_USERS_KEY];
+  if (!live || live.size === 0) return;
+  const { sweepLeftoverTestUsers } = await import('./integration/helpers/test-users');
+  await sweepLeftoverTestUsers();
 });
