@@ -520,7 +520,15 @@ const LOADING_ROUTES = {
   },
 } as const;
 
-function StaffFrame({ path, children }: { readonly path: string; readonly children: React.ReactNode }) {
+function StaffFrame({
+  path,
+  banner,
+  children,
+}: {
+  readonly path: string;
+  readonly banner?: React.ReactNode;
+  readonly children: React.ReactNode;
+}) {
   // The staff frame as the admin layout composes it (see /test-fixtures/aura-shell).
   return (
     <AuraDensity density="compact">
@@ -539,6 +547,7 @@ function StaffFrame({ path, children }: { readonly path: string; readonly childr
           defaultCollapsed: false,
         }}
         user={{ displayName: 'Malin Berg', email: 'malin.berg@example.com', role: 'admin' }}
+        banner={banner}
       >
         {children}
       </StaffShell>
@@ -1843,13 +1852,25 @@ export default async function AuraAdminPreviewPage({
     );
   }
   if (view === 'support') {
+    // ?state=ok (default) | maintenance | feature-off — the board's status tweak.
     const { renderStaffSupportView } = await import('@/app/(staff)/admin/support/page');
-    return <StaffFrame path="/admin/support">{await renderStaffSupportView()}</StaffFrame>;
+    const pause = {
+      readOnly: state === 'maintenance',
+      featuresOff: state === 'feature-off' ? (['onlinePayment', 'broadcasts'] as const) : [],
+    };
+    // No maintenance banner here: the live page hides it (`HideOnSupportPage`).
+    return <StaffFrame path="/admin/support">{await renderStaffSupportView(pause)}</StaffFrame>;
   }
 
   if (view === 'root-not-found') {
+    // ?state=maintenance draws the staff maintenance banner (board `State-maintenance`) above it.
     const StaffNotFound = (await import('@/app/(staff)/admin/not-found')).default;
-    return <StaffFrame path="/admin">{await StaffNotFound()}</StaffFrame>;
+    const { MaintenanceBannerView } = await import('@/components/layout/staff-read-only-banner');
+    return (
+      <StaffFrame path="/admin" banner={state === 'maintenance' ? await MaintenanceBannerView() : null}>
+        {await StaffNotFound()}
+      </StaffFrame>
+    );
   }
 
   if (view === 'audit') {

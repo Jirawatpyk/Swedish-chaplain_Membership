@@ -25,10 +25,12 @@ export interface StaffShellProps {
   readonly nav: Omit<StaffNavProps, 'onChange' | 'className' | 'collapsed' | 'collapsible'>;
   readonly user: StaffTopBarProps['user'];
   readonly topBarExtras?: ReactNode;
+  /** A shell-wide notice above every page (the maintenance banner), or nothing. */
+  readonly banner?: ReactNode;
   readonly children: ReactNode;
 }
 
-export function StaffShell({ nav, user, topBarExtras, children }: StaffShellProps) {
+export function StaffShell({ nav, user, topBarExtras, banner, children }: StaffShellProps) {
   const t = useTranslations('nav.staff');
 
   return (
@@ -42,6 +44,7 @@ export function StaffShell({ nav, user, topBarExtras, children }: StaffShellProp
         nav={<StaffNav {...nav} />}
         header={<StaffTopBar tenantName={nav.tenantName} user={user} extras={topBarExtras} currentPath={nav.currentPath} />}
       >
+        {banner}
         {/* Below 1024px the bar has no room for the trail: a "← Parent" link above the page, as on the phone boards. */}
         <div className="lg:hidden">
           <BreadcrumbBackLink pathname={nav.currentPath} />

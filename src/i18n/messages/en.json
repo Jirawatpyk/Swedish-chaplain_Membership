@@ -6161,9 +6161,28 @@
         }
       }
     },
+    "maintenanceBanner": {
+      "title": "Maintenance: changes are paused.",
+      "body": "You can still sign in, view and download. Saving, issuing, recording payments and sending are switched off until it ends.",
+      "help": "Help and support"
+    },
     "support": {
       "title": "Help and support",
       "subtitle": "What it means when a change is paused, and who to contact.",
+      "status": {
+        "ok": "Everything is working right now.",
+        "maintenance": "Maintenance is on: changes are paused.",
+        "maintenanceBody": "Try again in about {minutes} minutes. Viewing and downloads still work.",
+        "featuresOff": "Switched off right now: {features}.",
+        "featuresOffBody": "The rest of the system works as usual."
+      },
+      "feature": {
+        "members": "Members",
+        "invoicing": "Invoicing",
+        "onlinePayment": "Online payments",
+        "broadcasts": "E-Blasts",
+        "renewals": "Renewals"
+      },
       "paused": {
         "title": "When changes are paused",
         "maintenance": "Maintenance: changes are paused for everyone. You can still sign in, view and download. Saving, issuing documents, recording payments and sending are switched off until it ends, usually within minutes. Try again in about {minutes} minutes.",

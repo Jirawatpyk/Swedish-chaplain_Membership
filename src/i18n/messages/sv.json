@@ -6161,9 +6161,28 @@
         }
       }
     },
+    "maintenanceBanner": {
+      "title": "Underhåll: ändringar är pausade.",
+      "body": "Du kan fortfarande logga in, visa och ladda ner. Det går inte att spara, utfärda dokument, registrera betalningar eller skicka förrän underhållet är klart.",
+      "help": "Hjälp och support"
+    },
     "support": {
       "title": "Hjälp och support",
       "subtitle": "Vad det betyder när ändringar är pausade och vem du kontaktar.",
+      "status": {
+        "ok": "Allt fungerar som det ska just nu.",
+        "maintenance": "Underhåll pågår: ändringar är pausade.",
+        "maintenanceBody": "Försök igen om cirka {minutes} minuter. Det går fortfarande att visa och ladda ner.",
+        "featuresOff": "Avstängt just nu: {features}.",
+        "featuresOffBody": "Resten av systemet fungerar som vanligt."
+      },
+      "feature": {
+        "members": "Medlemmar",
+        "invoicing": "Fakturering",
+        "onlinePayment": "Onlinebetalningar",
+        "broadcasts": "E-Blasts",
+        "renewals": "Förnyelser"
+      },
       "paused": {
         "title": "När ändringar är pausade",
         "maintenance": "Underhåll: ändringar är pausade för alla. Du kan fortfarande logga in, visa och ladda ner. Det går inte att spara, utfärda dokument, registrera betalningar eller skicka förrän underhållet är klart, oftast inom några minuter. Försök igen om cirka {minutes} minuter.",

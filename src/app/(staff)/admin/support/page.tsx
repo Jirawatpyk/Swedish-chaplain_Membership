@@ -1,11 +1,12 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { MailIcon } from 'lucide-react';
-import { Card, buttonClass } from '@jirawatpyk/aura-react/server';
+import { Alert, Card, buttonClass } from '@jirawatpyk/aura-react/server';
 import { FormContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
 import { env } from '@/lib/env';
 import { KILL_SWITCH_RETRY_AFTER_SECONDS } from '@/lib/kill-switch-retry';
+import { readPauseState, type PauseState } from '@/lib/pause-state';
 import { requirePagePermission } from '@/lib/rbac';
 
 /**
@@ -30,20 +31,46 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function StaffSupportPage(): Promise<React.ReactElement> {
   await requirePagePermission('dashboard.view');
-  return renderStaffSupportView();
+  // The proxy's own flags, read per request as it reads them.
+  return renderStaffSupportView(readPauseState(env));
 }
 
 /** The page body, shared with the /test-fixtures/aura-admin preview. */
-export async function renderStaffSupportView(): Promise<React.ReactElement> {
+export async function renderStaffSupportView(pause: PauseState): Promise<React.ReactElement> {
   const t = await getTranslations('admin.support');
+  const minutes = KILL_SWITCH_RETRY_AFTER_SECONDS / 60;
+  const nothingPaused = !pause.readOnly && pause.featuresOff.length === 0;
 
   return (
     <FormContainer align="start">
       <PageHeader title={t('title')} subtitle={t('subtitle')} />
 
+      {/* What is paused RIGHT NOW (board `Admin-support`, status tweak), so a
+          staff user who was refused learns which case they hit. */}
+      {nothingPaused ? (
+        <Alert id="support-status-ok" tone="success" role="status" title={t('status.ok')} />
+      ) : null}
+      {pause.readOnly ? (
+        <Alert id="support-status-maintenance" tone="warning" role="status" title={t('status.maintenance')}>
+          {t('status.maintenanceBody', { minutes })}
+        </Alert>
+      ) : null}
+      {pause.featuresOff.length > 0 ? (
+        <Alert
+          id="support-status-off"
+          tone="warning"
+          role="status"
+          title={t('status.featuresOff', {
+            features: pause.featuresOff.map((feature) => t(`feature.${feature}`)).join(', '),
+          })}
+        >
+          {t('status.featuresOffBody')}
+        </Alert>
+      ) : null}
+
       <Card title={t('paused.title')} headingLevel={2}>
         <div className="flex flex-col gap-[var(--aura-space-2)] aura-text-sm">
-          <p>{t('paused.maintenance', { minutes: KILL_SWITCH_RETRY_AFTER_SECONDS / 60 })}</p>
+          <p>{t('paused.maintenance', { minutes })}</p>
           <p>{t('paused.featureOff')}</p>
           <p className="text-[var(--aura-fg-secondary)]">{t('paused.nothingChanged')}</p>
         </div>

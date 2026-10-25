@@ -16,7 +16,7 @@ vi.mock('next-intl/server', () => ({
 const requirePagePermission = vi.hoisted(() => vi.fn(async () => ({})));
 vi.mock('@/lib/rbac', () => ({ requirePagePermission }));
 
-import StaffSupportPage from '@/app/(staff)/admin/support/page';
+import StaffSupportPage, { renderStaffSupportView } from '@/app/(staff)/admin/support/page';
 
 describe('/admin/support', () => {
   it('is gated like the dashboard (every staff role)', async () => {
@@ -46,5 +46,22 @@ describe('/admin/support', () => {
     const [first, second] = screen.getAllByRole('heading', { level: 2 });
     expect(first).toHaveTextContent('admin.support.paused.title');
     expect(second).toHaveTextContent('admin.support.contact.title');
+  });
+
+  // What is paused RIGHT NOW, from the proxy's own flags, above the cards.
+  it('says everything is working when nothing is paused', async () => {
+    render(await renderStaffSupportView({ readOnly: false, featuresOff: [] }));
+    expect(screen.getByRole('status')).toHaveTextContent('admin.support.status.ok');
+  });
+
+  it('says maintenance is on, and names the switched-off features', async () => {
+    render(
+      await renderStaffSupportView({ readOnly: true, featuresOff: ['onlinePayment', 'broadcasts'] }),
+    );
+    const [maintenance, off] = screen.getAllByRole('status');
+    expect(maintenance).toHaveTextContent('admin.support.status.maintenance');
+    expect(off).toHaveTextContent(
+      'admin.support.status.featuresOff {"features":"admin.support.feature.onlinePayment, admin.support.feature.broadcasts"}',
+    );
   });
 });
