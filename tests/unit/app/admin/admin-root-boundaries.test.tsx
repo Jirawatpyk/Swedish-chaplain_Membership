@@ -20,6 +20,8 @@ const notFound = vi.hoisted(() =>
   }),
 );
 vi.mock('next/navigation', () => ({ notFound }));
+const requirePagePermission = vi.hoisted(() => vi.fn(async () => ({})));
+vi.mock('@/lib/rbac', () => ({ requirePagePermission }));
 
 vi.mock('next-intl/server', () => ({
   getTranslations: vi.fn(async (ns: string) => (key: string) => `${ns}.${key}`),
@@ -65,9 +67,10 @@ describe('staff not-found boundary', () => {
 });
 
 describe('an unknown /admin/* route', () => {
-  it('is caught by the staff catch-all, which answers notFound()', async () => {
+  it('is caught by the staff catch-all, which is gated like the dashboard and answers notFound()', async () => {
     const { default: UnknownStaffRoute } = await import('@/app/(staff)/admin/[...unknown]/page');
-    expect(() => UnknownStaffRoute()).toThrow('NEXT_HTTP_ERROR_FALLBACK;404');
+    await expect(UnknownStaffRoute()).rejects.toThrow('NEXT_HTTP_ERROR_FALLBACK;404');
+    expect(requirePagePermission).toHaveBeenCalledWith('dashboard.view');
     expect(notFound).toHaveBeenCalledTimes(1);
   });
 });

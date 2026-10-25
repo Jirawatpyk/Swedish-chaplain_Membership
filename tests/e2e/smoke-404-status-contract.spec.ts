@@ -169,6 +169,11 @@ test.describe('@smoke unmatched /admin/* URLs reach the staff not-found page', (
   for (const path of ['/admin/zz-no-such-page', '/admin/plans/zz', '/admin/zz/no/such/page']) {
     test(`${path} → "Page not available" inside the admin shell`, async ({ page }) => {
       await signInAsAdmin(page);
+      // Same status contract as above: 404 on a production build, 200 on the
+      // dev server (headers commit before `notFound()`); never a redirect.
+      const { status, body } = await probeNotFound(page.request, path);
+      expect([200, 404]).toContain(status);
+      expect(body).toMatch(/<meta\s+name="next-error"\s+content="not-found"|NEXT_HTTP_ERROR_FALLBACK;404/);
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1, name: 'Page not available' })).toBeVisible();
       await expect(page.getByRole('link', { name: 'Back to dashboard' })).toHaveAttribute('href', '/admin');

@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { requirePagePermission } from '@/lib/rbac';
 
 /**
  * Catch-all for unmatched `/admin/*` URLs (R84, after PR #640).
@@ -11,7 +12,12 @@ import { notFound } from 'next/navigation';
  * session guard and the member → `/portal` redirect still run first. Every
  * real route (including `(auth-public)/admin/sign-in`) outranks a catch-all,
  * so nothing existing is shadowed. Same pattern as `portal/[...unknown]`.
+ *
+ * Gated like the dashboard (`dashboard.view`): every staff page declares its
+ * permission (`check:staff-page-guard`), and a denial is the same `notFound()`,
+ * so the reader sees the one cause-neutral page either way.
  */
-export default function UnknownStaffRoute(): never {
+export default async function UnknownStaffRoute(): Promise<never> {
+  await requirePagePermission('dashboard.view');
   notFound();
 }
