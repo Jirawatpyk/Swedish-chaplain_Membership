@@ -39,6 +39,12 @@ import {
   BULK_RATE_WINDOW_SECONDS,
 } from '@/lib/members-bulk-constants';
 
+// 127 — a bulk archive/unarchive runs up to 100 members' post-commit
+// cascades (broadcasts + renewal cycle) sequentially in this request. 300 s is
+// the Fluid Compute default, made explicit so a platform change cannot
+// shorten it silently.
+export const maxDuration = 300;
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   // 1. RBAC — admin-only, `members:bulk` resource
   const ctx = await requireApiPermission(request, 'members.bulk');

@@ -136,6 +136,15 @@ describe('validatePlanChange (126)', () => {
     });
   });
 
+  it('127: measures age on the day of the change, not at the plan start', () => {
+    // 35 on NOW (2026-10-24) although 36 on 1 Jan 2027 — passes a max-35 plan.
+    const r = run({
+      newPlan: plan({ maxMemberAge: 35, planYear: 2027 }),
+      primaryDateOfBirth: new Date('1991-01-01T00:00:00Z'),
+    });
+    expect(r.ok).toBe(true);
+  });
+
   it('lets an override bypass the age rule, and skips it with no date of birth', () => {
     const newPlan = plan({ maxMemberAge: 35 });
     const dob = new Date('1980-01-01T00:00:00Z');

@@ -1308,6 +1308,8 @@
           "turnoverAbove": "Omsättning {turnover} THB överstiger paketets maximum på {max} THB.",
           "startupTooOld": "Grundningsår {year} överskrider paketets gräns på {maxYears} år.",
           "ageNotEligible": "Ålder {age} överstiger paketets maximum på {maxAge}.",
+          "memberTypeCompanyOnly": "Paketet är för företag, men juridisk form är Privatperson. Ange ett skäl för att fortsätta.",
+          "memberTypeIndividualOnly": "Paketet är för privatpersoner, men juridisk form är ett företag. Ange ett skäl för att fortsätta.",
           "generic": "Värdet ligger utanför paketets gränser. Ange en anledning för att fortsätta."
         },
         "title": "Anledning till att kringgå validering",

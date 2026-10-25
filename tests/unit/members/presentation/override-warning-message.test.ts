@@ -98,6 +98,27 @@ describe('formatOverrideWarning', () => {
     expect(calls.at(-1)?.values).toEqual({ year: '2019', maxYears: '5' });
   });
 
+  // 127 — the legal-entity-type scope rule names which kind the plan takes.
+  it('member type out of scope on a company-only plan → memberTypeCompanyOnly', () => {
+    const { t } = makeT();
+    expect(
+      formatOverrideWarning(
+        { type: 'member_type_out_of_scope', legalEntityType: 'individual', memberTypeScope: 'company' },
+        t,
+      ),
+    ).toBe('warnings.memberTypeCompanyOnly');
+  });
+
+  it('member type out of scope on an individual-only plan → memberTypeIndividualOnly', () => {
+    const { t } = makeT();
+    expect(
+      formatOverrideWarning(
+        { type: 'member_type_out_of_scope', legalEntityType: 'limited_company', memberTypeScope: 'individual' },
+        t,
+      ),
+    ).toBe('warnings.memberTypeIndividualOnly');
+  });
+
   it('age not eligible → ageNotEligible', () => {
     const { t, calls } = makeT();
     const out = formatOverrideWarning(

@@ -1711,9 +1711,10 @@ export function makeDrizzleRenewalCycleRepo(
       tx: unknown,
       tenantId: string,
       invoiceId: string,
+      opts?: { readonly forUpdate?: boolean },
     ): Promise<(MembershipInvoiceRef & { readonly planId: string | null }) | null> {
       const txDb = tx as typeof db;
-      const [row] = await txDb
+      const query = txDb
         .select({
           invoiceId: invoices.invoiceId,
           memberId: invoices.memberId,
@@ -1735,6 +1736,7 @@ export function makeDrizzleRenewalCycleRepo(
           ),
         )
         .limit(1);
+      const [row] = opts?.forUpdate ? await query.for('update') : await query;
       if (!row) return null;
       // `member_id`/`plan_year` are NOT NULL for `invoice_subject='membership'`
       // (invoices_subject_fields_ck), but Drizzle types them nullable because
