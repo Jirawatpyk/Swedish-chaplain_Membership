@@ -19,7 +19,7 @@
  *                          validated step list (caller pre-validates
  *                          via Domain `parseSchedulePolicySteps`)
  */
-import { eq, asc } from 'drizzle-orm';
+import { and, eq, asc } from 'drizzle-orm';
 import { db, runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import {
@@ -98,7 +98,12 @@ export function makeDrizzleTenantRenewalSchedulePolicyRepo(
         const rows = await tx
           .select()
           .from(tenantRenewalSchedulePolicies)
-          .where(eq(tenantRenewalSchedulePolicies.tierBucket, tierBucket))
+          .where(
+            and(
+              eq(tenantRenewalSchedulePolicies.tenantId, tenant.slug),
+              eq(tenantRenewalSchedulePolicies.tierBucket, tierBucket),
+            ),
+          )
           .limit(1);
         return rows[0] ? rowToDomain(rows[0]) : null;
       });
@@ -111,6 +116,7 @@ export function makeDrizzleTenantRenewalSchedulePolicyRepo(
         const rows = await tx
           .select()
           .from(tenantRenewalSchedulePolicies)
+          .where(eq(tenantRenewalSchedulePolicies.tenantId, tenant.slug))
           .orderBy(asc(tenantRenewalSchedulePolicies.tierBucket));
         return rows.map(rowToDomain);
       });

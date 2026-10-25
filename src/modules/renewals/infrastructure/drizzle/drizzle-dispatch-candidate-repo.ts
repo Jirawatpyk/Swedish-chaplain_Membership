@@ -296,6 +296,7 @@ export function makeDrizzleDispatchCandidateRepo(
         // older than `NOW() - maxOffsetDays days` is still returned so the
         // schedule's positive-offset (post-expiry) reminder steps fire.
         const filters: SQL[] = [
+          eq(renewalCycles.tenantId, tenant.slug),
           sql`${renewalCycles.status} IN (${sql.raw(OPEN_CYCLE_STATUSES_SQL_LIST)})`,
           sql`${renewalCycles.expiresAt} <= ${args.cutoffExpiresAt}`,
           sql`${renewalCycles.expiresAt} >= NOW() - (${args.maxOffsetDays}::int * INTERVAL '1 day')`,
@@ -410,7 +411,7 @@ export function makeDrizzleDispatchCandidateRepo(
               ),
             ),
           )
-          .where(eq(renewalCycles.cycleId, cycleId))
+          .where(and(eq(renewalCycles.tenantId, tenant.slug), eq(renewalCycles.cycleId, cycleId)))
           .limit(1);
         const r = rows[0];
         return r ? rowToDispatchCandidate(r) : null;
@@ -485,6 +486,7 @@ export function makeDrizzleDispatchCandidateRepo(
         // expires_at is ~12 months out and must not be hidden (review C1;
         // mirrors listCyclesEligibleForLapse's no-pre-filter precedent).
         const filters: SQL[] = [
+          eq(renewalCycles.tenantId, tenant.slug),
           sql`${renewalCycles.status} = 'awaiting_payment'`,
           // COMP-1 H4 — never dispatch to a GDPR-erased member.
           sql`${members.erasedAt} IS NULL`,

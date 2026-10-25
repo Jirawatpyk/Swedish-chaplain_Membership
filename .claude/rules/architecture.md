@@ -67,7 +67,7 @@ specs/<nnn-feature>/                   # Spec Kit artefacts — one dir per feat
 
 ## Tenancy (F2+)
 
-- `runInTenant(ctx, fn)` + Postgres RLS (`SET LOCAL app.current_tenant`) is the isolation pattern. `src/modules/tenants/` is a Domain-only module hosting the `TenantContext` branded type. `DEBUG_RLS_STATE` is a dev-only tenant-context assertion.
+- `runInTenant(ctx, fn)` + Postgres RLS (`SET LOCAL app.current_tenant`) is the isolation pattern, **plus** an explicit `tenant_id` predicate on every tenant-scoped table reference (D-029) — RLS is the second wall, not the only one. Gate a repo with `tests/helpers/tenant-sql-shape.ts` (`recordingDb` + `tenantPredicateViolations`). `src/modules/tenants/` is a Domain-only module hosting the `TenantContext` branded type. `DEBUG_RLS_STATE` is a dev-only tenant-context assertion.
 - **Tenant-scoped repos MUST thread `tx` from `runInTenant`, never the global `db` singleton.** A repo method on a `tenant_id`-scoped table that reaches for the pool-global `db` gets a fresh connection without `SET LOCAL app.current_tenant`, silently bypassing RLS (it can read/write across tenants and the RLS+FORCE policies won't save you).
 - `err()` returned inside `runInTenant` **commits** the transaction — put refusal guards above the first write.
 - `neondb_owner` has `BYPASSRLS`: an ad-hoc SELECT as the owner sees every tenant, so a cross-tenant leak can never be reproduced from a psql session.
