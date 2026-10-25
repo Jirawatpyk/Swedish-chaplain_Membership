@@ -68,17 +68,34 @@ export interface WipeF8RenewalsResult {
  * still referenced by `scheduled_plan_changes` (FK RESTRICT) makes the whole
  * delete roll back and throw, rather than leaving the cycle without its
  * reminder and task history.
+ *
+ * A `completed` cycle linked to the issued-invoice fixture is also the seed's:
+ * only `setCycleStatusForSuccessE2E(…, 'completed')` makes one (no real flow
+ * completes a cycle on that fixture). A run that stops after that step leaves
+ * it behind, and the member then counts as a returning renewer, so the
+ * first-renewal welcome never shows again (`member-self-service-renewal`).
  */
 async function deleteSeedOwnedRows(
   sql: postgres.Sql,
   memberId: string,
 ): Promise<WipeF8RenewalsResult> {
+  const fixtureInvoiceId = process.env.E2E_ISSUED_INVOICE_ID ?? null;
   return sql.begin(async (tx) => {
     const seedCycles = tx`
       SELECT cycle_id FROM renewal_cycles
       WHERE tenant_id = ${TENANT_ID}
         AND member_id = ${memberId}::uuid
-        AND status IN ('upcoming', 'reminded', 'awaiting_payment', 'lapsed')
+        AND (
+          status IN ('upcoming', 'reminded', 'awaiting_payment', 'lapsed')
+          -- A pinned one (scheduled_plan_changes, FK RESTRICT) is left alone:
+          -- deleting it would roll the whole seed back for every renewal spec.
+          OR (status = 'completed' AND linked_invoice_id = ${fixtureInvoiceId}::uuid
+              AND NOT EXISTS (
+                SELECT 1 FROM scheduled_plan_changes s
+                WHERE s.tenant_id = renewal_cycles.tenant_id
+                  AND s.effective_at_cycle_id = renewal_cycles.cycle_id
+              ))
+        )
     `;
     const reminderEvents = await tx`
       DELETE FROM renewal_reminder_events
