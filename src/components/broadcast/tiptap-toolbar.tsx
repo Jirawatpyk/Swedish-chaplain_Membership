@@ -37,7 +37,7 @@
  * the two unavailable image controls give their reason through the visible
  * hint they are described by, not a hover-only `title` (which would also turn
  * AURA's tooltip off). AURA has no Toolbar, so the roving tabindex above stays
- * the app's.
+ * the app's. A toggle passes `pressed`, which AURA draws (5.65.0, #180).
  */
 import { useCallback, useRef, useState } from 'react';
 import { getMarkRange } from '@tiptap/core';
@@ -534,7 +534,7 @@ export function TiptapToolbar({
             label={control.label}
             touchHeight
             data-toolbar-control={control.key}
-            {...(control.pressed !== undefined && { 'aria-pressed': control.pressed })}
+            {...(control.pressed !== undefined && { pressed: control.pressed })}
             {...(control.opensDialog === true && { 'aria-haspopup': 'dialog' as const })}
             {...((control.unavailable === true || disabled) && { 'aria-disabled': true })}
             {...(control.unavailable === true &&
@@ -551,13 +551,6 @@ export function TiptapToolbar({
               control.onActivate();
             }}
             className={cn(
-              // AURA's IconButton has no pressed (toggle) look: stand-in until AURA #180.
-              // The fill alone is ~1.07:1 on white, so an accent edge marks the
-              // state (AURA's selected-segment rule), and forced colours keep
-              // it as a Highlight outline.
-              'aria-pressed:bg-[var(--aura-bg-selected)] aria-pressed:text-[var(--aura-fg-accent)]',
-              'aria-pressed:shadow-[inset_0_0_0_1px_var(--aura-fg-accent)]',
-              'forced-colors:aria-pressed:outline-2 forced-colors:aria-pressed:outline-[Highlight] forced-colors:aria-pressed:-outline-offset-2',
               (control.unavailable === true || disabled) && 'opacity-[var(--aura-disabled-opacity)]',
             )}
           />

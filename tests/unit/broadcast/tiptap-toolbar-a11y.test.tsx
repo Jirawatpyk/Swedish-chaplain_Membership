@@ -124,17 +124,15 @@ describe('T098 — visible focus state and 320 px wrapping', () => {
     }
   });
 
-  it('a pressed toggle carries the stand-in pressed look (until AURA #180)', () => {
+  // AURA 5.65.0 (#180) draws a pressed IconButton itself (fill, accent icon,
+  // Highlight in forced colours), so the app's stand-in classes are gone.
+  it('a pressed toggle is drawn by AURA, with no app stand-in classes', () => {
     const { buttons } = renderToolbar();
     const pressable = buttons.filter((b) => b.hasAttribute('aria-pressed'));
     expect(pressable.length).toBeGreaterThan(0);
     for (const b of pressable) {
-      expect(b.className).toContain('aria-pressed:bg-[var(--aura-bg-selected)]');
-      // UX review H-1: the fill alone is 1.07:1 on white; an accent edge marks
-      // the state at 3:1 or more (AURA's own selected-segment rule), and
-      // forced colours keep it as a Highlight outline.
-      expect(b.className).toContain('aria-pressed:shadow-[inset_0_0_0_1px_var(--aura-fg-accent)]');
-      expect(b.className).toContain('forced-colors:aria-pressed:outline-[Highlight]');
+      expect(b).toHaveClass('aura-icon-btn');
+      expect(b.className).not.toContain('aria-pressed:');
     }
   });
 

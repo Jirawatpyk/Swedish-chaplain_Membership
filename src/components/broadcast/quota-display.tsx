@@ -23,7 +23,7 @@
  *
  * 25 Oct (the user: one quota bar on the Dashboard and here): the bar is AURA
  * `Progress` with `secondaryValue`, as the Dashboard's; the legend shows only
- * while something is reserved (`QuotaLegend`), and the bar turns danger once
+ * while something is reserved (AURA `Progress` `legend`), and the bar turns danger once
  * the quota is used up.
  */
 import { useEffect, useState } from 'react';
@@ -33,7 +33,6 @@ import { Button, Card, Progress, buttonClass } from '@jirawatpyk/aura-react';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
 import { formatCalendarYear } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
-import { QuotaLegend } from './quota-legend';
 
 export interface QuotaSnapshot {
   readonly used: number;
@@ -199,14 +198,10 @@ export function QuotaDisplay({
                 remaining: snap.remaining,
                 cap: snap.cap,
               })}
+              // AURA's key (5.64.0, #179): shown only while the reserved part
+              // is drawn, aria-hidden, swatches in the bar's tone.
+              legend={{ value: t('used'), secondary: t('reservedLegend') }}
             />
-            {snap.reserved > 0 ? (
-              <QuotaLegend
-                usedLabel={t('used')}
-                reservedLabel={t('reservedLegend')}
-                tone={exhausted ? 'danger' : 'accent'}
-              />
-            ) : null}
             {exhausted ? (
               <p className="aura-text-caption text-[var(--aura-fg-danger)]">
                 {/* Says what is still reserved, not "all used" (the user, 25 Oct). */}

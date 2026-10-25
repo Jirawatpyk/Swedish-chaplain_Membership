@@ -77,7 +77,9 @@ describe('<PortalBenefitsSummaryCard> reserved E-Blasts (spec 122 US3, `Main` bo
     expect(container.querySelector('.aura-progress')).toHaveClass('aura-progress--accent');
     expect(bar).toHaveAttribute('aria-labelledby');
     // One quota bar with the Benefits / compose card (the user, 25 Oct): the same key under it.
-    const legend = screen.getByTestId('quota-legend');
+    // AURA's own key since 5.64.0 (#179); the app stand-in is gone.
+    expect(screen.queryByTestId('quota-legend')).toBeNull();
+    const legend = container.querySelector('.aura-progress__legend');
     expect(legend).toHaveAttribute('aria-hidden', 'true');
     expect(legend).toHaveTextContent('Reserved (in review or scheduled)');
   });
@@ -95,7 +97,7 @@ describe('<PortalBenefitsSummaryCard> reserved E-Blasts (spec 122 US3, `Main` bo
     );
     expect(screen.getByText('Not used yet this year')).toBeInTheDocument();
     expect(screen.queryByText(/reserved/)).toBeNull();
-    expect(screen.queryByTestId('quota-legend')).toBeNull();
+    expect(document.querySelector('.aura-progress__legend')).toBeNull();
   });
 
   it('turns the E-Blast bar and its key to danger once used plus reserved reach the quota, as the Benefits card does', () => {
@@ -122,9 +124,7 @@ describe('<PortalBenefitsSummaryCard> reserved E-Blasts (spec 122 US3, `Main` bo
     );
     const [eblast, tickets] = container.querySelectorAll('.aura-progress');
     expect(eblast).toHaveClass('aura-progress--danger');
-    expect(screen.getByTestId('quota-legend').querySelector('[data-swatch="reserved"]')).toHaveClass(
-      'bg-[var(--aura-fg-danger)]',
-    );
+    expect(eblast!.querySelector('.aura-progress__swatch--reserved')).not.toBeNull();
     // A ticket benefit used in full is not an error.
     expect(tickets).toHaveClass('aura-progress--accent');
     // No dead end: with no E-Blast left the next step is the E-Blasts tab, not compose (the user, 25 Oct).

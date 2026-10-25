@@ -115,7 +115,9 @@ describe('QuotaDisplay on AURA', () => {
     expect(progress.querySelector('.aura-progress__bar--reserved')).not.toBeNull();
     expect(card.querySelector('[data-segment]')).toBeNull();
     // The counters already state the numbers, so the legend is not read twice.
-    const legend = screen.getByTestId('quota-legend');
+    // AURA's own key since 5.64.0 (#179); the app stand-in is gone.
+    const legend = card.querySelector('.aura-progress__legend');
+    expect(screen.queryByTestId('quota-legend')).toBeNull();
     expect(legend).toHaveAttribute('aria-hidden', 'true');
     expect(legend).toHaveTextContent(q.reservedLegend);
     expect(screen.getByText(q.footnote)).toBeInTheDocument();
@@ -123,7 +125,7 @@ describe('QuotaDisplay on AURA', () => {
 
   it('shows the legend only while something is reserved', () => {
     renderQuota({ live: false, initial: { ...SNAP, reserved: 0, remaining: 4 } });
-    expect(screen.queryByTestId('quota-legend')).toBeNull();
+    expect(screen.getByTestId('quota-display').querySelector('.aura-progress__legend')).toBeNull();
     expect(screen.getByTestId('quota-display').querySelector('.aura-progress__bar--reserved')).toBeNull();
   });
 
@@ -131,9 +133,8 @@ describe('QuotaDisplay on AURA', () => {
     renderQuota({ live: false, initial: { ...SNAP, used: 5, reserved: 1, remaining: 0 } });
     const card = screen.getByTestId('quota-display');
     expect(card.querySelector('.aura-progress')).toHaveClass('aura-progress--danger');
-    expect(screen.getByTestId('quota-legend').querySelector('[data-swatch="reserved"]')).toHaveClass(
-      'bg-[var(--aura-fg-danger)]',
-    );
+    // The key's swatches take the bar's tone (AURA #179).
+    expect(card.querySelector('.aura-progress--danger .aura-progress__swatch--reserved')).not.toBeNull();
   });
 
   it('says what is still reserved when no E-Blast is left (the user, 25 Oct)', () => {
