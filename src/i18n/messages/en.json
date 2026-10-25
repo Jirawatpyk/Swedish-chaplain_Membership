@@ -6532,6 +6532,7 @@
         }
       },
       "pasteNotice": "Some formatting is not supported in email and was removed.",
+      "placeholder": "Write your message…",
       "preview": {
         "empty": "Your message preview appears here.",
         "paused": "Preview paused for {seconds} seconds — it refreshes on your next edit.",
@@ -6886,12 +6887,21 @@
             "italicOff": "Italic off",
             "underlineOn": "Underline on",
             "underlineOff": "Underline off",
-            "bulletListOn": "Bullet list on",
-            "bulletListOff": "Bullet list off",
+            "bulletListOn": "Bulleted list on",
+            "bulletListOff": "Bulleted list off",
             "orderedListOn": "Numbered list on",
             "orderedListOff": "Numbered list off",
             "linkSet": "Link added",
-            "linkCleared": "Link removed"
+            "linkCleared": "Link removed",
+            "heading2On": "Heading on",
+            "heading2Off": "Heading off",
+            "heading3On": "Subheading on",
+            "heading3Off": "Subheading off",
+            "quoteOn": "Quote on",
+            "quoteOff": "Quote off",
+            "dividerAdded": "Divider added",
+            "buttonAdded": "Button added",
+            "imageAdded": "Image added"
           }
         },
         "toast": {
@@ -6961,7 +6971,8 @@
           "uploadingLabel": "Uploading…",
           "uploadingAria": "Uploading image — please wait",
           "uploadedToast": "Image uploaded.",
-          "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before upload.",
+          "notInserted": "The image was not added to your message.",
+          "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before they're stored.",
           "publicLinkNotice": "Your image is stored at a public web address that needs no sign-in — anyone with the link can open it, so don't upload anything private.",
           "draftRequiredHint": "Save this draft first to enable image uploads.",
           "disallowedSourcesHeading": "These image sources aren't allowed:",

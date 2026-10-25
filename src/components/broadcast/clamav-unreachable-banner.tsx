@@ -48,10 +48,18 @@ export function ClamavUnreachableBanner({
   useEffect(() => {
     if (healthEndpoint === undefined) return undefined;
     let cancelled = false;
+    // Spec 122 US12d-2 round 2 (#17): an offline browser says nothing about
+    // the scanner, so it is not reported as "scanner down"; a hidden tab is
+    // not polled (it probes again when shown); and a probe that hangs gives
+    // up after 10 s.
     const probe = async (): Promise<void> => {
+      if (document.visibilityState === 'hidden' || !navigator.onLine) return;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 10_000);
       try {
         const res = await fetch(healthEndpoint, {
           cache: 'no-store',
+          signal: controller.signal,
         });
         if (cancelled) return;
         if (!res.ok) {
@@ -79,14 +87,24 @@ export function ClamavUnreachableBanner({
           { err: String(err) },
           'broadcasts.clamav_health_probe_failed',
         );
+        if (!navigator.onLine) return;
         setUnreachable(true);
+      } finally {
+        window.clearTimeout(timeout);
       }
+    };
+    const probeWhenShown = (): void => {
+      if (document.visibilityState === 'visible') void probe();
     };
     void probe();
     const id = window.setInterval(probe, 30_000);
+    document.addEventListener('visibilitychange', probeWhenShown);
+    window.addEventListener('online', probeWhenShown);
     return (): void => {
       cancelled = true;
       window.clearInterval(id);
+      document.removeEventListener('visibilitychange', probeWhenShown);
+      window.removeEventListener('online', probeWhenShown);
     };
   }, [healthEndpoint]);
 

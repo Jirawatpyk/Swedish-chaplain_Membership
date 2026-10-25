@@ -22,7 +22,7 @@
  *     tells the author ONCE per mounted editor, in a non-blocking toast.
  *   - ARIA-live region announces editor state changes (CHK029)
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { NodeSelection } from '@tiptap/pm/state';
 import { useTranslations } from 'next-intl';
@@ -30,11 +30,7 @@ import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { TiptapLoadingSkeleton } from '@/components/shell/tiptap-loader';
 import { Info } from 'lucide-react';
-import {
-  IMAGE_DISABLED_HINT_ID,
-  TiptapToolbar,
-  type AnnounceKey,
-} from './tiptap-toolbar';
+import { TiptapToolbar, type AnnounceKey } from './tiptap-toolbar';
 import { makeBroadcastEditorExtensions } from './broadcast-editor-extensions';
 import { makeBroadcastPasteTransform } from './broadcast-paste-transform';
 import { ImageAltDialog, type ImageAltVariant } from './image-alt-dialog';
@@ -121,6 +117,10 @@ export default function TiptapEditor({
   const tChrome = useTranslations('broadcast.editor');
   const tImage = useTranslations('portal.broadcasts.compose.imageUpload');
   const [announcement, setAnnouncement] = useState<string>('');
+  // Round 2, #4 — an upload in flight: Image and Banner wait for it.
+  const [imageBusy, setImageBusy] = useState<boolean>(false);
+  // Round 2, #20 — per editor, so two editors on a page never share it.
+  const imageHintId = useId();
   const [altOpen, setAltOpen] = useState<boolean>(false);
   const [altVariant, setAltVariant] = useState<ImageAltVariant>('inline');
   // Round 2, #6 — an inserted image selected when Image / Banner is used: the
@@ -164,6 +164,11 @@ export default function TiptapEditor({
         class: 'eblast-editor-content min-h-[240px] px-3 py-2 focus:outline-none',
         role: 'textbox',
         'aria-multiline': 'true',
+        // Round 2, #13 — a placeholder without a new dependency: globals.css
+        // draws `--eblast-placeholder` in the empty first paragraph, and
+        // `aria-placeholder` gives it to assistive technology.
+        'aria-placeholder': tChrome('placeholder'),
+        style: `--eblast-placeholder: ${JSON.stringify(tChrome('placeholder'))}`,
         // Round 2, #3 — read-only while the host saves or submits.
         ...(disabled && { 'aria-readonly': 'true' }),
         ...(labelledById !== undefined && { 'aria-labelledby': labelledById }),
@@ -195,12 +200,25 @@ export default function TiptapEditor({
     if (editor && editor.isEditable === disabled) editor.setEditable(!disabled);
   }, [editor, disabled]);
 
+  // Round 2, #14 — one clear timer at a time: a second toggle within 1.5 s
+  // was cut short by the first one's clear.
+  const announceTimerRef = useRef<number | null>(null);
   const announceState = useCallback(
     (key: AnnounceKey) => {
       setAnnouncement(tEditor(`announcements.${key}`));
-      window.setTimeout(() => setAnnouncement(''), 1500);
+      if (announceTimerRef.current !== null) window.clearTimeout(announceTimerRef.current);
+      announceTimerRef.current = window.setTimeout(() => {
+        announceTimerRef.current = null;
+        setAnnouncement('');
+      }, 1500);
     },
     [tEditor],
+  );
+  useEffect(
+    () => () => {
+      if (announceTimerRef.current !== null) window.clearTimeout(announceTimerRef.current);
+    },
+    [],
   );
 
   /**
@@ -213,13 +231,18 @@ export default function TiptapEditor({
   const insertImage = useCallback(
     (kind: ImageAltVariant, src: string, alt: string): void => {
       if (!editor) return;
-      if (kind === 'banner') {
-        editor.chain().focus().setBannerImage({ src, alt }).run();
-      } else {
-        editor.chain().focus().setImage({ src, alt }).run();
+      const done =
+        kind === 'banner'
+          ? editor.chain().focus().setBannerImage({ src, alt }).run()
+          : editor.chain().focus().setImage({ src, alt }).run();
+      // Round 2, #5 — "uploaded" is said here, once the image is in the
+      // message, not when the file reached storage.
+      if (done) {
+        toast.success(tImage('uploadedToast'));
+        announceState('imageAdded');
       }
     },
-    [editor],
+    [editor, tImage, announceState],
   );
 
   /**
@@ -290,9 +313,12 @@ export default function TiptapEditor({
     // must never be written onto the image that was being edited.
     if (!next) setAltEdit(null);
     if (!next && pendingImageRef.current?.alt === undefined) {
+      // Uploaded, then the description was cancelled: the file is stored but
+      // nothing is in the message, so say so (round 2, #5).
+      if (pendingImageRef.current?.src !== undefined) toast.info(tImage('notInserted'));
       pendingImageRef.current = null;
     }
-  }, []);
+  }, [tImage]);
 
   /**
    * The author dismissed the file picker the description opened. The pending
@@ -340,7 +366,9 @@ export default function TiptapEditor({
         // when invalid. The outline follows the writing area only, so a focused
         // toolbar control shows its own ring, not two.
         className={cn(
-          'min-w-0 overflow-hidden rounded-[var(--aura-radius-md)] border bg-[var(--aura-bg-input)]',
+          // `overflow-clip`, not `hidden`: it rounds the corners without making
+          // a scroll box, so the toolbar can stay sticky (round 2, #11).
+          'min-w-0 overflow-clip rounded-[var(--aura-radius-md)] border bg-[var(--aura-bg-input)]',
           'has-[.ProseMirror:focus]:outline-[length:var(--aura-focus-ring-width)] has-[.ProseMirror:focus]:outline-offset-1 has-[.ProseMirror:focus]:outline-[var(--aura-focus-ring)] has-[.ProseMirror:focus]:outline-solid',
           invalid
             ? 'border-[var(--aura-border-danger)]'
@@ -354,6 +382,8 @@ export default function TiptapEditor({
           onAnnounce={announceState}
           imagesEnabled={imagesEnabled}
           imageInsertEnabled={draftId !== null}
+          imageBusy={imageBusy}
+          imageHintId={imageHintId}
           onInsertImage={() => openAltDialog('inline')}
           onInsertBanner={() => openAltDialog('banner')}
         />
@@ -387,6 +417,8 @@ export default function TiptapEditor({
               {...(imageUploadUrl !== undefined ? { uploadUrl: imageUploadUrl } : {})}
               onUploaded={handleUploaded}
               onPickerCancel={handlePickerCancel}
+              onUploadingChange={setImageBusy}
+              disabled={disabled}
             />
           ) : (
             // PR-review fix 2026-05-20 UX-M3 — pair the hint with an
@@ -398,7 +430,7 @@ export default function TiptapEditor({
             // null`), so the target exists whenever it is referenced.
             <div className="flex items-start gap-2 aura-text-caption text-[var(--aura-fg-secondary)]">
               <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <p id={IMAGE_DISABLED_HINT_ID}>{tImage('draftRequiredHint')}</p>
+              <p id={imageHintId}>{tImage('draftRequiredHint')}</p>
             </div>
           )}
         </div>

@@ -90,7 +90,16 @@ export type AnnounceKey =
   | 'orderedListOn'
   | 'orderedListOff'
   | 'linkSet'
-  | 'linkCleared';
+  | 'linkCleared'
+  | 'heading2On'
+  | 'heading2Off'
+  | 'heading3On'
+  | 'heading3Off'
+  | 'quoteOn'
+  | 'quoteOff'
+  | 'dividerAdded'
+  | 'buttonAdded'
+  | 'imageAdded';
 
 export interface TiptapToolbarProps {
   readonly editor: Editor;
@@ -103,6 +112,10 @@ export interface TiptapToolbarProps {
   readonly onInsertBanner?: () => void;
   /** While the host saves or submits, every control is unavailable (round 2, #3). */
   readonly disabled?: boolean;
+  /** An image is uploading: Image and Banner wait for it (round 2, #4). */
+  readonly imageBusy?: boolean;
+  /** The id of the visible "save the draft first" hint (per editor; round 2, #20). */
+  readonly imageHintId?: string;
 }
 
 interface CtaTarget {
@@ -142,6 +155,8 @@ export function TiptapToolbar({
   onInsertImage,
   onInsertBanner,
   disabled = false,
+  imageBusy = false,
+  imageHintId = IMAGE_DISABLED_HINT_ID,
 }: TiptapToolbarProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.toolbar');
   const locale = useLocale();
@@ -176,11 +191,12 @@ export function TiptapToolbar({
     }),
   });
 
+  // Round 2, #14 — announce what happened, not what was asked: a command
+  // that did nothing (Bold where no mark is allowed) says nothing.
   const toggle = useCallback(
-    (isActive: boolean, run: () => void, on: AnnounceKey, off: AnnounceKey) => {
+    (isActive: boolean, run: () => boolean, on: AnnounceKey, off: AnnounceKey) => {
       const willBeOn = !isActive;
-      run();
-      onAnnounce(willBeOn ? on : off);
+      if (run()) onAnnounce(willBeOn ? on : off);
     },
     [onAnnounce],
   );
@@ -257,11 +273,11 @@ export function TiptapToolbar({
   const applyCta = ({ href, text }: { href: string; text: string }): void => {
     const target = ctaTarget;
     const node = { type: 'ctaButton', attrs: { href }, content: [{ type: 'text', text }] };
-    if (target.editPos !== null || target.text !== '') {
-      editor.chain().focus().insertContentAt({ from: target.from, to: target.to }, node).run();
-    } else {
-      editor.chain().focus().setCtaButton({ href, text }).run();
-    }
+    const done =
+      target.editPos !== null || target.text !== ''
+        ? editor.chain().focus().insertContentAt({ from: target.from, to: target.to }, node).run()
+        : editor.chain().focus().setCtaButton({ href, text }).run();
+    if (done && target.editPos === null) onAnnounce('buttonAdded');
   };
 
   const removeLink = (): void => {
@@ -275,27 +291,47 @@ export function TiptapToolbar({
       label: t('heading2'),
       Icon: Heading2,
       pressed: active.heading2,
-      onActivate: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
+      onActivate: () =>
+        toggle(
+          editor.isActive('heading', { level: 2 }),
+          () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
+          'heading2On',
+          'heading2Off',
+        ),
     },
     {
       key: 'heading3',
       label: t('heading3'),
       Icon: Heading3,
       pressed: active.heading3,
-      onActivate: () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+      onActivate: () =>
+        toggle(
+          editor.isActive('heading', { level: 3 }),
+          () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+          'heading3On',
+          'heading3Off',
+        ),
     },
     {
       key: 'quote',
       label: t('quote'),
       Icon: Quote,
       pressed: active.quote,
-      onActivate: () => editor.chain().focus().toggleBlockquote().run(),
+      onActivate: () =>
+        toggle(
+          editor.isActive('blockquote'),
+          () => editor.chain().focus().toggleBlockquote().run(),
+          'quoteOn',
+          'quoteOff',
+        ),
     },
     {
       key: 'divider',
       label: t('divider'),
       Icon: Minus,
-      onActivate: () => editor.chain().focus().setHorizontalRule().run(),
+      onActivate: () => {
+        if (editor.chain().focus().setHorizontalRule().run()) onAnnounce('dividerAdded');
+      },
     },
     {
       key: 'bulletList',
@@ -374,7 +410,6 @@ export function TiptapToolbar({
       pressed: active.link,
       opensDialog: true,
       onActivate: () => {
-        confirmedRef.current = false;
         setLinkTarget(captureLinkTarget());
         setLinkOpen(true);
       },
@@ -386,10 +421,10 @@ export function TiptapToolbar({
             label: t('image'),
             Icon: ImageIcon,
             opensDialog: true,
-            unavailable: !imageInsertEnabled,
-            describedBy: IMAGE_DISABLED_HINT_ID,
+            unavailable: !imageInsertEnabled || imageBusy,
+            ...(imageInsertEnabled ? {} : { describedBy: imageHintId }),
             onActivate: () => {
-              if (imageInsertEnabled) onInsertImage?.();
+              if (imageInsertEnabled && !imageBusy) onInsertImage?.();
             },
           } satisfies ToolbarControl,
         ]
@@ -400,7 +435,6 @@ export function TiptapToolbar({
       Icon: MousePointerClick,
       opensDialog: true,
       onActivate: () => {
-        confirmedRef.current = false;
         setCtaTarget(captureCtaTarget());
         setCtaOpen(true);
       },
@@ -412,10 +446,10 @@ export function TiptapToolbar({
             label: t('banner'),
             Icon: RectangleHorizontal,
             opensDialog: true,
-            unavailable: !imageInsertEnabled,
-            describedBy: IMAGE_DISABLED_HINT_ID,
+            unavailable: !imageInsertEnabled || imageBusy,
+            ...(imageInsertEnabled ? {} : { describedBy: imageHintId }),
             onActivate: () => {
-              if (imageInsertEnabled) onInsertBanner?.();
+              if (imageInsertEnabled && !imageBusy) onInsertBanner?.();
             },
           } satisfies ToolbarControl,
         ]
@@ -513,6 +547,7 @@ export function TiptapToolbar({
             onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
               if (disabled) return;
               triggerRef.current = event.currentTarget;
+              confirmedRef.current = false;
               control.onActivate();
             }}
             className={cn(

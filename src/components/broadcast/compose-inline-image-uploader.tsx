@@ -8,12 +8,13 @@
  * `<img src=blobUrl>` via `editor.chain().setImage()`.
  *
  * a11y:
- *   - file input is `sr-only` + paired with visible Button trigger
- *     so the focusable affordance is announced by screen readers
- *   - <progress aria-label> for upload-in-flight feedback
- *   - role="alert" on inline error so it's announced immediately
+ *   - the file input is `sr-only` and out of the Tab order; the visible
+ *     Button opens it, carrying the help and public-link notice
+ *   - an indeterminate AURA Progress (aria-label) while the upload runs
+ *   - a refusal is announced once, by the toast; the inline Alert keeps it
+ *     in view afterwards
  */
-import { useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { useEffect, useId, useImperativeHandle, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Image as ImageIcon } from 'lucide-react';
 import { Alert, Button, Progress } from '@jirawatpyk/aura-react';
@@ -51,6 +52,14 @@ interface Props {
    * to arrive" — the editor's pending description — can drop it.
    */
   readonly onPickerCancel?: () => void;
+  /**
+   * Round 2, #4 — told when an upload starts and ends, so the editor can make
+   * Image and Banner unavailable meanwhile (a second upload or a banner
+   * started mid-flight attached the wrong description).
+   */
+  readonly onUploadingChange?: (uploading: boolean) => void;
+  /** While the host saves or submits (round 2, #3). */
+  readonly disabled?: boolean;
   readonly ref?: React.Ref<ComposeInlineImageUploaderHandle>;
 }
 
@@ -59,14 +68,37 @@ export function ComposeInlineImageUploader({
   onUploaded,
   uploadUrl = MEMBER_INLINE_IMAGE_UPLOAD_URL,
   onPickerCancel,
+  onUploadingChange,
+  disabled = false,
   ref,
 }: Props): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.imageUpload');
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Round 2, #20 — ids per instance: two editors on one page must not share them.
+  const idBase = useId();
+  const inputId = `${idBase}-file`;
+  const helpId = `${idBase}-help`;
+  const noticeId = `${idBase}-public-notice`;
 
-  useImperativeHandle(ref, () => ({ openPicker: () => fileRef.current?.click() }), []);
+  // Round 2, #4/#15 — a picker opened from the description never starts a
+  // second upload mid-flight, and starting again clears the last refusal.
+  useImperativeHandle(
+    ref,
+    () => ({
+      openPicker: () => {
+        if (uploading) return;
+        setError(null);
+        fileRef.current?.click();
+      },
+    }),
+    [uploading],
+  );
+
+  useEffect(() => {
+    onUploadingChange?.(uploading);
+  }, [uploading, onUploadingChange]);
 
   // A native listener, not React's `onCancel` prop: React attaches `cancel`
   // only to <dialog>, so the prop would never fire on an <input type="file">.
@@ -83,7 +115,9 @@ export function ComposeInlineImageUploader({
   // browsers without the input `cancel` event (Safari < 16.4), where the
   // listener above never fires.
   const handlePick = (): void => {
+    if (disabled) return;
     onPickerCancel?.();
+    setError(null);
     fileRef.current?.click();
   };
 
@@ -155,8 +189,10 @@ export function ComposeInlineImageUploader({
         return;
       }
       const data = (await res.json()) as { blobUrl: string };
+      // The success toast is the editor's, said when the image is actually in
+      // the message (round 2, #5): an upload whose description is cancelled
+      // adds nothing.
       onUploaded(data.blobUrl);
-      toast.success(t('uploadedToast'));
     } catch (err) {
       // PR-review fix 2026-05-20 SF-M2 — log so CSP / CORS / offline
       // are distinguishable in browser console; toast stays generic.
@@ -176,21 +212,23 @@ export function ComposeInlineImageUploader({
 
   return (
     <div className="flex flex-col gap-2">
-      <label htmlFor="broadcast-image-file" className="sr-only">
+      <label htmlFor={inputId} className="sr-only">
         {t('pickerLabel')}
       </label>
       <input
-        id="broadcast-image-file"
+        id={inputId}
+        // Round 2, #10 — opened only by the button (or the description's
+        // hand-off), never reached by Tab: a clipped input was an invisible
+        // tab stop beside the button that does the same thing.
+        tabIndex={-1}
         ref={fileRef}
         type="file"
         accept="image/png,image/jpeg,image/webp,image/gif"
         className="sr-only"
-        // `sr-only` CLIPS, it does not hide, so this input is still a tab stop
-        // — and the visible Button is a second one. Both carry the description
-        // (the `custom-list-input.tsx` pattern), because a member who tabs to
-        // the Button would otherwise never hear the public-link notice, and
-        // that notice is the entire PDPA transparency control.
-        aria-describedby="broadcast-image-help broadcast-image-public-notice"
+        // Both the input and the Button carry the description (the
+        // `custom-list-input.tsx` pattern): a member reaching the Button must
+        // hear the public-link notice, the entire PDPA transparency control.
+        aria-describedby={`${helpId} ${noticeId}`}
         onChange={handleChange}
       />
       {/* Spec 122 US12d-2 — the boards' "Upload image": a secondary AURA
@@ -204,7 +242,8 @@ export function ComposeInlineImageUploader({
         // the button while the file uploads (a native disabled dropped it to
         // <body>, so "Uploading…" was never heard).
         loading={uploading}
-        aria-describedby="broadcast-image-help broadcast-image-public-notice"
+        {...(disabled && !uploading && { 'aria-disabled': true })}
+        aria-describedby={`${helpId} ${noticeId}`}
         className="self-start"
       >
         {uploading ? t('uploadingLabel') : t('uploadButton')}
@@ -219,11 +258,13 @@ export function ComposeInlineImageUploader({
         <Progress aria-label={t('uploadingAria')} />
       )}
       {error && (
-        <Alert tone="danger" role="alert">
+        // `role="none"`: the toast already announces the refusal (round 2,
+        // #15); this keeps it in view after the toast is gone.
+        <Alert tone="danger" role="none">
           {error}
         </Alert>
       )}
-      <p id="broadcast-image-help" className="aura-text-caption text-[var(--aura-fg-secondary)]">
+      <p id={helpId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
         {t('helpText')}
       </p>
       {/*
@@ -235,7 +276,7 @@ export function ComposeInlineImageUploader({
         sentence sits next to the picker, above it in reading order, not in a
         toast after the upload.
       */}
-      <p id="broadcast-image-public-notice" className="aura-text-caption text-[var(--aura-fg-secondary)]">
+      <p id={noticeId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
         {t('publicLinkNotice')}
       </p>
     </div>

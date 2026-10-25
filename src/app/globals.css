@@ -883,3 +883,18 @@ summary,
     outline: var(--aura-focus-ring-width) solid var(--aura-focus-ring);
   }
 }
+
+/* Spec 122 US12d-2 round 2 (#13) — the E-Blast editor's placeholder, with no
+   new dependency: the editor puts the localised text in
+   `--eblast-placeholder` (and in `aria-placeholder`), and it shows in the
+   empty first paragraph only, never as content. */
+@layer components {
+  .eblast-editor-content > p:only-child:has(> br:only-child)::before,
+  .eblast-editor-content > p:only-child:empty::before {
+    content: var(--eblast-placeholder);
+    float: left;
+    height: 0;
+    color: var(--aura-fg-tertiary);
+    pointer-events: none;
+  }
+}

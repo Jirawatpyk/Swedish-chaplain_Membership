@@ -7,7 +7,7 @@
  * pinned by the uploader's other tests.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { ComposeInlineImageUploader } from '@/components/broadcast/compose-inline-image-uploader';
@@ -67,7 +67,9 @@ describe('the inline image uploader on AURA', () => {
     expect(button).toHaveAttribute('aria-busy', 'true');
   });
 
-  it('a refused upload is an AURA danger Alert', async () => {
+  // Round 2 (#15): the toast announces the refusal; the inline danger Alert
+  // keeps it in view without announcing it a second time (`role="none"`).
+  it('a refused upload is an AURA danger Alert, announced once (by the toast)', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(
@@ -80,7 +82,8 @@ describe('the inline image uploader on AURA', () => {
     );
     const container = renderUploader();
     pickFile(container);
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(copy.errors.unknown));
-    expect(screen.getByRole('alert')).toHaveClass('aura-alert', 'aura-alert--danger');
+    const message = await screen.findByText(copy.errors.unknown);
+    expect(message.closest('.aura-alert')).toHaveClass('aura-alert--danger');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

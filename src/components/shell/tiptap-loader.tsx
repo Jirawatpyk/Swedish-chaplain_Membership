@@ -82,7 +82,12 @@ export function TiptapLoadingSkeleton(): React.ReactElement {
       data-testid="tiptap-loading"
       className="space-y-3"
     >
-      <SkeletonBlock className="h-10 w-full" />
+      {/* Text as well as the label: a status with no content is not announced
+          by every screen reader (spec 122 US12d-2 round 2). */}
+      <span className="sr-only">{t('editorLoading')}</span>
+      {/* The toolbar wraps to three 44px rows on a phone: reserve that, so
+          the page does not jump when the editor arrives. */}
+      <SkeletonBlock className="h-[152px] w-full sm:h-10" />
       <SkeletonBlock className="h-60 w-full" />
     </div>
   );

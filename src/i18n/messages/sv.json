@@ -6532,6 +6532,7 @@
         }
       },
       "pasteNotice": "Viss formatering stöds inte i e-post och togs bort.",
+      "placeholder": "Skriv ditt meddelande…",
       "preview": {
         "empty": "Din förhandsgranskning visas här.",
         "paused": "Förhandsgranskningen är pausad i {seconds} sekunder – den uppdateras vid din nästa ändring.",
@@ -6891,7 +6892,16 @@
             "orderedListOn": "Numrerad lista på",
             "orderedListOff": "Numrerad lista av",
             "linkSet": "Länk tillagd",
-            "linkCleared": "Länk borttagen"
+            "linkCleared": "Länk borttagen",
+            "heading2On": "Rubrik på",
+            "heading2Off": "Rubrik av",
+            "heading3On": "Underrubrik på",
+            "heading3Off": "Underrubrik av",
+            "quoteOn": "Citat på",
+            "quoteOff": "Citat av",
+            "dividerAdded": "Avdelare tillagd",
+            "buttonAdded": "Knapp tillagd",
+            "imageAdded": "Bild tillagd"
           }
         },
         "toast": {
@@ -6961,7 +6971,8 @@
           "uploadingLabel": "Laddar upp…",
           "uploadingAria": "Laddar upp bild — vänta",
           "uploadedToast": "Bilden har laddats upp.",
-          "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas före uppladdning.",
+          "notInserted": "Bilden lades inte till i meddelandet.",
+          "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas innan de sparas.",
           "publicLinkNotice": "Din bild sparas på en offentlig webbadress som inte kräver inloggning — vem som helst med länken kan öppna den, så ladda inte upp något privat.",
           "draftRequiredHint": "Spara utkastet först för att aktivera bilduppladdning.",
           "disallowedSourcesHeading": "Dessa bildkällor är inte tillåtna:",
