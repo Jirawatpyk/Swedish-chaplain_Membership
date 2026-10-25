@@ -266,3 +266,26 @@ describe('T137 / T145 — FR-039 parity is a set, not a list of remembered featu
     }
   });
 });
+
+// R89 (spec 122 US12d-2): the editor's toolbar is `position: sticky`, and an
+// ancestor with `overflow: hidden | auto | scroll` becomes the box it sticks
+// in. The compose card had `overflow-hidden`, so on a phone the toolbar
+// scrolled away with the text. `overflow-clip` clips the same way without
+// becoming that box.
+describe('the sticky editor toolbar has no scroll-container ancestor', () => {
+  const SCROLL_CONTAINER = /(?:^|\s)overflow(?:-[xy])?-(?:hidden|auto|scroll)(?:\s|$)/;
+
+  it.each([
+    ['member', renderMember],
+    ['staff', renderStaff],
+  ])('%s form', (_name, renderForm) => {
+    const root = renderForm();
+    const editor = root.querySelector('[data-compose-feature="body-editor"]');
+    expect(editor).not.toBeNull();
+    const offenders: string[] = [];
+    for (let el = editor!.parentElement; el && el !== root; el = el.parentElement) {
+      if (SCROLL_CONTAINER.test(el.className)) offenders.push(`${el.tagName.toLowerCase()}.${el.className}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+});
