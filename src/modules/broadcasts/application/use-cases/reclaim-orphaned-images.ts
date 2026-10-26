@@ -53,6 +53,8 @@
  * `broadcasts.image_sweep.retained_still_referenced`. Retained ORPHAN rows are
  * re-examined every tick, which is the point — they stay reachable — but a
  * climbing `retained` count means they are eating into the bounded batch.
+ * Retained UNUSED rows (spec 131) are watermarked instead and re-examined when
+ * the 30-day window lapses, so they cannot fill arm 3's batch.
  *
  * THE LOCK (F2-10(a)). Each per-row transaction takes
  * `pg_advisory_xact_lock` on (tenant, content_hash) BEFORE it counts. The
@@ -235,10 +237,11 @@ const DISPOSITION_SUMMARY: Readonly<Record<BlobDisposition, string>> = {
  * RoPA (§ F119 Erasure row) requires that count — including zero — on the
  * ticket. Change this arm and those two documents change with it.
  *
- * Nothing re-examines such a row automatically. `restoreLive` un-stamps it
- * and `listOrphaned` selects only rows whose OWNER is gone — and an erasure
- * REDACTS the member's broadcast, it does not delete it. The runbook step
- * surfaces the row; it is reclaimed by hand once the holding content goes.
+ * Spec 131 — the UNUSED arm now re-examines such a row: the redacted owner is
+ * terminal and no longer holds the URL, so `listUnused` picks it, the row is
+ * watermarked while other content holds the file, looked at again when the
+ * 30-day watermark lapses, and reclaimed once that content has gone. The
+ * runbook step still surfaces it for the DSR answer while it is held.
  *
  * Decision (e), 2026-09-23 (conservative default; the DPO may revise): an
  * erased member's row removed as `'kept_shared_row'` also leaves bytes
@@ -353,10 +356,11 @@ export async function reclaimOrphanedImages(
             // OWNER. A draft-discard / prune row's owner is gone, so the next
             // tick's orphan arm re-examines it. An ERASURE-stamped row's owner
             // survives (erasure redacts the broadcast, it does not delete it),
-            // so `listOrphaned` never selects it and nothing re-examines it
-            // automatically: `docs/runbooks/member-erasure.md` § Verifying
-            // step 4 surfaces it, and it is reclaimed by hand once the holding
-            // content goes.
+            // so `listOrphaned` never selects it; since spec 131 the UNUSED
+            // arm does (the redacted owner is terminal and no longer holds
+            // the URL), at most every 30 days, and reclaims it once the
+            // holding content goes. `docs/runbooks/member-erasure.md`
+            // § Verifying step 4 surfaces it for the DSR answer meanwhile.
             //
             // No `broadcast_image_removed` audit — nothing was removed, and an
             // audit row claiming otherwise is exactly the audit-truth class

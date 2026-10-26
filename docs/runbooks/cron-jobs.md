@@ -597,7 +597,8 @@ back, but it means an upload and the sweep raced for the same hash.
 `rowsRemoved` exceeding `blobsDeleted` is NORMAL: it means blobs were kept
 because another reference survives, or that two rows of one batch shared a
 hash and the first one deleted the bytes. The audit `reason` says which arm —
-`sweep` (marked row) or `sweep_orphaned` (owner vanished) — and
+`sweep` (marked row), `sweep_orphaned` (owner vanished) or `sweep_unused`
+(spec 131: a terminal E-Blast's image its content does not use) — and
 `blob_disposition` (F7-1) says what happened to the bytes: `deleted` (this row
 deleted them), `kept_shared_row` (another live row shares the hash; bytes
 stay) or `reclaimed_by_sibling` (an earlier row of this tick already deleted
@@ -613,6 +614,27 @@ at `error` (`errorId: 'M119.cron.image_sweep.rows_failed'`) and increments
 (`err`). The same tenant failing on consecutive days is a fault that is not
 clearing — an expired `BLOB_READ_WRITE_TOKEN` fails every row — and while it
 lasts, erased members' images stay publicly served.
+
+**Spec 131 additions.**
+- **The arm 3 watermark (0319).** Arm 3 stamps `broadcast_images.unused_checked_at`
+  on the rows a terminal E-Blast still uses, at most 1,000 per tick, and on
+  the rows the content check keeps. A stamped row is skipped for 30 days, so
+  an image is examined at most monthly. A row that throws is not stamped, so
+  it is retried the next tick.
+- **Separate transactions.** The marked/orphaned listing and arm 3 each run
+  in their own transaction under a 20 s statement timeout.
+  - If arm 3's listing fails, the other two arms still run. The tick logs
+    `cron.broadcasts.image_sweep.unused_list_failed`
+    (`errorId: 'M131.cron.image_sweep.unused_list_failed'`).
+  - The use case logs `broadcasts.image_sweep.unused_list_failed` with the
+    cause (`err`).
+- **Time budget.** Block 2 starts no new row after 150 s of the tick, so
+  Block 3 still runs. A stopped batch logs
+  `cron.broadcasts.image_sweep.truncated`
+  (`errorId: 'M131.cron.image_sweep.truncated'`), and the rest waits for the
+  next tick. Seeing it on several ticks in a row means the backlog is
+  outrunning the budget; it is expected only on the first ticks after
+  spec 131 merged.
 
 `retained` (ROUND-2 S-3) is the case where live content still embeds the blob
 URL. Those rows keep their bytes AND their row: the row is un-stamped back

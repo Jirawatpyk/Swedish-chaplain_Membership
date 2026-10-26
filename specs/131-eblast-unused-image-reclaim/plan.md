@@ -48,7 +48,12 @@ Rules: `.claude/rules/modules/broadcasts.md`, `architecture.md` (D-029 tenant pr
 
 ## Data model and migration
 
-n/a. `broadcast_images` and the `broadcast_image_removed` audit type already exist, and a reason is a payload value.
+**Migration 0319** (`0319_broadcast_images_unused_checked_at.sql`) is added by the #658 review round, at the maintainer's choice.
+- It adds `broadcast_images.unused_checked_at timestamptz NULL` and a partial index `(tenant_id, unused_checked_at) WHERE deleted_at IS NULL AND owner_kind = 'broadcast'`.
+- It is additive and nullable, so it is safe before the code that reads it. NULL means "never examined".
+- It is unflagged on deploy. Rollback is a forward fix; the column is harmless if unused.
+
+There is no new audit type. `not_inserted` and `sweep_unused` are payload values.
 
 ## Test plan
 

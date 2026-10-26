@@ -1,6 +1,6 @@
 # 131 — Reclaim E-Blast images that were uploaded but never used
 
-**Size**: M (broadcasts use case + repo methods + 3 DELETE routes + the daily sweep + editor client + i18n + docs; no migration, no flag). Personal data and audit surfaces, so not S.
+**Size**: M (broadcasts use case + repo methods + 3 DELETE routes + the daily sweep + editor client + i18n + docs; migration 0319 adds one nullable column; no flag). Personal data and audit surfaces, so not S.
 **Status**: building on `claude/jolly-feynman-8hpoyh`, 26 Oct 2026.
 **Source**: found while building PR #655 (spec 122 US12d-2); named there as the server follow-up (FR-011). The maintainer chose two layers on 25 Oct 2026.
 
@@ -30,13 +30,15 @@ Nothing compares an owner's images with its content. So an unused image on an E-
 
 1. **Cancel after an upload releases the image.** The author uploads an image, then cancels the description. The editor then:
    - sends `DELETE` to the release endpoint with that upload's `imageId`;
-   - shows the info toast "The image was not added to your message. It will be removed within a day." (EN/TH/SV).
+   - shows the info toast "The image wasn't added. It will be removed automatically, usually within a day." (EN/TH/SV).
+
+   The release URL is fixed when the image is uploaded. Leaving the page while the description is still open releases the upload too.
 
    This works on all four hosts: member compose, staff compose on behalf, the approval workspace, and the template form. A failed release changes nothing the author sees, and layer 2 still covers it.
 2. **The release endpoints.** `DELETE /api/broadcasts/inline-image-upload/[imageId]?draftId=…` (member), `DELETE /api/admin/broadcasts/[id]/images/[imageId]` (staff), `DELETE /api/admin/broadcasts/templates/[id]/images/[imageId]` (staff).
    - Each runs the same gate, kill-switch and write-rate bucket as its upload route, and `authorizeImageOwner`: 404 + probe audit for another member's or tenant's owner, and 409 when the owner is closed to this actor.
    - The proxy applies CSRF and the read-only freeze, as for every state-changing `/api/**` route.
-   - A live row of that owner is stamped (`deleted_at`). One `broadcast_image_removed { reason: 'not_inserted', blob_deleted: false }` is audited in the same transaction. A failed audit rolls the stamp back.
+   - A live row of that owner **uploaded by the caller** is stamped (`deleted_at`). Another user's upload is not released (maintainer, 26 Oct 2026). One `broadcast_image_removed { reason: 'not_inserted', blob_deleted: false }` is audited in the same transaction. A failed audit rolls the stamp back.
    - The answer is `200 { released: true }`. If no live row of this owner has that id, the answer is `200 { released: false }` and nothing is audited, so repeating the call is harmless and the endpoint reveals nothing about other owners' rows.
    - A malformed `imageId` → 404.
 3. **The next daily tick reclaims a released image** through the existing marked arm (the last-reference rule unchanged): its row is removed and its bytes are deleted unless another live row or live content holds them.
@@ -45,6 +47,12 @@ Nothing compares an owner's images with its content. So an unused image on an E-
    - An image the E-Blast does show is never selected.
    - Drafts and E-Blasts still in review are never selected.
    - The shared-hash rule and the tenant-wide content backstop apply as in the other arms. A row kept by the backstop stays live and counts as `retained`.
+   - **The watermark (0319 `unused_checked_at`).** Arm 3 examines a row at most once every 30 days.
+     - It stamps the rows a terminal owner still uses, and the rows the backstop keeps.
+     - It skips a stamped row until the 30 days lapse.
+     - A row whose transaction fails is not stamped.
+   - **Isolation.** Arm 3 lists in its own transaction under a statement timeout, and its failure never stops the marked arm.
+   - **Time budget.** The sweep starts no new row after the cron's 150 s Block 2 budget.
    - The backlog already in production is removed from the first tick after merge, 200 rows per arm per tenant per tick (maintainer, 26 Oct 2026).
 5. **Tenant isolation.** Every new query carries its own `tenant_id` predicate (D-029). A cross-tenant integration test shows tenant B cannot release tenant A's image.
 6. **Docs:**
@@ -63,7 +71,9 @@ Nothing compares an owner's images with its content. So an unused image on an E-
 
 - Arm 3 removes the existing backlog straight away. There is no report-only mode and no flag.
 - Templates are included in layer 1.
-- The toast says the image "will be removed within a day".
+- ~~The toast says the image "will be removed within a day".~~ Revised after the #658 reviews: "The image wasn't added. It will be removed automatically, usually within a day." It names no destination and makes no hard promise.
+- A watermark column (migration 0319) rather than re-scanning every image of every sent E-Blast every day.
+- Only the uploader may release an image.
 
 ## Open questions
 
