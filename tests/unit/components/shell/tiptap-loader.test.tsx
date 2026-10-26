@@ -24,7 +24,9 @@ describe('loadTiptapEditor', () => {
     );
     const status = screen.getByRole('status', { name: 'Loading editor…' });
     expect(status).toHaveAttribute('data-testid', 'tiptap-loading');
-    expect(status.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(2);
+    // The toolbar's own strip (15 controls, #662) plus the body block.
+    expect(status.querySelectorAll('[data-skeleton="toolbar-control"]')).toHaveLength(15);
+    expect(status.querySelectorAll('[data-slot="skeleton-block"]')).toHaveLength(16);
     expect(status.querySelector('[data-slot="skeleton"]')).toBeNull();
   });
 });
