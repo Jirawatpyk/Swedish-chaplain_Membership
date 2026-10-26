@@ -51,6 +51,10 @@ import { ClamavUnreachableBanner } from './clamav-unreachable-banner';
  * description (toolbar path) or the uploaded URL (uploader-button path) — and
  * the node is inserted only once both are present (FR-040).
  */
+/** Spec 131 — the one retry of a release that failed for a reason that may pass. */
+const RELEASE_RETRY_MS = 2_000;
+type ReleaseOutcome = 'released' | 'retryable' | 'final';
+
 interface PendingImage {
   readonly kind: ImageAltVariant;
   readonly alt?: string;
@@ -359,18 +363,20 @@ export default function TiptapEditor({
    * Spec 131 — release an upload that never made it into the message: the
    * endpoint beside the host's upload route stamps its row, and the next daily
    * sweep removes it. Fire and forget, `keepalive` so a page left at once
-   * still sends it. It resolves `true` only when the server stamped the row;
-   * otherwise the caller shows `notInsertedKept`, and on an E-Blast the
-   * sweep's "unused" arm reclaims the image once it closes.
+   * still sends it. `released` only when the server stamped the row. A
+   * failure that may pass (offline, 429, 5xx) is `retryable`; any other
+   * refusal (404, 409) is final. On an E-Blast the sweep's "unused" arm still
+   * reclaims an image left behind once the E-Blast closes.
    */
-  const releaseUpload = useCallback(async (url: string): Promise<boolean> => {
+  const releaseUpload = useCallback(async (url: string): Promise<ReleaseOutcome> => {
     try {
       const res = await fetch(url, { method: 'DELETE', keepalive: true });
-      if (!res.ok) console.error({ status: res.status }, 'broadcasts.image_release.refused');
-      return res.ok;
+      if (res.ok) return 'released';
+      console.error({ status: res.status }, 'broadcasts.image_release.refused');
+      return res.status === 429 || res.status >= 500 ? 'retryable' : 'final';
     } catch (err: unknown) {
       console.error({ err: String(err) }, 'broadcasts.image_release.failed');
-      return false;
+      return 'retryable';
     }
   }, []);
 
@@ -413,15 +419,22 @@ export default function TiptapEditor({
       // nothing is in the message, so say so (round 2, #5) and release it
       // (spec 131). "It will be removed" is said only once the release went
       // through: a refused or failed one (429, offline) leaves the file, and
-      // a template has no sweep behind it (#658 code review).
+      // a template has no sweep behind it (#658 code review). A failure that
+      // may pass is sent once more after 2 s (#658 UX M2, the maintainer).
       const pending = pendingImageRef.current;
       if (pending?.src !== undefined) {
         if (pending.releaseUrl === undefined) {
           toast.info(tImage('notInsertedKept'));
         } else {
-          void releaseUpload(pending.releaseUrl).then((released) => {
-            toast.info(tImage(released ? 'notInserted' : 'notInsertedKept'));
-          });
+          const url = pending.releaseUrl;
+          void (async () => {
+            let outcome = await releaseUpload(url);
+            if (outcome === 'retryable') {
+              await new Promise((resolve) => setTimeout(resolve, RELEASE_RETRY_MS));
+              outcome = await releaseUpload(url);
+            }
+            toast.info(tImage(outcome === 'released' ? 'notInserted' : 'notInsertedKept'));
+          })();
         }
       }
       pendingImageRef.current = null;

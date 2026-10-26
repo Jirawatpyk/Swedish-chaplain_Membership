@@ -30,7 +30,7 @@ Nothing compares an owner's images with its content. So an unused image on an E-
 
 1. **Cancel after an upload releases the image.** The author uploads an image, then cancels the description. The editor then:
    - sends `DELETE` to the release endpoint with that upload's `imageId`;
-   - once the release succeeded, shows the info toast "The image wasn't added to your message. It will be removed automatically, usually within a day." (EN/TH/SV, `notInserted`). A refused or failed release, or an upload with no image id, shows only "The image wasn't added to your message." (`notInsertedKept`), because nothing will remove it soon.
+   - once the release succeeded, shows the info toast "The image wasn't added to your message. It will be removed automatically, usually within a day." (EN/TH/SV, `notInserted`). A refused or failed release, or an upload with no image id, shows "The image wasn't added to your message. It's still stored. Contact the chamber if it must be removed." (`notInsertedKept`), because nothing will remove it soon. A failure that may pass (offline, 429, 5xx) is sent once more after 2 s before that toast; a 404 or 409 is final (maintainer, 26 Oct 2026, #658 UX M2).
 
    The release URL is fixed when the image is uploaded. Leaving the page while the description is still open releases the upload too, whether by navigating inside the app or by closing the tab or reloading (`pagehide`, a `keepalive` request; maintainer, 26 Oct 2026). It is sent once.
 
