@@ -1,0 +1,99 @@
+/**
+ * 130 (D-029) slice 4 — every statement of the plans repos carries a
+ * `tenant_id` predicate on each tenant-scoped table it names. Supersedes
+ * research.md § 7.1's "no explicit WHERE tenant_id" for this module.
+ * `callEach` refuses an unnamed method; the source scans cover statements
+ * that run only once an earlier read returns rows (the recording db answers
+ * none).
+ */
+import { readFileSync } from 'node:fs';
+import { describe, expect, it, vi } from 'vitest';
+import type { RecordedStatement } from '../../../helpers/tenant-sql-shape';
+
+const rec = vi.hoisted(() => ({ statements: [] as RecordedStatement[], db: null as unknown }));
+vi.mock('@/lib/db', async (importOriginal) => {
+  const { recordingDb } = await import('../../../helpers/tenant-sql-shape');
+  const r = recordingDb();
+  rec.statements = r.statements;
+  rec.db = r.db;
+  return {
+    ...(await importOriginal<typeof import('@/lib/db')>()),
+    db: r.db,
+    runInTenant: async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(r.db),
+  };
+});
+
+const {
+  ANY,
+  SHAPE_TENANT: T,
+  anyWith,
+  callEach,
+  isPureInsert,
+  tenantPredicateViolations,
+  tenantScopedTables,
+  unfencedRawSql,
+  unfencedWheres,
+} = await import('../../../helpers/tenant-sql-shape');
+const { planRepo } = await import('@/modules/plans/infrastructure/db/plan-repo');
+const { drizzleScheduledPlanChangeRepo } = await import(
+  '@/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo'
+);
+
+const TABLES = tenantScopedTables();
+const CTX = { slug: T } as never;
+const noop = async () => undefined;
+const PLAN_SRC = 'src/modules/plans/infrastructure/db/plan-repo.ts';
+const SCHEDULED_SRC = 'src/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo.ts';
+
+function violationsOf(statements: readonly RecordedStatement[]): string[] {
+  // The plan-row advisory lock names no table (its key is tenant:plan) — not
+  // a read. Matched exactly, so a lock statement that also reads is checked.
+  const LOCK_ONLY = 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))';
+  const checked = statements.filter((s) => !isPureInsert(s.sql) && s.sql.trim() !== LOCK_ONLY);
+  // Positive control: every read/update names a tenant table the parse sees.
+  const reads = checked.filter((s) => !s.sql.trimStart().toLowerCase().startsWith('insert'));
+  expect(reads.filter((s) => tenantPredicateViolations(s, TABLES).refs.length === 0).map((s) => s.sql.slice(0, 80))).toEqual([]);
+  return checked.flatMap((s) =>
+    tenantPredicateViolations(s, TABLES).violations.map((v) => `${v} :: ${s.sql.slice(0, 90)}`),
+  );
+}
+
+describe('plans repos — tenant predicate on every statement (130 s4)', () => {
+  it('plan repo', async () => {
+    rec.statements.length = 0;
+    const filter = anyWith({ year: 2026, category: undefined, search: undefined, includeInactive: undefined, includeDeleted: undefined });
+    await callEach(planRepo as never, {
+      findByTenantAndYear: [CTX, filter],
+      findOne: [CTX, 'large', 2026],
+      insert: [CTX, ANY, noop],
+      update: [CTX, 'large', 2026, anyWith({ planName: { en: 'Large' } }), 'user-1', noop],
+      setActive: [CTX, 'large', 2026, false, 'user-1', noop],
+      softDeleteGuarded: [CTX, 'large', 2026, new Date('2026-01-01T00:00:00.000Z'), 'user-1', noop],
+      undelete: [CTX, 'large', 2026, 'user-1', noop],
+      cloneYear: [CTX, 2026, 2027, false, 'user-1', noop],
+    });
+    expect(rec.statements.length).toBeGreaterThanOrEqual(8);
+    expect(violationsOf(rec.statements)).toEqual([]);
+  });
+
+  it('scheduled plan-change repo', async () => {
+    rec.statements.length = 0;
+    await callEach(drizzleScheduledPlanChangeRepo as never, {
+      supersedeAndInsertPendingAtomically: [CTX, ANY, rec.db, noop],
+      findPendingForCycle: [CTX, 'member-1', 'cycle-1'],
+      findById: [CTX, 'change-1'],
+      transitionStatus: [CTX, 'change-1', 'applied', noop],
+      listForMember: [CTX, 'member-1'],
+    });
+    expect(rec.statements.length).toBeGreaterThanOrEqual(5);
+    expect(violationsOf(rec.statements)).toEqual([]);
+  });
+
+  it('every .where( and hand-written sql block in both sources names tenant_id', () => {
+    for (const path of [PLAN_SRC, SCHEDULED_SRC]) {
+      const src = readFileSync(path, 'utf8');
+      expect(unfencedWheres(src)).toEqual([]);
+      expect(unfencedRawSql(src, TABLES)).toEqual([]);
+    }
+  });
+});
