@@ -15,6 +15,10 @@
  * - `emailChangeTokenAdapter.findActiveById` — the token id is what resolves
  *   the tenant, so the read cannot be bound to one.
  * - the plan advisory lock (`SELECT pg_advisory_xact_lock(...)`), no table.
+ *
+ * The tx-only `…InTx` methods read their tenant with `tenantSlugOf(tx)`
+ * (D-030), so the mock binds the recording db to `SHAPE_TENANT` the way
+ * `runInTenant` binds a real tx.
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
@@ -22,12 +26,14 @@ import type { RecordedStatement } from '../../../helpers/tenant-sql-shape';
 
 const rec = vi.hoisted(() => ({ statements: [] as RecordedStatement[], db: null as unknown }));
 vi.mock('@/lib/db', async (importOriginal) => {
-  const { recordingDb } = await import('../../../helpers/tenant-sql-shape');
+  const { recordingDb, SHAPE_TENANT } = await import('../../../helpers/tenant-sql-shape');
+  const original = await importOriginal<typeof import('@/lib/db')>();
   const r = recordingDb();
+  original.bindTenantTx(r.db, SHAPE_TENANT);
   rec.statements = r.statements;
   rec.db = r.db;
   return {
-    ...(await importOriginal<typeof import('@/lib/db')>()),
+    ...original,
     db: r.db,
     runInTenant: async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(r.db),
   };
@@ -149,9 +155,9 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
     rec.statements.length = 0;
     const { silent, byMethod } = await callCounted(drizzleMemberRepo as never, {
       findById: [CTX, 'member-1'],
-      findByIdInTx: [tx, T, 'member-1'],
+      findByIdInTx: [tx, 'member-1'],
       findRiskById: [CTX, 'member-1'],
-      findErasedAtByIdInTx: [tx, T, 'member-1'],
+      findErasedAtByIdInTx: [tx, 'member-1'],
       findErasedAtById: [CTX, 'member-1'],
       findStuckErasuresInTx: [tx, T, 10],
       findManyByIdsInTx: [tx, T, ['member-1']],
@@ -163,10 +169,10 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
       findSoftDuplicate: [CTX, 'Acme', 'TH'],
       createWithPrimaryContactInTx: [tx, anyWith({ member: anyWith({ registrationDate: NOW, archivedAt: null }), primaryContact: ANY, secondaryContact: null })],
       updateStatus: [CTX, 'member-1', STATUS],
-      updateStatusInTx: [tx, T, 'member-1', STATUS],
+      updateStatusInTx: [tx, 'member-1', STATUS],
       updateFields: [CTX, 'member-1', { companyName: 'Acme' }],
-      updateFieldsInTx: [tx, T, 'member-1', { companyName: 'Acme' }],
-      scrubPiiInTx: [tx, T, 'member-1', { erasedAt: NOW }],
+      updateFieldsInTx: [tx, 'member-1', { companyName: 'Acme' }],
+      scrubPiiInTx: [tx, 'member-1', { erasedAt: NOW }],
       searchDirectory: [CTX, DIRECTORY_OFF],
       searchDirectoryWithCount: [CTX, DIRECTORY_OFF],
       listContactsForMarketingAudience: [CTX, AUDIENCE_OFF],
@@ -175,17 +181,17 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
       findBroadcastRecipientContacts: [CTX, SEGMENT_ALL],
       countBroadcastOptedOutContacts: [CTX, SEGMENT_ALL],
       findMembersHaltedForBroadcast: [CTX],
-      updateBroadcastsHaltedInTx: [tx, T, 'member-1', true],
-      updateBroadcastsAcknowledgedAtInTx: [tx, T, 'member-1', NOW],
+      updateBroadcastsHaltedInTx: [tx, 'member-1', true],
+      updateBroadcastsAcknowledgedAtInTx: [tx, 'member-1', NOW],
       findPrimaryContactEmailInTx: [tx, T, 'member-1'],
-      findPreferredLocaleInTx: [tx, T, 'member-1'],
-      updatePreferredLocaleInTx: [tx, T, 'member-1', 'th'],
-      findMemberByPrimaryContactEmailInTx: [tx, T, 'a@example.com'],
+      findPreferredLocaleInTx: [tx, 'member-1'],
+      updatePreferredLocaleInTx: [tx, 'member-1', 'th'],
+      findMemberByPrimaryContactEmailInTx: [tx, 'a@example.com'],
       findLastPlanChangedAt: [CTX, 'member-1'],
       findPendingInvitationsForMember: [CTX, 'member-1'],
       findPendingInvitationsForPrimaryContacts: [CTX, ['member-1']],
     });
-    expect.soft(silent).toEqual([]);
+    expect(silent).toEqual([]);
     expect(byMethod.size).toBeGreaterThanOrEqual(36);
     expect(violationsOf(rec.statements)).toEqual([]);
   });
@@ -242,36 +248,44 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
     const tx = rec.db;
     rec.statements.length = 0;
     const scrub = await callCounted(changeRequestScrubAdapter as never, {
-      scrubForMemberInTx: [tx, T, 'member-1', NOW],
-      listRequestIdsInTx: [tx, T, 'member-1'],
+      scrubForMemberInTx: [tx, 'member-1', NOW],
+      listRequestIdsInTx: [tx, 'member-1'],
     });
     const tokens = await callCounted(emailChangeTokenAdapter as never, {
       findActiveById: ['token-1'],
       insertInTx: [tx, CTX, anyWith({ activatedAt: NOW, expiresAt: NOW })],
-      findActiveByIdInTx: [tx, T, 'token-1'],
-      markConsumedInTx: [tx, T, 'token-1', NOW],
-      invalidateActiveForUserInTx: [tx, T, 'user-1', 'revert', NOW],
-      invalidateAllActiveForUsersInTx: [tx, T, ['user-1'], NOW],
+      findActiveByIdInTx: [tx, 'token-1'],
+      markConsumedInTx: [tx, 'token-1', NOW],
+      invalidateActiveForUserInTx: [tx, 'user-1', 'revert', NOW],
+      invalidateAllActiveForUsersInTx: [tx, ['user-1'], NOW],
     });
     const lock = await callCounted(drizzlePlanAdvisoryLockAdapter as never, {
       acquire: [tx, 'plans:tenant-shape:plan-1:2026'],
-      isPlanSoftDeletedInTx: [tx, T, 'plan-1', 2026],
+      isPlanSoftDeletedInTx: [tx, 'plan-1', 2026],
     });
     const lookup = await callCounted(plansBarrelAdapter as never, {
       getPlan: [CTX, 'plan-1', 2026],
       countAffectedMembers: [CTX, 'plan-1', 2026],
     });
     await countActiveMembersOnPlan(CTX, 'plan-1', 2026);
-    await (countActiveMembersOnPlanInTx as (...a: unknown[]) => Promise<number>)(tx, T, 'plan-1', 2026).catch(() => 0);
+    await countActiveMembersOnPlanInTx(tx as never, 'plan-1', 2026).catch(() => 0);
 
     // `getPlan` reaches the (mocked) plans repo only — no statement of its own.
-    expect.soft([...scrub.silent, ...tokens.silent, ...lock.silent, ...lookup.silent]).toEqual(['getPlan']);
+    expect([...scrub.silent, ...tokens.silent, ...lock.silent, ...lookup.silent]).toEqual(['getPlan']);
     // The token lookup that resolves the tenant: exactly one id read, exempt.
     const resolving = tokens.byMethod.get('findActiveById')!;
     expect(resolving).toHaveLength(1);
     expect(resolving[0]!.sql).toMatch(/^select .* from "email_change_tokens" where \("email_change_tokens"\."id" = \$1/);
     const exempt = new Set(resolving);
     expect(violationsOf(rec.statements.filter((s) => !exempt.has(s)))).toEqual([]);
+  });
+
+  it('a tx runInTenant did not open sends nothing — tenantSlugOf fails closed (D-030)', async () => {
+    const { recordingDb } = await import('../../../helpers/tenant-sql-shape');
+    const unbound = recordingDb();
+    const result = await drizzleMemberRepo.findByIdInTx(unbound.db as never, 'member-1' as never);
+    expect(result.ok).toBe(false);
+    expect(unbound.statements).toEqual([]);
   });
 
   it('the bounce resolver is the one cross-tenant read, and it is only that', async () => {
