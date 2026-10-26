@@ -15,6 +15,7 @@
 | s2 | `3b944ad36` | `cycle-repo.test.ts`: 51 violations (renewal_cycles reads/updates/locks; members, invoices and credit_notes joins whose root was unfenced) |
 | s2 | `c1fe40629` | the month-filtered `loadPipelinePage` branch (6 refs) and `pruneOlderThan`'s DELETE on `consumed_link_tokens` — found by hand-scanning the branches the call map cannot reach |
 | s3 | `28772a9e8` | `flags-escalation-repos.test.ts`: 24 violations in the member renewal-flags repo (members reads/updates, the at-risk factor CTE root `m`, the bulk risk UPDATE, the widget summary), 12 in the escalation-task repo (incl. `list`'s no-filter branch with no WHERE at all), 23 unfenced `.where(` in source |
+| s6 | `3d78be87c` | `contact-change-request-repos-tenant-sql-shape.test.ts`: 22 violations in the contact repo (every contacts read/update outside `findByEmail` and the opt-out batch), 21 in the change-request repo (the request reads/updates, and the list join's `members` + `contacts` with an unfenced root), 1 hand-written block (the tombstone `contacts c` / `peer`), 22 unfenced `.where(` in the contact source |
 
 Mutation proof for s1: from the committed GREEN, deleting `eq(contacts.tenantId, tenant.slug)` in `drizzle-bounce-event-query.ts` turned the gate red (`contacts: 1 reference(s), 0 tenant predicate(s)`); restoring it turned the gate green again.
 
@@ -28,3 +29,6 @@ s2 review (#657): the call-map now pins every optional filter OFF (the default p
 
 s3 notes: the at-risk factor SQL's invoices LATERAL named `tenant_id` bare (`WHERE tenant_id = m.tenant_id`); it is now qualified (`invoices.tenant_id`) — same meaning, visible to the checker. `listActiveMemberIdsForAtRiskRecompute`'s EXISTS over `renewal_cycles` correlated by `member_id` only and now also by `tenant_id`. The escalation `list` had a branch that issued no WHERE when no filter was set; both branches are now one query that always carries the tenant.
 
+Mutation proof for s6: from the committed GREEN (`7dc314342`), deleting `eq(contacts.tenantId, tenantSlugOf(tx))` in `scrubPiiForMemberInTx` and `f.tenant_id = ${tenant} AND` in `decideInTx`'s raw UPDATE turned three gate cases red (the contacts call map, the raw-SQL scan, the `.where(` scan); restoring both with `git checkout --` turned the gate green again (6/6).
+
+s6 notes: both repos are module singletons whose `*InTx` methods receive only `tx`, so a tx-only method binds `tenantSlugOf(tx)` (D-030) and keeps its port signature; `updateEmailInTx`'s unused `_ctx` is now the predicate's source. The change-request list join correlates `members` and `contacts` by `tenant_id` to the fenced request root. `loadFields` (row-dependent, never recorded) is covered by the `.where(` scan. The fail-loud contact unit test binds its fake tx, since an unbound tx now throws `TenantTxNotBoundError` before the SELECT.
