@@ -316,12 +316,12 @@ describe('the loading skeleton', () => {
     const status = screen.getByTestId('tiptap-loading');
     expect(status).not.toHaveAttribute('aria-label');
     expect(status).toHaveAccessibleName(enMessages.shell.editorLoading);
-    // Phones 104px (the boards' eight controls, two rows at 320px), touch
-    // screens from 640px 104px (two rows), a mouse from 640px 40px (one row).
-    expect(status.querySelector('[data-slot="skeleton-block"]')).toHaveClass(
-      'h-[104px]',
-      'sm:[@media(pointer:fine)]:h-10',
-    );
+    // The toolbar strip wraps like the real one (#662 review): 15 controls,
+    // the boards' 8 on a phone, 44px on touch and 32px with a mouse from 640px.
+    const placeholders = Array.from(status.querySelectorAll('[data-skeleton="toolbar-control"]'));
+    expect(placeholders).toHaveLength(15);
+    expect(placeholders.filter((p) => !p.className.includes('max-sm:hidden'))).toHaveLength(8);
+    expect(placeholders[0]).toHaveClass('size-11', 'sm:[@media(pointer:fine)]:size-8');
   });
 });
 

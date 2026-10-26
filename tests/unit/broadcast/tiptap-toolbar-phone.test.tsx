@@ -131,13 +131,32 @@ describe('phone toolbar — the staff boards\' row', () => {
     act(() => {
       editor!.chain().focus().toggleHeading({ level: 2 }).run();
     });
-    expect(within(toolbar).getByRole('button', { name: t.blocksMenu }).querySelector('[data-active-mark]')).not.toBeNull();
+    // The mark is decorative; the name says it too (#662 review: WCAG 1.3.1).
+    const marked = within(toolbar).getByRole('button', { name: `${t.blocksMenu}, ${t.heading2}` });
+    expect(marked.querySelector('[data-active-mark]')).not.toBeNull();
   });
 
-  it('while the host saves, the menus do not open', () => {
+  it('while the host saves, every menu item is unavailable and says why', () => {
     const { toolbar } = renderToolbar({ disabled: true });
-    fireEvent.click(within(toolbar).getByRole('button', { name: t.insertMenu }));
-    expect(screen.queryByRole('menu')).toBeNull();
+    const menu = openMenu(toolbar, t.insertMenu);
+    const items = Array.from(menu.querySelectorAll('[role^=menuitem]'));
+    expect(items.every((i) => i.getAttribute('aria-disabled') === 'true')).toBe(true);
+    expect(within(menu).getAllByText(t.saveWait)).toHaveLength(items.length);
+  });
+
+  it('the menu button keeps focus when the host starts saving (no remount, #662 review)', () => {
+    editor = new Editor({ extensions: makeBroadcastEditorExtensions({ images: true }), content: '<p>hello</p>' });
+    const ui = (disabled: boolean) => (
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <TiptapToolbar editor={editor!} onAnnounce={() => {}} imagesEnabled imageInsertEnabled disabled={disabled} />
+      </NextIntlClientProvider>
+    );
+    const view = render(ui(false));
+    const trigger = screen.getByRole('button', { name: t.insertMenu });
+    trigger.focus();
+    view.rerender(ui(true));
+    expect(document.activeElement).toBe(trigger);
+    expect(trigger).toHaveAttribute('aria-haspopup', 'menu');
   });
 
   it('Thai has no Italic on the phone row either (FR-044)', () => {
