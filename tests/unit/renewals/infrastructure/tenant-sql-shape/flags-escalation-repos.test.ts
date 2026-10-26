@@ -22,9 +22,18 @@ vi.mock('@/lib/db', async (importOriginal) => {
   };
 });
 
-const { ANY, SHAPE_TENANT: T, anyWith, callEach, isPureInsert, tenantPredicateViolations, tenantScopedTables } =
-  await import('../../../../helpers/tenant-sql-shape');
-const { makeDrizzleMemberRenewalFlagsRepo } = await import(
+const {
+  ANY,
+  SHAPE_TENANT: T,
+  anyWith,
+  callEach,
+  isPureInsert,
+  tenantPredicateViolations,
+  tenantScopedTables,
+  unfencedRawSql,
+  unfencedWheres,
+} = await import('../../../../helpers/tenant-sql-shape');
+const { makeDrizzleMemberRenewalFlagsRepo, makeDrizzleMemberRenewalFlagsRepoWithTenant } = await import(
   '@/modules/renewals/infrastructure/drizzle/drizzle-member-renewal-flags-repo'
 );
 const { makeDrizzleRenewalEscalationTaskRepo } = await import(
@@ -42,9 +51,10 @@ const OFF = {
   taskTypeFilter: undefined,
   overdueOnly: undefined,
   overdueThresholdDays: undefined,
-  bandFilter: undefined,
-  includeSnoozed: undefined,
+  band: undefined,
 };
+const FLAGS_SRC = 'src/modules/renewals/infrastructure/drizzle/drizzle-member-renewal-flags-repo.ts';
+const ESCALATION_SRC = 'src/modules/renewals/infrastructure/drizzle/drizzle-renewal-escalation-task-repo.ts';
 
 function violationsOf(statements: readonly RecordedStatement[]): string[] {
   const checked = statements.filter((s) => !isPureInsert(s.sql));
@@ -55,23 +65,6 @@ function violationsOf(statements: readonly RecordedStatement[]): string[] {
   return checked.flatMap((s) =>
     tenantPredicateViolations(s, TABLES).violations.map((v) => `${v} :: ${s.sql.slice(0, 90)}`),
   );
-}
-
-/** Every `.where(` in a source file that names no tenant predicate inline. */
-function unfencedWheres(path: string): string[] {
-  const src = readFileSync(path, 'utf8');
-  const out: string[] = [];
-  for (let at = src.indexOf('.where('); at !== -1; at = src.indexOf('.where(', at + 1)) {
-    let depth = 0;
-    let end = at + '.where'.length;
-    for (; end < src.length; end += 1) {
-      if (src[end] === '(') depth += 1;
-      else if (src[end] === ')' && --depth === 0) break;
-    }
-    const inner = src.slice(at + '.where('.length, end).replace(/\s+/g, ' ').trim();
-    if (!/tenantId|tenant_id/.test(inner)) out.push(inner);
-  }
-  return out.sort();
 }
 
 describe('flags + escalation repos — tenant predicate on every statement (130 s3)', () => {
@@ -102,6 +95,15 @@ describe('flags + escalation repos — tenant predicate on every statement (130 
     expect(violationsOf(rec.statements)).toEqual([]);
   });
 
+  it('member renewal flags — the band-filtered widget and the WithTenant wrapper', async () => {
+    rec.statements.length = 0;
+    const repo = makeDrizzleMemberRenewalFlagsRepoWithTenant(CTX);
+    await repo.listAtRiskWidgetMembers(rec.db as never, T, anyWith({ ...OFF, band: 'critical' }) as never).catch(() => undefined);
+    await repo.clearEmailUnverifiedInTenant('member-1').catch(() => undefined);
+    expect(rec.statements.length).toBeGreaterThanOrEqual(2);
+    expect(violationsOf(rec.statements)).toEqual([]);
+  });
+
   it('renewal escalation tasks', async () => {
     const tx = rec.db;
     rec.statements.length = 0;
@@ -122,12 +124,17 @@ describe('flags + escalation repos — tenant predicate on every statement (130 
     expect(violationsOf(rec.statements)).toEqual([]);
   });
 
+  it('every hand-written sql block on a tenant table names tenant_id (row-dependent statements included)', () => {
+    expect(unfencedRawSql(readFileSync(FLAGS_SRC, 'utf8'), TABLES)).toEqual([]);
+    expect(unfencedRawSql(readFileSync(ESCALATION_SRC, 'utf8'), TABLES)).toEqual([]);
+  });
+
   it('every .where( in both sources names tenant_id (row-dependent statements included)', () => {
     // `baseWhere` is the composed at-risk widget filter — fenced, and proven
     // by the call-map case above.
-    expect(unfencedWheres('src/modules/renewals/infrastructure/drizzle/drizzle-member-renewal-flags-repo.ts')).toEqual([
+    expect(unfencedWheres(readFileSync(FLAGS_SRC, 'utf8'))).toEqual([
       'baseWhere',
     ]);
-    expect(unfencedWheres('src/modules/renewals/infrastructure/drizzle/drizzle-renewal-escalation-task-repo.ts')).toEqual([]);
+    expect(unfencedWheres(readFileSync(ESCALATION_SRC, 'utf8'))).toEqual([]);
   });
 });

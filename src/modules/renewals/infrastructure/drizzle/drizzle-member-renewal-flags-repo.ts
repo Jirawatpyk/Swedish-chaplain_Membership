@@ -67,13 +67,11 @@ import type {
 import type { RiskBand } from '../../domain/value-objects/risk-band';
 
 export function makeDrizzleMemberRenewalFlagsRepo(
-  // RLS does the tenant binding via runInTenant at the use-case layer;
-  // most methods below receive only the tx + memberId and write via the
-  // members table directly, so `tenant` goes unused for them. Rolling-
-  // anchor rev 2 added `hasUnreconciledPaidMembershipInvoice`, which has
-  // no caller-supplied tx (the dispatcher gate calls it standalone) — it
-  // opens its OWN `runInTenant(tenant, …)` using this closed-over context,
-  // mirroring `makeDrizzleTierUpgradeEvalCandidateRepo`'s `list()` method.
+  // D-029 — every statement below carries `tenant_id = tenant.slug`
+  // alongside the RLS the use-case's `runInTenant` sets (the tx-taking
+  // methods inherit it). `hasUnreconciledPaidMembershipInvoice` has no
+  // caller-supplied tx (the dispatcher gate calls it standalone) — it opens
+  // its OWN `runInTenant(tenant, …)` using this closed-over context.
   tenant: TenantContext,
 ): MemberRenewalFlagsRepo {
   return {

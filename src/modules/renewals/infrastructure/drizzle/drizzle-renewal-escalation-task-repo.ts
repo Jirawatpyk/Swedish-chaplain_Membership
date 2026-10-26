@@ -602,24 +602,17 @@ export function makeDrizzleRenewalEscalationTaskRepo(
             users,
             eq(users.id, renewalEscalationTasks.assignedToUserId),
           );
-        const rows = whereExpr
-          ? await baseQuery
-              .where(and(eq(renewalEscalationTasks.tenantId, tenant.slug), whereExpr))
-              .orderBy(
-                orderExpr,
-                opts.sort === 'due_at_desc'
-                  ? desc(renewalEscalationTasks.taskId)
-                  : asc(renewalEscalationTasks.taskId),
-              )
-              .limit(opts.pageSize + 1)
-          : await baseQuery
-              .orderBy(
-                orderExpr,
-                opts.sort === 'due_at_desc'
-                  ? desc(renewalEscalationTasks.taskId)
-                  : asc(renewalEscalationTasks.taskId),
-              )
-              .limit(opts.pageSize + 1);
+        // D-029 — one query, always tenant-fenced (`and()` drops an
+        // undefined filter; the former no-WHERE arm is gone).
+        const rows = await baseQuery
+          .where(and(eq(renewalEscalationTasks.tenantId, tenant.slug), whereExpr))
+          .orderBy(
+            orderExpr,
+            opts.sort === 'due_at_desc'
+              ? desc(renewalEscalationTasks.taskId)
+              : asc(renewalEscalationTasks.taskId),
+          )
+          .limit(opts.pageSize + 1);
 
         const hasMore = rows.length > opts.pageSize;
         const pageRows = hasMore ? rows.slice(0, opts.pageSize) : rows;

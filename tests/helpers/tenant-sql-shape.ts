@@ -187,3 +187,39 @@ export async function callEach(
 export function isPureInsert(sql: string): boolean {
   return /^\s*insert\b/i.test(sql) && !/\b(?:select|where)\b/i.test(sql);
 }
+
+/**
+ * Every `.where(` in a source file that names no tenant predicate inline —
+ * the static half of a gate, covering statements the recording db never sees
+ * (it answers no rows, so a read that runs only after a found row is skipped).
+ */
+export function unfencedWheres(source: string): string[] {
+  const out: string[] = [];
+  for (let at = source.indexOf('.where('); at !== -1; at = source.indexOf('.where(', at + 1)) {
+    let depth = 0;
+    let end = at + '.where'.length;
+    for (; end < source.length; end += 1) {
+      if (source[end] === '(') depth += 1;
+      else if (source[end] === ')' && --depth === 0) break;
+    }
+    const inner = source.slice(at + '.where('.length, end).replace(/\s+/g, ' ').trim();
+    if (!/tenantId|tenant_id/.test(inner)) out.push(inner);
+  }
+  return out.sort();
+}
+
+/**
+ * Every hand-written `sql\`…\`` block that reads or writes a tenant-scoped
+ * table by name (FROM / JOIN / UPDATE) yet never mentions `tenant_id` — the
+ * raw-SQL counterpart of `unfencedWheres`.
+ */
+export function unfencedRawSql(source: string, tenantTables: readonly string[]): string[] {
+  const names = tenantTables.join('|');
+  const ref = new RegExp(String.raw`\b(?:from|join|update)\s+"?(?:${names})"?\b`, 'i');
+  const out: string[] = [];
+  for (const m of source.matchAll(/sql(?:<[^>]*>)?`([^`]*)`/g)) {
+    const body = m[1]!;
+    if (ref.test(body) && !/tenant_id|tenantId/.test(body)) out.push(body.replace(/\s+/g, ' ').trim().slice(0, 120));
+  }
+  return out;
+}
