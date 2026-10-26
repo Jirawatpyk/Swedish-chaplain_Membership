@@ -345,6 +345,8 @@ describe('isTerminatedAllowedRoute — the F119 E-Blast sign-off exemption (T074
     // Benefit-consuming siblings stay refused.
     ['/api/broadcasts/submit', false],
     ['/api/broadcasts/inline-image-upload', false],
+    // Spec 131 — the release beside it, too (a lapsed member writes no draft).
+    [`/api/broadcasts/inline-image-upload/${ID}`, false],
     ['/api/broadcasts/preview', false],
     ['/api/broadcasts/test-copy', false],
     ['/api/broadcasts/quota', false],
