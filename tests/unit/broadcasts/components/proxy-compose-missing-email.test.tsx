@@ -243,15 +243,18 @@ describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
         hasPrimaryContactEmail: true,
       });
     });
-    const excluded = screen.getByText(/won't receive this broadcast/i);
+    // Spec 122 US12d-3 (T1267): on all_members the exclusion is the count
+    // line's own note — "· not {company}'s own contacts" — not a line above.
+    const excluded = screen.getByText("· not Has Email Corp's own contacts");
+    expect(screen.queryByText(/won't receive this broadcast/i)).toBeNull();
     const picker = screen.getByTestId('segment-picker');
-    // The picker precedes the notice in document order.
+    // The picker precedes the note in document order.
     expect(picker.compareDocumentPosition(excluded) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await act(async () => {
       capturedSegmentOnChange?.({ kind: 'custom', tierCodes: [], emails: [] } as never);
     });
-    expect(screen.queryByText(/won't receive this broadcast/i)).toBeNull();
+    expect(screen.queryByText(/own contacts/i)).toBeNull();
     expect(screen.getByText(/will receive it/i)).toBeInTheDocument();
   });
 
