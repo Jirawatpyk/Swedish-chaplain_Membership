@@ -36,6 +36,7 @@ Mutation proof for s7: from the committed GREEN (`e2d24c42f`), each of these tur
 - deleting it in the attendances read;
 - deleting `eq(broadcasts.tenantId, tenantId)` from `adminQueueListQuery`;
 - deleting the first `eq(invoices.tenantId, tenantIdArg)` from an invoice-repo `filters` list.
+- deleting the `tenantSlugOf(tx)` predicate from `markProcessed` (from the committed `e61f003c4`).
 
 The broadcasts and invoice-repo gates had no RED, because neither repo needed a change; these mutations are their evidence.
 
@@ -43,4 +44,4 @@ s7 notes:
 - **Checker.** The checker read `IS DISTINCT FROM "t"."col"` (the tier-upgrade orphan query) as a table reference; `TABLE_REF` now skips it, and `checker.test.ts` has a case for it.
 - **Static scans.** `unfencedRawSql` stops at a nested backtick, so the broadcasts redaction UPDATE (`sql.join` of `sql` fragments) is pinned by its truncated prefix; both of its refs bind `tenant_id`.
 - **Exemptions.** The cross-tenant reads are listed in spec § Not changed, and each gate pins them as the file's only unfenced statements.
-- **`processor_events` writes.** `markProcessed` and `updateOutcome` receive only a tx; they bind the tenant through `tenantSlugOf(tx)` (D-030) rather than a widened port.
+- **`processor_events` writes.** `markProcessed` and `updateOutcome` receive only a tx, so they bind the tenant through `tenantSlugOf(tx)` (D-030) rather than a widened port. Every caller reaches them through `paymentsRepo.withTx`, which is `runInTenant`. A tx that `runInTenant` did not open is refused before any SQL.

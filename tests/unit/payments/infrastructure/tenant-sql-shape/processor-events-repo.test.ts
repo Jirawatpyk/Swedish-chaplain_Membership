@@ -27,9 +27,8 @@ vi.mock('@/lib/db', async (importOriginal) => {
   };
 });
 
-const { SHAPE_TENANT: T, callEach, tenantPredicateViolations, tenantScopedTables, unfencedWheres } = await import(
-  '../../../../helpers/tenant-sql-shape'
-);
+const { SHAPE_TENANT: T, callEach, recordingDb, tenantPredicateViolations, tenantScopedTables, unfencedWheres } =
+  await import('../../../../helpers/tenant-sql-shape');
 const { makeDrizzleProcessorEventsRepo, findProcessorEventInTenant } = await import(
   '@/modules/payments/infrastructure/repos/drizzle-processor-events-repo'
 );
@@ -62,11 +61,11 @@ describe('processor_events repo — tenant predicate on every tenant-tx statemen
   });
 
   it('a tx runInTenant did not open is refused before any SQL (fails closed, D-030)', async () => {
-    rec.statements.length = 0;
+    const unbound = recordingDb();
     const repo = makeDrizzleProcessorEventsRepo();
-    await expect(repo.markProcessed({}, 'evt_1')).rejects.toThrow('tenantSlugOf');
-    await expect(repo.updateOutcome({}, { id: 'evt_1', outcome: 'processed' })).rejects.toThrow('tenantSlugOf');
-    expect(rec.statements).toEqual([]);
+    await expect(repo.markProcessed(unbound.db, 'evt_1')).rejects.toThrow('tenantSlugOf');
+    await expect(repo.updateOutcome(unbound.db, { id: 'evt_1', outcome: 'processed' })).rejects.toThrow('tenantSlugOf');
+    expect(unbound.statements).toEqual([]);
   });
 
   it('the pre-resolution reads are the only unfenced .where( in either payments repo', () => {
