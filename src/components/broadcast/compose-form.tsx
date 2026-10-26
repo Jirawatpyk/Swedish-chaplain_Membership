@@ -30,6 +30,7 @@ import {
   estimateNoteKey,
   excludedByPreference,
   PREFERENCE_TOAST_DURATION_MS,
+  recipientNoteKey,
   selfExclusionHintKey,
   submitBlockedByCount,
   submitBlockedHintKey,
@@ -317,6 +318,9 @@ export function ComposeForm({
   // than rendering a raw i18n key path (next-intl does not throw).
   const estimateNote = estimateNoteKey(segment.kind, audienceMode);
   const selfExclusionHint = selfExclusionHintKey(segment.kind);
+  // Spec 122 US12d-3 (T1267) — the note on the one recipients line; the
+  // estimate note and the hint above stay only for the custom list.
+  const recipientNote = recipientNoteKey(segment.kind, audienceMode);
   const validation = SubmitSchema.safeParse({ subject, bodyHtml });
   const customListValid =
     segment.kind !== 'custom' || (customLines.length > 0 && customLines.length <= 100);
@@ -656,7 +660,7 @@ export function ComposeForm({
                 /code-review finding #6: an unrecognised segment kind yields
                 null and this line is omitted — never a raw i18n key path,
                 which is what next-intl renders for an unknown key. */}
-            {estimateNote !== null ? (
+            {recipientNote === null && estimateNote !== null ? (
               <p className="text-xs text-muted-foreground">
                 {t(estimateNote, { ceiling: audienceCeiling })}
               </p>
@@ -665,7 +669,7 @@ export function ComposeForm({
                 the sending member, not only the primary address. Round 2 (UX
                 H-3): every segment kind says which way the rule goes — silence
                 on the custom list / attendees read as "same rule". */}
-            {selfExclusionHint !== null ? (
+            {recipientNote === null && selfExclusionHint !== null ? (
               <p className="text-xs text-muted-foreground">{t(selfExclusionHint)}</p>
             ) : null}
             {/* 108 PR-C T089 (FR-040): the live count — the same resolver that
@@ -674,6 +678,7 @@ export function ComposeForm({
               state={recipientCount}
               textId={RECIPIENT_COUNT_TEXT_ID}
               onRetry={() => setCountRetry((n) => n + 1)}
+              note={recipientNote === null ? null : t(recipientNote)}
             />
 
             {segment.kind === 'custom' ? (

@@ -69,7 +69,7 @@ describe('member compose — one recipients line (T1267)', () => {
   it('says "every contact" when the all-contacts leg is in force', () => {
     renderForm('all_contacts');
     expect(line()).toHaveTextContent(
-      '128 recipients · every contact of each active member who hasn’t opted out, not your own company',
+      "128 recipients · every contact of each active member who hasn't opted out, not your own company",
     );
   });
 

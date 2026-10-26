@@ -4116,7 +4116,8 @@
         "draftSavedToast": "Utkast sparat.",
         "draftSaveErrorToast": "Utkastet kunde inte sparas. Försök igen.",
         "savedAt": "Sparat kl. {time}",
-        "confirmTitle": "Skicka för {company}s räkning?"
+        "confirmTitle": "Skicka för {company}s räkning?",
+        "recipientNote": "inte {company}s egna kontakter"
       },
       "proxySubmitButton": "Skicka in å medlems vägnar",
       "haltBanner": {
@@ -6967,7 +6968,15 @@
           "attendees": "Mottagare: alla från medlemsföretag som deltagit i ett kammarevenemang under de senaste 90 dagarna (högst {ceiling, number}).",
           "customCount": "{count} e-post angiven."
         },
+        "recipientNote": {
+          "allMembers": "primärkontakten hos varje aktiv medlem, inte ert eget företag",
+          "allMembersAllContacts": "varje kontakt hos varje aktiv medlem som inte har avregistrerat sig, inte ert eget företag",
+          "tier": "primärkontakten hos varje aktiv medlem på valda nivåer, inte ert eget företag",
+          "tierAllContacts": "varje kontakt hos varje aktiv medlem på valda nivåer som inte har avregistrerat sig, inte ert eget företag",
+          "attendees": "alla från medlemsföretag som deltagit i ett kammarevenemang under de senaste 90 dagarna, även du och dina kollegor om ni deltog"
+        },
         "recipientCount": {
+          "readyShort": "{count, plural, one {# mottagare} other {# mottagare}}",
           "loading": "Räknar mottagare…",
           "ready": "{count, number} mottagare får detta utskick.",
           "empty": "Inga mottagare matchar den här målgruppen{dropped, plural, =0 {} other { – # uteslöts enligt mottagarnas önskemål}}. Det går inte att skicka in förrän målgruppen vidgas.",

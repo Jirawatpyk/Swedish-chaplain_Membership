@@ -4116,7 +4116,8 @@
         "draftSavedToast": "Draft saved.",
         "draftSaveErrorToast": "Couldn't save the draft. Please try again.",
         "savedAt": "Saved at {time}",
-        "confirmTitle": "Submit on behalf of {company}?"
+        "confirmTitle": "Submit on behalf of {company}?",
+        "recipientNote": "not {company}'s own contacts"
       },
       "proxySubmitButton": "Submit on behalf of member",
       "haltBanner": {
@@ -6967,7 +6968,15 @@
           "attendees": "Recipients: everyone from a member company who attended a chamber event in the last 90 days (up to {ceiling, number}).",
           "customCount": "{count} email(s) entered."
         },
+        "recipientNote": {
+          "allMembers": "the primary contact of each active member, not your own company",
+          "allMembersAllContacts": "every contact of each active member who hasn't opted out, not your own company",
+          "tier": "the primary contact of each active member on the selected tiers, not your own company",
+          "tierAllContacts": "every contact of each active member on the selected tiers who hasn't opted out, not your own company",
+          "attendees": "everyone from a member company who attended a chamber event in the last 90 days, including you and your colleagues if you attended"
+        },
         "recipientCount": {
+          "readyShort": "{count, plural, one {# recipient} other {# recipients}}",
           "loading": "Counting recipients…",
           "ready": "{count, plural, one {# recipient will receive this broadcast.} other {# recipients will receive this broadcast.}}",
           "empty": "No eligible recipients match this audience{dropped, plural, =0 {} other { — # excluded by recipient preference}}. Submission is blocked until you widen it.",

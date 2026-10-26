@@ -669,7 +669,7 @@ export function ProxyComposeForm({
             />
             {member !== null &&
             !memberMissingEmail &&
-            proxySelfExclusionNotice !== null ? (
+            proxySelfExclusionNotice === 'selfExclusionNoticeIncluded' ? (
               // UX-review fix (DV-4) — WCAG 4.1.3 Status Messages:
               // `role="status"` (implicit aria-live="polite") so SR users hear
               // it without focus moving. Round 2 (UX H-1 + i18n H3): it FOLLOWS
@@ -691,10 +691,19 @@ export function ProxyComposeForm({
               </p>
             ) : null}
             {/* 108 PR-C T089 (FR-040): live count for the proxied member. */}
+            {/* Spec 122 US12d-3 (T1267): on the segments that self-exclude,
+                the exclusion is the count line's own note ("130 recipients ·
+                not {company}'s own contacts"); the warning above stays for
+                the two that do not. */}
             <RecipientCountLine
               state={recipientCount}
               textId={RECIPIENT_COUNT_TEXT_ID}
               onRetry={() => setCountRetry((n) => n + 1)}
+              note={
+                member !== null && !memberMissingEmail && proxySelfExclusionNotice === 'selfExclusionNotice'
+                  ? t('recipientNote', { company: member.companyName })
+                  : null
+              }
             />
 
             {segment.kind === 'custom' ? (

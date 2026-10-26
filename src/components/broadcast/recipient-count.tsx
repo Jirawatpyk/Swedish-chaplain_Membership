@@ -162,6 +162,7 @@ export function RecipientCountLine({
   state,
   onRetry,
   textId,
+  note = null,
 }: {
   readonly state: RecipientCountState;
   /** Review round 2 (UX H-5) — re-runs the count for the same segment. */
@@ -173,6 +174,13 @@ export function RecipientCountLine({
    * repeating its words somewhere else.
    */
   readonly textId?: string;
+  /**
+   * Spec 122 US12d-3 (T1267) — who the recipients are, after the count on the
+   * same line ("128 recipients · the primary contact of each active member,
+   * not your own company"). Outside the live region, so a count change is
+   * announced without re-reading it; with a note the count is the short form.
+   */
+  readonly note?: string | null;
 }): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.recipientCount');
   let text: string | null = null;
@@ -211,7 +219,7 @@ export function RecipientCountLine({
         text = t('empty', { dropped: state.droppedByPreference ?? 0 });
         tone = 'text-destructive';
       } else {
-        text = t('ready', { count: state.count });
+        text = note !== null ? t('readyShort', { count: state.count }) : t('ready', { count: state.count });
         tone = 'font-medium text-foreground';
         icon = <Users className="size-3.5 shrink-0" aria-hidden="true" />;
       }
@@ -223,7 +231,7 @@ export function RecipientCountLine({
     // before its content changes (L-1 — an inserted region is not announced).
     <div
       data-compose-feature="recipient-count"
-      className={`flex min-h-10 items-start gap-1.5 text-sm ${tone}`}
+      className={`flex min-h-10 flex-wrap items-start gap-x-1.5 text-sm ${tone}`}
     >
       {/*
         /code-review 2026-09-07 (finding #8) — the retry BUTTON used to live
@@ -245,6 +253,14 @@ export function RecipientCountLine({
         {icon !== null ? <span className="mt-0.5">{icon}</span> : null}
         {text !== null ? <span>{text}</span> : null}
       </p>
+      {/* The space is a text node, not layout: flex drops it visually but a
+          screen reader reads "128 recipients · …" as two words, not one. */}
+      {note !== null ? (
+        <>
+          {' '}
+          <span className="font-normal text-[var(--aura-fg-secondary)]">· {note}</span>
+        </>
+      ) : null}
       {retry ? (
         <button
           type="button"

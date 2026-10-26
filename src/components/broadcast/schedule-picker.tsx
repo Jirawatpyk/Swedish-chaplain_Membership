@@ -62,7 +62,7 @@ export function SchedulePicker({
           aria-hidden="true"
           className={cn('size-4 shrink-0 motion-safe:transition-transform', open && 'rotate-90')}
         />
-        <span>{t('fields.sendOptions')}</span>
+        <span>{t('fields.sendOptions')}</span>{' '}
         <span className="font-normal text-[var(--aura-fg-secondary)]">
           · {scheduled === '' ? t('confirm.sendingNow') : t('confirm.sendingAt', { when: scheduled })}
         </span>
