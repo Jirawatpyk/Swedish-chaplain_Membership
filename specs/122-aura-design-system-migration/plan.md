@@ -535,3 +535,8 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
 - **Review fixes** (`ab545aa4a`, enterprise-ux-designer): `linkClass` lays a link out only on touch and resets its font, so the website link keeps `inline-flex min-w-0` to truncate, the summary is `flex w-fit`, contacts and the audience company align to the start, and the picker's label type moves to a span. With a mouse from 640px it is text height like every other `linkClass` link (maintainer, 23 Oct: no 24px or 36px exception); a `min-h-*` utility would beat the 44px touch rule, and the picker test guards against one. `min-w-0` is safe there because the text is wider than 44px. The touched files' 38 test files pass (328 tests); typecheck and lint are clean.
 - **#171:** no app change (the section tabs already pass `touchHeight`).
 - **Not changed:** the brand theme. `aura-theme --brand "#10487A"` on 5.59 regenerates `src/styles/aura-theme.css` byte-identical below its header.
+
+### US12d-3 (T1270) — the tier field's comma
+
+- **RED, recorded after the fact** (/code-review high, round 1: test and fix shared `ebf7f02`). `tests/unit/broadcast/segment-picker.test.tsx` run against `origin/main`'s `segment-picker.tsx`: `× SegmentPicker (T1270) > two tier codes can be typed, comma and all` — `expect(element).toHaveValue(premium, large)`. The old field re-joined the parsed codes on every keystroke, so a typed "," vanished and a second code could never be entered.
+- **GREEN:** the field keeps the raw text and parses it on change (`ebf7f02`).
