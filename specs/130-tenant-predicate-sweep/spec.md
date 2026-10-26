@@ -27,7 +27,7 @@
 - **Query-less stubs.**
 - **Cross-tenant by design (s7).** These run before the tenant is known, or as the owner role across tenants, and stay global:
   - `renewals/infrastructure/lookup-member-by-email.ts`: both reads. The Resend webhook resolves an email to its tenant.
-  - `drizzle-processor-events-repo.ts`: `insertIfNew`'s duplicate read and `findById`. These are the webhook's pre-resolution idempotency probes, and the row may have a NULL tenant.
+  - `drizzle-processor-events-repo.ts`: `insertIfNew`'s duplicate read and `findById`. The Stripe event id is a globally unique primary key, and the existing row may be a NULL-tenant rejection row that no tenant context can see.
   - `drizzle-tenant-payment-settings-repo.ts`: `findByProcessorAccountId`. The Stripe account id is the lookup key.
   - `drizzle-csv-import-records-repo.ts`: the admin repo (`findByIdAcrossTenants`, `listExpiredErrorCsvBlobsAllTenants`). These are the blob-expiry cron and the cross-tenant id lookup.
   - `drizzle-broadcasts-repo.ts`: `findByResendBroadcastIdBypassRls` and `findBroadcastByResendAudienceIdsBypassRls`. These are Resend webhook pre-resolution reads.
