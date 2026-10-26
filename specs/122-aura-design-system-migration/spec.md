@@ -896,6 +896,14 @@ The maintainer reviewed a proposal page (https://claude.ai/artifact/QBcoA6qZZHmN
     - the upload hint keeps "anyone can open" (the notice's PDPA wording), so on the member desktop it wraps under the button;
     - the preview keeps its header with the "Preview" button and the 600px column (FR-050);
     - the staff quota card keeps its four figures in one row and its note on when a slot is given back; the attendee choice keeps "from member companies".
+- Review rounds 1–2 (T1272; /code-review high, enterprise-ux-designer, mobile-a11y-ux-reviewer, i18n-translation-reviewer, pdpa-gdpr-compliance-officer). Built: focus returns to Submit after the summary (Submit is inert by AURA `loading`, not native `disabled`) and the summary names its `finalFocus`; a subject, body or read-only refusal sent from the phone's Preview tab reopens Write and focuses it; the summary drops the allowance when the quota failed to load, says plainly when none is left and then offers no Submit; the phone bar says "Can't send to this audience" on a refused audience; Send options has "Send as soon as it's approved"; the recipients note is in the live region beside "counting…", the count or "unavailable", never a refusal; the member skeleton draws the one-line quota; the upload line adds "so don't upload anything private" (PDPA); TH/SV terms aligned. AURA 5.66 (#181, #182) is adopted: the member refusal on staff compose is the picker's own.
+- Decided in review, kept:
+  - the member form renders its skeleton until the first client render, on every width. The server cannot know a phone's layout, and the two trees mounted the editor three times on a phone. The editor is client-only already, and the page header and back link still come from the server.
+  - Crossing 640px (rotating a phone) remounts the form's layout; the text is kept, the editor's undo history is not.
+  - Staff compose has no such gate: only its Submit moves into the bar on a phone, so there is no second editor mount.
+  - The recipients note is re-read when the count lands. On staff compose it is the only place the member's own contacts are said to be excluded.
+  - The cap ("up to 500 per broadcast") is said when the measured count passes it, not before.
+  - The summary names the segment, not the chosen tiers.
 
 ### Session 2026-10-26 (US12d-2 follow-up: the toolbar to the boards)
 
