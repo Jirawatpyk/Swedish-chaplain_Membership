@@ -41,7 +41,7 @@ import type {
   ProcessorEventOutcome,
 } from '../../domain/processor-event';
 import { processorEvents, type ProcessorEventRow } from '../schema';
-import { db, runInTenant, type TenantTx } from '@/lib/db';
+import { db, runInTenant, tenantSlugOf, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 
 function toDomain(row: ProcessorEventRow): ProcessorEvent {
@@ -69,10 +69,14 @@ function toDomain(row: ProcessorEventRow): ProcessorEvent {
  *       from `processor_account_id` before calling this — runs as the
  *       owner role + ON CONFLICT DO NOTHING handles dedup).
  *
- * Read paths use `db` directly because processor_events is a system-
- * wide idempotency log — per-tenant filtering happens upstream via the
- * resolved tenantId in `processWebhookEvent` rather than at the repo
- * boundary.
+ * The two pre-resolution reads (`insertIfNew`'s duplicate probe and
+ * `findById`) use `db` directly and stay global by design: processor_events
+ * is a system-wide idempotency log and the webhook does not know its tenant
+ * yet (the row may carry a NULL tenant). Every statement on a tenant tx binds
+ * `tenant_id` explicitly (D-029): `markProcessed` / `updateOutcome` take the
+ * slug `runInTenant` bound to their tx (`tenantSlugOf`, D-030 — it throws on
+ * a tx from the global `db`); `findProcessorEventInTenant` uses its own ctx.
+ * RLS is the second wall.
  */
 export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
   return {
@@ -129,7 +133,7 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
       await tx
         .update(processorEvents)
         .set({ processedAt: sql`now()` })
-        .where(eq(processorEvents.id, id));
+        .where(and(eq(processorEvents.tenantId, tenantSlugOf(tx)), eq(processorEvents.id, id)));
     },
 
     async updateOutcome(txUnknown, input): Promise<void> {
@@ -137,7 +141,7 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
       await tx
         .update(processorEvents)
         .set({ outcome: input.outcome })
-        .where(eq(processorEvents.id, input.id));
+        .where(and(eq(processorEvents.tenantId, tenantSlugOf(tx)), eq(processorEvents.id, input.id)));
     },
 
     async findById(id: string): Promise<ProcessorEvent | null> {

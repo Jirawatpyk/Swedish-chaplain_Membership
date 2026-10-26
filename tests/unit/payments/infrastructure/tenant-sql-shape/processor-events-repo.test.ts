@@ -1,7 +1,7 @@
 /**
  * 130 (D-029) slice 7 — the processor_events repo binds `tenant_id` on every
- * statement that runs on a tenant tx (`markProcessed`, `updateOutcome`,
- * `findProcessorEventInTenant`). `insertIfNew`'s duplicate read and
+ * statement that runs on a tenant tx (`markProcessed` and `updateOutcome`
+ * via `tenantSlugOf(tx)`, D-030; `findProcessorEventInTenant` via its ctx). `insertIfNew`'s duplicate read and
  * `findById` run before the webhook knows its tenant (the row may carry a
  * NULL tenant), so they stay global by design — pinned below as the only
  * exemptions. `findByProcessorAccountId` in the payment-settings repo is the
@@ -13,12 +13,15 @@ import type { RecordedStatement } from '../../../../helpers/tenant-sql-shape';
 
 const rec = vi.hoisted(() => ({ statements: [] as RecordedStatement[], db: null as unknown }));
 vi.mock('@/lib/db', async (importOriginal) => {
-  const { recordingDb } = await import('../../../../helpers/tenant-sql-shape');
+  const { recordingDb, SHAPE_TENANT } = await import('../../../../helpers/tenant-sql-shape');
   const r = recordingDb();
   rec.statements = r.statements;
   rec.db = r.db;
+  const orig = await importOriginal<typeof import('@/lib/db')>();
+  // The tx-only writes read their tenant from the tx (`tenantSlugOf`, D-030).
+  orig.bindTenantTx(r.db, SHAPE_TENANT);
   return {
-    ...(await importOriginal<typeof import('@/lib/db')>()),
+    ...orig,
     db: r.db,
     runInTenant: async (_ctx: unknown, fn: (tx: unknown) => unknown) => fn(r.db),
   };
@@ -56,6 +59,14 @@ describe('processor_events repo — tenant predicate on every tenant-tx statemen
     await findProcessorEventInTenant(T, 'evt_1');
     expect(rec.statements.length).toBe(3);
     expect(violationsOf(rec.statements)).toEqual([]);
+  });
+
+  it('a tx runInTenant did not open is refused before any SQL (fails closed, D-030)', async () => {
+    rec.statements.length = 0;
+    const repo = makeDrizzleProcessorEventsRepo();
+    await expect(repo.markProcessed({}, 'evt_1')).rejects.toThrow('tenantSlugOf');
+    await expect(repo.updateOutcome({}, { id: 'evt_1', outcome: 'processed' })).rejects.toThrow('tenantSlugOf');
+    expect(rec.statements).toEqual([]);
   });
 
   it('the pre-resolution reads are the only unfenced .where( in either payments repo', () => {
