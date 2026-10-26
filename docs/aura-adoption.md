@@ -202,6 +202,8 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #181 | A checkable `Menu` item draws its check box in place of its `icon` (Addendum 82): ask for icon + trailing check | The phone toolbar's "Lists and headings" menu keeps `checked` and shows no icons (`tiptap-toolbar.tsx`); the boards are drawn to match |
+| #182 | `Combobox` has no `aria-describedby` and no `invalid` (Addendum 83), as `TextField` has since 5.50 | Staff compose's member refusals stay `role="alert"` paragraphs beside the picker, not tied to it (`proxy-compose-form.tsx`); focus still moves to the picker |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

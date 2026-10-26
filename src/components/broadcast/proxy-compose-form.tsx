@@ -634,6 +634,9 @@ export function ProxyComposeForm({
                 disabled={submitting}
                 inputRef={pickerRef}
               />
+              {/* Not tied to the picker (no `aria-describedby` / `invalid` on
+                  AURA's Combobox): stand-in until AURA #182. Focus moves to the
+                  picker on a member refusal; these alerts say why. */}
               {memberError !== null ? (
                 <p role="alert" className="text-xs text-[var(--aura-fg-danger)]">
                   {memberError}
