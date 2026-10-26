@@ -685,3 +685,76 @@ describe('reclaimOrphanedImages — F2-1 orphan arm + F2-10 races', () => {
     if (r.ok) expect(r.value).toMatchObject({ rowsRemoved: 1, blobsDeleted: 0 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spec 131 — arm 3 ("unused"): a LIVE image of an E-Blast that can no longer
+// change, which that E-Blast's content does not use. Before it, an image
+// uploaded and left out of a SENT E-Blast stayed at its public URL until the
+// retention sweep, about five years later. `listUnused` (SQL) selects only
+// terminal owners whose own body / versions do not embed the URL, so an image
+// the E-Blast shows is never in the batch.
+// ---------------------------------------------------------------------------
+describe('reclaimOrphanedImages — spec 131 arm 3 (unused)', () => {
+  let audit: ReturnType<typeof makeAudit>;
+  beforeEach(() => {
+    audit = makeAudit();
+  });
+
+  it('an unused live image of a sent E-Blast is reaped: bytes deleted, row removed, audited sweep_unused', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
+    vi.mocked(imagesRepo.listUnused).mockResolvedValue([unused]);
+    const storage = makeFakeImageStorage();
+
+    const r = await reclaimOrphanedImages(
+      { imagesRepo, storage, audit },
+      { tenantId: TENANT, now: NOW, requestId: 'sweep-3' },
+    );
+
+    expect(vi.mocked(imagesRepo.listUnused)).toHaveBeenCalledWith(TENANT, 200, FAKE_TX);
+    // The row is itself live, so it must not count itself as the holder.
+    expect(vi.mocked(imagesRepo.countLiveByContentHash).mock.calls[0]![3]).toBe('img-unused');
+    expect(storage.deleted).toEqual([unused.blobKey]);
+    expect(imagesRepo.rows).toEqual([]);
+    if (r.ok) expect(r.value).toMatchObject({ scanned: 1, rowsRemoved: 1, blobsDeleted: 1 });
+    expect(audit.events[0]!.payload).toMatchObject({
+      image_id: 'img-unused',
+      reason: 'sweep_unused',
+      blob_deleted: true,
+      blob_disposition: 'deleted',
+      actor_role: 'system',
+    });
+  });
+
+  it('a live row sharing the hash keeps the bytes (kept_shared_row); the unused row still goes', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused, imageRow({ id: 'img-used', ownerId: 'other-draft' })]);
+    vi.mocked(imagesRepo.listUnused).mockResolvedValue([unused]);
+    const storage = makeFakeImageStorage();
+
+    await reclaimOrphanedImages({ imagesRepo, storage, audit }, { tenantId: TENANT, now: NOW, requestId: 's' });
+
+    expect(storage.deleted).toEqual([]);
+    expect(imagesRepo.rows.map((x) => x.id)).toEqual(['img-used']);
+    expect(audit.events[0]!.payload).toMatchObject({ reason: 'sweep_unused', blob_disposition: 'kept_shared_row' });
+  });
+
+  it('content elsewhere in the tenant still embedding the URL keeps bytes AND the live row (retained, no audit)', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
+    vi.mocked(imagesRepo.listUnused).mockResolvedValue([unused]);
+    vi.mocked(imagesRepo.isBlobReferencedByContent).mockResolvedValue(true);
+    const storage = makeFakeImageStorage();
+
+    const r = await reclaimOrphanedImages(
+      { imagesRepo, storage, audit },
+      { tenantId: TENANT, now: NOW, requestId: 's' },
+    );
+
+    expect(storage.deleted).toEqual([]);
+    expect(imagesRepo.rows).toEqual([unused]);
+    expect(vi.mocked(imagesRepo.remove)).not.toHaveBeenCalled();
+    expect(audit.events).toEqual([]);
+    if (r.ok) expect(r.value).toMatchObject({ retained: 1, rowsRemoved: 0 });
+  });
+});

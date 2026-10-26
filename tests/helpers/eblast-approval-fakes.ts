@@ -148,6 +148,29 @@ export function makeFakeBroadcastImagesRepo(
       });
       return stamped;
     }),
+    // Spec 131 — the release-on-cancel stamp: ONE live row of ONE owner.
+    markDeletedById: vi.fn(
+      async (
+        tenantId: never,
+        owner: { kind: 'broadcast' | 'template'; id: string },
+        imageId: string,
+        at: Date,
+        _tx: unknown,
+      ): Promise<BroadcastImageRecord | null> => {
+        const i = rows.findIndex(
+          (r) =>
+            r.tenantId === (tenantId as unknown as string) &&
+            r.id === imageId &&
+            r.ownerKind === owner.kind &&
+            r.ownerId === owner.id &&
+            r.deletedAt === null,
+        );
+        if (i === -1) return null;
+        const next = { ...rows[i]!, deletedAt: at };
+        rows[i] = next;
+        return next;
+      },
+    ),
     // ROUND-2 R-M1 — the bounded prune batch's single stamp statement.
     markDeletedByOwners: vi.fn(
       async (tenantId: never, ownerKind: 'broadcast' | 'template', ownerIds: readonly string[], at: Date, _tx: unknown) => {
@@ -179,6 +202,9 @@ export function makeFakeBroadcastImagesRepo(
     // F119 R17 — the GDPR export's by-member read; same no-broadcasts default.
     listByMember: vi.fn(async (_tenantId: never, _memberId: string, _limit: number, _tx: unknown) => [] as BroadcastImageRecord[]),
     listOrphaned: vi.fn(async (_tenantId: never, _limit: number) => [] as BroadcastImageRecord[]),
+    // Spec 131 — arm 3 ("unused"). The owner/content rule is SQL; the fake has
+    // no owner tables, so a test that wants an unused row overrides it.
+    listUnused: vi.fn(async (_tenantId: never, _limit: number) => [] as BroadcastImageRecord[]),
     countLiveByContentHash: vi.fn(async (tenantId: never, contentHash: string, _tx: unknown, excludeImageId?: string) =>
       rows.filter(
         (r) =>
