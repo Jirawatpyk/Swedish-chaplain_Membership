@@ -90,10 +90,13 @@ describe('plans repos — tenant predicate on every statement (130 s4)', () => {
   });
 
   it('every .where( and hand-written sql block in both sources names tenant_id', () => {
-    for (const path of [PLAN_SRC, SCHEDULED_SRC]) {
-      const src = readFileSync(path, 'utf8');
-      expect(unfencedWheres(src)).toEqual([]);
-      expect(unfencedRawSql(src, TABLES)).toEqual([]);
-    }
+    const plan = readFileSync(PLAN_SRC, 'utf8');
+    // `conditions` is the plan-list filter array, seeded with the tenant
+    // predicate and proven by the call-map case above.
+    expect(unfencedWheres(plan)).toEqual(['and(...conditions)']);
+    expect(unfencedRawSql(plan, TABLES)).toEqual([]);
+    const scheduled = readFileSync(SCHEDULED_SRC, 'utf8');
+    expect(unfencedWheres(scheduled)).toEqual([]);
+    expect(unfencedRawSql(scheduled, TABLES)).toEqual([]);
   });
 });
