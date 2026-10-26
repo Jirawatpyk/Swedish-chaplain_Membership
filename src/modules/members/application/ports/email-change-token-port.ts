@@ -116,8 +116,9 @@ export interface EmailChangeTokenPort {
    * frozen real addresses.
    *
    * `userIds` empty ⇒ no-op, returns `{ invalidatedEmails: [] }`. Tenant-scoped
-   * by the tx's own tenant (`tenantSlugOf(tx)`, D-030) and RLS. Same FAIL-LOUD contract as the rest
-   * of the erasure tx: a DB error returns `err` so the caller's tx rolls back.
+   * by the tx's own tenant (`tenantSlugOf(tx)`, D-030) and RLS. Same
+   * FAIL-LOUD contract as the rest of the erasure tx: a DB error returns
+   * `err` so the caller's tx rolls back.
    */
   invalidateAllActiveForUsersInTx(
     tx: TenantTx,
