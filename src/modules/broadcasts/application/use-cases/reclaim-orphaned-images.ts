@@ -4,18 +4,18 @@
  *
  * ROUND-3 #15 — the guarantee is "on the NEXT DAILY TICK, 200 rows per arm
  * per tenant", not "within 24 hours". The two differ whenever a tenant has
- * more than 400 reclaimable rows in a day — a bulk erasure, a prune of a
+ * more than 600 reclaimable rows in a day — a bulk erasure, a prune of a
  * backlog of drafts — and they differ again for a row that throws, which is
  * left for the tick after. Saying 24 hours states a ceiling nothing enforces.
  *
- * TWO ARMS.
+ * THREE ARMS.
  *
  * 1. MARKED (`deleted_at IS NOT NULL`) — the primary mechanism. A row is
- *    stamped by a member erasure, a draft discard or the draft prune (the
- *    reasons today: `member_erased | draft_discarded | draft_pruned`), each
- *    inside the same transaction as the state change that removed the
- *    reference. A member withdrawal and a staff rejection arrive as stamping
- *    paths with PR-2 (T081).
+ *    stamped inside the same transaction as the state change that removed
+ *    the reference: a member erasure, a draft discard, the draft prune, a
+ *    withdrawal or cancel, a rejection, the retention sweep, and (spec 131)
+ *    the author's release of an image they uploaded and left out
+ *    (`not_inserted`). The reasons are `ImageRemovalReason`.
  *
  * 2. ORPHANED (`deleted_at IS NULL`, owner row gone) — F119 review finding
  *    F2-1, defence in depth. `owner_id` carries no FK (two possible parents),
@@ -25,6 +25,14 @@
  *    ever reach — not this sweep, not the Art. 17 / §33 erasure cascade. The
  *    two hard-delete paths now stamp; this arm is what stops the next one
  *    from recreating the class silently.
+ *
+ * 3. UNUSED (`deleted_at IS NULL`, spec 131) — a live image of an E-Blast
+ *    that can no longer change (terminal status) and whose own content does
+ *    not use it (`listUnused`). Before this arm, an image uploaded and left
+ *    out of a SENT E-Blast stayed at its public URL until the retention sweep,
+ *    about five years later. The owner check is in the SELECT, so an image the
+ *    E-Blast shows is never in the batch; the tenant-wide content backstop
+ *    below still applies, so content elsewhere that embeds it keeps it.
  *
  * THE LAST-REFERENCE RULE. A blob is deleted iff no LIVE row of EITHER
  * owner_kind shares its `content_hash` (a template image a draft uses is
@@ -84,7 +92,7 @@ export const IMAGE_SWEEP_BATCH = 200;
  * Neither of the two waits inside that transaction ends on its own. The
  * advisory lock blocks until its holder commits, and
  * `isBlobReferencedByContent` is a sequential `position()` scan of
- * `broadcasts`, `broadcast_versions` and `broadcast_templates` executed once per swept row — up to 400
+ * `broadcasts`, `broadcast_versions` and `broadcast_templates` executed once per swept row — up to 600
  * a tick. `src/lib/db.ts` asks the connection for 5 s, but the pooled Neon
  * endpoint drops it and reports 0, so the real ceiling today is the route's
  * `maxDuration = 300`: the tick is killed part way through, with the blob
@@ -138,7 +146,20 @@ export type ReclaimOrphanedImagesError = {
  * ROUND-2 S-3 removed `'sweep_referenced'`: that case no longer reaps
  * anything, so it emits no audit row at all (see `RowOutcome`).
  */
-type SweepReason = 'sweep' | 'sweep_orphaned';
+type SweepReason = 'sweep' | 'sweep_orphaned' | 'sweep_unused';
+
+/**
+ * Which arm selected the row. ORPHANED and UNUSED rows are LIVE (only MARKED
+ * rows are stamped), so those two must not count themselves as the holder of
+ * their own bytes.
+ */
+type SweepArm = 'marked' | 'orphaned' | 'unused';
+
+const REASON_BY_ARM: Readonly<Record<SweepArm, SweepReason>> = {
+  marked: 'sweep',
+  orphaned: 'sweep_orphaned',
+  unused: 'sweep_unused',
+};
 
 /**
  * F7-1 (audit truth) — what happened to the BYTES of a REMOVED row. It is the
@@ -197,18 +218,21 @@ export async function reclaimOrphanedImages(
 ): Promise<Result<ReclaimOrphanedImagesOutput, ReclaimOrphanedImagesError>> {
   let marked: readonly BroadcastImageRecord[];
   let orphaned: readonly BroadcastImageRecord[];
+  let unused: readonly BroadcastImageRecord[];
   try {
-    ({ marked, orphaned } = await deps.imagesRepo.withTx(input.tenantId, async (tx) => ({
+    ({ marked, orphaned, unused } = await deps.imagesRepo.withTx(input.tenantId, async (tx) => ({
       marked: await deps.imagesRepo.listMarked(input.tenantId, IMAGE_SWEEP_BATCH, tx),
       orphaned: await deps.imagesRepo.listOrphaned(input.tenantId, IMAGE_SWEEP_BATCH, tx),
+      unused: await deps.imagesRepo.listUnused(input.tenantId, IMAGE_SWEEP_BATCH, tx),
     })));
   } catch (e) {
     return err({ kind: 'sweep.server_error', message: e instanceof Error ? e.message : String(e) });
   }
 
-  const batch: Array<{ image: BroadcastImageRecord; orphan: boolean }> = [
-    ...marked.map((image) => ({ image, orphan: false })),
-    ...orphaned.map((image) => ({ image, orphan: true })),
+  const batch: Array<{ image: BroadcastImageRecord; arm: SweepArm }> = [
+    ...marked.map((image) => ({ image, arm: 'marked' as const })),
+    ...orphaned.map((image) => ({ image, arm: 'orphaned' as const })),
+    ...unused.map((image) => ({ image, arm: 'unused' as const })),
   ];
 
   // F2-10 (LOW) — two rows of one batch can share a `content_hash`. Before
@@ -221,7 +245,8 @@ export async function reclaimOrphanedImages(
   let retained = 0;
   let rowsFailed = 0;
 
-  for (const { image, orphan } of batch) {
+  for (const { image, arm } of batch) {
+    const live = arm !== 'marked';
     try {
       const outcome = await deps.imagesRepo.withTx(input.tenantId, async (tx): Promise<RowOutcome> => {
         // ROUND-3 #4 — FIRST, before anything that can block. The lock waits
@@ -233,17 +258,17 @@ export async function reclaimOrphanedImages(
         // land between the count and the delete.
         await deps.imagesRepo.lockContentHash(input.tenantId, image.contentHash, tx);
 
-        // An ORPHAN is itself a live row, so it must not count itself.
-        const live = await deps.imagesRepo.countLiveByContentHash(
+        // An ORPHANED or UNUSED row is itself live, so it must not count itself.
+        const holders = await deps.imagesRepo.countLiveByContentHash(
           input.tenantId,
           image.contentHash,
           tx,
-          orphan ? image.id : undefined,
+          live ? image.id : undefined,
         );
 
         let disposition: BlobDisposition = 'kept_shared_row';
-        const reason: SweepReason = orphan ? 'sweep_orphaned' : 'sweep';
-        if (live === 0) {
+        const reason = REASON_BY_ARM[arm];
+        if (holders === 0) {
           // F2-10(b) — pre-0304 blobs have no row but ARE referenced by live
           // `body_html`.
           const stillReferenced = await deps.imagesRepo.isBlobReferencedByContent(
@@ -316,7 +341,7 @@ export async function reclaimOrphanedImages(
             tenantId: input.tenantId,
             imageId: image.id,
             contentHash: image.contentHash,
-            orphan,
+            arm,
             requestId: input.requestId,
           },
           'broadcasts.image_sweep.retained_still_referenced',
@@ -334,7 +359,7 @@ export async function reclaimOrphanedImages(
       rowsFailed += 1;
       broadcastsMetrics.imageSweepRowFailed(input.tenantId as unknown as string);
       logger.warn(
-        { err: errKind(e), tenantId: input.tenantId, imageId: image.id, orphan, requestId: input.requestId },
+        { err: errKind(e), tenantId: input.tenantId, imageId: image.id, arm, requestId: input.requestId },
         'broadcasts.image_sweep.row_retry_next_tick',
       );
     }

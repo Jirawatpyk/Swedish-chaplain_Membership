@@ -62,6 +62,20 @@ export interface BroadcastImagesRepo {
     tx: BroadcastImagesTx,
   ): Promise<readonly BroadcastImageRecord[]>;
   /**
+   * Spec 131 — stamp ONE live row of ONE owner (the release of an image
+   * uploaded and then left out of the message). Returns the stamped row, or
+   * null when no live row of that owner has that id — already stamped,
+   * another owner's, or no such row — so a repeated release is a no-op and
+   * reveals nothing about other owners' rows.
+   */
+  markDeletedById(
+    tenantId: TenantSlug,
+    owner: { readonly kind: BroadcastImageOwnerKind; readonly id: string },
+    imageId: string,
+    at: Date,
+    tx: BroadcastImagesTx,
+  ): Promise<BroadcastImageRecord | null>;
+  /**
    * ROUND-2 R-M1 — the same stamp for MANY owners of one kind, in ONE
    * statement.
    *
@@ -130,6 +144,23 @@ export interface BroadcastImagesRepo {
    * that no sweep and no erasure can reach.
    */
   listOrphaned(tenantId: TenantSlug, limit: number, tx: BroadcastImagesTx): Promise<readonly BroadcastImageRecord[]>;
+  /**
+   * Spec 131 — the sweep's third arm: LIVE `owner_kind='broadcast'` rows whose
+   * owner E-Blast exists in a terminal status (its content can no longer
+   * change) and does not hold the row's URL, oldest first, bounded.
+   *
+   * "Holds" is the same rule `isBlobReferencedByContent` applies, narrowed to
+   * the OWNER: the owner holds images at all (Domain `holdsImageReferences`)
+   * AND its `body_html`, `body_source` or one of its versions' bodies embeds
+   * the URL. The rule lives in the SELECT, not in the per-row loop, because an
+   * image a sent E-Blast does show would otherwise be picked every tick and
+   * fill the bounded batch for ever.
+   *
+   * Drafts and E-Blasts still in review are never returned — their author may
+   * yet insert the image. Templates are never returned — a template can still
+   * be edited.
+   */
+  listUnused(tenantId: TenantSlug, limit: number, tx: BroadcastImagesTx): Promise<readonly BroadcastImageRecord[]>;
   /**
    * Live rows of EITHER owner_kind sharing the hash — the last-reference rule.
    *
@@ -217,7 +248,7 @@ export interface BroadcastImagesRepo {
    * The sweep's per-row transaction needs it because both of its waits are
    * otherwise unbounded: `lockContentHash` blocks until the holder commits,
    * and `isBlobReferencedByContent` is a sequential `position()` scan over
-   * `broadcasts`, `broadcast_versions` and `broadcast_templates` run once per swept row (up to 400 a
+   * `broadcasts`, `broadcast_versions` and `broadcast_templates` run once per swept row (up to 600 a
    * tick). `src/lib/db.ts` asks for 5 s at connect, but the pooled Neon
    * endpoint DROPS it and reports 0 — so without this the tick has no
    * database-side bound at all and is killed by `maxDuration` instead, part

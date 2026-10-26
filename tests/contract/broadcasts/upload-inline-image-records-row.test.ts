@@ -65,9 +65,11 @@ function makeDeps(o?: { existing?: boolean; verdict?: 'clean' | 'infected' }) {
     listByMember: vi.fn(async () => []),
     // ROUND-2 R-M1 / S-3 — the batched prune stamp and the sweep's
     // keep-the-row arm. Unstubbed, either is an unexercised branch.
+    markDeletedById: vi.fn(async () => null),
     markDeletedByOwners: vi.fn(async () => []),
     restoreLive: vi.fn(async () => undefined),
     listOrphaned: vi.fn(async () => []),
+    listUnused: vi.fn(async () => []),
     lockContentHash: vi.fn(async () => undefined),
     isBlobReferencedByContent: vi.fn(async () => false),
     countLiveByContentHash: vi.fn(),

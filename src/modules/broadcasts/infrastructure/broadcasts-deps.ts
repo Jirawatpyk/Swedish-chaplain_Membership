@@ -94,6 +94,7 @@ import type { ManageImageAllowlistDeps } from '../application/use-cases/manage-i
 import type { UploadInlineImageDeps } from '../application/use-cases/upload-inline-image';
 import type { ReclaimOrphanedImagesDeps } from '../application/use-cases/reclaim-orphaned-images';
 import type { AuthorizeImageOwnerDeps } from '../application/use-cases/authorize-image-owner';
+import type { ReleaseUnusedImageDeps } from '../application/use-cases/release-unused-image';
 import { drizzleBroadcastImagesRepo } from './db/drizzle-broadcast-images-repo';
 import { drizzleBroadcastApprovalScrub } from './db/drizzle-broadcast-approval-scrub';
 import { sharpImageReencoder } from './sharp-image-reencoder';
@@ -1031,6 +1032,18 @@ export function makeAuthorizeImageOwnerDeps(tenantId: string): AuthorizeImageOwn
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     templates: makeDrizzleBroadcastTemplatesRepo(),
     audit: f7AuditAdapter,
+  };
+}
+
+/**
+ * Spec 131 — composition root for `releaseUnusedImage`, the three release
+ * routes' use case. The ownership half is the upload's own.
+ */
+export function makeReleaseUnusedImageDeps(tenantId: string): ReleaseUnusedImageDeps {
+  return {
+    imagesRepo: drizzleBroadcastImagesRepo,
+    audit: f7AuditAdapter,
+    owner: makeAuthorizeImageOwnerDeps(tenantId),
   };
 }
 
