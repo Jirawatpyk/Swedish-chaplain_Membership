@@ -52,6 +52,20 @@ describe('MemberPicker (closed-state guard)', () => {
     expect(screen.getByRole('combobox', { name: 'Member' })).toHaveValue('Acme AB');
   });
 
+  // Spec 122 US12d-3 — AURA 5.66 (#182): the page's own refusal is tied to
+  // the picker, as on a TextField.
+  it('marks itself invalid and is described by the page\'s refusal', () => {
+    render(
+      <>
+        <MemberPicker {...baseProps} value={null} invalid describedBy="member-refusal" />
+        <p id="member-refusal">That member was not found.</p>
+      </>,
+    );
+    const input = screen.getByRole('combobox', { name: 'Member' });
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription(/That member was not found\./);
+  });
+
   it('forwards inputRef to the combobox input', () => {
     const ref = createRef<HTMLInputElement>();
     render(<MemberPicker {...baseProps} value={null} inputRef={ref} />);

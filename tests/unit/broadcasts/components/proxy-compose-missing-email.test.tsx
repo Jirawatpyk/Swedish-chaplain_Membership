@@ -78,14 +78,18 @@ vi.mock('@/components/broadcast/member-picker', () => ({
     value,
     onSelect,
     label,
+    invalid,
+    describedBy,
   }: {
     value: MemberPickerOption | null;
     onSelect: (m: MemberPickerOption) => void;
     label: string;
+    invalid?: boolean;
+    describedBy?: string;
   }) => {
     capturedOnSelect = onSelect;
     return (
-      <div>
+      <div data-testid="member-picker" data-invalid={String(invalid === true)} data-described-by={describedBy ?? ''}>
         <span>{label}</span>
         {value ? <span data-testid="selected-member">{value.companyName}</span> : null}
       </div>
@@ -352,5 +356,24 @@ describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
     //     `pickerError` MUST NOT clear it (the admin may want to navigate to
     //     the member profile to add a contact email first).
     expect(screen.getByTestId('selected-member')).toBeInTheDocument();
+  });
+});
+
+// Spec 122 US12d-3 — AURA 5.66 (#182) retires the stand-in: the warning
+// beside the picker is tied to it.
+describe('ProxyComposeForm — the member refusal is the picker\'s', () => {
+  it('a member with no contact email marks the picker invalid, described by the warning', async () => {
+    renderForm();
+    await act(async () => {
+      capturedOnSelect?.({
+        memberId: 'm-noemail',
+        companyName: 'No Email Corp',
+        primaryContactName: null,
+        hasPrimaryContactEmail: false,
+      });
+    });
+    const picker = screen.getByTestId('member-picker');
+    expect(picker).toHaveAttribute('data-invalid', 'true');
+    expect(picker.getAttribute('data-described-by')).toContain('proxy-missing-contact-email');
   });
 });
