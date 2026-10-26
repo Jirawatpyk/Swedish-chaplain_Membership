@@ -1111,26 +1111,57 @@ describe('processWebhookEvent (T056)', () => {
     mismatch.mockRestore();
   });
 
-  it('adopted unresolved row → audit row on its own connection, not counted as a crash recovery', async () => {
-    const recovery = vi.spyOn(paymentsMetrics, 'webhookDispatchRecoveryReplay');
+  it('duplicate tenant mismatch without a wired logger still refuses the dispatch', async () => {
     const deps = makeDeps();
     (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       inserted: false,
-      adoptedFrom: 'rejected_api_version_mismatch',
       event: {
         id: 'evt_test_001',
-        tenantId: TENANT_ID,
+        tenantId: null,
         eventType: 'payment_intent.succeeded',
         apiVersion: PINNED_API,
         livemode: false,
         processorAccountId: 'acct_test_123',
-        receivedAt: new Date('2026-10-01T03:00:00Z'),
+        receivedAt: new Date(),
         processedAt: null,
-        outcome: 'processed',
+        outcome: 'acknowledged_only',
         payloadSha256: 'x'.repeat(64),
-        correlationId: 'corr_first',
+        correlationId: 'corr_1',
       },
     });
+    const result = await processWebhookEvent(deps, makeInput());
+    expect(result.ok && result.value.kind).toBe('duplicate');
+    expect(deps.processorEventsRepo.markProcessed).not.toHaveBeenCalled();
+  });
+
+  it('adopted unresolved row → audit row on the adoption transaction, not counted as a crash recovery', async () => {
+    const recovery = vi.spyOn(paymentsMetrics, 'webhookDispatchRecoveryReplay');
+    const deps = makeDeps();
+    const adoptedEvent = {
+      id: 'evt_test_001',
+      tenantId: TENANT_ID,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: PINNED_API,
+      livemode: false,
+      processorAccountId: 'acct_test_123',
+      receivedAt: new Date('2026-10-01T03:00:00Z'),
+      processedAt: null,
+      outcome: 'processed' as const,
+      payloadSha256: 'x'.repeat(64),
+      correlationId: 'corr_first',
+    };
+    const OWNER_TX = { owner: 'adoption-tx' };
+    // The repo runs `onAdopted` inside the adoption's own transaction.
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (
+        _tx: unknown,
+        _input: unknown,
+        onAdopted?: (tx: unknown, from: string, event: typeof adoptedEvent) => Promise<void>,
+      ) => {
+        await onAdopted?.(OWNER_TX, 'rejected_api_version_mismatch', adoptedEvent);
+        return { inserted: false, adoptedFrom: 'rejected_api_version_mismatch', event: adoptedEvent };
+      },
+    );
     try {
       const result = await processWebhookEvent(deps, makeInput());
       expect(result.ok && result.value.kind).toBe('processed');
@@ -1139,7 +1170,7 @@ describe('processWebhookEvent (T056)', () => {
       );
       expect(adoptAudits).toHaveLength(1);
       const [tx, audit] = adoptAudits[0]!;
-      expect(tx).toBeNull();
+      expect(tx).toBe(OWNER_TX);
       expect(audit).toMatchObject({
         tenantId: TENANT_ID,
         retentionYears: 10,

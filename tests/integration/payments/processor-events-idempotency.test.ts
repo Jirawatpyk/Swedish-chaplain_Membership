@@ -245,6 +245,47 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
     expect(replay.event.outcome).toBe('rejected_signature');
   });
 
+  // 132 round 2 (reliability M-1) — the adoption and its record commit
+  // together: a failing `onAdopted` rolls the adoption back, so the next
+  // replay adopts again instead of finding a re-tenanted row with no record.
+  it('a failing onAdopted rolls the adoption back (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-rollback-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    const replayInput = { ...first, tenantId: 'test-adopt-tenant', outcome: 'processed' as const };
+    await expect(
+      repo.insertIfNew(null, replayInput, async () => {
+        throw new Error('audit write failed');
+      }),
+    ).rejects.toThrow('audit write failed');
+
+    const [row] = await db.select().from(processorEvents).where(eq(processorEvents.id, id));
+    expect(row?.tenantId).toBeNull();
+    expect(row?.outcome).toBe('acknowledged_only');
+
+    // The callback sees the adopted row on the transaction it commits with.
+    const seen: string[] = [];
+    const again = await repo.insertIfNew(null, replayInput, async (ownerTx, from, event) => {
+      expect(ownerTx).not.toBeNull();
+      seen.push(`${from}:${event.tenantId}`);
+    });
+    expect(again.adoptedFrom).toBe('acknowledged_only');
+    expect(seen).toEqual(['acknowledged_only:test-adopt-tenant']);
+  });
+
   it('a row of another livemode is not adopted (132)', async () => {
     const id = makeEventId();
     insertedIds.push(id);
