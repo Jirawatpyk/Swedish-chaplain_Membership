@@ -97,7 +97,20 @@ e2e: `broadcasts/image-upload-allowlist` and `broadcasts/eblast-a11y` on chromiu
 
 ## Evidence
 
-This cloud session has no `.env.local`, so the live-Neon and running-app evidence comes from the maintainer's relay run **R90** (relay doc). Local gate on `d31887f`: `pnpm check` exit 0; `pnpm vitest run tests/contract/` 256 files, 2817 tests green. `pnpm test:coverage` 20795 green with no threshold miss. Its one red is the deliberate `pagehide` RED test (`28c92f9`), which landed mid-run; GREEN at `4b27a42`. The rerun on `4b27a42` is recorded in the PR.
+This cloud session has no `.env.local`, so the live-Neon and running-app evidence comes from the maintainer's relay run **R90** (relay doc).
+
+**R90: pass** (maintainer, 26 Oct 2026; manual at `df0530c`, e2e at `4b27a42`, base `main` `a77d213`; :3400 against the Neon dev branch, ClamAV in Docker):
+- **Migration 0319 on dev.** `pnpm db:migrate` applied it. `information_schema` shows `unused_checked_at` as `timestamp with time zone`, nullable. `pg_indexes` shows the partial index as written. `pnpm db:verify` passes 24/24 canaries, including 0319.
+- **Integration.** `eblast-image-lifecycle.test.ts` passes 17/17: the 9 spec 131 cases plus the existing ones.
+- **e2e** (`--workers=1`):
+  - `image-upload-allowlist` passes 3/3 on chromium and mobile-chrome.
+  - `eblast-a11y` passes 16/16 alone. The failures seen when it runs in the batch also occur on base, so they predate this PR.
+- **Manual.** Each step was checked in SQL as well as in the browser.
+  - 4.1–4.3: member, staff and template cancels each send one DELETE → 200, with `not_inserted`. Describe-and-insert sends none.
+  - 4.4: the cron returns `rowsRemoved 16, blobsDeleted 15, rowsFailed 0, truncated false, unusedListFailed false`. Every released blob returns 404; the inserted image is kept.
+  - 5.1: a blocked release is retried once (2 DELETEs), then the "still stored" toast shows, the row stays live and no audit is written.
+  - 5.2–5.4: reload, tab close and in-app navigation each release once, with no toast.
+- **Template 404, first run.** Both template releases first got 404 from a dev server that had never compiled that route (a Turbopack cold route). On a warm server the same release returns 200. Local gate on `d31887f`: `pnpm check` exit 0; `pnpm vitest run tests/contract/` 256 files, 2817 tests green. `pnpm test:coverage` 20795 green with no threshold miss. Its one red is the deliberate `pagehide` RED test (`28c92f9`), which landed mid-run; GREEN at `4b27a42`. The rerun on `4b27a42` is recorded in the PR.
 
 | Done-when | Evidence |
 |---|---|
