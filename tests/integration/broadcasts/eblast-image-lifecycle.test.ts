@@ -25,6 +25,8 @@ import { db, runInTenant } from '@/lib/db';
 import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/upload-inline-image';
 import { reclaimOrphanedImages } from '@/modules/broadcasts/application/use-cases/reclaim-orphaned-images';
 import { markOwnerImagesRemoved } from '@/modules/broadcasts/application/use-cases/_mark-owner-images-removed';
+import { releaseUnusedImage } from '@/modules/broadcasts/application/use-cases/release-unused-image';
+import { makeReleaseUnusedImageDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { drizzleBroadcastImagesRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcast-images-repo';
 import { sharpImageReencoder } from '@/modules/broadcasts/infrastructure/sharp-image-reencoder';
 import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapter';
@@ -514,5 +516,158 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
       });
       expect(r).toMatchObject({ deleted: true, rows: 0 });
     }, 180_000);
+  });
+
+  /**
+   * Spec 131 — the two layers on live Neon: the release stamps under RLS and
+   * the next tick reclaims it; arm 3's SELECT (`listUnused`) is valid SQL
+   * against the deployed schema and applies the owner rule — a sent E-Blast
+   * keeps what its body or a version shows and loses what it does not; a
+   * draft is never selected; and tenant B cannot release tenant A's image.
+   */
+  describe('spec 131 — release on cancel, and the "unused" arm', () => {
+    async function seedOwner(patch: Partial<NewBroadcastRow> & Pick<NewBroadcastRow, 'status' | 'bodyHtml'>): Promise<string> {
+      const id = randomUUID();
+      await runInTenant(tenant.ctx, (tx) =>
+        tx.insert(broadcasts).values({
+          tenantId: tenant.ctx.slug,
+          broadcastId: id,
+          requestedByMemberId: memberId,
+          requestedByMemberPlanIdSnapshot: 'plan-test',
+          submittedByUserId: actorUserId,
+          actorRole: 'member_self_service',
+          subject: 'Spec 131',
+          bodySource: 'plain',
+          fromName: 'Test Member via Test Chamber',
+          replyToEmail: 'reply@example.com',
+          segmentType: 'all_members',
+          estimatedRecipientCount: 0,
+          ...patch,
+        }),
+      );
+      return id;
+    }
+
+    /** One image row on `owner`, with its own hash so no other row shares the bytes. */
+    async function seedImage(owner: string): Promise<{ id: string; url: string; blobKey: string }> {
+      const hash = `u${randomUUID().replace(/-/g, '')}`;
+      const blobKey = `broadcasts/images/${tenant.ctx.slug}/${hash}.png`;
+      const url = `https://${HOST}/${blobKey}`;
+      const row = await runInTenant(tenant.ctx, (tx) =>
+        drizzleBroadcastImagesRepo.record(
+          tenant.ctx.slug as never,
+          { ownerKind: 'broadcast', ownerId: owner, contentHash: hash, blobUrl: url, blobKey, mimeType: 'image/png', byteSize: 1024, uploadedByUserId: actorUserId },
+          tx,
+        ),
+      );
+      return { id: row.id, url, blobKey };
+    }
+
+    async function liveIds(owner: string): Promise<string[]> {
+      const rows = (await db.execute(sql`
+        SELECT id::text AS id FROM broadcast_images
+         WHERE tenant_id = ${tenant.ctx.slug} AND owner_id = ${owner}::uuid AND deleted_at IS NULL
+      `)) as unknown as Array<{ id: string }>;
+      return rows.map((r) => r.id).sort();
+    }
+
+    async function sweep(storage = makeStorage()): Promise<{ storage: ReturnType<typeof makeStorage>; requestId: string }> {
+      const requestId = `s131-${randomUUID().slice(0, 8)}`;
+      const r = await reclaimOrphanedImages(
+        { imagesRepo: drizzleBroadcastImagesRepo, storage, audit: f7AuditAdapter },
+        { tenantId: tenant.ctx.slug as never, now: new Date(), requestId },
+      );
+      expect(r.ok).toBe(true);
+      return { storage, requestId };
+    }
+
+    it('release stamps the draft\'s image (audit not_inserted) and the next tick deletes its row and bytes', async () => {
+      const draft = await seedOwner({ status: 'draft', bodyHtml: '<p>no image</p>' });
+      const img = await seedImage(draft);
+      const releaseId = `rel-${randomUUID().slice(0, 8)}`;
+
+      const released = await releaseUnusedImage(makeReleaseUnusedImageDeps(tenant.ctx.slug), {
+        tenantId: tenant.ctx.slug as never,
+        owner: { kind: 'broadcast', id: draft },
+        imageId: img.id,
+        actor: { kind: 'member', memberId },
+        actorUserId,
+        actorRole: 'member',
+        requestId: releaseId,
+        now: new Date(),
+      });
+      expect(released).toEqual({ ok: true, value: { released: true } });
+      expect(await liveIds(draft)).toEqual([]);
+      expect((await imageAudits(tenant, releaseId)).map((p) => p['reason'])).toEqual(['not_inserted']);
+
+      const { storage } = await sweep();
+      expect(await countImages(tenant, draft)).toBe(0);
+      expect(storage.deleted).toContain(img.blobKey);
+    }, 180_000);
+
+    it('arm 3: a SENT E-Blast keeps the image its body shows and the one only a version shows, and loses the unused one', async () => {
+      const sent = await seedOwner({ status: 'sent', bodyHtml: '<p>placeholder</p>', submittedAt: new Date(), sentAt: new Date(), quotaYearConsumed: 2026, quotaConsumedAt: new Date() });
+      const shown = await seedImage(sent);
+      const inVersion = await seedImage(sent);
+      const unused = await seedImage(sent);
+      await runInTenant(tenant.ctx, (tx) =>
+        tx.execute(sql`
+          UPDATE broadcasts SET body_html = ${`<p><img src="${shown.url}"></p>`}
+           WHERE tenant_id = ${tenant.ctx.slug} AND broadcast_id = ${sent}::uuid
+        `),
+      );
+      await runInTenant(tenant.ctx, (tx) =>
+        tx.insert(broadcastVersions).values({
+          tenantId: tenant.ctx.slug,
+          broadcastId: sent,
+          versionNo: 1,
+          subject: 'Formatted',
+          bodyHtml: `<p><img src="${inVersion.url}"></p>`,
+          bodySource: 'v1',
+          authoredByUserId: actorUserId,
+          authoredByRole: 'admin_proxy',
+          sentToMemberAt: new Date(),
+        }),
+      );
+
+      const { storage, requestId } = await sweep();
+      expect(await liveIds(sent)).toEqual([shown.id, inVersion.id].sort());
+      expect(storage.deleted).toContain(unused.blobKey);
+      expect(storage.deleted).not.toContain(shown.blobKey);
+      const audits = await imageAudits(tenant, requestId);
+      expect(audits.some((p) => p['image_id'] === unused.id && p['reason'] === 'sweep_unused')).toBe(true);
+    }, 180_000);
+
+    it('arm 3 never selects a draft\'s live image, nor a template\'s', async () => {
+      const draft = await seedOwner({ status: 'draft', bodyHtml: '<p>still writing</p>' });
+      const img = await seedImage(draft);
+      const unused = await runInTenant(tenant.ctx, (tx) =>
+        drizzleBroadcastImagesRepo.listUnused(tenant.ctx.slug as never, 10_000, tx),
+      );
+      expect(unused.map((r) => r.id)).not.toContain(img.id);
+      expect(unused.every((r) => r.ownerKind === 'broadcast')).toBe(true);
+    }, 180_000);
+
+    it('Principle I: tenant B cannot release tenant A\'s image (not_found, the row stays live)', async () => {
+      const other = await createTestTenant('test-chamber');
+      try {
+        const draft = await seedOwner({ status: 'draft', bodyHtml: '<p>tenant A</p>' });
+        const img = await seedImage(draft);
+        const r = await releaseUnusedImage(makeReleaseUnusedImageDeps(other.ctx.slug), {
+          tenantId: other.ctx.slug as never,
+          owner: { kind: 'broadcast', id: draft },
+          imageId: img.id,
+          actor: { kind: 'member', memberId },
+          actorUserId,
+          actorRole: 'member',
+          requestId: `xt-${randomUUID().slice(0, 8)}`,
+          now: new Date(),
+        });
+        expect(r).toEqual({ ok: false, error: { kind: 'not_found' } });
+        expect(await liveIds(draft)).toEqual([img.id]);
+      } finally {
+        await other.cleanup().catch(() => {});
+      }
+    }, 240_000);
   });
 });
