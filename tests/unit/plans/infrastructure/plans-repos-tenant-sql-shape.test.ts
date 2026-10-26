@@ -28,7 +28,7 @@ const {
   SHAPE_TENANT: T,
   anyWith,
   callEach,
-  isPureInsert,
+  gateViolations,
   tenantPredicateViolations,
   tenantScopedTables,
   unfencedRawSql,
@@ -46,22 +46,16 @@ const PLAN_SRC = 'src/modules/plans/infrastructure/db/plan-repo.ts';
 const SCHEDULED_SRC = 'src/modules/plans/infrastructure/db/drizzle-scheduled-plan-change-repo.ts';
 
 function violationsOf(statements: readonly RecordedStatement[]): string[] {
-  // The plan-row advisory lock names no table (its key is tenant:plan) — not
-  // a read. Matched exactly, so a lock statement that also reads is checked.
-  const LOCK_ONLY = 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))';
-  const checked = statements.filter((s) => !isPureInsert(s.sql) && s.sql.trim() !== LOCK_ONLY);
-  // Positive control: every read/update names a tenant table the parse sees.
-  const reads = checked.filter((s) => !s.sql.trimStart().toLowerCase().startsWith('insert'));
-  expect(reads.filter((s) => tenantPredicateViolations(s, TABLES).refs.length === 0).map((s) => s.sql.slice(0, 80))).toEqual([]);
-  return checked.flatMap((s) =>
-    tenantPredicateViolations(s, TABLES).violations.map((v) => `${v} :: ${s.sql.slice(0, 90)}`),
-  );
+  const { blind, violations } = gateViolations(statements, TABLES);
+  expect(blind).toEqual([]);
+  return violations;
 }
 
 describe('plans repos — tenant predicate on every statement (130 s4)', () => {
   it('plan repo', async () => {
     rec.statements.length = 0;
-    const filter = anyWith({ year: 2026, category: undefined, search: undefined, includeInactive: undefined, includeDeleted: undefined });
+    // The DEFAULT list path: every optional filter pinned off.
+    const filter = anyWith({ year: undefined, category: undefined, q: undefined, activeOnly: undefined, showDeleted: undefined });
     await callEach(planRepo as never, {
       findByTenantAndYear: [CTX, filter],
       findOne: [CTX, 'large', 2026],
@@ -73,6 +67,15 @@ describe('plans repos — tenant predicate on every statement (130 s4)', () => {
       cloneYear: [CTX, 2026, 2027, false, 'user-1', noop],
     });
     expect(rec.statements.length).toBeGreaterThanOrEqual(8);
+    expect(violationsOf(rec.statements)).toEqual([]);
+  });
+
+  it('plan list with every filter on (year, category, search, active-only, show-deleted)', async () => {
+    rec.statements.length = 0;
+    await planRepo
+      .findByTenantAndYear(CTX, { year: 2026, category: 'corporate', q: 'large', activeOnly: true, showDeleted: true } as never)
+      .catch(() => undefined);
+    expect(rec.statements.length).toBe(1);
     expect(violationsOf(rec.statements)).toEqual([]);
   });
 

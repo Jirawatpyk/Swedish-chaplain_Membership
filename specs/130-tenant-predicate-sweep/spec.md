@@ -15,7 +15,7 @@
    - **s1:** reminder events, dispatch candidates, schedule policy, at-risk outreach read, the bounce query's `contacts` read.
    - **s2:** `drizzle-renewal-cycle-repo.ts`.
    - **s3:** `drizzle-member-renewal-flags-repo.ts` and `drizzle-renewal-escalation-task-repo.ts`.
-   - **s4:** plans (`plan-repo.ts`, `drizzle-scheduled-plan-change-repo.ts`).
+   - **s4:** plans (`plan-repo.ts`, `drizzle-scheduled-plan-change-repo.ts`). `softDeleteGuarded` also calls the members helper `countActiveMembersOnPlanInTx` (`count-active-members-on-plan.ts`), which s5 fences.
    - **s5–s6:** members (`drizzle-member-repo.ts`, `drizzle-contact-repo.ts`, `drizzle-change-request-repo.ts`, the adapters) — PII, so `pdpa-gdpr-compliance-officer` + `security-engineer` review.
    - **s7:** the rest — renewals stragglers (`drizzle-tier-upgrade-suggestion-repo.ts`, `plan-lookup-for-renewal-drizzle.ts`, `drizzle-at-risk-scorer.ts`, `lookup-member-by-email.ts`), payments, events, broadcasts, invoicing.
    - Scope found by a tenant-table-aware scan (every `.where(` naming a `tenant_id` table, every raw `sql` block on one), not the original `_tenantId`-only inventory.

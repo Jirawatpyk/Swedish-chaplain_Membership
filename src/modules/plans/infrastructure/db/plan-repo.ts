@@ -513,7 +513,7 @@ export const planRepo: PlanRepo = {
       // 3. Bulk insert into target year
       const now = new Date();
       const values = sources.map((row) => ({
-        tenantId: row.tenantId, // RLS re-verifies this matches current_tenant
+        tenantId: tenant.slug, // D-029 — the context tenant; RLS re-verifies it
         planId: row.planId,
         planYear: targetYear,
         planName: row.planName,
