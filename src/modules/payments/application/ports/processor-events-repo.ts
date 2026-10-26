@@ -25,6 +25,10 @@ export interface ProcessorEventsRepo {
    * `outcome = 'processed'`, bounded to the row's account and livemode,
    * never a `rejected_signature` row. `adoptedFrom` is then the outcome it
    * replaced; absent on every other result.
+   *
+   * `onAdopted` runs inside the adoption's own transaction (`ownerTx`), so
+   * the record of the adoption commits with it: if it throws, the adoption
+   * rolls back and the error propagates, and the next replay adopts again.
    */
   insertIfNew(
     tx: unknown,
@@ -40,6 +44,11 @@ export interface ProcessorEventsRepo {
       readonly correlationId: string;
       readonly receivedAt: Date;
     },
+    onAdopted?: (
+      ownerTx: unknown,
+      adoptedFrom: ProcessorEventOutcome,
+      event: ProcessorEvent,
+    ) => Promise<void>,
   ): Promise<{
     readonly inserted: boolean;
     readonly event: ProcessorEvent;

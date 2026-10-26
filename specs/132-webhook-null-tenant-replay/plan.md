@@ -1,6 +1,6 @@
 # Plan: 132 — adopt a NULL-tenant processor_events row on replay (L-1)
 
-Spec: `specs/132-webhook-null-tenant-replay/spec.md`. Branch `132-webhook-null-tenant-replay` (this worktree, from `origin/main` 0a5091e57). One slice. No migration, no flag, no new dependency.
+Spec: `specs/132-webhook-null-tenant-replay/spec.md`. Branch `132-webhook-null-tenant-replay` (this worktree, from `origin/main` 0a5091e57). One slice. Migration 0320 (one `audit_event_type` value, added in review round 1); no flag, no new dependency.
 
 ## Context
 
@@ -82,3 +82,16 @@ Deploys with the merge; behaviour changes only for duplicate deliveries whose st
 - Docs: env-mismatch adoption is reachable only after the deployment's live/test mode changed (code-review correctness note).
 - Not done: a live `payment_intent.succeeded` settlement through an adopted row (financial "recommended"). The default branch and `unknown_intent` both stamp through the same `markProcessed`; the settlement path's idempotency is unchanged by this PR.
 - Evidence round 2: RED 512243734 — audit query failed (enum value absent), `''` row `expected undefined to be 'acknowledged_only'`, unit adoption audit `expected [] to have a length of 1`. GREEN: migration 0320 applied to Neon dev and verified in `pg_enum` (n = 1); integration 4 files 20/20 (replay, idempotency, audit-event-type parity, unprocessed-events-count); unit payments + guard + label coverage 853 passed; payments webhook contract tests 18/18; `tsc` clean.
+
+### Review round 2 → fixes
+
+Round 2 (fresh subagents on 8cefc0e7d): financial-integrity PASS (3 Low); security APPROVE, checklist signed (2 Low); reliability 1 Medium + 2 Low; senior-tester NOT SHIP-READY (1 High, 1 Medium); spec-compliance COMPLIANT (DW5 partial, Low).
+
+- Adoption and audit not atomic (reliability M-1, senior-tester H-R2-1, security L-1, spec DW4 Low): `insertIfNew` takes `onAdopted(ownerTx, adoptedFrom, event)` and runs the UPDATE and the callback in one owner transaction; the use case writes the audit row there (non-null tx → the adapter bubbles a failure, the adoption rolls back, the next replay adopts again).
+- Fallback branch only probabilistically tested (senior-tester Medium): deterministic row-lock test — the adopting UPDATE blocks on a held lock, the holder commits a tenant, the replay returns the committed row with no adoption and `onAdopted` uncalled.
+- The `''` arm depends on the route's SweCham-gated fallback (security L-2): comment at the fallback in `route.ts` ties it to D-031.
+- The race loser counts as a crash recovery (financial L-1, reliability L-1, security INFO): accepted and documented in `docs/observability.md` (it does re-dispatch like one).
+- Docs: spec / plan no longer say "no migration"; data-model `tenant_id` row no longer claims an FK (0036 has none).
+- Not red first: the livemode, two-tenant and concurrent integration tests (512243734) and the row-lock test guard code that already existed (54d37017e, 8cefc0e7d); they were proven by mutation in senior-tester round 2 (M1–M6 all killed), not by a RED run.
+- Accepted Lows: mismatch refusal leaves no audit row (only warn + counter + alert); no live `payment_intent.succeeded` settlement test through an adopted row; adopted row keeps the first delivery's `api_version` / `payload_sha256`.
+- Evidence round 3: RED 172c18f32 — unit `expected null to be { owner: 'adoption-tx' }`; integration "a failing onAdopted rolls the adoption back" → `promise resolved … instead of rejecting`. GREEN: integration replay + idempotency 15/15 (row-lock test 1834 ms, i.e. it blocked); unit payments + architecture 823 passed.

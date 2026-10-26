@@ -575,18 +575,43 @@ async function processWebhookEventBody(
   // connection and ignores any tx (it must also write NULL-tenant rows), so
   // no tenant tx is opened for it: one would only hold a pool connection
   // while the insert borrowed a second (132 review, reliability M-1).
-  const inserted = await deps.processorEventsRepo.insertIfNew(null, {
-    id: event.id,
-    tenantId,
-    eventType: event.type,
-    apiVersion: event.apiVersion,
-    livemode: event.livemode,
-    processorAccountId: event.account,
-    outcome: 'processed',
-    payloadSha256: input.payloadSha256,
-    correlationId: input.correlationId,
-    receivedAt: new Date(deps.clock.nowMs()),
-  });
+  const inserted = await deps.processorEventsRepo.insertIfNew(
+    null,
+    {
+      id: event.id,
+      tenantId,
+      eventType: event.type,
+      apiVersion: event.apiVersion,
+      livemode: event.livemode,
+      processorAccountId: event.account,
+      outcome: 'processed',
+      payloadSha256: input.payloadSha256,
+      correlationId: input.correlationId,
+      receivedAt: new Date(deps.clock.nowMs()),
+    },
+    // 132 (D-031) — the adoption overwrites the row's outcome, so this audit
+    // row is the only durable record that the event was once refused. It is
+    // written on the adoption's own transaction: a failed write rolls the
+    // adoption back (the next replay adopts again), and it survives a
+    // dispatch that fails afterwards.
+    async (ownerTx, adoptedFrom, adopted) => {
+      await deps.audit.emit(ownerTx, {
+        tenantId,
+        requestId: input.requestId,
+        eventType: 'webhook_unresolved_event_adopted',
+        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+        summary: `Stripe ${event.type} ${event.id} adopted on replay (was ${adoptedFrom})`,
+        payload: {
+          processor_event_id: event.id,
+          event_type: event.type,
+          adopted_from: adoptedFrom,
+          first_received_at: adopted.receivedAt.toISOString(),
+          first_correlation_id: adopted.correlationId,
+        },
+        retentionYears: retentionFor('webhook_unresolved_event_adopted'),
+      });
+    },
+  );
 
   if (inserted.adoptedFrom !== undefined) {
     // 132 (D-031) — the repo adopted the NULL-tenant row an unresolved first
@@ -599,25 +624,6 @@ async function processWebhookEventBody(
       adoptedFrom: inserted.adoptedFrom,
     });
     paymentsMetrics.webhookUnresolvedRowAdopted(tenantId, event.type);
-    // The adoption overwrote the row's outcome, so this row is the only
-    // durable record that the event was once refused. `null` tx: it must
-    // survive a dispatch that fails below (the adapter swallows + counts a
-    // failed emit, so it never blocks the dispatch).
-    await deps.audit.emit(null, {
-      tenantId,
-      requestId: input.requestId,
-      eventType: 'webhook_unresolved_event_adopted',
-      actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-      summary: `Stripe ${event.type} ${event.id} adopted on replay (was ${inserted.adoptedFrom})`,
-      payload: {
-        processor_event_id: event.id,
-        event_type: event.type,
-        adopted_from: inserted.adoptedFrom,
-        first_received_at: inserted.event.receivedAt.toISOString(),
-        first_correlation_id: inserted.event.correlationId,
-      },
-      retentionYears: retentionFor('webhook_unresolved_event_adopted'),
-    });
   }
 
   if (!inserted.inserted && inserted.event.tenantId !== tenantId) {

@@ -95,7 +95,7 @@ function toDomain(row: ProcessorEventRow): ProcessorEvent {
  */
 export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
   return {
-    async insertIfNew(_txUnknown, input) {
+    async insertIfNew(_txUnknown, input, onAdopted) {
       // Audit 2026-04-25 finding #5: `_txUnknown` is intentionally
       // ignored — see file-level docstring for why insertIfNew runs
       // outside runInTenant. The arg stays in the port shape for
@@ -153,28 +153,34 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
           existing.processorAccountId === '') &&
         existing.livemode === input.livemode
       ) {
-        const [adopted] = await db
-          .update(processorEvents)
-          .set({ tenantId: input.tenantId, outcome: 'processed' })
-          .where(
-            and(
-              eq(processorEvents.id, input.id),
-              isNull(processorEvents.tenantId),
-              inArray(processorEvents.outcome, [...ADOPTABLE_OUTCOMES]),
-              or(
-                eq(processorEvents.processorAccountId, input.processorAccountId),
-                eq(processorEvents.processorAccountId, ''),
+        const tenantId = input.tenantId;
+        const adoptedFrom = existing.outcome as ProcessorEventOutcome;
+        // One owner transaction: the adoption and `onAdopted` (the caller's
+        // audit row) commit together or not at all.
+        const adopted = await db.transaction(async (ownerTx) => {
+          const [row] = await ownerTx
+            .update(processorEvents)
+            .set({ tenantId, outcome: 'processed' })
+            .where(
+              and(
+                eq(processorEvents.id, input.id),
+                isNull(processorEvents.tenantId),
+                inArray(processorEvents.outcome, [...ADOPTABLE_OUTCOMES]),
+                or(
+                  eq(processorEvents.processorAccountId, input.processorAccountId),
+                  eq(processorEvents.processorAccountId, ''),
+                ),
+                eq(processorEvents.livemode, input.livemode),
               ),
-              eq(processorEvents.livemode, input.livemode),
-            ),
-          )
-          .returning();
+            )
+            .returning();
+          if (!row) return null;
+          const event = toDomain(row as ProcessorEventRow);
+          await onAdopted?.(ownerTx, adoptedFrom, event);
+          return event;
+        });
         if (adopted) {
-          return {
-            inserted: false,
-            adoptedFrom: existing.outcome as ProcessorEventOutcome,
-            event: toDomain(adopted as ProcessorEventRow),
-          };
+          return { inserted: false, adoptedFrom, event: adopted };
         }
         // A concurrent replay adopted it between the read and the UPDATE
         // (`tenant_id IS NULL` re-evaluated to false) — return the row as

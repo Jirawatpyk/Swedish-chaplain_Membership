@@ -21,7 +21,7 @@
  * Mocking policy: NONE. Real Neon round-trip per
  * `tests/integration/payments/drizzle-payments-repo.test.ts` precedent.
  */
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID, createHash } from 'node:crypto';
 import { db } from '@/lib/db';
@@ -284,6 +284,58 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
     });
     expect(again.adoptedFrom).toBe('acknowledged_only');
     expect(seen).toEqual(['acknowledged_only:test-adopt-tenant']);
+  });
+
+  // Deterministic version of the concurrent-replay race: another transaction
+  // holds the row lock, so the adopting UPDATE blocks; when the holder
+  // commits a tenant, Postgres re-evaluates `tenant_id IS NULL` to false and
+  // the replay must return the row as committed, with no adoption.
+  it('an adoption that loses the row lock returns the committed row, unadopted (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-lock-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    let release!: () => void;
+    const released = new Promise<void>((r) => (release = r));
+    const holder = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM processor_events WHERE id = ${id} FOR UPDATE`);
+      locked();
+      await released;
+      await tx.execute(
+        sql`UPDATE processor_events SET tenant_id = 'test-lock-winner', outcome = 'processed' WHERE id = ${id}`,
+      );
+    });
+    await isLocked;
+
+    const onAdopted = vi.fn(async () => undefined);
+    const adopting = repo.insertIfNew(
+      null,
+      { ...first, tenantId: 'test-adopt-tenant', outcome: 'processed' },
+      onAdopted,
+    );
+    // Let the replay read the NULL row and block on the UPDATE.
+    await new Promise((r) => setTimeout(r, 1500));
+    release();
+    await holder;
+
+    const result = await adopting;
+    expect(result.adoptedFrom).toBeUndefined();
+    expect(result.event.tenantId).toBe('test-lock-winner');
+    expect(onAdopted).not.toHaveBeenCalled();
   });
 
   it('a row of another livemode is not adopted (132)', async () => {

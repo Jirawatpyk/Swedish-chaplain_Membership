@@ -551,6 +551,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // to the SweCham tenant context. Multi-tenant deploys land here
   // with an empty account → tenant resolution returns null →
   // acknowledged_only path emits + 200-acks Stripe without state change.
+  //
+  // 132 (D-031) — this fallback is also why `insertIfNew` lets a replay adopt
+  // a NULL-tenant row recorded with account '': such a row can only be a
+  // direct event from before this fallback was configured, and only this
+  // SweCham-gated branch turns '' into an account that resolves. Extending
+  // the fallback to another tenant widens that adoption with it.
   if (
     !evAccount &&
     env.stripe.accountIdSwecham &&
