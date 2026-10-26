@@ -24,7 +24,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { drizzleContactRepo } from '@/modules/members/infrastructure/db/drizzle-contact-repo';
-import type { TenantTx } from '@/lib/db';
+import { bindTenantTx, type TenantTx } from '@/lib/db';
 import type { MemberId } from '@/modules/members';
 
 /**
@@ -37,7 +37,10 @@ function makeRejectingTx(error: Error): TenantTx {
   builder.from = vi.fn(() => builder);
   // `where` is the awaited terminal in the adapter — reject there.
   builder.where = vi.fn(() => Promise.reject(error));
-  return { select: vi.fn(() => builder) } as unknown as TenantTx;
+  const tx = { select: vi.fn(() => builder) };
+  // D-030: the repo reads its tenant from the tx `runInTenant` bound.
+  bindTenantTx(tx, 'tenant-1');
+  return tx as unknown as TenantTx;
 }
 
 describe('drizzleContactRepo.listLinkedUserIdsForMemberInTx — fails loud (H3)', () => {

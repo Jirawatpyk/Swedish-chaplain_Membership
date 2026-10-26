@@ -2,7 +2,11 @@
  * Drizzle + RLS implementation of ContactRepo (T048).
  *
  * Same tenant-scoping pattern as drizzle-member-repo.ts — every method
- * runs inside runInTenant(). The partial unique index
+ * runs inside runInTenant(), AND every statement carries an explicit
+ * `tenant_id` predicate (D-029): the ctx slug, or for a tx-only method the
+ * slug `runInTenant` bound to that tx (`tenantSlugOf`, D-030). Gate:
+ * `tests/unit/members/infrastructure/contact-change-request-repos-tenant-sql-shape.test.ts`.
+ * The partial unique index
  * `contacts_one_primary_per_member` enforces FR-003 at the DB layer;
  * this repo maps the resulting Postgres unique-violation to
  * `repo.conflict` so callers get a clean error instead of a leaky 500.
@@ -11,7 +15,7 @@
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { isUniqueViolationOnConstraint } from '@/lib/db-errors';
 import { err, ok } from '@/lib/result';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, tenantSlugOf } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
 import { contacts } from './schema-contacts';
 import { findCarriedSelfOptOut } from './carried-marketing-opt-out';
@@ -66,7 +70,7 @@ export function rowToContact(c: typeof contacts.$inferSelect): Contact {
 export const drizzleContactRepo: ContactRepo = {
   async listByMember(ctx, memberId, options) {
     try {
-      const conds = [eq(contacts.memberId, memberId)];
+      const conds = [eq(contacts.tenantId, ctx.slug), eq(contacts.memberId, memberId)];
       if (!options?.includeRemoved) conds.push(isNull(contacts.removedAt));
       const rows = await runInTenant(ctx, (tx) =>
         tx.select().from(contacts).where(and(...conds)),
@@ -83,7 +87,7 @@ export const drizzleContactRepo: ContactRepo = {
         tx
           .select()
           .from(contacts)
-          .where(eq(contacts.contactId, contactId))
+          .where(and(eq(contacts.tenantId, ctx.slug), eq(contacts.contactId, contactId)))
           .limit(1),
       );
       if (rows.length === 0) return err({ code: 'repo.not_found' });
@@ -188,7 +192,7 @@ export const drizzleContactRepo: ContactRepo = {
           }),
           updatedAt: new Date(),
         })
-        .where(eq(contacts.contactId, contactId))
+        .where(and(eq(contacts.tenantId, tenantSlugOf(tx)), eq(contacts.contactId, contactId)))
         .returning();
       if (updated.length === 0) return err({ code: 'repo.not_found' });
       return ok(rowToContact(updated[0]!));
@@ -202,7 +206,7 @@ export const drizzleContactRepo: ContactRepo = {
       const rows = await tx
         .select()
         .from(contacts)
-        .where(eq(contacts.memberId, memberId));
+        .where(and(eq(contacts.tenantId, tenantSlugOf(tx)), eq(contacts.memberId, memberId)));
       return ok(rows.map(rowToContact));
     } catch (e) {
       return err(unexpected(e));
@@ -215,11 +219,13 @@ export const drizzleContactRepo: ContactRepo = {
       // in the WHERE means a row that was promoted by a concurrent tx (whose
       // row lock we wait on, then re-evaluate against) matches 0 rows here
       // instead of being soft-deleted out from under the member.
+      const tenant = tenantSlugOf(tx);
       const updated = await tx
         .update(contacts)
         .set({ removedAt: new Date() })
         .where(
           and(
+            eq(contacts.tenantId, tenant),
             eq(contacts.contactId, contactId),
             eq(contacts.isPrimary, false),
           ),
@@ -233,7 +239,7 @@ export const drizzleContactRepo: ContactRepo = {
       const [probe] = await tx
         .select({ isPrimary: contacts.isPrimary })
         .from(contacts)
-        .where(eq(contacts.contactId, contactId))
+        .where(and(eq(contacts.tenantId, tenant), eq(contacts.contactId, contactId)))
         .limit(1);
       if (!probe) return err({ code: 'repo.not_found' });
       return err({ code: 'repo.conflict', reason: 'cannot_remove_primary' });
@@ -249,6 +255,7 @@ export const drizzleContactRepo: ContactRepo = {
         .set({ isPrimary: true, updatedAt: new Date() })
         .where(
           and(
+            eq(contacts.tenantId, tenantSlugOf(tx)),
             eq(contacts.contactId, contactId),
             eq(contacts.memberId, memberId),
             isNull(contacts.removedAt),
@@ -271,11 +278,13 @@ export const drizzleContactRepo: ContactRepo = {
       // and race to link. `0 rows updated` means either the contact
       // doesn't exist OR it's already linked; distinguish with a
       // targeted follow-up SELECT only when the update affected nothing.
+      const tenant = tenantSlugOf(tx);
       const updated = await tx
         .update(contacts)
         .set({ linkedUserId: userId, updatedAt: new Date() })
         .where(
           and(
+            eq(contacts.tenantId, tenant),
             eq(contacts.contactId, contactId),
             isNull(contacts.linkedUserId),
           ),
@@ -287,7 +296,7 @@ export const drizzleContactRepo: ContactRepo = {
       const [probe] = await tx
         .select({ contactId: contacts.contactId })
         .from(contacts)
-        .where(eq(contacts.contactId, contactId))
+        .where(and(eq(contacts.tenantId, tenant), eq(contacts.contactId, contactId)))
         .limit(1);
       if (!probe) return err({ code: 'repo.not_found' });
       return err({
@@ -314,7 +323,9 @@ export const drizzleContactRepo: ContactRepo = {
     const rows = await tx
       .select({ linkedUserId: contacts.linkedUserId })
       .from(contacts)
-      .where(and(eq(contacts.memberId, memberId), isNull(contacts.removedAt)));
+      .where(
+        and(eq(contacts.tenantId, tenantSlugOf(tx)), eq(contacts.memberId, memberId), isNull(contacts.removedAt)),
+      );
     return rows
       .map((r) => r.linkedUserId)
       .filter((uid): uid is string => uid !== null);
@@ -340,7 +351,7 @@ export const drizzleContactRepo: ContactRepo = {
     const rows = await tx
       .select({ linkedUserId: contacts.linkedUserId })
       .from(contacts)
-      .where(eq(contacts.memberId, memberId));
+      .where(and(eq(contacts.tenantId, tenantSlugOf(tx)), eq(contacts.memberId, memberId)));
     return rows
       .map((r) => r.linkedUserId)
       .filter((uid): uid is string => uid !== null);
@@ -348,14 +359,15 @@ export const drizzleContactRepo: ContactRepo = {
 
   async markInviteBouncedInTx(tx, contactId, bouncedAt) {
     try {
-      // Tenant-scoped via the caller's runInTenant tx (RLS scopes the row to
-      // the owner tenant). Idempotent guard: only stamp a live, not-yet-marked
+      // Fenced by `tenant_id` (D-029) alongside the caller's runInTenant tx
+      // (RLS). Idempotent guard: only stamp a live, not-yet-marked
       // contact — re-deliveries of the same bounce no-op (affected: 0).
       const updated = await tx
         .update(contacts)
         .set({ inviteBouncedAt: bouncedAt, updatedAt: new Date() })
         .where(
           and(
+            eq(contacts.tenantId, tenantSlugOf(tx)),
             eq(contacts.contactId, contactId),
             isNull(contacts.removedAt),
             isNull(contacts.inviteBouncedAt),
@@ -370,8 +382,8 @@ export const drizzleContactRepo: ContactRepo = {
 
   async clearInviteBouncedInTx(tx, contactId) {
     try {
-      // Clears invite_bounced_at = NULL. Tenant-scoped via the caller's
-      // runInTenant tx. Idempotent: if already NULL the update affects 0 rows.
+      // Clears invite_bounced_at = NULL. Fenced by `tenant_id` (D-029) alongside
+      // the caller's runInTenant tx (RLS). Idempotent: if already NULL the update affects 0 rows.
       // No WHERE guard on removedAt — we allow clearing on a removed contact
       // to avoid a confusing stuck-in-bounced state if archiving races with
       // a resend. Idempotent no-op when already NULL (the Cluster 3 lapsed-
@@ -380,7 +392,7 @@ export const drizzleContactRepo: ContactRepo = {
       const updated = await tx
         .update(contacts)
         .set({ inviteBouncedAt: null, updatedAt: new Date() })
-        .where(eq(contacts.contactId, contactId))
+        .where(and(eq(contacts.tenantId, tenantSlugOf(tx)), eq(contacts.contactId, contactId)))
         .returning({ contactId: contacts.contactId });
       return ok({ affected: updated.length });
     } catch (e) {
@@ -392,12 +404,13 @@ export const drizzleContactRepo: ContactRepo = {
     try {
       // Lock the live row first so the same-state decision and the write see
       // one snapshot (two staff toggling at once cannot both "change" it).
-      // Tenant-scoped via the caller's runInTenant tx (RLS): another tenant's
-      // contact id reads as 0 rows → not_found, never a cross-tenant write.
+      // Fenced by `tenant_id` (D-029) and RLS: another tenant's contact id
+      // reads as 0 rows → not_found, never a cross-tenant write.
+      const tenant = tenantSlugOf(tx);
       const rows = await tx
         .select()
         .from(contacts)
-        .where(and(eq(contacts.contactId, contactId), isNull(contacts.removedAt)))
+        .where(and(eq(contacts.tenantId, tenant), eq(contacts.contactId, contactId), isNull(contacts.removedAt)))
         .for('update')
         .limit(1);
       const current = rows[0];
@@ -433,7 +446,7 @@ export const drizzleContactRepo: ContactRepo = {
           marketingOptOutByUserId: command.kind === 'off' ? command.byUserId : null,
           updatedAt: new Date(),
         })
-        .where(and(eq(contacts.contactId, contactId), isNull(contacts.removedAt)))
+        .where(and(eq(contacts.tenantId, tenant), eq(contacts.contactId, contactId), isNull(contacts.removedAt)))
         .returning();
       const row = updated[0];
       if (!row) return err({ code: 'repo.not_found' });
@@ -453,7 +466,7 @@ export const drizzleContactRepo: ContactRepo = {
     const rows = await tx
       .select({ email: contacts.email })
       .from(contacts)
-      .where(eq(contacts.memberId, memberId));
+      .where(and(eq(contacts.tenantId, tenantSlugOf(tx)), eq(contacts.memberId, memberId)));
     const emails = new Set<string>();
     for (const r of rows) if (r.email) emails.add(r.email);
     return [...emails];
@@ -473,7 +486,9 @@ export const drizzleContactRepo: ContactRepo = {
     const rows = await tx
       .select({ email: contacts.email })
       .from(contacts)
-      .where(and(eq(contacts.memberId, memberId), isNull(contacts.removedAt)));
+      .where(
+        and(eq(contacts.tenantId, tenantSlugOf(tx)), eq(contacts.memberId, memberId), isNull(contacts.removedAt)),
+      );
     const emails = new Set<string>();
     for (const r of rows) if (r.email) emails.add(r.email);
     return [...emails];
@@ -491,17 +506,19 @@ export const drizzleContactRepo: ContactRepo = {
     // Resend. For the rare collision (the erased member's email is ALSO a peer's
     // live contact) we leave the erased member's own datum — the SAME accepted
     // safer-failure residual as the live-only outbox guard (a residual self-
-    // datum beats deleting/redacting a peer's data). RLS scopes BOTH `contacts`
-    // references to the tenant via the caller's runInTenant tx — the
+    // datum beats deleting/redacting a peer's data). Both `contacts` references
+    // carry `tenant_id` (D-029; `peer` correlated to `c`) alongside RLS — the
     // `peer.member_id <> ${memberId}` anti-join is the cross-member guard.
     const rows = (await tx.execute(sql`
       SELECT DISTINCT lower(c.email) AS email
       FROM contacts c
-      WHERE c.member_id = ${memberId}
+      WHERE c.tenant_id = ${tenantSlugOf(tx)}
+        AND c.member_id = ${memberId}
         AND c.email IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM contacts peer
-          WHERE peer.member_id <> ${memberId}
+          WHERE peer.tenant_id = c.tenant_id
+            AND peer.member_id <> ${memberId}
             AND peer.removed_at IS NULL
             AND lower(peer.email) = lower(c.email)
         )
@@ -522,8 +539,8 @@ export const drizzleContactRepo: ContactRepo = {
       // (`lower(email) WHERE removed_at IS NULL`) — without it, the sentinel
       // emails would have to stay collision-free on a LIVE index. `is_primary`
       // is forced FALSE so the row also leaves `contacts_one_primary_per_member`
-      // and respects the `contacts_primary_not_removed` CHECK. Tenant-scoped via
-      // the caller's runInTenant tx (RLS); no manual tenant_id filter needed.
+      // and respects the `contacts_primary_not_removed` CHECK. Fenced by
+      // `tenant_id` (D-029) alongside the caller's runInTenant tx (RLS).
       // Idempotent: re-running yields the same stable sentinels per contact_id.
       //
       // `linked_user_id` is DELIBERATELY absent from this .set() — it is NOT
@@ -560,7 +577,7 @@ export const drizzleContactRepo: ContactRepo = {
           removedAt: opts.erasedAt,
           updatedAt: opts.erasedAt,
         })
-        .where(eq(contacts.memberId, memberId))
+        .where(and(eq(contacts.tenantId, tenantSlugOf(tx)), eq(contacts.memberId, memberId)))
         .returning({ contactId: contacts.contactId });
       return ok({ scrubbedCount: updated.length });
     } catch (e) {
@@ -568,7 +585,7 @@ export const drizzleContactRepo: ContactRepo = {
     }
   },
 
-  async updateEmailInTx(tx, _ctx, contactId, newEmail) {
+  async updateEmailInTx(tx, ctx, contactId, newEmail) {
     try {
       // SELECT the current email first — Postgres RETURNING on UPDATE
       // reflects post-SET values, not pre-SET, so a single UPDATE can
@@ -576,14 +593,14 @@ export const drizzleContactRepo: ContactRepo = {
       const [before] = await tx
         .select({ email: contacts.email })
         .from(contacts)
-        .where(eq(contacts.contactId, contactId))
+        .where(and(eq(contacts.tenantId, ctx.slug), eq(contacts.contactId, contactId)))
         .limit(1);
       if (!before) return err({ code: 'repo.not_found' });
 
       const updated = await tx
         .update(contacts)
         .set({ email: newEmail, updatedAt: new Date() })
-        .where(eq(contacts.contactId, contactId))
+        .where(and(eq(contacts.tenantId, ctx.slug), eq(contacts.contactId, contactId)))
         .returning({ id: contacts.contactId });
       if (updated.length === 0) return err({ code: 'repo.not_found' });
 
@@ -606,11 +623,13 @@ export const drizzleContactRepo: ContactRepo = {
       // was always NULL). See migration 0253 for why this also rules out a
       // DB CHECK correlating this column with `is_primary`.
       // Demote current primary FIRST (partial unique index constraint)
+      const tenant = tenantSlugOf(tx);
       const demoted = await tx
         .update(contacts)
         .set({ isPrimary: false, updatedAt: new Date() })
         .where(
           and(
+            eq(contacts.tenantId, tenant),
             eq(contacts.memberId, memberId),
             eq(contacts.isPrimary, true),
             sql`${contacts.removedAt} IS NULL`,
@@ -622,6 +641,7 @@ export const drizzleContactRepo: ContactRepo = {
         .set({ isPrimary: true, updatedAt: new Date() })
         .where(
           and(
+            eq(contacts.tenantId, tenant),
             eq(contacts.contactId, newPrimaryContactId),
             eq(contacts.memberId, memberId),
             // A removed contact cannot become primary (DB CHECK

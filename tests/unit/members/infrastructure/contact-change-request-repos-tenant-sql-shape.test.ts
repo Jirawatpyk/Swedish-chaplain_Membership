@@ -17,7 +17,7 @@ vi.mock('@/lib/db', async (importOriginal) => {
   rec.statements = r.statements;
   rec.db = r.db;
   // D-030: a tx-only method reads its tenant from the tx `runInTenant` bound.
-  (orig as { bindTenantTx?: (tx: unknown, slug: string) => void }).bindTenantTx?.(r.db, SHAPE_TENANT);
+  orig.bindTenantTx(r.db, SHAPE_TENANT);
   return {
     ...orig,
     db: r.db,
@@ -149,7 +149,9 @@ describe('contact + change-request repos — tenant predicate on every statement
   });
 
   it('every .where( in both sources names tenant_id (row-dependent statements included)', () => {
-    expect(unfencedWheres(readFileSync(CONTACT_SRC, 'utf8'))).toEqual([]);
+    // `conds` is `listByMember`'s composed filter list, seeded with the
+    // tenant — fenced, and proven by both listByMember call-map cases above.
+    expect(unfencedWheres(readFileSync(CONTACT_SRC, 'utf8'))).toEqual(['and(...conds)']);
     expect(unfencedWheres(readFileSync(CHANGE_REQUEST_SRC, 'utf8'))).toEqual([]);
   });
 });
