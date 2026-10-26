@@ -63,4 +63,16 @@ describe('member compose chrome', () => {
     expect(screen.queryByText(/You can cancel this broadcast at any time/)).toBeNull();
     vi.unstubAllGlobals();
   });
+
+  it('draws Save as draft as the outlined secondary button, beside Submit', () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(QUOTA), { status: 200 })));
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ComposeForm audienceCeiling={500} audienceMode="primary_only" initialQuota={QUOTA} />
+      </NextIntlClientProvider>,
+    );
+    const save = screen.getByRole('button', { name: enMessages.portal.broadcasts.compose.button.saveDraft });
+    expect(save.className).toContain('aura-btn--secondary');
+    vi.unstubAllGlobals();
+  });
 });
