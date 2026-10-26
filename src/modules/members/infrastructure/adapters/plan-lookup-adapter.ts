@@ -88,6 +88,7 @@ export const plansBarrelAdapter: PlanLookupPort = {
           .from(members)
           .where(
             and(
+              eq(members.tenantId, ctx.slug),
               eq(members.planId, planId),
               eq(members.planYear, planYear),
               or(
