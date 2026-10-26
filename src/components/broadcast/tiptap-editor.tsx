@@ -36,6 +36,7 @@ import { makeBroadcastPasteTransform } from './broadcast-paste-transform';
 import { ImageAltDialog, type ImageAltVariant } from './image-alt-dialog';
 import {
   ComposeInlineImageUploader,
+  MEMBER_INLINE_IMAGE_UPLOAD_URL,
   type ComposeInlineImageUploaderHandle,
 } from './compose-inline-image-uploader';
 import { ClamavUnreachableBanner } from './clamav-unreachable-banner';
@@ -50,10 +51,20 @@ import { ClamavUnreachableBanner } from './clamav-unreachable-banner';
  * description (toolbar path) or the uploaded URL (uploader-button path) — and
  * the node is inserted only once both are present (FR-040).
  */
+/** Spec 131 — the one retry of a release that failed for a reason that may pass. */
+const RELEASE_RETRY_MS = 2_000;
+type ReleaseOutcome = 'released' | 'retryable' | 'final';
+
 interface PendingImage {
   readonly kind: ImageAltVariant;
   readonly alt?: string;
   readonly src?: string;
+  /**
+   * Where to release the uploaded row if its description is cancelled (spec
+   * 131), fixed at upload time: the host's draft or URL may change before
+   * the author answers (#658 reliability L2).
+   */
+  readonly releaseUrl?: string;
 }
 
 export interface TiptapEditorProps {
@@ -349,6 +360,50 @@ export default function TiptapEditor({
   );
 
   /**
+   * Spec 131 — release an upload that never made it into the message: the
+   * endpoint beside the host's upload route stamps its row, and the next daily
+   * sweep removes it. Fire and forget, `keepalive` so a page left at once
+   * still sends it. `released` only when the server stamped the row. A
+   * failure that may pass (offline, 429, 5xx) is `retryable`; any other
+   * refusal (404, 409) is final. On an E-Blast the sweep's "unused" arm still
+   * reclaims an image left behind once the E-Blast closes.
+   */
+  const releaseUpload = useCallback(async (url: string): Promise<ReleaseOutcome> => {
+    try {
+      const res = await fetch(url, { method: 'DELETE', keepalive: true });
+      if (res.ok) return 'released';
+      console.error({ status: res.status }, 'broadcasts.image_release.refused');
+      return res.status === 429 || res.status >= 500 ? 'retryable' : 'final';
+    } catch (err: unknown) {
+      console.error({ err: String(err) }, 'broadcasts.image_release.failed');
+      return 'retryable';
+    }
+  }, []);
+
+  // #658 reliability L3 — leaving the page while an uploaded image's
+  // description is still open abandons it too, so release it then: on an
+  // in-app navigation (unmount) and on closing the tab or reloading
+  // (`pagehide`, NEW-5). The release URL is dropped once sent, so the two
+  // never both fire; the pending image itself stays, so a page restored
+  // from the back-forward cache can still insert it (the sweep's
+  // `restoreLive` keeps a released image the saved draft embeds).
+  useEffect(() => {
+    const releasePending = (): void => {
+      const pending = pendingImageRef.current;
+      if (pending?.src !== undefined && pending.alt === undefined && pending.releaseUrl !== undefined) {
+        const { releaseUrl, ...rest } = pending;
+        pendingImageRef.current = rest;
+        void releaseUpload(releaseUrl);
+      }
+    };
+    window.addEventListener('pagehide', releasePending);
+    return () => {
+      window.removeEventListener('pagehide', releasePending);
+      releasePending();
+    };
+  }, [releaseUpload]);
+
+  /**
    * Closing WITHOUT confirming abandons the insert — otherwise a cancelled
    * description would stay armed and silently attach itself to whatever the
    * author uploaded next. A pending entry that already carries an `alt` is
@@ -361,11 +416,30 @@ export default function TiptapEditor({
     if (!next) setAltEdit(null);
     if (!next && pendingImageRef.current?.alt === undefined) {
       // Uploaded, then the description was cancelled: the file is stored but
-      // nothing is in the message, so say so (round 2, #5).
-      if (pendingImageRef.current?.src !== undefined) toast.info(tImage('notInserted'));
+      // nothing is in the message, so say so (round 2, #5) and release it
+      // (spec 131). "It will be removed" is said only once the release went
+      // through: a refused or failed one (429, offline) leaves the file, and
+      // a template has no sweep behind it (#658 code review). A failure that
+      // may pass is sent once more after 2 s (#658 UX M2, the maintainer).
+      const pending = pendingImageRef.current;
+      if (pending?.src !== undefined) {
+        if (pending.releaseUrl === undefined) {
+          toast.info(tImage('notInsertedKept'));
+        } else {
+          const url = pending.releaseUrl;
+          void (async () => {
+            let outcome = await releaseUpload(url);
+            if (outcome === 'retryable') {
+              await new Promise((resolve) => setTimeout(resolve, RELEASE_RETRY_MS));
+              outcome = await releaseUpload(url);
+            }
+            toast.info(tImage(outcome === 'released' ? 'notInserted' : 'notInsertedKept'));
+          })();
+        }
+      }
       pendingImageRef.current = null;
     }
-  }, [tImage]);
+  }, [tImage, releaseUpload]);
 
   /**
    * The author dismissed the file picker the description opened. The pending
@@ -380,7 +454,7 @@ export default function TiptapEditor({
   }, []);
 
   const handleUploaded = useCallback(
-    (blobUrl: string): void => {
+    (blobUrl: string, imageId?: string): void => {
       const pending = pendingImageRef.current;
       if (pending?.alt !== undefined) {
         insertImage(pending.kind, blobUrl, pending.alt);
@@ -392,11 +466,15 @@ export default function TiptapEditor({
       rememberTrigger();
       altConfirmedRef.current = false;
       setAltEdit(null);
-      pendingImageRef.current = { kind: 'inline', src: blobUrl };
+      const releaseUrl =
+        imageId !== undefined && draftId !== null
+          ? `${imageUploadUrl ?? MEMBER_INLINE_IMAGE_UPLOAD_URL}/${encodeURIComponent(imageId)}?draftId=${encodeURIComponent(draftId)}`
+          : undefined;
+      pendingImageRef.current = { kind: 'inline', src: blobUrl, ...(releaseUrl !== undefined ? { releaseUrl } : {}) };
       setAltVariant('inline');
       setAltOpen(true);
     },
-    [insertImage],
+    [insertImage, draftId, imageUploadUrl],
   );
 
   if (!editor) {

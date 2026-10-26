@@ -1,7 +1,7 @@
 # 130 — An explicit `tenant_id` predicate on every tenant-scoped statement (issue #653)
 
-**Size**: L, sliced per D-020 into `130-tenant-predicate-sweep-s1` … `s4`. No migration, no flag, no new dependency.
-**Status**: s1 built 25 Oct 2026.
+**Size**: L, sliced per D-020 into `130-tenant-predicate-sweep-s1` … `s7` (widened from s4 on 2026-10-26; the maintainer chose to sweep every module). No migration, no flag, no new dependency.
+**Status**: s1–s3 merged (#656, #657, #659); s4 built 26 Oct 2026.
 **Decision**: D-029 (the maintainer chose the explicit-predicate reading, 2026-10-25).
 
 ## Done when
@@ -15,9 +15,11 @@
    - **s1:** reminder events, dispatch candidates, schedule policy, at-risk outreach read, the bounce query's `contacts` read.
    - **s2:** `drizzle-renewal-cycle-repo.ts`.
    - **s3:** `drizzle-member-renewal-flags-repo.ts` and `drizzle-renewal-escalation-task-repo.ts`.
-   - **s4:** plans (`plan-repo.ts`, `drizzle-scheduled-plan-change-repo.ts`) and the member-plan adapters' members-repo calls.
-   - **s7:** the renewals leftovers (tier-upgrade suggestions, plan lookup for renewal, the per-member at-risk scorer), `processor_events` (`markProcessed` / `updateOutcome` gain a `tenantId` argument), the attendances read, and the buyer-PII redaction UPDATEs. The csv-import, broadcasts and invoice repos needed no change; source-scan gates pin their exemptions.
-5. **Every RLS-only comment is removed.** That is every "do NOT add a tenant_id predicate" note: S-R5-6 and plans research § 7.1. #653 closes after the last slice (s7) merges.
+   - **s4:** plans (`plan-repo.ts`, `drizzle-scheduled-plan-change-repo.ts`). `softDeleteGuarded` also calls the members helper `countActiveMembersOnPlanInTx` (`count-active-members-on-plan.ts`), which s5 fences.
+   - **s5–s6:** members (`drizzle-member-repo.ts`, `drizzle-contact-repo.ts`, `drizzle-change-request-repo.ts`, the adapters) — PII, so `pdpa-gdpr-compliance-officer` + `security-engineer` review.
+   - **s7:** the renewals leftovers (tier-upgrade suggestions, plan lookup for renewal, the per-member at-risk scorer), `processor_events` (`markProcessed` / `updateOutcome` bind `tenantSlugOf(tx)`, D-030; no port change), the attendances read, and the buyer-PII redaction UPDATEs. The csv-import, broadcasts and invoice repos needed no change; source-scan gates pin their exemptions.
+   - Scope found by a tenant-table-aware scan (every `.where(` naming a `tenant_id` table, every raw `sql` block on one), not the original `_tenantId`-only inventory.
+5. **Every RLS-only comment is removed.** That is every "do NOT add a tenant_id predicate" note: S-R5-6 and plans research § 7.1. #653 closes after s7.
 
 ## Not changed
 - **Inserts.** They set `tenant_id` in VALUES.

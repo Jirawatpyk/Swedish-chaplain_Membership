@@ -5,7 +5,7 @@
  * never the pool-global `db`, which would bypass RLS + FORCE silently (the
  * F7.1a US2 rule). Drizzle-inferred row types stay inside this file.
  */
-import { and, count, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import type {
@@ -17,6 +17,7 @@ import type {
 } from '../../application/ports/broadcast-images-repo';
 import type { ImageMimeType } from '../../application/ports/image-storage-port';
 import { CLOSED_NEVER_SENT_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
+import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
 import { broadcastImages, type BroadcastImageRow } from '../schema';
 
 /**
@@ -27,6 +28,30 @@ import { broadcastImages, type BroadcastImageRow } from '../schema';
 const OWNER_HOLDS_IMAGES = sql`NOT (b.status IN (${sql.raw(
   CLOSED_NEVER_SENT_BROADCAST_STATUSES.map((s) => `'${s}'`).join(', '),
 )}) AND b.sending_started_at IS NULL AND b.resend_broadcast_id IS NULL AND b.audience_import_id IS NULL)`;
+
+/** Spec 131 — the statuses whose content can no longer change, from the Domain constant. */
+const OWNER_IS_TERMINAL = sql`b.status IN (${sql.raw(TERMINAL_BROADCAST_STATUSES.map((s) => `'${s}'`).join(', '))})`;
+
+/**
+ * Spec 131 — does the owner `b` hold `url`? It holds images at all
+ * (`OWNER_HOLDS_IMAGES`) AND its body, its source or one of its versions'
+ * bodies embeds the URL. Every table carries its own `tenant_id` predicate.
+ */
+function ownerHoldsUrl(tenantId: string, url: SQL): SQL {
+  return sql`(
+    ${OWNER_HOLDS_IMAGES}
+    AND (
+      position(${url} in b.body_html) > 0
+      OR position(${url} in b.body_source) > 0
+      OR EXISTS (
+        SELECT 1 FROM broadcast_versions v
+         WHERE v.tenant_id = ${tenantId}
+           AND v.broadcast_id = b.broadcast_id
+           AND (position(${url} in v.body_html) > 0 OR position(${url} in v.body_source) > 0)
+      )
+    )
+  )`;
+}
 
 function toRecord(row: BroadcastImageRow): BroadcastImageRecord {
   return {
@@ -102,6 +127,26 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
       )
       .returning();
     return rows.map(toRecord);
+  },
+
+  /** Spec 131 — one live row of one owner, uploaded by one user; null when there is none to stamp. */
+  async markDeletedById(tenantId, target, at, tx) {
+    const rows = await (tx as TenantTx)
+      .update(broadcastImages)
+      .set({ deletedAt: at })
+      .where(
+        and(
+          eq(broadcastImages.tenantId, tenantId as string),
+          eq(broadcastImages.id, target.imageId),
+          eq(broadcastImages.ownerKind, target.owner.kind),
+          eq(broadcastImages.ownerId, target.owner.id),
+          eq(broadcastImages.uploadedByUserId, target.uploadedByUserId),
+          isNull(broadcastImages.deletedAt),
+        ),
+      )
+      .returning();
+    const row = rows[0];
+    return row === undefined ? null : toRecord(row);
   },
 
   /**
@@ -254,6 +299,97 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
     return rows.map(toRecord);
   },
 
+  /**
+   * Spec 131 — arm 3, part 1: stamp the due rows a terminal owner still uses.
+   * One bounded UPDATE over an id subquery (Postgres has no UPDATE … LIMIT).
+   * Every table carries its own `tenant_id` predicate (D-029).
+   */
+  async markUsedImagesExamined(tenantId, now, dueBefore, limit, tx) {
+    const t = tenantId as string;
+    const rows = (await (tx as TenantTx).execute(sql`
+      UPDATE broadcast_images bi
+         SET unused_checked_at = ${now.toISOString()}::timestamptz
+       WHERE bi.tenant_id = ${t}
+         AND bi.id IN (
+               SELECT c.id FROM broadcast_images c
+                WHERE c.tenant_id = ${t}
+                  AND c.owner_kind = 'broadcast'
+                  AND c.deleted_at IS NULL
+                  AND (c.unused_checked_at IS NULL OR c.unused_checked_at < ${dueBefore.toISOString()}::timestamptz)
+                  AND EXISTS (
+                        SELECT 1 FROM broadcasts b
+                         WHERE b.tenant_id = ${t}
+                           AND b.broadcast_id = c.owner_id
+                           AND ${OWNER_IS_TERMINAL}
+                           AND ${ownerHoldsUrl(t, sql`c.blob_url`)}
+                      )
+                ORDER BY c.unused_checked_at NULLS FIRST, c.created_at
+                LIMIT ${limit}
+             )
+      RETURNING bi.id
+    `)) as unknown as Array<{ id: string }>;
+    return rows.length;
+  },
+
+  /**
+   * Spec 131 — arm 3, part 2: the due rows a terminal owner does NOT hold.
+   * Never-examined rows first, then the longest-unexamined.
+   */
+  async listUnused(tenantId, dueBefore, limit, tx) {
+    const t = tenantId as string;
+    const rows = await (tx as TenantTx)
+      .select()
+      .from(broadcastImages)
+      .where(
+        and(
+          eq(broadcastImages.tenantId, t),
+          eq(broadcastImages.ownerKind, 'broadcast'),
+          isNull(broadcastImages.deletedAt),
+          sql`(${broadcastImages.unusedCheckedAt} IS NULL OR ${broadcastImages.unusedCheckedAt} < ${dueBefore.toISOString()}::timestamptz)`,
+          sql`EXISTS (
+            SELECT 1 FROM broadcasts b
+             WHERE b.tenant_id = ${t}
+               AND b.broadcast_id = ${broadcastImages.ownerId}
+               AND ${OWNER_IS_TERMINAL}
+               AND NOT ${ownerHoldsUrl(t, sql`${broadcastImages.blobUrl}`)}
+          )`,
+        ),
+      )
+      .orderBy(sql`${broadcastImages.unusedCheckedAt} NULLS FIRST`, broadcastImages.createdAt)
+      .limit(limit);
+    return rows.map(toRecord);
+  },
+
+  /** Spec 131 — arm 3's re-check, inside the row's own transaction. */
+  async isLiveImage(tenantId, imageId, tx) {
+    const rows = await (tx as TenantTx)
+      .select({ id: broadcastImages.id })
+      .from(broadcastImages)
+      .where(
+        and(
+          eq(broadcastImages.tenantId, tenantId as string),
+          eq(broadcastImages.id, imageId),
+          isNull(broadcastImages.deletedAt),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  },
+
+  /** Spec 131 — arm 3, part 3: watermark one live row the sweep kept. */
+  async markUnusedExamined(tenantId, imageId, now, tx) {
+    await (tx as TenantTx)
+      .update(broadcastImages)
+      .set({ unusedCheckedAt: now })
+      .where(
+        and(
+          eq(broadcastImages.tenantId, tenantId as string),
+          eq(broadcastImages.id, imageId),
+          isNull(broadcastImages.deletedAt),
+        ),
+      );
+  },
+
   async countLiveByContentHash(tenantId, contentHash, tx, excludeImageId) {
     const rows = await (tx as TenantTx)
       .select({ n: count() })
@@ -357,7 +493,9 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
   async restoreLive(tenantId, imageId, tx) {
     await (tx as TenantTx)
       .update(broadcastImages)
-      .set({ deletedAt: null })
+      // Spec 131 — and clear arm 3's watermark, so a restored row (an
+      // erasure-retained one) is examined on the next tick, not up to 30 days on.
+      .set({ deletedAt: null, unusedCheckedAt: null })
       .where(
         and(
           eq(broadcastImages.tenantId, tenantId as string),

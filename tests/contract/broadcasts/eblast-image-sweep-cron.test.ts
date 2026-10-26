@@ -120,6 +120,35 @@ describe('prune-expired-drafts — image sweep block (T035)', () => {
     );
   });
 
+  /**
+   * Spec 131 (#658 reliability M2) — up to 600 rows a tick, so the sweep gets
+   * a deadline well inside `maxDuration` (300 s): a large tick stops between
+   * rows instead of being killed inside one, and Block 3 (the approval
+   * reminders and day-30 expiry) still runs. A truncated tick and a failed
+   * unused-arm listing are logged at error.
+   */
+  it('spec 131: the sweep runs under a deadline that leaves the later blocks time; truncation and a failed unused arm are logged', async () => {
+    reclaimMock.mockResolvedValueOnce(
+      ok({ scanned: 600, blobsDeleted: 0, rowsRemoved: 400, retained: 0, rowsFailed: 0, truncated: true, unusedListFailed: true }),
+    );
+    const before = Date.now();
+    const { POST } = await importRoute();
+    const { logger } = await import('@/lib/logger');
+    const res = await POST(req('POST'));
+    expect(res.status).toBe(200);
+    const [, input] = reclaimMock.mock.calls[0]! as [unknown, { deadlineMs: number }];
+    expect(input.deadlineMs).toBeGreaterThan(before);
+    expect(input.deadlineMs).toBeLessThanOrEqual(before + 200_000);
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ errorId: 'M131.cron.image_sweep.truncated' }),
+      'cron.broadcasts.image_sweep.truncated',
+    );
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ errorId: 'M131.cron.image_sweep.unused_list_failed' }),
+      'cron.broadcasts.image_sweep.unused_list_failed',
+    );
+  });
+
   it('the CRON_SECRET bearer guards the whole handler — no block runs without it', async () => {
     const { POST } = await importRoute();
     const res = await POST(req('POST', 'Bearer wrong'));
