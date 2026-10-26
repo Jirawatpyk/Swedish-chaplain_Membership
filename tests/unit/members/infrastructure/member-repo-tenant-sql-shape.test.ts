@@ -311,6 +311,10 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
       expect(result.ok, name).toBe(false);
       expect(rec.statements, name).toEqual([]);
     }
+    // The erasure reconciler's read returns rows, not a Result: it throws.
+    rec.statements.length = 0;
+    await expect(drizzleMemberRepo.findStuckErasuresInTx(tx as never, 'other-tenant', 10)).rejects.toThrow();
+    expect(rec.statements).toEqual([]);
   });
 
   it('the bounce resolver is the one cross-tenant read, and it is only that', async () => {
