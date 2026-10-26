@@ -656,7 +656,7 @@ export function TiptapToolbar({
         // Below 30rem of height (a landscape phone, the keyboard open) it
         // stops sticking, as AURA's own shell bar does; `z-[5]` keeps it under
         // the portal header (round 3, a11y review).
-        className="sticky top-[var(--shell-bar-height,0px)] z-[5] flex [@media(max-height:30rem)]:static flex-wrap items-center gap-1 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-input)] p-1.5"
+        className="sticky top-[var(--shell-bar-height,0px)] z-[5] flex [@media(max-height:30rem)]:static flex-wrap items-center gap-0.5 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-input)] p-1.5"
       >
         {row.map((entry, index) =>
           entry.kind === 'menu' ? (

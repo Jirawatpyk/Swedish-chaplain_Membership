@@ -17,7 +17,7 @@
  *   - the quota card is a 2×2 / 1×4 grid of counters (`text-2xl` value over a
  *     `text-xs` label) plus the progress bar — not one line;
  *   - the editor toolbar is a WRAP of 44 px controls (`tiptap-toolbar.tsx`:
- *     h-11 each, `gap-1 p-1`), one or two rows depending on the column width —
+ *     h-11 each, `gap-0.5 p-1`), one or two rows depending on the column width —
  *     not one h-9 bar. It reserves the count the toolbar renders: thirteen, plus
  *     the image and banner controls while `FEATURE_F71A_US2_IMAGES` is on
  *     (#400 U4 — the caller's server `loading.tsx` reads the flag); the wrap
@@ -101,7 +101,7 @@ export function ComposeFormSkeleton({ variant, imageControls }: ComposeFormSkele
             <div className="space-y-2">
               <Skeleton className="h-4 w-20" />
               <div className="overflow-hidden rounded-md border">
-                <div className="flex flex-wrap items-center gap-1 border-b p-1">
+                <div className="flex flex-wrap items-center gap-0.5 border-b p-1">
                   {Array.from({ length: toolbarControls }).map((_, i) => (
                     <Skeleton
                       key={i}

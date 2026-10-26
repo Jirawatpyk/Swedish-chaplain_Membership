@@ -89,7 +89,7 @@ export function TiptapLoadingSkeleton(): React.ReactElement {
           does not jump when the editor arrives at any width (#662 review): the
           boards' eight controls on a phone (seven in Thai, no Italic), all of
           them from 640px; 44px on touch, 32px with a mouse. */}
-      <div aria-hidden className="flex flex-wrap items-center gap-1 rounded-[var(--aura-radius-md)] p-1.5">
+      <div aria-hidden className="flex flex-wrap items-center gap-0.5 rounded-[var(--aura-radius-md)] p-1.5">
         {Array.from({ length: thai ? 14 : 15 }).map((_, i) => (
           <SkeletonBlock
             key={i}

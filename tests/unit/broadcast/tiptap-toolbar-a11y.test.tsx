@@ -159,6 +159,14 @@ describe('T098 — visible focus state and 320 px wrapping', () => {
     }
   });
 
+  // R91 step 6: with the boards' 4px gap the fifteen controls overflowed the
+  // member editor column at 1440px by 6px and Redo wrapped. The boards draw
+  // a 2px gap; the 600px email preview (FR-050) keeps its width.
+  it('spaces its controls 2px apart, as the boards do', () => {
+    const { toolbar } = renderToolbar();
+    expect(toolbar.className).toMatch(/(^|\s)gap-0\.5(\s|$)/);
+  });
+
   it('names itself for assistive technology', () => {
     const { toolbar } = renderToolbar();
     expect(toolbar).toHaveAttribute('aria-label');
