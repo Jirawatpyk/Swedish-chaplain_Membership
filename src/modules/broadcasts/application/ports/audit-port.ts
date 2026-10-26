@@ -416,7 +416,7 @@ export interface F7AuditPayloadShapes {
      * groups on it. The comment is now the type. A new surface adds its member
      * here.
      */
-    readonly operation?: 'image_upload' | 'snapshot_template' | 'member_decision' | 'version_thread';
+    readonly operation?: 'image_upload' | 'image_release' | 'snapshot_template' | 'member_decision' | 'version_thread';
   };
   readonly broadcast_webhook_batch_missing: {
     readonly broadcastId: string;

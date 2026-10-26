@@ -43,13 +43,15 @@ describe('drizzleBroadcastImagesRepo — D-029 tenant predicates', () => {
       record: [SHAPE_TENANT, { ownerKind: 'broadcast', ownerId: OWNER.id, contentHash: 'h', blobUrl: 'u', blobKey: 'k', mimeType: 'image/png', byteSize: 1, uploadedByUserId: 'u-1' }, tx],
       listByOwner: [SHAPE_TENANT, OWNER, tx],
       markDeletedByOwner: [SHAPE_TENANT, OWNER, AT, tx],
-      markDeletedById: [SHAPE_TENANT, OWNER, '22222222-2222-2222-2222-222222222222', AT, tx],
+      markDeletedById: [SHAPE_TENANT, { owner: OWNER, imageId: '22222222-2222-2222-2222-222222222222', uploadedByUserId: 'u-1' }, AT, tx],
       markDeletedByOwners: [SHAPE_TENANT, 'broadcast', [OWNER.id], AT, tx],
       markDeletedForMember: [SHAPE_TENANT, '33333333-3333-3333-3333-333333333333', AT, tx],
       listByMember: [SHAPE_TENANT, '33333333-3333-3333-3333-333333333333', 10, tx],
       listMarked: [SHAPE_TENANT, 10, tx],
       listOrphaned: [SHAPE_TENANT, 10, tx],
-      listUnused: [SHAPE_TENANT, 10, tx],
+      markUsedImagesExamined: [SHAPE_TENANT, AT, AT, 10, tx],
+      listUnused: [SHAPE_TENANT, AT, 10, tx],
+      markUnusedExamined: [SHAPE_TENANT, 'img-x', AT, tx],
       countLiveByContentHash: [SHAPE_TENANT, 'h', tx, 'img-x'],
       lockContentHash: [SHAPE_TENANT, 'h', tx],
       isBlobReferencedByContent: [SHAPE_TENANT, 'https://x/y.png', tx],
@@ -60,8 +62,9 @@ describe('drizzleBroadcastImagesRepo — D-029 tenant predicates', () => {
     const checked = rec.statements.filter(
       (s) => !isPureInsert(s.sql) && tenantPredicateViolations(s, TABLES).refs.length > 0,
     );
-    // Positive control: one per table-reading method (13 of the 17 above).
-    expect(checked.length).toBeGreaterThanOrEqual(13);
+    // Positive control: exactly one statement per table-reading method (15 of
+    // the 19 above), so a method that goes quiet cannot hide behind another.
+    expect(checked.length).toBe(15);
     const violations = checked.flatMap((s) =>
       tenantPredicateViolations(s, TABLES).violations.map((v) => `${v} :: ${s.sql.replace(/\s+/g, ' ').slice(0, 120)}`),
     );

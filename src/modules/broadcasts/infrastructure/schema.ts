@@ -1057,6 +1057,8 @@ export const broadcastImages = pgTable(
       .notNull()
       .defaultNow(),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    /** Spec 131 (0319) — when the sweep's UNUSED arm last examined this row; skipped for 30 days. */
+    unusedCheckedAt: timestamp('unused_checked_at', { withTimezone: true }),
   },
   (table) => [
     primaryKey({
@@ -1087,6 +1089,9 @@ export const broadcastImages = pgTable(
     index('broadcast_images_tenant_deleted_idx')
       .on(table.tenantId, table.deletedAt)
       .where(sql`${table.deletedAt} IS NOT NULL`),
+    index('broadcast_images_tenant_unused_checked_idx')
+      .on(table.tenantId, table.unusedCheckedAt)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.ownerKind} = 'broadcast'`),
   ],
 );
 

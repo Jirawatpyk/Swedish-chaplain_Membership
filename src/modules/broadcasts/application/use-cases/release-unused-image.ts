@@ -9,12 +9,12 @@
  * or a template). A refusal is its `not_found` (404 + probe audit) or
  * `closed` (409), and nothing is stamped.
  *
- * WHAT. One live row of THAT owner is stamped, and
+ * WHAT. One live row of THAT owner, uploaded by THE CALLER, is stamped, and
  * `broadcast_image_removed { reason: 'not_inserted', blob_deleted: false }`
  * is audited in the same transaction. The emit is raw (through
  * `auditImagesRemoved`), so a failed audit rolls the stamp back rather than
- * commit an unevidenced deletion. No live row of that owner with that id
- * (already stamped, another owner's, unknown) → `released: false` and no
+ * commit an unevidenced deletion. No such live row (already stamped, another
+ * owner's, another user's upload, unknown) → `released: false` and no
  * audit: a repeated release is harmless and says nothing about other rows.
  *
  * NO CONTENT CHECK. The bytes are not touched here. The next daily sweep's
@@ -70,11 +70,19 @@ export async function releaseUnusedImage(
     actor: input.actor,
     actorUserId: input.actorUserId,
     requestId: input.requestId,
+    operation: 'image_release',
   });
   if (!authorized.ok) return err(authorized.error);
 
   return deps.imagesRepo.withTx(input.tenantId, async (tx) => {
-    const stamped = await deps.imagesRepo.markDeletedById(input.tenantId, input.owner, input.imageId, input.now, tx);
+    // Only the uploader may release (the maintainer, 26 Oct 2026): the release
+    // undoes the caller's own upload, never someone else's image.
+    const stamped = await deps.imagesRepo.markDeletedById(
+      input.tenantId,
+      { owner: input.owner, imageId: input.imageId, uploadedByUserId: input.actorUserId },
+      input.now,
+      tx,
+    );
     if (stamped === null) return ok({ released: false });
     await auditImagesRemoved(
       deps.audit,

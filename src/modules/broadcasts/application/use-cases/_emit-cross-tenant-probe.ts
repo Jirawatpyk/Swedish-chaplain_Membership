@@ -45,6 +45,8 @@ export type TemplateProbeOperation =
   | 'delete'
   | 'update'
   | 'snapshot'
+  // Spec 131 — the release of an uploaded image left out of the template.
+  | 'image_release'
   // F119 T108 — the compose picker's start counter
   // (`POST /api/broadcasts/templates/[id]/started`).
   | 'start';
@@ -61,6 +63,8 @@ export type BroadcastProbeUseCase =
   // F119 T106/T146 — the image ownership check (staff route miss, member
   // route unknown/other-tenant id).
   | 'upload-inline-image'
+  // Spec 131 — the release of an uploaded image left out of the E-Blast.
+  | 'release-unused-image'
   // F119 PR-2 — the staff formatting routes (`…/[id]/version`,
   // `…/version/send`, `…/schedule`).
   | 'start-formatted-version'

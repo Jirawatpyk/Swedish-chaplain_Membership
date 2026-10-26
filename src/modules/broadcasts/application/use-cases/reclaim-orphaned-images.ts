@@ -106,16 +106,45 @@ export const IMAGE_SWEEP_BATCH = 200;
  */
 export const IMAGE_SWEEP_ROW_TIMEOUT_MS = 5_000;
 
+/**
+ * Spec 131 (#658 reviews) — the bound on each LISTING transaction. The lists
+ * ran with none (the pooled endpoint drops the connect-time 5 s), so a slow
+ * list could run until `maxDuration`. 20 s, not the row's 5 s: arm 3's
+ * watermark UPDATE scans up to `UNUSED_MARK_BATCH` rows' content in one
+ * statement, and the first tick after spec 131 meets the whole backlog.
+ */
+export const IMAGE_SWEEP_LIST_TIMEOUT_MS = 20_000;
+
+/**
+ * Spec 131 — arm 3 examines a row at most once per this window (0319
+ * `unused_checked_at`). A terminal E-Blast's content never changes, so a row
+ * its owner uses needs no re-scan sooner; a row the content backstop kept is
+ * re-examined when the window lapses, automatically.
+ */
+export const UNUSED_RECHECK_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Spec 131 — how many used rows one tick may watermark (one UPDATE). */
+export const UNUSED_MARK_BATCH = 1_000;
+
 export interface ReclaimOrphanedImagesDeps {
   readonly imagesRepo: BroadcastImagesRepo;
   readonly storage: Pick<ImageStoragePort, 'delete'>;
   readonly audit: AuditPort;
+  /** Epoch ms, for the deadline. Defaults to `Date.now`. */
+  readonly clock?: () => number;
 }
 
 export interface ReclaimOrphanedImagesInput {
   readonly tenantId: TenantSlug;
   readonly now: Date;
   readonly requestId: string;
+  /**
+   * Spec 131 (#658 reliability M2) — epoch ms (on `deps.clock`) after which no
+   * new row is started. The cron gives the block a share of its `maxDuration`,
+   * so a large tick ends cleanly between rows instead of being killed inside
+   * one, and the cron's later blocks still run. Omitted: no deadline.
+   */
+  readonly deadlineMs?: number;
 }
 
 export interface ReclaimOrphanedImagesOutput {
@@ -133,6 +162,13 @@ export interface ReclaimOrphanedImagesOutput {
    * cron logs a non-zero count at `error` and the counter carries the alert.
    */
   readonly rowsFailed: number;
+  /** Spec 131 — the deadline stopped the batch; the rest waits for the next tick. */
+  readonly truncated: boolean;
+  /**
+   * Spec 131 — arm 3's own listing failed. Arms 1 and 2 still ran: an erased
+   * member's images must not wait on the newest arm.
+   */
+  readonly unusedListFailed: boolean;
 }
 
 export type ReclaimOrphanedImagesError = {
@@ -218,15 +254,37 @@ export async function reclaimOrphanedImages(
 ): Promise<Result<ReclaimOrphanedImagesOutput, ReclaimOrphanedImagesError>> {
   let marked: readonly BroadcastImageRecord[];
   let orphaned: readonly BroadcastImageRecord[];
-  let unused: readonly BroadcastImageRecord[];
   try {
-    ({ marked, orphaned, unused } = await deps.imagesRepo.withTx(input.tenantId, async (tx) => ({
-      marked: await deps.imagesRepo.listMarked(input.tenantId, IMAGE_SWEEP_BATCH, tx),
-      orphaned: await deps.imagesRepo.listOrphaned(input.tenantId, IMAGE_SWEEP_BATCH, tx),
-      unused: await deps.imagesRepo.listUnused(input.tenantId, IMAGE_SWEEP_BATCH, tx),
-    })));
+    ({ marked, orphaned } = await deps.imagesRepo.withTx(input.tenantId, async (tx) => {
+      await deps.imagesRepo.setStatementTimeout(IMAGE_SWEEP_LIST_TIMEOUT_MS, tx);
+      return {
+        marked: await deps.imagesRepo.listMarked(input.tenantId, IMAGE_SWEEP_BATCH, tx),
+        orphaned: await deps.imagesRepo.listOrphaned(input.tenantId, IMAGE_SWEEP_BATCH, tx),
+      };
+    }));
   } catch (e) {
     return err({ kind: 'sweep.server_error', message: e instanceof Error ? e.message : String(e) });
+  }
+
+  // Spec 131 (#658 reviews) — arm 3 in its OWN bounded transaction, and its
+  // failure isolated: the newest arm must never stop the marked arm, which
+  // carries the erasure and release stamps. First the due rows their owner
+  // uses are watermarked (no re-scan for 30 days), then the unused are listed.
+  let unused: readonly BroadcastImageRecord[] = [];
+  let unusedListFailed = false;
+  const dueBefore = new Date(input.now.getTime() - UNUSED_RECHECK_MS);
+  try {
+    unused = await deps.imagesRepo.withTx(input.tenantId, async (tx) => {
+      await deps.imagesRepo.setStatementTimeout(IMAGE_SWEEP_LIST_TIMEOUT_MS, tx);
+      await deps.imagesRepo.markUsedImagesExamined(input.tenantId, input.now, dueBefore, UNUSED_MARK_BATCH, tx);
+      return deps.imagesRepo.listUnused(input.tenantId, dueBefore, IMAGE_SWEEP_BATCH, tx);
+    });
+  } catch (e) {
+    unusedListFailed = true;
+    logger.error(
+      { err: errKind(e), tenantId: input.tenantId, requestId: input.requestId },
+      'broadcasts.image_sweep.unused_list_failed',
+    );
   }
 
   const batch: Array<{ image: BroadcastImageRecord; arm: SweepArm }> = [
@@ -244,8 +302,14 @@ export async function reclaimOrphanedImages(
   let rowsRemoved = 0;
   let retained = 0;
   let rowsFailed = 0;
+  let truncated = false;
+  const clock = deps.clock ?? Date.now;
 
   for (const { image, arm } of batch) {
+    if (input.deadlineMs !== undefined && clock() > input.deadlineMs) {
+      truncated = true;
+      break;
+    }
     const live = arm !== 'marked';
     try {
       const outcome = await deps.imagesRepo.withTx(input.tenantId, async (tx): Promise<RowOutcome> => {
@@ -298,7 +362,13 @@ export async function reclaimOrphanedImages(
             // audit row claiming otherwise is exactly the audit-truth class
             // this repo already guards elsewhere. The durable signal is the
             // metric plus this log line.
-            await deps.imagesRepo.restoreLive(input.tenantId, image.id, tx);
+            if (arm === 'unused') {
+              // Spec 131 — already live; watermark it instead, or it is picked
+              // again every tick and the batch fills with it (#658 reviews).
+              await deps.imagesRepo.markUnusedExamined(input.tenantId, image.id, input.now, tx);
+            } else {
+              await deps.imagesRepo.restoreLive(input.tenantId, image.id, tx);
+            }
             return 'retained';
           } else if (deletedBlobKeys.has(image.blobKey)) {
             // An earlier row of THIS batch already deleted these bytes. No
@@ -364,5 +434,5 @@ export async function reclaimOrphanedImages(
       );
     }
   }
-  return ok({ scanned: batch.length, blobsDeleted, rowsRemoved, retained, rowsFailed });
+  return ok({ scanned: batch.length, blobsDeleted, rowsRemoved, retained, rowsFailed, truncated, unusedListFailed });
 }

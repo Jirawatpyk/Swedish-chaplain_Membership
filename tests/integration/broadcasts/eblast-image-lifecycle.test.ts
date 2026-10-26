@@ -642,7 +642,7 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
       const draft = await seedOwner({ status: 'draft', bodyHtml: '<p>still writing</p>' });
       const img = await seedImage(draft);
       const unused = await runInTenant(tenant.ctx, (tx) =>
-        drizzleBroadcastImagesRepo.listUnused(tenant.ctx.slug as never, 10_000, tx),
+        drizzleBroadcastImagesRepo.listUnused(tenant.ctx.slug as never, new Date(), 10_000, tx),
       );
       expect(unused.map((r) => r.id)).not.toContain(img.id);
       expect(unused.every((r) => r.ownerKind === 'broadcast')).toBe(true);

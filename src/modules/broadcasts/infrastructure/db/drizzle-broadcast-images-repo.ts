@@ -5,7 +5,7 @@
  * never the pool-global `db`, which would bypass RLS + FORCE silently (the
  * F7.1a US2 rule). Drizzle-inferred row types stay inside this file.
  */
-import { and, count, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNotNull, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { asTenantContext, type TenantSlug } from '@/modules/tenants';
 import type {
@@ -31,6 +31,27 @@ const OWNER_HOLDS_IMAGES = sql`NOT (b.status IN (${sql.raw(
 
 /** Spec 131 — the statuses whose content can no longer change, from the Domain constant. */
 const OWNER_IS_TERMINAL = sql`b.status IN (${sql.raw(TERMINAL_BROADCAST_STATUSES.map((s) => `'${s}'`).join(', '))})`;
+
+/**
+ * Spec 131 — does the owner `b` hold `url`? It holds images at all
+ * (`OWNER_HOLDS_IMAGES`) AND its body, its source or one of its versions'
+ * bodies embeds the URL. Every table carries its own `tenant_id` predicate.
+ */
+function ownerHoldsUrl(tenantId: string, url: SQL): SQL {
+  return sql`(
+    ${OWNER_HOLDS_IMAGES}
+    AND (
+      position(${url} in b.body_html) > 0
+      OR position(${url} in b.body_source) > 0
+      OR EXISTS (
+        SELECT 1 FROM broadcast_versions v
+         WHERE v.tenant_id = ${tenantId}
+           AND v.broadcast_id = b.broadcast_id
+           AND (position(${url} in v.body_html) > 0 OR position(${url} in v.body_source) > 0)
+      )
+    )
+  )`;
+}
 
 function toRecord(row: BroadcastImageRow): BroadcastImageRecord {
   return {
@@ -108,17 +129,18 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
     return rows.map(toRecord);
   },
 
-  /** Spec 131 — one live row of one owner; null when there is none to stamp. */
-  async markDeletedById(tenantId, owner, imageId, at, tx) {
+  /** Spec 131 — one live row of one owner, uploaded by one user; null when there is none to stamp. */
+  async markDeletedById(tenantId, target, at, tx) {
     const rows = await (tx as TenantTx)
       .update(broadcastImages)
       .set({ deletedAt: at })
       .where(
         and(
           eq(broadcastImages.tenantId, tenantId as string),
-          eq(broadcastImages.id, imageId),
-          eq(broadcastImages.ownerKind, owner.kind),
-          eq(broadcastImages.ownerId, owner.id),
+          eq(broadcastImages.id, target.imageId),
+          eq(broadcastImages.ownerKind, target.owner.kind),
+          eq(broadcastImages.ownerId, target.owner.id),
+          eq(broadcastImages.uploadedByUserId, target.uploadedByUserId),
           isNull(broadcastImages.deletedAt),
         ),
       )
@@ -278,46 +300,78 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
   },
 
   /**
-   * Spec 131 — arm 3. The owner must exist, be terminal, and NOT hold the URL:
-   * `OWNER_HOLDS_IMAGES` (a closed, never-sent E-Blast holds nothing) AND the
-   * URL is in its body, its source or one of its versions' bodies. Every
-   * table carries its own `tenant_id` predicate (D-029). `coalesce` keeps a
-   * NULL body from turning the whole test NULL, which would hide the row.
+   * Spec 131 — arm 3, part 1: stamp the due rows a terminal owner still uses.
+   * One bounded UPDATE over an id subquery (Postgres has no UPDATE … LIMIT).
+   * Every table carries its own `tenant_id` predicate (D-029).
    */
-  async listUnused(tenantId, limit, tx) {
+  async markUsedImagesExamined(tenantId, now, dueBefore, limit, tx) {
+    const t = tenantId as string;
+    const rows = (await (tx as TenantTx).execute(sql`
+      UPDATE broadcast_images bi
+         SET unused_checked_at = ${now.toISOString()}::timestamptz
+       WHERE bi.tenant_id = ${t}
+         AND bi.id IN (
+               SELECT c.id FROM broadcast_images c
+                WHERE c.tenant_id = ${t}
+                  AND c.owner_kind = 'broadcast'
+                  AND c.deleted_at IS NULL
+                  AND (c.unused_checked_at IS NULL OR c.unused_checked_at < ${dueBefore.toISOString()}::timestamptz)
+                  AND EXISTS (
+                        SELECT 1 FROM broadcasts b
+                         WHERE b.tenant_id = ${t}
+                           AND b.broadcast_id = c.owner_id
+                           AND ${OWNER_IS_TERMINAL}
+                           AND ${ownerHoldsUrl(t, sql`c.blob_url`)}
+                      )
+                ORDER BY c.unused_checked_at NULLS FIRST, c.created_at
+                LIMIT ${limit}
+             )
+      RETURNING bi.id
+    `)) as unknown as Array<{ id: string }>;
+    return rows.length;
+  },
+
+  /**
+   * Spec 131 — arm 3, part 2: the due rows a terminal owner does NOT hold.
+   * Never-examined rows first, then the longest-unexamined.
+   */
+  async listUnused(tenantId, dueBefore, limit, tx) {
+    const t = tenantId as string;
     const rows = await (tx as TenantTx)
       .select()
       .from(broadcastImages)
       .where(
         and(
-          eq(broadcastImages.tenantId, tenantId as string),
+          eq(broadcastImages.tenantId, t),
           eq(broadcastImages.ownerKind, 'broadcast'),
           isNull(broadcastImages.deletedAt),
+          sql`(${broadcastImages.unusedCheckedAt} IS NULL OR ${broadcastImages.unusedCheckedAt} < ${dueBefore.toISOString()}::timestamptz)`,
           sql`EXISTS (
             SELECT 1 FROM broadcasts b
-             WHERE b.tenant_id = ${tenantId as string}
+             WHERE b.tenant_id = ${t}
                AND b.broadcast_id = ${broadcastImages.ownerId}
                AND ${OWNER_IS_TERMINAL}
-               AND NOT (
-                 ${OWNER_HOLDS_IMAGES}
-                 AND (
-                   position(${broadcastImages.blobUrl} in coalesce(b.body_html, '')) > 0
-                   OR position(${broadcastImages.blobUrl} in coalesce(b.body_source, '')) > 0
-                   OR EXISTS (
-                     SELECT 1 FROM broadcast_versions v
-                      WHERE v.tenant_id = ${tenantId as string}
-                        AND v.broadcast_id = b.broadcast_id
-                        AND (position(${broadcastImages.blobUrl} in coalesce(v.body_html, '')) > 0
-                             OR position(${broadcastImages.blobUrl} in coalesce(v.body_source, '')) > 0)
-                   )
-                 )
-               )
+               AND NOT ${ownerHoldsUrl(t, sql`${broadcastImages.blobUrl}`)}
           )`,
         ),
       )
-      .orderBy(broadcastImages.createdAt)
+      .orderBy(sql`${broadcastImages.unusedCheckedAt} NULLS FIRST`, broadcastImages.createdAt)
       .limit(limit);
     return rows.map(toRecord);
+  },
+
+  /** Spec 131 — arm 3, part 3: watermark one live row the sweep kept. */
+  async markUnusedExamined(tenantId, imageId, now, tx) {
+    await (tx as TenantTx)
+      .update(broadcastImages)
+      .set({ unusedCheckedAt: now })
+      .where(
+        and(
+          eq(broadcastImages.tenantId, tenantId as string),
+          eq(broadcastImages.id, imageId),
+          isNull(broadcastImages.deletedAt),
+        ),
+      );
   },
 
   async countLiveByContentHash(tenantId, contentHash, tx, excludeImageId) {

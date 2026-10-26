@@ -62,6 +62,12 @@ export interface AuthorizeImageOwnerInput {
   readonly actor: ImageUploadActor;
   readonly actorUserId: string;
   readonly requestId: string;
+  /**
+   * Spec 131 — what the caller is about to do, so a refused probe is audited
+   * as what it was. The release reuses this check unchanged; without the
+   * label its probes read as upload attempts. Defaults to `'image_upload'`.
+   */
+  readonly operation?: 'image_upload' | 'image_release';
 }
 
 export type AuthorizeImageOwnerError =
@@ -77,6 +83,8 @@ export async function authorizeImageOwner(
   deps: AuthorizeImageOwnerDeps,
   input: AuthorizeImageOwnerInput,
 ): Promise<Result<AuthorizeImageOwnerOutput, AuthorizeImageOwnerError>> {
+  const releasing = input.operation === 'image_release';
+  const probeUseCase = releasing ? 'release-unused-image' : 'upload-inline-image';
   if (input.owner.kind === 'template') {
     if (input.actor.kind === 'member') {
       // A member never writes to a template; treat as an unknown resource.
@@ -89,7 +97,7 @@ export async function authorizeImageOwner(
         tenantId: input.tenantId,
         actorUserId: input.actorUserId,
         templateId: input.owner.id,
-        operation: 'update',
+        operation: releasing ? 'image_release' : 'update',
         requestId: input.requestId,
       });
       return err({ kind: 'not_found' });
@@ -111,11 +119,13 @@ export async function authorizeImageOwner(
           eventType: 'broadcast_cross_member_probe',
           actorUserId: input.actorUserId,
           tenantId: input.tenantId,
-          summary: `Member ${input.actor.memberId} tried to attach an image to broadcast ${broadcastId} owned by another member`,
+          summary: releasing
+            ? `Member ${input.actor.memberId} tried to release an image of broadcast ${broadcastId} owned by another member`
+            : `Member ${input.actor.memberId} tried to attach an image to broadcast ${broadcastId} owned by another member`,
           payload: {
             probedMemberId: input.actor.memberId,
             probedBroadcastId: broadcastId,
-            operation: 'image_upload',
+            operation: releasing ? 'image_release' : 'image_upload',
           },
           requestId: input.requestId,
         });
@@ -125,7 +135,7 @@ export async function authorizeImageOwner(
           tenantId: input.tenantId,
           actorUserId: input.actorUserId,
           requestId: input.requestId,
-          surface: { kind: 'broadcast', broadcastId, useCase: 'upload-inline-image' },
+          surface: { kind: 'broadcast', broadcastId, useCase: probeUseCase },
         });
       }
       return err({ kind: 'not_found' });
@@ -143,7 +153,7 @@ export async function authorizeImageOwner(
       tenantId: input.tenantId,
       actorUserId: input.actorUserId,
       requestId: input.requestId,
-      surface: { kind: 'broadcast', broadcastId, useCase: 'upload-inline-image' },
+      surface: { kind: 'broadcast', broadcastId, useCase: probeUseCase },
     });
     return err({ kind: 'not_found' });
   }

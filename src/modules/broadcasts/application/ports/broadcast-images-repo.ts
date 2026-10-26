@@ -62,16 +62,20 @@ export interface BroadcastImagesRepo {
     tx: BroadcastImagesTx,
   ): Promise<readonly BroadcastImageRecord[]>;
   /**
-   * Spec 131 — stamp ONE live row of ONE owner (the release of an image
-   * uploaded and then left out of the message). Returns the stamped row, or
-   * null when no live row of that owner has that id — already stamped,
-   * another owner's, or no such row — so a repeated release is a no-op and
-   * reveals nothing about other owners' rows.
+   * Spec 131 — stamp ONE live row of ONE owner, uploaded by ONE user (the
+   * release of an image the author uploaded and then left out of the
+   * message; the maintainer: only its uploader may release it). Returns the
+   * stamped row, or null when no live row matches all four — already
+   * stamped, another owner's, another user's, or no such row — so a repeated
+   * release is a no-op and reveals nothing about other rows.
    */
   markDeletedById(
     tenantId: TenantSlug,
-    owner: { readonly kind: BroadcastImageOwnerKind; readonly id: string },
-    imageId: string,
+    target: {
+      readonly owner: { readonly kind: BroadcastImageOwnerKind; readonly id: string };
+      readonly imageId: string;
+      readonly uploadedByUserId: string;
+    },
     at: Date,
     tx: BroadcastImagesTx,
   ): Promise<BroadcastImageRecord | null>;
@@ -145,22 +149,45 @@ export interface BroadcastImagesRepo {
    */
   listOrphaned(tenantId: TenantSlug, limit: number, tx: BroadcastImagesTx): Promise<readonly BroadcastImageRecord[]>;
   /**
-   * Spec 131 — the sweep's third arm: LIVE `owner_kind='broadcast'` rows whose
-   * owner E-Blast exists in a terminal status (its content can no longer
-   * change) and does not hold the row's URL, oldest first, bounded.
+   * Spec 131 — the sweep's third arm, part 1: stamp `unused_checked_at = now`
+   * on up to `limit` LIVE `owner_kind='broadcast'` rows that are due (never
+   * examined, or examined before `dueBefore`), whose owner E-Blast is in a
+   * terminal status and DOES hold the row's URL. Returns how many it stamped.
    *
-   * "Holds" is the same rule `isBlobReferencedByContent` applies, narrowed to
-   * the OWNER: the owner holds images at all (Domain `holdsImageReferences`)
-   * AND its `body_html`, `body_source` or one of its versions' bodies embeds
-   * the URL. The rule lives in the SELECT, not in the per-row loop, because an
-   * image a sent E-Blast does show would otherwise be picked every tick and
-   * fill the bounded batch for ever.
+   * "Holds" is the rule `isBlobReferencedByContent` applies, narrowed to the
+   * OWNER: the owner holds images at all (Domain `holdsImageReferences`) AND
+   * its `body_html`, `body_source` or one of its versions' bodies embeds the
+   * URL. A terminal E-Blast's content never changes, so a row it uses needs
+   * no re-scan until the watermark lapses (0319).
+   */
+  markUsedImagesExamined(
+    tenantId: TenantSlug,
+    now: Date,
+    dueBefore: Date,
+    limit: number,
+    tx: BroadcastImagesTx,
+  ): Promise<number>;
+  /**
+   * Spec 131 — part 2: LIVE `owner_kind='broadcast'` rows that are due, whose
+   * owner E-Blast exists in a terminal status and does NOT hold the URL;
+   * never-examined rows first, then oldest, bounded.
    *
    * Drafts and E-Blasts still in review are never returned — their author may
    * yet insert the image. Templates are never returned — a template can still
    * be edited.
    */
-  listUnused(tenantId: TenantSlug, limit: number, tx: BroadcastImagesTx): Promise<readonly BroadcastImageRecord[]>;
+  listUnused(
+    tenantId: TenantSlug,
+    dueBefore: Date,
+    limit: number,
+    tx: BroadcastImagesTx,
+  ): Promise<readonly BroadcastImageRecord[]>;
+  /**
+   * Spec 131 — part 3: stamp `unused_checked_at = now` on one LIVE row the
+   * sweep kept (content elsewhere in the tenant still embeds it), so it is
+   * not re-selected until the watermark lapses. A no-op for a stamped row.
+   */
+  markUnusedExamined(tenantId: TenantSlug, imageId: string, now: Date, tx: BroadcastImagesTx): Promise<void>;
   /**
    * Live rows of EITHER owner_kind sharing the hash — the last-reference rule.
    *
