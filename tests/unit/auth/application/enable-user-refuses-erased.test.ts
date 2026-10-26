@@ -70,4 +70,11 @@ describe('enableUser — an erased login stays disabled (133)', () => {
     expect(r.ok).toBe(true);
     expect(enable).toHaveBeenCalledOnce();
   });
+
+  it('only the exact erasure sentinel counts — a real address on that domain still re-enables (#668 review)', async () => {
+    const { deps, enable } = depsFor('someone@erased.invalid');
+    const r = await enableUser(input, deps);
+    expect(r.ok).toBe(true);
+    expect(enable).toHaveBeenCalledOnce();
+  });
 });

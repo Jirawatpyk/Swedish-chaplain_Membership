@@ -342,6 +342,14 @@ describe('eraseUser use-case (live Neon)', () => {
       activatedAt: new Date(),
       expiresAt: future,
     }));
+    // The erasing tenant's token, already consumed by eraseMember before the
+    // global eraseUser runs — its plaintext addresses still sit on the row.
+    const earlier = new Date(Date.now() - 3600_000);
+    rows.push({ ...rows[0]!, id: `it-133-consumed-${stamp}`, consumedAt: earlier } as never);
+    // Negative control: ANOTHER login's live token must be left alone.
+    const bystander = await createActiveTestUser('member');
+    created.push(bystander);
+    rows.push({ ...rows[1]!, id: `it-133-other-${stamp}`, userId: bystander.userId } as never);
     await db.insert(emailChangeTokens).values(rows);
 
     const res = await eraseUser({
@@ -353,11 +361,30 @@ describe('eraseUser use-case (live Neon)', () => {
     expect(res.ok).toBe(true);
 
     const after = await db
-      .select({ id: emailChangeTokens.id, consumedAt: emailChangeTokens.consumedAt })
+      .select({
+        id: emailChangeTokens.id,
+        consumedAt: emailChangeTokens.consumedAt,
+        oldEmail: emailChangeTokens.oldEmail,
+        newEmail: emailChangeTokens.newEmail,
+      })
       .from(emailChangeTokens)
       .where(eq(emailChangeTokens.userId, user.userId));
-    expect(after).toHaveLength(2);
+    expect(after).toHaveLength(3);
     expect(after.every((r) => r.consumedAt !== null)).toBe(true);
+    // The already-consumed row keeps its original consumption time.
+    expect(after.find((r) => r.id === `it-133-consumed-${stamp}`)?.consumedAt?.getTime()).toBe(earlier.getTime());
+    const [other] = await db
+      .select({ consumedAt: emailChangeTokens.consumedAt, oldEmail: emailChangeTokens.oldEmail })
+      .from(emailChangeTokens)
+      .where(eq(emailChangeTokens.id, `it-133-other-${stamp}`));
+    expect(other?.consumedAt).toBeNull();
+    expect(other?.oldEmail).toBe(`real-${stamp}@example.test`);
+    // #668 PDPA review (HIGH-1, Art. 17 / PDPA §33) — consuming is not
+    // erasing: the plaintext addresses are scrubbed to the erasure sentinel on
+    // every row, the already-consumed one (eraseMember's tenant) included.
+    const sentinel = `erased+${user.userId}@erased.invalid`;
+    expect(after.map((r) => [r.oldEmail, r.newEmail])).toEqual(after.map(() => [sentinel, sentinel]));
+    expect(JSON.stringify(after)).not.toContain(`real-${stamp}`);
   });
 
   it('after eraseUser: no login-resolvable identity, sessions revoked, user_erased audit (no PII)', async () => {
