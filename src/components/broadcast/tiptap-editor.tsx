@@ -359,8 +359,9 @@ export default function TiptapEditor({
    * Spec 131 — release an upload that never made it into the message: the
    * endpoint beside the host's upload route stamps its row, and the next daily
    * sweep removes it. Fire and forget, `keepalive` so a page left at once
-   * still sends it. A failure is logged and changes nothing the author sees:
-   * on an E-Blast the sweep's "unused" arm reclaims the image once it closes.
+   * still sends it. It resolves `true` only when the server stamped the row;
+   * otherwise the caller shows `notInsertedKept`, and on an E-Blast the
+   * sweep's "unused" arm reclaims the image once it closes.
    */
   const releaseUpload = useCallback(async (url: string): Promise<boolean> => {
     try {

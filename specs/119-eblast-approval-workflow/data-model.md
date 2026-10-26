@@ -186,11 +186,12 @@ elsewhere is kept, by design. (This paragraph used to say "within 24 hours". The
 BATCH, not the clock: a bulk erasure or a prune of a backlog leaves more than 600 rows (three arms since spec 131) and clears
 over successive ticks, and a row whose blob delete throws waits for the tick after.)
 
-**Spec 131 adds a third path to each mechanism.** The author's release of an image uploaded and then
-left out of the message stamps `deleted_at` with reason `not_inserted` (`releaseUnusedImage`, the
+**Spec 131 adds a third path to each mechanism.** The uploader's own release of an image uploaded and then
+left out of the message (only the user who uploaded it may release it) stamps `deleted_at` with reason `not_inserted` (`releaseUnusedImage`, the
 `DELETE …/images/[imageId]` routes beside each upload route). The sweep gains an UNUSED arm
 (`listUnused`): live rows of an E-Blast in a terminal status whose own body, source and versions do
-not embed the URL, reaped with reason `sweep_unused`. Before it, an image left out of a SENT E-Blast
+not embed the URL, reaped with reason `sweep_unused`. Its watermark `unused_checked_at` (migration 0319)
+keeps a row the owner still uses, or the backstop retains, out of the scan for 30 days. Before it, an image left out of a SENT E-Blast
 stayed at its public URL until the retention sweep.
 
 **No per-block authorship column, by decision.** Blocks and links carried into a draft from a

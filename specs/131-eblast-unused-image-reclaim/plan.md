@@ -8,7 +8,7 @@ Two layers.
 
 **Layer 1: release on cancel.** The editor already knows the moment an upload goes unused: the author cancels the description dialog after an upload. The upload's 201 already returns `imageId`. The editor keeps it with the pending image and, on that cancel, sends `DELETE` to a release endpoint beside the upload route. A new use case `releaseUnusedImage` stamps that one row and audits `broadcast_image_removed { reason: 'not_inserted' }` in one transaction. The existing marked arm reclaims it on the next tick.
 
-The release reuses `authorizeImageOwner` unchanged: a release is allowed exactly where an upload is. It does **not** check the owner's content. If the saved draft still embeds the URL (for example, the same file inserted earlier, deduped to the same URL), the marked arm finds the reference and puts the row back live (`restoreLive`). That is the existing S-3 path, so the release cannot remove a used image.
+The release reuses `authorizeImageOwner` unchanged, then narrows it to the uploader's own row (maintainer, 26 Oct 2026). It does **not** check the owner's content. If the saved draft still embeds the URL (for example, the same file inserted earlier, deduped to the same URL), the marked arm finds the reference and puts the row back live (`restoreLive`). That is the existing S-3 path, so the release cannot remove a used image.
 
 **Layer 2: sweep arm 3, "unused".** `listUnused` selects live `owner_kind='broadcast'` rows whose owner exists in a terminal status and whose URL that owner does not hold. An owner holds a URL when:
 - it holds images at all (`OWNER_HOLDS_IMAGES`, the SQL twin of Domain `holdsImageReferences`), and
@@ -43,7 +43,7 @@ Rules: `.claude/rules/modules/broadcasts.md`, `architecture.md` (D-029 tenant pr
 - **Client:**
   - `compose-inline-image-uploader.tsx`: `onUploaded({ blobUrl, imageId })`;
   - `tiptap-editor.tsx`: keeps `imageId` with the pending image; on cancel it sends `DELETE` to `${uploadUrl}/${imageId}?draftId=…`.
-- **i18n:** `portal.broadcasts.compose.imageUpload.notInserted` in EN/TH/SV.
+- **i18n:** `portal.broadcasts.compose.imageUpload.notInserted` (after a successful release) and `notInsertedKept` (otherwise) in EN/TH/SV.
 - **Guards:** the RBAC matrix / route-guard registries, if they list API routes.
 
 ## Data model and migration
@@ -59,7 +59,7 @@ There is no new audit type. `not_inserted` and `sweep_unused` are payload values
 
 | Done-when line | Test that goes red first (file, name) | Level |
 |---|---|---|
-| 2 release stamps one live row of the owner + audits `not_inserted` in the tx | `tests/unit/broadcasts/application/release-unused-image.test.ts` › "stamps the row and audits not_inserted" | unit |
+| 2 release stamps one live row of the owner + audits `not_inserted` in the tx | `tests/unit/broadcasts/application/release-unused-image.test.ts` › "stamps the row in the tx and audits not_inserted"; › "only the uploader releases" | unit |
 | 2 no live row of this owner → `released:false`, no audit | same › "another owner's or an already-stamped id releases nothing" | unit |
 | 2 a failed audit rolls the stamp back | same › "a failed audit fails the release" | unit |
 | 2 owner refused → not_found / closed, nothing stamped | same › "refused owner stamps nothing" | unit |
@@ -82,12 +82,12 @@ e2e: `broadcasts/image-upload-allowlist` and `broadcasts/eblast-a11y` on chromiu
 - II Test-First: pass. RED commits for the use case, repo, routes and sweep (audit / PII / guard classes, so no shared commit).
 - III Clean Architecture: pass. Ports only in Application; the SQL is in the adapter.
 - IV PCI DSS: n/a.
-- V i18n: one key in EN/TH/SV.
+- V i18n: two keys (`notInserted`, `notInsertedKept`) in EN/TH/SV.
 - VI Inclusive UX: the toast is the existing info toast (`role=status`).
 - VII Perf & Observability: arm 3 adds one bounded SELECT per tenant per tick, and its rows share the per-row timeout. Logs use the existing sweep keys and `errKind`.
 - VIII Reliability: the stamp and the audit share one transaction; the release is idempotent; the sweep's per-row isolation is unchanged.
 - IX Code Quality: the shared route helper mirrors the upload's.
-- X Simplicity: no dependency, no migration, no flag.
+- X Simplicity: no dependency, no flag; one additive nullable column (0319), chosen over a daily rescan of every sent E-Blast's images.
 
 ## Complexity Tracking
 
@@ -113,5 +113,5 @@ Unflagged on merge.
   - the per-row tenant-wide backstop keeps the bytes when anything else embeds them.
 
   How we'd notice: `broadcast_image_removed { reason: 'sweep_unused' }` rows, and the sweep log's counts.
-- **Batch starvation by retained rows** (rows the backstop keeps live are re-selected each tick). This needs content outside the owner to embed the URL, which is rare. How we'd notice: `broadcasts_image_sweep_retained_total`.
+- **Batch starvation by retained rows.** Closed by the 0319 watermark: a used or retained row is not re-examined for 30 days. What remains is a row whose transaction fails every tick (follow-up NEW-4). How we'd notice: `broadcasts_image_sweep_retained_total` and the per-row error logs.
 - **A release racing an insert:** the author cancels, then re-uploads the same file and inserts it before the tick. The new upload is a new live row, so the hash count keeps the bytes.

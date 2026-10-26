@@ -563,8 +563,9 @@ sets, 200 rows each per tenant per tick:
   E-Blasts in review and templates are never picked.
 
 A blob is deleted only under the LAST-REFERENCE rule: no live row of either
-owner_kind shares the `content_hash`, AND no live `body_html` still embeds
-the URL.
+owner_kind shares the `content_hash`, AND no live content still embeds the
+URL (an E-Blast's `body_html`, `body_source` or a version's bodies, or a
+template's body; `isBlobReferencedByContent`).
 
 **First run after spec 131 merged.** The unused arm finds every image left
 out of an already-sent or already-closed E-Blast at once, and clears that

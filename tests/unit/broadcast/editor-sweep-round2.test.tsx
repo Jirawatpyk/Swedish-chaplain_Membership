@@ -249,7 +249,7 @@ describe('#19 — the copy says what happens', () => {
 
 // Spec 131 (layer 1) — the cancelled upload is RELEASED: the editor asks the
 // endpoint beside the upload route to stamp the row for the next daily sweep,
-// and says so. A failed release changes nothing the author sees.
+// and says so only once it succeeded; otherwise the toast is `notInsertedKept`.
 describe('spec 131 — a cancelled upload is released', () => {
   const IMAGE_ID = '55555555-5555-5555-5555-555555555555';
   const OTHER_DRAFT = '66666666-6666-6666-6666-666666666666';

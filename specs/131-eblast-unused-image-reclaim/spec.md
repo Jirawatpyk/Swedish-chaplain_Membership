@@ -22,25 +22,25 @@ Nothing compares an owner's images with its content. So an unused image on an E-
   - staff: an E-Blast in `draft | submitted | in_design`;
   - staff: an existing template.
 
-  The release route reuses it unchanged, so the release is allowed exactly where the upload was.
+  The release route reuses it unchanged, and then narrows it: only the uploader may release (Decisions).
 - When a stamped row's URL is still embedded in live content, the marked arm already keeps the bytes and puts the row back in the live set (`restoreLive`, ROUND-2 S-3). So releasing a row whose URL the saved draft still embeds is safe: the sweep restores it. The release needs no content check of its own.
-- `broadcast_image_removed` and its payload union exist. A removal reason is a payload value, not an enum, so there is no migration.
+- `broadcast_image_removed` and its payload union exist. A removal reason is a payload value, not an enum, so the reasons need no migration. (Migration 0319 is the arm-3 watermark, Decisions.)
 
 ## Done when
 
 1. **Cancel after an upload releases the image.** The author uploads an image, then cancels the description. The editor then:
    - sends `DELETE` to the release endpoint with that upload's `imageId`;
-   - once the release succeeded, shows the info toast "The image wasn't added. It will be removed automatically, usually within a day." (EN/TH/SV, `notInserted`). A refused or failed release, or an upload with no image id, shows only "The image wasn't added." (`notInsertedKept`), because nothing will remove it soon. A template has no sweep behind it.
+   - once the release succeeded, shows the info toast "The image wasn't added. It will be removed automatically, usually within a day." (EN/TH/SV, `notInserted`). A refused or failed release, or an upload with no image id, shows only "The image wasn't added." (`notInsertedKept`), because nothing will remove it soon.
 
-   The release URL is fixed when the image is uploaded. Leaving the page while the description is still open releases the upload too.
+   The release URL is fixed when the image is uploaded. Navigating away inside the app while the description is still open releases the upload too. Closing the tab or reloading sends nothing (follow-up NEW-5).
 
-   This works on all four hosts: member compose, staff compose on behalf, the approval workspace, and the template form. A failed release changes nothing the author sees, and layer 2 still covers it.
+   This works on all four hosts: member compose, staff compose on behalf, the approval workspace, and the template form. When the release fails, the author sees `notInsertedKept`. On an E-Blast, arm 3 still reclaims the image once the E-Blast closes; a template has no sweep behind it.
 2. **The release endpoints.** `DELETE /api/broadcasts/inline-image-upload/[imageId]?draftId=…` (member), `DELETE /api/admin/broadcasts/[id]/images/[imageId]` (staff), `DELETE /api/admin/broadcasts/templates/[id]/images/[imageId]` (staff).
    - Each runs the same gate, kill-switch and write-rate bucket as its upload route, and `authorizeImageOwner`: 404 + probe audit for another member's or tenant's owner, and 409 when the owner is closed to this actor.
    - The proxy applies CSRF and the read-only freeze, as for every state-changing `/api/**` route.
    - A live row of that owner **uploaded by the caller** is stamped (`deleted_at`). Another user's upload is not released (maintainer, 26 Oct 2026). One `broadcast_image_removed { reason: 'not_inserted', blob_deleted: false }` is audited in the same transaction. A failed audit rolls the stamp back.
    - The answer is `200 { released: true }`. If no live row of this owner has that id, the answer is `200 { released: false }` and nothing is audited, so repeating the call is harmless and the endpoint reveals nothing about other owners' rows.
-   - A malformed `imageId` → 404.
+   - A malformed `imageId` → 404. The member route without `draftId` → 400.
 3. **The next daily tick reclaims a released image** through the existing marked arm (the last-reference rule unchanged): its row is removed and its bytes are deleted unless another live row or live content holds them.
 4. **Sweep arm 3, "unused".** A live image of an E-Blast that can no longer change (owner status in `TERMINAL_BROADCAST_STATUSES`) is reclaimed when its URL is not in that E-Blast's content. Its content is `body_html`, `body_source` and every version's bodies; a closed, never-sent E-Blast holds none (Domain `holdsImageReferences`).
    - It is audited `broadcast_image_removed { reason: 'sweep_unused', blob_disposition }`.
@@ -52,7 +52,7 @@ Nothing compares an owner's images with its content. So an unused image on an E-
      - It skips a stamped row until the 30 days lapse.
      - A row whose transaction fails is not stamped.
    - **Isolation.** Arm 3 lists in its own transaction under a statement timeout, and its failure never stops the marked arm.
-   - **Time budget.** The sweep starts no new row after the cron's 150 s Block 2 budget.
+   - **Time budget.** The sweep starts no new row after 150 s of the cron tick (measured from the tick's start).
    - The backlog already in production is removed from the first tick after merge, 200 rows per arm per tenant per tick (maintainer, 26 Oct 2026).
 5. **Tenant isolation.** Every new query carries its own `tenant_id` predicate (D-029). A cross-tenant integration test shows tenant B cannot release tenant A's image.
 6. **Docs:**
