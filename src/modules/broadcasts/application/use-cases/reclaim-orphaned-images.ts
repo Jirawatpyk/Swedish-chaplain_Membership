@@ -150,6 +150,7 @@ export interface ReclaimOrphanedImagesInput {
 }
 
 export interface ReclaimOrphanedImagesOutput {
+  /** Rows examined: after a deadline stop, fewer than were listed (spec 131). */
   readonly scanned: number;
   readonly blobsDeleted: number;
   readonly rowsRemoved: number;
@@ -249,7 +250,7 @@ const DISPOSITION_SUMMARY: Readonly<Record<BlobDisposition, string>> = {
  * still-served personal data of that member. Step 4 enumerates those too, and
  * the DSR ticket discloses their count, including zero.
  */
-type RowOutcome = BlobDisposition | 'retained';
+type RowOutcome = BlobDisposition | 'retained' | 'skipped';
 
 export async function reclaimOrphanedImages(
   deps: ReclaimOrphanedImagesDeps,
@@ -319,6 +320,7 @@ export async function reclaimOrphanedImages(
   let retained = 0;
   let rowsFailed = 0;
   let truncated = false;
+  let scanned = 0;
   const clock = deps.clock ?? Date.now;
 
   for (const { image, arm } of batch) {
@@ -326,6 +328,7 @@ export async function reclaimOrphanedImages(
       truncated = true;
       break;
     }
+    scanned += 1;
     const live = arm !== 'marked';
     try {
       const outcome = await deps.imagesRepo.withTx(input.tenantId, async (tx): Promise<RowOutcome> => {
@@ -337,6 +340,13 @@ export async function reclaimOrphanedImages(
         // F2-10(a) — BEFORE the count, so an upload of the same file cannot
         // land between the count and the delete.
         await deps.imagesRepo.lockContentHash(input.tenantId, image.contentHash, tx);
+
+        // Spec 131 (#658 code review) — an UNUSED row was listed in another
+        // transaction. If an erasure or a release stamped it since, it is the
+        // marked arm's on the next tick, with its true reason.
+        if (arm === 'unused' && !(await deps.imagesRepo.isLiveImage(input.tenantId, image.id, tx))) {
+          return 'skipped';
+        }
 
         // An ORPHANED or UNUSED row is itself live, so it must not count itself.
         const holders = await deps.imagesRepo.countLiveByContentHash(
@@ -420,6 +430,10 @@ export async function reclaimOrphanedImages(
         });
         return disposition;
       });
+      if (outcome === 'skipped') {
+        scanned -= 1;
+        continue;
+      }
       if (outcome === 'retained') {
         retained += 1;
         broadcastsMetrics.imageSweepRetained(input.tenantId as unknown as string);
@@ -451,5 +465,5 @@ export async function reclaimOrphanedImages(
       );
     }
   }
-  return ok({ scanned: batch.length, blobsDeleted, rowsRemoved, retained, rowsFailed, truncated, unusedListFailed });
+  return ok({ scanned, blobsDeleted, rowsRemoved, retained, rowsFailed, truncated, unusedListFailed });
 }

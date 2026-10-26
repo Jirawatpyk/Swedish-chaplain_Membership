@@ -356,26 +356,21 @@ export default function TiptapEditor({
   );
 
   /**
-   * Closing WITHOUT confirming abandons the insert — otherwise a cancelled
-   * description would stay armed and silently attach itself to whatever the
-   * author uploaded next. A pending entry that already carries an `alt` is
-   * mid-flight (the picker is open), so it survives the close.
-   */
-  /**
    * Spec 131 — release an upload that never made it into the message: the
    * endpoint beside the host's upload route stamps its row, and the next daily
    * sweep removes it. Fire and forget, `keepalive` so a page left at once
    * still sends it. A failure is logged and changes nothing the author sees:
    * on an E-Blast the sweep's "unused" arm reclaims the image once it closes.
    */
-  const releaseUpload = useCallback((url: string): void => {
-    void fetch(url, { method: 'DELETE', keepalive: true })
-      .then((res) => {
-        if (!res.ok) console.error({ status: res.status }, 'broadcasts.image_release.refused');
-      })
-      .catch((err: unknown) => {
-        console.error({ err: String(err) }, 'broadcasts.image_release.failed');
-      });
+  const releaseUpload = useCallback(async (url: string): Promise<boolean> => {
+    try {
+      const res = await fetch(url, { method: 'DELETE', keepalive: true });
+      if (!res.ok) console.error({ status: res.status }, 'broadcasts.image_release.refused');
+      return res.ok;
+    } catch (err: unknown) {
+      console.error({ err: String(err) }, 'broadcasts.image_release.failed');
+      return false;
+    }
   }, []);
 
   // #658 reliability L3 — leaving the page while an uploaded image's
@@ -384,11 +379,17 @@ export default function TiptapEditor({
     return () => {
       const pending = pendingImageRef.current;
       if (pending?.src !== undefined && pending.alt === undefined && pending.releaseUrl !== undefined) {
-        releaseUpload(pending.releaseUrl);
+        void releaseUpload(pending.releaseUrl);
       }
     };
   }, [releaseUpload]);
 
+  /**
+   * Closing WITHOUT confirming abandons the insert — otherwise a cancelled
+   * description would stay armed and silently attach itself to whatever the
+   * author uploaded next. A pending entry that already carries an `alt` is
+   * mid-flight (the picker is open), so it survives the close.
+   */
   const handleAltOpenChange = useCallback((next: boolean): void => {
     setAltOpen(next);
     // A closed edit is over, confirmed or not: a later upload's description
@@ -397,11 +398,18 @@ export default function TiptapEditor({
     if (!next && pendingImageRef.current?.alt === undefined) {
       // Uploaded, then the description was cancelled: the file is stored but
       // nothing is in the message, so say so (round 2, #5) and release it
-      // (spec 131).
+      // (spec 131). "It will be removed" is said only once the release went
+      // through: a refused or failed one (429, offline) leaves the file, and
+      // a template has no sweep behind it (#658 code review).
       const pending = pendingImageRef.current;
       if (pending?.src !== undefined) {
-        toast.info(tImage('notInserted'));
-        if (pending.releaseUrl !== undefined) releaseUpload(pending.releaseUrl);
+        if (pending.releaseUrl === undefined) {
+          toast.info(tImage('notInsertedKept'));
+        } else {
+          void releaseUpload(pending.releaseUrl).then((released) => {
+            toast.info(tImage(released ? 'notInserted' : 'notInsertedKept'));
+          });
+        }
       }
       pendingImageRef.current = null;
     }

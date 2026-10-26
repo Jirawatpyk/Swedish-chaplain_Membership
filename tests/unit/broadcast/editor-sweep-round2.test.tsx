@@ -115,7 +115,8 @@ describe('#4/#5 — the upload flow', () => {
     const container = await renderEditor();
     act(() => uploaderMocks.props.current?.onUploaded('https://assets.swecham.example/a.png'));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^cancel$/i }));
-    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(copy.notInserted));
+    // No image id came back, so nothing is released: the toast promises nothing (spec 131).
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(copy.notInsertedKept));
     expect(toast.success).not.toHaveBeenCalled();
 
     act(() => uploaderMocks.props.current?.onUploaded('https://assets.swecham.example/b.png'));

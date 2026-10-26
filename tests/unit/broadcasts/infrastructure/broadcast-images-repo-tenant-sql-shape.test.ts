@@ -52,6 +52,7 @@ describe('drizzleBroadcastImagesRepo — D-029 tenant predicates', () => {
       markUsedImagesExamined: [SHAPE_TENANT, AT, AT, 10, tx],
       listUnused: [SHAPE_TENANT, AT, 10, tx],
       markUnusedExamined: [SHAPE_TENANT, 'img-x', AT, tx],
+      isLiveImage: [SHAPE_TENANT, 'img-x', tx],
       countLiveByContentHash: [SHAPE_TENANT, 'h', tx, 'img-x'],
       lockContentHash: [SHAPE_TENANT, 'h', tx],
       isBlobReferencedByContent: [SHAPE_TENANT, 'https://x/y.png', tx],
@@ -62,9 +63,9 @@ describe('drizzleBroadcastImagesRepo — D-029 tenant predicates', () => {
     const checked = rec.statements.filter(
       (s) => !isPureInsert(s.sql) && tenantPredicateViolations(s, TABLES).refs.length > 0,
     );
-    // Positive control: exactly one statement per table-reading method (15 of
-    // the 19 above), so a method that goes quiet cannot hide behind another.
-    expect(checked.length).toBe(15);
+    // Positive control: exactly one statement per table-reading method (16 of
+    // the 20 above), so a method that goes quiet cannot hide behind another.
+    expect(checked.length).toBe(16);
     const violations = checked.flatMap((s) =>
       tenantPredicateViolations(s, TABLES).violations.map((v) => `${v} :: ${s.sql.replace(/\s+/g, ' ').slice(0, 120)}`),
     );

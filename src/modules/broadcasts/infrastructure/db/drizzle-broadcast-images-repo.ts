@@ -360,6 +360,22 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
     return rows.map(toRecord);
   },
 
+  /** Spec 131 — arm 3's re-check, inside the row's own transaction. */
+  async isLiveImage(tenantId, imageId, tx) {
+    const rows = await (tx as TenantTx)
+      .select({ id: broadcastImages.id })
+      .from(broadcastImages)
+      .where(
+        and(
+          eq(broadcastImages.tenantId, tenantId as string),
+          eq(broadcastImages.id, imageId),
+          isNull(broadcastImages.deletedAt),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
+  },
+
   /** Spec 131 — arm 3, part 3: watermark one live row the sweep kept. */
   async markUnusedExamined(tenantId, imageId, now, tx) {
     await (tx as TenantTx)

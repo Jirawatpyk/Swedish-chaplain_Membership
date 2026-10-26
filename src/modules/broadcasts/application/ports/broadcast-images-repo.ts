@@ -189,6 +189,12 @@ export interface BroadcastImagesRepo {
    */
   markUnusedExamined(tenantId: TenantSlug, imageId: string, now: Date, tx: BroadcastImagesTx): Promise<void>;
   /**
+   * Spec 131 (#658 code review) — is the row still LIVE? Arm 3 lists in one
+   * transaction and handles each row in another, up to 150 s later; a row an
+   * erasure or a release stamped in between belongs to the marked arm.
+   */
+  isLiveImage(tenantId: TenantSlug, imageId: string, tx: BroadcastImagesTx): Promise<boolean>;
+  /**
    * Live rows of EITHER owner_kind sharing the hash — the last-reference rule.
    *
    * `excludeImageId` omits ONE row from the count. The orphan arm needs it:
