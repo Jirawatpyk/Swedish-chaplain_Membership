@@ -55,8 +55,12 @@ interface PendingImage {
   readonly kind: ImageAltVariant;
   readonly alt?: string;
   readonly src?: string;
-  /** The uploaded row, so a cancelled description can release it (spec 131). */
-  readonly imageId?: string;
+  /**
+   * Where to release the uploaded row if its description is cancelled (spec
+   * 131), fixed at upload time: the host's draft or URL may change before
+   * the author answers (#658 reliability L2).
+   */
+  readonly releaseUrl?: string;
 }
 
 export interface TiptapEditorProps {
@@ -362,23 +366,28 @@ export default function TiptapEditor({
    * endpoint beside the host's upload route stamps its row, and the next daily
    * sweep removes it. Fire and forget, `keepalive` so a page left at once
    * still sends it. A failure is logged and changes nothing the author sees:
-   * the sweep's "unused" arm reclaims the image once the E-Blast closes.
+   * on an E-Blast the sweep's "unused" arm reclaims the image once it closes.
    */
-  const releaseUpload = useCallback(
-    (imageId: string): void => {
-      if (draftId === null) return;
-      const base = imageUploadUrl ?? MEMBER_INLINE_IMAGE_UPLOAD_URL;
-      const url = `${base}/${encodeURIComponent(imageId)}?draftId=${encodeURIComponent(draftId)}`;
-      void fetch(url, { method: 'DELETE', keepalive: true })
-        .then((res) => {
-          if (!res.ok) console.error({ status: res.status, draftId }, 'broadcasts.image_release.refused');
-        })
-        .catch((err: unknown) => {
-          console.error({ err: String(err), draftId }, 'broadcasts.image_release.failed');
-        });
-    },
-    [draftId, imageUploadUrl],
-  );
+  const releaseUpload = useCallback((url: string): void => {
+    void fetch(url, { method: 'DELETE', keepalive: true })
+      .then((res) => {
+        if (!res.ok) console.error({ status: res.status }, 'broadcasts.image_release.refused');
+      })
+      .catch((err: unknown) => {
+        console.error({ err: String(err) }, 'broadcasts.image_release.failed');
+      });
+  }, []);
+
+  // #658 reliability L3 — leaving the page while an uploaded image's
+  // description is still open abandons it too, so release it then.
+  useEffect(() => {
+    return () => {
+      const pending = pendingImageRef.current;
+      if (pending?.src !== undefined && pending.alt === undefined && pending.releaseUrl !== undefined) {
+        releaseUpload(pending.releaseUrl);
+      }
+    };
+  }, [releaseUpload]);
 
   const handleAltOpenChange = useCallback((next: boolean): void => {
     setAltOpen(next);
@@ -392,7 +401,7 @@ export default function TiptapEditor({
       const pending = pendingImageRef.current;
       if (pending?.src !== undefined) {
         toast.info(tImage('notInserted'));
-        if (pending.imageId !== undefined) releaseUpload(pending.imageId);
+        if (pending.releaseUrl !== undefined) releaseUpload(pending.releaseUrl);
       }
       pendingImageRef.current = null;
     }
@@ -423,11 +432,15 @@ export default function TiptapEditor({
       rememberTrigger();
       altConfirmedRef.current = false;
       setAltEdit(null);
-      pendingImageRef.current = { kind: 'inline', src: blobUrl, ...(imageId !== undefined ? { imageId } : {}) };
+      const releaseUrl =
+        imageId !== undefined && draftId !== null
+          ? `${imageUploadUrl ?? MEMBER_INLINE_IMAGE_UPLOAD_URL}/${encodeURIComponent(imageId)}?draftId=${encodeURIComponent(draftId)}`
+          : undefined;
+      pendingImageRef.current = { kind: 'inline', src: blobUrl, ...(releaseUrl !== undefined ? { releaseUrl } : {}) };
       setAltVariant('inline');
       setAltOpen(true);
     },
-    [insertImage],
+    [insertImage, draftId, imageUploadUrl],
   );
 
   if (!editor) {
