@@ -882,6 +882,11 @@ The maintainer reviewed a proposal page (https://claude.ai/artifact/QBcoA6qZZHmN
 - Q: The staff form? → A: Keep its 4-figure quota card, member picker, template picker and subject. The self-exclusion notice and the count become one line ("130 recipients · not {company}'s own contacts"); the upload hint and Send options change as on the member form; Submit opens the confirmation.
 - Q: The boards' "first visit: full guidelines alert, then one line with Read again"? → A: Not in US12d-3. No acknowledgement is recorded today, so it needs server state and an audit event. That is its own PR after this one (FR-011).
 - Q: The 600px email preview against the boards' 520px? → A: Keep 600px (spec 119 FR-050); the toolbar's 2px gap already fits the member column (#662).
+- Parity pass (T1271), built to the approved boards:
+  - the compose quota is one line ("3 of 6 E-Blasts left in 2026 · 1 reserved");
+  - "you can cancel until an admin approves it" is said once, in the confirmation;
+  - the member page links back to the E-Blast tab;
+  - staff compose on a phone keeps Submit in a sticky bar with the count, as the member page does. Save as draft stays in the form and the preview stays below it, so the old board's preview icon and status line ("uses 1 of 5 remaining · Saved at") are not built; the board is redrawn to match.
 
 ### Session 2026-10-26 (US12d-2 follow-up: the toolbar to the boards)
 

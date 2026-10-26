@@ -61,7 +61,7 @@ import {
   submitBlockedHintKey,
 } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
-import { Button, Card, TextField } from '@jirawatpyk/aura-react';
+import { ActionBar, Button, Card, TextField, useBreakpoint } from '@jirawatpyk/aura-react';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { MemberPicker, type MemberPickerOption } from './member-picker';
@@ -282,6 +282,9 @@ export function ProxyComposeForm({
   // allowance its quota card last loaded. Keyed by member, so a quota loaded
   // for a member picked earlier is never stated for another.
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Spec 122 US12d-3 (board `Admin-broadcast-new-mobile`) — on a phone Submit
+  // sits in a sticky bar with the count, as on the member form.
+  const phone = useBreakpoint() === 'base';
   const [memberQuota, setMemberQuota] = useState<{
     readonly memberId: string;
     readonly quota: QuotaSnapshot;
@@ -581,6 +584,17 @@ export function ProxyComposeForm({
     }
   }
 
+  const submitButton = (
+    <SubmitButton
+      disabled={submitDisabled}
+      submitting={submitting}
+      blockedReasonIds={submitBlockedReasonIds}
+      onClick={() => setConfirmOpen(true)}
+    />
+  );
+  // The bar states the count only once a member is picked (it is theirs).
+  const barCount = member === null ? null : summaryRecipientCount(recipientCount, segment.kind, customLines.length);
+
   return (
     <div className="min-w-0 space-y-6">
       {/* Portal live walk U27 (FR-045) — unload AND in-app navigation, the
@@ -870,15 +884,23 @@ export function ProxyComposeForm({
               >
                 {t('saveDraftButton')}
               </Button>
-              <SubmitButton
-                disabled={submitDisabled}
-                submitting={submitting}
-                blockedReasonIds={submitBlockedReasonIds}
-                onClick={() => setConfirmOpen(true)}
-              />
+              {phone ? null : submitButton}
             </div>
           </div>
         </Card>
+        {phone ? (
+          <ActionBar
+            className="chamber-viewport-actionbar"
+            label={tCompose('views.actions')}
+            start={
+              barCount === null ? undefined : (
+                <span className="text-sm">{tCompose('recipientCount.readyShort', { count: barCount })}</span>
+              )
+            }
+          >
+            {submitButton}
+          </ActionBar>
+        ) : null}
 
         {member !== null ? (
           <SubmitSummaryDialog
@@ -893,7 +915,7 @@ export function ProxyComposeForm({
             onBehalfOf={{ company: member.companyName }}
             subject={subject}
             segmentLabel={tCompose(`segmentOption.${segment.kind}`)}
-            recipientCount={summaryRecipientCount(recipientCount, segment.kind, customLines.length)}
+            recipientCount={barCount}
             quota={memberQuota?.memberId === member.memberId ? memberQuota.quota : null}
             scheduledFor={scheduledFor}
           />
