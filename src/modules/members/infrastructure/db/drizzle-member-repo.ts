@@ -720,6 +720,7 @@ export const drizzleMemberRepo: MemberRepo = {
     // FOR UPDATE OF m SKIP LOCKED locks ONLY the `members` row (audit subqueries
     // aren't lockable) so concurrent reconciler ticks don't double-drive a row.
     // Threads the runInTenant `tx` (RLS gotcha — never the global db).
+    assertTxTenant(tx, tenantSlug);
     const rows = (await tx.execute(sql`
       SELECT m.member_id::text AS member_id,
              COALESCE(

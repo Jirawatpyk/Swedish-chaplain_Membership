@@ -20,6 +20,7 @@
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import { asTenantContext } from '@/modules/tenants';
 import { invitations } from '@/modules/auth/infrastructure/db/schema';
 import { contacts } from './db/schema-contacts';
@@ -89,7 +90,7 @@ export async function handleInvitationBounce(
     targets = await resolveBouncedInviteContacts(toEmail);
   } catch (e) {
     logger.error(
-      { err: e instanceof Error ? e.message : String(e), requestId },
+      { err: errKind(e), requestId },
       'invitation_bounce.resolve_failed',
     );
     return { marked: 0 };
@@ -128,7 +129,7 @@ export async function handleInvitationBounce(
       failed += 1;
       logger.error(
         {
-          err: e instanceof Error ? e.message : String(e),
+          err: errKind(e),
           tenantId: t.tenantId,
           contactId: t.contactId,
           requestId,
