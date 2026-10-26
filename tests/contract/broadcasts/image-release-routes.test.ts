@@ -16,6 +16,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest, NextResponse } from 'next/server';
 import { err, ok } from '@/lib/result';
+import {
+  MEMBER_WRITE_RATE_MAX,
+  STAFF_WRITE_RATE_MAX,
+  memberWriteRateKey,
+  staffWriteRateKey,
+} from '@/lib/broadcasts-write-rate-limit';
 
 const requireApiPermissionMock = vi.fn();
 const requireMemberContextMock = vi.fn();
@@ -122,9 +128,28 @@ describe('DELETE /api/broadcasts/inline-image-upload/[imageId] (member)', () => 
     checkLimitMock.mockResolvedValueOnce(err({ retryAfterSeconds: 7 }));
     const limited = await call();
     expect(limited.status).toBe(429);
+    expect(limited.headers.get('Retry-After')).toBe('7');
     flagMock.mockReturnValue(false);
     expect((await call()).status).toBe(503);
     expect(releaseMock).not.toHaveBeenCalled();
+  });
+
+  it('spends the MEMBER write bucket of this tenant and user', async () => {
+    await call();
+    const [key, max] = checkLimitMock.mock.calls[0]!;
+    expect(key).toBe(memberWriteRateKey('test-tenant' as never, 'user-m-1'));
+    expect(max).toBe(MEMBER_WRITE_RATE_MAX);
+  });
+
+  it('an unexpected throw — in the use case or in the rate limiter — is a 500 with the envelope, never a bare crash', async () => {
+    releaseMock.mockRejectedValueOnce(new Error('db down'));
+    const res = await call();
+    expect(res.status).toBe(500);
+    expect((await res.json()).error.code).toBe('internal_error');
+    checkLimitMock.mockRejectedValueOnce(new Error('upstash down'));
+    const res2 = await call();
+    expect(res2.status).toBe(500);
+    expect((await res2.json()).error.code).toBe('internal_error');
   });
 
   it('an unauthenticated member gets the context guard\'s own response', async () => {
@@ -160,6 +185,19 @@ describe('DELETE /api/admin/broadcasts/[id]/images/[imageId] (staff)', () => {
     });
   });
 
+  it('spends the STAFF write bucket; 429 and the kill-switch 503 touch nothing', async () => {
+    await call();
+    const [key, max] = checkLimitMock.mock.calls[0]!;
+    expect(key).toBe(staffWriteRateKey('test-tenant' as never, 'user-mk-1'));
+    expect(max).toBe(STAFF_WRITE_RATE_MAX);
+    releaseMock.mockClear();
+    checkLimitMock.mockResolvedValueOnce(err({ retryAfterSeconds: 3 }));
+    expect((await call()).status).toBe(429);
+    flagMock.mockReturnValue(false);
+    expect((await call()).status).toBe(503);
+    expect(releaseMock).not.toHaveBeenCalled();
+  });
+
   it('a closed E-Blast → 409 stage_changed; a malformed id → 404 before any lookup', async () => {
     releaseMock.mockResolvedValueOnce(err({ kind: 'closed', status: 'sent' }));
     const res = await call();
@@ -183,6 +221,14 @@ describe('DELETE /api/admin/broadcasts/templates/[id]/images/[imageId] (staff, t
     expect(requireApiPermissionMock.mock.calls[0]![1]).toBe('broadcasts.write');
     const [, input] = releaseMock.mock.calls[0]!;
     expect(input).toMatchObject({ owner: { kind: 'template', id: TID }, imageId: IMG, actor: { kind: 'staff' } });
+  });
+
+  it('429 and the kill-switch 503 touch nothing', async () => {
+    checkLimitMock.mockResolvedValueOnce(err({ retryAfterSeconds: 3 }));
+    expect((await call()).status).toBe(429);
+    flagMock.mockReturnValue(false);
+    expect((await call()).status).toBe(503);
+    expect(releaseMock).not.toHaveBeenCalled();
   });
 
   it('an unknown template → 404; a malformed id → 404 before any lookup', async () => {
