@@ -32,7 +32,7 @@ Nothing compares an owner's images with its content. So an unused image on an E-
    - sends `DELETE` to the release endpoint with that upload's `imageId`;
    - once the release succeeded, shows the info toast "The image wasn't added. It will be removed automatically, usually within a day." (EN/TH/SV, `notInserted`). A refused or failed release, or an upload with no image id, shows only "The image wasn't added." (`notInsertedKept`), because nothing will remove it soon.
 
-   The release URL is fixed when the image is uploaded. Navigating away inside the app while the description is still open releases the upload too. Closing the tab or reloading sends nothing (follow-up NEW-5).
+   The release URL is fixed when the image is uploaded. Leaving the page while the description is still open releases the upload too, whether by navigating inside the app or by closing the tab or reloading (`pagehide`, a `keepalive` request; maintainer, 26 Oct 2026). It is sent once.
 
    This works on all four hosts: member compose, staff compose on behalf, the approval workspace, and the template form. When the release fails, the author sees `notInsertedKept`. On an E-Blast, arm 3 still reclaims the image once the E-Blast closes; a template has no sweep behind it.
 2. **The release endpoints.** `DELETE /api/broadcasts/inline-image-upload/[imageId]?draftId=…` (member), `DELETE /api/admin/broadcasts/[id]/images/[imageId]` (staff), `DELETE /api/admin/broadcasts/templates/[id]/images/[imageId]` (staff).

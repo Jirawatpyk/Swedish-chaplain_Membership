@@ -375,13 +375,25 @@ export default function TiptapEditor({
   }, []);
 
   // #658 reliability L3 — leaving the page while an uploaded image's
-  // description is still open abandons it too, so release it then.
+  // description is still open abandons it too, so release it then: on an
+  // in-app navigation (unmount) and on closing the tab or reloading
+  // (`pagehide`, NEW-5). The release URL is dropped once sent, so the two
+  // never both fire; the pending image itself stays, so a page restored
+  // from the back-forward cache can still insert it (the sweep's
+  // `restoreLive` keeps a released image the saved draft embeds).
   useEffect(() => {
-    return () => {
+    const releasePending = (): void => {
       const pending = pendingImageRef.current;
       if (pending?.src !== undefined && pending.alt === undefined && pending.releaseUrl !== undefined) {
-        void releaseUpload(pending.releaseUrl);
+        const { releaseUrl, ...rest } = pending;
+        pendingImageRef.current = rest;
+        void releaseUpload(releaseUrl);
       }
+    };
+    window.addEventListener('pagehide', releasePending);
+    return () => {
+      window.removeEventListener('pagehide', releasePending);
+      releasePending();
     };
   }, [releaseUpload]);
 
