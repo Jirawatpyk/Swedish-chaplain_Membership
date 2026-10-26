@@ -781,12 +781,12 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 Boards: `Portal-broadcast-new` (+mobile, -sv, -th), `Admin-broadcast-new` (+mobile), and the approved proposal (`Proposal-compose*`, `Proposal-admin-compose*`). UI presentation only (FR-011).
 
 - [x] T1264 [US12] Spec session and these tasks.
-- [ ] T1265 [US12] Submit opens a confirmation on both forms: subject, recipients with the count, the allowance (live quota), sending; Keep editing / Submit for review. Test: `compose-submit-confirm`.
-- [ ] T1266 [US12] "Send options" disclosure replaces the "leave blank" checkbox on both forms; same `scheduledFor` payload.
-- [ ] T1267 [US12] One recipients line: member "N recipients · the primary contact of each active member, not your own company"; staff "N recipients · not {company}'s own contacts".
-- [ ] T1268 [US12] Upload: a one-line hint with an info tip holding the full rules.
-- [ ] T1269 [US12] Phone (member): Write / Preview tabs and a sticky bar with the count and Submit.
-- [ ] T1270 [US12] Kit migration of the compose forms, pickers and skeleton; `MIGRATED_PATHS`.
+- [x] T1265 [US12] Submit opens a confirmation on both forms: subject, recipients with the count, the allowance (live quota), sending; Keep editing / Submit for review. Test: `compose-submit-confirm`.
+- [x] T1266 [US12] "Send options" disclosure replaces the "leave blank" checkbox on both forms; same `scheduledFor` payload.
+- [x] T1267 [US12] One recipients line: member "N recipients · the primary contact of each active member, not your own company"; staff "N recipients · not {company}'s own contacts".
+- [x] T1268 [US12] Upload: a one-line hint with an info tip holding the full rules.
+- [x] T1269 [US12] Phone (member): Write / Preview tabs and a sticky bar with the count and Submit.
+- [x] T1270 [US12] Kit migration of the compose forms, pickers and skeleton; `MIGRATED_PATHS`.
 - [ ] T1271 [US12] Fixtures open the dialog (`dialog=submit`); boards updated from the proposal; parity page (whole board vs whole page).
 - [ ] T1272 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV with the dialog open; UX, mobile-a11y and i18n reviews; e2e updated for the confirm step; draft PR; relay R92.
 
