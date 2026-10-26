@@ -20,8 +20,17 @@ vi.mock('@/lib/db', async (importOriginal) => {
   };
 });
 
-const { ANY, SHAPE_TENANT: T, anyWith, callEach, isPureInsert, tenantPredicateViolations, tenantScopedTables } =
-  await import('../../../../helpers/tenant-sql-shape');
+const {
+  ANY,
+  SHAPE_TENANT: T,
+  anyWith,
+  callEach,
+  isPureInsert,
+  tenantPredicateViolations,
+  tenantScopedTables,
+  unfencedRawSql,
+  unfencedWheres,
+} = await import('../../../../helpers/tenant-sql-shape');
 const { makeDrizzleRenewalCycleRepo } = await import(
   '@/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo'
 );
@@ -141,18 +150,9 @@ describe('renewal cycle repo — tenant predicate on every statement (130 s2)', 
   // cases above prove fenced.
   it('every .where( in the source names tenant_id or a proven filter list (review #657)', () => {
     const src = readFileSync('src/modules/renewals/infrastructure/drizzle/drizzle-renewal-cycle-repo.ts', 'utf8');
-    const unfenced: string[] = [];
-    for (let at = src.indexOf('.where('); at !== -1; at = src.indexOf('.where(', at + 1)) {
-      let depth = 0;
-      let end = at + '.where'.length;
-      for (; end < src.length; end += 1) {
-        if (src[end] === '(') depth += 1;
-        else if (src[end] === ')' && --depth === 0) break;
-      }
-      const inner = src.slice(at + '.where('.length, end).replace(/\s+/g, ' ').trim();
-      if (!/tenantId|tenant_id/.test(inner)) unfenced.push(inner);
-    }
-    expect(unfenced.sort()).toEqual(
+    expect(unfencedRawSql(src, TABLES)).toEqual([]);
+    const unfenced = unfencedWheres(src);
+    expect(unfenced).toEqual(
       [
         'and(...filters)',
         'and(...filters)',

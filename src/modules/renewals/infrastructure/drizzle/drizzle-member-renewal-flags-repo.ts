@@ -67,13 +67,11 @@ import type {
 import type { RiskBand } from '../../domain/value-objects/risk-band';
 
 export function makeDrizzleMemberRenewalFlagsRepo(
-  // RLS does the tenant binding via runInTenant at the use-case layer;
-  // most methods below receive only the tx + memberId and write via the
-  // members table directly, so `tenant` goes unused for them. Rolling-
-  // anchor rev 2 added `hasUnreconciledPaidMembershipInvoice`, which has
-  // no caller-supplied tx (the dispatcher gate calls it standalone) — it
-  // opens its OWN `runInTenant(tenant, …)` using this closed-over context,
-  // mirroring `makeDrizzleTierUpgradeEvalCandidateRepo`'s `list()` method.
+  // D-029 — every statement below carries `tenant_id = tenant.slug`
+  // alongside the RLS the use-case's `runInTenant` sets (the tx-taking
+  // methods inherit it). `hasUnreconciledPaidMembershipInvoice` has no
+  // caller-supplied tx (the dispatcher gate calls it standalone) — it opens
+  // its OWN `runInTenant(tenant, …)` using this closed-over context.
   tenant: TenantContext,
 ): MemberRenewalFlagsRepo {
   return {
@@ -89,7 +87,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const priorRows = await txDb
         .select({ emailUnverified: members.emailUnverified })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       const prior = priorRows[0];
       if (!prior) {
@@ -107,7 +110,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           emailUnverified: true,
           emailUnverifiedAt: new Date(),
         })
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .returning({ memberId: members.memberId });
       return {
         previouslyUnverified: false,
@@ -125,7 +133,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const priorRows = await txDb
         .select({ emailUnverified: members.emailUnverified })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       const prior = priorRows[0];
       if (!prior) {
@@ -142,7 +155,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           emailUnverified: false,
           emailUnverifiedAt: null,
         })
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .returning({ memberId: members.memberId });
       return {
         previouslyUnverified: wasUnverified,
@@ -159,7 +177,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const priorRows = await txDb
         .select({ optedOut: members.renewalRemindersOptedOut })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       const prior = priorRows[0];
       if (!prior) {
@@ -175,7 +198,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           renewalRemindersOptedOut: true,
           renewalRemindersOptedOutAt: new Date(),
         })
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .returning({ memberId: members.memberId });
       return { previousValue: false, affectedRows: updated.length };
     },
@@ -189,7 +217,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const priorRows = await txDb
         .select({ optedOut: members.renewalRemindersOptedOut })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       const prior = priorRows[0];
       if (!prior) {
@@ -202,7 +235,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           renewalRemindersOptedOut: false,
           renewalRemindersOptedOutAt: null,
         })
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .returning({ memberId: members.memberId });
       return { previousValue: wasOptedOut, affectedRows: updated.length };
     },
@@ -216,7 +254,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const priorRows = await txDb
         .select({ blocked: members.blockedFromAutoReactivation })
         .from(members)
-        .where(eq(members.memberId, input.memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, input.memberId),
+          ),
+        )
         .limit(1);
       const prior = priorRows[0];
       if (!prior) {
@@ -237,7 +280,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           blockedFromAutoReactivationSetByUserId: input.actorUserId,
           blockedFromAutoReactivationReason: input.reason ?? null,
         })
-        .where(eq(members.memberId, input.memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, input.memberId),
+          ),
+        )
         .returning({ memberId: members.memberId });
       return { previousValue: false, affectedRows: updated.length };
     },
@@ -251,7 +299,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const rows = await txDb
         .select({ blocked: members.blockedFromAutoReactivation })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       return rows[0]?.blocked ?? null;
     },
@@ -284,7 +337,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           erasedAt: members.erasedAt,
         })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       const row = rows[0];
       if (row === undefined) return null;
@@ -317,6 +375,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           .from(members)
           .where(
             and(
+              eq(members.tenantId, tenant.slug),
               inArray(members.memberId, [...memberIds]),
               isNotNull(members.erasedAt),
             ),
@@ -334,7 +393,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const rows = await txDb
         .select({ optedOut: members.renewalRemindersOptedOut })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       return rows[0]?.optedOut ?? null;
     },
@@ -348,7 +412,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const priorRows = await txDb
         .select({ blocked: members.blockedFromAutoReactivation })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       const prior = priorRows[0];
       if (!prior) {
@@ -365,7 +434,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           blockedFromAutoReactivationSetByUserId: null,
           blockedFromAutoReactivationReason: null,
         })
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .returning({ memberId: members.memberId });
       return { previousValue: wasBlocked, affectedRows: updated.length };
     },
@@ -386,7 +460,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const priorRows = await txDb
         .select({ band: members.riskScoreBand })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       const prior = priorRows[0];
       if (!prior) {
@@ -408,7 +487,13 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           riskScoreFactors: input.factors,
           riskScoreLastComputedAt: new Date(input.computedAt),
         })
-        .where(and(eq(members.memberId, memberId), isNull(members.erasedAt)))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+            isNull(members.erasedAt),
+          ),
+        )
         .returning({ memberId: members.memberId });
       return { previousBand, affectedRows: updated.length };
     },
@@ -435,6 +520,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
         .from(members)
         .where(
           and(
+            eq(members.tenantId, tenant.slug),
             eq(members.status, 'active'),
             // COMP-1 H4 — never re-score a GDPR-erased member (erasure keeps
             // `status` + NULLs risk_score, stamps `erased_at`).
@@ -445,6 +531,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
                 .from(renewalCycles)
                 .where(
                   and(
+                    eq(renewalCycles.tenantId, members.tenantId),
                     eq(renewalCycles.memberId, members.memberId),
                     notInArray(renewalCycles.status, ['lapsed', 'cancelled']),
                   ),
@@ -498,7 +585,8 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           risk_score_last_computed_at = ${computedAt.toISOString()}::timestamptz
         FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb)
           AS src(member_id uuid, score smallint, band text, factors jsonb)
-        WHERE m.member_id = src.member_id
+        WHERE m.tenant_id = ${tenant.slug}
+          AND m.member_id = src.member_id
           -- COMP-1 R3 — per-row WRITE-time guard: never re-populate the
           -- scrubbed risk columns on a member erased between candidate-
           -- listing and this bulk write (TOCTOU re-leak of the quasi-
@@ -652,7 +740,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           -- Phase 6 review I7 — explicit tenant_id filter as
           -- defence-in-depth atop RLS. Constitution Principle I 2-layer
           -- rule: if RLS bind is misconfigured, the filter still scopes.
-          WHERE tenant_id = m.tenant_id AND member_id = m.member_id
+          WHERE invoices.tenant_id = m.tenant_id AND invoices.member_id = m.member_id
         ) inv ON true
         LEFT JOIN LATERAL (
           SELECT count(*) AS consumed
@@ -729,13 +817,15 @@ export function makeDrizzleMemberRenewalFlagsRepo(
             -- must not have the +25/+10 disengagement factors suppressed.
             AND e.start_date <= NOW()
         ) ev ON true
-        WHERE m.status = 'active'
+        WHERE m.tenant_id = ${tenant.slug}
+          AND m.status = 'active'
           -- COMP-1 H4 — exclude GDPR-erased members from the at-risk batch
           -- recompute (erasure keeps status, stamps erased_at).
           AND m.erased_at IS NULL
           AND EXISTS (
             SELECT 1 FROM renewal_cycles c
-            WHERE c.member_id = m.member_id
+            WHERE c.tenant_id = m.tenant_id
+              AND c.member_id = m.member_id
               AND c.status NOT IN ('lapsed', 'cancelled')
           )
         ORDER BY m.member_id
@@ -819,6 +909,7 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       }
 
       const baseWhere = and(
+        eq(members.tenantId, tenant.slug),
         // Phase 6 review I6 — filter archived members from the widget.
         // Archive does not currently clear risk_score (kept for forensic
         // history), so without this filter an archived "at-risk" member
@@ -902,7 +993,8 @@ export function makeDrizzleMemberRenewalFlagsRepo(
           count(*) FILTER (WHERE risk_score_band = 'at-risk') AS at_risk,
           count(*) FILTER (WHERE risk_score_band = 'critical') AS critical
         FROM members
-        WHERE status = 'active'  -- Phase 6 review I6 (archive cascade)
+        WHERE tenant_id = ${tenant.slug}
+          AND status = 'active'  -- Phase 6 review I6 (archive cascade)
           AND erased_at IS NULL  -- COMP-1 H4 (GDPR-erased excluded)
           AND risk_score >= 50
           AND (risk_snoozed_until IS NULL OR risk_snoozed_until < NOW())
@@ -941,7 +1033,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const priorRows = await txDb
         .select({ snoozedUntil: members.riskSnoozedUntil })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       const prior = priorRows[0];
       if (!prior) {
@@ -953,7 +1050,12 @@ export function makeDrizzleMemberRenewalFlagsRepo(
       const updated = await txDb
         .update(members)
         .set({ riskSnoozedUntil: new Date(snoozedUntil) })
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .returning({ memberId: members.memberId });
       return {
         previousValue: wasSnoozedActive,
