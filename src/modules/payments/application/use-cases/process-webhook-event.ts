@@ -588,6 +588,36 @@ async function processWebhookEventBody(
     });
   });
 
+  if (inserted.adoptedFrom !== undefined) {
+    // 132 (D-031) — the repo adopted the NULL-tenant row an unresolved first
+    // delivery left. Its processed_at is NULL, so the recovery path below
+    // dispatches and stamps it. No account id here: tenant + type suffice.
+    deps.logger?.info('stripe-webhook.unresolved_row_adopted', {
+      eventId: event.id,
+      eventType: event.type,
+      tenantId,
+      adoptedFrom: inserted.adoptedFrom,
+    });
+    paymentsMetrics.webhookUnresolvedRowAdopted(tenantId, event.type);
+  }
+
+  if (!inserted.inserted && inserted.event.tenantId !== tenantId) {
+    // 132 (D-031) — fail closed. The stored row belongs to no tenant (the
+    // repo refused to adopt it: wrong account or livemode, or
+    // rejected_signature) or to another tenant. `markProcessed` runs under
+    // this tenant's RLS and could never stamp it, so dispatching would
+    // repeat on every replay — and would act for a tenant the row does not
+    // name. Acknowledge as a duplicate instead.
+    deps.logger?.warn('stripe-webhook.duplicate_tenant_mismatch', {
+      eventId: event.id,
+      eventType: event.type,
+      tenantId,
+      storedTenant: inserted.event.tenantId === null ? 'null' : 'other',
+    });
+    paymentsMetrics.webhookDuplicateTenantMismatch(tenantId, event.type);
+    return ok<ProcessWebhookEventOutcome>({ kind: 'duplicate' });
+  }
+
   if (!inserted.inserted) {
     // duplicate delivery — but ONLY short-circuit if the prior
     // attempt actually completed (processed_at set). If the previous

@@ -44,7 +44,13 @@ I tenancy: two layers kept; the owner write is bounded by account + NULL predica
 
 ## Complexity Tracking
 
-Solo-maintainer review for the payment surface: `/code-review high` + `financial-integrity-reviewer` + `security-engineer` (+ `pci-saqa-guardian` only if a reviewer judges it card-adjacent — webhook path, so I will run it). The five checks recorded in `plan.md` § Complexity Tracking.
+No deviation from a principle. Payment surface → solo-maintainer review (review-and-ship § 2), its five checks:
+
+1. Repeated independent rounds: `/code-review high` + `financial-integrity-reviewer`, `pci-saqa-guardian`, `security-engineer`, `reliability-guardian`, fresh subagents per round, until a round finds no High/Medium; counts per round in the PR.
+2. Staff review: `whole-branch-reviewer` + `security-engineer` + `senior-tester` on the same diff.
+3. Coverage + real infrastructure: `pnpm test:coverage`; integration on Neon dev for the adoption and the refusal (`webhook-null-tenant-replay.test.ts`, `processor-events-idempotency.test.ts`).
+4. Defence in depth: the 0036 RLS policies are unchanged and still hide NULL rows from `chamber_app`; CHECK `processor_events_sig_reject_implies_null_tenant` refuses a tenant on a `rejected_signature` row at the database even if the repo predicate regressed.
+5. Post-remediation: the reviewer that raises a finding re-runs on its fix in a new subagent.
 
 ## Verification
 
@@ -53,3 +59,12 @@ Solo-maintainer review for the payment surface: `/code-review high` + `financial
 ## Rollout / Risks
 
 Deploys with the merge; behaviour changes only for duplicate deliveries whose stored tenant is NULL or different. Risk: an operator replay now settles an invoice for a payment that arrived before the account was registered — that is the intended outcome; the adopt log + metric make it visible.
+
+## Evidence
+
+- RED (commit d64c6ecb0), Neon dev, 26 Oct 2026: `webhook-null-tenant-replay.test.ts` — "a acknowledged_only row is adopted…" → `expected null to be 'test-bc21c208'` (tenant stays NULL); "a row from another account is not adopted and not dispatched" → `expected 'acknowledged_only' to be 'duplicate'` (it was dispatched); `processor-events-idempotency.test.ts` "a resolved-tenant replay adopts…" → `expected undefined to be 'acknowledged_only'`; unit `process-webhook-event.test.ts` 3 new cases failed (backstop + metrics absent).
+- Done when 1, 2: GREEN — `webhook-null-tenant-replay.test.ts` both outcomes (`acknowledged_only`, `rejected_api_version_mismatch`): row ends `tenant_id` = test tenant, `processed_at` set, `received_at` / `correlation_id` the first delivery's; the second replay returns `duplicate`.
+- Done when 3: GREEN — another account's row stays `tenant_id NULL`, `processed_at NULL`, `acknowledged_only`, result `duplicate`; `rejected_signature` row not adopted (idempotency test); unit: NULL / other-tenant duplicate → `duplicate`, no `markProcessed`, no `markPaidFromProcessor`, mismatch metric + warn.
+- Done when 4: unit — adoption counts once and logs `stripe-webhook.unresolved_row_adopted` with `adoptedFrom`, no account id.
+- Done when 5: repo + port docstrings, data-model § 5.4 + `tenant_id` row, gauge docstring, `docs/observability.md`, D-031, changelog.
+- Gates: `pnpm check` exit 0; unit `tests/unit/payments/` 46 files / 816 tests passed; integration (3 files incl. `unprocessed-events-count`) 12/12 passed.

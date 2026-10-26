@@ -18,10 +18,13 @@ export interface ProcessorEventsRepo {
    * `tenantId` MAY be null ONLY for rejection-audit rows written by
    * `insertRejectedProcessorEvent` (env mismatch / api-version mismatch /
    * unknown-account `acknowledged_only`). Successful events INSERT with
-   * the resolved tenant_id from the start. The original "pre-resolution
-   * NULL → UPDATE" flow (data-model.md § 5.4 historical) is unimplement-
-   * able under the SELECT policy — see audit 2026-04-25 reality-check
-   * block in data-model.md.
+   * the resolved tenant_id from the start. A `chamber_app` UPDATE cannot
+   * resolve a NULL row later (the SELECT policy hides it — data-model.md
+   * § 5.4), so a duplicate with a non-null `tenantId` adopts such a row
+   * itself, on the owner connection (D-031): `tenant_id` set,
+   * `outcome = 'processed'`, bounded to the row's account and livemode,
+   * never a `rejected_signature` row. `adoptedFrom` is then the outcome it
+   * replaced; absent on every other result.
    */
   insertIfNew(
     tx: unknown,
@@ -37,7 +40,11 @@ export interface ProcessorEventsRepo {
       readonly correlationId: string;
       readonly receivedAt: Date;
     },
-  ): Promise<{ readonly inserted: boolean; readonly event: ProcessorEvent }>;
+  ): Promise<{
+    readonly inserted: boolean;
+    readonly event: ProcessorEvent;
+    readonly adoptedFrom?: ProcessorEventOutcome;
+  }>;
 
   /** Stamp `processed_at = now()`. Called at pipeline step 10. */
   markProcessed(tx: unknown, id: string): Promise<void>;

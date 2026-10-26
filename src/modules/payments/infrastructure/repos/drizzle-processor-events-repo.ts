@@ -16,9 +16,15 @@
  *     - NULL-tenant rows ONLY appear via `insertRejectedProcessorEvent`
  *       for rejection-audit (env mismatch / api-version mismatch /
  *       unknown-account `acknowledged_only`);
- *     - rejection rows are system-level audit and are never promoted —
- *       they remain invisible to all chamber_app contexts and are
- *       inspected out-of-band by the `neondb_owner` operator role.
+ *     - rejection rows are system-level audit, invisible to every
+ *       chamber_app context and inspected out-of-band by the
+ *       `neondb_owner` operator role — until a replay of the same event
+ *       reaches a resolved tenant. Then `insertIfNew` adopts the row on
+ *       this owner connection (132, D-031; it revises the 2026-04-25
+ *       "never promoted" rule): `tenant_id` set, `outcome = 'processed'`,
+ *       only for the row's own account + livemode and never for a
+ *       `rejected_signature` row. A row it will not adopt stays NULL and
+ *       `processWebhookEvent` refuses to dispatch it.
  *
  * `insertIfNew` runs OUTSIDE `runInTenant` because the rejection
  * write must succeed even when no tenant context is available; the
@@ -34,7 +40,7 @@
  * Domain-type leak containment: Drizzle row types stay here; the
  * caller sees `ProcessorEvent` Domain shapes only.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { ProcessorEventsRepo } from '../../application/ports/processor-events-repo';
 import type {
   ProcessorEvent,
@@ -43,6 +49,18 @@ import type {
 import { processorEvents, type ProcessorEventRow } from '../schema';
 import { db, runInTenant, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
+
+/**
+ * Rejection outcomes a later replay may adopt (D-031): the delivery was
+ * genuine but could not be processed then. `rejected_signature` is absent —
+ * that row never proved it came from Stripe, and CHECK
+ * `processor_events_sig_reject_implies_null_tenant` forbids a tenant on it.
+ */
+const ADOPTABLE_OUTCOMES: ProcessorEventOutcome[] = [
+  'acknowledged_only',
+  'rejected_environment_mismatch',
+  'rejected_api_version_mismatch',
+];
 
 function toDomain(row: ProcessorEventRow): ProcessorEvent {
   return {
@@ -118,6 +136,46 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
           `drizzle-processor-events-repo: insertIfNew saw conflict but row ${input.id} not found`,
         );
       }
+
+      // 132 (D-031) — adopt-on-replay. A replay that reached a resolved
+      // tenant takes over the row its unresolved first delivery left, on
+      // this owner connection: `chamber_app` cannot see a NULL-tenant row,
+      // so `markProcessed` could never stamp it. Bounded to the row's own
+      // account and livemode; a `rejected_signature` row is never adopted.
+      if (input.tenantId !== null && existing.tenantId === null) {
+        const [adopted] = await db
+          .update(processorEvents)
+          .set({ tenantId: input.tenantId, outcome: 'processed' })
+          .where(
+            and(
+              eq(processorEvents.id, input.id),
+              isNull(processorEvents.tenantId),
+              inArray(processorEvents.outcome, ADOPTABLE_OUTCOMES),
+              eq(processorEvents.processorAccountId, input.processorAccountId),
+              eq(processorEvents.livemode, input.livemode),
+            ),
+          )
+          .returning();
+        if (adopted) {
+          return {
+            inserted: false,
+            adoptedFrom: existing.outcome as ProcessorEventOutcome,
+            event: toDomain(adopted as ProcessorEventRow),
+          };
+        }
+        // Not adoptable, or a concurrent replay adopted it first — return
+        // the row as it stands now.
+        const [current] = await db
+          .select()
+          .from(processorEvents)
+          .where(eq(processorEvents.id, input.id))
+          .limit(1);
+        return {
+          inserted: false,
+          event: toDomain((current ?? existing) as ProcessorEventRow),
+        };
+      }
+
       return {
         inserted: false,
         event: toDomain(existing as ProcessorEventRow),
