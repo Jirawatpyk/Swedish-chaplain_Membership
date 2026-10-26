@@ -6857,7 +6857,6 @@
           "triggerLabel": "Start from a template",
           "blankOption": "Blank — start from scratch",
           "starterSuffix": "Starter",
-          "starterBadgeAria": "Seeded by the platform",
           "searchPlaceholder": "Search templates by name",
           "emptyMessage": "No templates match your search",
           "helpText": "Picking a template fills the subject + message. You can still edit before sending.",

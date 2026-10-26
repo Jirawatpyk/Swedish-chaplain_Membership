@@ -6857,7 +6857,6 @@
           "triggerLabel": "Börja från en mall",
           "blankOption": "Tom — börja från noll",
           "starterSuffix": "Start",
-          "starterBadgeAria": "Förseedad av plattformen",
           "searchPlaceholder": "Sök mallar efter namn",
           "emptyMessage": "Inga mallar matchar din sökning",
           "helpText": "Att välja en mall fyller i ämne och innehåll. Du kan fortfarande redigera innan du skickar.",
