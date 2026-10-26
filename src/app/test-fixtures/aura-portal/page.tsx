@@ -20,6 +20,9 @@ import { PortalEditForm } from '@/components/members/portal-edit-form';
 import { renderPortalProfileView, type PortalProfileViewProps } from '@/components/members/portal-profile-view';
 import { renderPortalAccountView } from '@/components/portal/portal-account-view';
 import { renderPortalBroadcastDetailPreview } from './eblast-detail-previews';
+import { ComposeForm } from '@/components/broadcast/compose-form';
+import { keepTermTogether } from '@/components/broadcast/keep-term-together';
+import { COMPOSE_TEMPLATES, MEMBER_COMPOSE_SAMPLE } from '../_shared/compose-fixtures';
 import { TimelineFilters } from '@/components/members/timeline-filters';
 import { TimelineStream } from '@/components/members/timeline-stream';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
@@ -195,6 +198,35 @@ export default async function AuraPortalPreviewPage({
   // Spec 122 US12d-1 — the benefits page's E-Blast tab (boards
   // `Portal-broadcasts`, `-mobile`, `-empty`), through the panel's own view:
   // `?view=benefits-eblasts&state=default|empty|exhausted|load-error|paged`.
+  // 122 US12d-2 follow-up — the member compose page as /portal/broadcasts/new
+  // renders it (board Portal-broadcast-new), with a saved draft so the image
+  // controls are on. `state=blank` starts empty.
+  if (view === 'broadcast-compose') {
+    const t = await getTranslations('portal.broadcasts.compose');
+    const blank = sp.state === 'blank';
+    return (
+      <MemberFrame path="/portal/benefits">
+        <DetailContainer>
+          <PageHeader title={keepTermTogether(t('title'))} subtitle={t('subtitle')} />
+          <ComposeForm
+            initialQuota={MEMBER_COMPOSE_SAMPLE.quota}
+            imagesEnabled
+            audienceCeiling={500}
+            audienceMode="primary_only"
+            templates={COMPOSE_TEMPLATES}
+            initialTemplateId={blank ? null : 'tpl-event'}
+            {...(blank
+              ? {}
+              : {
+                  initialDraftId: '7c1e4d2a-0000-4000-8000-0000000000aa',
+                  initialSubject: MEMBER_COMPOSE_SAMPLE.subject,
+                  initialBodyHtml: MEMBER_COMPOSE_SAMPLE.bodyHtml,
+                })}
+          />
+        </DetailContainer>
+      </MemberFrame>
+    );
+  }
   if (view === 'benefits-eblasts') {
     const t = await getTranslations('benefits.page');
     const tStatus = await getTranslations('portal.broadcasts.list.status');
