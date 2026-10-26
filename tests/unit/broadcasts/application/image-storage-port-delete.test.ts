@@ -61,9 +61,14 @@ function makeDeps(rows: BroadcastImageRecord[], liveCounts: Record<string, numbe
     listByMember: vi.fn(async () => []),
     // ROUND-2 R-M1 / S-3 — the batched prune stamp and the sweep's
     // keep-the-row arm. Unstubbed, either is an unexercised branch.
+    markDeletedById: vi.fn(async () => null),
     markDeletedByOwners: vi.fn(async () => []),
     restoreLive: vi.fn(async () => undefined),
     listOrphaned: vi.fn(async () => []),
+    markUsedImagesExamined: vi.fn(async () => 0),
+    listUnused: vi.fn(async () => []),
+    markUnusedExamined: vi.fn(async () => undefined),
+    isLiveImage: vi.fn(async () => true),
     lockContentHash: vi.fn(async () => undefined),
     isBlobReferencedByContent: vi.fn(async () => false),
     countLiveByContentHash: vi.fn(async (_t: never, hash: string) => liveCounts[hash] ?? 0),
@@ -91,7 +96,7 @@ describe('reclaimOrphanedImages', () => {
     const r = await reclaimOrphanedImages(deps, { tenantId: TENANT, now: NOW, requestId: 'cron-1' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 1, rowsRemoved: 1, retained: 0, rowsFailed: 0 });
+    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 1, rowsRemoved: 1, retained: 0, rowsFailed: 0, truncated: false, unusedListFailed: false });
     expect(deps.storage.delete).toHaveBeenCalledWith('broadcasts/images/tenant-swe/hash-a.png');
     expect(deps.imagesRepo.remove).toHaveBeenCalledWith(TENANT, 'img-a', 'tx-1');
     const [, event] = (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
@@ -117,7 +122,7 @@ describe('reclaimOrphanedImages', () => {
     const r = await reclaimOrphanedImages(deps, { tenantId: TENANT, now: NOW, requestId: 'cron-1' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 0, rowsRemoved: 1, retained: 0, rowsFailed: 0 });
+    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 0, rowsRemoved: 1, retained: 0, rowsFailed: 0, truncated: false, unusedListFailed: false });
     expect(deps.storage.delete).not.toHaveBeenCalled();
     expect(deps.imagesRepo.remove).toHaveBeenCalledTimes(1);
     const [, event] = (deps.audit.emitTyped as ReturnType<typeof vi.fn>).mock.calls[0]!;
@@ -130,7 +135,7 @@ describe('reclaimOrphanedImages', () => {
   it('a second run the same day is a no-op (nothing marked → nothing touched, nothing audited)', async () => {
     const deps = makeDeps([], {});
     const r = await reclaimOrphanedImages(deps, { tenantId: TENANT, now: NOW, requestId: 'cron-2' });
-    expect(r).toEqual({ ok: true, value: { scanned: 0, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 0 } });
+    expect(r).toEqual({ ok: true, value: { scanned: 0, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 0, truncated: false, unusedListFailed: false } });
     expect(deps.storage.delete).not.toHaveBeenCalled();
     expect(deps.audit.emitTyped).not.toHaveBeenCalled();
   });
@@ -142,7 +147,7 @@ describe('reclaimOrphanedImages', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     // The row stays so the sweep retries the delete tomorrow; nothing is audited yet.
-    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 1 });
+    expect(r.value).toEqual({ scanned: 1, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 1, truncated: false, unusedListFailed: false });
     expect(deps.imagesRepo.remove).not.toHaveBeenCalled();
     expect(deps.audit.emitTyped).not.toHaveBeenCalled();
   });
@@ -151,7 +156,7 @@ describe('reclaimOrphanedImages', () => {
     const deps = makeDeps([marked('img-e', 'hash-e'), marked('img-f', 'hash-f')], {});
     (deps.storage.delete as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('blob token expired'));
     const r = await reclaimOrphanedImages(deps, { tenantId: TENANT, now: NOW, requestId: 'cron-5' });
-    expect(r).toEqual({ ok: true, value: { scanned: 2, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 2 } });
+    expect(r).toEqual({ ok: true, value: { scanned: 2, blobsDeleted: 0, rowsRemoved: 0, retained: 0, rowsFailed: 2, truncated: false, unusedListFailed: false } });
     expect(imageSweepRowFailedSpy).toHaveBeenCalledTimes(2);
     expect(imageSweepRowFailedSpy).toHaveBeenCalledWith(TENANT);
   });

@@ -557,8 +557,11 @@ describe('reclaimOrphanedImages — F2-1 orphan arm + F2-10 races', () => {
       { tenantId: TENANT, now: NOW, requestId: 's' },
     );
 
-    // Once per row, first each time.
-    expect(order).toEqual([
+    // The three listing transactions bound themselves first (spec 131: the
+    // marked/orphaned list, arm 3's watermark, arm 3's list), then each row:
+    // once per row, first each time.
+    expect(order.slice(0, 3)).toEqual(['timeout', 'timeout', 'timeout']);
+    expect(order.slice(3)).toEqual([
       'timeout',
       'lock',
       'count',
@@ -685,3 +688,169 @@ describe('reclaimOrphanedImages — F2-1 orphan arm + F2-10 races', () => {
     if (r.ok) expect(r.value).toMatchObject({ rowsRemoved: 1, blobsDeleted: 0 });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spec 131 — arm 3 ("unused"): a LIVE image of an E-Blast that can no longer
+// change, which that E-Blast's content does not use. Before it, an image
+// uploaded and left out of a SENT E-Blast stayed at its public URL until the
+// retention sweep, about five years later. `listUnused` (SQL) selects only
+// terminal owners whose own body / versions do not embed the URL, so an image
+// the E-Blast shows is never in the batch.
+// ---------------------------------------------------------------------------
+describe('reclaimOrphanedImages — spec 131 arm 3 (unused)', () => {
+  // A terminal E-Blast's content never changes, so each of its images is
+  // examined at most once every 30 days (the `unused_checked_at` watermark).
+  const DUE_BEFORE = new Date(NOW.getTime() - 30 * 24 * 60 * 60 * 1000);
+  let audit: ReturnType<typeof makeAudit>;
+  beforeEach(() => {
+    audit = makeAudit();
+  });
+
+  it('an unused live image of a sent E-Blast is reaped: bytes deleted, row removed, audited sweep_unused', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
+    vi.mocked(imagesRepo.listUnused).mockResolvedValue([unused]);
+    const storage = makeFakeImageStorage();
+
+    const r = await reclaimOrphanedImages(
+      { imagesRepo, storage, audit },
+      { tenantId: TENANT, now: NOW, requestId: 'sweep-3' },
+    );
+
+    expect(vi.mocked(imagesRepo.listUnused)).toHaveBeenCalledWith(TENANT, DUE_BEFORE, 200, FAKE_TX);
+    // The row is itself live, so it must not count itself as the holder.
+    expect(vi.mocked(imagesRepo.countLiveByContentHash).mock.calls[0]![3]).toBe('img-unused');
+    expect(storage.deleted).toEqual([unused.blobKey]);
+    expect(imagesRepo.rows).toEqual([]);
+    if (r.ok) expect(r.value).toMatchObject({ scanned: 1, rowsRemoved: 1, blobsDeleted: 1 });
+    expect(audit.events[0]!.payload).toMatchObject({
+      image_id: 'img-unused',
+      reason: 'sweep_unused',
+      blob_deleted: true,
+      blob_disposition: 'deleted',
+      actor_role: 'system',
+    });
+  });
+
+  it('a live row sharing the hash keeps the bytes (kept_shared_row); the unused row still goes', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused, imageRow({ id: 'img-used', ownerId: 'other-draft' })]);
+    vi.mocked(imagesRepo.listUnused).mockResolvedValue([unused]);
+    const storage = makeFakeImageStorage();
+
+    await reclaimOrphanedImages({ imagesRepo, storage, audit }, { tenantId: TENANT, now: NOW, requestId: 's' });
+
+    expect(storage.deleted).toEqual([]);
+    expect(imagesRepo.rows.map((x) => x.id)).toEqual(['img-used']);
+    expect(audit.events[0]!.payload).toMatchObject({ reason: 'sweep_unused', blob_disposition: 'kept_shared_row' });
+  });
+
+  it('content elsewhere in the tenant still embedding the URL keeps bytes AND the live row (retained, no audit)', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
+    vi.mocked(imagesRepo.listUnused).mockResolvedValue([unused]);
+    vi.mocked(imagesRepo.isBlobReferencedByContent).mockResolvedValue(true);
+    const storage = makeFakeImageStorage();
+
+    const r = await reclaimOrphanedImages(
+      { imagesRepo, storage, audit },
+      { tenantId: TENANT, now: NOW, requestId: 's' },
+    );
+
+    expect(storage.deleted).toEqual([]);
+    expect(imagesRepo.rows).toEqual([unused]);
+    expect(vi.mocked(imagesRepo.remove)).not.toHaveBeenCalled();
+    expect(audit.events).toEqual([]);
+    if (r.ok) expect(r.value).toMatchObject({ retained: 1, rowsRemoved: 0 });
+  });
+
+  it('watermarks the used images first (now, due before now − 30 d), then lists the unused with the same cut-off', async () => {
+    const imagesRepo = makeFakeBroadcastImagesRepo([]);
+    await reclaimOrphanedImages({ imagesRepo, storage: makeFakeImageStorage(), audit }, { tenantId: TENANT, now: NOW, requestId: 's' });
+
+    expect(vi.mocked(imagesRepo.markUsedImagesExamined)).toHaveBeenCalledWith(TENANT, NOW, DUE_BEFORE, 1000, FAKE_TX);
+    const markOrder = vi.mocked(imagesRepo.markUsedImagesExamined).mock.invocationCallOrder[0]!;
+    const listOrder = vi.mocked(imagesRepo.listUnused).mock.invocationCallOrder[0]!;
+    expect(markOrder).toBeLessThan(listOrder);
+  });
+
+  it('each list runs under its own statement timeout', async () => {
+    const imagesRepo = makeFakeBroadcastImagesRepo([]);
+    await reclaimOrphanedImages({ imagesRepo, storage: makeFakeImageStorage(), audit }, { tenantId: TENANT, now: NOW, requestId: 's' });
+
+    // marked + orphaned share one listing tx, the unused arm has its own: two bounds, before any list.
+    expect(vi.mocked(imagesRepo.setStatementTimeout).mock.calls.length).toBeGreaterThanOrEqual(2);
+    const firstTimeout = vi.mocked(imagesRepo.setStatementTimeout).mock.invocationCallOrder[0]!;
+    expect(firstTimeout).toBeLessThan(vi.mocked(imagesRepo.listMarked).mock.invocationCallOrder[0]!);
+  });
+
+  it('the unused arm failing does not stop the marked arm (an erased member\'s images still go)', async () => {
+    const marked = imageRow({ id: 'img-erased', deletedAt: NOW });
+    const imagesRepo = makeFakeBroadcastImagesRepo([marked]);
+    vi.mocked(imagesRepo.listUnused).mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
+    const storage = makeFakeImageStorage();
+
+    const r = await reclaimOrphanedImages({ imagesRepo, storage, audit }, { tenantId: TENANT, now: NOW, requestId: 's' });
+
+    expect(r.ok).toBe(true);
+    expect(storage.deleted).toEqual([marked.blobKey]);
+    if (r.ok) expect(r.value).toMatchObject({ rowsRemoved: 1, unusedListFailed: true });
+  });
+
+  it('the watermark statement failing does not stop the unused listing (#658 NEW-2): it is an optimisation only', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
+    vi.mocked(imagesRepo.markUsedImagesExamined).mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
+    vi.mocked(imagesRepo.listUnused).mockResolvedValue([unused]);
+
+    const r = await reclaimOrphanedImages({ imagesRepo, storage: makeFakeImageStorage(), audit }, { tenantId: TENANT, now: NOW, requestId: 's' });
+
+    expect(vi.mocked(imagesRepo.listUnused)).toHaveBeenCalled();
+    if (r.ok) expect(r.value).toMatchObject({ rowsRemoved: 1, unusedListFailed: false });
+  });
+
+  it('a listed unused row stamped meanwhile (an erasure) is left to the marked arm, not audited sweep_unused (#658 code review)', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
+    vi.mocked(imagesRepo.listUnused).mockImplementation(async () => {
+      // Listed live; an erasure stamps it before the row's own transaction.
+      imagesRepo.rows[0] = { ...unused, deletedAt: NOW };
+      return [unused];
+    });
+    const storage = makeFakeImageStorage();
+
+    await reclaimOrphanedImages({ imagesRepo, storage, audit }, { tenantId: TENANT, now: NOW, requestId: 's' });
+
+    expect(vi.mocked(imagesRepo.isLiveImage)).toHaveBeenCalledWith(TENANT, 'img-unused', FAKE_TX);
+    expect(storage.deleted).toEqual([]);
+    expect(audit.events.filter((e) => e.payload['reason'] === 'sweep_unused')).toEqual([]);
+  });
+
+  it('a retained unused row is watermarked, so it does not refill the batch every tick', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
+    vi.mocked(imagesRepo.listUnused).mockResolvedValue([unused]);
+    vi.mocked(imagesRepo.isBlobReferencedByContent).mockResolvedValue(true);
+
+    await reclaimOrphanedImages({ imagesRepo, storage: makeFakeImageStorage(), audit }, { tenantId: TENANT, now: NOW, requestId: 's' });
+
+    expect(vi.mocked(imagesRepo.markUnusedExamined)).toHaveBeenCalledWith(TENANT, 'img-unused', NOW, FAKE_TX);
+  });
+
+  it('past its deadline the sweep stops between rows and says so (the rest waits for the next tick)', async () => {
+    const a = imageRow({ id: 'img-1', contentHash: 'h1', blobKey: 'k1', deletedAt: NOW });
+    const b = imageRow({ id: 'img-2', contentHash: 'h2', blobKey: 'k2', deletedAt: NOW });
+    const imagesRepo = makeFakeBroadcastImagesRepo([a, b]);
+    const storage = makeFakeImageStorage();
+    let clock = 0;
+    const r = await reclaimOrphanedImages(
+      { imagesRepo, storage, audit, clock: () => (clock += 100) },
+      { tenantId: TENANT, now: NOW, requestId: 's', deadlineMs: 150 },
+    );
+
+    expect(storage.deleted).toEqual(['k1']);
+    // `scanned` counts the rows actually examined, not the whole batch (#658 code review).
+    if (r.ok) expect(r.value).toMatchObject({ scanned: 1, rowsRemoved: 1, truncated: true });
+  });
+});
+

@@ -62,6 +62,24 @@ export interface BroadcastImagesRepo {
     tx: BroadcastImagesTx,
   ): Promise<readonly BroadcastImageRecord[]>;
   /**
+   * Spec 131 — stamp ONE live row of ONE owner, uploaded by ONE user (the
+   * release of an image the author uploaded and then left out of the
+   * message; the maintainer: only its uploader may release it). Returns the
+   * stamped row, or null when no live row matches all four — already
+   * stamped, another owner's, another user's, or no such row — so a repeated
+   * release is a no-op and reveals nothing about other rows.
+   */
+  markDeletedById(
+    tenantId: TenantSlug,
+    target: {
+      readonly owner: { readonly kind: BroadcastImageOwnerKind; readonly id: string };
+      readonly imageId: string;
+      readonly uploadedByUserId: string;
+    },
+    at: Date,
+    tx: BroadcastImagesTx,
+  ): Promise<BroadcastImageRecord | null>;
+  /**
    * ROUND-2 R-M1 — the same stamp for MANY owners of one kind, in ONE
    * statement.
    *
@@ -130,6 +148,52 @@ export interface BroadcastImagesRepo {
    * that no sweep and no erasure can reach.
    */
   listOrphaned(tenantId: TenantSlug, limit: number, tx: BroadcastImagesTx): Promise<readonly BroadcastImageRecord[]>;
+  /**
+   * Spec 131 — the sweep's third arm, part 1: stamp `unused_checked_at = now`
+   * on up to `limit` LIVE `owner_kind='broadcast'` rows that are due (never
+   * examined, or examined before `dueBefore`), whose owner E-Blast is in a
+   * terminal status and DOES hold the row's URL. Returns how many it stamped.
+   *
+   * "Holds" is the rule `isBlobReferencedByContent` applies, narrowed to the
+   * OWNER: the owner holds images at all (Domain `holdsImageReferences`) AND
+   * its `body_html`, `body_source` or one of its versions' bodies embeds the
+   * URL. A terminal E-Blast's content never changes, so a row it uses needs
+   * no re-scan until the watermark lapses (0319).
+   */
+  markUsedImagesExamined(
+    tenantId: TenantSlug,
+    now: Date,
+    dueBefore: Date,
+    limit: number,
+    tx: BroadcastImagesTx,
+  ): Promise<number>;
+  /**
+   * Spec 131 — part 2: LIVE `owner_kind='broadcast'` rows that are due, whose
+   * owner E-Blast exists in a terminal status and does NOT hold the URL;
+   * never-examined rows first, then oldest, bounded.
+   *
+   * Drafts and E-Blasts still in review are never returned — their author may
+   * yet insert the image. Templates are never returned — a template can still
+   * be edited.
+   */
+  listUnused(
+    tenantId: TenantSlug,
+    dueBefore: Date,
+    limit: number,
+    tx: BroadcastImagesTx,
+  ): Promise<readonly BroadcastImageRecord[]>;
+  /**
+   * Spec 131 — part 3: stamp `unused_checked_at = now` on one LIVE row the
+   * sweep kept (content elsewhere in the tenant still embeds it), so it is
+   * not re-selected until the watermark lapses. A no-op for a stamped row.
+   */
+  markUnusedExamined(tenantId: TenantSlug, imageId: string, now: Date, tx: BroadcastImagesTx): Promise<void>;
+  /**
+   * Spec 131 (#658 code review) — is the row still LIVE? Arm 3 lists in one
+   * transaction and handles each row in another, up to 150 s later; a row an
+   * erasure or a release stamped in between belongs to the marked arm.
+   */
+  isLiveImage(tenantId: TenantSlug, imageId: string, tx: BroadcastImagesTx): Promise<boolean>;
   /**
    * Live rows of EITHER owner_kind sharing the hash — the last-reference rule.
    *
@@ -217,7 +281,7 @@ export interface BroadcastImagesRepo {
    * The sweep's per-row transaction needs it because both of its waits are
    * otherwise unbounded: `lockContentHash` blocks until the holder commits,
    * and `isBlobReferencedByContent` is a sequential `position()` scan over
-   * `broadcasts`, `broadcast_versions` and `broadcast_templates` run once per swept row (up to 400 a
+   * `broadcasts`, `broadcast_versions` and `broadcast_templates` run once per swept row (up to 600 a
    * tick). `src/lib/db.ts` asks for 5 s at connect, but the pooled Neon
    * endpoint DROPS it and reports 0 — so without this the tick has no
    * database-side bound at all and is killed by `maxDuration` instead, part

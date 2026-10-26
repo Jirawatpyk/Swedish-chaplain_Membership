@@ -258,7 +258,11 @@ describe('T053 marketing reachable surfaces (US3)', () => {
     '/admin/members/[memberId]/benefits',
     '/admin/members/[memberId]/timeline',
     '/admin/settings',
+    // Spec 131 — releasing an uploaded image left out of the E-Blast or the
+    // template (`broadcasts.write`, the upload's key). The frozen set grows by 2.
+    'DELETE /api/admin/broadcasts/[id]/images/[imageId]',
     'DELETE /api/admin/broadcasts/templates/[id]',
+    'DELETE /api/admin/broadcasts/templates/[id]/images/[imageId]',
     'GET /api/admin/broadcasts',
     // 108 PR-C — the compose-time recipient COUNT for the staff proxy form,
     // keyed `broadcasts.write` exactly like `proxy-submit` below (a marketing

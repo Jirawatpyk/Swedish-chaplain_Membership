@@ -224,15 +224,24 @@ template image the chamber still uses must not be deleted out from under it.
    carries the blob URL although no row proves it. ROUND-2 S-3 keeps the row
    AND un-stamps it — nothing was removed, so nothing claims it was. Correct
    behaviour, not an erasure failure, but record it and name the content that
-   holds the URL: until that content goes, the file is still served. **Nothing
-   re-examines this row automatically.** The sweep's orphan arm selects only
-   rows whose OWNER is gone, and an erasure REDACTS the member's broadcast — it
-   does not delete it — so the un-stamped row's owner survives and no later
-   tick reaches it. Step 4 query (i) surfaces it; it is reclaimed by hand once
-   the holding content goes (re-stamp the row — `deleted_at = now()` — and the
-   next tick applies the last-reference rule to it). (A retained row whose
-   owner was a DISCARDED or PRUNED draft is different: its owner is gone, so
-   the orphan arm re-examines it every tick.)
+   holds the URL: until that content goes, the file is still served. **Since spec 131 it is reached automatically, by a path that depends on the
+   redacted E-Blast's status.**
+   - **A terminal one** (sent, closed, or cancelled by the cascade): it no
+     longer holds the URL, so the sweep's UNUSED arm (`listUnused`) picks the
+     row.
+   - **A redacted draft** is not terminal and is not picked. The redaction
+     touches `updated_at`, so the draft is pruned 30 days later. The prune
+     re-stamps the row, and from then on the orphan arm re-examines it every
+     tick.
+   - **One still sending** is picked once it reaches a terminal status.
+
+   For the unused arm: While the holding content still embeds the
+   file, the row is watermarked (`unused_checked_at`) and kept. The arm looks
+   again once the 30-day watermark lapses, and when the holding content has
+   gone it reclaims the row (`broadcast_image_removed { reason: 'sweep_unused' }`).
+   No manual re-stamp is needed; step 4 query (i) still surfaces the row for
+   the DSR answer while it is held. (A retained row whose owner was a
+   DISCARDED or PRUNED draft is reached by the orphan arm every tick instead.)
 
 4. **Enumerate what is STILL SERVED, for the DSR answer.** The audit trail
    alone cannot answer "what is still served?": outcome (c) writes **no audit
@@ -343,8 +352,13 @@ template image the chamber still uses must not be deleted out from under it.
    **the answer must say so** and record on the DSR ticket:
 
    - the count from (i), and the holder of each (another data subject's live
-     content, or a chamber template, still embeds the file) — reclaimed by hand
-     once that content goes, per outcome (c) above;
+     content, or a chamber template, still embeds the file) — reclaimed
+     automatically at the arm's next examination after that content goes,
+     per outcome (c) above. That is normally about 30 days after the row was
+     last examined, and longer while a sweep backlog or a failing row is
+     worked off (`broadcasts_image_sweep_row_failed_total`,
+     `cron.broadcasts.image_sweep.truncated`). Do not promise the subject a
+     fixed date;
    - the count from (ii) — **decision (e), 2026-09-23** (delegated by the
      maintainer to Claude as a conservative default; the DPO may revise): a file
      whose identical bytes are still held by another owner's live row COUNTS as

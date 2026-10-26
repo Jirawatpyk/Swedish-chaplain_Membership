@@ -549,11 +549,29 @@ transaction.
 ### Block 2: the inline-image blob sweep (F119 T035)
 
 The same tick runs `reclaimOrphanedImages`, independently transacted (one
-transaction per row, so one bad blob never blocks the batch). It reaps two
-sets: rows already MARKED (`deleted_at IS NOT NULL`) and, as defence in
-depth, ORPHANED rows whose owner no longer exists. A blob is deleted only
-under the LAST-REFERENCE rule — no live row of either owner_kind shares the
-`content_hash` AND no live `body_html` still embeds the URL.
+transaction per row, so one bad blob never blocks the batch). It reaps three
+sets, 200 rows each per tenant per tick:
+
+- **MARKED** rows (`deleted_at IS NOT NULL`). This includes images an author
+  released by cancelling the description after an upload (spec 131,
+  `reason: 'not_inserted'`).
+- As defence in depth, **ORPHANED** rows whose owner no longer exists.
+- **UNUSED** rows (spec 131, `reason: 'sweep_unused'`): live images of an
+  E-Blast in a terminal status whose own body, source and versions do not
+  embed the URL. A closed, never-sent E-Blast holds none. The owner check is
+  in the SELECT, so an image the E-Blast shows is never picked. Drafts,
+  E-Blasts in review and templates are never picked.
+
+A blob is deleted only under the LAST-REFERENCE rule: no live row of either
+owner_kind shares the `content_hash`, AND no live content still embeds the
+URL (an E-Blast's `body_html`, `body_source` or a version's bodies, or a
+template's body; `isBlobReferencedByContent`).
+
+**First run after spec 131 merged.** The unused arm finds every image left
+out of an already-sent or already-closed E-Blast at once, and clears that
+backlog at 200 rows per tenant per tick. Each removal is audited
+(`broadcast_image_removed { reason: 'sweep_unused' }`). The maintainer chose
+this over a report-only first week (26 Oct 2026).
 
 **Advisory lock.** Each per-row transaction takes `pg_advisory_xact_lock` on
 `hashtextextended('broadcasts-image:' || tenant || ':' || content_hash, 0)`
@@ -580,7 +598,8 @@ back, but it means an upload and the sweep raced for the same hash.
 `rowsRemoved` exceeding `blobsDeleted` is NORMAL: it means blobs were kept
 because another reference survives, or that two rows of one batch shared a
 hash and the first one deleted the bytes. The audit `reason` says which arm —
-`sweep` (marked row) or `sweep_orphaned` (owner vanished) — and
+`sweep` (marked row), `sweep_orphaned` (owner vanished) or `sweep_unused`
+(spec 131: a terminal E-Blast's image its content does not use) — and
 `blob_disposition` (F7-1) says what happened to the bytes: `deleted` (this row
 deleted them), `kept_shared_row` (another live row shares the hash; bytes
 stay) or `reclaimed_by_sibling` (an earlier row of this tick already deleted
@@ -596,6 +615,34 @@ at `error` (`errorId: 'M119.cron.image_sweep.rows_failed'`) and increments
 (`err`). The same tenant failing on consecutive days is a fault that is not
 clearing — an expired `BLOB_READ_WRITE_TOKEN` fails every row — and while it
 lasts, erased members' images stay publicly served.
+
+**Spec 131 additions.**
+- **The arm 3 watermark (0319).** Arm 3 stamps `broadcast_images.unused_checked_at`
+  on the rows a terminal E-Blast still uses, at most 1,000 per tick, and on
+  the rows the content check keeps. A stamped row is skipped for 30 days, so
+  an image is examined at most monthly. A row that throws is not stamped, so
+  it is retried the next tick.
+- **Separate transactions.** The marked/orphaned listing, arm 3's watermark
+  and arm 3's listing each run in their own transaction, under a 20 s
+  statement timeout.
+  - If the watermark fails, it is logged as
+    `broadcasts.image_sweep.unused_watermark_failed` (warn) and the listing
+    still runs. The listing applies the owner rule itself; the watermark only
+    saves the next tick a re-scan.
+  - If arm 3's listing fails, the other two arms still run. The tick logs
+    `cron.broadcasts.image_sweep.unused_list_failed`
+    (`errorId: 'M131.cron.image_sweep.unused_list_failed'`).
+  - The use case logs `broadcasts.image_sweep.unused_list_failed` with the
+    cause (`err`).
+- **Time budget.** Block 2 starts no new row after 150 s of the tick, so
+  Block 3 still runs. Each blob delete is bounded at 10 s
+  (`IMAGE_BLOB_DELETE_TIMEOUT_MS`); an aborted delete fails its row, which
+  is retried the next tick. A stopped batch logs
+  `cron.broadcasts.image_sweep.truncated`
+  (`errorId: 'M131.cron.image_sweep.truncated'`), and the rest waits for the
+  next tick. Seeing it on several ticks in a row means the backlog is
+  outrunning the budget; it is expected only on the first ticks after
+  spec 131 merged.
 
 `retained` (ROUND-2 S-3) is the case where live content still embeds the blob
 URL. Those rows keep their bytes AND their row: the row is un-stamped back
