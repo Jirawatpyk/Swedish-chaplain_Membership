@@ -796,6 +796,18 @@ describe('reclaimOrphanedImages — spec 131 arm 3 (unused)', () => {
     if (r.ok) expect(r.value).toMatchObject({ rowsRemoved: 1, unusedListFailed: true });
   });
 
+  it('the watermark statement failing does not stop the unused listing (#658 NEW-2): it is an optimisation only', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
+    vi.mocked(imagesRepo.markUsedImagesExamined).mockRejectedValueOnce(new Error('canceling statement due to statement timeout'));
+    vi.mocked(imagesRepo.listUnused).mockResolvedValue([unused]);
+
+    const r = await reclaimOrphanedImages({ imagesRepo, storage: makeFakeImageStorage(), audit }, { tenantId: TENANT, now: NOW, requestId: 's' });
+
+    expect(vi.mocked(imagesRepo.listUnused)).toHaveBeenCalled();
+    if (r.ok) expect(r.value).toMatchObject({ rowsRemoved: 1, unusedListFailed: false });
+  });
+
   it('a retained unused row is watermarked, so it does not refill the batch every tick', async () => {
     const unused = imageRow({ id: 'img-unused', deletedAt: null });
     const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
