@@ -787,7 +787,7 @@ Boards: `Portal-broadcast-new` (+mobile, -sv, -th), `Admin-broadcast-new` (+mobi
 - [x] T1268 [US12] Upload: a one-line hint with an info tip holding the full rules.
 - [x] T1269 [US12] Phone (member): Write / Preview tabs and a sticky bar with the count and Submit.
 - [x] T1270 [US12] Kit migration of the compose forms, pickers and skeleton; `MIGRATED_PATHS`.
-- [ ] T1271 [US12] Fixtures open the dialog (`dialog=submit`); boards updated from the proposal; parity page (whole board vs whole page).
+- [x] T1271 [US12] Fixtures open the dialog (`dialog=submit`); boards updated from the proposal; parity page (whole board vs whole page). Done 26 Oct 2026: boards on the canvas (version 131: four new, six redrawn); parity page https://claude.ai/artifact/ABBmz28YHJ53ZFvABq8iZN (10 pairs, 1440/390/320, EN/TH/SV, light and dark, dialog open). Two parity passes built the one-line quota, one "you can cancel", the back link above the title, the staff phone bar, the outlined Save as draft and the staff 320px fit; what stays different is listed in spec.md.
 - [ ] T1272 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV with the dialog open; UX, mobile-a11y and i18n reviews; e2e updated for the confirm step; draft PR; relay R92.
 
 ## Later phases (one PR each; tasks written when the phase starts)

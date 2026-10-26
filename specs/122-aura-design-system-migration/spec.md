@@ -887,6 +887,15 @@ The maintainer reviewed a proposal page (https://claude.ai/artifact/QBcoA6qZZHmN
   - "you can cancel until an admin approves it" is said once, in the confirmation;
   - the member page links back to the E-Blast tab;
   - staff compose on a phone keeps Submit in a sticky bar with the count, as the member page does. Save as draft stays in the form and the preview stays below it, so the old board's preview icon and status line ("uses 1 of 5 remaining · Saved at") are not built; the board is redrawn to match.
+- Second parity pass (T1271, whole board against the whole fixture page):
+  - built: the back link sits above the title (it was under the subtitle), as on the other portal detail pages; Save as draft is the outlined secondary button on both forms (it was a ghost); staff compose at 320 px no longer scrolls sideways (its grid had no track below `lg`, so the page was 338 px wide).
+  - kept, though the boards differ:
+    - the summary's note is the dialog's description, under its title, so a screen reader hears it with the title (the boards put it under the list);
+    - the phone tabs are full width, two 44px halves (the boards draw short tabs at the start);
+    - on a phone the recipients note runs on after the count rather than starting its own line;
+    - the upload hint keeps "anyone can open" (the notice's PDPA wording), so on the member desktop it wraps under the button;
+    - the preview keeps its header with the "Preview" button and the 600px column (FR-050);
+    - the staff quota card keeps its four figures in one row and its note on when a slot is given back; the attendee choice keeps "from member companies".
 
 ### Session 2026-10-26 (US12d-2 follow-up: the toolbar to the boards)
 
