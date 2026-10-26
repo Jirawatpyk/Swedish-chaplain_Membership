@@ -15,7 +15,7 @@
  * Spec authority: specs/132-webhook-null-tenant-replay/spec.md Done when 1–3.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID, createHash } from 'node:crypto';
 import { db } from '@/lib/db';
 import {
@@ -27,6 +27,7 @@ import type { ProcessorEventOutcome } from '@/modules/payments/domain/processor-
 import { makeDrizzleProcessorEventsRepo } from '@/modules/payments/infrastructure/repos/drizzle-processor-events-repo';
 import { makeProcessWebhookEventDeps } from '@/modules/payments/infrastructure/di';
 import { processorEvents } from '@/modules/payments/infrastructure/schema';
+import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 
 const API_VERSION = '2024-06-20';
@@ -40,10 +41,12 @@ describe('132 — replay of a NULL-tenant processor_events row (live Neon)', () 
   const repo = makeDrizzleProcessorEventsRepo();
   const ids: string[] = [];
   let tenant: TestTenant;
+  let other: TestTenant;
   let deps: ProcessWebhookEventDeps;
 
   beforeAll(async () => {
     tenant = await createTestTenant('test');
+    other = await createTestTenant('test');
     deps = await makeProcessWebhookEventDeps(tenant.ctx.slug);
   });
 
@@ -57,18 +60,20 @@ describe('132 — replay of a NULL-tenant processor_events row (live Neon)', () 
       }
     });
     await tenant?.cleanup();
+    await other?.cleanup();
   });
 
   async function seedUnresolved(
     outcome: ProcessorEventOutcome,
     account: string,
+    owner: string | null = null,
   ): Promise<{ id: string; correlationId: string }> {
     const id = `evt_132_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
     const correlationId = `corr-132-first-${id.slice(-6)}`;
     ids.push(id);
     await repo.insertIfNew(null, {
       id,
-      tenantId: null,
+      tenantId: owner,
       eventType: 'customer.created',
       apiVersion: API_VERSION,
       livemode: false,
@@ -105,8 +110,12 @@ describe('132 — replay of a NULL-tenant processor_events row (live Neon)', () 
     return row;
   }
 
-  it.each(['acknowledged_only', 'rejected_api_version_mismatch'] as const)(
-    'a %s row is adopted by the replay, stamped, and a second replay is a duplicate',
+  it.each([
+    'acknowledged_only',
+    'rejected_api_version_mismatch',
+    'rejected_environment_mismatch',
+  ] as const)(
+    'a %s row is adopted by the replay, stamped, audited, and a second replay is a duplicate',
     async (firstOutcome) => {
       const account = `acct_132_${randomUUID().slice(0, 8)}`;
       const { id, correlationId } = await seedUnresolved(firstOutcome, account);
@@ -121,10 +130,49 @@ describe('132 — replay of a NULL-tenant processor_events row (live Neon)', () 
       expect(row?.receivedAt.toISOString()).toBe(FIRST_RECEIVED_AT.toISOString());
       expect(row?.correlationId).toBe(correlationId);
 
+      // D-031 — the adoption leaves an append-only record of what it replaced.
+      const audits = await db
+        .select()
+        .from(auditLog)
+        .where(
+          and(
+            eq(auditLog.eventType, 'webhook_unresolved_event_adopted'),
+            eq(auditLog.tenantId, tenant.ctx.slug),
+            sql`${auditLog.payload}->>'processor_event_id' = ${id}`,
+          ),
+        );
+      expect(audits).toHaveLength(1);
+      expect(audits[0]?.payload).toMatchObject({ adopted_from: firstOutcome });
+      expect(JSON.stringify(audits[0]?.payload)).not.toContain(account);
+
       const second = await replay(id, account);
       expect(second.ok && second.value.kind).toBe('duplicate');
+      // The duplicate dispatched nothing: the stamp is the first replay's.
+      expect((await rowOf(id))?.processedAt?.toISOString()).toBe(row?.processedAt?.toISOString());
     },
   );
+
+  it('two concurrent replays adopt once and end stamped', async () => {
+    const account = `acct_132_${randomUUID().slice(0, 8)}`;
+    const { id } = await seedUnresolved('acknowledged_only', account);
+
+    const results = await Promise.all([replay(id, account), replay(id, account)]);
+    expect(results.every((r) => r.ok)).toBe(true);
+
+    const row = await rowOf(id);
+    expect(row?.tenantId).toBe(tenant.ctx.slug);
+    expect(row?.processedAt).not.toBeNull();
+    const audits = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.eventType, 'webhook_unresolved_event_adopted'),
+          sql`${auditLog.payload}->>'processor_event_id' = ${id}`,
+        ),
+      );
+    expect(audits).toHaveLength(1);
+  });
 
   it('a row from another account is not adopted and not dispatched', async () => {
     const { id } = await seedUnresolved('acknowledged_only', `acct_132_first_${randomUUID().slice(0, 8)}`);
@@ -136,5 +184,20 @@ describe('132 — replay of a NULL-tenant processor_events row (live Neon)', () 
     expect(row?.tenantId).toBeNull();
     expect(row?.processedAt).toBeNull();
     expect(row?.outcome).toBe('acknowledged_only');
+  });
+
+  // Principle I — a row another tenant owns is neither re-tenanted nor
+  // dispatched in this tenant's name.
+  it("another tenant's unstamped row is refused: stays the other tenant's, not dispatched", async () => {
+    const account = `acct_132_${randomUUID().slice(0, 8)}`;
+    const { id } = await seedUnresolved('processed', account, other.ctx.slug);
+
+    const result = await replay(id, account);
+    expect(result.ok && result.value.kind).toBe('duplicate');
+
+    const row = await rowOf(id);
+    expect(row?.tenantId).toBe(other.ctx.slug);
+    expect(row?.processedAt).toBeNull();
+    expect(row?.outcome).toBe('processed');
   });
 });

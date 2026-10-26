@@ -244,4 +244,62 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
     expect(replay.event.tenantId).toBeNull();
     expect(replay.event.outcome).toBe('rejected_signature');
   });
+
+  it('a row of another livemode is not adopted (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-livemode-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    const replay = await repo.insertIfNew(null, {
+      ...first,
+      tenantId: 'test-adopt-tenant',
+      livemode: true,
+      outcome: 'processed',
+    });
+    expect(replay.adoptedFrom).toBeUndefined();
+    expect(replay.event.tenantId).toBeNull();
+    expect(replay.event.outcome).toBe('acknowledged_only');
+  });
+
+  // The platform-owner (SweCham) direct event: its first delivery carried no
+  // `account` and the route's fallback was not configured yet, so the row
+  // recorded ''. The replay arrives with the fallback account id.
+  it("a row recorded with no account ('') is adopted by the account-bearing replay (132)", async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: '',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-empty-acct-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    const replay = await repo.insertIfNew(null, {
+      ...first,
+      tenantId: 'test-adopt-tenant',
+      processorAccountId: 'acct_test_platform',
+      outcome: 'processed',
+    });
+    expect(replay.adoptedFrom).toBe('acknowledged_only');
+    expect(replay.event.tenantId).toBe('test-adopt-tenant');
+  });
 });

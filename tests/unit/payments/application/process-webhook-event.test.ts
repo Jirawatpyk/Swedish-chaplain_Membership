@@ -1113,6 +1113,84 @@ describe('processWebhookEvent (T056)', () => {
     mismatch.mockRestore();
   });
 
+  it('adopted unresolved row → audit row on its own connection, not counted as a crash recovery', async () => {
+    const recovery = vi.spyOn(paymentsMetrics, 'webhookDispatchRecoveryReplay');
+    const deps = makeDeps();
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      inserted: false,
+      adoptedFrom: 'rejected_api_version_mismatch',
+      event: {
+        id: 'evt_test_001',
+        tenantId: TENANT_ID,
+        eventType: 'payment_intent.succeeded',
+        apiVersion: PINNED_API,
+        livemode: false,
+        processorAccountId: 'acct_test_123',
+        receivedAt: new Date('2026-10-01T03:00:00Z'),
+        processedAt: null,
+        outcome: 'processed',
+        payloadSha256: 'x'.repeat(64),
+        correlationId: 'corr_first',
+      },
+    });
+    try {
+      const result = await processWebhookEvent(deps, makeInput());
+      expect(result.ok && result.value.kind).toBe('processed');
+      const adoptAudits = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.filter(
+        ([, e]) => (e as { eventType: string }).eventType === 'webhook_unresolved_event_adopted',
+      );
+      expect(adoptAudits).toHaveLength(1);
+      const [tx, audit] = adoptAudits[0]!;
+      expect(tx).toBeNull();
+      expect(audit).toMatchObject({
+        tenantId: TENANT_ID,
+        retentionYears: 10,
+        payload: {
+          processor_event_id: 'evt_test_001',
+          event_type: 'payment_intent.succeeded',
+          adopted_from: 'rejected_api_version_mismatch',
+          first_received_at: '2026-10-01T03:00:00.000Z',
+          first_correlation_id: 'corr_first',
+        },
+      });
+      expect(JSON.stringify(audit)).not.toContain('acct_test_123');
+      expect(recovery).not.toHaveBeenCalled();
+    } finally {
+      recovery.mockRestore();
+    }
+  });
+
+  it('an ordinary crash-recovery replay records no adoption', async () => {
+    const adopted = vi.spyOn(paymentsMetrics, 'webhookUnresolvedRowAdopted');
+    const deps = makeDeps();
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      inserted: false,
+      event: {
+        id: 'evt_test_001',
+        tenantId: TENANT_ID,
+        eventType: 'payment_intent.succeeded',
+        apiVersion: PINNED_API,
+        livemode: false,
+        processorAccountId: 'acct_test_123',
+        receivedAt: new Date(),
+        processedAt: null,
+        outcome: 'processed',
+        payloadSha256: 'x'.repeat(64),
+        correlationId: 'corr_1',
+      },
+    });
+    try {
+      await processWebhookEvent(deps, makeInput());
+      expect(adopted).not.toHaveBeenCalled();
+      const eventTypes = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map(
+        ([, e]) => (e as { eventType: string }).eventType,
+      );
+      expect(eventTypes).not.toContain('webhook_unresolved_event_adopted');
+    } finally {
+      adopted.mockRestore();
+    }
+  });
+
   it('adopted unresolved row → dispatches, counts and logs the adoption without the account id', async () => {
     const adopted = vi.spyOn(paymentsMetrics, 'webhookUnresolvedRowAdopted');
     const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
