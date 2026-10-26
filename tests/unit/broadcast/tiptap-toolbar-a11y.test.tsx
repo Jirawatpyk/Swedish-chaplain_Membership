@@ -7,8 +7,9 @@
  * ONE tab stop and the arrow keys move within it — plus Home/End to the ends,
  * and a visible focus state.
  *
- * At 320 px the toolbar WRAPS onto further rows (`flex-wrap`); it never hides
- * controls behind an overflow menu (FR-048, contracts § Page contracts).
+ * On a desktop the toolbar WRAPS onto further rows (`flex-wrap`) with no
+ * overflow menu. On a phone it is the staff boards' row with two named menus
+ * (spec 122, 26 Oct 2026) — `tiptap-toolbar-phone.test.tsx`.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -147,7 +148,7 @@ describe('T098 — visible focus state and 320 px wrapping', () => {
     }
   });
 
-  it('wraps onto further rows with NO overflow menu', () => {
+  it('on a desktop, wraps onto further rows with NO overflow menu', () => {
     const { toolbar, buttons } = renderToolbar();
     expect(toolbar.className).toMatch(/flex-wrap/);
     // No "More…" affordance, and nothing hidden behind a menu button.
@@ -156,6 +157,14 @@ describe('T098 — visible focus state and 320 px wrapping', () => {
       expect(b.getAttribute('aria-haspopup')).not.toBe('menu');
       expect((b.getAttribute('aria-label') ?? '').toLowerCase()).not.toContain('more');
     }
+  });
+
+  // R91 step 6: with the boards' 4px gap the fifteen controls overflowed the
+  // member editor column at 1440px by 6px and Redo wrapped. The boards draw
+  // a 2px gap; the 600px email preview (FR-050) keeps its width.
+  it('spaces its controls 2px apart, as the boards do', () => {
+    const { toolbar } = renderToolbar();
+    expect(toolbar.className).toMatch(/(^|\s)gap-0\.5(\s|$)/);
   });
 
   it('names itself for assistive technology', () => {

@@ -84,8 +84,10 @@ async function runAttendeesQuery(
       )
       .where(
         and(
-          // Defense-in-depth WHERE alongside the RLS GUC set by
-          // runInTenant. The matched_member_id is the F3 member uuid.
+          // D-029: the explicit tenant predicate alongside the RLS GUC set
+          // by runInTenant (the join correlates events to it). The
+          // matched_member_id is the F3 member uuid.
+          eq(eventRegistrations.tenantId, ctx.slug),
           eq(eventRegistrations.matchedMemberId, String(input.memberId)),
           gte(events.startDate, input.since),
           // Optional upper bound (F9 benefit-usage year/now boundary) so

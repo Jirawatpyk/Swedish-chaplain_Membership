@@ -18,7 +18,7 @@
  *     (#400 U5).
  *
  * #400 U3 — no fixed-width help line may overflow a 320 px column; U4 — the
- * toolbar reserves 11 controls with `FEATURE_F71A_US2_IMAGES` off, 13 on.
+ * toolbar reserves 13 controls with `FEATURE_F71A_US2_IMAGES` off, 15 on (8 on a phone).
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
@@ -48,12 +48,16 @@ afterEach(() => {
   flags.images = true;
 });
 
-/** The editor toolbar's controls with the image flag on (`tiptap-toolbar.tsx`): 11 + image + banner. */
-const TOOLBAR_CONTROLS = 13;
+/** The editor toolbar's controls with the image flag on (`tiptap-toolbar.tsx`): 13 + image + banner (Undo and Redo included). */
+const TOOLBAR_CONTROLS = 15;
+/** On a phone the toolbar is the boards' row: B, I, U, Link, two menus, Undo, Redo (spec 122, 26 Oct 2026). */
+const PHONE_CONTROLS = 8;
 
 function expectComposeShape(container: HTMLElement, controls = TOOLBAR_CONTROLS): void {
   const toolbar = container.querySelectorAll('[data-skeleton="toolbar-control"]');
   expect(toolbar).toHaveLength(controls);
+  const onPhone = Array.from(toolbar).filter((c) => !c.className.includes('max-sm:hidden'));
+  expect(onPhone).toHaveLength(PHONE_CONTROLS);
   for (const control of toolbar) expect(control.className).toContain('h-11');
   const grid = container.querySelector('[data-skeleton="compose-grid"]');
   expect(grid).not.toBeNull();
@@ -110,11 +114,11 @@ describe('U12 — the compose, templates and brand skeletons match their pages',
     expect(container.querySelector('[data-skeleton="address-missing"]')).toBeNull();
   });
 
-  it('#400 U4: with FEATURE_F71A_US2_IMAGES off both compose skeletons reserve the 11 controls the toolbar renders', async () => {
+  it('#400 U4: with FEATURE_F71A_US2_IMAGES off both compose skeletons reserve the 13 controls the toolbar renders', async () => {
     flags.images = false;
-    expectComposeShape(render(PortalComposeLoading()).container, 11);
+    expectComposeShape(render(PortalComposeLoading()).container, 13);
     cleanup();
-    expectComposeShape(render((await AdminComposeLoading()) as React.ReactElement).container, 11);
+    expectComposeShape(render((await AdminComposeLoading()) as React.ReactElement).container, 13);
   });
 
   it('#400 U3: no fixed-width line wider than a 320 px column (w-64 / w-72 / w-80 are bounded by w-full)', async () => {

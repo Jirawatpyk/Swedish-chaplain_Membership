@@ -3,10 +3,9 @@
  *
  * Implements the F8 port `TierUpgradeSuggestionRepo` (Wave E T043)
  * against the `tier_upgrade_suggestions` table (Wave C migration
- * 0091). Tenant isolation is enforced by Postgres RLS+FORCE — every
- * method wraps its query in `runInTenant(ctx, …)` which sets
- * `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant`.
- * NO explicit `WHERE tenant_id = ?` — the policy adds it automatically.
+ * 0091). Every statement carries an explicit `tenant_id` predicate on each
+ * tenant-scoped table it names (D-029); RLS+FORCE under `runInTenant(ctx, …)`
+ * (`SET LOCAL ROLE chamber_app` + `app.current_tenant`) is the second wall.
  *
  * Pure Infrastructure — only `@/lib/db` + tenants barrel imports
  * (Constitution Principle III).
@@ -252,11 +251,16 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
         const [row] = await txDb
           .select()
           .from(tierUpgradeSuggestions)
-          .where(eq(tierUpgradeSuggestions.suggestionId, suggestionId))
+          .where(
+            and(
+              eq(tierUpgradeSuggestions.tenantId, tenant.slug),
+              eq(tierUpgradeSuggestions.suggestionId, suggestionId),
+            ),
+          )
           .limit(1);
         if (!row) return null;
-        // Defence-in-depth — RLS already filters cross-tenant rows but
-        // assert tenantId match anyway.
+        // The WHERE binds the adapter's tenant (D-029); a caller passing a
+        // different tenantId still gets null.
         if (row.tenantId !== tenantId) return null;
         return rowToDomain(row);
       });
@@ -273,6 +277,7 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
           .from(tierUpgradeSuggestions)
           .where(
             and(
+              eq(tierUpgradeSuggestions.tenantId, tenant.slug),
               eq(tierUpgradeSuggestions.memberId, memberId),
               sql`${tierUpgradeSuggestions.status} IN ('open','accepted_pending_apply')`,
             ),
@@ -296,6 +301,7 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
           .from(tierUpgradeSuggestions)
           .where(
             and(
+              eq(tierUpgradeSuggestions.tenantId, tenant.slug),
               eq(tierUpgradeSuggestions.memberId, memberId),
               eq(tierUpgradeSuggestions.status, 'dismissed'),
               sql`${tierUpgradeSuggestions.suppressedUntil} > ${nowIso}::timestamptz`,
@@ -481,6 +487,7 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
           )
           .where(
             and(
+              eq(tierUpgradeSuggestions.tenantId, tenant.slug),
               eq(
                 tierUpgradeSuggestions.status,
                 'accepted_pending_apply',
@@ -501,6 +508,7 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
           )
           .where(
             and(
+              eq(tierUpgradeSuggestions.tenantId, tenant.slug),
               eq(
                 tierUpgradeSuggestions.status,
                 'accepted_pending_apply',
@@ -550,7 +558,10 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
           .select()
           .from(tierUpgradeSuggestions)
           .where(
-            sql`${tierUpgradeSuggestions.status} IN ('open','accepted_pending_apply')`,
+            and(
+              eq(tierUpgradeSuggestions.tenantId, tenant.slug),
+              sql`${tierUpgradeSuggestions.status} IN ('open','accepted_pending_apply')`,
+            ),
           )
           .orderBy(
             desc(tierUpgradeSuggestions.createdAt),
@@ -583,6 +594,7 @@ export function makeDrizzleTierUpgradeSuggestionRepo(
         .from(tierUpgradeSuggestions)
         .where(
           and(
+            eq(tierUpgradeSuggestions.tenantId, tenant.slug),
             inArray(tierUpgradeSuggestions.memberId, [...memberIds]),
             eq(tierUpgradeSuggestions.status, 'dismissed'),
             sql`${tierUpgradeSuggestions.suppressedUntil} > ${nowIso}::timestamptz`,

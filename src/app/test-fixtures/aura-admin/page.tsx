@@ -108,6 +108,9 @@ import {
 import { ATTENDEE_ROWS, ERASURE_EMAIL, ERASURE_ROWS, EVENT_DETAIL, EVENT_ID, EVENT_ROWS, IMPORT_HISTORY_ROWS, IMPORT_PICKER_EVENTS, MEMBER_SEARCH_HITS } from './event-fixtures';
 import { ImportPreviewDriver, MemberSearchStub, OpenRotateDialog, OpenRowEraseMenu, RevealPreview } from './event-previews';
 import { MembersApiStub, PickRadioInDialog } from './user-previews';
+import { ProxyComposeForm } from '@/components/broadcast/proxy-compose-form';
+import { COMPOSE_TEMPLATES } from '../_shared/compose-fixtures';
+import { StaffComposeApiStub } from '../_shared/compose-api-stub';
 import { QueueDialogDriver } from './eblast-queue-driver';
 import {
   renderAudiencePreview,
@@ -2012,6 +2015,20 @@ export default async function AuraAdminPreviewPage({
   // Admin-settings-brand*, Admin-marketing-audience*, Admin-state-audience-*).
   if (view === 'templates') {
     return <StaffFrame path="/admin/broadcasts/templates">{await renderTemplatesPreview(state)}</StaffFrame>;
+  }
+  // 122 US12d-2 follow-up — staff compose on behalf as /admin/broadcasts/new
+  // renders it (board Admin-broadcast-new); member search and quota are stubbed.
+  if (view === 'broadcast-new') {
+    const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
+    return (
+      <StaffFrame path="/admin/broadcasts/new">
+        <StaffComposeApiStub />
+        <DetailContainer>
+          <PageHeader title={t('title')} subtitle={t('pageSubtitle')} />
+          <ProxyComposeForm audienceCeiling={500} templates={COMPOSE_TEMPLATES} imagesEnabled />
+        </DetailContainer>
+      </StaffFrame>
+    );
   }
   // 122 US12d-2 — the E-Blast editor alone (`state=draft|unsaved|invalid`).
   if (view === 'eblast-editor') {

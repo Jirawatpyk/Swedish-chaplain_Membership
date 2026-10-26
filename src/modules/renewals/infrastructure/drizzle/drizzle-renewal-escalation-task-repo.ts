@@ -3,10 +3,9 @@
  *
  * Implements the F8 port `RenewalEscalationTaskRepo` (Wave E T044)
  * against the `renewal_escalation_tasks` table (Wave C migration 0092).
- * Tenant isolation is enforced by Postgres RLS+FORCE — every method
- * wraps its query in `runInTenant(ctx, …)` which sets `SET LOCAL ROLE
- * chamber_app` + `SET LOCAL app.current_tenant`. NO explicit
- * `WHERE tenant_id = ?` — the policy adds it automatically.
+ * Every statement carries an explicit `tenant_id` predicate on each
+ * tenant-scoped table it names (D-029); RLS+FORCE under `runInTenant`
+ * is the second wall.
  *
  * Phase 4 directly exercises:
  *   - `listOpenForMemberByType` — by T091 reset-email-unverified

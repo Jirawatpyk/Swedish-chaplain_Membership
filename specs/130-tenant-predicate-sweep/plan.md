@@ -19,6 +19,7 @@
 | s5 (D-030) | `036554e13` | the same gate with the recording db bound by `bindTenantTx` and the original `tx`-only call shapes: the 10 member-repo tx-only methods (`[ 'findByIdInTx', …(9) ]`) and the adapters' tx-only methods read a shifted argument as the tenant and sent no statement; a tx `runInTenant` did not open still sent a statement (`expected [ { …(2) } ] to deeply equal []`) |
 | s5 (outbox) | `6df758488` | `outbox-cancel-adapter.ts` (flagged by s6's PDPA review): both erasure DELETEs on `notifications_outbox` and their `contacts` peer-ownership guards named no `tenant_id` (`unfencedRawSql` 2, plus the call-map violations) |
 | s6 | `3d78be87c` | `contact-change-request-repos-tenant-sql-shape.test.ts`: 22 violations in the contact repo (every contacts read/update outside `findByEmail` and the opt-out batch), 21 in the change-request repo (the request reads/updates, and the list join's `members` + `contacts` with an unfenced root), 1 hand-written block (the tombstone `contacts c` / `peer`), 22 unfenced `.where(` in the contact source |
+| s7 | `e7a9b6c4f` | 10 cases across 5 gate files: tier-upgrade (9 violations: every read but `findPendingForCycle` and the CAS pair, incl. both orphan-detection joins), plan lookup (5 `membership_plans` reads), the scorer's `members` read, attendances (`event_registrations` + `events`), both buyer-PII tombstone UPDATEs, `processor_events` `markProcessed`/`updateOutcome`, plus 7 tier-upgrade and 1 attendances unfenced `.where(` |
 
 Mutation proof for s1: from the committed GREEN, deleting `eq(contacts.tenantId, tenant.slug)` in `drizzle-bounce-event-query.ts` turned the gate red (`contacts: 1 reference(s), 0 tenant predicate(s)`); restoring it turned the gate green again.
 
@@ -49,3 +50,27 @@ Mutation proof for s6: from the committed GREEN (`7dc314342`), deleting `eq(cont
 s6 notes: both repos are module singletons whose `*InTx` methods receive only `tx`, so a tx-only method binds `tenantSlugOf(tx)` (D-030) and keeps its port signature; `updateEmailInTx`'s unused `_ctx` is now the predicate's source. The change-request list join correlates `members` and `contacts` by `tenant_id` to the fenced request root. `loadFields` (row-dependent, never recorded) is covered by the `.where(` scan. The fail-loud contact unit test binds its fake tx, since an unbound tx now throws `TenantTxNotBoundError` before the SELECT.
 
 s6 review (#664): code-review, security-engineer and pdpa-gdpr-compliance-officer found no blocker. Fixed with RED `414ae67f7` → GREEN `7a43ce583`: tx-only methods resolve `tenantSlugOf(tx)` before the try (an unbound tx now throws `TenantTxNotBoundError`, not `repo.unexpected`); `updateEmailInTx` and `addInTx`'s carried opt-out read take the tx's tenant, not the caller's ctx / `draft.tenantId`; the change-request helpers read the slug from the tx; the gate pins exact statement counts and adds a tx-tenant-vs-argument case and an unbound-tx case. Mutation proof: moving `updateInTx`'s `tenantSlugOf` back inside the try turned the unbound-tx case red; restoring it turned the gate green (8/8). The members adapters (`change-request-scrub-adapter`, `outbox-cancel-adapter`) are still RLS-only — handed to s5.
+
+Mutation proof for s7: from the committed GREEN (`e2d24c42f`), each of these turned its gate red and restoring it turned the gate green again:
+- deleting the tenant predicate in tier-upgrade `findById`;
+- deleting it in the per-member scorer's `membership_plans` read (source scan);
+- deleting it in the invoices tombstone UPDATE (call and source scan);
+- deleting it in the attendances read;
+- deleting `eq(broadcasts.tenantId, tenantId)` from `adminQueueListQuery`;
+- deleting the first `eq(invoices.tenantId, tenantIdArg)` from an invoice-repo `filters` list.
+- deleting the `tenantSlugOf(tx)` predicate from `markProcessed` (from the committed `e61f003c4`).
+- deleting `b2.tenant_id = …` from the broadcasts custom-recipient redaction UPDATE (new runtime case).
+
+The broadcasts and invoice-repo gates had no RED, because neither repo needed a change; these mutations are their evidence.
+
+s7 notes:
+- **Checker.** The checker read `IS DISTINCT FROM "t"."col"` (the tier-upgrade orphan query) as a table reference; `TABLE_REF` now skips it, and `checker.test.ts` has a case for it.
+- **Static scans.** `unfencedRawSql` stops at a nested backtick, so the broadcasts redaction UPDATE (`sql.join` of `sql` fragments) is pinned by its truncated prefix; both of its refs bind `tenant_id`.
+- **Exemptions.** The cross-tenant reads are listed in spec § Not changed, and each gate pins them as the file's only unfenced statements.
+- **`processor_events` writes.** `markProcessed` and `updateOutcome` receive only a tx, so they bind the tenant through `tenantSlugOf(tx)` (D-030) rather than a widened port. Every caller reaches them through `paymentsRepo.withTx`, which is `runInTenant`. A tx that `runInTenant` did not open is refused before any SQL.
+- **Review round (#663).**
+  - **A miss caught by review.** The review's completeness check found one statement the slice inventory missed: `drizzle-tier-upgrade-eval-candidate-repo.ts` `list` roots on `members` with no bound tenant predicate (its subqueries correlate to `members.tenant_id`). RED is `b8e902c56`, with 8 violations across the first page and the cursor page, and the root predicate is now added.
+  - **Comments.** The remaining RLS-only comments in the s1–s3 renewals files now cite D-029.
+  - **Single tenant source.** The scorer binds every predicate to the same `tenantId`. This uses the method argument rather than the factory slug (§ Approach) because its three existing predicates already did; every caller passes the adapter's own tenant.
+  - **Broadcasts.** The broadcasts redaction UPDATE now has a runtime gate case.
+- **Completeness scan.** Outside `members/` and `plans/`, every `.from/.update/.delete` on a tenant table whose `.where(` lacks the root's own `tenantId` was checked by hand. Each is either a composed list led by the tenant predicate or one of the § Not changed exemptions. One limit remains: a statement whose subqueries mention `tenantId` while the root does not passes a text scan; only the recording-db gates catch that. Checked by hand: every `exists(` / `notExists(` subquery in infrastructure outside `members/` and `plans/` sits in a file with a call-map gate, or is on tables with no `tenant_id` (`user-repo`); none other was found.

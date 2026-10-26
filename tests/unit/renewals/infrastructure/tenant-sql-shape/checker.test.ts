@@ -70,6 +70,14 @@ describe('tenantPredicateViolations (130)', () => {
     ]);
   });
 
+  it('IS DISTINCT FROM a qualified column is a comparison, not a table reference (s7)', () => {
+    const s = `select 1 from "members" where "members"."tenant_id" = $1 and "members"."plan_id" is distinct from "invoices"."plan_id"`;
+    expect(tenantPredicateViolations(s, TABLES).refs).toEqual(['members']);
+    expect(tenantPredicateViolations(s, TABLES).violations).toEqual([]);
+    const not = s.replace('is distinct from', 'is not distinct from');
+    expect(tenantPredicateViolations(not, TABLES).refs).toEqual(['members']);
+  });
+
   it('flags a comma join', () => {
     expect(tenantPredicateViolations(`SELECT 1 FROM renewal_cycles rc, members m WHERE rc.tenant_id = $1`, TABLES).violations)
       .toContain('comma join after a table reference');
