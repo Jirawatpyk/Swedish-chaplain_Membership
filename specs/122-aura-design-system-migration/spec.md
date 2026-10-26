@@ -869,6 +869,15 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The portal sign-out button becomes an AURA `Button` with the 44px touch height. (R84 then found it mounted nowhere since 063 — sign-out lives in the Account menu — so the follow-up PR deletes it.)
   - Requests, toasts and copy are unchanged.
 
+### Session 2026-10-26 (US12d-2 follow-up: the toolbar to the boards)
+
+The US12d-2 parity page set the editor against its boards. The maintainer decided:
+
+- Q: On a phone, the boards disagree: staff boards draw six controls with two menus, the member board one scrolling row, and the build wraps all fifteen. Which wins? → A: The staff boards, on every host. The row is Bold, Italic (not in TH, FR-044), Underline, Link, "Lists and headings ▾" (Heading, Subheading, the two lists, Quote) and "Insert ▾" (Divider, Button, Image, Banner image). Undo and Redo stay on the row, after the menus. Desktop is unchanged.
+- Q: Which icons? → A: Heading and Subheading stay H2/H3, because that is what the email sends; the boards change. Button takes the board's rectangle and Banner image the board's image-plus.
+- Q: The toolbar's name? → A: "Formatting", as the boards and this spec say. The role already says "toolbar".
+- Q: The stale boards? → A: Update them to the build and these decisions, and add a board for spec 131's two "image wasn't added" toasts.
+
 ### Session 2026-10-25 (US12d-2 start: the E-Blast editor)
 
 - **Migrate and fix (the maintainer, 25 Oct, for this and every later slice):** "fix the old problems too, not just move to AURA". A slice also fixes the problems its files already had: UX, accessibility, mobile, copy and states, found by a whole-file sweep, not only the diff review. A fix that changes server behaviour, stored data, money or an API still ships as its own PR right after the slice (FR-011), and the slice's PR names it.

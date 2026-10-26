@@ -766,8 +766,15 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1255 [US12] `MIGRATED_PATHS` gains the seven editor files; a US12d-2 ratchet block; the `control:` moves to `proxy-compose-form.tsx`.
 - [x] T1258 [US12] Round 2, the old problems from the whole-file sweep (the maintainer: "fix the old problems too"): links (#1 #2 #8 #9, https://), state (#3 #7 #11 #18, Undo/Redo #16), block editing (#6), upload flow and the rest (#4 #5 #10 #12 #13 #14 #15 #17 #19 #20). Tests: `editor-link-behaviour`, `editor-state-and-history`, `editor-blocks-edit`, `editor-sweep-round2`.
 - [x] T1259 [US12] Boards: Undo and Redo on `Portal-broadcast-new(-mobile)`, `Admin-broadcast-new` and `Admin-eblast-design`.
-- [ ] T1256 [US12] e2e the swap may touch (`eblast-a11y`, `admin-proxy-submit`, `image-upload-allowlist`, the specs that type in the editor), run locally (relay R89).
-- [ ] T1257 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV; UX and mobile-a11y reviews; draft PR; relay R89.
+- [x] T1256 [US12] e2e the swap may touch (`eblast-a11y`, `admin-proxy-submit`, `image-upload-allowlist`, the specs that type in the editor), run locally (relay R89). Done: R89 green (PR #655).
+- [x] T1257 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV; UX and mobile-a11y reviews; draft PR; relay R89. Done: PR #655 merged (9e01262); parity artifact https://claude.ai/artifact/VGNGrCbbBCgu3q6X7sAq4G (made after the merge, 26 Oct).
+
+#### US12d-2 follow-up — the toolbar to the boards (Session 2026-10-26)
+
+- [x] T1260 [US12] Phone toolbar (<640px) is the staff boards' row on every host: Bold, Italic (not in TH), Underline, Link, "Lists and headings ▾", "Insert ▾", Undo, Redo; menu items are the desktop controls. Button icon the rectangle, Banner image the image-plus; the toolbar is named "Formatting". Test: `tiptap-toolbar-phone`.
+- [x] T1261 [US12] Compose preview fixtures (`aura-portal?view=broadcast-compose`, `aura-admin?view=broadcast-new`); the compose skeleton reserves 15 controls (8 on a phone). Test: `compose-and-settings-skeletons`.
+- [ ] T1262 [US12] Boards: the stale editor boards updated to the build and these decisions (parity page § Board check).
+- [ ] T1263 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV with the menus open; UX and mobile-a11y reviews; parity republished with full-page pairs; draft PR; relay R91.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
