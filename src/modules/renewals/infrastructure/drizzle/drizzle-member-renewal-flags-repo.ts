@@ -9,10 +9,10 @@
  *   - T090 detect-bounce-threshold (Wave I2d) → `setEmailUnverified`
  *   - T091 reset-email-unverified (this wave) → `clearEmailUnverified`
  *
- * Tenant isolation: most tables (members, membership_plans, renewal_*,
- * broadcasts) use strict isolating RLS policies — `runInTenant` SET LOCAL
- * is sufficient and NO explicit `WHERE tenant_id = ?` is required for them.
- * However, `audit_log` uses a PERMISSIVE policy where rows with NULL
+ * Tenant isolation: every statement carries an explicit `tenant_id`
+ * predicate on each tenant-scoped table it names (D-029); RLS under
+ * `runInTenant` is the second wall. For `audit_log` the predicate is the
+ * only wall: `audit_log` uses a PERMISSIVE policy where rows with NULL
  * tenant_id (F1 identity events, migration 0007) remain visible to every
  * tenant context. Therefore any `audit_log` query in this file MUST include
  * an explicit `al.tenant_id = ${tenantId}` predicate — it is load-bearing,

@@ -2,11 +2,10 @@
  * F8 Phase 4 Wave I2a — Drizzle adapter for `AtRiskOutreachReadRepo`.
  *
  * Implements the F8 read-only port `AtRiskOutreachReadRepo` against
- * the `at_risk_outreach` table (Wave C migration 0090). Tenant
- * isolation is enforced by Postgres RLS+FORCE — every method wraps
- * its query in `runInTenant(ctx, …)` which sets `SET LOCAL ROLE
- * chamber_app` + `SET LOCAL app.current_tenant`. NO explicit
- * `WHERE tenant_id = ?` — the policy adds it automatically.
+ * the `at_risk_outreach` table (Wave C migration 0090).
+ * Every statement carries an explicit `tenant_id` predicate on each
+ * tenant-scoped table it names (D-029); RLS+FORCE under `runInTenant`
+ * is the second wall.
  *
  * Phase 4 (US2) directly exercises:
  *   - `hasOutreachWithinDays` — per-member pause-check called by the
