@@ -206,10 +206,10 @@ export default async function AuraPortalPreviewPage({
       <MemberFrame path="/portal/benefits">
         <MemberComposeApiStub />
         <DetailContainer>
-          <PageHeader title={keepTermTogether(t('title'))} subtitle={t('subtitle')} />
           <BackLink href="/portal/benefits?tab=broadcasts">
             {(await getTranslations('portal.broadcasts.detail'))('back')}
           </BackLink>
+          <PageHeader title={keepTermTogether(t('title'))} subtitle={t('subtitle')} />
           <ComposeForm
             initialQuota={MEMBER_COMPOSE_SAMPLE.quota}
             imagesEnabled

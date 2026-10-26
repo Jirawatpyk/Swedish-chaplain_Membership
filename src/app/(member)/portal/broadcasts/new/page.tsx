@@ -283,11 +283,12 @@ export default async function ComposeBroadcastPage({
     // 600 px email preview sit side by side from `lg` up. Recorded as an
     // exception in docs/ux-standards.md § 18.2.
     <DetailContainer>
-      <PageHeader title={keepTermTogether(t('title'))} subtitle={t('subtitle')} />
       {/* Spec 122 US12d-3 (boards `Portal-broadcast-new`, `Proposal-compose`):
-          back to the E-Blast tab, as the broadcast detail page does. A member
-          only reaches compose with E-Blast in their plan, so the tab is theirs. */}
+          back to the E-Blast tab, above the title as on the other portal
+          detail pages. A member only reaches compose with E-Blast in their
+          plan, so the tab is theirs. */}
       <BackLink href="/portal/benefits?tab=broadcasts">{tDetail('back')}</BackLink>
+      <PageHeader title={keepTermTogether(t('title'))} subtitle={t('subtitle')} />
       {/*
         F119 T140 (FR-046, SC-012): the template picker moved INSIDE the form
         and the `key={selectedTemplateId ?? 'blank'}` remount is gone. The key

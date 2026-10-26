@@ -845,7 +845,7 @@ export function ComposeForm({
               ) : null}
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 data-compose-feature="save-draft"
                 onClick={onSaveDraft}
                 disabled={submitting}

@@ -872,7 +872,7 @@ export function ProxyComposeForm({
               ) : null}
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 data-compose-feature="save-draft"
                 onClick={() => {
                   void handleSaveDraft();
