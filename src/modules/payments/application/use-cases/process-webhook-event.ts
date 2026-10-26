@@ -531,9 +531,11 @@ export async function processWebhookEvent(
           span.setAttribute('webhook.outcome', `err:${result.error.code}`);
         }
         return result;
-        /* v8 ignore start — tracer error-status path; processWebhookEventBody
-         * always returns Result<...>. Defence-in-depth for OOM /
-         * tracer-internal throws bypassing the typed contract. */
+        /* v8 ignore start — tracer error-status path. Reached by an
+         * adoption whose audit write fails (132, D-031: it throws so the
+         * adoption rolls back; covered by "adoption audit write fails")
+         * and by OOM / tracer-internal throws. The non-Error arm and the
+         * post-throw continuation are not separately exercised. */
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
@@ -541,8 +543,8 @@ export async function processWebhookEvent(
           message: e instanceof Error ? e.constructor.name : 'webhook_threw',
         });
         throw e;
-        /* v8 ignore stop */
       } finally {
+        /* v8 ignore stop */
         span.end();
       }
     },
