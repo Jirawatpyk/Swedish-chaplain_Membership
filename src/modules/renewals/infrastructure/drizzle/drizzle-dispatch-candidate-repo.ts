@@ -7,10 +7,9 @@
  *   - `contacts` (deep-import from F3 — primary contact lookup)
  *   - `tenant_renewal_schedule_policies` (own schema)
  *
- * Tenant isolation: Postgres RLS+FORCE on every joined table — every
- * method wraps its query in `runInTenant(ctx, …)` which sets `SET LOCAL
- * ROLE chamber_app` + `SET LOCAL app.current_tenant`. NO explicit
- * `WHERE tenant_id = ?` — the policies add it automatically.
+ * Tenant isolation: every statement carries an explicit `tenant_id`
+ * predicate on each joined table (D-029); RLS+FORCE under `runInTenant`
+ * is the second wall.
  *
  * Cursor pagination: reuses `encodeCursor` / `decodeCursor` from
  * `drizzle-renewal-cycle-repo.ts` so pipeline + dispatcher cursors

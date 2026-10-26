@@ -48,7 +48,7 @@ import type {
   ProcessorEventOutcome,
 } from '../../domain/processor-event';
 import { processorEvents, type ProcessorEventRow } from '../schema';
-import { db, runInTenant, type TenantTx } from '@/lib/db';
+import { db, runInTenant, tenantSlugOf, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 
 /**
@@ -88,10 +88,17 @@ function toDomain(row: ProcessorEventRow): ProcessorEvent {
  *       from `processor_account_id` before calling this — runs as the
  *       owner role + ON CONFLICT DO NOTHING handles dedup).
  *
- * Read paths use `db` directly because processor_events is a system-
- * wide idempotency log — per-tenant filtering happens upstream via the
- * resolved tenantId in `processWebhookEvent` rather than at the repo
- * boundary.
+ * The two global reads (`insertIfNew`'s duplicate probe and `findById`) use
+ * `db` directly by design: the Stripe event id is a globally unique PK, and
+ * the existing row may be a NULL-tenant rejection row written by
+ * `insertRejectedProcessorEvent`, which no tenant context can see. The
+ * duplicate path's adoption UPDATE (132, D-031) is the one global write: it
+ * is fenced by `tenant_id IS NULL`, not a tenant predicate, and commits with
+ * its audit row in one owner transaction. Every statement on a tenant tx binds
+ * `tenant_id` explicitly (D-029): `markProcessed` / `updateOutcome` take the
+ * slug `runInTenant` bound to their tx (`tenantSlugOf`, D-030 — it throws on
+ * a tx from the global `db`); `findProcessorEventInTenant` uses its own ctx.
+ * RLS is the second wall.
  */
 export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
   return {
@@ -213,7 +220,7 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
       await tx
         .update(processorEvents)
         .set({ processedAt: sql`now()` })
-        .where(eq(processorEvents.id, id));
+        .where(and(eq(processorEvents.tenantId, tenantSlugOf(tx)), eq(processorEvents.id, id)));
     },
 
     async updateOutcome(txUnknown, input): Promise<void> {
@@ -221,7 +228,7 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
       await tx
         .update(processorEvents)
         .set({ outcome: input.outcome })
-        .where(eq(processorEvents.id, input.id));
+        .where(and(eq(processorEvents.tenantId, tenantSlugOf(tx)), eq(processorEvents.id, input.id)));
     },
 
     async findById(id: string): Promise<ProcessorEvent | null> {
@@ -262,7 +269,7 @@ export async function findProcessorEventInTenant(
     const [row] = await tx
       .select()
       .from(processorEvents)
-      .where(eq(processorEvents.id, id))
+      .where(and(eq(processorEvents.tenantId, ctx.slug), eq(processorEvents.id, id)))
       .limit(1);
     return row ? toDomain(row as ProcessorEventRow) : null;
   });

@@ -292,9 +292,8 @@ export interface RenewalEscalationTaskRepo {
    * Drives the queue-top "X overdue tasks" banner (FR-045) so the
    * banner copy isn't capped at the page-size of 1.
    *
-   * Implementations MUST honour the same RLS-scoped tenant context as
-   * the rest of the repo (no `WHERE tenant_id = ?` in callers — the
-   * policy adds it automatically).
+   * Implementations MUST bind `tenant_id` explicitly like the rest of the
+   * repo (D-029); RLS under `runInTenant` is the second wall.
    */
   countMatching(
     tenantId: string,

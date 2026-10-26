@@ -137,6 +137,7 @@ export async function tombstoneBuyerPiiAndAuditInTx(params: {
             || jsonb_build_object('legal_name','[REDACTED]','address','[REDACTED]',
                  'primary_contact_name','[REDACTED]','primary_contact_email','','tax_id',NULL)
           WHERE invoice_id = ${documentId}
+            AND tenant_id = ${params.tenantId}
             AND (member_identity_snapshot->>'legal_name') <> '[REDACTED]'
           RETURNING invoice_id
         `)) as unknown as Array<{ invoice_id: string }>)
@@ -146,6 +147,7 @@ export async function tombstoneBuyerPiiAndAuditInTx(params: {
             || jsonb_build_object('legal_name','[REDACTED]','address','[REDACTED]',
                  'primary_contact_name','[REDACTED]','primary_contact_email','','tax_id',NULL)
           WHERE credit_note_id = ${documentId}
+            AND tenant_id = ${params.tenantId}
             AND (member_identity_snapshot->>'legal_name') <> '[REDACTED]'
           RETURNING credit_note_id
         `)) as unknown as Array<{ credit_note_id: string }>);
