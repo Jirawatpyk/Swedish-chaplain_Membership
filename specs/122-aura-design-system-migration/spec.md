@@ -869,6 +869,20 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The portal sign-out button becomes an AURA `Button` with the 44px touch height. (R84 then found it mounted nowhere since 063 — sign-out lives in the Account menu — so the follow-up PR deletes it.)
   - Requests, toasts and copy are unchanged.
 
+### Session 2026-10-26 (US12d-3: the compose forms, calmer, with a submit confirmation)
+
+The maintainer reviewed a proposal page (https://claude.ai/artifact/QBcoA6qZZHmNp9TaDwhdP6) and decided:
+
+- Q: The compose page reads as cluttered; split sending into steps? → A: No. One page, made calmer, and Submit opens a confirmation dialog instead of sending straight away, on the member form and on staff compose on behalf. The dialog sums up the subject, the recipients with their count, the allowance it uses and when it is sent.
+- Q: What gets calmer on the member form? → A:
+  - the recipient count sits under the choices as one line with its explanation;
+  - the upload rules move into an info tip beside a one-line hint;
+  - "Send options" collapses to one line that states the current choice, replacing the "leave blank" checkbox;
+  - on a phone, Write / Preview tabs and a sticky bar with the count and Submit.
+- Q: The staff form? → A: Keep its 4-figure quota card, member picker, template picker and subject. The self-exclusion notice and the count become one line ("130 recipients · not {company}'s own contacts"); the upload hint and Send options change as on the member form; Submit opens the confirmation.
+- Q: The boards' "first visit: full guidelines alert, then one line with Read again"? → A: Not in US12d-3. No acknowledgement is recorded today, so it needs server state and an audit event. That is its own PR after this one (FR-011).
+- Q: The 600px email preview against the boards' 520px? → A: Keep 600px (spec 119 FR-050); the toolbar's 2px gap already fits the member column (#662).
+
 ### Session 2026-10-26 (US12d-2 follow-up: the toolbar to the boards)
 
 The US12d-2 parity page set the editor against its boards. The maintainer decided:
