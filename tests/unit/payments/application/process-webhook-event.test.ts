@@ -1189,6 +1189,31 @@ describe('processWebhookEvent (T056)', () => {
     }
   });
 
+  // A failed audit write must surface: the repo rolls the adoption back only
+  // if the error leaves `onAdopted`, and the webhook must not dispatch.
+  it('adoption audit write fails → the error propagates and nothing is dispatched', async () => {
+    const deps = makeDeps();
+    (deps.audit.emit as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('audit_log insert failed'));
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (
+        _tx: unknown,
+        _input: unknown,
+        onAdopted?: (tx: unknown, from: string, event: unknown) => Promise<void>,
+      ) => {
+        await onAdopted?.({ owner: 'adoption-tx' }, 'acknowledged_only', {
+          id: 'evt_test_001',
+          tenantId: TENANT_ID,
+          receivedAt: new Date('2026-10-01T03:00:00Z'),
+          correlationId: 'corr_first',
+        });
+        throw new Error('unreachable: onAdopted threw');
+      },
+    );
+    await expect(processWebhookEvent(deps, makeInput())).rejects.toThrow('audit_log insert failed');
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    expect(deps.processorEventsRepo.markProcessed).not.toHaveBeenCalled();
+  });
+
   it('an ordinary crash-recovery replay records no adoption', async () => {
     const adopted = vi.spyOn(paymentsMetrics, 'webhookUnresolvedRowAdopted');
     const deps = makeDeps();

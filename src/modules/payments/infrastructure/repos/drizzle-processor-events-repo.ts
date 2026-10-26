@@ -145,6 +145,12 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
       // account (or '' — a platform-owner event recorded before the route's
       // account fallback was configured) and livemode; a
       // `rejected_signature` row is never adopted.
+      //
+      // The JS pre-check below and the UPDATE's WHERE state the same
+      // predicate: the pre-check skips a pointless transaction, the WHERE is
+      // what decides under concurrency. Change one, change both. The UPDATE
+      // is a pre-resolution write outside D-029 — `tenant_id IS NULL`, not a
+      // bound tenant predicate, is its fence (D-031).
       if (
         input.tenantId !== null &&
         existing.tenantId === null &&
