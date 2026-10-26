@@ -195,9 +195,6 @@ export default async function AuraPortalPreviewPage({
     return <MemberFrame path="/portal/benefits">{await Loading()}</MemberFrame>;
   }
 
-  // Spec 122 US12d-1 — the benefits page's E-Blast tab (boards
-  // `Portal-broadcasts`, `-mobile`, `-empty`), through the panel's own view:
-  // `?view=benefits-eblasts&state=default|empty|exhausted|load-error|paged`.
   // 122 US12d-2 follow-up — the member compose page as /portal/broadcasts/new
   // renders it (board Portal-broadcast-new), with a saved draft so the image
   // controls are on. `state=blank` starts empty.
@@ -227,6 +224,9 @@ export default async function AuraPortalPreviewPage({
       </MemberFrame>
     );
   }
+  // Spec 122 US12d-1 — the benefits page's E-Blast tab (boards
+  // `Portal-broadcasts`, `-mobile`, `-empty`), through the panel's own view:
+  // `?view=benefits-eblasts&state=default|empty|exhausted|load-error|paged`.
   if (view === 'benefits-eblasts') {
     const t = await getTranslations('benefits.page');
     const tStatus = await getTranslations('portal.broadcasts.list.status');

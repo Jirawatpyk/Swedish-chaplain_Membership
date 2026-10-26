@@ -155,11 +155,8 @@ type ToolbarEntry =
       readonly items: readonly ToolbarControl[];
     };
 
-type ControlGroup = 'inline' | 'blocks' | 'insert' | 'history';
-
 interface ToolbarControl {
   readonly key: string;
-  readonly group: ControlGroup;
   readonly label: string;
   readonly Icon: React.ComponentType<{ className?: string }>;
   readonly onActivate: () => void;
@@ -169,6 +166,8 @@ interface ToolbarControl {
   readonly unavailable?: boolean;
   /** The visible reason a control is unavailable, when it has one. */
   readonly describedBy?: string;
+  /** The same reason in words, for the phone menu, where there is no visible hint to point at. */
+  readonly reason?: string;
   /** `aria-keyshortcuts` for a control with a keyboard equivalent (Undo / Redo). */
   readonly keyshortcuts?: string;
 }
@@ -351,7 +350,6 @@ export function TiptapToolbar({
   const controls: ToolbarControl[] = [
     {
       key: 'heading2',
-      group: 'blocks',
       label: t('heading2'),
       Icon: Heading2,
       pressed: active.heading2,
@@ -365,7 +363,6 @@ export function TiptapToolbar({
     },
     {
       key: 'heading3',
-      group: 'blocks',
       label: t('heading3'),
       Icon: Heading3,
       pressed: active.heading3,
@@ -379,7 +376,6 @@ export function TiptapToolbar({
     },
     {
       key: 'quote',
-      group: 'blocks',
       label: t('quote'),
       Icon: Quote,
       pressed: active.quote,
@@ -393,7 +389,6 @@ export function TiptapToolbar({
     },
     {
       key: 'divider',
-      group: 'insert',
       label: t('divider'),
       Icon: Minus,
       onActivate: () => {
@@ -402,7 +397,6 @@ export function TiptapToolbar({
     },
     {
       key: 'bulletList',
-      group: 'blocks',
       label: t('bulletList'),
       Icon: List,
       pressed: active.bulletList,
@@ -416,7 +410,6 @@ export function TiptapToolbar({
     },
     {
       key: 'orderedList',
-      group: 'blocks',
       label: t('orderedList'),
       Icon: ListOrdered,
       pressed: active.orderedList,
@@ -430,7 +423,6 @@ export function TiptapToolbar({
     },
     {
       key: 'bold',
-      group: 'inline',
       label: t('bold'),
       Icon: Bold,
       pressed: active.bold,
@@ -448,7 +440,6 @@ export function TiptapToolbar({
       : [
           {
             key: 'italic',
-            group: 'inline',
             label: t('italic'),
             Icon: Italic,
             pressed: active.italic,
@@ -463,7 +454,6 @@ export function TiptapToolbar({
         ]),
     {
       key: 'underline',
-      group: 'inline',
       label: t('underline'),
       Icon: Underline,
       pressed: active.underline,
@@ -477,7 +467,6 @@ export function TiptapToolbar({
     },
     {
       key: 'link',
-      group: 'inline',
       label: t('link'),
       Icon: LinkIcon,
       pressed: active.link,
@@ -491,7 +480,6 @@ export function TiptapToolbar({
       ? [
           {
             key: 'image',
-            group: 'insert',
             label: active.selectedBlock === 'image' ? t('editImage') : t('image'),
             Icon: ImageIcon,
             opensDialog: true,
@@ -501,6 +489,11 @@ export function TiptapToolbar({
                 ? { describedBy: imageBusyId }
                 : {}
               : { describedBy: imageHintId }),
+            ...(!imageInsertEnabled
+              ? { reason: tImage('draftRequiredHint') }
+              : imageBusy
+                ? { reason: t('uploadWait') }
+                : {}),
             onActivate: () => {
               if (imageInsertEnabled && !imageBusy) onInsertImage?.();
             },
@@ -509,7 +502,6 @@ export function TiptapToolbar({
       : []),
     {
       key: 'cta',
-      group: 'insert',
       label: active.selectedBlock === 'ctaButton' ? t('editButton') : t('cta'),
       Icon: RectangleHorizontal,
       opensDialog: true,
@@ -522,7 +514,6 @@ export function TiptapToolbar({
       ? [
           {
             key: 'banner',
-            group: 'insert',
             label: active.selectedBlock === 'bannerImage' ? t('editBanner') : t('banner'),
             Icon: ImagePlus,
             opensDialog: true,
@@ -532,6 +523,11 @@ export function TiptapToolbar({
                 ? { describedBy: imageBusyId }
                 : {}
               : { describedBy: imageHintId }),
+            ...(!imageInsertEnabled
+              ? { reason: tImage('draftRequiredHint') }
+              : imageBusy
+                ? { reason: t('uploadWait') }
+                : {}),
             onActivate: () => {
               if (imageInsertEnabled && !imageBusy) onInsertBanner?.();
             },
@@ -543,7 +539,6 @@ export function TiptapToolbar({
     // (spec 122 Session 2026-10-25).
     {
       key: 'undo',
-      group: 'history',
       label: t('undo'),
       Icon: Undo2,
       unavailable: !active.canUndo,
@@ -554,7 +549,6 @@ export function TiptapToolbar({
     },
     {
       key: 'redo',
-      group: 'history',
       label: t('redo'),
       Icon: Redo2,
       unavailable: !active.canRedo,
@@ -566,34 +560,37 @@ export function TiptapToolbar({
   ];
 
   // On a phone the block and insert controls move into the boards' two menus;
-  // everything else stays on the row, in the desktop order.
-  const BLOCK_ORDER = ['heading2', 'heading3', 'bulletList', 'orderedList', 'quote'];
-  const INSERT_ORDER = ['divider', 'cta', 'image', 'banner'];
-  const inGroup = (group: ControlGroup, order: readonly string[]): ToolbarControl[] =>
-    order.flatMap((key) => controls.filter((c) => c.group === group && c.key === key));
+  // the rest stay on the row. One list per place, in the boards' order.
+  const pick = (keys: readonly string[]): ToolbarControl[] =>
+    keys.flatMap((key) => controls.filter((c) => c.key === key));
+  const asControls = (keys: readonly string[]): ToolbarEntry[] =>
+    pick(keys).map((control) => ({ kind: 'control' as const, control }));
   const row: ToolbarEntry[] = phone
     ? [
-        ...controls.filter((c) => c.group === 'inline').map((control) => ({ kind: 'control' as const, control })),
-        { kind: 'menu', key: 'blocks', label: t('blocksMenu'), Icon: List, items: inGroup('blocks', BLOCK_ORDER) },
-        { kind: 'menu', key: 'insert', label: t('insertMenu'), Icon: Plus, items: inGroup('insert', INSERT_ORDER) },
-        ...controls.filter((c) => c.group === 'history').map((control) => ({ kind: 'control' as const, control })),
+        ...asControls(['bold', 'italic', 'underline', 'link']),
+        {
+          kind: 'menu',
+          key: 'blocks',
+          label: t('blocksMenu'),
+          Icon: List,
+          items: pick(['heading2', 'heading3', 'bulletList', 'orderedList', 'quote']),
+        },
+        { kind: 'menu', key: 'insert', label: t('insertMenu'), Icon: Plus, items: pick(['divider', 'cta', 'image', 'banner']) },
+        ...asControls(['undo', 'redo']),
       ]
     : controls.map((control) => ({ kind: 'control' as const, control }));
 
-  /** A menu item is the desktop control: same command, pressed as `checked`, same reason when unavailable. */
+  /** A menu item is the desktop control: same command, pressed as `checked`, the same reason when unavailable. */
   const menuItem = (control: ToolbarControl, menuKey: string): MenuItem => {
-    const unavailable = control.unavailable === true || disabled;
+    // While the host saves, every item waits for it (AURA ignores a chosen disabled item).
+    const reason = disabled ? t('saveWait') : control.unavailable === true ? control.reason : undefined;
     return {
       label: control.label,
       icon: <control.Icon />,
       ...(control.pressed !== undefined && { checked: control.pressed }),
-      ...(unavailable && { disabled: true }),
-      ...(control.unavailable === true &&
-        (control.key === 'image' || control.key === 'banner') && {
-          disabledReason: imageInsertEnabled ? t('uploadWait') : tImage('draftRequiredHint'),
-        }),
+      ...((disabled || control.unavailable === true) && { disabled: true }),
+      ...(reason !== undefined && { disabledReason: reason }),
       onSelect: () => {
-        if (unavailable) return;
         // A dialog opened from the menu returns focus to the menu's button:
         // AURA calls `onSelect` before it closes the menu, so the item still
         // has focus here, and the image dialog remembers whatever has focus
@@ -663,50 +660,17 @@ export function TiptapToolbar({
       >
         {row.map((entry, index) =>
           entry.kind === 'menu' ? (
-            (() => {
-              // The caret sits in one of the menu's blocks: the button says so
-              // with a mark, as a pressed desktop control does (#662 UX M2).
-              const active = entry.items.some((control) => control.pressed === true);
-              const button = (
-                <IconButton
-                  key={entry.key}
-                  icon={
-                    <span className="relative inline-flex items-center gap-0.5">
-                      <entry.Icon className="size-4" />
-                      <ChevronDown className="size-3" aria-hidden />
-                      {active && (
-                        <span
-                          data-active-mark
-                          aria-hidden
-                          className="absolute -top-1 -right-1 size-1.5 rounded-full bg-[var(--aura-fg-accent)]"
-                        />
-                      )}
-                    </span>
-                  }
-                  label={entry.label}
-                  touchHeight
-                  data-toolbar-control={entry.key}
-                  {...(disabled && { 'aria-disabled': true })}
-                  tabIndex={index === tabStop ? 0 : -1}
-                  onFocus={() => setActiveIndex(index)}
-                  className={cn(
-                    disabled && 'opacity-[var(--aura-disabled-opacity)]',
-                    'aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent',
-                  )}
-                />
-              );
-              // While the host saves, the button is unavailable and opens nothing.
-              return disabled ? (
-                button
-              ) : (
-                <DropdownMenu
-                  key={entry.key}
-                  label={entry.label}
-                  items={entry.items.map((control) => menuItem(control, entry.key))}
-                  trigger={button}
-                />
-              );
-            })()
+            <ToolbarMenuButton
+              key={entry.key}
+              menuKey={entry.key}
+              label={entry.label}
+              Icon={entry.Icon}
+              items={entry.items.map((control) => menuItem(control, entry.key))}
+              activeLabel={entry.items.find((control) => control.pressed === true)?.label}
+              disabled={disabled}
+              tabbable={index === tabStop}
+              onFocus={() => setActiveIndex(index)}
+            />
           ) : (
           <IconButton
             key={entry.control.key}
@@ -778,5 +742,67 @@ export function TiptapToolbar({
         finalFocus={dialogFinalFocus}
       />
     </>
+  );
+}
+
+/**
+ * A phone menu on the toolbar row ("Lists and headings ▾", "Insert ▾"). The
+ * DropdownMenu stays mounted while the host saves, so a focused button keeps
+ * its focus and its menu role (#662 review); its items then say why they
+ * wait. While the caret sits in one of its blocks the button carries a mark
+ * and says so in its name, as a pressed desktop control does (#662 UX M2,
+ * WCAG 1.3.1).
+ */
+function ToolbarMenuButton({
+  menuKey,
+  label,
+  Icon,
+  items,
+  activeLabel,
+  disabled,
+  tabbable,
+  onFocus,
+}: {
+  readonly menuKey: string;
+  readonly label: string;
+  readonly Icon: React.ComponentType<{ className?: string }>;
+  readonly items: MenuItem[];
+  readonly activeLabel: string | undefined;
+  readonly disabled: boolean;
+  readonly tabbable: boolean;
+  readonly onFocus: () => void;
+}): React.ReactElement {
+  return (
+    <DropdownMenu
+      label={label}
+      items={items}
+      trigger={
+        <IconButton
+          icon={
+            <span className="relative inline-flex items-center gap-0.5">
+              <Icon className="size-4" />
+              <ChevronDown className="size-3" aria-hidden />
+              {activeLabel !== undefined && (
+                <span
+                  data-active-mark
+                  aria-hidden
+                  className="absolute -top-1 -right-1 size-1.5 rounded-full bg-[var(--aura-fg-accent)]"
+                />
+              )}
+            </span>
+          }
+          label={activeLabel === undefined ? label : `${label}, ${activeLabel}`}
+          touchHeight
+          data-toolbar-control={menuKey}
+          {...(disabled && { 'aria-disabled': true })}
+          tabIndex={tabbable ? 0 : -1}
+          onFocus={onFocus}
+          className={cn(
+            disabled && 'opacity-[var(--aura-disabled-opacity)]',
+            'aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent',
+          )}
+        />
+      }
+    />
   );
 }

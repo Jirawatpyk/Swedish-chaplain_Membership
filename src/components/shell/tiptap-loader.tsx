@@ -45,8 +45,9 @@
 
 import dynamic from 'next/dynamic';
 import { useId, type ComponentType } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { SkeletonBlock } from '@/components/shell/page-skeletons';
+import { cn } from '@/lib/utils';
 
 /**
  * Dynamic-loader factory for any Tiptap-based editor component. Returns
@@ -74,6 +75,7 @@ export function loadTiptapEditor<TProps>(
  */
 export function TiptapLoadingSkeleton(): React.ReactElement {
   const t = useTranslations('shell');
+  const thai = useLocale() === 'th';
   const labelId = useId();
   return (
     <div role="status" aria-live="polite" aria-labelledby={labelId} data-testid="tiptap-loading" className="space-y-3">
@@ -83,11 +85,19 @@ export function TiptapLoadingSkeleton(): React.ReactElement {
       <span id={labelId} className="sr-only">
         {t('editorLoading')}
       </span>
-      {/* The toolbar's real height, so the page does not jump when the editor
-          arrives: two 44px rows on a phone (the boards' eight controls) and
-          on a touch screen from 640px (AURA's touch height follows the
-          pointer), one with a mouse. */}
-      <SkeletonBlock className="h-[104px] w-full sm:[@media(pointer:fine)]:h-10" />
+      {/* The toolbar's own strip, wrapping as the real one does, so the page
+          does not jump when the editor arrives at any width (#662 review): the
+          boards' eight controls on a phone (seven in Thai, no Italic), all of
+          them from 640px; 44px on touch, 32px with a mouse. */}
+      <div aria-hidden className="flex flex-wrap items-center gap-1 rounded-[var(--aura-radius-md)] p-1.5">
+        {Array.from({ length: thai ? 14 : 15 }).map((_, i) => (
+          <SkeletonBlock
+            key={i}
+            data-skeleton="toolbar-control"
+            className={cn('size-11 sm:[@media(pointer:fine)]:size-8', i >= (thai ? 7 : 8) && 'max-sm:hidden')}
+          />
+        ))}
+      </div>
       <SkeletonBlock className="h-60 w-full" />
     </div>
   );

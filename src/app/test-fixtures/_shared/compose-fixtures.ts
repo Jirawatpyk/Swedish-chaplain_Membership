@@ -33,7 +33,18 @@ export const MEMBER_COMPOSE_SAMPLE = {
   quota: { used: 2, reserved: 1, remaining: 3, cap: 6, quotaYear: 2026, planName: 'Premium Corporate' } satisfies QuotaSnapshot,
 } as const;
 
+/** The member picker's search rows (`/api/admin/members/search`, `member-picker.tsx`). */
 export const STAFF_COMPOSE_MEMBERS = [
-  { member_id: '0b9e1d2c-0000-4000-8000-000000000001', company_name: 'Bangkok Freight Nordic Co., Ltd.', country: 'TH', status: 'active' },
-  { member_id: '0b9e1d2c-0000-4000-8000-000000000002', company_name: 'Siam Nordic Trading Co., Ltd.', country: 'TH', status: 'active' },
+  {
+    memberId: '0b9e1d2c-0000-4000-8000-000000000001',
+    companyName: 'Bangkok Freight Nordic Co., Ltd.',
+    primaryContactName: 'Malin Berg',
+    hasPrimaryContactEmail: true,
+  },
+  {
+    memberId: '0b9e1d2c-0000-4000-8000-000000000002',
+    companyName: 'Siam Nordic Trading Co., Ltd.',
+    primaryContactName: 'Erik Holm',
+    hasPrimaryContactEmail: true,
+  },
 ] as const;

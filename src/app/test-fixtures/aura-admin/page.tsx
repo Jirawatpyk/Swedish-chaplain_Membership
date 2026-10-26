@@ -109,7 +109,8 @@ import { ATTENDEE_ROWS, ERASURE_EMAIL, ERASURE_ROWS, EVENT_DETAIL, EVENT_ID, EVE
 import { ImportPreviewDriver, MemberSearchStub, OpenRotateDialog, OpenRowEraseMenu, RevealPreview } from './event-previews';
 import { MembersApiStub, PickRadioInDialog } from './user-previews';
 import { ProxyComposeForm } from '@/components/broadcast/proxy-compose-form';
-import { COMPOSE_TEMPLATES, STAFF_COMPOSE_MEMBERS } from '../_shared/compose-fixtures';
+import { COMPOSE_TEMPLATES } from '../_shared/compose-fixtures';
+import { StaffComposeApiStub } from '../_shared/compose-api-stub';
 import { QueueDialogDriver } from './eblast-queue-driver';
 import {
   renderAudiencePreview,
@@ -2016,12 +2017,12 @@ export default async function AuraAdminPreviewPage({
     return <StaffFrame path="/admin/broadcasts/templates">{await renderTemplatesPreview(state)}</StaffFrame>;
   }
   // 122 US12d-2 follow-up — staff compose on behalf as /admin/broadcasts/new
-  // renders it (board Admin-broadcast-new); the member picker searches a stub.
+  // renders it (board Admin-broadcast-new); member search and quota are stubbed.
   if (view === 'broadcast-new') {
     const t = await getTranslations('admin.broadcasts.proxySubmitDialog');
     return (
       <StaffFrame path="/admin/broadcasts/new">
-        <MembersApiStub rows={STAFF_COMPOSE_MEMBERS} />
+        <StaffComposeApiStub />
         <DetailContainer>
           <PageHeader title={t('title')} subtitle={t('pageSubtitle')} />
           <ProxyComposeForm audienceCeiling={500} templates={COMPOSE_TEMPLATES} imagesEnabled />
