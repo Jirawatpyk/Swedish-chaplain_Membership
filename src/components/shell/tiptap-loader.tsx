@@ -84,9 +84,10 @@ export function TiptapLoadingSkeleton(): React.ReactElement {
         {t('editorLoading')}
       </span>
       {/* The toolbar's real height, so the page does not jump when the editor
-          arrives: three 44px rows on a phone, two on a touch screen from
-          640px (AURA's touch height follows the pointer), one with a mouse. */}
-      <SkeletonBlock className="h-[152px] w-full sm:h-[104px] sm:[@media(pointer:fine)]:h-10" />
+          arrives: two 44px rows on a phone (the boards' eight controls) and
+          on a touch screen from 640px (AURA's touch height follows the
+          pointer), one with a mouse. */}
+      <SkeletonBlock className="h-[104px] w-full sm:[@media(pointer:fine)]:h-10" />
       <SkeletonBlock className="h-60 w-full" />
     </div>
   );

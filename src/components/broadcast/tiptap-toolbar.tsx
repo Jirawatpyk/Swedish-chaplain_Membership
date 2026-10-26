@@ -590,13 +590,18 @@ export function TiptapToolbar({
       ...(unavailable && { disabled: true }),
       ...(control.unavailable === true &&
         (control.key === 'image' || control.key === 'banner') && {
-          disabledReason: imageInsertEnabled ? tImage('uploadingLabel') : tImage('draftRequiredHint'),
+          disabledReason: imageInsertEnabled ? t('uploadWait') : tImage('draftRequiredHint'),
         }),
       onSelect: () => {
         if (unavailable) return;
-        // A dialog opened from the menu returns focus to the menu's button.
-        triggerRef.current =
+        // A dialog opened from the menu returns focus to the menu's button:
+        // AURA calls `onSelect` before it closes the menu, so the item still
+        // has focus here, and the image dialog remembers whatever has focus
+        // (#662 a11y H1). Move it to the button first.
+        const menuButton =
           containerRef.current?.querySelector<HTMLElement>(`[data-toolbar-control="${menuKey}"]`) ?? null;
+        menuButton?.focus();
+        triggerRef.current = menuButton;
         confirmedRef.current = false;
         control.onActivate();
       },
@@ -658,16 +663,24 @@ export function TiptapToolbar({
       >
         {row.map((entry, index) =>
           entry.kind === 'menu' ? (
-            <DropdownMenu
-              key={entry.key}
-              label={entry.label}
-              items={entry.items.map((control) => menuItem(control, entry.key))}
-              trigger={
+            (() => {
+              // The caret sits in one of the menu's blocks: the button says so
+              // with a mark, as a pressed desktop control does (#662 UX M2).
+              const active = entry.items.some((control) => control.pressed === true);
+              const button = (
                 <IconButton
+                  key={entry.key}
                   icon={
-                    <span className="inline-flex items-center gap-0.5">
-                      <entry.Icon />
+                    <span className="relative inline-flex items-center gap-0.5">
+                      <entry.Icon className="size-4" />
                       <ChevronDown className="size-3" aria-hidden />
+                      {active && (
+                        <span
+                          data-active-mark
+                          aria-hidden
+                          className="absolute -top-1 -right-1 size-1.5 rounded-full bg-[var(--aura-fg-accent)]"
+                        />
+                      )}
                     </span>
                   }
                   label={entry.label}
@@ -676,10 +689,24 @@ export function TiptapToolbar({
                   {...(disabled && { 'aria-disabled': true })}
                   tabIndex={index === tabStop ? 0 : -1}
                   onFocus={() => setActiveIndex(index)}
-                  className={cn(disabled && 'opacity-[var(--aura-disabled-opacity)]')}
+                  className={cn(
+                    disabled && 'opacity-[var(--aura-disabled-opacity)]',
+                    'aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent',
+                  )}
                 />
-              }
-            />
+              );
+              // While the host saves, the button is unavailable and opens nothing.
+              return disabled ? (
+                button
+              ) : (
+                <DropdownMenu
+                  key={entry.key}
+                  label={entry.label}
+                  items={entry.items.map((control) => menuItem(control, entry.key))}
+                  trigger={button}
+                />
+              );
+            })()
           ) : (
           <IconButton
             key={entry.control.key}
