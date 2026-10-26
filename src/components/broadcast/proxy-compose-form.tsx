@@ -110,6 +110,7 @@ const INITIAL_BODY_HTML = '<p></p>';
 const BODY_ERROR_ID = 'proxy-broadcast-body-error';
 /** U29 — the elements a dimmed Submit points at, plus its own hint line. */
 const MISSING_EMAIL_ID = 'proxy-missing-contact-email';
+const MEMBER_ERROR_ID = 'proxy-member-error';
 const RECIPIENT_COUNT_TEXT_ID = 'proxy-recipient-count';
 const SUBMIT_BLOCKED_HINT_ID = 'proxy-submit-blocked';
 
@@ -657,12 +658,18 @@ export function ProxyComposeForm({
                 loadingText={tLink('loading')}
                 disabled={submitting}
                 inputRef={pickerRef}
+                // AURA 5.66 (#182): the refusal beside the picker is the
+                // picker's own — marked invalid and read after its name.
+                invalid={memberError !== null || memberMissingEmail}
+                describedBy={[
+                  ...(memberError !== null ? [MEMBER_ERROR_ID] : []),
+                  ...(memberMissingEmail ? [MISSING_EMAIL_ID] : []),
+                ].join(' ')}
               />
-              {/* Not tied to the picker (no `aria-describedby` / `invalid` on
-                  AURA's Combobox): stand-in until AURA #182. Focus moves to the
-                  picker on a member refusal; these alerts say why. */}
+              {/* Focus moves to the picker on a member refusal; these alerts
+                  say why. */}
               {memberError !== null ? (
-                <p role="alert" className="text-xs text-[var(--aura-fg-danger)]">
+                <p id={MEMBER_ERROR_ID} role="alert" className="text-xs text-[var(--aura-fg-danger)]">
                   {memberError}
                 </p>
               ) : null}

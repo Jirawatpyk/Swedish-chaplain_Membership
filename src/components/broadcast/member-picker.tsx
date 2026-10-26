@@ -60,6 +60,10 @@ export interface MemberPickerProps {
   readonly disabled?: boolean;
   /** The combobox input — focused by the form on a member error. */
   readonly inputRef?: React.Ref<HTMLInputElement>;
+  /** The page refuses the picked member (AURA 5.66, #182): the danger edge and `aria-invalid`. */
+  readonly invalid?: boolean;
+  /** The id(s) of the page's own refusal beside the picker, read after its name. */
+  readonly describedBy?: string;
 }
 
 export function MemberPicker({
@@ -72,6 +76,8 @@ export function MemberPicker({
   loadingText,
   disabled = false,
   inputRef,
+  invalid = false,
+  describedBy,
 }: MemberPickerProps): React.ReactElement {
   const [rawQuery, setRawQuery] = useState('');
   const query = useDebouncedValue(rawQuery.trim(), DEBOUNCE_MS);
@@ -159,6 +165,8 @@ export function MemberPicker({
           if (hit !== null && hit.memberId === next) onSelect(hit);
         }}
         disabled={disabled}
+        invalid={invalid}
+        {...(describedBy !== undefined && describedBy !== '' ? { 'aria-describedby': describedBy } : {})}
         loading={loading}
         loadingText={loadingText}
         emptyText={note()}
