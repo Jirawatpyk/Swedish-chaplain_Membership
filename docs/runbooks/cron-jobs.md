@@ -549,11 +549,28 @@ transaction.
 ### Block 2: the inline-image blob sweep (F119 T035)
 
 The same tick runs `reclaimOrphanedImages`, independently transacted (one
-transaction per row, so one bad blob never blocks the batch). It reaps two
-sets: rows already MARKED (`deleted_at IS NOT NULL`) and, as defence in
-depth, ORPHANED rows whose owner no longer exists. A blob is deleted only
-under the LAST-REFERENCE rule — no live row of either owner_kind shares the
-`content_hash` AND no live `body_html` still embeds the URL.
+transaction per row, so one bad blob never blocks the batch). It reaps three
+sets, 200 rows each per tenant per tick:
+
+- **MARKED** rows (`deleted_at IS NOT NULL`). This includes images an author
+  released by cancelling the description after an upload (spec 131,
+  `reason: 'not_inserted'`).
+- As defence in depth, **ORPHANED** rows whose owner no longer exists.
+- **UNUSED** rows (spec 131, `reason: 'sweep_unused'`): live images of an
+  E-Blast in a terminal status whose own body, source and versions do not
+  embed the URL. A closed, never-sent E-Blast holds none. The owner check is
+  in the SELECT, so an image the E-Blast shows is never picked. Drafts,
+  E-Blasts in review and templates are never picked.
+
+A blob is deleted only under the LAST-REFERENCE rule: no live row of either
+owner_kind shares the `content_hash`, AND no live `body_html` still embeds
+the URL.
+
+**First run after spec 131 merged.** The unused arm finds every image left
+out of an already-sent or already-closed E-Blast at once, and clears that
+backlog at 200 rows per tenant per tick. Each removal is audited
+(`broadcast_image_removed { reason: 'sweep_unused' }`). The maintainer chose
+this over a report-only first week (26 Oct 2026).
 
 **Advisory lock.** Each per-row transaction takes `pg_advisory_xact_lock` on
 `hashtextextended('broadcasts-image:' || tenant || ':' || content_hash, 0)`
