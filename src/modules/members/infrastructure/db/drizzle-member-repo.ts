@@ -224,6 +224,18 @@ function applyMemberPatch(
 type RepoTx = Parameters<Parameters<typeof runInTenant>[1]>[0];
 
 /**
+ * D-030 — a method that takes a tenant argument beside its tx must be given
+ * the tenant `runInTenant` bound to that tx, so the `tenant_id` predicate and
+ * RLS name one tenant. Throws (inside the caller's try → `repo.unexpected`)
+ * before any statement is sent.
+ */
+function assertTxTenant(tx: unknown, tenantId: string): void {
+  if (tenantSlugOf(tx) !== tenantId) {
+    throw new Error('tenant argument differs from the tenant bound to the tx');
+  }
+}
+
+/**
  * Scalar directory filters (planYear / country / planId / riskBand). Returns
  * `SQL[]` (not `ReturnType<typeof eq>[]`) for a uniform element type across the
  * `eq()` / `inArray()` results. (The cursor path's own pagination predicates are
@@ -743,6 +755,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findManyByIdsInTx(tx, tenantId, memberIds) {
     try {
+      assertTxTenant(tx, tenantId);
       if (memberIds.length === 0) {
         return ok(new Map() as ReadonlyMap<MemberId, Member>);
       }
@@ -775,6 +788,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async enrolAutoInvoiceInTx(tx, tenantId, memberIds, enrolledAt) {
     try {
+      assertTxTenant(tx, tenantId);
       if (memberIds.length === 0) return ok([] as ReadonlyArray<MemberId>);
       const rows = await tx
         .update(members)
@@ -815,6 +829,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findErasedIdsInTx(tx, tenantId, memberIds) {
     try {
+      assertTxTenant(tx, tenantId);
       if (memberIds.length === 0) return ok(new Set<MemberId>());
       const rows = await tx
         .select({ memberId: members.memberId })
@@ -837,6 +852,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findIdsWithoutLivePrimaryInTx(tx, tenantId, memberIds) {
     try {
+      assertTxTenant(tx, tenantId);
       if (memberIds.length === 0) return ok(new Set<MemberId>());
       const rows = await tx
         .select({ memberId: members.memberId })
@@ -862,6 +878,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async unenrolAutoInvoiceInTx(tx, tenantId, memberIds) {
     try {
+      assertTxTenant(tx, tenantId);
       if (memberIds.length === 0) return ok([] as ReadonlyArray<MemberId>);
       const rows = await tx
         .update(members)
@@ -968,6 +985,15 @@ export const drizzleMemberRepo: MemberRepo = {
     // failure on insert 2 or 3 still rolls back insert 1 — "one
     // transaction, or none" is a property of the CALLER's tx boundary, not
     // of how many try/catch blocks sit inside this method.
+
+    // 0. D-030 — every row is written for the tenant the tx is bound to.
+    try {
+      assertTxTenant(tx, draft.member.tenantId);
+      assertTxTenant(tx, draft.primaryContact.tenantId);
+      if (draft.secondaryContact) assertTxTenant(tx, draft.secondaryContact.tenantId);
+    } catch (e) {
+      return err(unexpected(e));
+    }
 
     // 1. Insert member
     let memberRow: typeof members.$inferSelect;
@@ -1883,6 +1909,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findPrimaryContactEmailInTx(tx, tenantId, memberId) {
     try {
+      assertTxTenant(tx, tenantId);
       const rows = await tx
         .select({ email: contacts.email })
         .from(contacts)
