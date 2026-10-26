@@ -148,21 +148,22 @@ export function makeFakeBroadcastImagesRepo(
       });
       return stamped;
     }),
-    // Spec 131 — the release-on-cancel stamp: ONE live row of ONE owner.
+    // Spec 131 — the release-on-cancel stamp: ONE live row of ONE owner,
+    // uploaded by the releasing user.
     markDeletedById: vi.fn(
       async (
         tenantId: never,
-        owner: { kind: 'broadcast' | 'template'; id: string },
-        imageId: string,
+        target: { owner: { kind: 'broadcast' | 'template'; id: string }; imageId: string; uploadedByUserId: string },
         at: Date,
         _tx: unknown,
       ): Promise<BroadcastImageRecord | null> => {
         const i = rows.findIndex(
           (r) =>
             r.tenantId === (tenantId as unknown as string) &&
-            r.id === imageId &&
-            r.ownerKind === owner.kind &&
-            r.ownerId === owner.id &&
+            r.id === target.imageId &&
+            r.ownerKind === target.owner.kind &&
+            r.ownerId === target.owner.id &&
+            r.uploadedByUserId === target.uploadedByUserId &&
             r.deletedAt === null,
         );
         if (i === -1) return null;
@@ -204,7 +205,9 @@ export function makeFakeBroadcastImagesRepo(
     listOrphaned: vi.fn(async (_tenantId: never, _limit: number) => [] as BroadcastImageRecord[]),
     // Spec 131 — arm 3 ("unused"). The owner/content rule is SQL; the fake has
     // no owner tables, so a test that wants an unused row overrides it.
-    listUnused: vi.fn(async (_tenantId: never, _limit: number) => [] as BroadcastImageRecord[]),
+    markUsedImagesExamined: vi.fn(async (_tenantId: never, _now: Date, _dueBefore: Date, _limit: number, _tx: unknown) => 0),
+    listUnused: vi.fn(async (_tenantId: never, _dueBefore: Date, _limit: number, _tx: unknown) => [] as BroadcastImageRecord[]),
+    markUnusedExamined: vi.fn(async (_tenantId: never, _imageId: string, _now: Date, _tx: unknown) => undefined),
     countLiveByContentHash: vi.fn(async (tenantId: never, contentHash: string, _tx: unknown, excludeImageId?: string) =>
       rows.filter(
         (r) =>

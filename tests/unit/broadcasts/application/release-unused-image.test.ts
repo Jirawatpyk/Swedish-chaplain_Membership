@@ -151,8 +151,28 @@ describe('releaseUnusedImage — spec 131 layer 1', () => {
     expect(submitted.imagesRepo.rows[0]!.deletedAt).toBeNull();
   });
 
+  it('only the uploader releases: another user\'s upload on the same draft releases nothing', async () => {
+    const { deps, imagesRepo, audit } = makeDeps([imageRow({ uploadedByUserId: 'u-2' })]);
+
+    const r = await releaseUnusedImage(deps, memberInput());
+
+    expect(r).toEqual({ ok: true, value: { released: false } });
+    expect(imagesRepo.rows[0]!.deletedAt).toBeNull();
+    expect(audit.events).toEqual([]);
+  });
+
+  it('a refused release is probe-audited as a release, not as an upload', async () => {
+    const { deps, audit } = makeDeps([imageRow()]);
+    await releaseUnusedImage(
+      deps,
+      memberInput({ actor: { kind: 'member', memberId: '99999999-9999-9999-9999-999999999999' } }),
+    );
+    const probe = audit.events.find((e) => e.eventType === 'broadcast_cross_member_probe');
+    expect(probe?.payload).toMatchObject({ operation: 'image_release' });
+  });
+
   it('staff release on a submitted E-Blast is allowed (the staff upload stages) and names the E-Blast member', async () => {
-    const { deps, audit } = makeDeps([imageRow()], 'submitted');
+    const { deps, audit } = makeDeps([imageRow({ uploadedByUserId: 'staff-1' })], 'submitted');
 
     const r = await releaseUnusedImage(
       deps,
