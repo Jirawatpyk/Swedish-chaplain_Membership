@@ -45,7 +45,9 @@ export type ImageRemovalReason =
   | 'withdrawn'
   | 'rejected'
   // The 0310 retention sweep: the owning E-Blast passed its retention and was deleted.
-  | 'retention_expired';
+  | 'retention_expired'
+  // Spec 131: uploaded, then left out of the message (its description cancelled).
+  | 'not_inserted';
 
 export interface MarkOwnerImagesRemovedDeps {
   readonly imagesRepo: Pick<BroadcastImagesRepo, 'markDeletedByOwner'>;

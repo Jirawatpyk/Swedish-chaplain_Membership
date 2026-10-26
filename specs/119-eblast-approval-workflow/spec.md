@@ -829,7 +829,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   (delivery of the E-Blast benefit). Retention follows the parent E-Blast record (the existing
   E-Blast retention from F7; audit rows 5 years). **Erasure** must reach every stored version
   (including an unsent working copy), every feedback/note text, the member's pending notifications
-  about the E-Blast and every image uploaded for it, not only the current content; a sent or failed
+  about the E-Blast and every image uploaded for it, not only the current content (an image
+  uploaded and left out of the message goes on the next daily tick after its description is
+  cancelled, or once the E-Blast closes: spec 131); a sent or failed
   notification keeps the address it was sent to until the 90-day outbox purge. **Export** covers
   the versions sent to the member and the member's decisions on them, with their notes and
   reasons: the unsent working copy is excluded (the chamber's work in progress, not yet shown to

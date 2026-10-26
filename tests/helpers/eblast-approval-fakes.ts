@@ -148,6 +148,30 @@ export function makeFakeBroadcastImagesRepo(
       });
       return stamped;
     }),
+    // Spec 131 — the release-on-cancel stamp: ONE live row of ONE owner,
+    // uploaded by the releasing user.
+    markDeletedById: vi.fn(
+      async (
+        tenantId: never,
+        target: { owner: { kind: 'broadcast' | 'template'; id: string }; imageId: string; uploadedByUserId: string },
+        at: Date,
+        _tx: unknown,
+      ): Promise<BroadcastImageRecord | null> => {
+        const i = rows.findIndex(
+          (r) =>
+            r.tenantId === (tenantId as unknown as string) &&
+            r.id === target.imageId &&
+            r.ownerKind === target.owner.kind &&
+            r.ownerId === target.owner.id &&
+            r.uploadedByUserId === target.uploadedByUserId &&
+            r.deletedAt === null,
+        );
+        if (i === -1) return null;
+        const next = { ...rows[i]!, deletedAt: at };
+        rows[i] = next;
+        return next;
+      },
+    ),
     // ROUND-2 R-M1 — the bounded prune batch's single stamp statement.
     markDeletedByOwners: vi.fn(
       async (tenantId: never, ownerKind: 'broadcast' | 'template', ownerIds: readonly string[], at: Date, _tx: unknown) => {
@@ -179,6 +203,14 @@ export function makeFakeBroadcastImagesRepo(
     // F119 R17 — the GDPR export's by-member read; same no-broadcasts default.
     listByMember: vi.fn(async (_tenantId: never, _memberId: string, _limit: number, _tx: unknown) => [] as BroadcastImageRecord[]),
     listOrphaned: vi.fn(async (_tenantId: never, _limit: number) => [] as BroadcastImageRecord[]),
+    // Spec 131 — arm 3 ("unused"). The owner/content rule is SQL; the fake has
+    // no owner tables, so a test that wants an unused row overrides it.
+    markUsedImagesExamined: vi.fn(async (_tenantId: never, _now: Date, _dueBefore: Date, _limit: number, _tx: unknown) => 0),
+    listUnused: vi.fn(async (_tenantId: never, _dueBefore: Date, _limit: number, _tx: unknown) => [] as BroadcastImageRecord[]),
+    markUnusedExamined: vi.fn(async (_tenantId: never, _imageId: string, _now: Date, _tx: unknown) => undefined),
+    isLiveImage: vi.fn(async (tenantId: never, imageId: string, _tx: unknown) =>
+      rows.some((r) => r.tenantId === (tenantId as unknown as string) && r.id === imageId && r.deletedAt === null),
+    ),
     countLiveByContentHash: vi.fn(async (tenantId: never, contentHash: string, _tx: unknown, excludeImageId?: string) =>
       rows.filter(
         (r) =>

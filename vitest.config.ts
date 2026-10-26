@@ -774,6 +774,27 @@ export default defineConfig({
           functions: 100,
           statements: 100,
         },
+        // Spec 131 (#658 test review M7) — the release is a deletion path on
+        // personal data behind an ownership guard and an audit: 100% branch.
+        // The sweep and the route helper are pinned at what they measure.
+        'src/modules/broadcasts/application/use-cases/release-unused-image.ts': {
+          lines: 100,
+          branches: 100,
+          functions: 100,
+          statements: 100,
+        },
+        'src/modules/broadcasts/application/use-cases/reclaim-orphaned-images.ts': {
+          lines: 98,
+          branches: 95,
+          functions: 100,
+          statements: 98,
+        },
+        'src/lib/broadcasts-image-release-route.ts': {
+          lines: 98,
+          branches: 94,
+          functions: 100,
+          statements: 98,
+        },
         // F119 PR-2 (T157a) — the Domain files PR-2 creates or reshapes: the
         // stage vocabulary (stage / whose turn / in-progress set / time in
         // stage), the widened status machine, and the approval VOs + policies.

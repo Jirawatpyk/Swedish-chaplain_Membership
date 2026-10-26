@@ -416,7 +416,7 @@ export interface F7AuditPayloadShapes {
      * groups on it. The comment is now the type. A new surface adds its member
      * here.
      */
-    readonly operation?: 'image_upload' | 'snapshot_template' | 'member_decision' | 'version_thread';
+    readonly operation?: 'image_upload' | 'image_release' | 'snapshot_template' | 'member_decision' | 'version_thread';
   };
   readonly broadcast_webhook_batch_missing: {
     readonly broadcastId: string;
@@ -552,20 +552,23 @@ export interface F7AuditPayloadShapes {
           // F119 T081 — `withdrawn` (member withdrawal / staff cancel) and
           // `rejected` (staff rejection) stamp in the same tx as the state change.
           // The 0310 retention sweep adds `retention_expired` (the parent
-          // E-Blast passed its retention_years and was deleted).
+          // E-Blast passed its retention_years and was deleted). Spec 131 adds
+          // `not_inserted` (released when its description was cancelled).
           readonly reason:
             | 'draft_discarded'
             | 'draft_pruned'
             | 'member_erased'
             | 'withdrawn'
             | 'rejected'
-            | 'retention_expired';
+            | 'retention_expired'
+            | 'not_inserted';
           readonly blob_deleted: false;
           readonly blob_disposition?: never;
           readonly actor_role: string | null;
         }
       | {
-          readonly reason: 'sweep' | 'sweep_orphaned';
+          // Spec 131 adds `sweep_unused` (arm 3: a terminal E-Blast's image its content does not use).
+          readonly reason: 'sweep' | 'sweep_orphaned' | 'sweep_unused';
           readonly blob_deleted: boolean;
           readonly blob_disposition: 'deleted' | 'kept_shared_row' | 'reclaimed_by_sibling';
           readonly actor_role: 'system';

@@ -106,7 +106,11 @@ export const OBSERVED_PAGES: readonly ObservedSurface[] = [
  * (`directory.export` / `members.bulk`).
  */
 export const OBSERVED_API: readonly ObservedSurface[] = [
+  // Spec 131 — release an uploaded image left out of the E-Blast / template:
+  // the same key as the upload it undoes.
+  { surface: 'DELETE /api/admin/broadcasts/[id]/images/[imageId]', kind: 'api', key: 'broadcasts.write' },
   { surface: 'DELETE /api/admin/broadcasts/templates/[id]', kind: 'api', key: 'broadcasts.write' },
+  { surface: 'DELETE /api/admin/broadcasts/templates/[id]/images/[imageId]', kind: 'api', key: 'broadcasts.write' },
   { surface: 'DELETE /api/invoices/[invoiceId]', kind: 'api', key: 'invoicing.write' },
   { surface: 'DELETE /api/members/[memberId]/contacts/[contactId]', kind: 'api', key: 'contacts.write' },
   { surface: 'DELETE /api/plans/[year]/[planId]', kind: 'api', key: 'plans.write' },

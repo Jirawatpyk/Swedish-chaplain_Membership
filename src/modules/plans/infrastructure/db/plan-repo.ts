@@ -3,12 +3,11 @@
  *
  * Every method runs its query inside `runInTenant(tenant, fn)` which
  * sets `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant`
- * as the first two statements of the transaction. Postgres RLS then
- * transparently scopes reads + writes to the tenant — there is NO
- * explicit `WHERE tenant_id = ?` in any query here. That's
- * deliberate per research.md § 7.1: adding an explicit filter would
- * imply distrust of the RLS layer, and the whole point of the
- * two-layer defence is that you don't need one.
+ * as the first two statements of the transaction, AND every statement
+ * carries an explicit `tenant_id = tenant.slug` predicate (D-029, which
+ * supersedes research.md § 7.1): the application wall stands even if RLS
+ * is bypassed. Gate:
+ * `tests/unit/plans/infrastructure/plans-repos-tenant-sql-shape.test.ts`.
  *
  * Row → Domain translation lives in `rowToPlan()` below — Drizzle's
  * inferred row type stays in Infrastructure and never leaks into
@@ -24,7 +23,7 @@
  *     but the use-case-level threshold covers them transitively.
  */
 
-import { and, count, eq, ilike, or, sql } from 'drizzle-orm';
+import { and, count, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { err, ok, type Result } from '@/lib/result';
 import { runInTenant } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -126,7 +125,7 @@ export const planRepo: PlanRepo = {
   // -- findByTenantAndYear (US1) ---------------------------------------------
   async findByTenantAndYear(tenant, filter: ListPlansFilter) {
     return runInTenant(tenant, async (tx) => {
-      const conditions = [];
+      const conditions: Array<SQL | undefined> = [eq(membershipPlans.tenantId, tenant.slug)];
 
       if (filter.year !== undefined) {
         conditions.push(eq(membershipPlans.planYear, filter.year));
@@ -153,11 +152,10 @@ export const planRepo: PlanRepo = {
         );
       }
 
-      const where = conditions.length > 0 ? and(...conditions) : undefined;
       const rows = await tx
         .select()
         .from(membershipPlans)
-        .where(where)
+        .where(and(...conditions))
         .orderBy(sql`${membershipPlans.planCategory} DESC`, membershipPlans.sortOrder);
       return rows.map(rowToPlan);
     });
@@ -171,6 +169,7 @@ export const planRepo: PlanRepo = {
         .from(membershipPlans)
         .where(
           and(
+            eq(membershipPlans.tenantId, tenant.slug),
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
           ),
@@ -241,6 +240,7 @@ export const planRepo: PlanRepo = {
         .from(membershipPlans)
         .where(
           and(
+            eq(membershipPlans.tenantId, tenant.slug),
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
             sql`${membershipPlans.deletedAt} IS NULL`,
@@ -302,6 +302,7 @@ export const planRepo: PlanRepo = {
         .set(updateValues)
         .where(
           and(
+            eq(membershipPlans.tenantId, tenant.slug),
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
             sql`${membershipPlans.deletedAt} IS NULL`,
@@ -331,6 +332,7 @@ export const planRepo: PlanRepo = {
         .set({ isActive: active, updatedBy, updatedAt: new Date() })
         .where(
           and(
+            eq(membershipPlans.tenantId, tenant.slug),
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
             sql`${membershipPlans.deletedAt} IS NULL`,
@@ -373,6 +375,7 @@ export const planRepo: PlanRepo = {
         .from(membershipPlans)
         .where(
           and(
+            eq(membershipPlans.tenantId, tenant.slug),
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
           ),
@@ -405,6 +408,7 @@ export const planRepo: PlanRepo = {
         .set({ deletedAt, updatedBy, updatedAt: new Date() })
         .where(
           and(
+            eq(membershipPlans.tenantId, tenant.slug),
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
             sql`${membershipPlans.deletedAt} IS NULL`,
@@ -441,6 +445,7 @@ export const planRepo: PlanRepo = {
         })
         .where(
           and(
+            eq(membershipPlans.tenantId, tenant.slug),
             eq(membershipPlans.planId, planId),
             eq(membershipPlans.planYear, year),
             sql`${membershipPlans.deletedAt} IS NOT NULL`,
@@ -479,7 +484,12 @@ export const planRepo: PlanRepo = {
       const targetRows = await tx
         .select({ count: count() })
         .from(membershipPlans)
-        .where(eq(membershipPlans.planYear, targetYear));
+        .where(
+          and(
+            eq(membershipPlans.tenantId, tenant.slug),
+            eq(membershipPlans.planYear, targetYear),
+          ),
+        );
       const existingCount = Number(targetRows[0]?.count ?? 0);
       if (existingCount > 0) {
         return err({ type: 'target_year_populated', existingCount });
@@ -491,6 +501,7 @@ export const planRepo: PlanRepo = {
         .from(membershipPlans)
         .where(
           and(
+            eq(membershipPlans.tenantId, tenant.slug),
             eq(membershipPlans.planYear, sourceYear),
             sql`${membershipPlans.deletedAt} IS NULL`,
           ),
@@ -502,7 +513,7 @@ export const planRepo: PlanRepo = {
       // 3. Bulk insert into target year
       const now = new Date();
       const values = sources.map((row) => ({
-        tenantId: row.tenantId, // RLS re-verifies this matches current_tenant
+        tenantId: tenant.slug, // D-029 — the context tenant; RLS re-verifies it
         planId: row.planId,
         planYear: targetYear,
         planName: row.planName,

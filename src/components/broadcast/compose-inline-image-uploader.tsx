@@ -4,8 +4,9 @@
  * T080 (F7.1a US2) — Member compose inline-image uploader.
  *
  * Triggers POST /api/broadcasts/inline-image-upload; on success calls
- * `onUploaded(blobUrl)` so the parent Tiptap editor can insert the
- * `<img src=blobUrl>` via `editor.chain().setImage()`.
+ * `onUploaded(blobUrl, imageId)` so the parent Tiptap editor can insert the
+ * `<img src=blobUrl>` via `editor.chain().setImage()`, or release the row by
+ * its id when the author cancels the description (spec 131).
  *
  * a11y:
  *   - the file input is `sr-only` and out of the Tab order; the visible
@@ -36,7 +37,8 @@ export const MEMBER_INLINE_IMAGE_UPLOAD_URL = '/api/broadcasts/inline-image-uplo
 
 interface Props {
   readonly draftId: string;
-  readonly onUploaded: (blobUrl: string) => void;
+  /** `imageId` is the `broadcast_images` row (spec 131: the release on cancel). */
+  readonly onUploaded: (blobUrl: string, imageId?: string) => void;
   /**
    * F119 T145 (FR-039) — where the file goes. The staff compose-on-behalf form
    * uploads to `POST /api/admin/broadcasts/[id]/images`, which carries the
@@ -192,11 +194,11 @@ export function ComposeInlineImageUploader({
         toast.error(msg);
         return;
       }
-      const data = (await res.json()) as { blobUrl: string };
+      const data = (await res.json()) as { blobUrl: string; imageId?: string };
       // The success toast is the editor's, said when the image is actually in
       // the message (round 2, #5): an upload whose description is cancelled
       // adds nothing.
-      onUploaded(data.blobUrl);
+      onUploaded(data.blobUrl, data.imageId);
     } catch (err) {
       // PR-review fix 2026-05-20 SF-M2 — log so CSP / CORS / offline
       // are distinguishable in browser console; toast stays generic.

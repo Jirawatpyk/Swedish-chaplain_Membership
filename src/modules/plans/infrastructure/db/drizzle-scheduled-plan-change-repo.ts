@@ -7,9 +7,8 @@
  *
  * Tenant isolation: every method runs inside `runInTenant(ctx, fn)`
  * which sets `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant`
- * — Postgres RLS scopes reads + writes transparently. NO explicit
- * `WHERE tenant_id = ?` filter is added (research.md § 7.1 — the whole
- * point of the two-layer defence is that you don't need one).
+ * — Postgres RLS scopes reads + writes, AND every statement carries an
+ * explicit `tenant_id` predicate (D-029, superseding research.md § 7.1).
  *
  * Wave B verify-run F1 remediation: `supersedeAndInsertPendingAtomically`
  * runs the supersede UPDATE + INSERT inside a single Postgres tx. If
@@ -93,6 +92,7 @@ async function supersedeAndInsertOnTx(
     })
     .where(
       and(
+        eq(scheduledPlanChanges.tenantId, tenantSlug),
         eq(scheduledPlanChanges.memberId, input.memberId),
         eq(scheduledPlanChanges.effectiveAtCycleId, input.effectiveAtCycleId),
         eq(scheduledPlanChanges.status, 'pending'),
@@ -167,6 +167,7 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
         .from(scheduledPlanChanges)
         .where(
           and(
+            eq(scheduledPlanChanges.tenantId, tenant.slug),
             eq(scheduledPlanChanges.memberId, memberId),
             eq(scheduledPlanChanges.effectiveAtCycleId, effectiveAtCycleId),
             eq(scheduledPlanChanges.status, 'pending'),
@@ -177,9 +178,7 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
     });
   },
 
-  // Primary-key lookup. RLS scopes to caller's tenant; explicit
-  // tenant_id filter intentionally omitted per the
-  // two-layer defence pattern (research.md § 7.1).
+  // Primary-key lookup, fenced by `tenant_id` alongside RLS (D-029).
   async findById(
     tenant: TenantContext,
     scheduledChangeId: string,
@@ -188,7 +187,12 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
       const rows = await tx
         .select()
         .from(scheduledPlanChanges)
-        .where(eq(scheduledPlanChanges.scheduledChangeId, scheduledChangeId))
+        .where(
+          and(
+            eq(scheduledPlanChanges.tenantId, tenant.slug),
+            eq(scheduledPlanChanges.scheduledChangeId, scheduledChangeId),
+          ),
+        )
         .limit(1);
       return rows[0] ? rowToDomain(rows[0]) : null;
     });
@@ -214,6 +218,7 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
         .set(setClause)
         .where(
           and(
+            eq(scheduledPlanChanges.tenantId, tenant.slug),
             eq(scheduledPlanChanges.scheduledChangeId, scheduledChangeId),
             eq(scheduledPlanChanges.status, 'pending'),
           ),
@@ -243,7 +248,12 @@ export const drizzleScheduledPlanChangeRepo: ScheduledPlanChangeRepo = {
       const rows = await tx
         .select()
         .from(scheduledPlanChanges)
-        .where(eq(scheduledPlanChanges.memberId, memberId))
+        .where(
+          and(
+            eq(scheduledPlanChanges.tenantId, tenant.slug),
+            eq(scheduledPlanChanges.memberId, memberId),
+          ),
+        )
         .orderBy(desc(scheduledPlanChanges.scheduledAt));
       return rows.map(rowToDomain);
     });

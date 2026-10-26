@@ -29,7 +29,7 @@ import { toast } from '@/lib/toast';
 const uploaderMocks = vi.hoisted(() => ({
   real: { current: true },
   props: { current: null as null | {
-    readonly onUploaded: (blobUrl: string) => void;
+    readonly onUploaded: (blobUrl: string, imageId?: string) => void;
     readonly onUploadingChange?: (busy: boolean) => void;
   } },
 }));
@@ -115,7 +115,8 @@ describe('#4/#5 — the upload flow', () => {
     const container = await renderEditor();
     act(() => uploaderMocks.props.current?.onUploaded('https://assets.swecham.example/a.png'));
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^cancel$/i }));
-    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(copy.notInserted));
+    // No image id came back, so nothing is released: the toast promises nothing (spec 131).
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(copy.notInsertedKept));
     expect(toast.success).not.toHaveBeenCalled();
 
     act(() => uploaderMocks.props.current?.onUploaded('https://assets.swecham.example/b.png'));
@@ -243,5 +244,163 @@ describe('#19 — the copy says what happens', () => {
   it('the upload hint says images are scanned before they are stored, not before upload', () => {
     expect(copy.helpText).toContain("before they're stored");
     expect(enMessages.portal.broadcasts.compose.editor.announcements.bulletListOn).toBe('Bulleted list on');
+  });
+});
+
+// Spec 131 (layer 1) — the cancelled upload is RELEASED: the editor asks the
+// endpoint beside the upload route to stamp the row for the next daily sweep,
+// and says so only once it succeeded; otherwise the toast is `notInsertedKept`.
+describe('spec 131 — a cancelled upload is released', () => {
+  const IMAGE_ID = '55555555-5555-5555-5555-555555555555';
+  const OTHER_DRAFT = '66666666-6666-6666-6666-666666666666';
+  const NOT_INSERTED = enMessages.portal.broadcasts.compose.imageUpload.notInserted;
+
+  function okFetch() {
+    const spy = vi.fn(async () => new Response(JSON.stringify({ released: true }), { status: 200 }));
+    vi.stubGlobal('fetch', spy);
+    return spy;
+  }
+
+  function renderHost(props: { imageUploadUrl?: string; draftId?: string } = {}) {
+    uploaderMocks.real.current = false;
+    const { draftId = DRAFT, ...rest } = props;
+    return render(wrap(<TiptapEditor initialHtml="<p>hello</p>" onChange={() => {}} imagesEnabled draftId={draftId} {...rest} />));
+  }
+
+  async function uploadThenCancel(props: { imageUploadUrl?: string } = {}): Promise<void> {
+    renderHost(props);
+    await screen.findByRole('toolbar');
+    act(() => uploaderMocks.props.current?.onUploaded('https://assets.swecham.example/a.png', IMAGE_ID));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^cancel$/i }));
+  }
+
+  it('the copy names no destination and does not promise a hard deadline (#658 UX / PDPA)', () => {
+    expect(NOT_INSERTED).toBe("The image wasn't added to your message. It will be removed automatically, usually within a day.");
+    // #658 UX M1 — "to your message", so a member does not read it as a failed upload and upload again.
+    expect(enMessages.portal.broadcasts.compose.imageUpload.notInsertedKept).toMatch(/^The image wasn't added to your message\./);
+  });
+
+  it('member host: DELETE /api/broadcasts/inline-image-upload/<imageId>?draftId=<draft>, and the toast says so', async () => {
+    const fetchSpy = okFetch();
+    await uploadThenCancel();
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`/api/broadcasts/inline-image-upload/${IMAGE_ID}?draftId=${DRAFT}`);
+    expect(init.method).toBe('DELETE');
+    expect(toast.info).toHaveBeenCalledWith(NOT_INSERTED);
+  });
+
+  it('staff and template hosts: the release goes beside the host\'s own upload URL', async () => {
+    const fetchSpy = okFetch();
+    await uploadThenCancel({ imageUploadUrl: `/api/admin/broadcasts/templates/${DRAFT}/images` });
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect((fetchSpy.mock.calls[0] as unknown as [string])[0]).toBe(
+      `/api/admin/broadcasts/templates/${DRAFT}/images/${IMAGE_ID}?draftId=${DRAFT}`,
+    );
+  });
+
+  it('confirming the description inserts the image and releases nothing', async () => {
+    const fetchSpy = okFetch();
+    const { container } = renderHost();
+    await screen.findByRole('toolbar');
+    act(() => uploaderMocks.props.current?.onUploaded('https://assets.swecham.example/a.png', IMAGE_ID));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText(/image description/i), { target: { value: 'The 2026 gala' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Insert image' }));
+    await waitFor(() => expect(container.querySelectorAll('img')).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('the release names the draft the image was uploaded to, even if the host\'s draft changed since', async () => {
+    const fetchSpy = okFetch();
+    const view = renderHost();
+    await screen.findByRole('toolbar');
+    act(() => uploaderMocks.props.current?.onUploaded('https://assets.swecham.example/a.png', IMAGE_ID));
+    view.rerender(wrap(<TiptapEditor initialHtml="<p>hello</p>" onChange={() => {}} imagesEnabled draftId={OTHER_DRAFT} />));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /^cancel$/i }));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect((fetchSpy.mock.calls[0] as unknown as [string])[0]).toBe(
+      `/api/broadcasts/inline-image-upload/${IMAGE_ID}?draftId=${DRAFT}`,
+    );
+  });
+
+  it('leaving the page with the description still open releases the upload', async () => {
+    const fetchSpy = okFetch();
+    const view = renderHost();
+    await screen.findByRole('toolbar');
+    act(() => uploaderMocks.props.current?.onUploaded('https://assets.swecham.example/a.png', IMAGE_ID));
+    view.unmount();
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].keepalive).toBe(true);
+  });
+
+  it('closing the tab or reloading (pagehide) with the description open releases the upload once', async () => {
+    const fetchSpy = okFetch();
+    const view = renderHost();
+    await screen.findByRole('toolbar');
+    act(() => uploaderMocks.props.current?.onUploaded('https://assets.swecham.example/a.png', IMAGE_ID));
+    act(() => { window.dispatchEvent(new Event('pagehide')); });
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain(IMAGE_ID);
+    expect(init).toMatchObject({ method: 'DELETE', keepalive: true });
+    view.unmount();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('pagehide with no upload waiting for its description sends nothing', async () => {
+    const fetchSpy = okFetch();
+    renderHost();
+    await screen.findByRole('toolbar');
+    act(() => { window.dispatchEvent(new Event('pagehide')); });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // #658 UX M2 (the maintainer, 26 Oct 2026): a release that fails for a
+  // reason that may pass (offline, 429, 5xx) is sent once more after 2 s; if
+  // it still fails, the toast says the file is still stored and who removes it.
+  const RETRY = { timeout: 5000 };
+  const KEPT = enMessages.portal.broadcasts.compose.imageUpload.notInsertedKept;
+
+  it('a failed release is retried once and, when that succeeds, promises the removal', async () => {
+    const fetchSpy = vi.fn()
+      .mockRejectedValueOnce(new TypeError('offline'))
+      .mockResolvedValue(new Response(JSON.stringify({ released: true }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await uploadThenCancel();
+
+    await waitFor(() => expect(toast.info).toHaveBeenCalledTimes(1), RETRY);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(toast.info).toHaveBeenCalledWith(NOT_INSERTED);
+  });
+
+  it('a release still refused after the retry (429) says the file is still stored', async () => {
+    const fetchSpy = vi.fn(async () => new Response('{}', { status: 429 }));
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await uploadThenCancel();
+
+    await waitFor(() => expect(toast.info).toHaveBeenCalledTimes(1), RETRY);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(toast.info).toHaveBeenCalledWith(KEPT);
+    expect(KEPT).toBe("The image wasn't added to your message. It's still stored. Contact the chamber if it must be removed.");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('a final refusal (409, the owner closed) is not retried', async () => {
+    const fetchSpy = vi.fn(async () => new Response('{}', { status: 409 }));
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await uploadThenCancel();
+
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(KEPT));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

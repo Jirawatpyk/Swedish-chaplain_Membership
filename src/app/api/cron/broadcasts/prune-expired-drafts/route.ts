@@ -66,6 +66,14 @@ export const dynamic = 'force-dynamic';
 // and `broadcast_images` disagreeing until the next run.
 export const maxDuration = 300;
 
+/**
+ * Spec 131 (#658 reliability M2) — how long Block 2 may start new rows,
+ * counted from the tick's start. Up to 600 rows a tick since the unused arm,
+ * each bounded only on its SQL; half the budget leaves the approval
+ * lifecycle (Block 3) its time and ends a large tick between rows.
+ */
+const IMAGE_SWEEP_BUDGET_MS = 150_000;
+
 // Vercel-native Cron invokes each scheduled path with a GET; this handler's
 // Bearer-gated logic lives in POST. Alias GET → POST so one handler serves
 // both the Vercel cron (GET) and the legacy cron-job.org trigger (POST)
@@ -155,15 +163,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     rowsRemoved?: number;
     retained?: number;
     rowsFailed?: number;
+    truncated?: boolean;
+    unusedListFailed?: boolean;
   } = { ok: false };
   try {
     const result = await reclaimOrphanedImages(makeReclaimOrphanedImagesDeps(tenantCtx.slug), {
       tenantId: tenantCtx.slug as never,
       now: new Date(),
       requestId: `cron-image-sweep-${startedAt}`,
+      deadlineMs: startedAt + IMAGE_SWEEP_BUDGET_MS,
     });
     if (result.ok) {
       imageSweep = { ok: true, ...result.value };
+      // Spec 131 — the rest of the batch waits for tomorrow; a tick that keeps
+      // truncating means the backlog outruns the budget.
+      if (result.value.truncated) {
+        logger.error(
+          { tenantId: tenantCtx.slug, scanned: result.value.scanned, rowsRemoved: result.value.rowsRemoved, errorId: 'M131.cron.image_sweep.truncated' },
+          'cron.broadcasts.image_sweep.truncated',
+        );
+      }
+      if (result.value.unusedListFailed) {
+        logger.error(
+          { tenantId: tenantCtx.slug, errorId: 'M131.cron.image_sweep.unused_list_failed' },
+          'cron.broadcasts.image_sweep.unused_list_failed',
+        );
+      }
       if (result.value.rowsFailed > 0) {
         logger.error(
           {

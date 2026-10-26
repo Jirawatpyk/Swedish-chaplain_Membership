@@ -776,7 +776,18 @@ export {
   type ReclaimOrphanedImagesInput,
   type ReclaimOrphanedImagesOutput,
 } from './application/use-cases/reclaim-orphaned-images';
-export { makeReclaimOrphanedImagesDeps, makeAuthorizeImageOwnerDeps, makeUploadInlineImageDeps } from './infrastructure/broadcasts-deps';
+export {
+  makeReclaimOrphanedImagesDeps,
+  makeAuthorizeImageOwnerDeps,
+  makeReleaseUnusedImageDeps,
+  makeUploadInlineImageDeps,
+} from './infrastructure/broadcasts-deps';
+export {
+  releaseUnusedImage,
+  type ReleaseUnusedImageDeps,
+  type ReleaseUnusedImageInput,
+  type ReleaseUnusedImageOutput,
+} from './application/use-cases/release-unused-image';
 export {
   authorizeImageOwner,
   IMAGE_UPLOAD_MEMBER_STAGES,
