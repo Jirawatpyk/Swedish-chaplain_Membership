@@ -64,26 +64,28 @@ export async function handleImageRelease(
   input: ImageReleaseRouteInput,
   correlationId: string,
 ): Promise<NextResponse> {
-  const limit =
-    input.actor.kind === 'member'
-      ? await broadcastsRateLimiter.checkLimit(
-          memberWriteRateKey(input.tenant.slug, input.actor.userId),
-          MEMBER_WRITE_RATE_MAX,
-          MEMBER_WRITE_RATE_WINDOW_SECONDS,
-        )
-      : await broadcastsRateLimiter.checkLimit(
-          staffWriteRateKey(input.tenant.slug, input.actor.userId),
-          STAFF_WRITE_RATE_MAX,
-          STAFF_WRITE_RATE_WINDOW_SECONDS,
-        );
-  if (!limit.ok) {
-    return errorResponse(429, 'broadcast_rate_limit_exceeded', correlationId, {
-      retryAfterSeconds: limit.error.retryAfterSeconds,
-      details: { retryAfterSeconds: limit.error.retryAfterSeconds },
-    });
-  }
-
+  // #658 reliability L4 — the rate limiter is inside the try, so an Upstash
+  // fault answers the 500 envelope with its correlation id, not a bare crash.
   try {
+    const limit =
+      input.actor.kind === 'member'
+        ? await broadcastsRateLimiter.checkLimit(
+            memberWriteRateKey(input.tenant.slug, input.actor.userId),
+            MEMBER_WRITE_RATE_MAX,
+            MEMBER_WRITE_RATE_WINDOW_SECONDS,
+          )
+        : await broadcastsRateLimiter.checkLimit(
+            staffWriteRateKey(input.tenant.slug, input.actor.userId),
+            STAFF_WRITE_RATE_MAX,
+            STAFF_WRITE_RATE_WINDOW_SECONDS,
+          );
+    if (!limit.ok) {
+      return errorResponse(429, 'broadcast_rate_limit_exceeded', correlationId, {
+        retryAfterSeconds: limit.error.retryAfterSeconds,
+        details: { retryAfterSeconds: limit.error.retryAfterSeconds },
+      });
+    }
+
     const result = await releaseUnusedImage(makeReleaseUnusedImageDeps(input.tenant.slug), {
       tenantId: input.tenant.slug as never,
       owner: input.owner,
