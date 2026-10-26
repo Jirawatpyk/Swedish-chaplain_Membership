@@ -623,7 +623,10 @@ export function ProxyComposeForm({
       />
       {/* F119 T148 (FR-050) — editor beside the 600 px email preview from `lg`
           up, stacked below; the page supplies the 72 rem container. */}
-      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]">
+      <div
+        data-testid="proxy-compose-grid"
+        className="grid min-w-0 grid-cols-[minmax(0,1fr)] items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]"
+      >
         {/* `overflow-clip`, not the card's `overflow-hidden`: a hidden
             overflow is the box the editor's sticky toolbar sticks in, so on
             a phone it scrolled away with the text (R89). */}
