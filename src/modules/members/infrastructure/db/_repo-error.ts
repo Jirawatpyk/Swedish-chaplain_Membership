@@ -4,14 +4,20 @@
  * unique-violation → `repo.conflict` detection that was duplicated verbatim
  * across every write path, including the Drizzle-0.45 cause-chain fallback.
  */
+import { TenantTxNotBoundError } from '@/lib/db';
 import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 import type {
   RepoConflictReason,
   RepoError,
 } from '../../application/ports/member-repo';
 
-/** Wrap an arbitrary caught cause as `repo.unexpected`. */
+/**
+ * Wrap an arbitrary caught cause as `repo.unexpected`. A tx that
+ * `runInTenant` did not open is a misuse, not a DB error, so its
+ * `TenantTxNotBoundError` is rethrown rather than folded into a Result (D-030).
+ */
 export function unexpected(cause: unknown): RepoError {
+  if (cause instanceof TenantTxNotBoundError) throw cause;
   return { code: 'repo.unexpected', cause };
 }
 

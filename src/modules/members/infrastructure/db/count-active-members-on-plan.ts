@@ -26,7 +26,7 @@
  * moved here and is re-exported through the members barrel unchanged.
  */
 import { and, count, eq, isNull, or } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, tenantSlugOf } from '@/lib/db';
 import type { TenantTx } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from './schema-members';
@@ -53,6 +53,7 @@ export async function countActiveMembersOnPlan(
       .from(members)
       .where(
         and(
+          eq(members.tenantId, ctx.slug),
           eq(members.planId, planId),
           eq(members.planYear, planYear),
           or(eq(members.status, 'active'), eq(members.status, 'inactive')),
@@ -74,9 +75,8 @@ export async function countActiveMembersOnPlan(
  * `pg_advisory_xact_lock` — guaranteeing the count is within the same
  * serialisation unit as the subsequent soft-delete UPDATE.
  *
- * RLS is already set by `runInTenant` on the surrounding tx — this query
- * does NOT need an explicit `WHERE tenant_id = ?` for safety, but Postgres
- * RLS+FORCE on the `members` table enforces it transparently.
+ * The query states the tenant `runInTenant` bound to the tx
+ * (`tenantSlugOf(tx)`, D-029/D-030), with RLS+FORCE on `members` behind it.
  *
  * Status filter intentionally matches `countActiveMembersOnPlan` exactly:
  * `active` OR `inactive` (archived = tombstoned = excluded).
@@ -86,11 +86,13 @@ export async function countActiveMembersOnPlanInTx(
   planId: string,
   planYear: number,
 ): Promise<number> {
+  const tenantId = tenantSlugOf(tx);
   const rows = await tx
     .select({ value: count() })
     .from(members)
     .where(
       and(
+        eq(members.tenantId, tenantId),
         eq(members.planId, planId),
         eq(members.planYear, planYear),
         or(eq(members.status, 'active'), eq(members.status, 'inactive')),

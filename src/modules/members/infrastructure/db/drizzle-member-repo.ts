@@ -2,9 +2,13 @@
  * Drizzle + RLS implementation of MemberRepo (T047).
  *
  * Every method runs inside `runInTenant(tenant, fn)` which sets
- * `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant` —
- * RLS then transparently scopes queries to the tenant. No explicit
- * `WHERE tenant_id = ?` appears here (F2 § 7.1 rationale).
+ * `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant` — RLS
+ * scopes every query to the tenant. Every statement ALSO carries an
+ * explicit `tenant_id` predicate on each tenant-scoped table it names
+ * (D-029, superseding F2 § 7.1), bound to the same slug `runInTenant` sets:
+ * `ctx.slug`, or for a tx-only `…InTx` method the slug `runInTenant` bound
+ * to that tx (`tenantSlugOf(tx)`, D-030 — it throws for any other tx). Gated by
+ * `tests/unit/members/infrastructure/member-repo-tenant-sql-shape.test.ts`.
  *
  * Row → Domain translation is handled by `rowToMember()` below; Drizzle's
  * inferred row shape never leaks into Application per Principle III.
@@ -26,7 +30,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
-import { runInTenant, type TenantTx } from '@/lib/db';
+import { runInTenant, tenantSlugOf, type TenantTx } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
@@ -155,6 +159,7 @@ function rowToMember(row: MemberRow): Member {
 /** Build and execute the UPDATE + RETURNING for a member patch on any tx. */
 function applyMemberPatch(
   tx: Parameters<Parameters<typeof runInTenant>[1]>[0],
+  tenantId: string,
   memberId: string,
   patch: MemberPatch,
 ) {
@@ -206,7 +211,7 @@ function applyMemberPatch(
   return tx
     .update(members)
     .set(set)
-    .where(eq(members.memberId, memberId))
+    .where(and(eq(members.tenantId, tenantId), eq(members.memberId, memberId)))
     .returning();
 }
 
@@ -217,6 +222,18 @@ function applyMemberPatch(
 // is documented below) live in ONE place.
 
 type RepoTx = Parameters<Parameters<typeof runInTenant>[1]>[0];
+
+/**
+ * D-030 — a method that takes a tenant argument beside its tx must be given
+ * the tenant `runInTenant` bound to that tx, so the `tenant_id` predicate and
+ * RLS name one tenant. Throws (inside the caller's try → `repo.unexpected`)
+ * before any statement is sent.
+ */
+function assertTxTenant(tx: unknown, tenantId: string): void {
+  if (tenantSlugOf(tx) !== tenantId) {
+    throw new Error('tenant argument differs from the tenant bound to the tx');
+  }
+}
 
 /**
  * Scalar directory filters (planYear / country / planId / riskBand). Returns
@@ -264,9 +281,11 @@ function buildDirectoryConds(filter: DirectoryFilter): SQL[] {
  */
 function buildDirectoryWhere(
   filter: DirectoryFilter | DirectoryOffsetFilter,
+  tenantId: string,
 ): SQL {
   const statuses = filter.status ?? ['active', 'inactive'];
   return and(
+    eq(members.tenantId, tenantId),
     // COMP-1 H4 — erasure keeps `status` and stamps only `erased_at`, so the
     // status OR-set does NOT hide an erased row.
     isNull(members.erasedAt),
@@ -480,13 +499,14 @@ function broadcastSegmentTierFilter(
  * exact statement the repo runs (PR-D review M-13: the 0294 partial index
  * was reserved for this read with an EXPLAIN obligation) instead of a
  * hand-written copy that would drift. Must be awaited inside the caller's
- * `runInTenant` tx — it is tenant-scoped by RLS, not by an explicit
- * predicate on `members.tenant_id`.
+ * `runInTenant` tx: it states that tx's tenant (`tenantSlugOf(tx)`, D-030)
+ * as an explicit `members.tenant_id` predicate alongside RLS (D-029).
  */
 export function buildBroadcastRecipientContactsQuery(
   tx: TenantTx,
   params: BroadcastRecipientContactsQuery,
 ) {
+  const tenantId = tenantSlugOf(tx);
   const tierFilter = broadcastSegmentTierFilter(params);
   const after = params.after;
   // Review 2026-09-07 round 2 (perf HIGH-1, EXPLAIN-proven on the 20k fixture)
@@ -559,6 +579,7 @@ export function buildBroadcastRecipientContactsQuery(
     )
     .where(
       and(
+        eq(members.tenantId, tenantId),
         eq(members.status, 'active'),
         isNull(members.erasedAt),
         eq(members.broadcastsHaltedUntilAdminReview, false),
@@ -577,7 +598,7 @@ export const drizzleMemberRepo: MemberRepo = {
         tx
           .select()
           .from(members)
-          .where(eq(members.memberId, memberId))
+          .where(and(eq(members.tenantId, ctx.slug), eq(members.memberId, memberId)))
           .limit(1),
       );
       if (rows.length === 0) return err({ code: 'repo.not_found' });
@@ -589,13 +610,14 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findByIdInTx(tx, memberId) {
     try {
+      const tenantId = tenantSlugOf(tx);
       // SELECT ... FOR UPDATE — row-level lock within the ambient tx so
       // concurrent actors must wait. Prevents TOCTOU lost-update (round-3
       // review N-C1). The lock is released on COMMIT / ROLLBACK.
       const rows = await tx
         .select()
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(and(eq(members.tenantId, tenantId), eq(members.memberId, memberId)))
         .for('update')
         .limit(1);
       if (rows.length === 0) return err({ code: 'repo.not_found' });
@@ -608,7 +630,8 @@ export const drizzleMemberRepo: MemberRepo = {
   async findRiskById(ctx, memberId) {
     try {
       // Narrow 2-column read (B18). Threads the runInTenant tx (RLS gotcha) —
-      // never the global db. Cross-tenant / absent → not_found via RLS.
+      // never the global db. Cross-tenant / absent → not_found (the tenant
+      // predicate, and RLS behind it).
       const rows = await runInTenant(ctx, (tx) =>
         tx
           .select({
@@ -616,7 +639,7 @@ export const drizzleMemberRepo: MemberRepo = {
             riskScoreBand: members.riskScoreBand,
           })
           .from(members)
-          .where(eq(members.memberId, memberId))
+          .where(and(eq(members.tenantId, ctx.slug), eq(members.memberId, memberId)))
           .limit(1),
       );
       const row = rows[0];
@@ -632,7 +655,12 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findErasedAtByIdInTx(tx, memberId) {
     try {
-      const rows = await tx.select({ erasedAt: members.erasedAt }).from(members).where(eq(members.memberId, memberId)).limit(1);
+      const tenantId = tenantSlugOf(tx);
+      const rows = await tx
+        .select({ erasedAt: members.erasedAt })
+        .from(members)
+        .where(and(eq(members.tenantId, tenantId), eq(members.memberId, memberId)))
+        .limit(1);
       const row = rows[0];
       if (row === undefined) return err({ code: 'repo.not_found' });
       return ok({ erasedAt: row.erasedAt ?? null });
@@ -645,13 +673,13 @@ export const drizzleMemberRepo: MemberRepo = {
     try {
       // COMP-1 narrow 1-column read (erasure pre-flight). Threads the
       // runInTenant tx (RLS gotcha) — never the global db. Cross-tenant /
-      // absent → not_found via RLS. `erased_at` is nullable: a non-erased
-      // member returns `{ erasedAt: null }`.
+      // absent → not_found (the tenant predicate, and RLS behind it).
+      // `erased_at` is nullable: a non-erased member returns `{ erasedAt: null }`.
       const rows = await runInTenant(ctx, (tx) =>
         tx
           .select({ erasedAt: members.erasedAt })
           .from(members)
-          .where(eq(members.memberId, memberId))
+          .where(and(eq(members.tenantId, ctx.slug), eq(members.memberId, memberId)))
           .limit(1),
       );
       const row = rows[0];
@@ -678,8 +706,8 @@ export const drizzleMemberRepo: MemberRepo = {
     // a PERMISSIVE RLS policy (migration 0007 — NULL-tenant F1 identity rows are
     // visible to every context), so `al.tenant_id = ${tenantSlug}` is required
     // for correctness, NOT defence-in-depth (mirrors the at-risk-scorer's
-    // audit_log subqueries). `members` uses a strict isolating policy — its
-    // outer WHERE is RLS-scoped by runInTenant, no explicit filter needed.
+    // audit_log subqueries). `members` uses a strict isolating policy, and its
+    // outer WHERE states the tenant too (D-029).
     //
     // The string-literal `event_type = 'member_erased'` comparisons are coerced
     // to the `audit_event_type` enum by Postgres (same pattern as
@@ -692,6 +720,7 @@ export const drizzleMemberRepo: MemberRepo = {
     // FOR UPDATE OF m SKIP LOCKED locks ONLY the `members` row (audit subqueries
     // aren't lockable) so concurrent reconciler ticks don't double-drive a row.
     // Threads the runInTenant `tx` (RLS gotcha — never the global db).
+    assertTxTenant(tx, tenantSlug);
     const rows = (await tx.execute(sql`
       SELECT m.member_id::text AS member_id,
              COALESCE(
@@ -704,7 +733,8 @@ export const drizzleMemberRepo: MemberRepo = {
                'gdpr_erasure_request'
              ) AS reason
       FROM members m
-      WHERE m.erased_at IS NOT NULL
+      WHERE m.tenant_id = ${tenantSlug}
+        AND m.erased_at IS NOT NULL
         AND NOT EXISTS (
           SELECT 1 FROM audit_log al2
           WHERE al2.tenant_id = ${tenantSlug}
@@ -726,6 +756,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findManyByIdsInTx(tx, tenantId, memberIds) {
     try {
+      assertTxTenant(tx, tenantId);
       if (memberIds.length === 0) {
         return ok(new Map() as ReadonlyMap<MemberId, Member>);
       }
@@ -758,6 +789,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async enrolAutoInvoiceInTx(tx, tenantId, memberIds, enrolledAt) {
     try {
+      assertTxTenant(tx, tenantId);
       if (memberIds.length === 0) return ok([] as ReadonlyArray<MemberId>);
       const rows = await tx
         .update(members)
@@ -798,6 +830,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findErasedIdsInTx(tx, tenantId, memberIds) {
     try {
+      assertTxTenant(tx, tenantId);
       if (memberIds.length === 0) return ok(new Set<MemberId>());
       const rows = await tx
         .select({ memberId: members.memberId })
@@ -820,6 +853,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findIdsWithoutLivePrimaryInTx(tx, tenantId, memberIds) {
     try {
+      assertTxTenant(tx, tenantId);
       if (memberIds.length === 0) return ok(new Set<MemberId>());
       const rows = await tx
         .select({ memberId: members.memberId })
@@ -845,6 +879,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async unenrolAutoInvoiceInTx(tx, tenantId, memberIds) {
     try {
+      assertTxTenant(tx, tenantId);
       if (memberIds.length === 0) return ok([] as ReadonlyArray<MemberId>);
       const rows = await tx
         .update(members)
@@ -920,6 +955,7 @@ export const drizzleMemberRepo: MemberRepo = {
           .from(members)
           .where(
             and(
+              eq(members.tenantId, ctx.slug),
               // COMP-1 H4 — an erased tombstone must not block a legitimate
               // re-registration under the same name.
               isNull(members.erasedAt),
@@ -950,6 +986,15 @@ export const drizzleMemberRepo: MemberRepo = {
     // failure on insert 2 or 3 still rolls back insert 1 — "one
     // transaction, or none" is a property of the CALLER's tx boundary, not
     // of how many try/catch blocks sit inside this method.
+
+    // 0. D-030 — every row is written for the tenant the tx is bound to.
+    try {
+      assertTxTenant(tx, draft.member.tenantId);
+      assertTxTenant(tx, draft.primaryContact.tenantId);
+      if (draft.secondaryContact) assertTxTenant(tx, draft.secondaryContact.tenantId);
+    } catch (e) {
+      return err(unexpected(e));
+    }
 
     // 1. Insert member
     let memberRow: typeof members.$inferSelect;
@@ -1059,7 +1104,7 @@ export const drizzleMemberRepo: MemberRepo = {
             archivedAt: next.archivedAt,
             updatedAt: next.updatedAt,
           })
-          .where(eq(members.memberId, memberId))
+          .where(and(eq(members.tenantId, ctx.slug), eq(members.memberId, memberId)))
           .returning(),
       );
       if (rows.length === 0) return err({ code: 'repo.not_found' });
@@ -1071,6 +1116,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async updateStatusInTx(tx, memberId, next) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await tx
         .update(members)
         .set({
@@ -1078,7 +1124,7 @@ export const drizzleMemberRepo: MemberRepo = {
           archivedAt: next.archivedAt,
           updatedAt: next.updatedAt,
         })
-        .where(eq(members.memberId, memberId))
+        .where(and(eq(members.tenantId, tenantId), eq(members.memberId, memberId)))
         .returning();
       if (rows.length === 0) return err({ code: 'repo.not_found' });
       return ok(rowToMember(rows[0]!));
@@ -1090,7 +1136,7 @@ export const drizzleMemberRepo: MemberRepo = {
   async updateFields(ctx, memberId, patch) {
     try {
       const rows = await runInTenant(ctx, (tx) =>
-        applyMemberPatch(tx, memberId, patch),
+        applyMemberPatch(tx, ctx.slug, memberId, patch),
       );
       if (rows.length === 0) return err({ code: 'repo.not_found' });
       return ok(rowToMember(rows[0]!));
@@ -1101,7 +1147,8 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async updateFieldsInTx(tx, memberId, patch) {
     try {
-      const rows = await applyMemberPatch(tx, memberId, patch);
+      const tenantId = tenantSlugOf(tx);
+      const rows = await applyMemberPatch(tx, tenantId, memberId, patch);
       if (rows.length === 0) return err({ code: 'repo.not_found' });
       return ok(rowToMember(rows[0]!));
     } catch (e) {
@@ -1111,6 +1158,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async scrubPiiInTx(tx, memberId, opts) {
     try {
+      const tenantId = tenantSlugOf(tx);
       // COMP-1 member erasure (GDPR Art.17 / PDPA §33). Anonymise the member
       // row in place. `company_name` is NOT NULL so it takes the non-PII
       // SENTINEL `[erased]`; every other PII-bearing column is NULLed —
@@ -1145,8 +1193,9 @@ export const drizzleMemberRepo: MemberRepo = {
       // which fails the build if a future column is left unclassified — keep
       // this `.set({...})` in lock-step with that test's SCRUBBED set.
       //
-      // Tenant-scoped via the caller's runInTenant tx (RLS); no manual
-      // tenant_id filter needed. Idempotent: re-running yields the same row.
+      // Tenant-scoped by an explicit `tenant_id` predicate on the caller's
+      // runInTenant tx, with RLS behind it (D-029). Idempotent: re-running
+      // yields the same row.
       const updated = await tx
         .update(members)
         .set({
@@ -1231,7 +1280,7 @@ export const drizzleMemberRepo: MemberRepo = {
           erasedAt: sql<Date>`COALESCE(${members.erasedAt}, ${opts.erasedAt.toISOString()}::timestamptz)`,
           updatedAt: opts.erasedAt,
         })
-        .where(eq(members.memberId, memberId))
+        .where(and(eq(members.tenantId, tenantId), eq(members.memberId, memberId)))
         .returning({ memberId: members.memberId });
       if (updated.length === 0) return err({ code: 'repo.not_found' });
       return ok(undefined);
@@ -1290,7 +1339,7 @@ export const drizzleMemberRepo: MemberRepo = {
         }
       }
 
-      const whereClause = and(buildDirectoryWhere(filter), ...cursorConds)!;
+      const whereClause = and(buildDirectoryWhere(filter, ctx.slug), ...cursorConds)!;
 
       const planNameSubquery = directoryPlanNameSubquery(tx);
 
@@ -1322,6 +1371,7 @@ export const drizzleMemberRepo: MemberRepo = {
               .from(contacts)
               .where(
                 and(
+                  eq(contacts.tenantId, ctx.slug),
                   eq(contacts.isPrimary, true),
                   inArray(contacts.memberId, memberIds),
                 ),
@@ -1356,13 +1406,13 @@ export const drizzleMemberRepo: MemberRepo = {
   // Powers numbered pagination on /admin/members. Runs two queries in one
   // runInTenant transaction: COUNT(*) for the total + LIMIT/OFFSET page.
   // Both use identical WHERE clauses so the count is always consistent
-  // with what the page shows (same RLS-scoped snapshot).
+  // with what the page shows (same tenant-scoped snapshot).
   async searchDirectoryWithCount(ctx, filter) {
     try {
       const result = await runInTenant(ctx, async (tx) => {
-        const whereClause = buildDirectoryWhere(filter);
+        const whereClause = buildDirectoryWhere(filter, ctx.slug);
 
-        // Count query — same filters, tenant-scoped via RLS
+        // Count query — same filters, same tenant predicate
         const countRows = await tx
           .select({ n: sql<number>`count(*)::int` })
           .from(members)
@@ -1413,6 +1463,7 @@ export const drizzleMemberRepo: MemberRepo = {
                 .from(contacts)
                 .where(
                   and(
+                    eq(contacts.tenantId, ctx.slug),
                     eq(contacts.isPrimary, true),
                     inArray(contacts.memberId, memberIds),
                   ),
@@ -1560,7 +1611,7 @@ export const drizzleMemberRepo: MemberRepo = {
         );
       }
       const n = await runInTenant(ctx, async (tx) => {
-        const whereClause = buildDirectoryWhere(filter);
+        const whereClause = buildDirectoryWhere(filter, ctx.slug);
         const rows = await tx
           .select({ n: sql<number>`count(*)::int` })
           .from(members)
@@ -1603,6 +1654,7 @@ export const drizzleMemberRepo: MemberRepo = {
           .leftJoin(
             contacts,
             and(
+              eq(contacts.tenantId, members.tenantId),
               eq(contacts.memberId, members.memberId),
               eq(contacts.isPrimary, true),
               sql`${contacts.removedAt} IS NULL`,
@@ -1618,6 +1670,7 @@ export const drizzleMemberRepo: MemberRepo = {
           )
           .where(
             and(
+              eq(members.tenantId, ctx.slug),
               // 108 PR-C (FR-021 / SC-009, UNFLAGGED): only ACTIVE members
               // are marketing-eligible. Before this predicate an archived or
               // lapsed member's primary still received every E-Blast.
@@ -1736,6 +1789,7 @@ export const drizzleMemberRepo: MemberRepo = {
           )
           .where(
             and(
+              eq(members.tenantId, ctx.slug),
               // The SAME member eligibility as the page read.
               eq(members.status, 'active'),
               isNull(members.erasedAt),
@@ -1770,6 +1824,7 @@ export const drizzleMemberRepo: MemberRepo = {
           .from(members)
           .where(
             and(
+              eq(members.tenantId, ctx.slug),
               // COMP-1 H4 — drop erased tombstones from the admin halt queue.
               isNull(members.erasedAt),
               eq(members.broadcastsHaltedUntilAdminReview, true),
@@ -1790,13 +1845,14 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async updateBroadcastsHaltedInTx(tx, memberId, halted) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const result = await tx
         .update(members)
         .set({
           broadcastsHaltedUntilAdminReview: halted,
           updatedAt: new Date(),
         })
-        .where(eq(members.memberId, memberId))
+        .where(and(eq(members.tenantId, tenantId), eq(members.memberId, memberId)))
         .returning({ memberId: members.memberId });
       return ok({ affected: result.length });
     } catch (e) {
@@ -1806,6 +1862,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async updateBroadcastsAcknowledgedAtInTx(tx, memberId, timestamp) {
     try {
+      const tenantId = tenantSlugOf(tx);
       // Atomic single-statement: UPDATE ... WHERE broadcasts_acknowledged_at IS NULL
       // produces exactly one fresh-acknowledgement row per concurrent
       // call (the other call's WHERE clause no longer matches). Avoids
@@ -1820,6 +1877,7 @@ export const drizzleMemberRepo: MemberRepo = {
         })
         .where(
           and(
+            eq(members.tenantId, tenantId),
             eq(members.memberId, memberId),
             sql`${members.broadcastsAcknowledgedAt} IS NULL`,
           ),
@@ -1839,7 +1897,7 @@ export const drizzleMemberRepo: MemberRepo = {
       const existsRows = await tx
         .select({ memberId: members.memberId })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(and(eq(members.tenantId, tenantId), eq(members.memberId, memberId)))
         .limit(1);
       if (existsRows.length === 0) {
         return ok({ affected: 0, previouslyNull: false });
@@ -1852,6 +1910,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findPrimaryContactEmailInTx(tx, tenantId, memberId) {
     try {
+      assertTxTenant(tx, tenantId);
       const rows = await tx
         .select({ email: contacts.email })
         .from(contacts)
@@ -1892,10 +1951,11 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findPreferredLocaleInTx(tx, memberId) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await tx
         .select({ locale: members.preferredLocale })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(and(eq(members.tenantId, tenantId), eq(members.memberId, memberId)))
         .limit(1);
       const row = rows[0];
       // CHECK constraint guarantees stored value is one of en|th|sv
@@ -1913,10 +1973,11 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async updatePreferredLocaleInTx(tx, memberId, nextLocale) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await tx
         .update(members)
         .set({ preferredLocale: nextLocale, updatedAt: new Date() })
-        .where(eq(members.memberId, memberId))
+        .where(and(eq(members.tenantId, tenantId), eq(members.memberId, memberId)))
         .returning({ previousValue: members.preferredLocale });
       const affected = rows.length;
       if (affected === 0) {
@@ -1933,6 +1994,7 @@ export const drizzleMemberRepo: MemberRepo = {
 
   async findMemberByPrimaryContactEmailInTx(tx, emailLower) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await tx
         .select({
           memberId: members.memberId,
@@ -1946,6 +2008,7 @@ export const drizzleMemberRepo: MemberRepo = {
         .innerJoin(
           contacts,
           and(
+            eq(contacts.tenantId, members.tenantId),
             eq(contacts.memberId, members.memberId),
             eq(contacts.isPrimary, true),
             sql`${contacts.removedAt} IS NULL`,
@@ -1960,6 +2023,7 @@ export const drizzleMemberRepo: MemberRepo = {
             eq(membershipPlans.planYear, members.planYear),
           ),
         )
+        .where(eq(members.tenantId, tenantId))
         .limit(1);
       const row = rows[0];
       if (!row) return ok(null);
@@ -2005,10 +2069,11 @@ export const drizzleMemberRepo: MemberRepo = {
    * this member's contacts. Cross-schema Drizzle join (auth.invitations
    * × members.contacts via contacts.linked_user_id = invitations.user_id).
    *
-   * Tenant scope: `contacts` RLS scopes the join under runInTenant +
-   * chamber_app role. `invitations` is cross-tenant by design (a user
-   * holds tenant-agnostic invites), so the join via contacts is what
-   * enforces the boundary. The `contacts.removed_at IS NULL` filter
+   * Tenant scope: `contacts.tenant_id = ctx.slug` (D-029), with `contacts`
+   * RLS behind it under runInTenant + chamber_app role. `invitations` is
+   * cross-tenant by design (a user holds tenant-agnostic invites; the table
+   * has no tenant_id), so the join via contacts is what enforces the
+   * boundary. The `contacts.removed_at IS NULL` filter
    * hides invitations for archived/removed contacts.
    *
    * Column visibility (migration 0017, staff-review R001):
@@ -2076,6 +2141,7 @@ export const drizzleMemberRepo: MemberRepo = {
           )
           .where(
             and(
+              eq(contacts.tenantId, ctx.slug),
               eq(contacts.memberId, memberId),
               isNull(contacts.removedAt),
               // Cluster 3 (2026-07-12): NO `expires_at > NOW()` filter —
@@ -2135,6 +2201,7 @@ export const drizzleMemberRepo: MemberRepo = {
           .innerJoin(contacts, eq(contacts.linkedUserId, invitations.userId))
           .where(
             and(
+              eq(contacts.tenantId, ctx.slug),
               inArray(contacts.memberId, [...memberIds]),
               eq(contacts.isPrimary, true),
               isNull(contacts.removedAt),
