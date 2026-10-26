@@ -67,6 +67,29 @@ describe('the inline image uploader on AURA', () => {
     expect(button).toHaveAttribute('aria-busy', 'true');
   });
 
+  // Spec 131: the editor needs the row's id to release an upload whose
+  // description is cancelled, so the uploader hands back both.
+  it('a stored upload hands back its blob URL and its image id', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ blobUrl: 'https://assets.swecham.example/a.png', imageId: 'img-7' }), {
+            status: 201,
+            headers: { 'content-type': 'application/json' },
+          }),
+      ),
+    );
+    const onUploaded = vi.fn();
+    const { container } = render(
+      <NextIntlClientProvider locale="en" messages={en}>
+        <ComposeInlineImageUploader draftId="d-1" onUploaded={onUploaded} />
+      </NextIntlClientProvider>,
+    );
+    pickFile(container);
+    await vi.waitFor(() => expect(onUploaded).toHaveBeenCalledWith('https://assets.swecham.example/a.png', 'img-7'));
+  });
+
   // Round 2 (#15): the toast announces the refusal; the inline danger Alert
   // keeps it in view without announcing it a second time (`role="none"`).
   it('a refused upload is an AURA danger Alert, announced once (by the toast)', async () => {
