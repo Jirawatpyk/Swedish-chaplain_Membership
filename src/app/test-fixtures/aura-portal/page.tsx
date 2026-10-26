@@ -23,6 +23,7 @@ import { renderPortalBroadcastDetailPreview } from './eblast-detail-previews';
 import { ComposeForm } from '@/components/broadcast/compose-form';
 import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import { COMPOSE_TEMPLATES, MEMBER_COMPOSE_SAMPLE } from '../_shared/compose-fixtures';
+import { MemberComposeApiStub } from '../_shared/compose-api-stub';
 import { TimelineFilters } from '@/components/members/timeline-filters';
 import { TimelineStream } from '@/components/members/timeline-stream';
 import type { TimelineItemProps } from '@/components/members/timeline-event-item';
@@ -203,6 +204,7 @@ export default async function AuraPortalPreviewPage({
     const blank = sp.state === 'blank';
     return (
       <MemberFrame path="/portal/benefits">
+        <MemberComposeApiStub />
         <DetailContainer>
           <PageHeader title={keepTermTogether(t('title'))} subtitle={t('subtitle')} />
           <ComposeForm
