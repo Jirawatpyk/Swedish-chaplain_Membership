@@ -72,9 +72,11 @@ export interface QuotaDisplayProps {
   /**
    * Spec 122 US12d-3 (T1265) — the numbers the card shows, each time a fetch
    * lands, so the compose form's submit confirmation names the same remaining
-   * allowance as the bar rather than the page's first paint.
+   * allowance as the bar rather than the page's first paint; `null` when a
+   * fetch fails, so the confirmation stops stating a number the card no
+   * longer shows.
    */
-  readonly onLoaded?: (snapshot: QuotaSnapshot) => void;
+  readonly onLoaded?: (snapshot: QuotaSnapshot | null) => void;
   /**
    * Spec 122 US12d-3 (board `Proposal-compose`) — `line`: one line, "3 of 6
    * E-Blasts left in 2026 · 1 reserved", with the bar beside it, for the
@@ -125,6 +127,7 @@ export function QuotaDisplay({
           if (!cancelled) {
             setSnap(null);
             setError(true);
+            onLoadedRef.current?.(null);
           }
           return;
         }
@@ -149,7 +152,10 @@ export function QuotaDisplay({
           onLoadedRef.current?.(next);
         }
       } catch {
-        if (!cancelled) setError(true);
+        if (!cancelled) {
+          setError(true);
+          onLoadedRef.current?.(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

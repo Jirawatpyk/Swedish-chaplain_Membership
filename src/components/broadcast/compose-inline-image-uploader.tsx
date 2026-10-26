@@ -289,22 +289,27 @@ export function ComposeInlineImageUploader({
         </Alert>
       )}
       {/* The full sentences stay in the DOM as the button's description, so a
-          screen-reader user hears them on the button, as before. */}
-      <p id={helpId} className="sr-only">
-        {t('helpText')}
-      </p>
-      {/*
-        F119 review finding F2-11 (PDPA M-4) — transparency BEFORE the choice.
-        An inline image is written to a public, unauthenticated blob URL and
-        then fetched by every recipient's mail client (a mail client cannot
-        carry a session, so the tier has to be public). A member picking a
-        photo off their phone has no way to know that from the button, so the
-        sentence sits next to the picker, above it in reading order, not in a
-        toast after the upload.
-      */}
-      <p id={noticeId} className="sr-only">
-        {t('publicLinkNotice')}
-      </p>
+          screen-reader user hears them on the button, as before. In a
+          `hidden` wrapper (review round 1): `aria-describedby` still reads
+          hidden text, and browse mode no longer reads it a second time after
+          the visible line. */}
+      <div hidden>
+        <p id={helpId}>
+          {t('helpText')}
+        </p>
+        {/*
+          F119 review finding F2-11 (PDPA M-4) — transparency BEFORE the choice.
+          An inline image is written to a public, unauthenticated blob URL and
+          then fetched by every recipient's mail client (a mail client cannot
+          carry a session, so the tier has to be public). A member picking a
+          photo off their phone has no way to know that from the button, so the
+          sentence sits next to the picker, above it in reading order, not in a
+          toast after the upload.
+        */}
+        <p id={noticeId}>
+          {t('publicLinkNotice')}
+        </p>
+      </div>
     </div>
   );
 }

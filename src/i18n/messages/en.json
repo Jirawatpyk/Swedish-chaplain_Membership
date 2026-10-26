@@ -6880,6 +6880,7 @@
           "sendOptions": "Send options",
           "schedulePicker": "Schedule for later",
           "scheduleHelp": "Leave blank to submit for immediate review.",
+          "scheduleClear": "Send as soon as it's approved",
           "previewLabel": "Preview",
           "previewLoading": "Loading preview…",
           "previewUnavailable": "Preview is temporarily unavailable",
@@ -6942,7 +6943,8 @@
           "label": "Compose view",
           "write": "Write",
           "preview": "Preview",
-          "actions": "Submit"
+          "actions": "Submit",
+          "blocked": "Can't send to this audience"
         },
         "confirm": {
           "title": "Submit this E-Blast for review?",
@@ -6953,6 +6955,8 @@
           "allowance": "Allowance",
           "allowanceMember": "Uses 1 of your {remaining, number} remaining E-Blasts for {year} (reserved until it's sent)",
           "allowanceProxy": "Uses 1 of the member's {remaining, number} remaining E-Blasts for {year}",
+          "allowanceNone": "You have no E-Blasts left for {year}, so this can't be submitted",
+          "allowanceNoneProxy": "The member has no E-Blasts left for {year}, so this can't be submitted",
           "sending": "Sending",
           "sendingNow": "As soon as it's approved",
           "sendingAt": "{when}, Bangkok time",
@@ -7016,7 +7020,7 @@
           "uploadedToast": "Image added.",
           "notInsertedKept": "The image wasn't added to your message. It's still stored. Contact the chamber if it must be removed.",
           "notInserted": "The image wasn't added to your message. It will be removed automatically, usually within a day.",
-          "shortHelp": "PNG, JPG, WebP or GIF up to 5 MB · stored at a public link anyone can open",
+          "shortHelp": "PNG, JPG, WebP or GIF up to 5 MB · stored at a public link anyone can open, so don't upload anything private",
           "aboutUploads": "About image uploads",
           "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before they're stored.",
           "publicLinkNotice": "Your image is stored at a public web address that needs no sign-in — anyone with the link can open it, so don't upload anything private.",

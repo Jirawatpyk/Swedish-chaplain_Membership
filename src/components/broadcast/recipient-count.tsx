@@ -177,8 +177,8 @@ export function RecipientCountLine({
   /**
    * Spec 122 US12d-3 (T1267) — who the recipients are, after the count on the
    * same line ("128 recipients · the primary contact of each active member,
-   * not your own company"). Outside the live region, so a count change is
-   * announced without re-reading it; with a note the count is the short form.
+   * not your own company"). Shown, and announced, only beside a measured
+   * count it explains; with a note the count is the short form.
    */
   readonly note?: string | null;
 }): React.ReactElement {
@@ -192,6 +192,7 @@ export function RecipientCountLine({
   let tone = 'text-[var(--aura-fg-secondary)]';
   let icon: React.ReactElement | null = null;
   let retry = false;
+  let withNote = false;
   switch (state.status) {
     case 'idle':
       break;
@@ -220,7 +221,8 @@ export function RecipientCountLine({
         text = t('empty', { dropped: state.droppedByPreference ?? 0 });
         tone = 'text-[var(--aura-fg-danger)]';
       } else {
-        text = note !== null ? t('readyShort', { count: state.count }) : t('ready', { count: state.count });
+        withNote = note !== null;
+        text = withNote ? t('readyShort', { count: state.count }) : t('ready', { count: state.count });
         tone = 'font-medium text-[var(--aura-fg-primary)]';
         icon = <Users className="size-3.5 shrink-0" aria-hidden="true" />;
       }
@@ -248,26 +250,27 @@ export function RecipientCountLine({
       {/* The count and its note are one sentence that wraps as text (board
           `Proposal-compose`), so a narrow column breaks inside the note, never
           before its "·". The space between them is a real text node, so a
-          screen reader reads two words. */}
-      <div className="min-w-0 flex-1">
-        <p id={textId} role="status" aria-live="polite" className="m-0 inline">
-          {icon !== null ? <span className="mr-1.5 inline-block align-[-2px]">{icon}</span> : null}
-          {text !== null ? <span>{text}</span> : null}
-        </p>
-        {note !== null ? (
+          screen reader reads two words. Review round 1: the note is inside
+          the status — on staff compose it is the only place the member's own
+          contacts are said to be excluded — and only beside a count it
+          explains, never beside "counting…" or a refusal. */}
+      <p id={textId} role="status" aria-live="polite" className="m-0 min-w-0 flex-1">
+        {icon !== null ? <span className="me-1.5 inline-block align-[-2px]">{icon}</span> : null}
+        {text !== null ? <span>{text}</span> : null}
+        {withNote ? (
           <>
             {' '}
             <span className="font-normal text-[var(--aura-fg-secondary)]">· {note}</span>
           </>
         ) : null}
-      </div>
+      </p>
       {/* T1270 — 44 px tall on a phone or a coarse pointer (it was the
           text's own height), AURA's focus ring. */}
       {retry ? (
         <button
           type="button"
           onClick={onRetry}
-          className="ml-1 inline-flex min-h-11 shrink-0 items-start rounded-[var(--aura-radius-sm)] px-1 underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] sm:[@media(pointer:fine)]:min-h-0"
+          className="ms-1 inline-flex min-h-11 shrink-0 items-start rounded-[var(--aura-radius-sm)] px-1 underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] sm:[@media(pointer:fine)]:min-h-0"
         >
           {t('retry')}
         </button>

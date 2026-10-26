@@ -157,6 +157,12 @@ vi.mock('@/components/shell/tiptap-loader', () => ({
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+// The exclusion note sits beside a measured count only (review round 1,
+// US12d-3), so the count is measured here.
+vi.mock('@/components/broadcast/recipient-count', async (orig) => ({
+  ...(await orig<typeof import('@/components/broadcast/recipient-count')>()),
+  useRecipientCount: () => ({ status: 'ready', count: 130, ceiling: 500, exceeds: false }),
+}));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // ---------------------------------------------------------------------------
@@ -246,6 +252,9 @@ describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
     // Spec 122 US12d-3 (T1267): on all_members the exclusion is the count
     // line's own note — "· not {company}'s own contacts" — not a line above.
     const excluded = screen.getByText("· not Has Email Corp's own contacts");
+    // Announced with the count: on this form the note is the only place the
+    // exclusion is said.
+    expect(screen.getByRole('status')).toHaveTextContent("130 recipients · not Has Email Corp's own contacts");
     expect(screen.queryByText(/won't receive this broadcast/i)).toBeNull();
     const picker = screen.getByTestId('segment-picker');
     // The picker precedes the note in document order.

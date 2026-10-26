@@ -14,8 +14,8 @@
  * cancellation note → the action row.
  *
  * Two regions used to be under-reserved (U12):
- *   - the quota card is a 2×2 / 1×4 grid of counters (`text-2xl` value over a
- *     `text-xs` label) plus the progress bar — not one line;
+ *   - the quota card (since spec 122 US12d-3 the one-line `variant="line"`:
+ *     the sentence with the bar beside it, under it on a phone);
  *   - the editor toolbar is a WRAP of 44 px controls (`tiptap-toolbar.tsx`:
  *     h-11 each, `gap-0.5 p-1`), one or two rows depending on the column width —
  *     not one h-9 bar. It reserves the count the toolbar renders: thirteen, plus
@@ -53,19 +53,12 @@ export function ComposeFormSkeleton({ variant, imageControls }: ComposeFormSkele
   return (
     <div className="min-w-0 space-y-6">
       {variant === 'member' ? (
-        // QuotaDisplay — the allowance card above the form.
+        // QuotaDisplay `variant="line"` — one line with the bar beside it
+        // (spec 122 US12d-3), the bar under it on a phone.
         <Card>
-          <div className="space-y-3">
-            <Skeleton className="h-5 w-40" />
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-2">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} data-skeleton="quota-counter" className="flex flex-col items-center">
-                  <Skeleton className="h-8 w-10" />
-                  <Skeleton className="h-4 w-14" />
-                </div>
-              ))}
-            </div>
-            <Skeleton className="h-2 w-full rounded-full" />
+          <div data-skeleton="quota-line" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Skeleton className="h-5 w-full sm:w-64" />
+            <Skeleton className="h-2 w-full rounded-full sm:w-72" />
           </div>
         </Card>
       ) : null}

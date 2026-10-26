@@ -287,7 +287,7 @@ export function ProxyComposeForm({
   const phone = useBreakpoint() === 'base';
   const [memberQuota, setMemberQuota] = useState<{
     readonly memberId: string;
-    readonly quota: QuotaSnapshot;
+    readonly quota: QuotaSnapshot | null;
   } | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [fieldError, setFieldError] = useState<{
@@ -594,6 +594,13 @@ export function ProxyComposeForm({
   );
   // The bar states the count only once a member is picked (it is theirs).
   const barCount = member === null ? null : summaryRecipientCount(recipientCount, segment.kind, customLines.length);
+  // A refused audience says so in the bar, beside the Submit it switches off
+  // (the reason itself is the count line in the card).
+  const barStart = countBlocked ? (
+    <span className="text-sm text-[var(--aura-fg-danger)]">{tCompose('views.blocked')}</span>
+  ) : barCount === null ? undefined : (
+    <span className="text-sm">{tCompose('recipientCount.readyShort', { count: barCount })}</span>
+  );
 
   return (
     <div className="min-w-0 space-y-6">
@@ -891,39 +898,6 @@ export function ProxyComposeForm({
             </div>
           </div>
         </Card>
-        {phone ? (
-          <ActionBar
-            className="chamber-viewport-actionbar"
-            label={tCompose('views.actions')}
-            start={
-              barCount === null ? undefined : (
-                <span className="text-sm">{tCompose('recipientCount.readyShort', { count: barCount })}</span>
-              )
-            }
-          >
-            {submitButton}
-          </ActionBar>
-        ) : null}
-
-        {member !== null ? (
-          <SubmitSummaryDialog
-            open={confirmOpen}
-            onOpenChange={setConfirmOpen}
-            // Closed before the request, as on the member form: a refusal
-            // then moves focus to its own field or the member picker.
-            onConfirm={async () => {
-              setConfirmOpen(false);
-              await handleSubmit();
-            }}
-            onBehalfOf={{ company: member.companyName }}
-            subject={subject}
-            segmentLabel={tCompose(`segmentOption.${segment.kind}`)}
-            recipientCount={barCount}
-            quota={memberQuota?.memberId === member.memberId ? memberQuota.quota : null}
-            scheduledFor={scheduledFor}
-          />
-        ) : null}
-
         <div className="min-w-0 lg:sticky lg:top-[calc(var(--shell-bar-height,0px)+1rem)]">
           <PreviewPane
             subject={subject}
@@ -933,6 +907,36 @@ export function ProxyComposeForm({
           />
         </div>
       </div>
+      {/* Review round 1: a sticky bar sticks within its container, so it is
+          the form's last child, not a row of the editor grid. */}
+      {phone ? (
+        <ActionBar
+          className="chamber-viewport-actionbar"
+          label={tCompose('views.actions')}
+          start={barStart}
+        >
+          {submitButton}
+        </ActionBar>
+      ) : null}
+
+      {member !== null ? (
+        <SubmitSummaryDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          // Closed before the request, as on the member form: a refusal
+          // then moves focus to its own field or the member picker.
+          onConfirm={async () => {
+            setConfirmOpen(false);
+            await handleSubmit();
+          }}
+          onBehalfOf={{ company: member.companyName }}
+          subject={subject}
+          segmentLabel={tCompose(`segmentOption.${segment.kind}`)}
+          recipientCount={barCount}
+          quota={memberQuota?.memberId === member.memberId ? memberQuota.quota : null}
+          scheduledFor={scheduledFor}
+        />
+      ) : null}
     </div>
   );
 }

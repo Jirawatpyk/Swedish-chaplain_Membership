@@ -28,6 +28,11 @@ export function summaryRecipientCount(
   return state.status === 'ready' && typeof state.count === 'number' ? state.count : null;
 }
 
+function visibleSubmit(): HTMLElement | null {
+  const buttons = document.querySelectorAll<HTMLElement>('[data-compose-feature="submit"]');
+  return Array.from(buttons).find((b) => b.getClientRects().length > 0) ?? buttons[0] ?? null;
+}
+
 export interface SubmitSummaryDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
@@ -69,15 +74,22 @@ export function SubmitSummaryDialog({
         ? segmentLabel
         : t('confirm.recipientsCount', { segment: segmentLabel, count: recipientCount }),
     ],
+    // No row when the card could not load the quota: the dialog never states
+    // a number the card no longer shows. None left is said plainly (the
+    // server refuses it; "1 of your 0" read as a typo).
     ...(quota === null
       ? []
       : ([
           [
             t('confirm.allowance'),
-            t(onBehalfOf === null ? 'confirm.allowanceMember' : 'confirm.allowanceProxy', {
-              remaining: quota.remaining,
-              year: formatCalendarYear(quota.quotaYear, locale),
-            }),
+            quota.remaining <= 0
+              ? t(onBehalfOf === null ? 'confirm.allowanceNone' : 'confirm.allowanceNoneProxy', {
+                  year: formatCalendarYear(quota.quotaYear, locale),
+                })
+              : t(onBehalfOf === null ? 'confirm.allowanceMember' : 'confirm.allowanceProxy', {
+                  remaining: quota.remaining,
+                  year: formatCalendarYear(quota.quotaYear, locale),
+                }),
           ],
         ] as const)),
     [t('confirm.sending'), scheduled === '' ? t('confirm.sendingNow') : t('confirm.sendingAt', { when: scheduled })],
@@ -92,6 +104,10 @@ export function SubmitSummaryDialog({
       cancelLabel={t('confirm.keepEditing')}
       confirmLabel={t('button.submit')}
       onConfirm={onConfirm}
+      // Back to the Submit the member pressed (the phone bar's or the
+      // card's, whichever is shown); a refusal then moves focus to its own
+      // alert or field.
+      finalFocus={visibleSubmit}
     >
       <dl
         data-compose-feature="submit-summary"

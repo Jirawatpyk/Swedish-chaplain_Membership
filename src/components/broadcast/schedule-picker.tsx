@@ -19,7 +19,7 @@
 import { useId, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { ChevronRight } from 'lucide-react';
-import { TextField } from '@jirawatpyk/aura-react';
+import { Button, TextField } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 import {
   bangkokInputToIso,
@@ -56,7 +56,7 @@ export function SchedulePicker({
         aria-controls={panelId}
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className="-ml-1 inline-flex min-h-11 items-center gap-1.5 self-start rounded-[var(--aura-radius-sm)] pr-2 pl-1 text-left text-sm font-medium text-[var(--aura-fg-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] disabled:opacity-[var(--aura-disabled-opacity)] sm:[@media(pointer:fine)]:min-h-9"
+        className="-ms-1 inline-flex min-h-11 items-center gap-1.5 self-start rounded-[var(--aura-radius-sm)] ps-1 pe-2 text-start text-sm font-medium text-[var(--aura-fg-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] disabled:opacity-[var(--aura-disabled-opacity)] sm:[@media(pointer:fine)]:min-h-9"
       >
         <ChevronRight
           aria-hidden="true"
@@ -67,7 +67,7 @@ export function SchedulePicker({
           · {scheduled === '' ? t('confirm.sendingNow') : t('confirm.sendingAt', { when: scheduled })}
         </span>
       </button>
-      <div id={panelId} hidden={!open} className="max-w-sm pl-6">
+      <div id={panelId} hidden={!open} className="flex max-w-sm flex-col items-start gap-2 ps-6">
         <TextField
           label={t('fields.schedulePicker')}
           optional
@@ -79,6 +79,13 @@ export function SchedulePicker({
           disabled={disabled}
           touchHeight
         />
+        {/* Review round 1 (UX): clearing a datetime field has no visible
+            control in every browser; this puts "now" back in one press. */}
+        {value !== null ? (
+          <Button type="button" variant="ghost" size="sm" touchHeight onClick={() => onChange(null)} disabled={disabled}>
+            {t('fields.scheduleClear')}
+          </Button>
+        ) : null}
       </div>
     </div>
   );

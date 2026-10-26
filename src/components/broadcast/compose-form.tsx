@@ -25,7 +25,7 @@
  * the read-only Alert and the Save-as-draft Button with AURA's own busy
  * spinner. Every muted / danger line reads AURA's tokens.
  */
-import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   ActionBar,
   Alert,
@@ -58,6 +58,7 @@ import { CustomListInput, parseLines } from './custom-list-input';
 import { SchedulePicker } from './schedule-picker';
 import { PreviewPane } from './preview-pane';
 import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
+import { ComposeFormSkeleton } from './compose-form-skeleton';
 import { SubmitButton } from './submit-button';
 import { UnsafeImageSourcesList } from './unsafe-image-sources-list';
 import { RecipientCountLine, useRecipientCount } from './recipient-count';
@@ -194,6 +195,11 @@ export interface ComposeFormProps {
   readonly initialTemplateId?: string | null;
 }
 
+/** `useSyncExternalStore` that never changes: false on the server and in hydration, true after. */
+function subscribeNever(): () => void {
+  return () => undefined;
+}
+
 export function ComposeForm({
   initialDraftId = null,
   initialSubject = '',
@@ -238,6 +244,7 @@ export function ComposeForm({
   // Spec 122 US12d-3 (T1269) — on a phone (AURA `base`, <640px) the page is
   // Write / Preview tabs and Submit sits in a sticky bar with the count.
   const phone = useBreakpoint() === 'base';
+  const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
   const [view, setView] = useState<'write' | 'preview'>('write');
   const [liveQuota, setLiveQuota] = useState<QuotaSnapshot | null>(initialQuota);
   // F119 T140 — which template is applied, and the html the editor is seeded
@@ -281,12 +288,19 @@ export function ComposeForm({
   // re-seed it with what the member has typed, never the last template.
   const bodyHtmlRef = useRef(bodyHtml);
   bodyHtmlRef.current = bodyHtml;
-  const layoutRef = useRef(phone);
+  // `null` until the form first mounts: before hydration the skeleton stands
+  // in, so the breakpoint settling then is not a layout switch.
+  const layoutRef = useRef<boolean | null>(null);
   useEffect(() => {
+    if (!hydrated) return;
+    if (layoutRef.current === null) {
+      layoutRef.current = phone;
+      return;
+    }
     if (layoutRef.current === phone) return;
     layoutRef.current = phone;
     setEditorSeed((prev) => ({ html: bodyHtmlRef.current, nonce: prev.nonce + 1 }));
-  }, [phone]);
+  }, [phone, hydrated]);
   // 108 PR-C T089 — debounced live count for the chosen segment (member mode:
   // the caller's own member is the one self-excluded server-side).
   // Round 2 (UX H-5): a "Try again" on an unavailable count re-runs the
@@ -317,18 +331,27 @@ export function ComposeForm({
   );
 
   // UX-R2-1 — auto-focus the failing field when a server error arrives.
-  useEffect(() => {
-    if (serverError === null) return;
-    if (serverError.field === 'subject') subjectRef.current?.focus();
-    else if (serverError.field === 'body') bodyContainerRef.current?.focus();
-    // segment / customList are radio/textarea — toast suffices
-  }, [serverError]);
-
   // The read-only alert takes focus so a keyboard / SR user lands on the
   // reason the submit did nothing (there is no toast to announce it).
+  // Review round 1 (US12d-3): on a phone the refusal can arrive while the
+  // Preview tab is open, and a field in the hidden Write panel cannot take
+  // focus — so the Write tab comes back first and the focus waits for it.
+  const focusPending = useRef(false);
   useEffect(() => {
+    if (serverError !== null || readOnlyRefusal !== null) focusPending.current = true;
+  }, [serverError, readOnlyRefusal]);
+  useEffect(() => {
+    if (!focusPending.current) return;
+    if (phone && view !== 'write') {
+      setView('write');
+      return;
+    }
+    focusPending.current = false;
     if (readOnlyRefusal !== null) readOnlyAlertRef.current?.focus();
-  }, [readOnlyRefusal]);
+    else if (serverError?.field === 'subject') subjectRef.current?.focus();
+    else if (serverError?.field === 'body') bodyContainerRef.current?.focus();
+    // segment / customList are radio/textarea — toast suffices
+  }, [serverError, readOnlyRefusal, phone, view]);
 
   const customLines = parseLines(customList);
   // /code-review 2026-09-07 (finding #6) — both are null for a segment
@@ -610,6 +633,13 @@ export function ComposeForm({
     />
   );
   const barCount = summaryRecipientCount(recipientCount, segment.kind, customLines.length);
+  // A refused audience says so in the bar, beside the Submit it switches off
+  // (the reason itself is the count line in the Write tab).
+  const barStart = countBlocked ? (
+    <span className="text-sm text-[var(--aura-fg-danger)]">{t('views.blocked')}</span>
+  ) : barCount === null ? undefined : (
+    <span className="text-sm">{t('recipientCount.readyShort', { count: barCount })}</span>
+  );
 
   const writeHead = (
     <>
@@ -866,6 +896,13 @@ export function ComposeForm({
     <PreviewPane subject={subject} bodyHtml={deferredBody} endpoint="/api/broadcasts/preview" locale={locale} />
   );
 
+  // Review round 1 (US12d-3): the phone and desktop layouts are two trees,
+  // and the server cannot know which one a phone needs — it rendered the
+  // desktop tree, then the phone swapped it in, mounting the editor and
+  // fetching the quota twice. The form waits for the first client render,
+  // with the route's own skeleton in its place.
+  if (!hydrated) return <ComposeFormSkeleton variant="member" imageControls={imagesEnabled} />;
+
   return (
     <div className="min-w-0 space-y-6">
       {/* Portal live walk U27 (FR-045) — the unload prompt covered the exits
@@ -900,11 +937,7 @@ export function ComposeForm({
           <ActionBar
             className="chamber-viewport-actionbar"
             label={t('views.actions')}
-            start={
-              barCount === null ? undefined : (
-                <span className="text-sm">{t('recipientCount.readyShort', { count: barCount })}</span>
-              )
-            }
+            start={barStart}
           >
             {submitButton}
           </ActionBar>
@@ -922,22 +955,22 @@ export function ComposeForm({
         </>
       )}
 
-        <SubmitSummaryDialog
-          open={confirmOpen}
-          onOpenChange={setConfirmOpen}
-          // Closed before the request: AURA hands focus back to Submit, and a
-          // refusal then moves it to its own alert or field as before.
-          onConfirm={async () => {
-            setConfirmOpen(false);
-            await onSubmit();
-          }}
-          onBehalfOf={null}
-          subject={subject}
-          segmentLabel={t(`segmentOption.${segment.kind}`)}
-          recipientCount={barCount}
-          quota={liveQuota}
-          scheduledFor={scheduledFor}
-        />
+      <SubmitSummaryDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        // Closed before the request: AURA hands focus back to Submit, and a
+        // refusal then moves it to its own alert or field as before.
+        onConfirm={async () => {
+          setConfirmOpen(false);
+          await onSubmit();
+        }}
+        onBehalfOf={null}
+        subject={subject}
+        segmentLabel={t(`segmentOption.${segment.kind}`)}
+        recipientCount={barCount}
+        quota={liveQuota}
+        scheduledFor={scheduledFor}
+      />
     </div>
   );
 }

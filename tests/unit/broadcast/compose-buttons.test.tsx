@@ -47,7 +47,10 @@ describe('SubmitButton on AURA', () => {
   it('is busy and inert while submitting', () => {
     renderSubmit({ submitting: true, blockedReasonIds: 'why-1' });
     const button = screen.getByRole('button', { name: compose.toast.submitting });
-    expect(button).toBeDisabled();
+    // Inert by AURA's `loading` (aria-disabled, clicks ignored), not native
+    // `disabled`, so it can take focus back from the summary dialog
+    // (review round 1, US12d-3).
+    expect(button).toHaveAttribute('aria-disabled', 'true');
     expect(button).toHaveAttribute('aria-busy', 'true');
     expect(button).not.toHaveAttribute('aria-describedby');
   });

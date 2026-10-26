@@ -26,6 +26,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { Combobox } from '@jirawatpyk/aura-react';
+import { useDebouncedValue } from '@/hooks/use-debounced-value';
 
 export interface MemberPickerOption {
   readonly memberId: string;
@@ -73,15 +74,10 @@ export function MemberPicker({
   inputRef,
 }: MemberPickerProps): React.ReactElement {
   const [rawQuery, setRawQuery] = useState('');
-  const [query, setQuery] = useState('');
+  const query = useDebouncedValue(rawQuery.trim(), DEBOUNCE_MS);
   const [results, setResults] = useState<readonly MemberPickerOption[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(false);
-
-  useEffect(() => {
-    const handle = setTimeout(() => setQuery(rawQuery.trim()), DEBOUNCE_MS);
-    return () => clearTimeout(handle);
-  }, [rawQuery]);
 
   // The state flips live inside the async run (not synchronously in the
   // effect body), as in the US10a picker.
