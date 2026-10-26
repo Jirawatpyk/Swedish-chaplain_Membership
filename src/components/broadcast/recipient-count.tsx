@@ -232,7 +232,7 @@ export function RecipientCountLine({
     // before its content changes (L-1 — an inserted region is not announced).
     <div
       data-compose-feature="recipient-count"
-      className={`flex min-h-10 flex-wrap items-start gap-x-1.5 text-sm ${tone}`}
+      className={`flex min-h-10 items-start gap-x-1.5 text-sm ${tone}`}
     >
       {/*
         /code-review 2026-09-07 (finding #8) — the retry BUTTON used to live
@@ -245,23 +245,22 @@ export function RecipientCountLine({
         alongside `role="status"` — redundant, but it is the hook the e2e
         reflow assertion selects on and it costs nothing.
       */}
-      <p
-        id={textId}
-        role="status"
-        aria-live="polite"
-        className="flex items-start gap-1.5"
-      >
-        {icon !== null ? <span className="mt-0.5">{icon}</span> : null}
-        {text !== null ? <span>{text}</span> : null}
-      </p>
-      {/* The space is a text node, not layout: flex drops it visually but a
-          screen reader reads "128 recipients · …" as two words, not one. */}
-      {note !== null ? (
-        <>
-          {' '}
-          <span className="font-normal text-[var(--aura-fg-secondary)]">· {note}</span>
-        </>
-      ) : null}
+      {/* The count and its note are one sentence that wraps as text (board
+          `Proposal-compose`), so a narrow column breaks inside the note, never
+          before its "·". The space between them is a real text node, so a
+          screen reader reads two words. */}
+      <div className="min-w-0 flex-1">
+        <p id={textId} role="status" aria-live="polite" className="m-0 inline">
+          {icon !== null ? <span className="mr-1.5 inline-block align-[-2px]">{icon}</span> : null}
+          {text !== null ? <span>{text}</span> : null}
+        </p>
+        {note !== null ? (
+          <>
+            {' '}
+            <span className="font-normal text-[var(--aura-fg-secondary)]">· {note}</span>
+          </>
+        ) : null}
+      </div>
       {/* T1270 — 44 px tall on a phone or a coarse pointer (it was the
           text's own height), AURA's focus ring. */}
       {retry ? (

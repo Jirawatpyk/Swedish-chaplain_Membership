@@ -6958,9 +6958,6 @@
           "sendingAt": "{when} เวลากรุงเทพฯ",
           "keepEditing": "แก้ไขต่อ"
         },
-        "submitNote": {
-          "cancellable": "คุณสามารถยกเลิก E-Blast นี้ได้ทุกเมื่อจนกว่าผู้ดูแลระบบจะอนุมัติ"
-        },
         "selfExclusionHint": "คุณและเพื่อนร่วมงานจะไม่ได้รับ E-Blast ของตัวเอง",
         "selfExclusionHintCustom": "ทุกอีเมลในรายการนี้จะได้รับ E-Blast — รวมถึงคุณ หากอีเมลของคุณอยู่ในรายการ",
         "selfExclusionHintAttendees": "ผู้เข้าร่วมงานจากบริษัทสมาชิกทุกคนจะได้รับ E-Blast — รวมถึงคุณและเพื่อนร่วมงาน หากได้เข้าร่วมงาน",
@@ -7054,6 +7051,8 @@
       },
       "quota": {
         "headerLabel": "โควตา E-Blast ({year})",
+        "lineLeft": "เหลือ {remaining, number} จาก {cap, number} E-Blast ในปี {year}",
+        "lineReserved": "กันไว้ {reserved, number}",
         "planLabel": "แพ็กเกจ: {plan}",
         "used": "ใช้ไป",
         "reserved": "จองไว้",

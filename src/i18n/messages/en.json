@@ -6958,9 +6958,6 @@
           "sendingAt": "{when}, Bangkok time",
           "keepEditing": "Keep editing"
         },
-        "submitNote": {
-          "cancellable": "You can cancel this broadcast at any time until an admin approves it."
-        },
         "selfExclusionHint": "You and your colleagues won't receive your own broadcast.",
         "selfExclusionHintCustom": "Everyone on this list receives the broadcast — including you, if your own address is on it.",
         "selfExclusionHintAttendees": "Every attendee from a member company receives the broadcast — including you and your colleagues, if you attended.",
@@ -7054,6 +7051,8 @@
       },
       "quota": {
         "headerLabel": "E-Blast quota ({year})",
+        "lineLeft": "{remaining, number} of {cap, number} E-Blasts left in {year}",
+        "lineReserved": "{reserved, number} reserved",
         "planLabel": "Plan: {plan}",
         "used": "Used",
         "reserved": "Reserved",

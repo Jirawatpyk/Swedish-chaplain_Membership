@@ -6958,9 +6958,6 @@
           "sendingAt": "{when}, Bangkok-tid",
           "keepEditing": "Fortsätt redigera"
         },
-        "submitNote": {
-          "cancellable": "Du kan avbryta detta utskick när som helst tills en administratör godkänner det."
-        },
         "selfExclusionHint": "Du och dina kollegor tar inte emot ert eget utskick.",
         "selfExclusionHintCustom": "Alla på den här listan tar emot utskicket – även du, om din egen adress står med.",
         "selfExclusionHintAttendees": "Alla deltagare från medlemsföretag tar emot utskicket – även du och dina kollegor, om ni deltog.",
@@ -7054,6 +7051,8 @@
       },
       "quota": {
         "headerLabel": "Utskickskvot ({year})",
+        "lineLeft": "{remaining, number} av {cap, number} E-Blasts kvar för {year}",
+        "lineReserved": "{reserved, number} reserverade",
         "planLabel": "Paket: {plan}",
         "used": "Använt",
         "reserved": "Reserverat",

@@ -75,6 +75,13 @@ export interface QuotaDisplayProps {
    * allowance as the bar rather than the page's first paint.
    */
   readonly onLoaded?: (snapshot: QuotaSnapshot) => void;
+  /**
+   * Spec 122 US12d-3 (board `Proposal-compose`) — `line`: one line, "3 of 6
+   * E-Blasts left in 2026 · 1 reserved", with the bar beside it, for the
+   * compose page. `card` (default): the four counters, legend and footnote of
+   * the benefits tab. The fetch, retry and live region are the same.
+   */
+  readonly variant?: 'card' | 'line';
 }
 
 export function QuotaDisplay({
@@ -86,6 +93,7 @@ export function QuotaDisplay({
   endpoint = '/api/broadcasts/quota',
   live = true,
   onLoaded,
+  variant = 'card',
 }: QuotaDisplayProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.quota');
   const tCompose = useTranslations('portal.broadcasts.compose');
@@ -155,6 +163,56 @@ export function QuotaDisplay({
   const exhausted = snap !== null && snap.remaining === 0;
 
   const showReset = nextResetCopy !== null && snap !== null && !error;
+
+  if (variant === 'line') {
+    return (
+      <Card aria-busy={loading} data-testid="quota-display" data-compose-feature="quota">
+        {error ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="aura-text-caption text-[var(--aura-fg-danger)]">{t('fetchError')}</p>
+            <Button type="button" size="sm" variant="ghost" touchHeight onClick={() => setRetryNonce((n) => n + 1)}>
+              {t('retry')}
+            </Button>
+          </div>
+        ) : snap !== null ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+            <p
+              aria-live="polite"
+              className={cn('m-0 font-medium', exhausted && 'text-[var(--aura-fg-danger)]')}
+            >
+              {exhausted
+                ? t('exhausted', { year: formatCalendarYear(snap.quotaYear, locale), reserved: snap.reserved })
+                : t('lineLeft', {
+                    remaining: snap.remaining,
+                    cap: snap.cap,
+                    year: formatCalendarYear(snap.quotaYear, locale),
+                  })}
+              {!exhausted && snap.reserved > 0 ? ` · ${t('lineReserved', { reserved: snap.reserved })}` : null}
+            </p>
+            <Progress
+              aria-label={t('progressLabel')}
+              value={snap.used}
+              secondaryValue={snap.reserved}
+              max={snap.cap}
+              tone={exhausted ? 'danger' : 'accent'}
+              valueText={t('valueText', {
+                used: snap.used,
+                reserved: snap.reserved,
+                remaining: snap.remaining,
+                cap: snap.cap,
+              })}
+              className="sm:w-72 sm:shrink-0"
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" aria-hidden="true">
+            <SkeletonBlock className="h-5 w-64 max-w-full" />
+            <SkeletonBlock className="h-2 w-full sm:w-72" />
+          </div>
+        )}
+      </Card>
+    );
+  }
 
   return (
     <Card aria-busy={loading} data-testid="quota-display" data-compose-feature="quota">

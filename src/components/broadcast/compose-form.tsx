@@ -613,7 +613,7 @@ export function ComposeForm({
 
   const writeHead = (
     <>
-      <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} onLoaded={setLiveQuota} />
+      <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} onLoaded={setLiveQuota} variant="line" />
       {/* F119 T140 (FR-046) — inside the form, so a choice re-seeds state
           instead of navigating and remounting it. */}
       <ComposeTemplatePickerField
@@ -791,11 +791,9 @@ export function ComposeForm({
               disabled={submitting}
             />
 
-            {/* UX-4 — surface FR-004a cancellation cutoff so members know
-                they can still pull back a submission until admin approves. */}
-            <p className="text-xs text-[var(--aura-fg-secondary)]">
-              {t('submitNote.cancellable')}
-            </p>
+            {/* UX-4 (FR-004a) — "you can cancel until an admin approves it" is said
+                in the submit confirmation now, beside the button that spends
+                the allowance (spec 122 US12d-3, board `Proposal-compose`). */}
 
             {/* U29 — the reason a dimmed Submit is dimmed, for the cases with
                 no element of their own. "Needs input" is not an error state,

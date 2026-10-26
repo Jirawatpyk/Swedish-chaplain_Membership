@@ -60,7 +60,7 @@ describe('member compose chrome', () => {
       </NextIntlClientProvider>,
     );
     expect(screen.getByTestId('quota-display')).toHaveTextContent('3 of 6 E-Blasts left in 2026');
-    expect(screen.queryByText(enMessages.portal.broadcasts.compose.submitNote.cancellable)).toBeNull();
+    expect(screen.queryByText(/You can cancel this broadcast at any time/)).toBeNull();
     vi.unstubAllGlobals();
   });
 });
