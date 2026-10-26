@@ -30,7 +30,7 @@ Nothing compares an owner's images with its content. So an unused image on an E-
 
 1. **Cancel after an upload releases the image.** The author uploads an image, then cancels the description. The editor then:
    - sends `DELETE` to the release endpoint with that upload's `imageId`;
-   - once the release succeeded, shows the info toast "The image wasn't added. It will be removed automatically, usually within a day." (EN/TH/SV, `notInserted`). A refused or failed release, or an upload with no image id, shows only "The image wasn't added." (`notInsertedKept`), because nothing will remove it soon.
+   - once the release succeeded, shows the info toast "The image wasn't added to your message. It will be removed automatically, usually within a day." (EN/TH/SV, `notInserted`). A refused or failed release, or an upload with no image id, shows only "The image wasn't added to your message." (`notInsertedKept`), because nothing will remove it soon.
 
    The release URL is fixed when the image is uploaded. Leaving the page while the description is still open releases the upload too, whether by navigating inside the app or by closing the tab or reloading (`pagehide`, a `keepalive` request; maintainer, 26 Oct 2026). It is sent once.
 
@@ -71,7 +71,7 @@ Nothing compares an owner's images with its content. So an unused image on an E-
 
 - Arm 3 removes the existing backlog straight away. There is no report-only mode and no flag.
 - Templates are included in layer 1.
-- ~~The toast says the image "will be removed within a day".~~ Revised after the #658 reviews: "The image wasn't added. It will be removed automatically, usually within a day." It names no destination and makes no hard promise.
+- ~~The toast says the image "will be removed within a day".~~ Revised after the #658 reviews: "The image wasn't added to your message. It will be removed automatically, usually within a day." It names no destination and makes no hard promise.
 - A watermark column (migration 0319) rather than re-scanning every image of every sent E-Blast every day.
 - Only the uploader may release an image.
 

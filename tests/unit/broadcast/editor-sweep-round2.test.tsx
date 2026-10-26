@@ -275,7 +275,9 @@ describe('spec 131 — a cancelled upload is released', () => {
   }
 
   it('the copy names no destination and does not promise a hard deadline (#658 UX / PDPA)', () => {
-    expect(NOT_INSERTED).toBe("The image wasn't added. It will be removed automatically, usually within a day.");
+    expect(NOT_INSERTED).toBe("The image wasn't added to your message. It will be removed automatically, usually within a day.");
+    // #658 UX M1 — "to your message", so a member does not read it as a failed upload and upload again.
+    expect(enMessages.portal.broadcasts.compose.imageUpload.notInsertedKept).toBe("The image wasn't added to your message.");
   });
 
   it('member host: DELETE /api/broadcasts/inline-image-upload/<imageId>?draftId=<draft>, and the toast says so', async () => {
