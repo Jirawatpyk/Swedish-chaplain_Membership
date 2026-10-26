@@ -9,11 +9,14 @@
  *
  * Counter live-updates as the user types; cap-exceeded triggers
  * aria-describedby warning + counter colour change.
+ *
+ * Spec 122 US12d-3 (T1270) — on AURA's Textarea. The help line and the
+ * counter keep their own ids (the counter is not a hint AURA could own), and
+ * an over-cap list now marks the field itself invalid, not only the counter.
  */
 import { useMemo } from 'react';
 import { useTranslations } from 'next-intl';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Textarea } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 
 const MAX_ENTRIES = 100;
@@ -63,28 +66,30 @@ export function CustomListInput({
 
   return (
     <div className="space-y-2">
-      <Label htmlFor="custom-recipient-list">{t('customListLabel')}</Label>
       <Textarea
         id="custom-recipient-list"
+        label={t('customListLabel')}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         rows={6}
         placeholder={t('customListPlaceholder')}
+        invalid={overCap}
         aria-describedby="custom-recipient-list-help custom-recipient-list-counter"
-        className="font-mono text-sm"
+        // `className` sits on the field wrapper: only the box is monospace.
+        className="[&_textarea]:font-mono [&_textarea]:text-sm"
       />
       <p
         id="custom-recipient-list-help"
-        className="text-xs text-muted-foreground"
+        className="text-xs text-[var(--aura-fg-secondary)]"
       >
         {t('customListHelp')}
       </p>
       <p
         id="custom-recipient-list-counter"
         className={cn(
-          'text-xs',
-          overCap ? 'font-semibold text-destructive' : 'text-muted-foreground',
+          'text-xs tabular-nums',
+          overCap ? 'font-semibold text-[var(--aura-fg-danger)]' : 'text-[var(--aura-fg-secondary)]',
         )}
       >
         {entries.length} / {MAX_ENTRIES}
