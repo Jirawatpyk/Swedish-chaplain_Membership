@@ -47,6 +47,7 @@ vi.mock('@/components/shell/tiptap-loader', () => ({
 }));
 
 const { ComposeForm } = await import('@/components/broadcast/compose-form');
+const { RecipientCountLine } = await import('@/components/broadcast/recipient-count');
 const c = enMessages.portal.broadcasts.compose;
 const QUOTA = { quotaYear: 2026, used: 3, reserved: 0, remaining: 3, cap: 6, planName: null };
 
@@ -163,5 +164,47 @@ describe('Send options', () => {
     expect(screen.getByRole('button', { name: new RegExp(c.fields.sendOptions) })).toHaveTextContent(
       c.confirm.sendingNow,
     );
+  });
+});
+
+describe('review round 2', () => {
+  it('with none left, the summary\'s Submit is off as well', async () => {
+    quotaReply = { status: 200, body: { ...QUOTA, used: 6, remaining: 0 } };
+    renderForm();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/broadcasts/quota', expect.anything()));
+    await userEvent.setup().click(visibleSubmit());
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByRole('button', { name: c.button.submit })).toBeDisabled();
+  });
+
+  it('a refusal with nothing to focus leaves the Preview tab open', async () => {
+    bp.current = 'base';
+    submitReply = { status: 500, body: { error: { code: 'internal_error', message: 'x' } } };
+    renderForm();
+    await userEvent.setup().click(screen.getByRole('tab', { name: c.views.preview }));
+    await confirmSubmit();
+    await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/submit'))).toBe(true));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.getByRole('tab', { name: c.views.preview })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('who the recipients are is said while the count is still coming', () => {
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <RecipientCountLine state={{ status: 'loading' } as never} note="not Acme's own contacts" />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent("Counting recipients… · not Acme's own contacts");
+  });
+
+  it('clearing the schedule keeps focus in Send options', async () => {
+    renderForm();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: new RegExp(c.fields.sendOptions) }));
+    fireEvent.change(screen.getByLabelText(new RegExp(c.fields.schedulePicker)), {
+      target: { value: '2099-11-03T09:30' },
+    });
+    await user.click(screen.getByRole('button', { name: c.fields.scheduleClear }));
+    expect(document.activeElement).toBe(screen.getByLabelText(new RegExp(c.fields.schedulePicker)));
   });
 });

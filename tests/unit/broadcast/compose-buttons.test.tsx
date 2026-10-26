@@ -45,8 +45,11 @@ describe('SubmitButton on AURA', () => {
   });
 
   it('is busy and inert while submitting', () => {
-    renderSubmit({ submitting: true, blockedReasonIds: 'why-1' });
+    const onClick = renderSubmit({ submitting: true, blockedReasonIds: 'why-1' });
     const button = screen.getByRole('button', { name: compose.toast.submitting });
+    // A second press while the request runs does nothing (review round 2).
+    fireEvent.click(button);
+    expect(onClick).not.toHaveBeenCalled();
     // Inert by AURA's `loading` (aria-disabled, clicks ignored), not native
     // `disabled`, so it can take focus back from the summary dialog
     // (review round 1, US12d-3).
