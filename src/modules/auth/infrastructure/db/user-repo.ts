@@ -266,15 +266,18 @@ export interface UserRepo {
     userId: UserId,
   ): Promise<{ readonly erased: boolean }>;
   /**
-   * 133 (#665 PDPA review, M-1) — stamp `consumed_at` on EVERY still-active
-   * `email_change_tokens` row of this login, in EVERY tenant. A login linked to
-   * members in two tenants holds a revert token per tenant; the erasing
-   * tenant's `eraseMember` only reaches its own (it runs in that tenant's
-   * `runInTenant`), and the other token carries the real email in plaintext.
-   * Deliberately cross-tenant (D-029 exemption): runs on the owner-role tx of
-   * the global `eraseUser`, keyed by the login id. Returns the count.
+   * 133 (#665 PDPA review, M-1; #668 review HIGH-1) — neutralise EVERY
+   * `email_change_tokens` row of this login, in EVERY tenant: stamp
+   * `consumed_at` where still null (an earlier consumption time is kept) and
+   * overwrite the plaintext `old_email` / `new_email` with the erasure
+   * sentinel. A login linked to members in two tenants holds a token per
+   * tenant; the erasing tenant's `eraseMember` only consumes its own (it runs
+   * in that tenant's `runInTenant`) and never scrubs the addresses. Consuming
+   * is not erasing (GDPR Art. 17 / PDPA §33). Deliberately cross-tenant
+   * (D-029 exemption): runs on the owner-role tx of the global `eraseUser`,
+   * keyed by the login id. Returns the number of rows neutralised.
    */
-  consumeEmailChangeTokensAllTenantsInTx(
+  scrubEmailChangeTokensAllTenantsInTx(
     tx: DbTx,
     userId: UserId,
     now: Date,
@@ -562,13 +565,18 @@ export const userRepo: UserRepo = {
       );
   },
 
-  async consumeEmailChangeTokensAllTenantsInTx(tx, userId, now) {
-    const consumed = await tx
+  async scrubEmailChangeTokensAllTenantsInTx(tx, userId, now) {
+    const sentinel = `erased+${userId}@erased.invalid`;
+    const scrubbed = await tx
       .update(emailChangeTokens)
-      .set({ consumedAt: now })
-      .where(and(eq(emailChangeTokens.userId, userId), isNull(emailChangeTokens.consumedAt)))
+      .set({
+        consumedAt: sql`COALESCE(${emailChangeTokens.consumedAt}, ${now.toISOString()}::timestamptz)`,
+        oldEmail: sentinel,
+        newEmail: sentinel,
+      })
+      .where(eq(emailChangeTokens.userId, userId))
       .returning({ id: emailChangeTokens.id });
-    return consumed.length;
+    return scrubbed.length;
   },
 
   async anonymiseErasedInTx(tx, userId) {

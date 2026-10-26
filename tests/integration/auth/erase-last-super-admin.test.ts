@@ -129,7 +129,7 @@ function depsOverTx(tx: Tx): { deps: EraseUserDeps; anonymised: string[] } {
         return Number((rows as unknown as Array<{ n: number }>)[0]?.n ?? -1);
       },
       // 133 — the token consume is not under test here (no tokens seeded).
-      consumeEmailChangeTokensAllTenantsInTx: async () => 0,
+      scrubEmailChangeTokensAllTenantsInTx: async () => 0,
       anonymiseErasedInTx: async (_tx, id) => {
         anonymised.push(String(id));
         return { erased: true };

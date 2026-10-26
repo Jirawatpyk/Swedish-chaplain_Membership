@@ -72,8 +72,8 @@ function oneAdminRepo(): UserRepo {
     deleteInviteOutboxByEmailAllTenantsInTx: (tx, email) =>
       userRepo.deleteInviteOutboxByEmailAllTenantsInTx(tx, email),
     anonymiseErasedInTx: (tx, userId) => userRepo.anonymiseErasedInTx(tx, userId),
-    consumeEmailChangeTokensAllTenantsInTx: (tx, userId, now) =>
-      userRepo.consumeEmailChangeTokensAllTenantsInTx(tx, userId, now),
+    scrubEmailChangeTokensAllTenantsInTx: (tx, userId, now) =>
+      userRepo.scrubEmailChangeTokensAllTenantsInTx(tx, userId, now),
     setPasswordHash: (id, hash, now) =>
       userRepo.setPasswordHash(id, hash, now),
     setPasswordHashInTx: (tx, id, hash, now) =>

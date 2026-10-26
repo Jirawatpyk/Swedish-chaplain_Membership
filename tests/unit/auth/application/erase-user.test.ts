@@ -63,7 +63,7 @@ function makeDeps(overrides: Partial<EraseUserDeps> = {}): {
   const findById = vi.fn(async () => ({ id: USER_ID, role: 'member', status: 'active' }));
   const countActiveAdministrators = vi.fn(async () => 5);
   // 133 — cross-tenant email-change token consume (count of tokens consumed).
-  const consumeEmailChangeTokensAllTenantsInTx = vi.fn(async () => 0);
+  const scrubEmailChangeTokensAllTenantsInTx = vi.fn(async () => 0);
   const deleteByUserIdInTx = vi.fn(async () => 2);
   const appendInTx = vi.fn(async () => undefined);
   const deps: EraseUserDeps = {
@@ -75,7 +75,7 @@ function makeDeps(overrides: Partial<EraseUserDeps> = {}): {
     // `countActiveAdministrators` and turn into a TypeError.
     users: {
       anonymiseErasedInTx,
-      consumeEmailChangeTokensAllTenantsInTx,
+      scrubEmailChangeTokensAllTenantsInTx,
       findById,
       countActiveAdministrators,
       ...(overrides.users ?? {}),
@@ -130,7 +130,7 @@ describe('eraseUser (F1 linked-user erasure)', () => {
           order.push('anonymise');
           return { erased: true };
         }),
-        consumeEmailChangeTokensAllTenantsInTx: vi.fn(async () => {
+        scrubEmailChangeTokensAllTenantsInTx: vi.fn(async () => {
           order.push('consume-tokens');
           return 2;
         }),
