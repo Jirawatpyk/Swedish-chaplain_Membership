@@ -84,6 +84,9 @@ export function makeDrizzleTierUpgradeEvalCandidateRepo(
           )
           .where(
             and(
+              // D-029: the root's own tenant predicate; the plan join and
+              // every subquery correlate to members.tenant_id.
+              eq(members.tenantId, tenant.slug),
               eq(members.status, 'active'),
               // COMP-1 H4 — exclude GDPR-erased members from tier-upgrade
               // evaluation (erasure keeps `status`, stamps `erased_at`).
@@ -108,7 +111,7 @@ export function makeDrizzleTierUpgradeEvalCandidateRepo(
           .orderBy(asc(members.memberId))
           .limit(limit + 1);
 
-        void tenantId; // RLS already scopes; param kept for adapter symmetry.
+        void tenantId; // the adapter's tenant is bound above; param kept for port symmetry.
 
         // Phase 7 review-fix I-TYPE-1: narrow `renewal_tier_bucket` to
         // the typed `TierBucket` union. Rows whose bucket value is

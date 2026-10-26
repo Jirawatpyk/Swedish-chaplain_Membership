@@ -140,7 +140,7 @@ export function makeDrizzleAtRiskScorer(
         .from(members)
         .where(
           and(
-            eq(members.tenantId, deps.tenant.slug),
+            eq(members.tenantId, tenantId),
             eq(members.memberId, memberId),
           ),
         )
@@ -385,7 +385,7 @@ export function makeDrizzleAtRiskScorer(
           })
           .from(membershipPlans)
           .where(
-            sql`${membershipPlans.tenantId} = ${deps.tenant.slug}
+            sql`${membershipPlans.tenantId} = ${tenantId}
                 AND ${membershipPlans.planId} = ${memberRow.planId}
                 AND ${membershipPlans.planYear} = ${memberRow.planYear}`,
           )

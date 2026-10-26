@@ -69,10 +69,10 @@ function toDomain(row: ProcessorEventRow): ProcessorEvent {
  *       from `processor_account_id` before calling this — runs as the
  *       owner role + ON CONFLICT DO NOTHING handles dedup).
  *
- * The two pre-resolution reads (`insertIfNew`'s duplicate probe and
- * `findById`) use `db` directly and stay global by design: processor_events
- * is a system-wide idempotency log and the webhook does not know its tenant
- * yet (the row may carry a NULL tenant). Every statement on a tenant tx binds
+ * The two global reads (`insertIfNew`'s duplicate probe and `findById`) use
+ * `db` directly by design: the Stripe event id is a globally unique PK, and
+ * the existing row may be a NULL-tenant rejection row written by
+ * `insertRejectedProcessorEvent`, which no tenant context can see. Every statement on a tenant tx binds
  * `tenant_id` explicitly (D-029): `markProcessed` / `updateOutcome` take the
  * slug `runInTenant` bound to their tx (`tenantSlugOf`, D-030 — it throws on
  * a tx from the global `db`); `findProcessorEventInTenant` uses its own ctx.

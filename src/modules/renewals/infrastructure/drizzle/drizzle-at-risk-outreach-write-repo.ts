@@ -8,10 +8,9 @@
  * 7-day pause check; this write-side covers the US4 admin/manager
  * "Contact" CTA insert.
  *
- * Tenant isolation is enforced by Postgres RLS+FORCE on
- * `at_risk_outreach` (migration 0090) — every method receives a tx
- * already prepared by `runInTenant`. NO explicit
- * `WHERE/INSERT tenant_id = ?` — the policy adds it automatically.
+ * Tenant isolation: inserts set `tenant_id` in VALUES and every other
+ * statement binds it explicitly (D-029); RLS+FORCE on `at_risk_outreach`
+ * (migration 0090), under the `runInTenant` tx, is the second wall.
  *
  * Migration 0090 enforces the channel-template discriminant CHECK:
  *   - `channel = 'email'` ⇒ `template_id IS NOT NULL`

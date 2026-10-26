@@ -25,7 +25,10 @@ vi.mock('@/lib/db', async (importOriginal) => {
 
 const { SHAPE_TENANT: T, tenantPredicateViolations, tenantScopedTables, unfencedRawSql, unfencedWheres } =
   await import('../../../../helpers/tenant-sql-shape');
-const { adminQueueListQuery } = await import('@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo');
+const { adminQueueListQuery, makeDrizzleBroadcastsRepo } = await import(
+  '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo'
+);
+const { drizzle } = await import('drizzle-orm/pg-proxy');
 
 const TABLES = tenantScopedTables();
 const SRC = 'src/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo.ts';
@@ -38,6 +41,28 @@ describe('broadcasts repo — tenant predicate on every statement (130 s7)', () 
     // Positive control: the parse sees the broadcasts ref.
     expect([...tenantPredicateViolations(rec.statements[0]!, TABLES).tables]).toEqual(['broadcasts']);
     expect(tenantPredicateViolations(rec.statements[0]!, TABLES).violations).toEqual([]);
+  });
+
+  it('the custom-recipient redaction UPDATE binds both of its broadcasts refs', async () => {
+    // A proxy db that answers the method's tenant-bound probe; the scan below
+    // cannot see this statement's predicates (nested sql.join fragments).
+    const statements: RecordedStatement[] = [];
+    const db = drizzle(async (sql, params) => {
+      statements.push({ sql, params });
+      return { rows: /current_setting/.test(sql) ? [{ current_tenant: T }] : [] };
+    });
+    const repo = makeDrizzleBroadcastsRepo(T as never);
+    await repo.redactMemberEmailFromCustomRecipientsInTx(db as never, T as never, ['a@example.com']);
+    const update = statements.find((s) => /^\s*update broadcasts/i.test(s.sql));
+    expect(update).toBeDefined();
+    expect([...tenantPredicateViolations(update!, TABLES).tables]).toEqual(['broadcasts']);
+    // `FROM broadcasts b2, LATERAL unnest(…)` is a comma join to a function,
+    // not a table; every broadcasts ref (`b`, `b2`) is bound.
+    expect(tenantPredicateViolations(update!, TABLES).violations).toEqual(['comma join after a table reference']);
+  });
+
+  it('listForMemberPaginated filters by its tenant-led baseWhere', () => {
+    expect(readFileSync(SRC, 'utf8').match(/const baseWhere = and\(\s*eq\(broadcasts\.tenantId, tenantIdArg\)/g)?.length).toBe(1);
   });
 
   it('every .where( names tenant_id, bar the composed lists and the two pre-resolution reads', () => {

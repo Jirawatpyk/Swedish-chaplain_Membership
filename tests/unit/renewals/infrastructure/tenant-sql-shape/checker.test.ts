@@ -74,6 +74,8 @@ describe('tenantPredicateViolations (130)', () => {
     const s = `select 1 from "members" where "members"."tenant_id" = $1 and "members"."plan_id" is distinct from "invoices"."plan_id"`;
     expect(tenantPredicateViolations(s, TABLES).refs).toEqual(['members']);
     expect(tenantPredicateViolations(s, TABLES).violations).toEqual([]);
+    const not = s.replace('is distinct from', 'is not distinct from');
+    expect(tenantPredicateViolations(not, TABLES).refs).toEqual(['members']);
   });
 
   it('flags a comma join', () => {

@@ -37,6 +37,7 @@ Mutation proof for s7: from the committed GREEN (`e2d24c42f`), each of these tur
 - deleting `eq(broadcasts.tenantId, tenantId)` from `adminQueueListQuery`;
 - deleting the first `eq(invoices.tenantId, tenantIdArg)` from an invoice-repo `filters` list.
 - deleting the `tenantSlugOf(tx)` predicate from `markProcessed` (from the committed `e61f003c4`).
+- deleting `b2.tenant_id = …` from the broadcasts custom-recipient redaction UPDATE (new runtime case).
 
 The broadcasts and invoice-repo gates had no RED, because neither repo needed a change; these mutations are their evidence.
 
@@ -45,3 +46,9 @@ s7 notes:
 - **Static scans.** `unfencedRawSql` stops at a nested backtick, so the broadcasts redaction UPDATE (`sql.join` of `sql` fragments) is pinned by its truncated prefix; both of its refs bind `tenant_id`.
 - **Exemptions.** The cross-tenant reads are listed in spec § Not changed, and each gate pins them as the file's only unfenced statements.
 - **`processor_events` writes.** `markProcessed` and `updateOutcome` receive only a tx, so they bind the tenant through `tenantSlugOf(tx)` (D-030) rather than a widened port. Every caller reaches them through `paymentsRepo.withTx`, which is `runInTenant`. A tx that `runInTenant` did not open is refused before any SQL.
+- **Review round (#663).**
+  - **A miss caught by review.** The review's completeness check found one statement the slice inventory missed: `drizzle-tier-upgrade-eval-candidate-repo.ts` `list` roots on `members` with no bound tenant predicate (its subqueries correlate to `members.tenant_id`). RED is `b8e902c56`, with 8 violations across the first page and the cursor page, and the root predicate is now added.
+  - **Comments.** The remaining RLS-only comments in the s1–s3 renewals files now cite D-029.
+  - **Single tenant source.** The scorer binds every predicate to the same `tenantId`.
+  - **Broadcasts.** The broadcasts redaction UPDATE now has a runtime gate case.
+- **Completeness scan.** Outside `members/` and `plans/`, every `.from/.update/.delete` on a tenant table whose `.where(` lacks the root's own `tenantId` was checked by hand. Each is either a composed list led by the tenant predicate or one of the § Not changed exemptions. One limit remains: a statement whose subqueries mention `tenantId` while the root does not passes a text scan; only the recording-db gates catch that.
