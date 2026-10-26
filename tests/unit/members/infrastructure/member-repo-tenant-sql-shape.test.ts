@@ -290,6 +290,29 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
     expect(unbound.statements).toEqual([]);
   });
 
+  it('a tenant argument that differs from the tx tenant sends nothing (D-030)', async () => {
+    const tx = rec.db;
+    const repo = drizzleMemberRepo as unknown as Record<string, (...a: unknown[]) => Promise<{ ok: boolean }>>;
+    const calls: Array<[string, unknown[]]> = [
+      ['findManyByIdsInTx', [tx, 'other-tenant', ['member-1']]],
+      ['enrolAutoInvoiceInTx', [tx, 'other-tenant', ['member-1'], NOW]],
+      ['findErasedIdsInTx', [tx, 'other-tenant', ['member-1']]],
+      ['findIdsWithoutLivePrimaryInTx', [tx, 'other-tenant', ['member-1']]],
+      ['unenrolAutoInvoiceInTx', [tx, 'other-tenant', ['member-1']]],
+      ['findPrimaryContactEmailInTx', [tx, 'other-tenant', 'member-1']],
+      [
+        'createWithPrimaryContactInTx',
+        [tx, anyWith({ member: anyWith({ tenantId: 'other-tenant', registrationDate: NOW, archivedAt: null }), primaryContact: ANY, secondaryContact: null })],
+      ],
+    ];
+    for (const [name, args] of calls) {
+      rec.statements.length = 0;
+      const result = await repo[name]!(...args);
+      expect(result.ok, name).toBe(false);
+      expect(rec.statements, name).toEqual([]);
+    }
+  });
+
   it('the bounce resolver is the one cross-tenant read, and it is only that', async () => {
     rec.statements.length = 0;
     await resolveBouncedInviteContacts('a@example.com');
