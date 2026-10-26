@@ -35,7 +35,7 @@
  * own truth, not a hand-copied constant (review round 1, P-6 / SEC-S2).
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { tenantSlugOf } from '@/lib/db';
+import { tenantSlugOf, TenantTxNotBoundError } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 import type { ChangeRequestScrubPort, ClosedChangeRequest } from '../../application/ports/change-request-scrub-port';
 import type { ChangeRequestId, ChangeRequestScope } from '../../domain/change-request/change-request';
@@ -103,6 +103,7 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
       }));
       return ok({ scrubbedRequestIds: ids as ChangeRequestId[], closedRequests });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
@@ -117,6 +118,7 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
         .where(and(eq(memberChangeRequests.tenantId, tenantId), eq(memberChangeRequests.memberId, memberId)));
       return ok(rows.map((r) => r.id as ChangeRequestId));
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },

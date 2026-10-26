@@ -11,7 +11,7 @@
  */
 
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import { db, tenantSlugOf } from '@/lib/db';
+import { db, tenantSlugOf, TenantTxNotBoundError } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 // Direct schema import — documented escape hatch for tx-sharing adapters.
 import {
@@ -52,6 +52,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
       };
       return ok(active);
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
@@ -81,6 +82,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
       }
       return ok({ tokenId: row.id });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
@@ -118,6 +120,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
       };
       return ok(active);
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
@@ -144,6 +147,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
       }
       return ok(undefined);
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
@@ -166,6 +170,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
         .returning({ id: emailChangeTokens.id });
       return ok({ invalidatedCount: updated.length });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
@@ -203,6 +208,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
       }
       return ok({ invalidatedEmails: [...emails] });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },

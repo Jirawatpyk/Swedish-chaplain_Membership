@@ -40,7 +40,7 @@
  * safety.
  */
 import { sql } from 'drizzle-orm';
-import { tenantSlugOf } from '@/lib/db';
+import { tenantSlugOf, TenantTxNotBoundError } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 import type { OutboxCancelPort } from '../../application/ports/outbox-cancel-port';
 
@@ -89,6 +89,7 @@ export const outboxCancelAdapter: OutboxCancelPort = {
       `)) as unknown as Array<{ id: string }>;
       return ok({ cancelledCount: deleted.length });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
@@ -113,6 +114,7 @@ export const outboxCancelAdapter: OutboxCancelPort = {
       `)) as unknown as Array<{ id: string }>;
       return ok({ cancelledCount: deleted.length });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
