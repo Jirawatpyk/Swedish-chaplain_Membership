@@ -13,21 +13,17 @@
  *
  * FR-038 also asks for editable link TEXT, which is why this is a dialog and
  * no longer the URL-only popover the toolbar carried before.
+ *
+ * Spec 122 US12d-2: an AURA `Dialog` with AURA fields. The refusal is the
+ * field's AURA `error` (its `aria-invalid` and `aria-describedby`), and its
+ * text sits in a `role="alert"` so it is spoken the moment the save is
+ * refused. Enter submits through the form.
  */
 import { useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Button, Dialog, TextField } from '@jirawatpyk/aura-react';
 import { BROADCAST_ALLOWED_URI_REGEXP } from '@/lib/broadcast-content-policy';
+import { looksLikeEmailAddress, withDefaultScheme } from './with-default-scheme';
 
 export interface BroadcastLink {
   readonly href: string;
@@ -43,10 +39,19 @@ export interface LinkDialogProps {
   readonly onRemove?: () => void;
   readonly initialHref?: string;
   readonly initialText?: string;
+  /** The link or selection has words: a blank text keeps them, not the address. */
+  readonly hasText?: boolean;
+  /** A link is under the caret: the dialog edits it ("Edit link"). */
+  readonly editing?: boolean;
+  /**
+   * The selection spans blocks, so its words cannot be replaced by one line
+   * of text without merging paragraphs: the text is shown, not editable.
+   */
+  readonly textReadOnly?: boolean;
   readonly finalFocus?: () => HTMLElement | false | null;
 }
 
-type LinkError = 'required' | 'scheme' | null;
+type LinkError = 'required' | 'scheme' | 'mailto' | null;
 
 export function LinkDialog({
   open,
@@ -56,16 +61,16 @@ export function LinkDialog({
   onRemove,
   initialHref = '',
   initialText = '',
+  editing = false,
+  hasText = false,
+  textReadOnly = false,
   finalFocus,
 }: LinkDialogProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.linkDialog');
   const [href, setHref] = useState<string>(initialHref);
   const [text, setText] = useState<string>(initialText);
   const [error, setError] = useState<LinkError>(null);
-  const fieldId = useId();
-  const urlId = `${fieldId}-url`;
-  const textId = `${fieldId}-text`;
-  const errorId = `${fieldId}-error`;
+  const formId = `${useId()}-link-form`;
 
   // Re-seed from the selection every time the dialog opens — a stale href from
   // the previously edited link would silently re-point this one. Render-time
@@ -82,13 +87,13 @@ export function LinkDialog({
   }
 
   const submit = (): void => {
-    const trimmedHref = href.trim();
+    const trimmedHref = withDefaultScheme(href);
     if (trimmedHref === '') {
       setError('required');
       return;
     }
     if (!BROADCAST_ALLOWED_URI_REGEXP.test(trimmedHref)) {
-      setError('scheme');
+      setError(looksLikeEmailAddress(trimmedHref) ? 'mailto' : 'scheme');
       return;
     }
     onConfirm({ href: trimmedHref, text: text.trim() });
@@ -96,68 +101,28 @@ export function LinkDialog({
   };
 
   const errorText =
-    error === 'required' ? t('errors.required') : error === 'scheme' ? t('errors.scheme') : null;
+    error === 'required'
+      ? t('errors.required')
+      : error === 'scheme'
+        ? t('errors.scheme')
+        : error === 'mailto'
+          ? t('errors.mailto', { address: href.trim() })
+          : null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" finalFocus={finalFocus}>
-        <DialogHeader>
-          <DialogTitle>{t('title')}</DialogTitle>
-          <DialogDescription>{t('description')}</DialogDescription>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={urlId}>{t('urlLabel')}</Label>
-            <Input
-              id={urlId}
-              type="text"
-              inputMode="url"
-              value={href}
-              placeholder={t('urlPlaceholder')}
-              onChange={(e) => {
-                setHref(e.target.value);
-                setError(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              {...(error !== null && { 'aria-invalid': true })}
-              {...(error !== null && { 'aria-describedby': errorId })}
-            />
-            {errorText !== null && (
-              <p id={errorId} role="alert" className="text-caption text-destructive">
-                {errorText}
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={textId}>{t('textLabel')}</Label>
-            <Input
-              id={textId}
-              type="text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
+    <Dialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      finalFocus={() => finalFocus?.() || null}
+      size="sm"
+      title={editing ? t('editTitle') : t('title')}
+      description={t('description')}
+      footer={
+        <>
           {canRemove && (
             <Button
-              type="button"
               variant="ghost"
-              className="sm:mr-auto"
+              className="sm:me-auto"
               onClick={() => {
                 onRemove?.();
                 onOpenChange(false);
@@ -166,14 +131,51 @@ export function LinkDialog({
               {t('remove')}
             </Button>
           )}
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>
-          <Button type="button" onClick={submit}>
+          <Button variant="primary" type="submit" form={formId}>
             {t('confirm')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </>
+      }
+    >
+      <form
+        id={formId}
+        noValidate
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <TextField
+          label={t('urlLabel')}
+          touchHeight
+          inputMode="url"
+          // A URL on a phone keyboard: no autocorrect or capital first
+          // letter, the browser's URL suggestions, "done" on the return key.
+          enterKeyHint="done"
+          autoComplete="url"
+          autoCapitalize="none"
+          spellCheck={false}
+          value={href}
+          placeholder={t('urlPlaceholder')}
+          onChange={(e) => {
+            setHref(e.target.value);
+            setError(null);
+          }}
+          error={errorText !== null ? <span role="alert">{errorText}</span> : undefined}
+        />
+        <TextField
+          label={t('textLabel')}
+          touchHeight
+          value={text}
+          readOnly={textReadOnly}
+          hint={textReadOnly ? t('textReadOnlyHint') : hasText ? t('textKeepHint') : t('textHint')}
+          onChange={(e) => setText(e.target.value)}
+        />
+      </form>
     </Dialog>
   );
 }

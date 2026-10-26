@@ -47,6 +47,10 @@ function renderToolbar(
   return { toolbar, buttons: within(toolbar).getAllByRole('button') };
 }
 
+/** The two controls that need a saved draft (FR-038). */
+const imageControls = (buttons: HTMLElement[]): HTMLElement[] =>
+  buttons.filter((b) => ['image', 'banner'].includes(b.getAttribute('data-toolbar-control') ?? ''));
+
 afterEach(() => {
   cleanup();
   editor?.destroy();
@@ -110,10 +114,36 @@ describe('T098 — one tab stop; arrows move; Home/End jump to the ends', () => 
 });
 
 describe('T098 — visible focus state and 320 px wrapping', () => {
-  it('every control carries a visible focus ring', () => {
+  // Spec 122 US12d-2: each control is an AURA IconButton, whose focus ring is
+  // AURA's own (`.aura-icon-btn:focus-visible`), 32px on desktop and 44px on
+  // touch / phone widths (`touchHeight`), as the compose boards draw it.
+  it('every control is an AURA IconButton with the touch size (AURA draws the focus ring)', () => {
     const { buttons } = renderToolbar();
     for (const b of buttons) {
-      expect(b.className).toMatch(/focus-visible:ring/);
+      expect(b).toHaveClass('aura-icon-btn', 'aura-icon-btn--touch');
+    }
+  });
+
+  // AURA 5.65.0 (#180) draws a pressed IconButton itself (fill, accent icon,
+  // Highlight in forced colours), so the app's stand-in classes are gone.
+  it('a pressed toggle is drawn by AURA, with no app stand-in classes', () => {
+    const { buttons } = renderToolbar();
+    const pressable = buttons.filter((b) => b.hasAttribute('aria-pressed'));
+    expect(pressable.length).toBeGreaterThan(0);
+    for (const b of pressable) {
+      expect(b).toHaveClass('aura-icon-btn');
+      expect(b.className).not.toContain('aria-pressed:');
+    }
+  });
+
+  it('the unavailable image controls keep the AURA tooltip (no native title) and the token opacity', () => {
+    const { buttons } = renderToolbar({ imageInsertEnabled: false });
+    const blocked = imageControls(buttons).filter((b) => b.getAttribute('aria-disabled') === 'true');
+    expect(blocked).toHaveLength(2);
+    for (const b of blocked) {
+      expect(b).not.toHaveAttribute('title');
+      expect(b).toHaveAttribute('data-aura-tip', b.getAttribute('aria-label'));
+      expect(b.className).toContain('opacity-[var(--aura-disabled-opacity)]');
     }
   });
 
@@ -143,8 +173,10 @@ describe('T098 — visible focus state and 320 px wrapping', () => {
  * unassociated. WCAG 3.3.2 (Labels or Instructions) / 1.3.1.
  */
 describe('U6 — the unavailable image controls point at the visible reason', () => {
+  // Undo and Redo are also unavailable on a fresh editor (round 2, #16), for
+  // their own reason, so this looks at the two image controls only.
   const unavailable = (buttons: HTMLElement[]): HTMLElement[] =>
-    buttons.filter((b) => b.getAttribute('aria-disabled') === 'true');
+    imageControls(buttons).filter((b) => b.getAttribute('aria-disabled') === 'true');
 
   it('with no saved draft, image + banner are aria-disabled and describedby the hint', () => {
     const { buttons } = renderToolbar({ imageInsertEnabled: false });

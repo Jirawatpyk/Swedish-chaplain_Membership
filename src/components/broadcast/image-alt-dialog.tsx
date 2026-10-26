@@ -12,7 +12,9 @@
  * "Announced" (US3-AS2) is the whole point of the error path, so it is three
  * things together, not a red border: `aria-invalid` on the field, the message
  * referenced by `aria-describedby`, and the message itself in a `role="alert"`
- * live region so it is spoken the moment the insert is refused.
+ * live region so it is spoken the moment the insert is refused. On AURA
+ * (spec 122 US12d-2) the first two are the `Textarea`'s own `error`; the
+ * message inside it is the `role="alert"`.
  *
  * The 1–125 bound is the Domain's (`BANNER_ALT_MIN`/`MAX` via the client-safe
  * re-export), the same numbers `validateBlocks` refuses with on the server —
@@ -21,17 +23,7 @@
  */
 import { useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Button, Dialog, Textarea } from '@jirawatpyk/aura-react';
 import { BANNER_ALT_MAX, BANNER_ALT_MIN } from '@/lib/design-blocks-client';
 
 export type ImageAltVariant = 'inline' | 'banner';
@@ -42,6 +34,9 @@ export interface ImageAltDialogProps {
   /** Only changes the copy — the rule and the bound are identical for both. */
   readonly variant: ImageAltVariant;
   readonly onConfirm: (alt: string) => void;
+  /** An inserted image is selected: the dialog edits its description ("Save description"). */
+  readonly editing?: boolean;
+  readonly initialValue?: string;
   /** Focus-return target on close; EVERY dialog in this codebase supplies one. */
   readonly finalFocus?: () => HTMLElement | false | null;
 }
@@ -53,6 +48,8 @@ export function ImageAltDialog({
   onOpenChange,
   variant,
   onConfirm,
+  editing = false,
+  initialValue = '',
   finalFocus,
 }: ImageAltDialogProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.altDialog');
@@ -66,9 +63,7 @@ export function ImageAltDialog({
   const tUpload = useTranslations('portal.broadcasts.compose.imageUpload');
   const [value, setValue] = useState<string>('');
   const [error, setError] = useState<AltError>(null);
-  const fieldId = useId();
-  const hintId = `${fieldId}-hint`;
-  const errorId = `${fieldId}-error`;
+  const formId = `${useId()}-alt-form`;
 
   // A fresh open is a fresh description — carrying the previous image's words
   // over is worse than an empty field, because it looks deliberate. Uses the
@@ -78,7 +73,7 @@ export function ImageAltDialog({
   if (open !== prevOpen) {
     setPrevOpen(open);
     if (open) {
-      setValue('');
+      setValue(initialValue);
       setError(null);
     }
   }
@@ -104,54 +99,65 @@ export function ImageAltDialog({
         ? t('errors.tooLong', { max: BANNER_ALT_MAX })
         : null;
 
+  const counter = t('counter', { count: value.trim().length, max: BANNER_ALT_MAX });
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" finalFocus={finalFocus}>
-        <DialogHeader>
-          <DialogTitle>{variant === 'banner' ? t('bannerTitle') : t('title')}</DialogTitle>
-          <DialogDescription>{t('description')}</DialogDescription>
-        </DialogHeader>
-
-        <p className="text-caption text-muted-foreground">{tUpload('publicLinkNotice')}</p>
-
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={fieldId}>{t('fieldLabel')}</Label>
-          <Textarea
-            id={fieldId}
-            value={value}
-            rows={2}
-            onChange={(e) => {
-              setValue(e.target.value);
-              setError(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            {...(error !== null && { 'aria-invalid': true })}
-            aria-describedby={error !== null ? `${hintId} ${errorId}` : hintId}
-          />
-          <p id={hintId} className="text-caption text-muted-foreground">
-            {t('counter', { count: value.trim().length, max: BANNER_ALT_MAX })}
-          </p>
-          {errorText !== null && (
-            <p id={errorId} role="alert" className="text-caption text-destructive">
-              {errorText}
-            </p>
-          )}
-        </div>
-
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+    <Dialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      finalFocus={() => finalFocus?.() || null}
+      size="sm"
+      title={editing ? t('editTitle') : variant === 'banner' ? t('bannerTitle') : t('title')}
+      description={t('description')}
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t('cancel')}
           </Button>
-          <Button type="button" onClick={submit}>
-            {variant === 'banner' ? t('bannerInsert') : t('insert')}
+          <Button variant="primary" type="submit" form={formId}>
+            {editing ? t('saveEdit') : variant === 'banner' ? t('bannerInsert') : t('insert')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </>
+      }
+    >
+      <form
+        id={formId}
+        noValidate
+        className="flex flex-col gap-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{tUpload('publicLinkNotice')}</p>
+        <Textarea
+          label={t('fieldLabel')}
+          touchHeight
+          value={value}
+          rows={2}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={(e) => {
+            // A textarea does not submit its form on Enter; Shift+Enter is a new
+            // line, and an Enter that commits an IME composition is not a submit.
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          hint={counter}
+          // AURA's error replaces the hint, so the counter rides along with it.
+          error={
+            errorText !== null ? (
+              <>
+                <span role="alert">{errorText}</span> {counter}
+              </>
+            ) : undefined
+          }
+        />
+      </form>
     </Dialog>
   );
 }

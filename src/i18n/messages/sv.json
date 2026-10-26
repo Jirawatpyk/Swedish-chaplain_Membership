@@ -6480,16 +6480,22 @@
         "image": "Bild",
         "cta": "Knapp",
         "banner": "Bannerbild",
-        "imageNeedsDraft": "Spara utkastet först för att kunna lägga till en bild."
+        "undo": "Ångra",
+        "redo": "Gör om",
+        "editButton": "Redigera knapp",
+        "editImage": "Redigera bildbeskrivning",
+        "editBanner": "Redigera bannerbeskrivning"
       },
       "altDialog": {
         "title": "Beskriv bilden",
         "bannerTitle": "Beskriv bannern",
+        "editTitle": "Redigera bildbeskrivning",
         "description": "En kort beskrivning läses upp för den som inte kan se bilden och visas i e-postappar som blockerar bilder.",
         "fieldLabel": "Bildbeskrivning",
         "counter": "{count} av {max} tecken",
         "insert": "Infoga bild",
         "bannerInsert": "Infoga banner",
+        "saveEdit": "Spara beskrivning",
         "cancel": "Avbryt",
         "errors": {
           "required": "Ange en beskrivning av bilden, {min} till {max} tecken.",
@@ -6498,35 +6504,46 @@
       },
       "linkDialog": {
         "title": "Lägg till länk",
+        "editTitle": "Redigera länk",
         "description": "Länkar öppnas i en ny flik.",
         "urlLabel": "Länkadress",
         "urlPlaceholder": "https://example.com",
         "textLabel": "Länktext",
+        "textHint": "Lämna tomt för att visa adressen.",
+        "textKeepHint": "Lämna tomt för att behålla nuvarande ord.",
+        "textReadOnlyHint": "Markeringen omfattar mer än ett stycke, så texten kan inte ändras här.",
         "confirm": "Spara länk",
         "cancel": "Avbryt",
         "remove": "Ta bort länk",
         "errors": {
           "required": "Ange en länkadress.",
-          "scheme": "En länk måste börja med http://, https:// eller mailto:."
+          "scheme": "En länk måste börja med http://, https:// eller mailto:.",
+          "mailto": "Om du vill länka till en e-postadress skriver du mailto:{address}"
         }
       },
       "ctaDialog": {
         "title": "Lägg till knapp",
+        "editTitle": "Redigera knapp",
         "description": "Kammarens färg och avstånd tillämpas automatiskt.",
         "textLabel": "Knapptext",
         "urlLabel": "Knapplänk",
         "urlPlaceholder": "https://example.com",
         "counter": "{count} av {max} tecken",
         "confirm": "Infoga knapp",
+        "saveEdit": "Spara knapp",
         "cancel": "Avbryt",
+        "remove": "Ta bort knapp",
         "errors": {
           "textRequired": "Ange knapptexten, {min} till {max} tecken.",
           "textTooLong": "Korta ner knapptexten till högst {max} tecken.",
           "required": "Ange en länk för knappen.",
-          "scheme": "En länk måste börja med http://, https:// eller mailto:."
+          "scheme": "En länk måste börja med http://, https:// eller mailto:.",
+          "mailto": "Om du vill länka till en e-postadress skriver du mailto:{address}"
         }
       },
       "pasteNotice": "Viss formatering stöds inte i e-post och togs bort.",
+      "placeholder": "Skriv ditt meddelande…",
+      "ctaBlockDescription": "knapp, länkar till {href}",
       "preview": {
         "empty": "Din förhandsgranskning visas här.",
         "paused": "Förhandsgranskningen är pausad i {seconds} sekunder – den uppdateras vid din nästa ändring.",
@@ -6886,7 +6903,17 @@
             "orderedListOn": "Numrerad lista på",
             "orderedListOff": "Numrerad lista av",
             "linkSet": "Länk tillagd",
-            "linkCleared": "Länk borttagen"
+            "linkCleared": "Länk borttagen",
+            "heading2On": "Rubrik på",
+            "heading2Off": "Rubrik av",
+            "heading3On": "Underrubrik på",
+            "heading3Off": "Underrubrik av",
+            "quoteOn": "Citat på",
+            "quoteOff": "Citat av",
+            "dividerAdded": "Avdelare tillagd",
+            "buttonAdded": "Knapp tillagd",
+            "undone": "Ångrat",
+            "redone": "Gjort om"
           }
         },
         "toast": {
@@ -6955,8 +6982,9 @@
           "uploadButton": "Ladda upp bild",
           "uploadingLabel": "Laddar upp…",
           "uploadingAria": "Laddar upp bild — vänta",
-          "uploadedToast": "Bilden har laddats upp.",
-          "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas före uppladdning.",
+          "uploadedToast": "Bild tillagd.",
+          "notInserted": "Bilden lades inte till i meddelandet.",
+          "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas innan de sparas.",
           "publicLinkNotice": "Din bild sparas på en offentlig webbadress som inte kräver inloggning — vem som helst med länken kan öppna den, så ladda inte upp något privat.",
           "draftRequiredHint": "Spara utkastet först för att aktivera bilduppladdning.",
           "disallowedSourcesHeading": "Dessa bildkällor är inte tillåtna:",

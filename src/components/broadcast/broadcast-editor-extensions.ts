@@ -28,6 +28,7 @@
  */
 import type { Extensions } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import { NodeSelection } from '@tiptap/pm/state';
 // Through the `src/lib` composition layer, never `@/modules/broadcasts` (whose
 // barrel would pull Drizzle into the browser bundle) and never a deep import
 // from a component — see `src/lib/broadcast-editor-extensions.ts`.
@@ -37,9 +38,65 @@ import {
   broadcastCtaButtonExtension,
   broadcastImageExtension,
 } from '@/lib/broadcast-editor-extensions';
+import { DESIGN_BLOCK_ATTR } from '@/lib/broadcast-content-policy';
+
+/**
+ * Spec 122 US12d-2 round 2 (#6) — in the editor the button block is ONE unit:
+ * its words are drawn, not typeable, so they change only through the button
+ * dialog and its 1–60 bound (typing in place let an author empty the button or
+ * run it past 60 characters and learn only at submit). The schema's
+ * `renderHTML` is untouched, so the saved HTML is byte-identical to the
+ * server's node (asserted in `editor-blocks-edit.test.tsx`).
+ */
+/** The DOM event the button block's Enter raises; the toolbar opens "Edit button" on it. */
+export const EDIT_CTA_EVENT = 'eblast:edit-cta';
+
+/**
+ * Round 3 (a11y review): the block is drawn without a link, so a screen reader
+ * would hear only its words; `describe(href)` adds the localised "button,
+ * links to …" for assistive technology. Enter on the selected block asks for
+ * its dialog instead of splitting the paragraph, which deleted it.
+ */
+function ctaButtonAsUnit(describe?: (href: string) => string) {
+  return broadcastCtaButtonExtension.extend({
+    atom: true,
+    addNodeView() {
+      return ({ node }) => {
+        // A `span`, not an `a href`: a non-editable link inside the editor is a
+        // real link to the browser, and a click followed it away from the
+        // unsaved message. The address shows on hover; Button edits it.
+        const dom = document.createElement('span');
+        dom.setAttribute(DESIGN_BLOCK_ATTR, 'cta');
+        const href: unknown = node.attrs['href'];
+        if (typeof href === 'string') dom.setAttribute('title', href);
+        dom.setAttribute('contenteditable', 'false');
+        dom.textContent = node.textContent;
+        if (describe !== undefined && typeof href === 'string') {
+          const sr = document.createElement('span');
+          sr.className = 'sr-only';
+          sr.textContent = ` — ${describe(href)}`;
+          dom.append(sr);
+        }
+        return { dom };
+      };
+    },
+    addKeyboardShortcuts() {
+      return {
+        Enter: ({ editor }) => {
+          const { selection } = editor.state;
+          if (!(selection instanceof NodeSelection) || selection.node.type.name !== this.name) return false;
+          editor.view.dom.dispatchEvent(new CustomEvent(EDIT_CTA_EVENT));
+          return true;
+        },
+      };
+    },
+  });
+}
 
 export function makeBroadcastEditorExtensions(opts: {
   readonly images: boolean;
+  /** The localised "button, links to {href}" a screen reader hears on the button block. */
+  readonly describeCta?: (href: string) => string;
 }): Extensions {
   const base: Extensions = [
     StarterKit.configure({
@@ -47,11 +104,15 @@ export function makeBroadcastEditorExtensions(opts: {
       code: false,
       codeBlock: false,
       strike: false,
+      // A click in a link places the caret (and selects the link) instead of
+      // opening the page in a new tab, so an author can edit or remove it
+      // (spec 122 US12d-2 round 2). The exported HTML is unchanged.
+      link: { openOnClick: false, enableClickSelection: true },
     }),
     // [bracketed text] decoration is style-only — no schema mutation, so it is
     // always on (admins author placeholders in templates; members replace them).
     broadcastBracketPlaceholderExtension,
-    broadcastCtaButtonExtension,
+    ctaButtonAsUnit(opts.describeCta),
   ];
   return opts.images
     ? [...base, broadcastImageExtension, broadcastBannerImageExtension]

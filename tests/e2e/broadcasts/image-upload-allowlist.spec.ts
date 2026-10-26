@@ -141,12 +141,14 @@ test.describe('F7.1a US2 — Image upload + allowlist E2E @a11y', () => {
       mimeType: 'image/png',
       buffer: Buffer.alloc(6 * 1024 * 1024, 0x42),
     });
-    // E2E selector fix 2026-05-21: `getByRole('alert')` matches BOTH the
-    // real error alert AND Next.js's internal `__next-route-announcer__`
-    // (also role=alert + aria-live=assertive). Scope to the main-content
-    // region to exclude the route announcer.
+    // Spec 122 US12d-2: the toast announces the refusal once; the inline
+    // AURA Alert is `role="none"` (so it is not said twice) and the upload
+    // button stays described by it while it shows.
     await expect(
-      page.locator('#main-content').getByRole('alert'),
-    ).toContainText(/5 mb/i, { timeout: 30_000 });
+      page.locator('#main-content').getByText(/larger than 5 mb/i),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(
+      page.getByRole('button', { name: /upload image/i }),
+    ).toHaveAccessibleDescription(/5 mb/i);
   });
 });

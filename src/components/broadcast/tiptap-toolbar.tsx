@@ -30,9 +30,19 @@
  * At 320 px the strip WRAPS onto further rows (`flex-wrap`). There is
  * deliberately no overflow menu: a formatting control hidden behind a "More"
  * button at phone width is a control most authors never find.
+ *
+ * Spec 122 US12d-2: each control is an AURA `IconButton`, 32px on desktop and
+ * 44px on touch / phone widths (`touchHeight`), as the compose boards draw it.
+ * Its `label` is the accessible name and AURA's own tooltip, on every control:
+ * the two unavailable image controls give their reason through the visible
+ * hint they are described by, not a hover-only `title` (which would also turn
+ * AURA's tooltip off). AURA has no Toolbar, so the roving tabindex above stays
+ * the app's. A toggle passes `pressed`, which AURA draws (5.65.0, #180).
  */
-import { useCallback, useRef, useState } from 'react';
-import { type Editor } from '@tiptap/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getMarkRange } from '@tiptap/core';
+import { type Editor, useEditorState } from '@tiptap/react';
+import { NodeSelection } from '@tiptap/pm/state';
 import { useLocale, useTranslations } from 'next-intl';
 import {
   Bold,
@@ -47,11 +57,14 @@ import {
   MousePointerClick,
   Quote,
   RectangleHorizontal,
+  Redo2,
   Underline,
+  Undo2,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 import { LinkDialog } from './link-dialog';
+import { EDIT_CTA_EVENT } from './broadcast-editor-extensions';
 import { CtaButtonDialog } from './cta-button-dialog';
 
 /**
@@ -78,7 +91,17 @@ export type AnnounceKey =
   | 'orderedListOn'
   | 'orderedListOff'
   | 'linkSet'
-  | 'linkCleared';
+  | 'linkCleared'
+  | 'heading2On'
+  | 'heading2Off'
+  | 'heading3On'
+  | 'heading3Off'
+  | 'quoteOn'
+  | 'quoteOff'
+  | 'dividerAdded'
+  | 'buttonAdded'
+  | 'undone'
+  | 'redone';
 
 export interface TiptapToolbarProps {
   readonly editor: Editor;
@@ -89,6 +112,30 @@ export interface TiptapToolbarProps {
   readonly imageInsertEnabled?: boolean;
   readonly onInsertImage?: () => void;
   readonly onInsertBanner?: () => void;
+  /** While the host saves or submits, every control is unavailable (round 2, #3). */
+  readonly disabled?: boolean;
+  /** An image is uploading: Image and Banner wait for it (round 2, #4). */
+  readonly imageBusy?: boolean;
+  /** The id of the visible "save the draft first" hint (per editor; round 2, #20). */
+  readonly imageHintId?: string;
+  /** The id of the uploader's "Uploading…" button: why Image and Banner wait (round 3). */
+  readonly imageBusyId?: string;
+}
+
+interface CtaTarget {
+  /** The selected button block's position, or null for a new button. */
+  readonly editPos: number | null;
+  readonly from: number;
+  readonly to: number;
+  readonly text: string;
+  readonly href: string;
+}
+
+interface LinkTarget {
+  readonly from: number;
+  readonly to: number;
+  readonly text: string;
+  readonly sameBlock: boolean;
 }
 
 interface ToolbarControl {
@@ -100,7 +147,10 @@ interface ToolbarControl {
   readonly pressed?: boolean;
   readonly opensDialog?: boolean;
   readonly unavailable?: boolean;
-  readonly title?: string;
+  /** The visible reason a control is unavailable, when it has one. */
+  readonly describedBy?: string;
+  /** `aria-keyshortcuts` for a control with a keyboard equivalent (Undo / Redo). */
+  readonly keyshortcuts?: string;
 }
 
 export function TiptapToolbar({
@@ -110,6 +160,10 @@ export function TiptapToolbar({
   imageInsertEnabled = true,
   onInsertImage,
   onInsertBanner,
+  disabled = false,
+  imageBusy = false,
+  imageHintId = IMAGE_DISABLED_HINT_ID,
+  imageBusyId,
 }: TiptapToolbarProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.toolbar');
   const locale = useLocale();
@@ -118,38 +172,153 @@ export function TiptapToolbar({
   const [activeIndex, setActiveIndex] = useState<number>(0);
   const [linkOpen, setLinkOpen] = useState<boolean>(false);
   const [ctaOpen, setCtaOpen] = useState<boolean>(false);
+  // Set by a confirmed link or button dialog, so focus goes back to the text
+  // (round 2, #18); a cancelled dialog returns it to the control.
+  const confirmedRef = useRef<boolean>(false);
+  const dialogFinalFocus = (): HTMLElement | null =>
+    confirmedRef.current ? editor.view.dom : triggerRef.current;
 
+  // Round 2, #7: Tiptap v3 does not re-render on every transaction, so state
+  // read during render went stale as the caret moved (Bold read "off" inside
+  // bold text). `useEditorState` re-renders the toolbar when these change.
+  const active = useEditorState({
+    editor,
+    selector: ({ editor: e }) => ({
+      heading2: e.isActive('heading', { level: 2 }),
+      heading3: e.isActive('heading', { level: 3 }),
+      quote: e.isActive('blockquote'),
+      bulletList: e.isActive('bulletList'),
+      orderedList: e.isActive('orderedList'),
+      bold: e.isActive('bold'),
+      italic: e.isActive('italic'),
+      underline: e.isActive('underline'),
+      link: e.isActive('link'),
+      canUndo: e.can().undo(),
+      canRedo: e.can().redo(),
+      // Round 3 (UX review): which block a selection holds, so the controls
+      // that would edit it say so ("Edit button", "Edit image description").
+      selectedBlock:
+        e.state.selection instanceof NodeSelection ? e.state.selection.node.type.name : null,
+    }),
+  });
+
+  // Round 3 (a11y review): Enter on a selected button block asks for its
+  // dialog (`EDIT_CTA_EVENT`, raised by the block's keyboard shortcut).
+  useEffect(() => {
+    const dom = editor.view.dom;
+    const openEdit = (): void => {
+      triggerRef.current = null;
+      confirmedRef.current = false;
+      setCtaTarget(captureCtaTarget());
+      setCtaOpen(true);
+    };
+    dom.addEventListener(EDIT_CTA_EVENT, openEdit);
+    return () => dom.removeEventListener(EDIT_CTA_EVENT, openEdit);
+    // captureCtaTarget reads the live editor state when the event fires.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor]);
+
+  // Round 2, #14 — announce what happened, not what was asked: a command
+  // that did nothing (Bold where no mark is allowed) says nothing.
   const toggle = useCallback(
-    (isActive: boolean, run: () => void, on: AnnounceKey, off: AnnounceKey) => {
+    (isActive: boolean, run: () => boolean, on: AnnounceKey, off: AnnounceKey) => {
       const willBeOn = !isActive;
-      run();
-      onAnnounce(willBeOn ? on : off);
+      if (run()) onAnnounce(willBeOn ? on : off);
     },
     [onAnnounce],
   );
 
-  const selectionText = (): string => {
-    const { from, to } = editor.state.selection;
-    return editor.state.doc.textBetween(from, to, ' ');
+  /**
+   * What the link dialog works on, captured when it opens (round 2, #2/#9):
+   * with the caret inside a link and nothing selected, the WHOLE link, so its
+   * words pre-fill the dialog and survive an address-only edit (before, the
+   * empty selection made Save replace "our 2026 report" with the URL). A
+   * selection across blocks cannot become one line of text without merging
+   * the paragraphs and dropping any image in it, so there only the mark is set.
+   */
+  const [linkTarget, setLinkTarget] = useState<LinkTarget>({ from: 0, to: 0, text: '', sameBlock: true });
+
+  const captureLinkTarget = (): LinkTarget => {
+    const { state } = editor;
+    const { from, to, empty, $from, $to } = state.selection;
+    const linkType = state.schema.marks['link'];
+    if (empty && linkType !== undefined) {
+      const range = getMarkRange($from, linkType);
+      if (range !== undefined) {
+        return { ...range, text: state.doc.textBetween(range.from, range.to, ' '), sameBlock: true };
+      }
+    }
+    return { from, to, text: state.doc.textBetween(from, to, ' '), sameBlock: $from.sameParent($to) };
   };
 
   const applyLink = ({ href, text }: { href: string; text: string }): void => {
-    const selected = selectionText();
-    const label = text !== '' ? text : selected !== '' ? selected : href;
-    if (label !== selected) {
-      // The author renamed the link (or there was no selection): replace the
-      // range with the label carrying the link mark, so "click here" can become
-      // "our 2026 report" without leaving the dialog.
+    const target = linkTarget;
+    const label = text !== '' ? text : target.text !== '' ? target.text : href;
+    if (!target.sameBlock || (label === target.text && target.from !== target.to)) {
+      editor.chain().focus().setTextSelection({ from: target.from, to: target.to }).setLink({ href }).run();
+    } else {
+      // A new link, or one renamed in the dialog: the label carrying the mark
+      // replaces the range, then the mark is dropped at the caret so the next
+      // character typed is not part of the link (#8).
       editor
         .chain()
         .focus()
-        .extendMarkRange('link')
-        .insertContent({ type: 'text', text: label, marks: [{ type: 'link', attrs: { href } }] })
+        .insertContentAt(
+          { from: target.from, to: target.to },
+          { type: 'text', text: label, marks: [{ type: 'link', attrs: { href } }] },
+        )
+        .unsetMark('link')
         .run();
-    } else {
-      editor.chain().focus().extendMarkRange('link').setLink({ href }).run();
     }
     onAnnounce('linkSet');
+  };
+
+  /**
+   * Round 2, #6 — what the button dialog works on: the selected button block
+   * (edited in place), or the selected words in one block, which pre-fill a
+   * new button and are replaced by it. Captured when the dialog opens.
+   */
+  const [ctaTarget, setCtaTarget] = useState<CtaTarget>({ editPos: null, from: 0, to: 0, text: '', href: '' });
+
+  const captureCtaTarget = (): CtaTarget => {
+    const { selection, doc } = editor.state;
+    if (selection instanceof NodeSelection && selection.node.type.name === 'ctaButton') {
+      const href: unknown = selection.node.attrs['href'];
+      return {
+        editPos: selection.from,
+        from: selection.from,
+        to: selection.to,
+        text: selection.node.textContent,
+        href: typeof href === 'string' ? href : '',
+      };
+    }
+    const { from, to, $from, $to } = selection;
+    if (!$from.sameParent($to)) return { editPos: null, from, to, text: '', href: '' };
+    // Round 3: the spaces around selected words stay outside the button (a
+    // double-click selects "Register now " with its trailing space).
+    const raw = doc.textBetween(from, to, ' ');
+    const lead = raw.length - raw.trimStart().length;
+    const trail = raw.length - raw.trimEnd().length;
+    const words = raw.trim();
+    return words === ''
+      ? { editPos: null, from, to, text: '', href: '' }
+      : { editPos: null, from: from + lead, to: to - trail, text: words, href: '' };
+  };
+
+  const applyCta = ({ href, text }: { href: string; text: string }): void => {
+    const target = ctaTarget;
+    const node = { type: 'ctaButton', attrs: { href }, content: [{ type: 'text', text }] };
+    const done =
+      target.editPos !== null || target.text !== ''
+        ? editor.chain().focus().insertContentAt({ from: target.from, to: target.to }, node).run()
+        : editor.chain().focus().setCtaButton({ href, text }).run();
+    if (done && target.editPos === null) onAnnounce('buttonAdded');
+  };
+
+  const removeCta = (): void => {
+    const target = ctaTarget;
+    if (target.editPos === null) return;
+    editor.chain().focus().deleteRange({ from: target.from, to: target.to }).run();
   };
 
   const removeLink = (): void => {
@@ -162,34 +331,54 @@ export function TiptapToolbar({
       key: 'heading2',
       label: t('heading2'),
       Icon: Heading2,
-      pressed: editor.isActive('heading', { level: 2 }),
-      onActivate: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
+      pressed: active.heading2,
+      onActivate: () =>
+        toggle(
+          editor.isActive('heading', { level: 2 }),
+          () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
+          'heading2On',
+          'heading2Off',
+        ),
     },
     {
       key: 'heading3',
       label: t('heading3'),
       Icon: Heading3,
-      pressed: editor.isActive('heading', { level: 3 }),
-      onActivate: () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+      pressed: active.heading3,
+      onActivate: () =>
+        toggle(
+          editor.isActive('heading', { level: 3 }),
+          () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
+          'heading3On',
+          'heading3Off',
+        ),
     },
     {
       key: 'quote',
       label: t('quote'),
       Icon: Quote,
-      pressed: editor.isActive('blockquote'),
-      onActivate: () => editor.chain().focus().toggleBlockquote().run(),
+      pressed: active.quote,
+      onActivate: () =>
+        toggle(
+          editor.isActive('blockquote'),
+          () => editor.chain().focus().toggleBlockquote().run(),
+          'quoteOn',
+          'quoteOff',
+        ),
     },
     {
       key: 'divider',
       label: t('divider'),
       Icon: Minus,
-      onActivate: () => editor.chain().focus().setHorizontalRule().run(),
+      onActivate: () => {
+        if (editor.chain().focus().setHorizontalRule().run()) onAnnounce('dividerAdded');
+      },
     },
     {
       key: 'bulletList',
       label: t('bulletList'),
       Icon: List,
-      pressed: editor.isActive('bulletList'),
+      pressed: active.bulletList,
       onActivate: () =>
         toggle(
           editor.isActive('bulletList'),
@@ -202,7 +391,7 @@ export function TiptapToolbar({
       key: 'orderedList',
       label: t('orderedList'),
       Icon: ListOrdered,
-      pressed: editor.isActive('orderedList'),
+      pressed: active.orderedList,
       onActivate: () =>
         toggle(
           editor.isActive('orderedList'),
@@ -215,7 +404,7 @@ export function TiptapToolbar({
       key: 'bold',
       label: t('bold'),
       Icon: Bold,
-      pressed: editor.isActive('bold'),
+      pressed: active.bold,
       onActivate: () =>
         toggle(
           editor.isActive('bold'),
@@ -232,7 +421,7 @@ export function TiptapToolbar({
             key: 'italic',
             label: t('italic'),
             Icon: Italic,
-            pressed: editor.isActive('italic'),
+            pressed: active.italic,
             onActivate: () =>
               toggle(
                 editor.isActive('italic'),
@@ -246,7 +435,7 @@ export function TiptapToolbar({
       key: 'underline',
       label: t('underline'),
       Icon: Underline,
-      pressed: editor.isActive('underline'),
+      pressed: active.underline,
       onActivate: () =>
         toggle(
           editor.isActive('underline'),
@@ -259,47 +448,84 @@ export function TiptapToolbar({
       key: 'link',
       label: t('link'),
       Icon: LinkIcon,
-      pressed: editor.isActive('link'),
+      pressed: active.link,
       opensDialog: true,
-      onActivate: () => setLinkOpen(true),
+      onActivate: () => {
+        setLinkTarget(captureLinkTarget());
+        setLinkOpen(true);
+      },
     },
     ...(imagesEnabled
       ? [
           {
             key: 'image',
-            label: t('image'),
+            label: active.selectedBlock === 'image' ? t('editImage') : t('image'),
             Icon: ImageIcon,
             opensDialog: true,
-            unavailable: !imageInsertEnabled,
-            ...(imageInsertEnabled ? {} : { title: t('imageNeedsDraft') }),
+            unavailable: !imageInsertEnabled || imageBusy,
+            ...(imageInsertEnabled
+              ? imageBusy && imageBusyId !== undefined
+                ? { describedBy: imageBusyId }
+                : {}
+              : { describedBy: imageHintId }),
             onActivate: () => {
-              if (imageInsertEnabled) onInsertImage?.();
+              if (imageInsertEnabled && !imageBusy) onInsertImage?.();
             },
           } satisfies ToolbarControl,
         ]
       : []),
     {
       key: 'cta',
-      label: t('cta'),
+      label: active.selectedBlock === 'ctaButton' ? t('editButton') : t('cta'),
       Icon: MousePointerClick,
       opensDialog: true,
-      onActivate: () => setCtaOpen(true),
+      onActivate: () => {
+        setCtaTarget(captureCtaTarget());
+        setCtaOpen(true);
+      },
     },
     ...(imagesEnabled
       ? [
           {
             key: 'banner',
-            label: t('banner'),
+            label: active.selectedBlock === 'bannerImage' ? t('editBanner') : t('banner'),
             Icon: RectangleHorizontal,
             opensDialog: true,
-            unavailable: !imageInsertEnabled,
-            ...(imageInsertEnabled ? {} : { title: t('imageNeedsDraft') }),
+            unavailable: !imageInsertEnabled || imageBusy,
+            ...(imageInsertEnabled
+              ? imageBusy && imageBusyId !== undefined
+                ? { describedBy: imageBusyId }
+                : {}
+              : { describedBy: imageHintId }),
             onActivate: () => {
-              if (imageInsertEnabled) onInsertBanner?.();
+              if (imageInsertEnabled && !imageBusy) onInsertBanner?.();
             },
           } satisfies ToolbarControl,
         ]
       : []),
+    // Round 2, #16 — a visible way back on touch screens, where there is no
+    // Ctrl+Z: a deleted banner or button can be restored. Not on the boards
+    // (spec 122 Session 2026-10-25).
+    {
+      key: 'undo',
+      label: t('undo'),
+      Icon: Undo2,
+      unavailable: !active.canUndo,
+      keyshortcuts: 'Control+Z Meta+Z',
+      onActivate: () => {
+        if (editor.can().undo() && editor.chain().focus().undo().run()) onAnnounce('undone');
+      },
+    },
+    {
+      key: 'redo',
+      label: t('redo'),
+      Icon: Redo2,
+      unavailable: !active.canRedo,
+      keyshortcuts: 'Control+Shift+Z Meta+Shift+Z',
+      onActivate: () => {
+        if (editor.can().redo() && editor.chain().focus().redo().run()) onAnnounce('redone');
+      },
+    },
   ];
 
   const controlElements = (): HTMLButtonElement[] =>
@@ -348,58 +574,81 @@ export function TiptapToolbar({
         role="toolbar"
         aria-label={t('label')}
         onKeyDown={handleKeyDown}
-        className="flex flex-wrap items-center gap-1 border-b bg-muted/30 p-1"
+        // Sticky below the shell bar, so a long message never scrolls the
+        // formatting out of reach (round 2, #11); the frame clips, not scrolls.
+        // Below 30rem of height (a landscape phone, the keyboard open) it
+        // stops sticking, as AURA's own shell bar does; `z-[5]` keeps it under
+        // the portal header (round 3, a11y review).
+        className="sticky top-[var(--shell-bar-height,0px)] z-[5] flex [@media(max-height:30rem)]:static flex-wrap items-center gap-1 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-input)] p-1.5"
       >
         {controls.map((control, index) => (
-          <Button
+          <IconButton
             key={control.key}
-            type="button"
-            variant="ghost"
-            size="sm"
+            icon={<control.Icon />}
+            label={control.label}
+            touchHeight
             data-toolbar-control={control.key}
-            aria-label={control.label}
-            {...(control.pressed !== undefined && { 'aria-pressed': control.pressed })}
+            {...(control.pressed !== undefined && { pressed: control.pressed })}
             {...(control.opensDialog === true && { 'aria-haspopup': 'dialog' as const })}
-            {...(control.unavailable === true && {
-              'aria-disabled': true,
-              // U6 — the reason, reachable without a pointer. `unavailable` is
-              // set only by the two image controls, and only while no draft is
-              // saved, which is exactly when the hint is on the page.
-              'aria-describedby': IMAGE_DISABLED_HINT_ID,
-            })}
-            {...(control.title !== undefined && { title: control.title })}
+            {...((control.unavailable === true || disabled) && { 'aria-disabled': true })}
+            {...(control.keyshortcuts !== undefined && { 'aria-keyshortcuts': control.keyshortcuts })}
+            {...(control.unavailable === true &&
+              control.describedBy !== undefined && {
+                // U6 — the reason, reachable without a pointer.
+                'aria-describedby': control.describedBy,
+              })}
             tabIndex={index === tabStop ? 0 : -1}
             onFocus={() => setActiveIndex(index)}
             onClick={(event: React.MouseEvent<HTMLButtonElement>) => {
+              if (disabled) return;
               triggerRef.current = event.currentTarget;
+              confirmedRef.current = false;
               control.onActivate();
             }}
             className={cn(
-              'h-11 w-11 min-h-11 min-w-11 p-0',
-              control.pressed === true && 'bg-accent text-accent-foreground',
-              control.unavailable === true && 'opacity-50',
+              (control.unavailable === true || disabled) && 'opacity-[var(--aura-disabled-opacity)]',
+              // AURA styles only `:disabled` IconButtons: an unavailable one
+              // keeps no hover fill and shows it cannot be used.
+              'aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent',
             )}
-          >
-            <control.Icon className="h-4 w-4" aria-hidden="true" />
-          </Button>
+          />
         ))}
       </div>
 
       <LinkDialog
         open={linkOpen}
         onOpenChange={setLinkOpen}
-        canRemove={editor.isActive('link')}
+        canRemove={active.link}
         initialHref={(editor.getAttributes('link')['href'] as string | undefined) ?? ''}
-        initialText={selectionText()}
-        onConfirm={applyLink}
-        onRemove={removeLink}
-        finalFocus={() => triggerRef.current}
+        initialText={linkTarget.text}
+        editing={active.link}
+        hasText={linkTarget.text !== ''}
+        textReadOnly={!linkTarget.sameBlock}
+        onConfirm={(link) => {
+          confirmedRef.current = true;
+          applyLink(link);
+        }}
+        onRemove={() => {
+          confirmedRef.current = true;
+          removeLink();
+        }}
+        finalFocus={dialogFinalFocus}
       />
       <CtaButtonDialog
         open={ctaOpen}
         onOpenChange={setCtaOpen}
-        onConfirm={({ href, text }) => editor.chain().focus().setCtaButton({ href, text }).run()}
-        finalFocus={() => triggerRef.current}
+        initialText={ctaTarget.text}
+        initialHref={ctaTarget.href}
+        editing={ctaTarget.editPos !== null}
+        onRemove={() => {
+          confirmedRef.current = true;
+          removeCta();
+        }}
+        onConfirm={({ href, text }) => {
+          confirmedRef.current = true;
+          applyCta({ href, text });
+        }}
+        finalFocus={dialogFinalFocus}
       />
     </>
   );

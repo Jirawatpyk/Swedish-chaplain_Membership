@@ -64,8 +64,9 @@ describe('T094 — the italic control is absent under `th`', () => {
   it('renders no italic control when the interface language is Thai', () => {
     const toolbar = renderToolbar('th');
     expect(within(toolbar).queryByLabelText(ITALIC_LABEL.th)).toBeNull();
-    // Positive control — the rest of the toolbar is intact (13 − italic = 12).
-    expect(within(toolbar).getAllByRole('button')).toHaveLength(12);
+    // Positive control — the rest of the toolbar is intact (13 constructs −
+    // italic + Undo and Redo = 14; spec 122 US12d-2 round 2).
+    expect(within(toolbar).getAllByRole('button')).toHaveLength(14);
   });
 
   it('offers italic under `en` and `sv`', () => {
@@ -74,7 +75,7 @@ describe('T094 — the italic control is absent under `th`', () => {
       expect(
         within(toolbar).getByLabelText(ITALIC_LABEL[locale]),
       ).toBeInTheDocument();
-      expect(within(toolbar).getAllByRole('button')).toHaveLength(13);
+      expect(within(toolbar).getAllByRole('button')).toHaveLength(15);
       cleanup();
       editor?.destroy();
       editor = null;

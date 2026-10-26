@@ -594,7 +594,10 @@ export function ComposeForm({
           by side from `lg` up and stack below it; the page supplies the 72 rem
           container the pair needs (exception recorded in ux-standards § 18.2). */}
       <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]">
-        <Card>
+        {/* `overflow-clip`, not the card's `overflow-hidden`: a hidden
+            overflow is the box the editor's sticky toolbar sticks in, so on
+            a phone it scrolled away with the text (R89). */}
+        <Card className="overflow-clip">
           <CardContent className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="broadcast-subject">{t('fields.subject')}</Label>

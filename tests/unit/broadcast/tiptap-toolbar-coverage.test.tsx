@@ -48,6 +48,13 @@ const EXPECTED_CONTROLS = [
   'Banner image',
 ] as const;
 
+/**
+ * Spec 122 US12d-2 round 2 (#16): history, not a construct, follows the
+ * constructs — Undo and Redo, so a phone author can bring back a deleted
+ * banner or button. They make no markup, so the policy contract above holds.
+ */
+const HISTORY_CONTROLS = ['Undo', 'Redo'] as const;
+
 const editors: Editor[] = [];
 
 function makeEditor(content = '<p>hello</p>', images = true): Editor {
@@ -90,7 +97,7 @@ afterEach(() => {
 describe('T088 — the toolbar offers exactly the constructs the shared policy keeps', () => {
   it('lists H2, H3, quote, divider, bullet, ordered, bold, italic, underline, link, image, CTA, banner — and no more', () => {
     const toolbar = renderToolbar();
-    expect(controlNames(toolbar)).toEqual([...EXPECTED_CONTROLS]);
+    expect(controlNames(toolbar)).toEqual([...EXPECTED_CONTROLS, ...HISTORY_CONTROLS]);
   });
 
   it('never offers H1, strikethrough, code or an alignment/colour control', () => {
@@ -118,7 +125,7 @@ describe('T088 — the toolbar offers exactly the constructs the shared policy k
     expect(names).not.toContain('Banner image');
     // Everything else still there — the flag removes two controls, not eleven.
     expect(names).toEqual(
-      EXPECTED_CONTROLS.filter((c) => c !== 'Image' && c !== 'Banner image'),
+      [...EXPECTED_CONTROLS.filter((c) => c !== 'Image' && c !== 'Banner image'), ...HISTORY_CONTROLS],
     );
   });
 });

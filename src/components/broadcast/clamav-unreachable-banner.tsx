@@ -29,7 +29,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { AlertCircle } from 'lucide-react';
+import { Alert } from '@jirawatpyk/aura-react';
 
 export interface ClamavUnreachableBannerProps {
   /**
@@ -48,10 +48,26 @@ export function ClamavUnreachableBanner({
   useEffect(() => {
     if (healthEndpoint === undefined) return undefined;
     let cancelled = false;
+    // Spec 122 US12d-2 round 2 (#17): an offline browser says nothing about
+    // the scanner, so it is not reported as "scanner down"; a hidden tab is
+    // not polled (it probes again when shown); and a probe that hangs gives
+    // up after 10 s.
+    // Round 3 (UX review): one probe at a time, aborted on unmount; going
+    // offline clears a banner already shown.
+    let inFlight: AbortController | null = null;
     const probe = async (): Promise<void> => {
+      if (!navigator.onLine) {
+        setUnreachable(false);
+        return;
+      }
+      if (document.visibilityState === 'hidden' || inFlight !== null) return;
+      const controller = new AbortController();
+      inFlight = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 10_000);
       try {
         const res = await fetch(healthEndpoint, {
           cache: 'no-store',
+          signal: controller.signal,
         });
         if (cancelled) return;
         if (!res.ok) {
@@ -79,14 +95,26 @@ export function ClamavUnreachableBanner({
           { err: String(err) },
           'broadcasts.clamav_health_probe_failed',
         );
+        if (!navigator.onLine) return;
         setUnreachable(true);
+      } finally {
+        window.clearTimeout(timeout);
+        inFlight = null;
       }
+    };
+    const probeWhenShown = (): void => {
+      if (document.visibilityState === 'visible') void probe();
     };
     void probe();
     const id = window.setInterval(probe, 30_000);
+    document.addEventListener('visibilitychange', probeWhenShown);
+    window.addEventListener('online', probeWhenShown);
     return (): void => {
       cancelled = true;
+      inFlight?.abort();
       window.clearInterval(id);
+      document.removeEventListener('visibilitychange', probeWhenShown);
+      window.removeEventListener('online', probeWhenShown);
     };
   }, [healthEndpoint]);
 
@@ -100,24 +128,12 @@ export function ClamavUnreachableBanner({
   return (
     <div role="status" aria-live="polite" aria-atomic="true">
       {unreachable ? (
-        <div className="flex items-start gap-2 p-3 border border-warning rounded bg-warning/10">
-          {/*
-            H5 fix 2026-05-21 (review finding enterprise-ux-designer H-3):
-            `text-warning` on `bg-warning/10` failed WCAG SC 1.4.11
-            (Non-text Contrast ≥3:1 for UI components) at ~2.8:1.
-            `text-foreground` matches the F4 design-system pattern used
-            by `template-edit-confirm-starter.tsx` + `stale-draft-banner.tsx`
-            and clears 4.5:1+ on both light + dark themes. The amber
-            `border-warning` boundary preserves the warning-state
-            semantics; the icon now provides high-contrast emphasis
-            without doubling as the sole semantic indicator.
-          */}
-          <AlertCircle className="w-4 h-4 mt-0.5 text-foreground" aria-hidden />
-          <div>
-            <p className="text-body font-medium">{t('title')}</p>
-            <p className="text-caption">{t('description')}</p>
-          </div>
-        </div>
+        // Spec 122 US12d-2 — an AURA warning Alert (its tokens carry the
+        // contrast H5 fixed by hand). `role="none"`: the wrapper above is
+        // the live region, so the Alert must not be a second one.
+        <Alert tone="warning" role="none" title={t('title')}>
+          {t('description')}
+        </Alert>
       ) : null}
     </div>
   );

@@ -41,3 +41,26 @@ describe('ClamavUnreachableBanner without a health endpoint (U34)', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+/**
+ * Spec 122 US12d-2 (UX review L-5): the AURA warning Alert defaults to
+ * `role="alert"`; inside the banner's always-mounted polite `role="status"`
+ * wrapper that would be a second, assertive live region announcing twice. The
+ * Alert carries `role="none"`, so there is exactly one region.
+ */
+describe('ClamavUnreachableBanner when the scanner is unreachable', () => {
+  it('shows the AURA warning inside ONE polite live region', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: false }), { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+    const { container, findByText } = render(
+      <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
+        <ClamavUnreachableBanner healthEndpoint="/api/test/clamav" />
+      </NextIntlClientProvider>,
+    );
+    await findByText(en.portal.broadcasts.compose.clamavBanner.title);
+    expect(container.querySelectorAll('[role="status"]')).toHaveLength(1);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('.aura-alert--warning')).not.toBeNull();
+  });
+});

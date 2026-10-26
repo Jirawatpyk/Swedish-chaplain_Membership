@@ -13,7 +13,7 @@
  *
  * 25 Oct (the user: one E-Blast quota bar here and on Benefits / compose):
  * while E-Blasts are reserved the bar carries the same key as the quota card
- * (`QuotaLegend`), and the E-Blast bar turns danger once used plus reserved
+ * (AURA `Progress` `legend`), and the E-Blast bar turns danger once used plus reserved
  * reach the quota. A ticket benefit used in full stays accent: not an error.
  */
 import Link from 'next/link';
@@ -23,7 +23,6 @@ import { Progress } from '@jirawatpyk/aura-react';
 import { Card, Icon as AuraIcon, buttonClass } from '@jirawatpyk/aura-react/server';
 import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-localised';
 import { cn } from '@/lib/utils';
-import { QuotaLegend } from '@/components/broadcast/quota-legend';
 import type { BenefitUsageItem } from './benefit-usage-card';
 
 const ACTION_ICON: Readonly<Record<string, LucideIcon>> = {
@@ -89,30 +88,29 @@ export function PortalBenefitsSummaryCard({
               <li key={b.key} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
                 <div className="min-w-0 flex-1">
                   {b.reserved !== undefined && b.reserved > 0 ? (
-                    <div className="flex flex-col gap-2">
-                      <Progress
-                        label={t(`benefit.${b.key}`)}
-                        value={b.used}
-                        secondaryValue={b.reserved}
-                        max={b.entitlement}
-                        tone={tone}
-                        showValue
-                        valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
-                        valueText={t('card.quotaValueText', {
-                          used: b.used,
-                          reserved: b.reserved,
-                          remaining: Math.max(0, b.entitlement - b.used - b.reserved),
-                          total: b.entitlement,
-                        })}
-                        hint={t('card.reservedHint', {
-                          reserved: b.reserved,
-                          remaining: Math.max(0, b.entitlement - b.used - b.reserved),
-                          hasDate: b.lastUsedAt === null ? 'no' : 'yes',
-                          date: b.lastUsedAt === null ? '' : formatDate(b.lastUsedAt),
-                        })}
-                      />
-                      <QuotaLegend usedLabel={tQuota('used')} reservedLabel={tQuota('reservedLegend')} tone={tone} />
-                    </div>
+                    <Progress
+                      label={t(`benefit.${b.key}`)}
+                      value={b.used}
+                      secondaryValue={b.reserved}
+                      max={b.entitlement}
+                      tone={tone}
+                      showValue
+                      valueLabel={t('card.usedOf', { used: b.used, total: b.entitlement })}
+                      valueText={t('card.quotaValueText', {
+                        used: b.used,
+                        reserved: b.reserved,
+                        remaining: Math.max(0, b.entitlement - b.used - b.reserved),
+                        total: b.entitlement,
+                      })}
+                      hint={t('card.reservedHint', {
+                        reserved: b.reserved,
+                        remaining: Math.max(0, b.entitlement - b.used - b.reserved),
+                        hasDate: b.lastUsedAt === null ? 'no' : 'yes',
+                        date: b.lastUsedAt === null ? '' : formatDate(b.lastUsedAt),
+                      })}
+                      // AURA's key (5.64.0, #179), as on the Benefits / compose card.
+                      legend={{ value: tQuota('used'), secondary: tQuota('reservedLegend') }}
+                    />
                   ) : (
                     <Progress
                       label={t(`benefit.${b.key}`)}

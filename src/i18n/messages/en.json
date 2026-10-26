@@ -6480,16 +6480,22 @@
         "image": "Image",
         "cta": "Button",
         "banner": "Banner image",
-        "imageNeedsDraft": "Save this draft first to add an image."
+        "undo": "Undo",
+        "redo": "Redo",
+        "editButton": "Edit button",
+        "editImage": "Edit image description",
+        "editBanner": "Edit banner description"
       },
       "altDialog": {
         "title": "Describe this image",
         "bannerTitle": "Describe this banner",
+        "editTitle": "Edit image description",
         "description": "A short description is read aloud to people who cannot see the image, and shows in email apps that block images.",
         "fieldLabel": "Image description",
         "counter": "{count} of {max} characters",
         "insert": "Insert image",
         "bannerInsert": "Insert banner",
+        "saveEdit": "Save description",
         "cancel": "Cancel",
         "errors": {
           "required": "Enter a description of the image, from {min} to {max} characters.",
@@ -6498,35 +6504,46 @@
       },
       "linkDialog": {
         "title": "Add a link",
+        "editTitle": "Edit link",
         "description": "Links open in a new tab.",
         "urlLabel": "Link address",
         "urlPlaceholder": "https://example.com",
         "textLabel": "Link text",
+        "textHint": "Leave blank to show the address.",
+        "textKeepHint": "Leave blank to keep the current words.",
+        "textReadOnlyHint": "The selection covers more than one paragraph, so its text can't be changed here.",
         "confirm": "Save link",
         "cancel": "Cancel",
         "remove": "Remove link",
         "errors": {
           "required": "Enter a link address.",
-          "scheme": "A link must start with http://, https:// or mailto:."
+          "scheme": "A link must start with http://, https:// or mailto:.",
+          "mailto": "To link an email address, write mailto:{address}"
         }
       },
       "ctaDialog": {
         "title": "Add a button",
+        "editTitle": "Edit button",
         "description": "The chamber brand colour and spacing are applied automatically.",
         "textLabel": "Button text",
         "urlLabel": "Button link",
         "urlPlaceholder": "https://example.com",
         "counter": "{count} of {max} characters",
         "confirm": "Insert button",
+        "saveEdit": "Save button",
         "cancel": "Cancel",
+        "remove": "Remove button",
         "errors": {
           "textRequired": "Enter the button text, from {min} to {max} characters.",
           "textTooLong": "Shorten the button text to {max} characters or fewer.",
           "required": "Enter a link for the button.",
-          "scheme": "A link must start with http://, https:// or mailto:."
+          "scheme": "A link must start with http://, https:// or mailto:.",
+          "mailto": "To link an email address, write mailto:{address}"
         }
       },
       "pasteNotice": "Some formatting is not supported in email and was removed.",
+      "placeholder": "Write your message…",
+      "ctaBlockDescription": "button, links to {href}",
       "preview": {
         "empty": "Your message preview appears here.",
         "paused": "Preview paused for {seconds} seconds — it refreshes on your next edit.",
@@ -6881,12 +6898,22 @@
             "italicOff": "Italic off",
             "underlineOn": "Underline on",
             "underlineOff": "Underline off",
-            "bulletListOn": "Bullet list on",
-            "bulletListOff": "Bullet list off",
+            "bulletListOn": "Bulleted list on",
+            "bulletListOff": "Bulleted list off",
             "orderedListOn": "Numbered list on",
             "orderedListOff": "Numbered list off",
             "linkSet": "Link added",
-            "linkCleared": "Link removed"
+            "linkCleared": "Link removed",
+            "heading2On": "Heading on",
+            "heading2Off": "Heading off",
+            "heading3On": "Subheading on",
+            "heading3Off": "Subheading off",
+            "quoteOn": "Quote on",
+            "quoteOff": "Quote off",
+            "dividerAdded": "Divider added",
+            "buttonAdded": "Button added",
+            "undone": "Undone",
+            "redone": "Redone"
           }
         },
         "toast": {
@@ -6955,8 +6982,9 @@
           "uploadButton": "Upload image",
           "uploadingLabel": "Uploading…",
           "uploadingAria": "Uploading image — please wait",
-          "uploadedToast": "Image uploaded.",
-          "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before upload.",
+          "uploadedToast": "Image added.",
+          "notInserted": "The image was not added to your message.",
+          "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before they're stored.",
           "publicLinkNotice": "Your image is stored at a public web address that needs no sign-in — anyone with the link can open it, so don't upload anything private.",
           "draftRequiredHint": "Save this draft first to enable image uploads.",
           "disallowedSourcesHeading": "These image sources aren't allowed:",
