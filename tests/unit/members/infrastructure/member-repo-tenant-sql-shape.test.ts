@@ -282,11 +282,17 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
     expect(violationsOf(rec.statements.filter((s) => !exempt.has(s)))).toEqual([]);
   });
 
-  it('a tx runInTenant did not open sends nothing — tenantSlugOf fails closed (D-030)', async () => {
+  it('a tx runInTenant did not open sends nothing and throws, never a Result (D-030)', async () => {
     const { recordingDb } = await import('../../../helpers/tenant-sql-shape');
+    const { TenantTxNotBoundError } = await import('@/lib/db');
     const unbound = recordingDb();
-    const result = await drizzleMemberRepo.findByIdInTx(unbound.db as never, 'member-1' as never);
-    expect(result.ok).toBe(false);
+    const tx = unbound.db as never;
+    // A misuse, not a DB error: it must not read as `repo.unexpected` or, in
+    // the token verify / revert routes, as `not_found`.
+    await expect(drizzleMemberRepo.findByIdInTx(tx, 'member-1' as never)).rejects.toBeInstanceOf(TenantTxNotBoundError);
+    await expect(emailChangeTokenAdapter.findActiveByIdInTx(tx, 'token-1')).rejects.toBeInstanceOf(TenantTxNotBoundError);
+    await expect(changeRequestScrubAdapter.listRequestIdsInTx(tx, 'member-1' as never)).rejects.toBeInstanceOf(TenantTxNotBoundError);
+    await expect(outboxCancelAdapter.cancelPendingForMemberInTx(tx, 'member-1' as never)).rejects.toBeInstanceOf(TenantTxNotBoundError);
     expect(unbound.statements).toEqual([]);
   });
 
