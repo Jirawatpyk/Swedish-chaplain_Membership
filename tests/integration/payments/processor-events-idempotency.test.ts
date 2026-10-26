@@ -181,4 +181,67 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
       .where(eq(processorEvents.id, id));
     expect(rows).toHaveLength(1);
   });
+
+  // 132 (L-1) — a replay whose tenant resolved adopts the unresolved row on
+  // the owner connection; `chamber_app` cannot see it to stamp it later.
+  it('a resolved-tenant replay adopts a NULL-tenant acknowledged_only row (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-adopt-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    const replay = await repo.insertIfNew(null, {
+      ...first,
+      tenantId: 'test-adopt-tenant',
+      outcome: 'processed',
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-adopt-replay',
+    });
+    expect(replay.inserted).toBe(false);
+    expect(replay.adoptedFrom).toBe('acknowledged_only');
+    expect(replay.event.tenantId).toBe('test-adopt-tenant');
+    expect(replay.event.outcome).toBe('processed');
+    expect(replay.event.correlationId).toBe('corr-adopt-first');
+
+    const [row] = await db.select().from(processorEvents).where(eq(processorEvents.id, id));
+    expect(row?.tenantId).toBe('test-adopt-tenant');
+  });
+
+  it('a rejected_signature row is never adopted (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'rejected_signature' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-sig-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    const replay = await repo.insertIfNew(null, {
+      ...first,
+      tenantId: 'test-adopt-tenant',
+      outcome: 'processed',
+    });
+    expect(replay.adoptedFrom).toBeUndefined();
+    expect(replay.event.tenantId).toBeNull();
+    expect(replay.event.outcome).toBe('rejected_signature');
+  });
 });

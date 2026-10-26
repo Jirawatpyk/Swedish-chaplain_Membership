@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { asSatang } from '@/lib/money';
+import { paymentsMetrics } from '@/lib/metrics';
 import { ok, err } from '@/lib/result';
 import {
   processWebhookEvent,
@@ -1071,6 +1072,80 @@ describe('processWebhookEvent (T056)', () => {
     // finally got its processed_at.
     expect(deps.invoicingBridge.markPaidFromProcessor).toHaveBeenCalledTimes(1);
     expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+  });
+
+  // 132 (L-1) — a duplicate whose stored tenant is not the resolved tenant
+  // (still NULL because the repo refused to adopt it, or another tenant's)
+  // must not dispatch: `markProcessed` could never stamp it, so every replay
+  // would dispatch again.
+  it.each([
+    ['still unresolved (NULL)', null],
+    ['another tenant', 'tnt_other'],
+  ] as const)('duplicate whose stored tenant is %s → duplicate, no dispatch', async (_label, storedTenant) => {
+    const mismatch = vi.spyOn(paymentsMetrics, 'webhookDuplicateTenantMismatch');
+    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    const deps = { ...makeDeps(), logger };
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      inserted: false,
+      event: {
+        id: 'evt_test_001',
+        tenantId: storedTenant,
+        eventType: 'payment_intent.succeeded',
+        apiVersion: PINNED_API,
+        livemode: false,
+        processorAccountId: 'acct_test_123',
+        receivedAt: new Date(),
+        processedAt: null,
+        outcome: 'acknowledged_only',
+        payloadSha256: 'x'.repeat(64),
+        correlationId: 'corr_1',
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput());
+    expect(result.ok && result.value.kind).toBe('duplicate');
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    expect(deps.processorEventsRepo.markProcessed).not.toHaveBeenCalled();
+    expect(mismatch).toHaveBeenCalledWith(TENANT_ID, 'payment_intent.succeeded');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'stripe-webhook.duplicate_tenant_mismatch',
+      expect.objectContaining({ storedTenant: storedTenant === null ? 'null' : 'other' }),
+    );
+    mismatch.mockRestore();
+  });
+
+  it('adopted unresolved row → dispatches, counts and logs the adoption without the account id', async () => {
+    const adopted = vi.spyOn(paymentsMetrics, 'webhookUnresolvedRowAdopted');
+    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    const deps = { ...makeDeps(), logger };
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      inserted: false,
+      adoptedFrom: 'acknowledged_only',
+      event: {
+        id: 'evt_test_001',
+        tenantId: TENANT_ID,
+        eventType: 'payment_intent.succeeded',
+        apiVersion: PINNED_API,
+        livemode: false,
+        processorAccountId: 'acct_test_123',
+        receivedAt: new Date(),
+        processedAt: null,
+        outcome: 'processed',
+        payloadSha256: 'x'.repeat(64),
+        correlationId: 'corr_1',
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput());
+    expect(result.ok && result.value.kind).toBe('processed');
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+    expect(adopted).toHaveBeenCalledTimes(1);
+    expect(adopted).toHaveBeenCalledWith(TENANT_ID, 'payment_intent.succeeded');
+    const adoptLogs = logger.info.mock.calls.filter(
+      ([msg]) => msg === 'stripe-webhook.unresolved_row_adopted',
+    );
+    expect(adoptLogs).toHaveLength(1);
+    expect(adoptLogs[0]?.[1]).toMatchObject({ adoptedFrom: 'acknowledged_only', tenantId: TENANT_ID });
+    expect(JSON.stringify(adoptLogs[0]?.[1])).not.toContain('acct_test_123');
+    adopted.mockRestore();
   });
 
   // R5 canonical fix — the `'invoiceId' in result.value` false arm on all
