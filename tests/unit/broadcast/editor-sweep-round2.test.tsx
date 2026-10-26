@@ -337,6 +337,29 @@ describe('spec 131 — a cancelled upload is released', () => {
     expect((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].keepalive).toBe(true);
   });
 
+  it('closing the tab or reloading (pagehide) with the description open releases the upload once', async () => {
+    const fetchSpy = okFetch();
+    const view = renderHost();
+    await screen.findByRole('toolbar');
+    act(() => uploaderMocks.props.current?.onUploaded('https://assets.swecham.example/a.png', IMAGE_ID));
+    act(() => { window.dispatchEvent(new Event('pagehide')); });
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    const [url, init] = fetchSpy.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toContain(IMAGE_ID);
+    expect(init).toMatchObject({ method: 'DELETE', keepalive: true });
+    view.unmount();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('pagehide with no upload waiting for its description sends nothing', async () => {
+    const fetchSpy = okFetch();
+    renderHost();
+    await screen.findByRole('toolbar');
+    act(() => { window.dispatchEvent(new Event('pagehide')); });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('a failed release promises nothing: the toast only says it was not added (#658 code review)', async () => {
     const fetchSpy = vi.fn(async () => { throw new TypeError('offline'); });
     vi.stubGlobal('fetch', fetchSpy);
