@@ -70,7 +70,7 @@ import {
 import { CustomListInput, parseLines } from './custom-list-input';
 import { SchedulePicker } from './schedule-picker';
 import { PreviewPane } from './preview-pane';
-import { QuotaDisplay } from './quota-display';
+import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
 import { SubmitButton } from './submit-button';
 import { buildSegmentPayload } from './compose-form';
 import { RecipientCountLine, useRecipientCount } from './recipient-count';
@@ -82,6 +82,7 @@ import {
 } from './compose/template-picker-field';
 import { useComposeDirtyGuard } from './compose/use-compose-dirty-guard';
 import { saveComposeDraft } from './compose/save-compose-draft';
+import { SubmitSummaryDialog, summaryRecipientCount } from './compose/submit-summary-dialog';
 import { formatLocalisedDate, TIME_HH_MM } from '@/lib/format-date-localised';
 
 // F119 T145 — the SAME loader and the SAME editor the member compose form
@@ -275,6 +276,14 @@ export function ProxyComposeForm({
   // drops it: the draft belongs to the member it was created for, and a PUT
   // naming another member is refused by `saveDraft`'s ownership guard.
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  // Spec 122 US12d-3 (T1265) — Submit asks first, naming the member and the
+  // allowance its quota card last loaded. Keyed by member, so a quota loaded
+  // for a member picked earlier is never stated for another.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [memberQuota, setMemberQuota] = useState<{
+    readonly memberId: string;
+    readonly quota: QuotaSnapshot;
+  } | null>(null);
   const [savingDraft, setSavingDraft] = useState(false);
   const [fieldError, setFieldError] = useState<{
     field: ServerErrorField;
@@ -584,6 +593,7 @@ export function ProxyComposeForm({
         <QuotaDisplay
           key={member.memberId}
           endpoint={`/api/admin/broadcasts/quota?memberId=${encodeURIComponent(member.memberId)}`}
+          onLoaded={(quota) => setMemberQuota({ memberId: member.memberId, quota })}
         />
       ) : null}
       {/* F119 T145 (FR-039) — the member form's template picker, with the same
@@ -848,13 +858,30 @@ export function ProxyComposeForm({
                 disabled={submitDisabled}
                 submitting={submitting}
                 blockedReasonIds={submitBlockedReasonIds}
-                onClick={() => {
-                  void handleSubmit();
-                }}
+                onClick={() => setConfirmOpen(true)}
               />
             </div>
           </CardContent>
         </Card>
+
+        {member !== null ? (
+          <SubmitSummaryDialog
+            open={confirmOpen}
+            onOpenChange={setConfirmOpen}
+            // Closed before the request, as on the member form: a refusal
+            // then moves focus to its own field or the member picker.
+            onConfirm={async () => {
+              setConfirmOpen(false);
+              await handleSubmit();
+            }}
+            onBehalfOf={{ company: member.companyName }}
+            subject={subject}
+            segmentLabel={tCompose(`segmentOption.${segment.kind}`)}
+            recipientCount={summaryRecipientCount(recipientCount, segment.kind, customLines.length)}
+            quota={memberQuota?.memberId === member.memberId ? memberQuota.quota : null}
+            scheduledFor={scheduledFor}
+          />
+        ) : null}
 
         <div className="min-w-0 lg:sticky lg:top-[calc(var(--shell-bar-height,0px)+1rem)]">
           <PreviewPane

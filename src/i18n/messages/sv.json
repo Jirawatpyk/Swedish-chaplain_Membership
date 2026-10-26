@@ -4115,7 +4115,8 @@
         "saveDraftButton": "Spara som utkast",
         "draftSavedToast": "Utkast sparat.",
         "draftSaveErrorToast": "Utkastet kunde inte sparas. Försök igen.",
-        "savedAt": "Sparat kl. {time}"
+        "savedAt": "Sparat kl. {time}",
+        "confirmTitle": "Skicka för {company}s räkning?"
       },
       "proxySubmitButton": "Skicka in å medlems vägnar",
       "haltBanner": {
@@ -6935,6 +6936,20 @@
         "submitBlocked": {
           "subjectRequired": "Lägg till ett ämne innan du skickar för granskning.",
           "tierRequired": "Välj minst en medlemsnivå innan du skickar för granskning."
+        },
+        "confirm": {
+          "title": "Skicka detta E-Blast för granskning?",
+          "note": "Marknadsavdelningen granskar det innan det skickas. Du kan avbryta tills en administratör godkänner det.",
+          "subject": "Ämne",
+          "recipients": "Mottagare",
+          "recipientsCount": "{segment} · {count, plural, one {# mottagare} other {# mottagare}}",
+          "allowance": "Kvot",
+          "allowanceMember": "Använder 1 av dina {remaining, number} återstående E-Blasts för {year} (reserverat tills det skickas)",
+          "allowanceProxy": "Använder 1 av medlemmens {remaining, number} återstående E-Blasts för {year}",
+          "sending": "Utskick",
+          "sendingNow": "Så snart det godkänns",
+          "sendingAt": "{when}, Bangkok-tid",
+          "keepEditing": "Fortsätt redigera"
         },
         "submitNote": {
           "cancellable": "Du kan avbryta detta utskick när som helst tills en administratör godkänner det."

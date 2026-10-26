@@ -25,7 +25,7 @@
  * so React flushes the update before assertions.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import type { MemberPickerOption } from '@/components/broadcast/member-picker';
@@ -318,6 +318,13 @@ describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
     const submitBtn = screen.getByTestId('submit-btn');
     await act(async () => {
       fireEvent.click(submitBtn);
+    });
+    // Spec 122 US12d-3: Submit asks first; confirm in the dialog.
+    const confirm = within(screen.getByRole('alertdialog')).getByRole('button', {
+      name: 'Submit for review',
+    });
+    await act(async () => {
+      fireEvent.click(confirm);
     });
 
     // (a) The picker-level error message for missingContactEmailError must be

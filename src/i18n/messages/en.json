@@ -4115,7 +4115,8 @@
         "saveDraftButton": "Save as draft",
         "draftSavedToast": "Draft saved.",
         "draftSaveErrorToast": "Couldn't save the draft. Please try again.",
-        "savedAt": "Saved at {time}"
+        "savedAt": "Saved at {time}",
+        "confirmTitle": "Submit on behalf of {company}?"
       },
       "proxySubmitButton": "Submit on behalf of member",
       "haltBanner": {
@@ -6935,6 +6936,20 @@
         "submitBlocked": {
           "subjectRequired": "Add a subject before submitting for review.",
           "tierRequired": "Choose at least one membership tier before submitting for review."
+        },
+        "confirm": {
+          "title": "Submit this E-Blast for review?",
+          "note": "Marketing reviews it before it goes out. You can cancel until an admin approves it.",
+          "subject": "Subject",
+          "recipients": "Recipients",
+          "recipientsCount": "{segment} · {count, plural, one {# recipient} other {# recipients}}",
+          "allowance": "Allowance",
+          "allowanceMember": "Uses 1 of your {remaining, number} remaining E-Blasts for {year} (reserved until it's sent)",
+          "allowanceProxy": "Uses 1 of the member's {remaining, number} remaining E-Blasts for {year}",
+          "sending": "Sending",
+          "sendingNow": "As soon as it's approved",
+          "sendingAt": "{when}, Bangkok time",
+          "keepEditing": "Keep editing"
         },
         "submitNote": {
           "cancellable": "You can cancel this broadcast at any time until an admin approves it."

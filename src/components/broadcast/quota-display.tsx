@@ -26,7 +26,7 @@
  * while something is reserved (AURA `Progress` `legend`), and the bar turns danger once
  * the quota is used up.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { Button, Card, Progress, buttonClass } from '@jirawatpyk/aura-react';
@@ -69,6 +69,12 @@ export interface QuotaDisplayProps {
    * the preview harness shows the card without a session. Pages leave it on.
    */
   readonly live?: boolean;
+  /**
+   * Spec 122 US12d-3 (T1265) — the numbers the card shows, each time a fetch
+   * lands, so the compose form's submit confirmation names the same remaining
+   * allowance as the bar rather than the page's first paint.
+   */
+  readonly onLoaded?: (snapshot: QuotaSnapshot) => void;
 }
 
 export function QuotaDisplay({
@@ -79,6 +85,7 @@ export function QuotaDisplay({
   planChangedExplainer = null,
   endpoint = '/api/broadcasts/quota',
   live = true,
+  onLoaded,
 }: QuotaDisplayProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.quota');
   const tCompose = useTranslations('portal.broadcasts.compose');
@@ -90,6 +97,11 @@ export function QuotaDisplay({
   const [loading, setLoading] = useState<boolean>(live && initial === null);
   const [error, setError] = useState<boolean>(false);
   const [retryNonce, setRetryNonce] = useState<number>(0);
+  // Held in a ref so a caller's inline callback never re-runs the fetch.
+  const onLoadedRef = useRef(onLoaded);
+  useEffect(() => {
+    onLoadedRef.current = onLoaded;
+  }, [onLoaded]);
 
   useEffect(() => {
     if (!live) return;
@@ -117,14 +129,16 @@ export function QuotaDisplay({
           planName?: string | null;
         };
         if (!cancelled) {
-          setSnap({
+          const next: QuotaSnapshot = {
             used: body.used,
             reserved: body.reserved,
             remaining: body.remaining,
             cap: body.cap,
             quotaYear: body.quotaYear,
             planName: body.planName ?? null,
-          });
+          };
+          setSnap(next);
+          onLoadedRef.current?.(next);
         }
       } catch {
         if (!cancelled) setError(true);

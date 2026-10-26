@@ -63,6 +63,7 @@ import {
   type ComposeTemplateOption,
 } from './compose/template-picker-field';
 import { useComposeDirtyGuard } from './compose/use-compose-dirty-guard';
+import { SubmitSummaryDialog, summaryRecipientCount } from './compose/submit-summary-dialog';
 import { saveComposeDraft } from './compose/save-compose-draft';
 import { formatLocalisedDate, TIME_HH_MM } from '@/lib/format-date-localised';
 
@@ -226,6 +227,10 @@ export function ComposeForm({
   // submit-in-flight would otherwise claim.
   const [savingDraft, setSavingDraft] = useState<boolean>(false);
   const [quotaRefreshKey, setQuotaRefreshKey] = useState<number>(0);
+  // Spec 122 US12d-3 (T1265) — Submit asks first; the summary names the
+  // allowance the quota card last loaded, not the page's first paint.
+  const [confirmOpen, setConfirmOpen] = useState<boolean>(false);
+  const [liveQuota, setLiveQuota] = useState<QuotaSnapshot | null>(initialQuota);
   // F119 T140 — which template is applied, and the html the editor is seeded
   // with. Tiptap reads `initialHtml` once per mount, so applying a template
   // bumps `nonce`, remounting the EDITOR alone — never the form.
@@ -580,7 +585,7 @@ export function ComposeForm({
           the browser owns; the member shell's own links did not prompt at all
           and lost the draft on one click. Both exits now come from here. */}
       <UnsavedChangesGuard armed={dirtyGuard.armed} />
-      <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} />
+      <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} onLoaded={setLiveQuota} />
       {/* F119 T140 (FR-046) — inside the form, so a choice re-seeds state
           instead of navigating and remounting it. */}
       <ComposeTemplatePickerField
@@ -826,11 +831,28 @@ export function ComposeForm({
                 disabled={submitDisabled}
                 submitting={submitting}
                 blockedReasonIds={submitBlockedReasonIds}
-                onClick={onSubmit}
+                onClick={() => setConfirmOpen(true)}
               />
             </div>
           </CardContent>
         </Card>
+
+        <SubmitSummaryDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          // Closed before the request: AURA hands focus back to Submit, and a
+          // refusal then moves it to its own alert or field as before.
+          onConfirm={async () => {
+            setConfirmOpen(false);
+            await onSubmit();
+          }}
+          onBehalfOf={null}
+          subject={subject}
+          segmentLabel={t(`segmentOption.${segment.kind}`)}
+          recipientCount={summaryRecipientCount(recipientCount, segment.kind, customLines.length)}
+          quota={liveQuota}
+          scheduledFor={scheduledFor}
+        />
 
         <div className="min-w-0 lg:sticky lg:top-[calc(var(--shell-bar-height,0px)+1rem)]">
           <PreviewPane

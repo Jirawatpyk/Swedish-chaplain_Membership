@@ -4115,7 +4115,8 @@
         "saveDraftButton": "บันทึกฉบับร่าง",
         "draftSavedToast": "บันทึกฉบับร่างแล้ว",
         "draftSaveErrorToast": "บันทึกฉบับร่างไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
-        "savedAt": "บันทึกเมื่อ {time}"
+        "savedAt": "บันทึกเมื่อ {time}",
+        "confirmTitle": "ส่งในนามของ {company} หรือไม่"
       },
       "proxySubmitButton": "ส่งแทนสมาชิก",
       "haltBanner": {
@@ -6935,6 +6936,20 @@
         "submitBlocked": {
           "subjectRequired": "กรอกหัวข้อก่อนส่งขออนุมัติ",
           "tierRequired": "เลือกระดับสมาชิกอย่างน้อยหนึ่งระดับก่อนส่งขออนุมัติ"
+        },
+        "confirm": {
+          "title": "ส่ง E-Blast นี้ให้ตรวจสอบหรือไม่",
+          "note": "ฝ่ายการตลาดจะตรวจสอบก่อนส่งออก คุณยกเลิกได้จนกว่าผู้ดูแลระบบจะอนุมัติ",
+          "subject": "หัวเรื่อง",
+          "recipients": "ผู้รับ",
+          "recipientsCount": "{segment} · ผู้รับ {count, number} ราย",
+          "allowance": "สิทธิ์ที่ใช้",
+          "allowanceMember": "ใช้ 1 จาก {remaining, number} E-Blast ที่เหลือของปี {year} (กันไว้จนกว่าจะส่ง)",
+          "allowanceProxy": "ใช้ 1 จาก {remaining, number} E-Blast ที่เหลือของสมาชิกในปี {year}",
+          "sending": "การส่ง",
+          "sendingNow": "ทันทีที่ได้รับการอนุมัติ",
+          "sendingAt": "{when} เวลากรุงเทพฯ",
+          "keepEditing": "แก้ไขต่อ"
         },
         "submitNote": {
           "cancellable": "คุณสามารถยกเลิก E-Blast นี้ได้ทุกเมื่อจนกว่าผู้ดูแลระบบจะอนุมัติ"

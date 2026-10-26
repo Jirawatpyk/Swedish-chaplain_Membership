@@ -22,8 +22,8 @@ import {
   bangkokInputToIso,
   isoToBangkokInput,
   bangkokMinInputAfterMinutes,
+  formatScheduledFor,
 } from './bangkok-datetime';
-import { getDateFormatLocale } from '@/lib/format-date-localised';
 
 export interface SchedulePickerProps {
   /** ISO-8601 UTC string or null when "send immediately" is selected. */
@@ -42,21 +42,7 @@ export function SchedulePicker({
 
   const localValue = useMemo(() => isoToBangkokInput(value), [value]);
 
-  const previewText = useMemo(() => {
-    if (value === null) return '';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    // Pin formatter to Asia/Bangkok so the displayed wall-time matches
-    // the contract the picker asks the user to provide (E2 UX hardening
-    // — previously this defaulted to the BROWSER local TZ, so an admin
-    // travelling abroad would see a different time than they typed).
-    const formatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
-      dateStyle: 'long',
-      timeStyle: 'short',
-      timeZone: 'Asia/Bangkok',
-    });
-    return formatter.format(date);
-  }, [value, locale]);
+  const previewText = useMemo(() => formatScheduledFor(value, locale), [value, locale]);
 
   return (
     <div className="space-y-2" data-compose-feature="schedule-picker">

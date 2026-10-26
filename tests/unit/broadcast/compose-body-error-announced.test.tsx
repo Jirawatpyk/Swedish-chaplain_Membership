@@ -18,7 +18,7 @@
  * compose suite stubbed the editor and NOTHING mounted it.)
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -168,6 +168,10 @@ describe('T136 — the message error is associated with the editor, not the wrap
     await user.type(screen.getByLabelText('Subject'), 'Spring mixer');
     await user.type(screen.getByLabelText('Message body'), '<p>Hello</p>');
     await user.click(screen.getByRole('button', { name: /Submit for review/ }));
+    // Spec 122 US12d-3: Submit asks first; confirm in the dialog.
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: /Submit for review/ }),
+    );
 
     await waitFor(() =>
       expect(screen.getByTestId('tiptap-editor')).toHaveAttribute(
