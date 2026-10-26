@@ -1,7 +1,8 @@
 /**
  * 130 (D-029) slice 5 — every statement of the members module's member repo
  * and its adapters (change-request scrub, email-change tokens, plan advisory
- * lock, plan lookup, the plan member count, the timeline) carries a
+ * lock, plan lookup, the plan member count, the timeline, the erasure outbox
+ * cancel) carries a
  * `tenant_id` predicate on each tenant-scoped table it names. `callEach`
  * refuses an unnamed method, and each method must record at least one
  * statement (a filter arg that throws before any SQL would otherwise pass
@@ -48,8 +49,7 @@ const {
   SHAPE_TENANT: T,
   anyWith,
   callEach,
-  isPureInsert,
-  tenantPredicateViolations,
+  gateViolations,
   tenantScopedTables,
   unfencedRawSql,
   unfencedWheres,
@@ -63,6 +63,7 @@ const { drizzlePlanAdvisoryLockAdapter } = await import(
   '@/modules/members/infrastructure/adapters/plan-advisory-lock-adapter'
 );
 const { plansBarrelAdapter } = await import('@/modules/members/infrastructure/adapters/plan-lookup-adapter');
+const { outboxCancelAdapter } = await import('@/modules/members/infrastructure/adapters/outbox-cancel-adapter');
 const { countActiveMembersOnPlan, countActiveMembersOnPlanInTx } = await import(
   '@/modules/members/infrastructure/db/count-active-members-on-plan'
 );
@@ -72,13 +73,13 @@ const { drizzleTimelineRepo } = await import('@/modules/members/infrastructure/t
 const TABLES = tenantScopedTables();
 const CTX = { slug: T } as never;
 const NOW = new Date('2026-01-01T00:00:00.000Z');
-const LOCK_ONLY = 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))';
 const SRC = {
   repo: 'src/modules/members/infrastructure/db/drizzle-member-repo.ts',
   scrub: 'src/modules/members/infrastructure/adapters/change-request-scrub-adapter.ts',
   token: 'src/modules/members/infrastructure/adapters/email-change-token-adapter.ts',
   lock: 'src/modules/members/infrastructure/adapters/plan-advisory-lock-adapter.ts',
   lookup: 'src/modules/members/infrastructure/adapters/plan-lookup-adapter.ts',
+  outbox: 'src/modules/members/infrastructure/adapters/outbox-cancel-adapter.ts',
   count: 'src/modules/members/infrastructure/db/count-active-members-on-plan.ts',
   bounce: 'src/modules/members/infrastructure/handle-invitation-bounce.ts',
   timeline: 'src/modules/members/infrastructure/timeline/drizzle-timeline-repo.ts',
@@ -140,13 +141,10 @@ async function callCounted(
 }
 
 function violationsOf(statements: readonly RecordedStatement[]): string[] {
-  const checked = statements.filter((s) => !isPureInsert(s.sql) && s.sql !== LOCK_ONLY);
+  const { blind, violations } = gateViolations(statements, TABLES);
   // Positive control: every read/update names a tenant table the parse sees.
-  const reads = checked.filter((s) => !s.sql.trimStart().toLowerCase().startsWith('insert'));
-  expect(reads.filter((s) => tenantPredicateViolations(s, TABLES).refs.length === 0).map((s) => s.sql.slice(0, 80))).toEqual([]);
-  return checked.flatMap((s) =>
-    tenantPredicateViolations(s, TABLES).violations.map((v) => `${v} :: ${s.sql.slice(0, 90)}`),
-  );
+  expect(blind).toEqual([]);
+  return violations;
 }
 
 describe('members repo + adapters — tenant predicate on every statement (130 s5)', () => {
@@ -267,11 +265,15 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
       getPlan: [CTX, 'plan-1', 2026],
       countAffectedMembers: [CTX, 'plan-1', 2026],
     });
+    const outbox = await callCounted(outboxCancelAdapter as never, {
+      cancelPendingForEmailsInTx: [tx, ['a@example.com'], 'member-1'],
+      cancelPendingForMemberInTx: [tx, 'member-1'],
+    });
     await countActiveMembersOnPlan(CTX, 'plan-1', 2026);
     await countActiveMembersOnPlanInTx(tx as never, 'plan-1', 2026).catch(() => 0);
 
     // `getPlan` reaches the (mocked) plans repo only — no statement of its own.
-    expect([...scrub.silent, ...tokens.silent, ...lock.silent, ...lookup.silent]).toEqual(['getPlan']);
+    expect([...scrub.silent, ...tokens.silent, ...lock.silent, ...outbox.silent, ...lookup.silent]).toEqual(['getPlan']);
     // The token lookup that resolves the tenant: exactly one id read, exempt.
     const resolving = tokens.byMethod.get('findActiveById')!;
     expect(resolving).toHaveLength(1);
@@ -344,6 +346,7 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
     ]);
     expect(unfencedWheres(readFileSync(SRC.lock, 'utf8'))).toEqual([]);
     expect(unfencedWheres(readFileSync(SRC.lookup, 'utf8'))).toEqual([]);
+    expect(unfencedWheres(readFileSync(SRC.outbox, 'utf8'))).toEqual([]);
     expect(unfencedWheres(readFileSync(SRC.count, 'utf8'))).toEqual([]);
     // The cross-tenant bounce resolver (see the header).
     expect(unfencedWheres(readFileSync(SRC.bounce, 'utf8'))).toEqual([
