@@ -6877,6 +6877,7 @@
           "segmentLabel": "Mottagare",
           "customListLabel": "Anpassad e-postlista",
           "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje adress måste redan finnas i din handelskammares katalog.",
+          "sendOptions": "Utskicksalternativ",
           "schedulePicker": "Schemalägg utskick",
           "scheduleHelp": "Lämna tomt för omedelbar granskning.",
           "previewLabel": "Förhandsgranskning",

@@ -7,6 +7,7 @@
  * optional "Schedule for later" field whose hint says that blank means now.
  * The value is unchanged: an ISO instant in Bangkok wall-time, or `null`.
  */
+import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
@@ -15,10 +16,24 @@ import { SchedulePicker } from '@/components/broadcast/schedule-picker';
 
 const f = enMessages.portal.broadcasts.compose.fields;
 
+/** The form holds the value, as both compose forms do. */
+function Harness({ initial, onChange }: { initial: string | null; onChange: (v: string | null) => void }) {
+  const [value, setValue] = useState(initial);
+  return (
+    <SchedulePicker
+      value={value}
+      onChange={(v) => {
+        setValue(v);
+        onChange(v);
+      }}
+    />
+  );
+}
+
 function renderPicker(value: string | null, onChange = vi.fn()): ReturnType<typeof vi.fn> {
   render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <SchedulePicker value={value} onChange={onChange} />
+      <Harness initial={value} onChange={onChange} />
     </NextIntlClientProvider>,
   );
   return onChange;
@@ -34,7 +49,7 @@ describe('Send options (T1266)', () => {
     expect(disclosure()).toHaveAttribute('aria-expanded', 'false');
     expect(disclosure()).toHaveTextContent("As soon as it's approved");
     expect(screen.queryByRole('checkbox')).toBeNull();
-    expect(screen.queryByLabelText(new RegExp(f.schedulePicker))).toBeNull();
+    expect(screen.getByLabelText(new RegExp(f.schedulePicker))).not.toBeVisible();
   });
 
   it('expands to an optional "Schedule for later" field whose hint says blank is now', () => {
@@ -58,7 +73,6 @@ describe('Send options (T1266)', () => {
 
   it('collapsed with a time set, the line states that time', () => {
     renderPicker('2026-11-03T02:30:00.000Z');
-    expect(disclosure()).toHaveTextContent('November 3, 2026');
-    expect(disclosure()).toHaveTextContent('9:30');
+    expect(disclosure()).toHaveTextContent('3 November 2026 at 09:30, Bangkok time');
   });
 });

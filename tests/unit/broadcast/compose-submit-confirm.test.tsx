@@ -10,7 +10,7 @@
  * Rendered under the REAL `en.json` so a dangling key fails here.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
@@ -122,6 +122,18 @@ describe('member compose — Submit asks first (T1265)', () => {
     expect(text).toContain('All members · 128 recipients');
     expect(text).toContain("Uses 1 of your 2 remaining E-Blasts for 2026 (reserved until it's sent)");
     expect(text).toContain("As soon as it's approved");
+  });
+
+  it('a scheduled send is stated in Bangkok time', async () => {
+    renderForm();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: new RegExp(c.fields.sendOptions) }));
+    fireEvent.change(screen.getByLabelText(new RegExp(c.fields.schedulePicker)), {
+      target: { value: '2099-11-03T09:30' },
+    });
+    await user.click(submitButton());
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain('3 November 2099 at 09:30, Bangkok time');
   });
 
   it('Keep editing closes it, sends nothing, and gives focus back to Submit', async () => {

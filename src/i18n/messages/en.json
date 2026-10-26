@@ -6877,6 +6877,7 @@
           "segmentLabel": "Recipients",
           "customListLabel": "Custom email list",
           "customListHelp": "One email per line, up to 100 entries. Each must already be in your tenant directory.",
+          "sendOptions": "Send options",
           "schedulePicker": "Schedule for later",
           "scheduleHelp": "Leave blank to submit for immediate review.",
           "previewLabel": "Preview",
