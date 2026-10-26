@@ -725,7 +725,7 @@ summary,
     /* The sticky bar's height, so sticky page parts (the E-Blast preview
        panes) stop below it: the height AppShell measures and writes on its
        root (it grows at 200% text, PR #530), 56px before it does; the
-       portal header sets 72px. */
+       portal header sets its own 64px, and 72px from lg. */
     --shell-bar-height: var(--aura-shell-bar-height, 56px);
   }
   .chamber-portal {
