@@ -557,10 +557,11 @@ describe('reclaimOrphanedImages — F2-1 orphan arm + F2-10 races', () => {
       { tenantId: TENANT, now: NOW, requestId: 's' },
     );
 
-    // The two listing transactions bound themselves first (spec 131), then
-    // each row: once per row, first each time.
-    expect(order.slice(0, 2)).toEqual(['timeout', 'timeout']);
-    expect(order.slice(2)).toEqual([
+    // The three listing transactions bound themselves first (spec 131: the
+    // marked/orphaned list, arm 3's watermark, arm 3's list), then each row:
+    // once per row, first each time.
+    expect(order.slice(0, 3)).toEqual(['timeout', 'timeout', 'timeout']);
+    expect(order.slice(3)).toEqual([
       'timeout',
       'lock',
       'count',

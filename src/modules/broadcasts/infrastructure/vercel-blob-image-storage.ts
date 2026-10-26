@@ -88,6 +88,9 @@ function buildKey(
   return `broadcasts/images/${tenantId}/${contentHash}.${ext}`;
 }
 
+/** Spec 131 — the bound on one blob delete (the sweep's only un-bounded wait). */
+export const IMAGE_BLOB_DELETE_TIMEOUT_MS = 10_000;
+
 export const vercelBlobImageStorage: ImageStoragePort = {
   async existsByContentHash(
     tenantId: TenantSlug,
@@ -175,7 +178,14 @@ export const vercelBlobImageStorage: ImageStoragePort = {
   // F119 T034 — the sweep's delete. `del` is idempotent on a missing key at
   // the Blob API (no throw), so a blob already gone counts as deleted; any
   // other failure propagates and the sweep retries the row next tick.
+  // Spec 131 (#658 reliability NEW-1) — bounded: the row's statement_timeout
+  // does not reach this HTTP call, and a hung delete held the row's tx and its
+  // content-hash lock past the cron's Block 2 deadline. The abort throws, so
+  // the row is counted as failed and retried.
   async delete(blobKey: string): Promise<void> {
-    await del(blobKey, { token: env.blob.readWriteToken });
+    await del(blobKey, {
+      token: env.blob.readWriteToken,
+      abortSignal: AbortSignal.timeout(IMAGE_BLOB_DELETE_TIMEOUT_MS),
+    });
   },
 };

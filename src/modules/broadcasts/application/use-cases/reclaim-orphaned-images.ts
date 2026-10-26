@@ -269,17 +269,30 @@ export async function reclaimOrphanedImages(
     return err({ kind: 'sweep.server_error', message: e instanceof Error ? e.message : String(e) });
   }
 
-  // Spec 131 (#658 reviews) — arm 3 in its OWN bounded transaction, and its
+  // Spec 131 (#658 reviews) — arm 3 in its OWN bounded transactions, and its
   // failure isolated: the newest arm must never stop the marked arm, which
   // carries the erasure and release stamps. First the due rows their owner
   // uses are watermarked (no re-scan for 30 days), then the unused are listed.
+  // The watermark is an optimisation only (`listUnused` applies the owner rule
+  // itself), so it commits on its own: a slow watermark must not roll back
+  // the listing and stall the arm on every tick (round 2, NEW-2).
   let unused: readonly BroadcastImageRecord[] = [];
   let unusedListFailed = false;
   const dueBefore = new Date(input.now.getTime() - UNUSED_RECHECK_MS);
   try {
-    unused = await deps.imagesRepo.withTx(input.tenantId, async (tx) => {
+    await deps.imagesRepo.withTx(input.tenantId, async (tx) => {
       await deps.imagesRepo.setStatementTimeout(IMAGE_SWEEP_LIST_TIMEOUT_MS, tx);
       await deps.imagesRepo.markUsedImagesExamined(input.tenantId, input.now, dueBefore, UNUSED_MARK_BATCH, tx);
+    });
+  } catch (e) {
+    logger.warn(
+      { err: errKind(e), tenantId: input.tenantId, requestId: input.requestId },
+      'broadcasts.image_sweep.unused_watermark_failed',
+    );
+  }
+  try {
+    unused = await deps.imagesRepo.withTx(input.tenantId, async (tx) => {
+      await deps.imagesRepo.setStatementTimeout(IMAGE_SWEEP_LIST_TIMEOUT_MS, tx);
       return deps.imagesRepo.listUnused(input.tenantId, dueBefore, IMAGE_SWEEP_BATCH, tx);
     });
   } catch (e) {

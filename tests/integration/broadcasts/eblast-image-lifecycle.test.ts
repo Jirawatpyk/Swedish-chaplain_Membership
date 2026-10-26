@@ -23,7 +23,7 @@ import { sql } from 'drizzle-orm';
 import sharp from 'sharp';
 import { db, runInTenant } from '@/lib/db';
 import { uploadInlineImage } from '@/modules/broadcasts/application/use-cases/upload-inline-image';
-import { reclaimOrphanedImages } from '@/modules/broadcasts/application/use-cases/reclaim-orphaned-images';
+import { reclaimOrphanedImages, UNUSED_RECHECK_MS } from '@/modules/broadcasts/application/use-cases/reclaim-orphaned-images';
 import { markOwnerImagesRemoved } from '@/modules/broadcasts/application/use-cases/_mark-owner-images-removed';
 import { releaseUnusedImage } from '@/modules/broadcasts/application/use-cases/release-unused-image';
 import { makeReleaseUnusedImageDeps } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
@@ -739,17 +739,21 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
       const shown = newImage();
       const sent = await seedOwner({ ...SENT, bodyHtml: `<p><img src="${shown.url}"></p>` });
       const id = await seedRow(sent, shown);
+      const sweptAt = Date.now();
       await sweep();
 
+      // Asserted on THIS row (the tenant is shared by the whole file, so a
+      // tenant-wide count would depend on how long the other cases took).
       const rows = (await db.execute(sql`
-        SELECT (unused_checked_at IS NOT NULL) AS stamped FROM broadcast_images
+        SELECT unused_checked_at FROM broadcast_images
          WHERE tenant_id = ${tenant.ctx.slug} AND id = ${id}::uuid
-      `)) as unknown as Array<{ stamped: boolean }>;
-      expect(rows[0]?.stamped).toBe(true);
-      const due = await runInTenant(tenant.ctx, (tx) =>
-        drizzleBroadcastImagesRepo.markUsedImagesExamined(tenant.ctx.slug as never, new Date(), new Date(Date.now() - 60_000), 10_000, tx),
-      );
-      expect(due).toBe(0);
+      `)) as unknown as Array<{ unused_checked_at: string | Date | null }>;
+      const stampedAt = rows[0]?.unused_checked_at;
+      expect(stampedAt).not.toBeNull();
+      expect(new Date(stampedAt!).getTime()).toBeGreaterThanOrEqual(sweptAt - 1_000);
+      // Stamped this tick, so it is inside the 30-day window: the next tick's
+      // `unused_checked_at < now - UNUSED_RECHECK_MS` filter skips it.
+      expect(new Date(stampedAt!).getTime()).toBeGreaterThan(Date.now() - UNUSED_RECHECK_MS);
     }, 180_000);
 
     it('Principle I, both walls: tenant B (its own valid draft) cannot release tenant A\'s image, nor can the repo under B stamp it', async () => {
