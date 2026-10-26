@@ -196,9 +196,7 @@ describe('contact + change-request repos — tenant predicate on every statement
   });
 
   it('every .where( in both sources names tenant_id (row-dependent statements included)', () => {
-    // `conds` is `listByMember`'s composed filter list, seeded with the
-    // tenant — fenced, and proven by both listByMember call-map cases above.
-    expect(unfencedWheres(readFileSync(CONTACT_SRC, 'utf8'))).toEqual(['and(...conds)']);
+    expect(unfencedWheres(readFileSync(CONTACT_SRC, 'utf8'))).toEqual([]);
     expect(unfencedWheres(readFileSync(CHANGE_REQUEST_SRC, 'utf8'))).toEqual([]);
   });
 });

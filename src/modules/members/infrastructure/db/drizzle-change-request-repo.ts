@@ -7,7 +7,8 @@
  * and FORCE RLS then shows zero rows / refuses every write). Every statement
  * ALSO carries an explicit `tenant_id` predicate (D-029) — the ctx slug, or
  * for a tx-only method the slug `runInTenant` bound to that tx
- * (`tenantSlugOf`, D-030); joins correlate by `tenant_id`. The `tenant_id`
+ * (`tenantSlugOf`, D-030, resolved before any try so an unbound tx throws
+ * loud); joins correlate by `tenant_id`. The `tenant_id`
  * column is written from the draft (the `WITH CHECK` refuses a forged value).
  * Gate: `tests/unit/members/infrastructure/contact-change-request-repos-tenant-sql-shape.test.ts`.
  *
@@ -175,7 +176,6 @@ function rowToDomain(r: MemberChangeRequestRow, fieldRows: readonly MemberChange
 
 async function loadFields(
   tx: TenantTx,
-  tenantSlug: string,
   requestIds: readonly string[],
 ): Promise<Map<string, MemberChangeRequestFieldRow[]>> {
   const out = new Map<string, MemberChangeRequestFieldRow[]>();
@@ -185,7 +185,7 @@ async function loadFields(
     .from(memberChangeRequestFields)
     .where(
       and(
-        eq(memberChangeRequestFields.tenantId, tenantSlug),
+        eq(memberChangeRequestFields.tenantId, tenantSlugOf(tx)),
         inArray(memberChangeRequestFields.requestId, [...requestIds]),
       ),
     );
@@ -200,7 +200,6 @@ async function loadFields(
 /** The submitter's pending row + its fields; `lock` = `FOR UPDATE` (the writers) or a plain read (the pages). */
 async function readPendingBySubmitter(
   tx: TenantTx,
-  tenantSlug: string,
   userId: UserId,
   lock: boolean,
 ): Promise<Result<ChangeRequest | null, RepoError>> {
@@ -209,7 +208,7 @@ async function readPendingBySubmitter(
     .from(memberChangeRequests)
     .where(
       and(
-        eq(memberChangeRequests.tenantId, tenantSlug),
+        eq(memberChangeRequests.tenantId, tenantSlugOf(tx)),
         eq(memberChangeRequests.submittedByUserId, userId),
         eq(memberChangeRequests.state, 'pending'),
       ),
@@ -218,25 +217,24 @@ async function readPendingBySubmitter(
   const rows = lock ? await base.for('update') : await base;
   const row = rows[0];
   if (!row) return ok(null);
-  const fields = await loadFields(tx, tenantSlug, [row.id]);
+  const fields = await loadFields(tx, [row.id]);
   return ok(rowToDomain(row, fields.get(row.id) ?? []));
 }
 
 async function readOne(
   tx: TenantTx,
-  tenantSlug: string,
   id: string,
   lock: boolean,
 ): Promise<Result<ChangeRequest, RepoError>> {
   const base = tx
     .select()
     .from(memberChangeRequests)
-    .where(and(eq(memberChangeRequests.tenantId, tenantSlug), eq(memberChangeRequests.id, id)))
+    .where(and(eq(memberChangeRequests.tenantId, tenantSlugOf(tx)), eq(memberChangeRequests.id, id)))
     .limit(1);
   const rows = lock ? await base.for('update') : await base;
   const row = rows[0];
   if (!row) return err({ code: 'repo.not_found' });
-  const fields = await loadFields(tx, tenantSlug, [row.id]);
+  const fields = await loadFields(tx, [row.id]);
   return ok(rowToDomain(row, fields.get(row.id) ?? []));
 }
 
@@ -384,7 +382,6 @@ function pageLimit(page: ChangeRequestPage): number {
 /** The ONE page statement every list runs: the joined select, the keyset predicate, the order, `limit + 1` for `hasMore`. */
 function listQuery(
   tx: TenantTx,
-  tenantSlug: string,
   where: ReturnType<typeof and>,
   oldestFirst: boolean,
   page: ChangeRequestPage,
@@ -393,7 +390,7 @@ function listQuery(
     ? [asc(memberChangeRequests.submittedAt), asc(memberChangeRequests.id)]
     : [desc(memberChangeRequests.submittedAt), desc(memberChangeRequests.id)];
   return joinedSelect(tx)
-    .where(and(eq(memberChangeRequests.tenantId, tenantSlug), where, afterCursor(page.cursor, oldestFirst)))
+    .where(and(eq(memberChangeRequests.tenantId, tenantSlugOf(tx)), where, afterCursor(page.cursor, oldestFirst)))
     .orderBy(...order)
     .limit(pageLimit(page) + 1);
 }
@@ -423,7 +420,7 @@ function queueWhere(filter: ChangeRequestListFilter): { readonly state: ChangeRe
  */
 export function queueListQuery(tx: TenantTx, filter: ChangeRequestListFilter, page: ChangeRequestPage) {
   const { state, where } = queueWhere(filter);
-  return listQuery(tx, tenantSlugOf(tx), where, state === 'pending', page);
+  return listQuery(tx, where, state === 'pending', page);
 }
 
 /**
@@ -445,12 +442,11 @@ async function runList(
     return await runInTenant(ctx, async (tx) => {
       let current = page;
       for (let continuations = 0; ; continuations += 1) {
-        const rows = await listQuery(tx, ctx.slug, where, oldestFirst, current);
+        const rows = await listQuery(tx, where, oldestFirst, current);
         const hasMore = rows.length > limit;
         const slice = hasMore ? rows.slice(0, limit) : rows;
         const fields = await loadFields(
           tx,
-          ctx.slug,
           slice.map((r) => r.request.id),
         );
         const items = projectListRows(ctx, slice, fields);
@@ -531,8 +527,9 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
   },
 
   async findByIdInTx(tx, id) {
+    tenantSlugOf(tx); // fail loud on an unbound tx, before the try (D-030)
     try {
-      return await readOne(tx, tenantSlugOf(tx), id, true);
+      return await readOne(tx, id, true);
     } catch (e) {
       return err(unexpected(e));
     }
@@ -540,7 +537,7 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
 
   async findById(ctx, id) {
     try {
-      return await runInTenant(ctx, (tx) => readOne(tx, ctx.slug, id, false));
+      return await runInTenant(ctx, (tx) => readOne(tx, id, false));
     } catch (e) {
       return err(unexpected(e));
     }
@@ -554,7 +551,7 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
           .limit(1);
         const j = rows[0];
         if (!j) return err({ code: 'repo.not_found' });
-        const fields = await loadFields(tx, ctx.slug, [j.request.id]);
+        const fields = await loadFields(tx, [j.request.id]);
         return ok(toListRow(j, fields.get(j.request.id) ?? []));
       });
     } catch (e) {
@@ -563,16 +560,17 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
   },
 
   async findPendingBySubmitterInTx(tx, userId) {
+    tenantSlugOf(tx); // fail loud on an unbound tx, before the try (D-030)
     try {
-      return await readPendingBySubmitter(tx, tenantSlugOf(tx), userId, true);
+      return await readPendingBySubmitter(tx, userId, true);
     } catch (e) {
       return err(unexpected(e));
     }
   },
 
   async withdrawInTx(tx, id, input) {
+    const tenant = tenantSlugOf(tx);
     try {
-      const tenant = tenantSlugOf(tx);
       const [row] = await tx
         .update(memberChangeRequests)
         .set({
@@ -591,7 +589,7 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
         )
         .returning();
       if (!row) return err({ code: 'repo.not_found' });
-      const fields = await loadFields(tx, tenant, [row.id]);
+      const fields = await loadFields(tx, [row.id]);
       return ok(rowToDomain(row, fields.get(row.id) ?? []));
     } catch (e) {
       return err(unexpected(e));
@@ -600,15 +598,15 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
 
   async findPendingBySubmitter(ctx, userId) {
     try {
-      return await runInTenant(ctx, (tx) => readPendingBySubmitter(tx, ctx.slug, userId, false));
+      return await runInTenant(ctx, (tx) => readPendingBySubmitter(tx, userId, false));
     } catch (e) {
       return err(unexpected(e));
     }
   },
 
   async decideInTx(tx, id, decision: ChangeRequestDecision) {
+    const tenant = tenantSlugOf(tx);
     try {
-      const tenant = tenantSlugOf(tx);
       const [row] = await tx
         .update(memberChangeRequests)
         .set({
@@ -659,7 +657,7 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
         const missing = decision.fields.map((f) => f.key).filter((k) => !touchedKeys.has(k));
         if (missing.length > 0) throw new Error(`decideInTx: no field row for ${missing.join(', ')} on ${row.id}`);
       }
-      const fields = await loadFields(tx, tenant, [row.id]);
+      const fields = await loadFields(tx, [row.id]);
       const rows = fields.get(row.id) ?? [];
       // the converse of the per-key assert above: a decided request must have
       // NO undecided field row (round 7, types F7 / #2) — the tx rolls back
@@ -672,8 +670,8 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
   },
 
   async acknowledgeInTx(tx, id, at) {
+    const tenant = tenantSlugOf(tx);
     try {
-      const tenant = tenantSlugOf(tx);
       // `COALESCE(existing, at)` keeps the FIRST dismissal — idempotent. The
       // Date is passed as an ISO string + explicit cast: a raw `sql` param has
       // no column mapping, so postgres-js would try to serialise the Date as
@@ -687,7 +685,7 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
         .where(and(eq(memberChangeRequests.tenantId, tenant), eq(memberChangeRequests.id, id)))
         .returning();
       if (!row) return err({ code: 'repo.not_found' });
-      const fields = await loadFields(tx, tenant, [row.id]);
+      const fields = await loadFields(tx, [row.id]);
       return ok(rowToDomain(row, fields.get(row.id) ?? []));
     } catch (e) {
       return err(unexpected(e));
@@ -695,6 +693,7 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
   },
 
   async countSubmittedSince(tx, userId, since) {
+    const tenant = tenantSlugOf(tx);
     try {
       const [row] = await tx
         .select({
@@ -709,7 +708,7 @@ export const drizzleChangeRequestRepo: ChangeRequestRepo = {
           // `oldestSubmittedAt` (the MIN over this same set) moves with it, so
           // `retryAfterSeconds` names when that row actually falls out.
           and(
-            eq(memberChangeRequests.tenantId, tenantSlugOf(tx)),
+            eq(memberChangeRequests.tenantId, tenant),
             eq(memberChangeRequests.submittedByUserId, userId),
             gte(memberChangeRequests.submittedAt, since),
           ),
