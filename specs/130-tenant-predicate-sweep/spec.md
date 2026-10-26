@@ -16,7 +16,7 @@
    - **s2:** `drizzle-renewal-cycle-repo.ts`.
    - **s3:** `drizzle-member-renewal-flags-repo.ts` and `drizzle-renewal-escalation-task-repo.ts`.
    - **s4:** plans (`plan-repo.ts`, `drizzle-scheduled-plan-change-repo.ts`) and the member-plan adapters' members-repo calls.
-   - **s5:** the members module's member repo (`drizzle-member-repo.ts`) and its adapters (change-request scrub, email-change tokens, plan advisory lock, plan lookup, the plan member count, the timeline). The `…InTx` methods that took only `tx` now take the tenant slug after it, like `findManyByIdsInTx` already did.
+   - **s5:** the members module's member repo (`drizzle-member-repo.ts`) and its adapters (change-request scrub, email-change tokens, plan advisory lock, plan lookup, the plan member count, the timeline). The tx-only `…InTx` methods keep their signatures and read the tenant with `tenantSlugOf(tx)` (D-030).
 5. **Every RLS-only comment is removed.** That is every "do NOT add a tenant_id predicate" note: S-R5-6 and plans research § 7.1. #653 closes after s4.
 
 ## Not changed
