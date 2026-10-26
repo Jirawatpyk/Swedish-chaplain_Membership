@@ -30,11 +30,13 @@ const {
   anyWith,
   callEach,
   isPureInsert,
+  recordingDb,
   tenantPredicateViolations,
   tenantScopedTables,
   unfencedRawSql,
   unfencedWheres,
 } = await import('../../../helpers/tenant-sql-shape');
+const { bindTenantTx, TenantTxNotBoundError } = await import('@/lib/db');
 const { drizzleContactRepo } = await import('@/modules/members/infrastructure/db/drizzle-contact-repo');
 const { drizzleChangeRequestRepo } = await import(
   '@/modules/members/infrastructure/db/drizzle-change-request-repo'
@@ -52,6 +54,10 @@ const QUEUE_OFF = {
   from: undefined,
   to: undefined,
 };
+// Exact, so a method that throws before its first statement (`callEach`
+// swallows it) cannot drop out of the gate unseen.
+const CONTACT_STATEMENTS = 24;
+const CHANGE_REQUEST_STATEMENTS = 14;
 const CONTACT_SRC = 'src/modules/members/infrastructure/db/drizzle-contact-repo.ts';
 const CHANGE_REQUEST_SRC = 'src/modules/members/infrastructure/db/drizzle-change-request-repo.ts';
 
@@ -92,7 +98,7 @@ describe('contact + change-request repos — tenant predicate on every statement
       promotePrimaryInTx: [tx, 'member-1', 'contact-2'],
       findMarketingOptedOutEmailLowers: [CTX, ['a@example.com']],
     });
-    expect(rec.statements.length).toBeGreaterThanOrEqual(24);
+    expect(rec.statements.length).toBe(CONTACT_STATEMENTS);
     expect(violationsOf(rec.statements)).toEqual([]);
   });
 
@@ -122,7 +128,7 @@ describe('contact + change-request repos — tenant predicate on every statement
       listVisibleToUser: [CTX, 'user-1', 'member-1', { ...PAGE, state: undefined }],
       pendingStats: [CTX],
     });
-    expect(rec.statements.length).toBeGreaterThanOrEqual(12);
+    expect(rec.statements.length).toBe(CHANGE_REQUEST_STATEMENTS);
     expect(violationsOf(rec.statements)).toEqual([]);
   });
 
@@ -141,6 +147,47 @@ describe('contact + change-request repos — tenant predicate on every statement
     } as never);
     expect(rec.statements.length).toBe(2);
     expect(violationsOf(rec.statements)).toEqual([]);
+  });
+
+  it('a tx-only method binds the tenant runInTenant gave its tx, never a caller argument (D-030)', async () => {
+    const own = recordingDb();
+    bindTenantTx(own.db, 'tenant-of-tx');
+    await drizzleContactRepo.updateEmailInTx(own.db as never, { slug: 'tenant-of-caller' } as never, 'contact-1' as never, 'b@example.com' as never);
+    await drizzleContactRepo.addInTx(
+      own.db as never,
+      anyWith({ tenantId: 'tenant-of-caller', email: 'a@example.com', dateOfBirth: null }) as never,
+    );
+    const reads = own.statements.filter((s) => !isPureInsert(s.sql));
+    expect(reads.length).toBe(2);
+    expect(reads.flatMap((s) => tenantPredicateViolations(s, TABLES, 'tenant-of-tx').violations)).toEqual([]);
+  });
+
+  it('an unbound tx fails loud with TenantTxNotBoundError before any SQL (D-030)', async () => {
+    const unbound = recordingDb();
+    const tx = unbound.db as never;
+    const id = 'x' as never;
+    const calls: Array<() => Promise<unknown>> = [
+      () => drizzleContactRepo.updateInTx(tx, id, { firstName: 'A' }),
+      () => drizzleContactRepo.listByMemberInTx(tx, id),
+      () => drizzleContactRepo.removeInTx(tx, id),
+      () => drizzleContactRepo.designatePrimaryInTx(tx, id, id),
+      () => drizzleContactRepo.linkUserInTx(tx, id, id),
+      () => drizzleContactRepo.markInviteBouncedInTx(tx, id, AT),
+      () => drizzleContactRepo.clearInviteBouncedInTx(tx, id),
+      () => drizzleContactRepo.setMarketingOptOutInTx(tx, id, { kind: 'off', actor: 'staff', at: AT, byUserId: 'u' } as never),
+      () => drizzleContactRepo.scrubPiiForMemberInTx(tx, id, { erasedAt: AT }),
+      () => drizzleContactRepo.updateEmailInTx(tx, CTX, id, id),
+      () => drizzleContactRepo.promotePrimaryInTx(tx, id, id),
+      () => drizzleContactRepo.addInTx(tx, anyWith({ tenantId: T, email: 'a@example.com', dateOfBirth: null }) as never),
+      () => drizzleChangeRequestRepo.findByIdInTx(tx, id),
+      () => drizzleChangeRequestRepo.findPendingBySubmitterInTx(tx, id),
+      () => drizzleChangeRequestRepo.withdrawInTx(tx, id, { reason: 'self', withdrawnAt: AT, replacedByRequestId: null } as never),
+      () => drizzleChangeRequestRepo.decideInTx(tx, id, anyWith({ fields: [], decidedAt: AT, note: null }) as never),
+      () => drizzleChangeRequestRepo.acknowledgeInTx(tx, id, AT),
+      () => drizzleChangeRequestRepo.countSubmittedSince(tx, id, AT),
+    ];
+    for (const call of calls) await expect(call()).rejects.toBeInstanceOf(TenantTxNotBoundError);
+    expect(unbound.statements).toEqual([]);
   });
 
   it('every hand-written sql block on a tenant table names tenant_id (row-dependent statements included)', () => {
