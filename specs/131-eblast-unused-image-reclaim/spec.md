@@ -30,7 +30,7 @@ Nothing compares an owner's images with its content. So an unused image on an E-
 
 1. **Cancel after an upload releases the image.** The author uploads an image, then cancels the description. The editor then:
    - sends `DELETE` to the release endpoint with that upload's `imageId`;
-   - shows the info toast "The image wasn't added. It will be removed automatically, usually within a day." (EN/TH/SV).
+   - once the release succeeded, shows the info toast "The image wasn't added. It will be removed automatically, usually within a day." (EN/TH/SV, `notInserted`). A refused or failed release, or an upload with no image id, shows only "The image wasn't added." (`notInsertedKept`), because nothing will remove it soon. A template has no sweep behind it.
 
    The release URL is fixed when the image is uploaded. Leaving the page while the description is still open releases the upload too.
 
