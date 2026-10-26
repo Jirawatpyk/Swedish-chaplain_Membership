@@ -562,6 +562,27 @@ export const MIGRATED_PATHS = [
   'src/components/broadcast/image-alt-dialog.tsx',
   'src/components/broadcast/compose-inline-image-uploader.tsx',
   'src/components/broadcast/clamav-unreachable-banner.tsx',
+  // US12d-3 — the E-Blast compose surface: both routes' pages and the staff
+  // loading frame, the member and staff forms, the segment, custom-list,
+  // member and template pickers, the skeleton, and the already-clean pieces
+  // they render (count line, subject counter, template field, submit summary,
+  // send options, unsafe-image list).
+  'src/app/(member)/portal/broadcasts/new/page.tsx',
+  'src/app/(staff)/admin/broadcasts/new/page.tsx',
+  'src/app/(staff)/admin/broadcasts/new/loading.tsx',
+  'src/components/broadcast/compose-form.tsx',
+  'src/components/broadcast/proxy-compose-form.tsx',
+  'src/components/broadcast/segment-picker.tsx',
+  'src/components/broadcast/custom-list-input.tsx',
+  'src/components/broadcast/member-picker.tsx',
+  'src/components/broadcast/compose-form-skeleton.tsx',
+  'src/components/broadcast/compose/template-picker.tsx',
+  'src/components/broadcast/compose/template-picker-field.tsx',
+  'src/components/broadcast/compose/subject-counter.tsx',
+  'src/components/broadcast/compose/submit-summary-dialog.tsx',
+  'src/components/broadcast/recipient-count.tsx',
+  'src/components/broadcast/schedule-picker.tsx',
+  'src/components/broadcast/unsafe-image-sources-list.tsx',
 ];
 
 /**
