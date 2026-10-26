@@ -277,7 +277,7 @@ describe('spec 131 — a cancelled upload is released', () => {
   it('the copy names no destination and does not promise a hard deadline (#658 UX / PDPA)', () => {
     expect(NOT_INSERTED).toBe("The image wasn't added to your message. It will be removed automatically, usually within a day.");
     // #658 UX M1 — "to your message", so a member does not read it as a failed upload and upload again.
-    expect(enMessages.portal.broadcasts.compose.imageUpload.notInsertedKept).toBe("The image wasn't added to your message.");
+    expect(enMessages.portal.broadcasts.compose.imageUpload.notInsertedKept).toMatch(/^The image wasn't added to your message\./);
   });
 
   it('member host: DELETE /api/broadcasts/inline-image-upload/<imageId>?draftId=<draft>, and the toast says so', async () => {
@@ -362,24 +362,45 @@ describe('spec 131 — a cancelled upload is released', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('a failed release promises nothing: the toast only says it was not added (#658 code review)', async () => {
-    const fetchSpy = vi.fn(async () => { throw new TypeError('offline'); });
+  // #658 UX M2 (the maintainer, 26 Oct 2026): a release that fails for a
+  // reason that may pass (offline, 429, 5xx) is sent once more after 2 s; if
+  // it still fails, the toast says the file is still stored and who removes it.
+  const RETRY = { timeout: 5000 };
+  const KEPT = enMessages.portal.broadcasts.compose.imageUpload.notInsertedKept;
+
+  it('a failed release is retried once and, when that succeeds, promises the removal', async () => {
+    const fetchSpy = vi.fn()
+      .mockRejectedValueOnce(new TypeError('offline'))
+      .mockResolvedValue(new Response(JSON.stringify({ released: true }), { status: 200 }));
     vi.stubGlobal('fetch', fetchSpy);
     vi.spyOn(console, 'error').mockImplementation(() => {});
     await uploadThenCancel();
 
-    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(toast.info).toHaveBeenCalledTimes(1));
-    expect(toast.info).toHaveBeenCalledWith(enMessages.portal.broadcasts.compose.imageUpload.notInsertedKept);
-    expect(toast.error).not.toHaveBeenCalled();
+    await waitFor(() => expect(toast.info).toHaveBeenCalledTimes(1), RETRY);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(toast.info).toHaveBeenCalledWith(NOT_INSERTED);
   });
 
-  it('a refused release (e.g. 429) promises nothing either', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 429 })));
+  it('a release still refused after the retry (429) says the file is still stored', async () => {
+    const fetchSpy = vi.fn(async () => new Response('{}', { status: 429 }));
+    vi.stubGlobal('fetch', fetchSpy);
     vi.spyOn(console, 'error').mockImplementation(() => {});
     await uploadThenCancel();
 
-    await waitFor(() => expect(toast.info).toHaveBeenCalledTimes(1));
-    expect(toast.info).toHaveBeenCalledWith(enMessages.portal.broadcasts.compose.imageUpload.notInsertedKept);
+    await waitFor(() => expect(toast.info).toHaveBeenCalledTimes(1), RETRY);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(toast.info).toHaveBeenCalledWith(KEPT);
+    expect(KEPT).toBe("The image wasn't added to your message. It's still stored. Contact the chamber if it must be removed.");
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('a final refusal (409, the owner closed) is not retried', async () => {
+    const fetchSpy = vi.fn(async () => new Response('{}', { status: 409 }));
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await uploadThenCancel();
+
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith(KEPT));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
