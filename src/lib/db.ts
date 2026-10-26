@@ -109,6 +109,38 @@ export class TenantContextAssertionError extends Error {
 export type TenantTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
+ * 130 (D-030) — the tenant each `runInTenant` transaction was opened for.
+ * A tx-only repo method (the members singletons' `*InTx`) reads it with
+ * `tenantSlugOf(tx)` to bind its D-029 `tenant_id` predicate — the same
+ * `ctx.slug` that set `app.current_tenant`, so the application wall and RLS
+ * name one tenant. Weak keys: an entry dies with its transaction.
+ */
+const TENANT_OF_TX = new WeakMap<object, string>();
+
+export class TenantTxNotBoundError extends Error {
+  constructor() {
+    super('tenantSlugOf: this tx was not opened by runInTenant');
+    this.name = 'TenantTxNotBoundError';
+  }
+}
+
+/** Binds a tx to its tenant. `runInTenant` calls it; gate tests call it on their recording db. */
+export function bindTenantTx(tx: object, slug: string): void {
+  TENANT_OF_TX.set(tx, slug);
+}
+
+/**
+ * The slug `runInTenant` bound to `tx`. Fails CLOSED: a tx from the global
+ * `db` or an owner-role `db.transaction` throws rather than returning
+ * `undefined`, which `eq(col, undefined)` would render as `tenant_id = NULL`.
+ */
+export function tenantSlugOf(tx: unknown): string {
+  const slug = typeof tx === 'object' && tx !== null ? TENANT_OF_TX.get(tx) : undefined;
+  if (slug === undefined) throw new TenantTxNotBoundError();
+  return slug;
+}
+
+/**
  * Phase 3F.11.14 (TxToken Step 4) — centralised unbrand helper. Used
  * by infrastructure adapters that receive a `TxToken`-typed parameter
  * (per the F71A port contracts at `@/modules/broadcasts/application/
@@ -233,9 +265,9 @@ export function isTenantTx(value: unknown): value is TenantTx {
  *       ),
  *   };
  *
- * Note: do NOT add an explicit `WHERE tenant_id = ctx.slug` — the RLS
- * policy adds it automatically, and an explicit filter would be a code
- * smell implying distrust of the RLS layer.
+ * D-029: every query ALSO carries an explicit `tenant_id = ctx.slug`
+ * predicate (the application wall; RLS is the database wall). A tx-only
+ * method reads the slug with `tenantSlugOf(tx)` (D-030).
  */
 export async function runInTenant<T>(
   ctx: TenantContext,
@@ -267,6 +299,7 @@ export async function runInTenant<T>(
     await tx.execute(sql`SET LOCAL ROLE chamber_app`);
     await tx.execute(sql.raw(`SET LOCAL app.current_tenant = '${ctx.slug}'`));
 
+    bindTenantTx(tx, ctx.slug);
     const result = await fn(tx);
 
     if (DEBUG_RLS_STATE) {
