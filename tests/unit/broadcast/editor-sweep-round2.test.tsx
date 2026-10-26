@@ -29,7 +29,7 @@ import { toast } from '@/lib/toast';
 const uploaderMocks = vi.hoisted(() => ({
   real: { current: true },
   props: { current: null as null | {
-    readonly onUploaded: (blobUrl: string) => void;
+    readonly onUploaded: (blobUrl: string, imageId?: string) => void;
     readonly onUploadingChange?: (busy: boolean) => void;
   } },
 }));

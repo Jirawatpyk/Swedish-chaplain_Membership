@@ -36,6 +36,7 @@ import { makeBroadcastPasteTransform } from './broadcast-paste-transform';
 import { ImageAltDialog, type ImageAltVariant } from './image-alt-dialog';
 import {
   ComposeInlineImageUploader,
+  MEMBER_INLINE_IMAGE_UPLOAD_URL,
   type ComposeInlineImageUploaderHandle,
 } from './compose-inline-image-uploader';
 import { ClamavUnreachableBanner } from './clamav-unreachable-banner';
@@ -54,6 +55,8 @@ interface PendingImage {
   readonly kind: ImageAltVariant;
   readonly alt?: string;
   readonly src?: string;
+  /** The uploaded row, so a cancelled description can release it (spec 131). */
+  readonly imageId?: string;
 }
 
 export interface TiptapEditorProps {
@@ -354,6 +357,29 @@ export default function TiptapEditor({
    * author uploaded next. A pending entry that already carries an `alt` is
    * mid-flight (the picker is open), so it survives the close.
    */
+  /**
+   * Spec 131 — release an upload that never made it into the message: the
+   * endpoint beside the host's upload route stamps its row, and the next daily
+   * sweep removes it. Fire and forget, `keepalive` so a page left at once
+   * still sends it. A failure is logged and changes nothing the author sees:
+   * the sweep's "unused" arm reclaims the image once the E-Blast closes.
+   */
+  const releaseUpload = useCallback(
+    (imageId: string): void => {
+      if (draftId === null) return;
+      const base = imageUploadUrl ?? MEMBER_INLINE_IMAGE_UPLOAD_URL;
+      const url = `${base}/${encodeURIComponent(imageId)}?draftId=${encodeURIComponent(draftId)}`;
+      void fetch(url, { method: 'DELETE', keepalive: true })
+        .then((res) => {
+          if (!res.ok) console.error({ status: res.status, draftId }, 'broadcasts.image_release.refused');
+        })
+        .catch((err: unknown) => {
+          console.error({ err: String(err), draftId }, 'broadcasts.image_release.failed');
+        });
+    },
+    [draftId, imageUploadUrl],
+  );
+
   const handleAltOpenChange = useCallback((next: boolean): void => {
     setAltOpen(next);
     // A closed edit is over, confirmed or not: a later upload's description
@@ -361,11 +387,16 @@ export default function TiptapEditor({
     if (!next) setAltEdit(null);
     if (!next && pendingImageRef.current?.alt === undefined) {
       // Uploaded, then the description was cancelled: the file is stored but
-      // nothing is in the message, so say so (round 2, #5).
-      if (pendingImageRef.current?.src !== undefined) toast.info(tImage('notInserted'));
+      // nothing is in the message, so say so (round 2, #5) and release it
+      // (spec 131).
+      const pending = pendingImageRef.current;
+      if (pending?.src !== undefined) {
+        toast.info(tImage('notInserted'));
+        if (pending.imageId !== undefined) releaseUpload(pending.imageId);
+      }
       pendingImageRef.current = null;
     }
-  }, [tImage]);
+  }, [tImage, releaseUpload]);
 
   /**
    * The author dismissed the file picker the description opened. The pending
@@ -380,7 +411,7 @@ export default function TiptapEditor({
   }, []);
 
   const handleUploaded = useCallback(
-    (blobUrl: string): void => {
+    (blobUrl: string, imageId?: string): void => {
       const pending = pendingImageRef.current;
       if (pending?.alt !== undefined) {
         insertImage(pending.kind, blobUrl, pending.alt);
@@ -392,7 +423,7 @@ export default function TiptapEditor({
       rememberTrigger();
       altConfirmedRef.current = false;
       setAltEdit(null);
-      pendingImageRef.current = { kind: 'inline', src: blobUrl };
+      pendingImageRef.current = { kind: 'inline', src: blobUrl, ...(imageId !== undefined ? { imageId } : {}) };
       setAltVariant('inline');
       setAltOpen(true);
     },
