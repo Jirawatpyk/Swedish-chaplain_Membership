@@ -69,7 +69,7 @@ function baseMember(billingCycle: BillingCycle) {
 function depsFor(current: ReturnType<typeof baseMember>) {
   const updateFieldsInTx = vi
     .fn()
-    .mockImplementation((_tx: unknown, _tenantId: unknown, _id: unknown, patch: object) =>
+    .mockImplementation((_tx: unknown, _id: unknown, patch: object) =>
       Promise.resolve(ok({ ...current, ...patch })),
     );
   const memberRepo = {
@@ -115,7 +115,7 @@ describe('updateMember — billing_cycle round-trips into the patch (065 §5.1)'
 
     expect(result.ok).toBe(true);
     expect(updateFieldsInTx).toHaveBeenCalledOnce();
-    const patch = updateFieldsInTx.mock.calls[0]![3] as { billingCycle?: BillingCycle };
+    const patch = updateFieldsInTx.mock.calls[0]![2] as { billingCycle?: BillingCycle };
     expect(patch.billingCycle).toBe('calendar');
     if (result.ok) expect(result.value.billingCycle).toBe('calendar');
   });

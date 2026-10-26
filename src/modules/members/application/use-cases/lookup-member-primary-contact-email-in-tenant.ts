@@ -31,7 +31,6 @@ export async function lookupMemberPrimaryContactEmailInTenant(
     return await runInTenant(deps.tenant, async (tx) =>
       deps.memberRepo.findMemberByPrimaryContactEmailInTx(
         tx,
-        deps.tenant.slug,
         emailLower.toLowerCase().trim(),
       ),
     );

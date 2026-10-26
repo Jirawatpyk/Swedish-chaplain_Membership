@@ -84,7 +84,6 @@ export async function setMemberHalt(
     return await runInTenant(deps.tenant, async (tx) => {
       const updateResult = await deps.memberRepo.updateBroadcastsHaltedInTx(
         tx,
-        deps.tenant.slug,
         memberId,
         halted,
       );

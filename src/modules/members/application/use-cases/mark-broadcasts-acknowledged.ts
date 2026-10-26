@@ -44,7 +44,6 @@ export async function markBroadcastsAcknowledged(
       const updateResult =
         await deps.memberRepo.updateBroadcastsAcknowledgedAtInTx(
           tx,
-          deps.tenant.slug,
           memberId,
           now,
         );

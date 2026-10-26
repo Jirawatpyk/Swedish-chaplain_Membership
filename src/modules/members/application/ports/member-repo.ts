@@ -303,14 +303,19 @@ export interface MemberRepo {
    * TOCTOU races where a concurrent actor mutates the row between the read
    * and the write. Caller already holds an open transaction via runInTenant.
    *
-   * The `*InTx` variants take the tx AND the tenant slug (`tenantId`, the
-   * same value `runInTenant` set on that tx): every statement states
-   * `tenant_id = tenantId` alongside RLS (D-029 — the two walls, never RLS
-   * alone). This superseded SS-5, under which they took only `tx`.
+   * SS-5: the `*InTx` variants take only `tx` (not `ctx`). The adapter reads
+   * the tenant `runInTenant` bound to that tx (`tenantSlugOf(tx)`, D-030) and
+   * states `tenant_id = <slug>` on every statement alongside RLS (D-029); a tx
+   * that `runInTenant` did not open fails closed. This contrasts with
+   * `audit.recordInTx(tx, ctx, event)` where `ctx` is required because
+   * `audit_log` carries an explicit `tenant_id` column under a *permissive*
+   * RLS policy (migration 0007: `tenant_id IS NULL OR tenant_id =
+   * current_setting('app.current_tenant')`). The policy allows NULL + own-tenant
+   * rows but does NOT auto-stamp `tenant_id`, so the caller must supply `ctx` to
+   * write the correct value into the row.
    */
   findByIdInTx(
     tx: TenantTx,
-    tenantId: string,
     memberId: MemberId,
   ): Promise<Result<Member, RepoError>>;
 
@@ -410,7 +415,6 @@ export interface MemberRepo {
    */
   updateStatusInTx(
     tx: TenantTx,
-    tenantId: string,
     memberId: MemberId,
     next: Member,
   ): Promise<Result<Member, RepoError>>;
@@ -424,7 +428,6 @@ export interface MemberRepo {
   /** In-transaction variant for atomic persist+audit (COR-8). */
   updateFieldsInTx(
     tx: TenantTx,
-    tenantId: string,
     memberId: MemberId,
     patch: MemberPatch,
   ): Promise<Result<Member, RepoError>>;
@@ -722,7 +725,6 @@ export interface MemberRepo {
    */
   updateBroadcastsHaltedInTx(
     tx: TenantTx,
-    tenantId: string,
     memberId: MemberId,
     halted: boolean,
   ): Promise<Result<{ affected: number }, RepoError>>;
@@ -740,7 +742,6 @@ export interface MemberRepo {
    */
   updateBroadcastsAcknowledgedAtInTx(
     tx: TenantTx,
-    tenantId: string,
     memberId: MemberId,
     timestamp: Date,
   ): Promise<Result<{ affected: number; previouslyNull: boolean }, RepoError>>;
@@ -772,7 +773,6 @@ export interface MemberRepo {
    */
   findPreferredLocaleInTx(
     tx: TenantTx,
-    tenantId: string,
     memberId: MemberId,
   ): Promise<Result<'en' | 'th' | 'sv' | null, RepoError>>;
 
@@ -791,7 +791,6 @@ export interface MemberRepo {
    */
   updatePreferredLocaleInTx(
     tx: TenantTx,
-    tenantId: string,
     memberId: MemberId,
     nextLocale: 'en' | 'th' | 'sv' | null,
   ): Promise<
@@ -812,7 +811,6 @@ export interface MemberRepo {
    */
   findMemberByPrimaryContactEmailInTx(
     tx: TenantTx,
-    tenantId: string,
     emailLower: string,
   ): Promise<Result<F7MemberRecipient | null, RepoError>>;
 
@@ -900,7 +898,6 @@ export interface MemberRepo {
    */
   scrubPiiInTx(
     tx: TenantTx,
-    tenantId: string,
     memberId: MemberId,
     opts: { readonly erasedAt: Date },
   ): Promise<Result<void, RepoError>>;
@@ -937,7 +934,6 @@ export interface MemberRepo {
    */
   findErasedAtByIdInTx(
     tx: TenantTx,
-    tenantId: string,
     memberId: MemberId,
   ): Promise<Result<{ readonly erasedAt: Date | null }, RepoError>>;
 

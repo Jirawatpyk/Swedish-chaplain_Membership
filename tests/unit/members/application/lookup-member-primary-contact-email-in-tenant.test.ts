@@ -43,7 +43,6 @@ describe('lookupMemberPrimaryContactEmailInTenant', () => {
     expect(result.ok).toBe(true);
     expect(memberRepo.findMemberByPrimaryContactEmailInTx).toHaveBeenCalledWith(
       {},
-      tenant.slug,
       'alice@example.com',
     );
   });

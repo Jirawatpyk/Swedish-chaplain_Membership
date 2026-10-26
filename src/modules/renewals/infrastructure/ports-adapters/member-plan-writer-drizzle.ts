@@ -19,12 +19,11 @@ import { f3DrizzleMemberRepo, asMemberId, asPlanId } from '@/modules/members';
 import type { MemberPlanWriterPort } from '../../application/ports/member-plan-writer-port';
 
 export const memberPlanWriterDrizzle: MemberPlanWriterPort = {
-  async writePlanIdInTx(tx, tenantId, memberId, planId, planYear) {
+  async writePlanIdInTx(tx, _tenantId, memberId, planId, planYear) {
     // `MemberPatch.planId` is the branded `PlanId`; brand at the boundary
     // (mirrors change-plan.ts, which passes an already-branded `PlanId`).
     const result = await f3DrizzleMemberRepo.updateFieldsInTx(
       tx,
-      tenantId,
       asMemberId(memberId),
       { planId: asPlanId(planId), planYear },
     );

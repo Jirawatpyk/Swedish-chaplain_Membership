@@ -17,10 +17,9 @@ import { f3DrizzleMemberRepo, asMemberId } from '@/modules/members';
 import type { MemberPlanLookupPort } from '../../application/ports/member-plan-lookup-port';
 
 export const memberPlanLookupDrizzle: MemberPlanLookupPort = {
-  async loadMemberPlanInTx(tx, tenantId, memberId) {
+  async loadMemberPlanInTx(tx, _tenantId, memberId) {
     const result = await f3DrizzleMemberRepo.findByIdInTx(
       tx,
-      tenantId,
       asMemberId(memberId),
     );
     if (!result.ok) {

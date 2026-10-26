@@ -321,7 +321,7 @@ describe('eraseMember scrubs the change requests (T070, live Neon)', () => {
     await new Promise((r) => setTimeout(r, 300));
     try {
       const scrub = runInTenant(tenant.ctx, (tx) =>
-        changeRequestScrubAdapter.scrubForMemberInTx(tx, tenant.ctx.slug, asMemberId(memberId), new Date('2026-09-13T00:00:00Z')),
+        changeRequestScrubAdapter.scrubForMemberInTx(tx, asMemberId(memberId), new Date('2026-09-13T00:00:00Z')),
       );
       expect(await Promise.race([scrub, blocked(1_500)])).toBe('blocked');
       // WHERE it waits is the whole point. Drop `.for('update')` from the

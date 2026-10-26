@@ -201,7 +201,7 @@ function seed(opts: { request?: ChangeRequest; member?: Member; contacts?: Conta
       findById: vi.fn(async (): Promise<Result<Member, RepoError>> => ok(m)),
       findByIdInTx: vi.fn(async (): Promise<Result<Member, RepoError>> => ok(m)),
       findErasedAtByIdInTx: vi.fn(async (): Promise<Result<{ erasedAt: Date | null }, RepoError>> => ok({ erasedAt: opts.erasedAt ?? null })),
-      updateFieldsInTx: vi.fn(async (_tx: unknown, _tenantId: unknown, _id: unknown, patch: Record<string, unknown>): Promise<Result<Member, RepoError>> => ok({ ...m, ...patch } as Member)),
+      updateFieldsInTx: vi.fn(async (_tx: unknown, _id: unknown, patch: Record<string, unknown>): Promise<Result<Member, RepoError>> => ok({ ...m, ...patch } as Member)),
     },
     contactRepo: {
       listByMember: vi.fn(async (): Promise<Result<Contact[], RepoError>> => ok(cs)),
@@ -330,7 +330,7 @@ describe('POST /api/admin/change-requests/[id]/decide — decisions', () => {
       ['description', 'approved', NOW.toISOString()],
     ]);
     expect(fakes.contactRepo.updateInTx).toHaveBeenCalledWith({ __tx: true }, CONTACT, { phone: '+66899999999' });
-    expect(fakes.memberRepo.updateFieldsInTx).toHaveBeenCalledWith({ __tx: true }, 'test-swecham', MEMBER, { description: 'A new description' });
+    expect(fakes.memberRepo.updateFieldsInTx).toHaveBeenCalledWith({ __tx: true }, MEMBER, { description: 'A new description' });
     expect(fakes.audit.events).toHaveLength(1);
     expect(fakes.audit.events[0]).toMatchObject({
       type: 'member_change_request_decided',

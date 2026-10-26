@@ -382,7 +382,7 @@ export async function eraseMember(
       // recency trigger must not fire) with `actor_role: 'system'` (the
       // closure is the erasure's consequence, not a human decision — the #333
       // kill-switch precedent) and the erasure's actor as `actor_user_id`.
-      const scrubChangeRequests = await deps.changeRequestScrub.scrubForMemberInTx(tx, deps.tenant.slug, memberId, now);
+      const scrubChangeRequests = await deps.changeRequestScrub.scrubForMemberInTx(tx, memberId, now);
       if (!scrubChangeRequests.ok)
         throw new Error(`change_request_scrub_failed:${scrubChangeRequests.error.code}`, {
           cause: repoErrorCause(scrubChangeRequests.error),
@@ -408,7 +408,7 @@ export async function eraseMember(
       // findByIdInTx takes a SELECT … FOR UPDATE row lock (mirrors
       // archive-member.ts) — keep it so a concurrent plan-change /
       // inline-edit cannot clobber the row between this read and the scrub.
-      const current = await deps.memberRepo.findByIdInTx(tx, deps.tenant.slug, memberId);
+      const current = await deps.memberRepo.findByIdInTx(tx, memberId);
       if (!current.ok) {
         if (current.error.code === 'repo.not_found')
           throw new EraseNotFoundError();
@@ -429,7 +429,7 @@ export async function eraseMember(
       // the erased record. Re-read the ids now (non-locking — no new AB-BA)
       // and abort on anything the scrub did not see: the tx rolls back, the
       // admin's retry (or the reconciler's re-drive) scrubs the new row too.
-      const rescan = await deps.changeRequestScrub.listRequestIdsInTx(tx, deps.tenant.slug, memberId);
+      const rescan = await deps.changeRequestScrub.listRequestIdsInTx(tx, memberId);
       if (!rescan.ok)
         throw new Error(`change_request_rescan_failed:${rescan.error.code}`, { cause: repoErrorCause(rescan.error) });
       const scrubbedIds = new Set<string>(scrubChangeRequests.value.scrubbedRequestIds);
@@ -582,7 +582,7 @@ export async function eraseMember(
         );
       tombstonedDeliveriesCount = tombstone.tombstonedCount;
 
-      const scrubMember = await deps.memberRepo.scrubPiiInTx(tx, deps.tenant.slug, memberId, {
+      const scrubMember = await deps.memberRepo.scrubPiiInTx(tx, memberId, {
         erasedAt: now,
       });
       if (!scrubMember.ok) {
@@ -657,7 +657,6 @@ export async function eraseMember(
       const tokenInvalidation =
         await deps.tokens.invalidateAllActiveForUsersInTx(
           tx,
-          deps.tenant.slug,
           linkedUserIdsForErasure,
           now,
         );

@@ -221,7 +221,6 @@ export async function bulkAction(
             // DB write joins the ambient transaction with the audit row.
             const persistResult = await deps.memberRepo.updateStatusInTx(
               tx,
-              deps.tenant.slug,
               memberId,
               updated,
             );
@@ -271,7 +270,6 @@ export async function bulkAction(
             }
             const persistResult = await deps.memberRepo.updateStatusInTx(
               tx,
-              deps.tenant.slug,
               memberId,
               undeleteResult.value,
             );

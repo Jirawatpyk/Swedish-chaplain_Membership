@@ -4,13 +4,14 @@
  *
  * All writes go through the caller's transaction so the compound
  * operations in change-contact-email / verify / revert stay atomic. Every
- * `…InTx` statement states `tenant_id = tenantId` (D-029) alongside RLS;
+ * `…InTx` statement states the tx's tenant (`tenantSlugOf(tx)`, D-029/D-030)
+ * alongside RLS;
  * `findActiveById` is the one read that cannot — the token resolves the
  * tenant (see the port).
  */
 
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import { db } from '@/lib/db';
+import { db, tenantSlugOf } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 // Direct schema import — documented escape hatch for tx-sharing adapters.
 import {
@@ -84,8 +85,9 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
     }
   },
 
-  async findActiveByIdInTx(tx, tenantId, tokenId) {
+  async findActiveByIdInTx(tx, tokenId) {
     try {
+      const tenantId = tenantSlugOf(tx);
       // FOR UPDATE prevents double-consume race under READ COMMITTED:
       // two concurrent requests cannot both pass the consumedAt IS NULL
       // check — the second blocks until the first commits/rolls back.
@@ -120,8 +122,9 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
     }
   },
 
-  async markConsumedInTx(tx, tenantId, tokenId, consumedAt) {
+  async markConsumedInTx(tx, tokenId, consumedAt) {
     try {
+      const tenantId = tenantSlugOf(tx);
       // Idempotent guard: only consume if not already consumed.
       // Combined with FOR UPDATE in findActiveByIdInTx, this is
       // belt-and-suspenders against double-consume.
@@ -145,8 +148,9 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
     }
   },
 
-  async invalidateActiveForUserInTx(tx, tenantId, userId, type, consumedAt) {
+  async invalidateActiveForUserInTx(tx, userId, type, consumedAt) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const updated = await tx
         .update(emailChangeTokens)
         .set({ consumedAt })
@@ -166,11 +170,12 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
     }
   },
 
-  async invalidateAllActiveForUsersInTx(tx, tenantId, userIds, consumedAt) {
+  async invalidateAllActiveForUsersInTx(tx, userIds, consumedAt) {
     // Empty work-list → no-op (an empty inArray would otherwise produce a
     // degenerate `IN ()` SQL fragment in some drivers). Cheap guard, explicit.
     if (userIds.length === 0) return ok({ invalidatedEmails: [] });
     try {
+      const tenantId = tenantSlugOf(tx);
       // One UPDATE over EVERY still-active token (any type) for the user set.
       // We intentionally do NOT filter `expires_at > now()`: an already-EXPIRED
       // unconsumed token is harmless (findActiveByIdInTx rejects it on expiry),

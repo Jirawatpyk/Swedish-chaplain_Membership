@@ -125,7 +125,7 @@ export async function archiveMember(
     const archived = await runInTenant(deps.tenant, async (tx) => {
       // Lock the row (SELECT ... FOR UPDATE) — prevents a concurrent
       // plan change / inline-edit from clobbering status after we read.
-      const current = await deps.memberRepo.findByIdInTx(tx, deps.tenant.slug, memberId);
+      const current = await deps.memberRepo.findByIdInTx(tx, memberId);
       if (!current.ok) {
         if (current.error.code === 'repo.not_found')
           throw new ArchiveNotFoundError();
@@ -139,7 +139,6 @@ export async function archiveMember(
 
       const persistResult = await deps.memberRepo.updateStatusInTx(
         tx,
-        deps.tenant.slug,
         memberId,
         transitioned.value,
       );

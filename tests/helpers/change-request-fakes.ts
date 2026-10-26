@@ -461,7 +461,7 @@ export interface ChangeRequestScrubFake extends ChangeRequestScrubPort {
 /** Scrubs the in-memory repo the way the Drizzle adapter scrubs the tables (R10). */
 export function makeChangeRequestScrubFake(repo: InMemoryChangeRequestRepo): ChangeRequestScrubFake {
   return {
-    scrubForMemberInTx: vi.fn(async (_tx, _tenantId, memberId, at) => {
+    scrubForMemberInTx: vi.fn(async (_tx, memberId, at) => {
       const scrubbed: ChangeRequestId[] = [];
       const closed: ClosedChangeRequest[] = [];
       for (const [id, row] of repo.rows) {
@@ -481,6 +481,6 @@ export function makeChangeRequestScrubFake(repo: InMemoryChangeRequestRepo): Cha
       }
       return ok({ scrubbedRequestIds: scrubbed, closedRequests: closed });
     }),
-    listRequestIdsInTx: vi.fn(async (_tx, _tenantId, memberId) => ok([...repo.rows.values()].filter((r) => r.memberId === memberId).map((r) => r.id))),
+    listRequestIdsInTx: vi.fn(async (_tx, memberId) => ok([...repo.rows.values()].filter((r) => r.memberId === memberId).map((r) => r.id))),
   };
 }

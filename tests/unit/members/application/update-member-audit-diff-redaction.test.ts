@@ -92,7 +92,7 @@ function baseMember(overrides: { taxId?: TaxId | null }) {
 function depsFor(current: ReturnType<typeof baseMember>) {
   const updateFieldsInTx = vi
     .fn()
-    .mockImplementation((_tx: unknown, _tenantId: unknown, _id: unknown, patch: object) =>
+    .mockImplementation((_tx: unknown, _id: unknown, patch: object) =>
       Promise.resolve(ok({ ...current, ...patch })),
     );
   const recordInTx = vi.fn().mockResolvedValue(ok(undefined));

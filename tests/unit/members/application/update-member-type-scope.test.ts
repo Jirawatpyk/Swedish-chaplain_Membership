@@ -66,7 +66,7 @@ function plan(scope: 'company' | 'individual' | 'both') {
 
 function depsFor(opts: { current?: ReturnType<typeof member>; locked?: ReturnType<typeof member>; scope?: 'company' | 'individual' | 'both' }) {
   const current = opts.current ?? member();
-  const updateFieldsInTx = vi.fn((_tx: unknown, _tenantId: unknown, _id: unknown, patch: object) =>
+  const updateFieldsInTx = vi.fn((_tx: unknown, _id: unknown, patch: object) =>
     Promise.resolve(ok({ ...current, ...patch })),
   );
   const recordInTx = vi.fn().mockResolvedValue(ok(undefined));

@@ -15,7 +15,7 @@
  * hatch documented in `src/lib/db.ts:113-130`.
  */
 import { and, eq, sql } from 'drizzle-orm';
-import { unbrandTx } from '@/lib/db';
+import { tenantSlugOf, unbrandTx } from '@/lib/db';
 // `membershipPlans` is a PUBLIC barrel export of the plans module
 // (`@/modules/plans` → schema), NOT a deep import — Principle III ok.
 import { membershipPlans } from '@/modules/plans';
@@ -31,11 +31,11 @@ export const drizzlePlanAdvisoryLockAdapter: PlanAdvisoryLockPort = {
 
   async isPlanSoftDeletedInTx(
     tx: unknown,
-    tenantId: string,
     planId: string,
     planYear: number,
   ): Promise<boolean> {
     const typedTx = unbrandTx(tx);
+    const tenantId = tenantSlugOf(typedTx);
     const rows = await typedTx
       .select({ deletedAt: membershipPlans.deletedAt })
       .from(membershipPlans)

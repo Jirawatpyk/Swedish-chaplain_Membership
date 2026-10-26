@@ -6,7 +6,8 @@
  * scopes every query to the tenant. Every statement ALSO carries an
  * explicit `tenant_id` predicate on each tenant-scoped table it names
  * (D-029, superseding F2 § 7.1), bound to the same slug `runInTenant` sets:
- * `ctx.slug`, or the `tenantId` argument of an `…InTx` method. Gated by
+ * `ctx.slug`, or for a tx-only `…InTx` method the slug `runInTenant` bound
+ * to that tx (`tenantSlugOf(tx)`, D-030 — it throws for any other tx). Gated by
  * `tests/unit/members/infrastructure/member-repo-tenant-sql-shape.test.ts`.
  *
  * Row → Domain translation is handled by `rowToMember()` below; Drizzle's
@@ -29,7 +30,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { err, ok, type Result } from '@/lib/result';
-import { runInTenant, type TenantTx } from '@/lib/db';
+import { runInTenant, tenantSlugOf, type TenantTx } from '@/lib/db';
 import { mapDbError, unexpected } from './_repo-error';
 import type { TenantContext } from '@/modules/tenants';
 import { membershipPlans } from '@/modules/plans';
@@ -486,14 +487,14 @@ function broadcastSegmentTierFilter(
  * exact statement the repo runs (PR-D review M-13: the 0294 partial index
  * was reserved for this read with an EXPLAIN obligation) instead of a
  * hand-written copy that would drift. Must be awaited inside the caller's
- * `runInTenant` tx; `tenantId` is that tx's slug, stated as an explicit
- * `members.tenant_id` predicate alongside RLS (D-029).
+ * `runInTenant` tx: it states that tx's tenant (`tenantSlugOf(tx)`, D-030)
+ * as an explicit `members.tenant_id` predicate alongside RLS (D-029).
  */
 export function buildBroadcastRecipientContactsQuery(
   tx: TenantTx,
-  tenantId: string,
   params: BroadcastRecipientContactsQuery,
 ) {
+  const tenantId = tenantSlugOf(tx);
   const tierFilter = broadcastSegmentTierFilter(params);
   const after = params.after;
   // Review 2026-09-07 round 2 (perf HIGH-1, EXPLAIN-proven on the 20k fixture)
@@ -595,8 +596,9 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async findByIdInTx(tx, tenantId, memberId) {
+  async findByIdInTx(tx, memberId) {
     try {
+      const tenantId = tenantSlugOf(tx);
       // SELECT ... FOR UPDATE — row-level lock within the ambient tx so
       // concurrent actors must wait. Prevents TOCTOU lost-update (round-3
       // review N-C1). The lock is released on COMMIT / ROLLBACK.
@@ -639,8 +641,9 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async findErasedAtByIdInTx(tx, tenantId, memberId) {
+  async findErasedAtByIdInTx(tx, memberId) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await tx
         .select({ erasedAt: members.erasedAt })
         .from(members)
@@ -1084,8 +1087,9 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async updateStatusInTx(tx, tenantId, memberId, next) {
+  async updateStatusInTx(tx, memberId, next) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await tx
         .update(members)
         .set({
@@ -1114,8 +1118,9 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async updateFieldsInTx(tx, tenantId, memberId, patch) {
+  async updateFieldsInTx(tx, memberId, patch) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await applyMemberPatch(tx, tenantId, memberId, patch);
       if (rows.length === 0) return err({ code: 'repo.not_found' });
       return ok(rowToMember(rows[0]!));
@@ -1124,8 +1129,9 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async scrubPiiInTx(tx, tenantId, memberId, opts) {
+  async scrubPiiInTx(tx, memberId, opts) {
     try {
+      const tenantId = tenantSlugOf(tx);
       // COMP-1 member erasure (GDPR Art.17 / PDPA §33). Anonymise the member
       // row in place. `company_name` is NOT NULL so it takes the non-PII
       // SENTINEL `[erased]`; every other PII-bearing column is NULLed —
@@ -1716,7 +1722,7 @@ export const drizzleMemberRepo: MemberRepo = {
   async findBroadcastRecipientContacts(ctx, params) {
     try {
       const rows = await runInTenant(ctx, async (tx) =>
-        buildBroadcastRecipientContactsQuery(tx, ctx.slug, params),
+        buildBroadcastRecipientContactsQuery(tx, params),
       );
 
       return ok(
@@ -1810,8 +1816,9 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async updateBroadcastsHaltedInTx(tx, tenantId, memberId, halted) {
+  async updateBroadcastsHaltedInTx(tx, memberId, halted) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const result = await tx
         .update(members)
         .set({
@@ -1826,8 +1833,9 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async updateBroadcastsAcknowledgedAtInTx(tx, tenantId, memberId, timestamp) {
+  async updateBroadcastsAcknowledgedAtInTx(tx, memberId, timestamp) {
     try {
+      const tenantId = tenantSlugOf(tx);
       // Atomic single-statement: UPDATE ... WHERE broadcasts_acknowledged_at IS NULL
       // produces exactly one fresh-acknowledgement row per concurrent
       // call (the other call's WHERE clause no longer matches). Avoids
@@ -1913,8 +1921,9 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async findPreferredLocaleInTx(tx, tenantId, memberId) {
+  async findPreferredLocaleInTx(tx, memberId) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await tx
         .select({ locale: members.preferredLocale })
         .from(members)
@@ -1934,8 +1943,9 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async updatePreferredLocaleInTx(tx, tenantId, memberId, nextLocale) {
+  async updatePreferredLocaleInTx(tx, memberId, nextLocale) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await tx
         .update(members)
         .set({ preferredLocale: nextLocale, updatedAt: new Date() })
@@ -1954,8 +1964,9 @@ export const drizzleMemberRepo: MemberRepo = {
     }
   },
 
-  async findMemberByPrimaryContactEmailInTx(tx, tenantId, emailLower) {
+  async findMemberByPrimaryContactEmailInTx(tx, emailLower) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await tx
         .select({
           memberId: members.memberId,

@@ -57,7 +57,6 @@ export async function setMemberPreferredLocale(
     return await runInTenant(deps.tenant, async (tx) => {
       const currentResult = await deps.memberRepo.findPreferredLocaleInTx(
         tx,
-        deps.tenant.slug,
         input.memberId,
       );
       if (!currentResult.ok) {
@@ -71,7 +70,6 @@ export async function setMemberPreferredLocale(
 
       const updateResult = await deps.memberRepo.updatePreferredLocaleInTx(
         tx,
-        deps.tenant.slug,
         input.memberId,
         input.nextValue,
       );

@@ -121,7 +121,7 @@ export async function inlineEdit(
   try {
     const updated = await runInTenant(deps.tenant, async (tx) => {
       // SELECT ... FOR UPDATE
-      const currentResult = await deps.memberRepo.findByIdInTx(tx, deps.tenant.slug, memberId);
+      const currentResult = await deps.memberRepo.findByIdInTx(tx, memberId);
       if (!currentResult.ok) {
         if (currentResult.error.code === 'repo.not_found') {
           throw new InlineEditNotFoundError();
@@ -162,7 +162,6 @@ export async function inlineEdit(
 
           const persistResult = await deps.memberRepo.updateStatusInTx(
             tx,
-            deps.tenant.slug,
             memberId,
             statusResult.value,
           );
@@ -211,7 +210,6 @@ export async function inlineEdit(
           const patch: MemberPatch = { country: countryResult.value };
           const persistResult = await deps.memberRepo.updateFieldsInTx(
             tx,
-            deps.tenant.slug,
             memberId,
             patch,
           );
@@ -254,7 +252,6 @@ export async function inlineEdit(
           const patch: MemberPatch = { notes: value };
           const persistResult = await deps.memberRepo.updateFieldsInTx(
             tx,
-            deps.tenant.slug,
             memberId,
             patch,
           );

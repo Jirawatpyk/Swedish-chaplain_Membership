@@ -2,8 +2,8 @@
  * F114 T078 — `ChangeRequestScrubPort` over Drizzle (FR-030; research R10).
  *
  * Runs INSIDE `eraseMember`'s atomic scrub tx (the caller's `runInTenant`
- * tx — never the global `db`). Every statement states the erased member's
- * tenant (`tenant_id = tenantId`, D-029), with RLS + the GUC behind it. The id read is `SELECT … FOR UPDATE`: the
+ * tx — never the global `db`). Every statement states the tenant that tx was
+ * opened for (`tenantSlugOf(tx)`, D-029/D-030), with RLS + the GUC behind it. The id read is `SELECT … FOR UPDATE`: the
  * REQUEST rows are the first lock this adapter takes, before any field row,
  * because `decideInTx` locks the request row first and writes the field
  * rows LAST — a scrub that updated field rows before holding the request
@@ -35,6 +35,7 @@
  * own truth, not a hand-copied constant (review round 1, P-6 / SEC-S2).
  */
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { tenantSlugOf } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 import type { ChangeRequestScrubPort, ClosedChangeRequest } from '../../application/ports/change-request-scrub-port';
 import type { ChangeRequestId, ChangeRequestScope } from '../../domain/change-request/change-request';
@@ -54,8 +55,9 @@ export const REQUEST_SCRUBBED_COLUMNS: ReadonlyArray<(typeof REASON_COLUMNS)[num
 ];
 
 export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
-  async scrubForMemberInTx(tx, tenantId, memberId, at) {
+  async scrubForMemberInTx(tx, memberId, at) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const ids = (
         await tx
           .select({ id: memberChangeRequests.id })
@@ -106,8 +108,9 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
   },
 
   // the post-member-lock rescan (see the port) — a plain read on the same tx
-  async listRequestIdsInTx(tx, tenantId, memberId) {
+  async listRequestIdsInTx(tx, memberId) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const rows = await tx
         .select({ id: memberChangeRequests.id })
         .from(memberChangeRequests)

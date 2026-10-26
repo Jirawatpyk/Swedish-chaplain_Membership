@@ -70,7 +70,6 @@ describe('setMemberPreferredLocale', () => {
     }
     expect(memberRepo.updatePreferredLocaleInTx).toHaveBeenCalledWith(
       {},
-      tenant.slug,
       memberId,
       'th',
     );

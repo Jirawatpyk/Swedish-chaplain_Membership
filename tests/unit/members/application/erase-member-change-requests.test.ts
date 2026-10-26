@@ -63,9 +63,8 @@ describe('eraseMember — change-request scrub (F114 T078)', () => {
     expect(res.ok, JSON.stringify(res)).toBe(true);
 
     expect(d.changeRequestScrub.scrubForMemberInTx).toHaveBeenCalledTimes(1);
-    const [tx, tenantArg, memberArg, at] = d.changeRequestScrub.scrubForMemberInTx.mock.calls[0]!;
+    const [tx, memberArg, at] = d.changeRequestScrub.scrubForMemberInTx.mock.calls[0]!;
     expect(tx).toEqual({ __tx: 'scrub-tx' });
-    expect(tenantArg).toBe(d.tenant.slug);
     expect(memberArg).toBe(MEMBER_ID);
     expect(at).toBeInstanceOf(Date);
     const memberLockOrder = d.memberRepo.findByIdInTx.mock.invocationCallOrder[0]!;

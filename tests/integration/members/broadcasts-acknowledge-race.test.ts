@@ -145,10 +145,10 @@ describe('updateBroadcastsAcknowledgedAtInTx — concurrent ack race fix (Round 
     // UPDATE's WHERE-IS-NULL predicate can serialize properly.
     const [r1, r2] = await Promise.all([
       runInTenant(tenant.ctx, async (tx) =>
-        drizzleMemberRepo.updateBroadcastsAcknowledgedAtInTx(tx, tenant.ctx.slug, branded, t1),
+        drizzleMemberRepo.updateBroadcastsAcknowledgedAtInTx(tx, branded, t1),
       ),
       runInTenant(tenant.ctx, async (tx) =>
-        drizzleMemberRepo.updateBroadcastsAcknowledgedAtInTx(tx, tenant.ctx.slug, branded, t2),
+        drizzleMemberRepo.updateBroadcastsAcknowledgedAtInTx(tx, branded, t2),
       ),
     ]);
 
@@ -192,7 +192,7 @@ describe('updateBroadcastsAcknowledgedAtInTx — concurrent ack race fix (Round 
   it('member missing — returns affected=0, previouslyNull=false', async () => {
     const ghostId = asMemberId(randomUUID());
     const r = await runInTenant(tenant.ctx, async (tx) =>
-      drizzleMemberRepo.updateBroadcastsAcknowledgedAtInTx(tx, tenant.ctx.slug, ghostId, new Date()),
+      drizzleMemberRepo.updateBroadcastsAcknowledgedAtInTx(tx, ghostId, new Date()),
     );
 
     expect(r.ok).toBe(true);
@@ -209,7 +209,7 @@ describe('updateBroadcastsAcknowledgedAtInTx — concurrent ack race fix (Round 
 
     // First ack — establishes the consent anchor.
     const r1 = await runInTenant(tenant.ctx, async (tx) =>
-      drizzleMemberRepo.updateBroadcastsAcknowledgedAtInTx(tx, tenant.ctx.slug, branded, original),
+      drizzleMemberRepo.updateBroadcastsAcknowledgedAtInTx(tx, branded, original),
     );
     expect(r1.ok).toBe(true);
     if (r1.ok) expect(r1.value.previouslyNull).toBe(true);
@@ -220,7 +220,7 @@ describe('updateBroadcastsAcknowledgedAtInTx — concurrent ack race fix (Round 
     // first acknowledgement as the legal anchor.
     const later = new Date('2026-06-01T10:00:00Z');
     const r2 = await runInTenant(tenant.ctx, async (tx) =>
-      drizzleMemberRepo.updateBroadcastsAcknowledgedAtInTx(tx, tenant.ctx.slug, branded, later),
+      drizzleMemberRepo.updateBroadcastsAcknowledgedAtInTx(tx, branded, later),
     );
     expect(r2.ok).toBe(true);
     if (r2.ok) {

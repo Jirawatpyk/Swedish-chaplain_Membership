@@ -67,7 +67,6 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(types).toContain('member_erasure_requested');
     expect(deps.memberRepo.scrubPiiInTx).toHaveBeenCalledWith(
       expect.anything(),
-      deps.tenant.slug,
       MEMBER_ID,
       expect.objectContaining({ erasedAt: expect.any(Date) }),
     );
@@ -925,7 +924,6 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     // The port received the UNFILTERED work-list (removed contacts included).
     expect(deps.tokens.invalidateAllActiveForUsersInTx).toHaveBeenCalledWith(
       expect.anything(),
-      deps.tenant.slug,
       ['u-1'],
       expect.any(Date),
     );

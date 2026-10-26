@@ -389,7 +389,7 @@ export const planRepo: PlanRepo = {
 
       // 3. Count active + inactive members on this plan WITHIN the same tx
       //    so the count is serialised under the lock.
-      const memberCount = await countActiveMembersOnPlanInTx(tx, tenant.slug, planId as string, year as number);
+      const memberCount = await countActiveMembersOnPlanInTx(tx, planId as string, year as number);
       if (memberCount > 0) {
         return { kind: 'has_active_members' as const, count: memberCount };
       }

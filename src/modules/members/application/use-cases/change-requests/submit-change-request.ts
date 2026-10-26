@@ -433,7 +433,7 @@ export async function submitChangeRequest(
           throw new RateLimitedAbort(inWindow.value.count, retryAfterSeconds);
         }
 
-        const fresh = await deps.memberRepo.findByIdInTx(tx, deps.tenant.slug, input.memberId);
+        const fresh = await deps.memberRepo.findByIdInTx(tx, input.memberId);
         if (!fresh.ok) throw new UseCaseAbort<RepoError>(fresh.error);
         if (fresh.value.status === 'archived') throw new MemberArchivedAbort();
         // An erasure keeps `status` and stamps only `erased_at`, so the FOR
@@ -444,7 +444,7 @@ export async function submitChangeRequest(
         // (decide's rule — the seam review of PR-2, #2). Refused as
         // `member_archived`: the member is gone either way, and the contact's
         // session is revoked by the same erasure.
-        const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, deps.tenant.slug, input.memberId);
+        const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, input.memberId);
         if (!erased.ok) throw new UseCaseAbort<RepoError>(erased.error);
         if (erased.value.erasedAt !== null) throw new MemberArchivedAbort();
 

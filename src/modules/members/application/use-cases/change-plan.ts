@@ -285,7 +285,6 @@ export async function changePlan(
       const newPlanSoftDeleted =
         await deps.planAdvisoryLock.isPlanSoftDeletedInTx(
           tx,
-          deps.tenant.slug,
           newPlan.value.planId as string,
           data.new_plan_year,
         );
@@ -299,7 +298,7 @@ export async function changePlan(
       // Pre-tx validation (bundle/turnover/startup) stays on the snapshot —
       // those are policy gates; only the recorded old-plan provenance must be
       // exact.
-      const lockedResult = await deps.memberRepo.findByIdInTx(tx, deps.tenant.slug, memberId);
+      const lockedResult = await deps.memberRepo.findByIdInTx(tx, memberId);
       if (!lockedResult.ok) {
         throw new TxAbort(
           lockedResult.error.code === 'repo.not_found'
@@ -315,7 +314,7 @@ export async function changePlan(
       // 063 — capture the pre-flip plan id for the post-commit F8 event.
       lockedOldPlanId = locked.planId as string;
 
-      const updated = await deps.memberRepo.updateFieldsInTx(tx, deps.tenant.slug, memberId, {
+      const updated = await deps.memberRepo.updateFieldsInTx(tx, memberId, {
         planId: newPlan.value.planId,
         planYear: data.new_plan_year,
       });
