@@ -44,6 +44,9 @@ const { makeDrizzlePlanLookupForRenewal } = await import(
 const { makeDrizzleAtRiskScorer } = await import(
   '@/modules/renewals/infrastructure/drizzle/drizzle-at-risk-scorer'
 );
+const { makeDrizzleTierUpgradeEvalCandidateRepo } = await import(
+  '@/modules/renewals/infrastructure/drizzle/drizzle-tier-upgrade-eval-candidate-repo'
+);
 
 const TABLES = tenantScopedTables();
 const CTX = { slug: T } as never;
@@ -109,6 +112,15 @@ describe('renewals leftovers — tenant predicate on every statement (130 s7)', 
       scoreMembers: [T, []],
     });
     expect(rec.statements.length).toBeGreaterThanOrEqual(3);
+    expect(violationsOf(rec.statements)).toEqual([]);
+  });
+
+  it('tier-upgrade evaluation candidates — first page and a cursor page (found by the s7 review)', async () => {
+    rec.statements.length = 0;
+    const repo = makeDrizzleTierUpgradeEvalCandidateRepo(CTX);
+    await callEach(repo as never, { list: [T, { pageSize: 10 }] });
+    await repo.list(T, { pageSize: 10, cursor: 'member-1' }).catch(() => undefined);
+    expect(rec.statements.length).toBe(2);
     expect(violationsOf(rec.statements)).toEqual([]);
   });
 
