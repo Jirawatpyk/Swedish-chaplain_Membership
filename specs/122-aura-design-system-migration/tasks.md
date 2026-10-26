@@ -774,7 +774,7 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1260 [US12] Phone toolbar (<640px) is the staff boards' row on every host: Bold, Italic (not in TH), Underline, Link, "Lists and headings ▾", "Insert ▾", Undo, Redo; menu items are the desktop controls. Button icon the rectangle, Banner image the image-plus; the toolbar is named "Formatting". Test: `tiptap-toolbar-phone`.
 - [x] T1261 [US12] Compose preview fixtures (`aura-portal?view=broadcast-compose`, `aura-admin?view=broadcast-new`); the compose skeleton reserves 15 controls (8 on a phone). Test: `compose-and-settings-skeletons`.
 - [x] T1262 [US12] Boards: the stale editor boards updated to the build and these decisions (parity page § Board check). Done: canvas v129 (26 Oct) — 11 boards updated, `Portal-broadcast-new-mobile-menus` and `Portal-broadcast-toasts-image` added.
-- [ ] T1263 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV with the menus open; UX and mobile-a11y reviews; parity republished with full-page pairs; draft PR; relay R91.
+- [x] T1263 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV with the menus open; UX and mobile-a11y reviews; parity republished with full-page pairs; draft PR; relay R91. Done: PR #662; parity https://claude.ai/artifact/VGNGrCbbBCgu3q6X7sAq4G (full-page pairs). R91 passed except step 6 (Redo wrapped at 1440px); fixed in `c0afc01` (controls 2px apart, as the boards; the 600px preview kept, FR-050; the staff form wraps to two rows, FR-048); R91b pass (26 Oct).
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
