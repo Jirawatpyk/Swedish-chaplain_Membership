@@ -50,8 +50,8 @@ describe('processor_events repo — tenant predicate on every tenant-tx statemen
     expect([insertIfNew, findById].every((f) => typeof f === 'function')).toBe(true);
     rec.statements.length = 0;
     await callEach(tenantScoped as never, {
-      markProcessed: [rec.db, T, 'evt_1'],
-      updateOutcome: [rec.db, T, { id: 'evt_1', outcome: 'processed' }],
+      markProcessed: [rec.db, 'evt_1'],
+      updateOutcome: [rec.db, { id: 'evt_1', outcome: 'processed' }],
     });
     await findProcessorEventInTenant(T, 'evt_1');
     expect(rec.statements.length).toBe(3);

@@ -51,10 +51,10 @@
  * 0); Wave A1's property-based test pins the "0-contribution-when-undefined"
  * invariant (`tests/unit/renewals/domain/at-risk-score.test.ts`).
  *
- * Tenant isolation: most tables (members, invoices, membership_plans,
- * renewal_*) use strict isolating RLS policies and require NO explicit
- * `WHERE tenant_id = ?` — `runInTenant` SET LOCAL is sufficient. However,
- * `audit_log` uses a PERMISSIVE policy where rows with NULL tenant_id (F1
+ * Tenant isolation: every statement carries an explicit `tenant_id`
+ * predicate on each tenant-scoped table it names (D-029); RLS under
+ * `runInTenant` is the second wall. For `audit_log` the predicate is the
+ * ONLY wall: it uses a PERMISSIVE policy where rows with NULL tenant_id (F1
  * identity events, migration 0007) remain visible to every tenant context.
  * Therefore any `audit_log` query in this file MUST include an explicit
  * `al.tenant_id = ${tenantId}` predicate — it is load-bearing, not
@@ -70,7 +70,7 @@
  * comfortably under the 60s budget. T174 measures + writes the actual
  * p95 to perf-benchmarks.md.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
 import type { TenantContext } from '@/modules/tenants';
 import { members } from '@/modules/members/infrastructure/db/schema-members';
@@ -138,7 +138,12 @@ export function makeDrizzleAtRiskScorer(
           planYear: members.planYear,
         })
         .from(members)
-        .where(eq(members.memberId, memberId))
+        .where(
+          and(
+            eq(members.tenantId, deps.tenant.slug),
+            eq(members.memberId, memberId),
+          ),
+        )
         .limit(1);
       const memberRow = memberRows[0];
 
@@ -157,10 +162,7 @@ export function makeDrizzleAtRiskScorer(
           MAX(paid_at) FILTER (WHERE status IN ('paid','partially_credited')) AS last_paid_at
         FROM ${invoices}
         WHERE member_id = ${memberId}
-          -- I7 defence-in-depth: invoices has a strict isolating RLS policy
-          -- so runInTenant already scopes this query; the explicit predicate
-          -- matches the batch scorer (drizzle-member-renewal-flags-repo.ts
-          -- ~line 502) for consistency. Result is RLS-identical.
+          -- D-029: the explicit tenant predicate alongside RLS.
           AND tenant_id = ${tenantId}
       `);
       const aggRow = invoiceAgg[0];
@@ -278,10 +280,9 @@ export function makeDrizzleAtRiskScorer(
       //
       // audit_log has ENABLE + FORCE RLS, but its policy is PERMISSIVE:
       // rows with NULL tenant_id (F1 identity events) remain visible to
-      // every tenant context (migration 0007). membership_plans uses a
-      // strict isolating policy and IS fully scoped automatically.
-      // The explicit tenant_id predicate on both tables is therefore
-      // load-bearing for audit_log, not merely defence-in-depth. Single
+      // every tenant context (migration 0007). The explicit tenant_id
+      // predicate (D-029) is therefore load-bearing for audit_log; the
+      // membership_plans joins correlate to it by tenant_id. Single
       // query; O(1) per member (we short-circuit on the first downgrade
       // row found).
       // ----------------------------------------------------------------
@@ -384,7 +385,8 @@ export function makeDrizzleAtRiskScorer(
           })
           .from(membershipPlans)
           .where(
-            sql`${membershipPlans.planId} = ${memberRow.planId}
+            sql`${membershipPlans.tenantId} = ${deps.tenant.slug}
+                AND ${membershipPlans.planId} = ${memberRow.planId}
                 AND ${membershipPlans.planYear} = ${memberRow.planYear}`,
           )
           .limit(1);

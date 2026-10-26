@@ -16,9 +16,17 @@
    - **s2:** `drizzle-renewal-cycle-repo.ts`.
    - **s3:** `drizzle-member-renewal-flags-repo.ts` and `drizzle-renewal-escalation-task-repo.ts`.
    - **s4:** plans (`plan-repo.ts`, `drizzle-scheduled-plan-change-repo.ts`) and the member-plan adapters' members-repo calls.
-5. **Every RLS-only comment is removed.** That is every "do NOT add a tenant_id predicate" note: S-R5-6 and plans research § 7.1. #653 closes after s4.
+   - **s7:** the renewals leftovers (tier-upgrade suggestions, plan lookup for renewal, the per-member at-risk scorer), `processor_events` (`markProcessed` / `updateOutcome` gain a `tenantId` argument), the attendances read, and the buyer-PII redaction UPDATEs. The csv-import, broadcasts and invoice repos needed no change; source-scan gates pin their exemptions.
+5. **Every RLS-only comment is removed.** That is every "do NOT add a tenant_id predicate" note: S-R5-6 and plans research § 7.1. #653 closes after the last slice (s7) merges.
 
 ## Not changed
 - **Inserts.** They set `tenant_id` in VALUES.
 - **`email_delivery_events`.** It has no `tenant_id` column; the bounce query matches on `to_email`.
 - **Query-less stubs.**
+- **Cross-tenant by design (s7).** These run before the tenant is known, or as the owner role across tenants, and stay global:
+  - `renewals/infrastructure/lookup-member-by-email.ts`: both reads. The Resend webhook resolves an email to its tenant.
+  - `drizzle-processor-events-repo.ts`: `insertIfNew`'s duplicate read and `findById`. These are the webhook's pre-resolution idempotency probes, and the row may have a NULL tenant.
+  - `drizzle-tenant-payment-settings-repo.ts`: `findByProcessorAccountId`. The Stripe account id is the lookup key.
+  - `drizzle-csv-import-records-repo.ts`: the admin repo (`findByIdAcrossTenants`, `listExpiredErrorCsvBlobsAllTenants`). These are the blob-expiry cron and the cross-tenant id lookup.
+  - `drizzle-broadcasts-repo.ts`: `findByResendBroadcastIdBypassRls` and `findBroadcastByResendAudienceIdsBypassRls`. These are Resend webhook pre-resolution reads.
+  - `auth/infrastructure/db/user-repo.ts`: `deleteInviteOutboxByEmailAllTenantsInTx`. It is its only `notifications_outbox` statement; `users` and `invitations` have no `tenant_id` (D-026).

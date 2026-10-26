@@ -34,7 +34,7 @@
  * Domain-type leak containment: Drizzle row types stay here; the
  * caller sees `ProcessorEvent` Domain shapes only.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { ProcessorEventsRepo } from '../../application/ports/processor-events-repo';
 import type {
   ProcessorEvent,
@@ -178,7 +178,7 @@ export async function findProcessorEventInTenant(
     const [row] = await tx
       .select()
       .from(processorEvents)
-      .where(eq(processorEvents.id, id))
+      .where(and(eq(processorEvents.tenantId, ctx.slug), eq(processorEvents.id, id)))
       .limit(1);
     return row ? toDomain(row as ProcessorEventRow) : null;
   });
