@@ -23,7 +23,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import { db, type DbTx } from '@/lib/db';
-import { users, notificationsOutbox, invitations, type UserRow } from './schema';
+import { users, notificationsOutbox, invitations, emailChangeTokens, type UserRow } from './schema';
 import {
   asEmailAddress,
   asPasswordHash,
@@ -265,6 +265,20 @@ export interface UserRepo {
     tx: DbTx,
     userId: UserId,
   ): Promise<{ readonly erased: boolean }>;
+  /**
+   * 133 (#665 PDPA review, M-1) — stamp `consumed_at` on EVERY still-active
+   * `email_change_tokens` row of this login, in EVERY tenant. A login linked to
+   * members in two tenants holds a revert token per tenant; the erasing
+   * tenant's `eraseMember` only reaches its own (it runs in that tenant's
+   * `runInTenant`), and the other token carries the real email in plaintext.
+   * Deliberately cross-tenant (D-029 exemption): runs on the owner-role tx of
+   * the global `eraseUser`, keyed by the login id. Returns the count.
+   */
+  consumeEmailChangeTokensAllTenantsInTx(
+    tx: DbTx,
+    userId: UserId,
+    now: Date,
+  ): Promise<number>;
   setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void>;
   /** Tx-scoped variant of `setPasswordHash` (Path C — A3 / A4). */
   setPasswordHashInTx(
@@ -546,6 +560,15 @@ export const userRepo: UserRepo = {
           eq(notificationsOutbox.status, 'pending'),
         ),
       );
+  },
+
+  async consumeEmailChangeTokensAllTenantsInTx(tx, userId, now) {
+    const consumed = await tx
+      .update(emailChangeTokens)
+      .set({ consumedAt: now })
+      .where(and(eq(emailChangeTokens.userId, userId), isNull(emailChangeTokens.consumedAt)))
+      .returning({ id: emailChangeTokens.id });
+    return consumed.length;
   },
 
   async anonymiseErasedInTx(tx, userId) {

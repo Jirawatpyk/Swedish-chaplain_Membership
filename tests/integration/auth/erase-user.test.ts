@@ -321,7 +321,7 @@ describe('eraseUser use-case (live Neon)', () => {
     for (const u of created.splice(0)) await deleteTestUser(u);
   });
 
-  // 131 (#665 PDPA review, M-1) — a login linked to members in TWO tenants
+  // 133 (#665 PDPA review, M-1) — a login linked to members in TWO tenants
   // holds a revert token in each. eraseMember only invalidates the erasing
   // tenant's tokens (it runs in that tenant's runInTenant), so the other
   // tenant's token — carrying the real email in plaintext — used to survive
@@ -332,7 +332,7 @@ describe('eraseUser use-case (live Neon)', () => {
     const stamp = Date.now().toString(36);
     const future = new Date(Date.now() + 48 * 3600_000);
     const rows = ['tenant-a', 'tenant-b'].map((t) => ({
-      id: `it-131-${t}-${stamp}`,
+      id: `it-133-${t}-${stamp}`,
       tenantId: `${t}-${stamp}`,
       contactId: randomUUID(),
       userId: user.userId,
@@ -347,7 +347,7 @@ describe('eraseUser use-case (live Neon)', () => {
     const res = await eraseUser({
       userId: user.userId,
       actorUserId: 'admin-it',
-      requestId: `it-erase-131-${stamp}`,
+      requestId: `it-erase-133-${stamp}`,
       sourceIp: null,
     });
     expect(res.ok).toBe(true);

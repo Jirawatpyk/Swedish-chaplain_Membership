@@ -1,5 +1,5 @@
 /**
- * 131 (#665 PDPA review, M-1) — an ERASED login can never be re-enabled.
+ * 133 (#665 PDPA review, M-1) — an ERASED login can never be re-enabled.
  *
  * `eraseUser` anonymises the row (sentinel `erased+{id}@erased.invalid`, no
  * password) and leaves it `disabled`. The revert-email sink refuses a
@@ -51,10 +51,10 @@ const input = {
   targetUserId: TARGET_ID,
   actorUserId: asUserId('33333333-3333-4333-8333-333333333333'),
   sourceIp: '203.0.113.5',
-  requestId: 'req-131',
+  requestId: 'req-133',
 };
 
-describe('enableUser — an erased login stays disabled (131)', () => {
+describe('enableUser — an erased login stays disabled (133)', () => {
   it('refuses the erasure sentinel as not-found and writes nothing', async () => {
     const { deps, enable, append } = depsFor(`erased+${TARGET_ID}@erased.invalid`);
     const r = await enableUser(input, deps);

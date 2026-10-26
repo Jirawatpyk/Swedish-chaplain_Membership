@@ -105,7 +105,10 @@ export type EraseUserError = {
 export interface EraseUserDeps {
   readonly users: Pick<
     UserRepo,
-    'anonymiseErasedInTx' | 'findById' | 'countActiveAdministrators'
+    | 'anonymiseErasedInTx'
+    | 'consumeEmailChangeTokensAllTenantsInTx'
+    | 'findById'
+    | 'countActiveAdministrators'
   >;
 
   readonly sessions: Pick<SessionRepo, 'deleteByUserIdInTx'>;
@@ -156,6 +159,11 @@ export async function eraseUser(
       //    or when US1 already revoked them inside the members tx). Returns the
       //    revoked COUNT and throws on a DB error (session-repo throw-style).
       await deps.sessions.deleteByUserIdInTx(tx, userId);
+
+      // 2b. 133 — consume every still-active email-change token of this login in
+      //     EVERY tenant. A revert token carries the real email in plaintext;
+      //     the erasing tenant's eraseMember only reached its own tenant's.
+      await deps.users.consumeEmailChangeTokensAllTenantsInTx(tx, userId, new Date());
 
       // 3. Audit at the TAIL (auth appendInTx never-throws — must be last so a
       //    poisoned tx cannot swallow a non-audit statement after it).
