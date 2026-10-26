@@ -151,7 +151,8 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
       // so `markProcessed` could never stamp it. Bounded to the row's own
       // account (or '' — a platform-owner event recorded before the route's
       // account fallback was configured) and livemode; a
-      // `rejected_signature` row is never adopted.
+      // `rejected_signature` row is never adopted, and no row is adopted
+      // without an `onAdopted` to record it.
       //
       // The JS pre-check below and the UPDATE's WHERE state the same
       // predicate: the pre-check skips a pointless transaction, the WHERE is
@@ -160,6 +161,7 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
       // bound tenant predicate, is its fence (D-031).
       if (
         input.tenantId !== null &&
+        onAdopted !== undefined &&
         existing.tenantId === null &&
         ADOPTABLE_OUTCOMES.includes(existing.outcome as ProcessorEventOutcome) &&
         (existing.processorAccountId === input.processorAccountId ||
@@ -189,7 +191,7 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
             .returning();
           if (!row) return null;
           const event = toDomain(row as ProcessorEventRow);
-          await onAdopted?.(ownerTx, adoptedFrom, event);
+          await onAdopted(ownerTx, adoptedFrom, event);
           return event;
         });
         if (adopted) {

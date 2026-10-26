@@ -32,6 +32,9 @@ function makeEventId(): string {
   return `evt_idem_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 }
 
+/** The caller's record of an adoption; the repo adopts nothing without one. */
+const recordAdoption = async (): Promise<void> => undefined;
+
 function makePayloadSha(): string {
   return createHash('sha256').update(randomUUID()).digest('hex');
 }
@@ -201,13 +204,17 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
     };
     await repo.insertIfNew(null, first);
 
-    const replay = await repo.insertIfNew(null, {
-      ...first,
-      tenantId: 'test-adopt-tenant',
-      outcome: 'processed',
-      payloadSha256: makePayloadSha(),
-      correlationId: 'corr-adopt-replay',
-    });
+    const replay = await repo.insertIfNew(
+      null,
+      {
+        ...first,
+        tenantId: 'test-adopt-tenant',
+        outcome: 'processed',
+        payloadSha256: makePayloadSha(),
+        correlationId: 'corr-adopt-replay',
+      },
+      recordAdoption,
+    );
     expect(replay.inserted).toBe(false);
     expect(replay.adoptedFrom).toBe('acknowledged_only');
     expect(replay.event.tenantId).toBe('test-adopt-tenant');
@@ -235,11 +242,11 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
     };
     await repo.insertIfNew(null, first);
 
-    const replay = await repo.insertIfNew(null, {
-      ...first,
-      tenantId: 'test-adopt-tenant',
-      outcome: 'processed',
-    });
+    const replay = await repo.insertIfNew(
+      null,
+      { ...first, tenantId: 'test-adopt-tenant', outcome: 'processed' },
+      recordAdoption,
+    );
     expect(replay.adoptedFrom).toBeUndefined();
     expect(replay.event.tenantId).toBeNull();
     expect(replay.event.outcome).toBe('rejected_signature');
@@ -327,8 +334,18 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
       { ...first, tenantId: 'test-adopt-tenant', outcome: 'processed' },
       onAdopted,
     );
-    // Let the replay read the NULL row and block on the UPDATE.
-    await new Promise((r) => setTimeout(r, 1500));
+    // Wait until the replay has read the NULL row and is blocked on the
+    // UPDATE (another backend waiting on a lock for this table), so the
+    // lost-race branch is what runs — not a pre-check that saw the winner.
+    const deadline = Date.now() + 20_000;
+    for (;;) {
+      const waiting = (await db.execute(
+        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query ILIKE 'update "processor_events"%'`,
+      )) as unknown as Array<{ n: number }>;
+      if ((waiting[0]?.n ?? 0) >= 1) break;
+      if (Date.now() > deadline) throw new Error('the adopting UPDATE never blocked on the row lock');
+      await new Promise((r) => setTimeout(r, 100));
+    }
     release();
     await holder;
 
@@ -336,6 +353,27 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
     expect(result.adoptedFrom).toBeUndefined();
     expect(result.event.tenantId).toBe('test-lock-winner');
     expect(onAdopted).not.toHaveBeenCalled();
+  });
+
+  it('without onAdopted nothing is adopted (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-no-callback-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+    const replay = await repo.insertIfNew(null, { ...first, tenantId: 'test-adopt-tenant', outcome: 'processed' });
+    expect(replay.adoptedFrom).toBeUndefined();
+    expect(replay.event.tenantId).toBeNull();
   });
 
   it('a row of another livemode is not adopted (132)', async () => {
@@ -355,12 +393,11 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
     };
     await repo.insertIfNew(null, first);
 
-    const replay = await repo.insertIfNew(null, {
-      ...first,
-      tenantId: 'test-adopt-tenant',
-      livemode: true,
-      outcome: 'processed',
-    });
+    const replay = await repo.insertIfNew(
+      null,
+      { ...first, tenantId: 'test-adopt-tenant', livemode: true, outcome: 'processed' },
+      recordAdoption,
+    );
     expect(replay.adoptedFrom).toBeUndefined();
     expect(replay.event.tenantId).toBeNull();
     expect(replay.event.outcome).toBe('acknowledged_only');
@@ -386,12 +423,16 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
     };
     await repo.insertIfNew(null, first);
 
-    const replay = await repo.insertIfNew(null, {
-      ...first,
-      tenantId: 'test-adopt-tenant',
-      processorAccountId: 'acct_test_platform',
-      outcome: 'processed',
-    });
+    const replay = await repo.insertIfNew(
+      null,
+      {
+        ...first,
+        tenantId: 'test-adopt-tenant',
+        processorAccountId: 'acct_test_platform',
+        outcome: 'processed',
+      },
+      recordAdoption,
+    );
     expect(replay.adoptedFrom).toBe('acknowledged_only');
     expect(replay.event.tenantId).toBe('test-adopt-tenant');
   });

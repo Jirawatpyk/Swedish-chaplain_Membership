@@ -595,21 +595,28 @@ async function processWebhookEventBody(
     // adoption back (the next replay adopts again), and it survives a
     // dispatch that fails afterwards.
     async (ownerTx, adoptedFrom, adopted) => {
-      await deps.audit.emit(ownerTx, {
-        tenantId,
-        requestId: input.requestId,
-        eventType: 'webhook_unresolved_event_adopted',
-        actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
-        summary: `Stripe ${event.type} ${event.id} adopted on replay (was ${adoptedFrom})`,
-        payload: {
-          processor_event_id: event.id,
-          event_type: event.type,
-          adopted_from: adoptedFrom,
-          first_received_at: adopted.receivedAt.toISOString(),
-          first_correlation_id: adopted.correlationId,
-        },
-        retentionYears: retentionFor('webhook_unresolved_event_adopted'),
-      });
+      try {
+        await deps.audit.emit(ownerTx, {
+          tenantId,
+          requestId: input.requestId,
+          eventType: 'webhook_unresolved_event_adopted',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Stripe ${event.type} ${event.id} adopted on replay (was ${adoptedFrom})`,
+          payload: {
+            processor_event_id: event.id,
+            event_type: event.type,
+            adopted_from: adoptedFrom,
+            first_received_at: adopted.receivedAt.toISOString(),
+            first_correlation_id: adopted.correlationId,
+          },
+          retentionYears: retentionFor('webhook_unresolved_event_adopted'),
+        });
+      } catch (e) {
+        // The throw rolls the adoption back; count it on the same alarm as
+        // every other failed F5 audit write (the route only logs a 500).
+        paymentsMetrics.useCaseAuditEmitFailed('webhook_unresolved_event_adopted');
+        throw e;
+      }
     },
   );
 

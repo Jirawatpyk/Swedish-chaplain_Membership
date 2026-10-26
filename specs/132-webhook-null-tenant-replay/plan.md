@@ -92,6 +92,18 @@ Round 2 (fresh subagents on 8cefc0e7d): financial-integrity PASS (3 Low); securi
 - The `''` arm depends on the route's SweCham-gated fallback (security L-2): comment at the fallback in `route.ts` ties it to D-031.
 - The race loser counts as a crash recovery (financial L-1, reliability L-1, security INFO): accepted and documented in `docs/observability.md` (it does re-dispatch like one).
 - Docs: spec / plan no longer say "no migration"; data-model `tenant_id` row no longer claims an FK (0036 has none).
-- Not red first: the livemode, two-tenant and concurrent integration tests (512243734) and the row-lock test guard code that already existed (54d37017e, 8cefc0e7d); they were proven by mutation in senior-tester round 2 (M1–M6 all killed), not by a RED run.
+- Not red first: the livemode, two-tenant and concurrent integration tests (512243734) and the row-lock test guard code that already existed (54d37017e, 8cefc0e7d). They are proven by the reviewers' reading of which mutant each kills (senior-tester rounds 2–3), not by a RED run; the unit mutants M1–M6 (round 2) and U1–U3 (round 3) were run and killed. The unit test "adoption audit write fails → the error propagates" (8f8c62e62) also passed on arrival: mutant U2 (audit error swallowed) survives at 047bde672 and is killed at 8f8c62e62.
 - Accepted Lows: mismatch refusal leaves no audit row (only warn + counter + alert); no live `payment_intent.succeeded` settlement test through an adopted row; adopted row keeps the first delivery's `api_version` / `payload_sha256`.
-- Evidence round 3: RED 172c18f32 — unit `expected null to be { owner: 'adoption-tx' }`; integration "a failing onAdopted rolls the adoption back" → `promise resolved … instead of rejecting`. GREEN: integration replay + idempotency 15/15 (row-lock test 1834 ms, i.e. it blocked); unit payments + architecture 823 passed.
+- Evidence for the round-2 fixes: RED 172c18f32 — unit `expected null to be { owner: 'adoption-tx' }`; integration "a failing onAdopted rolls the adoption back" → `promise resolved … instead of rejecting`. GREEN: integration replay + idempotency 15/15 (row-lock test 1834 ms, i.e. it blocked); unit payments + architecture 823 passed.
+
+### Review round 3 → fixes
+
+Round 3: `/code-review high 666` 3 Low (fixed in 8f8c62e62); reliability re-run: M-1 closed, 4 Low; senior-tester re-run: H-R2-1 closed, one failing unit test after merging #663 (C-1), 2 Low.
+
+- C-1: #663's source-scan gate (`tenant-sql-shape/processor-events-repo.test.ts`) did not know the lost-race re-read; it is pinned as a third pre-resolution read, with the reason (it must see another tenant's winning row so the mismatch guard can refuse it).
+- No adoption without `onAdopted` (reliability L-3): the repo adopts nothing when no recorder is passed; integration test.
+- A failed adoption audit is counted on `payments_use_case_audit_emit_failed_total` before it rethrows (reliability L-1); unit test.
+- The row-lock test waits for `pg_stat_activity` to show the UPDATE blocked on a lock instead of sleeping (reliability L-2, senior-tester L-1).
+- Evidence note above corrected (senior-tester L-2).
+- Accepted: the race loser counts as a crash recovery (documented); an adopted row keeps the first delivery's `api_version` / `payload_sha256`.
+- Gates after merging main (#662, #663, #664): `tsc` clean; unit payments 823 passed; integration 4 files 23/23 (row-lock test 580 ms, lock observed).

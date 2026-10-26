@@ -29,6 +29,7 @@ export interface ProcessorEventsRepo {
    * `onAdopted` runs inside the adoption's own transaction (`ownerTx`), so
    * the record of the adoption commits with it: if it throws, the adoption
    * rolls back and the error propagates, and the next replay adopts again.
+   * Without `onAdopted` nothing is adopted: an adoption is never unrecorded.
    */
   insertIfNew(
     tx: unknown,
