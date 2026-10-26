@@ -338,7 +338,11 @@ export function ComposeForm({
   // focus — so the Write tab comes back first and the focus waits for it.
   const focusPending = useRef(false);
   useEffect(() => {
-    if (serverError !== null || readOnlyRefusal !== null) focusPending.current = true;
+    // Only a refusal with something to focus; the rest are told by a toast
+    // and leave the tab the member is on.
+    if (readOnlyRefusal !== null || serverError?.field === 'subject' || serverError?.field === 'body') {
+      focusPending.current = true;
+    }
   }, [serverError, readOnlyRefusal]);
   useEffect(() => {
     if (!focusPending.current) return;
@@ -350,7 +354,6 @@ export function ComposeForm({
     if (readOnlyRefusal !== null) readOnlyAlertRef.current?.focus();
     else if (serverError?.field === 'subject') subjectRef.current?.focus();
     else if (serverError?.field === 'body') bodyContainerRef.current?.focus();
-    // segment / customList are radio/textarea — toast suffices
   }, [serverError, readOnlyRefusal, phone, view]);
 
   const customLines = parseLines(customList);
@@ -935,7 +938,7 @@ export function ComposeForm({
             ]}
           />
           <ActionBar
-            className="chamber-viewport-actionbar"
+            className="chamber-viewport-actionbar chamber-compose-actionbar"
             label={t('views.actions')}
             start={barStart}
           >

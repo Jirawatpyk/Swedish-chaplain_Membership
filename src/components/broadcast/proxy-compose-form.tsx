@@ -911,7 +911,7 @@ export function ProxyComposeForm({
           the form's last child, not a row of the editor grid. */}
       {phone ? (
         <ActionBar
-          className="chamber-viewport-actionbar"
+          className="chamber-viewport-actionbar chamber-compose-actionbar"
           label={tCompose('views.actions')}
           start={barStart}
         >

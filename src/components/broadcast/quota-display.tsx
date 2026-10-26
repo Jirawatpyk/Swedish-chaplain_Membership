@@ -166,7 +166,9 @@ export function QuotaDisplay({
     };
   }, [endpoint, live, refreshKey, retryNonce]);
 
-  const exhausted = snap !== null && snap.remaining === 0;
+  // `<= 0`, as the submit summary reads it: a cap lowered mid-year can
+  // leave it below zero.
+  const exhausted = snap !== null && snap.remaining <= 0;
 
   const showReset = nextResetCopy !== null && snap !== null && !error;
 

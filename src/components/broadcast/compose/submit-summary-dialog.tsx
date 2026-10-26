@@ -104,6 +104,8 @@ export function SubmitSummaryDialog({
       cancelLabel={t('confirm.keepEditing')}
       confirmLabel={t('button.submit')}
       onConfirm={onConfirm}
+      // With none left the server refuses it, so the summary does not offer it.
+      confirmDisabled={quota !== null && quota.remaining <= 0}
       // Back to the Submit the member pressed (the phone bar's or the
       // card's, whichever is shown); a refusal then moves focus to its own
       // alert or field.

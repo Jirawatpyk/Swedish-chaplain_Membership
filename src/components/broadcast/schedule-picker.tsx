@@ -16,7 +16,7 @@
  * UX hardening E2). Schedule lead-time uses Bangkok now + 5 min as the min
  * value (matches server-side NFR-PERF-002).
  */
-import { useId, useMemo, useState } from 'react';
+import { useId, useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { ChevronRight } from 'lucide-react';
 import { Button, TextField } from '@jirawatpyk/aura-react';
@@ -44,6 +44,7 @@ export function SchedulePicker({
   const locale = useLocale();
   const panelId = useId();
   const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const localValue = useMemo(() => isoToBangkokInput(value), [value]);
   const scheduled = formatScheduledFor(value, locale);
@@ -78,11 +79,23 @@ export function SchedulePicker({
           onChange={(e) => onChange(e.target.value === '' ? null : bangkokInputToIso(e.target.value))}
           disabled={disabled}
           touchHeight
+          ref={inputRef}
         />
         {/* Review round 1 (UX): clearing a datetime field has no visible
             control in every browser; this puts "now" back in one press. */}
         {value !== null ? (
-          <Button type="button" variant="ghost" size="sm" touchHeight onClick={() => onChange(null)} disabled={disabled}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            touchHeight
+            onClick={() => {
+              onChange(null);
+              // The button goes with the value; focus stays in the panel.
+              inputRef.current?.focus();
+            }}
+            disabled={disabled}
+          >
             {t('fields.scheduleClear')}
           </Button>
         ) : null}

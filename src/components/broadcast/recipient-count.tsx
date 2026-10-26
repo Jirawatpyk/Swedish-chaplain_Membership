@@ -177,8 +177,9 @@ export function RecipientCountLine({
   /**
    * Spec 122 US12d-3 (T1267) — who the recipients are, after the count on the
    * same line ("128 recipients · the primary contact of each active member,
-   * not your own company"). Shown, and announced, only beside a measured
-   * count it explains; with a note the count is the short form.
+   * not your own company"). Shown, and announced, beside "counting…", the
+   * count or "unavailable" — never beside a refusal; with a note the count is
+   * the short form.
    */
   readonly note?: string | null;
 }): React.ReactElement {
@@ -198,12 +199,14 @@ export function RecipientCountLine({
       break;
     case 'loading':
       text = t('loading');
+      withNote = note !== null;
       break;
     case 'unavailable':
       text = t('unavailable');
       tone = 'text-[var(--aura-fg-warning)]';
       icon = <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />;
       retry = true;
+      withNote = note !== null;
       break;
     case 'ready':
       // Re-review 2026-09-07 (finding #4) — a MEASURED refusal blocks the
@@ -252,8 +255,9 @@ export function RecipientCountLine({
           before its "·". The space between them is a real text node, so a
           screen reader reads two words. Review round 1: the note is inside
           the status — on staff compose it is the only place the member's own
-          contacts are said to be excluded — and only beside a count it
-          explains, never beside "counting…" or a refusal. */}
+          contacts are said to be excluded — so it is re-read when the count
+          lands (a decision, spec.md US12d-3). Not beside a refusal, whose
+          own sentence is the point, nor with no count to explain. */}
       <p id={textId} role="status" aria-live="polite" className="m-0 min-w-0 flex-1">
         {icon !== null ? <span className="me-1.5 inline-block align-[-2px]">{icon}</span> : null}
         {text !== null ? <span>{text}</span> : null}
