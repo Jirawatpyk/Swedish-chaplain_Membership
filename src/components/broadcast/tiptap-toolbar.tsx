@@ -27,9 +27,13 @@
  * the interface language is Thai. The italic MARK stays in the schema, so
  * `<em>` from a paste or a template survives untouched.
  *
- * At 320 px the strip WRAPS onto further rows (`flex-wrap`). There is
- * deliberately no overflow menu: a formatting control hidden behind a "More"
- * button at phone width is a control most authors never find.
+ * On a desktop the strip WRAPS onto further rows (`flex-wrap`) and has no
+ * overflow menu. On a phone (AURA `useBreakpoint() === 'base'`, below 640px)
+ * it is the staff boards' row on every host (the maintainer, 26 Oct 2026):
+ * Bold, Italic, Underline, Link, then "Lists and headings ▾" and "Insert ▾",
+ * then Undo and Redo. The two menus are named for what they hold, never a
+ * bare "More", and their items are the desktop controls (same command, same
+ * pressed state as `checked`, same reason when unavailable).
  *
  * Spec 122 US12d-2: each control is an AURA `IconButton`, 32px on desktop and
  * 44px on touch / phone widths (`touchHeight`), as the compose boards draw it.
@@ -46,22 +50,24 @@ import { NodeSelection } from '@tiptap/pm/state';
 import { useLocale, useTranslations } from 'next-intl';
 import {
   Bold,
+  ChevronDown,
   Heading2,
   Heading3,
   Image as ImageIcon,
+  ImagePlus,
   Italic,
   Link as LinkIcon,
   List,
   ListOrdered,
   Minus,
-  MousePointerClick,
+  Plus,
   Quote,
   RectangleHorizontal,
   Redo2,
   Underline,
   Undo2,
 } from 'lucide-react';
-import { IconButton } from '@jirawatpyk/aura-react';
+import { DropdownMenu, IconButton, useBreakpoint, type MenuItem } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 import { LinkDialog } from './link-dialog';
 import { EDIT_CTA_EVENT } from './broadcast-editor-extensions';
@@ -138,8 +144,22 @@ interface LinkTarget {
   readonly sameBlock: boolean;
 }
 
+/** Where a control sits on a phone: on the row, or inside one of the two menus. */
+type ToolbarEntry =
+  | { readonly kind: 'control'; readonly control: ToolbarControl }
+  | {
+      readonly kind: 'menu';
+      readonly key: string;
+      readonly label: string;
+      readonly Icon: React.ComponentType<{ className?: string }>;
+      readonly items: readonly ToolbarControl[];
+    };
+
+type ControlGroup = 'inline' | 'blocks' | 'insert' | 'history';
+
 interface ToolbarControl {
   readonly key: string;
+  readonly group: ControlGroup;
   readonly label: string;
   readonly Icon: React.ComponentType<{ className?: string }>;
   readonly onActivate: () => void;
@@ -166,7 +186,9 @@ export function TiptapToolbar({
   imageBusyId,
 }: TiptapToolbarProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.toolbar');
+  const tImage = useTranslations('portal.broadcasts.compose.imageUpload');
   const locale = useLocale();
+  const phone = useBreakpoint() === 'base';
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const [activeIndex, setActiveIndex] = useState<number>(0);
@@ -329,6 +351,7 @@ export function TiptapToolbar({
   const controls: ToolbarControl[] = [
     {
       key: 'heading2',
+      group: 'blocks',
       label: t('heading2'),
       Icon: Heading2,
       pressed: active.heading2,
@@ -342,6 +365,7 @@ export function TiptapToolbar({
     },
     {
       key: 'heading3',
+      group: 'blocks',
       label: t('heading3'),
       Icon: Heading3,
       pressed: active.heading3,
@@ -355,6 +379,7 @@ export function TiptapToolbar({
     },
     {
       key: 'quote',
+      group: 'blocks',
       label: t('quote'),
       Icon: Quote,
       pressed: active.quote,
@@ -368,6 +393,7 @@ export function TiptapToolbar({
     },
     {
       key: 'divider',
+      group: 'insert',
       label: t('divider'),
       Icon: Minus,
       onActivate: () => {
@@ -376,6 +402,7 @@ export function TiptapToolbar({
     },
     {
       key: 'bulletList',
+      group: 'blocks',
       label: t('bulletList'),
       Icon: List,
       pressed: active.bulletList,
@@ -389,6 +416,7 @@ export function TiptapToolbar({
     },
     {
       key: 'orderedList',
+      group: 'blocks',
       label: t('orderedList'),
       Icon: ListOrdered,
       pressed: active.orderedList,
@@ -402,6 +430,7 @@ export function TiptapToolbar({
     },
     {
       key: 'bold',
+      group: 'inline',
       label: t('bold'),
       Icon: Bold,
       pressed: active.bold,
@@ -419,6 +448,7 @@ export function TiptapToolbar({
       : [
           {
             key: 'italic',
+            group: 'inline',
             label: t('italic'),
             Icon: Italic,
             pressed: active.italic,
@@ -433,6 +463,7 @@ export function TiptapToolbar({
         ]),
     {
       key: 'underline',
+      group: 'inline',
       label: t('underline'),
       Icon: Underline,
       pressed: active.underline,
@@ -446,6 +477,7 @@ export function TiptapToolbar({
     },
     {
       key: 'link',
+      group: 'inline',
       label: t('link'),
       Icon: LinkIcon,
       pressed: active.link,
@@ -459,6 +491,7 @@ export function TiptapToolbar({
       ? [
           {
             key: 'image',
+            group: 'insert',
             label: active.selectedBlock === 'image' ? t('editImage') : t('image'),
             Icon: ImageIcon,
             opensDialog: true,
@@ -476,8 +509,9 @@ export function TiptapToolbar({
       : []),
     {
       key: 'cta',
+      group: 'insert',
       label: active.selectedBlock === 'ctaButton' ? t('editButton') : t('cta'),
-      Icon: MousePointerClick,
+      Icon: RectangleHorizontal,
       opensDialog: true,
       onActivate: () => {
         setCtaTarget(captureCtaTarget());
@@ -488,8 +522,9 @@ export function TiptapToolbar({
       ? [
           {
             key: 'banner',
+            group: 'insert',
             label: active.selectedBlock === 'bannerImage' ? t('editBanner') : t('banner'),
-            Icon: RectangleHorizontal,
+            Icon: ImagePlus,
             opensDialog: true,
             unavailable: !imageInsertEnabled || imageBusy,
             ...(imageInsertEnabled
@@ -508,6 +543,7 @@ export function TiptapToolbar({
     // (spec 122 Session 2026-10-25).
     {
       key: 'undo',
+      group: 'history',
       label: t('undo'),
       Icon: Undo2,
       unavailable: !active.canUndo,
@@ -518,6 +554,7 @@ export function TiptapToolbar({
     },
     {
       key: 'redo',
+      group: 'history',
       label: t('redo'),
       Icon: Redo2,
       unavailable: !active.canRedo,
@@ -527,6 +564,44 @@ export function TiptapToolbar({
       },
     },
   ];
+
+  // On a phone the block and insert controls move into the boards' two menus;
+  // everything else stays on the row, in the desktop order.
+  const BLOCK_ORDER = ['heading2', 'heading3', 'bulletList', 'orderedList', 'quote'];
+  const INSERT_ORDER = ['divider', 'cta', 'image', 'banner'];
+  const inGroup = (group: ControlGroup, order: readonly string[]): ToolbarControl[] =>
+    order.flatMap((key) => controls.filter((c) => c.group === group && c.key === key));
+  const row: ToolbarEntry[] = phone
+    ? [
+        ...controls.filter((c) => c.group === 'inline').map((control) => ({ kind: 'control' as const, control })),
+        { kind: 'menu', key: 'blocks', label: t('blocksMenu'), Icon: List, items: inGroup('blocks', BLOCK_ORDER) },
+        { kind: 'menu', key: 'insert', label: t('insertMenu'), Icon: Plus, items: inGroup('insert', INSERT_ORDER) },
+        ...controls.filter((c) => c.group === 'history').map((control) => ({ kind: 'control' as const, control })),
+      ]
+    : controls.map((control) => ({ kind: 'control' as const, control }));
+
+  /** A menu item is the desktop control: same command, pressed as `checked`, same reason when unavailable. */
+  const menuItem = (control: ToolbarControl, menuKey: string): MenuItem => {
+    const unavailable = control.unavailable === true || disabled;
+    return {
+      label: control.label,
+      icon: <control.Icon />,
+      ...(control.pressed !== undefined && { checked: control.pressed }),
+      ...(unavailable && { disabled: true }),
+      ...(control.unavailable === true &&
+        (control.key === 'image' || control.key === 'banner') && {
+          disabledReason: imageInsertEnabled ? tImage('uploadingLabel') : tImage('draftRequiredHint'),
+        }),
+      onSelect: () => {
+        if (unavailable) return;
+        // A dialog opened from the menu returns focus to the menu's button.
+        triggerRef.current =
+          containerRef.current?.querySelector<HTMLElement>(`[data-toolbar-control="${menuKey}"]`) ?? null;
+        confirmedRef.current = false;
+        control.onActivate();
+      },
+    };
+  };
 
   const controlElements = (): HTMLButtonElement[] =>
     Array.from(
@@ -539,7 +614,7 @@ export function TiptapToolbar({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    const count = controls.length;
+    const count = row.length;
     if (count === 0) return;
     switch (event.key) {
       case 'ArrowRight':
@@ -565,7 +640,7 @@ export function TiptapToolbar({
 
   // The index can outlive its control (the image flag flips, the locale
   // changes): clamp so the toolbar always has exactly one tab stop.
-  const tabStop = Math.min(activeIndex, Math.max(controls.length - 1, 0));
+  const tabStop = Math.min(activeIndex, Math.max(row.length - 1, 0));
 
   return (
     <>
@@ -581,21 +656,45 @@ export function TiptapToolbar({
         // the portal header (round 3, a11y review).
         className="sticky top-[var(--shell-bar-height,0px)] z-[5] flex [@media(max-height:30rem)]:static flex-wrap items-center gap-1 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-input)] p-1.5"
       >
-        {controls.map((control, index) => (
+        {row.map((entry, index) =>
+          entry.kind === 'menu' ? (
+            <DropdownMenu
+              key={entry.key}
+              label={entry.label}
+              items={entry.items.map((control) => menuItem(control, entry.key))}
+              trigger={
+                <IconButton
+                  icon={
+                    <span className="inline-flex items-center gap-0.5">
+                      <entry.Icon />
+                      <ChevronDown className="size-3" aria-hidden />
+                    </span>
+                  }
+                  label={entry.label}
+                  touchHeight
+                  data-toolbar-control={entry.key}
+                  {...(disabled && { 'aria-disabled': true })}
+                  tabIndex={index === tabStop ? 0 : -1}
+                  onFocus={() => setActiveIndex(index)}
+                  className={cn(disabled && 'opacity-[var(--aura-disabled-opacity)]')}
+                />
+              }
+            />
+          ) : (
           <IconButton
-            key={control.key}
-            icon={<control.Icon />}
-            label={control.label}
+            key={entry.control.key}
+            icon={<entry.control.Icon />}
+            label={entry.control.label}
             touchHeight
-            data-toolbar-control={control.key}
-            {...(control.pressed !== undefined && { pressed: control.pressed })}
-            {...(control.opensDialog === true && { 'aria-haspopup': 'dialog' as const })}
-            {...((control.unavailable === true || disabled) && { 'aria-disabled': true })}
-            {...(control.keyshortcuts !== undefined && { 'aria-keyshortcuts': control.keyshortcuts })}
-            {...(control.unavailable === true &&
-              control.describedBy !== undefined && {
+            data-toolbar-control={entry.control.key}
+            {...(entry.control.pressed !== undefined && { pressed: entry.control.pressed })}
+            {...(entry.control.opensDialog === true && { 'aria-haspopup': 'dialog' as const })}
+            {...((entry.control.unavailable === true || disabled) && { 'aria-disabled': true })}
+            {...(entry.control.keyshortcuts !== undefined && { 'aria-keyshortcuts': entry.control.keyshortcuts })}
+            {...(entry.control.unavailable === true &&
+              entry.control.describedBy !== undefined && {
                 // U6 — the reason, reachable without a pointer.
-                'aria-describedby': control.describedBy,
+                'aria-describedby': entry.control.describedBy,
               })}
             tabIndex={index === tabStop ? 0 : -1}
             onFocus={() => setActiveIndex(index)}
@@ -603,16 +702,17 @@ export function TiptapToolbar({
               if (disabled) return;
               triggerRef.current = event.currentTarget;
               confirmedRef.current = false;
-              control.onActivate();
+              entry.control.onActivate();
             }}
             className={cn(
-              (control.unavailable === true || disabled) && 'opacity-[var(--aura-disabled-opacity)]',
+              (entry.control.unavailable === true || disabled) && 'opacity-[var(--aura-disabled-opacity)]',
               // AURA styles only `:disabled` IconButtons: an unavailable one
               // keeps no hover fill and shows it cannot be used.
               'aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent',
             )}
           />
-        ))}
+          ),
+        )}
       </div>
 
       <LinkDialog

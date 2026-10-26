@@ -6466,7 +6466,9 @@
   "broadcast": {
     "editor": {
       "toolbar": {
-        "label": "Formateringsverktygsfält",
+        "label": "Formatering",
+        "blocksMenu": "Listor och rubriker",
+        "insertMenu": "Infoga",
         "heading2": "Rubrik",
         "heading3": "Underrubrik",
         "quote": "Citat",

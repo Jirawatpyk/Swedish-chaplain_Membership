@@ -80,7 +80,7 @@ describe('phone toolbar — the staff boards\' row', () => {
   it('Lists and headings holds Heading, Subheading, the two lists and Quote; choosing one runs it', () => {
     const { toolbar } = renderToolbar();
     const menu = openMenu(toolbar, t.blocksMenu);
-    const names = within(menu).getAllByRole(/menuitem/).map((i) => i.textContent?.trim());
+    const names = Array.from(menu.querySelectorAll('[role^=menuitem]')).map((i) => i.textContent?.trim());
     expect(names).toEqual([t.heading2, t.heading3, t.bulletList, t.orderedList, t.quote]);
     fireEvent.click(within(menu).getByText(t.heading2));
     expect(editor!.isActive('heading', { level: 2 })).toBe(true);
@@ -97,7 +97,7 @@ describe('phone toolbar — the staff boards\' row', () => {
   it('Insert holds Divider, Button, Image and Banner image', () => {
     const { toolbar } = renderToolbar();
     const menu = openMenu(toolbar, t.insertMenu);
-    const names = within(menu).getAllByRole(/menuitem/).map((i) => i.textContent?.trim());
+    const names = Array.from(menu.querySelectorAll('[role^=menuitem]')).map((i) => i.textContent?.trim());
     expect(names).toEqual([t.divider, t.cta, t.image, t.banner]);
   });
 

@@ -7,8 +7,9 @@
  * ONE tab stop and the arrow keys move within it — plus Home/End to the ends,
  * and a visible focus state.
  *
- * At 320 px the toolbar WRAPS onto further rows (`flex-wrap`); it never hides
- * controls behind an overflow menu (FR-048, contracts § Page contracts).
+ * On a desktop the toolbar WRAPS onto further rows (`flex-wrap`) with no
+ * overflow menu. On a phone it is the staff boards' row with two named menus
+ * (spec 122, 26 Oct 2026) — `tiptap-toolbar-phone.test.tsx`.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
@@ -147,7 +148,7 @@ describe('T098 — visible focus state and 320 px wrapping', () => {
     }
   });
 
-  it('wraps onto further rows with NO overflow menu', () => {
+  it('on a desktop, wraps onto further rows with NO overflow menu', () => {
     const { toolbar, buttons } = renderToolbar();
     expect(toolbar.className).toMatch(/flex-wrap/);
     // No "More…" affordance, and nothing hidden behind a menu button.
