@@ -13,10 +13,11 @@
  * status → 'disabled'. Idempotent: the sentinel is computed from the id, so a
  * re-run produces the byte-identical row with no unique-index violation.
  */
+import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { auditLog, sessions, users } from '@/modules/auth/infrastructure/db/schema';
+import { auditLog, emailChangeTokens, sessions, users } from '@/modules/auth/infrastructure/db/schema';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import {
@@ -318,6 +319,45 @@ describe('eraseUser use-case (live Neon)', () => {
 
   afterEach(async () => {
     for (const u of created.splice(0)) await deleteTestUser(u);
+  });
+
+  // 131 (#665 PDPA review, M-1) — a login linked to members in TWO tenants
+  // holds a revert token in each. eraseMember only invalidates the erasing
+  // tenant's tokens (it runs in that tenant's runInTenant), so the other
+  // tenant's token — carrying the real email in plaintext — used to survive
+  // the global eraseUser. Every active token for the login is now consumed.
+  it('consumes every active email-change token of the login, in every tenant', async () => {
+    const user = await createActiveTestUser('member');
+    created.push(user);
+    const stamp = Date.now().toString(36);
+    const future = new Date(Date.now() + 48 * 3600_000);
+    const rows = ['tenant-a', 'tenant-b'].map((t) => ({
+      id: `it-131-${t}-${stamp}`,
+      tenantId: `${t}-${stamp}`,
+      contactId: randomUUID(),
+      userId: user.userId,
+      type: 'revert' as const,
+      oldEmail: `real-${stamp}@example.test`,
+      newEmail: `new-${stamp}@example.test`,
+      activatedAt: new Date(),
+      expiresAt: future,
+    }));
+    await db.insert(emailChangeTokens).values(rows);
+
+    const res = await eraseUser({
+      userId: user.userId,
+      actorUserId: 'admin-it',
+      requestId: `it-erase-131-${stamp}`,
+      sourceIp: null,
+    });
+    expect(res.ok).toBe(true);
+
+    const after = await db
+      .select({ id: emailChangeTokens.id, consumedAt: emailChangeTokens.consumedAt })
+      .from(emailChangeTokens)
+      .where(eq(emailChangeTokens.userId, user.userId));
+    expect(after).toHaveLength(2);
+    expect(after.every((r) => r.consumedAt !== null)).toBe(true);
   });
 
   it('after eraseUser: no login-resolvable identity, sessions revoked, user_erased audit (no PII)', async () => {
