@@ -531,7 +531,7 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
       expect(tabStopsAfter, 'still exactly one roving tab stop').toBe(1);
     });
 
-    test('T148 — the compose page has no horizontal scroll at 320 px and stacks below lg', async ({
+    test('T148 — the compose page has no horizontal scroll at 320 px, tabs on a phone, side by side at lg', async ({
       page,
     }) => {
       await signInAsPortalMember(page);
@@ -555,18 +555,18 @@ test.describe('@a11y F119 T139 — E-Blast screens PR-1 builds (320 px)', () => 
       // COUNTER is labelled from the same word and the strict locator would
       // resolve to two nodes.
       const subject = page.locator('#broadcast-subject');
-      await expect(preview).toBeVisible();
       await expect(subject).toBeVisible();
-
-      const narrowSubject = await subject.boundingBox();
-      const narrowPreview = await preview.boundingBox();
-      expect(narrowSubject).not.toBeNull();
-      expect(narrowPreview).not.toBeNull();
-      // Stacked: the preview starts below the editor column, not beside it.
+      // Spec 122 US12d-3 (T1269): below 640 px the preview is its own tab —
+      // hidden while writing, shown in place of the form on "Preview".
+      await expect(preview).toBeHidden();
+      await page.getByRole('tab', { name: 'Preview' }).click();
+      await expect(preview).toBeVisible();
+      await expect(subject).toBeHidden();
       expect(
-        narrowPreview!.y,
-        'preview sits BELOW the editor at 320 px',
-      ).toBeGreaterThan(narrowSubject!.y + narrowSubject!.height);
+        await page.evaluate(() => document.documentElement.scrollWidth),
+        'no horizontal page scroll on the Preview tab at 320 px',
+      ).toBeLessThanOrEqual(REFLOW_VIEWPORT.width);
+      await page.getByRole('tab', { name: 'Write' }).click();
 
       await page.setViewportSize(LG_VIEWPORT);
       await expect(editorAnchor(page)).toBeVisible();

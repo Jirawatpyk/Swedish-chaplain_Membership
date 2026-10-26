@@ -249,8 +249,10 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
   // -------------------------------------------------------------------------
   const COUNT_URL = /\/api\/broadcasts\/recipient-count\?/;
   // Round 2: a measured answer is one of three lines — a count, "above the
-  // limit", or (i18n H1) "No eligible recipients" when the count is 0.
-  const READY_OR_EXCEEDS = /recipients? will receive this broadcast|above the limit of|No eligible recipients match/;
+  // limit", or (i18n H1) "No eligible recipients" when the count is 0. Spec
+  // 122 US12d-3 (T1267): on a member-based segment the count is the short
+  // "128 recipients" followed by who they are.
+  const READY_OR_EXCEEDS = /recipients? will receive this broadcast|\d recipients?\b|above the limit of|No eligible recipients match/;
   const UNAVAILABLE = /Recipient count unavailable right now/;
 
   async function openCompose(page: Page): Promise<void> {
@@ -438,16 +440,14 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
   });
 
   // Round 2 (UX H-3): every segment kind says which way the self-exclusion
-  // rule goes — the custom list says the sender IS included.
+  // rule goes — the custom list says the sender IS included. Spec 122 US12d-3
+  // (T1267): on a member-based segment the exclusion is the count line's note.
   test('T084: the self-exclusion hint follows the segment — excluded on member-based, included on a custom list', async ({
     page,
   }) => {
     await openCompose(page);
-    const hint = page.getByText(
-      "You and your colleagues won't receive your own broadcast.",
-      { exact: true },
-    );
-    await expect(hint).toBeVisible();
+    const hint = page.getByText(/not your own company/);
+    await expect(hint).toBeVisible({ timeout: 10_000 });
     await page.getByRole('radio', { name: 'Custom email list' }).click();
     await expect(hint).toHaveCount(0);
     await expect(page.getByText(/including you, if your own address is on it/i)).toBeVisible();
