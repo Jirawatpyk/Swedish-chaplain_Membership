@@ -390,10 +390,10 @@ export async function decideChangeRequest(
         //    waits on our lock); a check-before-lock on another connection
         //    would let a decision write PII back into an erased record
         //    (review: reliability I-2 / security I-2). Archived → refused (FR-020).
-        const memberResult = await deps.memberRepo.findByIdInTx(tx, request.memberId);
+        const memberResult = await deps.memberRepo.findByIdInTx(tx, deps.tenant.slug, request.memberId);
         if (!memberResult.ok) throw new UseCaseAbort<RepoError>(memberResult.error);
         const member: Member = memberResult.value;
-        const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, request.memberId);
+        const erased = await deps.memberRepo.findErasedAtByIdInTx(tx, deps.tenant.slug, request.memberId);
         if (!erased.ok) throw new UseCaseAbort<RepoError>(erased.error);
         if (erased.value.erasedAt !== null) throw new Refusal({ type: 'member_erasing' });
         if (member.status === 'archived') throw new Refusal({ type: 'member_archived' });
@@ -428,7 +428,7 @@ export async function decideChangeRequest(
           if (!updated.ok) throw new UseCaseAbort<RepoError>(updated.error);
         }
         if (Object.keys(patches.value.member).length > 0) {
-          const updated = await deps.memberRepo.updateFieldsInTx(tx, request.memberId, patches.value.member);
+          const updated = await deps.memberRepo.updateFieldsInTx(tx, deps.tenant.slug, request.memberId, patches.value.member);
           if (!updated.ok) throw new UseCaseAbort<RepoError>(updated.error);
         }
 

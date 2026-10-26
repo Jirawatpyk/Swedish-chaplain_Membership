@@ -335,7 +335,7 @@ export async function updateMember(
       // records the override only then. Scoped to this callback so a re-run
       // can never inherit it.
       let overrideApplied = false;
-      const currentResult = await deps.memberRepo.findByIdInTx(tx, memberId);
+      const currentResult = await deps.memberRepo.findByIdInTx(tx, deps.tenant.slug, memberId);
       if (!currentResult.ok) {
         throw new UseCaseAbort<UpdateMemberError>(
           currentResult.error.code === 'repo.not_found'
@@ -587,6 +587,7 @@ export async function updateMember(
 
       const persistResult = await deps.memberRepo.updateFieldsInTx(
         tx,
+        deps.tenant.slug,
         memberId,
         patch,
       );

@@ -3,7 +3,10 @@
  * plus the FR-012b revert-flow lookups and consumption primitives.
  *
  * All writes go through the caller's transaction so the compound
- * operations in change-contact-email / verify / revert stay atomic.
+ * operations in change-contact-email / verify / revert stay atomic. Every
+ * `…InTx` statement states `tenant_id = tenantId` (D-029) alongside RLS;
+ * `findActiveById` is the one read that cannot — the token resolves the
+ * tenant (see the port).
  */
 
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
@@ -81,7 +84,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
     }
   },
 
-  async findActiveByIdInTx(tx, tokenId) {
+  async findActiveByIdInTx(tx, tenantId, tokenId) {
     try {
       // FOR UPDATE prevents double-consume race under READ COMMITTED:
       // two concurrent requests cannot both pass the consumedAt IS NULL
@@ -91,6 +94,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
         .from(emailChangeTokens)
         .where(
           and(
+            eq(emailChangeTokens.tenantId, tenantId),
             eq(emailChangeTokens.id, tokenId),
             isNull(emailChangeTokens.consumedAt),
             gt(emailChangeTokens.expiresAt, sql`now()`),
@@ -116,7 +120,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
     }
   },
 
-  async markConsumedInTx(tx, tokenId, consumedAt) {
+  async markConsumedInTx(tx, tenantId, tokenId, consumedAt) {
     try {
       // Idempotent guard: only consume if not already consumed.
       // Combined with FOR UPDATE in findActiveByIdInTx, this is
@@ -126,6 +130,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
         .set({ consumedAt })
         .where(
           and(
+            eq(emailChangeTokens.tenantId, tenantId),
             eq(emailChangeTokens.id, tokenId),
             isNull(emailChangeTokens.consumedAt),
           ),
@@ -140,13 +145,14 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
     }
   },
 
-  async invalidateActiveForUserInTx(tx, userId, type, consumedAt) {
+  async invalidateActiveForUserInTx(tx, tenantId, userId, type, consumedAt) {
     try {
       const updated = await tx
         .update(emailChangeTokens)
         .set({ consumedAt })
         .where(
           and(
+            eq(emailChangeTokens.tenantId, tenantId),
             eq(emailChangeTokens.userId, userId),
             eq(emailChangeTokens.type, type),
             isNull(emailChangeTokens.consumedAt),
@@ -160,7 +166,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
     }
   },
 
-  async invalidateAllActiveForUsersInTx(tx, userIds, consumedAt) {
+  async invalidateAllActiveForUsersInTx(tx, tenantId, userIds, consumedAt) {
     // Empty work-list → no-op (an empty inArray would otherwise produce a
     // degenerate `IN ()` SQL fragment in some drivers). Cheap guard, explicit.
     if (userIds.length === 0) return ok({ invalidatedEmails: [] });
@@ -176,6 +182,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
         .set({ consumedAt })
         .where(
           and(
+            eq(emailChangeTokens.tenantId, tenantId),
             inArray(emailChangeTokens.userId, [...userIds]),
             isNull(emailChangeTokens.consumedAt),
           ),

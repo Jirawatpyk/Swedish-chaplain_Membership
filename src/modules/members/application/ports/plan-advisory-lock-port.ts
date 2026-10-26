@@ -47,11 +47,14 @@ export interface PlanAdvisoryLockPort {
    * attached to a soft-deleted plan.
    *
    * @param tx - ambient `TenantTx` (typed `unknown` to keep the port pure;
-   *   adapter casts via `unbrandTx`). RLS scopes the read to the tenant.
+   *   adapter casts via `unbrandTx`).
+   * @param tenantId - the tx's tenant slug; the read states it (D-029), with
+   *   RLS behind it.
    * @returns `true` when `deleted_at IS NOT NULL` (or the row is gone).
    */
   isPlanSoftDeletedInTx(
     tx: unknown,
+    tenantId: string,
     planId: string,
     planYear: number,
   ): Promise<boolean>;

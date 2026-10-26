@@ -353,7 +353,7 @@ export async function memberSelfUpdate(
       // archive between them and these writes would otherwise let a portal member
       // mutate a now-archived member, bypassing the archived-immutability
       // invariant that inline-edit enforces (inline-edit.ts § archived guard).
-      const fresh = await deps.memberRepo.findByIdInTx(tx, input.memberId);
+      const fresh = await deps.memberRepo.findByIdInTx(tx, deps.tenant.slug, input.memberId);
       if (!fresh.ok) throw new UseCaseAbort<RepoError>(fresh.error);
       if (fresh.value.status === 'archived') throw new MemberArchivedAbort();
       // `member`/`contact` are the echoed return values; `updateFieldsInTx` /
@@ -365,6 +365,7 @@ export async function memberSelfUpdate(
       if (hasMemberPatch) {
         const r = await deps.memberRepo.updateFieldsInTx(
           tx,
+          deps.tenant.slug,
           input.memberId,
           memberPatch,
         );

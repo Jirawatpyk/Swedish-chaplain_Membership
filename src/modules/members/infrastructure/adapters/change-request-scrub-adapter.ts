@@ -2,8 +2,8 @@
  * F114 T078 — `ChangeRequestScrubPort` over Drizzle (FR-030; research R10).
  *
  * Runs INSIDE `eraseMember`'s atomic scrub tx (the caller's `runInTenant`
- * tx — never the global `db`; RLS + the GUC confine every statement to the
- * erased member's tenant). The id read is `SELECT … FOR UPDATE`: the
+ * tx — never the global `db`). Every statement states the erased member's
+ * tenant (`tenant_id = tenantId`, D-029), with RLS + the GUC behind it. The id read is `SELECT … FOR UPDATE`: the
  * REQUEST rows are the first lock this adapter takes, before any field row,
  * because `decideInTx` locks the request row first and writes the field
  * rows LAST — a scrub that updated field rows before holding the request
@@ -54,10 +54,14 @@ export const REQUEST_SCRUBBED_COLUMNS: ReadonlyArray<(typeof REASON_COLUMNS)[num
 ];
 
 export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
-  async scrubForMemberInTx(tx, memberId, at) {
+  async scrubForMemberInTx(tx, tenantId, memberId, at) {
     try {
       const ids = (
-        await tx.select({ id: memberChangeRequests.id }).from(memberChangeRequests).where(eq(memberChangeRequests.memberId, memberId)).for('update')
+        await tx
+          .select({ id: memberChangeRequests.id })
+          .from(memberChangeRequests)
+          .where(and(eq(memberChangeRequests.tenantId, tenantId), eq(memberChangeRequests.memberId, memberId)))
+          .for('update')
       ).map((r) => r.id);
       if (ids.length === 0) return ok({ scrubbedRequestIds: [], closedRequests: [] });
 
@@ -65,7 +69,7 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
       await tx
         .update(memberChangeRequestFields)
         .set({ seenValue: ERASED_SENTINEL, proposedValue: ERASED_SENTINEL } satisfies Cols<typeof FIELD_SCRUBBED_COLUMNS>)
-        .where(inArray(memberChangeRequestFields.requestId, ids));
+        .where(and(eq(memberChangeRequestFields.tenantId, tenantId), inArray(memberChangeRequestFields.requestId, ids)));
 
       // 2. the reviewer's free text — sentinel when set, NULL stays NULL
       await tx
@@ -75,13 +79,19 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
           decisionNote: sql`CASE WHEN ${memberChangeRequests.decisionNote} IS NULL THEN NULL ELSE ${ERASED_SENTINEL} END`,
           updatedAt: at,
         } satisfies Cols<typeof REASON_COLUMNS>)
-        .where(inArray(memberChangeRequests.id, ids));
+        .where(and(eq(memberChangeRequests.tenantId, tenantId), inArray(memberChangeRequests.id, ids)));
 
       // 3. close what is still pending
       const closed = await tx
         .update(memberChangeRequests)
         .set({ state: 'withdrawn', withdrawnReason: 'erasure', withdrawnAt: at, updatedAt: at } satisfies Cols<typeof CLOSE_COLUMNS>)
-        .where(and(inArray(memberChangeRequests.id, ids), eq(memberChangeRequests.state, 'pending')))
+        .where(
+          and(
+            eq(memberChangeRequests.tenantId, tenantId),
+            inArray(memberChangeRequests.id, ids),
+            eq(memberChangeRequests.state, 'pending'),
+          ),
+        )
         .returning({ id: memberChangeRequests.id, contactId: memberChangeRequests.submittedByContactId, scope: memberChangeRequests.scope });
 
       const closedRequests: ClosedChangeRequest[] = closed.map((c) => ({
@@ -96,9 +106,12 @@ export const changeRequestScrubAdapter: ChangeRequestScrubPort = {
   },
 
   // the post-member-lock rescan (see the port) — a plain read on the same tx
-  async listRequestIdsInTx(tx, memberId) {
+  async listRequestIdsInTx(tx, tenantId, memberId) {
     try {
-      const rows = await tx.select({ id: memberChangeRequests.id }).from(memberChangeRequests).where(eq(memberChangeRequests.memberId, memberId));
+      const rows = await tx
+        .select({ id: memberChangeRequests.id })
+        .from(memberChangeRequests)
+        .where(and(eq(memberChangeRequests.tenantId, tenantId), eq(memberChangeRequests.memberId, memberId)));
       return ok(rows.map((r) => r.id as ChangeRequestId));
     } catch (e) {
       return err({ code: 'repo.unexpected', cause: e });

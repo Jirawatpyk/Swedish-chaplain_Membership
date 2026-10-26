@@ -83,6 +83,7 @@ export async function revertContactEmail(
     const outcome = await runInTenant(deps.tenant, async (tx) => {
       const tokenResult = await deps.tokens.findActiveByIdInTx(
         tx,
+        deps.tenant.slug,
         input.tokenId,
       );
       if (!tokenResult.ok) throw new UseCaseAbort({ code: 'not_found' });
@@ -171,6 +172,7 @@ export async function revertContactEmail(
       // attacker can't consume one post-revert.
       const invalidated = await deps.tokens.invalidateActiveForUserInTx(
         tx,
+        deps.tenant.slug,
         token.userId,
         'verification',
         now,
@@ -185,6 +187,7 @@ export async function revertContactEmail(
       // Step 6 — mark the revert token itself consumed
       const marked = await deps.tokens.markConsumedInTx(
         tx,
+        deps.tenant.slug,
         token.tokenId,
         now,
       );

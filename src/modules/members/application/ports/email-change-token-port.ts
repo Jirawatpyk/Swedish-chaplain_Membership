@@ -53,9 +53,10 @@ export interface EmailChangeTokenPort {
    * in-tx variant; caller then opens a runInTenant transaction with
    * `tenantId` and proceeds with consumption.
    *
-   * `email_change_tokens` carries no RLS policy so the default DB
-   * owner can read it — migration 0012 intentionally scoped the
-   * table outside the per-tenant isolation wall for this reason.
+   * The tenant is unknown here, so this read cannot carry a tenant
+   * predicate: it runs on the global (owner-role) db, outside
+   * `runInTenant`. The `…InTx` methods below all state `tenant_id`
+   * (D-029), with the table's RLS + FORCE (migration 0097) behind it.
    */
   findActiveById(tokenId: string): Promise<Result<ActiveToken, RepoError>>;
 
@@ -75,12 +76,14 @@ export interface EmailChangeTokenPort {
    */
   findActiveByIdInTx(
     tx: TenantTx,
+    tenantId: string,
     tokenId: string,
   ): Promise<Result<ActiveToken, RepoError>>;
 
   /** Mark a token consumed (idempotent on already-consumed rows). */
   markConsumedInTx(
     tx: TenantTx,
+    tenantId: string,
     tokenId: string,
     consumedAt: Date,
   ): Promise<Result<undefined, RepoError>>;
@@ -93,6 +96,7 @@ export interface EmailChangeTokenPort {
    */
   invalidateActiveForUserInTx(
     tx: TenantTx,
+    tenantId: string,
     userId: string,
     type: TokenType,
     consumedAt: Date,
@@ -114,11 +118,12 @@ export interface EmailChangeTokenPort {
    * frozen real addresses.
    *
    * `userIds` empty ⇒ no-op, returns `{ invalidatedEmails: [] }`. Tenant-scoped
-   * via the caller's runInTenant tx (RLS). Same FAIL-LOUD contract as the rest
+   * by `tenant_id = tenantId` (D-029) on the caller's runInTenant tx (RLS). Same FAIL-LOUD contract as the rest
    * of the erasure tx: a DB error returns `err` so the caller's tx rolls back.
    */
   invalidateAllActiveForUsersInTx(
     tx: TenantTx,
+    tenantId: string,
     userIds: readonly string[],
     consumedAt: Date,
   ): Promise<

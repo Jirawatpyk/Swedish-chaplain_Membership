@@ -39,7 +39,7 @@ export async function getMemberPreferredLocale(
 ): Promise<Result<LocaleLiteral | null, RepoError>> {
   try {
     return await runInTenant(deps.tenant, async (tx) =>
-      deps.memberRepo.findPreferredLocaleInTx(tx, memberId),
+      deps.memberRepo.findPreferredLocaleInTx(tx, deps.tenant.slug, memberId),
     );
   } catch (e) {
     return err({ code: 'repo.unexpected', cause: e });

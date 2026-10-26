@@ -120,7 +120,7 @@ function makeDeps(current: ReturnType<typeof currentMember>) {
   const auditEvents: AuditEvt[] = [];
   const memberRepo = {
     findByIdInTx: vi.fn(async () => ok(current)),
-    updateFieldsInTx: vi.fn(async (_tx: unknown, _id: unknown, patch: Record<string, unknown>) =>
+    updateFieldsInTx: vi.fn(async (_tx: unknown, _tenantId: unknown, _id: unknown, patch: Record<string, unknown>) =>
       ok({ ...current, ...patch }),
     ),
   };

@@ -31,6 +31,7 @@ export const drizzlePlanAdvisoryLockAdapter: PlanAdvisoryLockPort = {
 
   async isPlanSoftDeletedInTx(
     tx: unknown,
+    tenantId: string,
     planId: string,
     planYear: number,
   ): Promise<boolean> {
@@ -40,6 +41,7 @@ export const drizzlePlanAdvisoryLockAdapter: PlanAdvisoryLockPort = {
       .from(membershipPlans)
       .where(
         and(
+          eq(membershipPlans.tenantId, tenantId),
           eq(membershipPlans.planId, planId),
           eq(membershipPlans.planYear, planYear),
         ),

@@ -52,7 +52,7 @@ function makeDeps(rows: ReturnType<typeof row>[]) {
     clock: { now: () => new Date() },
     memberRepo: {
       findManyByIdsInTx: vi.fn(async () => ok(map)),
-      updateStatusInTx: vi.fn(async (_tx: unknown, id: string) => ok(map.get(id))),
+      updateStatusInTx: vi.fn(async (_tx: unknown, _tenantId: unknown, id: string) => ok(map.get(id))),
       findErasedIdsInTx: vi.fn(async () => ok(new Set())),
       findIdsWithoutLivePrimaryInTx: vi.fn(async () => ok(new Set())),
     },

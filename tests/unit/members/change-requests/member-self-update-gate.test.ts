@@ -39,7 +39,7 @@ function makeDeps() {
   const memberRepo = {
     findById: vi.fn(async () => ok(member)),
     findByIdInTx: vi.fn(async () => ok(member)),
-    updateFieldsInTx: vi.fn(async (_tx: unknown, _id: unknown, patch: Record<string, unknown>) => ok({ ...(member as object), ...patch })),
+    updateFieldsInTx: vi.fn(async (_tx: unknown, _tenantId: unknown, _id: unknown, patch: Record<string, unknown>) => ok({ ...(member as object), ...patch })),
   };
   const contactRepo = {
     findById: vi.fn(async () => ok(contact)),
@@ -109,7 +109,7 @@ describe('memberSelfUpdate gate = immediate (byte-identical F3 path, SC-011)', (
     const r = await call(deps, { primary_contact: { firstName: 'Anna', phone: '+66812345678' }, website: 'https://x.example' }, gate);
     expect(r.ok).toBe(true);
     expect(contactRepo.updateInTx).toHaveBeenCalledWith({}, contactId, { firstName: 'Anna', phone: '+66812345678' });
-    expect(memberRepo.updateFieldsInTx).toHaveBeenCalledWith({}, memberId, { website: 'https://x.example' });
+    expect(memberRepo.updateFieldsInTx).toHaveBeenCalledWith({}, tenant.slug, memberId, { website: 'https://x.example' });
     expect(audit.record).not.toHaveBeenCalled();
   });
 

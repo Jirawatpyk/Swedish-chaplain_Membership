@@ -146,6 +146,7 @@ export async function resendVerificationEmail(
       // verification should be redeemable at a time.
       const prior = await deps.tokens.invalidateActiveForUserInTx(
         tx,
+        deps.tenant.slug,
         userId,
         'verification',
         now,

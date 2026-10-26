@@ -88,6 +88,7 @@ describe('setMemberHalt', () => {
     expect(result.ok).toBe(true);
     expect(memberRepo.updateBroadcastsHaltedInTx).toHaveBeenCalledWith(
       {},
+      tenant.slug,
       memberId,
       false,
     );

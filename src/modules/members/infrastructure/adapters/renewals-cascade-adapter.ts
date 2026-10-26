@@ -201,7 +201,7 @@ export const f8RenewalsCascadeAdapter: RenewalsCascadePort = {
       const memberResult = await runInTenant(tenant, (tx) =>
         // `memberId` is already branded `MemberId` (the port param type) — no
         // re-brand cast needed (Cluster 4 review-fix, FIX 5).
-        drizzleMemberRepo.findByIdInTx(tx, memberId),
+        drizzleMemberRepo.findByIdInTx(tx, tenant.slug, memberId),
       );
       if (!memberResult.ok) {
         logger.warn(

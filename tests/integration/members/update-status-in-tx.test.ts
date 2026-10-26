@@ -114,7 +114,7 @@ describe('updateStatusInTx + findByIdInTx (T3 — round-3)', () => {
   it('findByIdInTx returns the row inside runInTenant', async () => {
     const memberId = await seedMember();
     const found = await runInTenant(tenant.ctx, (tx) =>
-      drizzleMemberRepo.findByIdInTx(tx, asMemberId(memberId)),
+      drizzleMemberRepo.findByIdInTx(tx, tenant.ctx.slug, asMemberId(memberId)),
     );
     expect(found.ok).toBe(true);
     if (found.ok) {
@@ -130,7 +130,7 @@ describe('updateStatusInTx + findByIdInTx (T3 — round-3)', () => {
     const otherTenant = await createTestTenant('test');
     try {
       const found = await runInTenant(otherTenant.ctx, (tx) =>
-        drizzleMemberRepo.findByIdInTx(tx, asMemberId(memberId)),
+        drizzleMemberRepo.findByIdInTx(tx, otherTenant.ctx.slug, asMemberId(memberId)),
       );
       expect(found.ok).toBe(false);
       if (!found.ok) {
@@ -148,6 +148,7 @@ describe('updateStatusInTx + findByIdInTx (T3 — round-3)', () => {
     await runInTenant(tenant.ctx, async (tx) => {
       const found = await drizzleMemberRepo.findByIdInTx(
         tx,
+        tenant.ctx.slug,
         asMemberId(memberId),
       );
       if (!found.ok) throw new Error('seed member not found');
@@ -159,6 +160,7 @@ describe('updateStatusInTx + findByIdInTx (T3 — round-3)', () => {
       };
       const updated = await drizzleMemberRepo.updateStatusInTx(
         tx,
+        tenant.ctx.slug,
         asMemberId(memberId),
         nextMember,
       );
@@ -184,11 +186,13 @@ describe('updateStatusInTx + findByIdInTx (T3 — round-3)', () => {
       await runInTenant(tenant.ctx, async (tx) => {
         const found = await drizzleMemberRepo.findByIdInTx(
           tx,
+          tenant.ctx.slug,
           asMemberId(memberId),
         );
         if (!found.ok) throw new Error('seed member not found');
         const updated = await drizzleMemberRepo.updateStatusInTx(
           tx,
+          tenant.ctx.slug,
           asMemberId(memberId),
           { ...found.value, status: 'archived', archivedAt: new Date() },
         );
@@ -211,7 +215,7 @@ describe('updateStatusInTx + findByIdInTx (T3 — round-3)', () => {
   it('findByIdInTx returns not_found for unknown id', async () => {
     const unknownId = randomUUID();
     const found = await runInTenant(tenant.ctx, (tx) =>
-      drizzleMemberRepo.findByIdInTx(tx, asMemberId(unknownId)),
+      drizzleMemberRepo.findByIdInTx(tx, tenant.ctx.slug, asMemberId(unknownId)),
     );
     expect(found.ok).toBe(false);
     if (!found.ok) {

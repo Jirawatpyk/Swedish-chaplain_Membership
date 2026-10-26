@@ -80,6 +80,7 @@ export async function verifyContactEmail(
     const outcome = await runInTenant(deps.tenant, async (tx) => {
       const tokenResult = await deps.tokens.findActiveByIdInTx(
         tx,
+        deps.tenant.slug,
         input.tokenId,
       );
       if (!tokenResult.ok) throw new UseCaseAbort({ code: 'not_found' });
@@ -97,6 +98,7 @@ export async function verifyContactEmail(
 
       const marked = await deps.tokens.markConsumedInTx(
         tx,
+        deps.tenant.slug,
         token.tokenId,
         now,
       );
@@ -115,6 +117,7 @@ export async function verifyContactEmail(
       // NEW address is owned by the real user.
       const revertInvalidated = await deps.tokens.invalidateActiveForUserInTx(
         tx,
+        deps.tenant.slug,
         token.userId,
         'revert',
         now,

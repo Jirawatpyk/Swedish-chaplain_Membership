@@ -571,7 +571,7 @@ export async function createMember(
         planSoftDeleteLockKey(deps.tenant.slug, plan.planId as string, data.plan_year),
       );
       if (
-        await deps.planAdvisoryLock.isPlanSoftDeletedInTx(tx, plan.planId as string, data.plan_year)
+        await deps.planAdvisoryLock.isPlanSoftDeletedInTx(tx, deps.tenant.slug, plan.planId as string, data.plan_year)
       ) {
         throw new PlanGoneAbort();
       }

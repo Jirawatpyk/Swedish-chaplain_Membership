@@ -174,7 +174,7 @@ describe('erased members excluded from FR-010 plan-soft-delete counts', () => {
 
   it('countActiveMembersOnPlanInTx (softDeleteGuarded path) excludes the erased member', async () => {
     const n = await runInTenant(tenant.ctx, (tx) =>
-      countActiveMembersOnPlanInTx(tx, planId, PLAN_YEAR),
+      countActiveMembersOnPlanInTx(tx, tenant.ctx.slug, planId, PLAN_YEAR),
     );
     expect(n).toBe(1);
   });
@@ -206,7 +206,7 @@ describe('erased members excluded from FR-010 plan-soft-delete counts', () => {
     expect(viaSimple).toBe(0);
 
     const viaTx = await runInTenant(tenant.ctx, (tx) =>
-      countActiveMembersOnPlanInTx(tx, planId, PLAN_YEAR),
+      countActiveMembersOnPlanInTx(tx, tenant.ctx.slug, planId, PLAN_YEAR),
     );
     expect(viaTx).toBe(0);
 

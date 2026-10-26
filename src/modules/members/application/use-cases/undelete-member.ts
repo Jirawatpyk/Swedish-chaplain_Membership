@@ -245,7 +245,7 @@ export async function undeleteMember(
 
   try {
     const restored = await runInTenant(deps.tenant, async (tx) => {
-      const current = await deps.memberRepo.findByIdInTx(tx, memberId);
+      const current = await deps.memberRepo.findByIdInTx(tx, deps.tenant.slug, memberId);
       if (!current.ok) {
         if (current.error.code === 'repo.not_found')
           throw new UndeleteNotFoundError();
@@ -282,6 +282,7 @@ export async function undeleteMember(
 
       const persistResult = await deps.memberRepo.updateStatusInTx(
         tx,
+        deps.tenant.slug,
         memberId,
         transitioned.value,
       );

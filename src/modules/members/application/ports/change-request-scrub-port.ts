@@ -36,6 +36,7 @@ export interface ChangeRequestScrubPort {
    */
   scrubForMemberInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
     at: Date,
   ): Promise<Result<ChangeRequestScrubResult, RepoError>>;
@@ -48,5 +49,9 @@ export interface ChangeRequestScrubPort {
    * inserted after a statement started), and the erase aborts so a re-drive
    * scrubs it too (the seam re-review of PR-2). No lock, so no new AB-BA.
    */
-  listRequestIdsInTx(tx: TenantTx, memberId: MemberId): Promise<Result<readonly ChangeRequestId[], RepoError>>;
+  listRequestIdsInTx(
+    tx: TenantTx,
+    tenantId: string,
+    memberId: MemberId,
+  ): Promise<Result<readonly ChangeRequestId[], RepoError>>;
 }

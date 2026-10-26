@@ -52,6 +52,7 @@ describe('markBroadcastsAcknowledged', () => {
     }
     expect(memberRepo.updateBroadcastsAcknowledgedAtInTx).toHaveBeenCalledWith(
       {},
+      tenant.slug,
       memberId,
       now,
     );

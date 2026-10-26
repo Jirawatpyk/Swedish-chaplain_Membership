@@ -195,7 +195,7 @@ function makeDeps(opts: { request?: ChangeRequest; member?: Member; contacts?: C
   const memberRepo = {
     findByIdInTx: vi.fn(async (): Promise<Result<Member, RepoError>> => ok(m)),
     findErasedAtByIdInTx: vi.fn(async (): Promise<Result<{ erasedAt: Date | null }, RepoError>> => ok({ erasedAt: opts.erasedAt ?? null })),
-    updateFieldsInTx: vi.fn(async (_tx: unknown, _id: unknown, patch: Record<string, unknown>): Promise<Result<Member, RepoError>> => ok({ ...m, ...patch } as Member)),
+    updateFieldsInTx: vi.fn(async (_tx: unknown, _tenantId: unknown, _id: unknown, patch: Record<string, unknown>): Promise<Result<Member, RepoError>> => ok({ ...m, ...patch } as Member)),
   };
   const contactRepo = {
     listByMemberInTx: vi.fn(async (): Promise<Result<Contact[], RepoError>> => ok(cs)),
@@ -396,7 +396,7 @@ describe('decideChangeRequest — the decision in ONE transaction (FR-015 / FR-0
       ['billing_address', 'approved', NOW],
     ]);
     expect(contactRepo.updateInTx).toHaveBeenCalledWith({ __tx: true }, CONTACT, { phone: '+66899999999' });
-    expect(memberRepo.updateFieldsInTx).toHaveBeenCalledWith({ __tx: true }, MEMBER, {
+    expect(memberRepo.updateFieldsInTx).toHaveBeenCalledWith({ __tx: true }, tenant.slug, MEMBER, {
       description: 'A new description',
       billingAddressLine1: 'Box 9',
       billingAddressLine2: null,
@@ -450,7 +450,7 @@ describe('decideChangeRequest — the decision in ONE transaction (FR-015 / FR-0
     expect(row.decisionReason).toBe('Please use the registered description');
     expect(row.decisionNote).toBe('checked DBD');
     expect(row.fields.find((f) => f.key === 'description')).toMatchObject({ outcome: 'rejected', appliedAt: null });
-    expect(memberRepo.updateFieldsInTx.mock.calls[0]?.[2]).not.toHaveProperty('description');
+    expect(memberRepo.updateFieldsInTx.mock.calls[0]?.[3]).not.toHaveProperty('description');
     expect(audit.events[0]!.payload).toMatchObject({ outcome: 'partially_approved', reason_length: 37 });
   });
 
@@ -613,7 +613,7 @@ describe('decideChangeRequest — T105 coverage: every field key applies, every 
     const r = await decideChangeRequest(deps, input(keys));
     expect(r.ok && r.value.request.outcome).toBe('approved');
     expect(contactRepo.updateInTx).toHaveBeenCalledWith(expect.anything(), CONTACT, { firstName: 'Annika', lastName: 'Lind', roleTitle: 'CEO', phone: null });
-    expect(memberRepo.updateFieldsInTx).toHaveBeenCalledWith(expect.anything(), MEMBER, {
+    expect(memberRepo.updateFieldsInTx).toHaveBeenCalledWith(expect.anything(), tenant.slug, MEMBER, {
       companyName: 'Nordic Company',
       website: 'https://nordic.se',
       addressLine1: '2 New Rd',

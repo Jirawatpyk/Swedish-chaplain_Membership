@@ -99,7 +99,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     updateStatus: async () => ok(baseMember),
     updateStatusInTx: async () => ok(baseMember),
     updateFields: async (_ctx, _id, patch) => ok({ ...baseMember, ...patch } as Member),
-    updateFieldsInTx: async (_tx, _id, patch) =>
+    updateFieldsInTx: async (_tx, _tenantId, _id, patch) =>
       ok({ ...baseMember, ...patch } as Member),
     searchDirectory: async () => ok({ items: [], nextCursor: null }),
     searchDirectoryWithCount: async () => ok({ items: [], total: 0 }),

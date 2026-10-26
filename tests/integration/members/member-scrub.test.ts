@@ -233,7 +233,7 @@ describe('MemberRepo.scrubPiiInTx', () => {
 
     // First erasure pass — establishes the authoritative erased_at instant.
     const first = await runInTenant(tenant.ctx, (tx) =>
-      drizzleMemberRepo.scrubPiiInTx(tx, memberId as MemberId, {
+      drizzleMemberRepo.scrubPiiInTx(tx, tenant.ctx.slug, memberId as MemberId, {
         erasedAt: firstInstant,
       }),
     );
@@ -241,7 +241,7 @@ describe('MemberRepo.scrubPiiInTx', () => {
 
     // Reconciler re-drive — distinct, LATER clock instant.
     const second = await runInTenant(tenant.ctx, (tx) =>
-      drizzleMemberRepo.scrubPiiInTx(tx, memberId as MemberId, {
+      drizzleMemberRepo.scrubPiiInTx(tx, tenant.ctx.slug, memberId as MemberId, {
         erasedAt: secondInstant,
       }),
     );
@@ -280,7 +280,7 @@ describe('MemberRepo.scrubPiiInTx', () => {
     const erasedAt = new Date('2026-06-16T00:00:00.000Z');
 
     const result = await runInTenant(tenant.ctx, (tx) =>
-      drizzleMemberRepo.scrubPiiInTx(tx, memberId as MemberId, { erasedAt }),
+      drizzleMemberRepo.scrubPiiInTx(tx, tenant.ctx.slug, memberId as MemberId, { erasedAt }),
     );
     expect(result.ok, JSON.stringify(result)).toBe(true);
 

@@ -303,19 +303,14 @@ export interface MemberRepo {
    * TOCTOU races where a concurrent actor mutates the row between the read
    * and the write. Caller already holds an open transaction via runInTenant.
    *
-   * SS-5: the `*InTx` variants intentionally take only `tx` (not `ctx`). The
-   * transaction session already carries tenant scope via the
-   * `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant` statements
-   * issued by `runInTenant` — RLS filters rows automatically. This contrasts
-   * with `audit.recordInTx(tx, ctx, event)` where `ctx` is required because
-   * `audit_log` carries an explicit `tenant_id` column under a *permissive*
-   * RLS policy (migration 0007: `tenant_id IS NULL OR tenant_id =
-   * current_setting('app.current_tenant')`). The policy allows NULL + own-tenant
-   * rows but does NOT auto-stamp `tenant_id`, so the caller must supply `ctx` to
-   * write the correct value into the row.
+   * The `*InTx` variants take the tx AND the tenant slug (`tenantId`, the
+   * same value `runInTenant` set on that tx): every statement states
+   * `tenant_id = tenantId` alongside RLS (D-029 — the two walls, never RLS
+   * alone). This superseded SS-5, under which they took only `tx`.
    */
   findByIdInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
   ): Promise<Result<Member, RepoError>>;
 
@@ -415,6 +410,7 @@ export interface MemberRepo {
    */
   updateStatusInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
     next: Member,
   ): Promise<Result<Member, RepoError>>;
@@ -428,6 +424,7 @@ export interface MemberRepo {
   /** In-transaction variant for atomic persist+audit (COR-8). */
   updateFieldsInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
     patch: MemberPatch,
   ): Promise<Result<Member, RepoError>>;
@@ -611,9 +608,10 @@ export interface MemberRepo {
    * NO `LIMIT`: the single-member method caps at 50 contacts, which is safe
    * for one member but would silently truncate a 50-member page.
    *
-   * Tenant scope: `contacts` is RLS-bound inside `runInTenant`; the auth
-   * `invitations` table is cross-tenant by design, so the join through
-   * `contacts` is what enforces the boundary. Only `user_id`, `consumed_at`
+   * Tenant scope: `contacts.tenant_id = ctx.slug` (D-029), RLS-bound inside
+   * `runInTenant` as well; the auth `invitations` table is cross-tenant by
+   * design (no tenant_id), so the join through `contacts` is what enforces
+   * the boundary. Only `user_id`, `consumed_at`
    * and `expires_at` may be referenced (migration 0017 column grants).
    *
    * Callers MUST pass a page-bounded id list (directory PAGE_SIZE = 50).
@@ -724,6 +722,7 @@ export interface MemberRepo {
    */
   updateBroadcastsHaltedInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
     halted: boolean,
   ): Promise<Result<{ affected: number }, RepoError>>;
@@ -741,6 +740,7 @@ export interface MemberRepo {
    */
   updateBroadcastsAcknowledgedAtInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
     timestamp: Date,
   ): Promise<Result<{ affected: number; previouslyNull: boolean }, RepoError>>;
@@ -772,6 +772,7 @@ export interface MemberRepo {
    */
   findPreferredLocaleInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
   ): Promise<Result<'en' | 'th' | 'sv' | null, RepoError>>;
 
@@ -790,6 +791,7 @@ export interface MemberRepo {
    */
   updatePreferredLocaleInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
     nextLocale: 'en' | 'th' | 'sv' | null,
   ): Promise<
@@ -810,6 +812,7 @@ export interface MemberRepo {
    */
   findMemberByPrimaryContactEmailInTx(
     tx: TenantTx,
+    tenantId: string,
     emailLower: string,
   ): Promise<Result<F7MemberRecipient | null, RepoError>>;
 
@@ -846,8 +849,9 @@ export interface MemberRepo {
    * contact of the tenant joined to its member, filtered per
    * `MarketingAudienceRepoFilter`, ordered company name → contact last name →
    * first name → contact id, plus the total matching count (two queries in
-   * one tenant tx, like `searchDirectoryWithCount`). Tenant-scoped via
-   * `runInTenant` + RLS FORCE on both tables (FR-052).
+   * one tenant tx, like `searchDirectoryWithCount`). Tenant-scoped by an
+   * explicit `tenant_id` predicate (D-029) + `runInTenant` RLS FORCE on both
+   * tables (FR-052).
    */
   listContactsForMarketingAudience(
     ctx: TenantContext,
@@ -896,6 +900,7 @@ export interface MemberRepo {
    */
   scrubPiiInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
     opts: { readonly erasedAt: Date },
   ): Promise<Result<void, RepoError>>;
@@ -915,7 +920,8 @@ export interface MemberRepo {
    *     cascades.
    *   - `{ erasedAt: null }` ⇒ first request: emit `member_erasure_requested`.
    *
-   * Tenant-scoped via ctx/RLS; threads the runInTenant tx, never the global db.
+   * Tenant-scoped via `ctx.slug` (D-029) and RLS; threads the runInTenant tx,
+   * never the global db.
    */
   findErasedAtById(
     ctx: TenantContext,
@@ -931,6 +937,7 @@ export interface MemberRepo {
    */
   findErasedAtByIdInTx(
     tx: TenantTx,
+    tenantId: string,
     memberId: MemberId,
   ): Promise<Result<{ readonly erasedAt: Date | null }, RepoError>>;
 
@@ -953,7 +960,7 @@ export interface MemberRepo {
    * NULL-tenant or cross-tenant audit row could wrongly satisfy/spoil the
    * match. (Mirrors the at-risk-scorer's `audit_log` subquery, which documents
    * the same load-bearing-filter requirement.) `members` uses a strict
-   * isolating RLS policy so its outer `WHERE` needs no explicit filter.
+   * isolating RLS policy, and its outer `WHERE` states the tenant too (D-029).
    *
    * Threads the runInTenant `tx` (RLS gotcha — never the global db).
    */

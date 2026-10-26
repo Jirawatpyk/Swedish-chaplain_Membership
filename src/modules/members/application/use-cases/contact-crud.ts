@@ -165,7 +165,7 @@ async function lockMemberInTx(
   memberId: MemberId,
   deps: ContactCrudDeps,
 ): Promise<MemberStatus> {
-  const member = await deps.memberRepo.findByIdInTx(tx, memberId);
+  const member = await deps.memberRepo.findByIdInTx(tx, deps.tenant.slug, memberId);
   if (!member.ok) throw new UseCaseAbort<RepoError>(member.error);
   return member.value.status;
 }

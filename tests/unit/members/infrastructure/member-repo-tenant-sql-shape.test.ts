@@ -314,8 +314,8 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
     // proven by the call-map cases above; the `consumedInv` anti-joins read
     // `invitations`, which has no tenant_id.
     expect(unfencedWheres(readFileSync(SRC.repo, 'utf8'))).toEqual([
-      'and( eq(consumedInv.userId, invitations.userId), isNotNull(consumedInv.consumedAt), )',
-      'and( eq(consumedInv.userId, invitations.userId), isNotNull(consumedInv.consumedAt), )',
+      'and( eq(consumedInv.userId, invitations.userId), isNotNull(consumedInv.consumedAt), ),',
+      'and( eq(consumedInv.userId, invitations.userId), isNotNull(consumedInv.consumedAt), ),',
       'whereClause',
       'whereClause',
       'whereClause',
@@ -326,14 +326,14 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
     expect(unfencedWheres(readFileSync(SRC.scrub, 'utf8'))).toEqual([]);
     // The tenant-resolving token read (see the header).
     expect(unfencedWheres(readFileSync(SRC.token, 'utf8'))).toEqual([
-      'and( eq(emailChangeTokens.id, tokenId), isNull(emailChangeTokens.consumedAt), gt(emailChangeTokens.expiresAt, sql`now()`), )',
+      'and( eq(emailChangeTokens.id, tokenId), isNull(emailChangeTokens.consumedAt), gt(emailChangeTokens.expiresAt, sql`now()`), ),',
     ]);
     expect(unfencedWheres(readFileSync(SRC.lock, 'utf8'))).toEqual([]);
     expect(unfencedWheres(readFileSync(SRC.lookup, 'utf8'))).toEqual([]);
     expect(unfencedWheres(readFileSync(SRC.count, 'utf8'))).toEqual([]);
     // The cross-tenant bounce resolver (see the header).
     expect(unfencedWheres(readFileSync(SRC.bounce, 'utf8'))).toEqual([
-      'and( sql`LOWER(${contacts.email}) = LOWER(${email})`, isNull(contacts.removedAt), isNull(contacts.inviteBouncedAt), isNull(invitations.consumedAt), gt(invitations.expiresAt, sql`NOW()`), )',
+      'and( sql`LOWER(${contacts.email}) = LOWER(${email})`, isNull(contacts.removedAt), isNull(contacts.inviteBouncedAt), isNull(invitations.consumedAt), gt(invitations.expiresAt, sql`NOW()`), ),',
     ]);
     // `users` is a platform table with no tenant_id.
     expect(unfencedWheres(readFileSync(SRC.timeline, 'utf8'))).toEqual(['inArray(users.id, uuidActorIds)']);

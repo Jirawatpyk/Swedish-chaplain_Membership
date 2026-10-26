@@ -98,7 +98,7 @@ function baseMember(overrides: Partial<typeof FULL_BILLING> = {}) {
 function depsFor(current: ReturnType<typeof baseMember>) {
   const updateFieldsInTx = vi
     .fn()
-    .mockImplementation((_tx: unknown, _id: unknown, patch: object) =>
+    .mockImplementation((_tx: unknown, _tenantId: unknown, _id: unknown, patch: object) =>
       Promise.resolve(ok({ ...current, ...patch })),
     );
   const recordInTx = vi.fn().mockResolvedValue(ok(undefined));
@@ -321,7 +321,7 @@ describe('updateMember — billing group invariant, checked against the RESULTIN
 
     expect(result.ok).toBe(true);
     expect(updateFieldsInTx).toHaveBeenCalledOnce();
-    const patch = updateFieldsInTx.mock.calls[0]?.[2] as {
+    const patch = updateFieldsInTx.mock.calls[0]?.[3] as {
       billingCountry: string;
     };
     expect(patch.billingCountry).toBe('SE');

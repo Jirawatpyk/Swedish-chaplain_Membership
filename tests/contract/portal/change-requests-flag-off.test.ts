@@ -297,7 +297,7 @@ function seedFakes() {
     findById: vi.fn(async (): Promise<Result<Member, RepoError>> => ok(m)),
     findByIdInTx: vi.fn(async (): Promise<Result<Member, RepoError>> => ok(m)),
     findErasedAtByIdInTx: vi.fn(async (): Promise<Result<{ erasedAt: Date | null }, RepoError>> => ok({ erasedAt: null })),
-    updateFieldsInTx: vi.fn(async (_tx: unknown, _id: unknown, patch: Record<string, unknown>): Promise<Result<Member, RepoError>> => ok({ ...m, ...patch } as Member)),
+    updateFieldsInTx: vi.fn(async (_tx: unknown, _tenantId: unknown, _id: unknown, patch: Record<string, unknown>): Promise<Result<Member, RepoError>> => ok({ ...m, ...patch } as Member)),
   };
   contactRepo = {
     findById: vi.fn(async (): Promise<Result<Contact, RepoError>> => ok(c)),
@@ -394,7 +394,7 @@ describe('FEATURE_MEMBER_CHANGE_APPROVAL=false with rows present (F114 T118 / FR
       }),
     );
     expect(res.status).toBe(200);
-    expect(memberRepo['updateFieldsInTx']).toHaveBeenCalledWith({ __tx: true }, MEMBER, expect.objectContaining({ website: 'https://new.example' }));
+    expect(memberRepo['updateFieldsInTx']).toHaveBeenCalledWith({ __tx: true }, 'test-swecham', MEMBER, expect.objectContaining({ website: 'https://new.example' }));
     expect(contactRepo['updateInTx']).toHaveBeenCalledWith({ __tx: true }, CONTACT, expect.objectContaining({ phone: '+66811111111' }));
     expect(audit.events.map((e) => e.type)).toContain('member_self_updated');
     expect(audit.events.map((e) => e.type)).not.toContain('member_self_update_forbidden');

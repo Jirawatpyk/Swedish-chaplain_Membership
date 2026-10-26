@@ -185,7 +185,7 @@ describe.runIf(process.env.RUN_SCALE_TESTS === '1')(
 
     it('EXPLAIN of the exact repo statement shows no N+1 shape (M-13)', async () => {
       const plan = await runInTenant(tenant.ctx, async (tx) => {
-        const query = buildBroadcastRecipientContactsQuery(tx, {
+        const query = buildBroadcastRecipientContactsQuery(tx, tenant.ctx.slug, {
           segmentType: 'all_members',
           after: null,
           limit: 5000,
@@ -223,13 +223,13 @@ describe.runIf(process.env.RUN_SCALE_TESTS === '1')(
         `)) as unknown as Array<{ memberId: string; contactId: string }>;
         return rows[0]!;
       });
-      const explainForced = (params: Parameters<typeof buildBroadcastRecipientContactsQuery>[1]) =>
+      const explainForced = (params: Parameters<typeof buildBroadcastRecipientContactsQuery>[2]) =>
         runInTenant(tenant.ctx, async (tx) => {
           await tx.execute(sql`SET LOCAL enable_seqscan = OFF`);
           await tx.execute(sql`SET LOCAL enable_bitmapscan = OFF`);
           await tx.execute(sql`SET LOCAL enable_sort = OFF`);
           const rows = (await tx.execute(
-            sql`EXPLAIN (FORMAT TEXT) ${buildBroadcastRecipientContactsQuery(tx, params)}`,
+            sql`EXPLAIN (FORMAT TEXT) ${buildBroadcastRecipientContactsQuery(tx, tenant.ctx.slug, params)}`,
           )) as unknown as Array<{ 'QUERY PLAN': string }>;
           return rows.map((r) => r['QUERY PLAN']).join('\n');
         });
