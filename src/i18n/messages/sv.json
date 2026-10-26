@@ -7014,6 +7014,8 @@
           "uploadedToast": "Bild tillagd.",
           "notInsertedKept": "Bilden lades inte till i meddelandet. Den finns fortfarande sparad. Kontakta handelskammaren om den måste tas bort.",
           "notInserted": "Bilden lades inte till i meddelandet. Den tas bort automatiskt, vanligtvis inom ett dygn.",
+          "shortHelp": "PNG, JPG, WebP eller GIF upp till 5 MB · lagras på en offentlig länk som vem som helst kan öppna",
+          "aboutUploads": "Om bilduppladdning",
           "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas innan de sparas.",
           "publicLinkNotice": "Din bild sparas på en offentlig webbadress som inte kräver inloggning — vem som helst med länken kan öppna den, så ladda inte upp något privat.",
           "draftRequiredHint": "Spara utkastet först för att aktivera bilduppladdning.",
