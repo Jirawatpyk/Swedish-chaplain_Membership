@@ -176,6 +176,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         .from(renewalEscalationTasks)
         .where(
           and(
+            eq(renewalEscalationTasks.tenantId, tenant.slug),
             eq(renewalEscalationTasks.memberId, input.memberId),
             input.cycleId === null
               ? sql`${renewalEscalationTasks.cycleId} IS NULL`
@@ -198,7 +199,12 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         const rows = await tx
           .select()
           .from(renewalEscalationTasks)
-          .where(eq(renewalEscalationTasks.taskId, taskId))
+          .where(
+            and(
+              eq(renewalEscalationTasks.tenantId, tenant.slug),
+              eq(renewalEscalationTasks.taskId, taskId),
+            ),
+          )
           .limit(1);
         return rows[0] ? rowToDomain(rows[0]) : null;
       });
@@ -218,18 +224,14 @@ export function makeDrizzleRenewalEscalationTaskRepo(
             ? desc(renewalEscalationTasks.createdAt)
             : asc(renewalEscalationTasks.dueAt);
 
-        const rows = whereExpr
-          ? await tx
-              .select()
-              .from(renewalEscalationTasks)
-              .where(whereExpr)
-              .orderBy(orderExpr)
-              .limit(opts.pageSize + 1)
-          : await tx
-              .select()
-              .from(renewalEscalationTasks)
-              .orderBy(orderExpr)
-              .limit(opts.pageSize + 1);
+        // D-029 — the tenant predicate always applies; `and()` drops an
+        // undefined filter expression.
+        const rows = await tx
+          .select()
+          .from(renewalEscalationTasks)
+          .where(and(eq(renewalEscalationTasks.tenantId, tenant.slug), whereExpr))
+          .orderBy(orderExpr)
+          .limit(opts.pageSize + 1);
         const hasMore = rows.length > opts.pageSize;
         const items = (hasMore ? rows.slice(0, opts.pageSize) : rows).map(
           rowToDomain,
@@ -247,6 +249,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
           .from(renewalEscalationTasks)
           .where(
             and(
+              eq(renewalEscalationTasks.tenantId, tenant.slug),
               eq(renewalEscalationTasks.assignedToUserId, userId),
               eq(renewalEscalationTasks.status, 'open'),
             ),
@@ -265,7 +268,12 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         const rows = await tx
           .select()
           .from(renewalEscalationTasks)
-          .where(eq(renewalEscalationTasks.cycleId, cycleId))
+          .where(
+            and(
+              eq(renewalEscalationTasks.tenantId, tenant.slug),
+              eq(renewalEscalationTasks.cycleId, cycleId),
+            ),
+          )
           .orderBy(desc(renewalEscalationTasks.createdAt));
         return rows.map(rowToDomain);
       });
@@ -282,6 +290,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
           .from(renewalEscalationTasks)
           .where(
             and(
+              eq(renewalEscalationTasks.tenantId, tenant.slug),
               eq(renewalEscalationTasks.memberId, memberId),
               eq(renewalEscalationTasks.taskType, taskType),
               eq(renewalEscalationTasks.status, 'open'),
@@ -320,6 +329,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         })
         .where(
           and(
+            eq(renewalEscalationTasks.tenantId, tenant.slug),
             eq(renewalEscalationTasks.taskId, taskId),
             eq(renewalEscalationTasks.status, 'open'),
           ),
@@ -343,6 +353,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
         .set({ assignedToUserId: newAssigneeUserId })
         .where(
           and(
+            eq(renewalEscalationTasks.tenantId, tenant.slug),
             eq(renewalEscalationTasks.taskId, taskId),
             eq(renewalEscalationTasks.status, 'open'),
           ),
@@ -395,7 +406,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
               eq(members.memberId, renewalEscalationTasks.memberId),
             ),
           )
-          .where(whereExpr);
+          .where(and(eq(renewalEscalationTasks.tenantId, tenant.slug), whereExpr));
         return Number(rows[0]?.value ?? 0);
       });
     },
@@ -441,7 +452,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
               eq(members.memberId, renewalEscalationTasks.memberId),
             ),
           )
-          .where(whereExpr)
+          .where(and(eq(renewalEscalationTasks.tenantId, tenant.slug), whereExpr))
           .orderBy(asc(renewalEscalationTasks.taskType));
         return rows.map((r) => r.taskType);
       });
@@ -593,7 +604,7 @@ export function makeDrizzleRenewalEscalationTaskRepo(
           );
         const rows = whereExpr
           ? await baseQuery
-              .where(whereExpr)
+              .where(and(eq(renewalEscalationTasks.tenantId, tenant.slug), whereExpr))
               .orderBy(
                 orderExpr,
                 opts.sort === 'due_at_desc'

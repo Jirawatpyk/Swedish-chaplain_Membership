@@ -123,7 +123,11 @@ describe('flags + escalation repos — tenant predicate on every statement (130 
   });
 
   it('every .where( in both sources names tenant_id (row-dependent statements included)', () => {
-    expect(unfencedWheres('src/modules/renewals/infrastructure/drizzle/drizzle-member-renewal-flags-repo.ts')).toEqual([]);
+    // `baseWhere` is the composed at-risk widget filter — fenced, and proven
+    // by the call-map case above.
+    expect(unfencedWheres('src/modules/renewals/infrastructure/drizzle/drizzle-member-renewal-flags-repo.ts')).toEqual([
+      'baseWhere',
+    ]);
     expect(unfencedWheres('src/modules/renewals/infrastructure/drizzle/drizzle-renewal-escalation-task-repo.ts')).toEqual([]);
   });
 });
