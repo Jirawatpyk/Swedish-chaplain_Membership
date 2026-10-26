@@ -13,7 +13,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
 import { sql } from 'drizzle-orm';
-import { runInTenant } from '@/lib/db';
+import { runInTenant, tenantSlugOf } from '@/lib/db';
 import { env } from '@/lib/env';
 import { asTenantContext } from '@/modules/tenants';
 
@@ -27,6 +27,13 @@ describe('RLS hardening — runInTenant forces row_security on', () => {
       tx.execute(sql`SELECT current_setting('row_security') AS rs`),
     )) as unknown as Array<{ rs: string }>;
     expect(rows[0]?.rs).toBe('on');
+  });
+
+  // 130 (D-030) — the tx handed to `fn` is bound to its tenant, so a
+  // tx-only repo method can read the slug for its `tenant_id` predicate.
+  it('binds the transaction to its tenant (tenantSlugOf)', async () => {
+    const slug = await runInTenant(asTenantContext(TENANT_SLUG), async (tx) => tenantSlugOf(tx));
+    expect(slug).toBe(TENANT_SLUG);
   });
 
   describe('defends a connection contaminated with row_security = off', () => {
