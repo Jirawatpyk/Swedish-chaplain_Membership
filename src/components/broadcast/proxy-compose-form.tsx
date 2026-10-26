@@ -40,12 +40,17 @@
  *   - broadcast_quota_blocked / broadcast_not_in_plan → toast with {company}
  *   - field codes → inline field error (subject/body/segment)
  *   - everything else (halt, rate-limit, missing-contact, internal) → generic toast
+ *
+ * Spec 122 US12d-3 (T1270) — on AURA: the editor Card, the subject TextField
+ * (44 px on touch; its own error line and counter keep their ids), the member
+ * picker's Combobox (a member error focuses its input) and the Save-as-draft
+ * Button with AURA's own busy spinner. Every muted / danger line reads AURA's
+ * tokens.
  */
 
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import {
   errorValues,
@@ -56,11 +61,8 @@ import {
   submitBlockedHintKey,
 } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
-import { Button } from '@/components/ui/button';
+import { Button, Card, TextField } from '@jirawatpyk/aura-react';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { MemberPicker, type MemberPickerOption } from './member-picker';
 import {
@@ -255,7 +257,7 @@ export function ProxyComposeForm({
   // staff user's locale, never by hand.
   const router = useRouter();
 
-  const pickerRef = useRef<HTMLButtonElement>(null);
+  const pickerRef = useRef<HTMLInputElement>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyContainerRef = useRef<HTMLDivElement>(null);
 
@@ -425,7 +427,7 @@ export function ProxyComposeForm({
     switch (handling.kind) {
       case 'picker':
         // Clear the stale selection: the picked member no longer exists, so
-        // the trigger must drop its company name, the self-exclusion notice
+        // the field must drop its company name, the self-exclusion notice
         // must disappear, and submit must re-disable (member === null) so the
         // admin can't resubmit the same dead id.
         setMember(null);
@@ -612,7 +614,7 @@ export function ProxyComposeForm({
             overflow is the box the editor's sticky toolbar sticks in, so on
             a phone it scrolled away with the text (R89). */}
         <Card className="overflow-clip">
-          <CardContent className="space-y-6">
+          <div className="space-y-6">
             <div className="space-y-2">
               <MemberPicker
                 value={member}
@@ -630,10 +632,10 @@ export function ProxyComposeForm({
                 emptyText={t('noResults')}
                 loadingText={tLink('loading')}
                 disabled={submitting}
-                triggerRef={pickerRef}
+                inputRef={pickerRef}
               />
               {memberError !== null ? (
-                <p role="alert" className="text-xs text-destructive">
+                <p role="alert" className="text-xs text-[var(--aura-fg-danger)]">
                   {memberError}
                 </p>
               ) : null}
@@ -646,7 +648,7 @@ export function ProxyComposeForm({
                 <p
                   id={MISSING_EMAIL_ID}
                   role="alert"
-                  className="text-xs text-destructive"
+                  className="text-xs text-[var(--aura-fg-danger)]"
                 >
                   {t('missingContactEmailWarning')}
                 </p>
@@ -680,13 +682,13 @@ export function ProxyComposeForm({
               // segment kind this build does not recognise yields null and the
               // notice is omitted, rather than falling to "{company} WILL
               // receive this broadcast".
-              <p role="status" className="text-sm text-muted-foreground">
+              <p role="status" className="text-sm text-[var(--aura-fg-secondary)]">
                 {t(proxySelfExclusionNotice, { company: member.companyName })}
               </p>
             ) : null}
 
             {fieldError?.field === 'segment' ? (
-              <p role="alert" className="text-xs text-destructive">
+              <p role="alert" className="text-xs text-[var(--aura-fg-danger)]">
                 {fieldError.message}
               </p>
             ) : null}
@@ -718,12 +720,13 @@ export function ProxyComposeForm({
             ) : null}
 
             <div className="space-y-2">
-              <Label htmlFor="proxy-broadcast-subject">
-                {t('subjectLabel')}
-              </Label>
-              <Input
+              {/* The error line and the counter are this form's own (their ids
+                  are what `aria-describedby` names), so the field is marked
+                  `invalid` rather than handed AURA's `error`. */}
+              <TextField
                 ref={subjectRef}
                 id="proxy-broadcast-subject"
+                label={t('subjectLabel')}
                 data-compose-feature="subject"
                 value={subject}
                 onChange={(e) => {
@@ -732,7 +735,8 @@ export function ProxyComposeForm({
                 }}
                 maxLength={200}
                 disabled={submitting}
-                aria-invalid={fieldError?.field === 'subject' || undefined}
+                touchHeight
+                invalid={fieldError?.field === 'subject'}
                 aria-describedby={
                   fieldError?.field === 'subject'
                     ? 'proxy-broadcast-subject-error proxy-broadcast-subject-counter'
@@ -743,7 +747,7 @@ export function ProxyComposeForm({
                 <p
                   id="proxy-broadcast-subject-error"
                   role="alert"
-                  className="text-xs text-destructive"
+                  className="text-xs text-[var(--aura-fg-danger)]"
                 >
                   {fieldError.message}
                 </p>
@@ -766,7 +770,11 @@ export function ProxyComposeForm({
               data-compose-feature="body-editor"
               className="space-y-2 outline-none"
             >
-              <Label id="proxy-broadcast-body-label">{t('bodyLabel')}</Label>
+              {/* Names the `contenteditable` through `labelledById`; a <label>
+                  can only name a form control, so this is plain text. */}
+              <p id="proxy-broadcast-body-label" className="text-sm font-medium text-[var(--aura-fg-primary)]">
+                {t('bodyLabel')}
+              </p>
               <TiptapEditor
                 key={editorSeed.nonce}
                 initialHtml={editorSeed.html}
@@ -790,7 +798,7 @@ export function ProxyComposeForm({
                 <p
                   id={BODY_ERROR_ID}
                   role="alert"
-                  className="text-xs text-destructive"
+                  className="text-xs text-[var(--aura-fg-danger)]"
                 >
                   {fieldError.message}
                 </p>
@@ -801,7 +809,7 @@ export function ProxyComposeForm({
                 <p
                   id={BODY_ERROR_ID}
                   role="alert"
-                  className="text-xs text-destructive"
+                  className="text-xs text-[var(--aura-fg-danger)]"
                 >
                   {tCompose('errors.broadcast_body_too_large')}
                 </p>
@@ -821,20 +829,20 @@ export function ProxyComposeForm({
               <p
                 id={SUBMIT_BLOCKED_HINT_ID}
                 data-compose-feature="submit-blocked-reason"
-                className="text-xs text-muted-foreground"
+                className="text-xs text-[var(--aura-fg-secondary)]"
               >
                 {blockedReasonMessage}
               </p>
             ) : null}
 
-            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
+            <div className="flex flex-col-reverse gap-2 border-t border-[var(--aura-border-subtle)] pt-4 sm:flex-row sm:items-center sm:justify-end">
               {/* F119 T145 (FR-045) — the member form's save receipt, same
                   test id, same `aria-live`, same next-intl formatter. */}
               {dirtyGuard.savedAt !== null ? (
                 <p
                   data-testid="compose-saved-at"
                   data-compose-feature="saved-at"
-                  className="text-xs text-muted-foreground sm:mr-auto"
+                  className="text-xs text-[var(--aura-fg-secondary)] sm:mr-auto"
                   aria-live="polite"
                 >
                   {t('savedAt', {
@@ -853,14 +861,10 @@ export function ProxyComposeForm({
                 // save until one is picked — the route would 400 on the
                 // missing `memberId`.
                 disabled={submitting || member === null}
-                aria-busy={savingDraft || undefined}
+                // AURA's spinner and aria-busy while the save runs, the label
+                // and width kept (it was a hand-placed lucide spinner).
+                loading={savingDraft}
               >
-                {savingDraft ? (
-                  <Loader2Icon
-                    className="size-4 motion-safe:animate-spin"
-                    aria-hidden="true"
-                  />
-                ) : null}
                 {t('saveDraftButton')}
               </Button>
               <SubmitButton
@@ -870,7 +874,7 @@ export function ProxyComposeForm({
                 onClick={() => setConfirmOpen(true)}
               />
             </div>
-          </CardContent>
+          </div>
         </Card>
 
         {member !== null ? (

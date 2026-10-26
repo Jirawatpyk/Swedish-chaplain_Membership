@@ -16,6 +16,7 @@
  * `details.disallowedSources: string[]`.
  */
 import { useTranslations } from 'next-intl';
+import { Alert } from '@jirawatpyk/aura-react';
 
 interface Props {
   readonly urls: ReadonlyArray<string>;
@@ -30,15 +31,11 @@ export function UnsafeImageSourcesList({
   if (urls.length === 0) return null;
 
   return (
-    <div
-      role="alert"
-      aria-labelledby={headingId}
-      className="space-y-2 p-3 border border-destructive rounded bg-destructive-surface"
-    >
-      <p id={headingId} className="text-body font-medium text-destructive">
-        {t('disallowedSourcesHeading')}
-      </p>
-      <ul className="text-caption text-destructive list-disc list-inside space-y-1">
+    // Spec 122 US12d-3 (T1270) — AURA's danger Alert (it was a hand-drawn
+    // red box on the legacy kit's tokens), still a `role="alert"` named by its
+    // heading.
+    <Alert tone="danger" role="alert" titleId={headingId} title={t('disallowedSourcesHeading')}>
+      <ul className="list-inside list-disc space-y-1">
         {urls.map((url) => {
           let host: string;
           try {
@@ -56,6 +53,6 @@ export function UnsafeImageSourcesList({
           );
         })}
       </ul>
-    </div>
+    </Alert>
   );
 }

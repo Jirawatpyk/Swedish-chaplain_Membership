@@ -185,10 +185,11 @@ export function RecipientCountLine({
   const t = useTranslations('portal.broadcasts.compose.recipientCount');
   let text: string | null = null;
   // Review 2026-09-07 round 2 (UX H-5 / L-6): the tones say what the state
-  // IS. `text-muted-foreground` is this codebase's empty-state sentinel, so
-  // a failure must not wear it; a measured number is the most actionable
-  // figure on the form and gets weight; a refusal is red.
-  let tone = 'text-muted-foreground';
+  // IS. Muted grey (`--aura-fg-secondary`) is this codebase's empty-state
+  // sentinel, so a failure must not wear it; a measured number is the most
+  // actionable figure on the form and gets weight; a refusal is red.
+  // Spec 122 US12d-3 (T1270): AURA's tokens, not the legacy kit's classes.
+  let tone = 'text-[var(--aura-fg-secondary)]';
   let icon: React.ReactElement | null = null;
   let retry = false;
   switch (state.status) {
@@ -199,7 +200,7 @@ export function RecipientCountLine({
       break;
     case 'unavailable':
       text = t('unavailable');
-      tone = 'text-warning';
+      tone = 'text-[var(--aura-fg-warning)]';
       icon = <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />;
       retry = true;
       break;
@@ -211,16 +212,16 @@ export function RecipientCountLine({
       retry = state.exceeds || state.count === 0;
       if (state.exceeds) {
         text = t('exceeds', { count: state.count, ceiling: state.ceiling });
-        tone = 'text-destructive';
+        tone = 'text-[var(--aura-fg-danger)]';
       } else if (state.count === 0) {
         // Review round 2 (i18n H1): "0 recipients will receive" was a lie —
         // the submit would be refused. And a tier where everyone objected
         // must read differently from a tier with nobody in it (FR-022a).
         text = t('empty', { dropped: state.droppedByPreference ?? 0 });
-        tone = 'text-destructive';
+        tone = 'text-[var(--aura-fg-danger)]';
       } else {
         text = note !== null ? t('readyShort', { count: state.count }) : t('ready', { count: state.count });
-        tone = 'font-medium text-foreground';
+        tone = 'font-medium text-[var(--aura-fg-primary)]';
         icon = <Users className="size-3.5 shrink-0" aria-hidden="true" />;
       }
       break;
@@ -261,11 +262,13 @@ export function RecipientCountLine({
           <span className="font-normal text-[var(--aura-fg-secondary)]">· {note}</span>
         </>
       ) : null}
+      {/* T1270 — 44 px tall on a phone or a coarse pointer (it was the
+          text's own height), AURA's focus ring. */}
       {retry ? (
         <button
           type="button"
           onClick={onRetry}
-          className="ml-1 shrink-0 underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+          className="ml-1 inline-flex min-h-11 shrink-0 items-start rounded-[var(--aura-radius-sm)] px-1 underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] sm:[@media(pointer:fine)]:min-h-0"
         >
           {t('retry')}
         </button>

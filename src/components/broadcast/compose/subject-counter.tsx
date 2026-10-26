@@ -28,7 +28,7 @@ export function SubjectCounter({
     <p
       id={id}
       data-compose-feature="subject-counter"
-      className="text-xs text-muted-foreground"
+      className="text-xs tabular-nums text-[var(--aura-fg-secondary)]"
       aria-live="off"
     >
       {t('subjectCounter', { count: value.length, max: SUBJECT_MAX_LENGTH })}

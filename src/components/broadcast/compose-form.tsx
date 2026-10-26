@@ -19,12 +19,24 @@
  *
  * `useDeferredValue(bodyHtml)` keeps the editor responsive while the
  * preview pane re-renders.
+ *
+ * Spec 122 US12d-3 (T1270) — on AURA: the editor Card, the subject
+ * TextField (44 px on touch; its own error line and counter keep their ids),
+ * the read-only Alert and the Save-as-draft Button with AURA's own busy
+ * spinner. Every muted / danger line reads AURA's tokens.
  */
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
-import { ActionBar, Tabs, useBreakpoint } from '@jirawatpyk/aura-react';
+import {
+  ActionBar,
+  Alert,
+  Button,
+  Card,
+  Tabs,
+  TextField,
+  useBreakpoint,
+} from '@jirawatpyk/aura-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { Loader2Icon } from 'lucide-react';
 import { toast } from '@/lib/toast';
 import {
   errorValues,
@@ -38,15 +50,6 @@ import {
   type ComposeAudienceMode,
 } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import {
-  InlineAlert,
-  InlineAlertDescription,
-  InlineAlertTitle,
-} from '@/components/ui/inline-alert';
 import { isReadOnlyCode, isReadOnlyRefusal, retryAfterMinutes } from '@/lib/http/read-only-refusal';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
@@ -628,12 +631,15 @@ export function ComposeForm({
             overflow is the box the editor's sticky toolbar sticks in, so on
             a phone it scrolled away with the text (R89). */
         <Card className="overflow-clip">
-          <CardContent className="space-y-6">
+          <div className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="broadcast-subject">{t('fields.subject')}</Label>
-              <Input
+              {/* The error line and the counter are this form's own (their ids
+                  are what `aria-describedby` names), so the field is marked
+                  `invalid` rather than handed AURA's `error`. */}
+              <TextField
                 ref={subjectRef}
                 id="broadcast-subject"
+                label={t('fields.subject')}
                 data-compose-feature="subject"
                 value={subject}
                 onChange={(e) => {
@@ -643,20 +649,19 @@ export function ComposeForm({
                 placeholder={t('fields.subjectPlaceholder')}
                 maxLength={200}
                 disabled={submitting}
+                touchHeight
                 aria-describedby={
                   serverError?.field === 'subject'
                     ? 'broadcast-subject-error broadcast-subject-counter'
                     : 'broadcast-subject-counter'
                 }
-                aria-invalid={
-                  subjectInvalid || serverError?.field === 'subject' || undefined
-                }
+                invalid={subjectInvalid || serverError?.field === 'subject'}
               />
               {serverError?.field === 'subject' ? (
                 <p
                   id="broadcast-subject-error"
                   role="alert"
-                  className="text-xs text-destructive"
+                  className="text-xs text-[var(--aura-fg-danger)]"
                 >
                   {serverError.message}
                 </p>
@@ -682,7 +687,7 @@ export function ComposeForm({
                 null and this line is omitted — never a raw i18n key path,
                 which is what next-intl renders for an unknown key. */}
             {recipientNote === null && estimateNote !== null ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-[var(--aura-fg-secondary)]">
                 {t(estimateNote, { ceiling: audienceCeiling })}
               </p>
             ) : null}
@@ -691,7 +696,7 @@ export function ComposeForm({
                 H-3): every segment kind says which way the rule goes — silence
                 on the custom list / attendees read as "same rule". */}
             {recipientNote === null && selfExclusionHint !== null ? (
-              <p className="text-xs text-muted-foreground">{t(selfExclusionHint)}</p>
+              <p className="text-xs text-[var(--aura-fg-secondary)]">{t(selfExclusionHint)}</p>
             ) : null}
             {/* 108 PR-C T089 (FR-040): the live count — the same resolver that
                 decides the send, so the number shown is the number sent (SC-004). */}
@@ -712,7 +717,7 @@ export function ComposeForm({
 
             {segment.kind === 'custom' && customLines.length > 0 ? (
               <p
-                className="text-xs text-muted-foreground"
+                className="text-xs text-[var(--aura-fg-secondary)]"
                 aria-live="polite"
               >
                 {t('estimateNote.customCount', { count: customLines.length })}
@@ -732,7 +737,11 @@ export function ComposeForm({
               data-compose-feature="body-editor"
               className="space-y-2 outline-none"
             >
-              <Label id="broadcast-body-label">{t('fields.bodyLabel')}</Label>
+              {/* Names the `contenteditable` through `labelledById`; a <label>
+                  can only name a form control, so this is plain text. */}
+              <p id="broadcast-body-label" className="text-sm font-medium text-[var(--aura-fg-primary)]">
+                {t('fields.bodyLabel')}
+              </p>
               <TiptapEditor
                 key={editorSeed.nonce}
                 initialHtml={editorSeed.html}
@@ -760,7 +769,7 @@ export function ComposeForm({
               {serverError?.field === 'body' ? (
                 <p
                   id="broadcast-body-error"
-                  className="text-xs text-destructive"
+                  className="text-xs text-[var(--aura-fg-danger)]"
                   role="alert"
                 >
                   {serverError.message}
@@ -768,7 +777,7 @@ export function ComposeForm({
               ) : bodyInvalid ? (
                 <p
                   id="broadcast-body-error"
-                  className="text-xs text-destructive"
+                  className="text-xs text-[var(--aura-fg-danger)]"
                   role="alert"
                 >
                   {tErr('broadcast_body_too_large')}
@@ -784,7 +793,7 @@ export function ComposeForm({
 
             {/* UX-4 — surface FR-004a cancellation cutoff so members know
                 they can still pull back a submission until admin approves. */}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-[var(--aura-fg-secondary)]">
               {t('submitNote.cancellable')}
             </p>
 
@@ -796,7 +805,7 @@ export function ComposeForm({
               <p
                 id={SUBMIT_BLOCKED_HINT_ID}
                 data-compose-feature="submit-blocked-reason"
-                className="text-xs text-muted-foreground"
+                className="text-xs text-[var(--aura-fg-secondary)]"
               >
                 {t(blockedHintKey)}
               </p>
@@ -806,30 +815,29 @@ export function ComposeForm({
                 read-only, hit on submit". Beside the button that was pressed,
                 so the reason sits where the member is looking. */}
             {readOnlyRefusal !== null ? (
-              <InlineAlert
+              <Alert
                 ref={readOnlyAlertRef}
                 tone="warning"
+                data-tone="warning"
                 tabIndex={-1}
                 data-testid="compose-read-only-alert"
                 className="outline-none"
+                title={t(READ_ONLY_COPY[readOnlyRefusal.kind].title)}
               >
-                <InlineAlertTitle>{t(READ_ONLY_COPY[readOnlyRefusal.kind].title)}</InlineAlertTitle>
-                <InlineAlertDescription>
-                  {readOnlyRefusal.minutes !== null
-                    ? t(READ_ONLY_COPY[readOnlyRefusal.kind].body, { minutes: readOnlyRefusal.minutes })
-                    : t(READ_ONLY_COPY[readOnlyRefusal.kind].bodyShortly)}
-                </InlineAlertDescription>
-              </InlineAlert>
+                {readOnlyRefusal.minutes !== null
+                  ? t(READ_ONLY_COPY[readOnlyRefusal.kind].body, { minutes: readOnlyRefusal.minutes })
+                  : t(READ_ONLY_COPY[readOnlyRefusal.kind].bodyShortly)}
+              </Alert>
             ) : null}
 
-            <div className="flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:items-center sm:justify-end">
+            <div className="flex flex-col-reverse gap-2 border-t border-[var(--aura-border-subtle)] pt-4 sm:flex-row sm:items-center sm:justify-end">
               {/* F119 T143 (FR-045) — the receipt for the save, in the member's
                   own locale via next-intl's formatter (never hand-formatted). */}
               {dirtyGuard.savedAt !== null ? (
                 <p
                   data-testid="compose-saved-at"
                   data-compose-feature="saved-at"
-                  className="text-xs text-muted-foreground sm:mr-auto"
+                  className="text-xs text-[var(--aura-fg-secondary)] sm:mr-auto"
                   aria-live="polite"
                 >
                   {t('savedAt', {
@@ -843,20 +851,16 @@ export function ComposeForm({
                 data-compose-feature="save-draft"
                 onClick={onSaveDraft}
                 disabled={submitting}
-                aria-busy={savingDraft || undefined}
+                // AURA's spinner and aria-busy while the save runs, the label
+                // and width kept (it was a hand-placed lucide spinner).
+                loading={savingDraft}
               >
-                {savingDraft ? (
-                  <Loader2Icon
-                    className="size-4 motion-safe:animate-spin"
-                    aria-hidden="true"
-                  />
-                ) : null}
                 {t('button.saveDraft')}
               </Button>
               {/* On a phone Submit is in the sticky bar instead. */}
               {phone ? null : submitButton}
             </div>
-          </CardContent>
+          </div>
         </Card>
   );
 
