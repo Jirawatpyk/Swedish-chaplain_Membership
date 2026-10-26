@@ -519,18 +519,34 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
   });
 
   /**
-   * Spec 131 — the two layers on live Neon: the release stamps under RLS and
-   * the next tick reclaims it; arm 3's SELECT (`listUnused`) is valid SQL
-   * against the deployed schema and applies the owner rule — a sent E-Blast
-   * keeps what its body or a version shows and loses what it does not; a
-   * draft is never selected; and tenant B cannot release tenant A's image.
+   * Spec 131 — the two layers on live Neon, with the #658 review fixes:
+   * - the release stamps under RLS, only its uploader's row, and the next tick
+   *   reclaims it — or restores it when the saved content still embeds it;
+   * - `listUnused` is asserted DIRECTLY (the per-row content backstop would
+   *   otherwise hide a SELECT that picks an image the E-Blast shows): a sent
+   *   E-Blast's body, source and versions keep their images, a closed
+   *   never-sent one holds none, a draft or an in-review one is never picked;
+   * - the 0319 watermark stamps a used row so it is not re-scanned;
+   * - Principle I at BOTH walls: tenant B (its own valid draft) cannot release
+   *   tenant A's image id, and the repo's own predicate refuses it too.
+   * Every URL is in the owner's body from INSERT: a submitted E-Blast's body
+   * is immutable (`broadcasts_immutable_after_submit_fn`).
    */
   describe('spec 131 — release on cancel, and the "unused" arm', () => {
-    async function seedOwner(patch: Partial<NewBroadcastRow> & Pick<NewBroadcastRow, 'status' | 'bodyHtml'>): Promise<string> {
+    function newImage(): { hash: string; url: string; blobKey: string } {
+      const hash = `u${randomUUID().replace(/-/g, '')}`;
+      const blobKey = `broadcasts/images/${tenant.ctx.slug}/${hash}.png`;
+      return { hash, url: `https://${HOST}/${blobKey}`, blobKey };
+    }
+
+    async function seedOwner(
+      patch: Partial<NewBroadcastRow> & Pick<NewBroadcastRow, 'status' | 'bodyHtml'>,
+      t: TestTenant = tenant,
+    ): Promise<string> {
       const id = randomUUID();
-      await runInTenant(tenant.ctx, (tx) =>
+      await runInTenant(t.ctx, (tx) =>
         tx.insert(broadcasts).values({
-          tenantId: tenant.ctx.slug,
+          tenantId: t.ctx.slug,
           broadcastId: id,
           requestedByMemberId: memberId,
           requestedByMemberPlanIdSnapshot: 'plan-test',
@@ -548,30 +564,41 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
       return id;
     }
 
-    /** One image row on `owner`, with its own hash so no other row shares the bytes. */
-    async function seedImage(owner: string): Promise<{ id: string; url: string; blobKey: string }> {
-      const hash = `u${randomUUID().replace(/-/g, '')}`;
-      const blobKey = `broadcasts/images/${tenant.ctx.slug}/${hash}.png`;
-      const url = `https://${HOST}/${blobKey}`;
-      const row = await runInTenant(tenant.ctx, (tx) =>
+    async function seedRow(
+      owner: string,
+      img: { hash: string; url: string; blobKey: string },
+      opts: { uploadedBy?: string; t?: TestTenant } = {},
+    ): Promise<string> {
+      const t = opts.t ?? tenant;
+      const row = await runInTenant(t.ctx, (tx) =>
         drizzleBroadcastImagesRepo.record(
-          tenant.ctx.slug as never,
-          { ownerKind: 'broadcast', ownerId: owner, contentHash: hash, blobUrl: url, blobKey, mimeType: 'image/png', byteSize: 1024, uploadedByUserId: actorUserId },
+          t.ctx.slug as never,
+          {
+            ownerKind: 'broadcast',
+            ownerId: owner,
+            contentHash: img.hash,
+            blobUrl: img.url,
+            blobKey: img.blobKey,
+            mimeType: 'image/png',
+            byteSize: 1024,
+            uploadedByUserId: opts.uploadedBy ?? actorUserId,
+          },
           tx,
         ),
       );
-      return { id: row.id, url, blobKey };
+      return row.id;
     }
 
-    async function liveIds(owner: string): Promise<string[]> {
+    async function liveIds(owner: string, t: TestTenant = tenant): Promise<string[]> {
       const rows = (await db.execute(sql`
         SELECT id::text AS id FROM broadcast_images
-         WHERE tenant_id = ${tenant.ctx.slug} AND owner_id = ${owner}::uuid AND deleted_at IS NULL
+         WHERE tenant_id = ${t.ctx.slug} AND owner_id = ${owner}::uuid AND deleted_at IS NULL
       `)) as unknown as Array<{ id: string }>;
       return rows.map((r) => r.id).sort();
     }
 
-    async function sweep(storage = makeStorage()): Promise<{ storage: ReturnType<typeof makeStorage>; requestId: string }> {
+    async function sweep(): Promise<{ storage: ReturnType<typeof makeStorage>; requestId: string }> {
+      const storage = makeStorage();
       const requestId = `s131-${randomUUID().slice(0, 8)}`;
       const r = await reclaimOrphanedImages(
         { imagesRepo: drizzleBroadcastImagesRepo, storage, audit: f7AuditAdapter },
@@ -581,22 +608,35 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
       return { storage, requestId };
     }
 
-    it('release stamps the draft\'s image (audit not_inserted) and the next tick deletes its row and bytes', async () => {
-      const draft = await seedOwner({ status: 'draft', bodyHtml: '<p>no image</p>' });
-      const img = await seedImage(draft);
-      const releaseId = `rel-${randomUUID().slice(0, 8)}`;
-
-      const released = await releaseUnusedImage(makeReleaseUnusedImageDeps(tenant.ctx.slug), {
-        tenantId: tenant.ctx.slug as never,
-        owner: { kind: 'broadcast', id: draft },
-        imageId: img.id,
+    function release(owner: string, imageId: string, t: TestTenant = tenant, requestId = `rel-${randomUUID().slice(0, 8)}`) {
+      return releaseUnusedImage(makeReleaseUnusedImageDeps(t.ctx.slug), {
+        tenantId: t.ctx.slug as never,
+        owner: { kind: 'broadcast', id: owner },
+        imageId,
         actor: { kind: 'member', memberId },
         actorUserId,
         actorRole: 'member',
-        requestId: releaseId,
+        requestId,
         now: new Date(),
       });
-      expect(released).toEqual({ ok: true, value: { released: true } });
+    }
+
+    async function unusedIds(): Promise<string[]> {
+      const rows = await runInTenant(tenant.ctx, (tx) =>
+        drizzleBroadcastImagesRepo.listUnused(tenant.ctx.slug as never, new Date(Date.now() + 60_000), 10_000, tx),
+      );
+      return rows.map((r) => r.id);
+    }
+
+    const SENT = { status: 'sent' as const, submittedAt: new Date(), sentAt: new Date(), quotaYearConsumed: 2026, quotaConsumedAt: new Date() };
+
+    it('release stamps the uploader\'s draft image (audit not_inserted); the next tick deletes its row and bytes', async () => {
+      const draft = await seedOwner({ status: 'draft', bodyHtml: '<p>no image</p>' });
+      const img = newImage();
+      const id = await seedRow(draft, img);
+      const releaseId = `rel-${randomUUID().slice(0, 8)}`;
+
+      expect(await release(draft, id, tenant, releaseId)).toEqual({ ok: true, value: { released: true } });
       expect(await liveIds(draft)).toEqual([]);
       expect((await imageAudits(tenant, releaseId)).map((p) => p['reason'])).toEqual(['not_inserted']);
 
@@ -605,17 +645,52 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
       expect(storage.deleted).toContain(img.blobKey);
     }, 180_000);
 
-    it('arm 3: a SENT E-Blast keeps the image its body shows and the one only a version shows, and loses the unused one', async () => {
-      const sent = await seedOwner({ status: 'sent', bodyHtml: '<p>placeholder</p>', submittedAt: new Date(), sentAt: new Date(), quotaYearConsumed: 2026, quotaConsumedAt: new Date() });
-      const shown = await seedImage(sent);
-      const inVersion = await seedImage(sent);
-      const unused = await seedImage(sent);
-      await runInTenant(tenant.ctx, (tx) =>
-        tx.execute(sql`
-          UPDATE broadcasts SET body_html = ${`<p><img src="${shown.url}"></p>`}
-           WHERE tenant_id = ${tenant.ctx.slug} AND broadcast_id = ${sent}::uuid
-        `),
-      );
+    it('only the uploader releases: another user\'s upload on the same draft is released:false and stays live', async () => {
+      const draft = await seedOwner({ status: 'draft', bodyHtml: '<p>no image</p>' });
+      const id = await seedRow(draft, newImage(), { uploadedBy: randomUUID() });
+      expect(await release(draft, id)).toEqual({ ok: true, value: { released: false } });
+      expect(await liveIds(draft)).toEqual([id]);
+    }, 180_000);
+
+    it('a released image the saved draft still embeds comes back live and keeps its bytes (the marked arm\'s restore)', async () => {
+      const img = newImage();
+      const draft = await seedOwner({ status: 'draft', bodyHtml: `<p><img src="${img.url}"></p>` });
+      const id = await seedRow(draft, img);
+      await release(draft, id);
+
+      const { storage } = await sweep();
+      expect(await liveIds(draft)).toEqual([id]);
+      expect(storage.deleted).not.toContain(img.blobKey);
+    }, 180_000);
+
+    it('dedup: releasing the second upload of a file the first upload still holds keeps the bytes and the first row', async () => {
+      const img = newImage();
+      const draft = await seedOwner({ status: 'draft', bodyHtml: '<p>text only</p>' });
+      const first = await seedRow(draft, img);
+      const second = await seedRow(draft, img);
+      await release(draft, second);
+
+      const { storage } = await sweep();
+      expect(await liveIds(draft)).toEqual([first]);
+      expect(storage.deleted).not.toContain(img.blobKey);
+    }, 180_000);
+
+    it('listUnused on a SENT E-Blast: what its body, its source or a version shows is never picked; the unused image is', async () => {
+      const shown = newImage();
+      const inSource = newImage();
+      const inVersion = newImage();
+      const unused = newImage();
+      const sent = await seedOwner({
+        ...SENT,
+        bodyHtml: `<p><img src="${shown.url}"></p>`,
+        bodySource: `{"src":"${inSource.url}"}`,
+      });
+      const ids = {
+        shown: await seedRow(sent, shown),
+        inSource: await seedRow(sent, inSource),
+        inVersion: await seedRow(sent, inVersion),
+        unused: await seedRow(sent, unused),
+      };
       await runInTenant(tenant.ctx, (tx) =>
         tx.insert(broadcastVersions).values({
           tenantId: tenant.ctx.slug,
@@ -630,44 +705,86 @@ describe('F119 F2-1/F2-10 — inline image lifecycle (live Neon)', () => {
         }),
       );
 
+      const picked = await unusedIds();
+      expect(picked).toContain(ids.unused);
+      expect(picked).not.toContain(ids.shown);
+      expect(picked).not.toContain(ids.inSource);
+      expect(picked).not.toContain(ids.inVersion);
+
       const { storage, requestId } = await sweep();
-      expect(await liveIds(sent)).toEqual([shown.id, inVersion.id].sort());
+      expect(await liveIds(sent)).toEqual([ids.shown, ids.inSource, ids.inVersion].sort());
       expect(storage.deleted).toContain(unused.blobKey);
-      expect(storage.deleted).not.toContain(shown.blobKey);
-      const audits = await imageAudits(tenant, requestId);
-      expect(audits.some((p) => p['image_id'] === unused.id && p['reason'] === 'sweep_unused')).toBe(true);
+      expect((await imageAudits(tenant, requestId)).some((p) => p['image_id'] === ids.unused && p['reason'] === 'sweep_unused')).toBe(true);
     }, 180_000);
 
-    it('arm 3 never selects a draft\'s live image, nor a template\'s', async () => {
-      const draft = await seedOwner({ status: 'draft', bodyHtml: '<p>still writing</p>' });
-      const img = await seedImage(draft);
-      const unused = await runInTenant(tenant.ctx, (tx) =>
-        drizzleBroadcastImagesRepo.listUnused(tenant.ctx.slug as never, new Date(), 10_000, tx),
+    it('listUnused: a closed never-sent E-Blast holds nothing (picked even though its body embeds the URL); drafts and in-review ones are never picked', async () => {
+      const rejectedImg = newImage();
+      const rejected = await seedOwner({ status: 'rejected', bodyHtml: `<p><img src="${rejectedImg.url}"></p>`, submittedAt: new Date(), rejectedAt: new Date() });
+      const rejectedId = await seedRow(rejected, rejectedImg);
+      const draftId = await seedRow(await seedOwner({ status: 'draft', bodyHtml: '<p>still writing</p>' }), newImage());
+      const submittedId = await seedRow(await seedOwner({ status: 'submitted', bodyHtml: '<p>in review</p>', submittedAt: new Date() }), newImage());
+      const designId = await seedRow(
+        await seedOwner({ status: 'in_design', bodyHtml: '<p>being formatted</p>', submittedAt: new Date(), currentRound: 1 }),
+        newImage(),
       );
-      expect(unused.map((r) => r.id)).not.toContain(img.id);
-      expect(unused.every((r) => r.ownerKind === 'broadcast')).toBe(true);
+
+      const picked = await unusedIds();
+      expect(picked).toContain(rejectedId);
+      expect(picked).not.toContain(draftId);
+      expect(picked).not.toContain(submittedId);
+      expect(picked).not.toContain(designId);
     }, 180_000);
 
-    it('Principle I: tenant B cannot release tenant A\'s image (not_found, the row stays live)', async () => {
+    it('0319 watermark: a sweep stamps the rows a sent E-Blast uses, and a stamped row is not due again until the window lapses', async () => {
+      const shown = newImage();
+      const sent = await seedOwner({ ...SENT, bodyHtml: `<p><img src="${shown.url}"></p>` });
+      const id = await seedRow(sent, shown);
+      await sweep();
+
+      const rows = (await db.execute(sql`
+        SELECT (unused_checked_at IS NOT NULL) AS stamped FROM broadcast_images
+         WHERE tenant_id = ${tenant.ctx.slug} AND id = ${id}::uuid
+      `)) as unknown as Array<{ stamped: boolean }>;
+      expect(rows[0]?.stamped).toBe(true);
+      const due = await runInTenant(tenant.ctx, (tx) =>
+        drizzleBroadcastImagesRepo.markUsedImagesExamined(tenant.ctx.slug as never, new Date(), new Date(Date.now() - 60_000), 10_000, tx),
+      );
+      expect(due).toBe(0);
+    }, 180_000);
+
+    it('Principle I, both walls: tenant B (its own valid draft) cannot release tenant A\'s image, nor can the repo under B stamp it', async () => {
       const other = await createTestTenant('test-chamber');
       try {
-        const draft = await seedOwner({ status: 'draft', bodyHtml: '<p>tenant A</p>' });
-        const img = await seedImage(draft);
-        const r = await releaseUnusedImage(makeReleaseUnusedImageDeps(other.ctx.slug), {
-          tenantId: other.ctx.slug as never,
-          owner: { kind: 'broadcast', id: draft },
-          imageId: img.id,
-          actor: { kind: 'member', memberId },
-          actorUserId,
-          actorRole: 'member',
-          requestId: `xt-${randomUUID().slice(0, 8)}`,
-          now: new Date(),
-        });
-        expect(r).toEqual({ ok: false, error: { kind: 'not_found' } });
-        expect(await liveIds(draft)).toEqual([img.id]);
+        const draftA = await seedOwner({ status: 'draft', bodyHtml: '<p>tenant A</p>' });
+        const imgA = await seedRow(draftA, newImage());
+        const draftB = await seedOwner({ status: 'draft', bodyHtml: '<p>tenant B</p>' }, other);
+
+        // The application wall: B's draft authorizes, A's image id matches nothing under B.
+        expect(await release(draftB, imgA, other)).toEqual({ ok: true, value: { released: false } });
+        // The query wall: the repo itself, under B's tenant, with A's owner.
+        const stamped = await runInTenant(other.ctx, (tx) =>
+          drizzleBroadcastImagesRepo.markDeletedById(
+            other.ctx.slug as never,
+            { owner: { kind: 'broadcast', id: draftA }, imageId: imgA, uploadedByUserId: actorUserId },
+            new Date(),
+            tx,
+          ),
+        );
+        expect(stamped).toBeNull();
+        // And B naming A's draft is refused outright.
+        expect(await release(draftA, imgA, other)).toEqual({ ok: false, error: { kind: 'not_found' } });
+        expect(await liveIds(draftA)).toEqual([imgA]);
       } finally {
         await other.cleanup().catch(() => {});
       }
     }, 240_000);
+
+    it('a member naming their own draft but another member\'s image id releases nothing', async () => {
+      const mine = await seedOwner({ status: 'draft', bodyHtml: '<p>mine</p>' });
+      const theirs = await seedOwner({ status: 'draft', bodyHtml: '<p>theirs</p>', requestedByMemberId: randomUUID() });
+      const theirImage = await seedRow(theirs, newImage());
+      expect(await release(mine, theirImage)).toEqual({ ok: true, value: { released: false } });
+      expect(await liveIds(theirs)).toEqual([theirImage]);
+    }, 180_000);
   });
 });
