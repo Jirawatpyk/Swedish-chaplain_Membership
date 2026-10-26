@@ -752,6 +752,11 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   wraps onto further rows rather than hiding controls in an overflow menu — the **shape** is
   decided; the **row count** is measured on the running dev server and recorded here after that
   check, and no control may clip or be hidden at that width *(checklist default)*.
+  **Amended 26 Oct 2026 (spec 122 § Session 2026-10-26, the maintainer):** below 640px the toolbar
+  is the staff boards' row — Bold, Italic (not in Thai), Underline, Link, two named menus
+  ("Lists and headings", "Insert") and Undo/Redo. The menus name what they hold, keep each
+  control's state (`checked`) and reason, and stay inside the one-tab-stop toolbar. From 640px
+  the wrap-with-no-menu rule above still holds.
 - **FR-049**: The member's E-Blast detail page MUST show the E-Blast's subject and content.
 - **FR-050**: The compose screens MUST use a page width that fits the editor and the 600 px email
   preview side by side on large screens and stacked on small ones; the departure from the form
