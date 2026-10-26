@@ -25,8 +25,14 @@ vi.mock('@/components/broadcast/preview-pane', () => ({
 }));
 vi.mock('@/components/shell/tiptap-loader', () => ({
   loadTiptapEditor: () =>
-    function TiptapStub(): React.ReactElement {
-      return <textarea aria-label="Message body" />;
+    function TiptapStub(props: { initialHtml: string; onChange: (html: string) => void }): React.ReactElement {
+      return (
+        <textarea
+          aria-label="Message body"
+          defaultValue={props.initialHtml}
+          onChange={(e) => props.onChange(e.target.value)}
+        />
+      );
     },
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
@@ -35,8 +41,8 @@ vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), info:
 const { ComposeForm } = await import('@/components/broadcast/compose-form');
 const c = enMessages.portal.broadcasts.compose;
 
-function renderForm(): void {
-  render(
+function renderForm(): ReturnType<typeof render> {
+  return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <ComposeForm audienceCeiling={500} audienceMode="primary_only" initialSubject="Breakfast" />
     </NextIntlClientProvider>,
@@ -83,5 +89,19 @@ describe('member compose on a desktop', () => {
     expect(screen.queryByRole('tab')).toBeNull();
     expect(screen.queryByRole('region', { name: c.views.actions })).toBeNull();
     expect(screen.getByLabelText('Email preview')).toBeVisible();
+  });
+});
+
+describe('crossing 640px', () => {
+  it('keeps what the member typed in the message (the editor is re-seeded, not reset)', () => {
+    const view = renderForm();
+    fireEvent.change(screen.getByLabelText('Message body'), { target: { value: '<p>Typed on the phone</p>' } });
+    bp.current = 'lg';
+    view.rerender(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ComposeForm audienceCeiling={500} audienceMode="primary_only" initialSubject="Breakfast" />
+      </NextIntlClientProvider>,
+    );
+    expect(screen.getByLabelText('Message body')).toHaveValue('<p>Typed on the phone</p>');
   });
 });

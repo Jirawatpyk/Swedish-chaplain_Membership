@@ -6939,6 +6939,12 @@
           "subjectRequired": "Add a subject before submitting for review.",
           "tierRequired": "Choose at least one membership tier before submitting for review."
         },
+        "views": {
+          "label": "Compose view",
+          "write": "Write",
+          "preview": "Preview",
+          "actions": "Submit"
+        },
         "confirm": {
           "title": "Submit this E-Blast for review?",
           "note": "Marketing reviews it before it goes out. You can cancel until an admin approves it.",

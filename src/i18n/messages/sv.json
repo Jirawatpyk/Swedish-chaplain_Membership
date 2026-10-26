@@ -6939,6 +6939,12 @@
           "subjectRequired": "Lägg till ett ämne innan du skickar för granskning.",
           "tierRequired": "Välj minst en medlemsnivå innan du skickar för granskning."
         },
+        "views": {
+          "label": "Skrivvy",
+          "write": "Skriv",
+          "preview": "Förhandsvisning",
+          "actions": "Skicka"
+        },
         "confirm": {
           "title": "Skicka detta E-Blast för granskning?",
           "note": "Marknadsavdelningen granskar det innan det skickas. Du kan avbryta tills en administratör godkänner det.",

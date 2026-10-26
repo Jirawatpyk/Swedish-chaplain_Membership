@@ -21,6 +21,7 @@
  * preview pane re-renders.
  */
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { ActionBar, Tabs, useBreakpoint } from '@jirawatpyk/aura-react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Loader2Icon } from 'lucide-react';
@@ -231,6 +232,10 @@ export function ComposeForm({
   // Spec 122 US12d-3 (T1265) — Submit asks first; the summary names the
   // allowance the quota card last loaded, not the page's first paint.
   const [confirmOpen, setConfirmOpen] = useState<boolean>(false);
+  // Spec 122 US12d-3 (T1269) — on a phone (AURA `base`, <640px) the page is
+  // Write / Preview tabs and Submit sits in a sticky bar with the count.
+  const phone = useBreakpoint() === 'base';
+  const [view, setView] = useState<'write' | 'preview'>('write');
   const [liveQuota, setLiveQuota] = useState<QuotaSnapshot | null>(initialQuota);
   // F119 T140 — which template is applied, and the html the editor is seeded
   // with. Tiptap reads `initialHtml` once per mount, so applying a template
@@ -269,6 +274,16 @@ export function ComposeForm({
   const readOnlyAlertRef = useRef<HTMLDivElement>(null);
 
   const deferredBody = useDeferredValue(bodyHtml);
+  // The two layouts are two trees, so crossing 640px remounts the editor;
+  // re-seed it with what the member has typed, never the last template.
+  const bodyHtmlRef = useRef(bodyHtml);
+  bodyHtmlRef.current = bodyHtml;
+  const layoutRef = useRef(phone);
+  useEffect(() => {
+    if (layoutRef.current === phone) return;
+    layoutRef.current = phone;
+    setEditorSeed((prev) => ({ html: bodyHtmlRef.current, nonce: prev.nonce + 1 }));
+  }, [phone]);
   // 108 PR-C T089 — debounced live count for the chosen segment (member mode:
   // the caller's own member is the one self-excluded server-side).
   // Round 2 (UX H-5): a "Try again" on an unavailable count re-runs the
@@ -583,12 +598,18 @@ export function ComposeForm({
     }
   }
 
-  return (
-    <div className="min-w-0 space-y-6">
-      {/* Portal live walk U27 (FR-045) — the unload prompt covered the exits
-          the browser owns; the member shell's own links did not prompt at all
-          and lost the draft on one click. Both exits now come from here. */}
-      <UnsavedChangesGuard armed={dirtyGuard.armed} />
+  const submitButton = (
+    <SubmitButton
+      disabled={submitDisabled}
+      submitting={submitting}
+      blockedReasonIds={submitBlockedReasonIds}
+      onClick={() => setConfirmOpen(true)}
+    />
+  );
+  const barCount = summaryRecipientCount(recipientCount, segment.kind, customLines.length);
+
+  const writeHead = (
+    <>
       <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} onLoaded={setLiveQuota} />
       {/* F119 T140 (FR-046) — inside the form, so a choice re-seeds state
           instead of navigating and remounting it. */}
@@ -599,13 +620,13 @@ export function ComposeForm({
         onApply={applyTemplate}
         disabled={submitting}
       />
-      {/* F119 T148 (FR-050) — the editor and the 600 px email preview sit side
-          by side from `lg` up and stack below it; the page supplies the 72 rem
-          container the pair needs (exception recorded in ux-standards § 18.2). */}
-      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]">
-        {/* `overflow-clip`, not the card's `overflow-hidden`: a hidden
+    </>
+  );
+
+  const writeCard = (
+        /* `overflow-clip`, not the card's `overflow-hidden`: a hidden
             overflow is the box the editor's sticky toolbar sticks in, so on
-            a phone it scrolled away with the text (R89). */}
+            a phone it scrolled away with the text (R89). */
         <Card className="overflow-clip">
           <CardContent className="space-y-6">
             <div className="space-y-2">
@@ -832,15 +853,72 @@ export function ComposeForm({
                 ) : null}
                 {t('button.saveDraft')}
               </Button>
-              <SubmitButton
-                disabled={submitDisabled}
-                submitting={submitting}
-                blockedReasonIds={submitBlockedReasonIds}
-                onClick={() => setConfirmOpen(true)}
-              />
+              {/* On a phone Submit is in the sticky bar instead. */}
+              {phone ? null : submitButton}
             </div>
           </CardContent>
         </Card>
+  );
+
+  const preview = (
+    <PreviewPane subject={subject} bodyHtml={deferredBody} endpoint="/api/broadcasts/preview" locale={locale} />
+  );
+
+  return (
+    <div className="min-w-0 space-y-6">
+      {/* Portal live walk U27 (FR-045) — the unload prompt covered the exits
+          the browser owns; the member shell's own links did not prompt at all
+          and lost the draft on one click. Both exits now come from here. */}
+      <UnsavedChangesGuard armed={dirtyGuard.armed} />
+      {phone ? (
+        <>
+          {/* Panels kept mounted: the editor and its undo history survive a
+              look at the preview. */}
+          <Tabs
+            label={t('views.label')}
+            value={view}
+            onChange={(id) => setView(id === 'preview' ? 'preview' : 'write')}
+            keepMounted
+            fullWidth
+            touchHeight
+            tabs={[
+              {
+                id: 'write',
+                label: t('views.write'),
+                content: (
+                  <div className="space-y-6 pt-4">
+                    {writeHead}
+                    {writeCard}
+                  </div>
+                ),
+              },
+              { id: 'preview', label: t('views.preview'), content: <div className="pt-4">{preview}</div> },
+            ]}
+          />
+          <ActionBar
+            className="chamber-viewport-actionbar"
+            label={t('views.actions')}
+            start={
+              barCount === null ? undefined : (
+                <span className="text-sm">{t('recipientCount.readyShort', { count: barCount })}</span>
+              )
+            }
+          >
+            {submitButton}
+          </ActionBar>
+        </>
+      ) : (
+        <>
+          {writeHead}
+          {/* F119 T148 (FR-050) — the editor and the 600 px email preview sit
+              side by side from `lg` up and stack below it; the page supplies
+              the 72 rem container the pair needs (ux-standards § 18.2). */}
+          <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]">
+            {writeCard}
+            <div className="min-w-0 lg:sticky lg:top-[calc(var(--shell-bar-height,0px)+1rem)]">{preview}</div>
+          </div>
+        </>
+      )}
 
         <SubmitSummaryDialog
           open={confirmOpen}
@@ -854,20 +932,10 @@ export function ComposeForm({
           onBehalfOf={null}
           subject={subject}
           segmentLabel={t(`segmentOption.${segment.kind}`)}
-          recipientCount={summaryRecipientCount(recipientCount, segment.kind, customLines.length)}
+          recipientCount={barCount}
           quota={liveQuota}
           scheduledFor={scheduledFor}
         />
-
-        <div className="min-w-0 lg:sticky lg:top-[calc(var(--shell-bar-height,0px)+1rem)]">
-          <PreviewPane
-            subject={subject}
-            bodyHtml={deferredBody}
-            endpoint="/api/broadcasts/preview"
-            locale={locale}
-          />
-        </div>
-      </div>
     </div>
   );
 }
