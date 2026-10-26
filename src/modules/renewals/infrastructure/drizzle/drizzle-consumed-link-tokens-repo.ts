@@ -80,10 +80,9 @@ export function makeDrizzleConsumedLinkTokensRepo(
 
     async pruneOlderThan(cutoff): Promise<{ readonly pruned: number }> {
       // Phase 9 retrofit — weekly housekeeping. DELETE scoped to the
-      // current tenant by RLS+FORCE (no explicit `WHERE tenant_id`
-      // predicate; the policy is the canonical scope per Round 6
-      // S-R5-6 convention used across renewals adapters). Returns
-      // count of affected rows for the cron-job.org dashboard summary.
+      // current tenant by an explicit `tenant_id` predicate alongside
+      // RLS+FORCE (D-029). Returns count of affected rows for the
+      // cron-job.org dashboard summary.
       //
       // Idempotency note: re-running with the same `cutoff` returns 0
       // pruned (rows already deleted on the prior pass). Cron retry-
@@ -102,7 +101,12 @@ export function makeDrizzleConsumedLinkTokensRepo(
       return runInTenant(tenant, async (tx) => {
         const deleted = await tx
           .delete(consumedLinkTokens)
-          .where(lt(consumedLinkTokens.consumedAt, cutoff))
+          .where(
+            and(
+              eq(consumedLinkTokens.tenantId, tenant.slug),
+              lt(consumedLinkTokens.consumedAt, cutoff),
+            ),
+          )
           .returning({ tokenSha256: consumedLinkTokens.tokenSha256 });
         return { pruned: deleted.length };
       });
