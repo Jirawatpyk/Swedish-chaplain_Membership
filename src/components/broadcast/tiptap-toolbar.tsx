@@ -27,9 +27,13 @@
  * the interface language is Thai. The italic MARK stays in the schema, so
  * `<em>` from a paste or a template survives untouched.
  *
- * At 320 px the strip WRAPS onto further rows (`flex-wrap`). There is
- * deliberately no overflow menu: a formatting control hidden behind a "More"
- * button at phone width is a control most authors never find.
+ * On a desktop the strip WRAPS onto further rows (`flex-wrap`) and has no
+ * overflow menu. On a phone (AURA `useBreakpoint() === 'base'`, below 640px)
+ * it is the staff boards' row on every host (the maintainer, 26 Oct 2026):
+ * Bold, Italic, Underline, Link, then "Lists and headings ▾" and "Insert ▾",
+ * then Undo and Redo. The two menus are named for what they hold, never a
+ * bare "More", and their items are the desktop controls (same command, same
+ * pressed state as `checked`, same reason when unavailable).
  *
  * Spec 122 US12d-2: each control is an AURA `IconButton`, 32px on desktop and
  * 44px on touch / phone widths (`touchHeight`), as the compose boards draw it.
@@ -46,22 +50,24 @@ import { NodeSelection } from '@tiptap/pm/state';
 import { useLocale, useTranslations } from 'next-intl';
 import {
   Bold,
+  ChevronDown,
   Heading2,
   Heading3,
   Image as ImageIcon,
+  ImagePlus,
   Italic,
   Link as LinkIcon,
   List,
   ListOrdered,
   Minus,
-  MousePointerClick,
+  Plus,
   Quote,
   RectangleHorizontal,
   Redo2,
   Underline,
   Undo2,
 } from 'lucide-react';
-import { IconButton } from '@jirawatpyk/aura-react';
+import { DropdownMenu, IconButton, useBreakpoint, type MenuItem } from '@jirawatpyk/aura-react';
 import { cn } from '@/lib/utils';
 import { LinkDialog } from './link-dialog';
 import { EDIT_CTA_EVENT } from './broadcast-editor-extensions';
@@ -138,6 +144,17 @@ interface LinkTarget {
   readonly sameBlock: boolean;
 }
 
+/** Where a control sits on a phone: on the row, or inside one of the two menus. */
+type ToolbarEntry =
+  | { readonly kind: 'control'; readonly control: ToolbarControl }
+  | {
+      readonly kind: 'menu';
+      readonly key: string;
+      readonly label: string;
+      readonly Icon: React.ComponentType<{ className?: string }>;
+      readonly items: readonly ToolbarControl[];
+    };
+
 interface ToolbarControl {
   readonly key: string;
   readonly label: string;
@@ -149,6 +166,8 @@ interface ToolbarControl {
   readonly unavailable?: boolean;
   /** The visible reason a control is unavailable, when it has one. */
   readonly describedBy?: string;
+  /** The same reason in words, for the phone menu, where there is no visible hint to point at. */
+  readonly reason?: string;
   /** `aria-keyshortcuts` for a control with a keyboard equivalent (Undo / Redo). */
   readonly keyshortcuts?: string;
 }
@@ -166,7 +185,9 @@ export function TiptapToolbar({
   imageBusyId,
 }: TiptapToolbarProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.toolbar');
+  const tImage = useTranslations('portal.broadcasts.compose.imageUpload');
   const locale = useLocale();
+  const phone = useBreakpoint() === 'base';
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
   const [activeIndex, setActiveIndex] = useState<number>(0);
@@ -468,6 +489,11 @@ export function TiptapToolbar({
                 ? { describedBy: imageBusyId }
                 : {}
               : { describedBy: imageHintId }),
+            ...(!imageInsertEnabled
+              ? { reason: tImage('draftRequiredHint') }
+              : imageBusy
+                ? { reason: t('uploadWait') }
+                : {}),
             onActivate: () => {
               if (imageInsertEnabled && !imageBusy) onInsertImage?.();
             },
@@ -477,7 +503,7 @@ export function TiptapToolbar({
     {
       key: 'cta',
       label: active.selectedBlock === 'ctaButton' ? t('editButton') : t('cta'),
-      Icon: MousePointerClick,
+      Icon: RectangleHorizontal,
       opensDialog: true,
       onActivate: () => {
         setCtaTarget(captureCtaTarget());
@@ -489,7 +515,7 @@ export function TiptapToolbar({
           {
             key: 'banner',
             label: active.selectedBlock === 'bannerImage' ? t('editBanner') : t('banner'),
-            Icon: RectangleHorizontal,
+            Icon: ImagePlus,
             opensDialog: true,
             unavailable: !imageInsertEnabled || imageBusy,
             ...(imageInsertEnabled
@@ -497,6 +523,11 @@ export function TiptapToolbar({
                 ? { describedBy: imageBusyId }
                 : {}
               : { describedBy: imageHintId }),
+            ...(!imageInsertEnabled
+              ? { reason: tImage('draftRequiredHint') }
+              : imageBusy
+                ? { reason: t('uploadWait') }
+                : {}),
             onActivate: () => {
               if (imageInsertEnabled && !imageBusy) onInsertBanner?.();
             },
@@ -528,6 +559,52 @@ export function TiptapToolbar({
     },
   ];
 
+  // On a phone the block and insert controls move into the boards' two menus;
+  // the rest stay on the row. One list per place, in the boards' order.
+  const pick = (keys: readonly string[]): ToolbarControl[] =>
+    keys.flatMap((key) => controls.filter((c) => c.key === key));
+  const asControls = (keys: readonly string[]): ToolbarEntry[] =>
+    pick(keys).map((control) => ({ kind: 'control' as const, control }));
+  const row: ToolbarEntry[] = phone
+    ? [
+        ...asControls(['bold', 'italic', 'underline', 'link']),
+        {
+          kind: 'menu',
+          key: 'blocks',
+          label: t('blocksMenu'),
+          Icon: List,
+          items: pick(['heading2', 'heading3', 'bulletList', 'orderedList', 'quote']),
+        },
+        { kind: 'menu', key: 'insert', label: t('insertMenu'), Icon: Plus, items: pick(['divider', 'cta', 'image', 'banner']) },
+        ...asControls(['undo', 'redo']),
+      ]
+    : controls.map((control) => ({ kind: 'control' as const, control }));
+
+  /** A menu item is the desktop control: same command, pressed as `checked`, the same reason when unavailable. */
+  const menuItem = (control: ToolbarControl, menuKey: string): MenuItem => {
+    // While the host saves, every item waits for it (AURA ignores a chosen disabled item).
+    const reason = disabled ? t('saveWait') : control.unavailable === true ? control.reason : undefined;
+    return {
+      label: control.label,
+      icon: <control.Icon />,
+      ...(control.pressed !== undefined && { checked: control.pressed }),
+      ...((disabled || control.unavailable === true) && { disabled: true }),
+      ...(reason !== undefined && { disabledReason: reason }),
+      onSelect: () => {
+        // A dialog opened from the menu returns focus to the menu's button:
+        // AURA calls `onSelect` before it closes the menu, so the item still
+        // has focus here, and the image dialog remembers whatever has focus
+        // (#662 a11y H1). Move it to the button first.
+        const menuButton =
+          containerRef.current?.querySelector<HTMLElement>(`[data-toolbar-control="${menuKey}"]`) ?? null;
+        menuButton?.focus();
+        triggerRef.current = menuButton;
+        confirmedRef.current = false;
+        control.onActivate();
+      },
+    };
+  };
+
   const controlElements = (): HTMLButtonElement[] =>
     Array.from(
       containerRef.current?.querySelectorAll<HTMLButtonElement>('[data-toolbar-control]') ?? [],
@@ -539,7 +616,7 @@ export function TiptapToolbar({
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
-    const count = controls.length;
+    const count = row.length;
     if (count === 0) return;
     switch (event.key) {
       case 'ArrowRight':
@@ -565,7 +642,7 @@ export function TiptapToolbar({
 
   // The index can outlive its control (the image flag flips, the locale
   // changes): clamp so the toolbar always has exactly one tab stop.
-  const tabStop = Math.min(activeIndex, Math.max(controls.length - 1, 0));
+  const tabStop = Math.min(activeIndex, Math.max(row.length - 1, 0));
 
   return (
     <>
@@ -579,23 +656,36 @@ export function TiptapToolbar({
         // Below 30rem of height (a landscape phone, the keyboard open) it
         // stops sticking, as AURA's own shell bar does; `z-[5]` keeps it under
         // the portal header (round 3, a11y review).
-        className="sticky top-[var(--shell-bar-height,0px)] z-[5] flex [@media(max-height:30rem)]:static flex-wrap items-center gap-1 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-input)] p-1.5"
+        className="sticky top-[var(--shell-bar-height,0px)] z-[5] flex [@media(max-height:30rem)]:static flex-wrap items-center gap-0.5 border-b border-[var(--aura-border-default)] bg-[var(--aura-bg-input)] p-1.5"
       >
-        {controls.map((control, index) => (
+        {row.map((entry, index) =>
+          entry.kind === 'menu' ? (
+            <ToolbarMenuButton
+              key={entry.key}
+              menuKey={entry.key}
+              label={entry.label}
+              Icon={entry.Icon}
+              items={entry.items.map((control) => menuItem(control, entry.key))}
+              activeLabel={entry.items.find((control) => control.pressed === true)?.label}
+              disabled={disabled}
+              tabbable={index === tabStop}
+              onFocus={() => setActiveIndex(index)}
+            />
+          ) : (
           <IconButton
-            key={control.key}
-            icon={<control.Icon />}
-            label={control.label}
+            key={entry.control.key}
+            icon={<entry.control.Icon />}
+            label={entry.control.label}
             touchHeight
-            data-toolbar-control={control.key}
-            {...(control.pressed !== undefined && { pressed: control.pressed })}
-            {...(control.opensDialog === true && { 'aria-haspopup': 'dialog' as const })}
-            {...((control.unavailable === true || disabled) && { 'aria-disabled': true })}
-            {...(control.keyshortcuts !== undefined && { 'aria-keyshortcuts': control.keyshortcuts })}
-            {...(control.unavailable === true &&
-              control.describedBy !== undefined && {
+            data-toolbar-control={entry.control.key}
+            {...(entry.control.pressed !== undefined && { pressed: entry.control.pressed })}
+            {...(entry.control.opensDialog === true && { 'aria-haspopup': 'dialog' as const })}
+            {...((entry.control.unavailable === true || disabled) && { 'aria-disabled': true })}
+            {...(entry.control.keyshortcuts !== undefined && { 'aria-keyshortcuts': entry.control.keyshortcuts })}
+            {...(entry.control.unavailable === true &&
+              entry.control.describedBy !== undefined && {
                 // U6 — the reason, reachable without a pointer.
-                'aria-describedby': control.describedBy,
+                'aria-describedby': entry.control.describedBy,
               })}
             tabIndex={index === tabStop ? 0 : -1}
             onFocus={() => setActiveIndex(index)}
@@ -603,16 +693,17 @@ export function TiptapToolbar({
               if (disabled) return;
               triggerRef.current = event.currentTarget;
               confirmedRef.current = false;
-              control.onActivate();
+              entry.control.onActivate();
             }}
             className={cn(
-              (control.unavailable === true || disabled) && 'opacity-[var(--aura-disabled-opacity)]',
+              (entry.control.unavailable === true || disabled) && 'opacity-[var(--aura-disabled-opacity)]',
               // AURA styles only `:disabled` IconButtons: an unavailable one
               // keeps no hover fill and shows it cannot be used.
               'aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent',
             )}
           />
-        ))}
+          ),
+        )}
       </div>
 
       <LinkDialog
@@ -651,5 +742,67 @@ export function TiptapToolbar({
         finalFocus={dialogFinalFocus}
       />
     </>
+  );
+}
+
+/**
+ * A phone menu on the toolbar row ("Lists and headings ▾", "Insert ▾"). The
+ * DropdownMenu stays mounted while the host saves, so a focused button keeps
+ * its focus and its menu role (#662 review); its items then say why they
+ * wait. While the caret sits in one of its blocks the button carries a mark
+ * and says so in its name, as a pressed desktop control does (#662 UX M2,
+ * WCAG 1.3.1).
+ */
+function ToolbarMenuButton({
+  menuKey,
+  label,
+  Icon,
+  items,
+  activeLabel,
+  disabled,
+  tabbable,
+  onFocus,
+}: {
+  readonly menuKey: string;
+  readonly label: string;
+  readonly Icon: React.ComponentType<{ className?: string }>;
+  readonly items: MenuItem[];
+  readonly activeLabel: string | undefined;
+  readonly disabled: boolean;
+  readonly tabbable: boolean;
+  readonly onFocus: () => void;
+}): React.ReactElement {
+  return (
+    <DropdownMenu
+      label={label}
+      items={items}
+      trigger={
+        <IconButton
+          icon={
+            <span className="relative inline-flex items-center gap-0.5">
+              <Icon className="size-4" />
+              <ChevronDown className="size-3" aria-hidden />
+              {activeLabel !== undefined && (
+                <span
+                  data-active-mark
+                  aria-hidden
+                  className="absolute -top-1 -right-1 size-1.5 rounded-full bg-[var(--aura-fg-accent)]"
+                />
+              )}
+            </span>
+          }
+          label={activeLabel === undefined ? label : `${label}, ${activeLabel}`}
+          touchHeight
+          data-toolbar-control={menuKey}
+          {...(disabled && { 'aria-disabled': true })}
+          tabIndex={tabbable ? 0 : -1}
+          onFocus={onFocus}
+          className={cn(
+            disabled && 'opacity-[var(--aura-disabled-opacity)]',
+            'aria-disabled:cursor-not-allowed aria-disabled:hover:bg-transparent',
+          )}
+        />
+      }
+    />
   );
 }

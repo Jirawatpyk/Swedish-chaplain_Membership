@@ -155,7 +155,7 @@ it. Keep one `ADD VALUE` per line, or the extraction misses them.
    from a template that contains italic → the italic content is **kept**, not stripped (FR-044).
 10. Save a draft → the save control shows a **busy state** while saving and a **"Saved at HH:MM"**
     indicator afterwards; change nothing, navigate away → **no** "unsaved changes" warning (FR-045).
-11. Toolbar at **320 px**: it **wraps onto further rows** — there is no overflow menu and no control
+11. Toolbar at **320 px** (amended 26 Oct 2026, spec 122: below 640px it is the boards' row with the two named menus — FR-048): it **wraps onto further rows** — there is no overflow menu and no control
     is hidden; arrow keys move between controls, **Home/End** jump to the first and last, and focus
     is visible throughout (FR-048).
 12. As `marketing`, the compose-on-behalf form offers drafts, images, the template picker, the
