@@ -114,6 +114,32 @@ Do **not** replay the webhook from the Stripe Dashboard without checking
 `payments.status` first: on the F-1 path the payment row may already be
 `succeeded`, and a replay will short-circuit on the idempotency guard.
 
+### Unresolved rows and replays (132, D-031)
+
+A replay of an event whose first delivery had no tenant (unknown account, env /
+api-version rejection) now adopts that row and dispatches it once: you will see
+`payments_webhook_unresolved_row_adopted_total` and an audit row
+`webhook_unresolved_event_adopted` (10 y). Because the adopted row keeps its
+first `received_at`, a dispatch that fails after the adoption shows up here at
+once — the expected signal, recovered by the next replay.
+
+`payments_webhook_duplicate_tenant_mismatch_total > 0` means a replay was
+**acknowledged without dispatch**: its stored row names no tenant (another
+account or livemode, or `rejected_signature`) or another tenant. Stripe sees a
+200, so it will not retry. Triage as `neondb_owner`:
+
+1. `SELECT id, tenant_id, processor_account_id, livemode, outcome, received_at FROM processor_events WHERE id = '<evt>';`
+2. Compare the account with `tenant_payment_settings.processor_account_id` and
+   the PaymentIntent in the Stripe Dashboard.
+3. If Stripe captured money for an invoice still `issued`, record it with
+   `record-payment` (never `mark-paid-offline`), then stamp the row in a
+   maintainer-only session. Replaying again changes nothing.
+
+A replay of an old event is also past the 48 h transient-retry ceiling at once
+(`eventAgeSeconds` is measured from Stripe's `created`), so a transient
+settlement failure on it is classified permanent and 200-acked. The row stays
+`processed_at NULL`, this gauge counts it, and the next replay recovers it.
+
 ## Scheduling
 
 Native Vercel Cron (`vercel.json`, `*/5 * * * *`, GET-only, UTC). Vercel

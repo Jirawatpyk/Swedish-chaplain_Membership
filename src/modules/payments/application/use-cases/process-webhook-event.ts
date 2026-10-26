@@ -570,22 +570,22 @@ async function processWebhookEventBody(
   const eventAgeSeconds =
     Math.floor(deps.clock.nowMs() / 1000) - event.createdAtUnixSeconds;
 
-  // Step 6 — idempotency insert. Runs on its own tx so a duplicate is
-  // observed before we open the dispatch tx (avoids a useless row lock
-  // on retry).
-  const inserted = await deps.paymentsRepo.withTx(async (tx) => {
-    return await deps.processorEventsRepo.insertIfNew(tx, {
-      id: event.id,
-      tenantId,
-      eventType: event.type,
-      apiVersion: event.apiVersion,
-      livemode: event.livemode,
-      processorAccountId: event.account,
-      outcome: 'processed',
-      payloadSha256: input.payloadSha256,
-      correlationId: input.correlationId,
-      receivedAt: new Date(deps.clock.nowMs()),
-    });
+  // Step 6 — idempotency insert, committed before the dispatch tx opens so
+  // a duplicate is observed first. `insertIfNew` runs on the owner
+  // connection and ignores any tx (it must also write NULL-tenant rows), so
+  // no tenant tx is opened for it: one would only hold a pool connection
+  // while the insert borrowed a second (132 review, reliability M-1).
+  const inserted = await deps.processorEventsRepo.insertIfNew(null, {
+    id: event.id,
+    tenantId,
+    eventType: event.type,
+    apiVersion: event.apiVersion,
+    livemode: event.livemode,
+    processorAccountId: event.account,
+    outcome: 'processed',
+    payloadSha256: input.payloadSha256,
+    correlationId: input.correlationId,
+    receivedAt: new Date(deps.clock.nowMs()),
   });
 
   if (inserted.adoptedFrom !== undefined) {
@@ -599,6 +599,25 @@ async function processWebhookEventBody(
       adoptedFrom: inserted.adoptedFrom,
     });
     paymentsMetrics.webhookUnresolvedRowAdopted(tenantId, event.type);
+    // The adoption overwrote the row's outcome, so this row is the only
+    // durable record that the event was once refused. `null` tx: it must
+    // survive a dispatch that fails below (the adapter swallows + counts a
+    // failed emit, so it never blocks the dispatch).
+    await deps.audit.emit(null, {
+      tenantId,
+      requestId: input.requestId,
+      eventType: 'webhook_unresolved_event_adopted',
+      actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+      summary: `Stripe ${event.type} ${event.id} adopted on replay (was ${inserted.adoptedFrom})`,
+      payload: {
+        processor_event_id: event.id,
+        event_type: event.type,
+        adopted_from: inserted.adoptedFrom,
+        first_received_at: inserted.event.receivedAt.toISOString(),
+        first_correlation_id: inserted.event.correlationId,
+      },
+      retentionYears: retentionFor('webhook_unresolved_event_adopted'),
+    });
   }
 
   if (!inserted.inserted && inserted.event.tenantId !== tenantId) {
@@ -652,7 +671,11 @@ async function processWebhookEventBody(
     // depending on branch) — forensic queries that aggregate these
     // MUST group by `payload->>'processor_refund_id'` to dedupe
     // (contract parity with the confirm-payment Phase B docstring).
-    paymentsMetrics.webhookDispatchRecoveryReplay(tenantId, event.type);
+    // An adoption also lands here (its row is unstamped), but it is an
+    // operator replay, not a crashed dispatch — counted above instead.
+    if (inserted.adoptedFrom === undefined) {
+      paymentsMetrics.webhookDispatchRecoveryReplay(tenantId, event.type);
+    }
   }
 
   // Step 9 — dispatch. Structured allow-list ONLY (PCI guardian).

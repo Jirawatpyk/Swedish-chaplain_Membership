@@ -8013,6 +8013,7 @@
       "auto_refund_failed_needs_manual_reconcile": "การคืนเงินอัตโนมัติล้มเหลว — ต้องกระทบยอดด้วยตนเอง",
       "auto_refund_reconciled": "กระทบยอดการคืนเงินอัตโนมัติด้วยตนเองแล้ว",
       "payment_settlement_rolled_back": "ยกเลิกการบันทึกการชำระเงิน — รับเงินแล้วแต่ยังไม่ได้ตัดชำระ",
+      "webhook_unresolved_event_adopted": "รับ event webhook ที่ค้างอยู่เข้าระบบเมื่อส่งซ้ำ",
       "webhook_dispatch_permanent_failure": "ประมวลผล webhook ล้มเหลวถาวร",
       "registration_cross_tenant_probe": "ตรวจพบการเข้าถึงข้ามองค์กร (การลงทะเบียนกิจกรรม)",
       "event_buyer_pii_redacted": "ปกปิดข้อมูลส่วนบุคคลของผู้ซื้อบัตรกิจกรรม",

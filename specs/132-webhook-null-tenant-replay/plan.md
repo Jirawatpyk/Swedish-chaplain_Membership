@@ -44,9 +44,11 @@ I tenancy: two layers kept; the owner write is bounded by account + NULL predica
 
 ## Complexity Tracking
 
-No deviation from a principle. Payment surface → solo-maintainer review (review-and-ship § 2), its five checks:
+**Deviation — Principle I, database layer.** The adoption UPDATE runs on the owner connection (`neondb_owner`, BYPASSRLS) and sets `tenant_id` itself, so RLS does not guard that one statement. Its walls are the app predicate (`tenant_id IS NULL`, adoptable outcome, same account or `''`, same livemode), the tenant coming only from the server-side account lookup of a signature-verified event, the CHECK forbidding a tenant on `rejected_signature`, and the use-case refusal of any mismatched duplicate. Rejected simpler alternatives: a policy change (every tenant would see every rejection row) and refuse-only (the event could never be applied). Recorded as D-031.
 
-1. Repeated independent rounds: `/code-review high` + `financial-integrity-reviewer`, `pci-saqa-guardian`, `security-engineer`, `reliability-guardian`, fresh subagents per round, until a round finds no High/Medium; counts per round in the PR.
+Payment surface → solo-maintainer review (review-and-ship § 2), its five checks:
+
+1. Repeated independent rounds (round 1: `/code-review high` 5 Low/cleanup; financial-integrity PASS, 5 Low; security APPROVE WITH FIXES, 2 Medium; pci-saqa PASS, 0; reliability 3 Medium; senior-tester NOT SHIP-READY, 2 Critical test gaps — all closed in round-1 fixes below): `/code-review high` + `financial-integrity-reviewer`, `pci-saqa-guardian`, `security-engineer`, `reliability-guardian`, fresh subagents per round, until a round finds no High/Medium; counts per round in the PR.
 2. Staff review: `whole-branch-reviewer` + `security-engineer` + `senior-tester` on the same diff.
 3. Coverage + real infrastructure: `pnpm test:coverage`; integration on Neon dev for the adoption and the refusal (`webhook-null-tenant-replay.test.ts`, `processor-events-idempotency.test.ts`).
 4. Defence in depth: the 0036 RLS policies are unchanged and still hide NULL rows from `chamber_app`; CHECK `processor_events_sig_reject_implies_null_tenant` refuses a tenant on a `rejected_signature` row at the database even if the repo predicate regressed.
@@ -68,3 +70,15 @@ Deploys with the merge; behaviour changes only for duplicate deliveries whose st
 - Done when 4: unit — adoption counts once and logs `stripe-webhook.unresolved_row_adopted` with `adoptedFrom`, no account id.
 - Done when 5: repo + port docstrings, data-model § 5.4 + `tenant_id` row, gauge docstring, `docs/observability.md`, D-031, changelog.
 - Gates: `pnpm check` exit 0; unit `tests/unit/payments/` 46 files / 816 tests passed; integration (3 files incl. `unprocessed-events-count`) 12/12 passed.
+
+### Review round 1 → fixes (maintainer decisions 26 Oct 2026: audit event; adopt the `''` account row)
+
+- Audit trail (security R-2, reliability M-3, financial L-3): new `webhook_unresolved_event_adopted` (migration 0320, 10 y) emitted on a `null` tx before dispatch; payload ids + outcome only.
+- No-account row (reliability M-2, financial L-1, security L-4): adoption also accepts a row recorded with `''`; runbook § Unresolved rows and replays covers what is still refused; alert rule `f5-webhook-duplicate-tenant-mismatch`.
+- Crash-recovery metric no longer counts an adoption (reliability L-1, financial L-2).
+- Step 6 no longer opens an empty tenant tx around `insertIfNew` (reliability M-1).
+- Repo pre-checks the predicate before the UPDATE; `ADOPTABLE_OUTCOMES` readonly (code-review efficiency + simplification).
+- Tests (senior-tester C-1/C-2/H-1/H-2, security R-1): env-mismatch adoption, livemode mismatch, `''` account, two concurrent replays (one audit row), another tenant's unstamped row refused on live Neon with two tenants, second replay leaves the stamp unchanged, adoption not counted as recovery.
+- Docs: env-mismatch adoption is reachable only after the deployment's live/test mode changed (code-review correctness note).
+- Not done: a live `payment_intent.succeeded` settlement through an adopted row (financial "recommended"). The default branch and `unknown_intent` both stamp through the same `markProcessed`; the settlement path's idempotency is unchanged by this PR.
+- Evidence round 2: RED 512243734 — audit query failed (enum value absent), `''` row `expected undefined to be 'acknowledged_only'`, unit adoption audit `expected [] to have a length of 1`. GREEN: migration 0320 applied to Neon dev and verified in `pg_enum` (n = 1); integration 4 files 20/20 (replay, idempotency, audit-event-type parity, unprocessed-events-count); unit payments + guard + label coverage 853 passed; payments webhook contract tests 18/18; `tsc` clean.

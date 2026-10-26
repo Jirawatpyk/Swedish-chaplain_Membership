@@ -454,7 +454,7 @@ describe('processWebhookEvent (T056)', () => {
     const deps = makeDeps();
     // Let the step-6 idempotency tx commit, then throw on the DISPATCH tx so
     // the failure lands in processRefundUpdated's catch → dispatch_threw.
-    rejectSecondTx(deps, new Error('neon reset'));
+    rejectDispatchTx(deps, new Error('neon reset'));
     const event = makeEvent({
       type: 'charge.refund.updated',
       dataObject: {
@@ -590,7 +590,7 @@ describe('processWebhookEvent (T056)', () => {
 
   it('refund.updated — withTx rejection returns dispatch_failed (dispatch_threw, eventType=refund.updated)', async () => {
     const deps = makeDeps();
-    rejectSecondTx(deps, new Error('neon reset'));
+    rejectDispatchTx(deps, new Error('neon reset'));
     const event = makeEvent({
       type: 'refund.updated',
       dataObject: {
@@ -782,17 +782,15 @@ describe('processWebhookEvent (T056)', () => {
   // payloads can carry partial API key fragments / internal ids.
   // ---------------------------------------------------------------------------
 
-  // Helper — withTx is called TWICE per dispatch path (once for the step-6
-  // idempotency insert, once inside the branch). Make call #1 pass through
-  // and call #2 throw, so the rejection lands in the dispatch try/catch we
-  // want to exercise.
-  function rejectSecondTx(
+  // Helper — the dispatch branch's withTx is the first withTx of a dispatch
+  // (the step-6 idempotency insert opens none since 132). Make it throw, so
+  // the rejection lands in the dispatch try/catch we want to exercise.
+  function rejectDispatchTx(
     deps: ProcessWebhookEventDeps,
     error: unknown,
   ): void {
     const tx = deps.paymentsRepo.withTx as ReturnType<typeof vi.fn>;
     tx.mockReset();
-    tx.mockImplementationOnce(async <T>(fn: (t: unknown) => Promise<T>) => fn({}));
     tx.mockImplementationOnce(async () => {
       throw error;
     });
@@ -806,7 +804,7 @@ describe('processWebhookEvent (T056)', () => {
         this.name = 'StripeAPIError';
       }
     }
-    rejectSecondTx(deps, new StripeAPIError());
+    rejectDispatchTx(deps, new StripeAPIError());
     const event = makeEvent({
       type: 'charge.refunded',
       dataObject: {
@@ -827,7 +825,7 @@ describe('processWebhookEvent (T056)', () => {
 
   it('CR-3: charge.dispute.created — withTx rejection returns dispatch_failed (no fall-through)', async () => {
     const deps = makeDeps();
-    rejectSecondTx(deps, new Error('audit table unreachable'));
+    rejectDispatchTx(deps, new Error('audit table unreachable'));
     const event = makeEvent({
       type: 'charge.dispute.created',
       dataObject: {
@@ -847,7 +845,7 @@ describe('processWebhookEvent (T056)', () => {
 
   it('CR-3 / R3 I-8: unknown event type — withTx rejection returns dispatch_failed', async () => {
     const deps = makeDeps();
-    rejectSecondTx(deps, new Error('processor_events INSERT denied by RLS'));
+    rejectDispatchTx(deps, new Error('processor_events INSERT denied by RLS'));
     const event = makeEvent({ type: 'some.future.event' });
     const result = await processWebhookEvent(deps, makeInput(event));
     expect(result.ok).toBe(false);
@@ -907,7 +905,7 @@ describe('processWebhookEvent (T056)', () => {
     // A rare but real case: postgres-js can reject with a non-Error value
     // (e.g. a pure string). The detail mapper falls back to "unknown" so
     // we never leak the raw payload into the response.
-    rejectSecondTx(deps, 'connection terminated unexpectedly: pi_secret_abc123');
+    rejectDispatchTx(deps, 'connection terminated unexpectedly: pi_secret_abc123');
     const event = makeEvent({
       type: 'charge.refunded',
       dataObject: { id: 'ch_x', type: 'charge', refundIds: [], amountSatang: asSatang(0n) },
@@ -1027,7 +1025,7 @@ describe('processWebhookEvent (T056)', () => {
 
   it('T5: dispatch_threw branches carry a null subDetail (no F4 code exists there)', async () => {
     const deps = makeDeps();
-    rejectSecondTx(deps, new Error('neon down'));
+    rejectDispatchTx(deps, new Error('neon down'));
     const event = makeEvent({
       type: 'charge.refunded',
       dataObject: { id: 'ch_x', type: 'charge', refundIds: [], amountSatang: asSatang(0n) },

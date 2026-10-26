@@ -22,8 +22,9 @@
  *       reaches a resolved tenant. Then `insertIfNew` adopts the row on
  *       this owner connection (132, D-031; it revises the 2026-04-25
  *       "never promoted" rule): `tenant_id` set, `outcome = 'processed'`,
- *       only for the row's own account + livemode and never for a
- *       `rejected_signature` row. A row it will not adopt stays NULL and
+ *       only for the row's own account (or '', a platform-owner event
+ *       recorded before the route's account fallback was set) + livemode,
+ *       never for a `rejected_signature` row. A row it will not adopt stays NULL and
  *       `processWebhookEvent` refuses to dispatch it.
  *
  * `insertIfNew` runs OUTSIDE `runInTenant` because the rejection
@@ -40,7 +41,7 @@
  * Domain-type leak containment: Drizzle row types stay here; the
  * caller sees `ProcessorEvent` Domain shapes only.
  */
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { ProcessorEventsRepo } from '../../application/ports/processor-events-repo';
 import type {
   ProcessorEvent,
@@ -56,7 +57,7 @@ import { asTenantContext } from '@/modules/tenants';
  * that row never proved it came from Stripe, and CHECK
  * `processor_events_sig_reject_implies_null_tenant` forbids a tenant on it.
  */
-const ADOPTABLE_OUTCOMES: ProcessorEventOutcome[] = [
+const ADOPTABLE_OUTCOMES: readonly ProcessorEventOutcome[] = [
   'acknowledged_only',
   'rejected_environment_mismatch',
   'rejected_api_version_mismatch',
@@ -141,8 +142,17 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
       // tenant takes over the row its unresolved first delivery left, on
       // this owner connection: `chamber_app` cannot see a NULL-tenant row,
       // so `markProcessed` could never stamp it. Bounded to the row's own
-      // account and livemode; a `rejected_signature` row is never adopted.
-      if (input.tenantId !== null && existing.tenantId === null) {
+      // account (or '' — a platform-owner event recorded before the route's
+      // account fallback was configured) and livemode; a
+      // `rejected_signature` row is never adopted.
+      if (
+        input.tenantId !== null &&
+        existing.tenantId === null &&
+        ADOPTABLE_OUTCOMES.includes(existing.outcome as ProcessorEventOutcome) &&
+        (existing.processorAccountId === input.processorAccountId ||
+          existing.processorAccountId === '') &&
+        existing.livemode === input.livemode
+      ) {
         const [adopted] = await db
           .update(processorEvents)
           .set({ tenantId: input.tenantId, outcome: 'processed' })
@@ -150,8 +160,11 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
             and(
               eq(processorEvents.id, input.id),
               isNull(processorEvents.tenantId),
-              inArray(processorEvents.outcome, ADOPTABLE_OUTCOMES),
-              eq(processorEvents.processorAccountId, input.processorAccountId),
+              inArray(processorEvents.outcome, [...ADOPTABLE_OUTCOMES]),
+              or(
+                eq(processorEvents.processorAccountId, input.processorAccountId),
+                eq(processorEvents.processorAccountId, ''),
+              ),
               eq(processorEvents.livemode, input.livemode),
             ),
           )
@@ -163,8 +176,9 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
             event: toDomain(adopted as ProcessorEventRow),
           };
         }
-        // Not adoptable, or a concurrent replay adopted it first — return
-        // the row as it stands now.
+        // A concurrent replay adopted it between the read and the UPDATE
+        // (`tenant_id IS NULL` re-evaluated to false) — return the row as
+        // it stands now, so this replay sees the adopted tenant.
         const [current] = await db
           .select()
           .from(processorEvents)
