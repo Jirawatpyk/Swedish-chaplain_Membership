@@ -621,15 +621,22 @@ lasts, erased members' images stay publicly served.
   the rows the content check keeps. A stamped row is skipped for 30 days, so
   an image is examined at most monthly. A row that throws is not stamped, so
   it is retried the next tick.
-- **Separate transactions.** The marked/orphaned listing and arm 3 each run
-  in their own transaction under a 20 s statement timeout.
+- **Separate transactions.** The marked/orphaned listing, arm 3's watermark
+  and arm 3's listing each run in their own transaction, under a 20 s
+  statement timeout.
+  - If the watermark fails, it is logged as
+    `broadcasts.image_sweep.unused_watermark_failed` (warn) and the listing
+    still runs. The listing applies the owner rule itself; the watermark only
+    saves the next tick a re-scan.
   - If arm 3's listing fails, the other two arms still run. The tick logs
     `cron.broadcasts.image_sweep.unused_list_failed`
     (`errorId: 'M131.cron.image_sweep.unused_list_failed'`).
   - The use case logs `broadcasts.image_sweep.unused_list_failed` with the
     cause (`err`).
 - **Time budget.** Block 2 starts no new row after 150 s of the tick, so
-  Block 3 still runs. A stopped batch logs
+  Block 3 still runs. Each blob delete is bounded at 10 s
+  (`IMAGE_BLOB_DELETE_TIMEOUT_MS`); an aborted delete fails its row, which
+  is retried the next tick. A stopped batch logs
   `cron.broadcasts.image_sweep.truncated`
   (`errorId: 'M131.cron.image_sweep.truncated'`), and the rest waits for the
   next tick. Seeing it on several ticks in a row means the backlog is
