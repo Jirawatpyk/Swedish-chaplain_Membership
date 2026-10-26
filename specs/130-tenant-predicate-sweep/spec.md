@@ -16,9 +16,13 @@
    - **s2:** `drizzle-renewal-cycle-repo.ts`.
    - **s3:** `drizzle-member-renewal-flags-repo.ts` and `drizzle-renewal-escalation-task-repo.ts`.
    - **s4:** plans (`plan-repo.ts`, `drizzle-scheduled-plan-change-repo.ts`) and the member-plan adapters' members-repo calls.
+   - **s5:** the members module's member repo (`drizzle-member-repo.ts`) and its adapters (change-request scrub, email-change tokens, plan advisory lock, plan lookup, the plan member count, the timeline). The `…InTx` methods that took only `tx` now take the tenant slug after it, like `findManyByIdsInTx` already did.
 5. **Every RLS-only comment is removed.** That is every "do NOT add a tenant_id predicate" note: S-R5-6 and plans research § 7.1. #653 closes after s4.
 
 ## Not changed
 - **Inserts.** They set `tenant_id` in VALUES.
 - **`email_delivery_events`.** It has no `tenant_id` column; the bounce query matches on `to_email`.
 - **Query-less stubs.**
+- **Reads that resolve the tenant (s5).** They run before any tenant is known, on the global db, so they cannot be bound to one:
+  - `resolveBouncedInviteContacts`: the Resend webhook finds which tenants own a bounced address, then marks each inside its own `runInTenant`.
+  - `emailChangeTokenAdapter.findActiveById`: the token id is what tells the public verify / revert endpoints the tenant.
