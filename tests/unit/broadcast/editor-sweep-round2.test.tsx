@@ -336,14 +336,24 @@ describe('spec 131 — a cancelled upload is released', () => {
     expect((fetchSpy.mock.calls[0] as unknown as [string, RequestInit])[1].keepalive).toBe(true);
   });
 
-  it('a failed release is quiet: it is attempted, then the same info toast and no error toast', async () => {
+  it('a failed release promises nothing: the toast only says it was not added (#658 code review)', async () => {
     const fetchSpy = vi.fn(async () => { throw new TypeError('offline'); });
     vi.stubGlobal('fetch', fetchSpy);
     vi.spyOn(console, 'error').mockImplementation(() => {});
     await uploadThenCancel();
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
-    expect(toast.info).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(toast.info).toHaveBeenCalledTimes(1));
+    expect(toast.info).toHaveBeenCalledWith(enMessages.portal.broadcasts.compose.imageUpload.notInsertedKept);
     expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('a refused release (e.g. 429) promises nothing either', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 429 })));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await uploadThenCancel();
+
+    await waitFor(() => expect(toast.info).toHaveBeenCalledTimes(1));
+    expect(toast.info).toHaveBeenCalledWith(enMessages.portal.broadcasts.compose.imageUpload.notInsertedKept);
   });
 });

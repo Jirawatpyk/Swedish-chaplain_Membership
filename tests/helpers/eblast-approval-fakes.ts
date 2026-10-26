@@ -208,6 +208,9 @@ export function makeFakeBroadcastImagesRepo(
     markUsedImagesExamined: vi.fn(async (_tenantId: never, _now: Date, _dueBefore: Date, _limit: number, _tx: unknown) => 0),
     listUnused: vi.fn(async (_tenantId: never, _dueBefore: Date, _limit: number, _tx: unknown) => [] as BroadcastImageRecord[]),
     markUnusedExamined: vi.fn(async (_tenantId: never, _imageId: string, _now: Date, _tx: unknown) => undefined),
+    isLiveImage: vi.fn(async (tenantId: never, imageId: string, _tx: unknown) =>
+      rows.some((r) => r.tenantId === (tenantId as unknown as string) && r.id === imageId && r.deletedAt === null),
+    ),
     countLiveByContentHash: vi.fn(async (tenantId: never, contentHash: string, _tx: unknown, excludeImageId?: string) =>
       rows.filter(
         (r) =>

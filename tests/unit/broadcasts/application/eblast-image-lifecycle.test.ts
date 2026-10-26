@@ -809,6 +809,23 @@ describe('reclaimOrphanedImages — spec 131 arm 3 (unused)', () => {
     if (r.ok) expect(r.value).toMatchObject({ rowsRemoved: 1, unusedListFailed: false });
   });
 
+  it('a listed unused row stamped meanwhile (an erasure) is left to the marked arm, not audited sweep_unused (#658 code review)', async () => {
+    const unused = imageRow({ id: 'img-unused', deletedAt: null });
+    const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
+    vi.mocked(imagesRepo.listUnused).mockImplementation(async () => {
+      // Listed live; an erasure stamps it before the row's own transaction.
+      imagesRepo.rows[0] = { ...unused, deletedAt: NOW };
+      return [unused];
+    });
+    const storage = makeFakeImageStorage();
+
+    await reclaimOrphanedImages({ imagesRepo, storage, audit }, { tenantId: TENANT, now: NOW, requestId: 's' });
+
+    expect(vi.mocked(imagesRepo.isLiveImage)).toHaveBeenCalledWith(TENANT, 'img-unused', FAKE_TX);
+    expect(storage.deleted).toEqual([]);
+    expect(audit.events.filter((e) => e.payload['reason'] === 'sweep_unused')).toEqual([]);
+  });
+
   it('a retained unused row is watermarked, so it does not refill the batch every tick', async () => {
     const unused = imageRow({ id: 'img-unused', deletedAt: null });
     const imagesRepo = makeFakeBroadcastImagesRepo([unused]);
@@ -832,7 +849,8 @@ describe('reclaimOrphanedImages — spec 131 arm 3 (unused)', () => {
     );
 
     expect(storage.deleted).toEqual(['k1']);
-    if (r.ok) expect(r.value).toMatchObject({ scanned: 2, rowsRemoved: 1, truncated: true });
+    // `scanned` counts the rows actually examined, not the whole batch (#658 code review).
+    if (r.ok) expect(r.value).toMatchObject({ scanned: 1, rowsRemoved: 1, truncated: true });
   });
 });
 

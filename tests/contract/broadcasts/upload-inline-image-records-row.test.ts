@@ -72,6 +72,7 @@ function makeDeps(o?: { existing?: boolean; verdict?: 'clean' | 'infected' }) {
     markUsedImagesExamined: vi.fn(async () => 0),
     listUnused: vi.fn(async () => []),
     markUnusedExamined: vi.fn(async () => undefined),
+    isLiveImage: vi.fn(async () => true),
     lockContentHash: vi.fn(async () => undefined),
     isBlobReferencedByContent: vi.fn(async () => false),
     countLiveByContentHash: vi.fn(),
