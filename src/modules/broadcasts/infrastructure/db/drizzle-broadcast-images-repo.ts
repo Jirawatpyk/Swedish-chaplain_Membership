@@ -477,7 +477,9 @@ export const drizzleBroadcastImagesRepo: BroadcastImagesRepo = {
   async restoreLive(tenantId, imageId, tx) {
     await (tx as TenantTx)
       .update(broadcastImages)
-      .set({ deletedAt: null })
+      // Spec 131 — and clear arm 3's watermark, so a restored row (an
+      // erasure-retained one) is examined on the next tick, not up to 30 days on.
+      .set({ deletedAt: null, unusedCheckedAt: null })
       .where(
         and(
           eq(broadcastImages.tenantId, tenantId as string),

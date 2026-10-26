@@ -1090,7 +1090,7 @@ export const broadcastImages = pgTable(
       .on(table.tenantId, table.deletedAt)
       .where(sql`${table.deletedAt} IS NOT NULL`),
     index('broadcast_images_tenant_unused_checked_idx')
-      .on(table.tenantId, table.unusedCheckedAt)
+      .on(table.tenantId, table.unusedCheckedAt.asc().nullsFirst(), table.createdAt)
       .where(sql`${table.deletedAt} IS NULL AND ${table.ownerKind} = 'broadcast'`),
   ],
 );

@@ -231,6 +231,14 @@ async function main(): Promise<void> {
         name: 'invoices_tenant_tax_point_paid_idx (tax-point expression) + credit_notes_tenant_issue_date_idx + refunds_tenant_completed_succeeded_idx (mig 0318)',
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'invoices_tenant_tax_point_paid_idx' AND indexdef LIKE '%COALESCE(payment_date, ((paid_at AT TIME ZONE ''Asia/Bangkok''::text))::date)%' AND indexdef LIKE '%WHERE%') AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'credit_notes' AND indexname = 'credit_notes_tenant_issue_date_idx' AND indexdef LIKE '%(tenant_id, issue_date)') AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'refunds' AND indexname = 'refunds_tenant_completed_succeeded_idx' AND indexdef LIKE '%(tenant_id, completed_at) WHERE (status = ''succeeded''::text)')`,
       },
+      {
+        // Spec 131 (mig 0319) — arm 3's watermark. Every `.select()` of the
+        // image repo now names the column, so a schema without it 500s every
+        // image read; the index is asserted by its definition (columns, order
+        // and partial predicate as Postgres renders them), not its name.
+        name: 'broadcast_images.unused_checked_at + broadcast_images_tenant_unused_checked_idx (mig 0319)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcast_images' AND column_name = 'unused_checked_at' AND data_type = 'timestamp with time zone' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'broadcast_images' AND indexname = 'broadcast_images_tenant_unused_checked_idx' AND indexdef LIKE '%(tenant_id, unused_checked_at NULLS FIRST, created_at) WHERE ((deleted_at IS NULL) AND (owner_kind = ''broadcast''::text))')`,
+      },
     ];
     let failures = 0;
     for (const canary of canaries) {

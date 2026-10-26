@@ -18,10 +18,17 @@
 -- Additive and nullable: safe before the code that reads it is deployed (no
 -- reader yet; NULL means "never examined", which is every existing row). The
 -- partial index serves the sweep's two arm-3 statements, which read only live
--- E-Blast rows of one tenant by watermark.
+-- E-Blast rows of one tenant by watermark, in their ORDER BY
+-- (`unused_checked_at NULLS FIRST, created_at`), so a LIMIT can stop early.
+--
+-- The ADD COLUMN takes an ACCESS EXCLUSIVE lock and the CREATE INDEX a SHARE
+-- lock, both brief on this table; lock_timeout makes a deploy that meets a long
+-- transaction (the daily sweep, an upload) ABORT instead of queueing every
+-- editor read behind it (the 0318 precedent).
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 ALTER TABLE broadcast_images
-  ADD COLUMN IF NOT EXISTS unused_checked_at timestamptz NULL;
-
+  ADD COLUMN IF NOT EXISTS unused_checked_at timestamptz NULL;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS broadcast_images_tenant_unused_checked_idx
-  ON broadcast_images (tenant_id, unused_checked_at)
-  WHERE deleted_at IS NULL AND owner_kind = 'broadcast';
+  ON broadcast_images (tenant_id, unused_checked_at NULLS FIRST, created_at)
+  WHERE deleted_at IS NULL AND owner_kind = 'broadcast';--> statement-breakpoint
+SET LOCAL lock_timeout = DEFAULT;
