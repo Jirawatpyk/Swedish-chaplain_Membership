@@ -540,3 +540,8 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
 
 - **RED, recorded after the fact** (/code-review high, round 1: test and fix shared `ebf7f02`). `tests/unit/broadcast/segment-picker.test.tsx` run against `origin/main`'s `segment-picker.tsx`: `× SegmentPicker (T1270) > two tier codes can be typed, comma and all` — `expect(element).toHaveValue(premium, large)`. The old field re-joined the parsed codes on every keystroke, so a typed "," vanished and a second code could never be entered.
 - **GREEN:** the field keeps the raw text and parses it on change (`ebf7f02`).
+
+### US12d-3 (T1271) — the compose back link
+
+- **Before** (`ad9bce3`, no RED commit): the first parity pass set board `Portal-broadcast-new` ("← Back to broadcasts" above the title) beside the live fixture page, which had no link back (live shot `live-m-1440.jpg`, 14:54 UTC, page text without "Back to broadcasts").
+- **Pin:** e2e `broadcast-compose-and-submit.spec.ts` › `@a11y US12d-3: Submit opens the summary…` asserts the link and its `href` (`/portal/benefits?tab=broadcasts`) on the real page. It needs a seeded member, so it runs in R92 and CI, not in this cloud session (no Neon access).

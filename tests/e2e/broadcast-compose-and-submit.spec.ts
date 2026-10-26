@@ -455,4 +455,34 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     await page.getByRole('radio', { name: 'All members' }).click();
     await expect(hint).toBeVisible();
   });
+  // Spec 122 US12d-3 (T1265, T1272) — Submit opens the summary first. This
+  // never confirms (no E-Blast is spent): it checks the page's back link, the
+  // dialog's rows and its axe scan, and that Keep editing hands focus back.
+  test('@a11y US12d-3: Submit opens the summary; Keep editing sends nothing and returns focus', async ({
+    page,
+  }) => {
+    await openCompose(page);
+    const back = page.getByRole('link', { name: 'Back to broadcasts' });
+    await expect(back).toBeVisible();
+    await expect(back).toHaveAttribute('href', '/portal/benefits?tab=broadcasts');
+
+    await page.getByRole('textbox', { name: /subject/i }).first().fill('[E2E] summary dialog');
+    await page.locator('[contenteditable="true"]').first().fill('Summary dialog body.');
+    let submitted = false;
+    page.on('request', (r) => {
+      if (r.url().includes('/api/broadcasts/submit')) submitted = true;
+    });
+    const submit = page.locator('[data-compose-feature="submit"]:visible');
+    await expect(submit).toBeEnabled({ timeout: 10_000 });
+    await submit.click();
+    const dialog = page.getByRole('alertdialog', { name: 'Submit this E-Blast for review?' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText('[E2E] summary dialog');
+    await expect(dialog).toContainText(/Sending\s*As soon as it's approved/);
+    await expectNoA11yViolations(page);
+    await dialog.getByRole('button', { name: 'Keep editing' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(submit).toBeFocused();
+    expect(submitted).toBe(false);
+  });
 });
