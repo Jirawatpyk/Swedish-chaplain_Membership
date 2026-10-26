@@ -8,7 +8,8 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@/lib/db', () => ({ db: {}, runInTenant: vi.fn() }));
+// D-030: addInTx reads its tenant from the tx runInTenant bound.
+vi.mock('@/lib/db', () => ({ db: {}, runInTenant: vi.fn(), tenantSlugOf: () => 'test-tenant' }));
 
 import { drizzleContactRepo } from '@/modules/members/infrastructure/db/drizzle-contact-repo';
 import type { TenantTx } from '@/lib/db';

@@ -6466,7 +6466,11 @@
   "broadcast": {
     "editor": {
       "toolbar": {
-        "label": "Formatting toolbar",
+        "label": "Formatting",
+        "blocksMenu": "Lists and headings",
+        "insertMenu": "Insert",
+        "uploadWait": "Wait for the upload to finish",
+        "saveWait": "Wait for the save to finish",
         "heading2": "Heading",
         "heading3": "Subheading",
         "quote": "Quote",

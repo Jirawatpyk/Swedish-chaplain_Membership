@@ -6466,7 +6466,11 @@
   "broadcast": {
     "editor": {
       "toolbar": {
-        "label": "Formateringsverktygsfält",
+        "label": "Formatering",
+        "blocksMenu": "Listor och rubriker",
+        "insertMenu": "Infoga",
+        "uploadWait": "Vänta tills uppladdningen är klar",
+        "saveWait": "Vänta tills sparandet är klart",
         "heading2": "Rubrik",
         "heading3": "Underrubrik",
         "quote": "Citat",
