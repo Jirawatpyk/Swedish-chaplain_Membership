@@ -27,6 +27,7 @@ import {
   type ResetTokenId,
 } from '@/modules/auth/domain/branded';
 import { eraseUser } from '@/modules/auth/application/erase-user';
+import { enableUser } from '@/modules/auth/application/enable-user';
 import { signIn } from '@/modules/auth/application/sign-in';
 import {
   defaultForgotPasswordDeps,
@@ -485,5 +486,29 @@ describe('eraseUser use-case (live Neon)', () => {
     const audits = await rawSelectAuditByTarget(user.userId);
     const erasedCount = audits.filter((a) => a.eventType === 'user_erased').length;
     expect(erasedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  // 133 (#668 security review) — the seam between the sentinel eraseUser
+  // writes and the one enableUser refuses: an erased login stays disabled.
+  it('an erased login cannot be re-enabled', async () => {
+    const user = await createActiveTestUser('member');
+    created.push(user);
+
+    const erased = await eraseUser({
+      userId: user.userId,
+      actorUserId: 'admin-it',
+      requestId: `it-erase-enable-${Date.now()}`,
+      sourceIp: null,
+    });
+    expect(erased.ok).toBe(true);
+
+    const res = await enableUser({
+      targetUserId: user.userId,
+      actorUserId: user.userId,
+      sourceIp: '127.0.0.1',
+      requestId: `it-erase-enable-2-${Date.now()}`,
+    });
+    expect(res).toEqual({ ok: false, error: { code: 'not-found' } });
+    expect((await rawSelectUser(user.userId))?.status).toBe('disabled');
   });
 });
