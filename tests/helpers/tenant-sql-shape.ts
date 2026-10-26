@@ -223,3 +223,27 @@ export function unfencedRawSql(source: string, tenantTables: readonly string[]):
   }
   return out;
 }
+
+/** The one advisory-lock statement the repos send; it names no table (its key is tenant:…). */
+export const ADVISORY_LOCK_ONLY = 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))';
+
+/**
+ * A gate's verdict over recorded statements: pure inserts and the exact
+ * advisory lock skipped; a positive control (every read/update names a
+ * tenant table the parse can see) asserted; the per-reference violations
+ * returned. Shared by every slice's gate test.
+ */
+export function gateViolations(statements: readonly RecordedStatement[], tenantTables: readonly string[]): {
+  blind: string[];
+  violations: string[];
+} {
+  const checked = statements.filter((s) => !isPureInsert(s.sql) && s.sql.trim() !== ADVISORY_LOCK_ONLY);
+  // An `insert … on conflict … where` writes its tenant in VALUES and names no table.
+  const reads = checked.filter((s) => !s.sql.trimStart().toLowerCase().startsWith('insert'));
+  return {
+    blind: reads.filter((s) => tenantPredicateViolations(s, tenantTables).refs.length === 0).map((s) => s.sql.slice(0, 80)),
+    violations: checked.flatMap((s) =>
+      tenantPredicateViolations(s, tenantTables).violations.map((v) => `${v} :: ${s.sql.slice(0, 90)}`),
+    ),
+  };
+}
