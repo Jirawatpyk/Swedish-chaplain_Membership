@@ -29,7 +29,6 @@ const {
   anyWith,
   callEach,
   gateViolations,
-  tenantPredicateViolations,
   tenantScopedTables,
   unfencedRawSql,
   unfencedWheres,
