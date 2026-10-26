@@ -17,11 +17,12 @@
  *   - the quota card is a 2×2 / 1×4 grid of counters (`text-2xl` value over a
  *     `text-xs` label) plus the progress bar — not one line;
  *   - the editor toolbar is a WRAP of 44 px controls (`tiptap-toolbar.tsx`:
- *     h-11 each, `gap-1 p-1`), one or two rows depending on the column width —
- *     not one h-9 bar. It reserves the count the toolbar renders: eleven, plus
+ *     h-11 each, `gap-0.5 p-1`), one or two rows depending on the column width —
+ *     not one h-9 bar. It reserves the count the toolbar renders: thirteen, plus
  *     the image and banner controls while `FEATURE_F71A_US2_IMAGES` is on
  *     (#400 U4 — the caller's server `loading.tsx` reads the flag); the wrap
- *     then decides the height the same way it does for the real toolbar.
+ *     then decides the height the same way it does for the real toolbar. On a
+ *     phone only the boards' eight show (`max-sm:hidden` on the rest).
  *
  * Help lines wider than a phone column are `w-full max-w-*` (#400 U3): at
  * 320 px the card leaves ~240 px, so a bare `w-64`+ bar overflowed it.
@@ -29,9 +30,11 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 
-/** `tiptap-toolbar.tsx`: eleven controls, + image + banner with the image flag on. */
-const TOOLBAR_CONTROLS = 11;
+/** `tiptap-toolbar.tsx`: thirteen controls (Undo and Redo included), + image + banner with the image flag on. */
+const TOOLBAR_CONTROLS = 13;
 const IMAGE_CONTROLS = 2;
+/** On a phone the toolbar is the boards' row: B, I, U, Link, two menus, Undo, Redo (spec 122, 26 Oct 2026). */
+const PHONE_CONTROLS = 8;
 
 export interface ComposeFormSkeletonProps {
   /** `member` shows the quota card above the form; `staff` starts the editor card with the member picker (no allowance until a member is picked). */
@@ -98,9 +101,13 @@ export function ComposeFormSkeleton({ variant, imageControls }: ComposeFormSkele
             <div className="space-y-2">
               <Skeleton className="h-4 w-20" />
               <div className="overflow-hidden rounded-md border">
-                <div className="flex flex-wrap items-center gap-1 border-b p-1">
+                <div className="flex flex-wrap items-center gap-0.5 border-b p-1">
                   {Array.from({ length: toolbarControls }).map((_, i) => (
-                    <Skeleton key={i} data-skeleton="toolbar-control" className="h-11 w-11" />
+                    <Skeleton
+                      key={i}
+                      data-skeleton="toolbar-control"
+                      className={i < PHONE_CONTROLS ? 'h-11 w-11' : 'h-11 w-11 max-sm:hidden'}
+                    />
                   ))}
                 </div>
                 <Skeleton className="h-[280px] w-full rounded-none" />
