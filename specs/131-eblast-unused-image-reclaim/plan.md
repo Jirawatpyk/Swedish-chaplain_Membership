@@ -97,7 +97,16 @@ e2e: `broadcasts/image-upload-allowlist` and `broadcasts/eblast-a11y` on chromiu
 
 ## Evidence
 
-(Filled in at Verify.)
+This cloud session has no `.env.local`, so the live-Neon and running-app evidence comes from the maintainer's relay run **R90** (relay doc). Local gate on `d31887f`: `pnpm check` exit 0; `pnpm vitest run tests/contract/` 256 files, 2817 tests green. `pnpm test:coverage` 20795 green with no threshold miss. Its one red is the deliberate `pagehide` RED test (`28c92f9`), which landed mid-run; GREEN at `4b27a42`. The rerun on `4b27a42` is recorded in the PR.
+
+| Done-when | Evidence |
+|---|---|
+| 1 Cancel releases; two toasts; leaving the page (in-app and `pagehide`) | `editor-sweep-round2.test.tsx` › spec 131 block (member / staff / template hosts, the release names the upload's draft, unmount, `pagehide` once, failed and 429 → `notInsertedKept`): 21/21. `inline-image-uploader-aura.test.tsx` › "hands back its blob URL and its image id". `tests/unit/broadcast` 99 files, 949 tests. Running app: R90 § 4 and § 5 (relay). |
+| 2 Release endpoints | `release-unused-image.test.ts` 7/7 (stamp + `not_inserted` in the tx, uploader only, failed audit throws, refused owner, probe label `image_release`, staff on submitted). `image-release-routes.test.ts` 15/15 (200 / 404 / 400 / 409 codes / 429 Retry-After / 503 / 500 envelope, member and staff buckets). CSRF and freeze: `src/proxy.ts` covers every state-changing `/api/**`. |
+| 3 Next tick reclaims a released image | integration › release and the next tick; restore when the saved draft embeds it; dedup (R90 § 2, relay). |
+| 4 Arm 3 + watermark + isolation + budget | `eblast-image-lifecycle.test.ts` (unit) arm 3: 11 cases; `eblast-image-sweep-cron.test.ts` (truncated, `unused_list_failed`); integration › `listUnused` on a sent E-Blast, closed never-sent vs draft or in review, 0319 watermark (R90 § 2). Migration 0319 applied and verified: R90 § 1. |
+| 5 Tenant isolation | `broadcast-images-repo-tenant-sql-shape.test.ts` (16 statements, positive control); integration › Principle I at both walls (R90 § 2). |
+| 6 Docs | spec 119 `spec.md` + `data-model.md` § 4, `processing-records.md`, `cron-jobs.md` Block 2, `member-erasure.md`, `observability.md`, `changelog.md` (diff). |
 
 ## Rollout
 
