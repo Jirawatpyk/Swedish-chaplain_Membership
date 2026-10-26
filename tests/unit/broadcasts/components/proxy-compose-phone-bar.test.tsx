@@ -86,3 +86,14 @@ describe('staff compose on a desktop', () => {
     expect(screen.getAllByRole('button', { name: c.button.submit })).toHaveLength(1);
   });
 });
+
+describe('staff compose at 320 px', () => {
+  // Measured at 320 px (fixture `aura-admin?view=broadcast-new`): with no
+  // track below `lg` the grid's implicit column took the cards' min-content,
+  // 322 px in a 288 px column, and the page scrolled sideways by 18 px.
+  it('sizes its one column to the page below lg, so nothing pushes it wider', () => {
+    renderPicked();
+    const grid = screen.getByTestId('proxy-compose-grid');
+    expect(grid.className).toContain('grid-cols-[minmax(0,1fr)]');
+  });
+});
