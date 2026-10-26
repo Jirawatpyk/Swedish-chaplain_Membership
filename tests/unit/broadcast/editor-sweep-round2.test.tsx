@@ -202,7 +202,7 @@ describe('#12 — the loading skeleton', () => {
     render(wrap(<Loading />));
     const status = screen.getByTestId('tiptap-loading');
     expect(within(status).getByText(enMessages.shell.editorLoading)).toHaveClass('sr-only');
-    expect(status.querySelector('[data-slot="skeleton-block"]')).toHaveClass('h-[152px]', 'sm:h-[104px]');
+    expect(status.querySelector('[data-slot="skeleton-block"]')).toHaveClass('h-[104px]', 'sm:[@media(pointer:fine)]:h-10');
   });
 });
 

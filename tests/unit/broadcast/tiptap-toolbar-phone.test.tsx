@@ -6,7 +6,7 @@
  * command. Desktop keeps every control in one wrapping row.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { Editor } from '@tiptap/core';
 import enMessages from '@/i18n/messages/en.json';
@@ -108,6 +108,36 @@ describe('phone toolbar — the staff boards\' row', () => {
       const item = within(menu).getByText(name).closest('[role^=menuitem]');
       expect(item).toHaveAttribute('aria-disabled', 'true');
     }
+  });
+
+  it('Image chosen from Insert starts from the menu button, so its dialog returns focus there (a11y H1)', () => {
+    let focusAtInsert: Element | null = null;
+    const { toolbar } = renderToolbar({ onInsertImage: () => { focusAtInsert = document.activeElement; } });
+    const menu = openMenu(toolbar, t.insertMenu);
+    fireEvent.click(within(menu).getByText(t.image));
+    expect(focusAtInsert).toHaveAttribute('data-toolbar-control', 'insert');
+  });
+
+  it('while uploading, Image and Banner say to wait for the upload', () => {
+    const { toolbar } = renderToolbar({ imageBusy: true });
+    const menu = openMenu(toolbar, t.insertMenu);
+    expect(within(menu).getAllByText(t.uploadWait)).toHaveLength(2);
+  });
+
+  it('the menu button shows when the caret is in one of its blocks (UX M2)', () => {
+    const { toolbar } = renderToolbar();
+    const trigger = within(toolbar).getByRole('button', { name: t.blocksMenu });
+    expect(trigger.querySelector('[data-active-mark]')).toBeNull();
+    act(() => {
+      editor!.chain().focus().toggleHeading({ level: 2 }).run();
+    });
+    expect(within(toolbar).getByRole('button', { name: t.blocksMenu }).querySelector('[data-active-mark]')).not.toBeNull();
+  });
+
+  it('while the host saves, the menus do not open', () => {
+    const { toolbar } = renderToolbar({ disabled: true });
+    fireEvent.click(within(toolbar).getByRole('button', { name: t.insertMenu }));
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it('Thai has no Italic on the phone row either (FR-044)', () => {

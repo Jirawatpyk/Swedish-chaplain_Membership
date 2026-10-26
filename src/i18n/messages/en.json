@@ -6469,6 +6469,7 @@
         "label": "Formatting",
         "blocksMenu": "Lists and headings",
         "insertMenu": "Insert",
+        "uploadWait": "Wait for the upload to finish",
         "heading2": "Heading",
         "heading3": "Subheading",
         "quote": "Quote",

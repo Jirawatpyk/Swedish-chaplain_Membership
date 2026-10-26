@@ -316,11 +316,10 @@ describe('the loading skeleton', () => {
     const status = screen.getByTestId('tiptap-loading');
     expect(status).not.toHaveAttribute('aria-label');
     expect(status).toHaveAccessibleName(enMessages.shell.editorLoading);
-    // Phones 152px (three rows), touch screens from 640px 104px (two rows), a
-    // mouse from 640px 40px (one row): AURA's touch height follows the pointer.
+    // Phones 104px (the boards' eight controls, two rows at 320px), touch
+    // screens from 640px 104px (two rows), a mouse from 640px 40px (one row).
     expect(status.querySelector('[data-slot="skeleton-block"]')).toHaveClass(
-      'h-[152px]',
-      'sm:h-[104px]',
+      'h-[104px]',
       'sm:[@media(pointer:fine)]:h-10',
     );
   });
