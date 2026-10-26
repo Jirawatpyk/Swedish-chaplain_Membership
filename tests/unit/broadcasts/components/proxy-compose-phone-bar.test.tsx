@@ -76,6 +76,14 @@ describe('staff compose on a phone', () => {
     expect(screen.getAllByRole('button', { name: c.button.submit })).toHaveLength(1);
     expect(within(bar).queryByRole('button', { name: en.admin.broadcasts.proxySubmitDialog.saveDraftButton })).toBeNull();
   });
+
+  // Review round 1: a sticky bar sticks only within its container; inside the
+  // grid it was one grid row and scrolled away with the card.
+  it('sits outside the editor grid, at the end of the form', () => {
+    renderPicked();
+    const bar = screen.getByRole('region', { name: c.views.actions });
+    expect(screen.getByTestId('proxy-compose-grid').contains(bar)).toBe(false);
+  });
 });
 
 describe('staff compose on a desktop', () => {

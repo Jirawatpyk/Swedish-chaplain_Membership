@@ -61,9 +61,13 @@ describe('member compose — one recipients line (T1267)', () => {
     );
   });
 
-  it('the count alone is the live status; the explanation is not re-announced', () => {
+  // Review round 1 (/code-review): on staff compose the note is the only
+  // place the self-exclusion is said, so it is announced with the count.
+  it('the count and who they are are announced together', () => {
     renderForm();
-    expect(screen.getByRole('status')).toHaveTextContent(/^128 recipients$/);
+    expect(screen.getByRole('status')).toHaveTextContent(
+      /^128 recipients · the primary contact of each active member, not your own company$/,
+    );
   });
 
   it('says "every contact" when the all-contacts leg is in force', () => {
