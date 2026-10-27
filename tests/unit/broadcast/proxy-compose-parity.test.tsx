@@ -161,6 +161,12 @@ afterEach(() => {
 });
 
 describe('T137 — the staff compose-on-behalf form offers what the member form offers', () => {
+  // Spec 122 PR C — staff are the reviewers: no sending rules on behalf.
+  it('shows no E-Blast sending rules', () => {
+    renderForm();
+    expect(screen.queryByTestId('compose-sending-rules')).toBeNull();
+  });
+
   it('offers the template picker', () => {
     renderForm();
     expect(screen.getByText('Start from a template')).toBeInTheDocument();
