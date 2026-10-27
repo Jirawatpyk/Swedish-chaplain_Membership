@@ -869,6 +869,12 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The portal sign-out button becomes an AURA `Button` with the 44px touch height. (R84 then found it mounted nowhere since 063 — sign-out lives in the Account menu — so the follow-up PR deletes it.)
   - Requests, toasts and copy are unchanged.
 
+### Session 2026-10-27 (follow-up PR F: the seeded tier presets)
+
+- Q: What was wrong? → A: Migration `0068` seeded six `swecham` tier presets in `broadcast_segment_definitions` with the codes premium, large, regular, diamond, platinum and gold. None is a `plan_category`, so each would reach nobody (the PR D bug, in data), and their `broadcasts.segment.tier*` label keys do not exist.
+- Q: Fix or disable? → A: The maintainer chose (27 Oct) a migration that fixes the rows. `0321` deletes every tier preset, in every tenant, whose `tierCodes` is not a non-empty list of the two categories, and seeds one `swecham` preset per category labelled with `portal.broadcasts.list.tierCode.*`. Nothing reads the table yet (the repo port has no caller) and no FK points at it, so it is safe before the code deploys; the rollback is a forward fix.
+- Out of scope (named): the other three `0068` presets (`all_members`, `event_attendees_last_90d`, `custom`) also point at missing `broadcasts.segment.*` keys. That is harmless until F7.1 reads the table.
+
 ### Session 2026-10-27 (follow-up PR D: the tier option is a choice of membership categories)
 
 - Q: Why change the tier field? → A: It was free text ("Tier code", placeholder "premium, large"). The recipient query matches only the `plan_category` values `corporate` and `partnership`, case-sensitively, so "premium", "large" or "Corporate" reached nobody, and nothing said why. This is a bug fix to what can be submitted (FR-011), not part of a UI-swap slice.
