@@ -35,7 +35,7 @@ const PRIVACY = 'https://swecham.example/privacy';
 function renderRules(acknowledgedAt: string | null): void {
   render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <ComposeSendingRules acknowledgedAt={acknowledgedAt} locale="en" privacyPolicyUrl={PRIVACY} />
+      <ComposeSendingRules memberId="m-1" acknowledgedAt={acknowledgedAt} locale="en" privacyPolicyUrl={PRIVACY} />
     </NextIntlClientProvider>,
   );
 }

@@ -99,7 +99,7 @@ vi.mock('@/components/broadcast/compose/template-picker', () => ({
 
 // Spec 122 PR C — the page reads the company's E-Blast terms acknowledgement
 // through the banner's shared read and hands it to the form.
-const readBroadcastsAcknowledgedAt = vi.hoisted(() => vi.fn());
+const readBroadcastsAcknowledgedAt = vi.hoisted(() => vi.fn().mockResolvedValue(null));
 vi.mock('@/app/(member)/portal/_components/broadcasts-acknowledgement', () => ({
   readBroadcastsAcknowledgedAt,
 }));

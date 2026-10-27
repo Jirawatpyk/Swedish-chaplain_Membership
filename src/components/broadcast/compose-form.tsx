@@ -196,10 +196,12 @@ export interface ComposeFormProps {
   readonly initialTemplateId?: string | null;
   /**
    * Spec 122 PR C — when the company acknowledged the E-Blast sending rules
-   * (ISO), or null when it has not. Absent: the rules are not shown (a failed
-   * read, or a surface without them).
+   * (ISO), or null when it has not (a failed read is null too: the rules show
+   * in full). Absent: a surface without the rules (fixtures, tests).
    */
   readonly acknowledgedAt?: string | null;
+  /** The signed-in member (company); keys the in-tab acknowledgement. */
+  readonly memberId?: string;
   /** The tenant's privacy policy, linked from the rules. */
   readonly privacyPolicyUrl?: string | null;
 }
@@ -221,6 +223,7 @@ export function ComposeForm({
   initialTemplateId = null,
   acknowledgedAt,
   privacyPolicyUrl,
+  memberId,
 }: ComposeFormProps): React.ReactElement {
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
@@ -657,8 +660,9 @@ export function ComposeForm({
 
   const writeHead = (
     <>
-      {acknowledgedAt !== undefined ? (
+      {acknowledgedAt !== undefined && memberId !== undefined ? (
         <ComposeSendingRules
+          memberId={memberId}
           acknowledgedAt={acknowledgedAt}
           locale={locale === 'th' || locale === 'sv' ? locale : 'en'}
           privacyPolicyUrl={privacyPolicyUrl ?? null}

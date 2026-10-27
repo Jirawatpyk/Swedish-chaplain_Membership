@@ -22,6 +22,7 @@ function renderBanner(): void {
   render(
     <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
       <AcknowledgementBannerClient
+        memberId="m-1"
         title={copy.title}
         body={copy.body}
         acknowledge={copy.acknowledge}
@@ -54,7 +55,7 @@ describe('after the compose page records the acknowledgement', () => {
     pathname.current = '/portal/benefits';
     renderBanner();
     expect(screen.getByTestId('broadcasts-acknowledge-banner')).toBeInTheDocument();
-    act(() => announceBroadcastsAcknowledged());
+    act(() => announceBroadcastsAcknowledged('m-1'));
     expect(screen.queryByTestId('broadcasts-acknowledge-banner')).toBeNull();
     resetAcknowledgedForTests();
   });

@@ -220,6 +220,7 @@ export default async function AuraPortalPreviewPage({
             initialTemplateId={blank ? null : 'tpl-event'}
             // Spec 122 PR C — `ack=none`: the company has not acknowledged the
             // sending rules yet, so they show in full.
+            memberId="7c1e4d2a-0000-4000-8000-0000000000ff"
             acknowledgedAt={sp.ack === 'none' ? null : '2026-10-01T03:00:00.000Z'}
             privacyPolicyUrl="https://swecham.example/privacy"
             {...(blank

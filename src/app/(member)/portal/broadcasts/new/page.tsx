@@ -119,6 +119,15 @@ export default async function ComposeBroadcastPage({
     redirect('/portal/benefits?tab=broadcasts&unavailable=no_member');
   }
   const memberId = memberLookup.value.memberId;
+  // Spec 122 PR C — started now, alongside the access, quota and template
+  // reads it does not depend on; awaited just before render.
+  const acknowledgedAtPromise = readBroadcastsAcknowledgedAt(tenant, memberId).catch((err: unknown) => {
+    logger.warn(
+      { err: errKind(err), tenantId: tenant.slug, memberIdHash: hashId(memberId) },
+      'broadcasts.compose.acknowledgement_read_failed',
+    );
+    return null;
+  });
   try {
     const membershipAccess = await loadMembershipAccess(tenant.slug, memberId);
     if (membershipAccess.access !== 'full') {
@@ -285,16 +294,7 @@ export default async function ComposeBroadcastPage({
   // is recorded, then one "Read again" line. A failed read shows them in full
   // rather than failing the page (the banner is hidden here, so leaving them
   // out showed them nowhere); acknowledging again is idempotent.
-  let acknowledgedAt: string | null = null;
-  try {
-    const ack = await readBroadcastsAcknowledgedAt(tenant, memberId);
-    acknowledgedAt = ack === null ? null : new Date(ack).toISOString();
-  } catch (err) {
-    logger.warn(
-      { err: errKind(err), tenantId: tenant.slug, memberIdHash: hashId(memberId) },
-      'broadcasts.compose.acknowledgement_read_failed',
-    );
-  }
+  const acknowledgedAt = (await acknowledgedAtPromise)?.toISOString() ?? null;
 
   return (
     // F119 T148 (FR-050) — 72 rem, not the 42 rem form tier: the editor and the
@@ -327,6 +327,7 @@ export default async function ComposeBroadcastPage({
         initialTemplateId={selectedTemplateId}
         {...(initialSubject !== undefined ? { initialSubject } : {})}
         {...(initialBodyHtml !== undefined ? { initialBodyHtml } : {})}
+        memberId={memberId}
         acknowledgedAt={acknowledgedAt}
         privacyPolicyUrl={env.broadcasts.privacyPolicyUrl ?? null}
       />

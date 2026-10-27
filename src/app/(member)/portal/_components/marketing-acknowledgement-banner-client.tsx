@@ -30,6 +30,8 @@ import {
 import { BroadcastsRulesBody } from '@/components/broadcast/acknowledgement/rules-body';
 
 export interface AcknowledgementBannerClientProps {
+  /** The signed-in member (company); keys the in-tab acknowledgement. */
+  readonly memberId: string;
   readonly title: string;
   readonly body: string;
   readonly acknowledge: string;
@@ -49,6 +51,7 @@ export interface AcknowledgementBannerClientProps {
 const COMPOSE_PATH = '/portal/broadcasts/new';
 
 export function AcknowledgementBannerClient({
+  memberId,
   title,
   body,
   acknowledge,
@@ -65,7 +68,7 @@ export function AcknowledgementBannerClient({
   // (`compose/sending-rules.tsx`), so the banner stays out of it there; and an
   // acknowledgement recorded there (or by this banner) hides it everywhere.
   const onCompose = usePathname() === COMPOSE_PATH;
-  const acknowledgedInThisTab = useBroadcastsAcknowledgedInThisTab();
+  const acknowledgedInThisTab = useBroadcastsAcknowledgedInThisTab(memberId);
 
   function dismiss() {
     // Move focus to the persistent anchor BEFORE unmount so the
@@ -79,6 +82,7 @@ export function AcknowledgementBannerClient({
   // with a retry hint and the banner stays: silently dismissing on failure
   // would diverge the recorded state from what the UI implies.
   const { acknowledge: onAcknowledge, pending } = useAcknowledgeBroadcastsTerms({
+    memberId,
     locale,
     failureHint: t('toastAcknowledgeFailedHint'),
     onAcknowledged: dismiss,

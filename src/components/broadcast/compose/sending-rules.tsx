@@ -26,6 +26,8 @@ import {
 import { BroadcastsRulesBody } from '@/components/broadcast/acknowledgement/rules-body';
 
 export interface ComposeSendingRulesProps {
+  /** The signed-in member (company); keys the in-tab acknowledgement. */
+  readonly memberId: string;
   /** ISO time the company acknowledged the rules, or null when it has not. */
   readonly acknowledgedAt: string | null;
   /** Recorded on the audit row, as the banner does. */
@@ -35,6 +37,7 @@ export interface ComposeSendingRulesProps {
 }
 
 export function ComposeSendingRules({
+  memberId,
   acknowledgedAt,
   locale,
   privacyPolicyUrl,
@@ -43,7 +46,7 @@ export function ComposeSendingRules({
   const tRules = useTranslations('portal.broadcasts.compose.rules');
   // Recorded on the server (the prop) or in this tab: the form remounts this
   // block when it crosses the phone breakpoint, and nothing refreshes the prop.
-  const acknowledgedInThisTab = useBroadcastsAcknowledgedInThisTab();
+  const acknowledgedInThisTab = useBroadcastsAcknowledgedInThisTab(memberId);
   const acknowledged = acknowledgedAt !== null || acknowledgedInThisTab;
   const [open, setOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -53,6 +56,7 @@ export function ComposeSendingRules({
   const rulesId = useId();
 
   const { acknowledge, pending } = useAcknowledgeBroadcastsTerms({
+    memberId,
     locale,
     // No banner on this page: the hint says the rules stay here.
     failureHint: tRules('toastAcknowledgeFailedHint'),

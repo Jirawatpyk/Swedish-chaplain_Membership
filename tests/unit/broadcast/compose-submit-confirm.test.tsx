@@ -58,7 +58,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 const submitCalls = (): unknown[][] =>
   fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/broadcasts/submit'));
 
-function renderForm(subject = 'Nordic Leadership Breakfast', extra: { acknowledgedAt?: string | null } = {}): void {
+function renderForm(subject = 'Nordic Leadership Breakfast', extra: { acknowledgedAt?: string | null; memberId?: string } = {}): void {
   render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <ComposeForm
@@ -176,7 +176,7 @@ describe('member compose — Submit asks first (T1265)', () => {
 // open and unacknowledged, Submit still asks and sends as before.
 describe('the sending rules do not gate Submit (spec 122 PR C)', () => {
   it('with the rules unacknowledged, Submit opens the summary and confirm sends', async () => {
-    renderForm('Nordic Leadership Breakfast', { acknowledgedAt: null });
+    renderForm('Nordic Leadership Breakfast', { acknowledgedAt: null, memberId: 'm-1' });
     expect(screen.getByTestId('compose-sending-rules')).toBeInTheDocument();
     const user = userEvent.setup();
     await user.click(submitButton());

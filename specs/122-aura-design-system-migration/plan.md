@@ -562,3 +562,25 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
   - the menu's icon and trailing check (AURA #181).
 - **Step 3 as written can't be reached:** the subject field has `maxlength=200`. It was checked with a stubbed `422 broadcast_subject_too_long` instead. The page went back to Write and focused the subject.
 - **Phone bars:** both stay put while scrolling and rise 20px at the very end of the page, where their container ends. This is AURA's sticky ActionBar. Accepted, not changed.
+
+### US12d-3 follow-up (PR C) — the sending rules on compose (size M, plan agreed 2026-10-27)
+
+- **The rules show in full until acknowledged, then one "Read again" line.**
+  - RED `ba2a707`. `compose-sending-rules.test.tsx` failed on the missing module. "passes the acknowledgement time as an ISO string" failed (the page did not read it). "is not shown on /portal/broadcasts/new" failed (the banner rendered).
+  - GREEN `4124802`.
+- **Review round 1.**
+  - RED `991304a`:
+    - the banner is told by event rather than a refresh;
+    - a remount keeps the line;
+    - "I acknowledge" is not the primary button;
+    - the failure hint names the rules;
+    - the toggle has one fixed name, with the line as its description;
+    - a failed read shows the rules.
+  - GREEN `5c70cdf`.
+- **Review round 2.**
+  - RED `81eca7b`. "acknowledged in this tab > is true for the member it was recorded for, and only that member" failed (the flag was tab-wide). "the portal banner when the acknowledgement read fails > renders nothing" failed (it threw).
+  - Also pinned: Submit is not gated by unacknowledged rules, and staff compose shows no rules.
+- **Tenancy.** `broadcasts-acknowledgement-tenant-sql-shape.test.ts` pins the bound `tenant_id` and `runInTenant` on the shared read.
+- **Boards.** Canvas v134 adds `Portal-broadcast-new-rules` (+ mobile, TH, SV) and puts the line on `Portal-broadcast-new` and its mobile set. The deliberate differences from the inset are recorded in spec.md Session 2026-10-27.
+- **e2e** (relay R95): `broadcast-compose-and-submit.spec.ts` › "@a11y spec 122 PR C" covers desktop and 390px, the alert state, the collapsed line and the open panel.
+

@@ -104,6 +104,7 @@ const SURFACES: readonly Surface[] = [
     name: 'marketing acknowledgement banner',
     ui: () => (
       <AcknowledgementBannerClient
+        memberId="m-1"
         title="Marketing"
         body="Body"
         acknowledge="I acknowledge"

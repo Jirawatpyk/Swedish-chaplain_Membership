@@ -28,6 +28,8 @@ import {
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { AcknowledgementBannerClient } from './marketing-acknowledgement-banner-client';
 import { readBroadcastsAcknowledgedAt } from './broadcasts-acknowledgement';
+import { logger } from '@/lib/logger';
+import { errKind, hashId } from '@/lib/log-id';
 
 interface BannerEligibility {
   readonly show: boolean;
@@ -54,7 +56,19 @@ async function checkEligibility(): Promise<BannerEligibility> {
   const memberId = memberLookup.value.memberId;
 
   // The shared read (also used by the compose page, spec 122 PR C).
-  const ack = await readBroadcastsAcknowledgedAt(tenant, memberId);
+  // Shared with the compose page and cached per request: a failed read hides
+  // the banner rather than failing the portal layout (compose shows the rules
+  // in full on its own; every other page shows the banner next time).
+  let ack: Date | null;
+  try {
+    ack = await readBroadcastsAcknowledgedAt(tenant, memberId);
+  } catch (err) {
+    logger.warn(
+      { err: errKind(err), tenantId: tenant.slug, memberIdHash: hashId(memberId) },
+      'broadcasts.banner.acknowledgement_read_failed',
+    );
+    return { show: false, memberId };
+  }
   if (ack !== null) {
     return { show: false, memberId };
   }
@@ -73,7 +87,7 @@ async function checkEligibility(): Promise<BannerEligibility> {
 
 export async function MarketingAcknowledgementBanner(): Promise<React.ReactElement | null> {
   const eligibility = await checkEligibility();
-  if (!eligibility.show) return null;
+  if (!eligibility.show || eligibility.memberId === null) return null;
 
   const t = await getTranslations(
     'portal.broadcasts.banner.acknowledgement',
@@ -91,6 +105,7 @@ export async function MarketingAcknowledgementBanner(): Promise<React.ReactEleme
   const privacyPolicyUrl = env.broadcasts.privacyPolicyUrl ?? null;
   return (
     <AcknowledgementBannerClient
+      memberId={eligibility.memberId}
       title={t('title')}
       body={t('body')}
       acknowledge={t('acknowledge')}
