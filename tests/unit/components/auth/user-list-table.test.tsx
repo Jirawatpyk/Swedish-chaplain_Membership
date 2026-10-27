@@ -21,6 +21,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { toast } from '@/lib/toast';
 import { UserListTable, type UserListTableProps } from '@/components/auth/user-list-table';
+import { erasedUserEmail } from '@/modules/auth/domain/erased-user-email';
 
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -36,6 +37,7 @@ const PENDING_USER = {
   status: 'pending',
   displayName: null,
   invitationExpiresAt: null,
+  isErased: false,
 } as const;
 
 const ACTIVE_USER = {
@@ -45,6 +47,7 @@ const ACTIVE_USER = {
   status: 'active',
   displayName: 'Active User',
   invitationExpiresAt: null,
+  isErased: false,
 } as const;
 
 const DISABLED_USER = {
@@ -54,6 +57,7 @@ const DISABLED_USER = {
   status: 'disabled',
   displayName: 'Disabled User',
   invitationExpiresAt: null,
+  isErased: false,
 } as const;
 
 // A STAFF row — the only rows the change-role picker offers (016 PR 3).
@@ -64,6 +68,7 @@ const ADMIN_USER = {
   status: 'active',
   displayName: 'Admin User',
   invitationExpiresAt: null,
+  isErased: false,
 } as const;
 
 // Fixed "now" (Task 2's server-now-hydration fix): UserListTable no longer
@@ -451,6 +456,7 @@ describe('UserListTable — change-role picker (016 PR 3, US1)', () => {
       status: 'active',
       displayName: 'Marketing User',
       invitationExpiresAt: null,
+      isErased: false,
     } as const;
     renderTable([MARKETING_USER], { canManageStaffRoles: true });
 
@@ -489,6 +495,7 @@ describe('UserListTable on AURA', () => {
     status: 'active',
     displayName: 'Karin Ek',
     invitationExpiresAt: null,
+    isErased: false,
   } as const;
 
   it('shows status as a pill toned by status', () => {
@@ -541,6 +548,32 @@ describe('UserListTable on AURA', () => {
     expect(screen.getByRole('button', { name: en.admin.users.actions.changeRole })).toBeInTheDocument();
     await pickFromMenu(disabledStaff.email, en.admin.users.actions.enable);
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  // 134-s3 — an erased login stays `disabled` in the DB; the row says
+  // "Erased" and offers nothing (enableUser refuses it server-side).
+  it('an erased row says "Erased" and offers no Enable and no ⋯ menu', () => {
+    const erased = { ...DISABLED_USER, id: 'u-erased-1', email: erasedUserEmail('u-erased-1'), displayName: '[erased]', isErased: true };
+    const { container } = renderTable([erased, DISABLED_USER]);
+    const row = container.querySelector<HTMLElement>(`tr[data-user-id="${erased.id}"]`)!;
+    expect(within(row).getByText(en.admin.users.filters.status.erased)).toHaveAttribute('data-status', 'erased');
+    expect(within(row).queryByText(en.admin.users.filters.status.disabled)).toBeNull();
+    expect(within(row).queryByRole('button')).toBeNull();
+    // The sentinel is named, never shown as an address.
+    expect(within(row).getByText(en.admin.users.erasedAccount)).toBeInTheDocument();
+    expect(row).not.toHaveTextContent('erased.invalid');
+    // eraseUser stamps displayName '[erased]'; the row never shows it.
+    expect(row).not.toHaveTextContent('[erased]');
+    // Control: a plain disabled row keeps its Enable action.
+    const plain = container.querySelector<HTMLElement>(`tr[data-user-id="${DISABLED_USER.id}"]`)!;
+    expect(within(plain).getByRole('button', { name: en.admin.users.actions.enable })).toBeInTheDocument();
+  });
+
+  it('an erased STAFF row offers no Change role', () => {
+    const erasedStaff = { ...DISABLED_USER, id: 'u-erased-staff', email: erasedUserEmail('u-erased-staff'), displayName: '[erased]', role: 'manager', isErased: true } as const;
+    renderTable([erasedStaff]);
+    expect(screen.queryByRole('button', { name: en.admin.users.actions.changeRole })).toBeNull();
+    expect(screen.queryByRole('button', { name: `More actions for ${erasedStaff.email}` })).toBeNull();
   });
 
   it('shows the status pill and the invitation expiry on one line', () => {

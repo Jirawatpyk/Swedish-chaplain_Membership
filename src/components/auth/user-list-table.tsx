@@ -62,6 +62,12 @@ interface UserRow {
    * invitation was already redeemed/revoked without a re-send.
    */
   readonly invitationExpiresAt: Date | null;
+  /**
+   * 134-s3 — an erased login (`UserListRow.isErased`). Its DB status stays
+   * `disabled`; the row shows "Erased" and offers no actions, since
+   * enableUser refuses it and nothing else applies to it.
+   */
+  readonly isErased: boolean;
 }
 
 /**
@@ -337,7 +343,7 @@ export function UserListTable({
   function rowView(user: UserRow) {
     const isSelf = user.id === currentUserId;
     const canDisable = canManageAccounts && !isSelf && user.status === 'active';
-    const canEnable = canManageAccounts && user.status === 'disabled';
+    const canEnable = canManageAccounts && user.status === 'disabled' && !user.isErased;
     const canManageInvite = canManageAccounts && user.status === 'pending';
     // Staff-role reassignment (users.manage). Never on your own row
     // (self-demotion lockout) and only on rows whose CURRENT role is
@@ -346,7 +352,10 @@ export function UserListTable({
     // avoids a row opening a picker that cannot show its own role.
     // A member↔staff move is a portal change, out of this picker's
     // scope; `changeRole.memberHint` says so in the dialog.
-    const canChangeRole = canManageStaffRoles && !isSelf && CHANGE_ROLE_OPTIONS.includes(user.role);
+    // An erased login keeps no role worth changing (UI-only: the
+    // change-role route itself is unchanged by 134-s3).
+    const canChangeRole =
+      canManageStaffRoles && !isSelf && !user.isErased && CHANGE_ROLE_OPTIONS.includes(user.role);
     const busy = busyId === user.id;
     const daysRemaining = user.invitationExpiresAt ? daysUntil(user.invitationExpiresAt, now) : null;
     // An EXPIRED invite gets the danger tone (not just muted text) so it's
@@ -494,9 +503,32 @@ export function UserListTable({
     );
   }
 
+  /**
+   * An erased row's identity cell: its address is eraseUser's sentinel, which
+   * is noise and reads like a mailbox (UX review), so it is named instead.
+   * `data-user-email` keeps the real value for the e2e lookups.
+   */
+  function erasedAccount(): ReactNode {
+    return <span className="text-[var(--aura-fg-secondary)]">{t('erasedAccount')}</span>;
+  }
+
+  /** The row's display name; eraseUser stamps `[erased]`, which is not one. */
+  function nameOf(user: UserRow): string | null {
+    return user.isErased ? null : user.displayName;
+  }
+
   function statusPillFor(user: UserRow): ReactNode {
+    // `filters.status.erased` is display-only: erased is not a DB status, so
+    // the filter offers only STATUS_VALUES (users-filters.tsx).
+    if (user.isErased) {
+      return (
+        <StatusPill tone="neutral" data-tone="neutral" data-status="erased">
+          {t('filters.status.erased')}
+        </StatusPill>
+      );
+    }
     return (
-      <StatusPill tone={statusTone[user.status]} data-tone={statusTone[user.status]}>
+      <StatusPill tone={statusTone[user.status]} data-tone={statusTone[user.status]} data-status={user.status}>
         {t(`filters.status.${user.status}`)}
       </StatusPill>
     );
@@ -540,8 +572,8 @@ export function UserListTable({
                 const none = !view.canDisable && !view.canEnable && !view.canManageInvite && !view.canChangeRole;
                 return (
                   <Tr key={user.id} data-user-id={user.id} data-user-email={user.email.toLowerCase()}>
-                    <Td>{emailWithBreak(user.email)}</Td>
-                    <Td className="whitespace-nowrap">{user.displayName ?? '—'}</Td>
+                    <Td>{user.isErased ? erasedAccount() : emailWithBreak(user.email)}</Td>
+                    <Td className="whitespace-nowrap">{nameOf(user) ?? '—'}</Td>
                     <Td>{roleBadgeFor(user)}</Td>
                     <Td>
                       <div className="flex flex-wrap items-center gap-[var(--aura-space-2)]">
@@ -585,10 +617,12 @@ export function UserListTable({
                 className="flex flex-col gap-[var(--aura-space-2)] rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] p-[var(--aura-space-4)]"
               >
                 <div className="flex items-start justify-between gap-[var(--aura-space-2)]">
-                  <span className="aura-text-label min-w-0 [overflow-wrap:anywhere]">{user.displayName ?? user.email}</span>
+                  <span className="aura-text-label min-w-0 [overflow-wrap:anywhere]">
+                    {nameOf(user) ?? (user.isErased ? erasedAccount() : user.email)}
+                  </span>
                   {statusPillFor(user)}
                 </div>
-                {user.displayName ? (
+                {nameOf(user) ? (
                   <span className="min-w-0 text-[var(--aura-fg-primary)] [overflow-wrap:anywhere]">{user.email}</span>
                 ) : user.status === 'pending' ? (
                   <span className="text-[var(--aura-fg-secondary)]">{t('invite.noNameYet')}</span>
