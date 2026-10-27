@@ -75,3 +75,18 @@ Agreed in plan mode on 27 Oct 2026, together with the D-030 follow-up (#670).
   - a `test-sweep-fixedslug` negative for the regex;
   - the spec's test list corrected.
 - **GREEN:** unit 15/15 (13 before this round's additions), integration 5/5, `tsc` and eslint clean.
+
+## Review round 3 → fixes
+
+- **reliability-guardian.** M-1R is closed. Two new MEDIUM findings:
+  - With discovery counted in the budget, a slow discovery could defer every tenant, so a growing backlog would never shrink. Fix: a run always drains at least one tenant.
+  - The bounded `UPDATE users` could now throw and abort the whole integration run. Fix: it is caught and logged with its SQLSTATE, and the run continues.
+- **senior-tester: SHIP-READY.** M10, M11 and the count-after-savepoint finding were all killed by mutation. Remaining mutants and their fixes:
+  - **B2:** `SET LOCAL` was sent outside a transaction. The fake client now records `BEGIN`, and every `SET LOCAL lock_timeout` must directly follow one.
+  - **B3:** the budget did not count discovery. A `Date.now` spy now proves it does.
+  - **M13:** the negative case used a 9-character suffix. It now uses `test-sweep-fixedabc`, an 8-character non-hex suffix.
+  - **C2:** the deleted count was never asserted as a positive. `deletedPerTable.get('members')` is now pinned at 2.
+- **GREEN:**
+  - unit 16/16;
+  - integration 5/5: the budget case now seeds two tenants and expects one drained and one deferred;
+  - `tsc` and eslint clean.

@@ -40,21 +40,31 @@ export default async function disableStaleLeakedTestStaff(): Promise<void> {
   try {
     // Bounded with SET LOCAL (a pooled URL drops session parameters), so a
     // held row lock cannot stall the run; the tenant sweep bounds itself.
-    const rows = await sql.begin(async (tx) => {
-      await tx.unsafe('SET LOCAL lock_timeout = 5000');
-      await tx.unsafe('SET LOCAL statement_timeout = 60000');
-      return tx`
-        UPDATE users SET status = 'disabled'
-        WHERE status = 'active'
-          AND role <> 'member'
-          AND created_at < now() - make_interval(hours => ${STALE_HOURS})
-          AND email ~ '@(swecham\\.test|example\\.com|wipe\\.test)$'
-          AND email NOT LIKE 'e2e-%'
-        RETURNING id
-      `;
-    });
-    if (rows.length > 0) {
-      console.warn(`[integration-global-setup] disabled ${rows.length} leaked test staff user(s) older than ${STALE_HOURS} h`);
+    // Hygiene only: a timeout or any failure is logged and the run goes on.
+    try {
+      const rows = await sql.begin(async (tx) => {
+        await tx.unsafe('SET LOCAL lock_timeout = 5000');
+        await tx.unsafe('SET LOCAL statement_timeout = 60000');
+        return tx`
+          UPDATE users SET status = 'disabled'
+          WHERE status = 'active'
+            AND role <> 'member'
+            AND created_at < now() - make_interval(hours => ${STALE_HOURS})
+            AND email ~ '@(swecham\\.test|example\\.com|wipe\\.test)$'
+            AND email NOT LIKE 'e2e-%'
+          RETURNING id
+        `;
+      });
+      if (rows.length > 0) {
+        console.warn(`[integration-global-setup] disabled ${rows.length} leaked test staff user(s) older than ${STALE_HOURS} h`);
+      }
+    } catch (e) {
+      const code =
+        typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
+      console.warn(
+        `[integration-global-setup] leaked test-user sweep failed ` +
+          `(${e instanceof Error ? e.constructor.name : 'unknown'}${code ? ` ${code}` : ''}); continuing`,
+      );
     }
 
     const started = Date.now();

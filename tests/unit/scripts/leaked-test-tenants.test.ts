@@ -91,7 +91,8 @@ describe('GENERATED_TEST_SLUG (135 review)', () => {
     expect(GENERATED_TEST_SLUG.test('test-suppression-explain')).toBe(false);
     expect(GENERATED_TEST_SLUG.test('test-adopt-tenant')).toBe(false);
     expect(GENERATED_TEST_SLUG.test('swecham')).toBe(false);
-    expect(GENERATED_TEST_SLUG.test('test-sweep-fixedslug')).toBe(false);
+    // Eight characters, but not hex: an alphanumeric suffix must not pass.
+    expect(GENERATED_TEST_SLUG.test('test-sweep-fixedabc')).toBe(false);
   });
 });
 
@@ -118,7 +119,11 @@ describe('sweepLeakedTestTenants wiring (135 review)', () => {
   // or inside a transaction / savepoint — is recorded in `sent`.
   function fakeSql(
     owned: Array<{ tbl: string; n: number }>,
-    { slug = 'test-sweep-a1b2c3d4', failOn }: { slug?: string; failOn?: string } = {},
+    {
+      slug = 'test-sweep-a1b2c3d4',
+      slugs = [slug],
+      failOn,
+    }: { slug?: string; slugs?: string[]; failOn?: string } = {},
   ) {
     const sent: string[] = [];
     const tagged = vi.fn(async (strings: TemplateStringsArray) => {
@@ -131,15 +136,18 @@ describe('sweepLeakedTestTenants wiring (135 review)', () => {
     });
     const unsafe = vi.fn(async (query: string) => {
       sent.push(query);
-      if (query.includes('count(*)::int AS n')) return owned.map((o) => ({ ...o, tenant_id: slug }));
-      if (query.includes('max(newest)')) return [{ tenant_id: slug, newest: new Date(Date.now() - 7 * 3_600_000) }];
+      if (query.includes('count(*)::int AS n')) return slugs.flatMap((s) => owned.map((o) => ({ ...o, tenant_id: s })));
+      if (query.includes('max(newest)')) return slugs.map((s) => ({ tenant_id: s, newest: new Date(Date.now() - 7 * 3_600_000) }));
       if (failOn !== undefined && query.startsWith(failOn)) throw new Error('refused');
       if (query.startsWith('DELETE')) return Object.assign([], { count: 2 });
-      return [{ tenant_id: slug }];
+      return slugs.map((s) => ({ tenant_id: s }));
     });
     const client = Object.assign(tagged, { unsafe }) as unknown as Record<string, unknown>;
     client['savepoint'] = async (fn: (sp: unknown) => Promise<unknown>) => fn(client);
-    client['begin'] = async (fn: (tx: unknown) => Promise<unknown>) => fn(client);
+    client['begin'] = async (fn: (tx: unknown) => Promise<unknown>) => {
+      sent.push('BEGIN');
+      return fn(client);
+    };
     return { sql: client as unknown as postgres.Sql, sent, slug };
   }
 
@@ -153,8 +161,9 @@ describe('sweepLeakedTestTenants wiring (135 review)', () => {
 
   it('without skipUndrainable the same tenant is attempted (still never with ALTER TABLE)', async () => {
     const { sql, sent } = fakeSql([{ tbl: 'members', n: 2 }, { tbl: 'broadcast_deliveries', n: 2 }]);
-    await sweepLeakedTestTenants(sql, { ...AUTOMATIC_SWEEP_OPTIONS, skipUndrainable: false });
+    const report = await sweepLeakedTestTenants(sql, { ...AUTOMATIC_SWEEP_OPTIONS, skipUndrainable: false });
     expect(sent).toContain('DELETE FROM "members" WHERE tenant_id = $1');
+    expect(report.deletedPerTable.get('members')).toBe(2);
     expect(sent.some((s) => s.startsWith('ALTER'))).toBe(false);
   });
 
@@ -163,9 +172,12 @@ describe('sweepLeakedTestTenants wiring (135 review)', () => {
     await sweepLeakedTestTenants(sql, AUTOMATIC_SWEEP_OPTIONS);
     const lock = sent.filter((s) => s === 'SET LOCAL lock_timeout = 5000').length;
     const stmt = sent.filter((s) => s === 'SET LOCAL statement_timeout = 30000').length;
-    // 4 discovery reads + 1 tenant drain.
+    // 4 discovery reads + 1 tenant drain, each inside its own transaction.
     expect(lock).toBe(5);
     expect(stmt).toBe(5);
+    sent.forEach((s, i) => {
+      if (s === 'SET LOCAL lock_timeout = 5000') expect(sent[i - 1]).toBe('BEGIN');
+    });
   });
 
   it('a delete is counted only when its savepoint held (a failed re-enable counts nothing)', async () => {
@@ -186,9 +198,27 @@ describe('sweepLeakedTestTenants wiring (135 review)', () => {
     expect(r1.slugs).toBe(0);
     expect(fixed.sent.some((s) => s.startsWith('DELETE'))).toBe(false);
 
-    const spent = fakeSql([{ tbl: 'members', n: 1 }]);
+    // A spent budget still drains one tenant per run, then defers the rest.
+    const spent = fakeSql([{ tbl: 'members', n: 1 }], { slugs: ['test-sweep-a1b2c3d4', 'test-sweep-b1b2c3d4'] });
     const r2 = await sweepLeakedTestTenants(spent.sql, { ...AUTOMATIC_SWEEP_OPTIONS, budgetMs: 0 });
-    expect(r2.skippedBudget).toEqual(['test-sweep-a1b2c3d4']);
-    expect(spent.sent.some((s) => s.startsWith('DELETE'))).toBe(false);
+    expect(r2.fullyCleaned).toBe(1);
+    expect(r2.skippedBudget).toEqual(['test-sweep-b1b2c3d4']);
+  });
+
+  it('the budget counts discovery time', async () => {
+    // Each Date.now() call advances the clock by 1 s; discovery alone makes
+    // several calls, so a 2 s budget is spent before the second tenant.
+    let t = 1_800_000_000_000;
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => (t += 1_000));
+    try {
+      const { sql } = fakeSql([{ tbl: 'members', n: 1 }], {
+        slugs: ['test-sweep-a1b2c3d4', 'test-sweep-b1b2c3d4'],
+      });
+      const r = await sweepLeakedTestTenants(sql, { ...AUTOMATIC_SWEEP_OPTIONS, budgetMs: 2_000 });
+      expect(r.fullyCleaned).toBe(1);
+      expect(r.skippedBudget).toEqual(['test-sweep-b1b2c3d4']);
+    } finally {
+      now.mockRestore();
+    }
   });
 });

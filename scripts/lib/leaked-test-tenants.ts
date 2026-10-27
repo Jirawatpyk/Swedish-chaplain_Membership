@@ -341,7 +341,9 @@ export async function sweepLeakedTestTenants(
   // ── Delete, one transaction per tenant, draining by retry ──────────────────
   let n = 0;
   for (const slug of eligible) {
-    if (opts.budgetMs !== undefined && Date.now() - started >= opts.budgetMs) {
+    // At least one tenant per run: a slow discovery alone must not defer
+    // everything, or a growing backlog would never shrink.
+    if (n > 0 && opts.budgetMs !== undefined && Date.now() - started >= opts.budgetMs) {
       skippedBudget.push(slug);
       continue;
     }

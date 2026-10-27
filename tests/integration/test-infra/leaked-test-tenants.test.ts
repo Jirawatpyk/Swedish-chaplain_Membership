@@ -29,6 +29,8 @@ describe('sweepLeakedTestTenants (135) — live Neon dev', () => {
   const stale = `test-sweep-${randomUUID().slice(0, 8)}`;
   const fresh = `test-sweep-${randomUUID().slice(0, 8)}`;
   const fixed = 'test-sweep-fixed-slug';
+  const budgetA = `test-sweep-${randomUUID().slice(0, 8)}`;
+  const budgetB = `test-sweep-${randomUUID().slice(0, 8)}`;
   const notTest = `testing-${randomUUID().slice(0, 8)}`;
 
   async function seed(slug: string, ageHours: number): Promise<void> {
@@ -57,10 +59,12 @@ describe('sweepLeakedTestTenants (135) — live Neon dev', () => {
     await seed(fresh, 0);
     await seed(fixed, 2);
     await seed(notTest, 2);
+    await seed(budgetA, 2);
+    await seed(budgetB, 2);
   });
 
   afterAll(async () => {
-    for (const slug of [stale, fresh, fixed, notTest]) {
+    for (const slug of [stale, fresh, fixed, notTest, budgetA, budgetB]) {
       await sql`DELETE FROM tenant_document_sequences WHERE tenant_id = ${slug}`;
       await sql`DELETE FROM dashboard_metrics_cache WHERE tenant_id = ${slug}`;
     }
@@ -80,17 +84,18 @@ describe('sweepLeakedTestTenants (135) — live Neon dev', () => {
     expect(await owned(stale)).toBe(2);
   });
 
-  it('a spent time budget leaves every tenant for the next run', async () => {
+  it('a spent time budget drains one tenant and leaves the rest for the next run', async () => {
     const report = await sweepLeakedTestTenants(sql, {
       maxAgeHours: 1,
       apply: true,
       includeUndatable: false,
       allowTriggerDisable: false,
-      onlySlugs: [stale],
+      onlySlugs: [budgetA, budgetB],
       budgetMs: 0,
     });
-    expect(report.skippedBudget).toEqual([stale]);
-    expect(await owned(stale)).toBe(2);
+    expect(report.fullyCleaned).toBe(1);
+    expect(report.skippedBudget).toHaveLength(1);
+    expect((await owned(budgetA)) + (await owned(budgetB))).toBe(2);
   });
 
   it('a slug pattern keeps fixed-slug fixtures out of the automatic sweep', async () => {
