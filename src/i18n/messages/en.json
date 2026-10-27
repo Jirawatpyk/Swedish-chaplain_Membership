@@ -685,6 +685,7 @@
       "title": "Users",
       "pageSubtitle": "Manage staff and member accounts, roles, and status.",
       "empty": "No users yet. Invite the first one to get started.",
+      "erasedAccount": "Erased account",
       "filters": {
         "searchPlaceholder": "Search by email or display name",
         "searchSrLabel": "Search users",

@@ -559,6 +559,9 @@ describe('UserListTable on AURA', () => {
     expect(within(row).getByText(en.admin.users.filters.status.erased)).toHaveAttribute('data-status', 'erased');
     expect(within(row).queryByText(en.admin.users.filters.status.disabled)).toBeNull();
     expect(within(row).queryByRole('button')).toBeNull();
+    // The sentinel is named, never shown as an address.
+    expect(within(row).getByText(en.admin.users.erasedAccount)).toBeInTheDocument();
+    expect(row).not.toHaveTextContent('erased.invalid');
     // Control: a plain disabled row keeps its Enable action.
     const plain = container.querySelector<HTMLElement>(`tr[data-user-id="${DISABLED_USER.id}"]`)!;
     expect(within(plain).getByRole('button', { name: en.admin.users.actions.enable })).toBeInTheDocument();
