@@ -15,9 +15,15 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { auditLog, emailChangeTokens, sessions, users } from '@/modules/auth/infrastructure/db/schema';
+import {
+  auditLog,
+  emailChangeTokens,
+  notificationsOutbox,
+  sessions,
+  users,
+} from '@/modules/auth/infrastructure/db/schema';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import {
@@ -386,6 +392,56 @@ describe('eraseUser use-case (live Neon)', () => {
     const sentinel = `erased+${user.userId}@erased.invalid`;
     expect(after.map((r) => [r.oldEmail, r.newEmail])).toEqual(after.map(() => [sentinel, sentinel]));
     expect(JSON.stringify(after)).not.toContain(`real-${stamp}`);
+  });
+
+  // 134-s2 — another tenant's PENDING mail bound to this login (a
+  // verification / revert notice keyed on the login id, an invitation keyed on
+  // its address) would otherwise still go out to the real address after the
+  // global erasure. eraseMember only reached its own tenant's rows.
+  it('cancels the login-bound pending outbox rows in every tenant', async () => {
+    const user = await createActiveTestUser('member');
+    created.push(user);
+    const bystander = await createActiveTestUser('member');
+    created.push(bystander);
+    const stamp = Date.now().toString(36);
+    const ctx = (userId: string) => ({ userId, token: `t-${stamp}`, contactId: randomUUID() });
+    const ids = {
+      verifyA: randomUUID(),
+      revertB: randomUUID(),
+      inviteB: randomUUID(),
+      sentA: randomUUID(),
+      otherLogin: randomUUID(),
+      invoice: randomUUID(),
+    };
+    await db.insert(notificationsOutbox).values([
+      { id: ids.verifyA, tenantId: `ta-${stamp}`, notificationType: 'email_verification', toEmail: `new-${stamp}@example.test`, locale: 'en', contextData: ctx(user.userId) },
+      { id: ids.revertB, tenantId: `tb-${stamp}`, notificationType: 'email_change_revert', toEmail: user.rawEmail, locale: 'en', contextData: { ...ctx(user.userId), oldEmail: user.rawEmail } },
+      { id: ids.inviteB, tenantId: `tb-${stamp}`, notificationType: 'member_invitation', toEmail: user.rawEmail.toLowerCase(), locale: 'en', contextData: { token: `i-${stamp}`, role: 'member' } },
+      // Controls: an already-SENT row, another login's row, and the tenant's
+      // own business mail to the same address are all left alone.
+      { id: ids.sentA, tenantId: `ta-${stamp}`, notificationType: 'email_verification', toEmail: `new-${stamp}@example.test`, locale: 'en', contextData: ctx(user.userId), status: 'sent' },
+      { id: ids.otherLogin, tenantId: `tb-${stamp}`, notificationType: 'email_verification', toEmail: bystander.rawEmail, locale: 'en', contextData: ctx(bystander.userId) },
+      { id: ids.invoice, tenantId: `tb-${stamp}`, notificationType: 'invoice_auto_email', toEmail: user.rawEmail, locale: 'en', contextData: { event_type: 'issued' } },
+    ]);
+    try {
+      const res = await eraseUser({
+        userId: user.userId,
+        actorUserId: 'admin-it',
+        requestId: `it-erase-134-${stamp}`,
+        sourceIp: null,
+      });
+      expect(res.ok).toBe(true);
+
+      const left = await db
+        .select({ id: notificationsOutbox.id })
+        .from(notificationsOutbox)
+        .where(inArray(notificationsOutbox.id, Object.values(ids)));
+      expect(left.map((r) => r.id).sort()).toEqual(
+        [ids.sentA, ids.otherLogin, ids.invoice].sort(),
+      );
+    } finally {
+      await db.delete(notificationsOutbox).where(inArray(notificationsOutbox.id, Object.values(ids)));
+    }
   });
 
   it('after eraseUser: no login-resolvable identity, sessions revoked, user_erased audit (no PII)', async () => {

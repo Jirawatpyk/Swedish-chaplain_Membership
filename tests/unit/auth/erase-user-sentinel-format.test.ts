@@ -19,14 +19,15 @@ import {
   ERASED_EMAIL_DOMAIN,
   ERASED_EMAIL_LOCAL_PREFIX,
 } from '@/modules/members/domain/erasure-sentinels';
+import { erasedUserEmail } from '@/modules/auth/domain/erased-user-email';
 
 /**
- * The exact literal `anonymiseErasedInTx` builds (user-repo.ts:358):
- *   const sentinelEmail = `erased+${userId}@erased.invalid`;
- * Kept here as the auth-side oracle so a change to either side trips the test.
+ * The auth side builds the sentinel in ONE place since 134-s2
+ * (`auth/domain/erased-user-email.ts`), used by the user scrub, the token
+ * scrub and enableUser — so pinning that builder pins all three.
  */
 function authScrubSentinel(userId: string): string {
-  return `erased+${userId}@erased.invalid`;
+  return erasedUserEmail(userId);
 }
 
 describe('auth erasure sentinel format vs members single source', () => {

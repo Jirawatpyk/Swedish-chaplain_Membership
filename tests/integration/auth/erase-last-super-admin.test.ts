@@ -130,6 +130,7 @@ function depsOverTx(tx: Tx): { deps: EraseUserDeps; anonymised: string[] } {
       },
       // 133 — the token consume is not under test here (no tokens seeded).
       scrubEmailChangeTokensAllTenantsInTx: async () => 0,
+      cancelLoginOutboxAllTenantsInTx: async () => 0,
       anonymiseErasedInTx: async (_tx, id) => {
         anonymised.push(String(id));
         return { erased: true };
