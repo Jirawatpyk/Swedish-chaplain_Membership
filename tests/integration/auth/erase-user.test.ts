@@ -13,10 +13,11 @@
  * status → 'disabled'. Idempotent: the sentinel is computed from the id, so a
  * re-run produces the byte-identical row with no unique-index violation.
  */
+import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { auditLog, sessions, users } from '@/modules/auth/infrastructure/db/schema';
+import { auditLog, emailChangeTokens, sessions, users } from '@/modules/auth/infrastructure/db/schema';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import {
@@ -26,6 +27,7 @@ import {
   type ResetTokenId,
 } from '@/modules/auth/domain/branded';
 import { eraseUser } from '@/modules/auth/application/erase-user';
+import { enableUser } from '@/modules/auth/application/enable-user';
 import { signIn } from '@/modules/auth/application/sign-in';
 import {
   defaultForgotPasswordDeps,
@@ -320,6 +322,72 @@ describe('eraseUser use-case (live Neon)', () => {
     for (const u of created.splice(0)) await deleteTestUser(u);
   });
 
+  // 133 (#665 PDPA review, M-1) — a login linked to members in TWO tenants
+  // holds a revert token in each. eraseMember only invalidates the erasing
+  // tenant's tokens (it runs in that tenant's runInTenant), so the other
+  // tenant's token — carrying the real email in plaintext — used to survive
+  // the global eraseUser. Every active token for the login is now consumed.
+  it('consumes every active email-change token of the login, in every tenant', async () => {
+    const user = await createActiveTestUser('member');
+    created.push(user);
+    const stamp = Date.now().toString(36);
+    const future = new Date(Date.now() + 48 * 3600_000);
+    const rows = ['tenant-a', 'tenant-b'].map((t) => ({
+      id: `it-133-${t}-${stamp}`,
+      tenantId: `${t}-${stamp}`,
+      contactId: randomUUID(),
+      userId: user.userId,
+      type: 'revert' as const,
+      oldEmail: `real-${stamp}@example.test`,
+      newEmail: `new-${stamp}@example.test`,
+      activatedAt: new Date(),
+      expiresAt: future,
+    }));
+    // The erasing tenant's token, already consumed by eraseMember before the
+    // global eraseUser runs — its plaintext addresses still sit on the row.
+    const earlier = new Date(Date.now() - 3600_000);
+    rows.push({ ...rows[0]!, id: `it-133-consumed-${stamp}`, consumedAt: earlier } as never);
+    // Negative control: ANOTHER login's live token must be left alone.
+    const bystander = await createActiveTestUser('member');
+    created.push(bystander);
+    rows.push({ ...rows[1]!, id: `it-133-other-${stamp}`, userId: bystander.userId } as never);
+    await db.insert(emailChangeTokens).values(rows);
+
+    const res = await eraseUser({
+      userId: user.userId,
+      actorUserId: 'admin-it',
+      requestId: `it-erase-133-${stamp}`,
+      sourceIp: null,
+    });
+    expect(res.ok).toBe(true);
+
+    const after = await db
+      .select({
+        id: emailChangeTokens.id,
+        consumedAt: emailChangeTokens.consumedAt,
+        oldEmail: emailChangeTokens.oldEmail,
+        newEmail: emailChangeTokens.newEmail,
+      })
+      .from(emailChangeTokens)
+      .where(eq(emailChangeTokens.userId, user.userId));
+    expect(after).toHaveLength(3);
+    expect(after.every((r) => r.consumedAt !== null)).toBe(true);
+    // The already-consumed row keeps its original consumption time.
+    expect(after.find((r) => r.id === `it-133-consumed-${stamp}`)?.consumedAt?.getTime()).toBe(earlier.getTime());
+    const [other] = await db
+      .select({ consumedAt: emailChangeTokens.consumedAt, oldEmail: emailChangeTokens.oldEmail })
+      .from(emailChangeTokens)
+      .where(eq(emailChangeTokens.id, `it-133-other-${stamp}`));
+    expect(other?.consumedAt).toBeNull();
+    expect(other?.oldEmail).toBe(`real-${stamp}@example.test`);
+    // #668 PDPA review (HIGH-1, Art. 17 / PDPA §33) — consuming is not
+    // erasing: the plaintext addresses are scrubbed to the erasure sentinel on
+    // every row, the already-consumed one (eraseMember's tenant) included.
+    const sentinel = `erased+${user.userId}@erased.invalid`;
+    expect(after.map((r) => [r.oldEmail, r.newEmail])).toEqual(after.map(() => [sentinel, sentinel]));
+    expect(JSON.stringify(after)).not.toContain(`real-${stamp}`);
+  });
+
   it('after eraseUser: no login-resolvable identity, sessions revoked, user_erased audit (no PII)', async () => {
     const user = await createActiveTestUser('member');
     created.push(user);
@@ -418,5 +486,29 @@ describe('eraseUser use-case (live Neon)', () => {
     const audits = await rawSelectAuditByTarget(user.userId);
     const erasedCount = audits.filter((a) => a.eventType === 'user_erased').length;
     expect(erasedCount).toBeGreaterThanOrEqual(1);
+  });
+
+  // 133 (#668 security review) — the seam between the sentinel eraseUser
+  // writes and the one enableUser refuses: an erased login stays disabled.
+  it('an erased login cannot be re-enabled', async () => {
+    const user = await createActiveTestUser('member');
+    created.push(user);
+
+    const erased = await eraseUser({
+      userId: user.userId,
+      actorUserId: 'admin-it',
+      requestId: `it-erase-enable-${Date.now()}`,
+      sourceIp: null,
+    });
+    expect(erased.ok).toBe(true);
+
+    const res = await enableUser({
+      targetUserId: user.userId,
+      actorUserId: user.userId,
+      sourceIp: '127.0.0.1',
+      requestId: `it-erase-enable-2-${Date.now()}`,
+    });
+    expect(res).toEqual({ ok: false, error: { code: 'not-found' } });
+    expect((await rawSelectUser(user.userId))?.status).toBe('disabled');
   });
 });

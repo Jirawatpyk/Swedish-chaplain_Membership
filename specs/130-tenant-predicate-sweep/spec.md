@@ -36,3 +36,4 @@
   - `drizzle-csv-import-records-repo.ts`: the admin repo (`findByIdAcrossTenants`, `listExpiredErrorCsvBlobsAllTenants`). These are the blob-expiry cron and the cross-tenant id lookup.
   - `drizzle-broadcasts-repo.ts`: `findByResendBroadcastIdBypassRls` and `findBroadcastByResendAudienceIdsBypassRls`. These are Resend webhook pre-resolution reads.
   - `auth/infrastructure/db/user-repo.ts`: `deleteInviteOutboxByEmailAllTenantsInTx`. It is its only `notifications_outbox` statement; `users` and `invitations` have no `tenant_id` (D-026).
+  - `auth/infrastructure/db/user-repo.ts`: `scrubEmailChangeTokensAllTenantsInTx` (133). The global `eraseUser` consumes the login's revert / verify tokens in every tenant and overwrites their `old_email` / `new_email` with the erasure sentinel, so no token carrying the real email survives the erasure.
