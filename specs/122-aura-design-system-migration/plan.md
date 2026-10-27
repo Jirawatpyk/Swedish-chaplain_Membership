@@ -545,3 +545,20 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
 
 - **Before** (`ad9bce3`, no RED commit): the first parity pass set board `Portal-broadcast-new` ("← Back to broadcasts" above the title) beside the live fixture page, which had no link back (live shot `live-m-1440.jpg`, 14:54 UTC, page text without "Back to broadcasts").
 - **Pin:** e2e `broadcast-compose-and-submit.spec.ts` › `@a11y US12d-3: Submit opens the summary…` asserts the link and its `href` (`/portal/benefits?tab=broadcasts`) on the real page. It needs a seeded member, so it runs in R92 and CI, not in this cloud session (no Neon access).
+
+### US12d-3 (T1272) — R92, the maintainer's local run (27 Oct 2026, `639e5a2`, AURA 5.66.0, base `main` `3731154`)
+
+- **e2e, branch, `--workers=1`:**
+  - `admin-proxy-submit` 5/5 on chromium and mobile-chrome.
+  - `broadcast-compose-and-submit` 12/12 on both, including the new `@a11y US12d-3` (summary rows, axe with the dialog open, Keep editing sends nothing and returns focus, the back link).
+  - `broadcasts/eblast-a11y` 16/16 on both.
+  - The one chromium failure in that batch was on the base, and it passes alone.
+- **Manual, 390×844 emulated; screen reader checked in the DOM:**
+  - tabs and the sticky bar;
+  - the summary rows and focus back to Submit;
+  - Send options with its clear button;
+  - the staff line, announced as `role=status`;
+  - the picker's `aria-invalid` and `aria-describedby` (AURA #182);
+  - the menu's icon and trailing check (AURA #181).
+- **Step 3 as written can't be reached:** the subject field has `maxlength=200`. It was checked with a stubbed `422 broadcast_subject_too_long` instead. The page went back to Write and focused the subject.
+- **Phone bars:** both stay put while scrolling and rise 20px at the very end of the page, where their container ends. This is AURA's sticky ActionBar. Accepted, not changed.

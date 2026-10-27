@@ -788,7 +788,12 @@ Boards: `Portal-broadcast-new` (+mobile, -sv, -th), `Admin-broadcast-new` (+mobi
 - [x] T1269 [US12] Phone (member): Write / Preview tabs and a sticky bar with the count and Submit.
 - [x] T1270 [US12] Kit migration of the compose forms, pickers and skeleton; `MIGRATED_PATHS`.
 - [x] T1271 [US12] Fixtures open the dialog (`dialog=submit`); boards updated from the proposal; parity page (whole board vs whole page). Done 26 Oct 2026: the shots open the dialog by clicking Submit, so no fixture flag was added; boards on the canvas (version 131: four new, six redrawn); parity page https://claude.ai/artifact/ABBmz28YHJ53ZFvABq8iZN (10 pairs, 1440/390/320, EN/TH/SV, light and dark, dialog open). Two parity passes built the one-line quota, one "you can cancel", the back link above the title, the staff phone bar, the outlined Save as draft and the staff 320px fit; what stays different is listed in spec.md.
-- [ ] T1272 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV with the dialog open; UX, mobile-a11y and i18n reviews; e2e updated for the confirm step; draft PR; relay R92.
+- [x] T1272 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV with the dialog open; UX, mobile-a11y and i18n reviews; e2e updated for the confirm step; draft PR; relay R92. Done 27 Oct 2026, PR #667 at `639e5a2` (AURA 5.66.0). Evidence:
+  - R92 passed. e2e on chromium and mobile-chrome: `admin-proxy-submit` 5/5, `broadcast-compose-and-submit` 12/12 including the new `@a11y US12d-3`, and `eblast-a11y` 16/16. The six manual phone steps passed.
+  - CI green on `639e5a2`.
+  - `pnpm check`, contract tests and coverage (1,837 files, 20,902 tests) green.
+  - Parity: https://claude.ai/artifact/ABBmz28YHJ53ZFvABq8iZN.
+  - Reviews (UX, mobile-a11y, i18n, PDPA, /code-review high ×3, spec-compliance) leave no High or Medium open.
 
 ## Later phases (one PR each; tasks written when the phase starts)
 
