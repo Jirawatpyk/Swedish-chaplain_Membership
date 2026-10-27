@@ -32,6 +32,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import { users, invitations } from '@/modules/auth/infrastructure/db/schema';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
+import { erasedUserEmail } from '@/modules/auth/domain/erased-user-email';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 
 async function seedUser(opts: {
@@ -174,5 +175,32 @@ describe('UserRepo.listWithFilter — invitation expiry projection (Staff Invita
     expect(rows).toHaveLength(1);
     expect(rows[0]?.invitationExpiresAt?.getTime()).toBe(newerExpiresAt.getTime());
     expect(rows[0]?.invitationExpiresAt?.getTime()).not.toBe(olderExpiresAt.getTime());
+  });
+
+  // 134-s3 — an erased login is a disabled row carrying eraseUser's
+  // sentinel; the list says so, so /admin/users stops offering Enable.
+  it('isErased: true only for a disabled login carrying its own erasure sentinel', async () => {
+    const sfx = randomUUID().slice(0, 8);
+    const erasedId = randomUUID();
+    const plainEmail = `erased-ctl-${sfx}@swecham.test`;
+    await db.insert(users).values({
+      id: erasedId,
+      email: erasedUserEmail(erasedId),
+      role: 'member',
+      status: 'disabled',
+      emailVerified: false,
+      requiresPasswordReset: false,
+      failedSignInCount: 0,
+      createdAt: new Date(),
+    });
+    seededUserIds.push(erasedId);
+    const plainId = await seedUser({ email: plainEmail, status: 'active' });
+    seededUserIds.push(plainId);
+    await db.update(users).set({ status: 'disabled' }).where(eq(users.id, plainId));
+
+    const erased = await userRepo.listWithFilter({ q: erasedId }, 10, 0);
+    expect(erased.map((r) => [r.id, r.isErased])).toEqual([[erasedId, true]]);
+    const plain = await userRepo.listWithFilter({ q: plainEmail }, 10, 0);
+    expect(plain.map((r) => [r.id, r.isErased])).toEqual([[plainId, false]]);
   });
 });
