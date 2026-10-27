@@ -39,6 +39,22 @@ describe('Email value object', () => {
     if (!r.ok) expect(r.error.code).toBe('email.invalid_format');
   });
 
+  // 134-s1 — the erasure sentinel domain (RFC 6761 reserved) is never a real
+  // address; accepting it would let a person's address collide with an
+  // erased login's tombstone.
+  it.each(['someone@erased.invalid', 'erased+abc@ERASED.INVALID', 'x@sub.erased.invalid'])(
+    'rejects the erasure sentinel domain (%s)',
+    (raw) => {
+      const r = asEmail(raw);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('email.reserved_domain');
+    },
+  );
+
+  it('still accepts a domain that only contains the sentinel text', () => {
+    expect(asEmail('someone@noterased.invalid.example.com').ok).toBe(true);
+  });
+
   it('isEmail type-guard', () => {
     expect(isEmail('a@b.co')).toBe(true);
     expect(isEmail('no')).toBe(false);

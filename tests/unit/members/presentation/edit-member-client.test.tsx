@@ -190,6 +190,20 @@ describe('EditMemberClient orchestration', () => {
     expect(h.toast.error).toHaveBeenCalledWith('admin.members.edit.errors.emailTaken');
   });
 
+  it('a contact-email 409 linked_login_unavailable highlights the email field (134-s1)', async () => {
+    h.values = EMAIL_DIFF;
+    fetchMock.mockResolvedValueOnce(
+      res(409, { error: { code: 'linked_login_unavailable' } }),
+    );
+    renderClient();
+    fireEvent.click(screen.getByText('stub-submit'));
+
+    await screen.findByText('primary_contact.email');
+    expect(h.toast.error).toHaveBeenCalledWith(
+      'admin.members.edit.errors.linkedLoginUnavailable',
+    );
+  });
+
   it('a contact-save 503 outage maps to the retryable serverBusy toast (parity with the member-field step) — G23', async () => {
     h.values = EMAIL_DIFF;
     fetchMock.mockResolvedValueOnce(

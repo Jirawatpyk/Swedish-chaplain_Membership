@@ -72,7 +72,7 @@ export type ResendVerificationError =
   | { code: 'not_found' }
   | {
       code: 'not_eligible';
-      reason: 'no_linked_user' | 'email_verified' | 'contact_removed';
+      reason: 'no_linked_user' | 'email_verified' | 'contact_removed' | 'login_erased';
     }
   | { code: 'server_error'; cause?: unknown };
 
@@ -142,6 +142,17 @@ export async function resendVerificationEmail(
 
   try {
     const outcome = await runInTenant(deps.tenant, async (tx) => {
+      // 134-s1 (security review LOW-4) — the linked login may have been erased
+      // from ANOTHER tenant (erasure leaves email_verified=false, so the gate
+      // above passes). Refuse before any write; the read locks the users row.
+      const statusResult = await deps.userEmails.readStatusInTx(tx, userId);
+      if (!statusResult.ok) {
+        throw new UseCaseAbort({ code: 'server_error', cause: statusResult.error });
+      }
+      if (statusResult.value === null || statusResult.value.erased) {
+        throw new UseCaseAbort({ code: 'not_eligible', reason: 'login_erased' });
+      }
+
       // Invalidate prior outstanding verification tokens — only one
       // verification should be redeemable at a time.
       const prior = await deps.tokens.invalidateActiveForUserInTx(

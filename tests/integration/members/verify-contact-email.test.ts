@@ -358,4 +358,62 @@ describe('verifyContactEmail integration (FR-012a token consumption)', () => {
       expect(result.error.code).toBe('not_found');
     }
   });
+
+  // 134-s1 — a live verification token of an erased (disabled) login is
+  // refused: the token stays unconsumed and email_verified is not flipped.
+  it('refuses a live token of a disabled (erased) login', async () => {
+    const erased = await createActiveTestUser('member');
+    try {
+      await db
+        .update(users)
+        .set({
+          status: 'disabled',
+          emailVerified: false,
+          email: `erased+${erased.userId}@erased.invalid`,
+        })
+        .where(eq(users.id, erased.userId));
+      const tokenId = randomUUID().replace(/-/g, '').repeat(2);
+      const now = new Date();
+      await runInTenant(tenant.ctx, (tx) =>
+        tx.insert(emailChangeTokens).values({
+          id: tokenId,
+          tenantId: tenant.ctx.slug,
+          contactId,
+          userId: erased.userId,
+          type: 'verification',
+          oldEmail: 'old@test.example',
+          newEmail: 'new@test.example',
+          activatedAt: new Date(now.getTime() - 60_000),
+          expiresAt: new Date(now.getTime() + 60 * 60_000),
+        }),
+      );
+      const deps = buildMembersDeps(tenant.ctx);
+
+      const result = await verifyContactEmail(
+        {
+          tenant: tenant.ctx,
+          tokens: deps.tokens,
+          userEmails: deps.userEmails,
+          audit: deps.audit,
+          clock: { now: () => now },
+        },
+        { tokenId, requestId: `verify-erased-${randomUUID().slice(0, 8)}` },
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.code).toBe('not_found');
+      const [tokenRow] = await db
+        .select({ consumedAt: emailChangeTokens.consumedAt })
+        .from(emailChangeTokens)
+        .where(eq(emailChangeTokens.id, tokenId));
+      expect(tokenRow?.consumedAt).toBeNull();
+      const [userRow] = await db
+        .select({ emailVerified: users.emailVerified })
+        .from(users)
+        .where(eq(users.id, erased.userId));
+      expect(userRow?.emailVerified).toBe(false);
+    } finally {
+      await deleteTestUser(erased);
+    }
+  });
 });
