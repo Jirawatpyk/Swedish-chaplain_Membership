@@ -490,7 +490,18 @@ describe('eraseUser use-case (live Neon)', () => {
         requestId: `it-erase-134-race-${stamp}`,
         sourceIp: null,
       });
-      await new Promise((r) => setTimeout(r, 750));
+      // Release only once the erasure is really blocked on the users row
+      // lock (a fixed sleep goes falsely green on a slow runner).
+      let waiting = false;
+      for (let i = 0; i < 50 && !waiting; i += 1) {
+        const rows = (await db.execute(sql`
+          SELECT 1 FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock'
+            AND query ILIKE '%from "users"%for update%' LIMIT 1`)) as unknown as unknown[];
+        waiting = rows.length > 0;
+        if (!waiting) await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(waiting).toBe(true);
       release();
       await changer;
       expect((await erase).ok).toBe(true);

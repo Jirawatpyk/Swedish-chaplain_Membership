@@ -415,6 +415,12 @@ notifications_cancelled, … }` — and on the completion log line
 **Not reached, and a DSR answer must say so:**
 - a **sent** `eblast_*` outbox row keeps the recipient address it was enqueued with in `to_email`
   for up to **90 days** (member-addressed rows carry the member contact's address);
+- since 134-s2 the login-bound rows are deleted in every tenant and status. Two kinds remain for the
+  90-day purge window:
+  - a tenant's **sent** business mail to the same address, such as `invoice_auto_email`
+    (`document_number` + address);
+  - the F7 broadcast author notices (`broadcast_*_notification`), whose `to_email` carries no
+    login key (see `processing-records.md`, F119 retention);
 - `authored_by_user_id`, `decided_by_user_id` and `decided_by_contact_id` stay as ids — the user
   and contact rows they point at are anonymised by the F1 / F3 legs;
 - an email already delivered to the member's or a staff inbox;
