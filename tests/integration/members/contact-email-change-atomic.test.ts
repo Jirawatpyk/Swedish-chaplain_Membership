@@ -478,6 +478,58 @@ describe('change-contact-email atomic tx (T072, FR-012a)', () => {
 
     await deleteTestUser(seed.linkedUser);
   });
+
+  // 134-s1 (security review HIGH-1) — an erasure that commits WHILE the change
+  // is running. The status read locks the users row, so the change waits for
+  // the erasure and then sees `disabled`; without the lock it read `active`
+  // and its UPDATE overwrote the freshly written sentinel.
+  it('a concurrent erasure wins: the change waits, then refuses', async () => {
+    const seed = await seedMemberWithLinkedContact({
+      tenant,
+      adminUserId: admin.userId,
+    });
+    const sentinel = `erased+${seed.linkedUser.userId}@erased.invalid`;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let markLocked!: () => void;
+    const locked = new Promise<void>((r) => (markLocked = r));
+    const eraser = db.transaction(async (tx) => {
+      await tx
+        .update(users)
+        .set({ status: 'disabled', email: sentinel })
+        .where(eq(users.id, seed.linkedUser.userId));
+      markLocked();
+      await gate;
+    });
+    await locked;
+
+    const deps = buildMembersDeps(tenant.ctx);
+    const change = changeContactEmail(
+      { ...deps, tenant: tenant.ctx },
+      {
+        contactId: seed.contactId,
+        newEmailRaw: `race-${randomUUID().slice(0, 8)}@example.com`,
+        actorUserId: admin.userId,
+        requestId: `req-race-${randomUUID().slice(0, 8)}`,
+        locale: 'en',
+      },
+    );
+    await new Promise((r) => setTimeout(r, 750));
+    release();
+    await eraser;
+    const result = await change;
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('linked_login_unavailable');
+    const [userRow] = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, seed.linkedUser.userId))
+      .limit(1);
+    expect(userRow?.email).toBe(sentinel);
+
+    await deleteTestUser(seed.linkedUser);
+  });
 });
 
 // Silence unused import if asUserId isn't used — kept for future assertions.
