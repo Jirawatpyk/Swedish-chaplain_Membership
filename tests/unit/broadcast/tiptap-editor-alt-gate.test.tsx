@@ -162,6 +162,11 @@ describe('T099 (a) — toolbar first: the description is collected BEFORE the fi
     // The gate: a dialog, not a file picker.
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toBeInTheDocument();
+    // PDPA review L-1: the file is still to be chosen, so the public-link
+    // notice is part of what the dialog says.
+    expect(dialog).toHaveAccessibleDescription(
+      expect.stringContaining(enMessages.portal.broadcasts.compose.imageUpload.publicLinkNotice),
+    );
     expect(altField()).toBeInTheDocument();
     expect(
       mocks.openPicker,
@@ -198,6 +203,46 @@ describe('T099 (a) — toolbar first: the description is collected BEFORE the fi
   });
 });
 
+describe('PDPA L-1 — the public-link notice on every toolbar route', () => {
+  const notice = enMessages.portal.broadcasts.compose.imageUpload.publicLinkNotice;
+
+  it('Banner image says it before the file picker, as Image does', async () => {
+    const user = userEvent.setup();
+    await renderEditor();
+    await user.click(screen.getByRole('button', { name: 'Banner image' }));
+    expect(await screen.findByRole('dialog')).toHaveAccessibleDescription(expect.stringContaining(notice));
+    expect(mocks.openPicker).not.toHaveBeenCalled();
+  });
+
+  it('editing an inserted image\'s description does not say it', async () => {
+    const user = userEvent.setup();
+    await renderEditor();
+    await user.click(imageControl());
+    await screen.findByRole('dialog');
+    await user.type(altField(), 'Chart of member growth');
+    await user.click(insertControl());
+    act(() => mocks.onUploaded.current!(BLOB_URL));
+    await waitFor(() => expect(insertedImages()).toHaveLength(1));
+
+    // jsdom has no layout, so a click cannot select the node; select it the
+    // way ProseMirror would, through the editor Tiptap hangs on its own DOM.
+    const pm = screen.getByTestId('tiptap-editor').querySelector('.ProseMirror') as unknown as {
+      editor: import('@tiptap/core').Editor;
+    };
+    let imagePos = -1;
+    pm.editor.state.doc.descendants((node, pos) => {
+      if (node.type.name === 'image') imagePos = pos;
+    });
+    act(() => {
+      pm.editor.commands.setNodeSelection(imagePos);
+    });
+    await user.click(await screen.findByRole('button', { name: 'Edit image description' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).not.toHaveTextContent(notice);
+    expect(dialog).not.toHaveAccessibleDescription(expect.stringContaining(notice));
+  });
+});
+
 describe('T099 (b) — uploader first: nothing is inserted before a description exists', () => {
   it('an upload with no pending description opens the dialog with the document still image-free', async () => {
     const user = userEvent.setup();
@@ -205,11 +250,13 @@ describe('T099 (b) — uploader first: nothing is inserted before a description 
 
     act(() => mocks.onUploaded.current!(BLOB_URL));
 
-    await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     expect(
       insertedImages(),
       'the node must not exist before its description does (FR-040)',
     ).toHaveLength(0);
+    // The file is already uploaded on this leg: no "don't upload" warning now.
+    expect(dialog).not.toHaveTextContent(enMessages.portal.broadcasts.compose.imageUpload.publicLinkNotice);
 
     await user.type(altField(), 'Chamber logo');
     await user.click(insertControl());
