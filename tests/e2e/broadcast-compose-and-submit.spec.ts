@@ -304,7 +304,7 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     await openCompose(page);
     await expect(countLine(page, READY_OR_EXCEEDS)).toBeVisible({ timeout: 10_000 });
 
-    // Base UI radio — a real pointer click on the role=radio item selects it.
+    // AURA RadioGroup: the categories option is last (PR D).
     await page.getByRole('radio', { name: 'Specific membership categories' }).click();
     await expect(countLine(page, READY_OR_EXCEEDS)).toHaveCount(0);
 

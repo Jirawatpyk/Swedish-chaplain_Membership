@@ -595,8 +595,37 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
 
 ### Follow-up PR D — the tier option is a choice of membership categories (size M, plan agreed 2026-10-27)
 
-- **Picker.** `segment-picker.test.tsx`: two checkboxes in a group named "Membership categories" with the hint, and no text field; ticking both gives `['corporate','partnership']` in a fixed order; unticking the last gives `[]`; a held code that is not a category is dropped; another kind clears the codes; Thai names.
-- **Server guards.** Contract tests: submit and proxy-submit answer 400 for `['premium']`, `['Corporate']` and `['corporate','large']`, and the use case is not called; both categories are accepted. The recipient count answers 400 for `tier=premium` and `tier=corporate,Partnership`.
-- RED `c53ae90`: 13 failing. The picker fails with "Unable to find role group named Membership categories". The routes answer 200 where 400 is expected.
-- GREEN `973a5c3`. `pnpm check` green. Unit suites `tests/unit/broadcast`, `broadcasts`, `lib`, `app/portal` and contract `broadcasts`: 458 files, 5,340 tests green.
+- **Picker.** `segment-picker.test.tsx` covers:
+  - two checkboxes in a group named by its legend and described by the hint, and no text field;
+  - ticking both gives `['corporate','partnership']` in a fixed order;
+  - unticking the last gives `[]`, and only then says "choose at least one" inside the group;
+  - the option is last;
+  - another kind clears the codes;
+  - Thai names.
+- **Both forms.** `compose-tier-categories.test.tsx`: on member and staff compose, choosing the option with none ticked keeps Submit disabled with the `tierRequired` reason; ticking Corporate clears it.
+- **Server guards.** Contract tests:
+  - submit and proxy-submit answer 400 for `['premium']`, `['Corporate']`, `['corporate','large']`, `['corporate','corporate']` and `['corporate','partnership','corporate']`, and the use case is not called; both categories are accepted;
+  - the member count answers 400 for `tier=premium`, `tier=corporate,Partnership` and `tier=%20corporate`, and the admin count for `tier=premium`;
+  - both draft routes still accept `['premium']` (201).
+
+  `broadcasts-tier-codes.test.ts` pins the list equal to the plans `PLAN_CATEGORIES`.
+- **Round 1.** RED `c53ae90`: 13 failing. The picker failed with "Unable to find role group"; the routes answered 200 where 400 was expected. GREEN `973a5c3`.
+- **Round 2 (security L-1/L-2).** RED `3228350`: 5 failing (duplicates 200, `%20corporate` 200). GREEN `8699ed6`, with a11y W1–W3 (D-023 presentation).
+- **Round 3 (/code-review high).** `6db6706`: one shared schema, typed picker value, the plans pin, and "category" everywhere.
+- **Round 4 (UX, i18n, spec-compliance; the maintainer's answers).** The picker tests "is the last option" and "says none is chosen only after the last one is unticked" failed first: the last radio was "Custom email list", and the required text was not found. Then:
+  - the option moves last;
+  - the inline required message;
+  - the legend margin and disabled look;
+  - TH "ประเภทสมาชิกภาพ";
+  - `malformed_segment` and the history label in category wording;
+  - the gate, staff and draft tests.
+- **Reviews.**
+  - `security-engineer`: APPROVE, with 2 Lows fixed.
+  - `mobile-a11y-ux-reviewer`: 3 warnings fixed.
+  - `/code-review high`: 7 of 8 fixed. The domain-invariant finding is kept at the route boundary, because the domain must still read legacy rows, and submit overwrites a draft's segment.
+  - `enterprise-ux-designer`: 3 Mediums fixed. "Keep ticks when switching away" is left: it is safe and costs one click.
+  - `i18n-translation-reviewer`: 2 Mediums fixed. The TH plans badge mismatch is older than this PR and left as a follow-up.
+  - `spec-compliance-auditor`: its gaps are closed above.
+- `pnpm check` green. Unit and contract suites green (numbers in the PR).
 - **AURA.** No `CheckboxGroup`. Handoff Addendum 84 (#183) asks for one; the stand-in is recorded in `docs/aura-adoption.md`.
+- **Pending:** the board `Portal-broadcast-new-tier`, its parity page, and relay R96 (e2e T084).

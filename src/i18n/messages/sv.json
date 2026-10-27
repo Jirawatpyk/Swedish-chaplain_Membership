@@ -3853,7 +3853,7 @@
           "provider_failed": "Resend rapporterade att kontaktimporten misslyckades.",
           "gateway_permanent": "Resend avvisade begäran (ett permanent fel). Kontrollera Resend-kontot och planens gränser.",
           "gateway_unknown": "Ett oväntat fel uppstod när utskicket förbereddes. Se Livscykelstidslinje nedan; om orsaken fortfarande är oklar, kontakta systemadministratören och ange detta utskicks ID.",
-          "malformed_segment": "Den sparade målgruppen för detta utskick är ofullständig (en nivåmålgrupp utan nivåer).",
+          "malformed_segment": "Den sparade målgruppen för detta utskick är ofullständig (en målgrupp per medlemskategori utan valda kategorier).",
           "audience_too_large": "Målgruppen växte förbi den tillåtna storleken mellan godkännande och utskick.",
           "retry_budget_exhausted": "Resend gick inte att nå på över en timme, så utskicket slutade försöka.",
           "audience_post_suppression_empty": "Inga mottagare återstod när avregistreringar och avanmälningar hade tillämpats.",
@@ -7109,7 +7109,7 @@
           "audience": "Målgrupp"
         },
         "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
-        "audienceTier": "Specifika medlemskategorier: {tiers}",
+        "audienceTier": "Medlemskategorier: {tiers}",
         "tierCode": {
           "corporate": "Företag",
           "partnership": "Partnerskap"

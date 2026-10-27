@@ -227,13 +227,13 @@ describe('U37 — the history renders as a card list below md', () => {
   // The stored codes are `plan_category` values; an unknown one shows as itself,
   // and malformed params fall back to the plain segment name.
   it.each([
-    ['en', ['corporate', 'partnership'], 'Specific membership categories: Corporate and Partnership · 42'],
-    ['th', ['corporate', 'partnership'], 'เฉพาะประเภทสมาชิก: องค์กรและพันธมิตร · 42'],
-    ['en', ['gold'], 'Specific membership categories: gold · 42'],
+    ['en', ['corporate', 'partnership'], 'Membership categories: Corporate and Partnership · 42'],
+    ['th', ['corporate', 'partnership'], 'ประเภทสมาชิกภาพ: องค์กรและพันธมิตร · 42'],
+    ['en', ['gold'], 'Membership categories: gold · 42'],
     // /code-review: an Object.prototype name is not a known category, and a
     // repeated code names its category once.
-    ['en', ['constructor'], 'Specific membership categories: constructor · 42'],
-    ['en', ['corporate', 'corporate'], 'Specific membership categories: Corporate · 42'],
+    ['en', ['constructor'], 'Membership categories: constructor · 42'],
+    ['en', ['corporate', 'corporate'], 'Membership categories: Corporate · 42'],
   ] as const)('names the tier categories in %s (%j)', async (locale, tierCodes, text) => {
     setHistory({ segmentType: 'tier', segmentParams: { tierCodes: [...tierCodes] } });
     await renderPanel(locale);

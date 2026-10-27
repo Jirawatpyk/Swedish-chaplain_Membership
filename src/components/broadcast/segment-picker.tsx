@@ -22,7 +22,7 @@
  * group yet: a fieldset and legend hold AURA Checkboxes (stand-in until AURA
  * #183, docs/aura-adoption.md).
  */
-import { useId } from 'react';
+import { useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Checkbox, RadioGroup } from '@jirawatpyk/aura-react';
 import { BROADCAST_TIER_CODES, type BroadcastTierCode } from '@/lib/broadcasts-tier-codes';
@@ -45,11 +45,13 @@ export interface SegmentPickerProps {
   readonly disabled?: boolean;
 }
 
+// The tier option is last (the maintainer, 27 Oct, PR D): its categories open
+// below the whole list, so they sit right under the radio that opened them.
 const OPTIONS: readonly SegmentKind[] = [
   'all_members',
-  'tier',
   'event_attendees_last_90d',
   'custom',
+  'tier',
 ];
 
 function isSegmentKind(value: string): value is SegmentKind {
@@ -104,19 +106,23 @@ function TierCategoriesField({
   const t = useTranslations('portal.broadcasts.compose');
   const tCategory = useTranslations('portal.broadcasts.list.tierCode');
   const hintId = useId();
+  const errorId = useId();
+  // UX-C2: "none chosen" is said only once the member has unticked the last
+  // one, not when the option first opens (enterprise UX review).
+  const [touched, setTouched] = useState(false);
   const chosen = new Set(codes);
+  const showRequired = touched && chosen.size === 0;
   return (
-    // stand-in until AURA #183: AURA's own field classes, so the legend, hint
-    // and gaps match the RadioGroup above it (and the Thai line height).
-    // Not indented: it follows the whole radio list, so an indent read as a
-    // sub-option of the last radio (a11y review W1).
+    // stand-in until AURA #183: AURA's own field classes, so the legend, hint,
+    // error, gaps and disabled look match the RadioGroup above it (and the
+    // Thai line height). The legend's 6px is RadioGroup's own legend margin.
     <fieldset
-      className="aura-field m-0 min-w-0 border-0 p-0"
-      aria-describedby={hintId}
+      className={`aura-field m-0 min-w-0 border-0 p-0${disabled ? ' is-disabled' : ''}`}
+      aria-describedby={showRequired ? `${hintId} ${errorId}` : hintId}
       disabled={disabled}
       data-compose-feature="tier-categories"
     >
-      <legend className="aura-field__label p-0">{t('tierLabel')}</legend>
+      <legend className="aura-field__label mb-1.5 p-0">{t('tierLabel')}</legend>
       <div className="flex flex-col gap-[var(--aura-space-3)] max-sm:gap-0">
         {BROADCAST_TIER_CODES.map((code) => (
           <Checkbox
@@ -126,6 +132,7 @@ function TierCategoriesField({
               const next = new Set(chosen);
               if (checked) next.add(code);
               else next.delete(code);
+              setTouched(true);
               onChange(BROADCAST_TIER_CODES.filter((c) => next.has(c)));
             }}
             disabled={disabled}
@@ -135,9 +142,12 @@ function TierCategoriesField({
           </Checkbox>
         ))}
       </div>
-      {/* stand-in until AURA #183: the field hint's own class. */}
+      {/* stand-in until AURA #183: the field hint's and error's own classes. */}
       <p id={hintId} className="aura-field__hint">
         {t('fields.tierCodesHelp')}
+      </p>
+      <p id={errorId} className="aura-field__error" aria-live="polite" hidden={!showRequired}>
+        {showRequired ? t('submitBlocked.tierRequired') : null}
       </p>
     </fieldset>
   );

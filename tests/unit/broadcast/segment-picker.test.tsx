@@ -85,6 +85,30 @@ describe('the tier option is a choice of membership categories (PR D)', () => {
     expect(seen.at(-1)).toEqual({ kind: 'tier', tierCodes: [] });
   });
 
+  it('is the last option, so the categories open right under it (maintainer, 27 Oct)', () => {
+    renderPicker();
+    expect(screen.getAllByRole('radio').at(-1)).toHaveAccessibleName('Specific membership categories');
+  });
+
+  it('says none is chosen only after the last one is unticked, inside the group', async () => {
+    const user = userEvent.setup();
+    renderPicker();
+    const required = en.portal.broadcasts.compose.submitBlocked.tierRequired;
+    // UX-C2: "needs input" is not an error before the user acts.
+    expect(screen.queryByText(required)).toBeNull();
+    const corporate = screen.getByRole('checkbox', { name: cat.corporate });
+    await user.click(corporate);
+    await user.click(corporate);
+    const message = screen.getByText(required);
+    expect(message).toHaveAttribute('aria-live', 'polite');
+    const group = screen.getByRole('group', { name: en.portal.broadcasts.compose.tierLabel });
+    expect(group).toHaveAccessibleDescription(
+      `${en.portal.broadcasts.compose.fields.tierCodesHelp} ${required}`,
+    );
+    await user.click(corporate);
+    expect(screen.queryByText(required)).toBeNull();
+  });
+
   it('choosing another kind clears the categories', async () => {
     const user = userEvent.setup();
     renderPicker('en', { kind: 'tier', tierCodes: ['corporate'] });

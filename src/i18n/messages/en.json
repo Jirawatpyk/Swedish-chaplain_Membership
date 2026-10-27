@@ -3853,7 +3853,7 @@
           "provider_failed": "Resend reported the contact import as failed.",
           "gateway_permanent": "Resend refused the request (a permanent error). Check the Resend account and its plan limits.",
           "gateway_unknown": "An unexpected error occurred while preparing the send. See the Lifecycle timeline below; if the cause is still unclear, contact your system administrator with this E-Blast's ID.",
-          "malformed_segment": "The saved audience for this E-Blast is incomplete (a tier audience with no tiers).",
+          "malformed_segment": "The saved audience for this E-Blast is incomplete (a category audience with no categories selected).",
           "audience_too_large": "The audience grew past the allowed size between approval and send.",
           "retry_budget_exhausted": "Resend could not be reached for over an hour, so dispatch stopped retrying.",
           "audience_post_suppression_empty": "No recipients were left once unsubscribes and opt-outs were applied.",
@@ -7109,7 +7109,7 @@
           "audience": "Audience"
         },
         "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
-        "audienceTier": "Specific membership categories: {tiers}",
+        "audienceTier": "Membership categories: {tiers}",
         "tierCode": {
           "corporate": "Corporate",
           "partnership": "Partnership"
