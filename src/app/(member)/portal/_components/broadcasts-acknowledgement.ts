@@ -27,8 +27,11 @@ const readCached = cache(async (tenantSlug: string, memberId: string): Promise<D
          AND member_id = ${memberId}
        LIMIT 1
     `),
-  )) as unknown as Array<{ broadcasts_acknowledged_at: Date | null }>;
-  return rows[0]?.broadcasts_acknowledged_at ?? null;
+  )) as unknown as Array<{ broadcasts_acknowledged_at: Date | string | null }>;
+  // A raw read gets timestamptz as a string: Drizzle's postgres-js driver
+  // turns that parser off (R95: the compose page crashed on `.toISOString()`).
+  const value = rows[0]?.broadcasts_acknowledged_at ?? null;
+  return value === null ? null : new Date(value);
 });
 
 export async function readBroadcastsAcknowledgedAt(

@@ -583,4 +583,7 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
 - **Tenancy.** `broadcasts-acknowledgement-tenant-sql-shape.test.ts` pins the bound `tenant_id` and `runInTenant` on the shared read.
 - **Boards.** Canvas v134 adds `Portal-broadcast-new-rules` (+ mobile, TH, SV) and puts the line on `Portal-broadcast-new` and its mobile set. The deliberate differences from the inset are recorded in spec.md Session 2026-10-27.
 - **e2e** (relay R95): `broadcast-compose-and-submit.spec.ts` › "@a11y spec 122 PR C" covers desktop and 390px, the alert state, the collapsed line and the open panel.
+- **R95: fail, fixed.** Compose crashed (digest `2201223759`) for every company that had already acknowledged. The raw `tx.execute` read returns `timestamptz` as a string, because Drizzle's postgres-js driver turns that parser off, and `page.tsx` called `.toISOString()` on it. The unit mocks used a Date, and the e2e always started unacknowledged.
+  - RED `22175bc`: "turns the driver string into a Date" failed with `expected '2026-10-27 09:21:00.898+00' to be an instance of Date`. It also adds an e2e "already acknowledged: compose opens on the one line".
+  - GREEN: the read returns `new Date(value)` or null. Re-run in R95b.
 
