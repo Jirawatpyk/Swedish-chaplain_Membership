@@ -148,31 +148,30 @@ describe('T099 — the banner variant is the same dialog with banner copy', () =
 });
 
 // PDPA review L-1 (spec 122 US12d-3 follow-up) — the toolbar's Image and
-// Banner controls open this dialog before the file picker. Focus lands on the
-// description field, so the public-link notice has to be part of what the
-// field is described by, or a screen reader starting from the toolbar never
-// hears it before choosing a file.
-describe('the public-link notice on the toolbar path', () => {
-  it.each(['inline', 'banner'] as const)('the %s description field is described by the notice', (variant) => {
-    renderDialog({ variant });
-    expect(describedText(field())).toContain(
-      enMessages.portal.broadcasts.compose.imageUpload.publicLinkNotice,
-    );
-  });
-});
+// Banner controls open this dialog before the file picker. The public-link
+// notice is the dialog's own description there, so it is announced with the
+// dialog wherever focus lands (/code-review: not tied to the field, not
+// dependent on AURA's initial-focus rule). It is said only when a file is
+// still to be chosen: never when editing a description, and not after an
+// upload from the uploader's own button, when the file is already public.
+const notice = enMessages.portal.broadcasts.compose.imageUpload.publicLinkNotice;
 
-// Pin (PDPA re-check of L-1): the notice is heard because focus opens on the
-// field it describes. That is AURA Dialog's first-focusable rule; an upgrade
-// that moved initial focus elsewhere would silently drop the notice.
-// jsdom has no layout, so AURA's tab-stop check (`getClientRects()`) fails
-// every element and the dialog itself takes focus; a browser has rects.
-describe('initial focus', () => {
-  it('opens on the description field', async () => {
-    const rects = vi
-      .spyOn(Element.prototype, 'getClientRects')
-      .mockReturnValue([new DOMRect(0, 0, 10, 10)] as unknown as DOMRectList);
-    renderDialog();
-    await vi.waitFor(() => expect(document.activeElement).toBe(field()));
-    rects.mockRestore();
+describe('the public-link notice', () => {
+  it.each(['inline', 'banner'] as const)('describes the %s dialog when a file is still to be chosen', (variant) => {
+    renderDialog({ variant, uploadFollows: true });
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(expect.stringContaining(notice));
+    expect(screen.getByText(notice)).toBeVisible();
+    // The dialog says it once; the field is not described by it too.
+    expect(describedText(field())).not.toContain(notice);
+  });
+
+  it('is not said once the file is already uploaded', () => {
+    renderDialog({ uploadFollows: false });
+    expect(screen.queryByText(notice)).toBeNull();
+  });
+
+  it('is not said when editing an existing description', () => {
+    renderDialog({ uploadFollows: true, editing: true, initialValue: 'Chart' });
+    expect(screen.queryByText(notice)).toBeNull();
   });
 });

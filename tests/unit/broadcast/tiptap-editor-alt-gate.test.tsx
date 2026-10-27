@@ -162,6 +162,11 @@ describe('T099 (a) — toolbar first: the description is collected BEFORE the fi
     // The gate: a dialog, not a file picker.
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toBeInTheDocument();
+    // PDPA review L-1: the file is still to be chosen, so the public-link
+    // notice is part of what the dialog says.
+    expect(dialog).toHaveAccessibleDescription(
+      expect.stringContaining(enMessages.portal.broadcasts.compose.imageUpload.publicLinkNotice),
+    );
     expect(altField()).toBeInTheDocument();
     expect(
       mocks.openPicker,
@@ -205,11 +210,13 @@ describe('T099 (b) — uploader first: nothing is inserted before a description 
 
     act(() => mocks.onUploaded.current!(BLOB_URL));
 
-    await screen.findByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     expect(
       insertedImages(),
       'the node must not exist before its description does (FR-040)',
     ).toHaveLength(0);
+    // The file is already uploaded on this leg: no "don't upload" warning now.
+    expect(dialog).not.toHaveTextContent(enMessages.portal.broadcasts.compose.imageUpload.publicLinkNotice);
 
     await user.type(altField(), 'Chamber logo');
     await user.click(insertControl());
