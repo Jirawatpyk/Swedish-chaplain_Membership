@@ -46,6 +46,9 @@ export { defaultEnableUserDeps };
  */
 const RESERVED_SYSTEM_ACTOR_PREFIX = '00000000-0000-0000-0000-0000000';
 
+/** eraseUser's sentinel domain (`erased+{id}@erased.invalid`, see userRepo.anonymiseErasedInTx). */
+const ERASED_EMAIL_DOMAIN = '@erased.invalid';
+
 export async function enableUser(
   input: EnableUserInput,
   deps: EnableUserDeps = defaultEnableUserDeps,
@@ -56,6 +59,15 @@ export async function enableUser(
   const target = await deps.users.findById(input.targetUserId);
   if (!target) return err({ code: 'not-found' });
   if (target.status !== 'disabled') return err({ code: 'not-disabled' });
+  // 133 (#665 PDPA review, M-1) — an ERASED login (eraseUser's sentinel email,
+  // no password) never comes back: re-enabling it was the step that let a
+  // stale revert token pass the revert sink's `disabled` guard and write the
+  // erased real email back. Same enumeration-safe answer as a missing row.
+  // EXACT sentinel (not the domain): a real address on `@erased.invalid` — the
+  // domain is not yet rejected at collection — must still re-enable.
+  if ((target.email as string) === `erased+${target.id}${ERASED_EMAIL_DOMAIN}`) {
+    return err({ code: 'not-found' });
+  }
 
   await deps.users.enable(target.id);
 

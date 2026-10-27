@@ -62,6 +62,8 @@ function makeDeps(overrides: Partial<EraseUserDeps> = {}): {
   // covered by its dedicated describe block below.
   const findById = vi.fn(async () => ({ id: USER_ID, role: 'member', status: 'active' }));
   const countActiveAdministrators = vi.fn(async () => 5);
+  // 133 — cross-tenant email-change token consume (count of tokens consumed).
+  const scrubEmailChangeTokensAllTenantsInTx = vi.fn(async () => 0);
   const deleteByUserIdInTx = vi.fn(async () => 2);
   const appendInTx = vi.fn(async () => undefined);
   const deps: EraseUserDeps = {
@@ -73,6 +75,7 @@ function makeDeps(overrides: Partial<EraseUserDeps> = {}): {
     // `countActiveAdministrators` and turn into a TypeError.
     users: {
       anonymiseErasedInTx,
+      scrubEmailChangeTokensAllTenantsInTx,
       findById,
       countActiveAdministrators,
       ...(overrides.users ?? {}),
@@ -119,13 +122,17 @@ describe('eraseUser (F1 linked-user erasure)', () => {
     expect(event?.summary).not.toContain('@');
   });
 
-  it('emits user_erased at the TAIL — after anonymise + session revoke', async () => {
+  it('emits user_erased at the TAIL — after anonymise, session revoke and the token consume', async () => {
     const order: string[] = [];
     const { deps } = makeDeps({
       users: {
         anonymiseErasedInTx: vi.fn(async () => {
           order.push('anonymise');
           return { erased: true };
+        }),
+        scrubEmailChangeTokensAllTenantsInTx: vi.fn(async () => {
+          order.push('consume-tokens');
+          return 2;
         }),
       } as unknown as EraseUserDeps['users'],
       sessions: {
@@ -143,7 +150,7 @@ describe('eraseUser (F1 linked-user erasure)', () => {
 
     await eraseUser({ userId: USER_ID, ...META }, deps);
 
-    expect(order).toEqual(['anonymise', 'revoke', 'audit']);
+    expect(order).toEqual(['anonymise', 'revoke', 'consume-tokens', 'audit']);
   });
 
   it('returns ok(erased:false) when the user row is already gone', async () => {
