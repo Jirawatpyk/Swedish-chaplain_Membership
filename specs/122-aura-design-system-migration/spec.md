@@ -877,6 +877,17 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - Q: The portal banner on the compose page? → A: Hidden there, so the rules show once. Other portal pages are unchanged. After "I acknowledge", the page refreshes, so the banner is also gone from the next page.
 - Q: "Remind me later" on compose? → A: No. The member is already composing, and the rules collapse to the line once acknowledged.
 - Q: Staff compose on behalf? → A: Nothing. Staff are the reviewers.
+- Q: Where does the build differ from the inset board (`Proposal-compose-inset-first-visit`, `Proposal-compose`)? → A: These are deliberate, and boards v134 are redrawn to match:
+  - The alert is warning-toned, as the banner is, not info-toned.
+  - "I acknowledge" is a secondary button, so Submit stays the page's one primary action (UX review).
+  - There is no "Remind me later".
+  - The line reads "E-Blast sending rules · Read again", not "You've confirmed the E-Blast guidelines". The record is per company, so a colleague who never saw the rules is not told they confirmed them.
+  - New boards: `Portal-broadcast-new-rules`, `-rules-mobile`, `-rules-mobile-th`, `-rules-mobile-sv`. The line is added to `Portal-broadcast-new` and its mobile set.
+- Review round 1 (27 Oct):
+  - Acknowledging no longer calls `router.refresh()`. That re-ran the whole compose page and could lose an unsaved draft. A window event and a per-tab flag hide the banner and keep the line through the phone/desktop remount.
+  - A failed read shows the rules in full, because the banner is hidden here and would otherwise show them nowhere. Acknowledging again is idempotent.
+  - The read is cached per request, so the layout and the page share one query.
+  - The banner and compose share one hook and one rules body.
 
 ### Session 2026-10-26 (US12d-3: the compose forms, calmer, with a submit confirmation)
 
