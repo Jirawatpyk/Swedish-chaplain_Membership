@@ -11,11 +11,16 @@
  *
  * The picker only emits the `kind` + `tierCodes` (when applicable).
  * `customRecipientEmails` is collected by the sibling <CustomListInput />.
+ *
+ * Spec 122 US12d-3 (T1270) — on AURA's RadioGroup (a fieldset named by its
+ * legend, each radio by its own label; 44 px rows on touch) and TextField.
+ * The tier-codes field keeps the typed TEXT and derives the codes from it: it
+ * used to be controlled by `tierCodes.join(', ')`, which split the comma away
+ * as it was typed, so a second code could never be entered.
  */
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { RadioGroup, TextField } from '@jirawatpyk/aura-react';
 
 export type SegmentKind =
   | 'all_members'
@@ -41,6 +46,17 @@ const OPTIONS: readonly SegmentKind[] = [
   'custom',
 ];
 
+function isSegmentKind(value: string): value is SegmentKind {
+  return (OPTIONS as readonly string[]).includes(value);
+}
+
+function parseTierCodes(raw: string): ReadonlyArray<string> {
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
 export function SegmentPicker({
   value,
   onChange,
@@ -50,74 +66,61 @@ export function SegmentPicker({
   const tOption = useTranslations('portal.broadcasts.compose.segmentOption');
 
   return (
-    <fieldset
-      className="space-y-3"
-      aria-disabled={disabled}
-      data-compose-feature="segment-picker"
-    >
-      <legend className="text-sm font-medium">{t('fields.segmentLabel')}</legend>
+    <div className="space-y-3" data-compose-feature="segment-picker">
       <RadioGroup
+        label={t('fields.segmentLabel')}
+        options={OPTIONS.map((opt) => ({ value: opt, label: tOption(opt) }))}
         value={value.kind}
-        onValueChange={(next: string) => {
+        onChange={(next) => {
+          if (!isSegmentKind(next)) return;
           onChange({
-            kind: next as SegmentKind,
+            kind: next,
             tierCodes: next === 'tier' ? value.tierCodes : [],
           });
         }}
         disabled={disabled}
-        className="space-y-2"
-      >
-        {OPTIONS.map((opt) => {
-          return (
-            <div key={opt} className="flex items-center gap-2">
-              {/* E5 UX hardening — removed redundant `aria-disabled`.
-                  The HTML `disabled` attribute on RadioGroupItem already
-                  surfaces as `aria-disabled="true"` via Radix. Setting
-                  both risks fighting if Radix ever changes its
-                  defaults. */}
-              <RadioGroupItem
-                id={`segment-${opt}`}
-                value={opt}
-                disabled={disabled}
-                // base-ui Radio.Root renders its own internal id, so the
-                // sibling <Label htmlFor> can't name it — set the accessible
-                // name directly (fixes axe aria-toggle-field-name).
-                aria-label={tOption(opt)}
-              />
-              <Label htmlFor={`segment-${opt}`} className="cursor-pointer">
-                {tOption(opt)}
-              </Label>
-            </div>
-          );
-        })}
-      </RadioGroup>
+        touchHeight
+      />
       {value.kind === 'tier' ? (
-        <div className="ml-6 space-y-1">
-          <Label htmlFor="segment-tier-codes">{t('tierLabel')}</Label>
-          <Input
-            id="segment-tier-codes"
-            value={value.tierCodes.join(', ')}
-            onChange={(e) =>
-              onChange({
-                kind: 'tier',
-                tierCodes: e.target.value
-                  .split(',')
-                  .map((s) => s.trim())
-                  .filter((s) => s.length > 0),
-              })
-            }
-            placeholder={t('fields.tierCodesPlaceholder')}
-            disabled={disabled}
-            aria-describedby="segment-tier-codes-help"
-          />
-          <p
-            id="segment-tier-codes-help"
-            className="text-xs text-muted-foreground"
-          >
-            {t('fields.tierCodesHelp')}
-          </p>
-        </div>
+        <TierCodesField
+          initialCodes={value.tierCodes}
+          onChange={(tierCodes) => onChange({ kind: 'tier', tierCodes })}
+          disabled={disabled}
+        />
       ) : null}
-    </fieldset>
+    </div>
+  );
+}
+
+/**
+ * Mounted only while the tier option is chosen, so its text starts from the
+ * codes already held and is never overwritten by their re-joined form.
+ */
+function TierCodesField({
+  initialCodes,
+  onChange,
+  disabled,
+}: {
+  readonly initialCodes: ReadonlyArray<string>;
+  readonly onChange: (codes: ReadonlyArray<string>) => void;
+  readonly disabled: boolean;
+}): React.ReactElement {
+  const t = useTranslations('portal.broadcasts.compose');
+  const [text, setText] = useState(() => initialCodes.join(', '));
+  return (
+    <TextField
+      id="segment-tier-codes"
+      className="ml-6 sm:max-w-sm"
+      label={t('tierLabel')}
+      hint={t('fields.tierCodesHelp')}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(parseTierCodes(e.target.value));
+      }}
+      placeholder={t('fields.tierCodesPlaceholder')}
+      disabled={disabled}
+      touchHeight
+    />
   );
 }

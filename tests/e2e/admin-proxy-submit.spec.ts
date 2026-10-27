@@ -215,8 +215,9 @@ test.describe('@e2e DV-4 admin proxy-submit (AS9 dual-actor + RBAC)', () => {
     await expect(option).toBeVisible({ timeout: 15_000 });
     await option.click();
 
-    // Self-exclusion notice (Q16) — role="status" with "won't receive".
-    await expect(page.getByText(/won't receive/i)).toBeVisible();
+    // Self-exclusion (Q16) — spec 122 US12d-3 (T1267): on a member-based
+    // segment it is the count line's own note, "not {company}'s own contacts".
+    await expect(page.getByText(/own contacts/i)).toBeVisible();
 
     // Subject (labelled Input, id proxy-broadcast-subject).
     await page.getByLabel(proxy.subjectLabel).fill('DV-4 proxy e2e');
@@ -230,9 +231,13 @@ test.describe('@e2e DV-4 admin proxy-submit (AS9 dual-actor + RBAC)', () => {
     // so no segment interaction is required for the happy path.
 
     // Submit — real label is "Submit for review" (shared SubmitButton).
+    // Spec 122 US12d-3 (T1265): it opens the summary; confirming sends.
     await page
       .getByRole('button', { name: new RegExp(escapeRegExp(submitButtonName), 'i') })
       .click();
+    const confirm = page.getByRole('alertdialog');
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole('button', { name: submitButtonName }).click();
 
     // On success the client router.push('/admin/broadcasts').
     await expect(page).toHaveURL(/\/admin\/broadcasts$/, { timeout: 30_000 });

@@ -4116,7 +4116,9 @@
         "saveDraftButton": "Save as draft",
         "draftSavedToast": "Draft saved.",
         "draftSaveErrorToast": "Couldn't save the draft. Please try again.",
-        "savedAt": "Saved at {time}"
+        "savedAt": "Saved at {time}",
+        "confirmTitle": "Submit on behalf of {company}?",
+        "recipientNote": "not {company}'s own contacts"
       },
       "proxySubmitButton": "Submit on behalf of member",
       "haltBanner": {
@@ -6856,7 +6858,6 @@
           "triggerLabel": "Start from a template",
           "blankOption": "Blank — start from scratch",
           "starterSuffix": "Starter",
-          "starterBadgeAria": "Seeded by the platform",
           "searchPlaceholder": "Search templates by name",
           "emptyMessage": "No templates match your search",
           "helpText": "Picking a template fills the subject + message. You can still edit before sending.",
@@ -6877,8 +6878,10 @@
           "segmentLabel": "Recipients",
           "customListLabel": "Custom email list",
           "customListHelp": "One email per line, up to 100 entries. Each must already be in your tenant directory.",
+          "sendOptions": "Send options",
           "schedulePicker": "Schedule for later",
           "scheduleHelp": "Leave blank to submit for immediate review.",
+          "scheduleClear": "Send as soon as it's approved",
           "previewLabel": "Preview",
           "previewLoading": "Loading preview…",
           "previewUnavailable": "Preview is temporarily unavailable",
@@ -6937,8 +6940,28 @@
           "subjectRequired": "Add a subject before submitting for review.",
           "tierRequired": "Choose at least one membership tier before submitting for review."
         },
-        "submitNote": {
-          "cancellable": "You can cancel this broadcast at any time until an admin approves it."
+        "views": {
+          "label": "Compose view",
+          "write": "Write",
+          "preview": "Preview",
+          "actions": "Submit",
+          "blocked": "Can't send to this audience"
+        },
+        "confirm": {
+          "title": "Submit this E-Blast for review?",
+          "note": "Marketing reviews it before it goes out. You can cancel until an admin approves it.",
+          "subject": "Subject",
+          "recipients": "Recipients",
+          "recipientsCount": "{segment} · {count, plural, one {# recipient} other {# recipients}}",
+          "allowance": "Allowance",
+          "allowanceMember": "Uses 1 of your {remaining, number} remaining E-Blasts for {year} (reserved until it's sent)",
+          "allowanceProxy": "Uses 1 of the member's {remaining, number} remaining E-Blasts for {year}",
+          "allowanceNone": "You have no E-Blasts left for {year}, so this can't be submitted",
+          "allowanceNoneProxy": "The member has no E-Blasts left for {year}, so this can't be submitted",
+          "sending": "Sending",
+          "sendingNow": "As soon as it's approved",
+          "sendingAt": "{when}, Bangkok time",
+          "keepEditing": "Keep editing"
         },
         "selfExclusionHint": "You and your colleagues won't receive your own broadcast.",
         "selfExclusionHintCustom": "Everyone on this list receives the broadcast — including you, if your own address is on it.",
@@ -6952,7 +6975,15 @@
           "attendees": "Recipients: everyone from a member company who attended a chamber event in the last 90 days (up to {ceiling, number}).",
           "customCount": "{count} email(s) entered."
         },
+        "recipientNote": {
+          "allMembers": "the primary contact of each active member, not your own company",
+          "allMembersAllContacts": "every contact of each active member who hasn't opted out, not your own company",
+          "tier": "the primary contact of each active member on the selected tiers, not your own company",
+          "tierAllContacts": "every contact of each active member on the selected tiers who hasn't opted out, not your own company",
+          "attendees": "everyone from a member company who attended a chamber event in the last 90 days, including you and your colleagues if you attended"
+        },
         "recipientCount": {
+          "readyShort": "{count, plural, one {# recipient} other {# recipients}}",
           "loading": "Counting recipients…",
           "ready": "{count, plural, one {# recipient will receive this broadcast.} other {# recipients will receive this broadcast.}}",
           "empty": "No eligible recipients match this audience{dropped, plural, =0 {} other { — # excluded by recipient preference}}. Submission is blocked until you widen it.",
@@ -6990,6 +7021,8 @@
           "uploadedToast": "Image added.",
           "notInsertedKept": "The image wasn't added to your message. It's still stored. Contact the chamber if it must be removed.",
           "notInserted": "The image wasn't added to your message. It will be removed automatically, usually within a day.",
+          "shortHelp": "PNG, JPG, WebP or GIF up to 5 MB · stored at a public link anyone can open, so don't upload anything private",
+          "aboutUploads": "About image uploads",
           "helpText": "PNG, JPG, WebP or GIF up to 5 MB. Images are virus-scanned before they're stored.",
           "publicLinkNotice": "Your image is stored at a public web address that needs no sign-in — anyone with the link can open it, so don't upload anything private.",
           "draftRequiredHint": "Save this draft first to enable image uploads.",
@@ -7023,6 +7056,8 @@
       },
       "quota": {
         "headerLabel": "E-Blast quota ({year})",
+        "lineLeft": "{remaining, number} of {cap, number} E-Blasts left in {year}",
+        "lineReserved": "{reserved, number} reserved",
         "planLabel": "Plan: {plan}",
         "used": "Used",
         "reserved": "Reserved",

@@ -14,6 +14,12 @@ import { ESLint } from 'eslint';
 import { uiRatchet } from '../../../eslint.ui-ratchet.mjs';
 
 const RULE = '@typescript-eslint/no-restricted-imports';
+/**
+ * The control for the "real MIGRATED_PATHS" blocks: a file that legitimately
+ * keeps the legacy kit. Since US12d-3 moved E-Blast compose, the last one is
+ * the button-matrix fixture, which goes with the kit itself at US13.
+ */
+const LEGACY_UNTIL_US13 = 'src/app/test-fixtures/button-matrix/page.tsx';
 const FIXTURE_GLOB = 'src/__ratchet_fixture__/**';
 
 async function ratchetHits(
@@ -97,8 +103,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/compose-form.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -117,8 +123,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: E-Blast proxy compose keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/proxy-compose-form.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -190,8 +196,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/page.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -286,8 +292,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast member picker keeps the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/member-picker.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -311,8 +317,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast member picker keeps the legacy kit until US12', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/member-picker.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -372,8 +378,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the staff compose route keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/page.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -393,8 +399,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/compose-form.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -429,8 +435,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the E-Blast schedule picker keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/schedule-picker.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -450,8 +456,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the compose template picker keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/compose/template-picker.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -476,8 +482,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/compose-form.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -498,8 +504,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/page.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -520,8 +526,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the staff compose route keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/app/(staff)/admin/broadcasts/new/page.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -701,8 +707,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: the compose template picker keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/compose/template-picker.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -737,8 +743,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: E-Blast compose keeps the legacy kit until US12d', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/proxy-compose-form.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -797,8 +803,8 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: E-Blast compose keeps the legacy kit until US12d-3', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/compose-form.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 
@@ -816,8 +822,36 @@ describe('UI import ratchet (spec 122)', () => {
       expect(await ratchetHits(legacy, path)).toHaveLength(1);
     });
 
-    it('control: E-Blast proxy compose keeps the legacy kit until US12d-3', async () => {
-      expect(await ratchetHits(legacy, 'src/components/broadcast/proxy-compose-form.tsx')).toEqual([]);
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
+    });
+  });
+
+  describe('the US12d-3 compose surface is on AURA (the real MIGRATED_PATHS)', () => {
+    const legacy = "import { Button } from '@/components/ui/button';\nexport const B = Button;\n";
+    it.each([
+      'src/app/(member)/portal/broadcasts/new/page.tsx',
+      'src/app/(staff)/admin/broadcasts/new/page.tsx',
+      'src/app/(staff)/admin/broadcasts/new/loading.tsx',
+      'src/components/broadcast/compose-form.tsx',
+      'src/components/broadcast/proxy-compose-form.tsx',
+      'src/components/broadcast/segment-picker.tsx',
+      'src/components/broadcast/custom-list-input.tsx',
+      'src/components/broadcast/member-picker.tsx',
+      'src/components/broadcast/compose-form-skeleton.tsx',
+      'src/components/broadcast/compose/template-picker.tsx',
+      'src/components/broadcast/compose/template-picker-field.tsx',
+      'src/components/broadcast/compose/subject-counter.tsx',
+      'src/components/broadcast/compose/submit-summary-dialog.tsx',
+      'src/components/broadcast/recipient-count.tsx',
+      'src/components/broadcast/schedule-picker.tsx',
+      'src/components/broadcast/unsafe-image-sources-list.tsx',
+    ])('%s cannot import the legacy kit', async (path) => {
+      expect(await ratchetHits(legacy, path)).toHaveLength(1);
+    });
+
+    it('control: the button-matrix fixture keeps the legacy kit until US13', async () => {
+      expect(await ratchetHits(legacy, LEGACY_UNTIL_US13)).toEqual([]);
     });
   });
 });

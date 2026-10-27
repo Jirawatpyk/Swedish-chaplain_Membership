@@ -26,7 +26,7 @@
  * while something is reserved (AURA `Progress` `legend`), and the bar turns danger once
  * the quota is used up.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useLocale, useTranslations } from 'next-intl';
 import { Button, Card, Progress, buttonClass } from '@jirawatpyk/aura-react';
@@ -69,6 +69,21 @@ export interface QuotaDisplayProps {
    * the preview harness shows the card without a session. Pages leave it on.
    */
   readonly live?: boolean;
+  /**
+   * Spec 122 US12d-3 (T1265) — the numbers the card shows, each time a fetch
+   * lands, so the compose form's submit confirmation names the same remaining
+   * allowance as the bar rather than the page's first paint; `null` when a
+   * fetch fails, so the confirmation stops stating a number the card no
+   * longer shows.
+   */
+  readonly onLoaded?: (snapshot: QuotaSnapshot | null) => void;
+  /**
+   * Spec 122 US12d-3 (board `Proposal-compose`) — `line`: one line, "3 of 6
+   * E-Blasts left in 2026 · 1 reserved", with the bar beside it, for the
+   * compose page. `card` (default): the four counters, legend and footnote of
+   * the benefits tab. The fetch, retry and live region are the same.
+   */
+  readonly variant?: 'card' | 'line';
 }
 
 export function QuotaDisplay({
@@ -79,6 +94,8 @@ export function QuotaDisplay({
   planChangedExplainer = null,
   endpoint = '/api/broadcasts/quota',
   live = true,
+  onLoaded,
+  variant = 'card',
 }: QuotaDisplayProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.quota');
   const tCompose = useTranslations('portal.broadcasts.compose');
@@ -90,6 +107,11 @@ export function QuotaDisplay({
   const [loading, setLoading] = useState<boolean>(live && initial === null);
   const [error, setError] = useState<boolean>(false);
   const [retryNonce, setRetryNonce] = useState<number>(0);
+  // Held in a ref so a caller's inline callback never re-runs the fetch.
+  const onLoadedRef = useRef(onLoaded);
+  useEffect(() => {
+    onLoadedRef.current = onLoaded;
+  }, [onLoaded]);
 
   useEffect(() => {
     if (!live) return;
@@ -105,6 +127,7 @@ export function QuotaDisplay({
           if (!cancelled) {
             setSnap(null);
             setError(true);
+            onLoadedRef.current?.(null);
           }
           return;
         }
@@ -117,17 +140,22 @@ export function QuotaDisplay({
           planName?: string | null;
         };
         if (!cancelled) {
-          setSnap({
+          const next: QuotaSnapshot = {
             used: body.used,
             reserved: body.reserved,
             remaining: body.remaining,
             cap: body.cap,
             quotaYear: body.quotaYear,
             planName: body.planName ?? null,
-          });
+          };
+          setSnap(next);
+          onLoadedRef.current?.(next);
         }
       } catch {
-        if (!cancelled) setError(true);
+        if (!cancelled) {
+          setError(true);
+          onLoadedRef.current?.(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -138,9 +166,61 @@ export function QuotaDisplay({
     };
   }, [endpoint, live, refreshKey, retryNonce]);
 
-  const exhausted = snap !== null && snap.remaining === 0;
+  // `<= 0`, as the submit summary reads it: a cap lowered mid-year can
+  // leave it below zero.
+  const exhausted = snap !== null && snap.remaining <= 0;
 
   const showReset = nextResetCopy !== null && snap !== null && !error;
+
+  if (variant === 'line') {
+    return (
+      <Card aria-busy={loading} data-testid="quota-display" data-compose-feature="quota">
+        {error ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="aura-text-caption text-[var(--aura-fg-danger)]">{t('fetchError')}</p>
+            <Button type="button" size="sm" variant="ghost" touchHeight onClick={() => setRetryNonce((n) => n + 1)}>
+              {t('retry')}
+            </Button>
+          </div>
+        ) : snap !== null ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+            <p
+              aria-live="polite"
+              className={cn('m-0 font-medium', exhausted && 'text-[var(--aura-fg-danger)]')}
+            >
+              {exhausted
+                ? t('exhausted', { year: formatCalendarYear(snap.quotaYear, locale), reserved: snap.reserved })
+                : t('lineLeft', {
+                    remaining: snap.remaining,
+                    cap: snap.cap,
+                    year: formatCalendarYear(snap.quotaYear, locale),
+                  })}
+              {!exhausted && snap.reserved > 0 ? ` · ${t('lineReserved', { reserved: snap.reserved })}` : null}
+            </p>
+            <Progress
+              aria-label={t('progressLabel')}
+              value={snap.used}
+              secondaryValue={snap.reserved}
+              max={snap.cap}
+              tone={exhausted ? 'danger' : 'accent'}
+              valueText={t('valueText', {
+                used: snap.used,
+                reserved: snap.reserved,
+                remaining: snap.remaining,
+                cap: snap.cap,
+              })}
+              className="sm:w-72 sm:shrink-0"
+            />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between" aria-hidden="true">
+            <SkeletonBlock className="h-5 w-64 max-w-full" />
+            <SkeletonBlock className="h-2 w-full sm:w-72" />
+          </div>
+        )}
+      </Card>
+    );
+  }
 
   return (
     <Card aria-busy={loading} data-testid="quota-display" data-compose-feature="quota">

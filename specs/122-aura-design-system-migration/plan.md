@@ -535,3 +535,30 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
 - **Review fixes** (`ab545aa4a`, enterprise-ux-designer): `linkClass` lays a link out only on touch and resets its font, so the website link keeps `inline-flex min-w-0` to truncate, the summary is `flex w-fit`, contacts and the audience company align to the start, and the picker's label type moves to a span. With a mouse from 640px it is text height like every other `linkClass` link (maintainer, 23 Oct: no 24px or 36px exception); a `min-h-*` utility would beat the 44px touch rule, and the picker test guards against one. `min-w-0` is safe there because the text is wider than 44px. The touched files' 38 test files pass (328 tests); typecheck and lint are clean.
 - **#171:** no app change (the section tabs already pass `touchHeight`).
 - **Not changed:** the brand theme. `aura-theme --brand "#10487A"` on 5.59 regenerates `src/styles/aura-theme.css` byte-identical below its header.
+
+### US12d-3 (T1270) — the tier field's comma
+
+- **RED, recorded after the fact** (/code-review high, round 1: test and fix shared `ebf7f02`). `tests/unit/broadcast/segment-picker.test.tsx` run against `origin/main`'s `segment-picker.tsx`: `× SegmentPicker (T1270) > two tier codes can be typed, comma and all` — `expect(element).toHaveValue(premium, large)`. The old field re-joined the parsed codes on every keystroke, so a typed "," vanished and a second code could never be entered.
+- **GREEN:** the field keeps the raw text and parses it on change (`ebf7f02`).
+
+### US12d-3 (T1271) — the compose back link
+
+- **Before** (`ad9bce3`, no RED commit): the first parity pass set board `Portal-broadcast-new` ("← Back to broadcasts" above the title) beside the live fixture page, which had no link back (live shot `live-m-1440.jpg`, 14:54 UTC, page text without "Back to broadcasts").
+- **Pin:** e2e `broadcast-compose-and-submit.spec.ts` › `@a11y US12d-3: Submit opens the summary…` asserts the link and its `href` (`/portal/benefits?tab=broadcasts`) on the real page. It needs a seeded member, so it runs in R92 and CI, not in this cloud session (no Neon access).
+
+### US12d-3 (T1272) — R92, the maintainer's local run (27 Oct 2026, `639e5a2`, AURA 5.66.0, base `main` `3731154`)
+
+- **e2e, branch, `--workers=1`:**
+  - `admin-proxy-submit` 5/5 on chromium and mobile-chrome.
+  - `broadcast-compose-and-submit` 12/12 on both, including the new `@a11y US12d-3` (summary rows, axe with the dialog open, Keep editing sends nothing and returns focus, the back link).
+  - `broadcasts/eblast-a11y` 16/16 on both.
+  - The one chromium failure in that batch was on the base, and it passes alone.
+- **Manual, 390×844 emulated; screen reader checked in the DOM:**
+  - tabs and the sticky bar;
+  - the summary rows and focus back to Submit;
+  - Send options with its clear button;
+  - the staff line, announced as `role=status`;
+  - the picker's `aria-invalid` and `aria-describedby` (AURA #182);
+  - the menu's icon and trailing check (AURA #181).
+- **Step 3 as written can't be reached:** the subject field has `maxlength=200`. It was checked with a stubbed `422 broadcast_subject_too_long` instead. The page went back to Write and focused the subject.
+- **Phone bars:** both stay put while scrolling and rise 20px at the very end of the page, where their container ends. This is AURA's sticky ActionBar. Accepted, not changed.

@@ -21,6 +21,7 @@ import { Image as ImageIcon } from 'lucide-react';
 import { Alert, Button, Progress } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
+import { InfoHint } from '@/components/shell/info-hint';
 
 /**
  * F119 T099 — the editor's toolbar Image / Banner controls collect the
@@ -244,6 +245,10 @@ export function ComposeInlineImageUploader({
       />
       {/* Spec 122 US12d-2 — the boards' "Upload image": a secondary AURA
           Button with an image icon, 44px on touch (UX-H3's tap target). */}
+      {/* Spec 122 US12d-3 (T1268; board `Proposal-compose-inset-upload-tip`):
+          the button, one short line and an ⓘ with the full rules, on one row
+          that wraps on a phone. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
       <Button
         variant="secondary"
         icon={<ImageIcon aria-hidden />}
@@ -257,10 +262,16 @@ export function ComposeInlineImageUploader({
         {...(buttonId !== undefined && { id: buttonId })}
         // The refusal stays described on the button after its toast is gone.
         aria-describedby={error ? `${alertId} ${helpId} ${noticeId}` : `${helpId} ${noticeId}`}
-        className="self-start"
       >
         {uploading ? t('uploadingLabel') : t('uploadButton')}
       </Button>
+        <span className="inline-flex items-center gap-0.5 aura-text-caption text-[var(--aura-fg-secondary)]">
+          {t('shortHelp')}
+          <InfoHint ariaLabel={t('aboutUploads')}>
+            {t('helpText')} {t('publicLinkNotice')}
+          </InfoHint>
+        </span>
+      </div>
       {uploading && (
         // PR-review fix 2026-05-20 UX-H4 — <progress> is indeterminate
         // (no value), so the aria-label must reflect indeterminate
@@ -277,21 +288,28 @@ export function ComposeInlineImageUploader({
           {error}
         </Alert>
       )}
-      <p id={helpId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
-        {t('helpText')}
-      </p>
-      {/*
-        F119 review finding F2-11 (PDPA M-4) — transparency BEFORE the choice.
-        An inline image is written to a public, unauthenticated blob URL and
-        then fetched by every recipient's mail client (a mail client cannot
-        carry a session, so the tier has to be public). A member picking a
-        photo off their phone has no way to know that from the button, so the
-        sentence sits next to the picker, above it in reading order, not in a
-        toast after the upload.
-      */}
-      <p id={noticeId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
-        {t('publicLinkNotice')}
-      </p>
+      {/* The full sentences stay in the DOM as the button's description, so a
+          screen-reader user hears them on the button, as before. In a
+          `hidden` wrapper (review round 1): `aria-describedby` still reads
+          hidden text, and browse mode no longer reads it a second time after
+          the visible line. */}
+      <div hidden>
+        <p id={helpId}>
+          {t('helpText')}
+        </p>
+        {/*
+          F119 review finding F2-11 (PDPA M-4) — transparency BEFORE the choice.
+          An inline image is written to a public, unauthenticated blob URL and
+          then fetched by every recipient's mail client (a mail client cannot
+          carry a session, so the tier has to be public). A member picking a
+          photo off their phone has no way to know that from the button, so the
+          sentence sits next to the picker, above it in reading order, not in a
+          toast after the upload.
+        */}
+        <p id={noticeId}>
+          {t('publicLinkNotice')}
+        </p>
+      </div>
     </div>
   );
 }

@@ -23,7 +23,7 @@
  */
 import { useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button, Dialog, Textarea } from '@jirawatpyk/aura-react';
+import { Alert, Button, Dialog, Textarea } from '@jirawatpyk/aura-react';
 import { BANNER_ALT_MAX, BANNER_ALT_MIN } from '@/lib/design-blocks-client';
 
 export type ImageAltVariant = 'inline' | 'banner';
@@ -39,6 +39,13 @@ export interface ImageAltDialogProps {
   readonly initialValue?: string;
   /** Focus-return target on close; EVERY dialog in this codebase supplies one. */
   readonly finalFocus?: () => HTMLElement | false | null;
+  /**
+   * A file is still to be chosen once this closes (the toolbar's Image and
+   * Banner path). Defaults to true, so the public-link notice is shown unless
+   * a caller opts out: the uploader-first path passes false, because the file
+   * is already public. Never shown when `editing`.
+   */
+  readonly uploadFollows?: boolean;
 }
 
 type AltError = 'required' | 'tooLong' | null;
@@ -51,6 +58,7 @@ export function ImageAltDialog({
   editing = false,
   initialValue = '',
   finalFocus,
+  uploadFollows = true,
 }: ImageAltDialogProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.altDialog');
   // F119 review finding F2-11 — the SAME public-link sentence the uploader
@@ -59,11 +67,15 @@ export function ImageAltDialog({
   // directly (`tiptap-editor.tsx` handleAltConfirm -> openPicker), and while
   // the dialog is up the uploader's copy is behind the backdrop and inert —
   // unreachable to a screen reader and unread by everyone else. One key, two
-  // renders; never a second wording.
+  // renders; never a second wording. Shown only when a file is still to be
+  // chosen (`uploadFollows`).
   const tUpload = useTranslations('portal.broadcasts.compose.imageUpload');
   const [value, setValue] = useState<string>('');
   const [error, setError] = useState<AltError>(null);
-  const formId = `${useId()}-alt-form`;
+  const baseId = useId();
+  const formId = `${baseId}-alt-form`;
+  const noticeId = `${baseId}-public-notice`;
+  const showNotice = uploadFollows && !editing;
 
   // A fresh open is a fresh description — carrying the previous image's words
   // over is worse than an empty field, because it looks deliberate. Uses the
@@ -109,6 +121,10 @@ export function ImageAltDialog({
       size="sm"
       title={editing ? t('editTitle') : variant === 'banner' ? t('bannerTitle') : t('title')}
       description={t('description')}
+      // PDPA review L-1: the notice is added to the dialog's description (AURA
+      // joins this id after its own `description` id, it does not replace it),
+      // so it is announced with the dialog wherever focus lands.
+      {...(showNotice ? { 'aria-describedby': noticeId } : {})}
       footer={
         <>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
@@ -129,7 +145,14 @@ export function ImageAltDialog({
           submit();
         }}
       >
-        <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{tUpload('publicLinkNotice')}</p>
+        {showNotice ? (
+          // An info Alert, not caption text (UX review M-1): it is the last
+          // thing said before the file picker. `role="none"`: the dialog's
+          // description already announces it, a live region would say it twice.
+          <Alert id={noticeId} tone="info" role="none">
+            {tUpload('publicLinkNotice')}
+          </Alert>
+        ) : null}
         <Textarea
           label={t('fieldLabel')}
           touchHeight

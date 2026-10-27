@@ -162,6 +162,7 @@ export function RecipientCountLine({
   state,
   onRetry,
   textId,
+  note = null,
 }: {
   readonly state: RecipientCountState;
   /** Review round 2 (UX H-5) — re-runs the count for the same segment. */
@@ -173,27 +174,39 @@ export function RecipientCountLine({
    * repeating its words somewhere else.
    */
   readonly textId?: string;
+  /**
+   * Spec 122 US12d-3 (T1267) — who the recipients are, after the count on the
+   * same line ("128 recipients · the primary contact of each active member,
+   * not your own company"). Shown, and announced, beside "counting…", the
+   * count or "unavailable" — never beside a refusal; with a note the count is
+   * the short form.
+   */
+  readonly note?: string | null;
 }): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.recipientCount');
   let text: string | null = null;
   // Review 2026-09-07 round 2 (UX H-5 / L-6): the tones say what the state
-  // IS. `text-muted-foreground` is this codebase's empty-state sentinel, so
-  // a failure must not wear it; a measured number is the most actionable
-  // figure on the form and gets weight; a refusal is red.
-  let tone = 'text-muted-foreground';
+  // IS. Muted grey (`--aura-fg-secondary`) is this codebase's empty-state
+  // sentinel, so a failure must not wear it; a measured number is the most
+  // actionable figure on the form and gets weight; a refusal is red.
+  // Spec 122 US12d-3 (T1270): AURA's tokens, not the legacy kit's classes.
+  let tone = 'text-[var(--aura-fg-secondary)]';
   let icon: React.ReactElement | null = null;
   let retry = false;
+  let withNote = false;
   switch (state.status) {
     case 'idle':
       break;
     case 'loading':
       text = t('loading');
+      withNote = note !== null;
       break;
     case 'unavailable':
       text = t('unavailable');
-      tone = 'text-warning';
+      tone = 'text-[var(--aura-fg-warning)]';
       icon = <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />;
       retry = true;
+      withNote = note !== null;
       break;
     case 'ready':
       // Re-review 2026-09-07 (finding #4) — a MEASURED refusal blocks the
@@ -203,16 +216,17 @@ export function RecipientCountLine({
       retry = state.exceeds || state.count === 0;
       if (state.exceeds) {
         text = t('exceeds', { count: state.count, ceiling: state.ceiling });
-        tone = 'text-destructive';
+        tone = 'text-[var(--aura-fg-danger)]';
       } else if (state.count === 0) {
         // Review round 2 (i18n H1): "0 recipients will receive" was a lie —
         // the submit would be refused. And a tier where everyone objected
         // must read differently from a tier with nobody in it (FR-022a).
         text = t('empty', { dropped: state.droppedByPreference ?? 0 });
-        tone = 'text-destructive';
+        tone = 'text-[var(--aura-fg-danger)]';
       } else {
-        text = t('ready', { count: state.count });
-        tone = 'font-medium text-foreground';
+        withNote = note !== null;
+        text = withNote ? t('readyShort', { count: state.count }) : t('ready', { count: state.count });
+        tone = 'font-medium text-[var(--aura-fg-primary)]';
         icon = <Users className="size-3.5 shrink-0" aria-hidden="true" />;
       }
       break;
@@ -223,7 +237,7 @@ export function RecipientCountLine({
     // before its content changes (L-1 — an inserted region is not announced).
     <div
       data-compose-feature="recipient-count"
-      className={`flex min-h-10 items-start gap-1.5 text-sm ${tone}`}
+      className={`flex min-h-10 items-start gap-x-1.5 text-sm ${tone}`}
     >
       {/*
         /code-review 2026-09-07 (finding #8) — the retry BUTTON used to live
@@ -236,20 +250,31 @@ export function RecipientCountLine({
         alongside `role="status"` — redundant, but it is the hook the e2e
         reflow assertion selects on and it costs nothing.
       */}
-      <p
-        id={textId}
-        role="status"
-        aria-live="polite"
-        className="flex items-start gap-1.5"
-      >
-        {icon !== null ? <span className="mt-0.5">{icon}</span> : null}
+      {/* The count and its note are one sentence that wraps as text (board
+          `Proposal-compose`), so a narrow column breaks inside the note, never
+          before its "·". The space between them is a real text node, so a
+          screen reader reads two words. Review round 1: the note is inside
+          the status — on staff compose it is the only place the member's own
+          contacts are said to be excluded — so it is re-read when the count
+          lands (a decision, spec.md US12d-3). Not beside a refusal, whose
+          own sentence is the point, nor with no count to explain. */}
+      <p id={textId} role="status" aria-live="polite" className="m-0 min-w-0 flex-1">
+        {icon !== null ? <span className="me-1.5 inline-block align-[-2px]">{icon}</span> : null}
         {text !== null ? <span>{text}</span> : null}
+        {withNote ? (
+          <>
+            {' '}
+            <span className="font-normal text-[var(--aura-fg-secondary)]">· {note}</span>
+          </>
+        ) : null}
       </p>
+      {/* T1270 — 44 px tall on a phone or a coarse pointer (it was the
+          text's own height), AURA's focus ring. */}
       {retry ? (
         <button
           type="button"
           onClick={onRetry}
-          className="ml-1 shrink-0 underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-sm"
+          className="ms-1 inline-flex min-h-11 shrink-0 items-start rounded-[var(--aura-radius-sm)] px-1 underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--aura-focus-ring)] sm:[@media(pointer:fine)]:min-h-0"
         >
           {t('retry')}
         </button>
