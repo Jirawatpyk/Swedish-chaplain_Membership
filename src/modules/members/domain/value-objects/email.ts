@@ -9,6 +9,7 @@
  * Pure TypeScript — no framework imports.
  */
 import { err, ok, type Result } from '@/lib/result';
+import { ERASED_EMAIL_DOMAIN } from '../erasure-sentinels';
 
 declare const EmailBrand: unique symbol;
 export type Email = string & { readonly [EmailBrand]: true };
@@ -16,7 +17,8 @@ export type Email = string & { readonly [EmailBrand]: true };
 export type EmailError =
   | { code: 'email.empty' }
   | { code: 'email.too_long'; maxLength: 254 }
-  | { code: 'email.invalid_format' };
+  | { code: 'email.invalid_format' }
+  | { code: 'email.reserved_domain' };
 
 // RFC 5322 simplified — one `@`, at least one `.` in the domain, no whitespace.
 // We intentionally reject some technically-valid exotic forms (quoted locals,
@@ -31,7 +33,13 @@ export function asEmail(raw: string): Result<Email, EmailError> {
     return err({ code: 'email.too_long', maxLength: 254 });
   if (!EMAIL_REGEX.test(trimmed))
     return err({ code: 'email.invalid_format' });
-  return ok(trimmed.toLowerCase() as Email);
+  const lower = trimmed.toLowerCase();
+  // 134-s1 — the erasure sentinel domain is never a real address; accepting it
+  // would let a stored address collide with an erased login's tombstone.
+  const domain = lower.slice(lower.lastIndexOf('@') + 1);
+  if (domain === ERASED_EMAIL_DOMAIN || domain.endsWith(`.${ERASED_EMAIL_DOMAIN}`))
+    return err({ code: 'email.reserved_domain' });
+  return ok(lower as Email);
 }
 
 export function isEmail(value: unknown): value is Email {

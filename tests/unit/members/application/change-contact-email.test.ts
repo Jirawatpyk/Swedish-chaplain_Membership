@@ -72,8 +72,10 @@ function makeDeps(overrides: Partial<{
   sessionResult: unknown;
   tokenInsertResult: unknown;
   emailEnqueueResult: unknown;
+  statusResult: unknown;
 }> = {}): ChangeContactEmailDeps {
   const {
+    statusResult = ok({ status: 'active', erased: false }),
     findByIdResult = ok(makeContact()),
     contactUpdateResult = ok(undefined),
     userUpdateResult = ok({ oldEmail: 'alice@old.com' }),
@@ -90,6 +92,7 @@ function makeDeps(overrides: Partial<{
     } as unknown as ChangeContactEmailDeps['contactRepo'],
     userEmails: {
       updateInTx: vi.fn(async () => userUpdateResult),
+      readStatusInTx: vi.fn(async () => statusResult),
     } as unknown as ChangeContactEmailDeps['userEmails'],
     sessions: {
       revokeAllForInTx: vi.fn(async () => sessionResult),
@@ -155,6 +158,41 @@ describe('changeContactEmail — contact lookup failures', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('not_found');
+  });
+});
+
+// 134-s1 — an erased login is `disabled` with a sentinel email. Writing a
+// real address onto it would re-identify it and disarm enableUser's sentinel
+// guard, so a disabled or missing login refuses the change before any write.
+describe('changeContactEmail — linked login guard (134-s1)', () => {
+  it.each([
+    ['erased', ok({ status: 'disabled', erased: true }), 'linked_login_unavailable'],
+    ['missing', ok(null), 'not_found'],
+  ])('refuses a %s login (%s → %s) and writes nothing', async (_label, statusResult, code) => {
+    const deps = makeDeps({ statusResult });
+    const result = await changeContactEmail(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe(code);
+    expect(deps.contactRepo.updateEmailInTx).not.toHaveBeenCalled();
+    expect(deps.userEmails.updateInTx).not.toHaveBeenCalled();
+    expect(deps.emails.enqueueInTx).not.toHaveBeenCalled();
+  });
+
+  it('still changes the email of a disabled login that was NOT erased', async () => {
+    const deps = makeDeps({ statusResult: ok({ status: 'disabled', erased: false }) });
+    const result = await changeContactEmail(deps, baseInput);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(deps.userEmails.updateInTx).toHaveBeenCalled();
+  });
+
+  it('returns server_error when the status read fails', async () => {
+    const deps = makeDeps({
+      statusResult: err({ code: 'repo.unexpected', cause: new Error('db down') }),
+    });
+    const result = await changeContactEmail(deps, baseInput);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('server_error');
+    expect(deps.userEmails.updateInTx).not.toHaveBeenCalled();
   });
 });
 

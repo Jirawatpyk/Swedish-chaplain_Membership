@@ -95,6 +95,23 @@ export async function verifyContactEmail(
         });
       }
 
+      // 134-s1 — an erased login is `disabled`; a verification token that
+      // survived for it (or for a gone row) is refused before any write, with
+      // the public route's enumeration-safe `not_found`. Mirrors the revert sink.
+      const statusResult = await deps.userEmails.readStatusInTx(tx, token.userId);
+      if (!statusResult.ok) {
+        throw new UseCaseAbort({
+          code: 'server_error',
+          cause: statusResult.error,
+        });
+      }
+      if (
+        statusResult.value === null ||
+        statusResult.value.status === 'disabled'
+      ) {
+        throw new UseCaseAbort({ code: 'not_found' });
+      }
+
       const marked = await deps.tokens.markConsumedInTx(
         tx,
         token.tokenId,
