@@ -39,6 +39,8 @@ vi.mock('@/lib/toast', () => ({
 }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  // The acknowledgement banner hides itself on the compose route (spec 122 PR C).
+  usePathname: () => '/portal',
 }));
 
 /** `src/proxy.ts` `build503`, verbatim. */

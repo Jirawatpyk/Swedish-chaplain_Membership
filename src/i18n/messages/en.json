@@ -6853,6 +6853,11 @@
       "compose": {
         "title": "Compose E-Blast",
         "subtitle": "Send a message to your chamber's members.",
+        "rules": {
+          "line": "E-Blast sending rules",
+          "readAgain": "Read again",
+          "hide": "Hide"
+        },
         "templatePicker": {
           "triggerLabel": "Start from a template",
           "blankOption": "Blank — start from scratch",

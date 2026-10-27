@@ -21,6 +21,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { usePathname } from 'next/navigation';
 import { toast } from '@/lib/toast';
 import { Alert, Button } from '@jirawatpyk/aura-react';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
@@ -43,6 +44,8 @@ export interface AcknowledgementBannerClientProps {
   readonly privacyPolicyLinkLabel?: string;
 }
 
+const COMPOSE_PATH = '/portal/broadcasts/new';
+
 export function AcknowledgementBannerClient({
   title,
   body,
@@ -58,6 +61,9 @@ export function AcknowledgementBannerClient({
   const [pending, startTransition] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
   const focusAnchorRef = useRef<HTMLSpanElement>(null);
+  // Spec 122 PR C — the compose page states the same rules itself
+  // (`compose/sending-rules.tsx`), so the banner stays out of it there.
+  const onCompose = usePathname() === COMPOSE_PATH;
 
   function dismiss() {
     // Move focus to the persistent anchor BEFORE unmount so the
@@ -103,7 +109,7 @@ export function AcknowledgementBannerClient({
 
   return (
     <>
-      {hidden ? null : (
+      {hidden || onCompose ? null : (
         // Outer wrapper matches DetailContainer's `mx-auto + max-w +
         // px-[var(--page-padding-x)]` so the warning-banner edges align
         // with the page content cards below on narrow viewports (was

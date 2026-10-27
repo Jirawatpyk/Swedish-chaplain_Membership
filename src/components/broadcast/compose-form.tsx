@@ -71,6 +71,7 @@ import {
 import { useComposeDirtyGuard } from './compose/use-compose-dirty-guard';
 import { SubmitSummaryDialog, summaryRecipientCount } from './compose/submit-summary-dialog';
 import { saveComposeDraft } from './compose/save-compose-draft';
+import { ComposeSendingRules } from './compose/sending-rules';
 import { formatLocalisedDate, TIME_HH_MM } from '@/lib/format-date-localised';
 
 const TiptapEditor = loadTiptapEditor<{
@@ -193,6 +194,14 @@ export interface ComposeFormProps {
   readonly templates?: readonly ComposeTemplateOption[];
   /** The template the page pre-populated from (`?template=`), if any. */
   readonly initialTemplateId?: string | null;
+  /**
+   * Spec 122 PR C — when the company acknowledged the E-Blast sending rules
+   * (ISO), or null when it has not. Absent: the rules are not shown (a failed
+   * read, or a surface without them).
+   */
+  readonly acknowledgedAt?: string | null;
+  /** The tenant's privacy policy, linked from the rules. */
+  readonly privacyPolicyUrl?: string | null;
 }
 
 /** `useSyncExternalStore` that never changes: false on the server and in hydration, true after. */
@@ -210,6 +219,8 @@ export function ComposeForm({
   audienceMode,
   templates = [],
   initialTemplateId = null,
+  acknowledgedAt,
+  privacyPolicyUrl,
 }: ComposeFormProps): React.ReactElement {
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
@@ -646,6 +657,13 @@ export function ComposeForm({
 
   const writeHead = (
     <>
+      {acknowledgedAt !== undefined ? (
+        <ComposeSendingRules
+          acknowledgedAt={acknowledgedAt}
+          locale={locale === 'th' || locale === 'sv' ? locale : 'en'}
+          privacyPolicyUrl={privacyPolicyUrl ?? null}
+        />
+      ) : null}
       <QuotaDisplay refreshKey={quotaRefreshKey} initial={initialQuota} onLoaded={setLiveQuota} variant="line" />
       {/* F119 T140 (FR-046) — inside the form, so a choice re-seeds state
           instead of navigating and remounting it. */}

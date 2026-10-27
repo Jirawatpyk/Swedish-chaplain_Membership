@@ -6853,6 +6853,11 @@
       "compose": {
         "title": "Skapa utskick",
         "subtitle": "Skicka ett meddelande till din handelskammares medlemmar.",
+        "rules": {
+          "line": "Regler för utskick",
+          "readAgain": "Läs igen",
+          "hide": "Dölj"
+        },
         "templatePicker": {
           "triggerLabel": "Börja från en mall",
           "blankOption": "Tom — börja från noll",

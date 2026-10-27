@@ -17,9 +17,7 @@
  * "Remind me later" records nothing — the banner re-appears on the
  * next portal session.
  */
-import { sql } from 'drizzle-orm';
 import { getLocale, getTranslations } from 'next-intl/server';
-import { runInTenant } from '@/lib/db';
 import { env } from '@/lib/env';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { getCurrentSession } from '@/lib/auth-session';
@@ -29,6 +27,7 @@ import {
 } from '@/modules/broadcasts';
 import { buildMembersDeps } from '@/modules/members/members-deps';
 import { AcknowledgementBannerClient } from './marketing-acknowledgement-banner-client';
+import { readBroadcastsAcknowledgedAt } from './broadcasts-acknowledgement';
 
 interface BannerEligibility {
   readonly show: boolean;
@@ -54,23 +53,8 @@ async function checkEligibility(): Promise<BannerEligibility> {
   }
   const memberId = memberLookup.value.memberId;
 
-  // Direct SQL: F3 Member entity does not project the
-  // `broadcasts_acknowledged_at` column (Q15 storage added by
-  // migration 0071). A small read here keeps the banner self-contained
-  // without bloating the F3 entity for a per-tenant flag.
-  //
-  // Round-4 CRIT-A: routed through `runInTenant` so RLS+FORCE on
-  // `members` applies (Constitution Principle I two-layer isolation).
-  const ackResult = (await runInTenant(tenant, async (tx) =>
-    tx.execute(sql`
-      SELECT broadcasts_acknowledged_at
-        FROM members
-       WHERE tenant_id = ${tenant.slug}
-         AND member_id = ${memberId}
-       LIMIT 1
-    `),
-  )) as unknown as Array<{ broadcasts_acknowledged_at: Date | null }>;
-  const ack = ackResult[0]?.broadcasts_acknowledged_at ?? null;
+  // The shared read (also used by the compose page, spec 122 PR C).
+  const ack = await readBroadcastsAcknowledgedAt(tenant, memberId);
   if (ack !== null) {
     return { show: false, memberId };
   }

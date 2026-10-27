@@ -28,6 +28,8 @@ import { makeDrizzleBroadcastTemplatesRepo } from '@/modules/broadcasts/infrastr
 import { safeAuditEmit } from '@/modules/broadcasts/application/use-cases/_safe-audit-emit';
 import { isF71aUs2Enabled } from '@/modules/broadcasts/infrastructure/feature-flags';
 import { buildMembersDeps } from '@/modules/members/members-deps';
+import { readBroadcastsAcknowledgedAt } from '@/app/(member)/portal/_components/broadcasts-acknowledgement';
+import { env } from '@/lib/env';
 
 /**
  * Compose page (server component).
@@ -278,6 +280,21 @@ export default async function ComposeBroadcastPage({
     }
   }
 
+  // Spec 122 PR C — the company's E-Blast sending-terms acknowledgement, read
+  // as the portal banner reads it. The form shows the rules in full until it
+  // is recorded, then one "Read again" line. A failed read leaves the rules
+  // out rather than failing the page: they explain, they never gate sending.
+  let acknowledgedAt: string | null | undefined;
+  try {
+    const ack = await readBroadcastsAcknowledgedAt(tenant, memberId);
+    acknowledgedAt = ack === null ? null : new Date(ack).toISOString();
+  } catch (err) {
+    logger.warn(
+      { err: errKind(err), tenantId: tenant.slug, memberIdHash: hashId(memberId) },
+      'broadcasts.compose.acknowledgement_read_failed',
+    );
+  }
+
   return (
     // F119 T148 (FR-050) — 72 rem, not the 42 rem form tier: the editor and the
     // 600 px email preview sit side by side from `lg` up. Recorded as an
@@ -309,6 +326,9 @@ export default async function ComposeBroadcastPage({
         initialTemplateId={selectedTemplateId}
         {...(initialSubject !== undefined ? { initialSubject } : {})}
         {...(initialBodyHtml !== undefined ? { initialBodyHtml } : {})}
+        {...(acknowledgedAt !== undefined
+          ? { acknowledgedAt, privacyPolicyUrl: env.broadcasts.privacyPolicyUrl ?? null }
+          : {})}
       />
     </DetailContainer>
   );
