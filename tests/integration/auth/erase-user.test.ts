@@ -34,6 +34,7 @@ import {
 } from '@/modules/auth/domain/branded';
 import { eraseUser } from '@/modules/auth/application/erase-user';
 import { enableUser } from '@/modules/auth/application/enable-user';
+import { changeRole } from '@/modules/auth/application/change-role';
 import { signIn } from '@/modules/auth/application/sign-in';
 import {
   defaultForgotPasswordDeps,
@@ -672,5 +673,32 @@ describe('eraseUser use-case (live Neon)', () => {
     });
     expect(res).toEqual({ ok: false, error: { code: 'not-found' } });
     expect((await rawSelectUser(user.userId))?.status).toBe('disabled');
+  });
+
+  // 134-s4 — the same seam for changeRole: an erased staff login keeps the
+  // role it had, and no role_changed row is written for it.
+  it('an erased login cannot have its role changed', async () => {
+    const user = await createActiveTestUser('manager');
+    created.push(user);
+
+    const erased = await eraseUser({
+      userId: user.userId,
+      actorUserId: 'admin-it',
+      requestId: `it-erase-role-${Date.now()}`,
+      sourceIp: null,
+    });
+    expect(erased.ok).toBe(true);
+
+    const res = await changeRole({
+      targetUserId: user.userId,
+      newRole: 'admin',
+      actorUserId: user.userId,
+      sourceIp: '127.0.0.1',
+      requestId: `it-erase-role-2-${Date.now()}`,
+    });
+    expect(res).toEqual({ ok: false, error: { code: 'not-found' } });
+    expect((await userRepo.findById(user.userId))?.role).toBe('manager');
+    const audits = await rawSelectAuditByTarget(user.userId);
+    expect(audits.filter((a) => a.eventType === 'role_changed')).toHaveLength(0);
   });
 });
