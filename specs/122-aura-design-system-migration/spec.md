@@ -869,6 +869,42 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The portal sign-out button becomes an AURA `Button` with the 44px touch height. (R84 then found it mounted nowhere since 063 — sign-out lives in the Account menu — so the follow-up PR deletes it.)
   - Requests, toasts and copy are unchanged.
 
+### Session 2026-10-26 (US12d-3: the compose forms, calmer, with a submit confirmation)
+
+The maintainer reviewed a proposal page (https://claude.ai/artifact/QBcoA6qZZHmNp9TaDwhdP6) and decided:
+
+- Q: The compose page reads as cluttered; split sending into steps? → A: No. One page, made calmer, and Submit opens a confirmation dialog instead of sending straight away, on the member form and on staff compose on behalf. The dialog sums up the subject, the recipients with their count, the allowance it uses and when it is sent.
+- Q: What gets calmer on the member form? → A:
+  - the recipient count sits under the choices as one line with its explanation;
+  - the upload rules move into an info tip beside a one-line hint;
+  - "Send options" collapses to one line that states the current choice, replacing the "leave blank" checkbox;
+  - on a phone, Write / Preview tabs and a sticky bar with the count and Submit.
+- Q: The staff form? → A: Keep its 4-figure quota card, member picker, template picker and subject. The self-exclusion notice and the count become one line ("130 recipients · not {company}'s own contacts"); the upload hint and Send options change as on the member form; Submit opens the confirmation.
+- Q: The boards' "first visit: full guidelines alert, then one line with Read again"? → A: Not in US12d-3. No acknowledgement is recorded today, so it needs server state and an audit event. That is its own PR after this one (FR-011).
+- Q: The 600px email preview against the boards' 520px? → A: Keep 600px (spec 119 FR-050); the toolbar's 2px gap already fits the member column (#662).
+- Parity pass (T1271), built to the approved boards:
+  - the compose quota is one line ("3 of 6 E-Blasts left in 2026 · 1 reserved");
+  - "you can cancel until an admin approves it" is said once, in the confirmation;
+  - the member page links back to the E-Blast tab;
+  - staff compose on a phone keeps Submit in a sticky bar with the count, as the member page does. Save as draft stays in the form and the preview stays below it, so the old board's preview icon and status line ("uses 1 of 5 remaining · Saved at") are not built; the board is redrawn to match.
+- Second parity pass (T1271, whole board against the whole fixture page):
+  - built: the back link sits above the title (it was under the subtitle), as on the other portal detail pages; Save as draft is the outlined secondary button on both forms (it was a ghost); staff compose at 320 px no longer scrolls sideways (its grid had no track below `lg`, so the page was 338 px wide).
+  - kept, though the boards differ:
+    - the summary's note is the dialog's description, under its title, so a screen reader hears it with the title (the boards put it under the list);
+    - the phone tabs are full width, two 44px halves (the boards draw short tabs at the start);
+    - on a phone the recipients note runs on after the count rather than starting its own line;
+    - the upload hint keeps "anyone can open" (the notice's PDPA wording), so on the member desktop it wraps under the button;
+    - the preview keeps its header with the "Preview" button and the 600px column (FR-050);
+    - the staff quota card keeps its four figures in one row and its note on when a slot is given back; the attendee choice keeps "from member companies".
+- Review rounds 1–2 (T1272; /code-review high, enterprise-ux-designer, mobile-a11y-ux-reviewer, i18n-translation-reviewer, pdpa-gdpr-compliance-officer). Built: focus returns to Submit after the summary (Submit is inert by AURA `loading`, not native `disabled`) and the summary names its `finalFocus`; a subject, body or read-only refusal sent from the phone's Preview tab reopens Write and focuses it; the summary drops the allowance when the quota failed to load, says plainly when none is left and then offers no Submit; the phone bar says "Can't send to this audience" on a refused audience; Send options has "Send as soon as it's approved"; the recipients note is in the live region beside "counting…", the count or "unavailable", never a refusal; the member skeleton draws the one-line quota; the upload line adds "so don't upload anything private" (PDPA); TH/SV terms aligned. AURA 5.66 (#181, #182) is adopted: the member refusal on staff compose is the picker's own.
+- Decided in review, kept:
+  - the member form renders its skeleton until the first client render, on every width. The server cannot know a phone's layout, and the two trees mounted the editor three times on a phone. The editor is client-only already, and the page header and back link still come from the server.
+  - Crossing 640px (rotating a phone) remounts the form's layout; the text is kept, the editor's undo history is not.
+  - Staff compose has no such gate: only its Submit moves into the bar on a phone, so there is no second editor mount.
+  - The recipients note is re-read when the count lands. On staff compose it is the only place the member's own contacts are said to be excluded.
+  - The cap ("up to 500 per broadcast") is said when the measured count passes it, not before.
+  - The summary names the segment, not the chosen tiers.
+
 ### Session 2026-10-26 (US12d-2 follow-up: the toolbar to the boards)
 
 The US12d-2 parity page set the editor against its boards. The maintainer decided:

@@ -22,6 +22,7 @@ import {
   type ComposeSegmentKind,
   excludedByPreference,
   proxySelfExclusionNoticeKey,
+  recipientNoteKey,
   selfExclusionHintKey,
   showsSelfExclusionHint,
   submitBlockedByCount,
@@ -318,5 +319,27 @@ describe('round-2 copy pins (UX + i18n reviewers)', () => {
     }
     expect(pick(sv as Messages, 'portal.broadcasts.compose.recipientCount.exceeds')).not.toMatch(/inlämningen/);
     expect(pick(sv as Messages, 'portal.broadcasts.compose.selfExclusionHint')).not.toMatch(/får inte/);
+  });
+});
+
+// Spec 122 US12d-3 (T1267) — the note on the one recipients line.
+describe('recipientNoteKey', () => {
+  it.each([
+    ['all_members', 'primary_only', 'recipientNote.allMembers'],
+    ['all_members', 'all_contacts', 'recipientNote.allMembersAllContacts'],
+    ['tier', 'primary_only', 'recipientNote.tier'],
+    ['tier', 'all_contacts', 'recipientNote.tierAllContacts'],
+    ['event_attendees_last_90d', 'primary_only', 'recipientNote.attendees'],
+    ['custom', 'primary_only', null],
+    ['not_a_kind', 'primary_only', null],
+  ] as const)('%s on %s → %s', (kind, mode, key) => {
+    expect(recipientNoteKey(kind as ComposeSegmentKind, mode)).toBe(key);
+  });
+
+  it('the attendee note says the sender is included, in every locale', () => {
+    for (const messages of [en, th, sv]) {
+      expect(pick(messages, 'portal.broadcasts.compose.recipientNote.attendees')).toEqual(expect.any(String));
+    }
+    expect(en.portal.broadcasts.compose.recipientNote.attendees).toMatch(/including you/);
   });
 });

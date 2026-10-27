@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getLocale, getTranslations } from 'next-intl/server';
 import { DetailContainer } from '@/components/layout';
 import { PageHeader } from '@/components/layout/page-header';
+import { BackLink } from '@/components/portal/back-link';
 import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import { ComposeForm } from '@/components/broadcast/compose-form';
 import type { ComposeTemplateOption } from '@/components/broadcast/compose/template-picker-field';
@@ -56,6 +57,7 @@ export default async function ComposeBroadcastPage({
   // must be pure under React 19 (`react-hooks/purity`); time-sensitive
   // measurements would violate the rule. Trace span is auto-created
   // by `@vercel/otel` for the route handler.
+  const tDetail = await getTranslations('portal.broadcasts.detail');
   const t = await getTranslations('portal.broadcasts.compose');
   const session = await requireSession('member');
   const tenant = resolveTenantFromRequest();
@@ -281,6 +283,11 @@ export default async function ComposeBroadcastPage({
     // 600 px email preview sit side by side from `lg` up. Recorded as an
     // exception in docs/ux-standards.md § 18.2.
     <DetailContainer>
+      {/* Spec 122 US12d-3 (boards `Portal-broadcast-new`, `Proposal-compose`):
+          back to the E-Blast tab, above the title as on the other portal
+          detail pages. A member only reaches compose with E-Blast in their
+          plan, so the tab is theirs. */}
+      <BackLink href="/portal/benefits?tab=broadcasts">{tDetail('back')}</BackLink>
       <PageHeader title={keepTermTogether(t('title'))} subtitle={t('subtitle')} />
       {/*
         F119 T140 (FR-046, SC-012): the template picker moved INSIDE the form

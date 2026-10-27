@@ -27,6 +27,8 @@
  * `tests/unit/architecture/broadcast-client-no-js-joda.test.ts`.
  */
 
+import { getDateFormatLocale } from '@/lib/format-date-localised';
+
 const BANGKOK_TZ = 'Asia/Bangkok';
 
 const MS_PER_DAY = 86_400_000;
@@ -195,4 +197,25 @@ export function bangkokMinInputAfterMinutes(plusMinutes: number): string {
   // Asia/Bangkok has no DST, so "instant + N min" and "wall-time + N min"
   // are the same wall-clock reading; seconds are dropped by the formatter.
   return isoToBangkokInput(new Date(Date.now() + plusMinutes * 60_000).toISOString());
+}
+
+/**
+ * The scheduled send time as the picker previews it, in Bangkok wall-time;
+ * '' when there is none. Shared with the submit confirmation (spec 122
+ * US12d-3) so both say the same time.
+ */
+export function formatScheduledFor(value: string | null, locale: string): string {
+  if (value === null) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  // Pin formatter to Asia/Bangkok so the displayed wall-time matches
+  // the contract the picker asks the user to provide (E2 UX hardening
+  // — previously this defaulted to the BROWSER local TZ, so an admin
+  // travelling abroad would see a different time than they typed).
+  const formatter = new Intl.DateTimeFormat(getDateFormatLocale(locale), {
+    dateStyle: 'long',
+    timeStyle: 'short',
+    timeZone: 'Asia/Bangkok',
+  });
+  return formatter.format(date);
 }

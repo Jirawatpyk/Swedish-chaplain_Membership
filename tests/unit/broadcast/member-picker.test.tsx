@@ -1,17 +1,16 @@
 /**
  * DV-4 — closed-state guard for the admin <MemberPicker />.
  *
- * Base UI / cmdk popovers deadlock under jsdom + React 19 (documented in
- * tests/unit/broadcasts/components/approve-reject-final-focus.test.ts), so
- * this suite NEVER opens the Popover. It asserts only the trigger-button
- * surface that renders in the closed state:
- *   - placeholder text when no member is selected
+ * Asserts the surface that renders before anything is typed:
+ *   - the placeholder when no member is selected
  *   - the selected company name when a value is set
- *   - `triggerRef` resolving to the trigger <button> (the compose form
+ *   - `inputRef` resolving to the combobox <input> (the compose form
  *     focuses it on `broadcast_member_not_found`)
  *
- * The data-fetching effect only fires when `open === true`, so no fetch
- * mock is needed for the closed-state render.
+ * Spec 122 US12d-3 (T1270): the picker is AURA's Combobox now, so the
+ * placeholder and the chosen name are the input's own placeholder and value
+ * rather than text in a trigger <button>. The search only runs once
+ * something is typed, so no fetch mock is needed for these renders.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -32,7 +31,10 @@ describe('MemberPicker (closed-state guard)', () => {
 
   it('shows the placeholder when no member is selected', () => {
     render(<MemberPicker {...baseProps} value={null} />);
-    expect(screen.getByText('Search by company name…')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Member' })).toHaveAttribute(
+      'placeholder',
+      'Search by company name…',
+    );
   });
 
   it('shows the selected company name', () => {
@@ -47,13 +49,28 @@ describe('MemberPicker (closed-state guard)', () => {
         }}
       />,
     );
-    expect(screen.getByText('Acme AB')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Member' })).toHaveValue('Acme AB');
   });
 
-  it('forwards triggerRef to the trigger button', () => {
-    const ref = createRef<HTMLButtonElement>();
-    render(<MemberPicker {...baseProps} value={null} triggerRef={ref} />);
-    expect(ref.current).toBeInstanceOf(HTMLButtonElement);
+  // Spec 122 US12d-3 — AURA 5.66 (#182): the page's own refusal is tied to
+  // the picker, as on a TextField.
+  it('marks itself invalid and is described by the page\'s refusal', () => {
+    render(
+      <>
+        <MemberPicker {...baseProps} value={null} invalid describedBy="member-refusal" />
+        <p id="member-refusal">That member was not found.</p>
+      </>,
+    );
+    const input = screen.getByRole('combobox', { name: 'Member' });
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription(/That member was not found\./);
+  });
+
+  it('forwards inputRef to the combobox input', () => {
+    const ref = createRef<HTMLInputElement>();
+    render(<MemberPicker {...baseProps} value={null} inputRef={ref} />);
+    expect(ref.current).toBeInstanceOf(HTMLInputElement);
+    expect(ref.current).toBe(screen.getByRole('combobox', { name: 'Member' }));
   });
 
   it('renders with a member that has no primary contact email (hasPrimaryContactEmail: false)', () => {
@@ -71,6 +88,6 @@ describe('MemberPicker (closed-state guard)', () => {
         }}
       />,
     );
-    expect(screen.getByText('NoEmail Corp')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Member' })).toHaveValue('NoEmail Corp');
   });
 });

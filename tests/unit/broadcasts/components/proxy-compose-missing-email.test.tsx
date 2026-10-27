@@ -25,7 +25,7 @@
  * so React flushes the update before assertions.
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import type { MemberPickerOption } from '@/components/broadcast/member-picker';
@@ -78,14 +78,18 @@ vi.mock('@/components/broadcast/member-picker', () => ({
     value,
     onSelect,
     label,
+    invalid,
+    describedBy,
   }: {
     value: MemberPickerOption | null;
     onSelect: (m: MemberPickerOption) => void;
     label: string;
+    invalid?: boolean;
+    describedBy?: string;
   }) => {
     capturedOnSelect = onSelect;
     return (
-      <div>
+      <div data-testid="member-picker" data-invalid={String(invalid === true)} data-described-by={describedBy ?? ''}>
         <span>{label}</span>
         {value ? <span data-testid="selected-member">{value.companyName}</span> : null}
       </div>
@@ -157,6 +161,12 @@ vi.mock('@/components/shell/tiptap-loader', () => ({
 }));
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+// The exclusion note sits beside a measured count only (review round 1,
+// US12d-3), so the count is measured here.
+vi.mock('@/components/broadcast/recipient-count', async (orig) => ({
+  ...(await orig<typeof import('@/components/broadcast/recipient-count')>()),
+  useRecipientCount: () => ({ status: 'ready', count: 130, ceiling: 500, exceeds: false }),
+}));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // ---------------------------------------------------------------------------
@@ -243,15 +253,21 @@ describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
         hasPrimaryContactEmail: true,
       });
     });
-    const excluded = screen.getByText(/won't receive this broadcast/i);
+    // Spec 122 US12d-3 (T1267): on all_members the exclusion is the count
+    // line's own note — "· not {company}'s own contacts" — not a line above.
+    const excluded = screen.getByText("· not Has Email Corp's own contacts");
+    // Announced with the count: on this form the note is the only place the
+    // exclusion is said.
+    expect(screen.getByRole('status')).toHaveTextContent("130 recipients · not Has Email Corp's own contacts");
+    expect(screen.queryByText(/won't receive this broadcast/i)).toBeNull();
     const picker = screen.getByTestId('segment-picker');
-    // The picker precedes the notice in document order.
+    // The picker precedes the note in document order.
     expect(picker.compareDocumentPosition(excluded) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     await act(async () => {
       capturedSegmentOnChange?.({ kind: 'custom', tierCodes: [], emails: [] } as never);
     });
-    expect(screen.queryByText(/won't receive this broadcast/i)).toBeNull();
+    expect(screen.queryByText(/own contacts/i)).toBeNull();
     expect(screen.getByText(/will receive it/i)).toBeInTheDocument();
   });
 
@@ -319,6 +335,13 @@ describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
     await act(async () => {
       fireEvent.click(submitBtn);
     });
+    // Spec 122 US12d-3: Submit asks first; confirm in the dialog.
+    const confirm = within(screen.getByRole('alertdialog')).getByRole('button', {
+      name: 'Submit for review',
+    });
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
 
     // (a) The picker-level error message for missingContactEmailError must be
     //     visible as a `role="alert"` paragraph. The en.json value for this key
@@ -333,5 +356,24 @@ describe('ProxyComposeForm — missing primary contact email (Task 6)', () => {
     //     `pickerError` MUST NOT clear it (the admin may want to navigate to
     //     the member profile to add a contact email first).
     expect(screen.getByTestId('selected-member')).toBeInTheDocument();
+  });
+});
+
+// Spec 122 US12d-3 — AURA 5.66 (#182) retires the stand-in: the warning
+// beside the picker is tied to it.
+describe('ProxyComposeForm — the member refusal is the picker\'s', () => {
+  it('a member with no contact email marks the picker invalid, described by the warning', async () => {
+    renderForm();
+    await act(async () => {
+      capturedOnSelect?.({
+        memberId: 'm-noemail',
+        companyName: 'No Email Corp',
+        primaryContactName: null,
+        hasPrimaryContactEmail: false,
+      });
+    });
+    const picker = screen.getByTestId('member-picker');
+    expect(picker).toHaveAttribute('data-invalid', 'true');
+    expect(picker.getAttribute('data-described-by')).toContain('proxy-missing-contact-email');
   });
 });

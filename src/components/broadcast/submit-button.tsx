@@ -73,8 +73,12 @@ export function SubmitButton({
       variant="primary"
       data-compose-feature="submit"
       onClick={onClick}
-      disabled={disabled || submitting}
-      // AURA's spinner and aria-busy while the request runs.
+      disabled={disabled}
+      // AURA's spinner, aria-busy and aria-disabled while the request runs,
+      // with clicks ignored. Not native `disabled`: the summary dialog closes
+      // in the same commit that starts the request, and AURA hands focus
+      // back to this button, which a disabled button cannot take (review
+      // round 1, US12d-3).
       loading={submitting}
       {...(describedBy !== undefined ? { 'aria-describedby': describedBy } : {})}
     >

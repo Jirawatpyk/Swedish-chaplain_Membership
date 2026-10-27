@@ -171,6 +171,42 @@ export function showsSelfExclusionHint(segmentKind: ComposeSegmentKind): boolean
 }
 
 /**
+ * Spec 122 US12d-3 (T1267) — the note the one recipients line carries after
+ * the count ("128 recipients · the primary contact of each active member, not
+ * your own company"): who the recipients are on the leg in force, and which
+ * way self-exclusion goes. It replaces the estimate note and the
+ * self-exclusion hint above the count. `null` for the custom list (it keeps
+ * its own instructions beside its textarea) and for a kind this build does
+ * not recognise — never a borrowed promise.
+ */
+export function recipientNoteKey(
+  segmentKind: ComposeSegmentKind,
+  audienceMode: ComposeAudienceMode,
+):
+  | 'recipientNote.allMembers'
+  | 'recipientNote.allMembersAllContacts'
+  | 'recipientNote.tier'
+  | 'recipientNote.tierAllContacts'
+  | 'recipientNote.attendees'
+  | null {
+  switch (segmentKind) {
+    case 'all_members':
+      return audienceMode === 'all_contacts' ? 'recipientNote.allMembersAllContacts' : 'recipientNote.allMembers';
+    case 'tier':
+      return audienceMode === 'all_contacts' ? 'recipientNote.tierAllContacts' : 'recipientNote.tier';
+    case 'event_attendees_last_90d':
+      return 'recipientNote.attendees';
+    case 'custom':
+      return null;
+    default: {
+      const _exhaustive: never = segmentKind;
+      void _exhaustive;
+      return null;
+    }
+  }
+}
+
+/**
  * Review 2026-09-07 round 2 (UX H-3) — EVERY segment kind carries a hint that
  * says which way the self-exclusion rule goes. Silence on the custom list /
  * attendee segment read as "the same rule applies": a sender who learned

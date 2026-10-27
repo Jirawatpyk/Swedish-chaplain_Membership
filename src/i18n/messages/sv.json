@@ -4115,7 +4115,9 @@
         "saveDraftButton": "Spara som utkast",
         "draftSavedToast": "Utkast sparat.",
         "draftSaveErrorToast": "Utkastet kunde inte sparas. Försök igen.",
-        "savedAt": "Sparat kl. {time}"
+        "savedAt": "Sparat kl. {time}",
+        "confirmTitle": "Skicka in på uppdrag av {company}?",
+        "recipientNote": "inte kontakter hos {company}"
       },
       "proxySubmitButton": "Skicka in å medlems vägnar",
       "haltBanner": {
@@ -6855,7 +6857,6 @@
           "triggerLabel": "Börja från en mall",
           "blankOption": "Tom — börja från noll",
           "starterSuffix": "Start",
-          "starterBadgeAria": "Förseedad av plattformen",
           "searchPlaceholder": "Sök mallar efter namn",
           "emptyMessage": "Inga mallar matchar din sökning",
           "helpText": "Att välja en mall fyller i ämne och innehåll. Du kan fortfarande redigera innan du skickar.",
@@ -6876,8 +6877,10 @@
           "segmentLabel": "Mottagare",
           "customListLabel": "Anpassad e-postlista",
           "customListHelp": "En e-postadress per rad, upp till 100 poster. Varje adress måste redan finnas i din handelskammares katalog.",
+          "sendOptions": "Utskicksalternativ",
           "schedulePicker": "Schemalägg utskick",
           "scheduleHelp": "Lämna tomt för omedelbar granskning.",
+          "scheduleClear": "Skicka så snart det godkänts",
           "previewLabel": "Förhandsgranskning",
           "previewLoading": "Laddar förhandsgranskning…",
           "previewUnavailable": "Förhandsgranskning är tillfälligt otillgänglig",
@@ -6936,8 +6939,28 @@
           "subjectRequired": "Lägg till ett ämne innan du skickar för granskning.",
           "tierRequired": "Välj minst en medlemsnivå innan du skickar för granskning."
         },
-        "submitNote": {
-          "cancellable": "Du kan avbryta detta utskick när som helst tills en administratör godkänner det."
+        "views": {
+          "label": "Skrivvy",
+          "write": "Skriv",
+          "preview": "Förhandsgranskning",
+          "actions": "Skicka",
+          "blocked": "Kan inte skicka till den här målgruppen"
+        },
+        "confirm": {
+          "title": "Skicka detta E-Blast för granskning?",
+          "note": "Marknadsavdelningen granskar det innan det skickas. Du kan avbryta tills en administratör godkänner det.",
+          "subject": "Ämne",
+          "recipients": "Mottagare",
+          "recipientsCount": "{segment} · {count, plural, one {# mottagare} other {# mottagare}}",
+          "allowance": "Kvot",
+          "allowanceMember": "Använder 1 av dina {remaining, number} återstående E-Blasts för {year} (reserverat tills det skickas)",
+          "allowanceProxy": "Använder 1 av medlemmens {remaining, number} återstående E-Blasts för {year}",
+          "allowanceNone": "Du har inga E-Blasts kvar för {year}, så detta kan inte skickas in",
+          "allowanceNoneProxy": "Medlemmen har inga E-Blasts kvar för {year}, så detta kan inte skickas in",
+          "sending": "Utskick",
+          "sendingNow": "Så snart det godkänns",
+          "sendingAt": "{when}, Bangkoktid",
+          "keepEditing": "Fortsätt redigera"
         },
         "selfExclusionHint": "Du och dina kollegor tar inte emot ert eget utskick.",
         "selfExclusionHintCustom": "Alla på den här listan tar emot utskicket – även du, om din egen adress står med.",
@@ -6951,7 +6974,15 @@
           "attendees": "Mottagare: alla från medlemsföretag som deltagit i ett kammarevenemang under de senaste 90 dagarna (högst {ceiling, number}).",
           "customCount": "{count} e-post angiven."
         },
+        "recipientNote": {
+          "allMembers": "primärkontakten hos varje aktiv medlem, inte ert eget företag",
+          "allMembersAllContacts": "varje kontakt hos varje aktiv medlem som inte har avregistrerat sig, inte ert eget företag",
+          "tier": "primärkontakten hos varje aktiv medlem på valda nivåer, inte ert eget företag",
+          "tierAllContacts": "varje kontakt hos varje aktiv medlem på valda nivåer som inte har avregistrerat sig, inte ert eget företag",
+          "attendees": "alla från medlemsföretag som deltagit i ett kammarevenemang under de senaste 90 dagarna, även du och dina kollegor om ni deltog"
+        },
         "recipientCount": {
+          "readyShort": "{count, number} mottagare",
           "loading": "Räknar mottagare…",
           "ready": "{count, number} mottagare får detta utskick.",
           "empty": "Inga mottagare matchar den här målgruppen{dropped, plural, =0 {} other { – # uteslöts enligt mottagarnas önskemål}}. Det går inte att skicka in förrän målgruppen vidgas.",
@@ -6989,6 +7020,8 @@
           "uploadedToast": "Bild tillagd.",
           "notInsertedKept": "Bilden lades inte till i meddelandet. Den finns fortfarande sparad. Kontakta handelskammaren om den måste tas bort.",
           "notInserted": "Bilden lades inte till i meddelandet. Den tas bort automatiskt, vanligtvis inom ett dygn.",
+          "shortHelp": "PNG, JPG, WebP eller GIF upp till 5 MB · lagras på en offentlig länk som vem som helst kan öppna, så ladda inte upp något privat",
+          "aboutUploads": "Om bilduppladdning",
           "helpText": "PNG, JPG, WebP eller GIF upp till 5 MB. Bilder virusskannas innan de sparas.",
           "publicLinkNotice": "Din bild sparas på en offentlig webbadress som inte kräver inloggning — vem som helst med länken kan öppna den, så ladda inte upp något privat.",
           "draftRequiredHint": "Spara utkastet först för att aktivera bilduppladdning.",
@@ -7022,6 +7055,8 @@
       },
       "quota": {
         "headerLabel": "Utskickskvot ({year})",
+        "lineLeft": "{remaining, number} av {cap, number} E-Blasts kvar {year}",
+        "lineReserved": "{reserved, number} reserverade",
         "planLabel": "Paket: {plan}",
         "used": "Använt",
         "reserved": "Reserverat",

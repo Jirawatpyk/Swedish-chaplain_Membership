@@ -776,6 +776,25 @@ Boards: `Admin-events`, `Admin-event-detail` (each with `-mobile`), `Admin-state
 - [x] T1262 [US12] Boards: the stale editor boards updated to the build and these decisions (parity page § Board check). Done: canvas v129 (26 Oct) — 11 boards updated, `Portal-broadcast-new-mobile-menus` and `Portal-broadcast-toasts-image` added.
 - [x] T1263 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV with the menus open; UX and mobile-a11y reviews; parity republished with full-page pairs; draft PR; relay R91. Done: PR #662; parity https://claude.ai/artifact/VGNGrCbbBCgu3q6X7sAq4G (full-page pairs). R91 passed except step 6 (Redo wrapped at 1440px); fixed in `c0afc01` (controls 2px apart, as the boards; the 600px preview kept, FR-050; the staff form wraps to two rows, FR-048); R91b pass (26 Oct).
 
+#### US12d-3 — the compose forms, calmer, with a submit confirmation (Session 2026-10-26)
+
+Boards: `Portal-broadcast-new` (+mobile, -sv, -th), `Admin-broadcast-new` (+mobile), and the approved proposal (`Proposal-compose*`, `Proposal-admin-compose*`). UI presentation only (FR-011).
+
+- [x] T1264 [US12] Spec session and these tasks.
+- [x] T1265 [US12] Submit opens a confirmation on both forms: subject, recipients with the count, the allowance (live quota), sending; Keep editing / Submit for review. Test: `compose-submit-confirm`.
+- [x] T1266 [US12] "Send options" disclosure replaces the "leave blank" checkbox on both forms; same `scheduledFor` payload.
+- [x] T1267 [US12] One recipients line: member "N recipients · the primary contact of each active member, not your own company"; staff "N recipients · not {company}'s own contacts".
+- [x] T1268 [US12] Upload: a one-line hint with an info tip holding the full rules.
+- [x] T1269 [US12] Phone (member): Write / Preview tabs and a sticky bar with the count and Submit.
+- [x] T1270 [US12] Kit migration of the compose forms, pickers and skeleton; `MIGRATED_PATHS`.
+- [x] T1271 [US12] Fixtures open the dialog (`dialog=submit`); boards updated from the proposal; parity page (whole board vs whole page). Done 26 Oct 2026: the shots open the dialog by clicking Submit, so no fixture flag was added; boards on the canvas (version 131: four new, six redrawn); parity page https://claude.ai/artifact/ABBmz28YHJ53ZFvABq8iZN (10 pairs, 1440/390/320, EN/TH/SV, light and dark, dialog open). Two parity passes built the one-line quota, one "you can cancel", the back link above the title, the staff phone bar, the outlined Save as draft and the staff 320px fit; what stays different is listed in spec.md.
+- [x] T1272 [US12] Exit: gates; shots at 1440/390/320 in EN/TH/SV with the dialog open; UX, mobile-a11y and i18n reviews; e2e updated for the confirm step; draft PR; relay R92. Done 27 Oct 2026, PR #667 at `639e5a2` (AURA 5.66.0). Evidence:
+  - R92 passed. e2e on chromium and mobile-chrome: `admin-proxy-submit` 5/5, `broadcast-compose-and-submit` 12/12 including the new `@a11y US12d-3`, and `eblast-a11y` 16/16. The six manual phone steps passed.
+  - CI green on `639e5a2`.
+  - `pnpm check`, contract tests and coverage (1,837 files, 20,902 tests) green.
+  - Parity: https://claude.ai/artifact/ABBmz28YHJ53ZFvABq8iZN.
+  - Reviews (UX, mobile-a11y, i18n, PDPA, /code-review high ×3, spec-compliance) leave no High or Medium open.
+
 ## Later phases (one PR each; tasks written when the phase starts)
 
 - [ ] T1300 [US13] Exit: delete `src/components/ui`; uninstall `@base-ui/react`, `tw-animate-css`, `shadcn`; drop the TanStack table UI; make the old-kit ban global; remove the token bridge; check the facade decision; confirm the date is within 10 weeks of the US0 merge.
