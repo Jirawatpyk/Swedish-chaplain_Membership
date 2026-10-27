@@ -1458,6 +1458,30 @@ export const paymentsMetrics = {
   },
 
   /**
+   * 132 (D-031) — a replay adopted the NULL-tenant `processor_events` row its
+   * unresolved first delivery left (unknown account, or an env/api-version
+   * rejection since corrected). Expected only after an operator replay.
+   */
+  webhookUnresolvedRowAdopted(tenantId: string, eventType: string): void {
+    counter(
+      'payments_webhook_unresolved_row_adopted_total',
+      'Webhook replay adopted a NULL-tenant processor_events row for the resolved tenant',
+    ).add(1, { tenant: tenantId, event_type: eventType });
+  },
+
+  /**
+   * 132 (D-031) — a duplicate delivery whose stored `processor_events` tenant
+   * is not the resolved one (a NULL row the repo would not adopt, or another
+   * tenant's). Not dispatched. Any non-zero value wants a look.
+   */
+  webhookDuplicateTenantMismatch(tenantId: string, eventType: string): void {
+    counter(
+      'payments_webhook_duplicate_tenant_mismatch_total',
+      'Webhook duplicate not dispatched: stored processor_events tenant differs from the resolved tenant',
+    ).add(1, { tenant: tenantId, event_type: eventType });
+  },
+
+  /**
    * F5R2-SF-3 — `confirm_payment.give_up_phase_b_mark_processed_failed_total`
    * — fires when the auto-refund give-up branch's Phase B
    * `markProcessedIfPresent` throws. The give-up path returns ok to

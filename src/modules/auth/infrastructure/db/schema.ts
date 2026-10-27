@@ -535,6 +535,12 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
   //     lockstep with F5AuditEventType + F5_AUDIT_RETENTION_YEARS; the F5
   //     parity test's `payment_` prefix already covers it. ---
   'payment_settlement_rolled_back',
+  // --- 132 / D-031 (migration 0320, 2026-10-26) — a Stripe replay adopted the
+  //     NULL-tenant processor_events row its unresolved first delivery left.
+  //     Emitted by `processWebhookEvent` on a `null` tx. 10y retention
+  //     (money-trail). Keep in lockstep with F5AuditEventType +
+  //     F5_AUDIT_RETENTION_YEARS. ---
+  'webhook_unresolved_event_adopted',
 ]);
 
 /**

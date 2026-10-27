@@ -16,9 +16,16 @@
  *     - NULL-tenant rows ONLY appear via `insertRejectedProcessorEvent`
  *       for rejection-audit (env mismatch / api-version mismatch /
  *       unknown-account `acknowledged_only`);
- *     - rejection rows are system-level audit and are never promoted —
- *       they remain invisible to all chamber_app contexts and are
- *       inspected out-of-band by the `neondb_owner` operator role.
+ *     - rejection rows are system-level audit, invisible to every
+ *       chamber_app context and inspected out-of-band by the
+ *       `neondb_owner` operator role — until a replay of the same event
+ *       reaches a resolved tenant. Then `insertIfNew` adopts the row on
+ *       this owner connection (132, D-031; it revises the 2026-04-25
+ *       "never promoted" rule): `tenant_id` set, `outcome = 'processed'`,
+ *       only for the row's own account (or '', a platform-owner event
+ *       recorded before the route's account fallback was set) + livemode,
+ *       never for a `rejected_signature` row. A row it will not adopt stays NULL and
+ *       `processWebhookEvent` refuses to dispatch it.
  *
  * `insertIfNew` runs OUTSIDE `runInTenant` because the rejection
  * write must succeed even when no tenant context is available; the
@@ -34,7 +41,7 @@
  * Domain-type leak containment: Drizzle row types stay here; the
  * caller sees `ProcessorEvent` Domain shapes only.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import type { ProcessorEventsRepo } from '../../application/ports/processor-events-repo';
 import type {
   ProcessorEvent,
@@ -43,6 +50,18 @@ import type {
 import { processorEvents, type ProcessorEventRow } from '../schema';
 import { db, runInTenant, tenantSlugOf, type TenantTx } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
+
+/**
+ * Rejection outcomes a later replay may adopt (D-031): the delivery was
+ * genuine but could not be processed then. `rejected_signature` is absent —
+ * that row never proved it came from Stripe, and CHECK
+ * `processor_events_sig_reject_implies_null_tenant` forbids a tenant on it.
+ */
+const ADOPTABLE_OUTCOMES: readonly ProcessorEventOutcome[] = [
+  'acknowledged_only',
+  'rejected_environment_mismatch',
+  'rejected_api_version_mismatch',
+];
 
 function toDomain(row: ProcessorEventRow): ProcessorEvent {
   return {
@@ -72,7 +91,10 @@ function toDomain(row: ProcessorEventRow): ProcessorEvent {
  * The two global reads (`insertIfNew`'s duplicate probe and `findById`) use
  * `db` directly by design: the Stripe event id is a globally unique PK, and
  * the existing row may be a NULL-tenant rejection row written by
- * `insertRejectedProcessorEvent`, which no tenant context can see. Every statement on a tenant tx binds
+ * `insertRejectedProcessorEvent`, which no tenant context can see. The
+ * duplicate path's adoption UPDATE (132, D-031) is the one global write: it
+ * is fenced by `tenant_id IS NULL`, not a tenant predicate, and commits with
+ * its audit row in one owner transaction. Every statement on a tenant tx binds
  * `tenant_id` explicitly (D-029): `markProcessed` / `updateOutcome` take the
  * slug `runInTenant` bound to their tx (`tenantSlugOf`, D-030 — it throws on
  * a tx from the global `db`); `findProcessorEventInTenant` uses its own ctx.
@@ -80,7 +102,7 @@ function toDomain(row: ProcessorEventRow): ProcessorEvent {
  */
 export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
   return {
-    async insertIfNew(_txUnknown, input) {
+    async insertIfNew(_txUnknown, input, onAdopted) {
       // Audit 2026-04-25 finding #5: `_txUnknown` is intentionally
       // ignored — see file-level docstring for why insertIfNew runs
       // outside runInTenant. The arg stays in the port shape for
@@ -122,6 +144,73 @@ export function makeDrizzleProcessorEventsRepo(): ProcessorEventsRepo {
           `drizzle-processor-events-repo: insertIfNew saw conflict but row ${input.id} not found`,
         );
       }
+
+      // 132 (D-031) — adopt-on-replay. A replay that reached a resolved
+      // tenant takes over the row its unresolved first delivery left, on
+      // this owner connection: `chamber_app` cannot see a NULL-tenant row,
+      // so `markProcessed` could never stamp it. Bounded to the row's own
+      // account (or '' — a platform-owner event recorded before the route's
+      // account fallback was configured) and livemode; a
+      // `rejected_signature` row is never adopted, and no row is adopted
+      // without an `onAdopted` to record it.
+      //
+      // The JS pre-check below and the UPDATE's WHERE state the same
+      // predicate: the pre-check skips a pointless transaction, the WHERE is
+      // what decides under concurrency. Change one, change both. The UPDATE
+      // is a pre-resolution write outside D-029 — `tenant_id IS NULL`, not a
+      // bound tenant predicate, is its fence (D-031).
+      if (
+        input.tenantId !== null &&
+        onAdopted !== undefined &&
+        existing.tenantId === null &&
+        ADOPTABLE_OUTCOMES.includes(existing.outcome as ProcessorEventOutcome) &&
+        (existing.processorAccountId === input.processorAccountId ||
+          existing.processorAccountId === '') &&
+        existing.livemode === input.livemode
+      ) {
+        const tenantId = input.tenantId;
+        const adoptedFrom = existing.outcome as ProcessorEventOutcome;
+        // One owner transaction: the adoption and `onAdopted` (the caller's
+        // audit row) commit together or not at all.
+        const adopted = await db.transaction(async (ownerTx) => {
+          const [row] = await ownerTx
+            .update(processorEvents)
+            .set({ tenantId, outcome: 'processed' })
+            .where(
+              and(
+                eq(processorEvents.id, input.id),
+                isNull(processorEvents.tenantId),
+                inArray(processorEvents.outcome, [...ADOPTABLE_OUTCOMES]),
+                or(
+                  eq(processorEvents.processorAccountId, input.processorAccountId),
+                  eq(processorEvents.processorAccountId, ''),
+                ),
+                eq(processorEvents.livemode, input.livemode),
+              ),
+            )
+            .returning();
+          if (!row) return null;
+          const event = toDomain(row as ProcessorEventRow);
+          await onAdopted(ownerTx, adoptedFrom, event);
+          return event;
+        });
+        if (adopted) {
+          return { inserted: false, adoptedFrom, event: adopted };
+        }
+        // A concurrent replay adopted it between the read and the UPDATE
+        // (`tenant_id IS NULL` re-evaluated to false) — return the row as
+        // it stands now, so this replay sees the adopted tenant.
+        const [current] = await db
+          .select()
+          .from(processorEvents)
+          .where(eq(processorEvents.id, input.id))
+          .limit(1);
+        return {
+          inserted: false,
+          event: toDomain((current ?? existing) as ProcessorEventRow),
+        };
+      }
+
       return {
         inserted: false,
         event: toDomain(existing as ProcessorEventRow),

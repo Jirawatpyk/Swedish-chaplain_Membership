@@ -1,0 +1,29 @@
+-- ---------------------------------------------------------------------------
+-- F5 audit_event_type enum extension (spec 132, D-031)
+--
+-- Adds `webhook_unresolved_event_adopted`, emitted by `processWebhookEvent`
+-- when a Stripe replay adopts the `processor_events` row its first,
+-- unresolved delivery left (`tenant_id NULL`: unknown account, or an
+-- env / api-version rejection). The adoption is an owner-connection UPDATE
+-- that sets `tenant_id` and overwrites the row's outcome with `processed`, so
+-- without this row nothing durable records that the event was once refused.
+-- pino keeps 30 days.
+--
+-- Retention: 10 years. The adoption is what lets an old event settle an
+-- invoice; it belongs to the same money trail as `payment_succeeded`
+-- (Thai RD §87/3), and must outlive the question "why did this event settle
+-- months after we rejected it".
+--
+-- Pattern: idempotent `DO $$ ALTER TYPE ... ADD VALUE ...` (matches 0269).
+-- Forward-only: enum values cannot be removed. Verify with
+-- `SELECT unnest(enum_range(NULL::audit_event_type))`, not the migrator tick.
+--
+-- Keep synced with:
+--   - `auditEventTypeEnum` in `src/modules/auth/infrastructure/db/schema.ts`
+--   - `F5AuditEventType` in `src/modules/payments/application/ports/audit-port.ts`
+--   - `F5_AUDIT_EVENT_PAYLOADS` + `F5_AUDIT_RETENTION_YEARS` in `audit-port.ts`
+--   - `audit.eventType.<type>` labels in `src/i18n/messages/{en,th,sv}.json`
+--   - `REQUIRED_ENUM_VALUES.audit_event_type` in `scripts/lib/enum-migration-guard.ts`
+-- ---------------------------------------------------------------------------
+
+DO $$ BEGIN ALTER TYPE "audit_event_type" ADD VALUE 'webhook_unresolved_event_adopted'; EXCEPTION WHEN duplicate_object THEN NULL; END $$;

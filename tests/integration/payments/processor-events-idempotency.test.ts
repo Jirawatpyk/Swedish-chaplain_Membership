@@ -21,7 +21,7 @@
  * Mocking policy: NONE. Real Neon round-trip per
  * `tests/integration/payments/drizzle-payments-repo.test.ts` precedent.
  */
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID, createHash } from 'node:crypto';
 import { db } from '@/lib/db';
@@ -31,6 +31,9 @@ import { processorEvents } from '@/modules/payments/infrastructure/schema';
 function makeEventId(): string {
   return `evt_idem_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
 }
+
+/** The caller's record of an adoption; the repo adopts nothing without one. */
+const recordAdoption = async (): Promise<void> => undefined;
 
 function makePayloadSha(): string {
   return createHash('sha256').update(randomUUID()).digest('hex');
@@ -180,5 +183,257 @@ describe('processor_events ON CONFLICT idempotency — live Neon (Review I-5/I-6
       .from(processorEvents)
       .where(eq(processorEvents.id, id));
     expect(rows).toHaveLength(1);
+  });
+
+  // 132 (L-1) — a replay whose tenant resolved adopts the unresolved row on
+  // the owner connection; `chamber_app` cannot see it to stamp it later.
+  it('a resolved-tenant replay adopts a NULL-tenant acknowledged_only row (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-adopt-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    const replay = await repo.insertIfNew(
+      null,
+      {
+        ...first,
+        tenantId: 'test-adopt-tenant',
+        outcome: 'processed',
+        payloadSha256: makePayloadSha(),
+        correlationId: 'corr-adopt-replay',
+      },
+      recordAdoption,
+    );
+    expect(replay.inserted).toBe(false);
+    expect(replay.adoptedFrom).toBe('acknowledged_only');
+    expect(replay.event.tenantId).toBe('test-adopt-tenant');
+    expect(replay.event.outcome).toBe('processed');
+    expect(replay.event.correlationId).toBe('corr-adopt-first');
+
+    const [row] = await db.select().from(processorEvents).where(eq(processorEvents.id, id));
+    expect(row?.tenantId).toBe('test-adopt-tenant');
+  });
+
+  it('a rejected_signature row is never adopted (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'rejected_signature' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-sig-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    const replay = await repo.insertIfNew(
+      null,
+      { ...first, tenantId: 'test-adopt-tenant', outcome: 'processed' },
+      recordAdoption,
+    );
+    expect(replay.adoptedFrom).toBeUndefined();
+    expect(replay.event.tenantId).toBeNull();
+    expect(replay.event.outcome).toBe('rejected_signature');
+  });
+
+  // 132 round 2 (reliability M-1) — the adoption and its record commit
+  // together: a failing `onAdopted` rolls the adoption back, so the next
+  // replay adopts again instead of finding a re-tenanted row with no record.
+  it('a failing onAdopted rolls the adoption back (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-rollback-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    const replayInput = { ...first, tenantId: 'test-adopt-tenant', outcome: 'processed' as const };
+    await expect(
+      repo.insertIfNew(null, replayInput, async () => {
+        throw new Error('audit write failed');
+      }),
+    ).rejects.toThrow('audit write failed');
+
+    const [row] = await db.select().from(processorEvents).where(eq(processorEvents.id, id));
+    expect(row?.tenantId).toBeNull();
+    expect(row?.outcome).toBe('acknowledged_only');
+
+    // The callback sees the adopted row on the transaction it commits with.
+    const seen: string[] = [];
+    const again = await repo.insertIfNew(null, replayInput, async (ownerTx, from, event) => {
+      expect(ownerTx).not.toBeNull();
+      seen.push(`${from}:${event.tenantId}`);
+    });
+    expect(again.adoptedFrom).toBe('acknowledged_only');
+    expect(seen).toEqual(['acknowledged_only:test-adopt-tenant']);
+  });
+
+  // Deterministic version of the concurrent-replay race: another transaction
+  // holds the row lock, so the adopting UPDATE blocks; when the holder
+  // commits a tenant, Postgres re-evaluates `tenant_id IS NULL` to false and
+  // the replay must return the row as committed, with no adoption.
+  it('an adoption that loses the row lock returns the committed row, unadopted (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-lock-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    let locked!: () => void;
+    const isLocked = new Promise<void>((r) => (locked = r));
+    let release!: () => void;
+    const released = new Promise<void>((r) => (release = r));
+    const holder = db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM processor_events WHERE id = ${id} FOR UPDATE`);
+      locked();
+      await released;
+      await tx.execute(
+        sql`UPDATE processor_events SET tenant_id = 'test-lock-winner', outcome = 'processed' WHERE id = ${id}`,
+      );
+    });
+    await isLocked;
+
+    const onAdopted = vi.fn(async () => undefined);
+    const adopting = repo.insertIfNew(
+      null,
+      { ...first, tenantId: 'test-adopt-tenant', outcome: 'processed' },
+      onAdopted,
+    );
+    // Wait until the replay has read the NULL row and is blocked on the
+    // UPDATE (another backend waiting on a lock for this table), so the
+    // lost-race branch is what runs — not a pre-check that saw the winner.
+    const deadline = Date.now() + 20_000;
+    for (;;) {
+      const waiting = (await db.execute(
+        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query ILIKE 'update "processor_events"%'`,
+      )) as unknown as Array<{ n: number }>;
+      if ((waiting[0]?.n ?? 0) >= 1) break;
+      if (Date.now() > deadline) throw new Error('the adopting UPDATE never blocked on the row lock');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    release();
+    await holder;
+
+    const result = await adopting;
+    expect(result.adoptedFrom).toBeUndefined();
+    expect(result.event.tenantId).toBe('test-lock-winner');
+    expect(onAdopted).not.toHaveBeenCalled();
+  });
+
+  it('without onAdopted nothing is adopted (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-no-callback-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+    const replay = await repo.insertIfNew(null, { ...first, tenantId: 'test-adopt-tenant', outcome: 'processed' });
+    expect(replay.adoptedFrom).toBeUndefined();
+    expect(replay.event.tenantId).toBeNull();
+  });
+
+  it('a row of another livemode is not adopted (132)', async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: 'acct_test_adopt',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-livemode-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    const replay = await repo.insertIfNew(
+      null,
+      { ...first, tenantId: 'test-adopt-tenant', livemode: true, outcome: 'processed' },
+      recordAdoption,
+    );
+    expect(replay.adoptedFrom).toBeUndefined();
+    expect(replay.event.tenantId).toBeNull();
+    expect(replay.event.outcome).toBe('acknowledged_only');
+  });
+
+  // The platform-owner (SweCham) direct event: its first delivery carried no
+  // `account` and the route's fallback was not configured yet, so the row
+  // recorded ''. The replay arrives with the fallback account id.
+  it("a row recorded with no account ('') is adopted by the account-bearing replay (132)", async () => {
+    const id = makeEventId();
+    insertedIds.push(id);
+    const first = {
+      id,
+      tenantId: null,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: '2024-06-20',
+      livemode: false,
+      processorAccountId: '',
+      outcome: 'acknowledged_only' as const,
+      payloadSha256: makePayloadSha(),
+      correlationId: 'corr-empty-acct-first',
+      receivedAt: new Date(),
+    };
+    await repo.insertIfNew(null, first);
+
+    const replay = await repo.insertIfNew(
+      null,
+      {
+        ...first,
+        tenantId: 'test-adopt-tenant',
+        processorAccountId: 'acct_test_platform',
+        outcome: 'processed',
+      },
+      recordAdoption,
+    );
+    expect(replay.adoptedFrom).toBe('acknowledged_only');
+    expect(replay.event.tenantId).toBe('test-adopt-tenant');
   });
 });

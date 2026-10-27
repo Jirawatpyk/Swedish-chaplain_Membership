@@ -4,7 +4,9 @@
  * via `tenantSlugOf(tx)`, D-030; `findProcessorEventInTenant` via its ctx). `insertIfNew`'s duplicate read and
  * `findById` run before the webhook knows its tenant (the row may carry a
  * NULL tenant), so they stay global by design — pinned below as the only
- * exemptions. `findByProcessorAccountId` in the payment-settings repo is the
+ * exemptions, with 132's lost-race re-read in the adoption path (D-031): it
+ * must see the row as the race winner committed it, which may be another
+ * tenant's, so the use case's mismatch guard can refuse it. `findByProcessorAccountId` in the payment-settings repo is the
  * same pre-resolution lookup.
  */
 import { readFileSync } from 'node:fs';
@@ -71,6 +73,7 @@ describe('processor_events repo — tenant predicate on every tenant-tx statemen
   it('the pre-resolution reads are the only unfenced .where( in either payments repo', () => {
     expect(unfencedWheres(readFileSync(EVENTS_SRC, 'utf8'))).toEqual([
       'eq(processorEvents.id, id)',
+      'eq(processorEvents.id, input.id)',
       'eq(processorEvents.id, input.id)',
     ]);
     expect(unfencedWheres(readFileSync(SETTINGS_SRC, 'utf8'))).toEqual([
