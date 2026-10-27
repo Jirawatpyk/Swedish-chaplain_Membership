@@ -13,25 +13,35 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import postgres from 'postgres';
 import { randomUUID } from 'node:crypto';
-import { sweepLeakedTestTenants } from '../../../scripts/lib/leaked-test-tenants';
+import {
+  GENERATED_TEST_SLUG,
+  sweepLeakedTestTenants,
+} from '../../../scripts/lib/leaked-test-tenants';
 
 const url =
   process.env.DATABASE_URL_UNPOOLED ?? process.env.POSTGRES_URL_NON_POOLING ?? process.env.DATABASE_URL;
 
 describe('sweepLeakedTestTenants (135) — live Neon dev', () => {
   let sql: postgres.Sql;
+  // Hex suffixes like `createTestTenant`'s, and 2 h old at most: any other
+  // run's globalSetup sweeps only rows older than 6 h, so it never takes
+  // these between `beforeAll` and the assertions.
   const stale = `test-sweep-${randomUUID().slice(0, 8)}`;
   const fresh = `test-sweep-${randomUUID().slice(0, 8)}`;
+  const fixed = 'test-sweep-fixed-slug';
+  const notTest = `testing-${randomUUID().slice(0, 8)}`;
 
   async function seed(slug: string, ageHours: number): Promise<void> {
     await sql`
       INSERT INTO tenant_document_sequences (tenant_id, document_type, fiscal_year, created_at, updated_at)
       VALUES (${slug}, 'bill', 2026, now() - make_interval(hours => ${ageHours}), now() - make_interval(hours => ${ageHours}))
+      ON CONFLICT DO NOTHING
     `;
     // A table with no created_at: dated by the tenant's other rows.
     await sql`
       INSERT INTO dashboard_metrics_cache (tenant_id, metrics, computed_at)
       VALUES (${slug}, '{}'::jsonb, now())
+      ON CONFLICT DO NOTHING
     `;
   }
 
@@ -43,12 +53,14 @@ describe('sweepLeakedTestTenants (135) — live Neon dev', () => {
 
   beforeAll(async () => {
     sql = postgres(url!, { ssl: 'require', max: 2 });
-    await seed(stale, 7);
+    await seed(stale, 2);
     await seed(fresh, 0);
+    await seed(fixed, 2);
+    await seed(notTest, 2);
   });
 
   afterAll(async () => {
-    for (const slug of [stale, fresh]) {
+    for (const slug of [stale, fresh, fixed, notTest]) {
       await sql`DELETE FROM tenant_document_sequences WHERE tenant_id = ${slug}`;
       await sql`DELETE FROM dashboard_metrics_cache WHERE tenant_id = ${slug}`;
     }
@@ -57,7 +69,7 @@ describe('sweepLeakedTestTenants (135) — live Neon dev', () => {
 
   it('a dry run reports the stale tenant as eligible and deletes nothing', async () => {
     const report = await sweepLeakedTestTenants(sql, {
-      maxAgeHours: 6,
+      maxAgeHours: 1,
       apply: false,
       includeUndatable: false,
       allowTriggerDisable: false,
@@ -68,9 +80,34 @@ describe('sweepLeakedTestTenants (135) — live Neon dev', () => {
     expect(await owned(stale)).toBe(2);
   });
 
+  it('a spent time budget leaves every tenant for the next run', async () => {
+    const report = await sweepLeakedTestTenants(sql, {
+      maxAgeHours: 1,
+      apply: true,
+      includeUndatable: false,
+      allowTriggerDisable: false,
+      onlySlugs: [stale],
+      budgetMs: 0,
+    });
+    expect(report.skippedBudget).toEqual([stale]);
+    expect(await owned(stale)).toBe(2);
+  });
+
+  it('a slug pattern keeps fixed-slug fixtures out of the automatic sweep', async () => {
+    const report = await sweepLeakedTestTenants(sql, {
+      maxAgeHours: 1,
+      apply: false,
+      includeUndatable: false,
+      allowTriggerDisable: false,
+      onlySlugs: [stale, fixed],
+      slugPattern: GENERATED_TEST_SLUG,
+    });
+    expect(report.eligible).toEqual([stale]);
+  });
+
   it('apply removes every row of the stale tenant and leaves the fresh one', async () => {
     const report = await sweepLeakedTestTenants(sql, {
-      maxAgeHours: 6,
+      maxAgeHours: 1,
       apply: true,
       includeUndatable: false,
       allowTriggerDisable: false,
@@ -82,13 +119,15 @@ describe('sweepLeakedTestTenants (135) — live Neon dev', () => {
     expect(await owned(fresh)).toBe(2);
   });
 
-  it('a non-test slug is never a candidate', async () => {
+  it('a slug that only looks like a test slug is never a candidate', async () => {
+    // `testing-…` passes the SQL `LIKE 'test%'` prefilter; the slug regex
+    // must reject it.
     const report = await sweepLeakedTestTenants(sql, {
       maxAgeHours: 0,
       apply: false,
       includeUndatable: true,
       allowTriggerDisable: false,
-      onlySlugs: ['swecham', fresh],
+      onlySlugs: [notTest, fresh],
     });
     expect(report.eligible).toEqual([fresh]);
   });
