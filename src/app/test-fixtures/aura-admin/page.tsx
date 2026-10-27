@@ -1742,7 +1742,7 @@ export default async function AuraAdminPreviewPage({
       { id: 'u-johan', email: 'johan.strand@swecham.example', role: 'marketing' as const, status: 'active' as const, displayName: 'Johan Strand', invitationExpiresAt: null, isErased: false },
       { id: 'u-ploy', email: 'ploy@siamnordic.example', role: 'member' as const, status: 'pending' as const, displayName: null, invitationExpiresAt: inDays(5), isErased: false },
       { id: 'u-anders', email: 'anders@midsommar.example', role: 'member' as const, status: 'disabled' as const, displayName: 'Anders Lind', invitationExpiresAt: null, isErased: false },
-      { id: 'u-erased', email: 'erased+u-erased@erased.invalid', role: 'member' as const, status: 'disabled' as const, displayName: null, invitationExpiresAt: null, isErased: true },
+      { id: 'u-erased', email: 'erased+u-erased@erased.invalid', role: 'member' as const, status: 'disabled' as const, displayName: '[erased]', invitationExpiresAt: null, isErased: true },
     ];
     const capabilities = { manageAccounts: true, manageStaffRoles: state !== 'manager' };
     const body = (

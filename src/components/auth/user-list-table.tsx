@@ -512,6 +512,11 @@ export function UserListTable({
     return <span className="text-[var(--aura-fg-secondary)]">{t('erasedAccount')}</span>;
   }
 
+  /** The row's display name; eraseUser stamps `[erased]`, which is not one. */
+  function nameOf(user: UserRow): string | null {
+    return user.isErased ? null : user.displayName;
+  }
+
   function statusPillFor(user: UserRow): ReactNode {
     // `filters.status.erased` is display-only: erased is not a DB status, so
     // the filter offers only STATUS_VALUES (users-filters.tsx).
@@ -523,7 +528,7 @@ export function UserListTable({
       );
     }
     return (
-      <StatusPill tone={statusTone[user.status]} data-tone={statusTone[user.status]}>
+      <StatusPill tone={statusTone[user.status]} data-tone={statusTone[user.status]} data-status={user.status}>
         {t(`filters.status.${user.status}`)}
       </StatusPill>
     );
@@ -568,7 +573,7 @@ export function UserListTable({
                 return (
                   <Tr key={user.id} data-user-id={user.id} data-user-email={user.email.toLowerCase()}>
                     <Td>{user.isErased ? erasedAccount() : emailWithBreak(user.email)}</Td>
-                    <Td className="whitespace-nowrap">{user.displayName ?? '—'}</Td>
+                    <Td className="whitespace-nowrap">{nameOf(user) ?? '—'}</Td>
                     <Td>{roleBadgeFor(user)}</Td>
                     <Td>
                       <div className="flex flex-wrap items-center gap-[var(--aura-space-2)]">
@@ -613,14 +618,12 @@ export function UserListTable({
               >
                 <div className="flex items-start justify-between gap-[var(--aura-space-2)]">
                   <span className="aura-text-label min-w-0 [overflow-wrap:anywhere]">
-                    {user.displayName ?? (user.isErased ? erasedAccount() : user.email)}
+                    {nameOf(user) ?? (user.isErased ? erasedAccount() : user.email)}
                   </span>
                   {statusPillFor(user)}
                 </div>
-                {user.displayName ? (
-                  <span className="min-w-0 text-[var(--aura-fg-primary)] [overflow-wrap:anywhere]">
-                    {user.isErased ? erasedAccount() : user.email}
-                  </span>
+                {nameOf(user) ? (
+                  <span className="min-w-0 text-[var(--aura-fg-primary)] [overflow-wrap:anywhere]">{user.email}</span>
                 ) : user.status === 'pending' ? (
                   <span className="text-[var(--aura-fg-secondary)]">{t('invite.noNameYet')}</span>
                 ) : null}

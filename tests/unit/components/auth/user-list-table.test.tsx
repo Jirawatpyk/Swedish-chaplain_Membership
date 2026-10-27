@@ -553,7 +553,7 @@ describe('UserListTable on AURA', () => {
   // 134-s3 — an erased login stays `disabled` in the DB; the row says
   // "Erased" and offers nothing (enableUser refuses it server-side).
   it('an erased row says "Erased" and offers no Enable and no ⋯ menu', () => {
-    const erased = { ...DISABLED_USER, id: 'u-erased-1', email: erasedUserEmail('u-erased-1'), displayName: null, isErased: true };
+    const erased = { ...DISABLED_USER, id: 'u-erased-1', email: erasedUserEmail('u-erased-1'), displayName: '[erased]', isErased: true };
     const { container } = renderTable([erased, DISABLED_USER]);
     const row = container.querySelector<HTMLElement>(`tr[data-user-id="${erased.id}"]`)!;
     expect(within(row).getByText(en.admin.users.filters.status.erased)).toHaveAttribute('data-status', 'erased');
@@ -562,13 +562,15 @@ describe('UserListTable on AURA', () => {
     // The sentinel is named, never shown as an address.
     expect(within(row).getByText(en.admin.users.erasedAccount)).toBeInTheDocument();
     expect(row).not.toHaveTextContent('erased.invalid');
+    // eraseUser stamps displayName '[erased]'; the row never shows it.
+    expect(row).not.toHaveTextContent('[erased]');
     // Control: a plain disabled row keeps its Enable action.
     const plain = container.querySelector<HTMLElement>(`tr[data-user-id="${DISABLED_USER.id}"]`)!;
     expect(within(plain).getByRole('button', { name: en.admin.users.actions.enable })).toBeInTheDocument();
   });
 
   it('an erased STAFF row offers no Change role', () => {
-    const erasedStaff = { ...DISABLED_USER, id: 'u-erased-staff', email: erasedUserEmail('u-erased-staff'), role: 'manager', isErased: true } as const;
+    const erasedStaff = { ...DISABLED_USER, id: 'u-erased-staff', email: erasedUserEmail('u-erased-staff'), displayName: '[erased]', role: 'manager', isErased: true } as const;
     renderTable([erasedStaff]);
     expect(screen.queryByRole('button', { name: en.admin.users.actions.changeRole })).toBeNull();
     expect(screen.queryByRole('button', { name: `More actions for ${erasedStaff.email}` })).toBeNull();
