@@ -520,6 +520,16 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
       await expectNoA11yViolations(page);
     });
 
+    // R95: a company that acknowledged earlier opens compose fresh. The raw
+    // read returned the driver's string, and the page crashed on it.
+    test('already acknowledged: compose opens on the one line', async ({ page }) => {
+      await setF7AckSeed(MEMBER_EMAIL, new Date());
+      await openCompose(page);
+      const rules = page.getByTestId('compose-sending-rules').filter({ visible: true });
+      await expect(rules.getByRole('button', { name: 'Read again' })).toBeVisible();
+      await expect(rules.getByRole('button', { name: 'I acknowledge' })).toHaveCount(0);
+    });
+
     test('on a phone (390px): the rules sit in the Write tab and pass axe', async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 });
       await openCompose(page);
