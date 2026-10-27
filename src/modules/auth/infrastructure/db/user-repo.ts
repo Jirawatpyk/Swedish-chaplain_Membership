@@ -291,8 +291,8 @@ export interface UserRepo {
    * global `eraseUser`, and a sent / failed one must not keep it for the
    * 90-day purge window (Art. 17 / PDPA §33). Login-bound only: the
    * email-change / verification notices (`context_data.userId`), the staff
-   * notices (`reviewerUserId` / `recipientUserId`), and invitations, matched
-   * on the login's CURRENT address — call this BEFORE `anonymiseErasedInTx`
+   * notices (`reviewerUserId` / `recipientUserId`), and — for a PENDING login —
+   * invitations, matched on its CURRENT address — call this BEFORE `anonymiseErasedInTx`
    * overwrites it. Locks the users row first. A tenant's own business mail
    * (invoices, broadcasts) to the same address is not the login's and is left
    * alone; so are the F7 broadcast author notices, whose frozen `to_email`
@@ -603,7 +603,7 @@ export const userRepo: UserRepo = {
     // and then sees its rows. The address read here is the REAL one — the
     // caller runs this before `anonymiseErasedInTx` overwrites it.
     const [login] = await tx
-      .select({ email: users.email })
+      .select({ email: users.email, status: users.status })
       .from(users)
       .where(eq(users.id, userId))
       .for('update')
@@ -632,8 +632,10 @@ export const userRepo: UserRepo = {
             'eblast_approval_lifecycle',
           ]),
           // An invitation carries no id; `users.email` is unique, so a row to
-          // this address is this login's.
-          login
+          // this address is this login's. Only a PENDING login can redeem one;
+          // an active login's address may still be another member's portal
+          // login, whose mail eraseMember deliberately keeps (its guard 2).
+          login?.status === 'pending'
             ? and(
                 eq(notificationsOutbox.notificationType, 'member_invitation'),
                 sql`lower(${notificationsOutbox.toEmail}) = lower(${login.email})`,
