@@ -628,4 +628,8 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
   - `spec-compliance-auditor`: its gaps are closed above.
 - `pnpm check` green. Unit and contract suites green (numbers in the PR).
 - **AURA.** No `CheckboxGroup`. Handoff Addendum 84 (#183) asks for one; the stand-in is recorded in `docs/aura-adoption.md`.
-- **Pending:** the board `Portal-broadcast-new-tier`, its parity page, and relay R96 (e2e T084).
+- **Boards and parity.**
+  - Canvas v135–v136: new board `Portal-broadcast-new-tier`. The categories option is moved last, and the copy now says "category", on `Portal-broadcast-new` (+ mobile EN/TH/SV), `-rules` (+ mobile set), `-over-limit` (+ mobile), `Admin-broadcast-new` and the `Portal-broadcasts` history set.
+  - Parity, text against text: https://claude.ai/artifact/XfHC3J6vQu2tSs16dPpbXZ. Fixture `segment=tier`, production build at `1c00a5d`, EN/TH/SV at 1440/390/320, light and dark. Every element matches. There is no sideways scroll, and the phone rows are 45px.
+  - The board's "Event attendees (last 90 days)" is shorter than the app's label. That predates this PR.
+- **Pending:** relay R96 (e2e T084 and the manual checks).
