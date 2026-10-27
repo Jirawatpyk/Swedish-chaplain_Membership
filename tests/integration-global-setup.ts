@@ -15,9 +15,20 @@
  *   - only non-member roles (the fan-out reads staff);
  *   - disabled, not deleted (21 FKs reference users).
  * Refuses a blocklisted (prod) host, like the per-file guard.
+ *
+ * Then deletes the rows of leaked `test-*` TENANTS (135): platform crons
+ * enumerate every tenant, so each leaked one slows them and every test that
+ * drives one (168 on 2026-10-27 timed out the redact crons under pre-push).
+ * Same age filter — a tenant whose newest row is younger belongs to a run in
+ * progress. Unlike the operator script it never disables a trigger (that lock
+ * would stall other sessions on the shared branch), skips tenants it cannot
+ * fully drain (the refund ↔ credit-note cycle, a delete-guarded table), and
+ * runs under a statement and lock timeout. Hygiene only: a failure is logged
+ * and the run goes on.
  */
 import postgres from 'postgres';
 import { assertDbHostNotBlocklisted } from './helpers/db-host-guard';
+import { AUTOMATIC_SWEEP_OPTIONS, sweepLeakedTestTenants } from '../scripts/lib/leaked-test-tenants';
 
 const STALE_HOURS = 6;
 
@@ -27,17 +38,60 @@ export default async function disableStaleLeakedTestStaff(): Promise<void> {
   assertDbHostNotBlocklisted(dbUrl, process.env.TEST_DB_HOST_BLOCKLIST, 'integration-global-setup');
   const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   try {
-    const rows = await sql`
-      UPDATE users SET status = 'disabled'
-      WHERE status = 'active'
-        AND role <> 'member'
-        AND created_at < now() - make_interval(hours => ${STALE_HOURS})
-        AND email ~ '@(swecham\\.test|example\\.com|wipe\\.test)$'
-        AND email NOT LIKE 'e2e-%'
-      RETURNING id
-    `;
-    if (rows.length > 0) {
-      console.warn(`[integration-global-setup] disabled ${rows.length} leaked test staff user(s) older than ${STALE_HOURS} h`);
+    // Bounded with SET LOCAL (a pooled URL drops session parameters), so a
+    // held row lock cannot stall the run; the tenant sweep bounds itself.
+    // Hygiene only: a timeout or any failure is logged and the run goes on.
+    try {
+      const rows = await sql.begin(async (tx) => {
+        await tx.unsafe('SET LOCAL lock_timeout = 5000');
+        await tx.unsafe('SET LOCAL statement_timeout = 60000');
+        return tx`
+          UPDATE users SET status = 'disabled'
+          WHERE status = 'active'
+            AND role <> 'member'
+            AND created_at < now() - make_interval(hours => ${STALE_HOURS})
+            AND email ~ '@(swecham\\.test|example\\.com|wipe\\.test)$'
+            AND email NOT LIKE 'e2e-%'
+          RETURNING id
+        `;
+      });
+      if (rows.length > 0) {
+        console.warn(`[integration-global-setup] disabled ${rows.length} leaked test staff user(s) older than ${STALE_HOURS} h`);
+      }
+    } catch (e) {
+      const code =
+        typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
+      console.warn(
+        `[integration-global-setup] leaked test-user sweep failed ` +
+          `(${e instanceof Error ? e.constructor.name : 'unknown'}${code ? ` ${code}` : ''}); continuing`,
+      );
+    }
+
+    const started = Date.now();
+    try {
+      const r = await sweepLeakedTestTenants(sql, AUTOMATIC_SWEEP_OPTIONS);
+      const ms = Date.now() - started;
+      // Quiet when there was nothing to do and it was quick; the skipped
+      // (undrainable) count rides along whenever it does speak.
+      if (r.eligible.length > 0 || ms > 5_000) {
+        const notDrainable = r.stuck.length + r.skippedStuck.length;
+        console.warn(
+          `[integration-global-setup] swept ${r.fullyCleaned}/${r.eligible.length} leaked test tenant(s) ` +
+            `older than ${AUTOMATIC_SWEEP_OPTIONS.maxAgeHours} h in ${ms} ms` +
+            (r.skippedBudget.length > 0 ? `; ${r.skippedBudget.length} deferred to the next run (time budget)` : '') +
+            (notDrainable > 0
+              ? `; ${notDrainable} not fully drainable here (run scripts/cleanup-leaked-test-tenants.ts)`
+              : ''),
+        );
+      }
+    } catch (e) {
+      // SQLSTATE, not the message: an FK error's DETAIL carries key values.
+      const code =
+        typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
+      console.warn(
+        `[integration-global-setup] leaked test-tenant sweep failed ` +
+          `(${e instanceof Error ? e.constructor.name : 'unknown'}${code ? ` ${code}` : ''}); continuing`,
+      );
     }
   } finally {
     await sql.end({ timeout: 5 });
