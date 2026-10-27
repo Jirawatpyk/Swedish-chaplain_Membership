@@ -32,8 +32,8 @@
  *   - `conflict`          — new email already taken on contact OR user
  *                           (unique-index violation)
  *   - `invalid_input`     — new email fails Domain Email validation
- *   - `linked_login_unavailable` — the linked login is disabled or gone (an
- *                           erased login is disabled); nothing is written
+ *   - `linked_login_unavailable` — the linked login was erased; nothing is
+ *                           written
  *   - `server_error`      — anything else (rolled back)
  */
 
@@ -141,15 +141,15 @@ export async function changeContactEmail(
   try {
     const outcome = await runInTenant(deps.tenant, async (tx) => {
       // 134-s1 — refuse BEFORE the first write (an err() inside runInTenant
-      // commits). An erased login is `disabled` with a sentinel email: writing
-      // a real address onto it would re-identify it and disarm enableUser's
-      // sentinel guard. Same rule as the revert sink (revert-contact-email).
+      // commits). An ERASED login (eraseUser's sentinel email): writing a real
+      // address onto it would re-identify it and disarm enableUser's sentinel
+      // guard. A merely disabled login keeps its email-correction path.
       const statusResult = await deps.userEmails.readStatusInTx(tx, userId);
       if (!statusResult.ok) throw new PortError(statusResult.error);
-      if (
-        statusResult.value === null ||
-        statusResult.value.status === 'disabled'
-      ) {
+      if (statusResult.value === null) {
+        throw new PortError({ code: 'repo.not_found' });
+      }
+      if (statusResult.value.erased) {
         throw new LinkedLoginUnavailable();
       }
 
@@ -394,6 +394,6 @@ class PortError extends Error {
 /** 134-s1 — aborts the tx (rollback) when the linked login may not change. */
 class LinkedLoginUnavailable extends Error {
   constructor() {
-    super('linked login is disabled or missing');
+    super('linked login was erased');
   }
 }

@@ -42,9 +42,9 @@ import {
  * An address that fails the `EmailLower` parse THROWS (code-review finding 1).
  * It used to be answered "not suppressed" without a query, which the caller
  * reads as permission to switch marketing back ON — so a person who had
- * unsubscribed could start receiving again. `asEmail` (members) and
- * `asEmailLower` (broadcasts) share one grammar, so no stored `contacts.email`
- * should fail here; but the multi-batch webhook path brands a Resend payload
+ * unsubscribed could start receiving again. `asEmail` (members) accepts a
+ * subset of `asEmailLower` (broadcasts) — it also rejects the erasure sentinel
+ * domain (134-s1) — so no stored `contacts.email` should fail here; but the multi-batch webhook path brands a Resend payload
  * WITHOUT parsing, so the suppression list can hold a value this side rejects.
  * If the branch ever fires the honest answer is "I could not check", which the
  * callers already turn into 503 `suppression_unavailable`.

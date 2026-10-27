@@ -88,7 +88,7 @@ describe('revertContactEmail — erased/disabled-user redemption guard (COMP-1 U
   it('REJECTS with not_found and restores NO PII when the target user is disabled (erased)', async () => {
     const deps = buildDeps();
     deps.userEmails.readStatusInTx = vi.fn(async () =>
-      ok({ status: 'disabled' as const }),
+      ok({ status: 'disabled' as const, erased: true }),
     );
 
     const res = await revertContactEmail(deps, {

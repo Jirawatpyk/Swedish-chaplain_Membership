@@ -75,7 +75,7 @@ function makeDeps(overrides: Partial<{
   statusResult: unknown;
 }> = {}): ChangeContactEmailDeps {
   const {
-    statusResult = ok({ status: 'active' }),
+    statusResult = ok({ status: 'active', erased: false }),
     findByIdResult = ok(makeContact()),
     contactUpdateResult = ok(undefined),
     userUpdateResult = ok({ oldEmail: 'alice@old.com' }),
@@ -166,16 +166,23 @@ describe('changeContactEmail — contact lookup failures', () => {
 // guard, so a disabled or missing login refuses the change before any write.
 describe('changeContactEmail — linked login guard (134-s1)', () => {
   it.each([
-    ['disabled', ok({ status: 'disabled' })],
-    ['missing', ok(null)],
-  ])('refuses a %s login with linked_login_unavailable and writes nothing', async (_label, statusResult) => {
+    ['erased', ok({ status: 'disabled', erased: true }), 'linked_login_unavailable'],
+    ['missing', ok(null), 'not_found'],
+  ])('refuses a %s login (%s → %s) and writes nothing', async (_label, statusResult, code) => {
     const deps = makeDeps({ statusResult });
     const result = await changeContactEmail(deps, baseInput);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe('linked_login_unavailable');
+    if (!result.ok) expect(result.error.code).toBe(code);
     expect(deps.contactRepo.updateEmailInTx).not.toHaveBeenCalled();
     expect(deps.userEmails.updateInTx).not.toHaveBeenCalled();
     expect(deps.emails.enqueueInTx).not.toHaveBeenCalled();
+  });
+
+  it('still changes the email of a disabled login that was NOT erased', async () => {
+    const deps = makeDeps({ statusResult: ok({ status: 'disabled', erased: false }) });
+    const result = await changeContactEmail(deps, baseInput);
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+    expect(deps.userEmails.updateInTx).toHaveBeenCalled();
   });
 
   it('returns server_error when the status read fails', async () => {

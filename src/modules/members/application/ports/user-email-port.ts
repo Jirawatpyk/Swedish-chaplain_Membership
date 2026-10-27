@@ -103,7 +103,14 @@ export interface UserEmailPort {
     tx: TenantTx,
     userId: string,
   ): Promise<
-    Result<{ readonly status: 'pending' | 'active' | 'disabled' } | null, RepoError>
+    Result<
+      {
+        readonly status: 'pending' | 'active' | 'disabled';
+        /** 134-s1 — the row carries eraseUser's sentinel email. */
+        readonly erased: boolean;
+      } | null,
+      RepoError
+    >
   >;
 
   /**

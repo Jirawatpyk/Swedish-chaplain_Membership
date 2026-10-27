@@ -25,6 +25,7 @@ import {
 } from '@/lib/idempotency';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import {
   changeContactEmail,
   removeContact,
@@ -235,20 +236,24 @@ export async function PATCH(
                 { status: 409 },
               );
             case 'linked_login_unavailable':
-              // 134-s1 — the contact's portal login is disabled or gone (an
-              // erased login is disabled), so its email cannot change.
+              // 134-s1 — the contact's portal login was erased, so its email
+              // cannot change.
               return NextResponse.json(
                 {
                   error: {
                     code: 'linked_login_unavailable',
-                    message: 'The linked portal login is disabled.',
+                    message: 'The linked portal login was erased.',
                   },
                 },
                 { status: 409 },
               );
             default:
               logger.error(
-                { requestId: ctx.requestId, err: changeResult.error },
+                {
+                  requestId: ctx.requestId,
+                  code: changeResult.error.code,
+                  err: errKind(changeResult.error.cause),
+                },
                 'change-contact-email: unhandled',
               );
               return NextResponse.json(

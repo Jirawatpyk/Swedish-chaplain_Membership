@@ -22,6 +22,10 @@ import { errorChainMessage, isUniqueViolation } from '@/lib/db-errors';
 // case would add no behaviour.
 import { users } from '@/modules/auth/infrastructure/db/schema';
 import type { UserEmailPort } from '../../application/ports/user-email-port';
+import {
+  ERASED_EMAIL_DOMAIN,
+  ERASED_EMAIL_LOCAL_PREFIX,
+} from '../../domain/erasure-sentinels';
 
 export const userEmailAdapter: UserEmailPort = {
   async updateInTx(tx, update) {
@@ -126,7 +130,7 @@ export const userEmailAdapter: UserEmailPort = {
       // or a concurrent eraseUser can commit between this read and the
       // sink's UPDATE, which then overwrites the fresh erasure sentinel.
       const [row] = await tx
-        .select({ status: users.status })
+        .select({ status: users.status, email: users.email })
         .from(users)
         .where(eq(users.id, userId))
         .for('update')
@@ -134,7 +138,11 @@ export const userEmailAdapter: UserEmailPort = {
       // No row (hard-deleted / never existed) is a valid "refuse the revert"
       // signal, NOT an error — return ok(null) so the use-case aborts cleanly.
       if (!row) return ok(null);
-      return ok({ status: row.status });
+      // eraseUser's sentinel (auth's `anonymiseErasedInTx`); the drift guard
+      // tests/unit/auth/erase-user-sentinel-format.test.ts pins both sides.
+      const erased =
+        row.email === `${ERASED_EMAIL_LOCAL_PREFIX}${userId}@${ERASED_EMAIL_DOMAIN}`;
+      return ok({ status: row.status, erased });
     } catch (e) {
       return err({ code: 'repo.unexpected', cause: e });
     }

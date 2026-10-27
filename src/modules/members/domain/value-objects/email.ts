@@ -36,7 +36,8 @@ export function asEmail(raw: string): Result<Email, EmailError> {
   const lower = trimmed.toLowerCase();
   // 134-s1 — the erasure sentinel domain is never a real address; accepting it
   // would let a stored address collide with an erased login's tombstone.
-  if (lower.endsWith(`@${ERASED_EMAIL_DOMAIN}`))
+  const domain = lower.slice(lower.lastIndexOf('@') + 1);
+  if (domain === ERASED_EMAIL_DOMAIN || domain.endsWith(`.${ERASED_EMAIL_DOMAIN}`))
     return err({ code: 'email.reserved_domain' });
   return ok(lower as Email);
 }

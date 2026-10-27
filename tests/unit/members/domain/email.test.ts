@@ -42,7 +42,7 @@ describe('Email value object', () => {
   // 134-s1 — the erasure sentinel domain (RFC 6761 reserved) is never a real
   // address; accepting it would let a person's address collide with an
   // erased login's tombstone.
-  it.each(['someone@erased.invalid', 'erased+abc@ERASED.INVALID'])(
+  it.each(['someone@erased.invalid', 'erased+abc@ERASED.INVALID', 'x@sub.erased.invalid'])(
     'rejects the erasure sentinel domain (%s)',
     (raw) => {
       const r = asEmail(raw);
