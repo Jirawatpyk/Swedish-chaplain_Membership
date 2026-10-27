@@ -41,9 +41,9 @@ export interface ImageAltDialogProps {
   readonly finalFocus?: () => HTMLElement | false | null;
   /**
    * A file is still to be chosen once this closes (the toolbar's Image and
-   * Banner path). Only then does the dialog carry the public-link notice: not
-   * when editing a description, and not after an uploader-first upload, when
-   * the file is already public.
+   * Banner path). Defaults to true, so the public-link notice is shown unless
+   * a caller opts out: the uploader-first path passes false, because the file
+   * is already public. Never shown when `editing`.
    */
   readonly uploadFollows?: boolean;
 }
@@ -58,7 +58,7 @@ export function ImageAltDialog({
   editing = false,
   initialValue = '',
   finalFocus,
-  uploadFollows = false,
+  uploadFollows = true,
 }: ImageAltDialogProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.altDialog');
   // F119 review finding F2-11 — the SAME public-link sentence the uploader

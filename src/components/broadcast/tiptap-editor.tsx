@@ -154,8 +154,9 @@ export default function TiptapEditor({
   // own close render without a re-render racing it.
   const pendingImageRef = useRef<PendingImage | null>(null);
   // PDPA review L-1: the description dialog carries the public-link notice
-  // only when a file is still to be chosen (toolbar-first).
-  const [altUploadFollows, setAltUploadFollows] = useState(false);
+  // only when a file is still to be chosen (toolbar-first). The dialog's own
+  // `editing` guard covers the edit path, so only the two new-image paths set it.
+  const [altUploadFollows, setAltUploadFollows] = useState(true);
   const uploaderRef = useRef<ComposeInlineImageUploaderHandle | null>(null);
   const altTriggerRef = useRef<HTMLElement | null>(null);
 
@@ -328,7 +329,6 @@ export default function TiptapEditor({
         const alt: unknown = selected.attrs['alt'];
         pendingImageRef.current = null;
         setAltEdit({ typeName: selected.type.name, alt: typeof alt === 'string' ? alt : '' });
-        setAltUploadFollows(false);
         setAltVariant(selected.type.name === 'bannerImage' ? 'banner' : 'inline');
         setAltOpen(true);
         return;
