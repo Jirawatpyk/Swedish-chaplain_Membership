@@ -2,7 +2,8 @@
  * change-role use case (T127, spec US4 AS4, FR-010, FR-011).
  *
  * Algorithm:
- *   1. Target lookup — not-found returns 404.
+ *   1. Target lookup — not-found returns 404; so does an erased login
+ *      (134-s4).
  *   2. Portal-boundary check — staff ↔ member role crossings are
  *      FORBIDDEN in F1 (spec §Q2: separate accounts for staff members
  *      who are also TSCC members). Returns 400 `role-portal-mismatch`.
@@ -24,6 +25,7 @@ import {
   type Role,
 } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
+import { isErasedUserEmail } from '@/modules/auth/domain/erased-user-email';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { SessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
@@ -63,6 +65,13 @@ export async function changeRole(
 ): Promise<Result<ChangeRoleSuccess, ChangeRoleError>> {
   const target = await deps.users.findById(input.targetUserId);
   if (!target) return err({ code: 'not-found' });
+  // 134-s4 — an ERASED login (eraseUser's sentinel) keeps the role it had,
+  // mirroring enableUser (133): nothing about it may change, and /admin/users
+  // no longer offers Change role on it (134-s3). Same enumeration-safe answer
+  // as a missing row, before any write, session revoke or audit row.
+  if (isErasedUserEmail(target.email as string, target.id)) {
+    return err({ code: 'not-found' });
+  }
 
   if (target.role === input.newRole) {
     return err({ code: 'same-role' });
