@@ -167,6 +167,7 @@ async function UsersDataSection({
         status: u.status,
         displayName: u.displayName,
         invitationExpiresAt: u.invitationExpiresAt,
+        isErased: u.isErased,
       }))}
       total={total}
       page={page}

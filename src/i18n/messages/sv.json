@@ -685,6 +685,7 @@
       "title": "Användare",
       "pageSubtitle": "Hantera personal- och medlemskonton, roller och status.",
       "empty": "Inga användare ännu. Bjud in den första för att komma igång.",
+      "erasedAccount": "Raderat konto",
       "filters": {
         "searchPlaceholder": "Sök på e-post eller visningsnamn",
         "searchSrLabel": "Sök användare",
@@ -707,7 +708,8 @@
           "all": "Alla statusar",
           "active": "Aktiv",
           "disabled": "Inaktiverad",
-          "pending": "Väntande"
+          "pending": "Väntande",
+          "erased": "Raderad"
         },
         "clear": "Rensa filter"
       },

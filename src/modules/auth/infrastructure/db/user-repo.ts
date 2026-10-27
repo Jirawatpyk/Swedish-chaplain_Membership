@@ -33,7 +33,7 @@ import {
   type UserId,
 } from '@/modules/auth/domain/branded';
 import type { UserAccount, UserStatus } from '@/modules/auth/domain/user';
-import { erasedUserEmail } from '@/modules/auth/domain/erased-user-email';
+import { erasedUserEmail, isErasedUserEmail } from '@/modules/auth/domain/erased-user-email';
 import type { Role } from '@/modules/auth/domain/role';
 
 type NotificationType = (typeof notificationsOutbox.notificationType.enumValues)[number];
@@ -57,6 +57,12 @@ export interface UserListFilter {
  */
 export type UserListRow = UserAccount & {
   readonly invitationExpiresAt: Date | null;
+  /**
+   * 134-s3 — the row carries eraseUser's sentinel for its own id. Erasure
+   * leaves `status = 'disabled'`, so the list needs this to stop offering
+   * Enable (which enableUser refuses anyway).
+   */
+  readonly isErased: boolean;
 };
 
 function buildFilterConditions(filter: UserListFilter): SQL | undefined {
@@ -810,6 +816,7 @@ export const userRepo: UserRepo = {
     return rows.map((row) => ({
       ...toDomain(row),
       invitationExpiresAt: row.invitationExpiresAt,
+      isErased: isErasedUserEmail(row.email, row.id),
     }));
   },
 
