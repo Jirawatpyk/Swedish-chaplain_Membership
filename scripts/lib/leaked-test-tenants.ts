@@ -65,12 +65,17 @@ export interface SweepOptions {
   /** Restrict the candidates to slugs matching this pattern. */
   readonly slugPattern?: RegExp;
   /**
-   * Stop starting tenants after this many ms; the rest wait for the next run
-   * (`skippedBudget`). Each tenant is its own transaction, so stopping early
-   * leaves nothing half-done.
+   * Stop STARTING tenants once this many ms have passed since the sweep
+   * began (discovery included); the rest wait for the next run
+   * (`skippedBudget`). Not a hard limit: a tenant already started finishes,
+   * bounded by the timeouts. Each tenant is its own transaction, so stopping
+   * early leaves nothing half-done.
    */
   readonly budgetMs?: number;
-  /** Per-tenant transaction `lock_timeout` / `statement_timeout`, in ms. */
+  /**
+   * `lock_timeout` / `statement_timeout` in ms, set with `SET LOCAL` on every
+   * statement the sweep sends (discovery reads and each tenant's drain).
+   */
   readonly lockTimeoutMs?: number;
   readonly statementTimeoutMs?: number;
   readonly log?: (line: string) => void;
@@ -131,9 +136,12 @@ export function partitionCandidates(
   const skippedStuck: string[] = [];
   for (const slug of candidates) {
     const ownedTables = [...(ownedByTenant.get(slug)?.keys() ?? [])];
-    // Both shapes are skipped only once an earlier drain has removed the
-    // tenant's `tenant_invoice_settings` row (the list the platform crons
-    // enumerate), so the first run still takes the tenant off that list.
+    // Both shapes are skipped only once the tenant owns no
+    // `tenant_invoice_settings` row (the list the redact crons enumerate), so a
+    // first run still takes it off that list. Known limits: a tenant that
+    // never had such a row is skipped at once, and one with a guarded table
+    // keeps its `broadcasts` rows (the cascade hits the guard), so it stays in
+    // the broadcasts gauges' tenant loop until the operator script runs.
     const undrainable =
       isStuckOnRefundCreditNoteCycle(ownedTables) ||
       (!ownedTables.includes('tenant_invoice_settings') &&
@@ -161,14 +169,43 @@ export const AUTOMATIC_SWEEP_OPTIONS = {
   statementTimeoutMs: 30_000,
 } as const satisfies SweepOptions;
 
+/**
+ * `SET LOCAL` the per-transaction timeouts. A session parameter would not
+ * survive a pooled connection (the Neon pooler drops it); `SET LOCAL` inside a
+ * transaction does.
+ */
+async function setLocalTimeouts(tx: postgres.TransactionSql, opts: SweepOptions): Promise<void> {
+  if (opts.lockTimeoutMs !== undefined) {
+    await tx.unsafe(`SET LOCAL lock_timeout = ${Math.trunc(opts.lockTimeoutMs)}`);
+  }
+  if (opts.statementTimeoutMs !== undefined) {
+    await tx.unsafe(`SET LOCAL statement_timeout = ${Math.trunc(opts.statementTimeoutMs)}`);
+  }
+}
+
+/** Runs one read under the timeouts when any is set (its own short transaction). */
+async function bounded<T>(
+  sql: postgres.Sql,
+  opts: SweepOptions,
+  read: (q: postgres.Sql) => Promise<T>,
+): Promise<T> {
+  if (opts.lockTimeoutMs === undefined && opts.statementTimeoutMs === undefined) return read(sql);
+  return (await sql.begin(async (tx) => {
+    await setLocalTimeouts(tx, opts);
+    return read(tx as unknown as postgres.Sql);
+  })) as T;
+}
+
 export async function sweepLeakedTestTenants(
   sql: postgres.Sql,
   opts: SweepOptions,
 ): Promise<SweepReport> {
   const log = opts.log ?? (() => undefined);
+  // The budget counts discovery too.
+  const started = Date.now();
 
   // ── Discover the tenant-scoped base tables ─────────────────────────────────
-  const discovered = (await sql`
+  const discovered = (await bounded(sql, opts, (q) => q`
     SELECT c.table_name AS name,
            bool_or(c2.column_name = 'created_at') AS has_created_at
       FROM information_schema.columns c
@@ -183,7 +220,7 @@ export async function sweepLeakedTestTenants(
         AND c.column_name = 'tenant_id'
       GROUP BY c.table_name
       ORDER BY c.table_name
-  `) as unknown as Array<{ name: string; has_created_at: boolean }>;
+  `)) as unknown as Array<{ name: string; has_created_at: boolean }>;
 
   const tables = discovered
     .filter((r) => !NEVER_DELETE.has(r.name))
@@ -202,8 +239,8 @@ export async function sweepLeakedTestTenants(
   const slugUnion = tables
     .map((t) => `SELECT DISTINCT tenant_id FROM "${t.name}" WHERE tenant_id LIKE 'test%'`)
     .join(' UNION ');
-  const slugRows = (await sql.unsafe(
-    `SELECT tenant_id FROM (${slugUnion}) u ORDER BY tenant_id`,
+  const slugRows = (await bounded(sql, opts, (q) =>
+    q.unsafe(`SELECT tenant_id FROM (${slugUnion}) u ORDER BY tenant_id`),
   )) as unknown as Array<{ tenant_id: string }>;
   const only = opts.onlySlugs === undefined ? null : new Set(opts.onlySlugs);
   const slugs = slugRows
@@ -223,11 +260,13 @@ export async function sweepLeakedTestTenants(
         `WHERE tenant_id LIKE 'test%' GROUP BY tenant_id`,
     )
     .join(' UNION ALL ');
-  const ageRows = (await sql.unsafe(`
+  const ageRows = (await bounded(sql, opts, (q) =>
+    q.unsafe(`
     SELECT tenant_id, max(newest) AS newest
       FROM (${ageUnion}) a
      GROUP BY tenant_id
-  `)) as unknown as Array<{ tenant_id: string; newest: Date }>;
+  `),
+  )) as unknown as Array<{ tenant_id: string; newest: Date }>;
   const newestBySlug = new Map(ageRows.map((r) => [r.tenant_id, r.newest]));
 
   const cutoff = Date.now() - opts.maxAgeHours * 3_600_000;
@@ -255,7 +294,7 @@ export async function sweepLeakedTestTenants(
           `WHERE tenant_id = ANY($1) GROUP BY tenant_id`,
       )
       .join(' UNION ALL ');
-    const owned = (await sql.unsafe(countsUnion, [candidates])) as unknown as Array<{
+    const owned = (await bounded(sql, opts, (q) => q.unsafe(countsUnion, [candidates]))) as unknown as Array<{
       tbl: string;
       tenant_id: string;
       n: number;
@@ -300,7 +339,6 @@ export async function sweepLeakedTestTenants(
   if (!opts.apply || eligible.length === 0) return report();
 
   // ── Delete, one transaction per tenant, draining by retry ──────────────────
-  const started = Date.now();
   let n = 0;
   for (const slug of eligible) {
     if (opts.budgetMs !== undefined && Date.now() - started >= opts.budgetMs) {
@@ -313,12 +351,7 @@ export async function sweepLeakedTestTenants(
     const deletable = ownedTables.filter((t) => !guarded.includes(t));
     try {
       const left = await sql.begin(async (tx) => {
-        if (opts.lockTimeoutMs !== undefined) {
-          await tx.unsafe(`SET LOCAL lock_timeout = ${Math.trunc(opts.lockTimeoutMs)}`);
-        }
-        if (opts.statementTimeoutMs !== undefined) {
-          await tx.unsafe(`SET LOCAL statement_timeout = ${Math.trunc(opts.statementTimeoutMs)}`);
-        }
+        await setLocalTimeouts(tx, opts);
         let remaining = [...deletable];
         for (let pass = 0; pass < remaining.length + 1 && remaining.length > 0; pass += 1) {
           const failed: string[] = [];

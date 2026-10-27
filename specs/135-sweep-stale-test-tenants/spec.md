@@ -25,8 +25,14 @@ Test users have an automatic stale sweep (#638); tenants had only the manual `sc
    - The options are one pinned constant, `AUTOMATIC_SWEEP_OPTIONS`.
 3. **The operator script still works.** `scripts/cleanup-leaked-test-tenants.ts` calls the same module with the trigger disable allowed, and its dry-run and apply output keep their shape.
 4. **Tests.**
-   - Integration on dev (`tests/integration/test-infra/leaked-test-tenants.test.ts`): a dry run deletes nothing; apply removes the stale tenant and keeps the fresh one; `swecham` is never eligible.
-   - Unit (`tests/unit/scripts/leaked-test-tenants.test.ts`): the trigger-disable statements and the stuck-cycle rule.
+   - Integration on dev (`tests/integration/test-infra/leaked-test-tenants.test.ts`): a dry run deletes nothing; apply removes the stale tenant and keeps the fresh one; a `testing-*` slug (passes `LIKE 'test%'`) is never eligible; a fixed slug stays out under the generated-slug pattern; a spent budget defers the tenant.
+   - Unit (`tests/unit/scripts/leaked-test-tenants.test.ts`):
+     - the three trigger statements;
+     - the stuck-cycle rule, including the one-sided cases;
+     - `partitionCandidates`;
+     - `GENERATED_TEST_SLUG`;
+     - `AUTOMATIC_SWEEP_OPTIONS` pinned whole;
+     - through a fake client: no DELETE for a skipped tenant, no `ALTER` on the automatic path, `SET LOCAL` timeouts on every read and drain, a delete counted only when its savepoint held, and the slug pattern and budget applied before any DELETE.
 5. **Docs.** `docs/changelog.md`, a `docs/retro.md` line, the script header, the dev-branch memory note.
 
 ## Out of scope

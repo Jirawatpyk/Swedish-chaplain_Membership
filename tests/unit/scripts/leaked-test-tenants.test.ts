@@ -91,56 +91,104 @@ describe('GENERATED_TEST_SLUG (135 review)', () => {
     expect(GENERATED_TEST_SLUG.test('test-suppression-explain')).toBe(false);
     expect(GENERATED_TEST_SLUG.test('test-adopt-tenant')).toBe(false);
     expect(GENERATED_TEST_SLUG.test('swecham')).toBe(false);
+    expect(GENERATED_TEST_SLUG.test('test-sweep-fixedslug')).toBe(false);
   });
 });
 
 describe('AUTOMATIC_SWEEP_OPTIONS (135 review)', () => {
   it('is safe for a shared branch', () => {
-    expect(AUTOMATIC_SWEEP_OPTIONS).toMatchObject({
+    // The whole object: a new key or a changed value must show up here.
+    expect(AUTOMATIC_SWEEP_OPTIONS).toEqual({
       maxAgeHours: 6,
       apply: true,
       includeUndatable: false,
       allowTriggerDisable: false,
       skipUndrainable: true,
       slugPattern: GENERATED_TEST_SLUG,
+      budgetMs: 20_000,
+      lockTimeoutMs: 5_000,
+      statementTimeoutMs: 30_000,
     });
-    expect(AUTOMATIC_SWEEP_OPTIONS.budgetMs).toBeGreaterThan(0);
-    expect(AUTOMATIC_SWEEP_OPTIONS.lockTimeoutMs).toBeGreaterThan(0);
-    expect(AUTOMATIC_SWEEP_OPTIONS.statementTimeoutMs).toBeGreaterThan(0);
   });
 });
 
 describe('sweepLeakedTestTenants wiring (135 review)', () => {
   // A stand-in for the postgres client: the catalogue, the candidate, its age
-  // and what it owns come from these answers; `begin` records any transaction.
-  function fakeSql(owned: Array<{ tbl: string; n: number }>) {
-    const slug = 'test-sweep-a1b2c3d4';
-    const begin = vi.fn(async () => []);
-    const tagged = vi.fn(async () => [
-      { name: 'broadcast_deliveries', has_created_at: true },
-      { name: 'members', has_created_at: true },
-      { name: 'tenant_invoice_settings', has_created_at: true },
-    ]);
+  // and what it owns come from these answers. Every statement — on the client
+  // or inside a transaction / savepoint — is recorded in `sent`.
+  function fakeSql(
+    owned: Array<{ tbl: string; n: number }>,
+    { slug = 'test-sweep-a1b2c3d4', failOn }: { slug?: string; failOn?: string } = {},
+  ) {
+    const sent: string[] = [];
+    const tagged = vi.fn(async (strings: TemplateStringsArray) => {
+      sent.push(strings.join('?'));
+      return [
+        { name: 'broadcast_deliveries', has_created_at: true },
+        { name: 'members', has_created_at: true },
+        { name: 'tenant_invoice_settings', has_created_at: true },
+      ];
+    });
     const unsafe = vi.fn(async (query: string) => {
+      sent.push(query);
       if (query.includes('count(*)::int AS n')) return owned.map((o) => ({ ...o, tenant_id: slug }));
       if (query.includes('max(newest)')) return [{ tenant_id: slug, newest: new Date(Date.now() - 7 * 3_600_000) }];
+      if (failOn !== undefined && query.startsWith(failOn)) throw new Error('refused');
+      if (query.startsWith('DELETE')) return Object.assign([], { count: 2 });
       return [{ tenant_id: slug }];
     });
-    const sql = Object.assign(tagged, { unsafe, begin }) as unknown as postgres.Sql;
-    return { sql, begin, slug };
+    const client = Object.assign(tagged, { unsafe }) as unknown as Record<string, unknown>;
+    client['savepoint'] = async (fn: (sp: unknown) => Promise<unknown>) => fn(client);
+    client['begin'] = async (fn: (tx: unknown) => Promise<unknown>) => fn(client);
+    return { sql: client as unknown as postgres.Sql, sent, slug };
   }
 
-  it('the automatic options skip an undrained guarded tenant without opening a transaction', async () => {
-    const { sql, begin, slug } = fakeSql([{ tbl: 'broadcast_deliveries', n: 2 }]);
+  it('the automatic options skip an undrained guarded tenant: no DELETE is ever sent', async () => {
+    const { sql, sent, slug } = fakeSql([{ tbl: 'broadcast_deliveries', n: 2 }]);
     const report = await sweepLeakedTestTenants(sql, AUTOMATIC_SWEEP_OPTIONS);
     expect(report.skippedStuck).toEqual([slug]);
     expect(report.eligible).toEqual([]);
-    expect(begin).not.toHaveBeenCalled();
+    expect(sent.some((s) => s.startsWith('DELETE') || s.startsWith('ALTER'))).toBe(false);
   });
 
-  it('without skipUndrainable the same tenant is attempted', async () => {
-    const { sql, begin } = fakeSql([{ tbl: 'broadcast_deliveries', n: 2 }]);
+  it('without skipUndrainable the same tenant is attempted (still never with ALTER TABLE)', async () => {
+    const { sql, sent } = fakeSql([{ tbl: 'members', n: 2 }, { tbl: 'broadcast_deliveries', n: 2 }]);
     await sweepLeakedTestTenants(sql, { ...AUTOMATIC_SWEEP_OPTIONS, skipUndrainable: false });
-    expect(begin).toHaveBeenCalledTimes(1);
+    expect(sent).toContain('DELETE FROM "members" WHERE tenant_id = $1');
+    expect(sent.some((s) => s.startsWith('ALTER'))).toBe(false);
+  });
+
+  it('every read and every drain runs under the SET LOCAL timeouts', async () => {
+    const { sql, sent } = fakeSql([{ tbl: 'members', n: 2 }]);
+    await sweepLeakedTestTenants(sql, AUTOMATIC_SWEEP_OPTIONS);
+    const lock = sent.filter((s) => s === 'SET LOCAL lock_timeout = 5000').length;
+    const stmt = sent.filter((s) => s === 'SET LOCAL statement_timeout = 30000').length;
+    // 4 discovery reads + 1 tenant drain.
+    expect(lock).toBe(5);
+    expect(stmt).toBe(5);
+  });
+
+  it('a delete is counted only when its savepoint held (a failed re-enable counts nothing)', async () => {
+    const { sql } = fakeSql([{ tbl: 'broadcast_deliveries', n: 2 }], { failOn: 'ALTER TABLE "broadcast_deliveries" ENABLE' });
+    const report = await sweepLeakedTestTenants(sql, {
+      maxAgeHours: 6,
+      apply: true,
+      includeUndatable: false,
+      allowTriggerDisable: true,
+    });
+    expect(report.deletedPerTable.has('broadcast_deliveries')).toBe(false);
+    expect(report.stuck).toEqual([{ slug: 'test-sweep-a1b2c3d4', left: ['broadcast_deliveries'] }]);
+  });
+
+  it('the slug pattern and the time budget apply before any DELETE', async () => {
+    const fixed = fakeSql([{ tbl: 'members', n: 1 }], { slug: 'test-suppression-explain' });
+    const r1 = await sweepLeakedTestTenants(fixed.sql, AUTOMATIC_SWEEP_OPTIONS);
+    expect(r1.slugs).toBe(0);
+    expect(fixed.sent.some((s) => s.startsWith('DELETE'))).toBe(false);
+
+    const spent = fakeSql([{ tbl: 'members', n: 1 }]);
+    const r2 = await sweepLeakedTestTenants(spent.sql, { ...AUTOMATIC_SWEEP_OPTIONS, budgetMs: 0 });
+    expect(r2.skippedBudget).toEqual(['test-sweep-a1b2c3d4']);
+    expect(spent.sent.some((s) => s.startsWith('DELETE'))).toBe(false);
   });
 });

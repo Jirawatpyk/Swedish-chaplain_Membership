@@ -59,3 +59,19 @@ Agreed in plan mode on 27 Oct 2026, together with the D-030 follow-up (#670).
     - test tenants 2 h old with a 1 h filter, so another run's 6 h sweep cannot take them.
 - GREEN: unit 12/12; integration 5/5; `tsc` and eslint clean; `pnpm check` exit 0.
 - Not covered by a test: the globalSetup catch path. It is hygiene code, and reading it shows it logs and continues.
+
+## Review round 2 → fixes
+
+- **reliability-guardian.** M-2 and M-3 are closed. M-1 was only partly closed: the discovery reads and the `UPDATE users` were unbounded on a pooled URL, because the pooler drops session connection parameters. Fix:
+  - every discovery read now runs in its own short transaction under `SET LOCAL lock_timeout` / `statement_timeout` (`bounded`);
+  - the users sweep runs in a `sql.begin` with `SET LOCAL`;
+  - the `connection:` block is removed;
+  - the budget now counts discovery;
+  - comments now say what the budget does and does not cap, and that a guarded tenant stays in the broadcasts gauges' loop.
+- **senior-tester** (NOT SHIP-READY: M10 and M11 survived):
+  - `AUTOMATIC_SWEEP_OPTIONS` is now pinned whole with `toEqual`;
+  - the fake client runs `begin` / `savepoint` bodies, so the drain is exercised: `SET LOCAL` on all 5 transactions, no `ALTER` on the automatic path, and a delete counted only when its savepoint held (a failed re-enable counts nothing);
+  - unit cases for the slug pattern and the budget;
+  - a `test-sweep-fixedslug` negative for the regex;
+  - the spec's test list corrected.
+- **GREEN:** unit 15/15 (13 before this round's additions), integration 5/5, `tsc` and eslint clean.

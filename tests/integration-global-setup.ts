@@ -36,22 +36,23 @@ export default async function disableStaleLeakedTestStaff(): Promise<void> {
   const dbUrl = process.env.DATABASE_URL_UNPOOLED ?? process.env.POSTGRES_URL_NON_POOLING ?? process.env.DATABASE_URL;
   if (!dbUrl) return; // the per-file guard reports the missing URL
   assertDbHostNotBlocklisted(dbUrl, process.env.TEST_DB_HOST_BLOCKLIST, 'integration-global-setup');
-  // Bounded: hygiene must never stall the run behind a lock or a slow scan.
-  const sql = postgres(dbUrl, {
-    ssl: 'require',
-    max: 1,
-    connection: { statement_timeout: 60_000, lock_timeout: 5_000 },
-  });
+  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
   try {
-    const rows = await sql`
-      UPDATE users SET status = 'disabled'
-      WHERE status = 'active'
-        AND role <> 'member'
-        AND created_at < now() - make_interval(hours => ${STALE_HOURS})
-        AND email ~ '@(swecham\\.test|example\\.com|wipe\\.test)$'
-        AND email NOT LIKE 'e2e-%'
-      RETURNING id
-    `;
+    // Bounded with SET LOCAL (a pooled URL drops session parameters), so a
+    // held row lock cannot stall the run; the tenant sweep bounds itself.
+    const rows = await sql.begin(async (tx) => {
+      await tx.unsafe('SET LOCAL lock_timeout = 5000');
+      await tx.unsafe('SET LOCAL statement_timeout = 60000');
+      return tx`
+        UPDATE users SET status = 'disabled'
+        WHERE status = 'active'
+          AND role <> 'member'
+          AND created_at < now() - make_interval(hours => ${STALE_HOURS})
+          AND email ~ '@(swecham\\.test|example\\.com|wipe\\.test)$'
+          AND email NOT LIKE 'e2e-%'
+        RETURNING id
+      `;
+    });
     if (rows.length > 0) {
       console.warn(`[integration-global-setup] disabled ${rows.length} leaked test staff user(s) older than ${STALE_HOURS} h`);
     }
