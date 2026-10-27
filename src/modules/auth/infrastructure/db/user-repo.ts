@@ -33,7 +33,10 @@ import {
   type UserId,
 } from '@/modules/auth/domain/branded';
 import type { UserAccount, UserStatus } from '@/modules/auth/domain/user';
+import { erasedUserEmail } from '@/modules/auth/domain/erased-user-email';
 import type { Role } from '@/modules/auth/domain/role';
+
+type NotificationType = (typeof notificationsOutbox.notificationType.enumValues)[number];
 
 /** Filter shape used by the admin users list page (search + role + status). */
 export interface UserListFilter {
@@ -282,6 +285,21 @@ export interface UserRepo {
     userId: UserId,
     now: Date,
   ): Promise<number>;
+  /**
+   * 134-s2 — DELETE this login's `notifications_outbox` rows in EVERY tenant,
+   * in ANY status: a pending row must not go out to the real address after the
+   * global `eraseUser`, and a sent / failed one must not keep it for the
+   * 90-day purge window (Art. 17 / PDPA §33). Login-bound only: the
+   * email-change / verification notices (`context_data.userId`), the staff
+   * notices (`reviewerUserId` / `recipientUserId`), and — for a PENDING login —
+   * invitations, matched on its CURRENT address — call this BEFORE `anonymiseErasedInTx`
+   * overwrites it. Locks the users row first. A tenant's own business mail
+   * (invoices, broadcasts) to the same address is not the login's and is left
+   * alone; so are the F7 broadcast author notices, whose frozen `to_email`
+   * carries no login key (a documented residual). Deliberately cross-tenant
+   * (D-029 exemption): runs on the owner-role tx. Returns the rows removed.
+   */
+  cancelLoginOutboxAllTenantsInTx(tx: DbTx, userId: UserId): Promise<number>;
   setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void>;
   /** Tx-scoped variant of `setPasswordHash` (Path C — A3 / A4). */
   setPasswordHashInTx(
@@ -566,7 +584,7 @@ export const userRepo: UserRepo = {
   },
 
   async scrubEmailChangeTokensAllTenantsInTx(tx, userId, now) {
-    const sentinel = `erased+${userId}@erased.invalid`;
+    const sentinel = erasedUserEmail(userId);
     const scrubbed = await tx
       .update(emailChangeTokens)
       .set({
@@ -577,6 +595,56 @@ export const userRepo: UserRepo = {
       .where(eq(emailChangeTokens.userId, userId))
       .returning({ id: emailChangeTokens.id });
     return scrubbed.length;
+  },
+
+  async cancelLoginOutboxAllTenantsInTx(tx, userId) {
+    // Lock the login row FIRST (security review M-1): an email change holds
+    // this lock while it enqueues, so the DELETE below waits for it to commit
+    // and then sees its rows. The address read here is the REAL one — the
+    // caller runs this before `anonymiseErasedInTx` overwrites it.
+    const [login] = await tx
+      .select({ email: users.email, status: users.status })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for('update')
+      .limit(1);
+    const keyed = (key: string, types: NotificationType[]) =>
+      and(
+        inArray(notificationsOutbox.notificationType, types),
+        sql`${notificationsOutbox.contextData}->>${key} = ${userId}`,
+      );
+    const removed = await tx
+      .delete(notificationsOutbox)
+      .where(
+        or(
+          keyed('userId', [
+            'email_verification',
+            'email_verification_resent',
+            'email_change_revert',
+          ]),
+          // Staff notices addressed to this login (F114 reviewer, F119
+          // E-Blast hand-offs) — re-resolved at send time, but their rows
+          // still hold the address until the 90-day purge.
+          keyed('reviewerUserId', ['member_change_request_submitted_staff']),
+          keyed('recipientUserId', [
+            'eblast_submitted_marketing',
+            'eblast_member_decided_marketing',
+            'eblast_approval_lifecycle',
+          ]),
+          // An invitation carries no id; `users.email` is unique, so a row to
+          // this address is this login's. Only a PENDING login can redeem one;
+          // an active login's address may still be another member's portal
+          // login, whose mail eraseMember deliberately keeps (its guard 2).
+          login?.status === 'pending'
+            ? and(
+                eq(notificationsOutbox.notificationType, 'member_invitation'),
+                sql`lower(${notificationsOutbox.toEmail}) = lower(${login.email})`,
+              )
+            : undefined,
+        ),
+      )
+      .returning({ id: notificationsOutbox.id });
+    return removed.length;
   },
 
   async anonymiseErasedInTx(tx, userId) {
@@ -591,11 +659,10 @@ export const userRepo: UserRepo = {
     // (a) the app is invitation-only — there is no self-registration route to
     // plant such an address, and (b) `userId` is an unguessable UUIDv4, so an
     // attacker cannot pre-register the exact sentinel for a future target.
-    // Rejecting the reserved `@erased.invalid` domain at the email-collection
-    // boundary (invite / member-create) is a documented follow-up, out of
-    // Task 2 scope — it touches those routes plus a cross-module email-policy
-    // decision (the sentinel domain is owned by the members context).
-    const sentinelEmail = `erased+${userId}@erased.invalid`;
+    // 134 also refuses the reserved `erased.invalid` domain where an address
+    // is collected: auth `createUser` (134-s2) and members `asEmail` (134-s1,
+    // a separate PR).
+    const sentinelEmail = erasedUserEmail(userId);
     const updated = await tx
       .update(users)
       .set({

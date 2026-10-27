@@ -74,6 +74,8 @@ function oneAdminRepo(): UserRepo {
     anonymiseErasedInTx: (tx, userId) => userRepo.anonymiseErasedInTx(tx, userId),
     scrubEmailChangeTokensAllTenantsInTx: (tx, userId, now) =>
       userRepo.scrubEmailChangeTokensAllTenantsInTx(tx, userId, now),
+    cancelLoginOutboxAllTenantsInTx: (tx, userId) =>
+      userRepo.cancelLoginOutboxAllTenantsInTx(tx, userId),
     setPasswordHash: (id, hash, now) =>
       userRepo.setPasswordHash(id, hash, now),
     setPasswordHashInTx: (tx, id, hash, now) =>

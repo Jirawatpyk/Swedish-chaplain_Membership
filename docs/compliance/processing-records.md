@@ -2250,8 +2250,20 @@ A flag-off that is a **retirement** rather than a pause therefore carries a purg
 off because every submit keeps enqueuing. A **sent** (or `permanently_failed`) row is kept **90 days** by the existing
 `outbox-purge` job and then deleted; for those 90 days it **keeps the recipient's address frozen at
 enqueue** in `to_email`, while holding no content (`context_data` is ids only; the email was
-rendered at send time and is not stored). The same rule already applies to every other outbox
-type; it is recorded here because the member-addressed rows carry a member contact's address.
+rendered at send time and is not stored). That ids-only rule holds for the `eblast_*` types only.
+Other outbox types freeze more in `context_data`:
+- the email-change / verification / invitation rows hold the plaintext token, and a revert row also
+  holds `oldEmail` / `newEmail`;
+- `invoice_auto_email` holds the `document_number`.
+
+Since 134-s2, the global `eraseUser` deletes **every** row bound to the erased login, in every tenant
+and in any status. "Bound" means keyed on `context_data.userId` / `reviewerUserId` /
+`recipientUserId`, or an invitation to the login's address. Residuals the erasure does not reach,
+each kept for the 90-day `outbox-purge` window:
+- a tenant's own **sent** business rows to the same address, such as `invoice_auto_email`
+  (`document_number` + address). Each tenant is that mail's controller.
+- the F7 broadcast **author** notices (`broadcast_*_notification`). Their frozen `to_email` carries
+  no login key.
 
 ### Data subject rights — F119 PR-2 amendments
 

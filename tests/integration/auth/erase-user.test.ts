@@ -15,9 +15,15 @@
  */
 import { randomUUID } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
-import { auditLog, emailChangeTokens, sessions, users } from '@/modules/auth/infrastructure/db/schema';
+import {
+  auditLog,
+  emailChangeTokens,
+  notificationsOutbox,
+  sessions,
+  users,
+} from '@/modules/auth/infrastructure/db/schema';
 import { userRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import { sessionRepo } from '@/modules/auth/infrastructure/db/session-repo';
 import {
@@ -386,6 +392,162 @@ describe('eraseUser use-case (live Neon)', () => {
     const sentinel = `erased+${user.userId}@erased.invalid`;
     expect(after.map((r) => [r.oldEmail, r.newEmail])).toEqual(after.map(() => [sentinel, sentinel]));
     expect(JSON.stringify(after)).not.toContain(`real-${stamp}`);
+  });
+
+  // 134-s2 — another tenant's mail bound to this login (a verification /
+  // revert notice or a staff notice keyed on the login id, an invitation keyed
+  // on its address) would otherwise still go out — or, once sent, keep the real
+  // address for the 90-day purge window. eraseMember only reached its own
+  // tenant's PENDING rows. Every status of a login-bound row is removed.
+  it('removes the login-bound outbox rows in every tenant, any status', async () => {
+    const user = await createActiveTestUser('member');
+    created.push(user);
+    const bystander = await createActiveTestUser('member');
+    created.push(bystander);
+    const stamp = Date.now().toString(36);
+    const ctx = (userId: string) => ({ userId, token: `t-${stamp}`, contactId: randomUUID() });
+    const gone = {
+      verifyA: randomUUID(),
+      revertB: randomUUID(),
+      sentA: randomUUID(),
+      failedB: randomUUID(),
+      reviewerB: randomUUID(),
+      eblastRecipientA: randomUUID(),
+    };
+    const kept = {
+      otherLogin: randomUUID(),
+      otherInvite: randomUUID(),
+      // An ACTIVE login's invitation row is left alone: only a pending login
+      // can redeem one, and a peer member sharing this login keeps its mail
+      // (eraseMember's guard 2, erase-member-outbox-cancel.test.ts).
+      activeLoginInvite: randomUUID(),
+      invoice: randomUUID(),
+      // A row of ANOTHER type that happens to carry this login under `userId`.
+      otherTypeSameUserId: randomUUID(),
+    };
+    const ids = [...Object.values(gone), ...Object.values(kept)];
+    const mixedCase = user.rawEmail.toUpperCase();
+    await db.insert(notificationsOutbox).values([
+      { id: gone.verifyA, tenantId: `ta-${stamp}`, notificationType: 'email_verification', toEmail: `new-${stamp}@example.test`, locale: 'en', contextData: ctx(user.userId) },
+      { id: gone.revertB, tenantId: `tb-${stamp}`, notificationType: 'email_change_revert', toEmail: user.rawEmail, locale: 'en', contextData: { ...ctx(user.userId), oldEmail: user.rawEmail } },
+      { id: kept.activeLoginInvite, tenantId: `tb-${stamp}`, notificationType: 'member_invitation', toEmail: mixedCase, locale: 'en', contextData: { token: `i-${stamp}`, role: 'member' } },
+      { id: gone.sentA, tenantId: `ta-${stamp}`, notificationType: 'email_verification', toEmail: `new-${stamp}@example.test`, locale: 'en', contextData: ctx(user.userId), status: 'sent' },
+      { id: gone.failedB, tenantId: `tb-${stamp}`, notificationType: 'email_change_revert', toEmail: user.rawEmail, locale: 'en', contextData: { ...ctx(user.userId), oldEmail: user.rawEmail }, status: 'permanently_failed' },
+      { id: gone.reviewerB, tenantId: `tb-${stamp}`, notificationType: 'member_change_request_submitted_staff', toEmail: user.rawEmail, locale: 'en', contextData: { requestId: randomUUID(), reviewerUserId: user.userId } },
+      { id: gone.eblastRecipientA, tenantId: `ta-${stamp}`, notificationType: 'eblast_approval_lifecycle', toEmail: user.rawEmail, locale: 'en', contextData: { audience: 'staff', recipientUserId: user.userId } },
+      // Controls.
+      { id: kept.otherLogin, tenantId: `tb-${stamp}`, notificationType: 'email_verification', toEmail: bystander.rawEmail, locale: 'en', contextData: ctx(bystander.userId) },
+      { id: kept.otherInvite, tenantId: `tb-${stamp}`, notificationType: 'member_invitation', toEmail: bystander.rawEmail, locale: 'en', contextData: { token: `j-${stamp}`, role: 'member' } },
+      { id: kept.invoice, tenantId: `tb-${stamp}`, notificationType: 'invoice_auto_email', toEmail: user.rawEmail, locale: 'en', contextData: { event_type: 'issued' } },
+      { id: kept.otherTypeSameUserId, tenantId: `tb-${stamp}`, notificationType: 'invoice_auto_email', toEmail: user.rawEmail, locale: 'en', contextData: { userId: user.userId } },
+    ]);
+    try {
+      const res = await eraseUser({
+        userId: user.userId,
+        actorUserId: 'admin-it',
+        requestId: `it-erase-134-${stamp}`,
+        sourceIp: null,
+      });
+      expect(res.ok).toBe(true);
+
+      const left = await db
+        .select({ id: notificationsOutbox.id })
+        .from(notificationsOutbox)
+        .where(inArray(notificationsOutbox.id, ids));
+      expect(left.map((r) => r.id).sort()).toEqual(Object.values(kept).sort());
+    } finally {
+      await db.delete(notificationsOutbox).where(inArray(notificationsOutbox.id, ids));
+    }
+  });
+
+  // 134-s2 — a PENDING login (an invite not yet redeemed) loses its
+  // invitation rows in every tenant, matched on its address in any case.
+  it('removes a pending login\'s invitation rows in every tenant', async () => {
+    const invitee = await createActiveTestUser('member');
+    created.push(invitee);
+    await db.update(users).set({ status: 'pending' }).where(eq(users.id, invitee.userId));
+    const stamp = Date.now().toString(36);
+    const ids = [randomUUID(), randomUUID()];
+    await db.insert(notificationsOutbox).values([
+      { id: ids[0]!, tenantId: `ta-${stamp}`, notificationType: 'member_invitation', toEmail: invitee.rawEmail, locale: 'en', contextData: { token: `p-${stamp}`, role: 'member' } },
+      { id: ids[1]!, tenantId: `tb-${stamp}`, notificationType: 'member_invitation', toEmail: invitee.rawEmail.toUpperCase(), locale: 'en', contextData: { token: `q-${stamp}`, role: 'member' } },
+    ]);
+    try {
+      const res = await eraseUser({
+        userId: invitee.userId,
+        actorUserId: 'admin-it',
+        requestId: `it-erase-134-pending-${stamp}`,
+        sourceIp: null,
+      });
+      expect(res.ok).toBe(true);
+      const left = await db
+        .select({ id: notificationsOutbox.id })
+        .from(notificationsOutbox)
+        .where(inArray(notificationsOutbox.id, ids));
+      expect(left).toHaveLength(0);
+    } finally {
+      await db.delete(notificationsOutbox).where(inArray(notificationsOutbox.id, ids));
+    }
+  });
+
+  // 134-s2 (security review M-1) — an email change that commits WHILE the
+  // erasure runs. The cancel locks the users row first, so it waits for the
+  // change and then sees (and removes) the rows that change enqueued.
+  it('a concurrent email change cannot slip a pending row past the cancel', async () => {
+    const user = await createActiveTestUser('member');
+    created.push(user);
+    const stamp = Date.now().toString(36);
+    const rowId = randomUUID();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let markLocked!: () => void;
+    const locked = new Promise<void>((r) => (markLocked = r));
+    const changer = db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, user.userId)).for('update');
+      await tx.insert(notificationsOutbox).values({
+        id: rowId,
+        tenantId: `tc-${stamp}`,
+        notificationType: 'email_change_revert',
+        toEmail: user.rawEmail,
+        locale: 'en',
+        contextData: { userId: user.userId, oldEmail: user.rawEmail },
+      });
+      markLocked();
+      await gate;
+    });
+    await locked;
+    try {
+      const erase = eraseUser({
+        userId: user.userId,
+        actorUserId: 'admin-it',
+        requestId: `it-erase-134-race-${stamp}`,
+        sourceIp: null,
+      });
+      // Release only once the erasure is really blocked on the users row
+      // lock (a fixed sleep goes falsely green on a slow runner).
+      let waiting = false;
+      for (let i = 0; i < 50 && !waiting; i += 1) {
+        const rows = (await db.execute(sql`
+          SELECT 1 FROM pg_stat_activity
+          WHERE wait_event_type = 'Lock'
+            AND query ILIKE '%from "users"%for update%' LIMIT 1`)) as unknown as unknown[];
+        waiting = rows.length > 0;
+        if (!waiting) await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(waiting).toBe(true);
+      release();
+      await changer;
+      expect((await erase).ok).toBe(true);
+
+      const left = await db
+        .select({ id: notificationsOutbox.id })
+        .from(notificationsOutbox)
+        .where(eq(notificationsOutbox.id, rowId));
+      expect(left).toHaveLength(0);
+    } finally {
+      release();
+      await db.delete(notificationsOutbox).where(eq(notificationsOutbox.id, rowId));
+    }
   });
 
   it('after eraseUser: no login-resolvable identity, sessions revoked, user_erased audit (no PII)', async () => {

@@ -191,6 +191,18 @@ describe('createUser (Path C atomic flow)', () => {
     expect(deps.audit.appendInTx).not.toHaveBeenCalled();
   });
 
+  // 134-s2 — the erasure sentinel domain is never a real address.
+  it('invalid-input: an erased.invalid address is refused before the tx', async () => {
+    const deps = makeDeps();
+
+    const result = await createUser({ ...baseInput, email: 'Someone@Erased.Invalid' }, deps);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe('invalid-input');
+    expect(deps.users.findByEmailInTx).not.toHaveBeenCalled();
+  });
+
   it('email-taken: dup check inside tx throws TxAbort — no writes executed', async () => {
     const deps = makeDeps();
     (deps.users.findByEmailInTx as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
