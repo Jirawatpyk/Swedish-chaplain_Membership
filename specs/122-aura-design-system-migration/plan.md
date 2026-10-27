@@ -632,4 +632,14 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
   - Canvas v135–v136: new board `Portal-broadcast-new-tier`. The categories option is moved last, and the copy now says "category", on `Portal-broadcast-new` (+ mobile EN/TH/SV), `-rules` (+ mobile set), `-over-limit` (+ mobile), `Admin-broadcast-new` and the `Portal-broadcasts` history set.
   - Parity, text against text: https://claude.ai/artifact/XfHC3J6vQu2tSs16dPpbXZ. Fixture `segment=tier`, production build at `1c00a5d`, EN/TH/SV at 1440/390/320, light and dark. Every element matches. There is no sideways scroll, and the phone rows are 45px.
   - The board's "Event attendees (last 90 days)" is shorter than the app's label. That predates this PR.
-- **Pending:** relay R96 (e2e T084 and the manual checks).
+- **R96: pass** at `acb6b30`.
+  - e2e: chromium 20/20 and mobile-chrome 20/20 (`broadcast-compose-and-submit` 15/15, `admin-proxy-submit` 5/5).
+  - Member compose, at 1440 and 390:
+    - the option is last;
+    - no count request is made until a box is ticked;
+    - Corporate counts `tier=corporate`;
+    - unticking shows the inline message, described by the group, and turns Submit off;
+    - both submit `['corporate','partnership']`, which returns 200.
+  - Staff compose: the same checks; Partnership submits.
+  - Direct calls: `premium`, a repeat and a trailing space get 400 on the count (`invalid_query`) and on submit (`invalid_body`).
+  - TH and SV match the parity page.
