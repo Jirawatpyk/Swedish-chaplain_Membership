@@ -173,6 +173,14 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     await tenant.cleanup().catch(() => {});
   });
 
+  // 135 — row-level cases sweep ONLY this file's tenant. The global route
+  // also sweeps every other concurrent run's tenant, and with
+  // `FOR UPDATE SKIP LOCKED` another run could hold (and later commit) this
+  // file's rows, so assertions raced. The route itself keeps one smoke test.
+  function sweepOwnTenant(): Promise<{ redacted: number }> {
+    return redactExpiredMemberDocumentsForTenant(tenant.ctx, null);
+  }
+
   function callCron(): Promise<Response> {
     const req = new NextRequest(
       'http://localhost/api/cron/invoicing/redact-expired-member-invoices',
@@ -632,16 +640,21 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     return extractPdfText(bytes);
   }
 
+  it('the cron route answers 200 with the sweep summary (route smoke, no row assertions)', async () => {
+    const res = await callCron();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { redactedCount: number; tenantsSwept: number };
+    expect(typeof body.redactedCount).toBe('number');
+    expect(body.tenantsSwept).toBeGreaterThanOrEqual(1);
+  });
+
   it('tombstones an ERASED member 11y-old MEMBERSHIP invoice + records the audit; financial fields preserved', async () => {
     const planId = await seedPlan();
     const memberId = await seedErasedMember(planId);
     const { invoiceId, pdfKey } = await seedIssuedMembershipInvoice(memberId, planId, '2014-01-01');
 
-    const res = await callCron();
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { redactedCount: number; tenantsSwept: number };
-    expect(body.redactedCount).toBeGreaterThanOrEqual(1);
-    expect(body.tenantsSwept).toBeGreaterThanOrEqual(1);
+    const { redacted } = await sweepOwnTenant();
+    expect(redacted).toBeGreaterThanOrEqual(1);
 
     // Snapshot tombstoned (PII → '[REDACTED]' / '' / null).
     const snap = await readSnapshot(invoiceId);
@@ -696,7 +709,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     const memberId = await seedErasedMember(planId);
     const { invoiceId } = await seedMatchedMemberEventInvoice(memberId, '2014-01-01');
 
-    await callCron();
+    await sweepOwnTenant();
 
     const snap = await readSnapshot(invoiceId);
     expect(snap.legal_name).toBe('[REDACTED]');
@@ -717,7 +730,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     const memberId = await seedActiveMember(planId);
     const { invoiceId } = await seedIssuedMembershipInvoice(memberId, planId, '2014-01-01');
 
-    await callCron();
+    await sweepOwnTenant();
 
     const snap = await readSnapshot(invoiceId);
     expect(snap.legal_name).toBe('Erased Member Co Ltd');
@@ -730,7 +743,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     const memberId = await seedErasedMember(planId);
     const { invoiceId } = await seedIssuedMembershipInvoice(memberId, planId, '2024-01-01');
 
-    await callCron();
+    await sweepOwnTenant();
 
     const snap = await readSnapshot(invoiceId);
     expect(snap.legal_name).toBe('Erased Member Co Ltd');
@@ -753,8 +766,8 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     const memberId = await seedErasedMember(planId);
     const { invoiceId } = await seedIssuedMembershipInvoice(memberId, planId, '2014-01-01');
 
-    await callCron();
-    await callCron();
+    await sweepOwnTenant();
+    await sweepOwnTenant();
 
     expect(await auditPayloadsFor(invoiceId)).toHaveLength(1);
   }, 180_000);
@@ -777,7 +790,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
       );
     });
 
-    await callCron();
+    await sweepOwnTenant();
 
     // The draft row is UNTOUCHED — the eligible-query's `i.status <> 'draft'`
     // clause excludes it even though the member is erased + the invoice is >10y.
@@ -806,7 +819,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     const { invoiceId } = await seedIssuedMembershipInvoice(memberId, planId, '2014-01-01');
     const { creditNoteId, pdfKey } = await seedCreditNote(invoiceId, '2014-02-01');
 
-    await callCron();
+    await sweepOwnTenant();
 
     const { snapshot, piiBlobPurgedAt } = await readCreditNoteRow(creditNoteId);
     expect(snapshot.legal_name).toBe('[REDACTED]');
@@ -841,7 +854,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     const { invoiceId } = await seedIssuedMembershipInvoice(memberId, planId, '2014-01-01');
     const { creditNoteId } = await seedCreditNote(invoiceId, '2014-02-01');
 
-    await callCron();
+    await sweepOwnTenant();
 
     const { snapshot } = await readCreditNoteRow(creditNoteId);
     expect(snapshot.legal_name).toBe(BUYER.legal_name);
@@ -871,7 +884,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     await tombstoneInvoiceSnapshotUnpurged(invoiceId);
     expect(await readInvoicePiiBlobPurgedAt(invoiceId)).toBeNull();
 
-    await callCron();
+    await sweepOwnTenant();
 
     // The retry purge ran: the blob delete WAS called for the row's key …
     const deletedKeys = blobDeleteSpy.mock.calls.map((c) => c[0]);
@@ -902,7 +915,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
       expect(piiBlobPurgedAt).toBeNull();
     }
 
-    await callCron();
+    await sweepOwnTenant();
 
     const deletedKeys = blobDeleteSpy.mock.calls.map((c) => c[0]);
     expect(deletedKeys).toContain(pdfKey);
@@ -928,7 +941,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     // Credit note <10y → NOT eligible (its own retention window has not elapsed).
     const { creditNoteId } = await seedCreditNote(invoiceId, '2024-02-01');
 
-    await callCron();
+    await sweepOwnTenant();
 
     // The PARENT invoice was redacted (proves the cron ran + the member is eligible).
     const invSnap = await readSnapshot(invoiceId);
@@ -953,7 +966,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     const { invoiceId } = await seedIssuedMembershipInvoice(memberId, planId, '2014-01-01');
 
     const before = await readInvoiceTaxFields(invoiceId);
-    await callCron();
+    await sweepOwnTenant();
     const after = await readInvoiceTaxFields(invoiceId);
 
     // The §87 sequential-numbering record + the §86/4 amounts + the SELLER
@@ -992,7 +1005,7 @@ describe('redact-expired-member-invoices — invoice arm (COMP-1 US3-B, live Neo
     const pdfBefore = await reRenderInvoicePdfTextFromSnapshot(invoiceId);
     expect(pdfBefore).toContain(BUYER.legal_name);
 
-    await callCron();
+    await sweepOwnTenant();
 
     // AFTER: re-render from the (now tombstoned) snapshot → the buyer is gone,
     // replaced by '[REDACTED]'. This proves the retained tax-document COPY is
