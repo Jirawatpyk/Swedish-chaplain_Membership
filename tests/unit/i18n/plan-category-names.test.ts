@@ -21,16 +21,27 @@ describe.each(Object.entries(LOCALES))('%s: a membership category has one name',
       m.admin.plans.filters.category[category],
       m.admin.plans.create.options.planCategory[category],
       m.portal.broadcasts.list.tierCode[category],
-      ...(category === 'partnership' ? [m.admin.renewals.tierBadge.partnership] : []),
+      ...(category === 'partnership'
+        ? [
+            m.admin.renewals.tierBadge.partnership,
+            m.admin.renewals.settings.schedules.tabs.partnership,
+            m.admin.renewals.tasks.tierBucket.partnership,
+          ]
+        : []),
     ]);
     expect([...names]).toHaveLength(1);
   });
 });
 
 describe('th', () => {
-  it('says พันธมิตร, never พาร์ทเนอร์ชิป, and does not call a category นิติบุคคล', () => {
-    const json = JSON.stringify(th);
-    expect(json).not.toContain('พาร์ทเนอร์ชิป');
-    expect(th.admin.plans.create.options.planCategory.corporate).not.toBe('นิติบุคคล');
+  it('says พันธมิตร, never พาร์ทเนอร์ชิป or พาร์ตเนอร์ชิป (events included)', () => {
+    const strings = (v: unknown): string[] =>
+      typeof v === 'string' ? [v] : v && typeof v === 'object' ? Object.values(v).flatMap(strings) : [];
+    expect(strings(th).filter((s) => /พาร์[ทต]เนอร์/.test(s))).toEqual([]);
+  });
+
+  it('names the categories in Thai where the copy mentions them', () => {
+    expect(th.admin.members.bundleChangeWarning.description).not.toMatch(/corporate|partnership/i);
+    expect(th.admin.events.detail.toggles.confirmFlagCulturalBody).not.toContain('Corporate');
   });
 });
