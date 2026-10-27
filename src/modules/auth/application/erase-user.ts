@@ -107,6 +107,7 @@ export interface EraseUserDeps {
     UserRepo,
     | 'anonymiseErasedInTx'
     | 'scrubEmailChangeTokensAllTenantsInTx'
+    | 'cancelLoginOutboxAllTenantsInTx'
     | 'findById'
     | 'countActiveAdministrators'
   >;
@@ -150,6 +151,11 @@ export async function eraseUser(
 
   try {
     const outcome = await db.transaction(async (tx) => {
+      // 0. 134-s2 — cancel this login's PENDING mail in EVERY tenant (a
+      //    verification / revert notice, an invitation). FIRST: an invitation
+      //    row is matched on the login's real address, which step 1 overwrites.
+      await deps.users.cancelLoginOutboxAllTenantsInTx(tx, userId);
+
       // 1. Scrub the users row. Plain `{ erased }` (NOT a Result) — a DB error
       //    THROWS and is caught by the outer try/catch. `erased:false` just
       //    means no row matched the id (already gone) — handled as success.

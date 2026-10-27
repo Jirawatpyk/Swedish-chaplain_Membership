@@ -54,6 +54,7 @@ import {
 } from '@/modules/auth/domain/branded';
 import type { Role } from '@/modules/auth/domain/role';
 import type { UserAccount } from '@/modules/auth/domain/user';
+import { ERASED_USER_EMAIL_DOMAIN } from '@/modules/auth/domain/erased-user-email';
 // Type-only — see sign-in.ts for the Clean Architecture rationale.
 import type { UserRepo } from '@/modules/auth/infrastructure/db/user-repo';
 import type { TokenRepo } from '@/modules/auth/infrastructure/db/token-repo';
@@ -189,6 +190,16 @@ export async function createUser(
   try {
     normalisedEmail = asEmailAddress(input.email);
   } catch {
+    return err({ code: 'invalid-input' });
+  }
+  // 134-s2 — the erasure sentinel domain is never a real address; an invite on
+  // it could collide with (and so block) a future erasure's tombstone. Not in
+  // `asEmailAddress`: that brand also reads stored rows, erased ones included.
+  const domain = normalisedEmail.slice(normalisedEmail.lastIndexOf('@') + 1);
+  if (
+    domain === ERASED_USER_EMAIL_DOMAIN ||
+    domain.endsWith(`.${ERASED_USER_EMAIL_DOMAIN}`)
+  ) {
     return err({ code: 'invalid-input' });
   }
 

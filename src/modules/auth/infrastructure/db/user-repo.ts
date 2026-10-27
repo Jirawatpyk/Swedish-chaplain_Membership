@@ -33,6 +33,7 @@ import {
   type UserId,
 } from '@/modules/auth/domain/branded';
 import type { UserAccount, UserStatus } from '@/modules/auth/domain/user';
+import { erasedUserEmail } from '@/modules/auth/domain/erased-user-email';
 import type { Role } from '@/modules/auth/domain/role';
 
 /** Filter shape used by the admin users list page (search + role + status). */
@@ -282,6 +283,18 @@ export interface UserRepo {
     userId: UserId,
     now: Date,
   ): Promise<number>;
+  /**
+   * 134-s2 — DELETE this login's PENDING `notifications_outbox` rows in EVERY
+   * tenant, so no queued mail still goes to the real address after the global
+   * `eraseUser`. Login-bound only: the email-change / verification notices
+   * carry `context_data.userId`; an invitation carries no id, so it is matched
+   * on the login's CURRENT address — call this BEFORE `anonymiseErasedInTx`
+   * overwrites it. A tenant's own business mail (invoices, broadcasts) to the
+   * same address is not the login's and is left alone, as are sent rows.
+   * Deliberately cross-tenant (D-029 exemption): runs on the owner-role tx.
+   * Returns the number of rows removed.
+   */
+  cancelLoginOutboxAllTenantsInTx(tx: DbTx, userId: UserId): Promise<number>;
   setPasswordHash(id: UserId, hash: PasswordHash, now: Date): Promise<void>;
   /** Tx-scoped variant of `setPasswordHash` (Path C — A3 / A4). */
   setPasswordHashInTx(
@@ -566,7 +579,7 @@ export const userRepo: UserRepo = {
   },
 
   async scrubEmailChangeTokensAllTenantsInTx(tx, userId, now) {
-    const sentinel = `erased+${userId}@erased.invalid`;
+    const sentinel = erasedUserEmail(userId);
     const scrubbed = await tx
       .update(emailChangeTokens)
       .set({
@@ -577,6 +590,32 @@ export const userRepo: UserRepo = {
       .where(eq(emailChangeTokens.userId, userId))
       .returning({ id: emailChangeTokens.id });
     return scrubbed.length;
+  },
+
+  async cancelLoginOutboxAllTenantsInTx(tx, userId) {
+    const removed = await tx
+      .delete(notificationsOutbox)
+      .where(
+        and(
+          eq(notificationsOutbox.status, 'pending'),
+          or(
+            and(
+              inArray(notificationsOutbox.notificationType, [
+                'email_verification',
+                'email_verification_resent',
+                'email_change_revert',
+              ]),
+              sql`${notificationsOutbox.contextData}->>'userId' = ${userId}`,
+            ),
+            and(
+              eq(notificationsOutbox.notificationType, 'member_invitation'),
+              sql`lower(${notificationsOutbox.toEmail}) = (SELECT lower(${users.email}) FROM ${users} WHERE ${users.id} = ${userId})`,
+            ),
+          ),
+        ),
+      )
+      .returning({ id: notificationsOutbox.id });
+    return removed.length;
   },
 
   async anonymiseErasedInTx(tx, userId) {
@@ -591,11 +630,9 @@ export const userRepo: UserRepo = {
     // (a) the app is invitation-only — there is no self-registration route to
     // plant such an address, and (b) `userId` is an unguessable UUIDv4, so an
     // attacker cannot pre-register the exact sentinel for a future target.
-    // Rejecting the reserved `@erased.invalid` domain at the email-collection
-    // boundary (invite / member-create) is a documented follow-up, out of
-    // Task 2 scope — it touches those routes plus a cross-module email-policy
-    // decision (the sentinel domain is owned by the members context).
-    const sentinelEmail = `erased+${userId}@erased.invalid`;
+    // Since 134 the reserved `erased.invalid` domain is also refused where an
+    // address is collected (members `asEmail`, auth `createUser`).
+    const sentinelEmail = erasedUserEmail(userId);
     const updated = await tx
       .update(users)
       .set({
