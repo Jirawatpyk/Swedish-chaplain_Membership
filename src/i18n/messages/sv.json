@@ -6856,7 +6856,7 @@
         "rules": {
           "line": "Regler för utskick",
           "readAgain": "Läs igen",
-          "hide": "Dölj"
+          "toastAcknowledgeFailedHint": "Försök igen — reglerna visas här tills din bekräftelse har registrerats."
         },
         "templatePicker": {
           "triggerLabel": "Börja från en mall",

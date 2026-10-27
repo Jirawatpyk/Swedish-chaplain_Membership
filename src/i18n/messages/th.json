@@ -6854,9 +6854,9 @@
         "title": "เขียน E-Blast",
         "subtitle": "ส่งข้อความไปยังสมาชิกของหอการค้า",
         "rules": {
-          "line": "กติกาการส่ง E-Blast",
+          "line": "ข้อกำหนดการส่ง E-Blast",
           "readAgain": "อ่านอีกครั้ง",
-          "hide": "ซ่อน"
+          "toastAcknowledgeFailedHint": "กรุณาลองใหม่ — ข้อกำหนดจะยังแสดงอยู่ที่นี่จนกว่าจะบันทึกการรับทราบสำเร็จ"
         },
         "templatePicker": {
           "triggerLabel": "เริ่มจากเทมเพลต",

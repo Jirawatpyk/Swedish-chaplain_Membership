@@ -6856,7 +6856,7 @@
         "rules": {
           "line": "E-Blast sending rules",
           "readAgain": "Read again",
-          "hide": "Hide"
+          "toastAcknowledgeFailedHint": "Please try again — the rules stay here until your acknowledgement is recorded."
         },
         "templatePicker": {
           "triggerLabel": "Start from a template",

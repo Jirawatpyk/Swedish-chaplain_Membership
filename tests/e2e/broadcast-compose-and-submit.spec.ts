@@ -513,9 +513,20 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
       expect((await ack).status()).toBe(200);
       const readAgain = rules.getByRole('button', { name: 'Read again' });
       await expect(readAgain).toBeFocused();
+      await expect(readAgain).toHaveAttribute('aria-expanded', 'false');
+      await expectNoA11yViolations(page);
       await readAgain.click();
       await expect(rules).toContainText('E-Blasts go only to people at member companies');
       await expectNoA11yViolations(page);
+    });
+
+    test('on a phone (390px): the rules sit in the Write tab and pass axe', async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await openCompose(page);
+      const rules = page.getByTestId('compose-sending-rules').filter({ visible: true });
+      await expect(rules).toContainText('Before you send E-Blasts');
+      await expectNoA11yViolations(page);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     });
   });
 });

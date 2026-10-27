@@ -7,14 +7,18 @@
  * 0071). Routed through `runInTenant` so RLS+FORCE on `members` applies, with
  * the explicit `tenant_id` predicate as the first wall (D-029, Principle I).
  */
+import { cache } from 'react';
 import { sql } from 'drizzle-orm';
 import { runInTenant } from '@/lib/db';
-import type { TenantContext } from '@/modules/tenants';
+import { asTenantContext, type TenantContext } from '@/modules/tenants';
 
-export async function readBroadcastsAcknowledgedAt(
-  tenant: TenantContext,
-  memberId: string,
-): Promise<Date | null> {
+/**
+ * React `cache()`: the layout's banner and the compose page both ask on one
+ * request, and share one read. Keyed by the tenant slug, not the context
+ * object, which each caller resolves afresh.
+ */
+const readCached = cache(async (tenantSlug: string, memberId: string): Promise<Date | null> => {
+  const tenant = asTenantContext(tenantSlug);
   const rows = (await runInTenant(tenant, async (tx) =>
     tx.execute(sql`
       SELECT broadcasts_acknowledged_at
@@ -25,4 +29,11 @@ export async function readBroadcastsAcknowledgedAt(
     `),
   )) as unknown as Array<{ broadcasts_acknowledged_at: Date | null }>;
   return rows[0]?.broadcasts_acknowledged_at ?? null;
+});
+
+export async function readBroadcastsAcknowledgedAt(
+  tenant: TenantContext,
+  memberId: string,
+): Promise<Date | null> {
+  return readCached(tenant.slug, memberId);
 }

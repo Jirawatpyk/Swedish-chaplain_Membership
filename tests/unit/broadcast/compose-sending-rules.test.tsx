@@ -86,7 +86,8 @@ describe('not yet acknowledged', () => {
     const readAgain = await screen.findByRole('button', { name: rules.readAgain });
     expect(readAgain).toHaveAttribute('aria-expanded', 'false');
     expect(document.activeElement).toBe(readAgain);
-    expect(screen.queryByText(ack.body)).toBeNull();
+    // The rules panel stays mounted (aria-controls), closed.
+    expect(screen.getByText(ack.body)).not.toBeVisible();
     expect(toast.success).toHaveBeenCalledWith(ack.toastAcknowledged, expect.anything());
     // /code-review: no router.refresh — it re-ran the whole compose page (and
     // could lose an unsaved draft). The portal banner hears an event instead.

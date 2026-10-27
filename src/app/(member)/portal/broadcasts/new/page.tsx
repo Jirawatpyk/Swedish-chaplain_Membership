@@ -282,9 +282,10 @@ export default async function ComposeBroadcastPage({
 
   // Spec 122 PR C — the company's E-Blast sending-terms acknowledgement, read
   // as the portal banner reads it. The form shows the rules in full until it
-  // is recorded, then one "Read again" line. A failed read leaves the rules
-  // out rather than failing the page: they explain, they never gate sending.
-  let acknowledgedAt: string | null | undefined;
+  // is recorded, then one "Read again" line. A failed read shows them in full
+  // rather than failing the page (the banner is hidden here, so leaving them
+  // out showed them nowhere); acknowledging again is idempotent.
+  let acknowledgedAt: string | null = null;
   try {
     const ack = await readBroadcastsAcknowledgedAt(tenant, memberId);
     acknowledgedAt = ack === null ? null : new Date(ack).toISOString();
@@ -326,9 +327,8 @@ export default async function ComposeBroadcastPage({
         initialTemplateId={selectedTemplateId}
         {...(initialSubject !== undefined ? { initialSubject } : {})}
         {...(initialBodyHtml !== undefined ? { initialBodyHtml } : {})}
-        {...(acknowledgedAt !== undefined
-          ? { acknowledgedAt, privacyPolicyUrl: env.broadcasts.privacyPolicyUrl ?? null }
-          : {})}
+        acknowledgedAt={acknowledgedAt}
+        privacyPolicyUrl={env.broadcasts.privacyPolicyUrl ?? null}
       />
     </DetailContainer>
   );
