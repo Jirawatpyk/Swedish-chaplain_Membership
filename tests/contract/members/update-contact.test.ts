@@ -337,6 +337,25 @@ describe('contract: PATCH /api/members/[memberId]/contacts/[contactId] (T071)', 
     expect(body.error.reason).toBe('email_taken');
   });
 
+  // 134-s1 — the linked login is disabled or gone (an erased login is
+  // disabled): 409 with its own code so the form explains it, not a 404.
+  it('409 on linked-user email change — linked_login_unavailable', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));
+    changeContactEmailMock.mockResolvedValueOnce(
+      err({ code: 'linked_login_unavailable' }),
+    );
+    const { PATCH } = await import(
+      '@/app/api/members/[memberId]/contacts/[contactId]/route'
+    );
+    const res = await PATCH(makeRequest({ email: 'alice@new.example' }), {
+      params: routeParams(),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error.code).toBe('linked_login_unavailable');
+  });
+
   it('500 on linked-user email change — server_error', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     contactRepoFindByIdMock.mockResolvedValueOnce(ok(stubLinkedContact));

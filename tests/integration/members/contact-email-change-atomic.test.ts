@@ -431,6 +431,53 @@ describe('change-contact-email atomic tx (T072, FR-012a)', () => {
     await deleteTestUser(conflicting);
     await deleteTestUser(seed.linkedUser);
   });
+
+  // 134-s1 — the linked login was erased (disabled + sentinel email). A real
+  // address written onto it would re-identify it, so nothing is written.
+  it('an erased linked login refuses the change and keeps its sentinel', async () => {
+    const seed = await seedMemberWithLinkedContact({
+      tenant,
+      adminUserId: admin.userId,
+    });
+    const sentinel = `erased+${seed.linkedUser.userId}@erased.invalid`;
+    await db
+      .update(users)
+      .set({ status: 'disabled', email: sentinel })
+      .where(eq(users.id, seed.linkedUser.userId));
+    const before = await countTenantRows(tenant.ctx.slug);
+    const deps = buildMembersDeps(tenant.ctx);
+
+    const result = await changeContactEmail(
+      { ...deps, tenant: tenant.ctx },
+      {
+        contactId: seed.contactId,
+        newEmailRaw: `real-${randomUUID().slice(0, 8)}@example.com`,
+        actorUserId: admin.userId,
+        requestId: `req-erased-${randomUUID().slice(0, 8)}`,
+        locale: 'en',
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('linked_login_unavailable');
+    const [userRow] = await db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, seed.linkedUser.userId))
+      .limit(1);
+    expect(userRow?.email).toBe(sentinel);
+    const [contactRow] = await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .select({ email: contacts.email })
+        .from(contacts)
+        .where(eq(contacts.contactId, seed.contactId))
+        .limit(1),
+    );
+    expect(contactRow?.email).toBe(seed.linkedUserOldEmail);
+    expect(await countTenantRows(tenant.ctx.slug)).toEqual(before);
+
+    await deleteTestUser(seed.linkedUser);
+  });
 });
 
 // Silence unused import if asUserId isn't used — kept for future assertions.
