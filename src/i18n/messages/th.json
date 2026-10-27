@@ -854,7 +854,7 @@
         "category": {
           "label": "ประเภท",
           "corporate": "องค์กร",
-          "partnership": "พาร์ทเนอร์ชิป"
+          "partnership": "พันธมิตร"
         },
         "year": "ปี",
         "search": {
@@ -874,7 +874,7 @@
         "inactive": "ไม่ใช้งาน",
         "deleted": "ถูกลบ",
         "corporate": "องค์กร",
-        "partnership": "พาร์ทเนอร์ชิป",
+        "partnership": "พันธมิตร",
         "missingTranslations": "ขาดการแปล: {locales}"
       },
       "actions": {
@@ -918,7 +918,7 @@
             "brandVisibility": "การมองเห็นแบรนด์",
             "events": "กิจกรรม",
             "additionalBenefits": "สิทธิประโยชน์เพิ่มเติม",
-            "partnershipBenefits": "สิทธิประโยชน์พาร์ทเนอร์ชิป"
+            "partnershipBenefits": "สิทธิประโยชน์พันธมิตร"
           },
           "eblastPerYear": "E-blast ต่อปี",
           "websitePageType": "ประเภทหน้าเว็บไซต์",
@@ -973,7 +973,7 @@
         },
         "options": {
           "planCategory": {
-            "corporate": "นิติบุคคล",
+            "corporate": "องค์กร",
             "partnership": "พันธมิตร"
           },
           "memberTypeScope": {
