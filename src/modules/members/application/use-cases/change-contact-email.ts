@@ -32,6 +32,8 @@
  *   - `conflict`          — new email already taken on contact OR user
  *                           (unique-index violation)
  *   - `invalid_input`     — new email fails Domain Email validation
+ *   - `linked_login_unavailable` — the linked login was erased; nothing is
+ *                           written
  *   - `server_error`      — anything else (rolled back)
  */
 
@@ -85,6 +87,7 @@ export type ChangeContactEmailError =
   | { code: 'not_found' }
   | { code: 'conflict'; reason: RepoConflictReason }
   | { code: 'invalid_input'; field: string }
+  | { code: 'linked_login_unavailable' }
   | { code: 'server_error'; cause?: unknown };
 
 export type ChangeContactEmailOutput = {
@@ -137,6 +140,19 @@ export async function changeContactEmail(
 
   try {
     const outcome = await runInTenant(deps.tenant, async (tx) => {
+      // 134-s1 — refuse BEFORE the first write (an err() inside runInTenant
+      // commits). An ERASED login (eraseUser's sentinel email): writing a real
+      // address onto it would re-identify it and disarm enableUser's sentinel
+      // guard. A merely disabled login keeps its email-correction path.
+      const statusResult = await deps.userEmails.readStatusInTx(tx, userId);
+      if (!statusResult.ok) throw new PortError(statusResult.error);
+      if (statusResult.value === null) {
+        throw new PortError({ code: 'repo.not_found' });
+      }
+      if (statusResult.value.erased) {
+        throw new LinkedLoginUnavailable();
+      }
+
       // Step (i) — contact email
       const contactUpdate = await deps.contactRepo.updateEmailInTx(
         tx,
@@ -340,6 +356,9 @@ export async function changeContactEmail(
       sessionsRevoked: outcome.sessionsRevoked,
     });
   } catch (e) {
+    if (e instanceof LinkedLoginUnavailable) {
+      return err({ code: 'linked_login_unavailable' });
+    }
     if (e instanceof PortError) {
       const re = e.repoError;
       if (re.code === 'repo.not_found') return err({ code: 'not_found' });
@@ -369,5 +388,12 @@ export async function changeContactEmail(
 class PortError extends Error {
   constructor(public readonly repoError: RepoError) {
     super(`port error: ${repoError.code}`);
+  }
+}
+
+/** 134-s1 — aborts the tx (rollback) when the linked login may not change. */
+class LinkedLoginUnavailable extends Error {
+  constructor() {
+    super('linked login was erased');
   }
 }

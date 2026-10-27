@@ -67,6 +67,7 @@ function makeDeps(): {
   emails: { enqueueInTx: ReturnType<typeof vi.fn> };
   audit: { recordInTx: ReturnType<typeof vi.fn> };
   isEmailVerified: ReturnType<typeof vi.fn>;
+  readStatusInTx: ReturnType<typeof vi.fn>;
 } {
   const invalidateActiveForUserInTx = vi.fn(async () =>
     ok({ invalidatedCount: 0 }),
@@ -77,6 +78,7 @@ function makeDeps(): {
   // The flipped gate: an erased login is email_verified=false → the pre-fix
   // path would treat it as "needs a resend".
   const isEmailVerified = vi.fn(async () => ok(false));
+  const readStatusInTx = vi.fn(async () => ok({ status: 'active', erased: false }));
 
   const deps: ResendVerificationDeps = {
     tenant,
@@ -92,6 +94,7 @@ function makeDeps(): {
     } as unknown as ResendVerificationDeps['emails'],
     userEmails: {
       isEmailVerified,
+      readStatusInTx,
     } as unknown as ResendVerificationDeps['userEmails'],
     audit: {
       recordInTx,
@@ -104,6 +107,7 @@ function makeDeps(): {
     emails: { enqueueInTx },
     audit: { recordInTx },
     isEmailVerified,
+    readStatusInTx,
   };
 }
 
@@ -135,6 +139,30 @@ describe('resendVerificationEmail — erased/removed-contact guard (FIX A)', () 
     // (the removed-contact guard short-circuits before it).
     expect(runInTenant).not.toHaveBeenCalled();
     expect(isEmailVerified).not.toHaveBeenCalled();
+    expect(tokens.invalidateActiveForUserInTx).not.toHaveBeenCalled();
+    expect(tokens.insertInTx).not.toHaveBeenCalled();
+    expect(emails.enqueueInTx).not.toHaveBeenCalled();
+    expect(audit.recordInTx).not.toHaveBeenCalled();
+  });
+});
+
+// 134-s1 (security review LOW-4) — another tenant's still-live contact linked
+// to a login that was erased elsewhere. Erasure set email_verified=false, so the
+// "already verified" gate passes; the login gate (FOR UPDATE, inside the tx)
+// refuses before any token or outbox row is written.
+describe('resendVerificationEmail — erased linked login (134-s1)', () => {
+  it('refuses with not_eligible/login_erased and writes nothing', async () => {
+    const { deps, tokens, emails, audit, readStatusInTx } = makeDeps();
+    (deps.contactRepo.findById as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      ok({ ...erasedContact, removedAt: null }),
+    );
+    readStatusInTx.mockResolvedValueOnce(ok({ status: 'disabled', erased: true }));
+
+    const result = await resendVerificationEmail(deps, input);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error).toEqual({ code: 'not_eligible', reason: 'login_erased' });
     expect(tokens.invalidateActiveForUserInTx).not.toHaveBeenCalled();
     expect(tokens.insertInTx).not.toHaveBeenCalled();
     expect(emails.enqueueInTx).not.toHaveBeenCalled();

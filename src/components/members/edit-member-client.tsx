@@ -181,6 +181,13 @@ export function EditMemberClient({ member, plans, primaryContact }: Props) {
         message: t('errors.emailTaken'),
       });
       toast.error(t('errors.emailTaken'));
+    } else if (res.status === 409 && code === 'linked_login_unavailable') {
+      // 134-s1 — the contact's portal login was erased.
+      setServerFieldError({
+        field: 'primary_contact.email',
+        message: t('errors.linkedLoginUnavailable'),
+      });
+      toast.error(t('errors.linkedLoginUnavailable'));
     } else if (res.status === 404) {
       toast.error(t('errors.contactNotFound'));
     } else if (

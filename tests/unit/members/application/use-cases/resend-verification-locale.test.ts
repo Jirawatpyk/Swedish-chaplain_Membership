@@ -50,6 +50,7 @@ function makeDeps(preferredLanguage: 'en' | 'th' | 'sv') {
     emails: { enqueueInTx } as unknown as ResendVerificationDeps['emails'],
     userEmails: {
       isEmailVerified: vi.fn(async () => ok(false)),
+      readStatusInTx: vi.fn(async () => ok({ status: 'active', erased: false })),
     } as unknown as ResendVerificationDeps['userEmails'],
     audit: {
       recordInTx: vi.fn(async () => ok(undefined)),
