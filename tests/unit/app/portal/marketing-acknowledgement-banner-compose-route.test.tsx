@@ -5,7 +5,7 @@
  * never shown twice on one page. Every other portal page is unchanged.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import { AcknowledgementBannerClient } from '@/app/(member)/portal/_components/marketing-acknowledgement-banner-client';
@@ -43,5 +43,19 @@ describe('the portal acknowledgement banner on the compose page', () => {
     pathname.current = path;
     renderBanner();
     expect(screen.getByTestId('broadcasts-acknowledge-banner')).toBeInTheDocument();
+  });
+});
+
+describe('after the compose page records the acknowledgement', () => {
+  it('the banner hides on the next page without a refresh', async () => {
+    const { announceBroadcastsAcknowledged, resetAcknowledgedForTests } = await import(
+      '@/components/broadcast/acknowledgement/use-acknowledge-broadcasts-terms'
+    );
+    pathname.current = '/portal/benefits';
+    renderBanner();
+    expect(screen.getByTestId('broadcasts-acknowledge-banner')).toBeInTheDocument();
+    act(() => announceBroadcastsAcknowledged());
+    expect(screen.queryByTestId('broadcasts-acknowledge-banner')).toBeNull();
+    resetAcknowledgedForTests();
   });
 });

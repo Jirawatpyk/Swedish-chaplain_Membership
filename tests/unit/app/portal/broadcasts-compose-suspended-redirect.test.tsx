@@ -181,10 +181,13 @@ describe('/portal/broadcasts/new — membership-access + quota redirect (059-mem
       expect(capturedComposeProps).toMatchObject({ acknowledgedAt: null });
     });
 
-    it('a failed read leaves the rules out instead of failing the page', async () => {
+    // PDPA L-1 / UX L4 / /code-review: a failed read shows the rules in full
+    // (the banner is hidden here, so leaving them out showed them nowhere).
+    // Acknowledging again is harmless: the route is idempotent.
+    it('a failed read shows the rules in full instead of failing the page', async () => {
       readBroadcastsAcknowledgedAt.mockRejectedValue(new Error('neon: connection reset'));
       render((await renderPage()) as React.ReactElement);
-      expect(capturedComposeProps).not.toHaveProperty('acknowledgedAt');
+      expect(capturedComposeProps).toMatchObject({ acknowledgedAt: null });
     });
   });
 
