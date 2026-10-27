@@ -7104,6 +7104,11 @@
           "audience": "Audience"
         },
         "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
+        "audienceTier": "Specific membership tier: {tiers}",
+        "tierCode": {
+          "corporate": "Corporate",
+          "partnership": "Partnership"
+        },
         "audience": {
           "all_members": "All members",
           "tier": "Specific membership tier",

@@ -227,8 +227,8 @@ describe('U37 — the history renders as a card list below md', () => {
   // The stored codes are `plan_category` values; an unknown one shows as itself,
   // and malformed params fall back to the plain segment name.
   it.each([
-    ['en', ['corporate', 'partnership'], 'Specific membership tier: Corporate, Partnership · 42'],
-    ['th', ['corporate'], 'เฉพาะระดับสมาชิก: องค์กร · 42'],
+    ['en', ['corporate', 'partnership'], 'Specific membership tier: Corporate and Partnership · 42'],
+    ['th', ['corporate', 'partnership'], 'เฉพาะระดับสมาชิก: องค์กรและพาร์ทเนอร์ชิป · 42'],
     ['en', ['gold'], 'Specific membership tier: gold · 42'],
   ] as const)('names the tier categories in %s (%j)', async (locale, tierCodes, text) => {
     setHistory({ segmentType: 'tier', segmentParams: { tierCodes: [...tierCodes] } });

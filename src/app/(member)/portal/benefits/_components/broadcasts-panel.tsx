@@ -43,6 +43,7 @@ import {
   listMemberBroadcasts,
   makeComputeQuotaDeps,
   makeListMemberBroadcastsDeps,
+  recipientSegmentFromPersisted,
 } from '@/modules/broadcasts';
 import { type MemberId } from '@/modules/members';
 import type { IanaTimezone } from '@/modules/tenants';
@@ -80,6 +81,7 @@ export async function BroadcastsPanel({
   const tQuota = await getTranslations('portal.broadcasts.quota');
   const tAudience = await getTranslations('portal.broadcasts.list.audience');
   const tList = await getTranslations('portal.broadcasts.list');
+  const tTierCode = await getTranslations('portal.broadcasts.list.tierCode');
   const locale = await getLocale();
   // Tenant-TZ pin (#315 follow-up, server-UTC display class): sent/created
   // instants rendered by the UTC Vercel runtime were 7h off (wrong day past
@@ -126,6 +128,8 @@ export async function BroadcastsPanel({
     sentAt: Date | null;
     estimatedRecipientCount: number;
     segmentType: string;
+    /** A tier E-Blast's `plan_category` codes; null for any other segment or unreadable params. */
+    tierCodes: ReadonlyArray<string> | null;
   }> = [];
   let pagination = { page: 1, totalPages: 0, total: 0 };
   // Portal error states #2 — a failed history read is NOT an empty history.
@@ -242,6 +246,7 @@ export async function BroadcastsPanel({
         sentAt: b.sentAt,
         estimatedRecipientCount: b.estimatedRecipientCount,
         segmentType: b.segmentType,
+        tierCodes: tierCodesOf(b),
       }));
     } else {
       // History query failure must not crash the entire page — quota
@@ -261,6 +266,9 @@ export async function BroadcastsPanel({
     }
   }
 
+  // "Corporate and Partnership" / "องค์กรและพาร์ทเนอร์ชิป": the members of
+  // either category. The 'unit' list joins Thai with a bare space.
+  const tierList = new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' });
   // U37 — formatted ONCE for both the desktop table and the phone card list,
   // so the two representations cannot drift apart.
   const historyRows: ReadonlyArray<BroadcastHistoryRowView> = history.map((row) => {
@@ -280,9 +288,22 @@ export async function BroadcastsPanel({
       // locale-formatted and held to its label by no-break spaces. A segment
       // type without a label falls back to the column's word, "Audience · 130".
       audience: tList('audienceWithCount', {
-        audience: tAudience.has(row.segmentType as Parameters<typeof tAudience>[0])
-          ? tAudience(row.segmentType as Parameters<typeof tAudience>[0])
-          : tList('columns.audience'),
+        // Task #12: a tier E-Blast names its categories, "Specific membership
+        // tier: Corporate and Partnership". An unknown code shows as itself.
+        audience:
+          row.tierCodes !== null
+            ? tList('audienceTier', {
+                tiers: tierList.format(
+                  row.tierCodes.map((code) =>
+                    tTierCode.has(code as Parameters<typeof tTierCode>[0])
+                      ? tTierCode(code as Parameters<typeof tTierCode>[0])
+                      : code,
+                  ),
+                ),
+              })
+            : tAudience.has(row.segmentType as Parameters<typeof tAudience>[0])
+              ? tAudience(row.segmentType as Parameters<typeof tAudience>[0])
+              : tList('columns.audience'),
         count: row.estimatedRecipientCount,
       }),
       submitted:
@@ -518,4 +539,15 @@ export async function BroadcastsPanelView({
       ) : null}
     </section>
   );
+}
+
+/** The `plan_category` codes of a tier E-Blast, read the way the send path reads them. */
+function tierCodesOf(b: Parameters<typeof recipientSegmentFromPersisted>[0]): ReadonlyArray<string> | null {
+  if (b.segmentType !== 'tier') return null;
+  const segment = recipientSegmentFromPersisted({
+    segmentType: b.segmentType,
+    segmentParams: b.segmentParams,
+    customRecipientEmails: null,
+  });
+  return segment.ok && segment.value.kind === 'tier' ? segment.value.tierCodes : null;
 }
