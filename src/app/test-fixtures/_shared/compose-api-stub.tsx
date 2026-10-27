@@ -20,6 +20,7 @@ const STAFF_COUNT_PATH = '/api/admin/broadcasts/recipient-count';
 const STAFF_PREVIEW_PATH = '/api/admin/broadcasts/preview';
 const MEMBER_QUOTA_PATH = '/api/broadcasts/quota';
 const MEMBER_COUNT_PATH = '/api/broadcasts/recipient-count';
+const MEMBER_ACK_PATH = '/api/portal/broadcasts/acknowledge';
 const MEMBER_PREVIEW_PATH = '/api/broadcasts/preview';
 
 const json = (body: unknown): Promise<Response> =>
@@ -82,6 +83,8 @@ export function MemberComposeApiStub() {
     if (url.pathname === MEMBER_QUOTA_PATH) return json(MEMBER_COMPOSE_SAMPLE.quota);
     if (url.pathname === MEMBER_COUNT_PATH) return json({ count: 128, ceiling: 500, exceeds: false, droppedByPreference: 0 });
     if (url.pathname === MEMBER_PREVIEW_PATH) return previewResponse(init);
+    // Spec 122 PR C — "I acknowledge" on the sending rules (`?ack=none`).
+    if (url.pathname === MEMBER_ACK_PATH) return json({ acknowledgedAt: new Date().toISOString(), wasNew: true });
     return null;
   });
   return null;

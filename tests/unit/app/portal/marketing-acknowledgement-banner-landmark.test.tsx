@@ -27,6 +27,7 @@ function renderBanner(): HTMLElement {
   render(
     <NextIntlClientProvider locale="en" messages={en as Record<string, unknown>}>
       <AcknowledgementBannerClient
+        memberId="m-1"
         title={copy.title}
         body={copy.body}
         acknowledge={copy.acknowledge}

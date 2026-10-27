@@ -58,7 +58,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 const submitCalls = (): unknown[][] =>
   fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/broadcasts/submit'));
 
-function renderForm(subject = 'Nordic Leadership Breakfast'): void {
+function renderForm(subject = 'Nordic Leadership Breakfast', extra: { acknowledgedAt?: string | null; memberId?: string } = {}): void {
   render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
       <ComposeForm
@@ -67,6 +67,7 @@ function renderForm(subject = 'Nordic Leadership Breakfast'): void {
         initialSubject={subject}
         initialBodyHtml="<p>Seats are limited.</p>"
         initialQuota={INITIAL_QUOTA}
+        {...extra}
       />
     </NextIntlClientProvider>,
   );
@@ -168,5 +169,19 @@ describe('member compose — Submit asks first (T1265)', () => {
     await userEvent.setup().click(submitButton());
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(submitCalls()).toHaveLength(0);
+  });
+});
+
+// Spec 122 PR C — the sending rules explain; they never gate. With the rules
+// open and unacknowledged, Submit still asks and sends as before.
+describe('the sending rules do not gate Submit (spec 122 PR C)', () => {
+  it('with the rules unacknowledged, Submit opens the summary and confirm sends', async () => {
+    renderForm('Nordic Leadership Breakfast', { acknowledgedAt: null, memberId: 'm-1' });
+    expect(screen.getByTestId('compose-sending-rules')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(submitButton());
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: c.button.submit }));
+    await waitFor(() => expect(submitCalls()).toHaveLength(1));
   });
 });
