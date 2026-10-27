@@ -1984,6 +1984,7 @@
           "contactNotFound": "Contact not found.",
           "cannotRemovePrimary": "Cannot remove the primary contact. Promote another contact first.",
           "emailTaken": "That email address is already in use.",
+          "linkedLoginUnavailable": "This contact's portal login is disabled, so its email can't be changed. Re-enable the login first, or add the new address as another contact.",
           "invalidPhone": "Phone number must be in international format, e.g. +66812345678.",
           "partialSave": "Some changes were saved before an error occurred. Review the member and retry the rest.",
           "concurrentChange": "This member was changed by someone else. Check your entries and save again.",

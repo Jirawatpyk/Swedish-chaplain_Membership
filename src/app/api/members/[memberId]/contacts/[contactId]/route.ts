@@ -234,6 +234,18 @@ export async function PATCH(
                 },
                 { status: 409 },
               );
+            case 'linked_login_unavailable':
+              // 134-s1 — the contact's portal login is disabled or gone (an
+              // erased login is disabled), so its email cannot change.
+              return NextResponse.json(
+                {
+                  error: {
+                    code: 'linked_login_unavailable',
+                    message: 'The linked portal login is disabled.',
+                  },
+                },
+                { status: 409 },
+              );
             default:
               logger.error(
                 { requestId: ctx.requestId, err: changeResult.error },

@@ -1984,6 +1984,7 @@
           "contactNotFound": "Kontakt hittades inte.",
           "cannotRemovePrimary": "Kan inte ta bort primär kontakt. Befordra en annan kontakt först.",
           "emailTaken": "E-postadressen används redan.",
+          "linkedLoginUnavailable": "Kontaktens portalinloggning är inaktiverad, så e-postadressen kan inte ändras. Aktivera inloggningen först eller lägg till den nya adressen som en annan kontakt.",
           "invalidPhone": "Telefonnumret måste vara i internationellt format, t.ex. +66812345678.",
           "partialSave": "Vissa ändringar sparades innan ett fel uppstod. Granska medlemmen och försök igen med resten.",
           "concurrentChange": "Medlemmen har ändrats av någon annan. Kontrollera uppgifterna och spara igen.",
