@@ -66,9 +66,11 @@ function expectComposeShape(container: HTMLElement, controls = TOOLBAR_CONTROLS)
 }
 
 describe('U12 — the compose, templates and brand skeletons match their pages', () => {
-  it('member compose: a four-counter quota card, and the wrapped 44 px toolbar', async () => {
+  it('member compose: the one-line quota, and the wrapped 44 px toolbar', async () => {
     const { container } = render(PortalComposeLoading());
-    expect(container.querySelectorAll('[data-skeleton="quota-counter"]')).toHaveLength(4);
+    // Spec 122 US12d-3: the compose quota is one line with its bar.
+    expect(container.querySelector('[data-skeleton="quota-line"]')).not.toBeNull();
+    expect(container.querySelector('[data-skeleton="quota-counter"]')).toBeNull();
     expectComposeShape(container);
   });
 

@@ -12,7 +12,7 @@
  * Rendered under the REAL `en.json` so a dangling key fails here.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { NextIntlClientProvider } from 'next-intl';
 import { toast } from '@/lib/toast';
@@ -87,7 +87,12 @@ async function composeAndSubmit(): Promise<void> {
       />
     </NextIntlClientProvider>,
   );
-  await userEvent.setup().click(screen.getByRole('button', { name: /submit/i }));
+  const user = userEvent.setup();
+  await user.click(screen.getByRole('button', { name: /submit/i }));
+  // Spec 122 US12d-3: Submit asks first; confirm in the dialog.
+  await user.click(
+    within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Submit for review' }),
+  );
 }
 
 beforeAll(() => {

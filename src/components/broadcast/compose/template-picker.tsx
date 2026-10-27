@@ -25,22 +25,18 @@
  * level up in `<ComposeTemplatePickerField>`; `?template=` still works as a
  * deep link on a fresh page load, which is the only thing it was ever needed
  * for.
+ *
+ * Spec 122 US12d-3 (T1270) — on AURA's Combobox (cmdk is banned outside the
+ * legacy host): the field is the search, its list filters as the member types
+ * (AURA's Thai-aware filter), the chosen row carries the check, a starter
+ * template says so on its second line, and the box is 44 px on touch. The
+ * value stays controlled by `selectedId`, so a choice the overwrite
+ * confirmation then cancels leaves the field showing the template in use.
+ * No clear button: "Blank" is an option of its own, and clearing would ask the
+ * same question with less said.
  */
-import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command';
-import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { cn } from '@/lib/utils';
+import { Combobox } from '@jirawatpyk/aura-react';
 
 export interface TemplatePickerRow {
   readonly id: string;
@@ -67,117 +63,44 @@ export function ComposeTemplatePicker({
   disabled = false,
 }: Props): React.ReactElement | null {
   const t = useTranslations('portal.broadcasts.compose.templatePicker');
-  const [open, setOpen] = useState(false);
 
   // Hide entirely when no templates exist (FR-018 implicit — no
   // empty-dropdown UX).
   if (templates.length === 0) return null;
 
-  const selectedTemplate = templates.find((tpl) => tpl.id === selectedId);
-  const triggerLabel = selectedTemplate?.name ?? t('blankOption');
-
-  function selectTemplate(value: string): void {
-    setOpen(false);
-    onSelect(value === BLANK_VALUE ? null : value);
-  }
+  const options = [
+    // Blank always at the top — members can always start fresh.
+    { value: BLANK_VALUE, label: t('blankOption') },
+    ...templates.map((tpl) => ({
+      value: tpl.id,
+      label: tpl.name,
+      ...(tpl.isSeeded ? { description: t('starterSuffix') } : {}),
+    })),
+  ];
+  const value = selectedId !== null && templates.some((tpl) => tpl.id === selectedId)
+    ? selectedId
+    : BLANK_VALUE;
 
   return (
     // F119 T140 — no `mb-6` any more: the picker is a child of the compose
-    // form's own `space-y-6` stack now, so its old page-level bottom margin
-    // would double the gap above the editor.
-    <div className="space-y-2" data-compose-feature="template-picker">
-      <Label id="compose-template-picker-label">{t('triggerLabel')}</Label>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger
-          render={
-            <Button
-              variant="outline"
-              role="combobox"
-              aria-expanded={open}
-              aria-labelledby="compose-template-picker-label"
-              aria-describedby="compose-template-picker-help"
-              disabled={disabled}
-              className="w-full justify-between"
-            />
-          }
-        >
-          <span
-            className={cn(
-              'truncate',
-              !selectedTemplate && 'text-muted-foreground',
-            )}
-          >
-            {triggerLabel}
-          </span>
-          <ChevronsUpDownIcon
-            className="ml-2 size-4 shrink-0 opacity-50"
-            aria-hidden="true"
-          />
-        </PopoverTrigger>
-        <PopoverContent
-          className="w-[var(--anchor-width)] max-w-[calc(100vw-2rem)] p-0"
-          align="start"
-        >
-          <Command>
-            <CommandInput placeholder={t('searchPlaceholder')} />
-            <CommandList>
-              <CommandEmpty>{t('emptyMessage')}</CommandEmpty>
-              <CommandGroup>
-                {/* Blank option always at the top — chamber members can
-                    always start fresh even when templates exist. */}
-                <CommandItem
-                  value={BLANK_VALUE}
-                  keywords={[t('blankOption')]}
-                  onSelect={() => selectTemplate(BLANK_VALUE)}
-                  className="flex cursor-pointer items-center gap-2"
-                >
-                  <CheckIcon
-                    className={cn(
-                      'size-4',
-                      selectedId === null ? 'opacity-100' : 'opacity-0',
-                    )}
-                    aria-hidden="true"
-                  />
-                  <span className="text-muted-foreground">
-                    {t('blankOption')}
-                  </span>
-                </CommandItem>
-                {templates.map((tpl) => (
-                  <CommandItem
-                    key={tpl.id}
-                    value={tpl.id}
-                    keywords={[tpl.name]}
-                    onSelect={() => selectTemplate(tpl.id)}
-                    className="flex cursor-pointer items-center justify-between gap-2"
-                  >
-                    <span className="flex items-center gap-2">
-                      <CheckIcon
-                        className={cn(
-                          'size-4',
-                          selectedId === tpl.id ? 'opacity-100' : 'opacity-0',
-                        )}
-                        aria-hidden="true"
-                      />
-                      <span>{tpl.name}</span>
-                    </span>
-                    {tpl.isSeeded ? (
-                      <span
-                        className="ml-auto inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold border border-warning bg-warning-surface text-warning"
-                        aria-label={t('starterBadgeAria')}
-                      >
-                        {t('starterSuffix')}
-                      </span>
-                    ) : null}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-      <p id="compose-template-picker-help" className="text-caption">
-        {t('helpText')}
-      </p>
+    // form's own `space-y-6` stack, so a page-level margin would double the gap.
+    <div data-compose-feature="template-picker" className="sm:max-w-md">
+      <Combobox
+        id="compose-template-picker"
+        touchHeight
+        label={t('triggerLabel')}
+        hint={t('helpText')}
+        placeholder={t('searchPlaceholder')}
+        emptyText={t('emptyMessage')}
+        options={options}
+        value={value}
+        clearable={false}
+        onChange={(next) => {
+          if (next === null) return;
+          onSelect(next === BLANK_VALUE ? null : next);
+        }}
+        disabled={disabled}
+      />
     </div>
   );
 }
