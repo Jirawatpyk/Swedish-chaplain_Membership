@@ -7105,6 +7105,11 @@
           "audience": "Målgrupp"
         },
         "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
+        "audienceTier": "Specifik medlemsnivå: {tiers}",
+        "tierCode": {
+          "corporate": "Företag",
+          "partnership": "Partnerskap"
+        },
         "audience": {
           "all_members": "Alla medlemmar",
           "tier": "Specifik medlemsnivå",

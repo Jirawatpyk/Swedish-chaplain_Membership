@@ -89,7 +89,14 @@ vi.mock('@/modules/members/members-deps', () => ({
 
 const computeQuotaCounter = vi.hoisted(() => vi.fn());
 const listMemberBroadcasts = vi.hoisted(() => vi.fn());
-vi.mock('@/modules/broadcasts', () => ({
+vi.mock('@/modules/broadcasts', async () => ({
+  // The real reader of persisted segments: the panel names a tier E-Blast's
+  // categories through it, malformed params included.
+  recipientSegmentFromPersisted: (
+    await vi.importActual<typeof import('@/modules/broadcasts/domain/recipient-segment')>(
+      '@/modules/broadcasts/domain/recipient-segment',
+    )
+  ).recipientSegmentFromPersisted,
   computeQuotaCounter,
   listMemberBroadcasts,
   makeComputeQuotaDeps: () => ({}),
@@ -114,7 +121,9 @@ function setQuota(remaining: number): void {
   });
 }
 
-function setHistory(row: { segmentType?: string } = {}): void {
+function setHistory(
+  row: { segmentType?: string; segmentParams?: Record<string, unknown> | null } = {},
+): void {
   listMemberBroadcasts.mockResolvedValue({
     page: 1,
     totalPages: 1,
@@ -128,6 +137,8 @@ function setHistory(row: { segmentType?: string } = {}): void {
         sentAt: new Date('2026-09-22T14:10:00Z'),
         estimatedRecipientCount: 42,
         segmentType: 'all_members',
+        segmentParams: null,
+        customRecipientEmails: null,
         ...row,
       },
     ],
@@ -211,6 +222,34 @@ describe('U37 — the history renders as a card list below md', () => {
     const table = screen.getByRole('table');
     expect(within(table).getAllByRole('cell')[2]).toHaveTextContent(text);
   });
+
+  // Task #12 (spec 122 follow-up, PR B): a tier E-Blast names its categories.
+  // The stored codes are `plan_category` values; an unknown one shows as itself,
+  // and malformed params fall back to the plain segment name.
+  it.each([
+    ['en', ['corporate', 'partnership'], 'Specific membership tier: Corporate and Partnership · 42'],
+    ['th', ['corporate', 'partnership'], 'เฉพาะระดับสมาชิก: องค์กรและพันธมิตร · 42'],
+    ['en', ['gold'], 'Specific membership tier: gold · 42'],
+    // /code-review: an Object.prototype name is not a known category, and a
+    // repeated code names its category once.
+    ['en', ['constructor'], 'Specific membership tier: constructor · 42'],
+    ['en', ['corporate', 'corporate'], 'Specific membership tier: Corporate · 42'],
+  ] as const)('names the tier categories in %s (%j)', async (locale, tierCodes, text) => {
+    setHistory({ segmentType: 'tier', segmentParams: { tierCodes: [...tierCodes] } });
+    await renderPanel(locale);
+    const table = screen.getByRole('table');
+    expect(within(table).getAllByRole('cell')[2]).toHaveTextContent(text);
+  });
+
+  it.each([[{}], [{ tierCodes: [42] }], [null]])(
+    'a tier E-Blast with unreadable params keeps the plain segment name (%j)',
+    async (segmentParams) => {
+      setHistory({ segmentType: 'tier', segmentParams });
+      await renderPanel('en');
+      const table = screen.getByRole('table');
+      expect(within(table).getAllByRole('cell')[2]).toHaveTextContent(/^Specific membership tier · 42$/);
+    },
+  );
 
   it('an audience without a label still says what the number is', async () => {
     setHistory({ segmentType: 'some_future_segment' });

@@ -90,7 +90,7 @@ export function BroadcastHistoryCardList({
                 </StatusPill>
                 <span className="aura-text-caption text-[var(--aura-fg-secondary)]">
                   {/* Task #6 (board `Portal-broadcasts-mobile`): "All members · 130". */}
-                  <span className="tabular-nums">{row.audience}</span>
+                  <span className="break-words tabular-nums">{row.audience}</span>
                   {/* Dates never break mid-value ("15 ต.ค. 2569", "15 okt. 2026"). */}
                   {row.submitted !== '—' ? (
                     <>
