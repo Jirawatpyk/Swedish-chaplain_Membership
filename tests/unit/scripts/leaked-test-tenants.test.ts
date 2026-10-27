@@ -13,7 +13,7 @@ import {
 describe('deleteStatementsFor (135)', () => {
   it('a trigger-guarded table disables its trigger only when allowed', () => {
     const allowed = deleteStatementsFor('broadcast_deliveries', true);
-    expect(allowed.some((s) => s.startsWith('ALTER TABLE'))).toBe(true);
+    expect(allowed?.some((s) => s.startsWith('ALTER TABLE'))).toBe(true);
 
     const refused = deleteStatementsFor('broadcast_deliveries', false);
     expect(refused).toBeNull();

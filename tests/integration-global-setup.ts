@@ -15,9 +15,19 @@
  *   - only non-member roles (the fan-out reads staff);
  *   - disabled, not deleted (21 FKs reference users).
  * Refuses a blocklisted (prod) host, like the per-file guard.
+ *
+ * Then deletes the rows of leaked `test-*` TENANTS (135): platform crons
+ * enumerate every tenant, so each leaked one slows them and every test that
+ * drives one (168 on 2026-10-27 timed out the redact crons under pre-push).
+ * Same age filter — a tenant whose newest row is younger belongs to a run in
+ * progress. Unlike the operator script it never disables a trigger (that lock
+ * would stall other sessions on the shared branch) and skips tenants already
+ * drained down to the refund ↔ credit-note cycle. Hygiene only: a failure is
+ * logged and the run goes on.
  */
 import postgres from 'postgres';
 import { assertDbHostNotBlocklisted } from './helpers/db-host-guard';
+import { sweepLeakedTestTenants } from '../scripts/lib/leaked-test-tenants';
 
 const STALE_HOURS = 6;
 
@@ -38,6 +48,28 @@ export default async function disableStaleLeakedTestStaff(): Promise<void> {
     `;
     if (rows.length > 0) {
       console.warn(`[integration-global-setup] disabled ${rows.length} leaked test staff user(s) older than ${STALE_HOURS} h`);
+    }
+
+    const started = Date.now();
+    try {
+      const r = await sweepLeakedTestTenants(sql, {
+        maxAgeHours: STALE_HOURS,
+        apply: true,
+        includeUndatable: false,
+        allowTriggerDisable: false,
+        skipStuckOnCycle: true,
+      });
+      if (r.eligible.length > 0) {
+        console.warn(
+          `[integration-global-setup] swept ${r.fullyCleaned}/${r.eligible.length} leaked test tenant(s) ` +
+            `older than ${STALE_HOURS} h in ${Date.now() - started} ms` +
+            (r.stuck.length > 0 ? `; ${r.stuck.length} left rows (run scripts/cleanup-leaked-test-tenants.ts)` : ''),
+        );
+      }
+    } catch (e) {
+      console.warn(
+        `[integration-global-setup] leaked test-tenant sweep failed (${e instanceof Error ? e.constructor.name : 'unknown'}); continuing`,
+      );
     }
   } finally {
     await sql.end({ timeout: 5 });
