@@ -63,7 +63,9 @@ export function ImageAltDialog({
   const tUpload = useTranslations('portal.broadcasts.compose.imageUpload');
   const [value, setValue] = useState<string>('');
   const [error, setError] = useState<AltError>(null);
-  const formId = `${useId()}-alt-form`;
+  const baseId = useId();
+  const formId = `${baseId}-alt-form`;
+  const noticeId = `${baseId}-public-notice`;
 
   // A fresh open is a fresh description — carrying the previous image's words
   // over is worse than an empty field, because it looks deliberate. Uses the
@@ -129,9 +131,14 @@ export function ImageAltDialog({
           submit();
         }}
       >
-        <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{tUpload('publicLinkNotice')}</p>
+        <p id={noticeId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
+          {tUpload('publicLinkNotice')}
+        </p>
         <Textarea
           label={t('fieldLabel')}
+          // PDPA review L-1: focus opens on this field, so the notice is read
+          // with it — the toolbar path reaches the file picker from here.
+          aria-describedby={noticeId}
           touchHeight
           value={value}
           rows={2}
