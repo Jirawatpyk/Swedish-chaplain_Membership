@@ -34,9 +34,9 @@ import {
 } from '@/modules/auth/domain/branded';
 import type { UserAccount, UserStatus } from '@/modules/auth/domain/user';
 import { erasedUserEmail } from '@/modules/auth/domain/erased-user-email';
+import type { Role } from '@/modules/auth/domain/role';
 
 type NotificationType = (typeof notificationsOutbox.notificationType.enumValues)[number];
-import type { Role } from '@/modules/auth/domain/role';
 
 /** Filter shape used by the admin users list page (search + role + status). */
 export interface UserListFilter {

@@ -17,3 +17,12 @@ export function erasedUserEmail(userId: string): string {
 export function isErasedUserEmail(email: string, userId: string): boolean {
   return email === erasedUserEmail(userId);
 }
+
+/** True for an address on the reserved sentinel domain or a sub-domain of it. */
+export function isOnErasedEmailDomain(email: string): boolean {
+  const domain = email.slice(email.lastIndexOf('@') + 1).toLowerCase();
+  return (
+    domain === ERASED_USER_EMAIL_DOMAIN ||
+    domain.endsWith(`.${ERASED_USER_EMAIL_DOMAIN}`)
+  );
+}

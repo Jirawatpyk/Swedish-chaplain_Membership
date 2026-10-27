@@ -61,8 +61,8 @@ export async function enableUser(
   // no password) never comes back: re-enabling it was the step that let a
   // stale revert token pass the revert sink's `disabled` guard and write the
   // erased real email back. Same enumeration-safe answer as a missing row.
-  // EXACT sentinel (not the domain): a real address on `@erased.invalid` — the
-  // domain is not yet rejected at collection — must still re-enable.
+  // EXACT sentinel (not the domain): a stored address on `@erased.invalid`
+  // that predates the 134 collection-time refusal must still re-enable.
   if (isErasedUserEmail(target.email as string, target.id)) {
     return err({ code: 'not-found' });
   }

@@ -151,10 +151,11 @@ export async function eraseUser(
 
   try {
     const outcome = await db.transaction(async (tx) => {
-      // 0. 134-s2 — cancel this login's PENDING mail in EVERY tenant (a
-      //    verification / revert notice, an invitation). FIRST: an invitation
-      //    row is matched on the login's real address, which step 1 overwrites.
-      await deps.users.cancelLoginOutboxAllTenantsInTx(tx, userId);
+      // 0. 134-s2 — remove this login's outbox rows in EVERY tenant and ANY
+      //    status (verification / revert / staff notices, invitations). FIRST:
+      //    it locks the users row, and an invitation is matched on the login's
+      //    real address, which step 1 overwrites.
+      const outboxRemoved = await deps.users.cancelLoginOutboxAllTenantsInTx(tx, userId);
 
       // 1. Scrub the users row. Plain `{ erased }` (NOT a Result) — a DB error
       //    THROWS and is caught by the outer try/catch. `erased:false` just
@@ -169,7 +170,11 @@ export async function eraseUser(
       // 2b. 133 — neutralise every email-change token of this login in EVERY
       //     tenant: consume it and scrub its plaintext addresses. A revert token
       //     carries the real email; eraseMember only reached its own tenant's.
-      await deps.users.scrubEmailChangeTokensAllTenantsInTx(tx, userId, new Date());
+      const tokensScrubbed = await deps.users.scrubEmailChangeTokensAllTenantsInTx(
+        tx,
+        userId,
+        new Date(),
+      );
 
       // 3. Audit at the TAIL (auth appendInTx never-throws — must be last so a
       //    poisoned tx cannot swallow a non-audit statement after it).
@@ -178,8 +183,10 @@ export async function eraseUser(
         actorUserId: input.actorUserId as ActorRef,
         targetUserId: userId,
         sourceIp: input.sourceIp,
-        // No PII (no email / display name) — only the opaque id.
-        summary: `user_erased ${input.userId}`,
+        // No PII (no email / display name) — only the opaque id and the
+        // cross-tenant counts (PDPA review L-1: evidence that other tenants'
+        // rows were touched).
+        summary: `user_erased ${input.userId} outbox_removed=${outboxRemoved} tokens_scrubbed=${tokensScrubbed}`,
         requestId: input.requestId,
       });
 
