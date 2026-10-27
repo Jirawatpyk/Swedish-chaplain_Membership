@@ -64,6 +64,8 @@ function makeDeps(overrides: Partial<EraseUserDeps> = {}): {
   const countActiveAdministrators = vi.fn(async () => 5);
   // 133 — cross-tenant email-change token consume (count of tokens consumed).
   const scrubEmailChangeTokensAllTenantsInTx = vi.fn(async () => 0);
+  // 134-s2 — cross-tenant cancel of the login's pending outbox rows.
+  const cancelLoginOutboxAllTenantsInTx = vi.fn(async () => 0);
   const deleteByUserIdInTx = vi.fn(async () => 2);
   const appendInTx = vi.fn(async () => undefined);
   const deps: EraseUserDeps = {
@@ -76,6 +78,7 @@ function makeDeps(overrides: Partial<EraseUserDeps> = {}): {
     users: {
       anonymiseErasedInTx,
       scrubEmailChangeTokensAllTenantsInTx,
+      cancelLoginOutboxAllTenantsInTx,
       findById,
       countActiveAdministrators,
       ...(overrides.users ?? {}),
@@ -134,6 +137,10 @@ describe('eraseUser (F1 linked-user erasure)', () => {
           order.push('consume-tokens');
           return 2;
         }),
+        cancelLoginOutboxAllTenantsInTx: vi.fn(async () => {
+          order.push('cancel-outbox');
+          return 3;
+        }),
       } as unknown as EraseUserDeps['users'],
       sessions: {
         deleteByUserIdInTx: vi.fn(async () => {
@@ -150,7 +157,9 @@ describe('eraseUser (F1 linked-user erasure)', () => {
 
     await eraseUser({ userId: USER_ID, ...META }, deps);
 
-    expect(order).toEqual(['anonymise', 'revoke', 'consume-tokens', 'audit']);
+    // 134-s2 — the outbox cancel runs FIRST: an invitation row is matched on
+    // the login's real email, which the anonymise step overwrites.
+    expect(order).toEqual(['cancel-outbox', 'anonymise', 'revoke', 'consume-tokens', 'audit']);
   });
 
   it('returns ok(erased:false) when the user row is already gone', async () => {
