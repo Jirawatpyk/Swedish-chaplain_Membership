@@ -160,3 +160,19 @@ describe('the public-link notice on the toolbar path', () => {
     );
   });
 });
+
+// Pin (PDPA re-check of L-1): the notice is heard because focus opens on the
+// field it describes. That is AURA Dialog's first-focusable rule; an upgrade
+// that moved initial focus elsewhere would silently drop the notice.
+// jsdom has no layout, so AURA's tab-stop check (`getClientRects()`) fails
+// every element and the dialog itself takes focus; a browser has rects.
+describe('initial focus', () => {
+  it('opens on the description field', async () => {
+    const rects = vi
+      .spyOn(Element.prototype, 'getClientRects')
+      .mockReturnValue([new DOMRect(0, 0, 10, 10)] as unknown as DOMRectList);
+    renderDialog();
+    await vi.waitFor(() => expect(document.activeElement).toBe(field()));
+    rects.mockRestore();
+  });
+});
