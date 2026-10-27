@@ -236,7 +236,14 @@ describe('POST /api/admin/broadcasts/proxy-submit — Wave 6 GREEN (T095)', () =
 
   // PR D (27 Oct 2026, FR-011): the recipient query matches only the two
   // plan_category values, so any other code reached nobody. It is refused.
-  it.each([[['premium']], [['Corporate']], [['corporate', 'large']]])(
+  it.each([
+    [['premium']],
+    [['Corporate']],
+    [['corporate', 'large']],
+    // Security review L-1: each category once.
+    [['corporate', 'corporate']],
+    [['corporate', 'partnership', 'corporate']],
+  ])(
     '400 invalid_body: tier code %j is not a membership category',
     async (tierCodes) => {
       requireApiPermissionMock.mockResolvedValueOnce(adminCtx);
