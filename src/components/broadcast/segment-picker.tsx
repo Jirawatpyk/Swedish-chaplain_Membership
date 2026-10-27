@@ -20,7 +20,7 @@
  * "Tier code" field, but the recipient query matches only the `plan_category`
  * values, so anything else typed there reached nobody. AURA has no checkbox
  * group yet: a fieldset and legend hold AURA Checkboxes (stand-in until AURA
- * ships one, see docs/aura-adoption.md).
+ * #183, docs/aura-adoption.md).
  */
 import { useId } from 'react';
 import { useTranslations } from 'next-intl';

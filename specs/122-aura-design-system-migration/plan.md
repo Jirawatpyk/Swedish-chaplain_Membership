@@ -592,3 +592,11 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
   - TH "ข้อกำหนดการส่ง E-Blast · อ่านอีกครั้ง" and SV "Regler för utskick · Läs igen" fit at 1440 and 390;
   - reset to NULL brings the full rules back.
 
+
+### Follow-up PR D — the tier option is a choice of membership categories (size M, plan agreed 2026-10-27)
+
+- **Picker.** `segment-picker.test.tsx`: two checkboxes in a group named "Membership categories" with the hint, and no text field; ticking both gives `['corporate','partnership']` in a fixed order; unticking the last gives `[]`; a held code that is not a category is dropped; another kind clears the codes; Thai names.
+- **Server guards.** Contract tests: submit and proxy-submit answer 400 for `['premium']`, `['Corporate']` and `['corporate','large']`, and the use case is not called; both categories are accepted. The recipient count answers 400 for `tier=premium` and `tier=corporate,Partnership`.
+- RED `c53ae90`: 13 failing. The picker fails with "Unable to find role group named Membership categories". The routes answer 200 where 400 is expected.
+- GREEN `973a5c3`. `pnpm check` green. Unit suites `tests/unit/broadcast`, `broadcasts`, `lib`, `app/portal` and contract `broadcasts`: 458 files, 5,340 tests green.
+- **AURA.** No `CheckboxGroup`. Handoff Addendum 84 (#183) asks for one; the stand-in is recorded in `docs/aura-adoption.md`.
