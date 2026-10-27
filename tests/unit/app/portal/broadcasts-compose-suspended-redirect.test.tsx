@@ -97,6 +97,13 @@ vi.mock('@/components/broadcast/compose/template-picker', () => ({
   ComposeTemplatePicker: () => null,
 }));
 
+// Spec 122 PR C — the page reads the company's E-Blast terms acknowledgement
+// through the banner's shared read and hands it to the form.
+const readBroadcastsAcknowledgedAt = vi.hoisted(() => vi.fn());
+vi.mock('@/app/(member)/portal/_components/broadcasts-acknowledgement', () => ({
+  readBroadcastsAcknowledgedAt,
+}));
+
 // 108 PR-C T079 — the mocked ComposeForm records the props the page hands it.
 let capturedComposeProps: Record<string, unknown> | null = null;
 
@@ -150,6 +157,35 @@ describe('/portal/broadcasts/new — membership-access + quota redirect (059-mem
     // it resolved server-side, so the compose copy can never hard-code them.
     render(result as React.ReactElement);
     expect(capturedComposeProps).toMatchObject({ audienceCeiling: 5000, audienceMode: 'primary_only' });
+  });
+
+  describe('spec 122 PR C — the sending-rules acknowledgement', () => {
+    beforeEach(() => {
+      loadMembershipAccess.mockResolvedValue({ access: 'full', reason: 'in_good_standing' });
+      computeQuotaCounter.mockResolvedValue({
+        ok: true,
+        value: { counter: { used: 1, reserved: 0, remaining: 9, cap: 10 }, quotaYear: 2026 },
+      });
+    });
+
+    it('passes the acknowledgement time as an ISO string', async () => {
+      readBroadcastsAcknowledgedAt.mockResolvedValue(new Date('2026-10-01T03:00:00.000Z'));
+      render((await renderPage()) as React.ReactElement);
+      expect(readBroadcastsAcknowledgedAt).toHaveBeenCalledWith({ slug: 't1' }, 'm1');
+      expect(capturedComposeProps).toMatchObject({ acknowledgedAt: '2026-10-01T03:00:00.000Z' });
+    });
+
+    it('passes null when the company has not acknowledged', async () => {
+      readBroadcastsAcknowledgedAt.mockResolvedValue(null);
+      render((await renderPage()) as React.ReactElement);
+      expect(capturedComposeProps).toMatchObject({ acknowledgedAt: null });
+    });
+
+    it('a failed read leaves the rules out instead of failing the page', async () => {
+      readBroadcastsAcknowledgedAt.mockRejectedValue(new Error('neon: connection reset'));
+      render((await renderPage()) as React.ReactElement);
+      expect(capturedComposeProps).not.toHaveProperty('acknowledgedAt');
+    });
   });
 
   // Review 2026-09-07 — surfaced by T084: an UNLINKED e2e persona reached the
