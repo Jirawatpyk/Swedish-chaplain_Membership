@@ -585,5 +585,10 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
 - **e2e** (relay R95): `broadcast-compose-and-submit.spec.ts` › "@a11y spec 122 PR C" covers desktop and 390px, the alert state, the collapsed line and the open panel.
 - **R95: fail, fixed.** Compose crashed (digest `2201223759`) for every company that had already acknowledged. The raw `tx.execute` read returns `timestamptz` as a string, because Drizzle's postgres-js driver turns that parser off, and `page.tsx` called `.toISOString()` on it. The unit mocks used a Date, and the e2e always started unacknowledged.
   - RED `22175bc`: "turns the driver string into a Date" failed with `expected '2026-10-27 09:21:00.898+00' to be an instance of Date`. It also adds an e2e "already acknowledged: compose opens on the one line".
-  - GREEN: the read returns `new Date(value)` or null. Re-run in R95b.
+  - GREEN `5946833`: the read returns `new Date(value)` or null.
+- **R95b: pass** at `5946833` (relay doc). e2e 27/27 on chromium and on mobile-chrome (`broadcast-compose-and-submit` 15/15 with the already-acknowledged case, `member-quota-history` 12/12). Manual, all pass:
+  - an acknowledged company opens compose on the line, and Read again toggles;
+  - the banner is gone on `/portal` and `/portal/benefits`;
+  - TH "ข้อกำหนดการส่ง E-Blast · อ่านอีกครั้ง" and SV "Regler för utskick · Läs igen" fit at 1440 and 390;
+  - reset to NULL brings the full rules back.
 
