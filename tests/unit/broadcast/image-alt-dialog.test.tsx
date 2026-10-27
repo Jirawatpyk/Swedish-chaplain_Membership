@@ -146,3 +146,17 @@ describe('T099 — the banner variant is the same dialog with banner copy', () =
     expect(await screen.findByRole('alert')).toBeInTheDocument();
   });
 });
+
+// PDPA review L-1 (spec 122 US12d-3 follow-up) — the toolbar's Image and
+// Banner controls open this dialog before the file picker. Focus lands on the
+// description field, so the public-link notice has to be part of what the
+// field is described by, or a screen reader starting from the toolbar never
+// hears it before choosing a file.
+describe('the public-link notice on the toolbar path', () => {
+  it.each(['inline', 'banner'] as const)('the %s description field is described by the notice', (variant) => {
+    renderDialog({ variant });
+    expect(describedText(field())).toContain(
+      enMessages.portal.broadcasts.compose.imageUpload.publicLinkNotice,
+    );
+  });
+});
