@@ -159,10 +159,18 @@ const notice = enMessages.portal.broadcasts.compose.imageUpload.publicLinkNotice
 describe('the public-link notice', () => {
   it.each(['inline', 'banner'] as const)('describes the %s dialog when a file is still to be chosen', (variant) => {
     renderDialog({ variant, uploadFollows: true });
-    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(expect.stringContaining(notice));
+    // AURA joins its own description first, then ours: both are said, in reading order.
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(
+      `${enMessages.broadcast.editor.altDialog.description} ${notice}`,
+    );
     expect(screen.getByText(notice)).toBeVisible();
     // The dialog says it once; the field is not described by it too.
     expect(describedText(field())).not.toContain(notice);
+  });
+
+  it('is said by default: a caller has to opt out, not in', () => {
+    renderDialog();
+    expect(screen.getByRole('dialog')).toHaveAccessibleDescription(expect.stringContaining(notice));
   });
 
   it('is not said once the file is already uploaded', () => {
