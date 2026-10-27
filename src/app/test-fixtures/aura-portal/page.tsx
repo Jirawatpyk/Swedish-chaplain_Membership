@@ -39,6 +39,7 @@ import { MembershipInvoiceAlert } from '@/app/(member)/portal/_components/member
 import { BenefitsTabs } from '@/app/(member)/portal/benefits/_components/benefits-tabs';
 import { BroadcastsPanelView } from '@/app/(member)/portal/benefits/_components/broadcasts-panel';
 import { getPortalBroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
+import { tierNames } from '@/components/broadcast/tier-audience';
 import PortalNotFound from '@/app/(member)/portal/not-found';
 import { renderPortalInvoicesView } from '@/app/(member)/portal/invoices/page';
 import { renderPortalInvoiceDetailView } from '@/app/(member)/portal/invoices/[invoiceId]/page';
@@ -238,6 +239,8 @@ export default async function AuraPortalPreviewPage({
     const tQuota = await getTranslations('portal.broadcasts.quota');
     const tAudience = await getTranslations('portal.broadcasts.list.audience');
     const tList = await getTranslations('portal.broadcasts.list');
+    const tTierCode = await getTranslations('portal.broadcasts.list.tierCode');
+    const locale = await getLocale();
     const state = sp.state ?? 'default';
     const exhausted = state === 'exhausted';
     const rows = (
@@ -255,7 +258,18 @@ export default async function AuraPortalPreviewPage({
       statusLabel: tStatus(status),
       statusTone: getPortalBroadcastStatusTone(status),
       estimatedRecipientCount: count,
-      audience: tList('audienceWithCount', { audience: tAudience(segmentType), count }),
+      // Task #12: tier rows name their categories, as the panel does.
+      audience: tList('audienceWithCount', {
+        audience:
+          segmentType === 'tier'
+            ? tList('audienceTier', {
+                tiers: tierNames(broadcastId === 'b6' ? ['corporate', 'partnership'] : ['corporate'], locale, (code) =>
+                  tTierCode(code),
+                ),
+              })
+            : tAudience(segmentType),
+        count,
+      }),
       submitted,
       sent,
     }));
