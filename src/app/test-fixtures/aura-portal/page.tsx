@@ -39,6 +39,7 @@ import { MembershipInvoiceAlert } from '@/app/(member)/portal/_components/member
 import { BenefitsTabs } from '@/app/(member)/portal/benefits/_components/benefits-tabs';
 import { BroadcastsPanelView } from '@/app/(member)/portal/benefits/_components/broadcasts-panel';
 import { getPortalBroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
+import { tierNames } from '@/components/broadcast/tier-audience';
 import PortalNotFound from '@/app/(member)/portal/not-found';
 import { renderPortalInvoicesView } from '@/app/(member)/portal/invoices/page';
 import { renderPortalInvoiceDetailView } from '@/app/(member)/portal/invoices/[invoiceId]/page';
@@ -239,7 +240,7 @@ export default async function AuraPortalPreviewPage({
     const tAudience = await getTranslations('portal.broadcasts.list.audience');
     const tList = await getTranslations('portal.broadcasts.list');
     const tTierCode = await getTranslations('portal.broadcasts.list.tierCode');
-    const tierList = new Intl.ListFormat(await getLocale(), { style: 'long', type: 'conjunction' });
+    const locale = await getLocale();
     const state = sp.state ?? 'default';
     const exhausted = state === 'exhausted';
     const rows = (
@@ -262,10 +263,8 @@ export default async function AuraPortalPreviewPage({
         audience:
           segmentType === 'tier'
             ? tList('audienceTier', {
-                tiers: tierList.format(
-                  (broadcastId === 'b6' ? (['corporate', 'partnership'] as const) : (['corporate'] as const)).map(
-                    (code) => tTierCode(code),
-                  ),
+                tiers: tierNames(broadcastId === 'b6' ? ['corporate', 'partnership'] : ['corporate'], locale, (code) =>
+                  tTierCode(code),
                 ),
               })
             : tAudience(segmentType),

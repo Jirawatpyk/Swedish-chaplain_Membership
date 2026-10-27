@@ -53,6 +53,7 @@ import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-local
 import { env } from '@/lib/env';
 import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import { getPortalBroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
+import { tierNames } from '@/components/broadcast/tier-audience';
 import type { BroadcastStatus } from '@/modules/broadcasts';
 import {
   BroadcastHistoryCardList,
@@ -266,9 +267,6 @@ export async function BroadcastsPanel({
     }
   }
 
-  // "Corporate and Partnership" / "องค์กรและพาร์ทเนอร์ชิป": the members of
-  // either category. The 'unit' list joins Thai with a bare space.
-  const tierList = new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' });
   // U37 — formatted ONCE for both the desktop table and the phone card list,
   // so the two representations cannot drift apart.
   const historyRows: ReadonlyArray<BroadcastHistoryRowView> = history.map((row) => {
@@ -289,17 +287,11 @@ export async function BroadcastsPanel({
       // type without a label falls back to the column's word, "Audience · 130".
       audience: tList('audienceWithCount', {
         // Task #12: a tier E-Blast names its categories, "Specific membership
-        // tier: Corporate and Partnership". An unknown code shows as itself.
+        // tier: Corporate and Partnership" (`tierNames`).
         audience:
           row.tierCodes !== null
             ? tList('audienceTier', {
-                tiers: tierList.format(
-                  row.tierCodes.map((code) =>
-                    tTierCode.has(code as Parameters<typeof tTierCode>[0])
-                      ? tTierCode(code as Parameters<typeof tTierCode>[0])
-                      : code,
-                  ),
-                ),
+                tiers: tierNames(row.tierCodes, locale, (code) => tTierCode(code)),
               })
             : tAudience.has(row.segmentType as Parameters<typeof tAudience>[0])
               ? tAudience(row.segmentType as Parameters<typeof tAudience>[0])
@@ -464,7 +456,7 @@ export async function BroadcastsPanelView({
                         {row.statusLabel}
                       </StatusPill>
                     </Td>
-                    <Td className="tabular-nums">{row.audience}</Td>
+                    <Td className="break-words tabular-nums">{row.audience}</Td>
                     <Td className="whitespace-nowrap text-[var(--aura-fg-secondary)]">{row.submitted}</Td>
                     <Td className="whitespace-nowrap text-[var(--aura-fg-secondary)]">{row.sent}</Td>
                   </Tr>
