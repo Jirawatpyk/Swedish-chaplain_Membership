@@ -23,10 +23,10 @@ describe('buildSegmentPayload', () => {
 
   it('maps tier with tier codes', () => {
     expect(
-      buildSegmentPayload({ kind: 'tier', tierCodes: ['GOLD'] }, []),
+      buildSegmentPayload({ kind: 'tier', tierCodes: ['corporate'] }, []),
     ).toEqual({
       kind: 'tier',
-      tierCodes: ['GOLD'],
+      tierCodes: ['corporate'],
     });
   });
 

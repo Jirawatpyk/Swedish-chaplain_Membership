@@ -204,6 +204,8 @@ export interface ComposeFormProps {
   readonly memberId?: string;
   /** The tenant's privacy policy, linked from the rules. */
   readonly privacyPolicyUrl?: string | null;
+  /** The recipients chosen on first render (preview fixtures only). Default: all members. */
+  readonly initialSegment?: SegmentPickerValue;
 }
 
 /** `useSyncExternalStore` that never changes: false on the server and in hydration, true after. */
@@ -224,6 +226,7 @@ export function ComposeForm({
   acknowledgedAt,
   privacyPolicyUrl,
   memberId,
+  initialSegment = { kind: 'all_members', tierCodes: [] },
 }: ComposeFormProps): React.ReactElement {
   const router = useRouter();
   const t = useTranslations('portal.broadcasts.compose');
@@ -241,10 +244,7 @@ export function ComposeForm({
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(
     initialDraftId,
   );
-  const [segment, setSegment] = useState<SegmentPickerValue>({
-    kind: 'all_members',
-    tierCodes: [],
-  });
+  const [segment, setSegment] = useState<SegmentPickerValue>(initialSegment);
   const [customList, setCustomList] = useState<string>('');
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);

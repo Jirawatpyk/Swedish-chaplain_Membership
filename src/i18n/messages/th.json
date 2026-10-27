@@ -6892,8 +6892,7 @@
           "previewUnavailable": "ดูตัวอย่างไม่ได้ชั่วคราว",
           "previewUnavailableHint": "รีเฟรชหน้าเพื่อลองใหม่ — แบบร่างของคุณยังอยู่ครบ",
           "subjectCounter": "{count} / {max} ตัวอักษร",
-          "tierCodesPlaceholder": "premium, large",
-          "tierCodesHelp": "รหัสระดับ คั่นด้วยเครื่องหมายจุลภาค",
+          "tierCodesHelp": "เลือกได้หนึ่งหรือทั้งสองประเภท",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
         },
         "segmentOption": {
@@ -6902,7 +6901,7 @@
           "event_attendees_last_90d": "ผู้เข้าร่วมงานจากบริษัทสมาชิก (90 วันล่าสุด)",
           "custom": "รายชื่ออีเมลกำหนดเอง"
         },
-        "tierLabel": "รหัสระดับ",
+        "tierLabel": "ประเภทสมาชิก",
         "editor": {
           "announcements": {
             "boldOn": "เปิดตัวหนา",

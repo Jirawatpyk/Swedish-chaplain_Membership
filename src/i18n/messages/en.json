@@ -6892,8 +6892,7 @@
           "previewUnavailable": "Preview is temporarily unavailable",
           "previewUnavailableHint": "Refresh the page to retry — your draft is safe.",
           "subjectCounter": "{count} / {max} characters",
-          "tierCodesPlaceholder": "premium, large",
-          "tierCodesHelp": "Comma-separated tier codes",
+          "tierCodesHelp": "Choose one or both.",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
         },
         "segmentOption": {
@@ -6902,7 +6901,7 @@
           "event_attendees_last_90d": "Event attendees from member companies (last 90 days)",
           "custom": "Custom email list"
         },
-        "tierLabel": "Tier code",
+        "tierLabel": "Membership categories",
         "editor": {
           "announcements": {
             "boldOn": "Bold on",

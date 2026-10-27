@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { isBroadcastTierCode } from '@/lib/broadcasts-tier-codes';
 import { resolveSegmentRecipients, type ResolveSegmentDeps } from '@/modules/broadcasts';
 import type { RecipientSegment } from '@/modules/broadcasts';
 
@@ -66,6 +67,9 @@ export function parseRecipientCountQuery(
     // malformed query.
     if (tierCodes.some((c) => c.length > 64)) return { ok: false };
     if (tierCodes.length === 0 || tierCodes.length > TIER_CODE_MAX) return { ok: false };
+    // PR D: the submit routes accept only the two plan categories, so the
+    // count does too; it never answers for an audience that can't be sent.
+    if (!tierCodes.every(isBroadcastTierCode)) return { ok: false };
     return { ok: true, segment: { kind: 'tier', tierCodes } };
   }
   return { ok: true, segment: { kind: segment } };

@@ -35,12 +35,14 @@ import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { broadcastsTracer } from '@/lib/otel-tracer';
 import { SpanStatusCode } from '@opentelemetry/api';
+import { BROADCAST_TIER_CODES } from '@/lib/broadcasts-tier-codes';
 
 const SegmentSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('all_members') }),
   z.object({
     kind: z.literal('tier'),
-    tierCodes: z.array(z.string().min(1)).min(1),
+    // PR D: only the two plan categories reach anyone (FR-011).
+    tierCodes: z.array(z.enum(BROADCAST_TIER_CODES)).min(1),
   }),
   z.object({ kind: z.literal('event_attendees_last_90d') }),
   z.object({

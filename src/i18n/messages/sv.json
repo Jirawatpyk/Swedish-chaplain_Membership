@@ -6892,8 +6892,7 @@
           "previewUnavailable": "Förhandsgranskning är tillfälligt otillgänglig",
           "previewUnavailableHint": "Uppdatera sidan för att försöka igen — ditt utkast är säkert.",
           "subjectCounter": "{count} / {max} tecken",
-          "tierCodesPlaceholder": "premium, large",
-          "tierCodesHelp": "Kommaseparerade nivåkoder",
+          "tierCodesHelp": "Välj en eller båda.",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
         },
         "segmentOption": {
@@ -6902,7 +6901,7 @@
           "event_attendees_last_90d": "Eventdeltagare från medlemsföretag (senaste 90 dagarna)",
           "custom": "Anpassad e-postlista"
         },
-        "tierLabel": "Nivåkod",
+        "tierLabel": "Medlemskategorier",
         "editor": {
           "announcements": {
             "boldOn": "Fet på",

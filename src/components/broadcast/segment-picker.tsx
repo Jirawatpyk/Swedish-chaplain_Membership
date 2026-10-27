@@ -13,14 +13,23 @@
  * `customRecipientEmails` is collected by the sibling <CustomListInput />.
  *
  * Spec 122 US12d-3 (T1270) — on AURA's RadioGroup (a fieldset named by its
- * legend, each radio by its own label; 44 px rows on touch) and TextField.
- * The tier-codes field keeps the typed TEXT and derives the codes from it: it
- * used to be controlled by `tierCodes.join(', ')`, which split the comma away
- * as it was typed, so a second code could never be entered.
+ * legend, each radio by its own label; 44 px rows on touch).
+ *
+ * PR D (27 Oct 2026, FR-011): the tier option is a choice of the two
+ * membership categories, more than one allowed. It used to be a free-text
+ * "Tier code" field, but the recipient query matches only the `plan_category`
+ * values, so anything else typed there reached nobody. AURA has no checkbox
+ * group yet: a fieldset and legend hold AURA Checkboxes (stand-in until AURA
+ * ships one, see docs/aura-adoption.md).
  */
-import { useState } from 'react';
+import { useId } from 'react';
 import { useTranslations } from 'next-intl';
-import { RadioGroup, TextField } from '@jirawatpyk/aura-react';
+import { Checkbox, RadioGroup } from '@jirawatpyk/aura-react';
+import {
+  BROADCAST_TIER_CODES,
+  isBroadcastTierCode,
+  type BroadcastTierCode,
+} from '@/lib/broadcasts-tier-codes';
 
 export type SegmentKind =
   | 'all_members'
@@ -50,13 +59,6 @@ function isSegmentKind(value: string): value is SegmentKind {
   return (OPTIONS as readonly string[]).includes(value);
 }
 
-function parseTierCodes(raw: string): ReadonlyArray<string> {
-  return raw
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
 export function SegmentPicker({
   value,
   onChange,
@@ -82,8 +84,8 @@ export function SegmentPicker({
         touchHeight
       />
       {value.kind === 'tier' ? (
-        <TierCodesField
-          initialCodes={value.tierCodes}
+        <TierCategoriesField
+          codes={value.tierCodes}
           onChange={(tierCodes) => onChange({ kind: 'tier', tierCodes })}
           disabled={disabled}
         />
@@ -93,34 +95,50 @@ export function SegmentPicker({
 }
 
 /**
- * Mounted only while the tier option is chosen, so its text starts from the
- * codes already held and is never overwritten by their re-joined form.
+ * The categories, in a fixed order whatever order they were ticked in. A code
+ * held from elsewhere that is not a category shows nothing ticked and is
+ * dropped on the next change.
  */
-function TierCodesField({
-  initialCodes,
+function TierCategoriesField({
+  codes,
   onChange,
   disabled,
 }: {
-  readonly initialCodes: ReadonlyArray<string>;
-  readonly onChange: (codes: ReadonlyArray<string>) => void;
+  readonly codes: ReadonlyArray<string>;
+  readonly onChange: (codes: ReadonlyArray<BroadcastTierCode>) => void;
   readonly disabled: boolean;
 }): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose');
-  const [text, setText] = useState(() => initialCodes.join(', '));
+  const tCategory = useTranslations('portal.broadcasts.list.tierCode');
+  const hintId = useId();
+  const chosen = new Set(codes.filter(isBroadcastTierCode));
   return (
-    <TextField
-      id="segment-tier-codes"
-      className="ml-6 sm:max-w-sm"
-      label={t('tierLabel')}
-      hint={t('fields.tierCodesHelp')}
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value);
-        onChange(parseTierCodes(e.target.value));
-      }}
-      placeholder={t('fields.tierCodesPlaceholder')}
+    <fieldset
+      className="m-0 ml-6 flex min-w-0 flex-col gap-[var(--aura-space-1)] border-0 p-0"
+      aria-describedby={hintId}
       disabled={disabled}
-      touchHeight
-    />
+      data-compose-feature="tier-categories"
+    >
+      <legend className="mb-[var(--aura-space-1)] p-0 text-sm font-medium">{t('tierLabel')}</legend>
+      {BROADCAST_TIER_CODES.map((code) => (
+        <Checkbox
+          key={code}
+          checked={chosen.has(code)}
+          onChange={(checked) => {
+            const next = new Set(chosen);
+            if (checked) next.add(code);
+            else next.delete(code);
+            onChange(BROADCAST_TIER_CODES.filter((c) => next.has(c)));
+          }}
+          disabled={disabled}
+          touchHeight
+        >
+          {tCategory(code)}
+        </Checkbox>
+      ))}
+      <p id={hintId} className="m-0 text-sm text-[var(--aura-fg-secondary)]">
+        {t('fields.tierCodesHelp')}
+      </p>
+    </fieldset>
   );
 }
