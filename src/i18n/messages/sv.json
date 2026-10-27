@@ -3837,7 +3837,7 @@
         },
         "segmentType": {
           "all_members": "Alla medlemmar",
-          "tier": "Per medlemsnivå",
+          "tier": "Per medlemskategori",
           "event_attendees_last_90d": "Deltagare från medlemsföretag (senaste 90 dagarna)",
           "custom": "Anpassad mottagarlista"
         },
@@ -3853,7 +3853,7 @@
           "provider_failed": "Resend rapporterade att kontaktimporten misslyckades.",
           "gateway_permanent": "Resend avvisade begäran (ett permanent fel). Kontrollera Resend-kontot och planens gränser.",
           "gateway_unknown": "Ett oväntat fel uppstod när utskicket förbereddes. Se Livscykelstidslinje nedan; om orsaken fortfarande är oklar, kontakta systemadministratören och ange detta utskicks ID.",
-          "malformed_segment": "Den sparade målgruppen för detta utskick är ofullständig (en nivåmålgrupp utan nivåer).",
+          "malformed_segment": "Den sparade målgruppen för detta utskick är ofullständig (en målgrupp per medlemskategori utan valda kategorier).",
           "audience_too_large": "Målgruppen växte förbi den tillåtna storleken mellan godkännande och utskick.",
           "retry_budget_exhausted": "Resend gick inte att nå på över en timme, så utskicket slutade försöka.",
           "audience_post_suppression_empty": "Inga mottagare återstod när avregistreringar och avanmälningar hade tillämpats.",
@@ -6892,17 +6892,16 @@
           "previewUnavailable": "Förhandsgranskning är tillfälligt otillgänglig",
           "previewUnavailableHint": "Uppdatera sidan för att försöka igen — ditt utkast är säkert.",
           "subjectCounter": "{count} / {max} tecken",
-          "tierCodesPlaceholder": "premium, large",
-          "tierCodesHelp": "Kommaseparerade nivåkoder",
+          "tierCodesHelp": "Välj en eller båda.",
           "customListPlaceholder": "alice@example.com\nbob@example.com"
         },
         "segmentOption": {
           "all_members": "Alla medlemmar",
-          "tier": "Specifik medlemsnivå",
+          "tier": "Specifika medlemskategorier",
           "event_attendees_last_90d": "Eventdeltagare från medlemsföretag (senaste 90 dagarna)",
           "custom": "Anpassad e-postlista"
         },
-        "tierLabel": "Nivåkod",
+        "tierLabel": "Medlemskategorier",
         "editor": {
           "announcements": {
             "boldOn": "Fet på",
@@ -6943,7 +6942,7 @@
         },
         "submitBlocked": {
           "subjectRequired": "Lägg till ett ämne innan du skickar för granskning.",
-          "tierRequired": "Välj minst en medlemsnivå innan du skickar för granskning."
+          "tierRequired": "Välj minst en medlemskategori innan du skickar för granskning."
         },
         "views": {
           "label": "Skrivvy",
@@ -6973,9 +6972,9 @@
         "selfExclusionHintAttendees": "Alla deltagare från medlemsföretag tar emot utskicket – även du och dina kollegor, om ni deltog.",
         "estimateNote": {
           "allMembers": "Mottagare: primärkontakten hos varje aktiv medlem (högst {ceiling, number} per utskick).",
-          "tier": "Mottagare: primärkontakten hos varje aktiv medlem på valda nivåer (högst {ceiling, number}).",
+          "tier": "Mottagare: primärkontakten hos varje aktiv medlem i valda kategorier (högst {ceiling, number}).",
           "allMembersAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem – primär och sekundär – som inte har avregistrerat sig (högst {ceiling, number} per utskick).",
-          "tierAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem på valda nivåer som inte har avregistrerat sig (högst {ceiling, number}).",
+          "tierAllContacts": "Mottagare: varje kontakt hos varje aktiv medlem i valda kategorier som inte har avregistrerat sig (högst {ceiling, number}).",
           "custom": "Mottagare: en e-post per rad nedan. Max 100 rader. Varje adress måste matcha en medlem eller kontakt i din handelskammare.",
           "attendees": "Mottagare: alla från medlemsföretag som deltagit i ett kammarevenemang under de senaste 90 dagarna (högst {ceiling, number}).",
           "customCount": "{count} e-post angiven."
@@ -6983,8 +6982,8 @@
         "recipientNote": {
           "allMembers": "primärkontakten hos varje aktiv medlem, inte ert eget företag",
           "allMembersAllContacts": "varje kontakt hos varje aktiv medlem som inte har avregistrerat sig, inte ert eget företag",
-          "tier": "primärkontakten hos varje aktiv medlem på valda nivåer, inte ert eget företag",
-          "tierAllContacts": "varje kontakt hos varje aktiv medlem på valda nivåer som inte har avregistrerat sig, inte ert eget företag",
+          "tier": "primärkontakten hos varje aktiv medlem i valda kategorier, inte ert eget företag",
+          "tierAllContacts": "varje kontakt hos varje aktiv medlem i valda kategorier som inte har avregistrerat sig, inte ert eget företag",
           "attendees": "alla från medlemsföretag som deltagit i ett kammarevenemang under de senaste 90 dagarna, även du och dina kollegor om ni deltog"
         },
         "recipientCount": {
@@ -7110,14 +7109,14 @@
           "audience": "Målgrupp"
         },
         "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
-        "audienceTier": "Specifik medlemsnivå: {tiers}",
+        "audienceTier": "Medlemskategorier: {tiers}",
         "tierCode": {
           "corporate": "Företag",
           "partnership": "Partnerskap"
         },
         "audience": {
           "all_members": "Alla medlemmar",
-          "tier": "Specifik medlemsnivå",
+          "tier": "Specifika medlemskategorier",
           "event_attendees_last_90d": "Eventdeltagare (senaste 90 dagarna)",
           "custom": "Anpassad e-postlista"
         },

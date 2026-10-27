@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
+import { broadcastTierCodesSchema } from '@/lib/broadcasts-tier-codes';
 import { resolveSegmentRecipients, type ResolveSegmentDeps } from '@/modules/broadcasts';
 import type { RecipientSegment } from '@/modules/broadcasts';
 
@@ -33,8 +34,6 @@ export const RECIPIENT_COUNT_RATE_WINDOW_SECONDS = 60;
 export function recipientCountRateKey(tenantSlug: string, userId: string): string {
   return `broadcasts:count:${tenantSlug}:${userId}`;
 }
-
-const TIER_CODE_MAX = 20;
 
 const querySchema = z.object({
   segment: z.enum(['all_members', 'tier', 'event_attendees_last_90d']),
@@ -56,16 +55,11 @@ export function parseRecipientCountQuery(
   if (!parsed.success) return { ok: false };
   const { segment, tier } = parsed.data;
   if (segment === 'tier') {
-    const tierCodes = (tier ?? '')
-      .split(',')
-      .map((c) => c.trim())
-      .filter((c) => c.length > 0);
-    // Review 2026-09-07 (code LOW) — an over-length code used to be silently
-    // DROPPED, so the count answered for a different audience than the submit
-    // would send (SC-004 broken with a wrong number shown as truth). It is a
-    // malformed query.
-    if (tierCodes.some((c) => c.length > 64)) return { ok: false };
-    if (tierCodes.length === 0 || tierCodes.length > TIER_CODE_MAX) return { ok: false };
+    // The submit routes' own guard, on the codes exactly as sent (not
+    // trimmed): the count never answers for an audience that can't be sent.
+    const codes = broadcastTierCodesSchema.safeParse((tier ?? '').split(','));
+    if (!codes.success) return { ok: false };
+    const tierCodes = codes.data;
     return { ok: true, segment: { kind: 'tier', tierCodes } };
   }
   return { ok: true, segment: { kind: segment } };

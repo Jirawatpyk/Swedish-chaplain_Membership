@@ -181,7 +181,7 @@ function MemberFrame({ path, children }: { readonly path: string; readonly child
 export default async function AuraPortalPreviewPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; state?: string; gate?: string; receipt?: string; ack?: string }>;
+  searchParams: Promise<{ view?: string; state?: string; gate?: string; receipt?: string; ack?: string; segment?: string }>;
 }) {
   if (!process.env.ALLOW_TEST_ROUTES) notFound();
   const sp = await searchParams;
@@ -223,6 +223,10 @@ export default async function AuraPortalPreviewPage({
             memberId="7c1e4d2a-0000-4000-8000-0000000000ff"
             acknowledgedAt={sp.ack === 'none' ? null : '2026-10-01T03:00:00.000Z'}
             privacyPolicyUrl="https://swecham.example/privacy"
+            // Spec 122 PR D — `segment=tier`: the tier option open, Corporate ticked.
+            {...(sp.segment === 'tier'
+              ? { initialSegment: { kind: 'tier' as const, tierCodes: ['corporate'] } }
+              : {})}
             {...(blank
               ? {}
               : {

@@ -183,7 +183,7 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
   it('a non-empty tier answers nothing about the preferences of other members (the probe M-3 closed for orphans)', async () => {
     requireMemberContextMock.mockResolvedValue(memberCtx);
     const { GET } = await importMemberRoute();
-    for (const tier of ['corporate', 'partnership', 'gold']) {
+    for (const tier of ['corporate', 'partnership']) {
       const res = await GET(memberRequest(`?segment=tier&tier=${tier}`));
       expect(res.status).toBe(200);
       expect(Object.keys(await res.json())).toEqual(['count', 'ceiling', 'exceeds']);
@@ -193,6 +193,12 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
   it.each([
     ['?segment=custom', 'custom lists are counted client-side'],
     ['?segment=tier', 'tier without codes'],
+    // PR D (27 Oct 2026): the count answers only for the two plan categories,
+    // as the submit routes now accept only those.
+    ['?segment=tier&tier=premium', 'a code that is not a membership category'],
+    ['?segment=tier&tier=corporate,Partnership', 'a category in the wrong case'],
+    // Security review L-2: the count trimmed codes the submit route refuses.
+    ['?segment=tier&tier=%20corporate', 'a category with a space'],
     ['?segment=nope', 'unknown segment'],
     ['', 'missing segment'],
   ])('400 invalid_query for %s (%s)', async (query) => {
@@ -312,6 +318,14 @@ describe('GET /api/admin/broadcasts/recipient-count (admin proxy) — 108 PR-C T
     expect(auditRecordMock).not.toHaveBeenCalled();
     expect(resolveSegmentRecipientsMock).not.toHaveBeenCalled();
     expect(JSON.stringify(body)).not.toMatch(/statement timeout|neon/);
+  });
+
+  it('400 for a tier code that is not a membership category (PR D); nothing is read', async () => {
+    requireApiPermissionMock.mockResolvedValue(adminCtx);
+    const { GET } = await importAdminRoute();
+    const res = await GET(adminRequest('?member_id=11111111-1111-4111-8111-111111111111&segment=tier&tier=premium'));
+    expect(res.status).toBe(400);
+    expect(resolveSegmentRecipientsMock).not.toHaveBeenCalled();
   });
 
   it('400 when member_id is missing or not a uuid', async () => {

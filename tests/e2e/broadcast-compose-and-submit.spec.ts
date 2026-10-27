@@ -298,14 +298,14 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     await expectNoA11yViolations(page);
   });
 
-  test('T084: choosing a tier re-counts for that segment; a tier with no codes has nothing to count', async ({
+  test('T084: choosing a tier re-counts for that segment; a tier with no category has nothing to count', async ({
     page,
   }) => {
     await openCompose(page);
     await expect(countLine(page, READY_OR_EXCEEDS)).toBeVisible({ timeout: 10_000 });
 
-    // Base UI radio — a real pointer click on the role=radio item selects it.
-    await page.getByRole('radio', { name: 'Specific membership tier' }).click();
+    // AURA RadioGroup: the categories option is last (PR D).
+    await page.getByRole('radio', { name: 'Specific membership categories' }).click();
     await expect(countLine(page, READY_OR_EXCEEDS)).toHaveCount(0);
 
     const tierCount = page.waitForResponse(
@@ -313,10 +313,11 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
         COUNT_URL.test(r.url()) &&
         new URL(r.url()).searchParams.get('segment') === 'tier',
     );
-    await page.locator('#segment-tier-codes').fill('premium');
+    // PR D: the tier is a choice of the two membership categories.
+    await page.getByRole('checkbox', { name: 'Corporate' }).filter({ visible: true }).check();
     const response = await tierCount;
     expect(response.status()).toBe(200);
-    expect(new URL(response.url()).searchParams.get('tier')).toBe('premium');
+    expect(new URL(response.url()).searchParams.get('tier')).toBe('corporate');
     await expect(countLine(page, READY_OR_EXCEEDS)).toBeVisible({ timeout: 10_000 });
     await expectNoA11yViolations(page);
   });

@@ -33,12 +33,14 @@ import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
+import { broadcastTierCodesSchema } from '@/lib/broadcasts-tier-codes';
 
 const SegmentSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('all_members') }),
   z.object({
     kind: z.literal('tier'),
-    tierCodes: z.array(z.string().min(1)).min(1),
+    // PR D: only the two plan categories reach anyone (FR-011), each once.
+    tierCodes: broadcastTierCodesSchema,
   }),
   z.object({ kind: z.literal('event_attendees_last_90d') }),
   z.object({

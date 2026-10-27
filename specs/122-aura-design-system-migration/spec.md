@@ -869,6 +869,18 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The portal sign-out button becomes an AURA `Button` with the 44px touch height. (R84 then found it mounted nowhere since 063 — sign-out lives in the Account menu — so the follow-up PR deletes it.)
   - Requests, toasts and copy are unchanged.
 
+### Session 2026-10-27 (follow-up PR D: the tier option is a choice of membership categories)
+
+- Q: Why change the tier field? → A: It was free text ("Tier code", placeholder "premium, large"). The recipient query matches only the `plan_category` values `corporate` and `partnership`, case-sensitively, so "premium", "large" or "Corporate" reached nobody, and nothing said why. This is a bug fix to what can be submitted (FR-011), not part of a UI-swap slice.
+- Q: What replaces it? → A: The maintainer chose (27 Oct) checkboxes, so one or both categories can be chosen. The group is "Membership categories" with the hint "Choose one or both.". The options use the same names as the history (`portal.broadcasts.list.tierCode.*`). Submit stays off until one is ticked (the existing `tierValid` gate). Member and staff compose share the picker.
+- Q: Does the server refuse other codes? → A: Yes, in this PR (the maintainer, 27 Oct). `POST /api/broadcasts/submit` and `POST /api/admin/broadcasts/proxy-submit` take `tierCodes` only from the two categories (400 `invalid_body`). The recipient count refuses them too (400 `invalid_query`), so it never answers for an audience that cannot be sent. One list, `src/lib/broadcasts-tier-codes.ts`, serves the picker, the history and the routes.
+- Q: What stays lenient? → A: Drafts. The draft routes keep any code, because a draft is not reloaded into the form. The history still shows an old stored code as it was typed (PR B).
+- Q: What is out of scope? → A: Migration `0068` seeds segment definitions with `premium`/`large`/`regular`. A forward fix is a separate change if those definitions are read anywhere.
+- Q: Where does the field sit, and what does it say when none is ticked? → A: After the reviews the maintainer chose (27 Oct) to move the option to the end of the list, so its categories open right under it. "Membership categories" is said once the last box is unticked, inside the group (`aria-live="polite"`), but not when the option first opens (UX-C2). The group has no `required` marker: AURA has none for a group yet (#183).
+- Q: Ticking both may reach everyone. Allow it? → A: Yes (the maintainer, 27 Oct). A member may hold neither category, and the live count shows who is reached.
+- Q: Which Thai word? → A: "ประเภทสมาชิกภาพ" (the maintainer, 27 Oct). "ประเภทสมาชิก" already means member type (company/individual) on the admin plans pages. EN and SV say category/kategori throughout: radio, legend, hint, blocked reason, recipient notes, the history label ("Membership categories: …") and the admin review label.
+- AURA has no `CheckboxGroup` (handoff Addendum 84, #183). Until it ships, a `fieldset` and `legend` hold two AURA `Checkbox`es, recorded as a stand-in in `docs/aura-adoption.md`.
+
 ### Session 2026-10-27 (US12d-3 follow-up: the sending rules on compose)
 
 - Q: Where is the acknowledgement stored? → A: It already exists. US12d-3 was wrong that none was recorded. `members.broadcasts_acknowledged_at` is per company, set once by `POST /api/portal/broadcasts/acknowledge` and audited the first time as `member_acknowledged_broadcasts_terms`. The portal banner uses it. The maintainer chose (27 Oct) to reuse it: no migration, no new audit event, no per-user record and no version.

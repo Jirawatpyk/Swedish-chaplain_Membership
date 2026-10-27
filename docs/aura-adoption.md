@@ -204,6 +204,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
+| #183 | No `CheckboxGroup`: no group name, hint, `error` or `required` for a many-choice field, as `RadioGroup` has (Addendum 84, 27 Oct) | `segment-picker.tsx` `TierCategoriesField`: a `<fieldset>` and `<legend>` around two AURA `Checkbox`es, with a hint tied by `aria-describedby`; Submit stays off until one is ticked |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

@@ -162,6 +162,36 @@ describe('POST /api/broadcasts/submit — Wave 6 GREEN (T037)', () => {
     expect(res.status).toBe(400);
   });
 
+  // PR D (27 Oct 2026, FR-011): the recipient query matches only the two
+  // plan_category values, so any other code reached nobody. It is refused.
+  it.each([
+    [['premium']],
+    [['Corporate']],
+    [['corporate', 'large']],
+    // Security review L-1: each category once.
+    [['corporate', 'corporate']],
+    [['corporate', 'partnership', 'corporate']],
+  ])(
+    '400 invalid_body: tier code %j is not a membership category',
+    async (tierCodes) => {
+      requireMemberContextMock.mockResolvedValueOnce(memberCtx);
+      const { POST } = await importRoute();
+      const res = await POST(makeRequest({ ...VALID_BODY, segment: { kind: 'tier', tierCodes } }));
+      expect(res.status).toBe(400);
+      expect(submitBroadcastMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it('200: both membership categories are accepted and reach the use case', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberCtx);
+    submitBroadcastMock.mockResolvedValueOnce(ok(submitOutput));
+    const { POST } = await importRoute();
+    const segment = { kind: 'tier', tierCodes: ['corporate', 'partnership'] };
+    const res = await POST(makeRequest({ ...VALID_BODY, segment }));
+    expect(res.status).toBe(200);
+    expect(submitBroadcastMock).toHaveBeenCalledTimes(1);
+  });
+
   it('400 invalid_body: custom segment > 100 emails', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
     const { POST } = await importRoute();

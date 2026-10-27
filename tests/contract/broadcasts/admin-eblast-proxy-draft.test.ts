@@ -168,6 +168,15 @@ describe('POST | PUT /api/admin/broadcasts/draft', () => {
     expect(input).not.toHaveProperty('draftId');
   });
 
+  // Spec 122 PR D: drafts stay lenient on tier codes, as on the member route.
+  it('POST keeps a tier code that is not a category (201)', async () => {
+    const { POST } = await importRoute();
+    const res = await POST(
+      req({ ...VALID_BODY, segmentType: 'tier', segmentParams: { tierCodes: ['premium'] } }),
+    );
+    expect(res.status).toBe(201);
+  });
+
   it('PUT updates the named draft (200); a row that is no longer a draft → 409', async () => {
     const { PUT } = await importRoute();
     saveDraftMock.mockResolvedValueOnce(draftResult(false));

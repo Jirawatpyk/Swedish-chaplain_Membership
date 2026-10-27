@@ -172,6 +172,19 @@ describe('POST/PUT /api/broadcasts/draft — Wave 6 GREEN (T036)', () => {
     expect(typeof body.createdAt).toBe('string');
   });
 
+  // Spec 122 PR D: drafts stay lenient on tier codes (only submit and the
+  // count refuse a non-category): a draft is not reloaded into the form, and
+  // submit overwrites its segment with the validated one.
+  it('POST 201: a draft keeps a tier code that is not a category', async () => {
+    requireMemberContextMock.mockResolvedValueOnce(memberCtx);
+    saveDraftMock.mockResolvedValueOnce(ok({ broadcast: broadcastFixture(), created: true }));
+    const { POST } = await importRoute();
+    const res = await POST(
+      makeRequest({ ...VALID_BODY, segmentType: 'tier', segmentParams: { tierCodes: ['premium'] } }),
+    );
+    expect(res.status).toBe(201);
+  });
+
   it('POST 400 invalid_body: unknown segmentType', async () => {
     requireMemberContextMock.mockResolvedValueOnce(memberCtx);
     const { POST } = await importRoute();
