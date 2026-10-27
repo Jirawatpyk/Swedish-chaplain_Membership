@@ -100,8 +100,9 @@ export async function revertContactEmail(
       // a typed `not_found` (the route renders it as link-invalid), touching NO
       // PII. Belt-and-suspenders to the in-tx token invalidation in eraseMember:
       // this catches ANY stale token regardless of timing/edge-case origin.
-      // Read inside this same tx (after the FOR-UPDATE token re-fetch) so the
-      // status check is consistent with the consumption — no TOCTOU window.
+      // Read inside this same tx (after the FOR-UPDATE token re-fetch); the
+      // read locks the users row too (134-s1), so a concurrent erasure cannot
+      // commit between this check and the restore below.
       const statusResult = await deps.userEmails.readStatusInTx(tx, token.userId);
       if (!statusResult.ok) {
         throw new UseCaseAbort({

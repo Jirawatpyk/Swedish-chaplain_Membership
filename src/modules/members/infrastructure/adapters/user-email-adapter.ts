@@ -121,10 +121,15 @@ export const userEmailAdapter: UserEmailPort = {
 
   async readStatusInTx(tx, userId) {
     try {
+      // 134-s1 (security review HIGH-1) — FOR UPDATE: the status gate in
+      // change / verify / revert must hold the users row until the tx ends,
+      // or a concurrent eraseUser can commit between this read and the
+      // sink's UPDATE, which then overwrites the fresh erasure sentinel.
       const [row] = await tx
         .select({ status: users.status })
         .from(users)
         .where(eq(users.id, userId))
+        .for('update')
         .limit(1);
       // No row (hard-deleted / never existed) is a valid "refuse the revert"
       // signal, NOT an error — return ok(null) so the use-case aborts cleanly.
