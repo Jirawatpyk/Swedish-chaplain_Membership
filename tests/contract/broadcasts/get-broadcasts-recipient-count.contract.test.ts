@@ -183,7 +183,7 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
   it('a non-empty tier answers nothing about the preferences of other members (the probe M-3 closed for orphans)', async () => {
     requireMemberContextMock.mockResolvedValue(memberCtx);
     const { GET } = await importMemberRoute();
-    for (const tier of ['corporate', 'partnership', 'gold']) {
+    for (const tier of ['corporate', 'partnership']) {
       const res = await GET(memberRequest(`?segment=tier&tier=${tier}`));
       expect(res.status).toBe(200);
       expect(Object.keys(await res.json())).toEqual(['count', 'ceiling', 'exceeds']);
@@ -193,6 +193,10 @@ describe('GET /api/broadcasts/recipient-count (member) — 108 PR-C T082/T088', 
   it.each([
     ['?segment=custom', 'custom lists are counted client-side'],
     ['?segment=tier', 'tier without codes'],
+    // PR D (27 Oct 2026): the count answers only for the two plan categories,
+    // as the submit routes now accept only those.
+    ['?segment=tier&tier=premium', 'a code that is not a membership category'],
+    ['?segment=tier&tier=corporate,Partnership', 'a category in the wrong case'],
     ['?segment=nope', 'unknown segment'],
     ['', 'missing segment'],
   ])('400 invalid_query for %s (%s)', async (query) => {
