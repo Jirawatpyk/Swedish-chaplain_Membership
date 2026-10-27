@@ -238,6 +238,8 @@ export default async function AuraPortalPreviewPage({
     const tQuota = await getTranslations('portal.broadcasts.quota');
     const tAudience = await getTranslations('portal.broadcasts.list.audience');
     const tList = await getTranslations('portal.broadcasts.list');
+    const tTierCode = await getTranslations('portal.broadcasts.list.tierCode');
+    const tierList = new Intl.ListFormat(await getLocale(), { style: 'long', type: 'conjunction' });
     const state = sp.state ?? 'default';
     const exhausted = state === 'exhausted';
     const rows = (
@@ -255,7 +257,20 @@ export default async function AuraPortalPreviewPage({
       statusLabel: tStatus(status),
       statusTone: getPortalBroadcastStatusTone(status),
       estimatedRecipientCount: count,
-      audience: tList('audienceWithCount', { audience: tAudience(segmentType), count }),
+      // Task #12: tier rows name their categories, as the panel does.
+      audience: tList('audienceWithCount', {
+        audience:
+          segmentType === 'tier'
+            ? tList('audienceTier', {
+                tiers: tierList.format(
+                  (broadcastId === 'b6' ? (['corporate', 'partnership'] as const) : (['corporate'] as const)).map(
+                    (code) => tTierCode(code),
+                  ),
+                ),
+              })
+            : tAudience(segmentType),
+        count,
+      }),
       submitted,
       sent,
     }));
