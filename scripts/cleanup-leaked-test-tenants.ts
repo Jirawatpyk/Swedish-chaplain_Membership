@@ -61,6 +61,7 @@
  */
 import postgres from 'postgres';
 import { sweepLeakedTestTenants } from './lib/leaked-test-tenants';
+import { assertDbHostNotBlocklisted } from '../tests/helpers/db-host-guard';
 
 function requireEnv(name: string): string {
   const v = process.env[name];
@@ -71,26 +72,11 @@ function requireEnv(name: string): string {
   return v;
 }
 
-function assertNotProd(url: string): void {
-  const blocklist = requireEnv('TEST_DB_HOST_BLOCKLIST')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s !== '');
-  const host = new URL(url).host;
-  const hit = blocklist.find((b) => host.includes(b));
-  if (hit !== undefined) {
-    console.error(
-      `REFUSING: DATABASE_URL host ${host} matches TEST_DB_HOST_BLOCKLIST entry "${hit}".`,
-    );
-    console.error('This script deletes rows. It is for the dev branch only.');
-    process.exit(1);
-  }
-  console.log(`host ${host} (not blocklisted)`);
-}
-
 async function main(): Promise<void> {
   const url = requireEnv('DATABASE_URL');
-  assertNotProd(url);
+  // The shared guard: it also refuses the `.env.example` placeholder values.
+  assertDbHostNotBlocklisted(url, process.env['TEST_DB_HOST_BLOCKLIST'], 'cleanup-leaked-test-tenants');
+  console.log(`host ${new URL(url).host} (not blocklisted)`);
 
   const apply = process.env['CLEANUP_APPLY'] === 'true';
   const maxAgeHours = Number(process.env['CLEANUP_MAX_AGE_HOURS'] ?? 6);

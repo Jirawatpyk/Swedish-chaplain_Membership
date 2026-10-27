@@ -45,10 +45,13 @@ export interface SweepOptions {
    */
   readonly allowTriggerDisable: boolean;
   /**
-   * Skip a tenant an earlier sweep already drained down to the settled-refund
-   * ↔ credit-note RESTRICT cycle, so an automatic run does not retry it.
+   * Skip a tenant this sweep cannot fully drain, so an automatic run does not
+   * retry it every time: one an earlier sweep drained down to the
+   * settled-refund ↔ credit-note RESTRICT cycle, or one that owns a
+   * delete-guarded table while `allowTriggerDisable` is false. The operator
+   * script handles both.
    */
-  readonly skipStuckOnCycle?: boolean;
+  readonly skipUndrainable?: boolean;
   /** Restrict the candidates to these slugs (tests). */
   readonly onlySlugs?: readonly string[];
   readonly log?: (line: string) => void;
@@ -92,6 +95,29 @@ export function deleteStatementsFor(table: string, allowTriggerDisable: boolean)
 export function isStuckOnRefundCreditNoteCycle(ownedTables: readonly string[]): boolean {
   const owned = new Set(ownedTables);
   return owned.has('refunds') && owned.has('credit_notes') && !owned.has('tenant_invoice_settings');
+}
+
+/**
+ * Split candidates into those to sweep and those to skip as undrainable
+ * (`skipUndrainable`), from what each one owns. Pure, so the wiring is unit
+ * tested apart from the database.
+ */
+export function partitionCandidates(
+  candidates: readonly string[],
+  ownedByTenant: ReadonlyMap<string, ReadonlyMap<string, number>>,
+  opts: Pick<SweepOptions, 'allowTriggerDisable' | 'skipUndrainable'>,
+): { eligible: string[]; skippedStuck: string[] } {
+  const eligible: string[] = [];
+  const skippedStuck: string[] = [];
+  for (const slug of candidates) {
+    const ownedTables = [...(ownedByTenant.get(slug)?.keys() ?? [])];
+    const undrainable =
+      isStuckOnRefundCreditNoteCycle(ownedTables) ||
+      ownedTables.some((t) => deleteStatementsFor(t, opts.allowTriggerDisable) === null);
+    if (opts.skipUndrainable === true && undrainable) skippedStuck.push(slug);
+    else eligible.push(slug);
+  }
+  return { eligible, skippedStuck };
 }
 
 export async function sweepLeakedTestTenants(
@@ -198,16 +224,7 @@ export async function sweepLeakedTestTenants(
     }
   }
 
-  const eligible: string[] = [];
-  const skippedStuck: string[] = [];
-  for (const slug of candidates) {
-    const ownedTables = [...(ownedByTenant.get(slug) ?? new Map<string, number>()).keys()];
-    if (opts.skipStuckOnCycle === true && isStuckOnRefundCreditNoteCycle(ownedTables)) {
-      skippedStuck.push(slug);
-    } else {
-      eligible.push(slug);
-    }
-  }
+  const { eligible, skippedStuck } = partitionCandidates(candidates, ownedByTenant, opts);
 
   const plannedPerTable = new Map<string, number>();
   for (const slug of eligible) {

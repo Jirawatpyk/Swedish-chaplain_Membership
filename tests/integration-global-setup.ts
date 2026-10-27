@@ -21,9 +21,10 @@
  * drives one (168 on 2026-10-27 timed out the redact crons under pre-push).
  * Same age filter — a tenant whose newest row is younger belongs to a run in
  * progress. Unlike the operator script it never disables a trigger (that lock
- * would stall other sessions on the shared branch) and skips tenants already
- * drained down to the refund ↔ credit-note cycle. Hygiene only: a failure is
- * logged and the run goes on.
+ * would stall other sessions on the shared branch), skips tenants it cannot
+ * fully drain (the refund ↔ credit-note cycle, a delete-guarded table), and
+ * runs under a statement and lock timeout. Hygiene only: a failure is logged
+ * and the run goes on.
  */
 import postgres from 'postgres';
 import { assertDbHostNotBlocklisted } from './helpers/db-host-guard';
@@ -35,7 +36,12 @@ export default async function disableStaleLeakedTestStaff(): Promise<void> {
   const dbUrl = process.env.DATABASE_URL_UNPOOLED ?? process.env.POSTGRES_URL_NON_POOLING ?? process.env.DATABASE_URL;
   if (!dbUrl) return; // the per-file guard reports the missing URL
   assertDbHostNotBlocklisted(dbUrl, process.env.TEST_DB_HOST_BLOCKLIST, 'integration-global-setup');
-  const sql = postgres(dbUrl, { ssl: 'require', max: 1 });
+  // Bounded: hygiene must never stall the run behind a lock or a slow scan.
+  const sql = postgres(dbUrl, {
+    ssl: 'require',
+    max: 1,
+    connection: { statement_timeout: 60_000, lock_timeout: 5_000 },
+  });
   try {
     const rows = await sql`
       UPDATE users SET status = 'disabled'
@@ -57,7 +63,7 @@ export default async function disableStaleLeakedTestStaff(): Promise<void> {
         apply: true,
         includeUndatable: false,
         allowTriggerDisable: false,
-        skipStuckOnCycle: true,
+        skipUndrainable: true,
       });
       if (r.eligible.length > 0) {
         console.warn(
