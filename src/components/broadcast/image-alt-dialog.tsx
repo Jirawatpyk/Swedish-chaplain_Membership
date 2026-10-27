@@ -23,7 +23,7 @@
  */
 import { useId, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Button, Dialog, Textarea } from '@jirawatpyk/aura-react';
+import { Alert, Button, Dialog, Textarea } from '@jirawatpyk/aura-react';
 import { BANNER_ALT_MAX, BANNER_ALT_MIN } from '@/lib/design-blocks-client';
 
 export type ImageAltVariant = 'inline' | 'banner';
@@ -121,8 +121,9 @@ export function ImageAltDialog({
       size="sm"
       title={editing ? t('editTitle') : variant === 'banner' ? t('bannerTitle') : t('title')}
       description={t('description')}
-      // PDPA review L-1: the notice is the dialog's own description, so it is
-      // announced with the dialog wherever focus lands.
+      // PDPA review L-1: the notice is added to the dialog's description (AURA
+      // joins this id after its own `description` id, it does not replace it),
+      // so it is announced with the dialog wherever focus lands.
       {...(showNotice ? { 'aria-describedby': noticeId } : {})}
       footer={
         <>
@@ -145,9 +146,12 @@ export function ImageAltDialog({
         }}
       >
         {showNotice ? (
-          <p id={noticeId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
+          // An info Alert, not caption text (UX review M-1): it is the last
+          // thing said before the file picker. `role="none"`: the dialog's
+          // description already announces it, a live region would say it twice.
+          <Alert id={noticeId} tone="info" role="none">
             {tUpload('publicLinkNotice')}
-          </p>
+          </Alert>
         ) : null}
         <Textarea
           label={t('fieldLabel')}

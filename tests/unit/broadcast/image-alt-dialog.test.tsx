@@ -168,6 +168,11 @@ describe('the public-link notice', () => {
     expect(describedText(field())).not.toContain(notice);
   });
 
+  it('stands out as an info notice, not caption-weight fine print (UX review M-1)', () => {
+    renderDialog({ uploadFollows: true });
+    expect(screen.getByText(notice).closest('.aura-alert')).toHaveClass('aura-alert--info');
+  });
+
   it('is said by default: a caller has to opt out, not in', () => {
     renderDialog();
     expect(screen.getByRole('dialog')).toHaveAccessibleDescription(expect.stringContaining(notice));
