@@ -914,6 +914,7 @@ The US12d-2 parity page set the editor against its boards. The maintainer decide
 - Q: The toolbar's name? → A: "Formatting", as the boards and this spec say. The role already says "toolbar".
 - Q: The stale boards? → A: Update them to the build and these decisions, and add a board for spec 131's two "image wasn't added" toasts.
 - Q: AURA draws a checkable menu item's check box in place of its icon, so "Lists and headings" shows checks and no icons while "Insert" shows icons (#662 UX review). → A: Keep the checks (the state a screen reader needs); ask AURA for icon + trailing check (handoff Addendum 82, #181); draw the board as built.
+  - 27 Oct 2026: #181 shipped in AURA 5.66 (adopted in #667). Each item now shows its icon with a check at the end, and the board `Portal-broadcast-new-mobile-menus` is redrawn to match (canvas version 132).
 
 ### Session 2026-10-25 (US12d-2 start: the E-Blast editor)
 
