@@ -869,6 +869,26 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The portal sign-out button becomes an AURA `Button` with the 44px touch height. (R84 then found it mounted nowhere since 063 — sign-out lives in the Account menu — so the follow-up PR deletes it.)
   - Requests, toasts and copy are unchanged.
 
+### Session 2026-10-27 (US12d-3 follow-up: the sending rules on compose)
+
+- Q: Where is the acknowledgement stored? → A: It already exists. US12d-3 was wrong that none was recorded. `members.broadcasts_acknowledged_at` is per company, set once by `POST /api/portal/broadcasts/acknowledge` and audited the first time as `member_acknowledged_broadcasts_terms`. The portal banner uses it. The maintainer chose (27 Oct) to reuse it: no migration, no new audit event, no per-user record and no version.
+- Q: What does the compose page show? → A: Until the company acknowledges, the banner's own warning alert: title, rules, privacy link, and "I acknowledge". After that, one line: "E-Blast sending rules · Read again". It is a disclosure that shows the same rules again and changes nothing on the server. The copy is the banner's, so the two surfaces say the same thing.
+- Q: Does it gate Save or Submit? → A: No. Nothing gated them before this change either. The column's own comment says it is not consent and not required for sending (FR-011).
+- Q: The portal banner on the compose page? → A: Hidden there, so the rules show once. Other portal pages are unchanged. After "I acknowledge", the banner stays gone on the next page too. There is no page refresh: a window event plus a per-tab flag, keyed by member, carries it (review rounds 1–2).
+- Q: "Remind me later" on compose? → A: No. The member is already composing, and the rules collapse to the line once acknowledged.
+- Q: Staff compose on behalf? → A: Nothing. Staff are the reviewers.
+- Q: Where does the build differ from the inset board (`Proposal-compose-inset-first-visit`, `Proposal-compose`)? → A: These are deliberate, and boards v134 are redrawn to match:
+  - The alert is warning-toned, as the banner is, not info-toned.
+  - "I acknowledge" is a secondary button, so Submit stays the page's one primary action (UX review).
+  - There is no "Remind me later".
+  - The line reads "E-Blast sending rules · Read again", not "You've confirmed the E-Blast guidelines". The record is per company, so a colleague who never saw the rules is not told they confirmed them.
+  - New boards: `Portal-broadcast-new-rules`, `-rules-mobile`, `-rules-mobile-th`, `-rules-mobile-sv`. The line is added to `Portal-broadcast-new` and its mobile set.
+- Review round 1 (27 Oct):
+  - Acknowledging no longer calls `router.refresh()`. That re-ran the whole compose page and could lose an unsaved draft. A window event and a per-tab flag hide the banner and keep the line through the phone/desktop remount.
+  - A failed read shows the rules in full, because the banner is hidden here and would otherwise show them nowhere. Acknowledging again is idempotent.
+  - The read is cached per request, so the layout and the page share one query.
+  - The banner and compose share one hook and one rules body.
+
 ### Session 2026-10-26 (US12d-3: the compose forms, calmer, with a submit confirmation)
 
 The maintainer reviewed a proposal page (https://claude.ai/artifact/QBcoA6qZZHmNp9TaDwhdP6) and decided:
@@ -880,7 +900,7 @@ The maintainer reviewed a proposal page (https://claude.ai/artifact/QBcoA6qZZHmN
   - "Send options" collapses to one line that states the current choice, replacing the "leave blank" checkbox;
   - on a phone, Write / Preview tabs and a sticky bar with the count and Submit.
 - Q: The staff form? → A: Keep its 4-figure quota card, member picker, template picker and subject. The self-exclusion notice and the count become one line ("130 recipients · not {company}'s own contacts"); the upload hint and Send options change as on the member form; Submit opens the confirmation.
-- Q: The boards' "first visit: full guidelines alert, then one line with Read again"? → A: Not in US12d-3. No acknowledgement is recorded today, so it needs server state and an audit event. That is its own PR after this one (FR-011).
+- Q: The boards' "first visit: full guidelines alert, then one line with Read again"? → A: Not in US12d-3. No acknowledgement is recorded today, so it needs server state and an audit event. That is its own PR after this one (FR-011). *(Superseded 2026-10-27: the acknowledgement already existed; see Session 2026-10-27, the sending rules on compose.)*
 - Q: The 600px email preview against the boards' 520px? → A: Keep 600px (spec 119 FR-050); the toolbar's 2px gap already fits the member column (#662).
 - Parity pass (T1271), built to the approved boards:
   - the compose quota is one line ("3 of 6 E-Blasts left in 2026 · 1 reserved");

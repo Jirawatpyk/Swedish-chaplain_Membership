@@ -39,6 +39,8 @@ vi.mock('@/lib/toast', () => ({
 }));
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  // The acknowledgement banner hides itself on the compose route (spec 122 PR C).
+  usePathname: () => '/portal',
 }));
 
 /** `src/proxy.ts` `build503`, verbatim. */
@@ -102,6 +104,7 @@ const SURFACES: readonly Surface[] = [
     name: 'marketing acknowledgement banner',
     ui: () => (
       <AcknowledgementBannerClient
+        memberId="m-1"
         title="Marketing"
         body="Body"
         acknowledge="I acknowledge"

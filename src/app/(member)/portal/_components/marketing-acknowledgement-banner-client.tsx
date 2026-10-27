@@ -18,15 +18,20 @@
  * that stays mounted across the hidden state so `document.activeElement`
  * is always a known element.
  */
-import { useRef, useState, useTransition } from 'react';
+import { useRef, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { toast } from '@/lib/toast';
+import { usePathname } from 'next/navigation';
 import { Alert, Button } from '@jirawatpyk/aura-react';
-import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
-import { isReadOnlyResponse } from '@/lib/http/read-only-refusal';
+import {
+  useAcknowledgeBroadcastsTerms,
+  useBroadcastsAcknowledgedInThisTab,
+} from '@/components/broadcast/acknowledgement/use-acknowledge-broadcasts-terms';
+import { BroadcastsRulesBody } from '@/components/broadcast/acknowledgement/rules-body';
 
 export interface AcknowledgementBannerClientProps {
+  /** The signed-in member (company); keys the in-tab acknowledgement. */
+  readonly memberId: string;
   readonly title: string;
   readonly body: string;
   readonly acknowledge: string;
@@ -43,7 +48,10 @@ export interface AcknowledgementBannerClientProps {
   readonly privacyPolicyLinkLabel?: string;
 }
 
+const COMPOSE_PATH = '/portal/broadcasts/new';
+
 export function AcknowledgementBannerClient({
+  memberId,
   title,
   body,
   acknowledge,
@@ -53,11 +61,14 @@ export function AcknowledgementBannerClient({
   privacyPolicyLinkLabel,
 }: AcknowledgementBannerClientProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.banner.acknowledgement');
-  const readOnlyToast = useReadOnlyToast();
   const [hidden, setHidden] = useState<boolean>(false);
-  const [pending, startTransition] = useTransition();
   const ref = useRef<HTMLDivElement>(null);
   const focusAnchorRef = useRef<HTMLSpanElement>(null);
+  // Spec 122 PR C — the compose page states the same rules itself
+  // (`compose/sending-rules.tsx`), so the banner stays out of it there; and an
+  // acknowledgement recorded there (or by this banner) hides it everywhere.
+  const onCompose = usePathname() === COMPOSE_PATH;
+  const acknowledgedInThisTab = useBroadcastsAcknowledgedInThisTab(memberId);
 
   function dismiss() {
     // Move focus to the persistent anchor BEFORE unmount so the
@@ -67,43 +78,19 @@ export function AcknowledgementBannerClient({
     setHidden(true);
   }
 
-  function onAcknowledge() {
-    startTransition(async () => {
-      try {
-        const res = await fetch('/api/portal/broadcasts/acknowledge', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ locale }),
-        });
-        if (!res.ok) {
-          // The write freeze: nothing was recorded, and the banner stays.
-          if (await isReadOnlyResponse(res)) {
-            readOnlyToast();
-            return;
-          }
-          toast.error(t('toastAcknowledgeFailed'), {
-            description: t('toastAcknowledgeFailedHint'),
-          });
-          return;
-        }
-        toast.success(t('toastAcknowledged'), { duration: 3000 });
-        dismiss();
-      } catch (e) {
-        // Bind the exception so the actual cause (TypeError, AbortError,
-        // CSP block, …) reaches the browser console / Sentry instead of
-        // disappearing into a generic "failed, retry" toast.
-        console.error('[broadcasts.acknowledge] network error', e);
-        toast.error(t('toastAcknowledgeFailed'), {
-          description: t('toastAcknowledgeFailedHint'),
-        });
-      }
-    });
-  }
+  // 2xx → success toast + dismiss. Non-2xx or a network failure → error toast
+  // with a retry hint and the banner stays: silently dismissing on failure
+  // would diverge the recorded state from what the UI implies.
+  const { acknowledge: onAcknowledge, pending } = useAcknowledgeBroadcastsTerms({
+    memberId,
+    locale,
+    failureHint: t('toastAcknowledgeFailedHint'),
+    onAcknowledged: dismiss,
+  });
 
   return (
     <>
-      {hidden ? null : (
+      {hidden || onCompose || acknowledgedInThisTab ? null : (
         // Outer wrapper matches DetailContainer's `mx-auto + max-w +
         // px-[var(--page-padding-x)]` so the warning-banner edges align
         // with the page content cards below on narrow viewports (was
@@ -149,24 +136,11 @@ export function AcknowledgementBannerClient({
                 </div>
               }
             >
-              <p>{body}</p>
-              {privacyPolicyUrl && privacyPolicyLinkLabel ? (
-                <p className="text-sm">
-                  <a
-                    href={privacyPolicyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    // `inline-block max-w-full` — the short link phrase stays
-                    // whole (TH "อ่านนโยบายความเป็นส่วนตัว" has no spaces) and
-                    // breaks only when it is wider than the line, e.g. at 200%
-                    // text on a phone (WCAG 1.4.4). `whitespace-nowrap` pushed
-                    // it past the viewport there and scrolled the page sideways.
-                    className="inline-block max-w-full font-medium text-[var(--aura-fg-accent)] underline underline-offset-2 hover:text-[var(--aura-fg-primary)]"
-                  >
-                    {privacyPolicyLinkLabel}
-                  </a>
-                </p>
-              ) : null}
+              <BroadcastsRulesBody
+                body={body}
+                privacyPolicyUrl={privacyPolicyUrl}
+                privacyPolicyLinkLabel={privacyPolicyLinkLabel}
+              />
             </Alert>
           </div>
         </div>

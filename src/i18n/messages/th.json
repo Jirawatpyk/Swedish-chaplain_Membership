@@ -6854,6 +6854,11 @@
       "compose": {
         "title": "เขียน E-Blast",
         "subtitle": "ส่งข้อความไปยังสมาชิกของหอการค้า",
+        "rules": {
+          "line": "ข้อกำหนดการส่ง E-Blast",
+          "readAgain": "อ่านอีกครั้ง",
+          "toastAcknowledgeFailedHint": "กรุณาลองใหม่ — ข้อกำหนดจะยังแสดงอยู่ที่นี่จนกว่าจะบันทึกการรับทราบสำเร็จ"
+        },
         "templatePicker": {
           "triggerLabel": "เริ่มจากเทมเพลต",
           "blankOption": "เว้นว่าง — เริ่มจากศูนย์",
