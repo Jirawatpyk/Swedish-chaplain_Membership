@@ -4,11 +4,11 @@
  *
  * Implements the F8 port `TenantRenewalSchedulePolicyRepo` (Wave E
  * T046) against the `tenant_renewal_schedule_policies` table (Wave C
- * migration 0089). Tenant isolation is enforced by Postgres RLS+FORCE
- * — every method wraps its query in `runInTenant(ctx, …)` which sets
- * `SET LOCAL ROLE chamber_app` + `SET LOCAL app.current_tenant`. NO
- * explicit `WHERE tenant_id = ?` — the policy adds it automatically
- * (research.md § 7.1).
+ * migration 0089).
+ * Every statement carries an explicit `tenant_id` predicate on each
+ * tenant-scoped table it names (D-029); RLS+FORCE under `runInTenant`
+ * is the second wall.
+ * (D-029 supersedes research.md § 7.1's RLS-only reading.)
  *
  * Phase 4 (US2) directly exercises:
  *   - `findByBucket`     — daily dispatcher cron looks up the policy

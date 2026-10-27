@@ -3,11 +3,15 @@
  * plus the FR-012b revert-flow lookups and consumption primitives.
  *
  * All writes go through the caller's transaction so the compound
- * operations in change-contact-email / verify / revert stay atomic.
+ * operations in change-contact-email / verify / revert stay atomic. Every
+ * `…InTx` statement states the tx's tenant (`tenantSlugOf(tx)`, D-029/D-030)
+ * alongside RLS;
+ * `findActiveById` is the one read that cannot — the token resolves the
+ * tenant (see the port).
  */
 
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import { db } from '@/lib/db';
+import { db, tenantSlugOf, TenantTxNotBoundError } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 // Direct schema import — documented escape hatch for tx-sharing adapters.
 import {
@@ -48,6 +52,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
       };
       return ok(active);
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
@@ -77,12 +82,14 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
       }
       return ok({ tokenId: row.id });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
 
   async findActiveByIdInTx(tx, tokenId) {
     try {
+      const tenantId = tenantSlugOf(tx);
       // FOR UPDATE prevents double-consume race under READ COMMITTED:
       // two concurrent requests cannot both pass the consumedAt IS NULL
       // check — the second blocks until the first commits/rolls back.
@@ -91,6 +98,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
         .from(emailChangeTokens)
         .where(
           and(
+            eq(emailChangeTokens.tenantId, tenantId),
             eq(emailChangeTokens.id, tokenId),
             isNull(emailChangeTokens.consumedAt),
             gt(emailChangeTokens.expiresAt, sql`now()`),
@@ -112,12 +120,14 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
       };
       return ok(active);
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
 
   async markConsumedInTx(tx, tokenId, consumedAt) {
     try {
+      const tenantId = tenantSlugOf(tx);
       // Idempotent guard: only consume if not already consumed.
       // Combined with FOR UPDATE in findActiveByIdInTx, this is
       // belt-and-suspenders against double-consume.
@@ -126,6 +136,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
         .set({ consumedAt })
         .where(
           and(
+            eq(emailChangeTokens.tenantId, tenantId),
             eq(emailChangeTokens.id, tokenId),
             isNull(emailChangeTokens.consumedAt),
           ),
@@ -136,17 +147,20 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
       }
       return ok(undefined);
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
 
   async invalidateActiveForUserInTx(tx, userId, type, consumedAt) {
     try {
+      const tenantId = tenantSlugOf(tx);
       const updated = await tx
         .update(emailChangeTokens)
         .set({ consumedAt })
         .where(
           and(
+            eq(emailChangeTokens.tenantId, tenantId),
             eq(emailChangeTokens.userId, userId),
             eq(emailChangeTokens.type, type),
             isNull(emailChangeTokens.consumedAt),
@@ -156,6 +170,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
         .returning({ id: emailChangeTokens.id });
       return ok({ invalidatedCount: updated.length });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
@@ -165,6 +180,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
     // degenerate `IN ()` SQL fragment in some drivers). Cheap guard, explicit.
     if (userIds.length === 0) return ok({ invalidatedEmails: [] });
     try {
+      const tenantId = tenantSlugOf(tx);
       // One UPDATE over EVERY still-active token (any type) for the user set.
       // We intentionally do NOT filter `expires_at > now()`: an already-EXPIRED
       // unconsumed token is harmless (findActiveByIdInTx rejects it on expiry),
@@ -176,6 +192,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
         .set({ consumedAt })
         .where(
           and(
+            eq(emailChangeTokens.tenantId, tenantId),
             inArray(emailChangeTokens.userId, [...userIds]),
             isNull(emailChangeTokens.consumedAt),
           ),
@@ -191,6 +208,7 @@ export const emailChangeTokenAdapter: EmailChangeTokenPort = {
       }
       return ok({ invalidatedEmails: [...emails] });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },

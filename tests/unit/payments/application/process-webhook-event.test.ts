@@ -10,6 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { asSatang } from '@/lib/money';
+import { paymentsMetrics } from '@/lib/metrics';
 import { ok, err } from '@/lib/result';
 import {
   processWebhookEvent,
@@ -453,7 +454,7 @@ describe('processWebhookEvent (T056)', () => {
     const deps = makeDeps();
     // Let the step-6 idempotency tx commit, then throw on the DISPATCH tx so
     // the failure lands in processRefundUpdated's catch → dispatch_threw.
-    rejectSecondTx(deps, new Error('neon reset'));
+    rejectDispatchTx(deps, new Error('neon reset'));
     const event = makeEvent({
       type: 'charge.refund.updated',
       dataObject: {
@@ -589,7 +590,7 @@ describe('processWebhookEvent (T056)', () => {
 
   it('refund.updated — withTx rejection returns dispatch_failed (dispatch_threw, eventType=refund.updated)', async () => {
     const deps = makeDeps();
-    rejectSecondTx(deps, new Error('neon reset'));
+    rejectDispatchTx(deps, new Error('neon reset'));
     const event = makeEvent({
       type: 'refund.updated',
       dataObject: {
@@ -781,17 +782,15 @@ describe('processWebhookEvent (T056)', () => {
   // payloads can carry partial API key fragments / internal ids.
   // ---------------------------------------------------------------------------
 
-  // Helper — withTx is called TWICE per dispatch path (once for the step-6
-  // idempotency insert, once inside the branch). Make call #1 pass through
-  // and call #2 throw, so the rejection lands in the dispatch try/catch we
-  // want to exercise.
-  function rejectSecondTx(
+  // Helper — the dispatch branch's withTx is the first withTx of a dispatch
+  // (the step-6 idempotency insert opens none since 132). Make it throw, so
+  // the rejection lands in the dispatch try/catch we want to exercise.
+  function rejectDispatchTx(
     deps: ProcessWebhookEventDeps,
     error: unknown,
   ): void {
     const tx = deps.paymentsRepo.withTx as ReturnType<typeof vi.fn>;
     tx.mockReset();
-    tx.mockImplementationOnce(async <T>(fn: (t: unknown) => Promise<T>) => fn({}));
     tx.mockImplementationOnce(async () => {
       throw error;
     });
@@ -805,7 +804,7 @@ describe('processWebhookEvent (T056)', () => {
         this.name = 'StripeAPIError';
       }
     }
-    rejectSecondTx(deps, new StripeAPIError());
+    rejectDispatchTx(deps, new StripeAPIError());
     const event = makeEvent({
       type: 'charge.refunded',
       dataObject: {
@@ -826,7 +825,7 @@ describe('processWebhookEvent (T056)', () => {
 
   it('CR-3: charge.dispute.created — withTx rejection returns dispatch_failed (no fall-through)', async () => {
     const deps = makeDeps();
-    rejectSecondTx(deps, new Error('audit table unreachable'));
+    rejectDispatchTx(deps, new Error('audit table unreachable'));
     const event = makeEvent({
       type: 'charge.dispute.created',
       dataObject: {
@@ -846,7 +845,7 @@ describe('processWebhookEvent (T056)', () => {
 
   it('CR-3 / R3 I-8: unknown event type — withTx rejection returns dispatch_failed', async () => {
     const deps = makeDeps();
-    rejectSecondTx(deps, new Error('processor_events INSERT denied by RLS'));
+    rejectDispatchTx(deps, new Error('processor_events INSERT denied by RLS'));
     const event = makeEvent({ type: 'some.future.event' });
     const result = await processWebhookEvent(deps, makeInput(event));
     expect(result.ok).toBe(false);
@@ -906,7 +905,7 @@ describe('processWebhookEvent (T056)', () => {
     // A rare but real case: postgres-js can reject with a non-Error value
     // (e.g. a pure string). The detail mapper falls back to "unknown" so
     // we never leak the raw payload into the response.
-    rejectSecondTx(deps, 'connection terminated unexpectedly: pi_secret_abc123');
+    rejectDispatchTx(deps, 'connection terminated unexpectedly: pi_secret_abc123');
     const event = makeEvent({
       type: 'charge.refunded',
       dataObject: { id: 'ch_x', type: 'charge', refundIds: [], amountSatang: asSatang(0n) },
@@ -1026,7 +1025,7 @@ describe('processWebhookEvent (T056)', () => {
 
   it('T5: dispatch_threw branches carry a null subDetail (no F4 code exists there)', async () => {
     const deps = makeDeps();
-    rejectSecondTx(deps, new Error('neon down'));
+    rejectDispatchTx(deps, new Error('neon down'));
     const event = makeEvent({
       type: 'charge.refunded',
       dataObject: { id: 'ch_x', type: 'charge', refundIds: [], amountSatang: asSatang(0n) },
@@ -1071,6 +1070,220 @@ describe('processWebhookEvent (T056)', () => {
     // finally got its processed_at.
     expect(deps.invoicingBridge.markPaidFromProcessor).toHaveBeenCalledTimes(1);
     expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+  });
+
+  // 132 (L-1) — a duplicate whose stored tenant is not the resolved tenant
+  // (still NULL because the repo refused to adopt it, or another tenant's)
+  // must not dispatch: `markProcessed` could never stamp it, so every replay
+  // would dispatch again.
+  it.each([
+    ['still unresolved (NULL)', null],
+    ['another tenant', 'tnt_other'],
+  ] as const)('duplicate whose stored tenant is %s → duplicate, no dispatch', async (_label, storedTenant) => {
+    const mismatch = vi.spyOn(paymentsMetrics, 'webhookDuplicateTenantMismatch');
+    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    const deps = { ...makeDeps(), logger };
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      inserted: false,
+      event: {
+        id: 'evt_test_001',
+        tenantId: storedTenant,
+        eventType: 'payment_intent.succeeded',
+        apiVersion: PINNED_API,
+        livemode: false,
+        processorAccountId: 'acct_test_123',
+        receivedAt: new Date(),
+        processedAt: null,
+        outcome: 'acknowledged_only',
+        payloadSha256: 'x'.repeat(64),
+        correlationId: 'corr_1',
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput());
+    expect(result.ok && result.value.kind).toBe('duplicate');
+    expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+    expect(deps.processorEventsRepo.markProcessed).not.toHaveBeenCalled();
+    expect(mismatch).toHaveBeenCalledWith(TENANT_ID, 'payment_intent.succeeded');
+    expect(logger.warn).toHaveBeenCalledWith(
+      'stripe-webhook.duplicate_tenant_mismatch',
+      expect.objectContaining({ storedTenant: storedTenant === null ? 'null' : 'other' }),
+    );
+    mismatch.mockRestore();
+  });
+
+  it('duplicate tenant mismatch without a wired logger still refuses the dispatch', async () => {
+    const deps = makeDeps();
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      inserted: false,
+      event: {
+        id: 'evt_test_001',
+        tenantId: null,
+        eventType: 'payment_intent.succeeded',
+        apiVersion: PINNED_API,
+        livemode: false,
+        processorAccountId: 'acct_test_123',
+        receivedAt: new Date(),
+        processedAt: null,
+        outcome: 'acknowledged_only',
+        payloadSha256: 'x'.repeat(64),
+        correlationId: 'corr_1',
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput());
+    expect(result.ok && result.value.kind).toBe('duplicate');
+    expect(deps.processorEventsRepo.markProcessed).not.toHaveBeenCalled();
+  });
+
+  it('adopted unresolved row → audit row on the adoption transaction, not counted as a crash recovery', async () => {
+    const recovery = vi.spyOn(paymentsMetrics, 'webhookDispatchRecoveryReplay');
+    const deps = makeDeps();
+    const adoptedEvent = {
+      id: 'evt_test_001',
+      tenantId: TENANT_ID,
+      eventType: 'payment_intent.succeeded',
+      apiVersion: PINNED_API,
+      livemode: false,
+      processorAccountId: 'acct_test_123',
+      receivedAt: new Date('2026-10-01T03:00:00Z'),
+      processedAt: null,
+      outcome: 'processed' as const,
+      payloadSha256: 'x'.repeat(64),
+      correlationId: 'corr_first',
+    };
+    const OWNER_TX = { owner: 'adoption-tx' };
+    // The repo runs `onAdopted` inside the adoption's own transaction.
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (
+        _tx: unknown,
+        _input: unknown,
+        onAdopted?: (tx: unknown, from: string, event: typeof adoptedEvent) => Promise<void>,
+      ) => {
+        await onAdopted?.(OWNER_TX, 'rejected_api_version_mismatch', adoptedEvent);
+        return { inserted: false, adoptedFrom: 'rejected_api_version_mismatch', event: adoptedEvent };
+      },
+    );
+    try {
+      const result = await processWebhookEvent(deps, makeInput());
+      expect(result.ok && result.value.kind).toBe('processed');
+      const adoptAudits = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.filter(
+        ([, e]) => (e as { eventType: string }).eventType === 'webhook_unresolved_event_adopted',
+      );
+      expect(adoptAudits).toHaveLength(1);
+      const [tx, audit] = adoptAudits[0]!;
+      expect(tx).toBe(OWNER_TX);
+      expect(audit).toMatchObject({
+        tenantId: TENANT_ID,
+        retentionYears: 10,
+        payload: {
+          processor_event_id: 'evt_test_001',
+          event_type: 'payment_intent.succeeded',
+          adopted_from: 'rejected_api_version_mismatch',
+          first_received_at: '2026-10-01T03:00:00.000Z',
+          first_correlation_id: 'corr_first',
+        },
+      });
+      expect(JSON.stringify(audit)).not.toContain('acct_test_123');
+      expect(recovery).not.toHaveBeenCalled();
+    } finally {
+      recovery.mockRestore();
+    }
+  });
+
+  // A failed audit write must surface: the repo rolls the adoption back only
+  // if the error leaves `onAdopted`, and the webhook must not dispatch.
+  it('adoption audit write fails → the error propagates, is counted, and nothing is dispatched', async () => {
+    const auditFailed = vi.spyOn(paymentsMetrics, 'useCaseAuditEmitFailed');
+    const deps = makeDeps();
+    (deps.audit.emit as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('audit_log insert failed'));
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (
+        _tx: unknown,
+        _input: unknown,
+        onAdopted?: (tx: unknown, from: string, event: unknown) => Promise<void>,
+      ) => {
+        await onAdopted?.({ owner: 'adoption-tx' }, 'acknowledged_only', {
+          id: 'evt_test_001',
+          tenantId: TENANT_ID,
+          receivedAt: new Date('2026-10-01T03:00:00Z'),
+          correlationId: 'corr_first',
+        });
+        throw new Error('unreachable: onAdopted threw');
+      },
+    );
+    try {
+      await expect(processWebhookEvent(deps, makeInput())).rejects.toThrow('audit_log insert failed');
+      expect(deps.invoicingBridge.markPaidFromProcessor).not.toHaveBeenCalled();
+      expect(deps.processorEventsRepo.markProcessed).not.toHaveBeenCalled();
+      expect(auditFailed).toHaveBeenCalledWith('webhook_unresolved_event_adopted');
+    } finally {
+      auditFailed.mockRestore();
+    }
+  });
+
+  it('an ordinary crash-recovery replay records no adoption', async () => {
+    const adopted = vi.spyOn(paymentsMetrics, 'webhookUnresolvedRowAdopted');
+    const deps = makeDeps();
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      inserted: false,
+      event: {
+        id: 'evt_test_001',
+        tenantId: TENANT_ID,
+        eventType: 'payment_intent.succeeded',
+        apiVersion: PINNED_API,
+        livemode: false,
+        processorAccountId: 'acct_test_123',
+        receivedAt: new Date(),
+        processedAt: null,
+        outcome: 'processed',
+        payloadSha256: 'x'.repeat(64),
+        correlationId: 'corr_1',
+      },
+    });
+    try {
+      await processWebhookEvent(deps, makeInput());
+      expect(adopted).not.toHaveBeenCalled();
+      const eventTypes = (deps.audit.emit as ReturnType<typeof vi.fn>).mock.calls.map(
+        ([, e]) => (e as { eventType: string }).eventType,
+      );
+      expect(eventTypes).not.toContain('webhook_unresolved_event_adopted');
+    } finally {
+      adopted.mockRestore();
+    }
+  });
+
+  it('adopted unresolved row → dispatches, counts and logs the adoption without the account id', async () => {
+    const adopted = vi.spyOn(paymentsMetrics, 'webhookUnresolvedRowAdopted');
+    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() };
+    const deps = { ...makeDeps(), logger };
+    (deps.processorEventsRepo.insertIfNew as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      inserted: false,
+      adoptedFrom: 'acknowledged_only',
+      event: {
+        id: 'evt_test_001',
+        tenantId: TENANT_ID,
+        eventType: 'payment_intent.succeeded',
+        apiVersion: PINNED_API,
+        livemode: false,
+        processorAccountId: 'acct_test_123',
+        receivedAt: new Date(),
+        processedAt: null,
+        outcome: 'processed',
+        payloadSha256: 'x'.repeat(64),
+        correlationId: 'corr_1',
+      },
+    });
+    const result = await processWebhookEvent(deps, makeInput());
+    expect(result.ok && result.value.kind).toBe('processed');
+    expect(deps.processorEventsRepo.markProcessed).toHaveBeenCalledTimes(1);
+    expect(adopted).toHaveBeenCalledTimes(1);
+    expect(adopted).toHaveBeenCalledWith(TENANT_ID, 'payment_intent.succeeded');
+    const adoptLogs = logger.info.mock.calls.filter(
+      ([msg]) => msg === 'stripe-webhook.unresolved_row_adopted',
+    );
+    expect(adoptLogs).toHaveLength(1);
+    expect(adoptLogs[0]?.[1]).toMatchObject({ adoptedFrom: 'acknowledged_only', tenantId: TENANT_ID });
+    expect(JSON.stringify(adoptLogs[0]?.[1])).not.toContain('acct_test_123');
+    adopted.mockRestore();
   });
 
   // R5 canonical fix — the `'invoiceId' in result.value` false arm on all

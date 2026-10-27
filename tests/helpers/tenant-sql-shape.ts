@@ -58,8 +58,9 @@ export function recordingDb(): { db: ReturnType<typeof drizzle>; statements: Rec
   return { db, statements };
 }
 
+// `IS [NOT] DISTINCT FROM "t"."col"` compares a column; it names no table.
 const TABLE_REF =
-  /\b(from|join|update)\s+("?)([a-z_][a-z0-9_]*)\2(?:\s+(?:as\s+)?("?)([a-z_][a-z0-9_]*)\4)?/gi;
+  /(?<!\bdistinct\s+)\b(from|join|update)\s+("?)([a-z_][a-z0-9_]*)\2(?:\s+(?:as\s+)?("?)([a-z_][a-z0-9_]*)\4)?/gi;
 
 // A word after a table name that is SQL, not an alias.
 const NOT_AN_ALIAS = new Set([

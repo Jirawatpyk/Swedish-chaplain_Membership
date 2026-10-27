@@ -24,6 +24,11 @@
  *     (`api/webhooks/stripe/route.ts:608`) — 200-acked, nothing to process.
  *   - `rejected_signature` / `rejected_environment_mismatch` /
  *     `rejected_api_version_mismatch` — rejection-audit rows, never dispatched.
+ * (132, D-031: a replay that resolves a tenant adopts an `acknowledged_only`
+ * or env/api-version row and rewrites its outcome to `processed`, so from
+ * then on it is an ordinary row here — counted only if that dispatch fails,
+ * which is the right signal. Its `received_at` is the first delivery's, so it
+ * is past the grace window at once.)
  * Counting them pins the gauge at a large non-zero constant (135 such rows on
  * the dev branch at the time of writing) and destroys the property that makes
  * this instrument worth deploying: production reads 0 today, so any future

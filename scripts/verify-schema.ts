@@ -239,6 +239,13 @@ async function main(): Promise<void> {
         name: 'broadcast_images.unused_checked_at + broadcast_images_tenant_unused_checked_idx (mig 0319)',
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcast_images' AND column_name = 'unused_checked_at' AND data_type = 'timestamp with time zone' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'broadcast_images' AND indexname = 'broadcast_images_tenant_unused_checked_idx' AND indexdef LIKE '%(tenant_id, unused_checked_at NULLS FIRST, created_at) WHERE ((deleted_at IS NULL) AND (owner_kind = ''broadcast''::text))')`,
       },
+      {
+        // Spec 132 (mig 0320) — a Stripe replay that adopts a NULL-tenant
+        // processor_events row audits it; without the label that audit
+        // insert fails and rolls the adoption back.
+        name: "audit_event_type has 'webhook_unresolved_event_adopted' (mig 0320)",
+        query: `SELECT 1 AS hit FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'webhook_unresolved_event_adopted'`,
+      },
     ];
     let failures = 0;
     for (const canary of canaries) {

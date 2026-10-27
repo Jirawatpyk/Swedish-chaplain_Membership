@@ -100,6 +100,7 @@ export function extractAlterTypeAddValueStatements(sql: string): string[] {
  *                        += the ten F119 approval-round events (0308)
  *                        += 'broadcast_retention_swept' (0310, F7 retention sweep)
  *                        += 'broadcast_unsubscribe_unattributed' (0312, F7 opt-out)
+ *                        += 'webhook_unresolved_event_adopted' (0320, 132 adopt-on-replay)
  *   - `notification_type` += the two F114 rows (0301), the five F119 eblast_* rows (0308)
  *   - `broadcast_status`  += the five F119 approval-round statuses (0308)
  */
@@ -186,6 +187,10 @@ export const REQUIRED_ENUM_VALUES: Readonly<Record<string, readonly string[]>> =
     // F7 (0312) — the broadcasts webhook INSERTs it for a Resend-side opt-out
     // it cannot record; a non-persisting ADD VALUE would lose that evidence.
     'broadcast_unsubscribe_unattributed',
+    // 132 (0320) — the Stripe webhook INSERTs it when a replay adopts an
+    // unresolved processor_events row; a non-persisting ADD VALUE would lose
+    // the only durable record of the adoption.
+    'webhook_unresolved_event_adopted',
   ],
   // F114 (0301) — the two outbox row types the same use cases INSERT.
   notification_type: [

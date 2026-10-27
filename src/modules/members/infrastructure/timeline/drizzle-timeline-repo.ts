@@ -10,7 +10,8 @@
  * Tenant scoping: runs under `runInTenant` (sets `app.current_tenant`); the
  * view is `security_invoker = on` so each base table's RLS applies to the
  * querying `chamber_app` role — tenant isolation holds inside the view
- * (Principle I).
+ * (Principle I). Every query on the view or a tenant table also states
+ * `tenant_id = ctx.slug` (D-029).
  *
  * Cursor precision: the cursor carries the FULL `occurred_at::text`
  * (microsecond) value, not a millisecond-truncated `Date.toISOString()` — a
@@ -23,7 +24,7 @@
  * strips them from the returned payload, and keeps the F3 plan-name
  * enrichment so the audit half renders exactly as before.
  */
-import { sql, inArray, type SQL } from 'drizzle-orm';
+import { and, eq, sql, inArray, type SQL } from 'drizzle-orm';
 import { ok, err } from '@/lib/result';
 import { runInTenant, db } from '@/lib/db';
 import { insightsMetrics } from '@/lib/metrics';
@@ -362,7 +363,7 @@ export const drizzleTimelineRepo: TimelinePort = {
                 planName: membershipPlans.planName,
               })
               .from(membershipPlans)
-              .where(inArray(membershipPlans.planId, planIds))
+              .where(and(eq(membershipPlans.tenantId, ctx.slug), inArray(membershipPlans.planId, planIds)))
               .orderBy(sql`${membershipPlans.planYear} DESC`);
             for (const pr of planRows) {
               const pn = (pr.planName ?? {}) as Record<string, string>;

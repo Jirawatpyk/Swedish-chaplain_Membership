@@ -175,7 +175,13 @@ export type F5AuditEventType =
   // false. 10y retention because it is money-trail-adjacent (Thai RD §87/3):
   // it is the only durable record that a captured payment did NOT settle.
   // Shares the `payment_` prefix, so `audit-event-type-parity` already covers it.
-  | 'payment_settlement_rolled_back';
+  | 'payment_settlement_rolled_back'
+  // 132 / D-031 (migration 0320) — a Stripe replay adopted the NULL-tenant
+  // processor_events row its first, unresolved delivery left. The adoption
+  // overwrites the row's outcome, so this is the only durable record that the
+  // event was once refused. 10y (money-trail: it is what lets an old event
+  // settle an invoice). `webhook_` prefix → covered by the parity test.
+  | 'webhook_unresolved_event_adopted';
 
 /**
  * R2 TD-13 (2026-04-27): typed payload shape per event type.
@@ -644,6 +650,16 @@ export interface F5AuditPayloadByType {
     readonly money_captured: true;
     readonly runbook_url: string;
   };
+  // 132 — ids, the event type and the refused outcome only. No account id,
+  // no payload content (SAQ-A). `first_*` are the unresolved delivery's
+  // values, which the processor_events row keeps.
+  webhook_unresolved_event_adopted: {
+    readonly processor_event_id: string;
+    readonly event_type: string;
+    readonly adopted_from: string;
+    readonly first_received_at: string;
+    readonly first_correlation_id: string;
+  };
 }
 
 /**
@@ -758,6 +774,9 @@ export const F5_AUDIT_RETENTION_YEARS: Record<F5AuditEventType, 5 | 10> = {
   // system then declined to settle. Same money-trail class as
   // `payment_succeeded` (Thai RD §87/3).
   payment_settlement_rolled_back: 10,
+  // 132 — the adoption that lets an old event settle an invoice; same
+  // money-trail class as `payment_succeeded`.
+  webhook_unresolved_event_adopted: 10,
 };
 
 /**

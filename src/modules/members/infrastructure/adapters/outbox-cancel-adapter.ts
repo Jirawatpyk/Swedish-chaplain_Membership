@@ -8,10 +8,11 @@
  * guard so already-sent / permanently_failed history is preserved.
  *
  * `notifications_outbox` is tenant-scoped (RLS+FORCE since migration 0098); the
- * caller threads the `tx` from `runInTenant`, so the row-level RLS policy
- * (`tenant_id = current_setting('app.current_tenant')`) confines the DELETE to
- * the erased member's tenant — no manual `tenant_id` filter needed (and the
- * GUC is set, unlike the cross-tenant owner-role `eraseUser` tx).
+ * caller threads the `tx` from `runInTenant`. Each DELETE states that tx's
+ * tenant (`o.tenant_id = tenantSlugOf(tx)`, D-029/D-030) and the `contacts`
+ * guards correlate `c.tenant_id = o.tenant_id`, with the RLS policy
+ * (`tenant_id = current_setting('app.current_tenant')`) behind them (the GUC
+ * is set, unlike the cross-tenant owner-role `eraseUser` tx).
  *
  * COMP-1 FIX-4 — the DELETE adds a two-pronged cross-member OWNERSHIP guard
  * (parameterised by `erasedMemberId`) so erasing member A cannot cancel a PEER
@@ -32,12 +33,14 @@
  * schema import is needed. `contacts` is intra-module (members); `users` lives
  * in the auth schema — referencing it by name inside the tenant-scoped tx is
  * the same documented cross-module escape hatch the prior Drizzle-builder
- * version used for `notifications_outbox`. RLS (FORCE on notifications_outbox)
- * + the GUC set by `runInTenant` confine the DELETE to the erased tenant; the
+ * version used for `notifications_outbox`. The tenant predicate, with RLS
+ * (FORCE on notifications_outbox) behind it, confines the DELETE to the erased
+ * tenant; the
  * two NOT EXISTS guards key on `member_id <> erasedMemberId` for cross-member
  * safety.
  */
 import { sql } from 'drizzle-orm';
+import { tenantSlugOf, TenantTxNotBoundError } from '@/lib/db';
 import { err, ok } from '@/lib/result';
 import type { OutboxCancelPort } from '../../application/ports/outbox-cancel-port';
 
@@ -47,13 +50,15 @@ export const outboxCancelAdapter: OutboxCancelPort = {
     // guard so an erased member with no queued mail does not touch the table.
     if (emails.length === 0) return ok({ cancelledCount: 0 });
     try {
+      const tenantId = tenantSlugOf(tx);
       // Raw DELETE so the two cross-member ownership guards (NOT EXISTS
       // anti-joins on `contacts` / `contacts ⨝ users`) can sit in the WHERE
       // clause. `= ANY(ARRAY[...]::text[])` is the Neon-safe array form
       // (mirrors the broadcasts redaction repo); a bare JS array errors 22P02.
       const deleted = (await tx.execute(sql`
         DELETE FROM notifications_outbox o
-        WHERE o.to_email = ANY(ARRAY[${sql.join(
+        WHERE o.tenant_id = ${tenantId}
+          AND o.to_email = ANY(ARRAY[${sql.join(
           emails.map((e) => sql`${e}`),
           sql`, `,
         )}]::text[])
@@ -63,7 +68,8 @@ export const outboxCancelAdapter: OutboxCancelPort = {
           -- contact address).
           AND NOT EXISTS (
             SELECT 1 FROM contacts c
-            WHERE c.member_id <> ${erasedMemberId}
+            WHERE c.tenant_id = o.tenant_id
+              AND c.member_id <> ${erasedMemberId}
               AND c.removed_at IS NULL
               AND lower(c.email) = lower(o.to_email)
           )
@@ -74,7 +80,8 @@ export const outboxCancelAdapter: OutboxCancelPort = {
           AND NOT EXISTS (
             SELECT 1 FROM contacts c2
             JOIN users u ON u.id = c2.linked_user_id
-            WHERE c2.member_id <> ${erasedMemberId}
+            WHERE c2.tenant_id = o.tenant_id
+              AND c2.member_id <> ${erasedMemberId}
               AND c2.removed_at IS NULL
               AND lower(u.email) = lower(o.to_email)
           )
@@ -82,6 +89,7 @@ export const outboxCancelAdapter: OutboxCancelPort = {
       `)) as unknown as Array<{ id: string }>;
       return ok({ cancelledCount: deleted.length });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },
@@ -98,13 +106,15 @@ export const outboxCancelAdapter: OutboxCancelPort = {
     try {
       const deleted = (await tx.execute(sql`
         DELETE FROM notifications_outbox o
-        WHERE o.status = 'pending'
+        WHERE o.tenant_id = ${tenantSlugOf(tx)}
+          AND o.status = 'pending'
           AND o.notification_type IN ('member_change_request_submitted_staff', 'member_change_request_decided_member')
           AND o.context_data->>'memberId' = ${erasedMemberId}
         RETURNING o.id
       `)) as unknown as Array<{ id: string }>;
       return ok({ cancelledCount: deleted.length });
     } catch (e) {
+      if (e instanceof TenantTxNotBoundError) throw e;
       return err({ code: 'repo.unexpected', cause: e });
     }
   },

@@ -100,9 +100,9 @@ const KNOWN_RAW_WITHTX: ReadonlyMap<string, { readonly count: number; readonly r
     [
       'use-cases/process-webhook-event.ts',
       {
-        count: 3,
+        count: 2,
         reason:
-          'processor_events insert + two dispatch-tail transactions folding markProcessed into the sub-use-case tx.',
+          'two dispatch-tail transactions folding markProcessed into the sub-use-case tx (the processor_events insert opens none since 132).',
       },
     ],
     [
@@ -147,7 +147,7 @@ const KNOWN_RAW_WITHTX: ReadonlyMap<string, { readonly count: number; readonly r
  * Pinned independently of `KNOWN_RAW_WITHTX` so that trimming the inventory
  * without converting code fails instead of quietly lowering the bar.
  */
-const RAW_WITHTX_TOTAL = 21;
+const RAW_WITHTX_TOTAL = 20;
 
 /**
  * `commitTxWithRefusal` commits *and* returns a refusal. That is legitimate for

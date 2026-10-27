@@ -531,9 +531,11 @@ export async function processWebhookEvent(
           span.setAttribute('webhook.outcome', `err:${result.error.code}`);
         }
         return result;
-        /* v8 ignore start — tracer error-status path; processWebhookEventBody
-         * always returns Result<...>. Defence-in-depth for OOM /
-         * tracer-internal throws bypassing the typed contract. */
+        /* v8 ignore start — tracer error-status path. Reached by an
+         * adoption whose audit write fails (132, D-031: it throws so the
+         * adoption rolls back; covered by "adoption audit write fails")
+         * and by OOM / tracer-internal throws. The non-Error arm and the
+         * post-throw continuation are not separately exercised. */
       } catch (e) {
         span.setStatus({
           code: SpanStatusCode.ERROR,
@@ -541,8 +543,8 @@ export async function processWebhookEvent(
           message: e instanceof Error ? e.constructor.name : 'webhook_threw',
         });
         throw e;
-        /* v8 ignore stop */
       } finally {
+        /* v8 ignore stop */
         span.end();
       }
     },
@@ -570,11 +572,14 @@ async function processWebhookEventBody(
   const eventAgeSeconds =
     Math.floor(deps.clock.nowMs() / 1000) - event.createdAtUnixSeconds;
 
-  // Step 6 — idempotency insert. Runs on its own tx so a duplicate is
-  // observed before we open the dispatch tx (avoids a useless row lock
-  // on retry).
-  const inserted = await deps.paymentsRepo.withTx(async (tx) => {
-    return await deps.processorEventsRepo.insertIfNew(tx, {
+  // Step 6 — idempotency insert, committed before the dispatch tx opens so
+  // a duplicate is observed first. `insertIfNew` runs on the owner
+  // connection and ignores any tx (it must also write NULL-tenant rows), so
+  // no tenant tx is opened for it: one would only hold a pool connection
+  // while the insert borrowed a second (132 review, reliability M-1).
+  const inserted = await deps.processorEventsRepo.insertIfNew(
+    null,
+    {
       id: event.id,
       tenantId,
       eventType: event.type,
@@ -585,8 +590,67 @@ async function processWebhookEventBody(
       payloadSha256: input.payloadSha256,
       correlationId: input.correlationId,
       receivedAt: new Date(deps.clock.nowMs()),
+    },
+    // 132 (D-031) — the adoption overwrites the row's outcome, so this audit
+    // row is the only durable record that the event was once refused. It is
+    // written on the adoption's own transaction: a failed write rolls the
+    // adoption back (the next replay adopts again), and it survives a
+    // dispatch that fails afterwards.
+    async (ownerTx, adoptedFrom, adopted) => {
+      try {
+        await deps.audit.emit(ownerTx, {
+          tenantId,
+          requestId: input.requestId,
+          eventType: 'webhook_unresolved_event_adopted',
+          actorUserId: SYSTEM_ACTOR_STRIPE_WEBHOOK,
+          summary: `Stripe ${event.type} ${event.id} adopted on replay (was ${adoptedFrom})`,
+          payload: {
+            processor_event_id: event.id,
+            event_type: event.type,
+            adopted_from: adoptedFrom,
+            first_received_at: adopted.receivedAt.toISOString(),
+            first_correlation_id: adopted.correlationId,
+          },
+          retentionYears: retentionFor('webhook_unresolved_event_adopted'),
+        });
+      } catch (e) {
+        // The throw rolls the adoption back; count it on the same alarm as
+        // every other failed F5 audit write (the route only logs a 500).
+        paymentsMetrics.useCaseAuditEmitFailed('webhook_unresolved_event_adopted');
+        throw e;
+      }
+    },
+  );
+
+  if (inserted.adoptedFrom !== undefined) {
+    // 132 (D-031) — the repo adopted the NULL-tenant row an unresolved first
+    // delivery left. Its processed_at is NULL, so the recovery path below
+    // dispatches and stamps it. No account id here: tenant + type suffice.
+    deps.logger?.info('stripe-webhook.unresolved_row_adopted', {
+      eventId: event.id,
+      eventType: event.type,
+      tenantId,
+      adoptedFrom: inserted.adoptedFrom,
     });
-  });
+    paymentsMetrics.webhookUnresolvedRowAdopted(tenantId, event.type);
+  }
+
+  if (!inserted.inserted && inserted.event.tenantId !== tenantId) {
+    // 132 (D-031) — fail closed. The stored row belongs to no tenant (the
+    // repo refused to adopt it: wrong account or livemode, or
+    // rejected_signature) or to another tenant. `markProcessed` runs under
+    // this tenant's RLS and could never stamp it, so dispatching would
+    // repeat on every replay — and would act for a tenant the row does not
+    // name. Acknowledge as a duplicate instead.
+    deps.logger?.warn('stripe-webhook.duplicate_tenant_mismatch', {
+      eventId: event.id,
+      eventType: event.type,
+      tenantId,
+      storedTenant: inserted.event.tenantId === null ? 'null' : 'other',
+    });
+    paymentsMetrics.webhookDuplicateTenantMismatch(tenantId, event.type);
+    return ok<ProcessWebhookEventOutcome>({ kind: 'duplicate' });
+  }
 
   if (!inserted.inserted) {
     // duplicate delivery — but ONLY short-circuit if the prior
@@ -622,7 +686,11 @@ async function processWebhookEventBody(
     // depending on branch) — forensic queries that aggregate these
     // MUST group by `payload->>'processor_refund_id'` to dedupe
     // (contract parity with the confirm-payment Phase B docstring).
-    paymentsMetrics.webhookDispatchRecoveryReplay(tenantId, event.type);
+    // An adoption also lands here (its row is unstamped), but it is an
+    // operator replay, not a crashed dispatch — counted above instead.
+    if (inserted.adoptedFrom === undefined) {
+      paymentsMetrics.webhookDispatchRecoveryReplay(tenantId, event.type);
+    }
   }
 
   // Step 9 — dispatch. Structured allow-list ONLY (PCI guardian).

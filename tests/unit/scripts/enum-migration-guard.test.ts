@@ -173,6 +173,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_retention_swept',
           // 0312 (F7 unattributed opt-out):
           'broadcast_unsubscribe_unattributed',
+          // 0320 (132 adopt-on-replay):
+          'webhook_unresolved_event_adopted',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -263,6 +265,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_retention_swept',
           // 0312 (F7 unattributed opt-out):
           'broadcast_unsubscribe_unattributed',
+          // 0320 (132 adopt-on-replay):
+          'webhook_unresolved_event_adopted',
         ]),
       ],
       // 0301 (F114): the two outbox row types the use cases INSERT.
@@ -380,6 +384,8 @@ describe('findMissingEnumValues', () => {
           'broadcast_retention_swept',
           // 0312 (F7 unattributed opt-out):
           'broadcast_unsubscribe_unattributed',
+          // 0320 (132 adopt-on-replay):
+          'webhook_unresolved_event_adopted',
         ],
       },
     ]);
