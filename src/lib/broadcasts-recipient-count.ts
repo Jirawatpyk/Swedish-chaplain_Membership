@@ -57,10 +57,9 @@ export function parseRecipientCountQuery(
   if (!parsed.success) return { ok: false };
   const { segment, tier } = parsed.data;
   if (segment === 'tier') {
-    const tierCodes = (tier ?? '')
-      .split(',')
-      .map((c) => c.trim())
-      .filter((c) => c.length > 0);
+    // Not trimmed (security review L-2): the count reads the codes exactly
+    // as the submit routes would, so `%20corporate` is refused by both.
+    const tierCodes = (tier ?? '').split(',');
     // Review 2026-09-07 (code LOW) — an over-length code used to be silently
     // DROPPED, so the count answered for a different audience than the submit
     // would send (SC-004 broken with a wrong number shown as truth). It is a
@@ -70,6 +69,7 @@ export function parseRecipientCountQuery(
     // PR D: the submit routes accept only the two plan categories, so the
     // count does too; it never answers for an audience that can't be sent.
     if (!tierCodes.every(isBroadcastTierCode)) return { ok: false };
+    if (new Set(tierCodes).size !== tierCodes.length) return { ok: false };
     return { ok: true, segment: { kind: 'tier', tierCodes } };
   }
   return { ok: true, segment: { kind: segment } };

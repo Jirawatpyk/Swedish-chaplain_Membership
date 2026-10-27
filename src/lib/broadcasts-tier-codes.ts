@@ -5,7 +5,8 @@
  * refuse anything else, because any other code reached nobody.
  *
  * Client-safe (no server imports): the picker, the history and the routes
- * share this one list.
+ * share this one list. The compose hint ("Choose one or both.") assumes two:
+ * adding a code means re-wording `portal.broadcasts.compose.fields.tierCodesHelp`.
  */
 export const BROADCAST_TIER_CODES = ['corporate', 'partnership'] as const;
 

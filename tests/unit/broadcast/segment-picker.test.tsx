@@ -60,7 +60,7 @@ describe('the tier option is a choice of membership categories (PR D)', () => {
   it('shows the two categories as checkboxes in a named group, and no text field', () => {
     renderPicker();
     const group = screen.getByRole('group', { name: en.portal.broadcasts.compose.tierLabel });
-    expect(group).toHaveTextContent(en.portal.broadcasts.compose.fields.tierCodesHelp);
+    expect(group).toHaveAccessibleDescription(en.portal.broadcasts.compose.fields.tierCodesHelp);
     expect(screen.getByRole('checkbox', { name: cat.corporate })).not.toBeChecked();
     expect(screen.getByRole('checkbox', { name: cat.partnership })).not.toBeChecked();
     expect(screen.getAllByRole('checkbox')).toHaveLength(2);

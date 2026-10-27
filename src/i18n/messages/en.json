@@ -6942,7 +6942,7 @@
         },
         "submitBlocked": {
           "subjectRequired": "Add a subject before submitting for review.",
-          "tierRequired": "Choose at least one membership tier before submitting for review."
+          "tierRequired": "Choose at least one membership category before submitting for review."
         },
         "views": {
           "label": "Compose view",

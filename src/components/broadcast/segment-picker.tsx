@@ -113,30 +113,37 @@ function TierCategoriesField({
   const hintId = useId();
   const chosen = new Set(codes.filter(isBroadcastTierCode));
   return (
+    // stand-in until AURA #183: AURA's own field classes, so the legend, hint
+    // and gaps match the RadioGroup above it (and the Thai line height).
+    // Not indented: it follows the whole radio list, so an indent read as a
+    // sub-option of the last radio (a11y review W1).
     <fieldset
-      className="m-0 ml-6 flex min-w-0 flex-col gap-[var(--aura-space-1)] border-0 p-0"
+      className="aura-field m-0 min-w-0 border-0 p-0"
       aria-describedby={hintId}
       disabled={disabled}
       data-compose-feature="tier-categories"
     >
-      <legend className="mb-[var(--aura-space-1)] p-0 text-sm font-medium">{t('tierLabel')}</legend>
-      {BROADCAST_TIER_CODES.map((code) => (
-        <Checkbox
-          key={code}
-          checked={chosen.has(code)}
-          onChange={(checked) => {
-            const next = new Set(chosen);
-            if (checked) next.add(code);
-            else next.delete(code);
-            onChange(BROADCAST_TIER_CODES.filter((c) => next.has(c)));
-          }}
-          disabled={disabled}
-          touchHeight
-        >
-          {tCategory(code)}
-        </Checkbox>
-      ))}
-      <p id={hintId} className="m-0 text-sm text-[var(--aura-fg-secondary)]">
+      <legend className="aura-field__label p-0">{t('tierLabel')}</legend>
+      <div className="flex flex-col gap-[var(--aura-space-3)] max-sm:gap-0">
+        {BROADCAST_TIER_CODES.map((code) => (
+          <Checkbox
+            key={code}
+            checked={chosen.has(code)}
+            onChange={(checked) => {
+              const next = new Set(chosen);
+              if (checked) next.add(code);
+              else next.delete(code);
+              onChange(BROADCAST_TIER_CODES.filter((c) => next.has(c)));
+            }}
+            disabled={disabled}
+            touchHeight
+          >
+            {tCategory(code)}
+          </Checkbox>
+        ))}
+      </div>
+      {/* stand-in until AURA #183: the field hint's own class. */}
+      <p id={hintId} className="aura-field__hint">
         {t('fields.tierCodesHelp')}
       </p>
     </fieldset>
