@@ -394,34 +394,49 @@ describe('eraseUser use-case (live Neon)', () => {
     expect(JSON.stringify(after)).not.toContain(`real-${stamp}`);
   });
 
-  // 134-s2 — another tenant's PENDING mail bound to this login (a
-  // verification / revert notice keyed on the login id, an invitation keyed on
-  // its address) would otherwise still go out to the real address after the
-  // global erasure. eraseMember only reached its own tenant's rows.
-  it('cancels the login-bound pending outbox rows in every tenant', async () => {
+  // 134-s2 — another tenant's mail bound to this login (a verification /
+  // revert notice or a staff notice keyed on the login id, an invitation keyed
+  // on its address) would otherwise still go out — or, once sent, keep the real
+  // address for the 90-day purge window. eraseMember only reached its own
+  // tenant's PENDING rows. Every status of a login-bound row is removed.
+  it('removes the login-bound outbox rows in every tenant, any status', async () => {
     const user = await createActiveTestUser('member');
     created.push(user);
     const bystander = await createActiveTestUser('member');
     created.push(bystander);
     const stamp = Date.now().toString(36);
     const ctx = (userId: string) => ({ userId, token: `t-${stamp}`, contactId: randomUUID() });
-    const ids = {
+    const gone = {
       verifyA: randomUUID(),
       revertB: randomUUID(),
-      inviteB: randomUUID(),
+      inviteMixedCaseB: randomUUID(),
       sentA: randomUUID(),
-      otherLogin: randomUUID(),
-      invoice: randomUUID(),
+      failedB: randomUUID(),
+      reviewerB: randomUUID(),
+      eblastRecipientA: randomUUID(),
     };
+    const kept = {
+      otherLogin: randomUUID(),
+      otherInvite: randomUUID(),
+      invoice: randomUUID(),
+      // A row of ANOTHER type that happens to carry this login under `userId`.
+      otherTypeSameUserId: randomUUID(),
+    };
+    const ids = [...Object.values(gone), ...Object.values(kept)];
+    const mixedCase = user.rawEmail.toUpperCase();
     await db.insert(notificationsOutbox).values([
-      { id: ids.verifyA, tenantId: `ta-${stamp}`, notificationType: 'email_verification', toEmail: `new-${stamp}@example.test`, locale: 'en', contextData: ctx(user.userId) },
-      { id: ids.revertB, tenantId: `tb-${stamp}`, notificationType: 'email_change_revert', toEmail: user.rawEmail, locale: 'en', contextData: { ...ctx(user.userId), oldEmail: user.rawEmail } },
-      { id: ids.inviteB, tenantId: `tb-${stamp}`, notificationType: 'member_invitation', toEmail: user.rawEmail.toLowerCase(), locale: 'en', contextData: { token: `i-${stamp}`, role: 'member' } },
-      // Controls: an already-SENT row, another login's row, and the tenant's
-      // own business mail to the same address are all left alone.
-      { id: ids.sentA, tenantId: `ta-${stamp}`, notificationType: 'email_verification', toEmail: `new-${stamp}@example.test`, locale: 'en', contextData: ctx(user.userId), status: 'sent' },
-      { id: ids.otherLogin, tenantId: `tb-${stamp}`, notificationType: 'email_verification', toEmail: bystander.rawEmail, locale: 'en', contextData: ctx(bystander.userId) },
-      { id: ids.invoice, tenantId: `tb-${stamp}`, notificationType: 'invoice_auto_email', toEmail: user.rawEmail, locale: 'en', contextData: { event_type: 'issued' } },
+      { id: gone.verifyA, tenantId: `ta-${stamp}`, notificationType: 'email_verification', toEmail: `new-${stamp}@example.test`, locale: 'en', contextData: ctx(user.userId) },
+      { id: gone.revertB, tenantId: `tb-${stamp}`, notificationType: 'email_change_revert', toEmail: user.rawEmail, locale: 'en', contextData: { ...ctx(user.userId), oldEmail: user.rawEmail } },
+      { id: gone.inviteMixedCaseB, tenantId: `tb-${stamp}`, notificationType: 'member_invitation', toEmail: mixedCase, locale: 'en', contextData: { token: `i-${stamp}`, role: 'member' } },
+      { id: gone.sentA, tenantId: `ta-${stamp}`, notificationType: 'email_verification', toEmail: `new-${stamp}@example.test`, locale: 'en', contextData: ctx(user.userId), status: 'sent' },
+      { id: gone.failedB, tenantId: `tb-${stamp}`, notificationType: 'email_change_revert', toEmail: user.rawEmail, locale: 'en', contextData: { ...ctx(user.userId), oldEmail: user.rawEmail }, status: 'permanently_failed' },
+      { id: gone.reviewerB, tenantId: `tb-${stamp}`, notificationType: 'member_change_request_submitted_staff', toEmail: user.rawEmail, locale: 'en', contextData: { requestId: randomUUID(), reviewerUserId: user.userId } },
+      { id: gone.eblastRecipientA, tenantId: `ta-${stamp}`, notificationType: 'eblast_approval_lifecycle', toEmail: user.rawEmail, locale: 'en', contextData: { audience: 'staff', recipientUserId: user.userId } },
+      // Controls.
+      { id: kept.otherLogin, tenantId: `tb-${stamp}`, notificationType: 'email_verification', toEmail: bystander.rawEmail, locale: 'en', contextData: ctx(bystander.userId) },
+      { id: kept.otherInvite, tenantId: `tb-${stamp}`, notificationType: 'member_invitation', toEmail: bystander.rawEmail, locale: 'en', contextData: { token: `j-${stamp}`, role: 'member' } },
+      { id: kept.invoice, tenantId: `tb-${stamp}`, notificationType: 'invoice_auto_email', toEmail: user.rawEmail, locale: 'en', contextData: { event_type: 'issued' } },
+      { id: kept.otherTypeSameUserId, tenantId: `tb-${stamp}`, notificationType: 'invoice_auto_email', toEmail: user.rawEmail, locale: 'en', contextData: { userId: user.userId } },
     ]);
     try {
       const res = await eraseUser({
@@ -435,12 +450,59 @@ describe('eraseUser use-case (live Neon)', () => {
       const left = await db
         .select({ id: notificationsOutbox.id })
         .from(notificationsOutbox)
-        .where(inArray(notificationsOutbox.id, Object.values(ids)));
-      expect(left.map((r) => r.id).sort()).toEqual(
-        [ids.sentA, ids.otherLogin, ids.invoice].sort(),
-      );
+        .where(inArray(notificationsOutbox.id, ids));
+      expect(left.map((r) => r.id).sort()).toEqual(Object.values(kept).sort());
     } finally {
-      await db.delete(notificationsOutbox).where(inArray(notificationsOutbox.id, Object.values(ids)));
+      await db.delete(notificationsOutbox).where(inArray(notificationsOutbox.id, ids));
+    }
+  });
+
+  // 134-s2 (security review M-1) — an email change that commits WHILE the
+  // erasure runs. The cancel locks the users row first, so it waits for the
+  // change and then sees (and removes) the rows that change enqueued.
+  it('a concurrent email change cannot slip a pending row past the cancel', async () => {
+    const user = await createActiveTestUser('member');
+    created.push(user);
+    const stamp = Date.now().toString(36);
+    const rowId = randomUUID();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let markLocked!: () => void;
+    const locked = new Promise<void>((r) => (markLocked = r));
+    const changer = db.transaction(async (tx) => {
+      await tx.select({ id: users.id }).from(users).where(eq(users.id, user.userId)).for('update');
+      await tx.insert(notificationsOutbox).values({
+        id: rowId,
+        tenantId: `tc-${stamp}`,
+        notificationType: 'email_change_revert',
+        toEmail: user.rawEmail,
+        locale: 'en',
+        contextData: { userId: user.userId, oldEmail: user.rawEmail },
+      });
+      markLocked();
+      await gate;
+    });
+    await locked;
+    try {
+      const erase = eraseUser({
+        userId: user.userId,
+        actorUserId: 'admin-it',
+        requestId: `it-erase-134-race-${stamp}`,
+        sourceIp: null,
+      });
+      await new Promise((r) => setTimeout(r, 750));
+      release();
+      await changer;
+      expect((await erase).ok).toBe(true);
+
+      const left = await db
+        .select({ id: notificationsOutbox.id })
+        .from(notificationsOutbox)
+        .where(eq(notificationsOutbox.id, rowId));
+      expect(left).toHaveLength(0);
+    } finally {
+      release();
+      await db.delete(notificationsOutbox).where(eq(notificationsOutbox.id, rowId));
     }
   });
 
