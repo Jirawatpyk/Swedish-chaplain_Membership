@@ -6,7 +6,10 @@ Agreed in plan mode on 27 Oct 2026, together with the D-030 follow-up (#670).
 
 - Extract table discovery and the per-tenant drain from `scripts/cleanup-leaked-test-tenants.ts` into `scripts/lib/leaked-test-tenants.ts`. It imports only `postgres`, so tsx and vitest both load it.
 - The operator script calls the module with `allowTriggerDisable: true`.
-- The globalSetup calls it with `apply: true`, a 6 h age filter, `allowTriggerDisable: false` and `skipStuckOnCycle: true`, inside a try/catch that only logs.
+- The globalSetup calls it with `AUTOMATIC_SWEEP_OPTIONS` inside a try/catch that only logs:
+  - 6 h age filter, generated slugs only;
+  - `allowTriggerDisable: false`, `skipUndrainable: true`;
+  - a 20 s budget and per-tenant lock and statement timeouts.
 - Not taken:
   - fixing every leaking file: worker kills and swallowed cleanups recur, as the users leak showed;
   - a pre-check on `tenant_invoice_settings`: a clean run already costs ~0, so it is not worth a second code path.
@@ -21,3 +24,38 @@ Agreed in plan mode on 27 Oct 2026, together with the D-030 follow-up (#670).
 - **First run with the new globalSetup:** `swept 66/87 leaked test tenant(s) older than 6 h in 99236 ms; 21 left rows`, 1 m 44 s in total.
 - **Second run:** no sweep line, because nothing was eligible and the stuck ones were skipped; 4.7 s in total.
 - `tsc` and eslint are clean on the touched files.
+
+## Review round 1 → fixes
+
+- **`/code-review high 671`**, 4 Low:
+  - guarded tenants were retried every run;
+  - no timeouts;
+  - no real-sweep test of the skip;
+  - the script used its own prod guard.
+
+  RED e68ffb9e7, fix 04fea2f9e.
+- **reliability-guardian**, 3 Medium plus 5 Low:
+  - no time budget or lock timeout;
+  - a TOCTOU on fixed-slug fixtures;
+  - guarded tenants retried.
+- **senior-tester**, NOT SHIP-READY:
+  - the ENABLE TRIGGER statement was unpinned, so mutant M2 survived;
+  - one-sided cycle cases were missing;
+  - the skip wiring was untested;
+  - the spec had drifted.
+- RED for the reliability and senior-tester findings: 19e57bf21. The budget and generated-slug cases failed with `expected undefined to deeply equal [...]` and `expected ['test-sweep-fixed-slug'] ...`. Fix: d79385f5f.
+  - Only generated slugs (`GENERATED_TEST_SLUG`) are swept automatically, so a fixed-slug fixture that a live run may rewrite is never touched.
+  - A 20 s budget (`skippedBudget`), plus a per-tenant `lock_timeout` of 5 s and `statement_timeout` of 30 s.
+  - An undrainable tenant is skipped only once its `tenant_invoice_settings` row is gone. The rule is the same for the cycle and for guarded tables.
+  - The deleted count is recorded only after the savepoint (and any trigger re-enable) holds.
+  - The globalSetup log gives the SQLSTATE on failure and counts deferred and undrainable tenants.
+  - Tests:
+    - the three trigger statements pinned with `toEqual`;
+    - one-sided cycle cases;
+    - `GENERATED_TEST_SLUG`;
+    - `AUTOMATIC_SWEEP_OPTIONS` pinned;
+    - the skip wiring through a fake client (a skipped tenant opens no transaction);
+    - a `testing-*` slug to exercise the regex;
+    - test tenants 2 h old with a 1 h filter, so another run's 6 h sweep cannot take them.
+- GREEN: unit 12/12; integration 5/5; `tsc` and eslint clean; `pnpm check` exit 0.
+- Not covered by a test: the globalSetup catch path. It is hygiene code, and reading it shows it logs and continues.

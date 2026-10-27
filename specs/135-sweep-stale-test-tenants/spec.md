@@ -16,11 +16,13 @@ Test users have an automatic stale sweep (#638); tenants had only the manual `sc
 
 1. **The globalSetup sweeps stale test tenants.** `tests/integration-global-setup.ts`, after the users sweep, deletes the rows of `test-*` tenants whose newest row is older than 6 h, through `sweepLeakedTestTenants` in `scripts/lib/leaked-test-tenants.ts`. It logs one line with the counts and the duration.
 2. **It is safe on a shared branch.**
-   - It never issues `ALTER TABLE … DISABLE TRIGGER`. A delete-guarded table is left and reported.
-   - A tenant with a row younger than 6 h is untouched.
-   - A non-`test` slug is never a candidate.
-   - A tenant already drained down to the refund ↔ credit-note cycle is skipped, not retried.
-   - A sweep failure is logged and the run goes on.
+   - It never issues `ALTER TABLE … DISABLE TRIGGER`.
+   - It takes only the slugs `createTestTenant` generates (`GENERATED_TEST_SLUG`), never a fixed-slug fixture.
+   - A tenant with a row younger than 6 h is untouched. A non-`test` slug is never a candidate.
+   - A tenant it cannot fully drain (the refund ↔ credit-note cycle, a delete-guarded table) is skipped once an earlier drain removed its `tenant_invoice_settings` row, and counted in the log line.
+   - It stops starting tenants after a 20 s budget, and runs each tenant under a lock and statement timeout.
+   - A sweep failure is logged with its SQLSTATE and the run goes on.
+   - The options are one pinned constant, `AUTOMATIC_SWEEP_OPTIONS`.
 3. **The operator script still works.** `scripts/cleanup-leaked-test-tenants.ts` calls the same module with the trigger disable allowed, and its dry-run and apply output keep their shape.
 4. **Tests.**
    - Integration on dev (`tests/integration/test-infra/leaked-test-tenants.test.ts`): a dry run deletes nothing; apply removes the stale tenant and keeps the fresh one; `swecham` is never eligible.
