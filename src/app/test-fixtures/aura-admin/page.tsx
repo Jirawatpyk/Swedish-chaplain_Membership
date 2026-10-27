@@ -145,6 +145,7 @@ import { renderDashboardPreview } from './dashboard-previews';
 import { renderFinancePreview } from './finance-previews';
 import { EditorPreview } from './editor-preview';
 import type { ExportJobRecord, GroupedEvidence } from '@/modules/insights';
+import { erasedUserEmail } from '@/modules/auth/domain/erased-user-email';
 
 // Request-time evaluation so the guard runs per request (see button-matrix).
 export const dynamic = 'force-dynamic';
@@ -1736,12 +1737,13 @@ export default async function AuraAdminPreviewPage({
     const now = new Date();
     const inDays = (n: number) => new Date(now.getTime() + n * DAY);
     const users = state === 'empty' ? [] : [
-      { id: 'u-malin', email: 'malin.berg@swecham.example', role: 'super_admin' as const, status: 'active' as const, displayName: 'Malin Berg', invitationExpiresAt: null },
-      { id: 'u-karin', email: 'karin.ek@swecham.example', role: 'manager' as const, status: 'active' as const, displayName: 'Karin Ek', invitationExpiresAt: null },
-      { id: 'u-nok', email: 'nok.suwan@swecham.example', role: 'admin' as const, status: 'active' as const, displayName: 'Nok Suwan', invitationExpiresAt: null },
-      { id: 'u-johan', email: 'johan.strand@swecham.example', role: 'marketing' as const, status: 'active' as const, displayName: 'Johan Strand', invitationExpiresAt: null },
-      { id: 'u-ploy', email: 'ploy@siamnordic.example', role: 'member' as const, status: 'pending' as const, displayName: null, invitationExpiresAt: inDays(5) },
-      { id: 'u-anders', email: 'anders@midsommar.example', role: 'member' as const, status: 'disabled' as const, displayName: 'Anders Lind', invitationExpiresAt: null },
+      { id: 'u-malin', email: 'malin.berg@swecham.example', role: 'super_admin' as const, status: 'active' as const, displayName: 'Malin Berg', invitationExpiresAt: null, isErased: false },
+      { id: 'u-karin', email: 'karin.ek@swecham.example', role: 'manager' as const, status: 'active' as const, displayName: 'Karin Ek', invitationExpiresAt: null, isErased: false },
+      { id: 'u-nok', email: 'nok.suwan@swecham.example', role: 'admin' as const, status: 'active' as const, displayName: 'Nok Suwan', invitationExpiresAt: null, isErased: false },
+      { id: 'u-johan', email: 'johan.strand@swecham.example', role: 'marketing' as const, status: 'active' as const, displayName: 'Johan Strand', invitationExpiresAt: null, isErased: false },
+      { id: 'u-ploy', email: 'ploy@siamnordic.example', role: 'member' as const, status: 'pending' as const, displayName: null, invitationExpiresAt: inDays(5), isErased: false },
+      { id: 'u-anders', email: 'anders@midsommar.example', role: 'member' as const, status: 'disabled' as const, displayName: 'Anders Lind', invitationExpiresAt: null, isErased: false },
+      { id: 'u-erased', email: erasedUserEmail('u-erased'), role: 'member' as const, status: 'disabled' as const, displayName: null, invitationExpiresAt: null, isErased: true },
     ];
     const capabilities = { manageAccounts: true, manageStaffRoles: state !== 'manager' };
     const body = (

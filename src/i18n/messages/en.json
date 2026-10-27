@@ -707,7 +707,8 @@
           "all": "All statuses",
           "active": "Active",
           "disabled": "Disabled",
-          "pending": "Pending"
+          "pending": "Pending",
+          "erased": "Erased"
         },
         "clear": "Clear filters"
       },

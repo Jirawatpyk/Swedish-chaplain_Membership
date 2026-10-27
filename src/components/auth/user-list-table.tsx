@@ -62,6 +62,12 @@ interface UserRow {
    * invitation was already redeemed/revoked without a re-send.
    */
   readonly invitationExpiresAt: Date | null;
+  /**
+   * 134-s3 — an erased login (`UserListRow.isErased`). Its DB status stays
+   * `disabled`; the row shows "Erased" and offers no actions, since
+   * enableUser refuses it and nothing else applies to it.
+   */
+  readonly isErased: boolean;
 }
 
 /**
@@ -337,7 +343,7 @@ export function UserListTable({
   function rowView(user: UserRow) {
     const isSelf = user.id === currentUserId;
     const canDisable = canManageAccounts && !isSelf && user.status === 'active';
-    const canEnable = canManageAccounts && user.status === 'disabled';
+    const canEnable = canManageAccounts && user.status === 'disabled' && !user.isErased;
     const canManageInvite = canManageAccounts && user.status === 'pending';
     // Staff-role reassignment (users.manage). Never on your own row
     // (self-demotion lockout) and only on rows whose CURRENT role is
@@ -346,7 +352,10 @@ export function UserListTable({
     // avoids a row opening a picker that cannot show its own role.
     // A member↔staff move is a portal change, out of this picker's
     // scope; `changeRole.memberHint` says so in the dialog.
-    const canChangeRole = canManageStaffRoles && !isSelf && CHANGE_ROLE_OPTIONS.includes(user.role);
+    // An erased login keeps no role worth changing (UI-only: the
+    // change-role route itself is unchanged by 134-s3).
+    const canChangeRole =
+      canManageStaffRoles && !isSelf && !user.isErased && CHANGE_ROLE_OPTIONS.includes(user.role);
     const busy = busyId === user.id;
     const daysRemaining = user.invitationExpiresAt ? daysUntil(user.invitationExpiresAt, now) : null;
     // An EXPIRED invite gets the danger tone (not just muted text) so it's
@@ -495,6 +504,13 @@ export function UserListTable({
   }
 
   function statusPillFor(user: UserRow): ReactNode {
+    if (user.isErased) {
+      return (
+        <StatusPill tone="neutral" data-tone="neutral" data-status="erased">
+          {t('filters.status.erased')}
+        </StatusPill>
+      );
+    }
     return (
       <StatusPill tone={statusTone[user.status]} data-tone={statusTone[user.status]}>
         {t(`filters.status.${user.status}`)}

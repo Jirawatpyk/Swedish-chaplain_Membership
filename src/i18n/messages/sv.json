@@ -707,7 +707,8 @@
           "all": "Alla statusar",
           "active": "Aktiv",
           "disabled": "Inaktiverad",
-          "pending": "Väntande"
+          "pending": "Väntande",
+          "erased": "Raderad"
         },
         "clear": "Rensa filter"
       },
