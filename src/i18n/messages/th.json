@@ -7104,6 +7104,11 @@
           "audience": "กลุ่มผู้รับ"
         },
         "audienceWithCount": "{audience}\u00a0·\u00a0{count, number}",
+        "audienceTier": "เฉพาะระดับสมาชิก: {tiers}",
+        "tierCode": {
+          "corporate": "องค์กร",
+          "partnership": "พันธมิตร"
+        },
         "audience": {
           "all_members": "สมาชิกทั้งหมด",
           "tier": "เฉพาะระดับสมาชิก",

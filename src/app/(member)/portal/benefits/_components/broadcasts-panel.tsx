@@ -43,6 +43,7 @@ import {
   listMemberBroadcasts,
   makeComputeQuotaDeps,
   makeListMemberBroadcastsDeps,
+  recipientSegmentFromPersisted,
 } from '@/modules/broadcasts';
 import { type MemberId } from '@/modules/members';
 import type { IanaTimezone } from '@/modules/tenants';
@@ -52,6 +53,7 @@ import { formatCalendarYear, getDateFormatLocale } from '@/lib/format-date-local
 import { env } from '@/lib/env';
 import { keepTermTogether } from '@/components/broadcast/keep-term-together';
 import { getPortalBroadcastStatusTone } from '@/components/broadcast/status-badge-mapping';
+import { tierNames } from '@/components/broadcast/tier-audience';
 import type { BroadcastStatus } from '@/modules/broadcasts';
 import {
   BroadcastHistoryCardList,
@@ -80,6 +82,7 @@ export async function BroadcastsPanel({
   const tQuota = await getTranslations('portal.broadcasts.quota');
   const tAudience = await getTranslations('portal.broadcasts.list.audience');
   const tList = await getTranslations('portal.broadcasts.list');
+  const tTierCode = await getTranslations('portal.broadcasts.list.tierCode');
   const locale = await getLocale();
   // Tenant-TZ pin (#315 follow-up, server-UTC display class): sent/created
   // instants rendered by the UTC Vercel runtime were 7h off (wrong day past
@@ -126,6 +129,8 @@ export async function BroadcastsPanel({
     sentAt: Date | null;
     estimatedRecipientCount: number;
     segmentType: string;
+    /** A tier E-Blast's `plan_category` codes; null for any other segment or unreadable params. */
+    tierCodes: ReadonlyArray<string> | null;
   }> = [];
   let pagination = { page: 1, totalPages: 0, total: 0 };
   // Portal error states #2 — a failed history read is NOT an empty history.
@@ -242,6 +247,7 @@ export async function BroadcastsPanel({
         sentAt: b.sentAt,
         estimatedRecipientCount: b.estimatedRecipientCount,
         segmentType: b.segmentType,
+        tierCodes: tierCodesOf(b),
       }));
     } else {
       // History query failure must not crash the entire page — quota
@@ -280,9 +286,16 @@ export async function BroadcastsPanel({
       // locale-formatted and held to its label by no-break spaces. A segment
       // type without a label falls back to the column's word, "Audience · 130".
       audience: tList('audienceWithCount', {
-        audience: tAudience.has(row.segmentType as Parameters<typeof tAudience>[0])
-          ? tAudience(row.segmentType as Parameters<typeof tAudience>[0])
-          : tList('columns.audience'),
+        // Task #12: a tier E-Blast names its categories, "Specific membership
+        // tier: Corporate and Partnership" (`tierNames`).
+        audience:
+          row.tierCodes !== null
+            ? tList('audienceTier', {
+                tiers: tierNames(row.tierCodes, locale, (code) => tTierCode(code)),
+              })
+            : tAudience.has(row.segmentType as Parameters<typeof tAudience>[0])
+              ? tAudience(row.segmentType as Parameters<typeof tAudience>[0])
+              : tList('columns.audience'),
         count: row.estimatedRecipientCount,
       }),
       submitted:
@@ -443,7 +456,7 @@ export async function BroadcastsPanelView({
                         {row.statusLabel}
                       </StatusPill>
                     </Td>
-                    <Td className="tabular-nums">{row.audience}</Td>
+                    <Td className="break-words tabular-nums">{row.audience}</Td>
                     <Td className="whitespace-nowrap text-[var(--aura-fg-secondary)]">{row.submitted}</Td>
                     <Td className="whitespace-nowrap text-[var(--aura-fg-secondary)]">{row.sent}</Td>
                   </Tr>
@@ -518,4 +531,15 @@ export async function BroadcastsPanelView({
       ) : null}
     </section>
   );
+}
+
+/** The `plan_category` codes of a tier E-Blast, read the way the send path reads them. */
+function tierCodesOf(b: Parameters<typeof recipientSegmentFromPersisted>[0]): ReadonlyArray<string> | null {
+  if (b.segmentType !== 'tier') return null;
+  const segment = recipientSegmentFromPersisted({
+    segmentType: b.segmentType,
+    segmentParams: b.segmentParams,
+    customRecipientEmails: null,
+  });
+  return segment.ok && segment.value.kind === 'tier' ? segment.value.tierCodes : null;
 }
