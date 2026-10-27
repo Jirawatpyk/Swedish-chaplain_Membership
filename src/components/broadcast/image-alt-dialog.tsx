@@ -39,6 +39,13 @@ export interface ImageAltDialogProps {
   readonly initialValue?: string;
   /** Focus-return target on close; EVERY dialog in this codebase supplies one. */
   readonly finalFocus?: () => HTMLElement | false | null;
+  /**
+   * A file is still to be chosen once this closes (the toolbar's Image and
+   * Banner path). Only then does the dialog carry the public-link notice: not
+   * when editing a description, and not after an uploader-first upload, when
+   * the file is already public.
+   */
+  readonly uploadFollows?: boolean;
 }
 
 type AltError = 'required' | 'tooLong' | null;
@@ -51,6 +58,7 @@ export function ImageAltDialog({
   editing = false,
   initialValue = '',
   finalFocus,
+  uploadFollows = false,
 }: ImageAltDialogProps): React.ReactElement {
   const t = useTranslations('broadcast.editor.altDialog');
   // F119 review finding F2-11 — the SAME public-link sentence the uploader
@@ -59,13 +67,15 @@ export function ImageAltDialog({
   // directly (`tiptap-editor.tsx` handleAltConfirm -> openPicker), and while
   // the dialog is up the uploader's copy is behind the backdrop and inert —
   // unreachable to a screen reader and unread by everyone else. One key, two
-  // renders; never a second wording.
+  // renders; never a second wording. Shown only when a file is still to be
+  // chosen (`uploadFollows`).
   const tUpload = useTranslations('portal.broadcasts.compose.imageUpload');
   const [value, setValue] = useState<string>('');
   const [error, setError] = useState<AltError>(null);
   const baseId = useId();
   const formId = `${baseId}-alt-form`;
   const noticeId = `${baseId}-public-notice`;
+  const showNotice = uploadFollows && !editing;
 
   // A fresh open is a fresh description — carrying the previous image's words
   // over is worse than an empty field, because it looks deliberate. Uses the
@@ -111,6 +121,9 @@ export function ImageAltDialog({
       size="sm"
       title={editing ? t('editTitle') : variant === 'banner' ? t('bannerTitle') : t('title')}
       description={t('description')}
+      // PDPA review L-1: the notice is the dialog's own description, so it is
+      // announced with the dialog wherever focus lands.
+      {...(showNotice ? { 'aria-describedby': noticeId } : {})}
       footer={
         <>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
@@ -131,14 +144,13 @@ export function ImageAltDialog({
           submit();
         }}
       >
-        <p id={noticeId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
-          {tUpload('publicLinkNotice')}
-        </p>
+        {showNotice ? (
+          <p id={noticeId} className="aura-text-caption text-[var(--aura-fg-secondary)]">
+            {tUpload('publicLinkNotice')}
+          </p>
+        ) : null}
         <Textarea
           label={t('fieldLabel')}
-          // PDPA review L-1: focus opens on this field, so the notice is read
-          // with it — the toolbar path reaches the file picker from here.
-          aria-describedby={noticeId}
           touchHeight
           value={value}
           rows={2}

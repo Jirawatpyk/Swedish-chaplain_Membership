@@ -153,6 +153,9 @@ export default function TiptapEditor({
   // resolves later, so the half already collected has to survive the dialog's
   // own close render without a re-render racing it.
   const pendingImageRef = useRef<PendingImage | null>(null);
+  // PDPA review L-1: the description dialog carries the public-link notice
+  // only when a file is still to be chosen (toolbar-first).
+  const [altUploadFollows, setAltUploadFollows] = useState(false);
   const uploaderRef = useRef<ComposeInlineImageUploaderHandle | null>(null);
   const altTriggerRef = useRef<HTMLElement | null>(null);
 
@@ -325,11 +328,13 @@ export default function TiptapEditor({
         const alt: unknown = selected.attrs['alt'];
         pendingImageRef.current = null;
         setAltEdit({ typeName: selected.type.name, alt: typeof alt === 'string' ? alt : '' });
+        setAltUploadFollows(false);
         setAltVariant(selected.type.name === 'bannerImage' ? 'banner' : 'inline');
         setAltOpen(true);
         return;
       }
       setAltEdit(null);
+      setAltUploadFollows(true);
       pendingImageRef.current = { kind };
       setAltVariant(kind);
       setAltOpen(true);
@@ -471,6 +476,7 @@ export default function TiptapEditor({
           ? `${imageUploadUrl ?? MEMBER_INLINE_IMAGE_UPLOAD_URL}/${encodeURIComponent(imageId)}?draftId=${encodeURIComponent(draftId)}`
           : undefined;
       pendingImageRef.current = { kind: 'inline', src: blobUrl, ...(releaseUrl !== undefined ? { releaseUrl } : {}) };
+      setAltUploadFollows(false);
       setAltVariant('inline');
       setAltOpen(true);
     },
@@ -532,6 +538,7 @@ export default function TiptapEditor({
           variant={altVariant}
           editing={altEdit !== null}
           initialValue={altEdit?.alt ?? ''}
+          uploadFollows={altUploadFollows}
           onConfirm={handleAltConfirm}
           // Saved or inserted: back to the text, as the link and button
           // dialogs do; cancelled: back to the control (round 3).
