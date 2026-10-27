@@ -409,7 +409,6 @@ describe('eraseUser use-case (live Neon)', () => {
     const gone = {
       verifyA: randomUUID(),
       revertB: randomUUID(),
-      inviteMixedCaseB: randomUUID(),
       sentA: randomUUID(),
       failedB: randomUUID(),
       reviewerB: randomUUID(),
@@ -418,6 +417,10 @@ describe('eraseUser use-case (live Neon)', () => {
     const kept = {
       otherLogin: randomUUID(),
       otherInvite: randomUUID(),
+      // An ACTIVE login's invitation row is left alone: only a pending login
+      // can redeem one, and a peer member sharing this login keeps its mail
+      // (eraseMember's guard 2, erase-member-outbox-cancel.test.ts).
+      activeLoginInvite: randomUUID(),
       invoice: randomUUID(),
       // A row of ANOTHER type that happens to carry this login under `userId`.
       otherTypeSameUserId: randomUUID(),
@@ -427,7 +430,7 @@ describe('eraseUser use-case (live Neon)', () => {
     await db.insert(notificationsOutbox).values([
       { id: gone.verifyA, tenantId: `ta-${stamp}`, notificationType: 'email_verification', toEmail: `new-${stamp}@example.test`, locale: 'en', contextData: ctx(user.userId) },
       { id: gone.revertB, tenantId: `tb-${stamp}`, notificationType: 'email_change_revert', toEmail: user.rawEmail, locale: 'en', contextData: { ...ctx(user.userId), oldEmail: user.rawEmail } },
-      { id: gone.inviteMixedCaseB, tenantId: `tb-${stamp}`, notificationType: 'member_invitation', toEmail: mixedCase, locale: 'en', contextData: { token: `i-${stamp}`, role: 'member' } },
+      { id: kept.activeLoginInvite, tenantId: `tb-${stamp}`, notificationType: 'member_invitation', toEmail: mixedCase, locale: 'en', contextData: { token: `i-${stamp}`, role: 'member' } },
       { id: gone.sentA, tenantId: `ta-${stamp}`, notificationType: 'email_verification', toEmail: `new-${stamp}@example.test`, locale: 'en', contextData: ctx(user.userId), status: 'sent' },
       { id: gone.failedB, tenantId: `tb-${stamp}`, notificationType: 'email_change_revert', toEmail: user.rawEmail, locale: 'en', contextData: { ...ctx(user.userId), oldEmail: user.rawEmail }, status: 'permanently_failed' },
       { id: gone.reviewerB, tenantId: `tb-${stamp}`, notificationType: 'member_change_request_submitted_staff', toEmail: user.rawEmail, locale: 'en', contextData: { requestId: randomUUID(), reviewerUserId: user.userId } },
@@ -452,6 +455,36 @@ describe('eraseUser use-case (live Neon)', () => {
         .from(notificationsOutbox)
         .where(inArray(notificationsOutbox.id, ids));
       expect(left.map((r) => r.id).sort()).toEqual(Object.values(kept).sort());
+    } finally {
+      await db.delete(notificationsOutbox).where(inArray(notificationsOutbox.id, ids));
+    }
+  });
+
+  // 134-s2 — a PENDING login (an invite not yet redeemed) loses its
+  // invitation rows in every tenant, matched on its address in any case.
+  it('removes a pending login\'s invitation rows in every tenant', async () => {
+    const invitee = await createActiveTestUser('member');
+    created.push(invitee);
+    await db.update(users).set({ status: 'pending' }).where(eq(users.id, invitee.userId));
+    const stamp = Date.now().toString(36);
+    const ids = [randomUUID(), randomUUID()];
+    await db.insert(notificationsOutbox).values([
+      { id: ids[0]!, tenantId: `ta-${stamp}`, notificationType: 'member_invitation', toEmail: invitee.rawEmail, locale: 'en', contextData: { token: `p-${stamp}`, role: 'member' } },
+      { id: ids[1]!, tenantId: `tb-${stamp}`, notificationType: 'member_invitation', toEmail: invitee.rawEmail.toUpperCase(), locale: 'en', contextData: { token: `q-${stamp}`, role: 'member' } },
+    ]);
+    try {
+      const res = await eraseUser({
+        userId: invitee.userId,
+        actorUserId: 'admin-it',
+        requestId: `it-erase-134-pending-${stamp}`,
+        sourceIp: null,
+      });
+      expect(res.ok).toBe(true);
+      const left = await db
+        .select({ id: notificationsOutbox.id })
+        .from(notificationsOutbox)
+        .where(inArray(notificationsOutbox.id, ids));
+      expect(left).toHaveLength(0);
     } finally {
       await db.delete(notificationsOutbox).where(inArray(notificationsOutbox.id, ids));
     }
