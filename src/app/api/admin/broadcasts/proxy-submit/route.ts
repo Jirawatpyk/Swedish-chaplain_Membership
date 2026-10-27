@@ -33,17 +33,14 @@ import { makeMarketingDirectory } from '@/lib/broadcast-marketing-deps';
 import { requireApiPermission } from '@/lib/rbac';
 import { resolveTenantFromRequest } from '@/lib/tenant-context';
 import { logger } from '@/lib/logger';
-import { BROADCAST_TIER_CODES } from '@/lib/broadcasts-tier-codes';
+import { broadcastTierCodesSchema } from '@/lib/broadcasts-tier-codes';
 
 const SegmentSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('all_members') }),
   z.object({
     kind: z.literal('tier'),
     // PR D: only the two plan categories reach anyone (FR-011), each once.
-    tierCodes: z
-      .array(z.enum(BROADCAST_TIER_CODES))
-      .min(1)
-      .refine((codes) => new Set(codes).size === codes.length, 'duplicate tier code'),
+    tierCodes: broadcastTierCodesSchema,
   }),
   z.object({ kind: z.literal('event_attendees_last_90d') }),
   z.object({

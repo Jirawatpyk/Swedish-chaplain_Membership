@@ -25,11 +25,7 @@
 import { useId } from 'react';
 import { useTranslations } from 'next-intl';
 import { Checkbox, RadioGroup } from '@jirawatpyk/aura-react';
-import {
-  BROADCAST_TIER_CODES,
-  isBroadcastTierCode,
-  type BroadcastTierCode,
-} from '@/lib/broadcasts-tier-codes';
+import { BROADCAST_TIER_CODES, type BroadcastTierCode } from '@/lib/broadcasts-tier-codes';
 
 export type SegmentKind =
   | 'all_members'
@@ -39,7 +35,8 @@ export type SegmentKind =
 
 export interface SegmentPickerValue {
   readonly kind: SegmentKind;
-  readonly tierCodes: ReadonlyArray<string>;
+  /** Only categories can be held, so what is ticked is what is sent (/code-review). */
+  readonly tierCodes: ReadonlyArray<BroadcastTierCode>;
 }
 
 export interface SegmentPickerProps {
@@ -94,24 +91,20 @@ export function SegmentPicker({
   );
 }
 
-/**
- * The categories, in a fixed order whatever order they were ticked in. A code
- * held from elsewhere that is not a category shows nothing ticked and is
- * dropped on the next change.
- */
+/** The categories, in a fixed order whatever order they were ticked in. */
 function TierCategoriesField({
   codes,
   onChange,
   disabled,
 }: {
-  readonly codes: ReadonlyArray<string>;
+  readonly codes: ReadonlyArray<BroadcastTierCode>;
   readonly onChange: (codes: ReadonlyArray<BroadcastTierCode>) => void;
   readonly disabled: boolean;
 }): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose');
   const tCategory = useTranslations('portal.broadcasts.list.tierCode');
   const hintId = useId();
-  const chosen = new Set(codes.filter(isBroadcastTierCode));
+  const chosen = new Set(codes);
   return (
     // stand-in until AURA #183: AURA's own field classes, so the legend, hint
     // and gaps match the RadioGroup above it (and the Thai line height).

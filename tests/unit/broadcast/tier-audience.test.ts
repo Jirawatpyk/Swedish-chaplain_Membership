@@ -1,8 +1,9 @@
 /**
  * Task #12 (PR B) — the category names a tier E-Blast's history row shows,
- * shared by the member panel and its preview fixture. Tier codes are free
- * text the member typed, so only the two `plan_category` values are looked
- * up; anything else, an Object.prototype name included, shows as itself.
+ * shared by the member panel and its preview fixture. Since PR D only the two
+ * `plan_category` values can be submitted, but rows from before it may hold
+ * typed text: only the categories are looked up; anything else, an
+ * Object.prototype name included, shows as itself.
  */
 import { describe, expect, it } from 'vitest';
 import { tierNames } from '@/components/broadcast/tier-audience';

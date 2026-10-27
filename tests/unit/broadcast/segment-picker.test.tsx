@@ -51,7 +51,7 @@ describe('SegmentPicker (T1270)', () => {
   it('names the radios by their option and the group by its legend', () => {
     renderPicker();
     expect(screen.getByRole('group', { name: 'Recipients' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Specific membership tier' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Specific membership categories' })).toBeChecked();
     expect(screen.getAllByRole('radio')).toHaveLength(4);
   });
 });
@@ -83,13 +83,6 @@ describe('the tier option is a choice of membership categories (PR D)', () => {
     expect(corporate).toBeChecked();
     await user.click(corporate);
     expect(seen.at(-1)).toEqual({ kind: 'tier', tierCodes: [] });
-  });
-
-  it('a code that is not a category is dropped on the next change', async () => {
-    const user = userEvent.setup();
-    renderPicker('en', { kind: 'tier', tierCodes: ['premium'] });
-    await user.click(screen.getByRole('checkbox', { name: cat.corporate }));
-    expect(seen.at(-1)).toEqual({ kind: 'tier', tierCodes: ['corporate'] });
   });
 
   it('choosing another kind clears the categories', async () => {

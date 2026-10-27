@@ -305,7 +305,7 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     await expect(countLine(page, READY_OR_EXCEEDS)).toBeVisible({ timeout: 10_000 });
 
     // Base UI radio — a real pointer click on the role=radio item selects it.
-    await page.getByRole('radio', { name: 'Specific membership tier' }).click();
+    await page.getByRole('radio', { name: 'Specific membership categories' }).click();
     await expect(countLine(page, READY_OR_EXCEEDS)).toHaveCount(0);
 
     const tierCount = page.waitForResponse(
