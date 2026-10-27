@@ -16,6 +16,7 @@ import type { Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from './fixtures';
 import { clearE2ERateLimits } from './helpers/rate-limit';
+import { resetF7AckSeed, setF7AckSeed } from './helpers/broadcasts-seed';
 
 // Review 2026-09-07 round 2 (UX § 15 #3) — the T084 states (a live count, an
 // unavailable count with its retry, the hints) were never scanned: the a11y
@@ -484,5 +485,37 @@ test.describe('Broadcast compose + submit (T052 — US1 AS1)', () => {
     await expect(dialog).toBeHidden();
     await expect(submit).toBeFocused();
     expect(submitted).toBe(false);
+  });
+  // Spec 122 PR C — the sending rules on compose: in full until the company
+  // acknowledges, then one "Read again" line. Reuses the banner's record, so
+  // the column is cleared first and set again afterwards (as the banner spec
+  // does) for the other specs that sign this persona in.
+  test.describe('@a11y spec 122 PR C: the sending rules', () => {
+    test.beforeEach(async () => {
+      await resetF7AckSeed(MEMBER_EMAIL);
+    });
+    test.afterAll(async () => {
+      await setF7AckSeed(MEMBER_EMAIL, new Date());
+    });
+
+    test('in full before acknowledging, then one line with Read again', async ({ page }) => {
+      await openCompose(page);
+      const rules = page.getByTestId('compose-sending-rules').filter({ visible: true });
+      await expect(rules).toContainText('Before you send E-Blasts');
+      // The portal banner stays off this page: the rules show once.
+      await expect(page.getByTestId('broadcasts-acknowledge-banner')).toHaveCount(0);
+      await expectNoA11yViolations(page);
+
+      const ack = page.waitForResponse(
+        (r) => r.url().includes('/api/portal/broadcasts/acknowledge') && r.request().method() === 'POST',
+      );
+      await rules.getByRole('button', { name: 'I acknowledge' }).click();
+      expect((await ack).status()).toBe(200);
+      const readAgain = rules.getByRole('button', { name: 'Read again' });
+      await expect(readAgain).toBeFocused();
+      await readAgain.click();
+      await expect(rules).toContainText('E-Blasts go only to people at member companies');
+      await expectNoA11yViolations(page);
+    });
   });
 });
