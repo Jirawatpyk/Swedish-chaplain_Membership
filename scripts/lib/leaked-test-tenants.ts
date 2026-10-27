@@ -31,6 +31,14 @@ const DELETE_BLOCKING_TRIGGERS: ReadonlyMap<string, string> = new Map([
 ]);
 
 const TEST_SLUG = /^test(-|$)/;
+
+/**
+ * The slugs `createTestTenant` mints (`test-<prefix>-<8 hex>`), never reused.
+ * The automatic sweep takes only these: a fixed-slug fixture
+ * (`test-suppression-explain`, ...) may be rewritten by a run in progress
+ * after its age was read, so it is left to the operator script.
+ */
+export const GENERATED_TEST_SLUG = /^test(-[a-z]+)*-[0-9a-f]{8}$/;
 const SAFE_IDENT = /^[a-z_][a-z0-9_]*$/;
 
 export interface SweepOptions {
@@ -54,6 +62,17 @@ export interface SweepOptions {
   readonly skipUndrainable?: boolean;
   /** Restrict the candidates to these slugs (tests). */
   readonly onlySlugs?: readonly string[];
+  /** Restrict the candidates to slugs matching this pattern. */
+  readonly slugPattern?: RegExp;
+  /**
+   * Stop starting tenants after this many ms; the rest wait for the next run
+   * (`skippedBudget`). Each tenant is its own transaction, so stopping early
+   * leaves nothing half-done.
+   */
+  readonly budgetMs?: number;
+  /** Per-tenant transaction `lock_timeout` / `statement_timeout`, in ms. */
+  readonly lockTimeoutMs?: number;
+  readonly statementTimeoutMs?: number;
   readonly log?: (line: string) => void;
 }
 
@@ -64,6 +83,7 @@ export interface SweepReport {
   readonly tooRecent: readonly string[];
   readonly undatable: readonly string[];
   readonly skippedStuck: readonly string[];
+  readonly skippedBudget: readonly string[];
   readonly plannedPerTable: ReadonlyMap<string, number>;
   readonly deletedPerTable: ReadonlyMap<string, number>;
   readonly fullyCleaned: number;
@@ -111,14 +131,35 @@ export function partitionCandidates(
   const skippedStuck: string[] = [];
   for (const slug of candidates) {
     const ownedTables = [...(ownedByTenant.get(slug)?.keys() ?? [])];
+    // Both shapes are skipped only once an earlier drain has removed the
+    // tenant's `tenant_invoice_settings` row (the list the platform crons
+    // enumerate), so the first run still takes the tenant off that list.
     const undrainable =
       isStuckOnRefundCreditNoteCycle(ownedTables) ||
-      ownedTables.some((t) => deleteStatementsFor(t, opts.allowTriggerDisable) === null);
+      (!ownedTables.includes('tenant_invoice_settings') &&
+        ownedTables.some((t) => deleteStatementsFor(t, opts.allowTriggerDisable) === null));
     if (opts.skipUndrainable === true && undrainable) skippedStuck.push(slug);
     else eligible.push(slug);
   }
   return { eligible, skippedStuck };
 }
+
+/**
+ * What the integration globalSetup runs on every `pnpm test:integration`:
+ * generated slugs only, 6 h age filter, no trigger disable, undrainable
+ * tenants skipped, bounded in time and per statement. Pinned by a unit test.
+ */
+export const AUTOMATIC_SWEEP_OPTIONS = {
+  maxAgeHours: 6,
+  apply: true,
+  includeUndatable: false,
+  allowTriggerDisable: false,
+  skipUndrainable: true,
+  slugPattern: GENERATED_TEST_SLUG,
+  budgetMs: 20_000,
+  lockTimeoutMs: 5_000,
+  statementTimeoutMs: 30_000,
+} as const satisfies SweepOptions;
 
 export async function sweepLeakedTestTenants(
   sql: postgres.Sql,
@@ -167,7 +208,12 @@ export async function sweepLeakedTestTenants(
   const only = opts.onlySlugs === undefined ? null : new Set(opts.onlySlugs);
   const slugs = slugRows
     .map((r) => r.tenant_id)
-    .filter((s) => TEST_SLUG.test(s) && (only === null || only.has(s)));
+    .filter(
+      (s) =>
+        TEST_SLUG.test(s) &&
+        (opts.slugPattern === undefined || opts.slugPattern.test(s)) &&
+        (only === null || only.has(s)),
+    );
 
   const ageUnion = tables
     .filter((t) => t.hasCreatedAt)
@@ -235,6 +281,7 @@ export async function sweepLeakedTestTenants(
 
   const deletedPerTable = new Map<string, number>();
   const stuck: Array<{ slug: string; left: string[] }> = [];
+  const skippedBudget: string[] = [];
   let fullyCleaned = 0;
   const report = (): SweepReport => ({
     tables: tables.length,
@@ -243,6 +290,7 @@ export async function sweepLeakedTestTenants(
     tooRecent,
     undatable,
     skippedStuck,
+    skippedBudget,
     plannedPerTable,
     deletedPerTable,
     fullyCleaned,
@@ -252,28 +300,40 @@ export async function sweepLeakedTestTenants(
   if (!opts.apply || eligible.length === 0) return report();
 
   // ── Delete, one transaction per tenant, draining by retry ──────────────────
+  const started = Date.now();
   let n = 0;
   for (const slug of eligible) {
+    if (opts.budgetMs !== undefined && Date.now() - started >= opts.budgetMs) {
+      skippedBudget.push(slug);
+      continue;
+    }
     n += 1;
     const ownedTables = [...(ownedByTenant.get(slug) ?? new Map<string, number>()).keys()];
     const guarded = ownedTables.filter((t) => deleteStatementsFor(t, opts.allowTriggerDisable) === null);
     const deletable = ownedTables.filter((t) => !guarded.includes(t));
     try {
       const left = await sql.begin(async (tx) => {
+        if (opts.lockTimeoutMs !== undefined) {
+          await tx.unsafe(`SET LOCAL lock_timeout = ${Math.trunc(opts.lockTimeoutMs)}`);
+        }
+        if (opts.statementTimeoutMs !== undefined) {
+          await tx.unsafe(`SET LOCAL statement_timeout = ${Math.trunc(opts.statementTimeoutMs)}`);
+        }
         let remaining = [...deletable];
         for (let pass = 0; pass < remaining.length + 1 && remaining.length > 0; pass += 1) {
           const failed: string[] = [];
           for (const tbl of remaining) {
             const statements = deleteStatementsFor(tbl, opts.allowTriggerDisable) ?? [];
             try {
+              let deleted = 0;
               await tx.savepoint(async (sp) => {
                 for (const stmt of statements) {
                   const r = await sp.unsafe(stmt, stmt.includes('$1') ? [slug] : []);
-                  if (stmt.startsWith('DELETE')) {
-                    deletedPerTable.set(tbl, (deletedPerTable.get(tbl) ?? 0) + r.count);
-                  }
+                  if (stmt.startsWith('DELETE')) deleted += r.count;
                 }
               });
+              // Counted once the savepoint (and any trigger re-enable) held.
+              deletedPerTable.set(tbl, (deletedPerTable.get(tbl) ?? 0) + deleted);
             } catch {
               failed.push(tbl);
             }

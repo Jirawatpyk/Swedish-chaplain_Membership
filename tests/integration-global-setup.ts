@@ -28,7 +28,7 @@
  */
 import postgres from 'postgres';
 import { assertDbHostNotBlocklisted } from './helpers/db-host-guard';
-import { sweepLeakedTestTenants } from '../scripts/lib/leaked-test-tenants';
+import { AUTOMATIC_SWEEP_OPTIONS, sweepLeakedTestTenants } from '../scripts/lib/leaked-test-tenants';
 
 const STALE_HOURS = 6;
 
@@ -58,23 +58,28 @@ export default async function disableStaleLeakedTestStaff(): Promise<void> {
 
     const started = Date.now();
     try {
-      const r = await sweepLeakedTestTenants(sql, {
-        maxAgeHours: STALE_HOURS,
-        apply: true,
-        includeUndatable: false,
-        allowTriggerDisable: false,
-        skipUndrainable: true,
-      });
-      if (r.eligible.length > 0) {
+      const r = await sweepLeakedTestTenants(sql, AUTOMATIC_SWEEP_OPTIONS);
+      const ms = Date.now() - started;
+      // Quiet when there was nothing to do and it was quick; the skipped
+      // (undrainable) count rides along whenever it does speak.
+      if (r.eligible.length > 0 || ms > 5_000) {
+        const notDrainable = r.stuck.length + r.skippedStuck.length;
         console.warn(
           `[integration-global-setup] swept ${r.fullyCleaned}/${r.eligible.length} leaked test tenant(s) ` +
-            `older than ${STALE_HOURS} h in ${Date.now() - started} ms` +
-            (r.stuck.length > 0 ? `; ${r.stuck.length} left rows (run scripts/cleanup-leaked-test-tenants.ts)` : ''),
+            `older than ${AUTOMATIC_SWEEP_OPTIONS.maxAgeHours} h in ${ms} ms` +
+            (r.skippedBudget.length > 0 ? `; ${r.skippedBudget.length} deferred to the next run (time budget)` : '') +
+            (notDrainable > 0
+              ? `; ${notDrainable} not fully drainable here (run scripts/cleanup-leaked-test-tenants.ts)`
+              : ''),
         );
       }
     } catch (e) {
+      // SQLSTATE, not the message: an FK error's DETAIL carries key values.
+      const code =
+        typeof e === 'object' && e !== null && 'code' in e ? String((e as { code: unknown }).code) : '';
       console.warn(
-        `[integration-global-setup] leaked test-tenant sweep failed (${e instanceof Error ? e.constructor.name : 'unknown'}); continuing`,
+        `[integration-global-setup] leaked test-tenant sweep failed ` +
+          `(${e instanceof Error ? e.constructor.name : 'unknown'}${code ? ` ${code}` : ''}); continuing`,
       );
     }
   } finally {
