@@ -111,7 +111,9 @@ describe('the tier option is a choice of membership categories (PR D)', () => {
     await user.click(corporate);
     await user.click(corporate);
     // AURA's error replaces the hint, in the same live node, and marks each box invalid.
-    expect(live).toHaveTextContent(required);
+    const errorLine = document.getElementById(corporate.getAttribute('aria-describedby') ?? '');
+    expect(errorLine).toBe(live);
+    expect(errorLine).toHaveTextContent(required);
     expect(group).toHaveAccessibleDescription(required);
     expect(corporate).toHaveAttribute('aria-invalid', 'true');
     expect(corporate).toHaveAccessibleDescription(required);
