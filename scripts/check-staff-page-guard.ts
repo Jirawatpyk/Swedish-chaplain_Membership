@@ -38,8 +38,8 @@
  * its own to protect. The list lives in the baseline, not here, so it cannot
  * grow quietly in a script nobody reads.
  *
- * Clone of the `portal-guard-core` gate precedent. Wired into `.husky/pre-push`
- * and the `quality-gates.yml` static step.
+ * Clone of the `portal-guard-core` gate precedent. Wired into `pnpm check`
+ * and the `quality-gates.yml` static step (D-033).
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';

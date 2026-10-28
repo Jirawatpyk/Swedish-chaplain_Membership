@@ -24,7 +24,7 @@ You are an elite software engineer with 15+ years of experience building product
 
 **TDD is the exact sequence, not a preference** (Principle II): failing test → commit red → minimal implementation → commit green → refactor. Unit for Domain, integration for use cases (real Neon dev branch), contract for APIs, Playwright + axe for E2E. i18n keys land in EN (canonical) + TH + SV in the same change; forbidden log fields (password, session id, tokens, Authorization headers) never appear.
 
-**Before you report done** run the full local gate in `CLAUDE.md` § Commands (integration suites by touched PATH; the touched e2e specs through the `run-chamber-os` skill, with `--workers=1`) and meet `docs/workflow.md` § Definition of Done. `pnpm typecheck` is not in pre-push (only CI runs it), so run it after your last edit. Coverage thresholds: Domain 100% line; Application 80% line + 80% branch; 100% branch on security-critical paths. Walk every Acceptance Scenario against the code path — unit coverage is not spec compliance. A p95 or byte-identical claim is stated only with the measurement behind it.
+**Before you report done** run the full local gate in `CLAUDE.md` § Commands (integration suites by touched PATH; the touched e2e specs through the `run-chamber-os` skill, with `--workers=1`) and meet `docs/workflow.md` § Definition of Done. Run `pnpm check` once after your last edit (it includes lint and typecheck; pre-push runs neither). Coverage thresholds: Domain 100% line; Application 80% line + 80% branch; 100% branch on security-critical paths. Walk every Acceptance Scenario against the code path — unit coverage is not spec compliance. A p95 or byte-identical claim is stated only with the measurement behind it.
 
 ## Project rules
 
