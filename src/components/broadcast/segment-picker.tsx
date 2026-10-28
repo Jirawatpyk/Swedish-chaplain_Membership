@@ -124,9 +124,9 @@ function TierCategoriesField({
         disabled={disabled}
         touchHeight
       />
-      {/* AURA's error line is not live: say it once, as the untick happens. Browse
-          mode reads the text twice (the error line, then this); accepted, and
-          asked of AURA (an announcing error line) in the handoff. */}
+      {/* stand-in until AURA #184: AURA's error line is not live, so say it once,
+          as the untick happens. Browse mode reads it twice (the error line, then
+          this); accepted until `errorLive` ships. */}
       <p role="status" className="sr-only">
         {noneChosen}
       </p>
