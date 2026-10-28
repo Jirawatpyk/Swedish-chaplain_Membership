@@ -627,7 +627,7 @@ The US8c-2 rail becomes the member page's section tabs above a one-column, start
   - `i18n-translation-reviewer`: 2 Mediums fixed. The TH plans badge mismatch is older than this PR and left as a follow-up.
   - `spec-compliance-auditor`: its gaps are closed above.
 - `pnpm check` green. Unit and contract suites green (numbers in the PR).
-- **AURA.** No `CheckboxGroup`. Handoff Addendum 84 (#183) asks for one; the stand-in is recorded in `docs/aura-adoption.md`.
+- **AURA.** No `CheckboxGroup`. Handoff Addendum 84 (#183) asks for one; the stand-in is recorded in `docs/aura-adoption.md`. *Shipped in 5.67.0 and adopted in PR G (28 Oct).*
 - **Boards and parity.**
   - Canvas v135–v136: new board `Portal-broadcast-new-tier`. The categories option is moved last, and the copy now says "category", on `Portal-broadcast-new` (+ mobile EN/TH/SV), `-rules` (+ mobile set), `-over-limit` (+ mobile), `Admin-broadcast-new` and the `Portal-broadcasts` history set.
   - Parity, text against text: https://claude.ai/artifact/XfHC3J6vQu2tSs16dPpbXZ. Fixture `segment=tier`, production build at `1c00a5d`, EN/TH/SV at 1440/390/320, light and dark. Every element matches. There is no sideways scroll, and the phone rows are 45px.
