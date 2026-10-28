@@ -22,7 +22,7 @@
  * the categories are AURA 5.67's CheckboxGroup (#183); since 5.68 its error
  * line announces itself (`errorLive`, #184).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CheckboxGroup, RadioGroup } from '@jirawatpyk/aura-react';
 import { BROADCAST_TIER_CODES, type BroadcastTierCode } from '@/lib/broadcasts-tier-codes';
@@ -43,7 +43,16 @@ export interface SegmentPickerProps {
   readonly value: SegmentPickerValue;
   readonly onChange: (next: SegmentPickerValue) => void;
   readonly disabled?: boolean;
+  /**
+   * Whether the categories' own error line is showing. The form uses it to
+   * describe Submit with that line instead of repeating its words.
+   */
+  readonly onTierErrorShownChange?: (shown: boolean) => void;
 }
+
+const TIER_CATEGORIES_ID = 'compose-tier-categories';
+/** AURA names a group's error line `${id}-error`; this is the categories'. */
+export const TIER_CATEGORIES_ERROR_ID = `${TIER_CATEGORIES_ID}-error`;
 
 // The tier option is last (the maintainer, 27 Oct, PR D): its categories open
 // below the whole list, so they sit right under the radio that opened them.
@@ -62,6 +71,7 @@ export function SegmentPicker({
   value,
   onChange,
   disabled = false,
+  onTierErrorShownChange,
 }: SegmentPickerProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose');
   const tOption = useTranslations('portal.broadcasts.compose.segmentOption');
@@ -87,6 +97,7 @@ export function SegmentPicker({
           codes={value.tierCodes}
           onChange={(tierCodes) => onChange({ kind: 'tier', tierCodes })}
           disabled={disabled}
+          onErrorShownChange={onTierErrorShownChange}
         />
       ) : null}
     </div>
@@ -98,10 +109,12 @@ function TierCategoriesField({
   codes,
   onChange,
   disabled,
+  onErrorShownChange,
 }: {
   readonly codes: ReadonlyArray<BroadcastTierCode>;
   readonly onChange: (codes: ReadonlyArray<BroadcastTierCode>) => void;
   readonly disabled: boolean;
+  readonly onErrorShownChange: ((shown: boolean) => void) | undefined;
 }): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose');
   const tCategory = useTranslations('portal.broadcasts.list.tierCode');
@@ -109,9 +122,17 @@ function TierCategoriesField({
   // one, not when the option first opens (enterprise UX review).
   const [touched, setTouched] = useState(false);
   const noneChosen = touched && codes.length === 0 ? t('submitBlocked.tierRequired') : null;
+  const errorShown = noneChosen !== null;
+  // Reported back so Submit points at this line rather than saying it again;
+  // `false` on unmount, since leaving the tier option takes the line with it.
+  useEffect(() => {
+    onErrorShownChange?.(errorShown);
+    return () => onErrorShownChange?.(false);
+  }, [errorShown, onErrorShownChange]);
   return (
     <div data-compose-feature="tier-categories">
       <CheckboxGroup
+        id={TIER_CATEGORIES_ID}
         label={t('tierLabel')}
         hint={t('fields.tierCodesHelp')}
         error={noneChosen}

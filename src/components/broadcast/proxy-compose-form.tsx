@@ -67,6 +67,7 @@ import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { MemberPicker, type MemberPickerOption } from './member-picker';
 import {
   SegmentPicker,
+  TIER_CATEGORIES_ERROR_ID,
   type SegmentPickerValue,
 } from './segment-picker';
 import { CustomListInput, parseLines } from './custom-list-input';
@@ -270,6 +271,8 @@ export function ProxyComposeForm({
     kind: 'all_members',
     tierCodes: [],
   });
+  // Whether the categories show their own error (after the last is unticked).
+  const [tierErrorShown, setTierErrorShown] = useState(false);
   const [customList, setCustomList] = useState('');
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -380,6 +383,7 @@ export function ProxyComposeForm({
       subjectEmpty: subject.length === 0,
       subjectTooLong: subject.length > 200,
       tierValid,
+      tierErrorShown,
       customListValid,
       customLineCount: customLines.length,
     });
@@ -389,6 +393,7 @@ export function ProxyComposeForm({
   const submitBlockedReasonIds = [
     ...(blockedReasonMessage !== null ? [SUBMIT_BLOCKED_HINT_ID] : []),
     ...(memberMissingEmail ? [MISSING_EMAIL_ID] : []),
+    ...(!tierValid && tierErrorShown ? [TIER_CATEGORIES_ERROR_ID] : []),
     ...(bodyInvalid ? [BODY_ERROR_ID] : []),
     ...(countBlocked ? [RECIPIENT_COUNT_TEXT_ID] : []),
   ].join(' ');
@@ -702,6 +707,7 @@ export function ProxyComposeForm({
                 if (fieldError?.field === 'segment') setFieldError(null);
               }}
               disabled={submitting}
+              onTierErrorShownChange={setTierErrorShown}
             />
             {member !== null &&
             !memberMissingEmail &&

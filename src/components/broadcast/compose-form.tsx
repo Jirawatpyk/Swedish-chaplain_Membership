@@ -53,7 +53,11 @@ import { z } from 'zod';
 import { isReadOnlyCode, isReadOnlyRefusal, retryAfterMinutes } from '@/lib/http/read-only-refusal';
 import { UnsavedChangesGuard } from '@/components/shell/unsaved-changes-guard';
 import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
-import { SegmentPicker, type SegmentPickerValue } from './segment-picker';
+import {
+  SegmentPicker,
+  TIER_CATEGORIES_ERROR_ID,
+  type SegmentPickerValue,
+} from './segment-picker';
 import { CustomListInput, parseLines } from './custom-list-input';
 import { SchedulePicker } from './schedule-picker';
 import { PreviewPane } from './preview-pane';
@@ -245,6 +249,8 @@ export function ComposeForm({
     initialDraftId,
   );
   const [segment, setSegment] = useState<SegmentPickerValue>(initialSegment);
+  // Whether the categories show their own error (after the last is unticked).
+  const [tierErrorShown, setTierErrorShown] = useState<boolean>(false);
   const [customList, setCustomList] = useState<string>('');
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -412,11 +418,13 @@ export function ComposeForm({
     subjectEmpty: subject.length === 0,
     subjectTooLong: subject.length > 200,
     tierValid,
+    tierErrorShown,
     customListValid,
     customLineCount: customLines.length,
   });
   const submitBlockedReasonIds = [
     ...(blockedHintKey !== null ? [SUBMIT_BLOCKED_HINT_ID] : []),
+    ...(!tierValid && tierErrorShown ? [TIER_CATEGORIES_ERROR_ID] : []),
     ...(bodyInvalid ? [BODY_ERROR_ID] : []),
     ...(countBlocked ? [RECIPIENT_COUNT_TEXT_ID] : []),
   ].join(' ');
@@ -728,6 +736,7 @@ export function ComposeForm({
               value={segment}
               onChange={setSegment}
               disabled={submitting}
+              onTierErrorShownChange={setTierErrorShown}
             />
 
             {/* UX-1 — set expectations before the live count settles: the

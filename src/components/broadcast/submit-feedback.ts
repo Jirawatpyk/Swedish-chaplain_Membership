@@ -70,7 +70,9 @@ export function submitBlockedByCount(state: RecipientCountState): boolean {
  * elements instead of repeating their words: an over-size body (the
  * `#broadcast-body-error` line under the editor) and a measured count refusal
  * (the red recipient-count line, which already ends "submission is blocked
- * until you widen it"). A zero-length body would also block, but the editor
+ * until you widen it"). The tier reason joins them once the categories show
+ * their own error (`tierErrorShown`, after the last one is unticked); before
+ * that, this hint is the only place it is said. A zero-length body would also block, but the editor
  * serialises an untouched document as `<p></p>`, so no surface can produce it.
  *
  * Keys are relative to `portal.broadcasts.compose`, the namespace both compose
@@ -87,6 +89,7 @@ export function submitBlockedHintKey(input: {
   readonly subjectEmpty: boolean;
   readonly subjectTooLong: boolean;
   readonly tierValid: boolean;
+  readonly tierErrorShown: boolean;
   readonly customListValid: boolean;
   readonly customLineCount: number;
 }): SubmitBlockedHintKey | null {
@@ -94,7 +97,7 @@ export function submitBlockedHintKey(input: {
   // the first thing the member would fix.
   if (input.subjectEmpty) return 'submitBlocked.subjectRequired';
   if (input.subjectTooLong) return 'errors.broadcast_subject_too_long';
-  if (!input.tierValid) return 'submitBlocked.tierRequired';
+  if (!input.tierValid) return input.tierErrorShown ? null : 'submitBlocked.tierRequired';
   if (!input.customListValid) {
     return input.customLineCount === 0
       ? 'errors.broadcast_custom_recipient_empty'
