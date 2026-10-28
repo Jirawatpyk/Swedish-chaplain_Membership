@@ -892,6 +892,7 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - Q: What changes? → A: The categories field is AURA 5.67's `CheckboxGroup` (#183) with `required`, the hint and `error`. The group is read as "Membership categories (required)" (AURA's hidden text, in EN/TH/SV), and its `*` shows.
 - Q: What does it say when none is ticked? → A: As before, only after the last box is unticked (UX-C2). AURA's error now replaces the hint (AURA's rule for every field) and marks each box `aria-invalid`. AURA's error line is not live, so the field keeps an `sr-only` `role="status"` that says it as it appears.
 - Q: The disabled look? → A: AURA's group fields (`RadioGroup`, `CheckboxGroup`) don't grey their legend while disabled, as `Field` does; the recipients radio group above already looked like this. Asked of AURA in the handoff; no stand-in.
+- Update (28 Oct, PR H): AURA 5.68.0 shipped both (#184). The group legends grey while disabled, and the field passes `errorLive`, so the page's own `sr-only` status is gone.
 
 ### Session 2026-10-27 (US12d-3 follow-up: the sending rules on compose)
 

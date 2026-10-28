@@ -19,7 +19,8 @@
  * membership categories, more than one allowed. It used to be a free-text
  * "Tier code" field, but the recipient query matches only the `plan_category`
  * values, so anything else typed there reached nobody. PR G (28 Oct 2026):
- * the categories are AURA 5.67's CheckboxGroup (#183).
+ * the categories are AURA 5.67's CheckboxGroup (#183); since 5.68 its error
+ * line announces itself (`errorLive`, #184).
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -114,6 +115,7 @@ function TierCategoriesField({
         label={t('tierLabel')}
         hint={t('fields.tierCodesHelp')}
         error={noneChosen}
+        errorLive
         required
         options={BROADCAST_TIER_CODES.map((code) => ({ value: code, label: tCategory(code) }))}
         value={[...codes]}
@@ -124,12 +126,6 @@ function TierCategoriesField({
         disabled={disabled}
         touchHeight
       />
-      {/* stand-in until AURA #184: AURA's error line is not live, so say it once,
-          as the untick happens. Browse mode reads it twice (the error line, then
-          this); accepted until `errorLive` ships. */}
-      <p role="status" className="sr-only">
-        {noneChosen}
-      </p>
     </div>
   );
 }
