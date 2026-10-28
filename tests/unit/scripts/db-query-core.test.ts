@@ -1,5 +1,5 @@
 /**
- * `pnpm db:query` — the read-only SQL runner for the dev branch (D-032).
+ * `pnpm db:query` — the read-only SQL runner for the dev branch (D-033).
  * The prod-host refusal must fire BEFORE a connection is opened, and the
  * printed rows must never carry a credential-shaped column.
  */

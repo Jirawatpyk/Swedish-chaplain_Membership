@@ -23,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `.claude/skills/feature-flow/` + `docs/workflow.md` | on demand | the change lifecycle, Definition of Done, decisions, retros |
 | `.claude/skills/new-migration/`, `add-audit-event/` | on demand | the fragile build steps: a hand-written migration; a new audit event type |
 | `.claude/skills/run-chamber-os/` | on demand | how to run a branch on :3400 for verification (personas, Playwright attach, UI probes) |
-| `.claude/settings.json` `permissions.deny` + the `.claude/hooks/guard.mjs` PreToolUse hook | always | kept small on purpose (D-016): no reading secrets (`.env*`, the PII workbooks), no editing a migration already on `main`, no prod write script by any spelling (D-025), and the deny list (format, stash, `db:generate`, `db:push`, the prod write scripts: `db:migrate:prod`, `seed:system-actors:prod`) |
+| `.claude/settings.json` `permissions.deny` + the `.claude/hooks/guard.mjs` PreToolUse hook | always | kept small on purpose (D-016): no reading secrets (`.env*`, the PII workbooks), no editing a migration already on `main`, no prod write script by any spelling (D-025), and the deny list (format, `db:generate`, `db:push`, the prod write scripts: `db:migrate:prod`, `seed:system-actors:prod`) |
 
 A fact that matters only for one module goes in that module's rule, not here. Keep this file under 200 lines.
 
@@ -78,7 +78,7 @@ pnpm test:e2e --grep "@a11y"   # axe-core WCAG 2.1 AA scan only
 pnpm check:i18n                # fails on missing EN keys
 pnpm db:migrate                # apply to the DEV branch; prod auto-migrates on deploy (vercel-build)
 pnpm db:verify                 # assert the live schema matches expectations (prod: pnpm db:verify:prod — read-only, allowed for Claude since D-024)
-pnpm db:query "<SQL>"          # one read-only statement against the DEV branch; refuses prod and every write (D-032)
+pnpm db:query "<SQL>"          # one read-only statement against the DEV branch; refuses prod and every write (D-033)
 pnpm build                     # production build
 # pnpm db:generate             # DO NOT USE — migrations are hand-written SQL (see .claude/rules/architecture.md)
 ```

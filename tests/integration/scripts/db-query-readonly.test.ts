@@ -1,5 +1,5 @@
 /**
- * `pnpm db:query` against the live dev branch (D-032): a SELECT returns rows;
+ * `pnpm db:query` against the live dev branch (D-033): a SELECT returns rows;
  * anything that writes, and any attempt to end the read-only transaction with
  * a second statement, is refused by Postgres itself.
  */

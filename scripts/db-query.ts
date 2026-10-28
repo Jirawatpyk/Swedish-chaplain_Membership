@@ -1,5 +1,5 @@
 // `pnpm db:query "<one SQL statement>"` — run one read-only statement against
-// the DEV branch and print the rows as JSON lines (D-032).
+// the DEV branch and print the rows as JSON lines (D-033).
 //
 // The connection string reaches this process through `--env-file=.env.local`
 // in package.json, so it never passes through a typed command. Guards and
