@@ -39,8 +39,8 @@ describe('db:query read-only client', () => {
     await expect(client.query('SELECT 1; COMMIT')).rejects.toThrow(/multiple commands/);
   });
 
-  it('opens every session read-only by default, as a second layer', async () => {
-    const rows = await client.query('SHOW default_transaction_read_only');
-    expect(rows).toEqual([{ default_transaction_read_only: 'on' }]);
+  it('opens every session read-only by default, as a second layer, with a 30 s statement timeout', async () => {
+    expect(await client.query('SHOW default_transaction_read_only')).toEqual([{ default_transaction_read_only: 'on' }]);
+    expect(await client.query('SHOW statement_timeout')).toEqual([{ statement_timeout: '30s' }]);
   });
 });
