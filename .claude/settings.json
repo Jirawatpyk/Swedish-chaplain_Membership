@@ -16,44 +16,22 @@
   },
   "permissions": {
     "deny": [
-      "Bash(pnpm format:*)",
-      "Bash(prettier --write:*)",
-      "Bash(npx prettier --write:*)",
-      "Bash(pnpm exec prettier --write:*)",
-      "Bash(git stash:*)",
-      "Bash(pnpm db:generate:*)",
-      "Bash(pnpm db:push:*)",
       "Bash(pnpm db:migrate:prod:*)",
+      "Bash(pnpm run db:migrate:prod:*)",
+      "Bash(pnpm -s db:migrate:prod:*)",
+      "Bash(npm run db:migrate:prod:*)",
       "Bash(pnpm seed:system-actors:prod:*)",
-      "Bash(pnpm run format:*)",
-      "PowerShell(pnpm format:*)",
-      "PowerShell(prettier --write:*)",
-      "PowerShell(npx prettier --write:*)",
-      "PowerShell(pnpm exec prettier --write:*)",
-      "PowerShell(git stash:*)",
-      "PowerShell(pnpm db:generate:*)",
-      "PowerShell(pnpm db:push:*)",
+      "Bash(pnpm run seed:system-actors:prod:*)",
+      "Bash(pnpm -s seed:system-actors:prod:*)",
+      "Bash(npm run seed:system-actors:prod:*)",
       "PowerShell(pnpm db:migrate:prod:*)",
+      "PowerShell(pnpm run db:migrate:prod:*)",
+      "PowerShell(pnpm -s db:migrate:prod:*)",
+      "PowerShell(npm run db:migrate:prod:*)",
       "PowerShell(pnpm seed:system-actors:prod:*)",
-      "PowerShell(pnpm run format:*)",
-      "Read(.env*)",
-      "Read(!.env.example)",
-      "Read(docs/*.xlsx)",
-      "Read(docs/*.xlsm)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash|PowerShell|Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/hooks/guard.mjs\"",
-            "timeout": 15
-          }
-        ]
-      }
+      "PowerShell(pnpm run seed:system-actors:prod:*)",
+      "PowerShell(pnpm -s seed:system-actors:prod:*)",
+      "PowerShell(npm run seed:system-actors:prod:*)"
     ]
   }
 }

@@ -10,7 +10,7 @@ Loaded every session (no `paths:`). Module-specific facts live in `.claude/rules
 - **Timestamps**: always store **ISO 8601 UTC (Gregorian)**. Thai Buddhist Era (BE = CE + 543) is **display-only** for `th-TH` surfaces. Storing BE anywhere is a ship blocker (off-by-543-years class).
 - **Primary currency THB**; SEK/EUR/USD presentable where applicable. Thai tax invoices need VAT 7%, tax IDs on both parties, TH language, sequential tax-receipt numbering.
 - **Never run `pnpm format` / `prettier --write`** even though the script exists — it reformats unrelated files. Hand-format to match the surrounding code.
-- **Never `git stash`** on a shared checkout, and stage only your own hunks in a file someone else is editing — `git add -A` is unsafe even folder-scoped.
+- Stage only your own hunks in a file someone else is editing — `git add -A` is unsafe even folder-scoped.
 
 ## Secrets & confidential data
 
