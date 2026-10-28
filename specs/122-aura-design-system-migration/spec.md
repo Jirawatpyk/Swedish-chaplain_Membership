@@ -869,6 +869,12 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
   - The portal sign-out button becomes an AURA `Button` with the 44px touch height. (R84 then found it mounted nowhere since 063 — sign-out lives in the Account menu — so the follow-up PR deletes it.)
   - Requests, toasts and copy are unchanged.
 
+### Session 2026-10-27 (follow-up PR F: the seeded tier presets)
+
+- Q: What was wrong? → A: Migration `0068` seeded six `swecham` tier presets in `broadcast_segment_definitions` with the codes premium, large, regular, diamond, platinum and gold. None is a `plan_category`, so each would reach nobody (the PR D bug, in data), and their `broadcasts.segment.tier*` label keys do not exist.
+- Q: Fix or disable? → A: The maintainer chose (27 Oct) a migration that fixes the rows. `0321` deletes every tier preset, in every tenant, whose `tierCodes` is not a non-empty list of the two categories, and seeds one `swecham` preset per category labelled with `portal.broadcasts.list.tierCode.*`. Nothing reads the table yet (the repo port has no caller) and no FK points at it, so it is safe before the code deploys; the rollback is a forward fix.
+- Out of scope (named): the other three `0068` presets (`all_members`, `event_attendees_last_90d`, `custom`) also point at missing `broadcasts.segment.*` keys. That is harmless until F7.1 reads the table.
+
 ### Session 2026-10-27 (follow-up PR D: the tier option is a choice of membership categories)
 
 - Q: Why change the tier field? → A: It was free text ("Tier code", placeholder "premium, large"). The recipient query matches only the `plan_category` values `corporate` and `partnership`, case-sensitively, so "premium", "large" or "Corporate" reached nobody, and nothing said why. This is a bug fix to what can be submitted (FR-011), not part of a UI-swap slice.
@@ -876,10 +882,16 @@ US8 is a money phase, so each of its PRs gets a financial-integrity review as we
 - Q: Does the server refuse other codes? → A: Yes, in this PR (the maintainer, 27 Oct). `POST /api/broadcasts/submit` and `POST /api/admin/broadcasts/proxy-submit` take `tierCodes` only from the two categories (400 `invalid_body`). The recipient count refuses them too (400 `invalid_query`), so it never answers for an audience that cannot be sent. One list, `src/lib/broadcasts-tier-codes.ts`, serves the picker, the history and the routes.
 - Q: What stays lenient? → A: Drafts. The draft routes keep any code, because a draft is not reloaded into the form. The history still shows an old stored code as it was typed (PR B).
 - Q: What is out of scope? → A: Migration `0068` seeds segment definitions with `premium`/`large`/`regular`. A forward fix is a separate change if those definitions are read anywhere.
-- Q: Where does the field sit, and what does it say when none is ticked? → A: After the reviews the maintainer chose (27 Oct) to move the option to the end of the list, so its categories open right under it. "Membership categories" is said once the last box is unticked, inside the group (`aria-live="polite"`), but not when the option first opens (UX-C2). The group has no `required` marker: AURA has none for a group yet (#183).
+- Q: Where does the field sit, and what does it say when none is ticked? → A: After the reviews the maintainer chose (27 Oct) to move the option to the end of the list, so its categories open right under it. "Membership categories" is said once the last box is unticked, inside the group (`aria-live="polite"`), but not when the option first opens (UX-C2). The group has no `required` marker: AURA has none for a group yet (#183). *Superseded by PR G (28 Oct): see the session below.*
 - Q: Ticking both may reach everyone. Allow it? → A: Yes (the maintainer, 27 Oct). A member may hold neither category, and the live count shows who is reached.
 - Q: Which Thai word? → A: "ประเภทสมาชิกภาพ" (the maintainer, 27 Oct). "ประเภทสมาชิก" already means member type (company/individual) on the admin plans pages. EN and SV say category/kategori throughout: radio, legend, hint, blocked reason, recipient notes, the history label ("Membership categories: …") and the admin review label.
-- AURA has no `CheckboxGroup` (handoff Addendum 84, #183). Until it ships, a `fieldset` and `legend` hold two AURA `Checkbox`es, recorded as a stand-in in `docs/aura-adoption.md`.
+- AURA has no `CheckboxGroup` (handoff Addendum 84, #183). Until it ships, a `fieldset` and `legend` hold two AURA `Checkbox`es, recorded as a stand-in in `docs/aura-adoption.md`. *Shipped in 5.67.0; see PR G below.*
+
+### Session 2026-10-28 (follow-up PR G: AURA 5.67 `CheckboxGroup`)
+
+- Q: What changes? → A: The categories field is AURA 5.67's `CheckboxGroup` (#183) with `required`, the hint and `error`. The group is read as "Membership categories (required)" (AURA's hidden text, in EN/TH/SV), and its `*` shows.
+- Q: What does it say when none is ticked? → A: As before, only after the last box is unticked (UX-C2). AURA's error now replaces the hint (AURA's rule for every field) and marks each box `aria-invalid`. AURA's error line is not live, so the field keeps an `sr-only` `role="status"` that says it as it appears.
+- Q: The disabled look? → A: AURA's group fields (`RadioGroup`, `CheckboxGroup`) don't grey their legend while disabled, as `Field` does; the recipients radio group above already looked like this. Asked of AURA in the handoff; no stand-in.
 
 ### Session 2026-10-27 (US12d-3 follow-up: the sending rules on compose)
 
