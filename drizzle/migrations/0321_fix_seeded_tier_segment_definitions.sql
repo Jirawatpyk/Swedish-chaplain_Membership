@@ -8,7 +8,8 @@
 -- (`broadcasts.segment.tier*`) do not exist either.
 --
 -- 1. Delete every tier preset, in every tenant, whose `params.tierCodes` is
---    not a non-empty array of the two categories (null / malformed included).
+--    not a non-empty array of the two categories (null params, a missing
+--    key and a non-array value included).
 -- 2. Seed one `swecham` preset per category, labelled with the keys the
 --    member E-Blast history already uses (exist in EN / TH / SV).
 --
@@ -21,13 +22,17 @@
 -- unchanged. Rollback is a forward fix.
 -- ---------------------------------------------------------------------------
 
+-- CASE + COALESCE: a missing key or a non-object `params` is NULL, which
+-- NOT would keep, and jsonb_array_length must never see a non-array.
 DELETE FROM "broadcast_segment_definitions"
  WHERE "segment_type" = 'tier'
-   AND NOT (
-     "params" IS NOT NULL
-     AND jsonb_typeof("params"->'tierCodes') = 'array'
-     AND jsonb_array_length("params"->'tierCodes') > 0
-     AND ("params"->'tierCodes') <@ '["corporate","partnership"]'::jsonb
+   AND NOT COALESCE(
+     CASE WHEN jsonb_typeof("params"->'tierCodes') = 'array'
+          THEN jsonb_array_length("params"->'tierCodes') > 0
+               AND ("params"->'tierCodes') <@ '["corporate","partnership"]'::jsonb
+          ELSE false
+     END,
+     false
    );--> statement-breakpoint
 
 INSERT INTO "broadcast_segment_definitions"
