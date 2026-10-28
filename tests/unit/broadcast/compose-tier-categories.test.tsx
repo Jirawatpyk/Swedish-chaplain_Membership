@@ -85,37 +85,27 @@ function submitButton(): HTMLElement {
   return screen.getByRole('button', { name: c.button.submit });
 }
 
-/** How many times Submit's accessible description says the categories reason. */
-function tierReasonCount(): number {
-  const ids = (submitButton().getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
-  const text = ids.map((id) => document.getElementById(id)?.textContent ?? '').join(' ');
-  return text.split(c.submitBlocked.tierRequired).length - 1;
-}
-
 async function chooseCategoriesAndCheckGate(): Promise<void> {
   const user = userEvent.setup();
   await user.click(screen.getByRole('radio', { name: c.segmentOption.tier }));
   // None ticked: Submit is off and says why.
   expect(submitButton()).toBeDisabled();
   expect(submitButton()).toHaveAccessibleDescription(expect.stringContaining(c.submitBlocked.tierRequired));
-  expect(tierReasonCount()).toBe(1);
   await user.click(screen.getByRole('checkbox', { name: cat.corporate }));
   expect(submitButton()).not.toHaveAccessibleDescription(expect.stringContaining(c.submitBlocked.tierRequired));
 
-  // Unticking the last one: the group shows its error, and Submit points at
-  // that line rather than repeating it in a second one.
+  // Unticking the last one: the group says it in full, and the line by Submit
+  // shortens rather than repeating the sentence.
   await user.click(screen.getByRole('checkbox', { name: cat.corporate }));
   expect(screen.getAllByText(c.submitBlocked.tierRequired)).toHaveLength(1);
-  expect(submitButton().getAttribute('aria-describedby')?.split(/\s+/)).toContain(
-    'compose-tier-categories-error',
-  );
-  expect(tierReasonCount()).toBe(1);
+  expect(submitButton()).toHaveAccessibleDescription(expect.stringContaining(c.submitBlocked.tierChooseFirst));
+  expect(submitButton()).not.toHaveAccessibleDescription(expect.stringContaining(c.submitBlocked.tierRequired));
 
-  // Away and back: the group's error is gone with it, so the hint returns.
+  // Away and back: the group's error goes with it, so the full hint returns.
   await user.click(screen.getByRole('radio', { name: c.segmentOption.all_members }));
   await user.click(screen.getByRole('radio', { name: c.segmentOption.tier }));
   expect(screen.getAllByText(c.submitBlocked.tierRequired)).toHaveLength(1);
-  expect(tierReasonCount()).toBe(1);
+  expect(submitButton()).toHaveAccessibleDescription(expect.stringContaining(c.submitBlocked.tierRequired));
 }
 
 describe('the membership categories on both compose forms (PR D)', () => {
