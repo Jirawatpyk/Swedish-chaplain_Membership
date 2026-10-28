@@ -89,7 +89,8 @@ describe('seeded tier segment definitions (migration 0321)', () => {
 
   it('its DELETE removes every malformed tier preset and keeps a valid one', async () => {
     const tenant = `test-tierseed-${randomUUID().slice(0, 8)}`;
-    const shapes = [
+    const shapes: ReadonlyArray<string | null> = [
+      null,
       '{}',
       '{"tierCodes":null}',
       '{"tierCodes":"corporate"}',
@@ -98,22 +99,29 @@ describe('seeded tier segment definitions (migration 0321)', () => {
       '[]',
       '{"tierCodes":["partnership"]}',
     ];
-    try {
-      for (const shape of shapes) {
-        await db.execute(sql`
-          INSERT INTO broadcast_segment_definitions
-            (tenant_id, segment_type, display_label_i18n_key, params, enabled)
-          VALUES (${tenant}, 'tier', 'portal.broadcasts.list.tierCode.partnership',
-                  ${shape}::jsonb, true)
-        `);
-      }
-      await db.execute(sql`${sql.raw(migrationDelete())} AND tenant_id = ${tenant}`);
-      const left = (await db.execute(sql`
-        SELECT params FROM broadcast_segment_definitions WHERE tenant_id = ${tenant}
-      `)) as unknown as Array<{ params: unknown }>;
-      expect(left.map((r) => r.params)).toEqual([{ tierCodes: ['partnership'] }]);
-    } finally {
-      await db.execute(sql`DELETE FROM broadcast_segment_definitions WHERE tenant_id = ${tenant}`);
-    }
+    // Rolled back, so the malformed rows are never committed to the shared
+    // dev branch: a crashed run cannot leave the first case red for everyone.
+    const rollback = new Error('rollback');
+    let left: Array<{ params: unknown }> = [];
+    await db
+      .transaction(async (tx) => {
+        for (const shape of shapes) {
+          await tx.execute(sql`
+            INSERT INTO broadcast_segment_definitions
+              (tenant_id, segment_type, display_label_i18n_key, params, enabled)
+            VALUES (${tenant}, 'tier', 'portal.broadcasts.list.tierCode.partnership',
+                    ${shape}::jsonb, true)
+          `);
+        }
+        await tx.execute(sql`${sql.raw(migrationDelete())} AND tenant_id = ${tenant}`);
+        left = (await tx.execute(sql`
+          SELECT params FROM broadcast_segment_definitions WHERE tenant_id = ${tenant}
+        `)) as unknown as Array<{ params: unknown }>;
+        throw rollback;
+      })
+      .catch((e: unknown) => {
+        if (e !== rollback) throw e;
+      });
+    expect(left.map((r) => r.params)).toEqual([{ tierCodes: ['partnership'] }]);
   });
 });

@@ -22,8 +22,9 @@
 -- unchanged. Rollback is a forward fix.
 -- ---------------------------------------------------------------------------
 
--- CASE + COALESCE: a missing key or a non-object `params` is NULL, which
--- NOT would keep, and jsonb_array_length must never see a non-array.
+-- CASE + COALESCE: SQL NULL `params`, a missing key, a JSON null and a
+-- non-object `params` all make `params->'tierCodes'` NULL, which NOT would
+-- keep; and jsonb_array_length must never see a non-array.
 DELETE FROM "broadcast_segment_definitions"
  WHERE "segment_type" = 'tier'
    AND NOT COALESCE(
