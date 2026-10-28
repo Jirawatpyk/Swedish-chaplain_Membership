@@ -22,6 +22,6 @@ Money and tax paths are live in production. Review with `financial-integrity-rev
 - **Tables**: `invoices`, `invoice_lines`, `credit_notes`, `tenant_invoice_settings`, `tenant_document_sequences`. Env `FEATURE_F4_INVOICING` + `BLOB_READ_WRITE_TOKEN` + `CRON_SECRET`.
 - **088 redesign**: `document_type` enum `+= 'bill'` · `invoices.bill_document_number_raw` + partial unique index · `members.is_head_office` + `branch_code` · `tenant_invoice_settings.wht_note_th/_en` + `seller_is_head_office` + `seller_branch_code` · amended CHECK constraints on `invoices`.
 - **Thai tax documents**: VAT 7%, tax IDs on both parties, a TH-language document, sequential §87 numbering that is gap-free (the `invoicing:` advisory lock, per tenant + document type + fiscal year). Buddhist Era is display-only.
-- **Money emails** address the LIVE primary contact through `RecipientLocalePort`, never the frozen snapshot — `pnpm check:money-recipient` (pre-push) guards it.
+- **Money emails** address the LIVE primary contact through `RecipientLocalePort`, never the frozen snapshot — `pnpm check:money-recipient` (`pnpm check` + CI) guards it.
 - `refunds` ↔ `credit_notes` is a mutual RESTRICT FK cycle: unlink and waiver-stamp before deleting either side.
 - An imported member reaches auto-draft as `first_payment`.

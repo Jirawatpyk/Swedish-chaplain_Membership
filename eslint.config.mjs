@@ -1375,6 +1375,31 @@ const eslintConfig = defineConfig([
   // Spec 122 — the AURA import ratchet. Its own rule id, so it composes with
   // (never replaces) the architecture `no-restricted-imports` blocks above.
   ...uiRatchet(MIGRATED_PATHS, NOT_YET_ON_AURA),
+  // D-033 — the React Compiler-backed react-hooks rules run one shared
+  // compiler pass per file; over tests/ it cost 84 s of a 129 s lint (measured
+  // 2026-10-28; turning one rule off just moved the cost to the next). The
+  // compiler never compiles test code, so these guard nothing there.
+  // rules-of-hooks and exhaustive-deps are not compiler-backed and stay on.
+  {
+    files: ["tests/**/*.{ts,tsx}"],
+    rules: {
+      "react-hooks/static-components": "off",
+      "react-hooks/use-memo": "off",
+      "react-hooks/component-hook-factories": "off",
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/incompatible-library": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/globals": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/error-boundaries": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/set-state-in-render": "off",
+      "react-hooks/unsupported-syntax": "off",
+      "react-hooks/config": "off",
+      "react-hooks/gating": "off",
+    },
+  },
   globalIgnores([
     ".next/**",
     "out/**",

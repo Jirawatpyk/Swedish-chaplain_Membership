@@ -13,7 +13,7 @@
     "vercel-build": "node --import tsx scripts/run-migrations.ts && next build --turbopack",
     "build:analyse": "ANALYZE=true next build --turbopack",
     "start": "next start --port 3100",
-    "lint": "eslint",
+    "lint": "eslint --cache --cache-strategy content --cache-location node_modules/.cache/eslint/",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

@@ -68,8 +68,8 @@ When the `advisor` tool is available, call it at these three points:
 ```bash
 pnpm install
 pnpm dev                       # Next.js dev with Turbopack on :3100
-pnpm lint                      # ESLint; errors block merge
-pnpm typecheck                 # tsc --noEmit under strict (NOT in pre-push — run it yourself)
+pnpm lint                      # ESLint, cached (only changed files re-lint); errors block merge
+pnpm typecheck                 # tsc --noEmit under strict
 pnpm test                      # Vitest run  (watch: pnpm test:watch)
 pnpm test:coverage             # with Vitest coverage thresholds (what CI enforces)
 pnpm test:integration <path>   # live Neon DEV branch; pass file PATHS — a `-- <pattern>` runs all ~40 min
@@ -82,7 +82,7 @@ pnpm build                     # production build
 # pnpm db:generate             # DO NOT USE — migrations are hand-written SQL (see .claude/rules/architecture.md)
 ```
 
-`pnpm check` runs lint + `next typegen` + typecheck + the static gates in one go, as CI does. Full local gate before shipping anything non-trivial:
+`pnpm check` runs lint + `next typegen` + typecheck + the static gates in one go, exactly as CI's static job does. Run it **once, after the last edit** — it already contains lint and typecheck, so don't run them again separately. Gate layering (D-033): `pnpm check` locally on demand; the pre-push hook runs only the integration gates CI does not run; CI's required checks own the static and architecture gates. Full local gate before shipping anything non-trivial:
 
 ```bash
 pnpm check && pnpm test:coverage && pnpm vitest run tests/contract/ && pnpm test:integration <touched paths>
@@ -90,7 +90,7 @@ pnpm check && pnpm test:coverage && pnpm vitest run tests/contract/ && pnpm test
 
 Then run the touched e2e specs against the branch's own :3400 server: `E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright.attach.config.ts <spec>` (the `run-chamber-os` skill).
 
-`main`'s required checks and what the pre-push hook runs are in the `review-and-ship` skill. Other `check:*` gates not in pre-push: `check:strict-aria`, `check:audit-events`, `check:audit-counts`, `check:bundle-budgets`, `check:multi-tenant`, `check:portal-guard`, `check:plan-divergence`, `check:f71a-schema`, `check:f9-schema` (`check:i18n` runs in `pnpm check` and CI).
+`main`'s required checks and what the pre-push hook runs are in the `review-and-ship` skill. Other `check:*` gates, in neither `pnpm check` nor CI's static job: `check:strict-aria`, `check:audit-events`, `check:audit-counts`, `check:bundle-budgets`, `check:multi-tenant`, `check:portal-guard`, `check:plan-divergence`, `check:f71a-schema`, `check:f9-schema` (`check:i18n` runs in `pnpm check` and CI).
 
 One-off: bootstrap the first admin (refuses if any admin exists): `BOOTSTRAP_ADMIN_EMAIL=first.admin@swecham.example pnpm db:seed-admin`.
 
