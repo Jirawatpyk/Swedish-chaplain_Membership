@@ -5,6 +5,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  clipLine,
+  connectionUrl,
   openReadOnlyClient,
   redactRow,
   redactText,
@@ -63,7 +65,14 @@ describe('redactRow', () => {
 });
 
 describe('secretTableRefusal', () => {
-  it.each(['sessions', 'password_reset_tokens', 'email_change_tokens', 'consumed_link_tokens', 'invitations'])(
+  it.each([
+    'sessions',
+    'password_reset_tokens',
+    'email_change_tokens',
+    'consumed_link_tokens',
+    'invitations',
+    'tenant_webhook_configs',
+  ])(
     'refuses a statement naming %s, in any case or quoting',
     (table) => {
       expect(secretTableRefusal(`select * from public."${table.toUpperCase()}" limit 1`)).toMatch(table);
@@ -112,5 +121,32 @@ describe('sessionOptions', () => {
 
   it('sends no flags to the pooler, which refuses the options parameter', () => {
     expect(sessionOptions('postgresql://u:p@ep-dev-xyz789-pooler.ap-southeast-1.aws.neon.tech/db')).toBe('');
+  });
+});
+
+describe('security review fixes (M-1, M-2, L-5)', () => {
+  it("strips the URL's options so postgres.js cannot let it override the session flags", () => {
+    expect(connectionUrl(`${DEV}?options=endpoint%3Dep-dev-xyz789&sslmode=require`)).toBe(`${DEV}?sslmode=require`);
+    expect(connectionUrl(DEV)).toBe(DEV);
+  });
+
+  it('masks credential keys at any depth (to_jsonb(row), json_agg)', () => {
+    expect(redactRow({ u: { id: 1, password_hash: 'x', rows: [{ api_key: 'k', name: 'n' }] } })).toEqual({
+      u: { id: 1, password_hash: '[redacted]', rows: [{ api_key: '[redacted]', name: 'n' }] },
+    });
+  });
+
+  it('masks an argon2 hash and a 40+ base64url secret wherever they appear', () => {
+    const b64 = 'Ab9_-'.repeat(9);
+    expect(redactText(`"x":"$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA","w":"${b64}"`)).toBe(
+      '"x":"[redacted]","w":"[redacted]"',
+    );
+  });
+
+  it('cuts an oversized printed line', () => {
+    const line = clipLine('x'.repeat(5000));
+    expect(line.length).toBeLessThanOrEqual(2100);
+    expect(line).toMatch(/\[cut: 5000 chars\]$/);
+    expect(clipLine('short')).toBe('short');
   });
 });

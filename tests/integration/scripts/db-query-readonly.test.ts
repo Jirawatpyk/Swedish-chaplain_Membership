@@ -61,12 +61,14 @@ describe('db:query read-only client', () => {
     expect(await client.query('SHOW statement_timeout')).toEqual([{ statement_timeout: '30s' }]);
   });
 
-  it('still refuses a write over the pooled URL', async () => {
+  it('still refuses a write, with a 30 s timeout, over the pooled URL', async () => {
     const pooled = openReadOnlyClient(process.env.DATABASE_URL ?? '', process.env.TEST_DB_HOST_BLOCKLIST);
     try {
       await expect(pooled.query('UPDATE members SET tenant_id = tenant_id WHERE false')).rejects.toThrow(
         /read-only transaction/,
       );
+      // SET LOCAL inside the transaction: the timeout holds on the pooler too.
+      expect(await pooled.query('SHOW statement_timeout')).toEqual([{ statement_timeout: '30s' }]);
     } finally {
       await pooled.end();
     }
