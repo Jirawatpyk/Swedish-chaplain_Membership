@@ -5,7 +5,7 @@
 // in package.json, so it never passes through a typed command. Guards and
 // their limits are in scripts/lib/db-query-core.ts. There is deliberately no
 // `:prod` variant.
-import { openReadOnlyClient, redactRow } from './lib/db-query-core';
+import { openReadOnlyClient, redactRow, redactText } from './lib/db-query-core';
 
 /** Rows printed before the output is cut; the total is always reported. */
 const MAX_PRINTED_ROWS = 200;
@@ -24,9 +24,12 @@ async function main(): Promise<void> {
 
   const client = openReadOnlyClient(url, process.env.TEST_DB_HOST_BLOCKLIST);
   console.log(`Target host: ${client.host} (read-only)`);
+  if (!process.env.DATABASE_URL_UNPOOLED) {
+    console.log('Pooled URL: no session read-only default and no statement timeout; BEGIN READ ONLY still applies.');
+  }
   try {
     const rows = await client.query(text);
-    for (const row of rows.slice(0, MAX_PRINTED_ROWS)) console.log(JSON.stringify(redactRow(row)));
+    for (const row of rows.slice(0, MAX_PRINTED_ROWS)) console.log(redactText(JSON.stringify(redactRow(row))));
     const cut = rows.length > MAX_PRINTED_ROWS ? ` (first ${MAX_PRINTED_ROWS} printed)` : '';
     console.log(`${rows.length} row(s)${cut}`);
   } finally {
