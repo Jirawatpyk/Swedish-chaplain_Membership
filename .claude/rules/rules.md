@@ -10,7 +10,7 @@ Loaded every session (no `paths:`). Module-specific facts live in `.claude/rules
 - **Timestamps**: always store **ISO 8601 UTC (Gregorian)**. Thai Buddhist Era (BE = CE + 543) is **display-only** for `th-TH` surfaces. Storing BE anywhere is a ship blocker (off-by-543-years class).
 - **Primary currency THB**; SEK/EUR/USD presentable where applicable. Thai tax invoices need VAT 7%, tax IDs on both parties, TH language, sequential tax-receipt numbering.
 - **Never run `pnpm format` / `prettier --write`** even though the script exists — it reformats unrelated files. Hand-format to match the surrounding code.
-- **Never `git stash`** on a shared checkout, and stage only your own hunks in a file someone else is editing — `git add -A` is unsafe even folder-scoped.
+- **Stage only your own hunks** in a file someone else is editing — `git add -A` is unsafe even folder-scoped.
 
 ## Secrets & confidential data
 
@@ -33,7 +33,7 @@ Loaded every session (no `paths:`). Module-specific facts live in `.claude/rules
 
 ## Cross-cutting gotchas
 
-- **`pnpm typecheck` is not in pre-push** (CI runs it). Run it locally as the final step after the last edit, before committing — and run full `pnpm lint` too, it catches errors typecheck + vitest miss.
+- **Run `pnpm check` once, after the last edit, before committing.** It contains lint, typecheck and the static gates, so don't run `pnpm lint` / `pnpm typecheck` again on top. The pre-push hook does NOT run them — it runs only the integration gates CI lacks (D-033); CI's required checks run the static and architecture gates on every PR.
 - **All cron triggers are native Vercel Cron** (`vercel.json` `crons`): **UTC-only** (Asia/Bangkok schedules are −7 h) and invoked with **GET**, so POST handlers need `export const GET = POST`. cron-job.org is a paused standby. See `docs/runbooks/cron-jobs.md`.
 - **DB is Neon-branched**: `.env.local` → the `dev` branch; `pnpm db:migrate` never touches prod. Prod + preview migrate on Vercel deploy. Map: `docs/runbooks/db-environment-branching.md`.
 - **`default: { return _exhaustive }` is FAIL-OPEN** — it returns the value at runtime, so an unknown variant is silently ACCEPTED. Write `void _exhaustive; return <safe>`. `rg -n "^\s*return _exhaustive" src` should print nothing.

@@ -1,88 +1,25 @@
 #!/usr/bin/env sh
-# Pre-push guards — ~50 sec total (12 static checks + the 24 s
-# architecture suite) so the dev loop stays tight. Heavier suites
-# (full contract, lint, typecheck) run in CI on every PR + push to
-# main — see .github/workflows/quality-gates.yml; e2e + coverage stay
-# manual. Per-module integration tests run conditionally
-# when the push touches that module (see § Spec Coverage Gate below).
+# Pre-push: ONLY the gates CI does not run (D-033, 2026-10-28).
 #
-# Rationale per check (all derived from 2026-05-17 polish retrospective):
+# Gate layering — each check runs once, where it pays:
+#   - local, on demand: `pnpm check` (lint [cached], typegen, typecheck, the
+#     static check:* gates), run once after the last edit;
+#   - this hook: the live-Neon integration suites for what the push touches
+#     (per-module Spec Coverage Gate + the API-route gate below) — CI's PR run
+#     has only the integration SMOKE, so these exist nowhere else before merge;
+#   - CI (required on main): lint, typecheck, every static check:* gate, the
+#     tests/unit/architecture/ suite, unit + contract, coverage, smoke.
 #
-#   - check:staff-page-guard : every (staff) page declares a LITERAL permission
-#                       key + shim row matching the frozen 016 baseline, and
-#                       carries no staff-role affordance literal (re-review D)
-#   - check:authorization-role-reads : no UNMARKED role literal on a decision surface
-#   - check:actor-role-truth  : no audit row states a role its actor did not hold
-#   - check:f8-error-id       : every F8 renewals route names ITSELF in the
-#                               errorId taxonomy (not the accept route)
-#   - check:api-route-guard  : same, per METHOD, for the ~119 staff API route
-#                       files, plus a scan for staff-role literals left behind
-#                       a gate (016 review C3 + re-review hardening)
-#   - check:layout    : single-page → single-container invariant
-#                       (Spec §FR-007 CLS-0). Cheap (~1 sec).
-#   - check:money-recipient   : no money email is addressed from the frozen
-#                               buyer snapshot (§86/4 identity vs delivery)
+# MOVED OUT 2026-10-28 (D-033): the 13 static check:* gates and the
+# architecture suite (68–82 s measured) used to run here as well, so every
+# push re-ran what `pnpm check` had just run and CI was about to run again.
+# All of them are required status checks on main, so nothing merges without
+# them; the cost is that a miss now surfaces in CI minutes after the push
+# instead of at push time. The user chose that trade-off. Each gate's
+# rationale lives in its script under scripts/ and in docs/decisions.md.
 #
-#   - check:fixme     : zero test.fixme + bare test.skip in
-#                       tests/e2e + tests/contract. Closes the
-#                       F4-ship-with-fixmes regression net erosion
-#                       class. Cheap (~1 sec).
-#
-#   - check:env-example : every key in the src/lib/env.ts zod schema
-#                       is documented in .env.example. The two files
-#                       had drifted by 14 keys before this gate
-#                       existed — including one that made
-#                       .env.example non-bootable when copied
-#                       verbatim. Belongs in pre-push because the
-#                       drift is introduced by the same commit that
-#                       adds the key. Cheap (~1 sec, no I/O beyond
-#                       two file reads).
-#
-#   - check:env-boot  : .env.example, copied VERBATIM, actually
-#                       satisfies the src/lib/env.ts schema. The
-#                       companion to check:env-example, not a
-#                       replacement: that gate checks a key is
-#                       DOCUMENTED, this one checks the documented
-#                       VALUE is valid. Five keys once carried
-#                       placeholders shorter than their own .min(32)
-#                       while check:env-example stayed green — the
-#                       template was unbootable and no gate said so.
-#                       Same pre-push rationale as its sibling: the
-#                       drift arrives in the commit that adds the key.
-#                       ~3.5 sec (spawns no DB/network — it boots the
-#                       zod schema in-process against a scratch copy
-#                       in the OS temp dir).
-#
-#   - vitest architecture     : Principle III Clean-Architecture
-#                       barrel guard — events module barrel rule
-#                       (e815caa9 F6 Phase 10 leaked raw infra).
-#                       8 files / 63 tests, ~24 sec measured.
-#
-# MOVED OUT 2026-07-28: the whole `tests/contract/` directory used to
-# run here too (190 files / 1787 tests, measured 258 s), which made
-# every push — including docs-only ones — cost ~4.3 min and get
-# SIGTERM-killed by short tool timeouts. It now runs on every PR and
-# every push to main in `.github/workflows/quality-gates.yml`, which
-# ALSO adds the `pnpm lint` + `pnpm typecheck` gates that no hook and
-# no workflow previously ran. Run it locally before opening a PR with:
-#   pnpm vitest run tests/contract/
-# The architecture suite deliberately stays here as well as in CI: it
-# is the settlement-tx money guard, it costs 24 s, and a hook that
-# fires BEFORE the push is worth more than a report that arrives after.
-
-pnpm check:layout
-pnpm check:template-seed
-pnpm check:fixme
-pnpm check:dates
-pnpm check:env-example
-pnpm check:env-boot
-pnpm check:staff-page-guard
-pnpm check:api-route-guard
-pnpm check:authorization-role-reads
-pnpm check:actor-role-truth
-pnpm check:money-recipient
-pnpm check:f8-error-id
-pnpm vitest run tests/unit/architecture/ --passWithNoTests
+# MOVED OUT 2026-07-28: tests/contract/ (258 s) — runs in quality-gates.yml;
+# run it locally before opening a PR with: pnpm vitest run tests/contract/
 
 # ===========================================================================
 # Spec Coverage Gate — per-module integration tests (R10 retrospective HIGH-1)

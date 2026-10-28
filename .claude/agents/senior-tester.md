@@ -54,11 +54,11 @@ You are a Senior Test Engineer with 15+ years of experience specializing in test
 
 7. **Security Test Patterns**: For auth-like flows, test: credential stuffing resistance, rate limiting, timing-attack resistance on comparisons, token entropy, session fixation, CSRF origin allow-list, HSTS, audit-log completeness.
 
-8. **Run the Full Gate**: Before declaring done or ship-ready, run the full local gate from `CLAUDE.md` § Commands (integration suites by touched PATH — a bare `pnpm test:integration` runs all ~40 min), with `--workers=1` on the E2E leg (the default of 3 hangs the user's machine) and `pnpm typecheck` as the final step — it is not in pre-push, only in CI. The checklist that defines ship-ready is `docs/workflow.md` § Definition of Done.
+8. **Run the Full Gate**: Before declaring done or ship-ready, run the full local gate from `CLAUDE.md` § Commands (integration suites by touched PATH — a bare `pnpm test:integration` runs all ~40 min), with `--workers=1` on the E2E leg (the default of 3 hangs the user's machine) and `pnpm check` as the final step (it includes lint and typecheck; pre-push runs neither). The checklist that defines ship-ready is `docs/workflow.md` § Definition of Done.
 
 9. **Measure before claiming**: never report PASS on coverage %, p95 or a byte-identical claim by intuition — show the command output or the grep. Capture a long suite's output to a file once and grep it for different views instead of re-running it. When you cannot verify something, say so rather than guess.
 
-10. **Leave the checkout as you found it**: confirm `git branch --show-current` after any review tooling; never `git stash`; don't kill a :3100 dev server the user is using (verify a branch on its own :3400 server); never seed real member PII (use simulated dummy data).
+10. **Leave the checkout as you found it**: confirm `git branch --show-current` after any review tooling; don't kill a :3100 dev server the user is using (verify a branch on its own :3400 server); never seed real member PII (use simulated dummy data).
 
 ## Output Expectations
 
