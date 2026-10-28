@@ -30,6 +30,8 @@ describe('db:query read-only client', () => {
   });
 
   it('refuses a sequence advance', async () => {
+    // The probe needs a sequence to advance; without one it would resolve to [].
+    expect(await client.query("SELECT count(*)::int AS n FROM pg_class WHERE relkind = 'S'")).not.toEqual([{ n: 0 }]);
     await expect(
       client.query("SELECT nextval(c.oid) FROM pg_class c WHERE c.relkind = 'S' LIMIT 1"),
     ).rejects.toThrow(/read-only transaction/);
@@ -37,10 +39,30 @@ describe('db:query read-only client', () => {
 
   it('refuses a second statement that would end the read-only transaction', async () => {
     await expect(client.query('SELECT 1; COMMIT')).rejects.toThrow(/multiple commands/);
+    // A lone SET TRANSACTION READ WRITE is accepted (no query precedes it), so
+    // the one-command rule is what keeps it from being followed by a write.
+    await expect(
+      client.query('SET TRANSACTION READ WRITE; UPDATE members SET tenant_id = tenant_id WHERE false'),
+    ).rejects.toThrow(/multiple commands/);
+  });
+
+  it('refuses a statement that names a table holding secrets, before running it', async () => {
+    await expect(client.query('SELECT id FROM sessions LIMIT 1')).rejects.toThrow(/sessions/);
   });
 
   it('opens every session read-only by default, as a second layer, with a 30 s statement timeout', async () => {
     expect(await client.query('SHOW default_transaction_read_only')).toEqual([{ default_transaction_read_only: 'on' }]);
     expect(await client.query('SHOW statement_timeout')).toEqual([{ statement_timeout: '30s' }]);
+  });
+
+  it('still refuses a write over the pooled URL', async () => {
+    const pooled = openReadOnlyClient(process.env.DATABASE_URL ?? '', process.env.TEST_DB_HOST_BLOCKLIST);
+    try {
+      await expect(pooled.query('UPDATE members SET tenant_id = tenant_id WHERE false')).rejects.toThrow(
+        /read-only transaction/,
+      );
+    } finally {
+      await pooled.end();
+    }
   });
 });
