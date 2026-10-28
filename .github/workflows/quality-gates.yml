@@ -54,6 +54,21 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
 
+      # D-033 — ESLint (`--cache-strategy content`) and tsc (`incremental`)
+      # both key their caches on file CONTENT, so they survive a fresh
+      # checkout. Restore the newest one for this lockfile + lint config; save
+      # a new one per commit even when a step fails (the red run is the one
+      # that gets fixed and re-pushed).
+      - name: Restore ESLint + tsc caches
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules/.cache/eslint/
+            tsconfig.tsbuildinfo
+          key: lint-tsc-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'eslint.config.mjs', 'eslint.ui-ratchet.mjs', 'tsconfig.json') }}-${{ github.sha }}
+          restore-keys: |
+            lint-tsc-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'eslint.config.mjs', 'eslint.ui-ratchet.mjs', 'tsconfig.json') }}-
+
       - name: ESLint
         run: pnpm lint
 
@@ -66,6 +81,15 @@ jobs:
 
       - name: TypeScript (strict, --noEmit)
         run: pnpm typecheck
+
+      - name: Save ESLint + tsc caches
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules/.cache/eslint/
+            tsconfig.tsbuildinfo
+          key: lint-tsc-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'eslint.config.mjs', 'eslint.ui-ratchet.mjs', 'tsconfig.json') }}-${{ github.sha }}
 
       - name: i18n key coverage (EN canonical; TH/SV parity)
         run: pnpm check:i18n
@@ -102,6 +126,11 @@ jobs:
 
       - name: Every F8 renewals route names itself in the errorId taxonomy
         run: pnpm check:f8-error-id
+
+      # D-033 — was in pre-push and pnpm check but in no required CI job (only the
+      # path-filtered template-seed-drift.yml); 1 s, so it joins the static gates.
+      - name: F7.1a template seed matches its source
+        run: pnpm check:template-seed
 
   unit:
     # Sharded because `vitest.config.ts` caps `maxWorkers: '50%'` for

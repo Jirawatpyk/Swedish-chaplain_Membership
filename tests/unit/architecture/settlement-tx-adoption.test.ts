@@ -39,11 +39,10 @@
  *
  * ## Why a vitest test rather than a `pnpm check:*` script
  *
- * `.husky/pre-push` runs `vitest run tests/contract/ tests/unit/architecture/`,
- * so a file dropped here is enforced from the first push with zero wiring.
- * `.github/workflows/` holds only three narrow workflows (multi-tenant
- * readiness, Neon preview cleanup, template-seed drift) — there is **no**
- * general lint/typecheck/`check:*` CI job in this repo. A new `check:settlement`
+ * The required `Architecture governance tests` CI check runs
+ * `vitest run tests/unit/architecture/` on every PR (D-033: it no longer runs
+ * in `.husky/pre-push`), so a file dropped here is enforced with zero wiring.
+ * A new `check:settlement`
  * script wired nowhere would never execute. Same reasoning as the sibling
  * `application-layer-imports.test.ts`, whose baseline shape this follows.
  */

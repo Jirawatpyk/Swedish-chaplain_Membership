@@ -89,7 +89,7 @@ specs/<nnn-feature>/                   # Spec Kit artefacts — one dir per feat
   5. `audit.eventType.<value>` in all three locale files, which `tests/unit/insights/audit-event-label-coverage.test.ts` enforces.
 
   Add the value with an idempotent `ALTER TYPE … ADD VALUE` migration. The TS tuple is not the whole enum: `ALL_AUDIT_EVENT_TYPES = tuple ∪ DB_ONLY_AUDIT_EVENT_TYPES` (`DB_ONLY_` is legacy drift; never add to it), and three values contain a hyphen, so parse enum values with `'([^']+)'`, never `[a-z0-9_]+`.
-- **Audit-truth invariant**: no `audit_log` row states a role its actor did not hold — record `?? null`, never `?? 'admin'`; `pnpm check:actor-role-truth` (pre-push) guards it.
+- **Audit-truth invariant**: no `audit_log` row states a role its actor did not hold — record `?? null`, never `?? 'admin'`; `pnpm check:actor-role-truth` (`pnpm check` + CI) guards it.
 - Audit payloads carry snake_case `member_id` — the `last_activity_at` trigger reads only that key.
 
 ## Migrations
