@@ -45,7 +45,13 @@ export interface ReadOnlyClient {
 export function openReadOnlyClient(url: string, blocklistRaw: string | undefined): ReadOnlyClient {
   assertDbHostNotBlocklisted(url, blocklistRaw, 'db:query');
   const options = sessionOptions(url);
-  const sql = postgres(url, { max: 1, ssl: 'require', ...(options ? { connection: { options } } : {}) });
+  // postgres.js spreads URL query params OVER `connection`, so the URL's own
+  // `options` would silently replace the merged flags: strip it from the URL.
+  const sql = postgres(connectionUrl(url), {
+    max: 1,
+    ssl: 'require',
+    ...(options ? { connection: { options } } : {}),
+  });
   return {
     host: new URL(url).hostname,
     query: async (text) => {
@@ -55,7 +61,12 @@ export function openReadOnlyClient(url: string, blocklistRaw: string | undefined
       // argument-less unsafe() uses the simple protocol, which runs every
       // `;`-separated command it is given.
       const extendedProtocol = { simple: false, prepare: false } as postgres.UnsafeQueryOptions;
-      const rows = await sql.begin('read only', (tx) => tx.unsafe(text, [], extendedProtocol));
+      const rows = await sql.begin('read only', async (tx) => {
+        // Per transaction, so it also holds on the pooler, which refuses the
+        // startup flags.
+        await tx`SET LOCAL statement_timeout = '30s'`;
+        return tx.unsafe(text, [], extendedProtocol);
+      });
       return [...rows] as Record<string, unknown>[];
     },
     end: () => sql.end(),
@@ -65,11 +76,32 @@ export function openReadOnlyClient(url: string, blocklistRaw: string | undefined
 /** A column whose name says it holds a credential. Matches snake_case and camelCase. */
 const CREDENTIAL_COLUMN = /(password|token|secret|session_?id|api_?key)/i;
 
-/** Masks credential-shaped columns so a printed row cannot leak one. */
+/** Masks credential-named keys at any depth, so `to_jsonb(row)` or `json_agg` cannot carry one out. */
 export function redactRow(row: Record<string, unknown>): Record<string, unknown> {
+  return redactValue(row) as Record<string, unknown>;
+}
+
+function redactValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactValue);
+  if (value === null || typeof value !== 'object' || value instanceof Date) return value;
   return Object.fromEntries(
-    Object.entries(row).map(([k, v]) => [k, v !== null && CREDENTIAL_COLUMN.test(k) ? '[redacted]' : v]),
+    Object.entries(value).map(([k, v]) => [k, v !== null && CREDENTIAL_COLUMN.test(k) ? '[redacted]' : redactValue(v)]),
   );
+}
+
+/** The URL without its `options` query parameter. */
+export function connectionUrl(url: string): string {
+  const parsed = new URL(url);
+  if (!parsed.searchParams.has('options')) return url;
+  parsed.searchParams.delete('options');
+  return parsed.toString();
+}
+
+/** Longest printed line; a row past it is cut so one value cannot flood the transcript. */
+const MAX_LINE_CHARS = 2_000;
+
+export function clipLine(line: string): string {
+  return line.length <= MAX_LINE_CHARS ? line : `${line.slice(0, MAX_LINE_CHARS)}… [cut: ${line.length} chars]`;
 }
 
 const SESSION_FLAGS = '-c default_transaction_read_only=on -c statement_timeout=30000';
@@ -86,13 +118,14 @@ export function sessionOptions(url: string): string {
   return own ? `${own} ${SESSION_FLAGS}` : SESSION_FLAGS;
 }
 
-/** Tables whose rows are sessions or link tokens (hashed or not). */
+/** Tables whose rows are sessions, link tokens (hashed or not) or plaintext webhook secrets. */
 const SECRET_TABLES = [
   'sessions',
   'password_reset_tokens',
   'email_change_tokens',
   'consumed_link_tokens',
   'invitations',
+  'tenant_webhook_configs',
 ] as const;
 
 /** A refusal when the statement names a secret table as a whole word, else null. */
@@ -106,7 +139,9 @@ export function secretTableRefusal(text: string): string | null {
 /** Masks token-shaped substrings in a printed line. */
 export function redactText(text: string): string {
   return text
-    .replace(/[0-9a-f]{40,}/gi, '[redacted]')
+    .replace(/\$argon2[^"\s]*/g, '[redacted]')
+    .replace(/[A-Za-z0-9_-]{40,}/g, '[redacted]')
     .replace(/(\/(?:reset-password|invite)\/)[^/?#"\s]+/g, '$1[redacted]')
     .replace(/([?&](?:token|code|key|secret|sig)=)[^&#"\s]+/gi, '$1[redacted]');
 }
+
