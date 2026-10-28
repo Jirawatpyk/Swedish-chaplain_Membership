@@ -22,9 +22,9 @@
  * group yet: a fieldset and legend hold AURA Checkboxes (stand-in until AURA
  * #183, docs/aura-adoption.md).
  */
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { Checkbox, RadioGroup } from '@jirawatpyk/aura-react';
+import { CheckboxGroup, RadioGroup } from '@jirawatpyk/aura-react';
 import { BROADCAST_TIER_CODES, type BroadcastTierCode } from '@/lib/broadcasts-tier-codes';
 
 export type SegmentKind =
@@ -105,50 +105,30 @@ function TierCategoriesField({
 }): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose');
   const tCategory = useTranslations('portal.broadcasts.list.tierCode');
-  const hintId = useId();
-  const errorId = useId();
   // UX-C2: "none chosen" is said only once the member has unticked the last
   // one, not when the option first opens (enterprise UX review).
   const [touched, setTouched] = useState(false);
-  const chosen = new Set(codes);
-  const showRequired = touched && chosen.size === 0;
+  const required = touched && codes.length === 0 ? t('submitBlocked.tierRequired') : null;
   return (
-    // stand-in until AURA #183: AURA's own field classes, so the legend, hint,
-    // error, gaps and disabled look match the RadioGroup above it (and the
-    // Thai line height). The legend's 6px is RadioGroup's own legend margin.
-    <fieldset
-      className={`aura-field m-0 min-w-0 border-0 p-0${disabled ? ' is-disabled' : ''}`}
-      aria-describedby={showRequired ? `${hintId} ${errorId}` : hintId}
-      disabled={disabled}
-      data-compose-feature="tier-categories"
-    >
-      <legend className="aura-field__label mb-1.5 p-0">{t('tierLabel')}</legend>
-      <div className="flex flex-col gap-[var(--aura-space-3)] max-sm:gap-0">
-        {BROADCAST_TIER_CODES.map((code) => (
-          <Checkbox
-            key={code}
-            checked={chosen.has(code)}
-            onChange={(checked) => {
-              const next = new Set(chosen);
-              if (checked) next.add(code);
-              else next.delete(code);
-              setTouched(true);
-              onChange(BROADCAST_TIER_CODES.filter((c) => next.has(c)));
-            }}
-            disabled={disabled}
-            touchHeight
-          >
-            {tCategory(code)}
-          </Checkbox>
-        ))}
-      </div>
-      {/* stand-in until AURA #183: the field hint's and error's own classes. */}
-      <p id={hintId} className="aura-field__hint">
-        {t('fields.tierCodesHelp')}
+    <div data-compose-feature="tier-categories">
+      <CheckboxGroup
+        label={t('tierLabel')}
+        hint={t('fields.tierCodesHelp')}
+        error={required}
+        required
+        options={BROADCAST_TIER_CODES.map((code) => ({ value: code, label: tCategory(code) }))}
+        value={[...codes]}
+        onChange={(values) => {
+          setTouched(true);
+          onChange(BROADCAST_TIER_CODES.filter((code) => values.includes(code)));
+        }}
+        disabled={disabled}
+        touchHeight
+      />
+      {/* AURA's error line is not live: say it once, as the untick happens. */}
+      <p role="status" className="sr-only">
+        {required}
       </p>
-      <p id={errorId} className="aura-field__error" aria-live="polite" hidden={!showRequired}>
-        {showRequired ? t('submitBlocked.tierRequired') : null}
-      </p>
-    </fieldset>
+    </div>
   );
 }
