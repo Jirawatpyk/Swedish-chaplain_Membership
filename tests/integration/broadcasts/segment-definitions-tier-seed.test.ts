@@ -6,12 +6,19 @@
  * two `plan_category` values, so each preset would reach nobody (the PR D
  * bug, in data). Migration 0321 replaces them with one preset per category.
  *
- * Read through the owner `db` (BYPASSRLS), so every tenant is checked.
+ * Read through the owner `db` (BYPASSRLS), so every tenant is checked. No
+ * fixture may leave a tier preset outside the two categories in this table:
+ * the first case fails for every tenant on the branch.
  */
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { db } from '@/lib/db';
 import en from '@/i18n/messages/en.json';
+import th from '@/i18n/messages/th.json';
+import sv from '@/i18n/messages/sv.json';
 
 const CATEGORIES = ['corporate', 'partnership'];
 
@@ -19,18 +26,33 @@ type TierRow = {
   tenant_id: string;
   params: { tierCodes?: unknown } | null;
   display_label_i18n_key: string;
+  enabled: boolean;
 };
 
 async function tierRows(): Promise<TierRow[]> {
   return (await db.execute(sql`
-    SELECT tenant_id, params, display_label_i18n_key
+    SELECT tenant_id, params, display_label_i18n_key, enabled
       FROM broadcast_segment_definitions
      WHERE segment_type = 'tier'
   `)) as unknown as TierRow[];
 }
 
-function hasMessage(key: string): boolean {
-  let node: unknown = en;
+/** The migration's own DELETE, the first statement of 0321. */
+function migrationDelete(): string {
+  const file = readFileSync(
+    join(process.cwd(), 'drizzle/migrations/0321_fix_seeded_tier_segment_definitions.sql'),
+    'utf8',
+  );
+  const stmt = file
+    .split('--> statement-breakpoint')
+    .map((part) => part.replace(/^\s*--.*$/gm, '').trim())
+    .find((part) => part.startsWith('DELETE'));
+  if (!stmt) throw new Error('0321 has no DELETE statement');
+  return stmt.replace(/;\s*$/, '');
+}
+
+function hasMessage(messages: unknown, key: string): boolean {
+  let node: unknown = messages;
   for (const part of key.split('.')) {
     if (node === null || typeof node !== 'object') return false;
     node = (node as Record<string, unknown>)[part];
@@ -51,9 +73,47 @@ describe('seeded tier segment definitions (migration 0321)', () => {
     expect(bad).toEqual([]);
   });
 
-  it('swecham has one preset per category, each with a label that exists', async () => {
+  it('swecham has an enabled preset per category, labelled in every locale', async () => {
     const rows = (await tierRows()).filter((r) => r.tenant_id === 'swecham');
-    expect(rows.map((r) => r.params?.tierCodes).sort()).toEqual([['corporate'], ['partnership']]);
-    for (const r of rows) expect(hasMessage(r.display_label_i18n_key), r.display_label_i18n_key).toBe(true);
+    for (const category of CATEGORIES) {
+      const preset = rows.find(
+        (r) => JSON.stringify(r.params?.tierCodes) === JSON.stringify([category]),
+      );
+      expect(preset, category).toBeDefined();
+      expect(preset?.enabled).toBe(true);
+      for (const messages of [en, th, sv]) {
+        expect(hasMessage(messages, preset?.display_label_i18n_key ?? ''), category).toBe(true);
+      }
+    }
+  });
+
+  it('its DELETE removes every malformed tier preset and keeps a valid one', async () => {
+    const tenant = `test-tierseed-${randomUUID().slice(0, 8)}`;
+    const shapes = [
+      '{}',
+      '{"tierCodes":null}',
+      '{"tierCodes":"corporate"}',
+      '{"tierCodes":[]}',
+      '{"tierCodes":["corporate","gold"]}',
+      '[]',
+      '{"tierCodes":["partnership"]}',
+    ];
+    try {
+      for (const shape of shapes) {
+        await db.execute(sql`
+          INSERT INTO broadcast_segment_definitions
+            (tenant_id, segment_type, display_label_i18n_key, params, enabled)
+          VALUES (${tenant}, 'tier', 'portal.broadcasts.list.tierCode.partnership',
+                  ${shape}::jsonb, true)
+        `);
+      }
+      await db.execute(sql`${sql.raw(migrationDelete())} AND tenant_id = ${tenant}`);
+      const left = (await db.execute(sql`
+        SELECT params FROM broadcast_segment_definitions WHERE tenant_id = ${tenant}
+      `)) as unknown as Array<{ params: unknown }>;
+      expect(left.map((r) => r.params)).toEqual([{ tierCodes: ['partnership'] }]);
+    } finally {
+      await db.execute(sql`DELETE FROM broadcast_segment_definitions WHERE tenant_id = ${tenant}`);
+    }
   });
 });
