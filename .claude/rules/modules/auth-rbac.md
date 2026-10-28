@@ -22,6 +22,6 @@ Security-sensitive: ≥2 reviewers, one signs `specs/001-auth-rbac/security.md` 
 - **016 RBAC v2**: role pgEnum `+= 'super_admin','marketing'` · `audit_event_type += 'permission_denied'` · `users_last_admin_guard()` rewritten UNION→strict. The permission catalogue and `ROLE_BUNDLES` are pure Domain data in `src/modules/auth/domain/permissions/`; the evaluator is single-leg `hasPermission(role, key)`.
 - **`ROLE_BUNDLES` is not the whole model**: super-admin keys come from the EVALUATOR, so ask it, never read the bundle.
 - `/admin/users` is `superAdminOnly` — an e2e admin sees "Page not available" there.
-- Pre-push guards: `check:staff-page-guard`, `check:api-route-guard`, `check:authorization-role-reads`, `check:actor-role-truth`.
+- Static guards (`pnpm check` + CI): `check:staff-page-guard`, `check:api-route-guard`, `check:authorization-role-reads`, `check:actor-role-truth`.
 - Rate limits that protect security use an atomic check, never a peek.
 - Coverage: **100% branch** on sign-in, change-password, reset-password, role policy, sign-out.

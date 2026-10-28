@@ -141,7 +141,7 @@ enforces and therefore all this section claims — an earlier version said
 "every failure that route can produce", which is not true of a failure logged
 at WARN, and was not true at all for `portal/renewal/[memberId]/confirm` until
 round 5 found its `requireMemberContext` 500 passing through unlogged.
-`pnpm check:f8-error-id` (pre-push + `quality-gates.yml`) enforces it: it fails
+`pnpm check:f8-error-id` (`pnpm check` + `quality-gates.yml`) enforces it: it fails
 on a route in scope that declares no entry, an entry two routes share, an entry
 missing from the union, a `logger.error` in a `catch` with no `errorId`, a
 `catch` that answers 500 while logging nothing at all, a hardcoded `F8.` literal

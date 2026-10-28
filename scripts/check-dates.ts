@@ -53,11 +53,9 @@
  *   - src/lib/format-tax-doc-date.ts
  *
  * Enforcement model:
- *   This script exits 1 on violations.  In `.husky/pre-push` it runs
- *   sequentially alongside the other advisory `check:*` guards (check:layout,
- *   check:fixme, check:template-seed) — none of which are chained with
- *   `|| exit 1`, so a failure is visible but non-blocking in pre-push.
- *   It IS blocking in the full-CI reproduce command:
+ *   This script exits 1 on violations. It runs in `pnpm check` and in the
+ *   required `Lint · typecheck · static gates` CI job (D-033 moved the static
+ *   gates out of `.husky/pre-push`). It IS blocking in the full-CI reproduce command:
  *     pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm check:i18n &&
  *     pnpm check:layout && pnpm check:fixme && pnpm check:dates && …
  *

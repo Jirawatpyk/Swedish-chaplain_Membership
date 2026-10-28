@@ -1,5 +1,5 @@
 /**
- * The read-only SQL runner behind `pnpm db:query` (D-033).
+ * The read-only SQL runner behind `pnpm db:query` (D-034).
  *
  * Claude may not read `.env*` (D-016), so an ad-hoc SELECT against the dev
  * branch had no sanctioned route: the connection string has to reach a child

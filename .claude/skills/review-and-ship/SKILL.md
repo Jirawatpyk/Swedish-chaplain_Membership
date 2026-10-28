@@ -70,9 +70,9 @@ These commands remain usable for the matching `docs/workflow.md` steps; the proc
 
 ## 4. Before pushing
 
-- Run `pnpm typecheck` and the full `pnpm lint` after the last edit; neither is in pre-push.
+- Run `pnpm check` once after the last edit; it contains lint, typecheck and the static gates, so do not run `pnpm lint` / `pnpm typecheck` again on top.
 - Run `pnpm vitest run tests/contract/` (~4.3 min) before opening a PR; contract tests run in CI, not pre-push.
-- Pre-push (~50 s) runs twelve static gates plus `tests/unit/architecture/`. It adds a per-module integration gate when `src/modules/<m>/**` is touched, and an API-route gate when `src/app/api/**/route.ts` is touched. On a branch's first push it diffs against `merge-base origin/main HEAD`. The hook is heavy, so give `git push` a 5-minute timeout.
+- Pre-push runs only what CI does not (D-033): a per-module integration gate when `src/modules/<m>/**` is touched, and an API-route gate when `src/app/api/**/route.ts` is touched. On a branch's first push it diffs against `merge-base origin/main HEAD`. The hook is heavy, so give `git push` a 5-minute timeout.
 - Emergency override: `SKIP_INTEGRATION_PREPUSH=1 git push`. If you use it, run the touched risk surface manually and disclose that in the PR.
 - e2e in CI covers only the `@critical` set (`e2e-critical.yml`, advisory, on every PR) and the full suite nightly (`e2e-nightly.yml`). A touched spec outside `@critical` still runs locally with `--workers=1` before the PR. Runbook: `docs/runbooks/e2e-ci.md`.
 
