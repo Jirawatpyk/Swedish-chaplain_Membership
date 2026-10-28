@@ -5,6 +5,7 @@
  * code" field ("premium, large"), but the recipient query matches only the
  * two `plan_category` values, case-sensitively, so anything else reached
  * nobody. It is now a choice of the two categories, more than one allowed.
+ * PR G (28 Oct 2026): the group is AURA 5.67's `CheckboxGroup` (#183).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -39,6 +40,8 @@ function renderPicker(locale: 'en' | 'th' = 'en', initial?: SegmentPickerValue):
 }
 
 const cat = en.portal.broadcasts.list.tierCode;
+// AURA's CheckboxGroup reads "(required)" after the legend; its `*` is hidden.
+const groupName = new RegExp(`^${en.portal.broadcasts.compose.tierLabel}\\s*\\(required\\)$`);
 
 beforeEach(() => {
   // The shared setup installs fake timers; userEvent never resolves under them.
@@ -59,7 +62,8 @@ describe('SegmentPicker (T1270)', () => {
 describe('the tier option is a choice of membership categories (PR D)', () => {
   it('shows the two categories as checkboxes in a named group, and no text field', () => {
     renderPicker();
-    const group = screen.getByRole('group', { name: en.portal.broadcasts.compose.tierLabel });
+    const group = screen.getByRole('group', { name: groupName });
+    expect(group).toHaveClass('aura-checkbox-group');
     expect(group).toHaveAccessibleDescription(en.portal.broadcasts.compose.fields.tierCodesHelp);
     expect(screen.getByRole('checkbox', { name: cat.corporate })).not.toBeChecked();
     expect(screen.getByRole('checkbox', { name: cat.partnership })).not.toBeChecked();
@@ -90,23 +94,27 @@ describe('the tier option is a choice of membership categories (PR D)', () => {
     expect(screen.getAllByRole('radio').at(-1)).toHaveAccessibleName('Specific membership categories');
   });
 
-  it('says none is chosen only after the last one is unticked, inside the group', async () => {
+  it('says none is chosen only after the last one is unticked, as the group error', async () => {
     const user = userEvent.setup();
     renderPicker();
     const required = en.portal.broadcasts.compose.submitBlocked.tierRequired;
     // UX-C2: "needs input" is not an error before the user acts.
     expect(screen.queryByText(required)).toBeNull();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
     const corporate = screen.getByRole('checkbox', { name: cat.corporate });
     await user.click(corporate);
     await user.click(corporate);
-    const message = screen.getByText(required);
-    expect(message).toHaveAttribute('aria-live', 'polite');
-    const group = screen.getByRole('group', { name: en.portal.broadcasts.compose.tierLabel });
-    expect(group).toHaveAccessibleDescription(
-      `${en.portal.broadcasts.compose.fields.tierCodesHelp} ${required}`,
-    );
+    // AURA's error replaces the hint and marks each box invalid.
+    const group = screen.getByRole('group', { name: groupName });
+    expect(group).toHaveAccessibleDescription(required);
+    expect(corporate).toHaveAttribute('aria-invalid', 'true');
+    expect(corporate).toHaveAccessibleDescription(required);
+    // AURA's error line is not live, so a polite status says it once.
+    expect(screen.getByRole('status')).toHaveTextContent(required);
     await user.click(corporate);
     expect(screen.queryByText(required)).toBeNull();
+    expect(corporate).not.toHaveAttribute('aria-invalid');
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('choosing another kind clears the categories', async () => {
