@@ -89,6 +89,7 @@ describe('submitBlockedHintKey', () => {
     subjectEmpty: false,
     subjectTooLong: false,
     tierValid: true,
+    tierErrorShown: false,
     customListValid: true,
     customLineCount: 3,
   } as const;
@@ -110,6 +111,14 @@ describe('submitBlockedHintKey', () => {
     [
       'the subject before the audience',
       { subjectEmpty: true, tierValid: false, customListValid: false, customLineCount: 0 },
+      'submitBlocked.subjectRequired',
+    ],
+    // The categories' own error line already says it: Submit points at that
+    // line instead of repeating its words.
+    ['a tier error the group already shows', { tierValid: false, tierErrorShown: true }, null],
+    [
+      'the subject even while the tier error shows',
+      { subjectEmpty: true, tierValid: false, tierErrorShown: true },
       'submitBlocked.subjectRequired',
     ],
     [
