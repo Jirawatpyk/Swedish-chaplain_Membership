@@ -3,7 +3,8 @@
  *
  * Read-only repository for the per-tenant segment metadata table
  * (`broadcast_segment_definitions`). Mostly populated by seed
- * migration 0068 (`all_members`, `tier:premium`, `tier:large`, etc.);
+ * migrations 0068 (`all_members`, `event_attendees_last_90d`, `custom`)
+ * and 0321 (one tier preset per `plan_category`, corporate / partnership);
  * admins MAY add custom segments in F7.1.
  *
  * No write methods in MVP — the seed migration covers it. F7.1's

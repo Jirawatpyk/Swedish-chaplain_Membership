@@ -2,7 +2,7 @@
  * T063 — Drizzle `BroadcastSegmentDefinitionsRepo` adapter (F7).
  *
  * Read-only adapter over the seeded `broadcast_segment_definitions`
- * table (migration 0068). MVP only reads — admins can extend in F7.1
+ * table (migrations 0068 and 0321). MVP only reads — admins can extend in F7.1
  * via an upsert method added later.
  */
 import { and, asc, eq } from 'drizzle-orm';
