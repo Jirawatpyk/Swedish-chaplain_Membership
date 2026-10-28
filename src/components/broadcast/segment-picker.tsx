@@ -22,7 +22,7 @@
  * the categories are AURA 5.67's CheckboxGroup (#183); since 5.68 its error
  * line announces itself (`errorLive`, #184).
  */
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CheckboxGroup, RadioGroup } from '@jirawatpyk/aura-react';
 import { BROADCAST_TIER_CODES, type BroadcastTierCode } from '@/lib/broadcasts-tier-codes';
@@ -121,11 +121,16 @@ function TierCategoriesField({
   const errorShown = noneChosen !== null;
   // Reported back so the line by Submit shortens rather than saying it again;
   // `false` on unmount, since leaving the tier option takes the line with it.
-  // A layout effect, so the two never paint together for a frame.
+  // A layout effect, so the two never paint together for a frame. The latest
+  // callback is read from a ref, so an inline one cannot re-run it each render.
+  const report = useRef(onErrorShownChange);
   useLayoutEffect(() => {
-    onErrorShownChange?.(errorShown);
-    return () => onErrorShownChange?.(false);
-  }, [errorShown, onErrorShownChange]);
+    report.current = onErrorShownChange;
+  });
+  useLayoutEffect(() => {
+    report.current?.(errorShown);
+    return () => report.current?.(false);
+  }, [errorShown]);
   return (
     <div data-compose-feature="tier-categories">
       <CheckboxGroup

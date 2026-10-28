@@ -76,11 +76,10 @@ export function submitBlockedByCount(state: RecipientCountState): boolean {
  * The tier reason is said in full here until the categories show their own
  * error (`tierErrorShown`, after the last one is unticked). From then on the
  * group says it in full, and this line shortens to `tierChooseFirst`: a
- * reason stays beside Submit (on phone it sits in the bottom bar, away from
- * the Write tab), but the sentence is not repeated.
+ * reason stays beside Submit, but the sentence is not repeated.
  *
  * Keys are relative to `portal.broadcasts.compose`, the namespace both compose
- * forms translate against; two of the four already existed.
+ * forms translate against.
  */
 export type SubmitBlockedHintKey =
   | 'submitBlocked.subjectRequired'
