@@ -6,6 +6,7 @@
  * two `plan_category` values, case-sensitively, so anything else reached
  * nobody. It is now a choice of the two categories, more than one allowed.
  * PR G (28 Oct 2026): the group is AURA 5.67's `CheckboxGroup` (#183).
+ * PR H (28 Oct 2026): AURA 5.68's `errorLive` announces the error (#184).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
@@ -101,21 +102,25 @@ describe('the tier option is a choice of membership categories (PR D)', () => {
     const required = en.portal.broadcasts.compose.submitBlocked.tierRequired;
     // UX-C2: "needs input" is not an error before the user acts.
     expect(screen.queryByText(required)).toBeNull();
-    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    // AURA's errorLive line waits in the page, empty and polite; no second status.
+    expect(screen.queryByRole('status')).toBeNull();
+    const group = screen.getByRole('group', { name: groupName });
+    const live = group.querySelector('[aria-live="polite"]');
+    expect(live).toBeEmptyDOMElement();
     const corporate = screen.getByRole('checkbox', { name: cat.corporate });
     await user.click(corporate);
     await user.click(corporate);
-    // AURA's error replaces the hint and marks each box invalid.
-    const group = screen.getByRole('group', { name: groupName });
+    // AURA's error replaces the hint, in the same live node, and marks each box invalid.
+    const errorLine = document.getElementById(corporate.getAttribute('aria-describedby') ?? '');
+    expect(errorLine).toBe(live);
+    expect(errorLine).toHaveTextContent(required);
     expect(group).toHaveAccessibleDescription(required);
     expect(corporate).toHaveAttribute('aria-invalid', 'true');
     expect(corporate).toHaveAccessibleDescription(required);
-    // AURA's error line is not live, so a polite status says it once.
-    expect(screen.getByRole('status')).toHaveTextContent(required);
     await user.click(corporate);
     expect(screen.queryByText(required)).toBeNull();
     expect(corporate).not.toHaveAttribute('aria-invalid');
-    expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    expect(live).toBeEmptyDOMElement();
   });
 
   it('choosing another kind clears the categories', async () => {
