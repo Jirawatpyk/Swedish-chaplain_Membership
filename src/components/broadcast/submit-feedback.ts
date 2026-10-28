@@ -70,10 +70,14 @@ export function submitBlockedByCount(state: RecipientCountState): boolean {
  * elements instead of repeating their words: an over-size body (the
  * `#broadcast-body-error` line under the editor) and a measured count refusal
  * (the red recipient-count line, which already ends "submission is blocked
- * until you widen it"). The tier reason joins them once the categories show
- * their own error (`tierErrorShown`, after the last one is unticked); before
- * that, this hint is the only place it is said. A zero-length body would also block, but the editor
+ * until you widen it"). A zero-length body would also block, but the editor
  * serialises an untouched document as `<p></p>`, so no surface can produce it.
+ *
+ * The tier reason is said in full here until the categories show their own
+ * error (`tierErrorShown`, after the last one is unticked). From then on the
+ * group says it in full, and this line shortens to `tierChooseFirst`: a
+ * reason stays beside Submit (on phone it sits in the bottom bar, away from
+ * the Write tab), but the sentence is not repeated.
  *
  * Keys are relative to `portal.broadcasts.compose`, the namespace both compose
  * forms translate against; two of the four already existed.
@@ -81,6 +85,7 @@ export function submitBlockedByCount(state: RecipientCountState): boolean {
 export type SubmitBlockedHintKey =
   | 'submitBlocked.subjectRequired'
   | 'submitBlocked.tierRequired'
+  | 'submitBlocked.tierChooseFirst'
   | 'errors.broadcast_subject_too_long'
   | 'errors.broadcast_custom_recipient_empty'
   | 'errors.broadcast_custom_recipient_too_many';
@@ -97,7 +102,9 @@ export function submitBlockedHintKey(input: {
   // the first thing the member would fix.
   if (input.subjectEmpty) return 'submitBlocked.subjectRequired';
   if (input.subjectTooLong) return 'errors.broadcast_subject_too_long';
-  if (!input.tierValid) return input.tierErrorShown ? null : 'submitBlocked.tierRequired';
+  if (!input.tierValid) {
+    return input.tierErrorShown ? 'submitBlocked.tierChooseFirst' : 'submitBlocked.tierRequired';
+  }
   if (!input.customListValid) {
     return input.customLineCount === 0
       ? 'errors.broadcast_custom_recipient_empty'

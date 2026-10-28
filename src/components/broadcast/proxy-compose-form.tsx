@@ -67,7 +67,6 @@ import { loadTiptapEditor } from '@/components/shell/tiptap-loader';
 import { MemberPicker, type MemberPickerOption } from './member-picker';
 import {
   SegmentPicker,
-  TIER_CATEGORIES_ERROR_ID,
   type SegmentPickerValue,
 } from './segment-picker';
 import { CustomListInput, parseLines } from './custom-list-input';
@@ -393,7 +392,6 @@ export function ProxyComposeForm({
   const submitBlockedReasonIds = [
     ...(blockedReasonMessage !== null ? [SUBMIT_BLOCKED_HINT_ID] : []),
     ...(memberMissingEmail ? [MISSING_EMAIL_ID] : []),
-    ...(!tierValid && tierErrorShown ? [TIER_CATEGORIES_ERROR_ID] : []),
     ...(bodyInvalid ? [BODY_ERROR_ID] : []),
     ...(countBlocked ? [RECIPIENT_COUNT_TEXT_ID] : []),
   ].join(' ');

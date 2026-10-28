@@ -22,7 +22,7 @@
  * the categories are AURA 5.67's CheckboxGroup (#183); since 5.68 its error
  * line announces itself (`errorLive`, #184).
  */
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { CheckboxGroup, RadioGroup } from '@jirawatpyk/aura-react';
 import { BROADCAST_TIER_CODES, type BroadcastTierCode } from '@/lib/broadcasts-tier-codes';
@@ -44,15 +44,11 @@ export interface SegmentPickerProps {
   readonly onChange: (next: SegmentPickerValue) => void;
   readonly disabled?: boolean;
   /**
-   * Whether the categories' own error line is showing. The form uses it to
-   * describe Submit with that line instead of repeating its words.
+   * Whether the categories' own error line is showing. The form shortens the
+   * line by Submit while it does, so the sentence is not said twice.
    */
   readonly onTierErrorShownChange?: (shown: boolean) => void;
 }
-
-const TIER_CATEGORIES_ID = 'compose-tier-categories';
-/** AURA names a group's error line `${id}-error`; this is the categories'. */
-export const TIER_CATEGORIES_ERROR_ID = `${TIER_CATEGORIES_ID}-error`;
 
 // The tier option is last (the maintainer, 27 Oct, PR D): its categories open
 // below the whole list, so they sit right under the radio that opened them.
@@ -123,16 +119,16 @@ function TierCategoriesField({
   const [touched, setTouched] = useState(false);
   const noneChosen = touched && codes.length === 0 ? t('submitBlocked.tierRequired') : null;
   const errorShown = noneChosen !== null;
-  // Reported back so Submit points at this line rather than saying it again;
+  // Reported back so the line by Submit shortens rather than saying it again;
   // `false` on unmount, since leaving the tier option takes the line with it.
-  useEffect(() => {
+  // A layout effect, so the two never paint together for a frame.
+  useLayoutEffect(() => {
     onErrorShownChange?.(errorShown);
     return () => onErrorShownChange?.(false);
   }, [errorShown, onErrorShownChange]);
   return (
     <div data-compose-feature="tier-categories">
       <CheckboxGroup
-        id={TIER_CATEGORIES_ID}
         label={t('tierLabel')}
         hint={t('fields.tierCodesHelp')}
         error={noneChosen}

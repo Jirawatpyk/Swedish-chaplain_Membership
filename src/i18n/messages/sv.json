@@ -6944,7 +6944,8 @@
         },
         "submitBlocked": {
           "subjectRequired": "Lägg till ett ämne innan du skickar för granskning.",
-          "tierRequired": "Välj minst en medlemskategori innan du skickar för granskning."
+          "tierRequired": "Välj minst en medlemskategori innan du skickar för granskning.",
+          "tierChooseFirst": "Välj en medlemskategori först."
         },
         "views": {
           "label": "Skrivvy",
