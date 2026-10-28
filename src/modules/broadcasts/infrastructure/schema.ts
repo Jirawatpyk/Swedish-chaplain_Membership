@@ -636,7 +636,8 @@ export type NewMarketingUnsubscribeRow =
 
 /**
  * Read-model snapshot of segment configurations (data-model § 1.4).
- * Mostly populated by seed migration 0068; admins MAY add custom-named
+ * Mostly populated by seed migrations 0068 and 0321 (one tier preset per
+ * `plan_category`); admins MAY add custom-named
  * segments in F7.1.
  */
 export const broadcastSegmentDefinitions = pgTable(

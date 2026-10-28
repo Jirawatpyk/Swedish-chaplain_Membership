@@ -8,7 +8,8 @@
  *
  * `BroadcastSegmentDefinition` is the persisted read-model snapshot of
  * available segments per tenant (data-model § 1.4). Mostly populated
- * by seed migration 0068; admins MAY add custom-named segments in F7.1.
+ * by seed migrations 0068 and 0321 (tier presets name only `plan_category`
+ * codes); admins MAY add custom-named segments in F7.1.
  *
  * Pure TypeScript — no framework/ORM imports (Constitution Principle III).
  */

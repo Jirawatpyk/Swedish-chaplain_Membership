@@ -246,6 +246,13 @@ async function main(): Promise<void> {
         name: "audit_event_type has 'webhook_unresolved_event_adopted' (mig 0320)",
         query: `SELECT 1 AS hit FROM pg_enum WHERE enumtypid = 'audit_event_type'::regtype AND enumlabel = 'webhook_unresolved_event_adopted'`,
       },
+      {
+        // Spec 122 PR F (mig 0321) — a data fix, so a silent no-op would leave
+        // tier presets that reach nobody: swecham has both category presets,
+        // and no real tenant keeps a tier preset outside the two categories.
+        name: 'broadcast_segment_definitions tier presets name only corporate / partnership (mig 0321)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM broadcast_segment_definitions WHERE tenant_id = 'swecham' AND segment_type = 'tier' AND params = '{"tierCodes":["corporate"]}'::jsonb) AND EXISTS (SELECT 1 FROM broadcast_segment_definitions WHERE tenant_id = 'swecham' AND segment_type = 'tier' AND params = '{"tierCodes":["partnership"]}'::jsonb) AND NOT EXISTS (SELECT 1 FROM broadcast_segment_definitions WHERE segment_type = 'tier' AND tenant_id NOT LIKE 'test-%' AND NOT COALESCE(CASE WHEN jsonb_typeof(params->'tierCodes') = 'array' THEN jsonb_array_length(params->'tierCodes') > 0 AND (params->'tierCodes') <@ '["corporate","partnership"]'::jsonb ELSE false END, false))`,
+      },
     ];
     let failures = 0;
     for (const canary of canaries) {

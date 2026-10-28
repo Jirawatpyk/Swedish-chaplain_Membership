@@ -6,9 +6,9 @@
  * two `plan_category` values, so each preset would reach nobody (the PR D
  * bug, in data). Migration 0321 replaces them with one preset per category.
  *
- * Read through the owner `db` (BYPASSRLS), so every tenant is checked. No
- * fixture may leave a tier preset outside the two categories in this table:
- * the first case fails for every tenant on the branch.
+ * Read through the owner `db` (BYPASSRLS), so every real tenant is checked.
+ * `test-*` tenants are left out: the shared dev branch is full of them, and
+ * a leftover fixture there must not turn this red for everyone.
  */
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -33,7 +33,7 @@ async function tierRows(): Promise<TierRow[]> {
   return (await db.execute(sql`
     SELECT tenant_id, params, display_label_i18n_key, enabled
       FROM broadcast_segment_definitions
-     WHERE segment_type = 'tier'
+     WHERE segment_type = 'tier' AND tenant_id NOT LIKE 'test-%'
   `)) as unknown as TierRow[];
 }
 
@@ -61,7 +61,7 @@ function hasMessage(messages: unknown, key: string): boolean {
 }
 
 describe('seeded tier segment definitions (migration 0321)', () => {
-  it('no tier definition in any tenant names a code outside the two categories', async () => {
+  it('no tier definition in any real tenant names a code outside the two categories', async () => {
     const bad = (await tierRows()).filter(({ params }) => {
       const codes = params?.tierCodes;
       return (

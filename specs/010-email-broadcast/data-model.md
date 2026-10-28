@@ -61,7 +61,7 @@ export const broadcasts = pgTable(
 
     // Recipient targeting (FR-015–FR-017 + FR-016a + Q7 + Q8)
     segmentType:             broadcastSegmentTypeEnum('segment_type').notNull(),
-    segmentParams:           jsonb('segment_params'),                                     // e.g., { tierCodes: ['premium','large'] } for segment_type='tier'
+    segmentParams:           jsonb('segment_params'),                                     // e.g., { tierCodes: ['corporate','partnership'] } for segment_type='tier' (plan_category values)
     customRecipientEmails:   text('custom_recipient_emails').array(),                     // segment_type='custom' only; ≤100 entries; FR-015d-validated lowercase+trim
     estimatedRecipientCount: integer('estimated_recipient_count').notNull(),              // computed at submit-time; ≤5000 cap (FR-016a)
 
@@ -258,7 +258,7 @@ broadcastsAcknowledgedAt: timestamp('broadcasts_acknowledged_at', { withTimezone
 
 ### 1.4 `broadcast_segment_definitions`
 
-Read-model snapshot of segment configurations. Used by audit + admin display ("which segment was this broadcast targeting?"). Mostly populated by the seed migration 0068; admins MAY add custom-named segments in F7.1.
+Read-model snapshot of segment configurations. Used by audit + admin display ("which segment was this broadcast targeting?"). Mostly populated by the seed migrations 0068 and 0321; admins MAY add custom-named segments in F7.1.
 
 ```ts
 export const broadcastSegmentDefinitions = pgTable(
@@ -268,7 +268,7 @@ export const broadcastSegmentDefinitions = pgTable(
     definitionId:       uuid('definition_id').defaultRandom().notNull(),
     segmentType:        broadcastSegmentTypeEnum('segment_type').notNull(),
     displayLabelI18nKey: text('display_label_i18n_key').notNull(),                    // e.g., 'broadcasts.segment.allMembers' resolves at render time
-    params:             jsonb('params'),                                              // e.g., { tierCodes: ['premium'] } for prebuilt tier segments
+    params:             jsonb('params'),                                              // e.g., { tierCodes: ['corporate'] } for prebuilt tier segments
 
     // Default presets seeded by 0068; tenants MAY hide via this flag without deleting
     enabled:            boolean('enabled').notNull().default(true),
@@ -630,7 +630,7 @@ $$ LANGUAGE plpgsql;
 2. **0065** — `create_broadcast_deliveries.sql` — table + enum + indexes + RLS + append-only triggers.
 3. **0066** — `create_marketing_unsubscribes.sql` — table + enum + indexes + RLS.
 4. **0067** — `create_broadcast_segment_definitions.sql` — table + indexes + RLS.
-5. **0068** — `seed_default_segment_definitions.sql` — seeds SweCham's default segment presets (`all_members`, `tier:premium`, `tier:large`, `tier:regular`, `tier:diamond`, `tier:platinum`, `tier:gold`, `event_attendees_last_90d`, `custom`). Idempotent (ON CONFLICT DO NOTHING).
+5. **0068** — `seed_default_segment_definitions.sql` — seeds SweCham's default segment presets (`all_members`, `tier:premium`, `tier:large`, `tier:regular`, `tier:diamond`, `tier:platinum`, `tier:gold`, `event_attendees_last_90d`, `custom`). Idempotent (ON CONFLICT DO NOTHING). **The six tier codes are not `plan_category` values and reached nobody; `0321` (2026-10-27) deletes them and seeds `tier:corporate` and `tier:partnership`.**
 6. **0069** — `audit_log_extend_retention_default_trigger.sql` — extends the audit retention trigger to map F7 event types to 5y default.
 7. **0070** — `members_add_broadcasts_halted_flag.sql` — adds `broadcasts_halted_until_admin_review boolean default false` column to F3's `members` table (Clarifications Q14, B — per-broadcast >5% complaint-rate auto-halt invariant). Idempotent (`ADD COLUMN IF NOT EXISTS`). RLS on `members` is unchanged (existing F3 policy covers the new column).
 8. **0071** — `members_add_broadcasts_acknowledged_at.sql` — adds `broadcasts_acknowledged_at timestamp with time zone` (nullable) column to F3's `members` table (Clarifications Q15, B — GDPR Art. 7 acknowledgement banner). Idempotent. RLS unchanged.

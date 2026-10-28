@@ -11,7 +11,9 @@
 --    not a non-empty array of the two categories (null params, a missing
 --    key and a non-array value included).
 -- 2. Seed one `swecham` preset per category, labelled with the keys the
---    member E-Blast history already uses (exist in EN / TH / SV).
+--    member E-Blast history already uses (exist in EN / TH / SV). Only
+--    `swecham` was ever seeded (0068); another tenant gets its presets from
+--    its own seed flow, so the DELETE leaves it nothing it could use.
 --
 -- Idempotent: the DELETE keeps valid rows; the INSERTs use 0068's own
 -- WHERE NOT EXISTS check on (tenant_id, segment_type, params).
