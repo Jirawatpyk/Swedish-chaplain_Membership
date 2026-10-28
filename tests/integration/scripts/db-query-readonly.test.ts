@@ -4,7 +4,7 @@
  * a second statement, is refused by Postgres itself.
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { openReadOnlyClient, type ReadOnlyClient } from '../../../scripts/lib/db-query-core';
+import { openReadOnlyClient, sessionOptions, type ReadOnlyClient } from '../../../scripts/lib/db-query-core';
 
 const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? '';
 const client: ReadOnlyClient = openReadOnlyClient(url, process.env.TEST_DB_HOST_BLOCKLIST);
@@ -50,7 +50,13 @@ describe('db:query read-only client', () => {
     await expect(client.query('SELECT id FROM sessions LIMIT 1')).rejects.toThrow(/sessions/);
   });
 
-  it('opens every session read-only by default, as a second layer, with a 30 s statement timeout', async () => {
+  it('opens every unpooled session read-only by default, with a 30 s statement timeout', async () => {
+    // CI may hand a pooler URL, which refuses the options parameter: there the
+    // client sends none, and the write tests above prove BEGIN READ ONLY holds.
+    if (new URL(url).hostname.includes('-pooler')) {
+      expect(sessionOptions(url)).toBe('');
+      return;
+    }
     expect(await client.query('SHOW default_transaction_read_only')).toEqual([{ default_transaction_read_only: 'on' }]);
     expect(await client.query('SHOW statement_timeout')).toEqual([{ statement_timeout: '30s' }]);
   });
