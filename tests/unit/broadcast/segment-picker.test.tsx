@@ -15,6 +15,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import en from '@/i18n/messages/en.json';
 import th from '@/i18n/messages/th.json';
 import { SegmentPicker, type SegmentPickerValue } from '@/components/broadcast/segment-picker';
+import { AuraBridge } from '@/components/providers/aura-bridge';
 
 const seen: SegmentPickerValue[] = [];
 
@@ -41,7 +42,8 @@ function renderPicker(locale: 'en' | 'th' = 'en', initial?: SegmentPickerValue):
 
 const cat = en.portal.broadcasts.list.tierCode;
 // AURA's CheckboxGroup reads "(required)" after the legend; its `*` is hidden.
-const groupName = new RegExp(`^${en.portal.broadcasts.compose.tierLabel}\\s*\\(required\\)$`);
+const escaped = en.portal.broadcasts.compose.tierLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const groupName = new RegExp(`^${escaped}\\s*\\(required\\)$`);
 
 beforeEach(() => {
   // The shared setup installs fake timers; userEvent never resolves under them.
@@ -63,7 +65,6 @@ describe('the tier option is a choice of membership categories (PR D)', () => {
   it('shows the two categories as checkboxes in a named group, and no text field', () => {
     renderPicker();
     const group = screen.getByRole('group', { name: groupName });
-    expect(group).toHaveClass('aura-checkbox-group');
     expect(group).toHaveAccessibleDescription(en.portal.broadcasts.compose.fields.tierCodesHelp);
     expect(screen.getByRole('checkbox', { name: cat.corporate })).not.toBeChecked();
     expect(screen.getByRole('checkbox', { name: cat.partnership })).not.toBeChecked();
@@ -123,6 +124,19 @@ describe('the tier option is a choice of membership categories (PR D)', () => {
     await user.click(screen.getByRole('radio', { name: 'All members' }));
     expect(seen.at(-1)).toEqual({ kind: 'all_members', tierCodes: [] });
     expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
+  it('reads the required marker in the page language (AURA locale pack)', () => {
+    render(
+      <NextIntlClientProvider locale="th" messages={th}>
+        <AuraBridge locale="th" timeZone="Asia/Bangkok">
+          <Host />
+        </AuraBridge>
+      </NextIntlClientProvider>,
+    );
+    expect(
+      screen.getByRole('group', { name: `${th.portal.broadcasts.compose.tierLabel} (จำเป็น)` }),
+    ).toBeInTheDocument();
   });
 
   it('names the categories in Thai', () => {

@@ -18,9 +18,8 @@
  * PR D (27 Oct 2026, FR-011): the tier option is a choice of the two
  * membership categories, more than one allowed. It used to be a free-text
  * "Tier code" field, but the recipient query matches only the `plan_category`
- * values, so anything else typed there reached nobody. AURA has no checkbox
- * group yet: a fieldset and legend hold AURA Checkboxes (stand-in until AURA
- * #183, docs/aura-adoption.md).
+ * values, so anything else typed there reached nobody. PR G (28 Oct 2026):
+ * the categories are AURA 5.67's CheckboxGroup (#183).
  */
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -108,13 +107,13 @@ function TierCategoriesField({
   // UX-C2: "none chosen" is said only once the member has unticked the last
   // one, not when the option first opens (enterprise UX review).
   const [touched, setTouched] = useState(false);
-  const required = touched && codes.length === 0 ? t('submitBlocked.tierRequired') : null;
+  const noneChosen = touched && codes.length === 0 ? t('submitBlocked.tierRequired') : null;
   return (
     <div data-compose-feature="tier-categories">
       <CheckboxGroup
         label={t('tierLabel')}
         hint={t('fields.tierCodesHelp')}
-        error={required}
+        error={noneChosen}
         required
         options={BROADCAST_TIER_CODES.map((code) => ({ value: code, label: tCategory(code) }))}
         value={[...codes]}
@@ -125,9 +124,11 @@ function TierCategoriesField({
         disabled={disabled}
         touchHeight
       />
-      {/* AURA's error line is not live: say it once, as the untick happens. */}
+      {/* AURA's error line is not live: say it once, as the untick happens. Browse
+          mode reads the text twice (the error line, then this); accepted, and
+          asked of AURA (an announcing error line) in the handoff. */}
       <p role="status" className="sr-only">
-        {required}
+        {noneChosen}
       </p>
     </div>
   );
