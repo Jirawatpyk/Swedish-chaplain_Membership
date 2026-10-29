@@ -84,3 +84,23 @@ describe('design blocks keep their own cells', () => {
     expect(html).toMatch(/<img src="https:\/\/cdn\.example\.org\/b\.png" alt="Banner" width="600" style="display:block;width:100%;max-width:100%;height:auto;border:0">/);
   });
 });
+
+// PR L follow-up (the maintainer, 29 Oct): the footer's grey #888 at 11px was
+// 3.5:1 on white, under WCAG AA's 4.5:1, and small for Thai's stacked vowels;
+// and on a screen of 300px or less the 240px logo outgrew the card.
+describe('footer contrast and the logo on a very narrow screen', () => {
+  const html = renderBroadcastHtml({
+    ...BASE,
+    brand: { primaryColor: null, postalAddress: null, logoUrl: 'https://blob.example/l.png' },
+  });
+
+  it('the footer is #6b6b6b (5.3:1 on white) at 12px', () => {
+    expect(html).toMatch(/border-top:1px solid #eee;font-size:12px;line-height:1\.5;color:#6b6b6b" class="eb-cell">/);
+    expect(html).not.toContain('color:#888');
+  });
+
+  it('the logo shrinks to the card at 300px and below, and keeps its 240px cap above', () => {
+    expect(html).toMatch(/<img [^>]*class="eb-logo"[^>]*style="[^"]*max-width:240px/);
+    expect(html).toContain('@media (max-width:300px){.eb-logo{max-width:100%!important;height:auto!important}}');
+  });
+});
