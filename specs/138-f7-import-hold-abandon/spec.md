@@ -70,8 +70,8 @@ The legacy (non-import) leg is LIVE in production. Its pre-send persist and inhe
    - The next tick runs a fresh tick 1. No `failed_to_dispatch` is recorded and no member email is sent.
    - On `createBroadcast`, the "404 → audience missing" classification is opt-in and only the import leg passes it. A gateway unit test pins the legacy classification unchanged (no resource id → `permanent`).
 7. **No `''` sentinels.** A row whose `resend_broadcast_id` is `''` does not loop. The handed path never writes `''` into `resend_audience_id`.
-8. **The legacy leg is unchanged except where stated.** The shared persist-before-send and reclaim helpers keep the legacy leg's log names, metric labels and error shapes byte-identical, proved by its unit suites and `dispatch-persist-before-send` / `eblast-approved-exit-vs-dispatch` integration. Two deliberate live changes, each listed in the PR with its own test:
-   - a non-retryable probe throw is now refused fail-closed;
+8. **The legacy leg is unchanged except where stated.** The shared persist-before-send and reclaim helpers keep the legacy leg's log names, metric labels and error shapes byte-identical, proved by its unit suites and `dispatch-persist-before-send` / `eblast-approved-exit-vs-dispatch` integration. The deliberate live changes, each listed in the PR with its own test (with the shared helpers, a refactor with no behaviour change, that makes five live surfaces):
+   - a non-retryable inherited-id probe throw is now refused fail-closed;
    - a non-retryable `/send` failure is probed (DW12): `queued`/`sending`/`sent` → advanced as sent; `draft`/`cancelled` → today's terminal path; anything else → a non-terminal refusal;
    - an empty `resend_broadcast_id` (`''`) is accepted by `attachBroadcastId`'s CAS instead of looping.
 

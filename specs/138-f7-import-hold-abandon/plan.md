@@ -1,6 +1,6 @@
 # Plan: 138 — F7 import leg: hold abandon + pre-send persist + fenced audience delete
 
-Spec: `specs/138-f7-import-hold-abandon/spec.md` · Size: L (first sized M in error, corrected on 29 Oct 2026) · Agreed by the user on: 29 Oct 2026.
+Spec: `specs/138-f7-import-hold-abandon/spec.md` · Size: L (first sized M in error, corrected on 29 Oct 2026) · Agreed by the user on: 29 Oct 2026, after the `chamber-os-architect` read and an advisor pass ("ถาม Advisor แล้วยืนยัน").
 
 **Agreement history:**
 - The first slice (the hold abandon) was approved in plan mode. That plan was saved outside the repo, which is a deviation.
@@ -18,7 +18,7 @@ All changes are in the import leg (`build-audience-tick.ts`). It follows the leg
 2. **Inherited-id probe.** A row carrying `resend_broadcast_id` is probed with `retrieveBroadcast` before the standing gate. The answer can be:
    - handed (`queued` / `sending` / `sent`): catch up with the post-send writes;
    - reusable (`draft` / `cancelled`);
-   - dead (`not_found` / `failed`);
+   - dead (`not_found`): re-minted; `failed` / `scheduled` read as `unknown` and are refused;
    - unknown, or the probe threw: refuse fail-closed.
 3. **Fenced hold abandon.**
    - claim CAS: clear only the import columns, and keep the bid and the audience (architect B1, 29 Oct);
@@ -91,7 +91,7 @@ n/a. No migration.
 | 2 lost claim touches nothing | failure-paths "claim lost → no gateway delete" | unit |
 | 3 sender fence: every attach fenced, both orders, double-race re-read | `audience-import-repo.test.ts` fence pair against Neon; failure-paths "fence lost → no send, own mint reclaimed, no bid left"; "send 404 after a claim → re-read → non-terminal", covering both bid≠own and bid=X + import NULL | integration + unit |
 | 4 partial abandon self-heals; 403 stops and leaves the bid | failure-paths "redo on an import-NULL row with bid/audience still set (no re-claim)"; "broadcast delete 403 → audience untouched, bid kept → next probe catches up" | unit |
-| 5 no double send: pre-send persist order; probe arms; dead bid replaced; fail-closed throws | failure-paths persist/probe blocks; "not_found/failed bid → replace-dead-bid CAS → fresh mint"; `audience-import-two-tick.test.ts` re-entry after send | unit + integration |
+| 5 no double send: pre-send persist order; probe arms; dead bid replaced; fail-closed throws | failure-paths persist/probe blocks; "not_found bid → replace-dead-bid CAS → fresh mint"; `audience-import-two-tick.test.ts` re-entry after send | unit + integration |
 | 6 dead audience self-heals; legacy classification pinned | failure-paths "createBroadcast 404 audience → detach, non-terminal"; "createContactImport 404 → fresh tick 1"; gateway unit "legacy createBroadcast 404 stays permanent" | unit |
 | 7 no `''` sentinels | failure-paths "'' broadcast id does not loop"; "handed path keeps null audience" | unit |
 | 8 legacy unchanged except stated | the legacy `dispatch-scheduled*` unit suites; `dispatch-persist-before-send`, `eblast-approved-exit-vs-dispatch` integration; new legacy tests for the probe-throw and `failed` arms | unit + integration |
@@ -106,9 +106,12 @@ n/a. No migration.
   - Layer 1: an `it.each` in `audience-import-repo.test.ts`, next to `:622`, over every new or changed method: the claim, the narrow clear, the fenced attach and the replace-dead-bid.
 - **e2e:** no spec touches this path (cron-only, dark behind the flag).
 - **Verify (step 6):**
-  - **Setup:** serve the branch on :3400 from a worktree, against dev Neon, with `FEATURE_F7_IMPORT_AUDIENCE=true` set only in that worktree's `.env.local`. Create an approved E-Blast whose member is `suspended`.
+  - **Setup:** serve the branch on :3400 from a worktree, against dev Neon, with `FEATURE_F7_IMPORT_AUDIENCE=true` set only in that worktree's `.env.local`.
+    - The Resend key is the production Broadcasts key, so the probe E-Blast is a **custom-recipients** broadcast whose only recipient is `delivered@resend.dev`. A tier or segment broadcast could import real member emails from the prod-derived dev data.
+    - Its member is set `suspended` on dev. This is a dev-DB write, stated here and in the session.
+    - Before the first tick, `pnpm db:query` the due `approved` rows. If any exist besides the probe row, drive only the probe row (a tsx script calling `buildAudienceTick` for that id), not the global cron route.
   - **Abandon:** run tick 1 and tick 2 through `GET /api/cron/broadcasts/dispatch-scheduled` with `CRON_SECRET`. Observe that the row's import, audience and broadcast columns are cleared (`pnpm db:query`), that `/api/internal/metrics/broadcasts-gauges` no longer counts the row, and the abandon log line.
-  - **Resume:** set the member to active, tick again, and see a fresh tick 1.
+  - **Resume:** set the member to active and tick again. Expect a fresh tick 1, then tick 2 sends to the sink only. Record the Resend broadcast status and the single sink email.
   - **Wrong-input probe:** the cron without `CRON_SECRET` answers 401.
   - **Recipients:** only Resend's sink address (`delivered@resend.dev`) is ever a recipient.
 
