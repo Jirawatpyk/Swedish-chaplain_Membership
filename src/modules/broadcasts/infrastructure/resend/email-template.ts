@@ -160,14 +160,20 @@ function renderPostalLine(physicalLine: string, postalAddress: string | null): s
 /**
  * PR L (29 Oct 2026) — the email fits a phone. The card is fluid up to 600px
  * (Outlook desktop, which ignores `max-width`, keeps 600px through the MSO
- * ghost table around it). Rows after the header never let an image outgrow
- * the card (the sanitiser keeps `img[src,alt]` with no style; the logo keeps
- * its own 240px cap), and phones get 16px side padding instead of 32px. A
- * client that drops `<style>` still gets the fluid card and the 32px.
+ * ghost table around it). An image in the body never outgrows the card: the
+ * sanitiser keeps `img[src,alt]` with no style, so each gets an inline cap
+ * (for a client that drops `<style>`) and the `.eb-body` rule backs it; the
+ * logo keeps its own 240px cap. Phones get 16px side padding instead of 32px
+ * on the card's own three cells (`.eb-cell`), never on a design block's.
  */
 const PHONE_STYLE =
-  '.eb-card tr+tr img{max-width:100%!important;height:auto!important}' +
-  '@media (max-width:480px){.eb-card td{padding-left:16px!important;padding-right:16px!important}}';
+  '.eb-body img{max-width:100%!important;height:auto!important}' +
+  '@media (max-width:480px){.eb-cell{padding-left:16px!important;padding-right:16px!important}}';
+
+/** The inline cap on a body image that carries no style of its own. */
+function capBodyImages(html: string): string {
+  return html.replace(/<img(?![^>]*\sstyle=)/g, '<img style="max-width:100%;height:auto"');
+}
 
 export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
   // Defensive lookup: TS already pins `input.locale` to BroadcastLocale,
@@ -208,9 +214,11 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
   // Design blocks are rendered AFTER sanitisation (the caller sanitised
   // `bodyHtml`) and the result is never fed back through DOMPurify. A body
   // without markers is returned as the identical string (T007).
-  const bodyHtml = applyDesignBlocks(input.bodyHtml, {
-    primaryColor: brand?.primaryColor ?? null,
-  });
+  const bodyHtml = capBodyImages(
+    applyDesignBlocks(input.bodyHtml, {
+      primaryColor: brand?.primaryColor ?? null,
+    }),
+  );
 
   return [
     '<!doctype html>',
@@ -226,9 +234,9 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
     '<tr><td align="center" style="padding:24px 12px">',
     '<!--[if mso]><table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0"><tr><td><![endif]-->',
     '<table role="presentation" class="eb-card" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden">',
-    `<tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #eee">${renderHeaderCell(safeTenantName, brand?.logoUrl ?? null)}</td></tr>`,
-    `<tr><td style="padding:24px 32px;font-size:15px;line-height:1.6;color:#1a1a1a">${bodyHtml}</td></tr>`,
-    '<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;font-size:11px;line-height:1.5;color:#888">',
+    `<tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #eee" class="eb-cell">${renderHeaderCell(safeTenantName, brand?.logoUrl ?? null)}</td></tr>`,
+    `<tr><td style="padding:24px 32px;font-size:15px;line-height:1.6;color:#1a1a1a" class="eb-cell eb-body">${bodyHtml}</td></tr>`,
+    '<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;font-size:11px;line-height:1.5;color:#888" class="eb-cell">',
     `<p style="margin:0 0 8px 0">${receivedLine}</p>`,
     `<p style="margin:0 0 8px 0"><a href="${RESEND_UNSUBSCRIBE_MERGE_TAG}" style="color:#666;text-decoration:underline">${escapeHtml(f.unsubscribeCta)}</a> ${escapeHtml(f.unsubscribeSuffix)}</p>`,
     objectionLine === null ? '' : `<p style="margin:0 0 8px 0">${objectionLine}</p>`,

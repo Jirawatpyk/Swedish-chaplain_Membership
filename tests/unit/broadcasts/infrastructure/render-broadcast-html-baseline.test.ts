@@ -22,10 +22,12 @@
  *
  * Deliberate rewrite, 2026-10-29 (PR L, the email fits a phone): a viewport
  * meta and a `<style>` in `<head>` (body images capped at the card, 16px
- * phone side padding), and the card table goes from `width="600"` to
- * `class="eb-card" width="100%"` inside an MSO ghost table that keeps
- * Outlook desktop at 600px. The diff was checked to be exactly those four
- * insertions and the one width; every cell's bytes are unchanged.
+ * phone side padding on the card's cells), the card table goes from
+ * `width="600"` to `class="eb-card" width="100%"` inside an MSO ghost table
+ * that keeps Outlook desktop at 600px, the three card cells gain a class
+ * (`eb-cell`, the body `eb-cell eb-body`), and a body `<img>` with no style
+ * gains `style="max-width:100%;height:auto"`. The diff was checked to be
+ * exactly those insertions and the one width; no other byte changed.
  *
  * The positive control proves the comparison bites: a one-character change
  * to the rendered output must fail the byte comparison.
