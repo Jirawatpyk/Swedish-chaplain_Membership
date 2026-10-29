@@ -132,6 +132,20 @@ jobs:
       - name: F7.1a template seed matches its source
         run: pnpm check:template-seed
 
+      # Retro 2026-10-29 (spec 138) — Principle II's commit order: a fix:/feat:
+      # commit changing application/domain code needs an earlier test: commit for
+      # its module. PR-only: a squash merge leaves one commit on main. The
+      # checkout is shallow, so fetch the history (trees only, no blobs) first.
+      - name: Every logic commit has a RED commit before it
+        if: github.event_name == 'pull_request'
+        env:
+          RED_FIRST_BASE: ${{ github.event.pull_request.base.sha }}
+          RED_FIRST_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags --filter=blob:none --unshallow origin
+          git fetch --no-tags --filter=blob:none origin "$RED_FIRST_HEAD"
+          pnpm check:red-first
+
   unit:
     # Sharded because `vitest.config.ts` caps `maxWorkers: '50%'` for
     # determinism (see the starvation trade-off documented there). On a 2-core
