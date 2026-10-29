@@ -196,3 +196,12 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   - A refused `/send` is probed before it is recorded as a failure.
   - Rejected: a dispatch lease column (it needs a migration, and still needs a fencing token, since a lease can expire mid-send), and detach-before-delete (it orphans an audience that neither erasure nor `reclaim-orphaned-audiences` can see).
 - *Consequence*: spec 138. The predicates must stay consistent; the Neon pair test in `audience-import-repo.test.ts` (both orders) and the SQL-shape test pin them.
+
+**D-038 — The F7 import leg merges dark; its tick concurrency is a separate spec with a lease** (2026-10-29)
+- *Context*: spec 138 went through six review rounds, and every one from round 2 to round 5 found a real bug in the import leg's partial-teardown state. All of them had the same cause. The dispatch cron holds no lease past its scan, so two ticks can work one row. The row CAS fence (D-037) covers rows that carry an import id. It does not reach rows that have none: a teardown can delete an audience under an overlapping tick 1, and a legacy tick running across the flip can have its audience torn out. D-037 had rejected a lease as unnecessary.
+- *Decision* (the maintainer, 29 Oct 2026):
+  - Spec 138 merges with the import leg dark and NOT flip-ready.
+  - Spec 140 owns import-leg tick concurrency with a dispatch lease, which needs a migration. This supersedes D-037's "lease rejected".
+  - `FEATURE_F7_IMPORT_AUDIENCE` may be set only after 139 (erasure) and 140 have merged and no legacy row is in flight (`docs/go-live-readiness.md` § 6.10).
+  - Also decided on 29 Oct: a `not_found` inherited id is re-probed once after 3 s, before any decision. The alternative was legacy parity: send to the dead id and let the send fail.
+- *Consequence*: go-live § 6.10 and `docs/operational-state.md` list the three preconditions. The spec 139 and spec 140 directories do not exist yet; each starts with feature-flow step 1 when the maintainer asks.
