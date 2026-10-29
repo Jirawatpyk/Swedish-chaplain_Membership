@@ -42,6 +42,7 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
+import { AuditPortInvariantError } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
@@ -603,10 +604,33 @@ export async function dispatchScheduledBroadcast(
         );
         return err({ kind: 'gateway_retryable', subKind, reason: shape.reason ?? 'retryable' });
       }
-      // Every other class follows the rules of every other gateway throw. This
-      // is not the Step-3 try, so it cannot borrow that catch; it borrows the
-      // function the catch calls.
-      return await settleGatewayThrow(deps, input, broadcast, now, e, shape);
+      // 2026-10-29 (reliability M2 / code review #4) — every OTHER class is
+      // refused too, FAIL CLOSED, exactly as the `unknown`-status arm below. It
+      // used to take `settleGatewayThrow`'s permanent arm: `failed_to_dispatch`,
+      // the member emailed that it did not go out, the quota slot released —
+      // when an unanswered probe (a 4xx other than 404 — the adapter answers a
+      // 404 as `not_found` — a 409, a throw with no `kind`) cannot say whether
+      // this inherited resource was already handed to `/send`. Non-terminal,
+      // no FR-021 clock; the route's `inherited_status` counter alarms. A
+      // wiring bug (`AuditPortInvariantError`) still throws.
+      if (e instanceof AuditPortInvariantError) throw e;
+      logger.error(
+        {
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId as string,
+          resendBroadcastId,
+          // The classifier's kind — a closed set — never the provider's text.
+          errorKind: shape.kind,
+          severity: 'critical',
+        },
+        'broadcasts.dispatch.inherited_probe_refused',
+      );
+      return err({
+        kind: 'dispatch.server_error',
+        message: 'inherited_probe_failed',
+        errClass: shape.kind,
+        phase: 'inherited_status',
+      });
     }
     if (probe.kind === 'present') {
       observedResendStatus = probe.resource.status;
@@ -658,6 +682,17 @@ export async function dispatchScheduledBroadcast(
         //
         // Still the right trade: a stuck broadcast is recoverable by a human; a
         // duplicate send to 150 real members is not.
+        //
+        // `failed` and `scheduled` land here too, on purpose (2026-10-29). Both
+        // are real Resend statuses that `normaliseStatus` maps to `unknown`.
+        // MEASURED 2026-10-29: deleting the audience of a `queued` broadcast
+        // turns it `failed` within 5 s with `sent_at` null and no mail; this
+        // leg never deletes an `approved` row's audience, so a `failed` here
+        // means someone did by hand. Recovery is the one above: delete the
+        // resource at Resend (or re-create the E-Blast) — DELETE on `failed`
+        // is UNMEASURED. They are not mapped because the status union is read
+        // by `reconcile-stuck-sending` too, and widening a live union for a
+        // state this leg cannot produce is not the minimal change.
         logger.error(
           {
             tenantId: deps.tenant.slug,
