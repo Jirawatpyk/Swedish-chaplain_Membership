@@ -751,6 +751,26 @@ describe('approve-broadcast โ€” Wave 6 GREEN (T100)', () => {
     ]);
   });
 
+  // Spec 139 DE1 / P3 — an erased member is refused with approve's existing
+  // standing refusal, but writes NO refusal row: the event is labelled
+  // "membership suspended", and an erasure must never be recorded as one.
+  it('spec 139: an erased member → member_not_in_good_standing, no transition, NO refusal audit row', async () => {
+    const { repo, audit, result } = approveWith({ erased: true, halted: ['m-1'] });
+    expect(await result).toEqual({ ok: false, error: { kind: 'member_not_in_good_standing', memberId: 'm-1' } });
+    expect(repo.transitions).toHaveLength(0);
+    expect(audit.emits).toEqual([]);
+  });
+
+  it('spec 139: the erasure read throws → approve.server_error naming the erasure read, no transition, no audit', async () => {
+    const { repo, audit, result } = approveWith({ erased: 'throws' });
+    expect(await result).toEqual({
+      ok: false,
+      error: { kind: 'approve.server_error', errKind: 'ApprovalDependencyError:member_erasure:Error' },
+    });
+    expect(repo.transitions).toHaveLength(0);
+    expect(audit.emits).toEqual([]);
+  });
+
   it('T166 follow-up: a refusal with no session role records actor_role null — never a stand-in', async () => {
     const { audit, result } = approveWith({ halted: ['m-1'] }, { lockedStatus: 'submitted' }, { ...baseInput, actorRole: null });
     await result;

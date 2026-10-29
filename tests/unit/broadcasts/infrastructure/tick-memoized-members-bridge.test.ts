@@ -36,12 +36,14 @@ function makeStubBridge(): {
   countCalls: Array<{ type: string; params: unknown; excludeMemberId: string | null }>;
   haltCalls: Array<{ memberId: string; halted: boolean }>;
   primaryCalls: Array<{ memberId: string }>;
+  erasedCalls: Array<{ memberId: string }>;
 } {
   const segmentCalls: Array<{ type: string; params: unknown }> = [];
   const contactCalls: Array<{ type: string; params: unknown }> = [];
   const countCalls: Array<{ type: string; params: unknown; excludeMemberId: string | null }> = [];
   const haltCalls: Array<{ memberId: string; halted: boolean }> = [];
   const primaryCalls: Array<{ memberId: string }> = [];
+  const erasedCalls: Array<{ memberId: string }> = [];
   const bridge: MembersBridgePort = {
     async getMembersBySegment(_ctx, type, params) {
       segmentCalls.push({ type, params });
@@ -76,6 +78,10 @@ function makeStubBridge(): {
     async lookupMemberPrimaryContactEmailInTenant() {
       return null;
     },
+    async getMemberErasedAt(_ctx, memberId) {
+      erasedCalls.push({ memberId });
+      return { erasedAt: null };
+    },
     async getMembersHaltedInTenant() {
       return [];
     },
@@ -91,7 +97,7 @@ function makeStubBridge(): {
       return null;
     },
   };
-  return { bridge, segmentCalls, contactCalls, countCalls, haltCalls, primaryCalls };
+  return { bridge, segmentCalls, contactCalls, countCalls, haltCalls, primaryCalls, erasedCalls };
 }
 
 const tenant = asTenantContext('test-tenant');
@@ -137,6 +143,17 @@ describe('makeTickMemoizedMembersBridge (R7 LOW-B)', () => {
     await memo.setMemberHalt(tenant, 'mem-1', true, 'system');
     await memo.setMemberHalt(tenant, 'mem-1', true, 'system');
     expect(stub.haltCalls).toHaveLength(2);
+  });
+
+  // Spec 139 — the erasure read is NEVER memoised, for the reason the fresh
+  // halt re-read is not: an erasure that commits mid-tick must stop the next
+  // row of the same tick, and a cached "not erased" would send it.
+  it('passes through the erasure read (getMemberErasedAt) on every call — never memoised', async () => {
+    const stub = makeStubBridge();
+    const memo = makeTickMemoizedMembersBridge(stub.bridge);
+    await memo.getMemberErasedAt(tenant, 'm-1');
+    await memo.getMemberErasedAt(tenant, 'm-1');
+    expect(stub.erasedCalls).toEqual([{ memberId: 'm-1' }, { memberId: 'm-1' }]);
   });
 
   it('passes through non-cached methods (getMemberPrimaryContact) on every call', async () => {

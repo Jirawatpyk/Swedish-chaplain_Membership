@@ -27,10 +27,11 @@ const f3 = vi.hoisted(() => ({
   getBroadcastRecipientContacts: vi.fn(),
   getMembersBySegment: vi.fn(),
   countBroadcastOptedOutContacts: vi.fn(),
+  findErasedAtById: vi.fn(),
 }));
 
 vi.mock('@/modules/members', () => ({
-  drizzleMemberRepo: { kind: 'member-repo-stub' },
+  drizzleMemberRepo: { kind: 'member-repo-stub', findErasedAtById: (...a: unknown[]) => f3.findErasedAtById(...a) },
   drizzleContactRepo: { kind: 'contact-repo-stub' },
   asMemberId: (id: string) => id,
   getBroadcastRecipientContacts: (...a: unknown[]) => f3.getBroadcastRecipientContacts(...a),
@@ -239,6 +240,46 @@ describe('membersBridge — the other lookups discriminate "no data" from "no an
     );
     vi.mocked(f3mod.setMemberHalt).mockResolvedValueOnce(ok(undefined) as never);
     expect(await membersBridge.setMemberHalt(tenant, 'm-1', false, 'admin')).toEqual(ok(undefined));
+  });
+});
+
+/**
+ * Spec 139 DE1 — the erasure read the send-standing gate makes FIRST (erasure
+ * takes a member OFF the halt list, and F8 access can still answer `full`).
+ * Through the members barrel's `findErasedAtById` (tenant predicate + RLS).
+ * A live member answers `{ erasedAt: null }`; `repo.not_found` (no such
+ * member in THIS tenant — another tenant's id included) answers `null`, which
+ * the gate refuses like an erasure (P4); `repo.unexpected` THROWS, so the gate
+ * fails closed instead of reading "not erased".
+ */
+describe('membersBridge.getMemberErasedAt (spec 139 DE1)', () => {
+  const ERASED_AT = new Date('2026-10-01T00:00:00Z');
+
+  it('exists on the bridge', () => {
+    expect(membersBridge.getMemberErasedAt).toBeTypeOf('function');
+  });
+
+  it('an erased member → its erased_at, read through findErasedAtById with the tenant context', async () => {
+    f3.findErasedAtById.mockResolvedValueOnce(ok({ erasedAt: ERASED_AT }));
+    expect(await membersBridge.getMemberErasedAt?.(tenant, 'm-1')).toEqual({ erasedAt: ERASED_AT });
+    expect(f3.findErasedAtById).toHaveBeenCalledWith(tenant, 'm-1');
+  });
+
+  it('a live member → { erasedAt: null }', async () => {
+    f3.findErasedAtById.mockResolvedValueOnce(ok({ erasedAt: null }));
+    expect(await membersBridge.getMemberErasedAt?.(tenant, 'm-1')).toEqual({ erasedAt: null });
+  });
+
+  it('repo.not_found (no such member in this tenant) → null', async () => {
+    f3.findErasedAtById.mockResolvedValueOnce(err({ code: 'repo.not_found' as const }));
+    expect(await membersBridge.getMemberErasedAt?.(tenant, 'm-1')).toBeNull();
+  });
+
+  it('repo.unexpected THROWS — an erasure gate must never fail open', async () => {
+    f3.findErasedAtById.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause: new Error('neon down') }));
+    await expect(Promise.resolve().then(() => membersBridge.getMemberErasedAt?.(tenant, 'm-1'))).rejects.toThrow(
+      /repo\.unexpected/,
+    );
   });
 });
 

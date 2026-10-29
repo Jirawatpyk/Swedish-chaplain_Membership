@@ -93,6 +93,8 @@ function makeMembersBridge(state: State): MembersBridgePort {
     async lookupMemberPrimaryContactEmailInTenant() {
       return null;
     },
+    // Spec 139 — read first by the send-standing gate; a live member.
+    async getMemberErasedAt() { return { erasedAt: null }; },
     async getMembersHaltedInTenant() {
       return [...state.haltedSet].map((memberId) => ({
         memberId,

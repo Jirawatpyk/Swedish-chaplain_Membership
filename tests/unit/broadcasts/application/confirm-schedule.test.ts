@@ -126,6 +126,28 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
       ]);
     });
 
+    // Spec 139 DE1 / P3 — an erased member's promotion is refused with the
+    // existing code (the route reads only `kind`), `access: 'erased'`, and NO
+    // refusal row: that event is labelled "membership suspended".
+    it('spec 139: an erased member → member_not_in_good_standing (access erased), nothing written, NO refusal audit row', async () => {
+      const { store, audit, run, sendStanding } = setup(promotable(), { erased: true, halted: [MEMBER] });
+      expect(await run({ actorRole: 'marketing' })).toEqual({
+        ok: false,
+        error: { kind: 'member_not_in_good_standing', memberId: MEMBER, access: 'erased' },
+      });
+      expect(sendStanding.membersBridge.getMemberErasedAt).toHaveBeenCalledWith(expect.anything(), MEMBER);
+      expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
+      expect(store.outbox.rows()).toHaveLength(0);
+      expect(audit.events).toEqual([]);
+    });
+
+    it('spec 139: the erasure read throws → server_error naming the erasure read, nothing written, no audit', async () => {
+      const { store, audit, run } = setup(promotable(), { erased: 'throws' });
+      expect(await run()).toEqual({ ok: false, error: { kind: 'server_error', errKind: 'ApprovalDependencyError:member_erasure:Error' } });
+      expect(store.broadcastsRepo.applyTransition).not.toHaveBeenCalled();
+      expect(audit.events).toEqual([]);
+    });
+
     it('a standing refusal with no session role records actor_role null', async () => {
       const { audit, run } = setup(promotable(), { halted: [MEMBER] });
       await run();

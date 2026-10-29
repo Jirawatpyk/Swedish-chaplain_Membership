@@ -280,6 +280,8 @@ function makeMembersBridge(): { port: MembersBridgePort; haltCalls: Array<{ memb
     async lookupMemberPrimaryContactEmailInTenant() {
       return null;
     },
+    // Spec 139 — read first by the send-standing gate; a live member.
+    async getMemberErasedAt() { return { erasedAt: null }; },
     async getMembersHaltedInTenant() {
       return [];
     },
@@ -1045,6 +1047,8 @@ describe('process-webhook-event — outbox best-effort + observability fallback 
       async memberExistsInTenant() { return true; },
       async lookupContactEmailInTenant() { return null; },
       async lookupMemberPrimaryContactEmailInTenant() { return null; },
+      // Spec 139 — read first by the send-standing gate; a live member.
+      async getMemberErasedAt() { return { erasedAt: null }; },
       async getMembersHaltedInTenant() { return []; },
       async setMemberHalt() { return ok(undefined); },
       async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },
@@ -1149,6 +1153,8 @@ describe('process-webhook-event — delivered-summary locale (email-locale audit
       async memberExistsInTenant() { return true; },
       async lookupContactEmailInTenant() { return null; },
       async lookupMemberPrimaryContactEmailInTenant() { return null; },
+      // Spec 139 — read first by the send-standing gate; a live member.
+      async getMemberErasedAt() { return { erasedAt: null }; },
       async getMembersHaltedInTenant() { return []; },
       async setMemberHalt() { return ok(undefined); },
       async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },

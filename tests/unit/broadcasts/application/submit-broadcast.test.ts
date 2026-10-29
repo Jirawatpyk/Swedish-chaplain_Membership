@@ -74,6 +74,8 @@ interface FixtureOpts {
   /** Review 2026-09-07 — the bridge THROWS on a failed read (repo.unexpected). */
   readonly primaryContactThrows?: boolean;
   readonly haltReadThrows?: boolean;
+  /** Spec 139 — the erasure read, made before the halt read. Default: a live member. */
+  readonly erased?: 'erased' | 'throws';
   readonly memberInBridge?: ReadonlyArray<{
     memberId: string;
     primaryContactEmail: string | null;
@@ -141,6 +143,11 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     },
     async lookupMemberPrimaryContactEmailInTenant() {
       return null;
+    },
+    // Spec 139 — read first by the send-standing gate.
+    async getMemberErasedAt() {
+      if (opts.erased === 'throws') throw new Error('members-bridge.getMemberErasedAt: repo.unexpected');
+      return { erasedAt: opts.erased === 'erased' ? FROZEN_NOW : null };
     },
     async getMembersHaltedInTenant() {
       if (opts.haltReadThrows) throw new Error('members-bridge.getMembersHaltedInTenant: repo.unexpected');
@@ -1984,6 +1991,23 @@ describe('submitBroadcast — a failed bridge READ is a 500, never a fabricated 
     expect(result.error.kind).toBe('submit.server_error');
     expect(audit.emits.find((e) => e.eventType === 'broadcast_member_halted_pending_review')).toBeUndefined();
     expect(audit.emits.find((e) => e.eventType === 'broadcast_member_missing_primary_contact_email')).toBeUndefined();
+  });
+
+  // Spec 139 DE1 / P3 — an erased member is refused with submit's existing
+  // standing refusal, but WITHOUT its audit row: that event is labelled
+  // "membership suspended", and an erasure must never be recorded as one.
+  it('an erased member → broadcast_membership_suspended_blocked, no reject audit row, nothing else read', async () => {
+    const { audit, deps } = makeDeps({ erased: 'erased', halted: ['m-1'], primaryContact: 'me@example.com' });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok ? null : result.error).toEqual({ kind: 'broadcast_membership_suspended_blocked', memberId: 'm-1' });
+    expect(audit.emits).toEqual([]);
+  });
+
+  it('the erasure read throws → submit.server_error, no audit (the gate was never decided)', async () => {
+    const { audit, deps } = makeDeps({ erased: 'throws', primaryContact: 'me@example.com' });
+    const result = await submitBroadcast(deps, baseInput);
+    expect(result.ok ? null : result.error.kind).toBe('submit.server_error');
+    expect(audit.emits).toEqual([]);
   });
 
   it('reply-to read throws → submit.server_error; NO broadcast_member_missing_primary_contact_email audit', async () => {

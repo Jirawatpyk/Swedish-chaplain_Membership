@@ -252,6 +252,8 @@ function makeMembersBridge(): MembersBridgePort {
     async memberExistsInTenant() { return true; },
     async lookupContactEmailInTenant() { return null; },
     async lookupMemberPrimaryContactEmailInTenant() { return null; },
+    // Spec 139 — read first by the send-standing gate; a live member.
+    async getMemberErasedAt() { return { erasedAt: null }; },
     async getMembersHaltedInTenant() { return []; },
     async setMemberHalt() { return ok(undefined); },
     async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },
