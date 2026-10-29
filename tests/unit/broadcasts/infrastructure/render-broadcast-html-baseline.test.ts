@@ -26,8 +26,10 @@
  * `width="600"` to `class="eb-card" width="100%"` inside an MSO ghost table
  * that keeps Outlook desktop at 600px, the three card cells gain a class
  * (`eb-cell`, the body `eb-cell eb-body`), and a body `<img>` with no style
- * gains `style="max-width:100%;height:auto"`. The diff was checked to be
- * exactly those insertions and the one width; no other byte changed.
+ * gains `style="max-width:100%;height:auto"`. The footer cell goes from
+ * `font-size:11px;…color:#888` (3.5:1) to `font-size:12px;…color:#6b6b6b`
+ * (5.3:1), and a 300px media rule lets the logo follow the card. The diff
+ * was checked to be exactly those changes; no other byte changed.
  *
  * The positive control proves the comparison bites: a one-character change
  * to the rendered output must fail the byte comparison.

@@ -145,7 +145,7 @@ function renderHeaderCell(safeTenantName: string, logoUrl: string | null): strin
   if (logoUrl === null) {
     return `<strong style="font-size:14px;color:#666">${safeTenantName}</strong>`;
   }
-  return `<img src="${escapeHtml(logoUrl)}" alt="${safeTenantName}" height="48" style="display:block;max-height:48px;height:auto;max-width:240px;border:0">`;
+  return `<img src="${escapeHtml(logoUrl)}" alt="${safeTenantName}" class="eb-logo" height="48" style="display:block;max-height:48px;height:auto;max-width:240px;border:0">`;
 }
 
 /**
@@ -165,10 +165,15 @@ function renderPostalLine(physicalLine: string, postalAddress: string | null): s
  * (for a client that drops `<style>`) and the `.eb-body` rule backs it; the
  * logo keeps its own 240px cap. Phones get 16px side padding instead of 32px
  * on the card's own three cells (`.eb-cell`), never on a design block's.
+ * The footer is #6b6b6b at 12px (5.3:1 on white; #888 at 11px was 3.5:1,
+ * under WCAG AA, and small for Thai's stacked vowels).
  */
 const PHONE_STYLE =
   '.eb-body img{max-width:100%!important;height:auto!important}' +
-  '@media (max-width:480px){.eb-cell{padding-left:16px!important;padding-right:16px!important}}';
+  '@media (max-width:480px){.eb-cell{padding-left:16px!important;padding-right:16px!important}}' +
+  // At 300px and below the card's content is narrower than the logo's 240px
+  // cap (300 − 24 − 32 = 244 at most), so there the logo follows the card.
+  '@media (max-width:300px){.eb-logo{max-width:100%!important;height:auto!important}}';
 
 /** The inline cap on a body image that carries no style of its own. */
 function capBodyImages(html: string): string {
@@ -236,7 +241,7 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
     '<table role="presentation" class="eb-card" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden">',
     `<tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #eee" class="eb-cell">${renderHeaderCell(safeTenantName, brand?.logoUrl ?? null)}</td></tr>`,
     `<tr><td style="padding:24px 32px;font-size:15px;line-height:1.6;color:#1a1a1a" class="eb-cell eb-body">${bodyHtml}</td></tr>`,
-    '<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;font-size:11px;line-height:1.5;color:#888" class="eb-cell">',
+    '<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;font-size:12px;line-height:1.5;color:#6b6b6b" class="eb-cell">',
     `<p style="margin:0 0 8px 0">${receivedLine}</p>`,
     `<p style="margin:0 0 8px 0"><a href="${RESEND_UNSUBSCRIBE_MERGE_TAG}" style="color:#666;text-decoration:underline">${escapeHtml(f.unsubscribeCta)}</a> ${escapeHtml(f.unsubscribeSuffix)}</p>`,
     objectionLine === null ? '' : `<p style="margin:0 0 8px 0">${objectionLine}</p>`,
