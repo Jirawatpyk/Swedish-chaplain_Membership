@@ -174,6 +174,42 @@ Filled in at Verify, one line per Done-when line.
 
   All are being closed in the fence commit set.
 
+**Check, 29 Oct 2026 (main checkout, after `/simplify` commits `28255613f`, `1a3f82b97`):**
+- **`pnpm check`:** exit 0, including `check:red-first` ("allowed c5bc2f9c6 …").
+- **`pnpm vitest run tests/contract/`:** 253 of 256 files passed, 2,740 tests.
+  - The 3 failing files are outside this change (`events/admin-events-api`, `events/csv-import-api`, `invoices/issue-as-paid`).
+  - Re-run alone: 3/3 files, 96/96 tests. They timed out under load: 2.3 GB free RAM, 79 node processes on the machine.
+- **`pnpm test:coverage`:** not run locally. The machine's memory reaper killed it, and the maintainer chose to let CI's required coverage check run it ("3", 29 Oct 2026). Disclosed in the PR.
+- **`/simplify` gates:**
+  - unit 3124/3126: 1 obsolete case removed; `broadcasts-deps-audience` timed out at 30 s under load and passes alone;
+  - contract `broadcasts` 961/961;
+  - integration `audience-import-repo` 26, `audience-import-two-tick` 4, `eblast-send-time-standing` 11, `dispatch-persist-before-send` 2, `eblast-approved-exit-vs-dispatch` 6.
+- **Speed:** `check:red-first` dropped from 6.6–7.0 s to 1.9–2.3 s.
+- **Legacy-leg diff:** 422 lines down to 386.
+
+**Verify, 29 Oct 2026 (step 6, Done-when 1 / 2 / 4 / 5 / 6 / 9):**
+- **Setup:**
+  - The branch ran on **:3401** from a detached worktree with `FEATURE_F7_IMPORT_AUDIENCE=true` set only there. :3400 was taken by another session's worktree (`Temp49`), which was left alone.
+  - Database: the dev Neon branch (`ep-gentle-king`).
+  - Data: test tenant `test-swecham-b0394791` with one approved, due, `custom` E-Blast `583cdab4-…`, whose only recipient is `delivered@resend.dev`.
+  - Before the first tick, `pnpm db:query` showed 0 other approved rows on dev.
+- **Route under test:** the real cron route, `GET /api/cron/broadcasts/dispatch-scheduled`, called with `x-tenant` and the bearer token.
+- **Results:**
+  - **Wrong-input probe:** without the bearer token the route answered **401**.
+  - **Suspended at tick 1:** `held: 1`; the row was untouched (no audience, no import).
+  - **Member set to full** (dev write: `awaiting_entered_at = now()`). Tick 1 returned `import_submitted: 1`; the row carries audience `194065b2-…` and import `39584250-…`.
+  - **Member suspended again, tick 2:** `held: 1`. The row's audience, import, submitted_at and broadcast id are all NULL. The stuck-gauge predicate matches **0** rows. Log line `broadcasts.audience_import.abandoned_on_hold`. **GET of the tick-1 audience at Resend returned 404** (deleted).
+  - **Member back to full:**
+    - resume tick 1: `import_submitted: 1`, a fresh audience and import;
+    - resume tick 2: `succeeded: 1`, row `sending`, `resend_broadcast_id ba647ded-…`;
+    - tick 3: `processed: 0`, so no second send.
+  - **At Resend:** broadcast `ba647ded-…` is `sent` (11:56:05 UTC), and **exactly one email for this subject, to `delivered@resend.dev`, `delivered`**.
+- **Cleanup:**
+  - the probe audience was deleted at Resend (200);
+  - the :3401 server was stopped;
+  - the worktree, including its `.env.local` copy, was removed;
+  - the test tenant is left for the 6 h stale-tenant sweep.
+
 ## Rollout
 
 - **Dark behind `FEATURE_F7_IMPORT_AUDIENCE`** (absent from Vercel): the whole import leg.
