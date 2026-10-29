@@ -1068,8 +1068,9 @@ export function makeDrizzleBroadcastsRepo(
      * overlap in normal operation, and the `lockForUpdate` advisory lock is long
      * released by the time any gateway call returns).
      *
-     * `fence` (import leg only; absent on the legacy leg, whose SQL is then
-     * unchanged):
+     * The `''` id arm below is unconditional, so it changes the legacy leg's
+     * SQL too (correctly — see its comment). `fence` is import leg only; the
+     * legacy leg passes none, so neither fence arm reaches its SQL:
      *   - `expectedAudienceImportId` adds `audience_import_id = $expected`: a
      *     hold on an overlapping tick that claimed the row
      *     (`releaseAudienceImport` NULLs that column) makes this attach lose,
@@ -1128,7 +1129,7 @@ export function makeDrizzleBroadcastsRepo(
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       importId: string,
-      fence?: { readonly expectedResendAudienceId: string },
+      fence: { readonly expectedResendAudienceId: string },
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'attachAudienceImport');
@@ -1185,7 +1186,7 @@ export function makeDrizzleBroadcastsRepo(
             // on an overlapping tick may have deleted and released that audience
             // since this tick's `createContactImport`; an import left on a row
             // with no audience would later mint into `''`.
-            fence === undefined ? undefined : eq(broadcasts.resendAudienceId, fence.expectedResendAudienceId),
+            eq(broadcasts.resendAudienceId, fence.expectedResendAudienceId),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });

@@ -2,12 +2,9 @@
  * Reclaim a Resend broadcast resource THIS TICK minted and cannot keep — shared
  * by both dispatch legs (`dispatchScheduledBroadcast`, `buildAudienceTick`).
  *
- * Both legs persist the minted id BEFORE the send (`attachBroadcastId`, F4 on
- * the legacy leg, S8 on the import leg). When that write refuses the id — a
- * sibling tick attached its own first or the row left `approved` (CAS loss),
- * the row vanished, or the write faulted and the read-back shows it did not
- * land — the resource we just minted is referenced by nothing and must be
- * deleted here, while its id is still in hand.
+ * Called when the pre-send persist refuses the id
+ * (`_persist-minted-broadcast-id.ts`): the resource we just minted is then
+ * referenced by nothing and must be deleted while its id is still in hand.
  *
  * 2026-09-10 follow-ups (2) + (6). Best-effort, and the grade is decided by
  * whether the reclaim worked — on every arm alike: reclaimed → info; reclaim

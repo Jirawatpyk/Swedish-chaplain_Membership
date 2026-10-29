@@ -57,7 +57,6 @@ import {
 import type {
   BroadcastsGatewayPort,
   AudienceContact,
-  GatewayRetryableSubKind,
   RetrievedBroadcastResource,
   RetrieveBroadcastOutcome,
 } from '../ports/broadcasts-gateway-port';
@@ -67,7 +66,7 @@ import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
-import { classifyThrown } from './_classify-thrown';
+import { classifyThrown, retryableSubKind, type RetryableSubKind } from './_classify-thrown';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import {
@@ -93,23 +92,6 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 import { probeRefusedSend } from './_probe-refused-send';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
-
-/**
- * The transport class a retryable gateway throw carried, or `unclassified`
- * when it carried none this build knows. Round 4 F8 removed the `?? 'api'`
- * default from `build-audience-tick.ts`; this leg kept it until F119 PR-E's
- * whole-branch review. `dispatch_budget_exhausted` pages on-call, so a fault
- * nobody classified must not arrive labelled as a real transport class — and
- * the old `as … ?? 'api'` cast also let a FIFTH string through to the metric
- * raw. Narrowed against the same four literals as `viaGateway` there.
- */
-type RetryableSubKind = GatewayRetryableSubKind | 'unclassified';
-
-function retryableSubKind(sub: string | undefined): RetryableSubKind {
-  return sub === 'network' || sub === 'timeout' || sub === 'server_5xx' || sub === 'api'
-    ? sub
-    : 'unclassified';
-}
 
 export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
@@ -1311,52 +1293,49 @@ export async function dispatchScheduledBroadcast(
           phase: 'inherited_status',
         });
       }
-      if (refusedSend?.kind === 'accepted') {
-        observedResendStatus = refusedSend.status;
-      } else {
-        if (shape.kind === 'idempotency_conflict') {
+      if (shape.kind === 'idempotency_conflict') {
+        logger.error(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            reason: shape.reason,
+          },
+          'broadcasts.dispatch.idempotency_conflict_pre_send',
+        );
+        // Verify-fix R3 (Errors-C1, 2026-05-02): emit DISTINCT audit
+        // event before falling through to the permanent handler so the
+        // forensic trail shows "two workers raced through createAudience"
+        // explicitly, separate from a generic Resend permanent error.
+        // Best-effort emit — the permanent handler below will also
+        // emit `broadcast_failed_to_dispatch`; both events together
+        // tell the full story.
+        try {
+          await deps.audit.emit(null, {
+            tenantId: deps.tenant.slug,
+            eventType: 'broadcast_dispatch_idempotency_conflict_pre_send',
+            actorUserId: 'system:cron',
+            summary: `Broadcast ${input.broadcastId} hit an idempotency conflict BEFORE any send was attempted this tick — the 409 came from an earlier call, not from /send, so there is nothing of ours to replay`,
+            payload: {
+              broadcastId: input.broadcastId,
+              reason: shape.reason,
+              resendAudienceId,
+              failedAt: now.toISOString(),
+            },
+            requestId: null,
+          });
+        } catch (auditErr) {
           logger.error(
             {
+              err: errKind(auditErr),
               tenantId: deps.tenant.slug,
               broadcastId: input.broadcastId as string,
-              reason: shape.reason,
             },
-            'broadcasts.dispatch.idempotency_conflict_pre_send',
+            'broadcasts.dispatch.idempotency_conflict_pre_send_audit_emit_failed',
           );
-          // Verify-fix R3 (Errors-C1, 2026-05-02): emit DISTINCT audit
-          // event before falling through to the permanent handler so the
-          // forensic trail shows "two workers raced through createAudience"
-          // explicitly, separate from a generic Resend permanent error.
-          // Best-effort emit — the permanent handler below will also
-          // emit `broadcast_failed_to_dispatch`; both events together
-          // tell the full story.
-          try {
-            await deps.audit.emit(null, {
-              tenantId: deps.tenant.slug,
-              eventType: 'broadcast_dispatch_idempotency_conflict_pre_send',
-              actorUserId: 'system:cron',
-              summary: `Broadcast ${input.broadcastId} hit an idempotency conflict BEFORE any send was attempted this tick — the 409 came from an earlier call, not from /send, so there is nothing of ours to replay`,
-              payload: {
-                broadcastId: input.broadcastId,
-                reason: shape.reason,
-                resendAudienceId,
-                failedAt: now.toISOString(),
-              },
-              requestId: null,
-            });
-          } catch (auditErr) {
-            logger.error(
-              {
-                err: errKind(auditErr),
-                tenantId: deps.tenant.slug,
-                broadcastId: input.broadcastId as string,
-              },
-              'broadcasts.dispatch.idempotency_conflict_pre_send_audit_emit_failed',
-            );
-          }
         }
-        return await settleGatewayThrow(deps, input, broadcast, now, e, shape);
       }
+      if (refusedSend?.kind !== 'accepted') return await settleGatewayThrow(deps, input, broadcast, now, e, shape);
+      observedResendStatus = refusedSend.status;
     }
   }
 

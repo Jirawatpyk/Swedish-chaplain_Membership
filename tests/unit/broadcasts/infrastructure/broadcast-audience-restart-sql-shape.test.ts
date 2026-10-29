@@ -28,7 +28,7 @@
  * optional fence adds `audience_import_id = $expected` (a hold that claimed the
  * row since Step 1 makes the sender's attach lose, so it does not send) and,
  * for a dead inherited id, `OR resend_broadcast_id = $dead` so the fresh id may
- * replace it. `attachAudienceImport`'s optional fence adds
+ * replace it. `attachAudienceImport`'s required fence adds
  * `resend_audience_id = $expected`, so an import never lands on a row whose
  * audience a hold released in the meantime.
  *
@@ -230,7 +230,7 @@ describe('attachBroadcastId — the empty-id arm, the import-id fence, the dead-
   });
 });
 
-describe('attachAudienceImport — the optional audience fence', () => {
+describe('attachAudienceImport — the audience fence', () => {
   it('with the fence the import lands only while the row still carries the expected audience', async () => {
     const { tx, sent } = recordingTx([[BROADCAST_ID]]);
     const repo = makeDrizzleBroadcastsRepo(TENANT);
@@ -241,15 +241,6 @@ describe('attachAudienceImport — the optional audience fence', () => {
     const slot = /"broadcasts"\."resend_audience_id"\s*=\s*\$(\d+)/.exec(whereOf(update));
     expect(slot, 'the audience fence is missing').not.toBeNull();
     expect(update.params[Number(slot?.[1]) - 1]).toBe('aud-held');
-  });
-
-  it('without the fence there is no audience predicate', async () => {
-    const { tx, sent } = recordingTx([[BROADCAST_ID]]);
-    const repo = makeDrizzleBroadcastsRepo(TENANT);
-
-    await repo.attachAudienceImport(tx, TENANT as never, BROADCAST_ID, 'imp-new');
-
-    expect(whereOf(theUpdate(sent))).not.toMatch(/"resend_audience_id"/);
   });
 });
 

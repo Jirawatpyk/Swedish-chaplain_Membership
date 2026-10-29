@@ -444,7 +444,7 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     importId: string,
-    fence?: { readonly expectedResendAudienceId: string },
+    fence: { readonly expectedResendAudienceId: string },
   ): Promise<void>;
 
   /**

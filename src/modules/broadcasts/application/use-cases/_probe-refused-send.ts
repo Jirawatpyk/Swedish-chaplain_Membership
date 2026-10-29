@@ -37,6 +37,15 @@ export type RefusedSendVerdict =
   | { readonly kind: 'refused' }
   | { readonly kind: 'unverifiable' };
 
+/**
+ * Resend has accepted the send. A POSITIVE test over the three statuses — the
+ * legacy leg's lesson: a negative `!== 'draft'` read `cancelled` and every
+ * unrecognised status as "already sent".
+ */
+export function isHandedStatus(status: string): status is 'queued' | 'sending' | 'sent' {
+  return status === 'queued' || status === 'sending' || status === 'sent';
+}
+
 export async function probeRefusedSend(
   gateway: Pick<BroadcastsGatewayPort, 'retrieveBroadcast'>,
   ids: { readonly tenantId: string; readonly broadcastId: string; readonly resendBroadcastId: string },
@@ -51,7 +60,7 @@ export async function probeRefusedSend(
     logger.error({ ...ids, err: errKind(e), severity: 'critical' }, `${logPrefix}.send_refusal_unverifiable`);
     return { kind: 'unverifiable' };
   }
-  if (status === 'queued' || status === 'sending' || status === 'sent') {
+  if (isHandedStatus(status)) {
     logger.warn({ ...ids, observedResendStatus: status }, `${logPrefix}.send_already_accepted`);
     return { kind: 'accepted', status };
   }

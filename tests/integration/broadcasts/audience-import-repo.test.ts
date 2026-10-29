@@ -57,6 +57,19 @@ async function seedApproved(): Promise<string> {
   return broadcastId;
 }
 
+/** `attachAudienceImport` is fenced on the audience the import went into, so the row needs one. */
+const SEED_AUDIENCE = 'aud_t086';
+const FENCE = { expectedResendAudienceId: SEED_AUDIENCE } as const;
+
+async function seedWithAudience(): Promise<string> {
+  const raw = await seedApproved();
+  const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+  await repo.withTx(async (tx) => {
+    await repo.attachAudienceId(tx, asTenantContext(TEST_TENANT).slug, asBroadcastId(raw), SEED_AUDIENCE);
+  });
+  return raw;
+}
+
 async function readImportCols(broadcastIdRaw: string): Promise<{
   audience_import_id: string | null;
   submitted: boolean;
@@ -116,13 +129,13 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
   });
 
   it('attach then complete: both writes land on an APPROVED row, and it stays approved', async () => {
-    const raw = await seedApproved();
+    const raw = await seedWithAudience();
     const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
     const tenantCtx = asTenantContext(TEST_TENANT);
     const broadcastId = asBroadcastId(raw);
 
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, tenantCtx.slug, broadcastId, 'imp_live_1');
+      await repo.attachAudienceImport(tx, tenantCtx.slug, broadcastId, 'imp_live_1', FENCE);
     });
 
     let row = await readImportCols(raw);
@@ -158,13 +171,13 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
    */
   it('F9 — re-stamping an ALREADY-completed import is silent, not an error', async () => {
     if (!RUN_INTEGRATION) return;
-    const raw = await seedApproved();
+    const raw = await seedWithAudience();
     const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
     const tenantCtx = asTenantContext(TEST_TENANT);
     const broadcastId = asBroadcastId(raw);
 
     await runInTenant(tenantCtx, async (tx) => {
-      await repo.attachAudienceImport(tx, tenantCtx.slug, broadcastId, 'imp-f9-once');
+      await repo.attachAudienceImport(tx, tenantCtx.slug, broadcastId, 'imp-f9-once', FENCE);
       await repo.markAudienceImportCompleted(tx, tenantCtx.slug, broadcastId);
     });
     const readStamp = async (): Promise<string> => {
@@ -255,7 +268,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
    */
   it('re-attaching the SAME import id is idempotent — a retried tick is harmless', async () => {
     if (!RUN_INTEGRATION) return;
-    const raw = await seedApproved();
+    const raw = await seedWithAudience();
     const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
     const broadcastId = asBroadcastId(raw);
     const slug = asTenantContext(TEST_TENANT).slug;
@@ -271,12 +284,12 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     };
 
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first');
+      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first', FENCE);
     });
     const firstStamp = await readSubmitted();
 
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first');
+      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first', FENCE);
     });
 
     expect((await readImportCols(raw)).audience_import_id).toBe('imp_first');
@@ -292,18 +305,18 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
 
   it('attaching a DIFFERENT import id over an existing one fails loudly', async () => {
     if (!RUN_INTEGRATION) return;
-    const raw = await seedApproved();
+    const raw = await seedWithAudience();
     const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
     const broadcastId = asBroadcastId(raw);
     const slug = asTenantContext(TEST_TENANT).slug;
 
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first');
+      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first', FENCE);
     });
 
     await expect(
       repo.withTx(async (tx) => {
-        await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_second');
+        await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_second', FENCE);
       }),
     ).rejects.toThrow(BroadcastConcurrentMutationError);
 
@@ -630,7 +643,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const otherSlug = asTenantContext(OTHER).slug;
     await expect(
       runInTenant(asTenantContext(OTHER), async (tx) =>
-        repo.attachAudienceImport(tx, otherSlug, broadcastId, 'imp_evil'),
+        repo.attachAudienceImport(tx, otherSlug, broadcastId, 'imp_evil', FENCE),
       ),
     ).rejects.toThrow();
 
@@ -673,7 +686,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
       await repo.attachAudienceId(tx, slug, id, 'aud_fence');
     });
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, slug, id, 'imp_fence');
+      await repo.attachAudienceImport(tx, slug, id, 'imp_fence', { expectedResendAudienceId: 'aud_fence' });
     });
     return { raw, id };
   }
