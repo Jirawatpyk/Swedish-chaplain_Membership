@@ -24,6 +24,13 @@
  *   - `refuse`    — PERMANENT (`failed_to_dispatch`): the member's E-Blasts are
  *                   halted, or the membership has ENDED (F8 `terminated`:
  *                   cancelled / coverage ended, lapsed, refunded).
+ *   - `refuse_erased` — spec 139: PERMANENT too, for a member who is erased or
+ *                   no longer exists in the tenant (P4). Its own kind because
+ *                   it writes no standing-refusal audit row and sends the
+ *                   member no email (P3), and because the leg must first
+ *                   delete a pre-scrub draft the row still carries (P2,
+ *                   `deleteErasedDraftBeforeRefusal`). The `failure_reason`
+ *                   token is the existing `member_not_in_good_standing`.
  *   - `undecided` — a read failed, or answered something this build does not
  *                   know. Fail CLOSED: nothing is sent, the row stays
  *                   `approved`, the leg answers `dispatch.server_error` (phase
@@ -51,7 +58,7 @@ export interface DispatchStandingDeps extends MemberSendStandingDeps {
    * tick) MUST set it to the raw bridge; absent, `membersBridge` itself is
    * re-read, which is only fresh when it is not memoised.
    */
-  readonly haltReadFresh?: Pick<MembersBridgePort, 'getMembersHaltedInTenant'>;
+  readonly haltReadFresh?: Pick<MembersBridgePort, 'getMemberErasedAt' | 'getMembersHaltedInTenant'>;
 }
 
 export type DispatchStandingDecision =
@@ -64,6 +71,7 @@ export type DispatchStandingDecision =
       /** The member-facing / `failure_reason` token. */
       readonly reason: 'member_halted' | 'member_not_in_good_standing';
     }
+  | { readonly kind: 'refuse_erased'; readonly reason: 'member_not_in_good_standing' }
   | { readonly kind: 'undecided'; readonly message: string; readonly errClass: string };
 
 export async function decideDispatchStanding(
@@ -85,12 +93,16 @@ export async function decideDispatchStanding(
   switch (standing.kind) {
     case 'ok':
       return { kind: 'send' };
+    case 'erased':
+      return { kind: 'refuse_erased', reason: 'member_not_in_good_standing' };
     case 'halted':
       return { kind: 'refuse', refusal: standing, reason: 'member_halted' };
     case 'not_in_good_standing':
       return standing.access === 'suspended'
         ? { kind: 'hold' }
         : { kind: 'refuse', refusal: standing, reason: 'member_not_in_good_standing' };
+    case 'erasure_read_failed':
+      return { kind: 'undecided', message: 'member_standing_erasure_read_failed', errClass: standing.errKind };
     case 'halt_read_failed':
       return { kind: 'undecided', message: 'member_standing_halt_read_failed', errClass: standing.errKind };
     case 'access_unavailable':

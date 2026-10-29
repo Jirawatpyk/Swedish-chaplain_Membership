@@ -341,6 +341,23 @@ export const membersBridge: MembersBridgePort = {
     }));
   },
 
+  /**
+   * Spec 139 DE1 — the port docblock has the contract. `findErasedAtById`
+   * runs in its own `runInTenant` with an explicit tenant predicate, so a
+   * cross-tenant id is `repo.not_found` (DE6).
+   */
+  async getMemberErasedAt(
+    tenantCtx: TenantContext,
+    memberId: string,
+  ): Promise<{ readonly erasedAt: Date | null } | null> {
+    const result = await drizzleMemberRepo.findErasedAtById(tenantCtx, asMemberId(memberId));
+    if (!result.ok) {
+      if (result.error.code === 'repo.not_found') return null;
+      throw new Error(`members-bridge.getMemberErasedAt: ${result.error.code}`);
+    }
+    return { erasedAt: result.value.erasedAt };
+  },
+
   async setMemberHalt(
     tenantCtx: TenantContext,
     memberId: string,

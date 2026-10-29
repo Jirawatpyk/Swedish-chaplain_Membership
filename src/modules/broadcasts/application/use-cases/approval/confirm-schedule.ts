@@ -100,6 +100,7 @@ import {
   readMemberSendStanding,
   standingRefusalAuditEvent,
   type MemberSendStanding,
+  type StandingRefusal,
   type MemberSendStandingDeps,
 } from '../_member-send-standing';
 import { ApprovalRefusal, isOwnRefusal, type ApprovalBroadcastsRepo } from './_approval-tx';
@@ -168,12 +169,14 @@ export type ConfirmScheduleError =
   /**
    * T166 S-H1 — the owning member's membership is suspended or terminated (F8).
    * `access` (PR-D) carries which one through the rollback into the refusal
-   * audit row; the route answers only the code.
+   * audit row; the route answers only the code. Spec 139 — `erased` (the
+   * member is erased or gone) is refused under the same code and writes NO
+   * refusal row (P3).
    */
   | {
       readonly kind: 'member_not_in_good_standing';
       readonly memberId: string;
-      readonly access: 'suspended' | 'terminated';
+      readonly access: 'suspended' | 'terminated' | 'erased';
     }
   | { readonly kind: 'schedule_too_soon'; readonly scheduledFor: Date }
   | { readonly kind: 'image_source_not_allowlisted'; readonly images: readonly UnsafeImageSource[] }
@@ -316,15 +319,20 @@ export async function confirmSchedule(
         surface: { kind: 'broadcast', broadcastId: input.broadcastId as string, useCase: 'confirm-schedule' },
       });
     }
-    if (refusal.kind === 'member_halted' || refusal.kind === 'member_not_in_good_standing') {
+    // Spec 139 (P3) — an erased member's refusal writes NO row: its event is
+    // labelled "membership suspended", and an erasure must never be one.
+    const audited: StandingRefusal | null =
+      refusal.kind === 'member_halted'
+        ? { kind: 'halted' }
+        : refusal.kind === 'member_not_in_good_standing' && refusal.access !== 'erased'
+          ? { kind: 'not_in_good_standing', access: refusal.access }
+          : null;
+    if (audited !== null && (refusal.kind === 'member_halted' || refusal.kind === 'member_not_in_good_standing')) {
       // T166 follow-up — submit's own refusal row, written AFTER the rollback
       // (a row on the refused tx would roll back with it): best-effort on
       // autocommit, exactly like the cross-tenant probe above.
       const event = standingRefusalAuditEvent({
-        refusal:
-          refusal.kind === 'member_halted'
-            ? { kind: 'halted' }
-            : { kind: 'not_in_good_standing', access: refusal.access },
+        refusal: audited,
         surface: 'schedule_confirm',
         tenantSlug: slug,
         memberId: refusal.memberId,
@@ -359,10 +367,13 @@ function assertMemberMaySend(standing: MemberSendStanding | null, memberId: stri
   switch (standing.kind) {
     case 'ok':
       return;
+    case 'erased':
+      return refuse({ kind: 'member_not_in_good_standing', memberId, access: 'erased' });
     case 'halted':
       return refuse({ kind: 'member_halted', memberId });
     case 'not_in_good_standing':
       return refuse({ kind: 'member_not_in_good_standing', memberId, access: standing.access });
+    case 'erasure_read_failed':
     case 'halt_read_failed':
     case 'access_unavailable':
       // Round-4 B3 — naming WHICH read failed and why, for the route's log.

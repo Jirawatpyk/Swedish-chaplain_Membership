@@ -735,8 +735,8 @@ async function applySendStanding(
   }
   return err({
     kind: 'dispatch.server_error',
-    message: standing.message,
-    errClass: standing.errClass,
+    message: standing.kind === 'undecided' ? standing.message : 'member_standing_unrouted',
+    errClass: standing.kind === 'undecided' ? standing.errClass : 'gate',
     phase: 'standing',
   });
 }
