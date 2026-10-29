@@ -64,6 +64,7 @@ import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
   decideDispatchStanding,
+  deleteErasedDraftBeforeRefusal,
   recordDispatchHold,
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
@@ -186,7 +187,9 @@ export const IMPORT_FAILURE_REASONS = [
   /**
    * F119 PR-A — the membership had ENDED (F8 `terminated`: cancelled /
    * coverage ended, lapsed, refunded) at send time. A `suspended` membership is
-   * HELD, never refused, so this token no longer means "suspended".
+   * HELD, never refused, so this token no longer means "suspended". Spec 139:
+   * also the token of an ERASED member's refusal (no member email is sent for
+   * that one; the audit payload says `standing: 'erased'`).
    */
   'member_not_in_good_standing',
 ] as const;
@@ -683,6 +686,11 @@ async function probeInheritedBroadcast(
  *   row every terminal failure writes, and the standing refusal under submit's
  *   own event types (`surface: 'dispatch'`), so "why was this member's E-Blast
  *   refused" stays one query across every surface.
+ * - `refuse_erased` (spec 139 — the member is erased or gone) — PERMANENT too,
+ *   but only once the row's never-handed draft is confirmed deleted at Resend
+ *   (P2, `deleteErasedDraftBeforeRefusal`; otherwise nothing is decided). ONE
+ *   audit row (`broadcast_failed_to_dispatch` with `standing: 'erased'`), no
+ *   standing-refusal row and no member email (P3).
  * - anything else — a read that FAILED decides nothing: `dispatch.server_error`
  *   with phase `standing`, the row stays `approved` and the next tick asks
  *   again. Fail CLOSED: an unknown decision lands here too, never at the send.
@@ -733,10 +741,35 @@ async function applySendStanding(
       },
     );
   }
+  if (standing.kind === 'refuse_erased') {
+    const inheritedId = broadcast.resendBroadcastId ?? '';
+    const cleared = await deleteErasedDraftBeforeRefusal(
+      deps.broadcastsGateway,
+      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, leg: 'import' },
+      // Reached only for a NOT-handed probe (a handed row returned at Step 1a).
+      inheritedId === '' ? null : { resendBroadcastId: inheritedId, probedStatus: probe !== null && !probe.handed ? probe.status : null },
+    );
+    if (cleared.kind === 'undecided') {
+      return err({ kind: 'dispatch.server_error', message: cleared.message, errClass: cleared.errClass, phase: 'standing' });
+    }
+    return failTerminally(
+      deps,
+      input,
+      broadcast,
+      {
+        kind: 'audience_import_failed',
+        reason: standing.reason,
+        importId: broadcast.audienceImportId,
+        observed: null,
+        expected: null,
+      },
+      { notifyMember: false, payloadExtra: { standing: 'erased', resendDraftOutcome: cleared.draftOutcome } },
+    );
+  }
   return err({
     kind: 'dispatch.server_error',
-    message: standing.kind === 'undecided' ? standing.message : 'member_standing_unrouted',
-    errClass: standing.kind === 'undecided' ? standing.errClass : 'gate',
+    message: standing.message,
+    errClass: standing.errClass,
     phase: 'standing',
   });
 }
@@ -1879,8 +1912,9 @@ async function confirmImport(
  * broadcast resource, all before this tick's `/send` — which 404s. The hold
  * won and nothing went out, so this is no failure of the broadcast: re-read
  * the row, and when it no longer carries the import this tick confirmed or the
- * id it sent, answer a concurrent skip (never `failed_to_dispatch`, never a
- * member email). `null` — the row is as this tick left it, or the re-read
+ * id it sent — or (spec 139 P8) is no longer `approved`, because the erasure
+ * cascade deleted the draft and cancelled it — answer a concurrent skip
+ * (never `failed_to_dispatch`, never a member email). `null` — the row is as this tick left it, or the re-read
  * failed: the ordinary `resource_missing` arm (an admin must look).
  */
 async function sendLostToHold(
@@ -1899,9 +1933,20 @@ async function sendLostToHold(
     );
     return null;
   }
-  if (row !== null && row.resendBroadcastId === sendId && row.audienceImportId === importId) return null;
+  // Spec 139 P8 — the erasure cascade's cancel leaves both ids where they
+  // were, so the status is part of "as this tick left it": a row no longer
+  // `approved` lost to a cancel and is a concurrent skip too.
+  if (row !== null && row.status === 'approved' && row.resendBroadcastId === sendId && row.audienceImportId === importId) {
+    return null;
+  }
   logger.info(
-    { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId: sendId, importId },
+    {
+      tenantId: deps.tenant.slug,
+      broadcastId: input.broadcastId,
+      resendBroadcastId: sendId,
+      importId,
+      observedStatus: row?.status ?? null,
+    },
     'broadcasts.audience_import.send_lost_to_hold',
   );
   return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
@@ -2273,6 +2318,12 @@ async function failTerminally(
      */
     readonly extraAudit?: AuditEmitInput;
     /**
+     * Spec 139 P3 — keys added to the `broadcast_failed_to_dispatch` payload
+     * (ids and closed tokens only): an erased refusal records `standing:
+     * 'erased'` there instead of writing a standing-refusal row.
+     */
+    readonly payloadExtra?: Readonly<Record<string, string>>;
+    /**
      * Round 4 F5 — set on the 404 path so the RETURNED kind is
      * `broadcast_resend_resource_missing` and the cron buckets it the way the
      * legacy leg does. The recorded terminal state, the audit event and the
@@ -2362,6 +2413,7 @@ async function failTerminally(
           importId: error.importId,
           reason,
           failedAt: now.toISOString(),
+          ...(opts.payloadExtra ?? {}),
         },
         requestId: null,
       });

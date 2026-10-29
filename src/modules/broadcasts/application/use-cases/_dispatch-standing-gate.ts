@@ -44,9 +44,11 @@
  *
  * Pure Application — no framework imports.
  */
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
+import type { BroadcastsGatewayPort, DeleteBroadcastOnceOutcome } from '../ports/broadcasts-gateway-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import { readMemberSendStanding, type MemberSendStandingDeps, type StandingRefusal } from './_member-send-standing';
 
@@ -115,6 +117,63 @@ export async function decideDispatchStanding(
       return { kind: 'undecided', message: 'member_standing_unrouted', errClass: 'gate' };
     }
   }
+}
+
+/**
+ * What an erased refusal's DELETE of the row's pre-scrub draft decided (P2).
+ * `cleared` — nothing of the member's is left at Resend that `/send` could
+ * still accept, so the leg may refuse terminally; `draftOutcome` is what it
+ * found (`none` = the row carried no id). `undecided` — the draft may still
+ * be there: nothing is sent, the row stays `approved`, the next tick (or the
+ * `reconcile-erasures` cron's cascade) tries again.
+ */
+export type ErasedDraftClearance =
+  | { readonly kind: 'cleared'; readonly draftOutcome: 'none' | 'deleted' | 'absent' | 'cancelled' }
+  | { readonly kind: 'undecided'; readonly message: 'member_erased_draft_not_deleted'; readonly errClass: string };
+
+/**
+ * Spec 139 P2 — before an erased member's row is refused, delete the Resend
+ * draft it still carries. Without this, an erasure cascade that failed
+ * retryably (the next dispatch tick, every 5 min, reaches the gate before
+ * `reconcile-erasures`, every 30 min) would make the row terminal and leave
+ * the pre-scrub subject, body and from-name at Resend for good.
+ *
+ * Called only for an id the same tick's probe said was never handed to
+ * `/send` (`draft`, `cancelled`, or `not_found`) — a handed id never reaches
+ * the gate. One `deleteBroadcastOnce`: `deleted` / `absent` clear; `forbidden`
+ * clears ONLY when the probe said `cancelled` (Resend answers 403 to a DELETE
+ * of a cancelled broadcast, and a cancelled broadcast can never be sent — only
+ * a draft can, MEASURED 2026-10-29 — so refusing it cannot strand a send;
+ * without this arm such a row would be undecided on every tick for ever). Any
+ * other answer, or a throw, is `undecided`.
+ *
+ * Kept OUT of `decideDispatchStanding`, which the staff detail page reads
+ * (`read-dispatch-hold.ts`): a page read must never delete anything.
+ */
+export async function deleteErasedDraftBeforeRefusal(
+  gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce'>,
+  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
+  draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
+): Promise<ErasedDraftClearance> {
+  if (draft === null || draft.resendBroadcastId === '') return { kind: 'cleared', draftOutcome: 'none' };
+  const logIds = { ...ids, resendBroadcastId: draft.resendBroadcastId, probedStatus: draft.probedStatus ?? 'not_found' };
+  let outcome: DeleteBroadcastOnceOutcome['kind'];
+  try {
+    outcome = (await gateway.deleteBroadcastOnce(draft.resendBroadcastId)).kind;
+  } catch (e) {
+    logger.warn({ ...logIds, err: errKind(e) }, 'broadcasts.dispatch.erased_draft_delete_threw');
+    return { kind: 'undecided', message: 'member_erased_draft_not_deleted', errClass: 'threw' };
+  }
+  if (outcome === 'deleted' || outcome === 'absent') {
+    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_deleted');
+    return { kind: 'cleared', draftOutcome: outcome };
+  }
+  if (outcome === 'forbidden' && draft.probedStatus === 'cancelled') {
+    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_cancelled_unsendable');
+    return { kind: 'cleared', draftOutcome: 'cancelled' };
+  }
+  logger.warn({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_delete_unconfirmed');
+  return { kind: 'undecided', message: 'member_erased_draft_not_deleted', errClass: outcome };
 }
 
 /**

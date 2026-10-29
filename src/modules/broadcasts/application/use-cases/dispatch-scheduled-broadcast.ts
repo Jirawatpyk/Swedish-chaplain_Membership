@@ -52,6 +52,7 @@ import {
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
   decideDispatchStanding,
+  deleteErasedDraftBeforeRefusal,
   recordDispatchHold,
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
@@ -781,14 +782,56 @@ export async function dispatchScheduledBroadcast(
       if (!recorded) return terminalWriteFailed();
       return err({ kind: 'broadcast_failed_to_dispatch', reason });
     }
+    if (standing.kind === 'refuse_erased') {
+      // Spec 139 — the member is erased (or gone). P2: a draft the row still
+      // carries (the probe above said it was never handed to `/send`) is
+      // deleted at Resend FIRST, so no pre-scrub copy outlives the refusal;
+      // anything short of a confirmed delete decides nothing. P3: one audit
+      // row only (`standing: 'erased'`), no "membership suspended" row, and no
+      // member email (`broadcast` is not passed, so nothing is enqueued).
+      const cleared = await deleteErasedDraftBeforeRefusal(
+        deps.broadcastsGateway,
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, leg: 'live' },
+        inheritedBroadcastId === ''
+          ? null
+          : {
+              resendBroadcastId: inheritedBroadcastId,
+              probedStatus:
+                observedResendStatus === 'draft' || observedResendStatus === 'cancelled' ? observedResendStatus : null,
+            },
+      );
+      if (cleared.kind === 'undecided') {
+        return err({ kind: 'dispatch.server_error', message: cleared.message, errClass: cleared.errClass, phase: 'standing' });
+      }
+      const { reason } = standing;
+      const recorded = await failDispatchAndAudit(
+        deps,
+        input,
+        now,
+        reason,
+        'broadcast_failed_to_dispatch',
+        {
+          broadcastId: input.broadcastId,
+          reason,
+          failedAt: now.toISOString(),
+          standing: 'erased',
+          resendDraftOutcome: cleared.draftOutcome,
+        },
+        MEMBER_STANDING_PHASE,
+        reason,
+        null,
+      );
+      if (!recorded) return terminalWriteFailed();
+      return err({ kind: 'broadcast_failed_to_dispatch', reason });
+    }
     // Anything but an explicit `send` is not a send (fail CLOSED): the
     // compiler narrows this to `undecided`, and a kind it does not know would
     // land here too rather than fall through to Step 2.
     if (standing.kind !== 'send') {
       return err({
         kind: 'dispatch.server_error',
-        message: standing.kind === 'undecided' ? standing.message : 'member_standing_unrouted',
-        errClass: standing.kind === 'undecided' ? standing.errClass : 'gate',
+        message: standing.message,
+        errClass: standing.errClass,
         phase: 'standing',
       });
     }
@@ -1245,6 +1288,39 @@ export async function dispatchScheduledBroadcast(
     }
 
     const shape = classifyThrown(e);
+
+    // ---- Spec 139 P8 — a `/send` 404 after the row left `approved` ----
+    //
+    // The erasure cascade deletes a never-sent draft at Resend and cancels the
+    // row under its lock; this tick, past its Step-1 lock, then meets a 404 on
+    // `/send`. The `resource_missing` arm below would lose its `approved` CAS
+    // to the cancel, log `cleanup_failed` at ERROR and answer a server error.
+    // Re-read first: a row that left `approved` is a concurrent skip — nothing
+    // went out, nothing is written. A row still `approved`, gone, or a failed
+    // re-read keeps the ordinary arm (an admin must look).
+    if (sendAttempted && shape.kind === 'resource_missing') {
+      let current: Broadcast | null = null;
+      try {
+        current = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+      } catch (readErr) {
+        logger.warn(
+          { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, err: errKind(readErr) },
+          'broadcasts.dispatch.send_404_reread_failed',
+        );
+      }
+      if (current !== null && current.status !== 'approved') {
+        logger.info(
+          {
+            tenantId: deps.tenant.slug,
+            broadcastId: input.broadcastId as string,
+            resendBroadcastId,
+            observedStatus: current.status,
+          },
+          'broadcasts.dispatch.send_404_row_left_approved',
+        );
+        return err({ kind: 'broadcast_invalid_state_transition', observedStatus: current.status });
+      }
+    }
 
     // ---- Idempotency conflict: success-replay ------------------------
     // Resend already accepted this broadcast on a prior attempt. Treat
