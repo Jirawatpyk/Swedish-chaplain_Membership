@@ -3460,8 +3460,10 @@ describe('buildAudienceTick — a refused /send is probed before it is believed'
     expect(warnSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.send_already_accepted')).toBe(true);
   });
 
-  it('422 + the probe answers draft → a genuine refusal: the ordinary permanent rule (terminal, member told)', async () => {
-    const { deps, rec } = makeDeps({ ...TICK2, throwOn: REFUSED, probe: { kind: 'present', status: 'draft' } });
+  // `cancelled` is a scheduled send Resend cancelled: never sent, the same reading
+  // the inherited-id probe (legacy Step 1b) gives it.
+  it.each(['draft', 'cancelled'])('422 + the probe answers %s → a genuine refusal: the ordinary permanent rule (terminal, member told)', async (status) => {
+    const { deps, rec } = makeDeps({ ...TICK2, throwOn: REFUSED, probe: { kind: 'present', status } });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 

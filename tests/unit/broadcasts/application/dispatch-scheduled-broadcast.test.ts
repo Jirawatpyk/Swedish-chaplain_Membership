@@ -3277,8 +3277,9 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       expect(warnSpy.mock.calls.some((c) => c[1] === 'broadcasts.dispatch.send_already_accepted')).toBe(true);
     });
 
-    it('422 + the probe answers draft → a genuine refusal: terminal, member told (unchanged)', async () => {
-      const { result, repo, email } = await dispatchWith({ retrieveStatus: 'draft' });
+    // `cancelled` = a scheduled send Resend cancelled: never sent, as Step 1b reads it.
+    it.each(['draft', 'cancelled'] as const)('422 + the probe answers %s → a genuine refusal: terminal, member told (unchanged)', async (retrieveStatus) => {
+      const { result, repo, email } = await dispatchWith({ retrieveStatus });
 
       expect(result.ok ? null : result.error.kind).toBe('broadcast_failed_to_dispatch');
       expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
