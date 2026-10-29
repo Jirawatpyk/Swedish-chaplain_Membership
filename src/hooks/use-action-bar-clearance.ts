@@ -25,13 +25,32 @@ export function useActionBarClearance(active: boolean, selector: string): number
     const bar = document.querySelector<HTMLElement>(selector);
     if (!bar) return;
     const measure = () => {
-      const offset = parseFloat(getComputedStyle(bar).bottom);
+      const style = getComputedStyle(bar);
+      // AURA un-sticks the bar on a short screen (`max-height: 30rem`: 400%
+      // zoom, a phone held sideways), where it sits in the flow and covers
+      // nothing; padding the root there would only crowd the focused field.
+      if (style.position !== 'sticky' && style.position !== 'fixed') {
+        setClearance(0);
+        return;
+      }
+      const offset = parseFloat(style.bottom);
       setClearance(Math.ceil(bar.getBoundingClientRect().height + (Number.isFinite(offset) ? offset : 0) + FOCUS_GAP_PX));
     };
     measure();
+    // A size change re-measures; so does the short-screen switch, which moves
+    // the bar in or out of the flow without resizing it. A `bottom` change
+    // alone (the bottom nav hiding) is not seen: no page that uses this hides
+    // its nav.
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     observer?.observe(bar);
-    return () => observer?.disconnect();
+    const short = typeof window.matchMedia === 'function' ? window.matchMedia('(max-height: 30rem)') : null;
+    short?.addEventListener('change', measure);
+    return () => {
+      observer?.disconnect();
+      short?.removeEventListener('change', measure);
+      // Never keep a number from the last time it was on.
+      setClearance(0);
+    };
   }, [active, selector]);
   return active ? clearance : 0;
 }

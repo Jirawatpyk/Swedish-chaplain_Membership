@@ -29,17 +29,22 @@ const json = (body: unknown): Promise<Response> =>
 const escapeHtml = (v: string): string =>
   v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-/** A plain stand-in for the rendered email: the subject over the body. */
+/**
+ * A plain stand-in for the rendered email. Like the real wrapper
+ * (`email-template.ts`), the subject is only the document's <title>, never
+ * in the body: a body heading here once made a parity capture show a subject
+ * that the delivered email does not have (PR K).
+ */
 async function previewResponse(init: RequestInit | undefined): Promise<Response> {
   const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
     subject?: string;
     bodyHtml?: string;
   };
   const html =
-    '<!doctype html><html><body style="margin:0;font-family:system-ui,sans-serif;color:#18181b">' +
+    `<!doctype html><html><head><title>${escapeHtml(body.subject ?? '')}</title></head>` +
+    '<body style="margin:0;font-family:system-ui,sans-serif;color:#18181b">' +
     '<div style="padding:16px 20px;background:#10487a;color:#fff;font-weight:600">SweCham</div>' +
-    `<div style="padding:20px"><h1 style="font-size:20px;margin:0 0 12px">${escapeHtml(body.subject ?? '')}</h1>` +
-    `${body.bodyHtml ?? ''}</div></body></html>`;
+    `<div style="padding:20px">${body.bodyHtml ?? ''}</div></body></html>`;
   return json({ html });
 }
 

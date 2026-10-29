@@ -69,10 +69,22 @@ export function PreviewPane({
   );
 
   if (variant === 'tab') {
+    // The delivered email carries the subject only in its <title>, so the card
+    // states it on top, as the board draws it (maintainer, 29 Oct); no
+    // heading while it is blank (U32).
     return (
-      <section data-compose-feature="preview-pane" aria-label={t('previewLabel')} className="flex min-w-0 flex-col gap-[10px]">
-        <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('previewCaption')}</p>
-        <div className="min-w-0 overflow-x-hidden rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)] py-2">
+      <section
+        data-compose-feature="preview-pane"
+        aria-label={t('previewLabel')}
+        className="flex min-w-0 flex-col gap-[var(--aura-space-2)]"
+      >
+        <p className="aura-text-label font-normal text-[var(--aura-fg-secondary)]">{t('previewCaption')}</p>
+        <div className="min-w-0 overflow-hidden rounded-[var(--aura-card-radius)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)]">
+          {subject.trim().length > 0 ? (
+            <h3 className="break-words border-b border-[var(--aura-border-default)] px-4 py-3 text-base font-semibold">
+              {subject}
+            </h3>
+          ) : null}
           {frame}
         </div>
       </section>

@@ -1019,7 +1019,7 @@ export function ComposeForm({
                   </div>
                 ),
               },
-              { id: 'preview', label: t('views.preview'), content: <div className="pt-4">{preview('tab')}</div> },
+              { id: 'preview', label: t('views.preview'), content: preview('tab') },
             ]}
           />
           <ActionBar

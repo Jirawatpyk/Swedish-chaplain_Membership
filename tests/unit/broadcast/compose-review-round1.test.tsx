@@ -214,6 +214,9 @@ describe('the phone bar', () => {
     const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       return { height: this.classList.contains('chamber-compose-actionbar') ? 114 : 0 } as DOMRect;
     });
+    // AURA's stylesheet makes the bar sticky; jsdom loads none.
+    const sticky = document.head.appendChild(document.createElement('style'));
+    sticky.textContent = '.chamber-compose-actionbar { position: sticky; }';
     try {
       renderForm();
       const root = document.documentElement;
@@ -223,6 +226,7 @@ describe('the phone bar', () => {
       expect(root.style.scrollPaddingBottom).toBe('');
     } finally {
       spy.mockRestore();
+      sticky.remove();
     }
   });
 

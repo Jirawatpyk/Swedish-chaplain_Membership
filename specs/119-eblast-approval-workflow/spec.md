@@ -725,6 +725,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   dialog that returns focus to the control on close and respects reduced-motion preferences.
   The same preview MUST be used on the member's compare screen (original vs formatted version)
   *(checklist default)*.
+  *Amended 29 Oct 2026 (spec 122 PR K, the maintainer):* below 640px the member compose page's
+  Preview tab is itself the full-width preview and has no dialog control; the dialog, with its
+  600/375 px widths, stays on desktop, staff compose and the approval workspace.
 - **FR-044**: Italic MUST NOT be offered when the user's interface language is Thai; italic
   content that arrives by paste or from a template is kept as-is — only the control is hidden
   *(checklist default)*.
