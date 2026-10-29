@@ -203,9 +203,6 @@ function makeDeps(opts: {
           dispatchFirstFailedAt = dispatchFirstFailedAt ?? at;
           return dispatchFirstFailedAt;
         },
-        async detachPendingAudienceImport() {
-          return false;
-        },
         async releaseAudienceImport() {
           return false;
         },

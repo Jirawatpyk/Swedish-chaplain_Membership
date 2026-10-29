@@ -66,7 +66,6 @@ function makeRepoMocks(opts: {
       // no-op
     },
     markDispatchRetryStarted: async () => null, // F119 PR-E; unused here.
-    detachPendingAudienceImport: async () => false, // unused here.
     releaseAudienceImport: async () => false, // unused here.
     releaseResendAudience: async () => false, // unused here.
     clearDispatchRetryClock: async () => {

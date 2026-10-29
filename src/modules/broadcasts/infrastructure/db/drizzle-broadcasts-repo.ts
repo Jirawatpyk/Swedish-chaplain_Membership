@@ -1067,12 +1067,23 @@ export function makeDrizzleBroadcastsRepo(
      * overlapping ticks apart (`maxDuration` equals the cron cadence, so they
      * overlap in normal operation, and the `lockForUpdate` advisory lock is long
      * released by the time any gateway call returns).
+     *
+     * `fence` (import leg only; absent on the legacy leg, whose SQL is then
+     * unchanged):
+     *   - `expectedAudienceImportId` adds `audience_import_id = $expected`: a
+     *     hold on an overlapping tick that claimed the row
+     *     (`releaseAudienceImport` NULLs that column) makes this attach lose,
+     *     so the sender does not send into an audience the hold is deleting;
+     *   - `replacesResendBroadcastId` adds one more id arm, `= $dead`, so a
+     *     fresh id may replace exactly that DEAD inherited one (the probe
+     *     answered `not_found`) and nothing else.
      */
     async attachBroadcastId(
       txUnknown,
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       resendBroadcastId: string,
+      fence?: { readonly expectedAudienceImportId: string; readonly replacesResendBroadcastId?: string },
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'attachBroadcastId');
@@ -1089,7 +1100,11 @@ export function makeDrizzleBroadcastsRepo(
             or(
               isNull(broadcasts.resendBroadcastId),
               eq(broadcasts.resendBroadcastId, resendBroadcastId),
+              fence?.replacesResendBroadcastId === undefined
+                ? undefined
+                : eq(broadcasts.resendBroadcastId, fence.replacesResendBroadcastId),
             ),
+            fence === undefined ? undefined : eq(broadcasts.audienceImportId, fence.expectedAudienceImportId),
             // F119 T166 R-H1 — the status CAS, as `attachAudienceId`. This is
             // the last write before `sendBroadcast`: a row withdrawn, cancelled
             // or re-opened since Step 1 fails it, the tick reclaims the resource
@@ -1109,6 +1124,7 @@ export function makeDrizzleBroadcastsRepo(
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       importId: string,
+      fence?: { readonly expectedResendAudienceId: string },
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'attachAudienceImport');
@@ -1161,6 +1177,11 @@ export function makeDrizzleBroadcastsRepo(
             // F119 T166 R-H1 — the status CAS, as `attachAudienceId`: the
             // import leg's hand-over marker only lands on a row still `approved`.
             eq(broadcasts.status, 'approved'),
+            // 2026-10-29 — and only on the audience it was imported INTO. A hold
+            // on an overlapping tick may have deleted and released that audience
+            // since this tick's `createContactImport`; an import left on a row
+            // with no audience would later mint into `''`.
+            fence === undefined ? undefined : eq(broadcasts.resendAudienceId, fence.expectedResendAudienceId),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -1235,16 +1256,20 @@ export function makeDrizzleBroadcastsRepo(
     },
 
     /**
-     * See the port docblock. One statement, a CAS on everything the hold read.
-     * Legal under both guards on this table: 0299's coherence CHECK (the id and
-     * its submit stamp go NULL together) and the immutability trigger's normal
-     * arm (none of these columns is frozen after submit; no redaction GUC).
+     * See the port docblock — the restart's CLAIM. One statement, a CAS on
+     * everything the caller read. Legal under both guards on this table: 0299's
+     * coherence CHECK (the import id and its submit stamp go NULL together; the
+     * completion stamp is already NULL, which the WHERE requires, so it is not
+     * written) and the immutability trigger's normal arm (none of these columns
+     * is frozen after submit; no redaction GUC) — proven on live Neon in
+     * `audience-import-repo.test.ts`.
      *
-     * The broadcast id is compared with `IS NOT DISTINCT FROM`, not `=`: the
-     * common hold has none (`expected.resendBroadcastId` is `null`), and
-     * `= NULL` matches nothing.
+     * Only the import columns: `resend_broadcast_id` and `resend_audience_id`
+     * stay until both resources are deleted (`releaseResendAudience`). The
+     * broadcast id is compared with `IS NOT DISTINCT FROM`, not `=`: the
+     * common hold has none, and `= NULL` matches nothing.
      */
-    async detachPendingAudienceImport(
+    async releaseAudienceImport(
       txUnknown,
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
@@ -1255,15 +1280,12 @@ export function makeDrizzleBroadcastsRepo(
       },
     ): Promise<boolean> {
       const tx = txUnknown as TenantTx;
-      await assertTenantBoundTx(tx, ctx.slug, 'detachPendingAudienceImport');
+      await assertTenantBoundTx(tx, ctx.slug, 'releaseAudienceImport');
       const updated = await tx
         .update(broadcasts)
         .set({
-          resendAudienceId: null,
-          resendBroadcastId: null,
           audienceImportId: null,
           audienceImportSubmittedAt: null,
-          audienceImportCompletedAt: null,
           updatedAt: new Date(),
         })
         .where(
@@ -1281,14 +1303,36 @@ export function makeDrizzleBroadcastsRepo(
       return updated.length === 1;
     },
 
-    // RED scaffold — implemented in the GREEN commit.
-    async releaseAudienceImport(): Promise<boolean> {
-      return false;
-    },
-
-    // RED scaffold — implemented in the GREEN commit.
-    async releaseResendAudience(): Promise<boolean> {
-      return false;
+    /**
+     * See the port docblock — the restart's last write, after the broadcast
+     * resource and the audience are gone at Resend: both columns together,
+     * only on a row with NO import (nothing can be sending from it — the import
+     * leg's send is fenced on a non-null import id) whose two ids still equal
+     * what was deleted (the broadcast id NULL-safe).
+     */
+    async releaseResendAudience(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      expected: { readonly resendAudienceId: string; readonly resendBroadcastId: string | null },
+    ): Promise<boolean> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'releaseResendAudience');
+      const updated = await tx
+        .update(broadcasts)
+        .set({ resendAudienceId: null, resendBroadcastId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            eq(broadcasts.status, 'approved'),
+            eq(broadcasts.resendAudienceId, expected.resendAudienceId),
+            isNull(broadcasts.audienceImportId),
+            sql`${broadcasts.resendBroadcastId} IS NOT DISTINCT FROM ${expected.resendBroadcastId}`,
+          ),
+        )
+        .returning({ broadcastId: broadcasts.broadcastId });
+      return updated.length === 1;
     },
 
     async markAudienceImportCompleted(
@@ -1313,6 +1357,11 @@ export function makeDrizzleBroadcastsRepo(
             // existing value and the column could not answer "when was this
             // import consumed" at all.
             isNull(broadcasts.audienceImportCompletedAt),
+            // 2026-10-29 — and only an import that is still THERE. A sender that
+            // passed its fence before a hold's claim reaches this stamp after
+            // the claim released the import; `completed_at` with no import is
+            // the shape 0299 forbids. 0 rows → the probe below names it.
+            isNotNull(broadcasts.audienceImportId),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });

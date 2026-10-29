@@ -2931,7 +2931,8 @@ export const broadcastsMetrics = {
       | 'inherited_status'
       | 'persist_broadcast_id'
       | 'gateway'
-      | 'terminal_write',
+      | 'terminal_write'
+      | 'audience_restart',
   ): void {
     safeMetric(() => {
       counter(
@@ -2965,18 +2966,37 @@ export const broadcastsMetrics = {
 
   /**
    * `broadcasts_audience_import_abandoned_on_hold_total{tenant}` — import leg
-   * (`FEATURE_F7_IMPORT_AUDIENCE`). One per HOLD that abandoned a pending
-   * Contacts-Import: the tick-1 Resend audience was deleted and the row's
-   * audience/import columns detached, so the resumed row runs a fresh tick 1.
-   * At most once per hold (a detached row has nothing left to abandon). Not a
-   * failure; the warn log `broadcasts.audience_import.hold_abandon_failed` is
-   * the one to watch (observability.md § 29.8).
+   * (`FEATURE_F7_IMPORT_AUDIENCE`). One per HOLD that abandoned an audience
+   * build: the row claimed, its never-handed broadcast resource and its Resend
+   * audience deleted, and those columns released, so the resumed row runs a
+   * fresh tick 1. At most once per hold (a released row has nothing left to
+   * abandon). Not a failure; the warn log
+   * `broadcasts.audience_import.hold_abandon_failed` is the one to watch
+   * (observability.md § 29.8).
    */
   audienceImportAbandonedOnHold(tenantId: string): void {
     safeMetric(() => {
       counter(
         'broadcasts_audience_import_abandoned_on_hold_total',
-        'Holds that abandoned a pending audience import (tick-1 audience deleted, columns detached)',
+        'Holds that abandoned an audience build (row claimed, Resend resources deleted, columns released)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts_audience_import_restarted_missing_audience_total{tenant}` —
+   * import leg. One per tick that found the tick-1 Resend audience GONE
+   * (`404 not_found` on `createBroadcast` / `createContactImport`, measured
+   * 2026-10-29) and released the row's columns so the next tick runs a fresh
+   * tick 1 instead of failing the broadcast. Expected only after a hold on an
+   * overlapping tick or a manual delete; a steady rate means something else is
+   * deleting audiences (observability.md § 29.8).
+   */
+  audienceImportRestartedOnMissingAudience(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_import_restarted_missing_audience_total',
+        'Import-leg ticks that found the Resend audience gone and restarted the build',
       ).add(1, { tenant: tenantId });
     });
   },

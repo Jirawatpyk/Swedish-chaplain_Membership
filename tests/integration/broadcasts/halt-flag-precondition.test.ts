@@ -185,9 +185,6 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     async attachAudienceImport() {},
     async markAudienceImportCompleted() {},
     async markDispatchRetryStarted() { return null; },
-    async detachPendingAudienceImport() {
-      return false;
-    },
     async releaseAudienceImport() {
       return false;
     },

@@ -568,7 +568,7 @@ export interface ApprovalStoreState {
 
 /** Every method is a `vi.fn` (so a test can override one arm), plus the live rows. */
 export type FakeApprovalBroadcastsRepo = Mocked<ApprovalBroadcastsRepo> &
-  Mocked<Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'detachPendingAudienceImport' | 'releaseAudienceImport' | 'releaseResendAudience'>> & {
+  Mocked<Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'releaseAudienceImport' | 'releaseResendAudience'>> & {
   readonly rows: Map<string, Broadcast>;
 };
 
@@ -736,44 +736,6 @@ export function makeFakeApprovalStore(
       if (row === undefined || row.status !== 'approved' || row.dispatchFirstFailedAt === null) return;
       state.broadcasts.set(key, { ...row, dispatchFirstFailedAt: null, updatedAt: store.now });
     }),
-    // A tick-2 HOLD abandons its pending import: the adapter's CAS on all three
-    // ids (the broadcast id NULL-safe), `approved`, no completion stamp; `false`
-    // on a miss.
-    detachPendingAudienceImport: vi.fn(
-      async (
-        _tx: unknown,
-        tenantId: TenantSlug,
-        broadcastId: BroadcastId,
-        expected: {
-          readonly importId: string;
-          readonly resendAudienceId: string;
-          readonly resendBroadcastId: string | null;
-        },
-      ): Promise<boolean> => {
-        const key = keyOf(tenantId as string, broadcastId);
-        const row = state.broadcasts.get(key);
-        if (
-          row === undefined ||
-          row.status !== 'approved' ||
-          row.audienceImportId !== expected.importId ||
-          row.resendAudienceId !== expected.resendAudienceId ||
-          (row.resendBroadcastId ?? null) !== expected.resendBroadcastId ||
-          row.audienceImportCompletedAt !== null
-        ) {
-          return false;
-        }
-        state.broadcasts.set(key, {
-          ...row,
-          resendAudienceId: null,
-          resendBroadcastId: null,
-          audienceImportId: null,
-          audienceImportSubmittedAt: null,
-          audienceImportCompletedAt: null,
-          updatedAt: store.now,
-        });
-        return true;
-      },
-    ),
     // The import leg's restart, step 1 — the CLAIM: NULL the import id and its
     // submit stamp ONLY (the broadcast id and the audience stay); a CAS on what
     // the caller read (the broadcast id NULL-safe), `approved`, no completion.
@@ -832,7 +794,7 @@ export function makeFakeApprovalStore(
     // parameter, so it is checked by presence; every other method is checked
     // against the port's signature.
   } satisfies Omit<ApprovalBroadcastsRepo, 'withTx'> &
-    Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'detachPendingAudienceImport' | 'releaseAudienceImport' | 'releaseResendAudience'> &
+    Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'releaseAudienceImport' | 'releaseResendAudience'> &
     Record<'withTx', unknown> & { rows: Map<string, Broadcast> };
 
   // T083 — the member's own E-Blasts, for the two DSAR reads.
