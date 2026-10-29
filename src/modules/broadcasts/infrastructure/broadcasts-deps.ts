@@ -625,6 +625,9 @@ export function makeCancelInFlightBroadcastsForMemberDeps(tenantId: string) {
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
     audit: f7AuditAdapter,
     clock: systemClock,
+    // Spec 139 DE2 — read only in the erasure mode (`delete_then_cancel`):
+    // ONE `deleteBroadcastOnce` under the row lock, and the probe after a 403.
+    broadcastsGateway: resendBroadcastsGateway,
   };
 }
 

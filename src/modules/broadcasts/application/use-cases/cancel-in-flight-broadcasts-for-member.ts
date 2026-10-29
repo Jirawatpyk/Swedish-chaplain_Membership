@@ -79,14 +79,33 @@
  * (the import leg's S8 fix mirrors the legacy F4), so the skip above also
  * covers a row whose resource was minted but whose send has not happened yet:
  * normally a gap of one DB write, but a retryable send failure or a dead tick
- * stretches it to the next tick (≥ 5 min). The skipped row is then left to the
- * dispatcher, whose send-time standing gate (`_dispatch-standing-gate.ts`)
- * reads only the halt list and F8 membership access — NOT erasure. OPEN
- * (reported 2026-10-29; fixed by spec 139, which must merge before
- * `FEATURE_F7_IMPORT_AUDIENCE` is set): an erased member with paid-through
- * access answers `send`, and on the import leg the resource being sent was
+ * stretches it to the next tick (≥ 5 min). On the import leg that resource was
  * minted BEFORE the content scrub, so it carries the pre-scrub subject, body
- * and from-name. Same skip on the legacy leg.
+ * and from-name.
+ *
+ * Spec 139 DE2 — so the caller chooses (`onDispatchBegun`). ARCHIVE (and bulk
+ * archive) keep `'skip'`, the default: the row is left to deliver, nothing is
+ * deleted at Resend (DE4). ERASURE passes `'delete_then_cancel'`: under the
+ * same row lock the cascade makes ONE `deleteBroadcastOnce` (no backoff, a
+ * 10 s hard timeout — the lock is held across it, D-039), and Resend arbitrates
+ * it against the tick's `/send` (DELETE answers 200 only on a draft, `/send`
+ * works only on a draft, and after a DELETE it 404s):
+ *   - `deleted` / `absent` → cancelled in the same tx; `broadcast_cancelled`
+ *     carries `resendOutcome`. A tick past its persist then meets a 404 and
+ *     answers a concurrent skip; an import tick re-minting over the deleted id
+ *     waits on this lock in its persist CAS and then sees `cancelled`.
+ *   - `forbidden` (403) → probed, because a restricted key answers 403 too
+ *     (P5): `queued` / `sending` / `sent` means Resend had already accepted
+ *     the send (residual 8c) — the row is left as it is and
+ *     `broadcast_concurrent_action_blocked` (`dispatchBegun: true`,
+ *     `resendOutcome: 'already_sent'`) is written INSIDE this locked tx, so a
+ *     failed write rolls back and counts unexpected (P6); `alreadySentCount`
+ *     carries it to `member_erased` (P7). Any other probe answer is unexpected.
+ *   - `retryable` (a timeout included — the DELETE may have landed) / `other`
+ *     → unexpected, the row unchanged; the adapter reports
+ *     `cascade_partial_failure`, `member_erased` is withheld, and the
+ *     `reconcile-erasures` cron drives the erasure again.
+ * An EMPTY id is not an id: the row is cancelled without a Resend call.
  * Any other exception is treated as
  * unexpected-error: the broadcast remains in flight, the cascade
  * continues to the next broadcast (best-effort), and the
@@ -104,6 +123,7 @@ import type { Broadcast } from '../../domain/broadcast';
 import { isInProgress } from '../../domain/stage/in-progress-statuses';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../ports/audit-port';
+import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import {
   BroadcastConcurrentMutationError,
   type BroadcastsRepo,
@@ -144,6 +164,13 @@ export interface CancelInFlightForMemberInput {
    * actor).
    */
   readonly initiatedByUserId?: string | null;
+  /**
+   * Spec 139 DE2 / DE4 — what to do with an `approved` row that already
+   * carries a Resend broadcast id. `'skip'` (the default — archive, bulk
+   * archive): leave it to deliver. `'delete_then_cancel'` (erasure only):
+   * delete the draft at Resend under the row lock, then cancel (docblock).
+   */
+  readonly onDispatchBegun?: 'skip' | 'delete_then_cancel';
 }
 
 export interface CancelInFlightForMemberOutput {
@@ -158,12 +185,34 @@ export interface CancelInFlightForMemberOutput {
    * partial cascade is auditable in the F3 caller, not just dashboards.
    */
   readonly unexpectedErrorCount: number;
+  /**
+   * Spec 139 P7 — rows whose E-Blast Resend had ALREADY accepted for sending
+   * when the erasure's DELETE arrived (403 + a `queued` / `sending` / `sent`
+   * probe): left as they are, each with its `already_sent` audit row. Always
+   * 0 in the `'skip'` mode. The members adapter carries it into the
+   * `member_erased` payload, so "clean" can no longer hide a sent E-Blast.
+   */
+  readonly alreadySentCount: number;
 }
 
 export interface CancelInFlightForMemberDeps {
   readonly broadcastsRepo: BroadcastsRepo;
   readonly audit: AuditPort;
   readonly clock: ClockPort;
+  /** Spec 139 — read only in the `'delete_then_cancel'` mode. */
+  readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcast'>;
+}
+
+/**
+ * Spec 139 — the erasure mode's DELETE (or the probe after a 403) did not
+ * settle the row. Thrown inside the locked tx so it rolls back and the row is
+ * counted unexpected; `outcome` names what Resend answered, for the log.
+ */
+class DispatchBegunUnresolvedError extends Error {
+  constructor(public readonly outcome: string) {
+    super(`dispatch-begun row not settled at Resend (${outcome})`);
+    this.name = 'DispatchBegunUnresolvedError';
+  }
 }
 
 const SYSTEM_ACTOR_USER_ID = 'system';
@@ -208,19 +257,24 @@ export async function cancelInFlightBroadcastsForMember(
         cancelledCount: 0,
         skippedConcurrentCount: 0,
         unexpectedErrorCount: 0,
+        alreadySentCount: 0,
       });
     }
 
+    const onDispatchBegun = input.onDispatchBegun ?? 'skip';
     let cancelledCount = 0;
     let skippedConcurrentCount = 0;
+    let alreadySentCount = 0;
 
     let unexpectedErrorCount = 0;
 
     /**
      * One cancel attempt in its own tx. `lost` = the CAS matched nothing, or
      * the row is gone (the caller re-reads); `dispatch_begun` = the locked row
-     * is `approved` and already handed over (D1 — the caller skips it); every
-     * other outcome is final and already counted.
+     * is `approved` and already handed over (D1 — the caller skips it; the
+     * `'skip'` mode only); `already_sent` = spec 139's 403 arm, its audit row
+     * already written in the tx; every other outcome is final and already
+     * counted.
      *
      * F119 round-4 B6 — every throw LEAVES the tx, so the tx rolls back. The
      * attempt used to catch inside `withTx` and return normally, which
@@ -230,9 +284,9 @@ export async function cancelInFlightBroadcastsForMember(
     const cancelOnce = async (
       broadcast: Broadcast,
       fromStatus: BroadcastStatus,
-    ): Promise<{ readonly kind: 'cancelled' | 'lost' | 'dispatch_begun' | 'unexpected' }> => {
+    ): Promise<{ readonly kind: 'cancelled' | 'lost' | 'dispatch_begun' | 'already_sent' | 'unexpected' }> => {
       try {
-        const handedOver = await deps.broadcastsRepo.withTx(async (tx) => {
+        const settled = await deps.broadcastsRepo.withTx(async (tx): Promise<'cancelled' | 'dispatch_begun' | 'already_sent'> => {
           // D1 — lock, THEN read: an in-flight attach commits before this read
           // returns, so its id is seen. Nothing is written on the skip, so the
           // tx ends clean. The CAS below stays on `fromStatus`; a locked row
@@ -240,7 +294,60 @@ export async function cancelInFlightBroadcastsForMember(
           await deps.broadcastsRepo.lockForUpdate(tx, input.tenant.slug, broadcast.broadcastId);
           const locked = await deps.broadcastsRepo.findByIdInTx(tx, input.tenant.slug, broadcast.broadcastId);
           if (locked === null) throw new BroadcastConcurrentMutationError(input.tenant.slug, broadcast.broadcastId, fromStatus);
-          if (locked.status === 'approved' && locked.resendBroadcastId !== null) return true;
+          let resendOutcome: 'deleted' | 'absent' | null = null;
+          if (locked.status === 'approved' && locked.resendBroadcastId !== null) {
+            if (onDispatchBegun === 'skip') return 'dispatch_begun';
+            const resendId = locked.resendBroadcastId;
+            if (resendId !== '') {
+              // Spec 139 DE2 — ONE DELETE under the row lock (docblock).
+              const startedAt = Date.now();
+              const outcome = await deps.broadcastsGateway.deleteBroadcastOnce(resendId);
+              logger.info(
+                {
+                  tenantId: input.tenant.slug,
+                  broadcastId: broadcast.broadcastId as string,
+                  resendBroadcastId: resendId,
+                  outcome: outcome.kind,
+                  lockHeldMs: Date.now() - startedAt,
+                  useCase: 'cancel-in-flight-broadcasts-for-member',
+                },
+                'broadcasts.cascade.dispatch_begun_delete',
+              );
+              if (outcome.kind === 'deleted' || outcome.kind === 'absent') {
+                resendOutcome = outcome.kind;
+              } else if (outcome.kind === 'forbidden') {
+                // P5 — a restricted key answers 403 too: believe "already sent"
+                // only from the probe. A probe that throws leaves the tx too.
+                const probe = await deps.broadcastsGateway.retrieveBroadcast(resendId);
+                const status = probe.kind === 'present' ? probe.resource.status : 'not_found';
+                if (status !== 'queued' && status !== 'sending' && status !== 'sent') {
+                  throw new DispatchBegunUnresolvedError(`forbidden_probe_${status}`);
+                }
+                // P6 — the residual-8c evidence row, inside the locked tx: a
+                // failed write rolls back and counts unexpected.
+                await deps.audit.emit(tx, {
+                  tenantId: input.tenant.slug,
+                  eventType: 'broadcast_concurrent_action_blocked',
+                  actorUserId: input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
+                  summary: `Erasure cascade could not stop broadcast ${broadcast.broadcastId} — Resend had already accepted it for sending`,
+                  payload: {
+                    broadcastId: broadcast.broadcastId,
+                    memberId: input.memberId as string,
+                    cascade: 'f3_member_archival_or_erasure',
+                    snapshotStatus: broadcast.status,
+                    observedStatus: locked.status,
+                    dispatchBegun: true,
+                    resendOutcome: 'already_sent',
+                    observedResendStatus: status,
+                  },
+                  requestId: input.requestId,
+                });
+                return 'already_sent';
+              } else {
+                throw new DispatchBegunUnresolvedError(outcome.kind);
+              }
+            }
+          }
           const cancelled = await deps.broadcastsRepo.applyTransition(
             tx,
             input.tenant.slug,
@@ -275,12 +382,30 @@ export async function cancelInFlightBroadcastsForMember(
               previousStatus: fromStatus,
               cascade: 'f3_member_archival_or_erasure',
               cancelledBroadcastId: cancelled.broadcastId as string,
+              // Spec 139 DE2 — set only when the erasure mode deleted the
+              // row's draft at Resend first.
+              ...(resendOutcome !== null ? { resendOutcome } : {}),
             },
             requestId: input.requestId,
           });
-          return false;
+          return 'cancelled';
         });
-        if (handedOver) return { kind: 'dispatch_begun' as const };
+        if (settled === 'dispatch_begun') return { kind: 'dispatch_begun' as const };
+        if (settled === 'already_sent') {
+          alreadySentCount += 1;
+          broadcastsMetrics.auditEmitCount(input.tenant.slug, 'broadcast_concurrent_action_blocked');
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'concurrent_skip');
+          logger.warn(
+            {
+              tenantId: input.tenant.slug,
+              broadcastId: broadcast.broadcastId as string,
+              memberId: input.memberId as string,
+              useCase: 'cancel-in-flight-broadcasts-for-member',
+            },
+            'broadcasts.cascade.dispatch_begun_already_sent',
+          );
+          return { kind: 'already_sent' as const };
+        }
       } catch (e) {
         // The CAS matched nothing: another writer moved the row. Where to
         // is the caller's re-read, not this error's `observedStatus`.
@@ -303,6 +428,8 @@ export async function cancelInFlightBroadcastsForMember(
             broadcastId: broadcast.broadcastId as string,
             memberId: input.memberId as string,
             previousStatus: fromStatus,
+            // Spec 139 — what Resend answered, when that is why it failed.
+            ...(e instanceof DispatchBegunUnresolvedError ? { resendOutcome: e.outcome } : {}),
             useCase: 'cancel-in-flight-broadcasts-for-member',
           },
           'broadcasts.cascade.tx_or_audit_failed',
@@ -441,12 +568,14 @@ export async function cancelInFlightBroadcastsForMember(
         cancelledCount,
         skippedConcurrentCount,
         unexpectedErrorCount,
+        alreadySentCount,
+        onDispatchBegun,
         cascade: 'f3_member_archival_or_erasure',
       },
       'broadcasts.cascade.completed',
     );
 
-    return ok({ cancelledCount, skippedConcurrentCount, unexpectedErrorCount });
+    return ok({ cancelledCount, skippedConcurrentCount, unexpectedErrorCount, alreadySentCount });
   } catch (e) {
     return err({
       kind: 'cascade.server_error',

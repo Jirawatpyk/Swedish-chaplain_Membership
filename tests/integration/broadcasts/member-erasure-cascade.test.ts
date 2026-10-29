@@ -225,6 +225,20 @@ function makeStubAudit(): {
 
 const clock: ClockPort = { now: () => NOW };
 
+/**
+ * Spec 139 — the Resend calls the cascade makes only in its erasure mode
+ * (`onDispatchBegun: 'delete_then_cancel'`). These cases run the default
+ * (archive) mode, so any call is a bug.
+ */
+const UNUSED_GATEWAY = {
+  async deleteBroadcastOnce(): Promise<never> {
+    throw new Error('deleteBroadcastOnce must not be called in the archive mode');
+  },
+  async retrieveBroadcast(): Promise<never> {
+    throw new Error('retrieveBroadcast must not be called in the archive mode');
+  },
+};
+
 describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', () => {
   it('cancels every submitted + approved broadcast and emits one audit per row', async () => {
     const inFlight = [
@@ -236,7 +250,7 @@ describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', ()
     const audit = makeStubAudit();
 
     const result = await cancelInFlightBroadcastsForMember(
-      { broadcastsRepo: repo.port, audit: audit.port, clock },
+      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY },
       {
         tenant,
         memberId: memberId as never,
@@ -280,7 +294,7 @@ describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', ()
     const audit = makeStubAudit();
 
     const result = await cancelInFlightBroadcastsForMember(
-      { broadcastsRepo: repo.port, audit: audit.port, clock },
+      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY },
       {
         tenant,
         memberId: memberId as never,
@@ -307,7 +321,7 @@ describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', ()
     const audit = makeStubAudit();
 
     const result = await cancelInFlightBroadcastsForMember(
-      { broadcastsRepo: repo.port, audit: audit.port, clock },
+      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY },
       {
         tenant,
         memberId: memberId as never,
@@ -340,7 +354,7 @@ describe('T178a — cancelInFlightBroadcastsForMember (F3 cascade boundary)', ()
     const audit = makeStubAudit();
 
     const result = await cancelInFlightBroadcastsForMember(
-      { broadcastsRepo: repo.port, audit: audit.port, clock },
+      { broadcastsRepo: repo.port, audit: audit.port, clock, broadcastsGateway: UNUSED_GATEWAY },
       {
         tenant,
         memberId: memberId as never,
