@@ -2964,6 +2964,24 @@ export const broadcastsMetrics = {
   },
 
   /**
+   * `broadcasts_audience_import_abandoned_on_hold_total{tenant}` — import leg
+   * (`FEATURE_F7_IMPORT_AUDIENCE`). One per HOLD that abandoned a pending
+   * Contacts-Import: the tick-1 Resend audience was deleted and the row's
+   * audience/import columns detached, so the resumed row runs a fresh tick 1.
+   * At most once per hold (a detached row has nothing left to abandon). Not a
+   * failure; the warn log `broadcasts.audience_import.hold_abandon_failed` is
+   * the one to watch (observability.md § 29.8).
+   */
+  audienceImportAbandonedOnHold(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_import_abandoned_on_hold_total',
+        'Holds that abandoned a pending audience import (tick-1 audience deleted, columns detached)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
    * `broadcasts.approved_overdue_count{tenant}` — review 2026-09-07 (errors
    * HIGH-4b): `approved` rows whose `scheduled_for` is more than an hour in
    * the past. `queue_pending` alerts at > 8,000, so ONE broadcast slipping

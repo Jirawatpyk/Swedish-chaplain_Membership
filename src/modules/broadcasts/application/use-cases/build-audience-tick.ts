@@ -92,8 +92,9 @@ export type BuildAudienceTickOutput =
   | { readonly kind: 'sent'; readonly resendBroadcastId: string; readonly recipientCount: number }
   /**
    * F119 PR-A R1 — the requesting member's membership is `suspended` (awaiting
-   * payment): nothing was polled, submitted, sent or written, and the row stays
-   * `approved` for the next tick. The same kind the legacy leg answers.
+   * payment): nothing was polled, submitted or sent, and the row stays
+   * `approved` for the next tick (a tick-2 hold abandons its pending import —
+   * `abandonPendingImportOnHold`). The same kind the legacy leg answers.
    */
   | { readonly kind: 'dispatch_held_member_suspended' };
 
@@ -409,12 +410,12 @@ export async function buildAudienceTick(
   // transition is what makes a tick-1 Resend audience a `cleanup-audiences`
   // candidate (terminal status + `resend_audience_id` + no
   // `audience_deleted_at`), and the Free plan holds three. A HOLD on tick 2
-  // therefore keeps that audience (and its submitted import) until the row
-  // resumes or is refused. A hold returns BEFORE `confirmImport`, so neither
-  // the 30-minute stuck rule nor the FR-021 budget runs while held; the stuck
-  // rule measures from the submit and fires only on a job the provider still
-  // reports as not completed, so a resumed row whose job completed during the
-  // hold proceeds.
+  // instead ABANDONS the pending import (`abandonPendingImportOnHold`): it
+  // deletes that audience itself and detaches the audience and import
+  // columns, so the row resumes with a fresh tick 1 against the audience as it
+  // is then — never a stale import, never a false stuck alarm while held. A
+  // hold returns BEFORE `confirmImport`, so neither the 30-minute stuck rule
+  // nor the FR-021 budget runs while held.
   //
   // Skipped when THIS leg already handed the send to Resend. On this leg
   // `resend_broadcast_id` is attached only AFTER `sendBroadcast` succeeded,
@@ -454,10 +455,11 @@ export async function buildAudienceTick(
  * anything else is the tick's answer.
  *
  * - `hold` (R1, a `suspended` membership) — `dispatch_held_member_suspended`:
- *   nothing sent, nobody told, no audit; the ONE write is the FR-021 retry-clock
- *   reset (F119 PR-E, review H1 — best-effort, own tx, a stamped row only), so a
- *   failure before a days-long hold cannot make the first blip after it
- *   terminal. The next tick asks again.
+ *   nothing sent, nobody told, no audit. Two best-effort writes, each in its
+ *   own tx: the FR-021 retry-clock reset (F119 PR-E, review H1 — a stamped row
+ *   only), so a failure before a days-long hold cannot make the first blip
+ *   after it terminal; and, on tick 2, abandoning the pending import
+ *   (`abandonPendingImportOnHold`). The next tick asks again.
  * - `refuse` (halted, or the membership ENDED) — PERMANENT, and writes BOTH
  *   audit rows in the terminal transaction: the `broadcast_failed_to_dispatch`
  *   row every terminal failure writes, and the standing refusal under submit's
@@ -482,6 +484,7 @@ async function applySendStanding(
     recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
     // Outside every tx: the Step-1 lock tx has committed.
     await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed');
+    await abandonPendingImportOnHold(deps, input, broadcast);
     return ok({ kind: 'dispatch_held_member_suspended' });
   }
   if (standing.kind === 'refuse') {
@@ -516,6 +519,70 @@ async function applySendStanding(
     errClass: standing.errClass,
     phase: 'standing',
   });
+}
+
+/**
+ * A HOLD on tick 2 — abandon the pending import, best-effort. Left in place,
+ * a held import counted in `audience_import_stuck_count` for the whole hold (a
+ * false "Resend import stuck" alarm), went stale while the audience changed
+ * (the resumed send then failed `count_mismatch` / `audience_membership_drift`),
+ * and made `hasDispatchBegun` read the row as handed over, so staff could
+ * neither cancel nor re-time it.
+ *
+ * Reached only for a row nothing was handed to Resend for SENDING:
+ * `handedToSend` keeps a row carrying `resend_broadcast_id` out of the gate,
+ * and the completion stamp lands only after the send. A tick-1 hold (no
+ * import) has nothing to abandon; neither has an import with no audience id
+ * (unreachable — tick 1 attaches the audience before it submits).
+ *
+ * 1. Delete the tick-1 audience — outside every tx (a network call). The
+ *    adapter answers 404 / 410 as success. A FAILURE leaves the columns as
+ *    they are and the next held tick retries: detaching without the delete
+ *    would leave the audience, and any erased member's address in it, where
+ *    no row points at it and the erasure derivation cannot find it.
+ * 2. Detach the columns — its own short tx, a CAS on both ids. A lost CAS
+ *    means another writer moved the row; the audience is gone either way.
+ *
+ * Never fails the tick: the hold is already the decided answer.
+ */
+async function abandonPendingImportOnHold(
+  deps: BuildAudienceTickDeps,
+  input: BuildAudienceTickInput,
+  broadcast: Broadcast,
+): Promise<void> {
+  const importId = broadcast.audienceImportId;
+  const resendAudienceId = broadcast.resendAudienceId;
+  if (importId === null || !resendAudienceId) return;
+  const ids = {
+    tenantId: deps.tenant.slug,
+    broadcastId: input.broadcastId as unknown as string,
+    importId,
+    resendAudienceId,
+  };
+  try {
+    await deps.broadcastsGateway.deleteAudience(resendAudienceId);
+  } catch (e) {
+    logger.warn({ err: errKind(e), ...ids, step: 'delete_audience' }, 'broadcasts.audience_import.hold_abandon_failed');
+    return;
+  }
+  let detached: boolean;
+  try {
+    detached = await deps.broadcastsRepo.withTx((tx) =>
+      deps.broadcastsRepo.detachPendingAudienceImport(tx, deps.tenant.slug, input.broadcastId, {
+        importId,
+        resendAudienceId,
+      }),
+    );
+  } catch (e) {
+    logger.warn({ err: errKind(e), ...ids, step: 'detach' }, 'broadcasts.audience_import.hold_abandon_failed');
+    return;
+  }
+  if (!detached) {
+    logger.info(ids, 'broadcasts.audience_import.hold_abandon_lost');
+    return;
+  }
+  broadcastsMetrics.audienceImportAbandonedOnHold(deps.tenant.slug);
+  logger.info(ids, 'broadcasts.audience_import.abandoned_on_hold');
 }
 
 /**

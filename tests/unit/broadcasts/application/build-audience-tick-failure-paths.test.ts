@@ -93,7 +93,9 @@ type GatewayMethod =
   | 'createContactImport'
   | 'getContactImport'
   | 'createBroadcast'
-  | 'sendBroadcast';
+  | 'sendBroadcast'
+  /** A tick-2 HOLD abandons the pending import: the tick-1 audience is deleted. */
+  | 'deleteAudience';
 
 interface Recorder {
   readonly transitions: Array<{
@@ -123,6 +125,13 @@ interface Recorder {
   readonly retryStamps: Date[];
   /** F119 PR-E (H1 / M1) — every `clearDispatchRetryClock` call, in gateway-call order. */
   readonly retryClears: number[];
+  /** Every audience the tick asked Resend to delete. */
+  readonly audiencesDeleted: string[];
+  /**
+   * Every `detachPendingAudienceImport` call: the CAS values it carried and how
+   * many gateway calls had been made by then (the delete must come FIRST).
+   */
+  readonly detaches: Array<{ importId: string; resendAudienceId: string; afterGatewayCalls: number }>;
 }
 
 /**
@@ -258,6 +267,10 @@ function makeDeps(opts: {
   readonly retryStampReturns?: Date | null;
   /** F119 PR-E (H1 / M1) — the clock reset itself fails. */
   readonly retryClearThrows?: boolean;
+  /** The hold's detach CAS matches no row (another writer moved it). */
+  readonly detachLoses?: boolean;
+  /** The hold's detach write itself fails (a Neon fault, not a lost CAS). */
+  readonly detachThrows?: boolean;
 }): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder } {
   let txSeq = 0;
   const rec: Recorder = {
@@ -272,6 +285,8 @@ function makeDeps(opts: {
     gatewayCalls: [],
     retryStamps: [],
     retryClears: [],
+    audiencesDeleted: [],
+    detaches: [],
   };
 
   const broadcast = {
@@ -473,6 +488,18 @@ function makeDeps(opts: {
             throw new Error('57P01 terminating connection due to administrator command');
           }
         },
+        async detachPendingAudienceImport(
+          _tx: unknown,
+          _t: unknown,
+          _b: unknown,
+          expected: { importId: string; resendAudienceId: string },
+        ) {
+          rec.detaches.push({ ...expected, afterGatewayCalls: rec.gatewayCalls.length });
+          if (opts.detachThrows === true) {
+            throw new Error('57P01 terminating connection due to administrator command');
+          }
+          return opts.detachLoses !== true;
+        },
         async attachResendIds(tx: unknown, _t: unknown, _b: unknown, _a: string, rbId: string) {
           rec.resendIdWrites.push({ resendBroadcastId: rbId, txId: (tx as { txId?: number } | null)?.txId });
           maybeCasThrow('attachResendIds');
@@ -547,6 +574,10 @@ function makeDeps(opts: {
         async sendBroadcast(id: string) {
           maybeThrow('sendBroadcast');
           rec.sends.push(id);
+        },
+        async deleteAudience(id: string) {
+          maybeThrow('deleteAudience');
+          rec.audiencesDeleted.push(id);
         },
       },
       audit: {
@@ -2229,13 +2260,14 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
 
   /**
    * R1 — a `suspended` membership (awaiting payment) is HELD on both ticks:
-   * nothing reaches Resend, nothing is written, nobody is emailed, and the row
-   * stays `approved` for the next tick.
+   * nothing is sent, no status moves, nobody is emailed, and the row stays
+   * `approved` for the next tick. On tick 2 the one Resend call is the delete
+   * of the tick-1 audience (the pending import is abandoned — see below).
    */
   it.each([
-    ['tick 1 (no import yet)', {}],
-    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }],
-  ] as const)('%s, a SUSPENDED member → held: ok, no transition, no audit, no email, no Resend call', async (_label, row) => {
+    ['tick 1 (no import yet)', {}, []],
+    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }, ['deleteAudience']],
+  ] as const)('%s, a SUSPENDED member → held: ok, no transition, no audit, no email, nothing sent', async (_label, row, calls) => {
     const heldSpy = vi.spyOn(broadcastsMetrics, 'dispatchStandingHeldTotal');
     const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
     const { deps, rec } = makeDeps({ ...row, standing: { access: 'suspended' } });
@@ -2246,7 +2278,8 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
     expect(rec.transitions).toEqual([]);
     expect(rec.audits).toEqual([]);
     expect(rec.memberEmails).toEqual([]);
-    expect(rec.gatewayCalls).toEqual([]);
+    expect(rec.gatewayCalls).toEqual(calls);
+    expect(rec.sends).toEqual([]);
     expect(rec.importsSubmitted).toEqual([]);
     // F119 PR-E — a hold is not a failure: the FR-021 clock is not started.
     expect(rec.retryStamps).toEqual([]);
@@ -2255,29 +2288,138 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
   });
 
   /**
-   * R1 import leg — a hold on tick 2 must not later be misjudged as
-   * `audience_import_stuck` when the row resumes. The stuck rule
-   * (`IMPORT_STUCK_AFTER_MS`, 30 min from the SUBMIT) is evaluated only while
-   * the provider reports the job NOT completed; a held tick returns before the
-   * poll, so it cannot fire while held, and a resumed row whose job completed
-   * during the hold proceeds to the send however long the hold lasted.
+   * Import leg — a hold on tick 2 ABANDONS the pending import. Left in place it
+   * counted in `audience_import_stuck_count` for the whole hold (a false
+   * "Resend import stuck" alarm), it went stale while the audience changed (the
+   * resumed send then failed `count_mismatch` / `audience_membership_drift`),
+   * and `hasDispatchBegun` read it as "handed over", so staff could neither
+   * cancel nor re-time the held row. The tick-1 audience is deleted FIRST, then
+   * the columns are detached: an erased member's address is never left in an
+   * audience that no row points at.
    */
-  it('held on tick 2 for longer than the stuck window, then resumed → proceeds to the send (not audience_import_stuck)', async () => {
+  it('tick 2 hold → deletes the tick-1 audience, THEN detaches the import columns (CAS on both ids), counted and logged', async () => {
+    const { logger } = await import('@/lib/logger');
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const abandonedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportAbandonedOnHold');
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW, standing: { access: 'suspended' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.audiencesDeleted).toEqual(['aud-1']);
+    expect(rec.detaches).toEqual([{ importId: 'imp-1', resendAudienceId: 'aud-1', afterGatewayCalls: 1 }]);
+    expect(abandonedSpy).toHaveBeenCalledWith('test-tenant');
+    const log = infoSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.abandoned_on_hold');
+    expect(log?.[0]).toMatchObject({ broadcastId: BROADCAST_ID, importId: 'imp-1', resendAudienceId: 'aud-1' });
+  });
+
+  it.each([
+    ['tick 1 (no import yet)', {}],
+    // Unreachable today (tick 1 attaches the audience before it submits), but
+    // with no audience id there is nothing to delete and no CAS value to match.
+    ['an import id with no audience id', { audienceImportId: 'imp-1', audienceImportSubmittedAt: NOW }],
+  ] as const)('%s, a hold abandons nothing: no delete, no detach', async (_label, row) => {
+    const { deps, rec } = makeDeps({ ...row, standing: { access: 'suspended' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.gatewayCalls).toEqual([]);
+    expect(rec.detaches).toEqual([]);
+  });
+
+  it('tick 2 hold, the audience delete FAILS → nothing detached, still held, logged by class only', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const abandonedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportAbandonedOnHold');
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      standing: { access: 'suspended' },
+      throwOn: { method: 'deleteAudience', kind: 'transient' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    // The columns stay: the next held tick retries the delete.
+    expect(rec.detaches).toEqual([]);
+    expect(rec.transitions).toEqual([]);
+    expect(abandonedSpy).not.toHaveBeenCalled();
+    const log = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.hold_abandon_failed');
+    expect(log?.[0]).toMatchObject({ err: 'Error', step: 'delete_audience', broadcastId: BROADCAST_ID, importId: 'imp-1' });
+    expect(JSON.stringify(log?.[0])).not.toContain('boom');
+  });
+
+  it('tick 2 hold, the detach CAS is LOST (another writer moved the row) → still held, logged, not counted', async () => {
+    const { logger } = await import('@/lib/logger');
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const abandonedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportAbandonedOnHold');
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW, standing: { access: 'suspended' }, detachLoses: true });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.audiencesDeleted).toEqual(['aud-1']);
+    expect(rec.detaches).toHaveLength(1);
+    expect(abandonedSpy).not.toHaveBeenCalled();
+    expect(infoSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.hold_abandon_lost')).toBe(true);
+  });
+
+  it('tick 2 hold, the detach write THROWS → still held (never an error), logged by class only', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const abandonedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportAbandonedOnHold');
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW, standing: { access: 'suspended' }, detachThrows: true });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.detaches).toHaveLength(1);
+    expect(abandonedSpy).not.toHaveBeenCalled();
+    const log = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.hold_abandon_failed');
+    expect(log?.[0]).toMatchObject({ err: 'Error', step: 'detach', broadcastId: BROADCAST_ID });
+    expect(JSON.stringify(log?.[0])).not.toContain('administrator command');
+  });
+
+  it('a row whose send was already handed to Resend (resendBroadcastId set) is never abandoned', async () => {
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      resendBroadcastId: 'rb-0',
+      standing: { access: 'suspended' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.gatewayCalls).not.toContain('deleteAudience');
+    expect(rec.detaches).toEqual([]);
+  });
+
+  /**
+   * The resume after an abandoning hold. The detached row carries no import and
+   * no audience, so the next tick is a fresh tick 1 against the CURRENT
+   * audience — never a stale import judged `audience_import_stuck`,
+   * `count_mismatch` or `audience_membership_drift`.
+   */
+  it('held on tick 2 for longer than the stuck window, then resumed → a FRESH tick 1 (createAudience, then createContactImport)', async () => {
     const submittedLongAgo = new Date(NOW.getTime() - 6 * 60 * 60 * 1000);
     const held = makeDeps({ ...POLLING, audienceImportSubmittedAt: submittedLongAgo, standing: { access: 'suspended' } });
     expect(await buildAudienceTick(held.deps as never, { broadcastId: BROADCAST_ID })).toEqual({
       ok: true,
       value: { kind: 'dispatch_held_member_suspended' },
     });
-    expect(held.rec.gatewayCalls).toEqual([]);
+    expect(held.rec.detaches).toHaveLength(1);
 
-    // The member paid: the cycle completed, access `full`.
-    const resumed = makeDeps({ ...POLLING, audienceImportSubmittedAt: submittedLongAgo });
+    // The member paid: the cycle completed, access `full`. The row is the
+    // detached one the hold left behind.
+    const resumed = makeDeps({ audienceImportId: null, resendAudienceId: null, audienceImportSubmittedAt: null });
     const res = await buildAudienceTick(resumed.deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: RECIPIENTS.length } });
-    expect(resumed.rec.transitions.map((t) => t.status)).toEqual(['sending']);
-    expect(resumed.rec.sends).toEqual(['rb-1']);
+    expect(res).toEqual({ ok: true, value: { kind: 'import_submitted', importId: 'imp-new', recipientCount: RECIPIENTS.length } });
+    expect(resumed.rec.gatewayCalls).toEqual(['createAudience', 'createContactImport']);
+    expect(resumed.rec.importsSubmitted).toEqual(['imp-new']);
+    expect(resumed.rec.transitions).toEqual([]);
   });
 
   /** R2 — the per-tick halt memo is re-read UNCACHED before a permanent refusal. */
@@ -2554,20 +2696,21 @@ describe('buildAudienceTick — FR-021 budget anchors on the first failure (F119
    * The reset is the one write a hold makes; still no audit row, no email.
    */
   it.each([
-    ['tick 1 (no import yet)', {}],
-    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }],
-  ] as const)('H1 — %s, a hold on a STAMPED row resets the clock and still writes no audit, sends no email', async (_label, row) => {
+    ['tick 1 (no import yet)', {}, []],
+    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }, ['deleteAudience']],
+  ] as const)('H1 — %s, a hold on a STAMPED row resets the clock and still writes no audit, sends no email', async (_label, row, calls) => {
     const { deps, rec } = makeDeps({ ...row, dispatchFirstFailedAt: minutesAgo(30), standing: { access: 'suspended' } });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    // The reset comes BEFORE the tick-2 abandon's delete.
     expect(rec.retryClears).toEqual([0]);
     expect(rec.retryStamps).toEqual([]);
     expect(rec.transitions).toEqual([]);
     expect(rec.audits).toEqual([]);
     expect(rec.memberEmails).toEqual([]);
-    expect(rec.gatewayCalls).toEqual([]);
+    expect(rec.gatewayCalls).toEqual(calls);
   });
 
   it('H1 — the reset failing is logged (class only) and the tick is still HELD, never an error', async () => {

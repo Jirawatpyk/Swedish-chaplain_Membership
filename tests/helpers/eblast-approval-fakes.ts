@@ -568,7 +568,7 @@ export interface ApprovalStoreState {
 
 /** Every method is a `vi.fn` (so a test can override one arm), plus the live rows. */
 export type FakeApprovalBroadcastsRepo = Mocked<ApprovalBroadcastsRepo> &
-  Mocked<Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock'>> & {
+  Mocked<Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'detachPendingAudienceImport'>> & {
   readonly rows: Map<string, Broadcast>;
 };
 
@@ -736,11 +736,43 @@ export function makeFakeApprovalStore(
       if (row === undefined || row.status !== 'approved' || row.dispatchFirstFailedAt === null) return;
       state.broadcasts.set(key, { ...row, dispatchFirstFailedAt: null, updatedAt: store.now });
     }),
+    // A tick-2 HOLD abandons its pending import: the adapter's CAS on both ids,
+    // `approved`, no Resend broadcast, no completion stamp; `false` on a miss.
+    detachPendingAudienceImport: vi.fn(
+      async (
+        _tx: unknown,
+        tenantId: TenantSlug,
+        broadcastId: BroadcastId,
+        expected: { readonly importId: string; readonly resendAudienceId: string },
+      ): Promise<boolean> => {
+        const key = keyOf(tenantId as string, broadcastId);
+        const row = state.broadcasts.get(key);
+        if (
+          row === undefined ||
+          row.status !== 'approved' ||
+          row.audienceImportId !== expected.importId ||
+          row.resendAudienceId !== expected.resendAudienceId ||
+          row.resendBroadcastId !== null ||
+          row.audienceImportCompletedAt !== null
+        ) {
+          return false;
+        }
+        state.broadcasts.set(key, {
+          ...row,
+          resendAudienceId: null,
+          audienceImportId: null,
+          audienceImportSubmittedAt: null,
+          audienceImportCompletedAt: null,
+          updatedAt: store.now,
+        });
+        return true;
+      },
+    ),
     // `withTx` is generic on the port and a `vi.fn` cannot carry the type
     // parameter, so it is checked by presence; every other method is checked
     // against the port's signature.
   } satisfies Omit<ApprovalBroadcastsRepo, 'withTx'> &
-    Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock'> &
+    Pick<BroadcastsRepo, 'findById' | 'markDispatchRetryStarted' | 'clearDispatchRetryClock' | 'detachPendingAudienceImport'> &
     Record<'withTx', unknown> & { rows: Map<string, Broadcast> };
 
   // T083 — the member's own E-Blasts, for the two DSAR reads.

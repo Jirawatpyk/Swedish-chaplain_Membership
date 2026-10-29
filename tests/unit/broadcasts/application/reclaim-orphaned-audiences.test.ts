@@ -106,6 +106,9 @@ function makeRepo(opts: {
     async attachAudienceImport() {},
     async markAudienceImportCompleted() {},
     async markDispatchRetryStarted() { return null; },
+    async detachPendingAudienceImport() {
+      return false;
+    },
     async clearDispatchRetryClock() {},
     async listByTenantStatus() { return { rows: [], nextCursor: null }; },
     async countForMemberQuota() { return { submittedOrApproved: 0, sent: 0 }; },

@@ -214,7 +214,7 @@ The answer is one of three (the maintainer's decision, R1):
 
 | Signal | Held (awaiting payment) | Refusal (halted / membership ended) | Read failure |
 |---|---|---|---|
-| Row | stays `approved` — every tick (5 min) re-checks it; the only write is the FR-021 retry-clock reset (`dispatch_first_failed_at = NULL`, only if it was set) | `failed_to_dispatch`, `failure_reason` = `member_halted` or `member_not_in_good_standing` | stays `approved` — the next tick asks again |
+| Row | stays `approved` — every tick (5 min) re-checks it; the writes are the FR-021 retry-clock reset (`dispatch_first_failed_at = NULL`, only if it was set) plus, on the import leg's tick 2, abandoning the pending import (below) | `failed_to_dispatch`, `failure_reason` = `member_halted` or `member_not_in_good_standing` | stays `approved` — the next tick asks again |
 | Staff detail page | once `scheduled_for` has passed: an info note "Held — the member's membership is awaiting payment; the E-Blast will send automatically once it is settled, or fail if the membership ends" | a "Why this E-Blast was not sent" note under the status, naming the cause | nothing new |
 | Audit | **none** (a row every 5 min would bury the log) | `broadcast_failed_to_dispatch` **and** `broadcast_member_halted_pending_review` / `broadcast_membership_suspended_blocked` with `surface: 'dispatch'`, actor `system:cron`, `actor_role: null` (one tx). The membership row also carries `access` — always `terminated` here (a suspended member is held); at submit / approve / schedule confirm it is `suspended` or `terminated` | none |
 | Member | nothing | the FR-021 "did not go out" email: a factual reason, "contact the chamber", and that they can submit the content as a new E-Blast once the chamber has resolved it | nothing |
@@ -226,33 +226,38 @@ completes, F8 answers `full` and the next tick sends — after `scheduled_for`, 
 hold lasted (the `broadcast_send_started` row's `delaySeconds` records how late). If the member
 never pays, the cycle lapses (`terminated`) and the next tick refuses it permanently
 (`member_not_in_good_standing`, member emailed, slot released). To stop a held E-Blast sooner,
-cancel it (an `approved` row is cancellable).
+cancel it (an `approved` row is cancellable). On the import leg that holds once the first held
+tick has abandoned the pending import: until then `audience_import_id` is set, the row reads as
+handed over and cancel / re-time answer `sending_started` — wait one tick (5 min), or check
+`broadcasts.audience_import.hold_abandon_failed` if it persists.
 
 **Side effects of a hold, know them before triaging an alarm:**
 
 - `broadcasts_approved_overdue_count` counts a held row after an hour and its alarm (≥ 1 for 30
   min) stays on for the whole hold. `broadcasts_dispatch_standing_held_total` climbing for the
   same tenant means "waiting for payment", not "stuck".
-- **Import leg only** (`FEATURE_F7_IMPORT_AUDIENCE` on): a hold on tick 2 keeps the tick-1 Resend
-  audience (and its submitted import) until the row resumes or is refused — one of the Free plan's
-  three audiences. On resume the completion rule still applies: an audience that changed during
-  the hold is refused as `count_mismatch` (FR-044 a), not sent.
-- **Import leg only — false import-stuck alarm.** The hold returns before `confirmImport`, so a
-  row held on tick 2 or later keeps `audience_import_id` set and `audience_import_completed_at`
-  NULL while its status stays `approved`. `broadcasts.audience_import_stuck_count` matches exactly
-  that shape (`broadcasts-gauges`: `status = 'approved'`, import submitted more than 30 min ago), so
-  it counts the held row and its alarm stays on until the member pays (the next tick confirms the
-  import) or the cycle lapses (the refusal makes the row terminal). It reads as "Resend's import
-  pipeline has stopped answering" when it is really a wait for payment. The gauge cannot tell a
-  held row apart without reading member standing, so the code is unchanged; **resolve this before
-  `FEATURE_F7_IMPORT_AUDIENCE` is turned on** (dormant while it is off, as it is in prod). Until
-  then: a stuck count on one tenant with `broadcasts_dispatch_standing_held_total` climbing for the
-  same tenant is a hold.
+- **Import leg only** (`FEATURE_F7_IMPORT_AUDIENCE` on): a hold on tick 2 **abandons the pending
+  import**. It deletes the tick-1 Resend audience (a 404 / 410 counts as gone), then detaches
+  `resend_audience_id`, `audience_import_id` and the two import stamps in one compare-and-set
+  write. The row stays `approved` with no import, so it holds none of the Free plan's three
+  audiences while it waits, `broadcasts.audience_import_stuck_count` does not count it (no false
+  "import stuck" alarm), staff can cancel or re-time it, and when the member pays the next tick
+  runs a fresh tick 1 against the audience as it is then — never a stale import refused as
+  `count_mismatch` / `audience_membership_drift`. Signals: `broadcasts.audience_import.abandoned_on_hold`
+  (info) + `broadcasts_audience_import_abandoned_on_hold_total` (+1 once per hold). A row whose
+  send was already handed to Resend (`resend_broadcast_id` set) is never abandoned.
+- **Import leg only — abandon failed.** `broadcasts.audience_import.hold_abandon_failed` (warn,
+  `step` = `delete_audience` or `detach`, `err` = class only): the delete or the detach failed,
+  the columns were left as they were (a failed delete never detaches — the audience must not be
+  left where no row points at it) and the next held tick retries. A single one is a blip; one
+  on every tick for the same row means the delete keeps failing — check the Resend status and
+  the API key. `broadcasts.audience_import.hold_abandon_lost` (info): the detach found the row
+  already moved by another writer (a cancel, a transition); nothing to do.
 - **Both legs:** a hold does not spend the FR-021 retry budget. Since migration `0311` (F119
   PR-E) the hour counts from the FIRST retryable Resend failure of the dispatch attempt
   (`broadcasts.dispatch_first_failed_at`), not from `scheduled_for`, so a row resuming days late
   gets its full hour. The column is reset on every status change, on a re-time, on every held tick
-  (the one write a hold makes — no audit row, no email; a failed reset logs
+  (a hold's only other write is abandoning a pending import — no audit row, no email; a failed reset logs
   `broadcasts.{dispatch,audience_import}.retry_clock_clear_failed` and the tick is still held)
   and right after a successful `sendBroadcast`. So a failure → a two-day hold → payment → one blip
   is a fresh hour, not `retry_budget_exhausted`.

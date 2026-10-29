@@ -447,6 +447,28 @@ export interface BroadcastsRepo {
   ): Promise<void>;
 
   /**
+   * Import leg, a tick-2 HOLD (a suspended member) — abandon the pending
+   * import: NULL `resend_audience_id`, `audience_import_id`,
+   * `audience_import_submitted_at` and `audience_import_completed_at` together
+   * (0299's coherence CHECK pairs the id with its submit stamp), WITHOUT a
+   * status change. The caller has already deleted the Resend audience; the
+   * next tick after the hold then runs a fresh tick 1 against the current
+   * audience instead of polling a stale import.
+   *
+   * A compare-and-set on what the hold read: both ids still equal to
+   * `expected`, the row still `approved`, no `resend_broadcast_id` (nothing
+   * handed to Resend for sending) and no completion stamp. `false` = zero rows
+   * matched — another writer moved the row since the Step-1 read; NOT an error
+   * (the audience is already gone, so there is nothing to reclaim).
+   */
+  detachPendingAudienceImport(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    expected: { readonly importId: string; readonly resendAudienceId: string },
+  ): Promise<boolean>;
+
+  /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp
    * `dispatch_first_failed_at = COALESCE(dispatch_first_failed_at, at)` while
    * the row is still `approved`. Called by BOTH dispatch legs on a retryable

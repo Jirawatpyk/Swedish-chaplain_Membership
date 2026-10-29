@@ -273,6 +273,9 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
       async attachAudienceImport() {},
       async markAudienceImportCompleted() {},
       async markDispatchRetryStarted() { return null; },
+      async detachPendingAudienceImport() {
+        return false;
+      },
       async clearDispatchRetryClock() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };

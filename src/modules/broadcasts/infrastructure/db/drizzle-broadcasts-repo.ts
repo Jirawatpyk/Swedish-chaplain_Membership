@@ -1234,6 +1234,44 @@ export function makeDrizzleBroadcastsRepo(
         );
     },
 
+    /**
+     * See the port docblock. One statement, a CAS on everything the hold read.
+     * Legal under both guards on this table: 0299's coherence CHECK (the id and
+     * its submit stamp go NULL together) and the immutability trigger's normal
+     * arm (none of these columns is frozen after submit; no redaction GUC).
+     */
+    async detachPendingAudienceImport(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      expected: { readonly importId: string; readonly resendAudienceId: string },
+    ): Promise<boolean> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'detachPendingAudienceImport');
+      const updated = await tx
+        .update(broadcasts)
+        .set({
+          resendAudienceId: null,
+          audienceImportId: null,
+          audienceImportSubmittedAt: null,
+          audienceImportCompletedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(broadcasts.tenantId, tenantIdArg),
+            eq(broadcasts.broadcastId, broadcastId),
+            eq(broadcasts.status, 'approved'),
+            eq(broadcasts.audienceImportId, expected.importId),
+            eq(broadcasts.resendAudienceId, expected.resendAudienceId),
+            isNull(broadcasts.resendBroadcastId),
+            isNull(broadcasts.audienceImportCompletedAt),
+          ),
+        )
+        .returning({ broadcastId: broadcasts.broadcastId });
+      return updated.length === 1;
+    },
+
     async markAudienceImportCompleted(
       txUnknown,
       tenantIdArg: TenantSlug,

@@ -300,6 +300,9 @@ function makeRepo(opts: RepoOpts): {
         // The adapter's COALESCE, over the row this fixture serves.
         return opts.broadcast?.dispatchFirstFailedAt ?? at;
       },
+      async detachPendingAudienceImport() {
+        return false;
+      },
       async clearDispatchRetryClock() {
         clears.count += 1;
         if (opts.clearDispatchRetryClockThrows !== undefined) {

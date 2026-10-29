@@ -145,6 +145,9 @@ function makeRepo(opts: RepoOpts = {}): {
       async attachAudienceImport() {},
       async markAudienceImportCompleted() {},
       async markDispatchRetryStarted() { return null; },
+      async detachPendingAudienceImport() {
+        return false;
+      },
       async clearDispatchRetryClock() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
