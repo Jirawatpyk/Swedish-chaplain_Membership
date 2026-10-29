@@ -20,9 +20,8 @@ import { useId } from 'react';
 import { useTranslations } from 'next-intl';
 
 /**
- * The e-mail's own palette (`email-template.ts`), not app tokens. One
- * departure: the e-mail's footer grey (#888, 3.5:1 on white) is below the
- * 4.5:1 this page owes its own text, so the sample uses #6b6b6b (5.3:1).
+ * The e-mail's own palette (`email-template.ts`), not app tokens. The footer
+ * grey is #6b6b6b (5.3:1 on white), the e-mail's own since PR L.
  */
 const EMAIL = {
   surface: '#ffffff',
