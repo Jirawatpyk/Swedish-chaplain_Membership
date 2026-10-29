@@ -3489,3 +3489,75 @@ describe('buildAudienceTick — a refused /send is probed before it is believed'
     expect(rec.memberEmails).toEqual([]);
   });
 });
+
+/**
+ * Arms of the restart and the sender's fence that the RED commits did not
+ * reach — pinned after GREEN, against shipped code.
+ */
+describe('buildAudienceTick — the remaining restart / fence arms', () => {
+  const TICK2 = { ...POLLING, audienceImportSubmittedAt: NOW } as const;
+  const AUDIENCE_404 = { method: 'createBroadcast', kind: 'permanent', code: 'not_found' } as const;
+
+  it('a hold whose final release CAS is LOST → still held, logged, not counted', async () => {
+    const { logger } = await import('@/lib/logger');
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const abandonedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportAbandonedOnHold');
+    const { deps, rec } = makeDeps({ ...TICK2, standing: { access: 'suspended' }, releaseAudienceLoses: true });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport', 'releaseResendAudience']);
+    expect(abandonedSpy).not.toHaveBeenCalled();
+    const log = infoSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.hold_abandon_lost');
+    expect(log?.[0]).toMatchObject({ step: 'release_audience' });
+  });
+
+  it('the audience-missing self-heal LOSES its claim → a concurrent skip, nothing terminal', async () => {
+    const { deps, rec } = makeDeps({ ...TICK2, throwOn: AUDIENCE_404, releaseImportLoses: true });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+    expect(rec.transitions).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
+  });
+
+  it('the audience-missing self-heal whose claim THROWS → transient (audience_restart), nothing terminal', async () => {
+    const { deps, rec } = makeDeps({ ...TICK2, throwOn: AUDIENCE_404, releaseImportThrows: true });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: false, error: { kind: 'dispatch.server_error', message: 'audience_restart_failed', phase: 'audience_restart' } });
+    expect(rec.transitions).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
+  });
+
+  it('the send 404s and the re-read itself FAILS → the ordinary resource_missing arm', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      throwOn: { method: 'sendBroadcast', kind: 'resource_missing' },
+      readBackResendBroadcastId: 'throws',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? null : res.error.kind).toBe('broadcast_resend_resource_missing');
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+
+  it.each([
+    ['a DB fault', 'other', { kind: 'dispatch.server_error', message: 'attach_broadcast_id_failed', errClass: 'Error', phase: 'persist_broadcast_id' }],
+    ['the row gone', 'not_found', { kind: 'broadcast_not_found', broadcastId: BROADCAST_ID }],
+  ] as const)('the fenced re-assert of an INHERITED id meets %s → nothing sent, the inherited resource kept', async (_label, attachBroadcastIdThrows, error) => {
+    const { deps, rec } = makeDeps({ ...TICK2, resendBroadcastId: 'rb-0', attachBroadcastIdThrows });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: false, error });
+    expect(rec.gatewayCalls).not.toContain('sendBroadcast');
+    expect(rec.broadcastsDeleted).toEqual([]);
+    expect(rec.transitions).toEqual([]);
+  });
+});
