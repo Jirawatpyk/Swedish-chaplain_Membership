@@ -381,10 +381,20 @@ export interface BroadcastsGatewayPort {
    * every call site — a failed reclaim is logged at critical and the tick's
    * outcome is unchanged, because the outcome was decided before the reclaim.
    *
-   * **Never call this on an id read from the row** — with ONE exception. A
+   * **Never call this on an id read from the row** — with TWO exceptions. A
    * persisted id is the resource a send may already have gone out on, so on
    * any live path only an id this tick minted and failed to persist is safe to
-   * remove. The exception is the F7 retention sweep (`sweepExpiredBroadcasts`,
+   * remove. The first exception is the import leg's tick-2 HOLD
+   * (`buildAudienceTick`'s `abandonPendingImportOnHold`), and only after
+   * `retrieveBroadcast` answered `draft`, `cancelled` or `not_found` IN THE
+   * SAME TICK — a resource never handed to `/send`. The race it leaves needs
+   * two overlapping ticks AND the member's payment landing between them: a
+   * sibling that sends that id first should make this delete fail (Resend's
+   * documentation says a queued or sent broadcast cannot be deleted — NOT
+   * MEASURED), and the hold then keeps every column and retries next tick; a
+   * delete that lands first makes the sibling's send 404 into its
+   * `resource_missing` arm — terminal, no mail sent, never a double send. The
+   * second exception is the F7 retention sweep (`sweepExpiredBroadcasts`,
    * 0310): it calls this on the persisted `resend_broadcast_id` (and any
    * per-batch `provider_broadcast_id`) of an E-Blast that is terminal AND past
    * its `retention_years` — the send finished years ago, and removing the

@@ -387,10 +387,12 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
         // response or a 5xx after Resend already accepted the send no longer
         // re-fires the broadcast.
         //
-        // What it does NOT close (S8, a flag-flip blocker, see
-        // `build-audience-tick.ts`): `createBroadcast` carries no key at all, so
-        // a re-entered tick mints a NEW broadcast resource and sends to a
-        // different path, where no key can help.
+        // What it does NOT close: `createBroadcast` carries no key at all, so
+        // a re-entered tick that minted again would send a NEW resource, where
+        // no key can help. Neither leg relies on the key for that: both persist
+        // the minted id BEFORE this call (`attachBroadcastId`) and a re-entered
+        // tick probes it (`retrieveBroadcast`) and reuses it — S8, closed on
+        // the import leg in `build-audience-tick.ts`.
         const result = (await sdk.post(`/broadcasts/${broadcastId}/send`, {}, {
           idempotencyKey,
         })) as ResendSdkResponse<{ id: string }>;

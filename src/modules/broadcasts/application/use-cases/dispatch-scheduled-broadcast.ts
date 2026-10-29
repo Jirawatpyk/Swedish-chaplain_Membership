@@ -90,6 +90,7 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 // WE attempt and Resend rejects; a paused cron, a hold or the read-only freeze
 // never spends it, because nothing failed.
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
+import { reclaimMintedBroadcast } from './_reclaim-minted-broadcast';
 
 /**
  * The transport class a retryable gateway throw carried, or `unclassified`
@@ -1136,6 +1137,7 @@ export async function dispatchScheduledBroadcast(
           await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
             why: 'attach_lost',
             observedStatus: persistErr.observedStatus,
+            logPrefix: 'broadcasts.dispatch',
           });
           return err({
             kind: 'broadcast_invalid_state_transition',
@@ -1171,6 +1173,7 @@ export async function dispatchScheduledBroadcast(
           // same leak critical and warn respectively).
           await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
             why: 'row_vanished',
+            logPrefix: 'broadcasts.dispatch',
           });
           return err({
             kind: 'broadcast_not_found',
@@ -1252,6 +1255,7 @@ export async function dispatchScheduledBroadcast(
         if (idLanded === false) {
           await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
             why: 'persist_failed',
+            logPrefix: 'broadcasts.dispatch',
           });
         } else if (idLanded === true) {
           logger.warn(
@@ -2260,57 +2264,6 @@ async function verifyAudienceOnReplay(
         actualRecipientCount: actualCount,
       },
       'broadcasts.dispatch.idempotency_replay',
-    );
-  }
-}
-
-/**
- * 2026-09-10 follow-ups (2) + (6). Reclaim a broadcast resource THIS TICK minted
- * and cannot keep. Best-effort, and the grade is decided by whether the reclaim
- * worked — on every arm alike: reclaimed → info; reclaim failed → error at
- * critical, because that is the one an operator has to act on (the resource
- * exists at Resend, no row references it, and no cron will find it —
- * `cleanup-orphaned-audiences` deletes audiences, not broadcasts).
- *
- * The tick's outcome is decided BEFORE this runs; nothing here changes the
- * return. And per the port docblock: never on an id read from the row.
- */
-async function reclaimMintedBroadcast(
-  deps: DispatchScheduledBroadcastDeps,
-  input: DispatchScheduledBroadcastInput,
-  resendBroadcastId: string,
-  resendAudienceId: string,
-  ctx: {
-    readonly why: 'attach_lost' | 'row_vanished' | 'persist_failed';
-    readonly observedStatus?: string;
-  },
-): Promise<void> {
-  try {
-    await deps.broadcastsGateway.deleteBroadcast(resendBroadcastId);
-    logger.info(
-      {
-        tenantId: deps.tenant.slug,
-        broadcastId: input.broadcastId as string,
-        resendBroadcastId,
-        resendAudienceId,
-        why: ctx.why,
-        ...(ctx.observedStatus === undefined ? {} : { observedStatus: ctx.observedStatus }),
-      },
-      'broadcasts.dispatch.minted_broadcast_reclaimed',
-    );
-  } catch (reclaimErr) {
-    logger.error(
-      {
-        err: errKind(reclaimErr),
-        tenantId: deps.tenant.slug,
-        broadcastId: input.broadcastId as string,
-        leakedResendBroadcastId: resendBroadcastId,
-        resendAudienceId,
-        why: ctx.why,
-        ...(ctx.observedStatus === undefined ? {} : { observedStatus: ctx.observedStatus }),
-        severity: 'critical',
-      },
-      'broadcasts.dispatch.minted_broadcast_leaked',
     );
   }
 }

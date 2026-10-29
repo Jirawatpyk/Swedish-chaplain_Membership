@@ -736,14 +736,19 @@ export function makeFakeApprovalStore(
       if (row === undefined || row.status !== 'approved' || row.dispatchFirstFailedAt === null) return;
       state.broadcasts.set(key, { ...row, dispatchFirstFailedAt: null, updatedAt: store.now });
     }),
-    // A tick-2 HOLD abandons its pending import: the adapter's CAS on both ids,
-    // `approved`, no Resend broadcast, no completion stamp; `false` on a miss.
+    // A tick-2 HOLD abandons its pending import: the adapter's CAS on all three
+    // ids (the broadcast id NULL-safe), `approved`, no completion stamp; `false`
+    // on a miss.
     detachPendingAudienceImport: vi.fn(
       async (
         _tx: unknown,
         tenantId: TenantSlug,
         broadcastId: BroadcastId,
-        expected: { readonly importId: string; readonly resendAudienceId: string },
+        expected: {
+          readonly importId: string;
+          readonly resendAudienceId: string;
+          readonly resendBroadcastId: string | null;
+        },
       ): Promise<boolean> => {
         const key = keyOf(tenantId as string, broadcastId);
         const row = state.broadcasts.get(key);
@@ -752,7 +757,7 @@ export function makeFakeApprovalStore(
           row.status !== 'approved' ||
           row.audienceImportId !== expected.importId ||
           row.resendAudienceId !== expected.resendAudienceId ||
-          row.resendBroadcastId !== null ||
+          (row.resendBroadcastId ?? null) !== expected.resendBroadcastId ||
           row.audienceImportCompletedAt !== null
         ) {
           return false;
@@ -760,6 +765,7 @@ export function makeFakeApprovalStore(
         state.broadcasts.set(key, {
           ...row,
           resendAudienceId: null,
+          resendBroadcastId: null,
           audienceImportId: null,
           audienceImportSubmittedAt: null,
           audienceImportCompletedAt: null,

@@ -448,24 +448,31 @@ export interface BroadcastsRepo {
 
   /**
    * Import leg, a tick-2 HOLD (a suspended member) — abandon the pending
-   * import: NULL `resend_audience_id`, `audience_import_id`,
-   * `audience_import_submitted_at` and `audience_import_completed_at` together
-   * (0299's coherence CHECK pairs the id with its submit stamp), WITHOUT a
-   * status change. The caller has already deleted the Resend audience; the
-   * next tick after the hold then runs a fresh tick 1 against the current
-   * audience instead of polling a stale import.
+   * import: NULL `resend_audience_id`, `resend_broadcast_id`,
+   * `audience_import_id`, `audience_import_submitted_at` and
+   * `audience_import_completed_at` together (0299's coherence CHECK pairs the
+   * import id with its submit stamp), WITHOUT a status change. The caller has
+   * already deleted the Resend audience — and, when the row carried a pre-send
+   * `resend_broadcast_id` whose probe said it was never handed to `/send`, the
+   * Resend broadcast too; the next tick after the hold then runs a fresh tick 1
+   * against the current audience instead of polling a stale import.
    *
-   * A compare-and-set on what the hold read: both ids still equal to
-   * `expected`, the row still `approved`, no `resend_broadcast_id` (nothing
-   * handed to Resend for sending) and no completion stamp. `false` = zero rows
-   * matched — another writer moved the row since the Step-1 read; NOT an error
-   * (the audience is already gone, so there is nothing to reclaim).
+   * A compare-and-set on what the hold read: all three ids still equal to
+   * `expected` (`resendBroadcastId` NULL-safe — `IS NOT DISTINCT FROM`, so
+   * `null` matches a row with none), the row still `approved` and no
+   * completion stamp. `false` = zero rows matched — another writer moved the
+   * row since the Step-1 read; NOT an error (the Resend resources are already
+   * gone, so there is nothing to reclaim).
    */
   detachPendingAudienceImport(
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
-    expected: { readonly importId: string; readonly resendAudienceId: string },
+    expected: {
+      readonly importId: string;
+      readonly resendAudienceId: string;
+      readonly resendBroadcastId: string | null;
+    },
   ): Promise<boolean>;
 
   /**

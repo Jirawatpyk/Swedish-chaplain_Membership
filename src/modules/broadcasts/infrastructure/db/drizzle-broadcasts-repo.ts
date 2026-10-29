@@ -1239,12 +1239,20 @@ export function makeDrizzleBroadcastsRepo(
      * Legal under both guards on this table: 0299's coherence CHECK (the id and
      * its submit stamp go NULL together) and the immutability trigger's normal
      * arm (none of these columns is frozen after submit; no redaction GUC).
+     *
+     * The broadcast id is compared with `IS NOT DISTINCT FROM`, not `=`: the
+     * common hold has none (`expected.resendBroadcastId` is `null`), and
+     * `= NULL` matches nothing.
      */
     async detachPendingAudienceImport(
       txUnknown,
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
-      expected: { readonly importId: string; readonly resendAudienceId: string },
+      expected: {
+        readonly importId: string;
+        readonly resendAudienceId: string;
+        readonly resendBroadcastId: string | null;
+      },
     ): Promise<boolean> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'detachPendingAudienceImport');
@@ -1252,6 +1260,7 @@ export function makeDrizzleBroadcastsRepo(
         .update(broadcasts)
         .set({
           resendAudienceId: null,
+          resendBroadcastId: null,
           audienceImportId: null,
           audienceImportSubmittedAt: null,
           audienceImportCompletedAt: null,
@@ -1264,7 +1273,7 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.status, 'approved'),
             eq(broadcasts.audienceImportId, expected.importId),
             eq(broadcasts.resendAudienceId, expected.resendAudienceId),
-            isNull(broadcasts.resendBroadcastId),
+            sql`${broadcasts.resendBroadcastId} IS NOT DISTINCT FROM ${expected.resendBroadcastId}`,
             isNull(broadcasts.audienceImportCompletedAt),
           ),
         )

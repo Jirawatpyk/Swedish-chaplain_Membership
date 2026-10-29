@@ -270,7 +270,10 @@ function makeDeps(opts: {
   readonly completionStampThrows?: boolean;
   /** F119 PR-A — the member's standing at send time; default: in good standing. */
   readonly standing?: FakeSendStandingOpts;
-  /** F119 PR-A — an earlier tick's send was handed to Resend (the id is attached only after it). */
+  /**
+   * An id an earlier tick persisted BEFORE its send (S8). Whether that send was
+   * handed to Resend is what `probe` answers.
+   */
   readonly resendBroadcastId?: string | null;
   /**
    * F119 PR-E — when the current attempt first failed (the FR-021 anchor).

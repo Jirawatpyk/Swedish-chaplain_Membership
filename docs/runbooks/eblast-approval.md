@@ -237,22 +237,29 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
   min) stays on for the whole hold. `broadcasts_dispatch_standing_held_total` climbing for the
   same tenant means "waiting for payment", not "stuck".
 - **Import leg only** (`FEATURE_F7_IMPORT_AUDIENCE` on): a hold on tick 2 **abandons the pending
-  import**. It deletes the tick-1 Resend audience (a 404 / 410 counts as gone), then detaches
-  `resend_audience_id`, `audience_import_id` and the two import stamps in one compare-and-set
-  write. The row stays `approved` with no import, so it holds none of the Free plan's three
+  import**. When the row carries a pre-send `resend_broadcast_id` that the inherited-id probe found
+  never handed to `/send` (`draft` / `cancelled` / `not_found`), it first deletes that Resend
+  broadcast; then it deletes the tick-1 Resend audience (a 404 / 410 counts as gone for both),
+  then detaches `resend_audience_id`, `resend_broadcast_id`, `audience_import_id` and the two
+  import stamps in one compare-and-set write (the broadcast id compared NULL-safe). The row stays `approved` with no import, so it holds none of the Free plan's three
   audiences while it waits, `broadcasts.audience_import_stuck_count` does not count it (no false
   "import stuck" alarm), staff can cancel or re-time it, and when the member pays the next tick
   runs a fresh tick 1 against the audience as it is then — never a stale import refused as
   `count_mismatch` / `audience_membership_drift`. Signals: `broadcasts.audience_import.abandoned_on_hold`
   (info) + `broadcasts_audience_import_abandoned_on_hold_total` (+1 once per hold). A row whose
-  send was already handed to Resend (`resend_broadcast_id` set) is never abandoned.
+  send was already handed to Resend (the probe answers `queued` / `sending` / `sent`) is never
+  held at all: the tick catches it up to `sending` instead.
 - **Import leg only — abandon failed.** `broadcasts.audience_import.hold_abandon_failed` (warn,
-  `step` = `delete_audience` or `detach`, `err` = class only): the delete or the detach failed,
-  the columns were left as they were (a failed delete never detaches — the audience must not be
-  left where no row points at it) and the next held tick retries. A single one is a blip; one
-  on every tick for the same row means the delete keeps failing — check the Resend status and
-  the API key. `broadcasts.audience_import.hold_abandon_lost` (info): the detach found the row
-  already moved by another writer (a cancel, a transition); nothing to do.
+  `step` = `delete_broadcast`, `delete_audience` or `detach`, `err` = class only): a delete or
+  the detach failed. A failed delete leaves every column as it was (a failed delete never
+  detaches — neither the broadcast, which holds the body and the member's name, nor the audience
+  may be left where no row points at it) and the next held tick retries. A failed detach is
+  retried in the same tick, up to 3 attempts (`attempts: 3` on the line); after that the row
+  points at deleted resources until the next held tick repairs it — see
+  `broadcast-audience-build.md` § C.4, residual (a). A single one is a blip; one on every tick
+  for the same row means the delete keeps failing — check the Resend status and the API key.
+  `broadcasts.audience_import.hold_abandon_lost` (info): the detach found the row already moved
+  by another writer (a cancel, a transition); nothing to do.
 - **Both legs:** a hold does not spend the FR-021 retry budget. Since migration `0311` (F119
   PR-E) the hour counts from the FIRST retryable Resend failure of the dispatch attempt
   (`broadcasts.dispatch_first_failed_at`), not from `scheduled_for`, so a row resuming days late
@@ -275,12 +282,13 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
   `round_zero`) and a row a tick already handed to Resend (`resend_broadcast_id` or
   `audience_import_id` set → `sending_started`). A re-time clears the clock only on a round ≥ 1
   row with neither id (`cron-jobs.md` § Read-only mode).
-- **A retryable failure of the inherited-id probe is never budgeted** (legacy leg; review M1). The
-  probe runs only when an earlier tick minted the Resend broadcast, and an unanswered probe cannot
-  say whether that mail already went out — so it retries every tick
-  (`broadcasts.dispatch.inherited_probe_retryable`, warn) instead of going terminal and telling the
-  member a delivered E-Blast failed. The operator signal for a probe that never answers is
-  `broadcasts_approved_overdue_count`, as for the `inherited_status` refusal.
+- **A retryable failure of the inherited-id probe is never budgeted** (both legs; review M1 — the
+  import leg since S8). The probe runs only when an earlier tick minted the Resend broadcast, and
+  an unanswered probe cannot say whether that mail already went out — so it retries every tick
+  (`broadcasts.{dispatch,audience_import}.inherited_probe_retryable`, warn) instead of going
+  terminal and telling the member a delivered E-Blast failed. The operator signal for a probe that
+  never answers is `broadcasts_approved_overdue_count`, as for the `inherited_status` refusal (on
+  the import leg it also counts `broadcasts_dispatch_resolve_failed_total{phase="gateway"}`).
 - **Rolling PR-E back:** `vercel promote` leaves the `dispatch_first_failed_at` column in place and
   the old code never clears it, so a row stamped by the new code and then re-approved under the
   old code keeps a stale stamp after the redeploy — after such a rollback-and-redeploy, run
@@ -292,9 +300,10 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
 A refusal is **permanent by the maintainer's rule, halted members included**: there is no edge out
 of `failed_to_dispatch`, and clearing a halt does not revive the row. A halt is re-read UNCACHED
 before it refuses (the cron memoises the halt list per tick), so a halt cleared mid-tick is not made
-permanent by the memo. Mail a prior tick already handed to Resend is never refused (legacy leg: the
-inherited-id probe; import leg: a `resend_broadcast_id` this leg attached, i.e. on a row that also
-carries `audience_import_id` — a legacy-leg row carried across a flag flip IS gated).
+permanent by the memo. Mail a prior tick already handed to Resend is never refused: both legs
+persist the minted `resend_broadcast_id` BEFORE the send and probe it on re-entry (the import leg
+since S8, 2026-10-29), so an id the probe finds `queued` / `sending` / `sent` skips the gate. That
+includes a legacy-leg row carried across a flag flip — the import leg probes it like its own.
 
 **What staff do**
 
