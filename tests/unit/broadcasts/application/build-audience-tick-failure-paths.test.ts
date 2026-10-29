@@ -32,7 +32,7 @@ import { ok, err } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import type { BroadcastStatus } from '@/modules/broadcasts';
-import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
+import { buildAudienceTick, REPROBE_PAUSE_MS } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { broadcastsMetrics } from '@/lib/metrics';
 import { AuditPortInvariantError } from '@/modules/broadcasts/application/ports/audit-port';
@@ -3146,7 +3146,7 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     // Declared dead only after a pause and a SECOND not_found: a fresh mint
     // after a send that was in fact accepted would mail the audience twice.
     expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'retrieveBroadcast', 'getContactImport', 'createBroadcast', 'sendBroadcast']);
-    expect(rec.reprobePauses).toHaveLength(1);
+    expect(rec.reprobePauses).toEqual([REPROBE_PAUSE_MS]);
     expect(rec.broadcastIdAttaches).toEqual([
       {
         resendBroadcastId: 'rb-1',
@@ -3431,6 +3431,21 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
    * flight: a refused delete of it says nothing about a sibling. Stopping
    * there would restart-fail every tick for ever.
    */
+  it('tick 2 hold with an inherited NOT-FOUND id → no re-probe pause (only a mint decision pays it)', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'not_found' },
+      standing: { access: 'suspended' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.reprobePauses).toEqual([]);
+    expect(rec.gatewayCalls.filter((c) => c === 'retrieveBroadcast')).toHaveLength(1);
+  });
+
   it('tick 2 hold with an inherited CANCELLED id whose delete is REFUSED → the audience is still deleted and both columns released', async () => {
     const { deps, rec } = makeDeps({
       ...TICK2,
@@ -3525,27 +3540,80 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
    * that audience between this tick's `createContactImport` and its attach.
    */
   it('tick 1 attaches its import FENCED on the audience it imported into', async () => {
-    const { deps, rec } = makeDeps({ resendAudienceId: 'aud-1' });
+    const { deps, rec } = makeDeps({});
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res.ok ? res.value.kind : res.error).toBe('import_submitted');
-    expect(rec.importFences).toEqual([{ expectedResendAudienceId: 'aud-1' }]);
+    expect(rec.importFences).toEqual([{ expectedResendAudienceId: expect.stringMatching(/^aud-broadcast-/) }]);
   });
 
-  it('createContactImport answers 404 (segment not found) on tick 1 → the audience is released, nothing terminal, nobody told', async () => {
-    const { deps, rec } = makeDeps({ resendAudienceId: 'aud-1', throwOn: { method: 'createContactImport', kind: 'permanent', code: 'not_found' } });
+  /**
+   * A row with an audience but NO import is a tick 1 that died after
+   * `attachAudienceId`, or a teardown (a hold, a self-heal) that stopped
+   * part-way. Either way the audience may hold a stale set — contacts who
+   * unsubscribed or left since — so it is never reused: the teardown is
+   * finished (delete, release) and the next tick builds a fresh one.
+   */
+  it('tick 1 on a row that still carries an audience but no import → the teardown is FINISHED, nothing imported into it', async () => {
+    const { deps, rec } = makeDeps({ resendAudienceId: 'aud-1' });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'audience_restarted' } });
+    expect(rec.gatewayCalls).toEqual(['deleteAudience']);
+    expect(rec.audiencesDeleted).toEqual(['aud-1']);
+    expect(rec.releases).toEqual([
+      { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-1', resendBroadcastId: null }, afterGatewayCalls: 1 },
+    ]);
+    expect(rec.importsSubmitted).toEqual([]);
+    expect(rec.transitions).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
+  });
+
+  it('that teardown with a DEAD (cancelled) broadcast id whose delete is REFUSED → it carries on: the audience deleted, both released', async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: 'aud-1',
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'present', status: 'cancelled' },
+      throwOn: { method: 'deleteBroadcast', kind: 'permanent', code: 'validation_error' },
+    });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res).toEqual({ ok: true, value: { kind: 'audience_restarted' } });
     expect(rec.audiencesDeleted).toEqual(['aud-1']);
-    expect(rec.releases).toEqual([
-      { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-1', resendBroadcastId: null }, afterGatewayCalls: 2 },
-    ]);
+    expect(rec.releases.map((r) => r.method)).toEqual(['releaseResendAudience']);
+  });
+
+  it('that teardown with a DRAFT broadcast id whose delete is REFUSED → it stops: the id and the audience are kept', async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: 'aud-1',
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'present', status: 'draft' },
+      throwOn: { method: 'deleteBroadcast', kind: 'permanent', code: 'validation_error' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? res.value : res.error).not.toEqual({ kind: 'audience_restarted' });
+    expect(rec.audiencesDeleted).toEqual([]);
+    expect(rec.releases).toEqual([]);
     expect(rec.importsSubmitted).toEqual([]);
-    expect(rec.transitions).toEqual([]);
-    expect(rec.memberEmails).toEqual([]);
+  });
+
+  it('that teardown with a DEAD broadcast id whose delete fails RETRYABLY → it stops (a transient says nothing about the resource)', async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: 'aud-1',
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'present', status: 'cancelled' },
+      throwOn: { method: 'deleteBroadcast', kind: 'retryable', subKind: 'server_5xx' },
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.audiencesDeleted).toEqual([]);
+    expect(rec.releases).toEqual([]);
   });
 
   /**
