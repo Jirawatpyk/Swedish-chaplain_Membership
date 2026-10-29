@@ -162,7 +162,7 @@ describe('the phone bar', () => {
     renderForm();
     fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
     await openPreview();
-    expect(bar()).toHaveTextContent(c.submitBlocked.subjectRequired);
+    expect(bar()).toHaveTextContent(c.submitBlocked.subjectAddFirst);
     expect(bar()).not.toHaveTextContent('128 recipients');
   });
 
@@ -190,7 +190,7 @@ describe('the phone bar', () => {
     renderForm();
     fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
     expect(bar()).toHaveTextContent('128 recipients');
-    expect(bar()).not.toHaveTextContent(c.submitBlocked.subjectRequired);
+    expect(bar()).not.toHaveTextContent(c.submitBlocked.subjectAddFirst);
   });
 
   // The form's own reason comes first, in its reading order: fixing the
@@ -201,7 +201,7 @@ describe('the phone bar', () => {
     renderForm();
     fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
     await openPreview();
-    expect(bar()).toHaveTextContent(c.submitBlocked.subjectRequired);
+    expect(bar()).toHaveTextContent(c.submitBlocked.subjectAddFirst);
     expect(bar()).not.toHaveTextContent(c.views.blocked);
   });
 
@@ -213,6 +213,31 @@ describe('the phone bar', () => {
     expect(bar().closest('.chamber-compose-actionbar-tall')).toBeNull();
     await openPreview();
     expect(bar().closest('.chamber-compose-actionbar-tall')).not.toBeNull();
+  });
+
+  // Every reason is fixed on Write, so the reason in the bar takes the member
+  // there and puts focus on the field to fix (UX review, the maintainer's call).
+  it('tapping the subject reason opens Write and focuses the subject', async () => {
+    bp.current = 'base';
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
+    await openPreview();
+    await userEvent.setup().click(within(bar()).getByRole('button', { name: c.submitBlocked.subjectAddFirst }));
+    await waitFor(() => expect(screen.getByRole('tab', { name: c.views.write })).toHaveAttribute('aria-selected', 'true'));
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById('broadcast-subject')));
+  });
+
+  it('tapping the category reason opens Write and focuses the first category', async () => {
+    bp.current = 'base';
+    renderForm();
+    await userEvent.setup().click(screen.getByRole('radio', { name: c.segmentOption.tier }));
+    await openPreview();
+    await userEvent.setup().click(within(bar()).getByRole('button', { name: c.submitBlocked.tierChooseFirst }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('checkbox', { name: enMessages.portal.broadcasts.list.tierCode.corporate }),
+      ),
+    );
   });
 
   it('on Preview, shows the count once nothing blocks', async () => {

@@ -364,19 +364,19 @@ describe('recipientNoteKey', () => {
 // a broken one red), then the audience, then the over-size body.
 describe('submitBarReason', () => {
   const base = { view: 'preview', hintKey: null, countBlocked: false, bodyInvalid: false } as const;
-  const blocked = { key: 'views.blocked', tone: 'danger' } as const;
+  const blocked = { key: 'views.blocked', tone: 'danger', fixTarget: 'audience' } as const;
   it.each([
     ['on Write, nothing', { view: 'write', hintKey: 'submitBlocked.subjectRequired', bodyInvalid: true }, null],
     ['on Write, a refused audience', { view: 'write', countBlocked: true }, blocked],
     ['nothing blocks', {}, null],
-    ['a missing subject', { hintKey: 'submitBlocked.subjectRequired' }, { key: 'submitBlocked.subjectRequired', tone: 'muted' }],
-    ['a tier reason, short', { hintKey: 'submitBlocked.tierRequired' }, { key: 'submitBlocked.tierChooseFirst', tone: 'muted' }],
-    ['an empty custom list, muted', { hintKey: 'errors.broadcast_custom_recipient_empty' }, { key: 'errors.broadcast_custom_recipient_empty', tone: 'muted' }],
-    ['an over-long subject, red', { hintKey: 'errors.broadcast_subject_too_long' }, { key: 'errors.broadcast_subject_too_long', tone: 'danger' }],
-    ['a custom list over the cap, red', { hintKey: 'errors.broadcast_custom_recipient_too_many' }, { key: 'errors.broadcast_custom_recipient_too_many', tone: 'danger' }],
+    ['a missing subject, short', { hintKey: 'submitBlocked.subjectRequired' }, { key: 'submitBlocked.subjectAddFirst', tone: 'muted', fixTarget: 'subject' }],
+    ['a tier reason, short', { hintKey: 'submitBlocked.tierRequired' }, { key: 'submitBlocked.tierChooseFirst', tone: 'muted', fixTarget: 'categories' }],
+    ['an empty custom list, muted', { hintKey: 'errors.broadcast_custom_recipient_empty' }, { key: 'errors.broadcast_custom_recipient_empty', tone: 'muted', fixTarget: 'customList' }],
+    ['an over-long subject, red', { hintKey: 'errors.broadcast_subject_too_long' }, { key: 'errors.broadcast_subject_too_long', tone: 'danger', fixTarget: 'subject' }],
+    ['a custom list over the cap, red', { hintKey: 'errors.broadcast_custom_recipient_too_many' }, { key: 'errors.broadcast_custom_recipient_too_many', tone: 'danger', fixTarget: 'customList' }],
     ['a refused audience', { countBlocked: true }, blocked],
-    ['an over-size body, red', { bodyInvalid: true }, { key: 'errors.broadcast_body_too_large', tone: 'danger' }],
-    ['the form before the audience', { hintKey: 'submitBlocked.subjectRequired', countBlocked: true }, { key: 'submitBlocked.subjectRequired', tone: 'muted' }],
+    ['an over-size body, red', { bodyInvalid: true }, { key: 'errors.broadcast_body_too_large', tone: 'danger', fixTarget: 'body' }],
+    ['the form before the audience', { hintKey: 'submitBlocked.subjectRequired', countBlocked: true }, { key: 'submitBlocked.subjectAddFirst', tone: 'muted', fixTarget: 'subject' }],
     ['the audience before the body', { countBlocked: true, bodyInvalid: true }, blocked],
   ] as const)('%s', (_label, overrides, expected) => {
     expect(submitBarReason({ ...base, ...overrides })).toEqual(expected);
