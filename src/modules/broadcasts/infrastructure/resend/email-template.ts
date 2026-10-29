@@ -157,6 +157,18 @@ function renderPostalLine(physicalLine: string, postalAddress: string | null): s
   return escapeHtml(postalAddress).replace(/\n/g, '<br>');
 }
 
+/**
+ * PR L (29 Oct 2026) — the email fits a phone. The card is fluid up to 600px
+ * (Outlook desktop, which ignores `max-width`, keeps 600px through the MSO
+ * ghost table around it). Rows after the header never let an image outgrow
+ * the card (the sanitiser keeps `img[src,alt]` with no style; the logo keeps
+ * its own 240px cap), and phones get 16px side padding instead of 32px. A
+ * client that drops `<style>` still gets the fluid card and the 32px.
+ */
+const PHONE_STYLE =
+  '.eb-card tr+tr img{max-width:100%!important;height:auto!important}' +
+  '@media (max-width:480px){.eb-card td{padding-left:16px!important;padding-right:16px!important}}';
+
 export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
   // Defensive lookup: TS already pins `input.locale` to BroadcastLocale,
   // but `noUncheckedIndexedAccess: true` requires a runtime fallback so a
@@ -205,12 +217,15 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
     `<html lang="${input.locale}">`,
     '<head>',
     '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${safeSubject}</title>`,
+    `<style>${PHONE_STYLE}</style>`,
     '</head>',
     '<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;background:#f6f6f6">',
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f6">',
     '<tr><td align="center" style="padding:24px 12px">',
-    '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden">',
+    '<!--[if mso]><table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0"><tr><td><![endif]-->',
+    '<table role="presentation" class="eb-card" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden">',
     `<tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #eee">${renderHeaderCell(safeTenantName, brand?.logoUrl ?? null)}</td></tr>`,
     `<tr><td style="padding:24px 32px;font-size:15px;line-height:1.6;color:#1a1a1a">${bodyHtml}</td></tr>`,
     '<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;font-size:11px;line-height:1.5;color:#888">',
@@ -220,6 +235,7 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
     `<p style="margin:0">${renderPostalLine(physicalLine, brand?.postalAddress ?? null)}</p>`,
     '</td></tr>',
     '</table>',
+    '<!--[if mso]></td></tr></table><![endif]-->',
     '</td></tr>',
     '</table>',
     '</body>',

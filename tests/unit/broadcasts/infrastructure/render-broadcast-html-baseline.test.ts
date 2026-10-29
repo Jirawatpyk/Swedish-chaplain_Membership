@@ -20,6 +20,13 @@
  * inbox. The diff was checked to be exactly those two footer paragraphs;
  * header, body cell and every other byte are unchanged.
  *
+ * Deliberate rewrite, 2026-10-29 (PR L, the email fits a phone): a viewport
+ * meta and a `<style>` in `<head>` (body images capped at the card, 16px
+ * phone side padding), and the card table goes from `width="600"` to
+ * `class="eb-card" width="100%"` inside an MSO ghost table that keeps
+ * Outlook desktop at 600px. The diff was checked to be exactly those four
+ * insertions and the one width; every cell's bytes are unchanged.
+ *
  * The positive control proves the comparison bites: a one-character change
  * to the rendered output must fail the byte comparison.
  */

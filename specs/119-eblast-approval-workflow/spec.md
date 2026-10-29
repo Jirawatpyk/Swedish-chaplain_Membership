@@ -696,6 +696,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   *(checklist default)*.
 - **FR-041a**: Every E-Blast's email header MUST show the chamber's logo when one is on file and
   the chamber's name otherwise, automatically — it is not something a user adds or removes.
+  *Amended 29 Oct 2026 (PR L):* the email's card is fluid up to 600 px (Outlook desktop keeps
+  600 px), so on a phone it reads at full size with no sideways scroll, and body images never
+  outgrow it.
 - **FR-041b**: The chamber's brand settings MUST be a single per-tenant settings page showing the
   logo, exactly one primary colour, and the chamber's postal address. The logo is the one already
   held for invoices and MUST be READ through a module interface — set once on its existing page,
