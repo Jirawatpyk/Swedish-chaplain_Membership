@@ -101,9 +101,9 @@ n/a. No migration.
 
 | # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
-| 1 | A hold abandons the pending import | 1, 2, 9 | reliability-guardian, pdpa-gdpr-compliance-officer | `138-f7-import-hold-abandon` | — · built (c5bc2f9c6; reworked in slice 3) |
-| 2 | Pre-send persist + inherited-id probe | 5, 7, 12 | reliability-guardian | `138-f7-import-hold-abandon` | — · built (37f7067e1, dbc8bc0a9) |
-| 3 | Fenced abandon, dead-audience self-heal, shared legacy helpers, fail-closed probe | 3, 4, 6, 8, 10, 11, 13 | reliability-guardian, pdpa-gdpr-compliance-officer, security-engineer, senior-tester | `138-f7-import-hold-abandon` | — · built (0a93148ff … b5afd499d) |
+| 1 | A hold abandons the pending import | 1, 2, 9 | reliability-guardian, pdpa-gdpr-compliance-officer | `138-f7-import-hold-abandon` | #695 · done (c5bc2f9c6; reworked in slice 3) |
+| 2 | Pre-send persist + inherited-id probe | 5, 7, 12 | reliability-guardian | `138-f7-import-hold-abandon` | #695 · done (37f7067e1, dbc8bc0a9) |
+| 3 | Fenced abandon, dead-audience self-heal, shared legacy helpers, fail-closed probe | 3, 4, 6, 8, 10, 11, 13 | reliability-guardian, pdpa-gdpr-compliance-officer, security-engineer, senior-tester | `138-f7-import-hold-abandon` | #695 · done (0a93148ff … 8f07e2a41) |
 
 ## Test plan
 
