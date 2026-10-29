@@ -205,6 +205,16 @@ describe('the phone bar', () => {
     expect(bar()).not.toHaveTextContent(c.views.blocked);
   });
 
+  // Only the Preview bar can give a two-line reason, so only it asks the page
+  // for the taller bottom scroll allowance (globals.css).
+  it('marks the bar as tall on Preview only', async () => {
+    bp.current = 'base';
+    renderForm();
+    expect(bar().closest('.chamber-compose-actionbar-tall')).toBeNull();
+    await openPreview();
+    expect(bar().closest('.chamber-compose-actionbar-tall')).not.toBeNull();
+  });
+
   it('on Preview, shows the count once nothing blocks', async () => {
     bp.current = 'base';
     renderForm();

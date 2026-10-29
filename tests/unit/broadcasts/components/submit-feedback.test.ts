@@ -358,20 +358,26 @@ describe('recipientNoteKey', () => {
   });
 });
 
-// The phone bar beside Submit, on the Preview tab only (the maintainer, 29
-// Oct): the form's own reason in the hint's tone (muted: a needed input), the
-// tier in its short form, and the over-size body as the error it is (red).
+// The phone bar beside Submit. On Write it keeps the count unless the audience
+// is refused. On Preview (the maintainer, 29 Oct) it names the first thing to
+// fix in the form's reading order: the form's reason (a missing input muted,
+// a broken one red), then the audience, then the over-size body.
 describe('submitBarReason', () => {
-  const base = { view: 'preview', hintKey: null, bodyInvalid: false } as const;
+  const base = { view: 'preview', hintKey: null, countBlocked: false, bodyInvalid: false } as const;
+  const blocked = { key: 'views.blocked', tone: 'danger' } as const;
   it.each([
-    ['on Write, nothing', { view: 'write', hintKey: 'submitBlocked.subjectRequired' }, null],
+    ['on Write, nothing', { view: 'write', hintKey: 'submitBlocked.subjectRequired', bodyInvalid: true }, null],
+    ['on Write, a refused audience', { view: 'write', countBlocked: true }, blocked],
     ['nothing blocks', {}, null],
     ['a missing subject', { hintKey: 'submitBlocked.subjectRequired' }, { key: 'submitBlocked.subjectRequired', tone: 'muted' }],
     ['a tier reason, short', { hintKey: 'submitBlocked.tierRequired' }, { key: 'submitBlocked.tierChooseFirst', tone: 'muted' }],
-    ['an empty custom list, muted like the hint', { hintKey: 'errors.broadcast_custom_recipient_empty' }, { key: 'errors.broadcast_custom_recipient_empty', tone: 'muted' }],
-    ['an over-long subject, muted like the hint', { hintKey: 'errors.broadcast_subject_too_long' }, { key: 'errors.broadcast_subject_too_long', tone: 'muted' }],
+    ['an empty custom list, muted', { hintKey: 'errors.broadcast_custom_recipient_empty' }, { key: 'errors.broadcast_custom_recipient_empty', tone: 'muted' }],
+    ['an over-long subject, red', { hintKey: 'errors.broadcast_subject_too_long' }, { key: 'errors.broadcast_subject_too_long', tone: 'danger' }],
+    ['a custom list over the cap, red', { hintKey: 'errors.broadcast_custom_recipient_too_many' }, { key: 'errors.broadcast_custom_recipient_too_many', tone: 'danger' }],
+    ['a refused audience', { countBlocked: true }, blocked],
     ['an over-size body, red', { bodyInvalid: true }, { key: 'errors.broadcast_body_too_large', tone: 'danger' }],
-    ['the hint before the body', { hintKey: 'submitBlocked.subjectRequired', bodyInvalid: true }, { key: 'submitBlocked.subjectRequired', tone: 'muted' }],
+    ['the form before the audience', { hintKey: 'submitBlocked.subjectRequired', countBlocked: true }, { key: 'submitBlocked.subjectRequired', tone: 'muted' }],
+    ['the audience before the body', { countBlocked: true, bodyInvalid: true }, blocked],
   ] as const)('%s', (_label, overrides, expected) => {
     expect(submitBarReason({ ...base, ...overrides })).toEqual(expected);
   });
