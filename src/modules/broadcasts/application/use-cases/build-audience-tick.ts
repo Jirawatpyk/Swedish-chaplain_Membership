@@ -464,13 +464,14 @@ export async function buildAudienceTick(
       resendBroadcastId: inheritedBroadcastId,
       // `null`, never `''`, when the row carries none: the post-send write
       // must not put an empty string into `resend_audience_id`.
-      audienceId: broadcast.resendAudienceId ?? null,
+      audienceId: broadcast.resendAudienceId || null,
       importId: broadcast.audienceImportId,
       recipientCount: broadcast.estimatedRecipientCount,
       orphanCount: null,
       droppedByPreference: null,
       handedOnPriorTick: { status: probe.status, sentAt: probe.sentAt },
       notHandedStatus: null,
+      acceptedOnRefusedSend: null,
     });
   }
 
@@ -525,11 +526,13 @@ type InheritedProbe =
  *   out), the hold's abandon, and the whole import poll / count / drift check
  *   (a `count_mismatch` now would be the same false failure) — and catches the
  *   row up with the post-send writes (`advanceToSending`).
- * - draft / cancelled → never handed: proceed as normal; `confirmImport` reuses
- *   the id (no second `createBroadcast`) and sends it with the same idempotency
- *   key. Logged, because the fall-through is a decision.
- * - not_found → proceed; the id is DEAD, so `confirmImport` mints a fresh
- *   resource and replaces it by fenced CAS — a dead id is never sent to.
+ * - draft → never handed: proceed as normal; `confirmImport` reuses the id (no
+ *   second `createBroadcast`) and sends it with the same idempotency key.
+ *   Logged, because the fall-through is a decision.
+ * - cancelled / not_found → never handed, and the id is DEAD: only a draft can
+ *   be sent (a non-draft `/send` answers 422, MEASURED 2026-10-29), so
+ *   `confirmImport` mints a fresh resource and replaces the dead id by fenced
+ *   CAS — a dead id is never sent to.
  * - unknown (and any status a later adapter adds without this function
  *   learning it) → REFUSE, fail closed: the row stays `approved`, phase
  *   `inherited_status`, no FR-021 clock (a clock would turn "unknown whether
@@ -585,7 +588,7 @@ async function probeInheritedBroadcast(
         { ...ids, subKind: retryableSubKind(shape.subKind) },
         'broadcasts.audience_import.inherited_probe_retryable',
       );
-      return { stop: err({ kind: 'dispatch.server_error', message: shape.reason ?? shape.kind, phase: 'gateway' }) };
+      return { stop: err({ kind: 'dispatch.server_error', message: shape.kind, phase: 'gateway' }) };
     }
     // FAIL CLOSED — see the docblock. `errorKind` is the classifier's kind (a
     // closed set), never the provider's free text.
@@ -751,8 +754,10 @@ function rowIds(broadcast: Broadcast): RowIds {
  *      `queued`, measured 2026-10-29) means a sibling sent it after all; the
  *      next tick's probe finds it handed and catches the row up — had the id
  *      been NULLed, that tick would mint and send again.
- *   3. `'hold'` only: delete the audience (404 = gone, fine). FAILS → stop; the
- *      column still points at it, so erasure and `cleanup-audiences` see it.
+ *   3. Delete the audience (404 = gone, fine) — on the audience-missing path
+ *      too: a 404 that did not mean "gone" must not leave member emails in an
+ *      audience no row points at. FAILS → stop; the column still points at it,
+ *      so erasure and `cleanup-audiences` see it.
  *   4. RELEASE (`releaseResendAudience`, own tx) — NULL the audience and the
  *      broadcast id together, a CAS on both and on "no import".
  *
@@ -786,6 +791,7 @@ async function restartAudienceBuild(
     resendBroadcastId,
   };
   const failed = (step: string, e: unknown): 'failed' => {
+    broadcastsMetrics.audienceImportRestartFailed(deps.tenant.slug, why, step);
     logger.warn(
       { err: errKind(e), errorKind: classifyThrown(e).kind, ...ids, step },
       `broadcasts.audience_import.${names.failed}`,
@@ -821,13 +827,11 @@ async function restartAudienceBuild(
       return failed('delete_broadcast', e);
     }
   }
-  // 3. The audience, 'hold' only.
-  if (why === 'hold') {
-    try {
-      await deps.broadcastsGateway.deleteAudience(audienceId);
-    } catch (e) {
-      return failed('delete_audience', e);
-    }
+  // 3. The audience.
+  try {
+    await deps.broadcastsGateway.deleteAudience(audienceId);
+  } catch (e) {
+    return failed('delete_audience', e);
   }
   // 4. RELEASE.
   let released: boolean;
@@ -951,15 +955,9 @@ async function viaGateway<T>(fn: () => Promise<T>): Promise<Result<T, GatewayFai
     const shape = classifyThrown(e);
     const message = shape.reason ?? shape.kind;
     if (isRetryableThrow(shape.kind)) {
-      const sub = shape.subKind;
-      return err({
-        retryable: true,
-        message,
-        subKind:
-          sub === 'network' || sub === 'timeout' || sub === 'server_5xx' || sub === 'api'
-            ? sub
-            : undefined,
-      });
+      // The shared narrowing; this union spells "no transport class" `undefined`.
+      const sub = retryableSubKind(shape.subKind);
+      return err({ retryable: true, message, subKind: sub === 'unclassified' ? undefined : sub });
     }
     return err({
       retryable: false,
@@ -1330,7 +1328,11 @@ async function submitImport(
     // `404 "Segment not found"` — the audience is gone (a hold on an
     // overlapping tick deleted it, or someone did by hand): forget it and
     // build afresh next tick rather than kill the broadcast.
-    if (isAudienceMissing(submitted.error)) {
+    // Only for an audience an EARLIER tick created: one THIS tick made and
+    // Resend cannot find is not "deleted since", and restarting would mint
+    // another every tick until the Free plan's three segments ran out.
+    const inheritedAudience = (broadcast.resendAudienceId ?? '') !== '';
+    if (inheritedAudience && isAudienceMissing(submitted.error)) {
       return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId });
     }
     return onGatewayFailure(deps, input, broadcast, submitted.error, null);
@@ -1655,11 +1657,13 @@ async function confirmImport(
   // and `/send`: on a fresh mint the persist IS the fence; an inherited id is
   // re-asserted through it.
   //
-  // A DEAD inherited id (the probe answered `not_found`) is never sent to — it
-  // could only 404. A fresh one is minted and replaces exactly that dead id
+  // A DEAD inherited id is never sent to: `not_found` could only 404, and
+  // `cancelled` only 422 (only a draft can be sent, MEASURED 2026-10-29). A
+  // fresh one is minted and replaces exactly that dead id
   // (`replacesResendBroadcastId`), still fenced.
   const inheritedId = inherited.resendBroadcastId;
-  const inheritedDead = inheritedId !== '' && inherited.observedResendStatus === null;
+  const inheritedDead =
+    inheritedId !== '' && (inherited.observedResendStatus === null || inherited.observedResendStatus === 'cancelled');
   const minted = inheritedId === '' || inheritedDead;
   let mintedId: string | null = null;
   if (minted) {
@@ -1692,8 +1696,8 @@ async function confirmImport(
     mintedId = createdRb.value.broadcastId;
   }
   const resendBroadcastId = mintedId ?? inheritedId;
-  // A minted id is reclaimed on a refusal; an inherited `draft` / `cancelled`
-  // one never is (the hold that won owns its removal).
+  // A minted id is reclaimed on a refusal; an inherited `draft` never is (the
+  // hold that won owns its removal).
   const persistRefused = await persistBroadcastIdBeforeSend(deps, input, {
     resendBroadcastId,
     resendAudienceId: audienceId,
@@ -1731,6 +1735,7 @@ async function confirmImport(
   // leaves nothing to advance to, which is exactly the distinction
   // `idempotency_conflict_pre_send` draws on the legacy leg.
   const replayed = !sent.ok && !sent.error.retryable && sent.error.kind === 'idempotency_conflict';
+  let acceptedOnRefusedSend: 'queued' | 'sending' | 'sent' | null = null;
   if (!sent.ok && !replayed) {
     const failure = sent.error as GatewayFailure;
     if (!failure.retryable && failure.kind === 'resource_missing') {
@@ -1749,6 +1754,7 @@ async function confirmImport(
       }
       if (verdict.kind === 'refused') return onGatewayFailure(deps, input, broadcast, failure, importId);
       // `accepted` — the mail is out: the replay arm's path below.
+      acceptedOnRefusedSend = verdict.status;
     } else {
       return onGatewayFailure(deps, input, broadcast, failure, importId);
     }
@@ -1774,6 +1780,7 @@ async function confirmImport(
     droppedByPreference: resolved.value.droppedByPreference,
     handedOnPriorTick: null,
     notHandedStatus: inherited.observedResendStatus,
+    acceptedOnRefusedSend,
   });
 }
 
@@ -1832,6 +1839,8 @@ interface SendHandOff {
    * `not_found`). A handed row's status is `handedOnPriorTick.status`.
    */
   readonly notHandedStatus: 'draft' | 'cancelled' | null;
+  /** What the probe of THIS tick's refused `/send` saw (`_probe-refused-send.ts`). */
+  readonly acceptedOnRefusedSend: 'queued' | 'sending' | 'sent' | null;
 }
 
 /**
@@ -1928,6 +1937,18 @@ async function advanceToSending(
     }),
   );
   if (!transitioned.ok) {
+    // A sibling tick that sent the SAME resource and flipped the row first (two
+    // senders on one inherited draft; the loser's 422 probes as accepted) is no
+    // incident: the mail went out once and the row says so. Only a row that
+    // ended anywhere else needs a human.
+    const now_ = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId).catch(() => null);
+    if (now_ !== null && now_.status === 'sending' && now_.resendBroadcastId === resendBroadcastId) {
+      logger.info(
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId, importId },
+        'broadcasts.audience_import.transition_already_sending',
+      );
+      return err(transitioned.error);
+    }
     // A cancel (or another worker) won the race while the send was in flight.
     // The mail IS out and the ids ARE persisted, so webhooks still resolve and
     // bounces still reach the suppression list. Critical-severity log because a
@@ -2017,7 +2038,7 @@ async function advanceToSending(
           // S8 — the legacy payload's two replay fields: the row says for
           // itself whether THIS tick sent, and what Resend answered.
           handedToSendOnPriorTick: handedEarlier,
-          observedResendStatus: sent.handedOnPriorTick?.status ?? sent.notHandedStatus,
+          observedResendStatus: sent.handedOnPriorTick?.status ?? sent.acceptedOnRefusedSend ?? sent.notHandedStatus,
           // Round 3, below-cap sweep — AS1's spec-required fields, as on the
           // legacy payload (its E1 closure). `actualSendAt` is AS1's second
           // name for the send moment (`null` when an earlier tick sent and

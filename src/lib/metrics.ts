@@ -2992,6 +2992,15 @@ export const broadcastsMetrics = {
    * overlapping tick or a manual delete; a steady rate means something else is
    * deleting audiences (observability.md § 29.8).
    */
+  audienceImportRestartFailed(tenantId: string, why: 'hold' | 'audience_missing', step: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_import_restart_failed_total',
+        'Import-leg audience restarts (hold abandon or missing-audience self-heal) that stopped at a step; the next tick redoes it',
+      ).add(1, { tenant: tenantId, why, step });
+    });
+  },
+
   audienceImportRestartedOnMissingAudience(tenantId: string): void {
     safeMetric(() => {
       counter(

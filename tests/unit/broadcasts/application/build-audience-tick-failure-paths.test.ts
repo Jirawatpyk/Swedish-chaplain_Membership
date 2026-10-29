@@ -327,6 +327,8 @@ function makeDeps(opts: {
   readonly readBackResendBroadcastId?: string | null | 'throws';
   /** What a `findById` read-back finds for the import id; default: the row's. */
   readonly readBackImportId?: string | null;
+  /** What a `findById` read-back finds for the status; default: the row's. */
+  readonly readBackStatus?: Broadcast['status'];
 }): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder } {
   let txSeq = 0;
   const rec: Recorder = {
@@ -613,6 +615,7 @@ function makeDeps(opts: {
             resendBroadcastId:
               opts.readBackResendBroadcastId === undefined ? rowResendBroadcastId : opts.readBackResendBroadcastId,
             audienceImportId: opts.readBackImportId === undefined ? broadcast.audienceImportId : opts.readBackImportId,
+            ...(opts.readBackStatus !== undefined ? { status: opts.readBackStatus } : {}),
           };
         },
         async attachResendIds(tx: unknown, _t: unknown, _b: unknown, audId: string | null, rbId: string) {
@@ -3237,7 +3240,8 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res).toEqual({ ok: false, error: { kind: 'dispatch.server_error', message: 'boom', phase: 'gateway' } });
+    // The classifier's kind, never the provider's free text (pdpa L-1).
+    expect(res).toEqual({ ok: false, error: { kind: 'dispatch.server_error', message: 'retryable', phase: 'gateway' } });
     expect(rec.gatewayCalls).toEqual(['retrieveBroadcast']);
     expect(rec.retryStamps).toEqual([]);
     expect(rec.transitions).toEqual([]);
@@ -3527,6 +3531,7 @@ describe('buildAudienceTick — a refused /send is probed before it is believed'
   });
 
   it('422 + the probe answers queued → the send_started audit records the status Resend reported, not the pre-send one', async () => {
+    const sendStarted = (r: Recorder) => r.audits.find((a) => a.eventType === 'broadcast_send_started');
     const { deps, rec } = makeDeps({ ...TICK2, throwOn: REFUSED, probe: { kind: 'present', status: 'queued' } });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
@@ -3544,7 +3549,16 @@ describe('buildAudienceTick — a refused /send is probed before it is believed'
   it('422 + accepted, then the sending transition LOSES (the sibling flipped it) → no critical sent_but_transition_lost', async () => {
     const { logger } = await import('@/lib/logger');
     const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-    const { deps, rec } = makeDeps({ ...TICK2, throwOn: REFUSED, probe: { kind: 'present', status: 'sent' }, transitionThrowsOn: 'sending' });
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      throwOn: REFUSED,
+      probe: { kind: 'present', status: 'sent' },
+      transitionThrowsOn: 'sending',
+      transitionThrowKind: 'concurrent',
+      // The sibling's flip, as the re-read finds it.
+      readBackStatus: 'sending',
+      readBackResendBroadcastId: 'rb-1',
+    });
 
     await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
