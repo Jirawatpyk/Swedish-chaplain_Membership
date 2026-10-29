@@ -18,11 +18,11 @@ All changes are in the import leg (`build-audience-tick.ts`). It follows the leg
 2. **Inherited-id probe.** A row carrying `resend_broadcast_id` is probed with `retrieveBroadcast` before the standing gate. The answer can be:
    - handed (`queued` / `sending` / `sent`): catch up with the post-send writes;
    - reusable (`draft`);
-   - dead (`cancelled` / `not_found`): re-minted (only a draft can be sent — 422 otherwise, measured); `failed` / `scheduled` read as `unknown` and are refused;
+   - dead (`cancelled` / `not_found`): re-minted (only a draft can be sent — 422 otherwise, measured); a `not_found` is re-probed once after 3 s first (round 3, the maintainer chose this over legacy parity); `failed` / `scheduled` read as `unknown` and are refused;
    - unknown, or the probe threw: refuse fail-closed.
 3. **Fenced hold abandon.**
    - claim CAS: clear only the import columns, and keep the bid and the audience (architect B1, 29 Oct);
-   - reclaim the draft broadcast (404 ok; 403 stops and leaves the bid for the next probe);
+   - reclaim the draft broadcast (404 ok; a refusal of a DRAFT id stops and leaves the bid for the next probe; a refusal of a DEAD id continues, since it cannot be in flight);
    - `deleteAudience`;
    - narrow CAS: clear the bid and the audience together, with predicate `audience_import_id IS NULL`.
 
@@ -67,7 +67,7 @@ All changes are in the import leg (`build-audience-tick.ts`). It follows the leg
   - `docs/runbooks/{eblast-approval,broadcast-audience-build,cron-jobs}.md`;
   - `docs/observability.md`;
   - `docs/go-live-readiness.md` § 6.10 and `docs/operational-state.md` (the spec-139 flip gate);
-  - `docs/compliance/processing-records.md` (residual 8b, the measured DELETE facts, the hold's audience delete) and `docs/runbooks/member-erasure.md` step 2b (interim, until 139);
+  - `docs/compliance/processing-records.md` (residual 8b, the measured DELETE facts, the hold's audience delete) and `docs/runbooks/member-erasure.md` step 3b (legacy leg only) (interim, until 139);
   - `docs/changelog.md`, `docs/decisions.md`, `docs/retro.md`;
   - `.claude/rules/modules/broadcasts.md`;
   - `.claude/skills/review-and-ship/SKILL.md` § 2;
@@ -192,7 +192,7 @@ Filled in at Verify, one line per Done-when line.
 - **Speed:** `check:red-first` dropped from 6.6–7.0 s to 1.9–2.3 s.
 - **Legacy-leg diff:** 422 lines down to 386.
 
-**Verify, 29 Oct 2026 (step 6). Driven live: Done-when 1 (abandon + gauge + audience gone) and 5 (fresh tick 1 after a resume, one send, no second send). Done-when 2 / 3 / 4 / 6 / 9 / 11 / 12 rest on the tests named in § Test plan — the live run cannot stage their races or provider faults:**
+**Verify, 29 Oct 2026 (step 6). Driven live: Done-when 1 (abandon + gauge + audience gone) and 5 (fresh tick 1 after a resume, one send, no second send). Done-when 2 / 3 / 4 / 6 / 7 / 8 / 9 / 11 / 12 rest on the tests named in § Test plan and the suites in § Check — the live run cannot stage their races or provider faults. Done-when 10 and 13 are checked by `spec-compliance-auditor` against the docs; 13's `sent` answer was measured live (below):**
 - **Setup:**
   - The branch ran on **:3401** from a detached worktree with `FEATURE_F7_IMPORT_AUDIENCE=true` set only there. :3400 was taken by another session's worktree (`Temp/f49`), which was left alone.
   - Database: the dev Neon branch (`ep-gentle-king`).
@@ -235,7 +235,7 @@ Filled in at Verify, one line per Done-when line.
 - **Docs:**
   - the spec-139 flip gate (go-live § 6.10, operational-state);
   - RoPA residual 8b plus the measured DELETE facts and the hold delete;
-  - erasure runbook step 2b;
+  - erasure runbook step 2b (now 3b, round 4);
   - the stale "unmeasured `/send`" comments (3);
   - changelog counts and `cancelled`;
   - runbook § C (cancelled, the unbounded fail-closed recovery, three-invocation residual, the 403 completion-stamp noise, the new counter);
@@ -260,6 +260,42 @@ Filled in at Verify, one line per Done-when line.
 - integration `audience-import-repo` 27/27, `audience-import-two-tick` 4/4, `eblast-send-time-standing` 11/11.
 - `red-first` 11/11.
 
+**Review round 3, 29 Oct 2026** (on `7136bd51e`; the raising reviewers re-ran on their fixes):
+
+| Reviewer | Verdict | Remaining |
+|---|---|---|
+| `pdpa-gdpr-compliance-officer` | APPROVE WITH CONDITIONS | H-1, M-1, M-2, L-1 CLOSED; H-2 PARTIAL. New MEDIUM: step 2b was correct only for the legacy leg, and on the import leg it would send a `[redacted]` E-Blast. 3 LOW |
+| `senior-tester` | SHIP-READY | both MEDIUM CLOSED; new MEDIUM: nothing asserted that the critical `sent_but_transition_lost` still fires when a cancel won; 2 LOW |
+| `spec-compliance-auditor` | PARTIALLY COMPLIANT (code meets every line) | 3 MEDIUM: the live-surface count, a runbook line contradicting the self-heal delete, four stale "unmeasured DELETE on sent" texts. 4 LOW |
+| `/code-review high` | 10 findings | the `cancelled` restart loop; a transient `not_found` re-mint (double send); the `check:red-first` prefix / scope / `Revert "…"` gaps; the misplaced metric docblock; the refused-send phase |
+
+**RED honesty for `8b9037505`.** Its message says all seven cases failed on their assertion. Two did not:
+- **The `queued` audit case** failed on a `ReferenceError`: `sendStarted` lived in another `describe`.
+- **The transition-lost case** failed on the fake's plain `40001` throw: `transitionThrowKind` was unset.
+- **GREEN `068b5f0e2` fixed both setups.** Each case discriminates now (senior-tester round 3 traced each to its production line).
+- **The `message: shape.kind` expectation was changed in the GREEN commit**, not in a RED of its own.
+
+**Closed in round 4:**
+- **RED `2ff6a9dcb` → GREEN `f23e9d87f`:**
+  - a `not_found` id is re-probed after 3 s before it is minted over (the maintainer's choice);
+  - a re-probe that finds the id sent catches the row up;
+  - a dead id's refused delete no longer stops the restart.
+  - Guards added: the critical log still fires when a cancel won; the `restart_failed` counter names its step.
+- **RED `b26efed16` → GREEN `ff5fdb430`:** `check:red-first` counts a scoped or prefix-named RED and `Revert "…"` commits; the dead `allowShas` parameter is removed; the errors name `git fetch origin main`.
+- **Docs:**
+  - erasure step moved after step 3 as **3b**, marked **legacy leg only**, with a log or query fallback;
+  - RoPA 8b states the interim is legacy-only, and the hold delete also covers the self-heal;
+  - go-live sign-off gains 8b;
+  - the stale "unmeasured DELETE on sent" text in the port docblock, `cron-jobs.md`, `observability.md` and the RoPA is corrected;
+  - the runbook's "the audience is not deleted" line;
+  - the metric docblock is moved onto its own method;
+  - the cancel-in-flight docblock names spec 139;
+  - spec line references, DW4, DW5, DW8 (the fourth bullet), and the Verify header.
+
+**Left as residuals:**
+- **The refused-send probe still reports phase `inherited_status`.** The runbook already routes `send_refused_unverifiable` there, and a new label value on the live metric is not worth adding now.
+- **Detecting the transient `not_found` rests on the GET-consistency assumption.** See Risks.
+
 ## Rollout
 
 - **Dark behind `FEATURE_F7_IMPORT_AUDIENCE`** (absent from Vercel): the whole import leg.
@@ -277,5 +313,6 @@ Filled in at Verify, one line per Done-when line.
 
 - **A live-leg regression from the helper extraction.** Noticed by the legacy unit and integration suites, the log names pinned in their tests, and `broadcasts_approved_overdue_count` in production.
 - **The fence double race.** A re-asserts its id, then B claims and deletes it in the milliseconds before A's `/send`. A gets 404, re-reads the row (`sendLostToHold`) and returns a concurrent skip; no mail, nothing terminal, B's restart proceeds. No double send.
+- **A transient `not_found` from Resend's GET.** A fresh mint after a stale 404 for an accepted send would mail the audience twice. Mitigated by one re-probe after 3 s (`REPROBE_PAUSE_MS`); GET answered consistently in every measurement on 2026-10-29 (immediately after `/send`, after a delete), but staleness cannot be induced, so this rests on that assumption. Noticed by two `send_already_accepted`-free sends for one broadcast in the Resend dashboard and by `broadcast_send_started` appearing twice for one `broadcast_id`.
 - **Three overlapping invocations** (a cron fired twice by hand) can let a re-submitted import be sent into an audience the hold is deleting: a lost E-Blast, not a double send. Closing it needs a lease column (out of scope). Documented in `broadcast-audience-build.md` § C.4.
 - **A fail-closed refusal can stall a row** (for example after a key rotation) until a human acts. Noticed by the `inherited_status` phase counter and `broadcasts_approved_overdue_count`. Recovery is in `broadcast-audience-build.md` § C.

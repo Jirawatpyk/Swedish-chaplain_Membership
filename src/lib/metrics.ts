@@ -2984,13 +2984,12 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts_audience_import_restarted_missing_audience_total{tenant}` —
-   * import leg. One per tick that found the tick-1 Resend audience GONE
-   * (`404 not_found` on `createBroadcast` / `createContactImport`, measured
-   * 2026-10-29) and released the row's columns so the next tick runs a fresh
-   * tick 1 instead of failing the broadcast. Expected only after a hold on an
-   * overlapping tick or a manual delete; a steady rate means something else is
-   * deleting audiences (observability.md § 29.8).
+   * `broadcasts_audience_import_restart_failed_total{tenant,why,step}` — import
+   * leg. One per audience restart (a hold abandon or the missing-audience
+   * self-heal) that stopped at `step`; the row keeps its ids and the next tick
+   * redoes the rest. Once the import is released the row leaves
+   * `audience_import_stuck_count`, so this is what still shows a restart that
+   * keeps failing (observability.md § 29.8).
    */
   audienceImportRestartFailed(tenantId: string, why: 'hold' | 'audience_missing', step: string): void {
     safeMetric(() => {
@@ -3001,6 +3000,15 @@ export const broadcastsMetrics = {
     });
   },
 
+  /**
+   * `broadcasts_audience_import_restarted_missing_audience_total{tenant}` —
+   * import leg. One per tick that found the tick-1 Resend audience GONE
+   * (`404 not_found` on `createBroadcast` / `createContactImport`, measured
+   * 2026-10-29) and released the row's columns so the next tick runs a fresh
+   * tick 1 instead of failing the broadcast. Expected only after a hold on an
+   * overlapping tick or a manual delete; a steady rate means something else is
+   * deleting audiences (observability.md § 29.8).
+   */
   audienceImportRestartedOnMissingAudience(tenantId: string): void {
     safeMetric(() => {
       counter(

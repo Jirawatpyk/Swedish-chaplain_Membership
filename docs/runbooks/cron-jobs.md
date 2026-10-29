@@ -974,7 +974,7 @@ Nothing is expected to be swept before ~2031 (the first prod E-Blast plus
 proxy's write-freeze does not cover, so the check is in the route — see
 § Read-only mode.)
 
-### Resend copies — NOT MEASURED, to measure before 2031
+### Resend copies — the DELETE answer MEASURED (2026-10-29); Resend's retention still to confirm
 
 **Policy (maintainer decision, 2026-09-25): our row is deleted even when
 Resend refuses to delete its copy.** Resend's documentation says a broadcast
@@ -986,15 +986,14 @@ broadcast object (the HTML body, and a name naming the member and the tenant)
 the Resend DPA / sub-processor terms. The RoPA discloses it as a residual
 (F7 retention row).
 
-`DELETE /broadcasts/{id}` has been measured against the live account **on a
-draft only** (2026-09-10). The policy rests on the gateway classifying the
-sent-broadcast answer as `permanent` (a 4xx); if Resend answered 5xx / 429
-instead, the row would be kept and retried daily for ever. Before the first prod
+`DELETE /broadcasts/{id}` was measured against the live account on
+2026-10-29 (sink address only): 200 on a `draft` or `scheduled` broadcast,
+**403 `validation_error` "Only draft or scheduled broadcasts can be deleted"**
+on a `queued` or `sent` one. The gateway classifies that 403 `permanent`, so
+the policy above holds: the row goes, the copy stays. Before the first prod
 E-Blast crosses its retention (~2031), the maintainer:
 
-1. **Measures it:** send a throwaway broadcast to a test audience on the Resend
-   account, then `DELETE /broadcasts/{id}` it; record the status and the
-   provider `name` (the sweep logs that `name` as `code`). Expected: a 4xx.
+1. ~~Measures it~~ — done 2026-10-29 (above).
 2. **Confirms Resend's retention for broadcast objects** (how long a sent
    broadcast and its body are kept, and whether support can delete one on
    request) and records the answer in the RoPA residual.

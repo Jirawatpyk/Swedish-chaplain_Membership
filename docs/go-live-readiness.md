@@ -429,7 +429,7 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
   failure this table exists to prevent.
 
 **§ 6.10 privacy sign-off** — date: ______ · reviewer: ______ · residual 8a
-acknowledged: ☐
+acknowledged: ☐ · residual 8b closed by spec 139: ☐
 
 ---
 

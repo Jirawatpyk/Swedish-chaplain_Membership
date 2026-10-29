@@ -420,13 +420,13 @@ export interface BroadcastsGatewayPort {
    * `provider_broadcast_id`) of an E-Blast that is terminal AND past its
    * `retention_years` — the send finished years ago, and removing the Resend
    * copy (HTML body, a name naming the member and tenant) before the row is the
-   * point. A `sent` broadcast's DELETE is UNMEASURED; the sweep treats a
-   * refusal (`permanent`) as "retained at the processor": our row is deleted
-   * anyway and the Resend copy stays under Resend's own retention, a disclosed
-   * RoPA residual (maintainer decision, 2026-09-25). A `retryable` failure
-   * keeps the row and its key. The status Resend answers for a sent broadcast
-   * is to be measured before 2031 (`docs/runbooks/cron-jobs.md` § F7
-   * retention-sweep, "Resend copies").
+   * point. A `sent` broadcast's DELETE answers 403 `validation_error` (MEASURED
+   * 2026-10-29), which the adapter classifies `permanent`; the sweep treats it
+   * as "retained at the processor": our row is deleted anyway and the Resend
+   * copy stays under Resend's own retention, a disclosed RoPA residual
+   * (maintainer decision, 2026-09-25). A `retryable` failure keeps the row and
+   * its key. Resend's retention of that copy is still unmeasured
+   * (`docs/runbooks/cron-jobs.md` § F7 retention-sweep, "Resend copies").
    */
   deleteBroadcast(broadcastId: string): Promise<void>;
 

@@ -82,7 +82,8 @@
  * stretches it to the next tick (≥ 5 min). The skipped row is then left to the
  * dispatcher, whose send-time standing gate (`_dispatch-standing-gate.ts`)
  * reads only the halt list and F8 membership access — NOT erasure. OPEN
- * (reported 2026-10-29, not fixed here): an erased member with paid-through
+ * (reported 2026-10-29; fixed by spec 139, which must merge before
+ * `FEATURE_F7_IMPORT_AUDIENCE` is set): an erased member with paid-through
  * access answers `send`, and on the import leg the resource being sent was
  * minted BEFORE the content scrub, so it carries the pre-scrub subject, body
  * and from-name. Same skip on the legacy leg.
