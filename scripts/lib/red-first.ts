@@ -59,7 +59,8 @@ export function findRedFirstViolations(
   const earlierTests: BranchCommit[] = [];
   for (const commit of commits) {
     const type = commitType(commit.subject);
-    if (type === 'fix' || type === 'feat') {
+    // `perf:` and `revert:` change behaviour too, under another name.
+    if (type === 'fix' || type === 'feat' || type === 'perf' || type === 'revert') {
       const modules = [
         ...new Set(
           commit.files.flatMap((f) => {
