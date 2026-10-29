@@ -495,6 +495,57 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     expect(after.audienceImportSubmittedAt).not.toBeNull();
   });
 
+  /**
+   * The same hold on a row that also carries a pre-send `resend_broadcast_id`
+   * (an earlier tick minted and persisted it, then died before the send). The
+   * probe answers `draft`, so nothing was handed to `/send`: the hold reclaims
+   * the draft resource, deletes the audience, and the widened CAS NULLs all
+   * three ids — the stuck gauge does not filter on `resend_broadcast_id`, so a
+   * row left carrying it would still not be a stuck import, but a row left
+   * pointing at a deleted draft would be resent on a dead id.
+   */
+  it('import leg, tick 2, a SUSPENDED member with a pre-send broadcast id whose probe answers draft → held: the draft reclaimed, the audience deleted, all three ids detached', async () => {
+    const memberId = await seedMember('suspended');
+    const audienceId = `aud-held-${randomUUID()}`;
+    const resendBroadcastId = `rb-held-${randomUUID()}`;
+    const row = approvedRow(memberId, {
+      resendAudienceId: audienceId,
+      resendBroadcastId,
+      audienceImportId: `imp-held-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 2 * 3_600_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    expect(await stuckGaugeMatches(row.broadcastId!)).toBe(true);
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcast: undefined,
+      deleteAudience: undefined,
+    });
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(gw.calls).toEqual([
+      { method: 'retrieveBroadcast', args: [resendBroadcastId] },
+      { method: 'deleteBroadcast', args: [resendBroadcastId] },
+      { method: 'deleteAudience', args: [audienceId] },
+    ]);
+    const held = await readRow(row.broadcastId!);
+    expect(held.status).toBe('approved');
+    expect(held.resendBroadcastId).toBeNull();
+    expect(held.resendAudienceId).toBeNull();
+    expect(held.audienceImportId).toBeNull();
+    expect(held.audienceImportSubmittedAt).toBeNull();
+    expect(held.audienceImportCompletedAt).toBeNull();
+    expect(await stuckGaugeMatches(row.broadcastId!)).toBe(false);
+    expect(await reserved(memberId)).toBe(1);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
   it('import leg, tick 1, a TERMINATED (lapsed) member → failed_to_dispatch (member_not_in_good_standing), permanently, no Resend call', async () => {
     const memberId = await seedMember('terminated');
     const row = approvedRow(memberId);

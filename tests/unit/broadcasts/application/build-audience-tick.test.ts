@@ -212,6 +212,11 @@ function makeDeps(opts: {
         async attachResendIds() {
           /* no-op */
         },
+        // S8 — the minted broadcast id is persisted BEFORE the send. Missing,
+        // the tick-2 cases would take the persist-fault arm and send nothing.
+        async attachBroadcastId() {
+          /* no-op */
+        },
         async applyTransition(_tx: unknown, _t: unknown, _b: unknown, status: string) {
           rec.transitions.push({ status });
           return { ...broadcast, status };
