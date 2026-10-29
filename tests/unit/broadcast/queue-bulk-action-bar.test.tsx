@@ -187,27 +187,58 @@ describe('QueueBulkActionBar — bar shell + count (AURA ActionBar)', () => {
     }
   });
 
-  it('the measured height becomes the page scroll padding, rounded up (WCAG 2.4.11)', () => {
-    renderBar();
-    act(() => roCb?.([{ borderBoxSize: [{ blockSize: 68.4 }] }]));
-    expect(scrollPadding()).toBe('69px');
+  // PR M — the shared `useActionBarClearance`: the bar's height, plus the gap
+  // AURA sticks it above the screen edge, plus 16px, so a focused row clears
+  // it fully. jsdom has no AURA stylesheet, so the test supplies the sticky
+  // position and the 12px `bottom`.
+  function stickyBar(height: { current: number }): () => void {
+    const style = document.head.appendChild(document.createElement('style'));
+    style.textContent = '.chamber-viewport-actionbar { position: sticky; bottom: 12px; }';
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { height: this.classList.contains('chamber-viewport-actionbar') ? height.current : 0 } as DOMRect;
+    });
+    return () => {
+      spy.mockRestore();
+      style.remove();
+    };
+  }
+
+  it('the bar height, its bottom offset and a 16px gap become the page scroll padding, rounded up (WCAG 2.4.11)', () => {
+    const restore = stickyBar({ current: 68.4 });
+    try {
+      renderBar();
+      expect(scrollPadding()).toBe('97px');
+    } finally {
+      restore();
+    }
   });
 
-  it('falls back to offsetHeight when the entry has no borderBoxSize', () => {
-    renderBar();
-    const bar = screen.getByRole('region', { name: BAR_NAME });
-    Object.defineProperty(bar, 'offsetHeight', { value: 96, configurable: true });
-    act(() => roCb?.([{}]));
-    expect(scrollPadding()).toBe('96px');
+  it('follows the bar when it grows', () => {
+    const height = { current: 68 };
+    const restore = stickyBar(height);
+    try {
+      renderBar();
+      expect(scrollPadding()).toBe('96px');
+      height.current = 120;
+      act(() => roCb?.([]));
+      expect(scrollPadding()).toBe('148px');
+    } finally {
+      restore();
+    }
   });
 
   it('disconnects the observer and restores the padding on unmount', () => {
-    const { unmount } = renderBar();
-    act(() => roCb?.([{ borderBoxSize: [{ blockSize: 70 }] }]));
-    expect(disconnectCount).toBe(0);
-    unmount();
-    expect(disconnectCount).toBe(1);
-    expect(scrollPadding()).toBe('');
+    const restore = stickyBar({ current: 70 });
+    try {
+      const { unmount } = renderBar();
+      expect(scrollPadding()).toBe('98px');
+      expect(disconnectCount).toBe(0);
+      unmount();
+      expect(disconnectCount).toBe(1);
+      expect(scrollPadding()).toBe('');
+    } finally {
+      restore();
+    }
   });
 });
 

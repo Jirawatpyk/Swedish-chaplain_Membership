@@ -864,6 +864,15 @@ test.describe('@a11y queue render-tree scan — desktop table / mobile card / bu
     await page.keyboard.press('Tab');
     await expect(approveButton).toBeFocused();
 
+    // Scan from the top of the page. Selecting the row scrolls it into view,
+    // and where that leaves the page decides whether the halt banner's button
+    // sits half under the sticky top bar — which axe then reports as
+    // `target-size` on the banner, not on this toolbar (R106, PR #693: the
+    // larger bar clearance moved the scroll on mobile-chrome). The toolbar is
+    // fixed, so it is scanned at any scroll position.
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await expect(toolbar).toBeVisible();
+
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
       .analyze();

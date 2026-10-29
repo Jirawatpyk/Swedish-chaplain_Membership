@@ -13,16 +13,22 @@
  * the number current. Returns 0 while inactive or when no bar matches, so the
  * stylesheet's own allowance stays in charge until a measure exists.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
+import { useFixedBarScrollPadding } from './use-fixed-bar-scroll-padding';
 
 /** Room between the bar's top and a focused field. */
 const FOCUS_GAP_PX = 16;
 
-export function useActionBarClearance(active: boolean, selector: string): number {
+/**
+ * `target` is the bar: a ref to it when the caller holds one (exactly that bar,
+ * whatever else is on the page), or a selector when the bar lives in another
+ * component.
+ */
+export function useActionBarClearance(active: boolean, target: string | RefObject<HTMLElement | null>): number {
   const [clearance, setClearance] = useState(0);
   useEffect(() => {
     if (!active) return;
-    const bar = document.querySelector<HTMLElement>(selector);
+    const bar = typeof target === 'string' ? document.querySelector<HTMLElement>(target) : target.current;
     if (!bar) return;
     const measure = () => {
       const style = getComputedStyle(bar);
@@ -51,6 +57,17 @@ export function useActionBarClearance(active: boolean, selector: string): number
       // Never keep a number from the last time it was on.
       setClearance(0);
     };
-  }, [active, selector]);
+  }, [active, target]);
   return active ? clearance : 0;
+}
+
+/**
+ * The pair every viewport bar needs: measure the bar, and keep that much clear
+ * at the bottom of the root scroller while it shows. Until the first measure
+ * (or while the bar is un-stuck) nothing is set inline, so the stylesheet's
+ * allowance stays in charge.
+ */
+export function useActionBarScrollPadding(active: boolean, target: string | RefObject<HTMLElement | null>): void {
+  const clearance = useActionBarClearance(active, target);
+  useFixedBarScrollPadding(active && clearance > 0, clearance);
 }

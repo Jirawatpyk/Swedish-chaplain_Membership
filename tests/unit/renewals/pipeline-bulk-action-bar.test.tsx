@@ -917,11 +917,15 @@ describe('PipelineBulkActionBar — results panel focus (a11y, review round 1 MU
 
 describe('PipelineBulkActionBar — keeps the last card clear of the sticky bar (WCAG 2.4.11)', () => {
   let style: HTMLStyleElement;
+  let rectSpy: { mockRestore: () => void };
   beforeEach(() => {
     // The viewport ActionBar sticks this far above the screen edge (AURA's
     // `bottom`); jsdom has no AURA stylesheet, so the test supplies it.
     style = document.createElement('style');
-    style.textContent = '.chamber-viewport-actionbar { bottom: 12px; }';
+    style.textContent = '.chamber-viewport-actionbar { position: sticky; bottom: 12px; }';
+    rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { height: this.classList.contains('chamber-viewport-actionbar') ? 121.5 : 0 } as DOMRect;
+    });
     document.head.appendChild(style);
     vi.stubGlobal(
       'ResizeObserver',
@@ -936,10 +940,13 @@ describe('PipelineBulkActionBar — keeps the last card clear of the sticky bar 
   });
   afterEach(() => {
     style.remove();
+    rectSpy.mockRestore();
+    vi.unstubAllGlobals();
     document.documentElement.style.scrollPaddingBottom = '';
   });
 
-  it('reserves the bar height plus its bottom offset while a selection is active, and gives it back when cleared', () => {
+  // PR M — the shared `useActionBarClearance`: + a 16px gap (121.5 + 12 + 16).
+  it('reserves the bar height plus its bottom offset and a gap while a selection is active, and gives it back when cleared', () => {
     const { rerender } = render(
       wrap(
         <PipelineBulkActionBar
@@ -949,7 +956,7 @@ describe('PipelineBulkActionBar — keeps the last card clear of the sticky bar 
         />,
       ),
     );
-    expect(document.documentElement.style.scrollPaddingBottom).toBe('134px');
+    expect(document.documentElement.style.scrollPaddingBottom).toBe('150px');
 
     rerender(wrap(<PipelineBulkActionBar selectedCycles={[]} totalMatching={1} onClear={vi.fn()} />));
     expect(document.documentElement.style.scrollPaddingBottom).toBe('');
