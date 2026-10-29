@@ -55,7 +55,7 @@ Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, o
 | Check | How |
 |---|---|
 | 1. Repeated independent review rounds | ≥ 2 rounds of `/code-review high <pr#>` + the § 2 surface reviewers, each in fresh subagents, until the latest round finds no High or Medium; record the finding counts per round in the PR |
-| 2. Staff review (correctness, security, tests) | `whole-branch-reviewer` + `security-engineer` + `senior-tester` on the same diff; a second round when any BLOCKER / CRITICAL / HIGH is found |
+| 2. Staff review (correctness, security, tests) | `security-engineer` + `senior-tester` on the same diff, plus `whole-branch-reviewer` only when the review was split (D-022, D-036); a second round when any BLOCKER / CRITICAL / HIGH is found |
 | 3. Coverage + real-infrastructure tests | the pinned coverage thresholds, and integration tests on Neon for every security-critical use case |
 | 4. Defence in depth | DB- or platform-level enforcement (RLS, constraints, triggers) for every invariant that can live there |
 | 5. Post-remediation verification | the reviewer that raised a finding re-runs on its fix in a new subagent; the writer never self-attests |

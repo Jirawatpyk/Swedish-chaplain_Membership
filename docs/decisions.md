@@ -181,3 +181,18 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Context*: on 2026-10-28 the `.claude/hooks/guard.mjs` PreToolUse hook blocked routine dev work three times: copying `.env.local` into a new worktree, a node edit of `package.json` that named it, and a dev-only read-only query. Each block cost a detour while the maintainer waited. The maintainer does not run these steps by hand, so a guard that refuses them leaves the work undone.
 - *Decision* (the maintainer's instruction, which ranks first under CLAUDE.md § Precedence): delete the hook and its test. `permissions.deny` keeps only the prod write scripts `db:migrate:prod` and `seed:system-actors:prod`, in their `pnpm`, `pnpm run`, `pnpm -s` and `npm run` spellings for Bash and PowerShell. Reading `.env*`, `.env.production` included, and the `docs/*.xlsx` / `*.xlsm` PII workbooks is allowed. So are `git stash`, prettier, `db:generate` and `db:push`. This supersedes D-016's list and D-025's hook; D-024 stays, and D-032 (`git stash`) is folded in.
 - *Consequence*: there is no mechanical check left on editing a migration that is already on `main`, on prod env files used with other scripts, or on spellings the deny list's prefix match misses (`node --env-file=.env.production … scripts/run-migrations.ts`, wrappers, variable indirection; see D-025). Those rest on the conventions in `.claude/rules/` and on review. `.gitignore` still keeps the workbooks out of git; never commit them, and never paste a secret value into a reply, a log, a commit or a PR.
+
+**D-036 — The solo-maintainer staff review runs `whole-branch-reviewer` only when the review was split** (2026-10-29)
+- *Context*: `review-and-ship` § 2 check 2 named `whole-branch-reviewer` + `security-engineer` + `senior-tester` for every staff review. D-022 and `docs/workflow.md` step 7 say `whole-branch-reviewer` runs only when the review was split, because `/code-review high <pr#>` already reads the whole diff. On spec 138 (one branch, one PR) the maintainer ruled it out.
+- *Decision*: the staff review is `security-engineer` + `senior-tester`. `whole-branch-reviewer` joins only when the review was split (the `review-branch` Workflow, a per-module review, or slices sharing one long-lived branch whose review was split).
+- *Consequence*: `review-and-ship` § 2 check 2 says the same.
+
+**D-037 — On the F7 import leg the `broadcasts` row is the mutex between a hold and a send** (2026-10-29)
+- *Context*: the dispatch cron holds no lease past its scan, so two ticks can work one row at once. Measured on 2026-10-29: deleting an audience while its broadcast is `queued` makes Resend fail it, and no mail goes out. Resend refuses DELETE on a `queued` broadcast (403) and a second `/send` on any non-draft broadcast (422).
+- *Decision*:
+  - A hold claims the row by CAS before it deletes anything at Resend. The claim clears only the import columns.
+  - It deletes the draft broadcast, then the audience, then clears both ids in one narrow CAS.
+  - Every import-leg `attachBroadcastId` is fenced on `audience_import_id`.
+  - A refused `/send` is probed before it is recorded as a failure.
+  - Rejected: a dispatch lease column (it needs a migration, and still needs a fencing token, since a lease can expire mid-send), and detach-before-delete (it orphans an audience that neither erasure nor `reclaim-orphaned-audiences` can see).
+- *Consequence*: spec 138. The predicates must stay consistent; the Neon pair test in `audience-import-repo.test.ts` (both orders) and the SQL-shape test pin them.
