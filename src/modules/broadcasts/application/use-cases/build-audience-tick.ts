@@ -110,11 +110,11 @@ export type BuildAudienceTickOutput =
    */
   | { readonly kind: 'dispatch_held_member_suspended' }
   /**
-   * The tick-1 audience is gone at Resend (`POST /broadcasts` → 404 "Audience
-   * not found", `POST /contacts/imports` → 404 "Segment not found", both
-   * measured 2026-10-29): the row's import / audience columns were released by
-   * CAS and the next tick runs a fresh tick 1. Nothing sent, nothing terminal,
-   * nobody told — neither a success nor a failure.
+   * The audience build was torn down and the next tick runs a fresh tick 1:
+   * tick 2's `POST /broadcasts` answered 404 "Audience not found" (measured
+   * 2026-10-29), or tick 1 found a row with an audience but no import (never
+   * reused — `stale_audience`). Nothing sent, nothing terminal, nobody told —
+   * neither a success nor a failure.
    */
   | { readonly kind: 'audience_restarted' };
 
@@ -885,9 +885,10 @@ async function restartAudienceBuild(
     try {
       await deps.broadcastsGateway.deleteBroadcast(resendBroadcastId);
     } catch (e) {
-      // A refusal means "a sibling sent it" only for a DRAFT. A dead id
-      // (`cancelled` / `not_found`) cannot be sending, so its refused delete
-      // must not stop the restart — that would fail every tick for ever.
+      // A refusal means "it may be out" — except for a `cancelled` id, which can
+      // never be sent, so its refused delete must not stop the restart (that
+      // would fail every tick for ever). A `not_found` id needs no exception:
+      // its delete 404s, which the adapter treats as success.
       if (!opts.bidIsDead || isRetryableThrow(classifyThrown(e).kind)) return failed('delete_broadcast', e);
       // Warn, not info: the cancelled resource stays at Resend (it cannot be
       // deleted) and the release below drops its id from the row, so this
@@ -1766,7 +1767,10 @@ async function confirmImport(
       // dead inherited id with it — `restartAudienceBuild` deletes it, 404 =
       // fine, and the release clears it) and build afresh next tick.
       if (isAudienceMissing(createdRb.error)) {
-        return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId }, inheritedDead);
+        // Only `cancelled` may carry the teardown past a refused delete — the
+        // same rule as `isDeadProbe`; `inheritedDead` (which also covers a
+        // re-probed `not_found`) answers the different question of minting.
+        return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId }, inherited.observedResendStatus === 'cancelled');
       }
       return onGatewayFailure(deps, input, broadcast, createdRb.error, importId);
     }
