@@ -134,6 +134,8 @@ interface Recorder {
   readonly retryClears: number[];
   /** Every audience the tick asked Resend to delete. */
   readonly audiencesDeleted: string[];
+  probes: number;
+  readonly reprobePauses: number[];
   /**
    * Every restart write a hold (or the audience-missing self-heal) made, in
    * order: the CAS values it carried and how many gateway calls had been made
@@ -320,6 +322,10 @@ function makeDeps(opts: {
   readonly probe?:
     | { readonly kind: 'present'; readonly status: string; readonly sentAt?: string | null }
     | { readonly kind: 'not_found' };
+  /** What a SECOND `retrieveBroadcast` answers (the re-probe after a `not_found`); default: `probe`. */
+  readonly probeSecond?:
+    | { readonly kind: 'present'; readonly status: string; readonly sentAt?: string | null }
+    | { readonly kind: 'not_found' };
   /** `retrieveBroadcast` itself throws (a non-retryable gateway error). */
   readonly probeThrows?: boolean;
   /** The pre-send `attachBroadcastId` fails: a lost CAS, a vanished row, or a DB fault. */
@@ -346,6 +352,8 @@ function makeDeps(opts: {
     retryStamps: [],
     retryClears: [],
     audiencesDeleted: [],
+    probes: 0,
+    reprobePauses: [],
     releases: [],
     broadcastIdAttaches: [],
     broadcastsDeleted: [],
@@ -456,6 +464,10 @@ function makeDeps(opts: {
       // F119 — required port; no brand configured for these cases.
       brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
       resolveRecipients: async () => resolverAnswer(),
+      // The pause before re-probing a `not_found` inherited id: recorded, never waited.
+      pauseBeforeReprobe: async (ms: number) => {
+        rec.reprobePauses.push(ms);
+      },
       membersBridge: {
         async getMemberPrimaryContact() {
           if (opts.memberBridgeThrows === true) {
@@ -702,7 +714,9 @@ function makeDeps(opts: {
         async retrieveBroadcast(id: string) {
           maybeThrow('retrieveBroadcast');
           if (opts.probeThrows === true) throw gatewayThrow('permanent', 'probe refused');
-          const answer = opts.probe ?? { kind: 'present' as const, status: 'draft' };
+          rec.probes += 1;
+          const first = opts.probe ?? { kind: 'present' as const, status: 'draft' };
+          const answer = rec.probes > 1 && opts.probeSecond !== undefined ? opts.probeSecond : first;
           if (answer.kind === 'not_found') return { kind: 'not_found' as const };
           return {
             kind: 'present' as const,
@@ -1683,6 +1697,22 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
     expect(rec.resendIdWrites[0]?.resendBroadcastId).toBeTruthy();
   });
 
+  it('a cancel winning the race (the row is NOT already sending) still logs the critical sent_but_transition_lost', async () => {
+    const { logger } = await import('@/lib/logger');
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      transitionThrowsOn: 'sending',
+      transitionThrowKind: 'concurrent',
+      readBackStatus: 'cancelled',
+    });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(errorSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.sent_but_transition_lost')).toBe(true);
+  });
+
   it('the id write and the transition are SEPARATE transactions, so one cannot roll back the other', async () => {
     const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW });
 
@@ -2537,6 +2567,7 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
     const { logger } = await import('@/lib/logger');
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const abandonedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportAbandonedOnHold');
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportRestartFailed');
     const { deps, rec } = makeDeps({
       ...POLLING,
       audienceImportSubmittedAt: NOW,
@@ -2552,6 +2583,7 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
     expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport']);
     expect(rec.transitions).toEqual([]);
     expect(abandonedSpy).not.toHaveBeenCalled();
+    expect(failedSpy).toHaveBeenCalledWith(expect.anything(), 'hold', 'delete_audience');
     const log = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.hold_abandon_failed');
     expect(log?.[0]).toMatchObject({ err: 'Error', step: 'delete_audience', broadcastId: BROADCAST_ID, importId: 'imp-1' });
     expect(JSON.stringify(log?.[0])).not.toContain('boom');
@@ -3105,13 +3137,16 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
    * audience and REPLACE the dead id by CAS (only while the row still carries
    * the dead id and the confirmed import), then send the fresh one.
    */
-  it('re-entry, the probe answers NOT FOUND → a FRESH resource is minted, replaces the dead id by fenced CAS, and is sent', async () => {
+  it('re-entry, the probe answers NOT FOUND twice → a FRESH resource is minted, replaces the dead id by fenced CAS, and is sent', async () => {
     const { deps, rec } = makeDeps({ ...TICK2, resendBroadcastId: 'rb-0', probe: { kind: 'not_found' } });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: RECIPIENTS.length } });
-    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'getContactImport', 'createBroadcast', 'sendBroadcast']);
+    // Declared dead only after a pause and a SECOND not_found: a fresh mint
+    // after a send that was in fact accepted would mail the audience twice.
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'retrieveBroadcast', 'getContactImport', 'createBroadcast', 'sendBroadcast']);
+    expect(rec.reprobePauses).toHaveLength(1);
     expect(rec.broadcastIdAttaches).toEqual([
       {
         resendBroadcastId: 'rb-1',
@@ -3139,6 +3174,22 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     expect(rec.broadcastIdAttaches.map((a) => a.fence)).toEqual([{ expectedAudienceImportId: 'imp-1', replacesResendBroadcastId: 'rb-0' }]);
     expect(rec.sends).toEqual(['rb-1']);
     expect(sendStarted(rec)?.payload).toMatchObject({ handedToSendOnPriorTick: false, observedResendStatus: 'cancelled' });
+  });
+
+  it('re-entry, NOT FOUND then the re-probe finds it SENT → caught up, nothing minted, nothing sent', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'not_found' },
+      probeSecond: { kind: 'present', status: 'sent', sentAt: minutesAgo(1).toISOString() },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId: 'rb-0', recipientCount: RECIPIENTS.length } });
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'retrieveBroadcast']);
+    expect(rec.sends).toEqual([]);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
   });
 
   it('re-entry, NOT FOUND, the replacing CAS is LOST → the fresh resource is reclaimed and nothing is sent', async () => {
@@ -3372,6 +3423,28 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
       { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-1', resendBroadcastId: 'rb-0' }, afterGatewayCalls: 3 },
     ]);
     expect(rec.sends).toEqual([]);
+  });
+
+  /**
+   * Only a DRAFT can be sent (a non-draft `/send` answers 422, MEASURED
+   * 2026-10-29), so a resource the probe called `cancelled` cannot be in
+   * flight: a refused delete of it says nothing about a sibling. Stopping
+   * there would restart-fail every tick for ever.
+   */
+  it('tick 2 hold with an inherited CANCELLED id whose delete is REFUSED → the audience is still deleted and both columns released', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'present', status: 'cancelled' },
+      standing: { access: 'suspended' },
+      throwOn: { method: 'deleteBroadcast', kind: 'permanent', code: 'validation_error' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.audiencesDeleted).toEqual(['aud-1']);
+    expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport', 'releaseResendAudience']);
   });
 
   it.each([
