@@ -148,6 +148,12 @@ function makeRepo(opts: RepoOpts = {}): {
       async detachPendingAudienceImport() {
         return false;
       },
+      async releaseAudienceImport() {
+        return false;
+      },
+      async releaseResendAudience() {
+        return false;
+      },
       async clearDispatchRetryClock() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };

@@ -397,6 +397,7 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     resendBroadcastId: string,
+    fence?: { readonly expectedAudienceImportId: string },
   ): Promise<void>;
 
 
@@ -473,6 +474,26 @@ export interface BroadcastsRepo {
       readonly resendAudienceId: string;
       readonly resendBroadcastId: string | null;
     },
+  ): Promise<boolean>;
+
+  /** RED scaffold — implemented in the GREEN commit. */
+  releaseAudienceImport(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    expected: {
+      readonly importId: string | null;
+      readonly resendAudienceId: string;
+      readonly resendBroadcastId: string | null;
+    },
+  ): Promise<boolean>;
+
+  /** RED scaffold — implemented in the GREEN commit. */
+  releaseResendAudience(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    expectedResendAudienceId: string,
   ): Promise<boolean>;
 
   /**

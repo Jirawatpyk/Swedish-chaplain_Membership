@@ -653,4 +653,129 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     expect(cols.submitted).toBe(false);
     expect(cols.completed).toBe(false);
   });
+
+  /**
+   * The hold's claim against the sender's fence — THE ROW IS THE MUTEX
+   * (2026-10-29). The dispatch cron holds no lease past its scan (`FOR UPDATE
+   * SKIP LOCKED` is released with the scan tx; `maxDuration = 300` equals the
+   * cadence), so two ticks can work one row at once. Deleting an audience whose
+   * broadcast is `queued` makes that broadcast `failed` with no mail (measured
+   * 2026-10-29), so a hold may delete the audience only after it has won the
+   * claim, and a sender may send only after its import-fenced attach landed.
+   * Both are single-statement CASes on one row; run here in both orders.
+   */
+  async function seedBuilding(): Promise<{ raw: string; id: ReturnType<typeof asBroadcastId> }> {
+    const raw = await seedApproved();
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const id = asBroadcastId(raw);
+    const slug = asTenantContext(TEST_TENANT).slug;
+    await repo.withTx(async (tx) => {
+      await repo.attachAudienceId(tx, slug, id, 'aud_fence');
+    });
+    await repo.withTx(async (tx) => {
+      await repo.attachAudienceImport(tx, slug, id, 'imp_fence');
+    });
+    return { raw, id };
+  }
+
+  async function readIds(raw: string): Promise<{
+    resend_audience_id: string | null;
+    resend_broadcast_id: string | null;
+    audience_import_id: string | null;
+    submitted: boolean;
+    status: string;
+  }> {
+    const rows = (await runInTenant(asTenantContext(TEST_TENANT), async (tx) =>
+      tx.execute(sql`
+        SELECT resend_audience_id, resend_broadcast_id, audience_import_id,
+               audience_import_submitted_at IS NOT NULL AS submitted,
+               status::text AS status
+        FROM broadcasts
+        WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid
+      `),
+    )) as unknown as Array<{
+      resend_audience_id: string | null;
+      resend_broadcast_id: string | null;
+      audience_import_id: string | null;
+      submitted: boolean;
+      status: string;
+    }>;
+    return rows[0]!;
+  }
+
+  it('the hold claims FIRST → the sender\'s import-fenced attach LOSES; the audience stays on the row until it is deleted', async () => {
+    if (!RUN_INTEGRATION) return;
+    const { raw, id } = await seedBuilding();
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const slug = asTenantContext(TEST_TENANT).slug;
+
+    const claimed = await repo.withTx((tx) =>
+      repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: null }),
+    );
+    expect(claimed).toBe(true);
+    // Legal under 0299 (the import id and its stamp go NULL together) and under
+    // the immutability trigger's normal arm — proven by the write landing.
+    expect(await readIds(raw)).toEqual({
+      resend_audience_id: 'aud_fence',
+      resend_broadcast_id: null,
+      audience_import_id: null,
+      submitted: false,
+      status: 'approved',
+    });
+
+    await expect(
+      repo.withTx(async (tx) => {
+        await repo.attachBroadcastId(tx, slug, id, 'rb_sender', { expectedAudienceImportId: 'imp_fence' });
+      }),
+    ).rejects.toThrow(BroadcastConcurrentMutationError);
+    expect((await readIds(raw)).resend_broadcast_id).toBeNull();
+
+    // After the audience delete: the column is released.
+    expect(await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, 'aud_fence'))).toBe(true);
+    expect((await readIds(raw)).resend_audience_id).toBeNull();
+  });
+
+  it('the sender attaches FIRST → the hold\'s claim LOSES; the row keeps its import, its audience and the sender\'s id', async () => {
+    if (!RUN_INTEGRATION) return;
+    const { raw, id } = await seedBuilding();
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const slug = asTenantContext(TEST_TENANT).slug;
+
+    await repo.withTx(async (tx) => {
+      await repo.attachBroadcastId(tx, slug, id, 'rb_sender', { expectedAudienceImportId: 'imp_fence' });
+    });
+
+    // The hold probed no broadcast id before the sender attached one.
+    const claimed = await repo.withTx((tx) =>
+      repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: null }),
+    );
+    expect(claimed).toBe(false);
+    // And the audience release refuses a row that still carries an import.
+    expect(await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, 'aud_fence'))).toBe(false);
+    expect(await readIds(raw)).toEqual({
+      resend_audience_id: 'aud_fence',
+      resend_broadcast_id: 'rb_sender',
+      audience_import_id: 'imp_fence',
+      submitted: true,
+      status: 'approved',
+    });
+  });
+
+  it("a row carrying an EMPTY resend_broadcast_id ('') accepts attachBroadcastId — it is not an id", async () => {
+    if (!RUN_INTEGRATION) return;
+    const { raw, id } = await seedBuilding();
+    const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
+    const slug = asTenantContext(TEST_TENANT).slug;
+    await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
+      await tx.execute(sql`
+        UPDATE broadcasts SET resend_broadcast_id = ''
+        WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${raw}::uuid`);
+    });
+
+    await repo.withTx(async (tx) => {
+      await repo.attachBroadcastId(tx, slug, id, 'rb_after_empty', { expectedAudienceImportId: 'imp_fence' });
+    });
+
+    expect((await readIds(raw)).resend_broadcast_id).toBe('rb_after_empty');
+  });
 });

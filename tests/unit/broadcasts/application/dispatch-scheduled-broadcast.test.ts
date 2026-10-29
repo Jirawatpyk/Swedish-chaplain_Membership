@@ -303,6 +303,12 @@ function makeRepo(opts: RepoOpts): {
       async detachPendingAudienceImport() {
         return false;
       },
+      async releaseAudienceImport() {
+        return false;
+      },
+      async releaseResendAudience() {
+        return false;
+      },
       async clearDispatchRetryClock() {
         clears.count += 1;
         if (opts.clearDispatchRetryClockThrows !== undefined) {
@@ -3152,6 +3158,64 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe('gateway_retryable');
+    expect(repo.transitions).toEqual([]);
+    expect(repo.retryStampCalls).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+  });
+
+  /**
+   * A NON-retryable probe throw on an inherited id answers no more than a
+   * retryable one: it cannot say whether the resource was handed to `/send`.
+   * It used to take `settleGatewayThrow`'s permanent arm — `failed_to_dispatch`,
+   * the member emailed, the quota slot released — for mail that may be out.
+   * FAIL CLOSED, as the `unknown`-status arm does: refused with phase
+   * `inherited_status`, the row stays `approved`, no FR-021 clock.
+   */
+  it('a PERMANENT probe throw on an inherited id is REFUSED (fail closed): row approved, no clock, nobody told', async () => {
+    const audit = makeAudit();
+    const email = makeEmailTransactional();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: {
+        ...makeBroadcast('approved'),
+        resendAudienceId: 'aud-existing',
+        resendBroadcastId: 'rb-from-previous-tick',
+      },
+    });
+    const gw = makeGateway({
+      throwOnRetrieveBroadcast: { kind: 'permanent', reason: 'resend 422' },
+    });
+    const result = await dispatchScheduledBroadcast(
+      {
+        tenant,
+        broadcastsRepo: repo.port,
+        audienceMode: 'primary_only' as const,
+        audienceCeiling: 5000,
+        broadcastsGateway: gw.port,
+        membersBridge: makeMembersBridge({
+          recipients: [recipient('m-r1', 'one@example.com')],
+          primaryContact: 'sender@example.com',
+        }),
+        marketingUnsubscribes: makeMarketingUnsubscribes(),
+        eventAttendees: makeEventAttendees(),
+        audit: audit.port,
+        clock,
+        fromEmail: 'noreply@test.invalid-but-test-only',
+        tenantDisplayName: 'Test Chamber',
+        locale: 'en' as const,
+        plansBridge: makePlansBridge(),
+        emailTransactional: email.port,
+        sendStanding: OK_STANDING,
+        brandChrome: NO_BRAND_CHROME,
+      },
+      baseInput,
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'dispatch.server_error', message: 'inherited_probe_failed', errClass: 'permanent', phase: 'inherited_status' },
+    });
     expect(repo.transitions).toEqual([]);
     expect(repo.retryStampCalls).toEqual([]);
     expect(audit.emits).toEqual([]);

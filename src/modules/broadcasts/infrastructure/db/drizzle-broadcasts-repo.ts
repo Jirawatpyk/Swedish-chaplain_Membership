@@ -1281,6 +1281,16 @@ export function makeDrizzleBroadcastsRepo(
       return updated.length === 1;
     },
 
+    // RED scaffold — implemented in the GREEN commit.
+    async releaseAudienceImport(): Promise<boolean> {
+      return false;
+    },
+
+    // RED scaffold — implemented in the GREEN commit.
+    async releaseResendAudience(): Promise<boolean> {
+      return false;
+    },
+
     async markAudienceImportCompleted(
       txUnknown,
       tenantIdArg: TenantSlug,

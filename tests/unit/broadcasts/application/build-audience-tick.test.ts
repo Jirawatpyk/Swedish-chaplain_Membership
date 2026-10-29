@@ -206,6 +206,12 @@ function makeDeps(opts: {
         async detachPendingAudienceImport() {
           return false;
         },
+        async releaseAudienceImport() {
+          return false;
+        },
+        async releaseResendAudience() {
+          return false;
+        },
         async clearDispatchRetryClock() {
           dispatchFirstFailedAt = null;
         },
