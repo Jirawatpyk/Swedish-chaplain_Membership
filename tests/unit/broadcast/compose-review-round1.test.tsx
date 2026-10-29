@@ -150,43 +150,54 @@ describe('the phone bar', () => {
     expect(bar).not.toHaveTextContent('1,240 recipients');
   });
 
-  // The Write tab's reason line is out of sight on Preview, so the bar by
-  // Submit says why it is off in its place of the count.
+  // The Write tab's reason line is out of sight on Preview, so there the bar
+  // by Submit says why it is off in place of the count. On Write the reason is
+  // in the form, and the bar keeps the count.
   const bar = (): HTMLElement => screen.getByRole('region', { name: c.views.actions });
+  const openPreview = (): Promise<void> =>
+    userEvent.setup().click(screen.getByRole('tab', { name: c.views.preview }));
 
-  it('says a subject is missing instead of the count', () => {
+  it('on Preview, says a subject is missing instead of the count', async () => {
     bp.current = 'base';
     renderForm();
     fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
+    await openPreview();
     expect(bar()).toHaveTextContent(c.submitBlocked.subjectRequired);
     expect(bar()).not.toHaveTextContent('128 recipients');
   });
 
-  it('says a category is missing in its short form', async () => {
+  it('on Preview, says a category is missing in its short form', async () => {
     bp.current = 'base';
     renderForm();
     await userEvent.setup().click(screen.getByRole('radio', { name: c.segmentOption.tier }));
+    await openPreview();
     expect(bar()).toHaveTextContent(c.submitBlocked.tierChooseFirst);
     expect(bar()).not.toHaveTextContent(c.submitBlocked.tierRequired);
   });
 
-  it('says the body is too large', () => {
+  it('on Preview, says the body is too large', async () => {
     bp.current = 'base';
     renderForm();
     fireEvent.change(screen.getByRole('textbox', { name: 'Message body' }), {
       target: { value: `<p>${'x'.repeat(200 * 1024)}</p>` },
     });
+    await openPreview();
     expect(bar()).toHaveTextContent(c.errors.broadcast_body_too_large);
   });
 
-  it('goes back to the count once nothing blocks', () => {
+  it('on Write, keeps the count: the reason is in the form there', () => {
     bp.current = 'base';
     renderForm();
-    const subject = screen.getByRole('textbox', { name: c.fields.subject });
-    fireEvent.change(subject, { target: { value: '' } });
-    fireEvent.change(subject, { target: { value: 'Nordic Leadership Breakfast' } });
+    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
     expect(bar()).toHaveTextContent('128 recipients');
     expect(bar()).not.toHaveTextContent(c.submitBlocked.subjectRequired);
+  });
+
+  it('on Preview, shows the count once nothing blocks', async () => {
+    bp.current = 'base';
+    renderForm();
+    await openPreview();
+    expect(bar()).toHaveTextContent('128 recipients');
   });
 });
 

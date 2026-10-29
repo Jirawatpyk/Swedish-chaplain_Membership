@@ -5,7 +5,7 @@
  * `Admin-broadcast-new-mobile`). Save as draft stays in the form. Desktop
  * keeps Submit in the card.
  */
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '@/i18n/messages/en.json';
@@ -70,11 +70,6 @@ afterEach(() => {
 describe('staff compose on a phone', () => {
   it('keeps Submit in a bar with the count, and only there; Save as draft stays in the form', () => {
     renderPicked();
-    // With a subject nothing blocks, so the bar states the count (PR J: a
-    // missing subject is said in the bar instead).
-    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), {
-      target: { value: 'Nordic Leadership Breakfast' },
-    });
     const bar = screen.getByRole('region', { name: c.views.actions });
     expect(bar).toHaveTextContent('130 recipients');
     expect(within(bar).getByRole('button', { name: c.button.submit })).toBeInTheDocument();
