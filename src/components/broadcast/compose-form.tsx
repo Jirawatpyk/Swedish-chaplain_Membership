@@ -688,7 +688,10 @@ export function ComposeForm({
   ) : barReason !== null ? (
     <Button
       variant="ghost"
-      className={`h-auto whitespace-normal text-start ${
+      // No side padding: the reason sits where the count did, and a short one
+      // keeps Submit on the same row at 390 (AURA's 24px ghost padding wrapped
+      // it by 4px, measured on the fixture).
+      className={`h-auto whitespace-normal px-0 text-start ${
         barReason.tone === 'danger' ? 'text-[var(--aura-fg-danger)]' : 'text-[var(--aura-fg-secondary)]'
       }`}
       onClick={() => {
