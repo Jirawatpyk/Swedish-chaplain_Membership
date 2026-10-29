@@ -161,7 +161,7 @@ with the exceptions below):
 | F8 reminder retry pass (inside the dispatch worker) | — | A reminder whose 24 h `retry_until` budget expires during the freeze is marked exhausted without a retry. |
 | F8 `reconcile-pending-reactivations-coordinator` | Catches up | Missed day-23/27/29 reminders collapse into one pass; if the request passes day 30 during the freeze the timeout + refund run first and the reminders are never sent. |
 | F7 `prune-expired-drafts` — E-Blast approval lifecycle | Catches up | Only the latest due reminder is sent (a missed day 3 is replaced by day 7). The 30-day clock keeps running: a freeze across day 30 expires the E-Blast (`expired_no_member_response`) without the day-23 warning. |
-| F7 `dispatch-scheduled` | Catches up — on the first tick every overdue `approved` E-Blast is re-checked against its member's standing: a **suspended** member's is **HELD** (stays `approved`, sends once the member pays); a **halted** or **terminated** member's is **REFUSED** permanently (`failed_to_dispatch`, member emailed, slot released); the rest send. See [eblast-approval.md § Dispatch standing refusal](./eblast-approval.md#dispatch-standing-refusal) | Nothing on a clean row: the FR-021 retry hour counts from the first retryable Resend failure (`dispatch_first_failed_at`, mig `0311`), not from `scheduled_for`. **Residual (not fixed, by design — a paused cron cannot write):** a row that had ALREADY failed before the freeze keeps its clock, so a freeze longer than the rest of its hour makes its next retryable failure terminal (a hold, by contrast, resets the clock every tick). **Mitigation:** after lifting a long freeze, clear the clock with SQL — `UPDATE broadcasts SET dispatch_first_failed_at = NULL WHERE status = 'approved' AND dispatch_first_failed_at IS NOT NULL` (`broadcasts` is RLS + FORCE: as the migration owner, or after `SET LOCAL app.current_tenant = '<tenant>'` once per tenant; `eblast-approval.md` § Dispatch standing refusal). Re-timing from the staff page is NOT a general substitute: confirm-schedule refuses a legacy-approved row (`current_round = 0`, `round_zero`) and a row a tick already handed to Resend (`resend_broadcast_id` or `audience_import_id` set, `sending_started`); it clears the clock only on a round ≥ 1 row with neither id. |
+| F7 `dispatch-scheduled` | Catches up — on the first tick every overdue `approved` E-Blast is re-checked against its member's standing: a **suspended** member's is **HELD** (stays `approved`, sends once the member pays); a **halted** or **terminated** member's is **REFUSED** permanently (`failed_to_dispatch`, member emailed, slot released); the rest send. See [eblast-approval.md § Dispatch standing refusal](./eblast-approval.md#dispatch-standing-refusal) | Nothing on a clean row: the FR-021 retry hour counts from the first retryable Resend failure (`dispatch_first_failed_at`, mig `0311`), not from `scheduled_for`. **Residual (not fixed, by design — a paused cron cannot write):** a row that had ALREADY failed before the freeze keeps its clock, so a freeze longer than the rest of its hour makes its next retryable failure terminal (a hold, by contrast, resets the clock every tick). **Mitigation:** after lifting a long freeze, clear the clock with SQL — `UPDATE broadcasts SET dispatch_first_failed_at = NULL WHERE status = 'approved' AND dispatch_first_failed_at IS NOT NULL` (`broadcasts` is RLS + FORCE: as the migration owner, or after `SET LOCAL app.current_tenant = '<tenant>'` once per tenant; `eblast-approval.md` § Dispatch standing refusal). Re-timing from the staff page is NOT a general substitute: confirm-schedule refuses a legacy-approved row (`current_round = 0`, `round_zero`) and a row a tick already handed to Resend (`resend_broadcast_id` or `audience_import_id` set, `sending_started`); it clears the clock only on a round ≥ 1 row with neither id. (An import-leg row HELD on tick 2 carries neither once the first held tick has abandoned its pending import, so it can be re-timed.) |
 | `auto-draft-coordinator` | Catches up inside the lead window | A cycle whose `expires_at` passes during the freeze never gets an auto-draft (window `expires_at > now AND <= now + lead`, lead ≈ 30 days) — only a freeze of about a month reaches this. |
 | `enter-awaiting-payment`, `lapse-cycles-on-grace-expiry`, `prune-auto-drafts`, `reconcile-issued-orphans`, `reconcile-coverage-ends`, weekly at-risk / tier-upgrade / prune-consumed-tokens / reconcile-pending-applications | Catch up fully | Predicates compare against `now` or current state. A late lapse still waits for its 14-day statutory warning. |
 | Redactions, retention sweeps, `outbox-purge`, `prune-orphaned-zero-rate-certs`, `prune-expired-invitations`, `lockout-cleanup`, `reclaim-orphan-audiences`, `cleanup-audiences`, `reconcile-stuck-sending`, `reconcile-erasures`, F9 export jobs + snapshot refresh | Catch up fully | Cutoffs are `now − retention`; `sweep-error-csv-blobs` drains 100 per run, so a backlog takes several days. An expired lockout is already ignored at sign-in; the cron only tidies the row. |
@@ -974,7 +974,7 @@ Nothing is expected to be swept before ~2031 (the first prod E-Blast plus
 proxy's write-freeze does not cover, so the check is in the route — see
 § Read-only mode.)
 
-### Resend copies — NOT MEASURED, to measure before 2031
+### Resend copies — the DELETE answer MEASURED (2026-10-29); Resend's retention still to confirm
 
 **Policy (maintainer decision, 2026-09-25): our row is deleted even when
 Resend refuses to delete its copy.** Resend's documentation says a broadcast
@@ -986,15 +986,14 @@ broadcast object (the HTML body, and a name naming the member and the tenant)
 the Resend DPA / sub-processor terms. The RoPA discloses it as a residual
 (F7 retention row).
 
-`DELETE /broadcasts/{id}` has been measured against the live account **on a
-draft only** (2026-09-10). The policy rests on the gateway classifying the
-sent-broadcast answer as `permanent` (a 4xx); if Resend answered 5xx / 429
-instead, the row would be kept and retried daily for ever. Before the first prod
+`DELETE /broadcasts/{id}` was measured against the live account on
+2026-10-29 (sink address only): 200 on a `draft` or `scheduled` broadcast,
+**403 `validation_error` "Only draft or scheduled broadcasts can be deleted"**
+on a `queued` or `sent` one. The gateway classifies that 403 `permanent`, so
+the policy above holds: the row goes, the copy stays. Before the first prod
 E-Blast crosses its retention (~2031), the maintainer:
 
-1. **Measures it:** send a throwaway broadcast to a test audience on the Resend
-   account, then `DELETE /broadcasts/{id}` it; record the status and the
-   provider `name` (the sweep logs that `name` as `code`). Expected: a 4xx.
+1. ~~Measures it~~ — done 2026-10-29 (above).
 2. **Confirms Resend's retention for broadcast objects** (how long a sent
    broadcast and its body are kept, and whether support can delete one on
    request) and records the answer in the RoPA residual.

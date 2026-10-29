@@ -64,12 +64,19 @@ export function hasSendingStarted(status: BroadcastStatus): boolean {
  * F119 T166 R-H1 — has the dispatcher already handed an `approved` row over,
  * although its status has not moved yet? The dispatch leg locks the row, then
  * COMMITS and calls the provider with no lock held, persisting what it made as
- * it goes: `resend_broadcast_id` before the send (legacy leg),
- * `audience_import_id` before the import is sent (import leg). Either one set
- * means a send is in flight or done — an exit from `approved` that is not
- * terminal (a withdrawn approval, a cancelled or re-timed schedule, a new
- * working copy) must then answer `sending_started`, or the next round would
- * inherit the id and be recorded as sent without ever going out.
+ * it goes: `resend_broadcast_id` before the send (BOTH legs since 2026-10-29 —
+ * the import leg's S8 fix persists it pre-send too), and on the import leg
+ * `audience_import_id` once the import is submitted. Either one set means a
+ * send may be in flight or done — an exit from `approved` that is not terminal
+ * (a withdrawn approval, a cancelled or re-timed schedule, a new working copy)
+ * must then answer `sending_started`, or the next round would inherit the id
+ * and be recorded as sent without ever going out.
+ *
+ * Conservative by design: a pre-send id whose send never happened (the tick
+ * died, or an import-leg hold's broadcast delete failed and left the id for
+ * the next tick's probe) still reads `true` until a dispatch tick clears it —
+ * a hold's restart releases both columns, a probe that answers `not_found`
+ * replaces the id.
  *
  * `resend_audience_id` alone does NOT count: an audience is reused across a
  * failed tick by design and carries no send.

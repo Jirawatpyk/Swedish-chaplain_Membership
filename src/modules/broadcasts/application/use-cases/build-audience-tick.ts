@@ -53,7 +53,7 @@ import type { BrandChromePort } from '../ports/brand-chrome-port';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { broadcastsMetrics } from '@/lib/metrics';
-import { classifyThrown, isRetryableThrow } from './_classify-thrown';
+import { classifyThrown, isRetryableThrow, retryableSubKind } from './_classify-thrown';
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
@@ -68,6 +68,8 @@ import {
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
+import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
+import { isHandedStatus, probeRefusedSend } from './_probe-refused-send';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
@@ -86,16 +88,35 @@ import type { ResolvedOrphan, ResolveSegmentError } from './resolve-segment-reci
  */
 export const IMPORT_STUCK_AFTER_MS = 30 * 60 * 1_000;
 
+/**
+ * The pause before re-probing an inherited id that answered `not_found`. A
+ * `not_found` makes `confirmImport` mint a FRESH resource; were that answer a
+ * stale or transient 404 for a send Resend in fact accepted, the audience would
+ * be mailed twice. GET has answered consistently in every measurement
+ * (2026-10-29), but a transient 404 cannot be induced to test it, so the id is
+ * declared dead only on a second `not_found` (maintainer, 29 Oct 2026).
+ */
+export const REPROBE_PAUSE_MS = 3_000;
+
 export type BuildAudienceTickOutput =
   | { readonly kind: 'import_submitted'; readonly importId: string; readonly recipientCount: number }
   | { readonly kind: 'import_pending'; readonly importId: string }
   | { readonly kind: 'sent'; readonly resendBroadcastId: string; readonly recipientCount: number }
   /**
    * F119 PR-A R1 — the requesting member's membership is `suspended` (awaiting
-   * payment): nothing was polled, submitted, sent or written, and the row stays
-   * `approved` for the next tick. The same kind the legacy leg answers.
+   * payment): nothing was polled, submitted or sent, and the row stays
+   * `approved` for the next tick (a hold abandons its audience build —
+   * `restartAudienceBuild`). The same kind the legacy leg answers.
    */
-  | { readonly kind: 'dispatch_held_member_suspended' };
+  | { readonly kind: 'dispatch_held_member_suspended' }
+  /**
+   * The audience build was torn down and the next tick runs a fresh tick 1:
+   * tick 2's `POST /broadcasts` answered 404 "Audience not found" (measured
+   * 2026-10-29), or tick 1 found a row with an audience but no import (never
+   * reused — `stale_audience`). Nothing sent, nothing terminal, nobody told —
+   * neither a success nor a failure.
+   */
+  | { readonly kind: 'audience_restarted' };
 
 /**
  * Why a build stopped for good. Each value is a DIFFERENT sentence in the audit
@@ -256,7 +277,25 @@ export type BuildAudienceTickError =
        * live leg) — the member-standing read failed and the gate was not
        * decided, so nothing was sent.
        */
-      readonly phase: 'gateway' | 'resolve' | 'terminal_write' | 'standing';
+      readonly phase:
+        | 'gateway'
+        | 'resolve'
+        | 'terminal_write'
+        | 'standing'
+        /**
+         * S8 — the inherited-id probe answered a status this build cannot
+         * read: refused, the row stays `approved`, no FR-021 clock. The legacy
+         * leg's phase of the same name.
+         */
+        | 'inherited_status'
+        /** S8 — the pre-send `resend_broadcast_id` write faulted; nothing was sent. */
+        | 'persist_broadcast_id'
+        /**
+         * The audience-missing self-heal could not release the row's columns
+         * (a DB fault, or a step that must stop); the row is where it was and
+         * the next tick re-meets the same 404 and tries again.
+         */
+        | 'audience_restart';
     };
 
 /**
@@ -365,6 +404,8 @@ export interface BuildAudienceTickDeps {
    * a halted or ended membership, silently.
    */
   readonly sendStanding: DispatchStandingDeps;
+  /** Waits `ms` before the `not_found` re-probe (`REPROBE_PAUSE_MS`); tests pass a recorder. Default: a timer. */
+  readonly pauseBeforeReprobe?: (ms: number) => Promise<void>;
 }
 
 export interface BuildAudienceTickInput {
@@ -398,6 +439,46 @@ export async function buildAudienceTick(
   }
   const broadcast = loaded.broadcast;
 
+  // Step 1a (S8) — the inherited-id probe, BEFORE the standing gate and before
+  // anything else touches Resend: the legacy leg's Step 1b, the same answers.
+  //
+  // `resend_broadcast_id` is persisted BEFORE the send on this leg now
+  // (`persistBroadcastIdBeforeSend`), so an id on the row no longer means "an
+  // earlier tick sent": that tick may have died between the persist and
+  // `sendBroadcast`, or the send may have failed. Reading presence as "sent"
+  // would skip the standing gate for mail nobody sent; reading absence as
+  // "unsent" was the double-send — the next tick minted a SECOND resource and
+  // sent to everyone again. So ask Resend — the verdicts and what each one
+  // makes this tick do are `probeInheritedBroadcast`'s docblock.
+  //
+  // Any inherited id is probed, including a LEGACY-leg row carried across a
+  // flag flip (its id from that leg's own pre-send attach, no import id): R5
+  // gated such a row because this leg had no probe and its send was
+  // unknowable here; with the probe it is knowable, so a carry-over the legacy
+  // leg already sent is caught up instead of refused or re-sent. An EMPTY id
+  // is not an id (R8.5): not probed, the row is gated.
+  const inheritedBroadcastId = broadcast.resendBroadcastId ?? '';
+  let probe: InheritedProbe | null = null;
+  if (inheritedBroadcastId !== '') {
+    const probed = await probeInheritedBroadcast(deps, input, broadcast, inheritedBroadcastId);
+    if ('stop' in probed) return probed.stop;
+    probe = probed.probe;
+    // A single `not_found` GET decides nothing (round 5): it is re-asked once
+    // after REPROBE_PAUSE_MS, BEFORE the standing gate, so a hold, a refusal
+    // and a send all act on the second answer. A stale 404 for an accepted send
+    // must not be minted over (a second send), torn down (an audience deleted
+    // under a queued send) or refused (`failed_to_dispatch` for delivered mail).
+    if (!probe.handed && probe.status === null) {
+      await (deps.pauseBeforeReprobe ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(REPROBE_PAUSE_MS);
+      const again = await probeInheritedBroadcast(deps, input, broadcast, inheritedBroadcastId);
+      if ('stop' in again) return again.stop;
+      probe = again.probe;
+    }
+  }
+  if (probe !== null && probe.handed) {
+    return catchUpHanded(deps, input, broadcast, now, inheritedBroadcastId, probe);
+  }
+
   // Step 1b (F119 PR-A) — the member's standing, re-read at SEND time, BEFORE
   // the submit/confirm branch so it covers both ticks: a member halted, or
   // whose membership ended, between tick 1 (import submitted) and tick 2 (send)
@@ -408,44 +489,182 @@ export async function buildAudienceTick(
   // A refusal goes through `failTerminally` and nothing else: the terminal
   // transition is what makes a tick-1 Resend audience a `cleanup-audiences`
   // candidate (terminal status + `resend_audience_id` + no
-  // `audience_deleted_at`), and the Free plan holds three. A HOLD on tick 2
-  // therefore keeps that audience (and its submitted import) until the row
-  // resumes or is refused. A hold returns BEFORE `confirmImport`, so neither
-  // the 30-minute stuck rule nor the FR-021 budget runs while held; the stuck
-  // rule measures from the submit and fires only on a job the provider still
-  // reports as not completed, so a resumed row whose job completed during the
-  // hold proceeds.
+  // `audience_deleted_at`), and the Free plan holds three. A HOLD instead
+  // ABANDONS the audience build (`restartAudienceBuild`): a never-handed
+  // broadcast resource deleted, the row CLAIMED by CAS, then the audience
+  // deleted and its column released — so the row resumes with a fresh tick 1
+  // against the audience as it is then: never a stale import, never a false
+  // stuck alarm while held. A hold returns BEFORE `confirmImport`, so neither
+  // the 30-minute stuck rule nor the FR-021 budget runs while held.
   //
-  // Skipped when THIS leg already handed the send to Resend. On this leg
-  // `resend_broadcast_id` is attached only AFTER `sendBroadcast` succeeded,
-  // and only on a row carrying `audience_import_id` (tick 1 wrote it), so such
-  // a row still `approved` has had its mail handed to Resend by an earlier tick
-  // whose status flip was lost — refusing it would record a delivered broadcast
-  // as `failed_to_dispatch`, free its quota slot and email the member that it
-  // did not go out. The legacy leg's `alreadyHandedToSend` probe draws the same
-  // line. Keyed on a PRESENT id, so a row whose id cannot be read is still gated.
-  //
-  // R5 — narrowed to `audience_import_id !== null`. A LEGACY-leg row carried
-  // across a flag flip carries an id from that leg's pre-send
-  // `attachBroadcastId` and no import id; it used to skip the gate here. It is
-  // now gated. Whether its legacy send went out is unknowable on this leg (no
-  // probe), but this leg re-sends such a row anyway, so the gate can only
-  // PREVENT a send to an ineligible member; the one new harm is a refusal
-  // recorded for mail the legacy leg had already delivered, and only when the
-  // member is by then halted or ended — the drain-before-flip runbook step is
-  // what keeps both shapes from existing.
-  const handedToSend =
-    broadcast.audienceImportId !== null &&
-    typeof broadcast.resendBroadcastId === 'string' &&
-    broadcast.resendBroadcastId !== '';
-  if (!handedToSend) {
-    const refused = await applySendStanding(deps, input, broadcast);
-    if (refused !== null) return refused;
-  }
+  // Reached only when nothing was handed to `/send`: the probe above returned
+  // for a handed row.
+  const refused = await applySendStanding(deps, input, broadcast, probe);
+  if (refused !== null) return refused;
 
   return broadcast.audienceImportId === null
-    ? submitImport(deps, input, broadcast)
-    : confirmImport(deps, input, broadcast, broadcast.audienceImportId, now);
+    ? submitImport(deps, input, broadcast, probe)
+    : confirmImport(deps, input, broadcast, broadcast.audienceImportId, now, {
+        resendBroadcastId: inheritedBroadcastId,
+        observedResendStatus: probe === null ? null : probe.status,
+      });
+}
+
+/**
+ * An earlier tick's send was handed to Resend (the probe said so): only the
+ * post-send writes are left. The recipient count: the legacy leg re-resolves
+ * even on this path and writes the FRESH count; this leg skips the resolve (a
+ * refusal from it could change nothing — the mail is out), so the honest
+ * number in hand is the row's frozen estimate, which is what the legacy leg
+ * writes when its own re-resolve is refused. Neither is "the count that was
+ * sent"; the webhook-fed delivery aggregate is. The attribution fields are
+ * `null`: nothing resolved them on this tick.
+ */
+function catchUpHanded(
+  deps: BuildAudienceTickDeps,
+  input: BuildAudienceTickInput,
+  broadcast: Broadcast,
+  now: Date,
+  resendBroadcastId: string,
+  probe: Extract<InheritedProbe, { handed: true }>,
+): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
+  return advanceToSending(deps, input, broadcast, now, {
+    resendBroadcastId,
+    // `null`, never `''`, when the row carries none: the post-send write must
+    // not put an empty string into `resend_audience_id`.
+    audienceId: broadcast.resendAudienceId || null,
+    importId: broadcast.audienceImportId,
+    recipientCount: broadcast.estimatedRecipientCount,
+    orphanCount: null,
+    droppedByPreference: null,
+    handedOnPriorTick: { status: probe.status, sentAt: probe.sentAt },
+    notHandedStatus: null,
+    acceptedOnRefusedSend: null,
+  });
+}
+
+/**
+ * What the inherited-id probe learned (`probeInheritedBroadcast`); `handed` is
+ * `isHandedStatus`. `status: null` on the not-handed arm is `not_found`.
+ */
+type InheritedProbe =
+  | { readonly handed: true; readonly status: 'queued' | 'sending' | 'sent'; readonly sentAt: string | null }
+  | { readonly handed: false; readonly status: 'draft' | 'cancelled' | null };
+
+/**
+ * S8 — ask Resend what became of the broadcast resource an earlier tick
+ * persisted. `{ stop }` is the tick's answer; `{ probe }` carries on.
+ *
+ * The statuses (Step 1a acts on the verdict):
+ *
+ * - queued / sending / sent → handed: the mail is out. Step 1a skips the
+ *   standing gate (refusing would record `failed_to_dispatch` for a delivered
+ *   broadcast, free its quota slot and email the member that it did not go
+ *   out), the hold's abandon, and the whole import poll / count / drift check
+ *   (a `count_mismatch` now would be the same false failure) — and catches the
+ *   row up with the post-send writes (`advanceToSending`).
+ * - draft → never handed: proceed as normal; `confirmImport` reuses the id (no
+ *   second `createBroadcast`) and sends it with the same idempotency key.
+ *   Logged, because the fall-through is a decision.
+ * - cancelled / not_found → never handed, and the id is DEAD: only a draft can
+ *   be sent (a non-draft `/send` answers 422, MEASURED 2026-10-29), so
+ *   `confirmImport` mints a fresh resource and replaces the dead id by fenced
+ *   CAS — a dead id is never sent to.
+ * - unknown (and any status a later adapter adds without this function
+ *   learning it) → REFUSE, fail closed: the row stays `approved`, phase
+ *   `inherited_status`, no FR-021 clock (a clock would turn "unknown whether
+ *   sent" into "failed, member told"). Re-sending risks a second delivery to
+ *   the whole audience; skipping risks recording a send that never happened —
+ *   both unmeasured, and a stuck broadcast is recoverable by a human where a
+ *   duplicate send to every member is not. Recovery: teach the adapter the
+ *   status, or delete the resource at Resend so the probe answers `not_found`.
+ *   Resend's `failed` and `scheduled` statuses (both real — measured
+ *   2026-10-29: a queued broadcast whose audience is deleted turns `failed`
+ *   with no mail) reach this arm too; see `normaliseStatus`.
+ *
+ * The throws:
+ *
+ * - A RETRYABLE throw is retried next tick and never budgeted, nor stamped —
+ *   the legacy leg's F119 PR-E M1 reasoning: an unanswered probe cannot say
+ *   whether the mail already went out. On the clock, "first blip → the send
+ *   succeeds but the `sending` flip faults for an hour → one probe blip" would
+ *   become `retry_budget_exhausted`: a false member email and a released quota
+ *   slot for mail that went out. The operator signal for a probe that never
+ *   answers is `broadcasts_approved_overdue_count` + the
+ *   `inherited_probe_retryable` warn repeating for the row.
+ * - Any other throw (a 4xx other than 404 — the adapter turns a 404 into
+ *   `not_found` — a 409, a throw with no `kind`) is REFUSED, fail closed,
+ *   exactly as `unknown`: an unanswered probe cannot say whether the mail is
+ *   out, so the ordinary permanent rule (`failed_to_dispatch`, the member
+ *   told, the quota slot released) is the wrong answer. The legacy leg does
+ *   the same. An `AuditPortInvariantError` (a wiring bug) still throws.
+ */
+async function probeInheritedBroadcast(
+  deps: BuildAudienceTickDeps,
+  input: BuildAudienceTickInput,
+  broadcast: Broadcast,
+  resendBroadcastId: string,
+): Promise<
+  | { readonly stop: Result<BuildAudienceTickOutput, BuildAudienceTickError> }
+  | { readonly probe: InheritedProbe }
+> {
+  const ids = {
+    tenantId: deps.tenant.slug,
+    broadcastId: input.broadcastId as unknown as string,
+    resendBroadcastId,
+    importId: broadcast.audienceImportId,
+  };
+  let retrieved: Awaited<ReturnType<BroadcastsGatewayPort['retrieveBroadcast']>>;
+  try {
+    retrieved = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
+  } catch (e) {
+    if (e instanceof AuditPortInvariantError) throw e;
+    const shape = classifyThrown(e);
+    if (isRetryableThrow(shape.kind)) {
+      logger.warn(
+        { ...ids, subKind: retryableSubKind(shape.subKind) },
+        'broadcasts.audience_import.inherited_probe_retryable',
+      );
+      return { stop: err({ kind: 'dispatch.server_error', message: shape.kind, phase: 'gateway' }) };
+    }
+    // FAIL CLOSED — see the docblock. `errorKind` is the classifier's kind (a
+    // closed set), never the provider's free text.
+    logger.error({ ...ids, errorKind: shape.kind, severity: 'critical' }, 'broadcasts.audience_import.inherited_probe_refused');
+    return {
+      stop: err({
+        kind: 'dispatch.server_error',
+        message: 'inherited_probe_failed',
+        errClass: shape.kind,
+        phase: 'inherited_status',
+      }),
+    };
+  }
+  if (retrieved.kind === 'not_found') {
+    logger.warn({ ...ids, observedResendStatus: 'not_found' }, 'broadcasts.audience_import.inherited_broadcast_send_attempted');
+    return { probe: { handed: false, status: null } };
+  }
+  const { status, sentAt } = retrieved.resource;
+  if (isHandedStatus(status)) {
+    logger.warn({ ...ids, observedResendStatus: status }, 'broadcasts.audience_import.inherited_broadcast_already_handed_to_send');
+    return { probe: { handed: true, status, sentAt } };
+  }
+  if (status === 'draft' || status === 'cancelled') {
+    logger.warn({ ...ids, observedResendStatus: status }, 'broadcasts.audience_import.inherited_broadcast_send_attempted');
+    return { probe: { handed: false, status } };
+  }
+  // `unknown` or an unlearned status: FAIL CLOSED (see the docblock).
+  logger.error(
+    { ...ids, observedResendStatus: status, severity: 'critical' },
+    'broadcasts.audience_import.inherited_resource_unrecognised_status',
+  );
+  return {
+    stop: err({
+      kind: 'dispatch.server_error',
+      message: 'inherited_resource_unrecognised_status',
+      errClass: 'gate',
+      phase: 'inherited_status',
+    }),
+  };
 }
 
 /**
@@ -454,10 +673,11 @@ export async function buildAudienceTick(
  * anything else is the tick's answer.
  *
  * - `hold` (R1, a `suspended` membership) — `dispatch_held_member_suspended`:
- *   nothing sent, nobody told, no audit; the ONE write is the FR-021 retry-clock
- *   reset (F119 PR-E, review H1 — best-effort, own tx, a stamped row only), so a
+ *   nothing sent, nobody told, no audit. Best-effort writes: the FR-021
+ *   retry-clock reset (F119 PR-E, review H1 — a stamped row only), so a
  *   failure before a days-long hold cannot make the first blip after it
- *   terminal. The next tick asks again.
+ *   terminal; and abandoning whatever the audience build left at Resend
+ *   (`restartAudienceBuild`). The next tick asks again.
  * - `refuse` (halted, or the membership ENDED) — PERMANENT, and writes BOTH
  *   audit rows in the terminal transaction: the `broadcast_failed_to_dispatch`
  *   row every terminal failure writes, and the standing refusal under submit's
@@ -471,6 +691,7 @@ async function applySendStanding(
   deps: BuildAudienceTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
+  probe: InheritedProbe | null,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
   const standing = await decideDispatchStanding(
     deps.sendStanding,
@@ -482,6 +703,8 @@ async function applySendStanding(
     recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
     // Outside every tx: the Step-1 lock tx has committed.
     await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed');
+    // Best-effort: the hold is already the decided answer, whatever this says.
+    await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
     return ok({ kind: 'dispatch_held_member_suspended' });
   }
   if (standing.kind === 'refuse') {
@@ -516,6 +739,230 @@ async function applySendStanding(
     errClass: standing.errClass,
     phase: 'standing',
   });
+}
+
+/** The three Resend-side ids a restart reads off the row (the broadcast id RAW — `''` included). */
+interface RowIds {
+  readonly audienceId: string | null;
+  readonly importId: string | null;
+  readonly resendBroadcastId: string | null;
+}
+
+/**
+ * The probe called the row's broadcast id `cancelled`: it exists and can never
+ * be sent (only a draft can — a non-draft `/send` answers 422, MEASURED
+ * 2026-10-29), so a refused delete of it says nothing about a sibling tick.
+ * NOT `not_found`: the adapter already treats a 404 delete as success, so after
+ * a (twice-confirmed) `not_found` a REFUSED delete proves the resource exists
+ * and is not a draft — perhaps queued — and the teardown must stop (round 5).
+ */
+function isDeadProbe(probe: InheritedProbe | null): boolean {
+  return probe !== null && !probe.handed && probe.status === 'cancelled';
+}
+
+function rowIds(broadcast: Broadcast): RowIds {
+  return {
+    audienceId: broadcast.resendAudienceId ?? null,
+    importId: broadcast.audienceImportId,
+    resendBroadcastId: broadcast.resendBroadcastId ?? null,
+  };
+}
+
+/**
+ * Restart the audience build: forget this row's Resend resources so the next
+ * tick runs a fresh tick 1 against the audience as it is then. Two callers:
+ *
+ *   - `'hold'` — a suspended member. Left in place, a pending import counted in
+ *     `audience_import_stuck_count` for the whole hold (a false "Resend import
+ *     stuck" alarm), went stale while the audience changed (the resumed send
+ *     then failed `count_mismatch` / `audience_membership_drift`), and made
+ *     `hasDispatchBegun` read the row as handed over, so staff could neither
+ *     cancel nor re-time it.
+ *   - `'audience_missing'` — Resend answered that the audience is gone (a
+ *     `404 not_found` on `createBroadcast` or `createContactImport`, measured
+ *     2026-10-29). Nothing can be built on it; terminal would be a false
+ *     failure the member is told about.
+ *
+ * Reached only for a row nothing was handed to Resend for SENDING: the
+ * inherited-id probe returns before this for `queued` / `sending` / `sent`
+ * (and refuses an unreadable status), so any broadcast id on the row is one
+ * the probe said this tick was `draft` / `cancelled` / gone.
+ *
+ * **The row is the mutex** (2026-10-29). The dispatch cron holds no lease past
+ * its scan, so a sibling tick may be sending from this row right now, and
+ * DELETE of an audience whose broadcast is `queued` turns that broadcast
+ * `failed` with no mail while our row goes `sending` (measured 2026-10-29). The
+ * import leg's send is fenced on `audience_import_id` (`attachBroadcastId`), so:
+ *
+ *   1. CLAIM (`releaseAudienceImport`, own tx) — NULL the import columns only,
+ *      a CAS on all three ids. Skipped when the row has no import (a tick 1
+ *      that died after `attachAudienceId`, or an earlier restart that stopped
+ *      after its claim): nothing can send from such a row. LOST → stop, delete
+ *      NOTHING (a sibling's fenced attach won and is sending).
+ *   2. Delete the broadcast resource, if the row carries one (404 = gone, fine).
+ *      FAILS → stop with the id still on the row. A refusal (`403` once
+ *      `queued`, measured 2026-10-29) means a sibling sent it after all; the
+ *      next tick's probe finds it handed and catches the row up — had the id
+ *      been NULLed, that tick would mint and send again.
+ *   3. Delete the audience (404 = gone, fine) — on the audience-missing path
+ *      too: a 404 that did not mean "gone" must not leave member emails in an
+ *      audience no row points at. FAILS → stop; the column still points at it,
+ *      so erasure and `cleanup-audiences` see it.
+ *   4. RELEASE (`releaseResendAudience`, own tx) — NULL the audience and the
+ *      broadcast id together, a CAS on both and on "no import".
+ *
+ * A step that stops leaves a shape the next tick redoes from: no import → no
+ * claim, straight to the deletes (both answer 404 as success).
+ *
+ * The residual double race (bounded, no double send): a sibling passes its
+ * fence, THEN this claims and deletes its broadcast before its `/send` — which
+ * 404s and finds the row re-read without its import (`confirmImport`), a
+ * concurrent skip. Sibling sends AFTER the delete never reach Resend: a 404.
+ *
+ * Never throws for a step: each failure is logged by class and answered.
+ */
+/**
+ * Why an audience build is being torn down. `stale_audience`: tick 1 found a
+ * row that still carries an audience but no import — a tick 1 that died after
+ * `attachAudienceId`, or a teardown that stopped part-way.
+ */
+type RestartReason = 'hold' | 'audience_missing' | 'stale_audience';
+
+const RESTART_LOG_NAMES: Readonly<Record<RestartReason, { failed: string; lost: string; done: string }>> = {
+  hold: { failed: 'hold_abandon_failed', lost: 'hold_abandon_lost', done: 'abandoned_on_hold' },
+  audience_missing: { failed: 'audience_missing_restart_failed', lost: 'audience_missing_restart_lost', done: 'audience_missing_restarted' },
+  stale_audience: { failed: 'stale_audience_restart_failed', lost: 'stale_audience_restart_lost', done: 'stale_audience_restarted' },
+};
+
+async function restartAudienceBuild(
+  deps: BuildAudienceTickDeps,
+  input: BuildAudienceTickInput,
+  row: RowIds,
+  why: RestartReason,
+  opts: { readonly bidIsDead: boolean },
+): Promise<'restarted' | 'nothing' | 'lost' | 'failed'> {
+  const { audienceId, importId, resendBroadcastId } = row;
+  if (audienceId === null || audienceId === '') return 'nothing';
+  const names = RESTART_LOG_NAMES[why];
+  const ids = {
+    tenantId: deps.tenant.slug,
+    broadcastId: input.broadcastId as unknown as string,
+    importId,
+    resendAudienceId: audienceId,
+    resendBroadcastId,
+  };
+  const failed = (step: string, e: unknown): 'failed' => {
+    broadcastsMetrics.audienceImportRestartFailed(deps.tenant.slug, why, step);
+    logger.warn(
+      { err: errKind(e), errorKind: classifyThrown(e).kind, ...ids, step },
+      `broadcasts.audience_import.${names.failed}`,
+    );
+    return 'failed';
+  };
+  const lost = (step: string): 'lost' => {
+    logger.info({ ...ids, step }, `broadcasts.audience_import.${names.lost}`);
+    return 'lost';
+  };
+
+  // 1. CLAIM.
+  if (importId !== null) {
+    let claimed: boolean;
+    try {
+      claimed = await deps.broadcastsRepo.withTx((tx) =>
+        deps.broadcastsRepo.releaseAudienceImport(tx, deps.tenant.slug, input.broadcastId, {
+          importId,
+          resendAudienceId: audienceId,
+          resendBroadcastId,
+        }),
+      );
+    } catch (e) {
+      return failed('release_import', e);
+    }
+    if (!claimed) return lost('release_import');
+  }
+  // 2. The broadcast resource (an empty id is not an id).
+  if (resendBroadcastId !== null && resendBroadcastId !== '') {
+    try {
+      await deps.broadcastsGateway.deleteBroadcast(resendBroadcastId);
+    } catch (e) {
+      // A refusal means "it may be out" — except for a `cancelled` id, which can
+      // never be sent, so its refused delete must not stop the restart (that
+      // would fail every tick for ever). A `not_found` id needs no exception:
+      // its delete 404s, which the adapter treats as success.
+      if (!opts.bidIsDead || isRetryableThrow(classifyThrown(e).kind)) return failed('delete_broadcast', e);
+      // Warn, not info: the cancelled resource stays at Resend (it cannot be
+      // deleted) and the release below drops its id from the row, so this
+      // line is its only record.
+      logger.warn({ ...ids, err: errKind(e) }, `broadcasts.audience_import.${names.failed}_dead_broadcast_kept`);
+    }
+  }
+  // 3. The audience.
+  try {
+    await deps.broadcastsGateway.deleteAudience(audienceId);
+  } catch (e) {
+    return failed('delete_audience', e);
+  }
+  // 4. RELEASE.
+  let released: boolean;
+  try {
+    released = await deps.broadcastsRepo.withTx((tx) =>
+      deps.broadcastsRepo.releaseResendAudience(tx, deps.tenant.slug, input.broadcastId, {
+        resendAudienceId: audienceId,
+        resendBroadcastId,
+      }),
+    );
+  } catch (e) {
+    return failed('release_audience', e);
+  }
+  if (!released) return lost('release_audience');
+
+  if (why === 'hold') {
+    broadcastsMetrics.audienceImportAbandonedOnHold(deps.tenant.slug);
+    logger.info(ids, `broadcasts.audience_import.${names.done}`);
+  } else if (why === 'audience_missing') {
+    broadcastsMetrics.audienceImportRestartedOnMissingAudience(deps.tenant.slug);
+    logger.warn(ids, `broadcasts.audience_import.${names.done}`);
+  } else {
+    logger.info(ids, `broadcasts.audience_import.${names.done}`);
+  }
+  return 'restarted';
+}
+
+/**
+ * The tick-1 audience is gone at Resend: `POST /broadcasts` answers `404
+ * not_found "Audience not found"`, `POST /contacts/imports` `404 not_found
+ * "Segment not found"` (both measured 2026-10-29). Neither call carries a
+ * resource id into the adapter, so a 404 there classifies `permanent` with
+ * `code: 'not_found'` (`classifyResendError` — the live legacy leg reads the
+ * same throw and keeps its permanent arm; this reading is the import leg's
+ * alone, at its one call site: `createBroadcast` in `confirmImport`, where the
+ * audience came from an earlier tick). `http_404` is the adapter's fallback
+ * code when Resend sends no `name`. (`createContactImport` always imports into
+ * an audience this tick created, so its 404 keeps the permanent rule.)
+ */
+function isAudienceMissing(failure: GatewayFailure): boolean {
+  return !failure.retryable && failure.kind === 'permanent' && (failure.code === 'not_found' || failure.code === 'http_404');
+}
+
+/**
+ * The audience-missing self-heal: restart the build and answer the tick
+ * NON-terminally — no `failed_to_dispatch`, no member email, no FR-021 clock.
+ * The next tick runs a fresh tick 1. A restart that stopped part-way leaves
+ * the row where the next tick meets the same 404 and tries again.
+ */
+async function selfHealMissingAudience(
+  deps: BuildAudienceTickDeps,
+  input: BuildAudienceTickInput,
+  row: RowIds,
+  bidIsDead: boolean,
+  why: Exclude<RestartReason, 'hold'> = 'audience_missing',
+): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
+  const outcome = await restartAudienceBuild(deps, input, row, why, { bidIsDead });
+  if (outcome === 'restarted') return ok({ kind: 'audience_restarted' });
+  if (outcome === 'lost') {
+    return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+  }
+  return err({ kind: 'dispatch.server_error', message: 'audience_restart_failed', phase: 'audience_restart' });
 }
 
 /**
@@ -583,15 +1030,9 @@ async function viaGateway<T>(fn: () => Promise<T>): Promise<Result<T, GatewayFai
     const shape = classifyThrown(e);
     const message = shape.reason ?? shape.kind;
     if (isRetryableThrow(shape.kind)) {
-      const sub = shape.subKind;
-      return err({
-        retryable: true,
-        message,
-        subKind:
-          sub === 'network' || sub === 'timeout' || sub === 'server_5xx' || sub === 'api'
-            ? sub
-            : undefined,
-      });
+      // The shared narrowing; this union spells "no transport class" `undefined`.
+      const sub = retryableSubKind(shape.subKind);
+      return err({ retryable: true, message, subKind: sub === 'unclassified' ? undefined : sub });
     }
     return err({
       retryable: false,
@@ -916,16 +1357,25 @@ async function submitImport(
   deps: BuildAudienceTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
+  probe: InheritedProbe | null,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
+  // A row that still carries an audience but no import is a tick 1 that died
+  // after `attachAudienceId`, or a teardown (a hold, a self-heal) that stopped
+  // part-way. The audience may hold a STALE set — contacts who unsubscribed or
+  // left since — so it is never reused (code review round 4): the teardown is
+  // finished (its broadcast, if never handed; the audience; the release) and
+  // the next tick builds a fresh one. Deleting before releasing is also what
+  // orphan prevention needs on the Free plan's three audiences. Bounded: a
+  // fresh audience's failures are budgeted (FR-021) or permanent.
+  if ((broadcast.resendAudienceId ?? '') !== '') {
+    return selfHealMissingAudience(deps, input, rowIds(broadcast), isDeadProbe(probe), 'stale_audience');
+  }
+
   const resolved = await deps.resolveRecipients(broadcast);
   if (!resolved.ok) return onResolveFailure(deps, input, broadcast, resolved.error);
 
-  // Orphan-audience prevention, the same rule the single-tick path follows: a
-  // retry after a downstream failure must REUSE the audience a previous attempt
-  // created. On Resend Free three audiences is the entire allowance, and a
-  // leaked one is not reclaimed until `cleanup-audiences` reaps it.
-  let audienceId = broadcast.resendAudienceId ?? '';
-  if (audienceId === '') {
+  let audienceId = '';
+  {
     const created = await viaGateway(() =>
       deps.broadcastsGateway.createAudience(
         `broadcast-${deps.tenant.slug}-${input.broadcastId as unknown as string}`,
@@ -958,15 +1408,24 @@ async function submitImport(
     Date.now() - submitStartedAt,
     submitted.ok ? 'ok' : 'failed',
   );
-  if (!submitted.ok) return onGatewayFailure(deps, input, broadcast, submitted.error, null);
+  if (!submitted.ok) {
+    // The audience was created on THIS tick, so a 404 is not "deleted since":
+    // it keeps the ordinary permanent rule (restarting would mint another every
+    // tick until the Free plan's three segments ran out).
+    return onGatewayFailure(deps, input, broadcast, submitted.error, null);
+  }
 
   const attachedImport = await viaRepoConcurrency(input.broadcastId, () =>
     deps.broadcastsRepo.withTx(async (tx) => {
+      // Fenced on the audience the import went INTO: a hold that released it
+      // in the meantime makes this lose (concurrent skip), so no import is
+      // left on a row with no audience.
       await deps.broadcastsRepo.attachAudienceImport(
         tx,
         deps.tenant.slug,
         input.broadcastId,
         submitted.value.importId,
+        { expectedResendAudienceId: audienceId },
       );
     }),
   );
@@ -1000,6 +1459,18 @@ async function confirmImport(
   broadcast: Broadcast,
   importId: string,
   now: Date,
+  /**
+   * S8 — what Step 1a learned about a broadcast id an earlier tick persisted.
+   * `resendBroadcastId` is `''` when the row carries none (a fresh mint). A
+   * non-empty one was probed NOT handed to `/send`: `draft` is reused (never
+   * minted twice), re-asserted through the sender's fence; `cancelled` and
+   * `observedResendStatus: null` (`not_found`, already re-probed once in Step 1a) are DEAD,
+   * so a fresh resource replaces them.
+   */
+  inherited: {
+    readonly resendBroadcastId: string;
+    readonly observedResendStatus: 'draft' | 'cancelled' | null;
+  },
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const polled = await viaGateway(() => deps.broadcastsGateway.getContactImport(importId));
   if (!polled.ok) return onGatewayFailure(deps, input, broadcast, polled.error, importId);
@@ -1141,9 +1612,10 @@ async function confirmImport(
   //
   // Every clause of the completion rule above compares numbers reported by the
   // import JOB. None of them looks at what the audience actually holds, and the
-  // two can differ: `submitImport` deliberately REUSES
-  // `broadcast.resendAudienceId`, `createContactImport` posts
-  // `on_conflict=upsert`, and nothing anywhere removes a contact —
+  // two could differ: `submitImport` used to REUSE `broadcast.resendAudienceId`
+  // (since spec 138 it never does — a row with an audience and no import is
+  // torn down first), `createContactImport` posts `on_conflict=upsert`, and
+  // nothing anywhere removes a contact —
   // `unsubscribe-recipient.ts` writes only `marketing_unsubscribes` and makes NO
   // gateway call, so Resend still holds the contact as subscribed.
   //
@@ -1245,60 +1717,97 @@ async function confirmImport(
     broadcastsMetrics.driftCheckUnverifiable(deps.tenant.slug);
   }
 
-  // F119 T031 — read outside the gateway retry wrapper: a brand read is not a
-  // provider call and must not be classified as one.
-  const brand = await loadBrandChrome(deps.brandChrome, deps.tenant, 'audience_tick');
-  const createdRb = await viaGateway(() =>
-    deps.broadcastsGateway.createBroadcast({
-      audienceId,
-      subject: broadcast.subject,
-      htmlBody: broadcast.bodyHtml,
-      fromName: broadcast.fromName,
-      fromEmail: deps.fromEmail,
-      replyToEmail: broadcast.replyToEmail,
-      broadcastNameForResendDashboard: `${deps.tenantDisplayName} — ${broadcast.subject}`,
-      tenantDisplayName: deps.tenantDisplayName,
-      locale: deps.locale,
-      brand,
-    }),
-  );
-  if (!createdRb.ok) return onGatewayFailure(deps, input, broadcast, createdRb.error, importId);
-  const rb = createdRb.value;
+  // S8 — the double-send window, closed the way the legacy leg closed it (F4).
+  //
+  // `createBroadcast` mints a Resend resource and carries no idempotency key
+  // (`Idempotency-Key` is MEASURED inert on `POST /broadcasts`, 2026-09-09). Its
+  // id used to reach the row only AFTER `sendBroadcast`, so a tick dying
+  // between the send and that write re-entered with no id, minted a SECOND
+  // resource and sent to everyone again — a different resource, where no key
+  // can dedupe. Now the minted id is persisted BEFORE the send, in its own tx
+  // (`persistBroadcastIdBeforeSend`), and a re-entered tick probes it at Step
+  // 1a: handed → caught up without a send; `draft` / `cancelled` → reused here.
+  //
+  // THE SENDER'S FENCE (2026-10-29): every persist on this leg is fenced on
+  // the import this tick confirmed, so a hold on an overlapping tick that
+  // claimed the row (`restartAudienceBuild`) makes it lose and nothing is sent
+  // into the audience the hold is deleting. Nothing runs between the persist
+  // and `/send`: on a fresh mint the persist IS the fence; an inherited id is
+  // re-asserted through it.
+  //
+  // A DEAD inherited id is never sent to: `not_found` could only 404, and
+  // `cancelled` only 422 (only a draft can be sent, MEASURED 2026-10-29). A
+  // fresh one is minted and replaces exactly that dead id
+  // (`replacesResendBroadcastId`), still fenced.
+  const inheritedId = inherited.resendBroadcastId;
+  const inheritedDead =
+    inheritedId !== '' && (inherited.observedResendStatus === null || inherited.observedResendStatus === 'cancelled');
+  const minted = inheritedId === '' || inheritedDead;
+  let mintedId: string | null = null;
+  if (minted) {
+    // F119 T031 — read outside the gateway retry wrapper: a brand read is not a
+    // provider call and must not be classified as one.
+    const brand = await loadBrandChrome(deps.brandChrome, deps.tenant, 'audience_tick');
+    const createdRb = await viaGateway(() =>
+      deps.broadcastsGateway.createBroadcast({
+        audienceId,
+        subject: broadcast.subject,
+        htmlBody: broadcast.bodyHtml,
+        fromName: broadcast.fromName,
+        fromEmail: deps.fromEmail,
+        replyToEmail: broadcast.replyToEmail,
+        broadcastNameForResendDashboard: `${deps.tenantDisplayName} — ${broadcast.subject}`,
+        tenantDisplayName: deps.tenantDisplayName,
+        locale: deps.locale,
+        brand,
+      }),
+    );
+    if (!createdRb.ok) {
+      // `404 "Audience not found"` — the audience is gone: forget it (and a
+      // dead inherited id with it — `restartAudienceBuild` deletes it, 404 =
+      // fine, and the release clears it) and build afresh next tick.
+      if (isAudienceMissing(createdRb.error)) {
+        // Only `cancelled` may carry the teardown past a refused delete — the
+        // same rule as `isDeadProbe`; `inheritedDead` (which also covers a
+        // re-probed `not_found`) answers the different question of minting.
+        return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId }, inherited.observedResendStatus === 'cancelled');
+      }
+      return onGatewayFailure(deps, input, broadcast, createdRb.error, importId);
+    }
+    mintedId = createdRb.value.broadcastId;
+  }
+  const resendBroadcastId = mintedId ?? inheritedId;
+  // A minted id is reclaimed on a refusal; an inherited `draft` never is (the
+  // hold that won owns its removal).
+  const persistRefused = await persistBroadcastIdBeforeSend(deps, input, {
+    resendBroadcastId,
+    resendAudienceId: audienceId,
+    minted,
+    fence: {
+      expectedAudienceImportId: importId,
+      ...(inheritedDead ? { replacesResendBroadcastId: inheritedId } : {}),
+    },
+    logPrefix: 'broadcasts.audience_import',
+    logFields: { importId },
+  });
+  if (persistRefused !== null) return err(persistRefused);
+  if (inheritedDead) {
+    // The dead resource stays at Resend if it was `cancelled` (it cannot be
+    // deleted); its id leaves the row here, so this line is its only record.
+    logger.warn(
+      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, replacedResendBroadcastId: inheritedId, resendBroadcastId, observedResendStatus: inherited.observedResendStatus ?? 'not_found' },
+      'broadcasts.audience_import.dead_broadcast_replaced',
+    );
+  }
 
-  // Same idempotency key shape the single-tick path uses.
-  //
-  // ⚠️ S8, NARROWED — and the narrowing matters, because the sentence that used
-  // to stand here ("Resend rejects the second call with a 409") was FALSE.
-  // Round 3 finding 3-1: `resend@4.8.0`'s `broadcasts.send` calls `post()` with
-  // two arguments and drops the key entirely, so no 409 was ever possible. The
-  // gateway now sends the key via `post()`'s third argument, which makes the
-  // WITHIN-TICK replay — `withRetry` re-firing after a lost response — safe, and
-  // makes the arm below reachable for the first time.
-  //
-  // **Still open, and a follow-up PR rather than a merge blocker** (this
-  // whole use case is dark at merge: `FEATURE_F7_IMPORT_AUDIENCE` defaults
-  // false): `createBroadcast` above carries NO key, so a tick that dies between
-  // the send and the tx below re-enters, mints a NEW Resend broadcast resource,
-  // and sends to a different path where no key can dedupe. Closing that means
-  // persisting `resend_broadcast_id` BEFORE the send so a re-entered tick reuses
-  // the resource — a change to the two-tick contract, tracked with the flip
-  // preconditions rather than ridden along here.
-  //
-  // The mechanism now EXISTS: `BroadcastsRepo.attachBroadcastId` was added by F4
-  // (PR #353) and the legacy leg uses it. This leg still calls `attachResendIds`
-  // AFTER the send, so it keeps the window. Wiring it here is a small change and
-  // a flip precondition, not a research task.
-  //
-  // This paragraph briefly carried a parenthetical claiming the double-send "is
-  // live on `origin/main` today and waits for a failed DB write, not for a flag".
-  // That is true of the LEGACY leg and false here: this file does not exist on
-  // `origin/main` (`git cat-file -e origin/main:<this path>` fails), so on this
-  // leg the shape genuinely does wait for `FEATURE_F7_IMPORT_AUDIENCE`. It was
-  // pasted across from `dispatch-scheduled-broadcast.ts`, where it is accurate,
-  // without re-checking which leg it had landed on.
+  // Same idempotency key shape the single-tick path uses, and the SAME key on
+  // a re-entered tick that reuses an inherited id (round 3 finding 3-1: the
+  // gateway sends it via `post()`'s third argument). The key dedupes nothing;
+  // Resend's own 422 on any second `/send` does (MEASURED 2026-10-29,
+  // `_probe-refused-send.ts`), and the loser's 422 is probed below.
   const sent = await viaGateway(() =>
     deps.broadcastsGateway.sendBroadcast(
-      rb.broadcastId,
+      resendBroadcastId,
       `broadcast-${deps.tenant.slug}-${input.broadcastId as unknown as string}`,
     ),
   );
@@ -1308,66 +1817,178 @@ async function confirmImport(
   // delivered broadcast, email the member that it did not go out, and refund the
   // quota slot (`countForMemberQuota` excludes `failed_to_dispatch`).
   //
+  // MEASURED 2026-10-29: a second send answers 422, never 409, so this arm is
+  // all but unreachable (`_probe-refused-send.ts`).
+  //
   // Only on the send, and only with a broadcast id in hand: a 409 raised earlier
   // leaves nothing to advance to, which is exactly the distinction
   // `idempotency_conflict_pre_send` draws on the legacy leg.
-  const sentOrReplayed =
-    sent.ok || (!sent.error.retryable && sent.error.kind === 'idempotency_conflict');
-  if (!sentOrReplayed) {
-    return onGatewayFailure(deps, input, broadcast, sent.error as GatewayFailure, importId);
+  const replayed = !sent.ok && !sent.error.retryable && sent.error.kind === 'idempotency_conflict';
+  let acceptedOnRefusedSend: 'queued' | 'sending' | 'sent' | null = null;
+  if (!sent.ok && !replayed) {
+    const failure = sent.error as GatewayFailure;
+    if (!failure.retryable && failure.kind === 'resource_missing') {
+      const lostToHold = await sendLostToHold(deps, input, resendBroadcastId, importId);
+      if (lostToHold !== null) return lostToHold;
+    }
+    // That 422 reads `permanent` here — ask Resend before believing it.
+    if (!failure.retryable && (failure.kind === 'permanent' || failure.kind === 'unknown')) {
+      const verdict = await probeRefusedSend(
+        deps.broadcastsGateway,
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, resendBroadcastId },
+        'broadcasts.audience_import',
+      );
+      if (verdict.kind === 'unverifiable') {
+        return err({ kind: 'dispatch.server_error', message: 'send_refused_unverifiable', errClass: 'gate', phase: 'inherited_status' });
+      }
+      if (verdict.kind === 'refused') return onGatewayFailure(deps, input, broadcast, failure, importId);
+      // `accepted` — the mail is out: the replay arm's path below.
+      acceptedOnRefusedSend = verdict.status;
+    } else {
+      return onGatewayFailure(deps, input, broadcast, failure, importId);
+    }
   }
-  if (!sent.ok) {
+  if (replayed) {
     logger.warn(
       {
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
-        resendBroadcastId: rb.broadcastId,
+        resendBroadcastId,
         importId,
       },
       'broadcasts.audience_import.send_idempotency_replay',
     );
   }
+
+  return advanceToSending(deps, input, broadcast, now, {
+    resendBroadcastId,
+    audienceId,
+    importId,
+    recipientCount: resolvedCount,
+    orphanCount: resolved.value.orphans.length,
+    droppedByPreference: resolved.value.droppedByPreference,
+    handedOnPriorTick: null,
+    notHandedStatus: inherited.observedResendStatus,
+    acceptedOnRefusedSend,
+  });
+}
+
+/**
+ * The fence's residual double race, answered. This tick's fenced persist
+ * landed, THEN a hold on an overlapping tick claimed the row and deleted that
+ * broadcast resource, all before this tick's `/send` — which 404s. The hold
+ * won and nothing went out, so this is no failure of the broadcast: re-read
+ * the row, and when it no longer carries the import this tick confirmed or the
+ * id it sent, answer a concurrent skip (never `failed_to_dispatch`, never a
+ * member email). `null` — the row is as this tick left it, or the re-read
+ * failed: the ordinary `resource_missing` arm (an admin must look).
+ */
+async function sendLostToHold(
+  deps: BuildAudienceTickDeps,
+  input: BuildAudienceTickInput,
+  sendId: string,
+  importId: string,
+): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
+  let row: Broadcast | null;
+  try {
+    row = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+  } catch (readErr) {
+    logger.warn(
+      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId: sendId, err: errKind(readErr) },
+      'broadcasts.audience_import.send_404_reread_failed',
+    );
+    return null;
+  }
+  if (row !== null && row.resendBroadcastId === sendId && row.audienceImportId === importId) return null;
+  logger.info(
+    { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId: sendId, importId },
+    'broadcasts.audience_import.send_lost_to_hold',
+  );
+  return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+}
+
+/** What the post-send writes need to know about the send they record. */
+interface SendHandOff {
+  readonly resendBroadcastId: string;
+  /** `null` only on the handed path, for a row that carries no audience id. */
+  readonly audienceId: string | null;
+  /** `null` for a legacy-leg carry-over the probe found already sent. */
+  readonly importId: string | null;
+  readonly recipientCount: number;
+  /** `null` when nothing resolved the audience on this tick (the handed path). */
+  readonly orphanCount: number | null;
+  readonly droppedByPreference: number | null;
+  /** Set when an EARLIER tick handed the send to Resend (the probe said so). */
+  readonly handedOnPriorTick: {
+    readonly status: 'queued' | 'sending' | 'sent';
+    readonly sentAt: string | null;
+  } | null;
+  /**
+   * What the probe answered on a NOT-handed row (`null`: nothing probed, or
+   * `not_found`). A handed row's status is `handedOnPriorTick.status`.
+   */
+  readonly notHandedStatus: 'draft' | 'cancelled' | null;
+  /** What the probe of THIS tick's refused `/send` saw (`_probe-refused-send.ts`). */
+  readonly acceptedOnRefusedSend: 'queued' | 'sending' | 'sent' | null;
+}
+
+/**
+ * The post-send writes — reached from TWO places: right after THIS tick's
+ * send (or its 409 replay), and from Step 1a when the probe found an earlier
+ * tick's send already handed to Resend. Either way the provider has the mail,
+ * so everything here is a record of a delivery, never a reason to undo one.
+ */
+async function advanceToSending(
+  deps: BuildAudienceTickDeps,
+  input: BuildAudienceTickInput,
+  broadcast: Broadcast,
+  now: Date,
+  sent: SendHandOff,
+): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
+  const { resendBroadcastId, audienceId, importId, recipientCount } = sent;
+  const handedEarlier = sent.handedOnPriorTick !== null;
   // F119 PR-E (review M1) — the provider has the mail: nothing is left to
   // budget, so reset the FR-021 clock before the writes below that may fail.
-  // This leg has no inherited-id probe, so a stamp surviving a delivered send
-  // would be inherited by any later budgeted failure on the row. Own tx,
-  // best-effort (never throws).
+  // A stamp surviving a delivered send would otherwise be inherited by any
+  // later budgeted failure on the row; the probe's retryable throw is kept off
+  // the clock for the same reason. Own tx, best-effort (never throws).
   await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed');
 
-  // ## Round 3 finding 3-6 — the cancel window, and why the ids go FIRST
+  // ## Round 3 finding 3-6 — the cancel window, and why the ids ride their own tx
   //
   // Nothing holds a lock across the send. `lockForUpdate` takes
-  // `pg_advisory_xact_lock`, but its tx commits at the top of this function,
-  // before every gateway call — so the cron header's claim that that lock
-  // "survives the entire dispatch tx and closes the TOCTOU window" is not true
-  // on this path. The window spans a `getContactImport` round trip, a full
-  // `resolveRecipients` re-walk, `createBroadcast` and `sendBroadcast` (each up
-  // to 6 `withRetry` attempts).
+  // `pg_advisory_xact_lock`, but its tx commits at the top of the tick, before
+  // every gateway call — so the window spans a `getContactImport` round trip, a
+  // full `resolveRecipients` re-walk, `createBroadcast` and `sendBroadcast`
+  // (each up to 6 `withRetry` attempts). `cancelBroadcast` accepts `approved`,
+  // so an admin cancel can land inside it: the mail is out and the row says
+  // `cancelled` — an unpleasant state no code here can undo.
   //
-  // `cancelBroadcast` accepts `approved`, so an admin cancel can land inside it.
-  // The mail is then already delivered and the row says `cancelled` — an
-  // unpleasant state no code here can undo. What made it WORSE was that both
-  // writes sat in one transaction after the send: `applyTransition(...,
-  // expectedFromStatus: 'approved')` matched 0 rows, threw, rolled back
-  // `attachResendIds` with it, and escaped uncaught to the cron's
-  // `uncaught_error` bucket. `resend_broadcast_id` stayed NULL for ever, so
-  // every later delivery / bounce / complaint webhook failed to resolve the
-  // broadcast and was DROPPED — bounces never reaching the suppression list is
-  // a deliverability problem that outlives the broadcast, and
-  // `reconcile-stuck-sending` could not see the row either because it is not
-  // `sending`.
+  // The broadcast id that makes the webhooks resolvable is already COMMITTED
+  // by now — `persistBroadcastIdBeforeSend` wrote it before the send, and on
+  // the handed path an earlier tick did. So `attachResendIds` below re-writes
+  // values the row already holds (it has no CAS and sets the same pair, so it
+  // is idempotent); it stays as the "row gone" detector and the parity write
+  // the legacy leg makes. It keeps its OWN tx, separate from the transition:
+  // when both shared one, a cancel made the transition match 0 rows, roll the
+  // id write back with it and escape as `uncaught_error`, and every later
+  // delivery / bounce / complaint webhook failed to resolve the broadcast.
   //
-  // So the ids are persisted in their OWN transaction first. They are a record
-  // of what Resend was told, true regardless of which status the row ends in,
-  // and they are what makes the webhooks resolvable.
+  // A row with NO audience id (the handed path only) takes `attachBroadcastId`
+  // instead — the same "row gone" detection and status CAS, without writing
+  // `''` into `resend_audience_id`.
   const idsAttached = await viaRepoConcurrency(input.broadcastId, () =>
     deps.broadcastsRepo.withTx(async (tx) => {
+      if (audienceId === null) {
+        await deps.broadcastsRepo.attachBroadcastId(tx, deps.tenant.slug, input.broadcastId, resendBroadcastId);
+        return;
+      }
       await deps.broadcastsRepo.attachResendIds(
         tx,
         deps.tenant.slug,
         input.broadcastId,
         audienceId,
-        rb.broadcastId,
+        resendBroadcastId,
       );
     }),
   );
@@ -1379,7 +2000,7 @@ async function confirmImport(
       {
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
-        resendBroadcastId: rb.broadcastId,
+        resendBroadcastId,
         importId,
         severity: 'critical',
       },
@@ -1397,13 +2018,29 @@ async function confirmImport(
         'sending',
       // `estimatedRecipientCount` is re-stamped with the count actually sent to.
       // Without it the row keeps its SUBMIT-time estimate as its only durable
-      // number, which can be days stale by the time a tick reads it.
-        { sendingStartedAt: now, estimatedRecipientCount: resolvedCount },
+      // number, which can be days stale by the time a tick reads it. (On the
+      // handed path that estimate IS the number in hand — see Step 1a.)
+        { sendingStartedAt: now, estimatedRecipientCount: recipientCount },
         'approved',
       );
     }),
   );
   if (!transitioned.ok) {
+    // A sibling tick that sent the SAME resource and flipped the row first (two
+    // senders on one inherited draft; the loser's 422 probes as accepted) is no
+    // incident: the mail went out once and the row says so. Only a row that
+    // ended anywhere else needs a human.
+    const reread = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId).catch((e: unknown) => {
+      logger.warn({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, err: errKind(e) }, 'broadcasts.audience_import.transition_lost_reread_failed');
+      return null;
+    });
+    if (reread !== null && reread.status === 'sending' && reread.resendBroadcastId === resendBroadcastId) {
+      logger.info(
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId, importId },
+        'broadcasts.audience_import.transition_already_sending',
+      );
+      return err(transitioned.error);
+    }
     // A cancel (or another worker) won the race while the send was in flight.
     // The mail IS out and the ids ARE persisted, so webhooks still resolve and
     // bounces still reach the suppression list. Critical-severity log because a
@@ -1414,15 +2051,32 @@ async function confirmImport(
       {
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
-        resendBroadcastId: rb.broadcastId,
+        resendBroadcastId,
         importId,
-        recipientCount: resolvedCount,
+        recipientCount,
         severity: 'critical',
       },
       'broadcasts.audience_import.sent_but_transition_lost',
     );
     return err(transitioned.error);
   }
+
+  // Round 7 M-1 (the legacy leg's rule) — `now` is the send time only when
+  // THIS tick sent. On the handed path the mail went out on an earlier tick,
+  // and only `'sent'` carries a meaningful provider `sent_at` (`queued` /
+  // `sending` are accepted, not yet gone). PARSED, not trusted: an unparseable
+  // value would make `.toISOString()` throw, so it degrades to `null`. Unknown
+  // send time means unknown delay.
+  let actualSendAt: Date | null = now;
+  if (sent.handedOnPriorTick !== null) {
+    const { status, sentAt } = sent.handedOnPriorTick;
+    const providerSentAt = status === 'sent' && sentAt !== null ? new Date(sentAt) : null;
+    actualSendAt = providerSentAt !== null && !Number.isNaN(providerSentAt.getTime()) ? providerSentAt : null;
+  }
+  const delaySeconds =
+    broadcast.scheduledFor !== null && broadcast.scheduledFor !== undefined && actualSendAt !== null
+      ? Math.round((actualSendAt.getTime() - broadcast.scheduledFor.getTime()) / 1000)
+      : null;
 
   // The Art. 30 record that N addresses were disclosed to a processor at a given
   // time. This path wrote NOTHING on success — the staff timeline jumped from
@@ -1459,37 +2113,32 @@ async function confirmImport(
         eventType: 'broadcast_send_started',
         tenantId: deps.tenant.slug,
         actorUserId: 'system:cron',
-        summary: `Broadcast ${input.broadcastId as unknown as string} sending to ${resolvedCount} recipients`,
+        summary: `Broadcast ${input.broadcastId as unknown as string} sending to ${recipientCount} recipients`,
         payload: {
           broadcastId: input.broadcastId as unknown as string,
           resendAudienceId: audienceId,
-          resendBroadcastId: rb.broadcastId,
-          recipientCount: resolvedCount,
+          resendBroadcastId,
+          recipientCount,
           importId,
           // The attribution the narrowed port used to discard. This is the
           // record that answers "why did this reach 40 people instead of 55?" —
           // a member question a previous review round added the fields for.
-          orphanCount: resolved.value.orphans.length,
-          droppedByPreference: resolved.value.droppedByPreference,
+          // `null` on the handed path: nothing resolved them on this tick.
+          orphanCount: sent.orphanCount,
+          droppedByPreference: sent.droppedByPreference,
           sendingStartedAt: now.toISOString(),
-          // Round 3, below-cap sweep — these three were MISSING while the
-          // comment above claimed "same payload shape as the legacy path on
-          // purpose". They are AS1's spec-required fields, added to the legacy
-          // payload by its own E1 closure: `actualSendAt` is the same wall-clock
-          // moment as `sendingStartedAt` under AS1's second name, and
-          // `delaySeconds` answers "how late did the cron fire" for the SC-001
-          // quartiles. `null` for a send-now row, where the question is moot.
-          //
-          // Computed the same way as `dispatch-scheduled-broadcast.ts:984-995`
-          // rather than approximated: an append-only row that silently omits
-          // three fields is a gap no reader can see, and the parity claim made
-          // it invisible to a diff of the two paths as well.
+          // S8 — the legacy payload's two replay fields: the row says for
+          // itself whether THIS tick sent, and what Resend answered.
+          handedToSendOnPriorTick: handedEarlier,
+          observedResendStatus: sent.handedOnPriorTick?.status ?? sent.acceptedOnRefusedSend ?? sent.notHandedStatus,
+          // Round 3, below-cap sweep — AS1's spec-required fields, as on the
+          // legacy payload (its E1 closure). `actualSendAt` is AS1's second
+          // name for the send moment (`null` when an earlier tick sent and
+          // Resend reports no `sent_at`), and `delaySeconds` answers "how late
+          // did the cron fire" — `null` for a send-now row or an unknown time.
           scheduledFor: broadcast.scheduledFor?.toISOString() ?? null,
-          actualSendAt: now.toISOString(),
-          delaySeconds:
-            broadcast.scheduledFor !== null && broadcast.scheduledFor !== undefined
-              ? Math.round((now.getTime() - broadcast.scheduledFor.getTime()) / 1000)
-              : null,
+          actualSendAt: actualSendAt === null ? null : actualSendAt.toISOString(),
+          delaySeconds,
         },
         requestId: null,
       });
@@ -1510,9 +2159,9 @@ async function confirmImport(
         err: errKind(auditErr),
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
-        resendBroadcastId: rb.broadcastId,
+        resendBroadcastId,
         importId,
-        recipientCount: resolvedCount,
+        recipientCount,
         severity: 'critical',
       },
       'broadcasts.audience_import.send_record_lost',
@@ -1541,25 +2190,28 @@ async function confirmImport(
   // assume: this import has been consumed, and the row is no longer claimable.
   // Best-effort — the send has happened and the row already says `sending`, so a
   // failure here is an observability loss, not a delivery one, and must not be
-  // reported as a dispatch failure.
-  try {
-    await deps.broadcastsRepo.withTx(async (tx) => {
-      await deps.broadcastsRepo.markAudienceImportCompleted(
-        tx,
-        deps.tenant.slug,
-        input.broadcastId,
+  // reported as a dispatch failure. Skipped for a legacy-leg carry-over: there
+  // is no import to have consumed.
+  if (importId !== null) {
+    try {
+      await deps.broadcastsRepo.withTx(async (tx) => {
+        await deps.broadcastsRepo.markAudienceImportCompleted(
+          tx,
+          deps.tenant.slug,
+          input.broadcastId,
+        );
+      });
+    } catch (stampErr) {
+      logger.error(
+        {
+          err: errKind(stampErr),
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId,
+          importId,
+        },
+        'broadcasts.audience_import.completion_stamp_failed',
       );
-    });
-  } catch (stampErr) {
-    logger.error(
-      {
-        err: errKind(stampErr),
-        tenantId: deps.tenant.slug,
-        broadcastId: input.broadcastId,
-        importId,
-      },
-      'broadcasts.audience_import.completion_stamp_failed',
-    );
+    }
   }
 
   // Throughput. Without it the dispatch dashboard reads zero sends while sends
@@ -1577,12 +2229,13 @@ async function confirmImport(
       tenantId: deps.tenant.slug,
       broadcastId: input.broadcastId,
       importId,
-      recipientCount: resolvedCount,
+      recipientCount,
+      handedToSendOnPriorTick: handedEarlier,
     },
     'broadcasts.audience_import.sent',
   );
 
-  return ok({ kind: 'sent', resendBroadcastId: rb.broadcastId, recipientCount: resolvedCount });
+  return ok({ kind: 'sent', resendBroadcastId, recipientCount });
 }
 
 /**

@@ -37,15 +37,14 @@
  *      stamp their `broadcast_images` in the same transaction — a delete never
  *      commits without its stamp, nor a stamp without its delete.
  *
- * NOT MEASURED: Resend's `DELETE /broadcasts/{id}` has been exercised only on a
- * DRAFT (2026-09-10). Resend's documentation says a broadcast that has been
- * queued or sent cannot be deleted, so an expired `sent` /
- * `partial_delivery_accepted` row is expected to take the `permanent` arm: our
- * row goes, Resend's copy stays under Resend's retention (a disclosed RoPA
- * residual). What status Resend actually answers — and so whether it lands in
- * `permanent` rather than `retryable` — is to be measured with a throwaway send
- * before the first E-Blast crosses its retention (2031); the cron runbook
- * (§ F7 retention-sweep, "Resend copies") carries the item.
+ * MEASURED 2026-10-29 (live account, sink address only): Resend's
+ * `DELETE /broadcasts/{id}` answers 200 on a draft or scheduled broadcast and
+ * 403 `validation_error` on a queued or sent one, which the adapter classifies
+ * `permanent`. So an expired `sent` / `partial_delivery_accepted` row takes the
+ * `permanent` arm: our row goes, Resend's copy stays under Resend's retention
+ * (a disclosed RoPA residual). Resend's retention of that copy is still to be
+ * confirmed before the first E-Blast crosses its retention (2031); the cron
+ * runbook (§ F7 retention-sweep, "Resend copies") carries the item.
  *
  * The loop runs until a short read or `timeBudgetMs`, checked between batches
  * and before every chunk of Resend calls (a Resend outage can hold one call

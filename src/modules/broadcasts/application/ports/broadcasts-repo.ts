@@ -390,13 +390,26 @@ export interface BroadcastsRepo {
    *
    * Same CAS contract as `attachAudienceId`: idempotent on the SAME value,
    * `BroadcastConcurrentMutationError` on a different one or on a row no
-   * longer `approved`, `BroadcastNotFoundError` if the row is gone.
+   * longer `approved`, `BroadcastNotFoundError` if the row is gone. An EMPTY
+   * id on the row (`''`) counts as none — it is not an id (both legs).
+   *
+   * `fence` — the import leg passes it on EVERY call (the legacy leg passes
+   * none; its write is unchanged):
+   *   - `expectedAudienceImportId`: the write also requires
+   *     `audience_import_id = $expected`, so a hold that claimed the row since
+   *     the caller read it (`releaseAudienceImport`) makes this lose and
+   *     nothing is sent. On a fresh mint the one pre-send persist IS the
+   *     fence; an inherited id is re-asserted through it right before `/send`.
+   *   - `replacesResendBroadcastId`: also admit a row still carrying exactly
+   *     this DEAD id (the probe answered `not_found`), so a fresh resource can
+   *     replace it — never any other id.
    */
   attachBroadcastId(
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     resendBroadcastId: string,
+    fence?: { readonly expectedAudienceImportId: string; readonly replacesResendBroadcastId?: string },
   ): Promise<void>;
 
 
@@ -417,6 +430,10 @@ export interface BroadcastsRepo {
    * other. Overwrite was the documented behaviour until 108 Phase 9 review S13.
    * A row no longer `approved` refuses it the same way (F119 T166 R-H1).
    *
+   * `fence.expectedResendAudienceId` (2026-10-29): the import also lands only
+   * while the row still carries the audience it was imported into — a hold on
+   * an overlapping tick may have deleted and released it in between.
+   *
    * Does NOT change status. The broadcast stays `approved` for the whole
    * build, which is what keeps it cancellable (`cancelBroadcast` accepts only
    * submitted/approved) — migration 0298 records why no `audience_building`
@@ -427,6 +444,7 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     importId: string,
+    fence: { readonly expectedResendAudienceId: string },
   ): Promise<void>;
 
   /**
@@ -445,6 +463,66 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
   ): Promise<void>;
+
+  /**
+   * Import leg — restart the audience build, the CLAIM (`restartAudienceBuild`
+   * in `build-audience-tick.ts`, reached from a HOLD and from the
+   * audience-missing self-heal).
+   *
+   * NULLs `audience_import_id` + `audience_import_submitted_at` (0299's
+   * coherence CHECK pairs them) and NOTHING else, WITHOUT a status change.
+   * `resend_broadcast_id` and `resend_audience_id` stay until the caller has
+   * deleted both resources (`releaseResendAudience` clears them): a refused
+   * broadcast delete (`403` once `queued` — measured 2026-10-29) means a
+   * sibling already sent it, and the id must stay so the next tick's probe
+   * finds it handed and catches the row up; erasure and `cleanup-audiences`
+   * find the audience through its column until it is gone.
+   *
+   * **The row is the mutex** (2026-10-29). The dispatch cron holds no lease
+   * past its scan (`FOR UPDATE SKIP LOCKED` ends with the scan tx and
+   * `maxDuration` equals the cadence), so a sibling tick can be sending into
+   * this audience — and DELETE of an audience whose broadcast is `queued`
+   * makes that broadcast `failed` with no mail (measured 2026-10-29). The
+   * import leg's pre-send `attachBroadcastId` is fenced on
+   * `audience_import_id`, so this claim and that attach exclude each other on
+   * one row: only a WON claim may delete anything.
+   *
+   * A compare-and-set on what the caller read: `importId` and
+   * `resendAudienceId` by `=`, `resendBroadcastId` NULL-safe (`IS NOT
+   * DISTINCT FROM` — the common hold has none), the row still `approved` and
+   * no completion stamp. `false` = zero rows matched — another writer moved
+   * the row since the read (a sibling's fenced attach, a cancel); NOT an
+   * error, and the caller must then delete NOTHING.
+   */
+  releaseAudienceImport(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    expected: {
+      readonly importId: string;
+      readonly resendAudienceId: string;
+      readonly resendBroadcastId: string | null;
+    },
+  ): Promise<boolean>;
+
+  /**
+   * Import leg — the restart's last write, once the caller has deleted the
+   * never-handed broadcast resource (if any) and the Resend audience, or
+   * Resend answered that the audience is gone: NULL `resend_audience_id` AND
+   * `resend_broadcast_id` together.
+   *
+   * A compare-and-set: both columns still equal to `expected` (the broadcast
+   * id NULL-safe), the row still `approved`, and NO `audience_import_id` —
+   * the shape nothing can send from (the import leg's send is fenced on a
+   * non-null import id). `false` = zero rows matched; NOT an error. The
+   * released row runs a fresh tick 1 on its next tick.
+   */
+  releaseResendAudience(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+    expected: { readonly resendAudienceId: string; readonly resendBroadcastId: string | null },
+  ): Promise<boolean>;
 
   /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp

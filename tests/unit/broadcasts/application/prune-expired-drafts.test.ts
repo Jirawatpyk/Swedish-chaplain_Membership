@@ -88,6 +88,12 @@ function makeRepo(opts: {
       async attachAudienceImport() {},
       async markAudienceImportCompleted() {},
       async markDispatchRetryStarted() { return null; },
+      async releaseAudienceImport() {
+        return false;
+      },
+      async releaseResendAudience() {
+        return false;
+      },
       async clearDispatchRetryClock() {},
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };

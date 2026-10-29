@@ -74,6 +74,19 @@
  * re-checks `approved` under its own lock before `createBroadcast`. Cancelling
  * it is safe, and skipping it would let that tick mint the email from the
  * row the erasure scrub has just redacted (`[redacted]` content).
+ *
+ * Since 2026-10-29 BOTH legs persist `resend_broadcast_id` BEFORE `/send`
+ * (the import leg's S8 fix mirrors the legacy F4), so the skip above also
+ * covers a row whose resource was minted but whose send has not happened yet:
+ * normally a gap of one DB write, but a retryable send failure or a dead tick
+ * stretches it to the next tick (≥ 5 min). The skipped row is then left to the
+ * dispatcher, whose send-time standing gate (`_dispatch-standing-gate.ts`)
+ * reads only the halt list and F8 membership access — NOT erasure. OPEN
+ * (reported 2026-10-29; fixed by spec 139, which must merge before
+ * `FEATURE_F7_IMPORT_AUDIENCE` is set): an erased member with paid-through
+ * access answers `send`, and on the import leg the resource being sent was
+ * minted BEFORE the content scrub, so it carries the pre-scrub subject, body
+ * and from-name. Same skip on the legacy leg.
  * Any other exception is treated as
  * unexpected-error: the broadcast remains in flight, the cascade
  * continues to the next broadcast (best-effort), and the

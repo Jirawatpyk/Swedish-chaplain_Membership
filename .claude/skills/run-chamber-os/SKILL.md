@@ -23,7 +23,7 @@ git worktree add "C:/Users/<you>/AppData/Local/Temp/fNN" <branch-or-sha>   # sho
 
 Then provide `node_modules` with **`pnpm install --frozen-lockfile`** in the worktree. A junction to the main checkout's `node_modules` is fine for lint, typecheck and unit tests, but **`next dev` refuses it** ("Symlink [project]/node_modules is invalid, it points out of the filesystem root"), so a worktree that runs the app needs a real install. Remove a junction with `cmd /c rmdir <path>` (never `rm -rf`, which follows it).
 
-The worktree needs `.env.local`: without it the app answers 500 with "Environment validation failed". The repo guard (D-016) refuses any command that names an `.env*` file, a `cp` and a host-printing `node -e` included, so **ask the user to copy it** (give them the one `cp` line with both absolute paths) and never try another spelling. It is gitignored, so never commit it. The dev-not-prod check is mechanical: integration tests refuse to run against prod (`TEST_DB_HOST_BLOCKLIST` in `tests/integration-setup.ts`), so the first `pnpm test:integration <path>` in the worktree is the host check.
+The worktree needs `.env.local`: without it the app answers 500 with "Environment validation failed". Copy it yourself from the main checkout: `cp "<main checkout>/.env.local" "<worktree>/.env.local"`. D-035 removed the guard that used to refuse this, and reading `.env*` is allowed. It is gitignored, so never commit it. The dev-not-prod check is mechanical: integration tests refuse to run against prod (`TEST_DB_HOST_BLOCKLIST` in `tests/integration-setup.ts`), so the first `pnpm test:integration <path>` in the worktree is the host check.
 
 ## 2. Start the server cold
 

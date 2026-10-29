@@ -24,13 +24,16 @@
  * the quota slot is released, Resend (a recording fake) is never called, and on
  * the import leg a tick-2 refusal leaves the tick-1 audience where
  * `cleanup-audiences` reaps it. A SUSPENDED member (an `awaiting_payment` cycle
- * whose paid period has not ended) is HELD on both legs (R1): the row is left
- * exactly as it was, the slot stays reserved, and no refusal row is written.
+ * whose paid period has not ended) is HELD on both legs (R1): the slot stays
+ * reserved and no refusal row is written. The legacy row is left exactly as it
+ * was; an import-leg row on tick 2 abandons its pending import (the tick-1
+ * audience deleted, the columns detached) and resumes with a fresh tick 1.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runInTenant } from '@/lib/db';
+import { ok } from '@/lib/result';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { makeConfirmScheduleDeps } from '@/lib/broadcast-approval-deps';
 import { asBroadcastId, makeApproveBroadcastDeps } from '@/modules/broadcasts';
@@ -388,16 +391,60 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
   });
 
-  it('import leg, tick 2, a SUSPENDED member → held: row approved with its import and audience, nothing audited, no Resend call', async () => {
+  /**
+   * A Resend double that answers the named methods and records every call; any
+   * other method throws. `recordingGateway` refuses everything, which a hold
+   * that abandons its import (one `deleteAudience`) cannot use.
+   */
+  function allowingGateway(answers: Partial<Record<keyof BroadcastsGatewayPort, unknown>>): {
+    calls: Array<{ method: string; args: unknown[] }>;
+    port: BroadcastsGatewayPort;
+  } {
+    const calls: Array<{ method: string; args: unknown[] }> = [];
+    const port = new Proxy(
+      {},
+      {
+        get: (_t, prop) =>
+          prop === 'then'
+            ? undefined
+            : async (...args: unknown[]) => {
+                calls.push({ method: String(prop), args });
+                if (!(String(prop) in answers)) throw new Error(`gateway.${String(prop)} must not be called here`);
+                return answers[String(prop) as keyof BroadcastsGatewayPort];
+              },
+      },
+    ) as BroadcastsGatewayPort;
+    return { calls, port };
+  }
+
+  /** The `audience_import_stuck_count` gauge's own predicate (broadcasts-gauges route). */
+  const stuckGaugeMatches = async (id: string) =>
+    (
+      (await runInTenant(tenant.ctx, (tx) =>
+        tx.execute(sql`
+          SELECT broadcast_id::text AS id
+          FROM broadcasts
+          WHERE audience_import_id IS NOT NULL
+            AND audience_import_completed_at IS NULL
+            AND status::text = 'approved'
+            AND audience_import_submitted_at < now() - interval '30 minutes'
+            AND tenant_id = ${tenant.ctx.slug}
+            AND broadcast_id = ${id}::uuid`),
+      )) as unknown as Array<{ id: string }>
+    ).length > 0;
+
+  it('import leg, tick 2, a SUSPENDED member → held: the tick-1 audience is deleted and the import detached, nothing audited, nothing sent; once access is back a FRESH tick 1 runs', async () => {
     const memberId = await seedMember('suspended');
+    const audienceId = `aud-held-${randomUUID()}`;
     const row = approvedRow(memberId, {
-      resendAudienceId: `aud-held-${randomUUID()}`,
+      resendAudienceId: audienceId,
       audienceImportId: `imp-held-${randomUUID()}`,
-      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+      // Older than the 30-minute stuck window, so the gauge DID match before.
+      audienceImportSubmittedAt: new Date(Date.now() - 2 * 3_600_000),
     });
     await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
-    const before = await readRow(row.broadcastId!);
-    const gw = recordingGateway();
+    expect(await stuckGaugeMatches(row.broadcastId!)).toBe(true);
+    const gw = allowingGateway({ deleteAudience: undefined });
     const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
 
     const r = await buildAudienceTick(
@@ -406,9 +453,96 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     );
 
     expect(r).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
-    expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(gw.calls).toEqual([{ method: 'deleteAudience', args: [audienceId] }]);
+    const held = await readRow(row.broadcastId!);
+    expect(held.status).toBe('approved');
+    expect(held.resendAudienceId).toBeNull();
+    expect(held.audienceImportId).toBeNull();
+    expect(held.audienceImportSubmittedAt).toBeNull();
+    expect(held.audienceImportCompletedAt).toBeNull();
+    expect(held.resendBroadcastId).toBeNull();
+    expect(await stuckGaugeMatches(row.broadcastId!)).toBe(false);
     expect(await reserved(memberId)).toBe(1);
-    expect(gw.calls).toEqual([]);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+
+    // Access back to `full` (0309: an early bill on a paid period keeps access).
+    await runInTenant(tenant.ctx, (tx) =>
+      tx
+        .update(renewalCycles)
+        .set({ awaitingEnteredAt: new Date() })
+        .where(and(eq(renewalCycles.tenantId, tenant.ctx.slug), eq(renewalCycles.memberId, memberId))),
+    );
+    const resumedGw = allowingGateway({
+      createAudience: { audienceId: 'aud-fresh' },
+      createContactImport: { importId: 'imp-fresh' },
+    });
+    const resumed = await buildAudienceTick(
+      {
+        ...(await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge)),
+        broadcastsGateway: resumedGw.port,
+        brandChrome: NO_BRAND,
+        resolveRecipients: async () =>
+          ok({ recipients: ['fresh@example.com'], estimatedCount: 1, orphans: [], droppedByPreference: 0 }),
+      },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(resumed).toEqual({ ok: true, value: { kind: 'import_submitted', importId: 'imp-fresh', recipientCount: 1 } });
+    expect(resumedGw.calls.map((c) => c.method)).toEqual(['createAudience', 'createContactImport']);
+    const after = await readRow(row.broadcastId!);
+    expect(after.resendAudienceId).toBe('aud-fresh');
+    expect(after.audienceImportId).toBe('imp-fresh');
+    expect(after.audienceImportSubmittedAt).not.toBeNull();
+  });
+
+  /**
+   * The same hold on a row that also carries a pre-send `resend_broadcast_id`
+   * (an earlier tick minted and persisted it, then died before the send). The
+   * probe answers `draft`, so nothing was handed to `/send`: the hold claims the
+   * row (the import columns), reclaims the draft resource, deletes the
+   * audience, and the release then NULLs the broadcast and audience ids
+   * together — a row left pointing at a deleted draft would otherwise be sent
+   * on a dead id.
+   */
+  it('import leg, tick 2, a SUSPENDED member with a pre-send broadcast id whose probe answers draft → held: the draft reclaimed, the audience deleted, all three ids detached', async () => {
+    const memberId = await seedMember('suspended');
+    const audienceId = `aud-held-${randomUUID()}`;
+    const resendBroadcastId = `rb-held-${randomUUID()}`;
+    const row = approvedRow(memberId, {
+      resendAudienceId: audienceId,
+      resendBroadcastId,
+      audienceImportId: `imp-held-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 2 * 3_600_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    expect(await stuckGaugeMatches(row.broadcastId!)).toBe(true);
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcast: undefined,
+      deleteAudience: undefined,
+    });
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(gw.calls).toEqual([
+      { method: 'retrieveBroadcast', args: [resendBroadcastId] },
+      { method: 'deleteBroadcast', args: [resendBroadcastId] },
+      { method: 'deleteAudience', args: [audienceId] },
+    ]);
+    const held = await readRow(row.broadcastId!);
+    expect(held.status).toBe('approved');
+    expect(held.resendBroadcastId).toBeNull();
+    expect(held.resendAudienceId).toBeNull();
+    expect(held.audienceImportId).toBeNull();
+    expect(held.audienceImportSubmittedAt).toBeNull();
+    expect(held.audienceImportCompletedAt).toBeNull();
+    expect(await stuckGaugeMatches(row.broadcastId!)).toBe(false);
+    expect(await reserved(memberId)).toBe(1);
     expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
   });
 

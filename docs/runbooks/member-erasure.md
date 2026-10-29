@@ -77,6 +77,27 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    `verification_method`, and add an optional note. Submitting emits the durable
    `member_erasure_requested` audit (the clock-start) and runs the cascade.
 
+3b. **AFTER step 3 — an E-Blast caught mid-dispatch (interim, LEGACY dispatch
+   leg only, until spec 139).** The cascade skips an `approved` E-Blast that
+   already carries a `resend_broadcast_id` ("dispatch begun"), and the send-time
+   standing gate does not read erasure, so a Resend draft minted before the
+   scrub — the pre-scrub subject, body and from-name — can still be sent.
+   Find it, either way (the audit emit is best-effort):
+   - the `broadcast_concurrent_action_blocked` audit row with
+     `dispatchBegun: true` under this erasure's `request_id`, or the
+     `broadcasts.cascade.concurrent_skip` warn log for the same `broadcastId`;
+   - or directly: `SELECT broadcast_id, resend_broadcast_id FROM broadcasts
+     WHERE tenant_id = '<tenant>' AND requested_by_member_id = '<member>' AND status = 'approved' AND
+     resend_broadcast_id IS NOT NULL;`
+   For each, `DELETE /broadcasts/{resend_broadcast_id}` on the Broadcasts account
+   while it is still `draft` or `scheduled` (200, MEASURED 2026-10-29): the
+   legacy dispatcher then meets `not_found` and stops. A **403** ("Only draft or
+   scheduled broadcasts can be deleted") means it was already sent — record
+   that in the DSR answer as a residual. **Do NOT apply this while
+   `FEATURE_F7_IMPORT_AUDIENCE` is ON**: the Contacts-Import leg re-mints a
+   deleted draft from the scrubbed row and sends it. That flag stays off until
+   spec 139, which replaces this step in code.
+
 4. **Confirm completeness (US3-D evidence log).** Open
    **`/admin/compliance/erasure-log`**. Find the member's card and confirm:
    - `member_erased` is present (the completion proof — green/complete badge);

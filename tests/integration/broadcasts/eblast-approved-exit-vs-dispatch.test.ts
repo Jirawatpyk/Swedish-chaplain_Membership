@@ -225,7 +225,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
       for (const attach of [
         (tx: unknown) => repo.attachAudienceId(tx, tenant.ctx.slug, bid, 'aud-late'),
         (tx: unknown) => repo.attachBroadcastId(tx, tenant.ctx.slug, bid, 'rb-late'),
-        (tx: unknown) => repo.attachAudienceImport(tx, tenant.ctx.slug, bid, 'imp-late'),
+        (tx: unknown) => repo.attachAudienceImport(tx, tenant.ctx.slug, bid, 'imp-late', { expectedResendAudienceId: 'aud-late' }),
       ]) {
         const thrown = await repo.withTx(attach).then(
           () => null,
