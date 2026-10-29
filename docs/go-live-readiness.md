@@ -367,6 +367,12 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 
 - [ ] **Spec 139 (erasure: an erased member's approved E-Blast caught between the
   pre-send persist and the send) is MERGED.** Do not set the flag before it.
+- [ ] **Spec 140 (import-leg tick concurrency: a dispatch lease for rows with no
+  import id) is MERGED.** Spec 138's row fence does not reach those rows.
+- [ ] **No legacy-leg row is in flight** at the flip: `SELECT COUNT(*) FROM
+  broadcasts WHERE status = 'approved' AND resend_audience_id IS NOT NULL AND
+  audience_import_id IS NULL` is 0, so no legacy tick is mid-push when the
+  import leg starts tearing such rows down.
   Spec 138 (the hold abandon, the pre-send persist, the row fence) is the other
   prerequisite; both are named in `specs/138-f7-import-hold-abandon/spec.md`.
 - [ ] Add `FEATURE_F7_IMPORT_AUDIENCE=true` → **redeploy immediately after**,

@@ -934,8 +934,10 @@ async function restartAudienceBuild(
  * resource id into the adapter, so a 404 there classifies `permanent` with
  * `code: 'not_found'` (`classifyResendError` — the live legacy leg reads the
  * same throw and keeps its permanent arm; this reading is the import leg's
- * alone, at its two call sites). `http_404` is the adapter's fallback code when
- * Resend sends no `name`.
+ * alone, at its one call site: `createBroadcast` in `confirmImport`, where the
+ * audience came from an earlier tick). `http_404` is the adapter's fallback
+ * code when Resend sends no `name`. (`createContactImport` always imports into
+ * an audience this tick created, so its 404 keeps the permanent rule.)
  */
 function isAudienceMissing(failure: GatewayFailure): boolean {
   return !failure.retryable && failure.kind === 'permanent' && (failure.code === 'not_found' || failure.code === 'http_404');
@@ -1406,9 +1408,6 @@ async function submitImport(
     submitted.ok ? 'ok' : 'failed',
   );
   if (!submitted.ok) {
-    // `404 "Segment not found"` — the audience is gone (a hold on an
-    // overlapping tick deleted it, or someone did by hand): forget it and
-    // build afresh next tick rather than kill the broadcast.
     // The audience was created on THIS tick, so a 404 is not "deleted since":
     // it keeps the ordinary permanent rule (restarting would mint another every
     // tick until the Free plan's three segments ran out).
@@ -1612,9 +1611,10 @@ async function confirmImport(
   //
   // Every clause of the completion rule above compares numbers reported by the
   // import JOB. None of them looks at what the audience actually holds, and the
-  // two can differ: `submitImport` deliberately REUSES
-  // `broadcast.resendAudienceId`, `createContactImport` posts
-  // `on_conflict=upsert`, and nothing anywhere removes a contact —
+  // two could differ: `submitImport` used to REUSE `broadcast.resendAudienceId`
+  // (since spec 138 it never does — a row with an audience and no import is
+  // torn down first), `createContactImport` posts `on_conflict=upsert`, and
+  // nothing anywhere removes a contact —
   // `unsubscribe-recipient.ts` writes only `marketing_unsubscribes` and makes NO
   // gateway call, so Resend still holds the contact as subscribed.
   //
