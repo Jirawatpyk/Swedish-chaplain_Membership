@@ -68,7 +68,7 @@ import {
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
-import { reclaimMintedBroadcast } from './_reclaim-minted-broadcast';
+import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 import { probeRefusedSend } from './_probe-refused-send';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
@@ -1691,13 +1691,13 @@ async function confirmImport(
       return onGatewayFailure(deps, input, broadcast, createdRb.error, importId);
     }
     resendBroadcastId = createdRb.value.broadcastId;
-    const persistRefused = await persistBroadcastIdBeforeSend(deps, input, resendBroadcastId, audienceId, importId, {
+    const persistRefused = await persistFencedBeforeSend(deps, input, resendBroadcastId, audienceId, importId, {
       minted: true,
       ...(inheritedDead ? { replaces: inheritedId } : {}),
     });
     if (persistRefused !== null) return persistRefused;
   } else {
-    const fenceLost = await persistBroadcastIdBeforeSend(deps, input, resendBroadcastId, audienceId, importId, {
+    const fenceLost = await persistFencedBeforeSend(deps, input, resendBroadcastId, audienceId, importId, {
       minted: false,
     });
     if (fenceLost !== null) return fenceLost;
@@ -1782,35 +1782,18 @@ async function confirmImport(
 }
 
 /**
- * S8 + the sender's fence — the last write before `/send`, in its OWN tx and
- * its own try/catch (the legacy leg's F4 block, the same arms). Fenced on the
- * import this tick confirmed (`attachBroadcastId`'s `expectedAudienceImportId`),
- * so a hold that claimed the row since Step 1 makes it lose. `null` = landed,
- * send it; anything else is the tick's answer, and on every one of them
- * NOTHING is sent.
+ * S8 + the sender's fence — the last write before `/send`
+ * (`_persist-minted-broadcast-id.ts`, shared with the legacy leg), always
+ * fenced on the import this tick confirmed, so a hold that claimed the row
+ * since Step 1 makes it lose. `null` = landed, send it; anything else is the
+ * tick's answer, and on every one of them NOTHING is sent.
  *
  * `minted: true` — the id `createBroadcast` just returned (with `replaces` when
- * it is taking the place of a DEAD inherited id). `minted: false` — an
- * inherited `draft` / `cancelled` id re-asserted through the fence; it is not
- * this tick's to delete on ANY arm (the hold that won owns its removal).
- *
- * - `BroadcastConcurrentMutationError` — a sibling tick attached its own id
- *   first, a hold claimed the row, or the row left `approved` since Step 1
- *   (withdrawn, cancelled, re-opened). Reclaim a minted resource (the CAS
- *   refused OUR id, so it is orphaned by construction) and stop.
- * - `BroadcastNotFoundError` — the row is gone; reclaim a minted resource and
- *   stop. No code path in `src/` produces it today (defence in depth, as on
- *   the legacy leg).
- * - Anything else — a DB fault, BEFORE any mail went out, so the safe answer
- *   is the transient one (`persist_broadcast_id`, not budgeted — a DB fault is
- *   budgeted on neither leg). For a minted id the throw cannot say whether the
- *   write landed (a commit whose ack was lost on the pooler looks identical),
- *   so the row is read back first: landed → KEEP the resource (the next tick
- *   inherits and probes it); absent → reclaim; read-back failed → keep (a junk
- *   draft in the dashboard is the cheaper wrong). An inherited id was on the
- *   row before this write, so there is nothing to read back for.
+ * it is taking the place of a DEAD inherited id): reclaimed on a refusal.
+ * `minted: false` — an inherited `draft` / `cancelled` id re-asserted through
+ * the fence: never reclaimed here (the hold that won owns its removal).
  */
-async function persistBroadcastIdBeforeSend(
+async function persistFencedBeforeSend(
   deps: BuildAudienceTickDeps,
   input: BuildAudienceTickInput,
   resendBroadcastId: string,
@@ -1818,68 +1801,18 @@ async function persistBroadcastIdBeforeSend(
   importId: string,
   how: { readonly minted: boolean; readonly replaces?: string },
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
-  try {
-    await deps.broadcastsRepo.withTx(async (tx) => {
-      await deps.broadcastsRepo.attachBroadcastId(tx, deps.tenant.slug, input.broadcastId, resendBroadcastId, {
-        expectedAudienceImportId: importId,
-        ...(how.replaces === undefined ? {} : { replacesResendBroadcastId: how.replaces }),
-      });
-    });
-    return null;
-  } catch (persistErr) {
-    const ids = {
-      tenantId: deps.tenant.slug,
-      broadcastId: input.broadcastId as unknown as string,
-      resendBroadcastId,
-      importId,
-    };
-    const reclaim = async (why: 'attach_lost' | 'row_vanished' | 'persist_failed', observedStatus?: string) => {
-      if (!how.minted) return;
-      await reclaimMintedBroadcast(deps, input, resendBroadcastId, audienceId, {
-        why,
-        logPrefix: 'broadcasts.audience_import',
-        ...(observedStatus === undefined ? {} : { observedStatus }),
-      });
-    };
-    if (persistErr instanceof BroadcastConcurrentMutationError) {
-      if (!how.minted) logger.info(ids, 'broadcasts.audience_import.send_fence_lost');
-      await reclaim('attach_lost', persistErr.observedStatus);
-      return err({ kind: 'broadcast_invalid_state_transition', observedStatus: persistErr.observedStatus });
-    }
-    if (persistErr instanceof BroadcastNotFoundError) {
-      await reclaim('row_vanished');
-      return err({ kind: 'broadcast_not_found', broadcastId: input.broadcastId as unknown as string });
-    }
-    // NOT `reason` — that key is in `REDACT_PATHS`.
-    const persistFailureKind =
-      (persistErr as { code?: string } | null)?.code === '23505'
-        ? 'duplicate_resend_broadcast_id'
-        : 'attach_broadcast_id_failed';
-    logger.error(
-      { ...ids, err: errKind(persistErr), persistFailureKind, severity: 'critical' },
-      'broadcasts.audience_import.attach_broadcast_id_failed',
-    );
-    if (how.minted) {
-      let idLanded: boolean | null = null;
-      try {
-        const readBack = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
-        idLanded = readBack?.resendBroadcastId === resendBroadcastId;
-      } catch (readErr) {
-        logger.warn({ ...ids, err: errKind(readErr) }, 'broadcasts.audience_import.persist_read_back_failed_resource_kept');
-      }
-      if (idLanded === false) {
-        await reclaim('persist_failed');
-      } else if (idLanded === true) {
-        logger.warn(ids, 'broadcasts.audience_import.persist_ack_lost_id_kept');
-      }
-    }
-    return err({
-      kind: 'dispatch.server_error',
-      message: persistFailureKind,
-      errClass: errKind(persistErr),
-      phase: 'persist_broadcast_id',
-    });
-  }
+  const refused = await persistBroadcastIdBeforeSend(deps, input, {
+    resendBroadcastId,
+    resendAudienceId: audienceId,
+    minted: how.minted,
+    fence: {
+      expectedAudienceImportId: importId,
+      ...(how.replaces === undefined ? {} : { replacesResendBroadcastId: how.replaces }),
+    },
+    logPrefix: 'broadcasts.audience_import',
+    logFields: { importId },
+  });
+  return refused === null ? null : err(refused);
 }
 
 /**

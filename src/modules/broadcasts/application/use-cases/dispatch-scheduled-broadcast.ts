@@ -91,8 +91,8 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 // WE attempt and Resend rejects; a paused cron, a hold or the read-only freeze
 // never spends it, because nothing failed.
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
-import { reclaimMintedBroadcast } from './_reclaim-minted-broadcast';
 import { probeRefusedSend } from './_probe-refused-send';
+import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 
 /**
  * The transport class a retryable gateway throw carried, or `unclassified`
@@ -1150,166 +1150,20 @@ export async function dispatchScheduledBroadcast(
       // — the WINNER is sending into it — and the arm deleted it, at INFO, under
       // a bucket the cron calls benign. Handling it here restores that premise
       // instead of patching around it.
-      try {
-        await deps.broadcastsRepo.withTx(async (tx) => {
-          await deps.broadcastsRepo.attachBroadcastId(
-            tx,
-            deps.tenant.slug,
-            input.broadcastId,
-            resendBroadcastId,
-          );
-        });
-      } catch (persistErr) {
-        if (persistErr instanceof BroadcastConcurrentMutationError) {
-          // A sibling tick attached first — or (F119 T166 R-H1) the row left
-          // `approved` since Step 1: the member withdrew their approval, the
-          // schedule was cancelled, a new working copy was opened, or an admin
-          // cancelled. Either way this tick must not send. We touch nothing of
-          // a sibling's — and reclaim the resource we just minted, which
-          // nothing else references: the CAS refused OUR id, so ours is
-          // orphaned by construction.
-          // (2026-09-10 follow-up 2: this used to log "we leak … because the
-          // gateway has no deleteBroadcast" at critical, every tick.)
-          await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
-            why: 'attach_lost',
-            observedStatus: persistErr.observedStatus,
-            logPrefix: 'broadcasts.dispatch',
-          });
-          return err({
-            kind: 'broadcast_invalid_state_transition',
-            observedStatus: persistErr.observedStatus,
-          });
-        }
-        // The row vanishing under us is NOT a fault. Every other sink in this
-        // module calls it `broadcast_not_found` and buckets it `concurrent_skip`
-        // at warn — the cron's own comment says "normal, self-healing, and NOT a
-        // failure of any kind".
-        //
-        // This comment used to justify the arm with "an erasure cascade can remove
-        // the row". It cannot: the cascade calls
-        // `cancelInFlightBroadcastsForMember` — cancel, not delete. The only
-        // DELETEs on `broadcasts` are the member draft route and the prune cron
-        // (both `status = 'draft'`, and this row is `approved`), and
-        // `scripts/reset-broadcast-quota.ts`, which skips rows whose audience is
-        // still live — and a row in THIS window is `approved` with a live
-        // audience, so that script cannot reach it either.
-        //
-        // So: **no code path in `src/` produces this today.** The arm is pure
-        // defence-in-depth, kept because routing a vanished row into the DB-fault
-        // arm would page at critical for something that can never be retried. The
-        // previous wording named that script as the reachable path, in the same
-        // sentence that said the script skips this row — a correction that
-        // refuted itself. The port docblock promises this class;
-        // routing it into the DB-fault arm below would page an operator at
-        // critical for a row that can never be retried.
-        if (persistErr instanceof BroadcastNotFoundError) {
-          // The row is gone, so nothing will ever reference the resource we
-          // minted seconds ago: reclaim it. Same call, same grading, as the CAS
-          // sibling above (2026-09-10 follow-up 6 — the two arms used to grade the
-          // same leak critical and warn respectively).
-          await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
-            why: 'row_vanished',
-            logPrefix: 'broadcasts.dispatch',
-          });
-          return err({
-            kind: 'broadcast_not_found',
-            broadcastId: input.broadcastId as string,
-          });
-        }
-        // Anything else is a DB fault — a Neon blip, a pooler drop, a timeout.
-        // **No mail has gone out yet.** Falling through to the gateway classifier
-        // made this `unknown` → non-retryable BY DESIGN → the permanent arm: the
-        // row went terminal, a raw driver message landed in an append-only audit
-        // row, and the member was emailed that their broadcast had FAILED. Before
-        // the send the safe direction is the opposite one — stay `approved` and
-        // let the next tick retry, which is the whole reason this write exists.
-        //
-        // `dispatch.server_error`, not `gateway_retryable`: the route logs
-        // `subKind` as a class of the RESEND transport (`network`/`timeout`/
-        // `server_5xx`/`api`), and none of those four is honest about Neon. This
-        // kind carries `errClass` instead and the route already buckets it
-        // `retryable` with its own counter.
-        //
-        // **NOT bounded by FR-021, on purpose.** A DB fault is not budgeted on
-        // either leg: round 4 F3 removed exactly that, because a budget measured
-        // from `scheduled_for` killed a row already an hour late on its FIRST
-        // blip. What made unbounded retry costly HERE was that each tick minted
-        // a fresh Resend resource and leaked it — the port had no
-        // `deleteBroadcast`. It does now (2026-09-10 follow-up 2), so the
-        // retry is bounded by `dispatch_resolve_failed.total{phase=
-        // "persist_broadcast_id"}` alarming, not by a clock.
-        //
-        // **The reclaim reads the row back FIRST.** This throw cannot say whether
-        // the write landed: a commit whose acknowledgement was lost on the pooler
-        // surfaces exactly like one that never reached the server. If the row
-        // now carries our id, deleting the resource would destroy the id the
-        // next tick inherits — it would probe `not_found`, send, 404, and fail
-        // the broadcast terminally for an admin to look at. So: id landed → keep
-        // it (the next tick inherits and sends); id absent → reclaim; read-back
-        // itself failed → keep it, because a junk draft in the dashboard is the
-        // cheaper wrong.
-        const persistFailureReason =
-          (persistErr as { code?: string } | null)?.code === '23505'
-            ? // Needs Resend to reissue an id, so it is the least likely member of
-              // this class — but the one an operator cannot otherwise name.
-              'duplicate_resend_broadcast_id'
-            : 'attach_broadcast_id_failed';
-        logger.error(
-          {
-            tenantId: deps.tenant.slug,
-            broadcastId: input.broadcastId as string,
-            resendBroadcastId,
-            err: errKind(persistErr),
-            // NOT `reason` — that key is in `REDACT_PATHS`, so this line printed
-            // `reason:"[REDACTED]"` and the token added specifically so an
-            // operator could name a 23505 reached no one. `logger.ts` prescribes
-            // exactly this: rename a safe operational field to a non-`reason` key.
-            // Proven by running the suite, not by reading the redact list.
-            persistFailureKind: persistFailureReason,
-            severity: 'critical',
-          },
-          'broadcasts.dispatch.attach_broadcast_id_failed',
-        );
-        let idLanded: boolean | null = null;
-        try {
-          const readBack = await deps.broadcastsRepo.findById(
-            deps.tenant.slug,
-            input.broadcastId,
-          );
-          idLanded = readBack?.resendBroadcastId === resendBroadcastId;
-        } catch (readErr) {
-          logger.warn(
-            {
-              err: errKind(readErr),
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              resendBroadcastId,
-            },
-            'broadcasts.dispatch.persist_read_back_failed_resource_kept',
-          );
-        }
-        if (idLanded === false) {
-          await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
-            why: 'persist_failed',
-            logPrefix: 'broadcasts.dispatch',
-          });
-        } else if (idLanded === true) {
-          logger.warn(
-            {
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              resendBroadcastId,
-            },
-            'broadcasts.dispatch.persist_ack_lost_id_kept',
-          );
-        }
-        return err({
-          kind: 'dispatch.server_error',
-          message: persistFailureReason,
-          errClass: errKind(persistErr),
-          phase: 'persist_broadcast_id',
-        });
-      }
+      //
+      // The write and its three refusal arms (a lost CAS, a vanished row, a DB
+      // fault with the read-back) live in `_persist-minted-broadcast-id.ts`,
+      // shared with the import leg since code review #8 (2026-10-29). This
+      // leg's behaviour, log names (`broadcasts.dispatch.*`), log fields and
+      // returned error shapes are unchanged; no fence (that is the import
+      // leg's).
+      const persistRefused = await persistBroadcastIdBeforeSend(deps, input, {
+        resendBroadcastId,
+        resendAudienceId,
+        minted: true,
+        logPrefix: 'broadcasts.dispatch',
+      });
+      if (persistRefused !== null) return err(persistRefused);
     }
 
     if (!alreadyHandedToSend) {
