@@ -47,7 +47,7 @@ function main(): void {
     try {
       base = git(['merge-base', 'origin/main', head]).trim();
     } catch {
-      console.error('check:red-first: cannot resolve merge-base(origin/main, HEAD); fetch origin/main or set RED_FIRST_BASE');
+      console.error('check:red-first: cannot resolve merge-base(origin/main, HEAD); run `git fetch origin main` or set RED_FIRST_BASE');
       process.exit(1);
     }
   }
@@ -84,6 +84,7 @@ function main(): void {
     console.error(`check:red-first: ${violations.length} commit(s) change application/domain logic with no earlier test: commit for the module:`);
     for (const v of violations) console.error(`  ${v.sha.slice(0, 9)} ${v.subject}  [${v.modules.join(', ')}]`);
     console.error('Commit the failing test first (test(<module>): …), or add a `Red-First-Exempt: <reason>` trailer.');
+    console.error('Not your commits? A stale origin/main pulls main\'s squash commits into the range: run `git fetch origin main` first.');
     process.exit(1);
   }
   console.log(`check:red-first: ${commits.length} commit(s) on the branch, every logic change has a RED commit before it`);

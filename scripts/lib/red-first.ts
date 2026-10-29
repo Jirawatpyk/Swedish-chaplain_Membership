@@ -27,12 +27,19 @@ export interface RedFirstViolation {
   readonly modules: ReadonlyArray<string>;
 }
 
-const HEADER = /^(?:\[Spec Kit\]\s*)?([a-z]+)(?:\([^)]*\))?!?:/;
+const HEADER = /^(?:\[Spec Kit\]\s*)?([a-z]+)(?:\(([^)]*)\))?!?:/;
+/** `git revert`'s default subject is `Revert "<original subject>"`. */
+const GIT_REVERT = /^Revert "/;
 const LOGIC_FILE = /^src\/modules\/([^/]+)\/(?:application|domain)\//;
 const EXEMPT_TRAILER = /^Red-First-Exempt:[ \t]*(\S.*)$/m;
 
 function commitType(subject: string): string | null {
+  if (GIT_REVERT.test(subject)) return 'revert';
   return HEADER.exec(subject)?.[1] ?? null;
+}
+
+function commitScope(subject: string): string | null {
+  return HEADER.exec(subject)?.[2] ?? null;
 }
 
 /**
@@ -45,16 +52,27 @@ const TEST_FOLDER_ALIASES: Readonly<Record<string, ReadonlyArray<string>>> = {
   invoicing: ['invoices'],
 };
 
-function touchesModuleTests(files: ReadonlyArray<string>, module: string): boolean {
+/**
+ * A `test:` commit counts as module M's RED when its scope names M (or an
+ * alias, or M's singular), or it touches a `tests/**` path with a folder named
+ * for M, or a file whose name starts with M's singular (`event-attendees-port…`
+ * for `events`, flat files in `tests/contract/`).
+ */
+function isRedFor(commit: BranchCommit, module: string): boolean {
+  const singular = module.endsWith('s') ? module.slice(0, -1) : module;
   const names = [module, ...(TEST_FOLDER_ALIASES[module] ?? [])];
-  return files.some((f) => f.startsWith('tests/') && f.split('/').some((seg) => names.includes(seg)));
+  const scope = commitScope(commit.subject);
+  if (scope !== null && (names.includes(scope) || scope === singular)) return true;
+  return commit.files.some((f) => {
+    if (!f.startsWith('tests/')) return false;
+    const segs = f.split('/');
+    const base = segs[segs.length - 1] ?? '';
+    return segs.slice(0, -1).some((seg) => names.includes(seg)) || [...names, singular].some((n) => base.startsWith(n));
+  });
 }
 
-/** Commits oldest first. `allowShas` are grandfathered SHA prefixes. */
-export function findRedFirstViolations(
-  commits: ReadonlyArray<BranchCommit>,
-  allowShas: ReadonlyArray<string> = [],
-): RedFirstViolation[] {
+/** Commits oldest first. Grandfathering is the caller's (`scripts/check-red-first.ts` ALLOW). */
+export function findRedFirstViolations(commits: ReadonlyArray<BranchCommit>): RedFirstViolation[] {
   const violations: RedFirstViolation[] = [];
   const earlierTests: BranchCommit[] = [];
   for (const commit of commits) {
@@ -69,9 +87,8 @@ export function findRedFirstViolations(
           }),
         ),
       ];
-      const missing = modules.filter((m) => !earlierTests.some((t) => touchesModuleTests(t.files, m)));
-      const exempt =
-        EXEMPT_TRAILER.test(commit.body) || allowShas.some((prefix) => commit.sha.startsWith(prefix));
+      const missing = modules.filter((m) => !earlierTests.some((t) => isRedFor(t, m)));
+      const exempt = EXEMPT_TRAILER.test(commit.body);
       if (missing.length > 0 && !exempt) {
         violations.push({ sha: commit.sha, subject: commit.subject, modules: missing });
       }

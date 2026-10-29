@@ -117,8 +117,4 @@ describe('findRedFirstViolations', () => {
     expect(v.map((x) => x.sha)).toEqual(['a2']);
   });
 
-  it('an allow-listed SHA prefix is exempt', () => {
-    const v = findRedFirstViolations([c('c5bc2f9c6abc', 'fix(broadcasts): x', [LOGIC])], ['c5bc2f9c6']);
-    expect(v).toEqual([]);
-  });
 });
