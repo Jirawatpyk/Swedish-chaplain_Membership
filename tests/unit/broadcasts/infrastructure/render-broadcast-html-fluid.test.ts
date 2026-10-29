@@ -54,8 +54,33 @@ describe.each([
 
   it('body images never outgrow the card, and phone side padding drops to 16px', () => {
     const style = /<head>[\s\S]*<style>([\s\S]*?)<\/style>[\s\S]*<\/head>/.exec(html)?.[1] ?? '';
-    // Rows after the header: the logo keeps its own 240px cap.
-    expect(style).toContain('.eb-card tr+tr img{max-width:100%!important;height:auto!important}');
-    expect(style).toMatch(/@media \(max-width:480px\)\{\.eb-card td\{padding-left:16px!important;padding-right:16px!important\}\}/);
+    // The body cell only: the logo keeps its own 240px cap.
+    expect(style).toContain('.eb-body img{max-width:100%!important;height:auto!important}');
+    expect(style).toContain('@media (max-width:480px){.eb-cell{padding-left:16px!important;padding-right:16px!important}}');
+  });
+
+  it('a body image carries its own cap too, for a client that drops <style>', () => {
+    expect(html).toContain('<img style="max-width:100%;height:auto" src="https://cdn.example.org/wide.png" alt="Wide">');
+  });
+});
+
+// Review round 1 (PR L): a rule on every `td` in the card reached the design
+// blocks' own cells and padded the CTA button and the banner on phones.
+describe('design blocks keep their own cells', () => {
+  const html = renderBroadcastHtml({
+    ...BASE,
+    bodyHtml:
+      '<p>Intro</p><a data-eb="cta" href="https://example.org/r" target="_blank" rel="noopener noreferrer nofollow">Register</a>' +
+      '<img data-eb="banner" src="https://cdn.example.org/b.png" alt="Banner">',
+  });
+
+  it('only the card\'s header, body and footer cells take the phone padding', () => {
+    expect(html.match(/class="eb-cell[^"]*"/g)).toHaveLength(3);
+    expect(html).toMatch(/<td bgcolor="[^"]+" style="border-radius:6px;background-color:[^"]+">/);
+    expect(html).toContain('<tr><td style="padding:0"><img');
+  });
+
+  it('the banner image keeps its own style and gets no second one', () => {
+    expect(html).toMatch(/<img src="https:\/\/cdn\.example\.org\/b\.png" alt="Banner" width="600" style="display:block;width:100%;max-width:100%;height:auto;border:0">/);
   });
 });
