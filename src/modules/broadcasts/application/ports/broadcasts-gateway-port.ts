@@ -112,7 +112,9 @@ export interface RetrievedBroadcastResource {
    * `dispatchScheduledBroadcast` reads `'queued' | 'sending' | 'sent'` to decide
    * whether a re-entered tick may send an inherited id — rather than assuming
    * Resend answers 409, which that file refuses to rely on because the idempotency
-   * header is MEASURED inert on `POST /broadcasts` and unmeasured on `/send`.
+   * header is MEASURED inert on `POST /broadcasts`, and on `/send` Resend answers
+   * any second send of a non-draft broadcast 422, whatever the key (MEASURED
+   * 2026-10-29, `_probe-refused-send.ts`).
    *
    * `'cancelled'` and `'unknown'` are the counter-examples that cost a round: read
    * as "already sent" by a `!== 'draft'` test, they skipped the send while still
@@ -395,8 +397,9 @@ export interface BroadcastsGatewayPort {
    * `scheduled` broadcast → 200 (then GET → 404); on a `queued` one (~1 s after
    * `/send`) → **403 `validation_error` "Only draft or scheduled broadcasts can
    * be deleted"**, and the send still completes (queued ~15 s+, sent by 45 s).
-   * The adapter classifies that 403 `permanent`. DELETE on `sending` / `sent`
-   * is still UNMEASURED (assumed refused the same way).
+   * The adapter classifies that 403 `permanent`. A `sent` one answers the same
+   * 403 (MEASURED 2026-10-29). `sending` is INFERRED from that message, not
+   * caught — Resend moved queued → sent without showing it.
    *
    * **Never call this on an id read from the row** — with TWO exceptions. A
    * persisted id is the resource a send may already have gone out on, so on

@@ -17,10 +17,11 @@
  *     the duplicate is collapsed".** MEASURED 2026-09-09 against the live
  *     account: two identical `POST /broadcasts` calls carrying the SAME
  *     `Idempotency-Key` created TWO resources. The header is inert on that
- *     endpoint. `/broadcasts/{id}/send` cannot be probed without sending real
- *     mail, so its behaviour is unmeasured — and assuming a provider honours the
- *     header on one endpoint of an API surface where it ignores it on another is
- *     a guess, not a safety property.
+ *     endpoint. `/broadcasts/{id}/send` was measured later (2026-10-29, sink
+ *     address only): a second send of a non-draft broadcast answers 422
+ *     "Only draft broadcasts can be sent or scheduled", whatever the key — so
+ *     Resend refuses the duplicate, and a refused send is probed before it is
+ *     believed (`_probe-refused-send.ts`).
  *   - `idempotency_conflict` → success-replay; advance to 'sending'
  *     (Resend already accepted this broadcast on a prior attempt)
  *   - `resource_missing` (404) → emit `broadcast_resend_resource_missing`
@@ -1641,10 +1642,10 @@ async function advanceToSending(ctx: {
     // **Round 4 F4 — this said "(Resend dedupes -> safe replay)" and that is not
     // a property we have.** MEASURED 2026-09-09 on the live account: two
     // IDENTICAL `POST /broadcasts` calls with the same `Idempotency-Key`
-    // returned two different ids. The header is inert there. The send endpoint
-    // could not be probed without sending real mail, so it is unmeasured —
-    // which is the point: "safe replay" was resting on an assumption nobody had
-    // checked, and the half that WAS checkable came back negative.
+    // returned two different ids. The header is inert there. The send endpoint,
+    // measured 2026-10-29, answers a second send 422 (never 409) whatever the
+    // key — "safe replay" rests on that refusal plus the probe of a refused
+    // send (`_probe-refused-send.ts`), not on the header.
     //
     // Worse for this particular path: the retry does not even reuse the same
     // resource. `resend_broadcast_id` was never persisted (that write is what

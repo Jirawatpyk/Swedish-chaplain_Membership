@@ -365,6 +365,10 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 
 **The flip, then the observation:**
 
+- [ ] **Spec 139 (erasure: an erased member's approved E-Blast caught between the
+  pre-send persist and the send) is MERGED.** Do not set the flag before it.
+  Spec 138 (the hold abandon, the pre-send persist, the row fence) is the other
+  prerequisite; both are named in `specs/138-f7-import-hold-abandon/spec.md`.
 - [ ] Add `FEATURE_F7_IMPORT_AUDIENCE=true` → **redeploy immediately after**,
   in that order, with no unrelated merge in between.
 - [ ] **Observe the first send — CHECK RESEND FIRST, then the audit row.**

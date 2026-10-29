@@ -17,8 +17,8 @@ All changes are in the import leg (`build-audience-tick.ts`). It follows the leg
 1. **Pre-send persist (S8 closed).** After `createBroadcast`, call `attachBroadcastId` in its own transaction before `sendBroadcast`. The legacy leg and the import leg share one helper: the 23505 classification, the read-back, and the landed / absent / unknown branches. The legacy log names come in through a `logPrefix`.
 2. **Inherited-id probe.** A row carrying `resend_broadcast_id` is probed with `retrieveBroadcast` before the standing gate. The answer can be:
    - handed (`queued` / `sending` / `sent`): catch up with the post-send writes;
-   - reusable (`draft` / `cancelled`);
-   - dead (`not_found`): re-minted; `failed` / `scheduled` read as `unknown` and are refused;
+   - reusable (`draft`);
+   - dead (`cancelled` / `not_found`): re-minted (only a draft can be sent — 422 otherwise, measured); `failed` / `scheduled` read as `unknown` and are refused;
    - unknown, or the probe threw: refuse fail-closed.
 3. **Fenced hold abandon.**
    - claim CAS: clear only the import columns, and keep the bid and the audience (architect B1, 29 Oct);
@@ -27,18 +27,20 @@ All changes are in the import leg (`build-audience-tick.ts`). It follows the leg
    - narrow CAS: clear the bid and the audience together, with predicate `audience_import_id IS NULL`.
 
    On the sender side, `attachBroadcastId` takes an optional `expectedAudienceImportId` fence:
-   - every import-leg attach passes it, and the fresh-mint persist IS the fence (B2);
+   - every import-leg attach BEFORE a send passes it, and the fresh-mint persist IS the fence (B2); the handed-path catch-up re-asserts unfenced, because the mail is already out;
    - the inherited path re-asserts once, right before `/send`;
    - the legacy calls do not pass it.
 
    A sender whose `/send` gets 404 re-reads the row, and returns non-terminal if the hold won.
 
-   A dead inherited bid (`not_found` / `failed`) is replaced through a new CAS that swaps it only while it still equals the dead value (B3).
-4. **Dead-audience self-heal.** On a 404 for a missing audience on the import path, run a CAS detach and return non-terminal. **Built differently from B4, and accepted.** The gateway is unchanged. The import leg matches `permanent` with code `not_found` (or `http_404`) at its two call sites only (`isAudienceMissing`), and two gateway pin tests keep the legacy classification (a 404 with no resource id stays `permanent`). The result is a new `audience_restarted` output, the counter `broadcasts_audience_import_restarted_missing_audience_total` and the phase `audience_restart`.
+   A dead inherited bid (`cancelled` / `not_found`) is replaced through a new CAS that swaps it only while it still equals the dead value (B3).
+4. **Dead-audience self-heal.** On a 404 for a missing audience on the import path, run the same restart as the hold — claim, delete the audience at Resend (404 = gone), release — and return non-terminal. Only an audience an EARLIER tick created is restarted (one made on this tick takes the ordinary permanent rule), so it cannot loop and exhaust the Free plan's three segments (review round 2). **Built differently from B4, and accepted.** The gateway is unchanged. The import leg matches `permanent` with code `not_found` (or `http_404`) at its two call sites only (`isAudienceMissing`), and two gateway pin tests keep the legacy classification (a 404 with no resource id stays `permanent`). The result is a new `audience_restarted` output, the counter `broadcasts_audience_import_restarted_missing_audience_total` and the phase `audience_restart`.
 5. **A refused `/send` is probed** (`_probe-refused-send.ts`, both legs):
    - `queued` / `sending` / `sent` → advanced as sent;
    - `draft` / `cancelled` → the ordinary terminal path;
    - anything else, or a failed probe → a non-terminal refusal.
+
+   When accepted, `broadcast_send_started` records the status the probe saw; a transition that then loses to a sibling already `sending` on the same resource logs info (`transition_already_sending`), not critical.
 6. **`failed` and `scheduled` stay `unknown`,** so they are refused fail-closed. `normaliseStatus` is unchanged because the LIVE `reconcile-stuck-sending` reads the same union.
 
 **Alternatives not taken:**
@@ -46,23 +48,26 @@ All changes are in the import leg (`build-audience-tick.ts`). It follows the leg
 - **Retry the detach ×3 in the tick.** This was the first build. It treated the symptom, and the code review noted that the ordering is the cause.
 - **A dispatch lease column.** It needs a migration, and the CAS fence already closes the overlap.
 - **Treating the measured `failed`-on-audience-delete as theoretical.** It was measured.
+- **Classifying the 422 in the gateway as "already sent".** It would key on provider text, change the LIVE leg's classification, and the 422 only says "not a draft" (a `failed` or `cancelled` resource answers it too); only `retrieveBroadcast` answers whether mail went out.
 
 ## Files and modules
 
 - `src/modules/broadcasts/application/use-cases/`:
   - `build-audience-tick.ts`;
-  - `dispatch-scheduled-broadcast.ts` (LIVE leg: helper extraction, the fail-closed probe throw, `failed` handling);
-  - new `_reclaim-minted-broadcast.ts` and `_persist-minted-broadcast-id.ts`;
-  - `cancel-in-flight-broadcasts-for-member.ts` (docblock);
-  - `reconcile-stuck-sending.ts` (LIVE: reached by the `normaliseStatus` change; behaviour unchanged).
+  - `dispatch-scheduled-broadcast.ts` (LIVE leg: helper extraction, the fail-closed probe throw, the refused-send probe);
+  - new `_reclaim-minted-broadcast.ts`, `_persist-minted-broadcast-id.ts`, `_probe-refused-send.ts`; `_classify-thrown.ts` gains `retryableSubKind`;
+  - `cancel-in-flight-broadcasts-for-member.ts` (docblock).
 - `src/modules/broadcasts/application/ports/`: `broadcasts-repo.ts` (claim + narrow-clear methods, the `attachBroadcastId` fence) and `broadcasts-gateway-port.ts` (docblocks).
-- `src/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo.ts` and `infrastructure/resend/resend-broadcasts-gateway.ts` (`normaliseStatus`, the 404 audience classification on the import path).
-- `src/modules/broadcasts/domain/stage/in-progress-statuses.ts` (docblock) and `src/lib/metrics.ts` (`audienceImportAbandonedOnHold`).
+- `src/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo.ts` (claim, release, fences, the `''` arm) and `infrastructure/resend/resend-broadcasts-gateway.ts` (comments only; classification and `normaliseStatus` unchanged).
+- `src/app/api/cron/broadcasts/dispatch-scheduled/route.ts` (the `audience_restarted` bucket and span).
+- `src/modules/broadcasts/domain/stage/in-progress-statuses.ts` (docblock) and `src/lib/metrics.ts` (`audienceImportAbandonedOnHold`, `audienceImportRestartedOnMissingAudience`, `audienceImportRestartFailed`).
+- The `check:red-first` gate (retro): `scripts/check-red-first.ts`, `scripts/lib/red-first.ts`, `package.json` (`pnpm check`), `.github/workflows/quality-gates.yml` (the PR-only step).
 - Rule: `.claude/rules/modules/broadcasts.md`.
 - Docs:
   - `docs/runbooks/{eblast-approval,broadcast-audience-build,cron-jobs}.md`;
   - `docs/observability.md`;
-  - `docs/go-live-readiness.md` § 6.10;
+  - `docs/go-live-readiness.md` § 6.10 and `docs/operational-state.md` (the spec-139 flip gate);
+  - `docs/compliance/processing-records.md` (residual 8b, the measured DELETE facts, the hold's audience delete) and `docs/runbooks/member-erasure.md` step 2b (interim, until 139);
   - `docs/changelog.md`, `docs/decisions.md`, `docs/retro.md`;
   - `.claude/rules/modules/broadcasts.md`;
   - `.claude/skills/review-and-ship/SKILL.md` § 2;
@@ -89,17 +94,17 @@ n/a. No migration.
 |---|---|---|
 | 1 hold abandons (claim → reclaim → delete → clear), gauge stops matching, counter | `build-audience-tick-failure-paths.test.ts` hold block; `eblast-send-time-standing.test.ts` "tick-2 hold abandons…" with the real gauge predicate | unit + integration |
 | 2 lost claim touches nothing | failure-paths "claim lost → no gateway delete" | unit |
-| 3 sender fence: every attach fenced, both orders, double-race re-read | `audience-import-repo.test.ts` fence pair against Neon; failure-paths "fence lost → no send, own mint reclaimed, no bid left"; "send 404 after a claim → re-read → non-terminal", covering both bid≠own and bid=X + import NULL | integration + unit |
+| 3 sender fence: every attach fenced, both orders, double-race re-read | `audience-import-repo.test.ts` fence pair against Neon; failure-paths "fence lost → no send, own mint reclaimed, no bid left"; "send 404 after a claim → re-read → non-terminal", covering bid=X + import NULL and bid≠own + import ours | integration + unit |
 | 4 partial abandon self-heals; 403 stops and leaves the bid | failure-paths "redo on an import-NULL row with bid/audience still set (no re-claim)"; "broadcast delete 403 → audience untouched, bid kept → next probe catches up" | unit |
-| 5 no double send: pre-send persist order; probe arms; dead bid replaced; fail-closed throws | failure-paths persist/probe blocks; "not_found bid → replace-dead-bid CAS → fresh mint"; `audience-import-two-tick.test.ts` re-entry after send | unit + integration |
-| 6 dead audience self-heals; legacy classification pinned | failure-paths "createBroadcast 404 audience → detach, non-terminal"; "createContactImport 404 → fresh tick 1"; gateway unit "legacy createBroadcast 404 stays permanent" | unit |
+| 5 no double send: pre-send persist order; probe arms; dead bid replaced; fail-closed throws | failure-paths persist/probe blocks; "not_found bid → replace-dead-bid CAS → fresh mint"; "probe answers CANCELLED → a FRESH resource is minted" (RED `8b9037505`); `audience-import-two-tick.test.ts` re-entry after send | unit + integration |
+| 6 dead audience self-heals (deletes, bounded); legacy classification pinned | failure-paths "createBroadcast 404 audience → …released" (now also asserts the audience delete), "createContactImport 404 for the audience THIS tick created → no restart loop" (RED `8b9037505`); "createContactImport 404 → fresh tick 1"; gateway unit "legacy createBroadcast 404 stays permanent" | unit |
 | 7 no `''` sentinels | failure-paths "'' broadcast id does not loop"; "handed path keeps null audience" | unit |
 | 8 legacy unchanged except stated | the legacy `dispatch-scheduled*` unit suites; `dispatch-persist-before-send`, `eblast-approved-exit-vs-dispatch` integration; new legacy tests for the probe-throw and `failed` arms | unit + integration |
 | 9 staff cancel after abandon | `hasDispatchBegun` false after detach (domain unit) | unit |
 | 10 docs | `spec-compliance-auditor` reads them against the code | review |
 | 11 cross-tenant layer 1 for each new or changed repo method | `audience-import-repo.test.ts` `it.each` next to `:622` | integration |
-| 12 refused second `/send` → probe → accepted, not failed (both legs) | failure-paths + legacy dispatch suite: "send 422 + probe sent → sending, no member email"; "422 + probe draft → terminal as today"; "422 + probe throws → non-terminal refusal" | unit |
-| 13 unmeasured DELETE on sending/sent labelled | `spec-compliance-auditor` greps the comments and docs | review |
+| 12 refused second `/send` → probe → accepted, not failed (both legs) | failure-paths + legacy dispatch suite: "send 422 + probe sent → sending, no member email"; "422 + probe draft / cancelled → terminal as today" (RED `284a80be9`); "422 + probe throws → non-terminal refusal"; "422 + queued → audit records queued", "422 + accepted, transition LOSES → no critical" (RED `8b9037505`) | unit |
+| 13 DELETE on sending/sent labelled (sent MEASURED 403 on 2026-10-29; sending inferred) | `spec-compliance-auditor` greps the comments and docs | review |
 
 - **Cross-tenant test (Principle I, both layers):**
   - Layer 2: the existing broadcasts RLS suite.
@@ -187,9 +192,9 @@ Filled in at Verify, one line per Done-when line.
 - **Speed:** `check:red-first` dropped from 6.6–7.0 s to 1.9–2.3 s.
 - **Legacy-leg diff:** 422 lines down to 386.
 
-**Verify, 29 Oct 2026 (step 6, Done-when 1 / 2 / 4 / 5 / 6 / 9):**
+**Verify, 29 Oct 2026 (step 6). Driven live: Done-when 1 (abandon + gauge + audience gone) and 5 (fresh tick 1 after a resume, one send, no second send). Done-when 2 / 3 / 4 / 6 / 9 / 11 / 12 rest on the tests named in § Test plan — the live run cannot stage their races or provider faults:**
 - **Setup:**
-  - The branch ran on **:3401** from a detached worktree with `FEATURE_F7_IMPORT_AUDIENCE=true` set only there. :3400 was taken by another session's worktree (`Temp49`), which was left alone.
+  - The branch ran on **:3401** from a detached worktree with `FEATURE_F7_IMPORT_AUDIENCE=true` set only there. :3400 was taken by another session's worktree (`Temp/f49`), which was left alone.
   - Database: the dev Neon branch (`ep-gentle-king`).
   - Data: test tenant `test-swecham-b0394791` with one approved, due, `custom` E-Blast `583cdab4-…`, whose only recipient is `delivered@resend.dev`.
   - Before the first tick, `pnpm db:query` showed 0 other approved rows on dev.
@@ -204,23 +209,73 @@ Filled in at Verify, one line per Done-when line.
     - resume tick 2: `succeeded: 1`, row `sending`, `resend_broadcast_id ba647ded-…`;
     - tick 3: `processed: 0`, so no second send.
   - **At Resend:** broadcast `ba647ded-…` is `sent` (11:56:05 UTC), and **exactly one email for this subject, to `delivered@resend.dev`, `delivered`**.
+  - **Measured afterwards, for Done-when 13:** `DELETE /broadcasts/{id}` on a `sent` sink broadcast → **403** "Only draft or scheduled broadcasts can be deleted"; status still `sent`.
 - **Cleanup:**
   - the probe audience was deleted at Resend (200);
   - the :3401 server was stopped;
   - the worktree, including its `.env.local` copy, was removed;
   - the test tenant is left for the 6 h stale-tenant sweep.
 
+**Review round 2, 29 Oct 2026** (on `dc7be41d6`; all reviewers ran in fresh subagents, read-only):
+
+| Reviewer | Verdict | BLOCKER / HIGH / MEDIUM / LOW |
+|---|---|---|
+| `/code-review high origin/main...HEAD` | 10 findings | — / — / 6 correctness + 1 gate / 3 |
+| `reliability-guardian` | PASS; every round-1 finding confirmed closed in the code | 0 / 0 / 0 / 4 |
+| `pdpa-gdpr-compliance-officer` | APPROVE WITH CONDITIONS | 0 / 2 / 2 / 1 |
+| `security-engineer` (staff review, security sign-off) | **SIGN WITH CONDITIONS**: the condition is the erasure gap, tracked as a flip precondition (spec 139) | 0 / 0 / 1 / 2 + 2 info |
+| `senior-tester` (staff review) | SHIP-READY | 0 / 0 / 2 / 8 |
+| `spec-compliance-auditor` | PARTIALLY COMPLIANT: the code meets every line; the evidence and docs did not | 0 / 3 / 8 / 2 |
+
+**Closed in the round-2 fix set:**
+- **Code:**
+  - RED `8b9037505`, GREEN `068b5f0e2`: cancelled re-minted; the self-heal deletes the audience and is bounded; the accepted-send audit status is recorded; the sibling-won transition is info; an empty audience counts as none; `viaGateway` uses the shared narrowing; no provider text in the Result; new counter `restart_failed_total`.
+  - RED `284a80be9` / `c1770d714` / the perf-revert case, GREEN `b5afd499d` / `6d0e36b7b` / `d2a28b07f`: the `cancelled` refusal, and `check:red-first` hardening (empty / non-SHA range refused, `--end-of-options`, a parse-to-nothing control, `perf:` / `revert:` checked).
+- **Tests:** `sendLostToHold` bid≠own, the cross-tenant `it.each` asserting `tx tenant mismatch` and covering `markAudienceImportCompleted`.
+- **Docs:**
+  - the spec-139 flip gate (go-live § 6.10, operational-state);
+  - RoPA residual 8b plus the measured DELETE facts and the hold delete;
+  - erasure runbook step 2b;
+  - the stale "unmeasured `/send`" comments (3);
+  - changelog counts and `cancelled`;
+  - runbook § C (cancelled, the unbounded fail-closed recovery, three-invocation residual, the 403 completion-stamp noise, the new counter);
+  - observability rows;
+  - the plan's Approach, Files, Test plan, Rollout and Risks;
+  - the spec wording (DW3, DW5, DW6, DW13), the Verify header above.
+- **Measured:** DELETE on a `sent` broadcast → 403.
+
+**Moved to spec 139:**
+- the erasure gap (code-review #1, security M1, pdpa H-2 code half);
+- the Art. 30 record for a hold's audience delete (reliability L4).
+
+**Left as residuals, listed in the PR:**
+- **Unbounded fail-closed refusal on a permanent probe error.** It is the reliability round-1 M2 request; the recovery is in runbook § C.
+- **One earlier `test:` commit covers later logic commits** (the `check:red-first` limit).
+- **Old weak cross-tenant case at `audience-import-repo.test.ts:648`.** It predates this branch.
+- **Two status-split copies (import leg and refused-send) plus legacy Step 1b.** Code-review #9; the legacy copy is not touched on a live leg.
+
+**Gates after the fix set:**
+- unit `tests/unit/broadcasts` + `tests/unit/broadcast` + red-first: 3129/3130. The one failure is `admin-eblast-detail-actions` "a manager sees no action control", a 30 s timeout. It passes alone (80/80, 22 s), its file is outside the diff, and the branch touches no UI.
+- contract `broadcasts` 961/961.
+- integration `audience-import-repo` 27/27, `audience-import-two-tick` 4/4, `eblast-send-time-standing` 11/11.
+- `red-first` 11/11.
+
 ## Rollout
 
 - **Dark behind `FEATURE_F7_IMPORT_AUDIENCE`** (absent from Vercel): the whole import leg.
-- **Unflagged on merge:**
-  - the shared persist and reclaim helpers on the LIVE legacy leg (refactor, no behaviour change);
-  - the legacy leg's fail-closed refusal on a non-retryable probe throw;
-  - the legacy leg's `failed` probe handling.
+- **Unflagged on merge — the five LIVE legacy-leg surfaces (spec Done-when 8):**
+  1. the shared persist-before-send and reclaim helpers (refactor, no behaviour change; log names byte-identical);
+  2. a non-retryable inherited-id probe throw is refused fail-closed (`inherited_probe_refused`, phase `inherited_status`) instead of `failed_to_dispatch` + member email;
+  3. a non-retryable `/send` failure is probed (`_probe-refused-send.ts`): `queued` / `sending` / `sent` → advanced as sent; `draft` → terminal as before; anything else → a non-terminal refusal;
+  4. in that probe, `cancelled` is a genuine refusal (terminal), as Step 1b reads it;
+  5. `attachBroadcastId`'s CAS treats `''` as no id (it looped mint → CAS-fail → reclaim).
+  Also unflagged but inert until the flag: the import-leg code, the new metrics, the cron bucket. Plus the `check:red-first` gate in `pnpm check` and CI.
+- **Before the flag may be set:** spec 139 (erasure) merged (`docs/go-live-readiness.md` § 6.10).
 - **Rollback:** revert the PR. There is no data migration.
 
 ## Risks
 
 - **A live-leg regression from the helper extraction.** Noticed by the legacy unit and integration suites, the log names pinned in their tests, and `broadcasts_approved_overdue_count` in production.
-- **The fence double race.** A re-asserts its id, then B claims and deletes it in the milliseconds before A's `/send`. A gets 404, then `resource_missing`. There is no double send; the cost is a lost E-Blast, recorded on the row.
+- **The fence double race.** A re-asserts its id, then B claims and deletes it in the milliseconds before A's `/send`. A gets 404, re-reads the row (`sendLostToHold`) and returns a concurrent skip; no mail, nothing terminal, B's restart proceeds. No double send.
+- **Three overlapping invocations** (a cron fired twice by hand) can let a re-submitted import be sent into an audience the hold is deleting: a lost E-Blast, not a double send. Closing it needs a lease column (out of scope). Documented in `broadcast-audience-build.md` § C.4.
 - **A fail-closed refusal can stall a row** (for example after a key rotation) until a human acts. Noticed by the `inherited_status` phase counter and `broadcasts_approved_overdue_count`. Recovery is in `broadcast-audience-build.md` § C.

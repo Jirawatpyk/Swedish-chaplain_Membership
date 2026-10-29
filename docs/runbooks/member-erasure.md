@@ -69,6 +69,19 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    retention-sweep, "Pre-0304 image blobs" — same enumeration, run over the
    rows about to expire rather than one member's.
 
+2b. **POST-CASCADE — an E-Blast caught mid-dispatch (interim, until spec 139).**
+   The cascade skips an `approved` E-Blast that already carries a
+   `resend_broadcast_id` ("dispatch begun"), and the send-time standing gate
+   does not read erasure, so a Resend draft minted before the scrub — the
+   pre-scrub subject, body and from-name — can still be sent. The skip is
+   audited as `broadcast_concurrent_action_blocked` with `dispatchBegun: true`.
+   After step 3, look for that row under this erasure's `request_id`. For each
+   one found, `DELETE /broadcasts/{resend_broadcast_id}` on the Broadcasts
+   account while it is still `draft` or `scheduled` (200, MEASURED 2026-10-29):
+   the dispatcher then meets `not_found` and stops. A **403** ("Only draft or
+   scheduled broadcasts can be deleted") means it was already sent — record
+   that in the DSR answer as a residual. Spec 139 replaces this step in code.
+
 3. **Execute via the admin UI (US3-A).** As an **admin** (the page is admin-only
    — manager/member get 404), open the member at `/admin/members/[memberId]`,
    click **Erase member**, and complete the gated dialog: type-to-confirm the

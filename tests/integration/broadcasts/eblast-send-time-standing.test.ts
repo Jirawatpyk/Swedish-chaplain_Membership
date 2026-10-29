@@ -498,11 +498,11 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
   /**
    * The same hold on a row that also carries a pre-send `resend_broadcast_id`
    * (an earlier tick minted and persisted it, then died before the send). The
-   * probe answers `draft`, so nothing was handed to `/send`: the hold reclaims
-   * the draft resource, deletes the audience, and the widened CAS NULLs all
-   * three ids — the stuck gauge does not filter on `resend_broadcast_id`, so a
-   * row left carrying it would still not be a stuck import, but a row left
-   * pointing at a deleted draft would be resent on a dead id.
+   * probe answers `draft`, so nothing was handed to `/send`: the hold claims the
+   * row (the import columns), reclaims the draft resource, deletes the
+   * audience, and the release then NULLs the broadcast and audience ids
+   * together — a row left pointing at a deleted draft would otherwise be sent
+   * on a dead id.
    */
   it('import leg, tick 2, a SUSPENDED member with a pre-send broadcast id whose probe answers draft → held: the draft reclaimed, the audience deleted, all three ids detached', async () => {
     const memberId = await seedMember('suspended');

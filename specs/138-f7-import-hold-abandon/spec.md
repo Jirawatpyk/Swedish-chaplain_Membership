@@ -15,7 +15,7 @@ Since #403, a member whose membership is `suspended` (awaiting payment) is **hel
 
 1. A hold that landed after tick 1 left the import pending. `audience_import_stuck_count` then false-alarmed for the whole hold. The stale import could fail the resumed send (`count_mismatch` / `audience_membership_drift`). `hasDispatchBegun` also refused staff cancel and re-time.
 2. `resend_broadcast_id` was persisted only after `sendBroadcast`. A tick dying in that window re-entered, minted a second Resend broadcast and **sent to the whole audience again**. With (1)'s fix, a hold in that window would also have deleted the audience of a broadcast that was being sent.
-3. Two ticks can work one row at once, because the dispatch cron holds no lease past its scan. Deleting an audience while its broadcast is queued makes Resend **fail** that broadcast silently (measured below). Our row would still advance to `sending`, but no mail would go out. `reconcile-stuck-sending` stamps `sent` only for a resource Resend reports as `sent` (`reconcile-stuck-sending.ts:253`), so the row would stay in `sending` as an unresolved provider status until a human acts. The member's E-Blast is lost silently.
+3. Two ticks can work one row at once, because the dispatch cron holds no lease past its scan. Deleting an audience while its broadcast is queued makes Resend **fail** that broadcast silently (measured below). Our row would still advance to `sending`, but no mail would go out. `reconcile-stuck-sending` stamps `sent` only for a resource Resend reports as `sent` (`reconcile-stuck-sending.ts:252`), so the row would stay in `sending` as an unresolved provider status until a human acts. The member's E-Blast is lost silently.
 
 The legacy (non-import) leg is LIVE in production. Its pre-send persist and inherited-id probe are the model this leg follows.
 
@@ -50,7 +50,7 @@ The legacy (non-import) leg is LIVE in production. Its pre-send persist and inhe
    - Then one narrow CAS clears `resend_broadcast_id` and `resend_audience_id` together. Its predicate is `audience_import_id IS NULL`, and both values must still equal what was deleted.
    - Afterwards `audience_import_stuck_count` no longer counts the row, and `broadcasts_audience_import_abandoned_on_hold_total{tenant}` increments.
 2. **A lost claim touches nothing.** If the CAS loses (another tick moved the row), nothing is deleted at Resend and the tick still returns the hold.
-3. **The sender is fenced.** Every import-leg `attachBroadcastId` is fenced on the row's `audience_import_id`.
+3. **The sender is fenced.** Every import-leg `attachBroadcastId` before a send is fenced on the row's `audience_import_id` (the handed-path catch-up is not: its mail is already out).
    - On the fresh-mint path, the single pre-send persist is the fence.
    - On the inherited-id path, the id is re-asserted once, fenced, immediately before `sendBroadcast`.
    - Fence lost (a hold claimed the row): nothing is sent, only a broadcast this tick minted is reclaimed, and the row keeps no bid from this tick.
@@ -61,14 +61,15 @@ The legacy (non-import) leg is LIVE in production. Its pre-send persist and inhe
    - The next tick's probe then answers `queued` / `sent`, and the row catches up on the handed path (`advanceToSending` with no import id). It is neither deleted nor re-sent.
 5. **No send can go out twice.** The broadcast id is persisted in its own transaction before `sendBroadcast`. A re-entered tick holding an inherited id probes it first:
    - `queued` / `sending` / `sent` → no second send. The standing gate, the import poll and the count checks are skipped, and the row advances to `sending` with the `broadcast_send_started` audit row.
-   - `draft` / `cancelled` → the inherited id is reused (no second `createBroadcast`) and sent with the same idempotency key.
-   - `not_found` → the dead id is never sent to. A fresh mint replaces it through a CAS that swaps the bid only while it still equals the dead value, fenced on the import id (`replacesResendBroadcastId`).
+   - `draft` → the inherited id is reused (no second `createBroadcast`) and sent with the same idempotency key.
+   - `not_found` and `cancelled` → the dead id is never sent to (only a draft can be sent; a non-draft `/send` answers 422). A fresh mint replaces it through a CAS that swaps the bid only while it still equals the dead value, fenced on the import id (`replacesResendBroadcastId`).
    - `failed` (and `scheduled`) stay `unknown` → refused fail-closed, like any status this build cannot read. Two reasons: the union is also read by the LIVE `reconcile-stuck-sending`, and the fence closes the one path that produced `failed` (decided 29 Oct 2026; recovery is in `broadcast-audience-build.md` § C).
    - `unknown`, or a probe throw of any class → refused fail-closed: the row stays `approved`, no FR-021 clock starts, nothing is recorded as failed and the member is not emailed. A retryable throw is retried, never budgeted or stamped.
 6. **A dead audience self-heals.** When Resend answers 404 for a missing audience (`createBroadcast`, `createContactImport`) on a row with nothing handed to send, the import leg clears the audience and import columns, and any dead bid, by CAS and returns non-terminal.
-   - The CAS predicate is `approved`, import = expected (or NULL on tick 1), audience = expected.
+   - It runs the hold's restart: claim, delete the audience at Resend (404 = gone, so a 404 that did not mean gone leaves no member emails in an unreferenced audience), release. CAS predicates: `approved`, import = expected (or NULL on tick 1), audience = expected.
+   - Only for an audience an EARLIER tick created: one this tick made takes the ordinary permanent rule, so the restart cannot loop.
    - The next tick runs a fresh tick 1. No `failed_to_dispatch` is recorded and no member email is sent.
-   - On `createBroadcast`, the "404 → audience missing" classification is opt-in and only the import leg passes it. A gateway unit test pins the legacy classification unchanged (no resource id → `permanent`).
+   - The gateway is unchanged: the import leg reads `permanent` + `not_found` at its two call sites (`isAudienceMissing`). A gateway unit test pins the legacy classification unchanged (no resource id → `permanent`).
 7. **No `''` sentinels.** A row whose `resend_broadcast_id` is `''` does not loop. The handed path never writes `''` into `resend_audience_id`.
 8. **The legacy leg is unchanged except where stated.** The shared persist-before-send and reclaim helpers keep the legacy leg's log names, metric labels and error shapes byte-identical, proved by its unit suites and `dispatch-persist-before-send` / `eblast-approved-exit-vs-dispatch` integration. The deliberate live changes, each listed in the PR with its own test (with the shared helpers, a refactor with no behaviour change, that makes five live surfaces):
    - a non-retryable inherited-id probe throw is now refused fail-closed;
@@ -92,7 +93,7 @@ The legacy (non-import) leg is LIVE in production. Its pre-send persist and inhe
     - `draft` or `cancelled` (a scheduled send Resend cancelled, so never sent; the reading Step 1b gives it) → today's terminal handling.
     - Any other answer, or a failed probe → refused fail-closed and non-terminal.
     - Tested on both legs. The comments and docs that called a second `/send` UNMEASURED now cite the 2026-10-29 measurement.
-13. **Remaining unmeasured behaviour is labelled.** DELETE on a `sending` / `sent` broadcast (only `queued` was measured) is marked UNMEASURED in code and docs.
+13. **DELETE on a non-draft broadcast is labelled as measured.** `queued` and `sent` answer 403 (MEASURED 2026-10-29); `sending` is inferred from the same message and labelled so in code and docs.
 
 ## Out of scope
 
@@ -112,4 +113,5 @@ None left for this spec. The erasure question moved out (below).
   - Erasure cancels the member's renewal cycle with a reason other than `coverage_ended`, so `renewal-cycle.ts` answers `full` while `expiresAt` is in the future.
   - Result: an erased member's E-Blast caught between the pre-send persist and the send can still go out.
 - **Already live on the legacy leg since F4.** The import leg has the same window.
-- **Fix:** it needs a cross-module port (members → broadcasts), so the maintainer chose (29 Oct 2026) to do it as its own spec, **139**. 139 must merge before `FEATURE_F7_IMPORT_AUDIENCE` is flipped.
+- **Fix:** it needs a cross-module port (members → broadcasts), so the maintainer chose (29 Oct 2026) to do it as its own spec, **139**. 139 must merge before `FEATURE_F7_IMPORT_AUDIENCE` is flipped (`docs/go-live-readiness.md` § 6.10). Interim for the live leg: `docs/runbooks/member-erasure.md` step 2b; RoPA residual 8b.
+- **Also moved to 139** (maintainer, 29 Oct 2026): a hold's audience delete writes no audit row, so if staff then cancel a held E-Blast, the tick-1 disclosure of the recipient list to Resend has no Art. 30 record. Tick 1 was never audited; 139 decides whether to add an event.
