@@ -70,6 +70,14 @@ describe('findRedFirstViolations', () => {
     expect(v.map((x) => x.modules)).toEqual([['members']]);
   });
 
+  it('checks perf: and revert: commits that change logic too (a behaviour change under another name)', () => {
+    const v = findRedFirstViolations([
+      c('a1', 'perf(broadcasts): faster tick', [LOGIC]),
+      c('a2', 'revert(broadcasts): undo the fence', [LOGIC]),
+    ]);
+    expect(v.map((x) => x.sha)).toEqual(['a1', 'a2']);
+  });
+
   it('ignores refactor:, docs:, chore: and test: commits, and infrastructure/-only changes', () => {
     const v = findRedFirstViolations([
       c('a1', 'refactor(broadcasts): extract helper', [LOGIC]),
