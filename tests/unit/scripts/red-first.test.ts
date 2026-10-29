@@ -63,6 +63,27 @@ describe('findRedFirstViolations', () => {
     expect(v).toEqual([]);
   });
 
+  it('counts a test file NAMED for the module, not only one in a folder named for it', () => {
+    const v = findRedFirstViolations([
+      c('a1', 'test(events): red', ['tests/contract/event-attendees-port.contract.test.ts']),
+      c('a2', 'fix(events): green', ['src/modules/events/application/use-cases/import.ts']),
+    ]);
+    expect(v).toEqual([]);
+  });
+
+  it('counts a test: commit whose SCOPE names the module', () => {
+    const v = findRedFirstViolations([
+      c('a1', 'test(invoicing): red', ['tests/contract/f4-on-paid-callbacks.contract.test.ts']),
+      c('a2', 'fix(invoicing): green', ['src/modules/invoicing/application/use-cases/pay.ts']),
+    ]);
+    expect(v).toEqual([]);
+  });
+
+  it("checks git's default revert subject too (Revert \"…\")", () => {
+    const v = findRedFirstViolations([c('a1', 'Revert "fix(broadcasts): the fence"', [LOGIC])]);
+    expect(v.map((x) => x.sha)).toEqual(['a1']);
+  });
+
   it('covers domain/ as well as application/, and the [Spec Kit] prefix', () => {
     const v = findRedFirstViolations([
       c('bbb2222', '[Spec Kit] feat(members): green', ['src/modules/members/domain/member.ts']),
