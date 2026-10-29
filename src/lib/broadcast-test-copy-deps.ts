@@ -40,7 +40,7 @@ export async function makeSendTestCopyDeps(
     mailer: testCopyMailer,
     audit: f7AuditAdapter,
     // R105: a test copy's Unsubscribe link explains itself; it never unsubscribes.
-    testCopyUnsubscribeUrl: new URL('/unsubscribe/test-copy', env.app.baseUrl).toString(),
+    testCopyUnsubscribeUrl: `${env.app.baseUrl.replace(/\/$/, '')}/unsubscribe/test-copy`,
     tenantDisplayName: preview.tenantDisplayName,
   };
 }
