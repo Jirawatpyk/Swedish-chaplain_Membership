@@ -193,6 +193,18 @@ describe('the phone bar', () => {
     expect(bar()).not.toHaveTextContent(c.submitBlocked.subjectRequired);
   });
 
+  // The form's own reason comes first, in its reading order: fixing the
+  // audience first would leave Submit dimmed with a new reason.
+  it('on Preview, a missing subject wins over a refused audience', async () => {
+    bp.current = 'base';
+    count.current = { status: 'ready', count: 1240, ceiling: 500, exceeds: true };
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
+    await openPreview();
+    expect(bar()).toHaveTextContent(c.submitBlocked.subjectRequired);
+    expect(bar()).not.toHaveTextContent(c.views.blocked);
+  });
+
   it('on Preview, shows the count once nothing blocks', async () => {
     bp.current = 'base';
     renderForm();

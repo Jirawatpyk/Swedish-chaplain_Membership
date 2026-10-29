@@ -27,7 +27,7 @@ import {
   showsSelfExclusionHint,
   submitBlockedByCount,
   submitBlockedHintKey,
-  submitBarReasonKey,
+  submitBarReason,
 } from '@/components/broadcast/submit-feedback';
 
 type Messages = Record<string, unknown>;
@@ -358,15 +358,21 @@ describe('recipientNoteKey', () => {
   });
 });
 
-// The phone bar beside Submit has one line of room, so a tier reason is always
-// the short form there; every other reason is the hint's own words.
-describe('submitBarReasonKey', () => {
+// The phone bar beside Submit, on the Preview tab only (the maintainer, 29
+// Oct): the form's own reason in the hint's tone (muted: a needed input), the
+// tier in its short form, and the over-size body as the error it is (red).
+describe('submitBarReason', () => {
+  const base = { view: 'preview', hintKey: null, bodyInvalid: false } as const;
   it.each([
-    ['submitBlocked.tierRequired', 'submitBlocked.tierChooseFirst'],
-    ['submitBlocked.tierChooseFirst', 'submitBlocked.tierChooseFirst'],
-    ['submitBlocked.subjectRequired', 'submitBlocked.subjectRequired'],
-    ['errors.broadcast_custom_recipient_empty', 'errors.broadcast_custom_recipient_empty'],
-  ] as const)('%s → %s', (key, expected) => {
-    expect(submitBarReasonKey(key)).toBe(expected);
+    ['on Write, nothing', { view: 'write', hintKey: 'submitBlocked.subjectRequired' }, null],
+    ['nothing blocks', {}, null],
+    ['a missing subject', { hintKey: 'submitBlocked.subjectRequired' }, { key: 'submitBlocked.subjectRequired', tone: 'muted' }],
+    ['a tier reason, short', { hintKey: 'submitBlocked.tierRequired' }, { key: 'submitBlocked.tierChooseFirst', tone: 'muted' }],
+    ['an empty custom list, muted like the hint', { hintKey: 'errors.broadcast_custom_recipient_empty' }, { key: 'errors.broadcast_custom_recipient_empty', tone: 'muted' }],
+    ['an over-long subject, muted like the hint', { hintKey: 'errors.broadcast_subject_too_long' }, { key: 'errors.broadcast_subject_too_long', tone: 'muted' }],
+    ['an over-size body, red', { bodyInvalid: true }, { key: 'errors.broadcast_body_too_large', tone: 'danger' }],
+    ['the hint before the body', { hintKey: 'submitBlocked.subjectRequired', bodyInvalid: true }, { key: 'submitBlocked.subjectRequired', tone: 'muted' }],
+  ] as const)('%s', (_label, overrides, expected) => {
+    expect(submitBarReason({ ...base, ...overrides })).toEqual(expected);
   });
 });
