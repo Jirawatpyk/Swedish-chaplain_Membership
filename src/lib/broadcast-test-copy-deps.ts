@@ -7,6 +7,7 @@
  * must not pay for that (nor mock it) just to read a colour.
  */
 import { emailSender } from '@/lib/auth-deps';
+import { env } from '@/lib/env';
 import { makeRenderBroadcastPreviewDeps } from '@/lib/broadcast-brand-deps';
 import { f7AuditAdapter, type SendTestCopyDeps, type TestCopyMailerPort } from '@/modules/broadcasts';
 
@@ -38,6 +39,8 @@ export async function makeSendTestCopyDeps(
     renderer: preview.renderer,
     mailer: testCopyMailer,
     audit: f7AuditAdapter,
+    // R105: a test copy's Unsubscribe link explains itself; it never unsubscribes.
+    testCopyUnsubscribeUrl: new URL('/unsubscribe/test-copy', env.app.baseUrl).toString(),
     tenantDisplayName: preview.tenantDisplayName,
   };
 }

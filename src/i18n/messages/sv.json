@@ -8482,6 +8482,12 @@
   },
   "public": {
     "unsubscribe": {
+      "testCopy": {
+        "metaTitle": "Testkopia",
+        "heading": "Det här är en testkopia",
+        "body": "I det E-Blast som skickas till mottagarna låter den här länken var och en sluta ta emot E-Blasts från {tenantDisplayName}.",
+        "nothingChanged": "Ingenting har ändrats: ingen har avregistrerats."
+      },
       "metaTitle": "Avregistrering",
       "fallbackChamberName": "kammaren",
       "chamberWebsiteLink": "Besök kammarens webbplats",

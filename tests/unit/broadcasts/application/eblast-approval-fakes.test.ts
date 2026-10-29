@@ -114,6 +114,7 @@ describe('eblast-approval-fakes — the PR-1 ports', () => {
         renderer: makeFakeEmailRenderer(),
         mailer,
         audit,
+        testCopyUnsubscribeUrl: 'https://app.example/unsubscribe/test-copy',
       },
       { tenantId: TENANT, tenantDisplayName: 'T', actorUserId: 'u1', actorRole: 'member', actorEmail: 'me@example.org', relatedMemberId: 'm-1', broadcastId: null, versionId: null, requestId: 'r', subject: 'S', bodyHtml: '<p>b</p>', locale: 'sv' },
     );
@@ -125,7 +126,7 @@ describe('eblast-approval-fakes — the PR-1 ports', () => {
 
     const failing = makeFakeTestCopyMailer({ failWith: 'upstream-unavailable' });
     const r2 = await sendTestCopy(
-      { sanitizer: { sanitize: (h) => h }, brand: makeFakeBrandChromePort(), renderer: makeFakeEmailRenderer(), mailer: failing, audit },
+      { sanitizer: { sanitize: (h) => h }, brand: makeFakeBrandChromePort(), renderer: makeFakeEmailRenderer(), mailer: failing, audit, testCopyUnsubscribeUrl: 'https://app.example/unsubscribe/test-copy' },
       { tenantId: TENANT, tenantDisplayName: 'T', actorUserId: 'u1', actorRole: 'member', actorEmail: 'me@example.org', relatedMemberId: 'm-1', broadcastId: null, versionId: null, requestId: 'r', subject: 'S', bodyHtml: '<p>b</p>', locale: 'en' },
     );
     expect(r2).toMatchObject({ ok: false, error: { kind: 'mailer_unavailable' } });

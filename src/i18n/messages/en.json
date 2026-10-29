@@ -8482,6 +8482,12 @@
   },
   "public": {
     "unsubscribe": {
+      "testCopy": {
+        "metaTitle": "Test copy",
+        "heading": "This is a test copy",
+        "body": "In the E-Blast sent to recipients, this link lets each person stop receiving E-Blasts from {tenantDisplayName}.",
+        "nothingChanged": "Nothing was changed: no one was unsubscribed."
+      },
       "metaTitle": "Unsubscribe",
       "fallbackChamberName": "the chamber",
       "chamberWebsiteLink": "Visit the chamber website",
