@@ -80,13 +80,15 @@ async function warmAdminRoutes(): Promise<void> {
   // that 409, which first compiled the route — 10.6 s (9.6 s of it compiling)
   // against the test's 10 s wait for the dialog.
   // And the E-Blast review queue (R106 / R107, 2026-10-29): whichever of AS2
-  // (approve) or AS3 (reject) ran first in a whole-file run compiled its route
+  // (approve; AS4 and bulk schedule post to it too) or AS3 (reject) ran first in a whole-file run compiled its route
   // — approve 13.4 s, reject 17.0 s — against the dialog's 15 s `toBeHidden`,
   // so the file passed alone and failed one test in a full run, on main too.
   // Sent with no session, so each route's guard answers before it reads the
   // ids or the body and writes no audit row (no actor to attribute) — 404 from
   // the relink admin guard, 401 from `requireApiPermission` on the plans,
-  // members and broadcasts routes; the Origin header gets them past the proxy's CSRF list.
+  // members and broadcasts routes (503 from the proxy's F7 kill switch while
+  // `FEATURE_F7_BROADCASTS` is off, when the queue specs skip anyway); the
+  // Origin header gets them past the proxy's CSRF list.
   const nilId = '00000000-0000-0000-0000-000000000000';
   const writeRoutes: ReadonlyArray<{ method: 'POST' | 'DELETE'; route: string }> = [
     { method: 'POST', route: `/api/admin/events/${nilId}/registrations/${nilId}/relink` },
@@ -96,7 +98,6 @@ async function warmAdminRoutes(): Promise<void> {
     { method: 'POST', route: `/api/members/${nilId}/undelete` },
     { method: 'POST', route: `/api/admin/broadcasts/${nilId}/approve` },
     { method: 'POST', route: `/api/admin/broadcasts/${nilId}/reject` },
-    { method: 'POST', route: `/api/admin/broadcasts/${nilId}/schedule` },
     { method: 'POST', route: `/api/admin/broadcasts/${nilId}/cancel` },
   ];
   for (const { method, route } of writeRoutes) {
