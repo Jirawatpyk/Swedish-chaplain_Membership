@@ -3003,8 +3003,8 @@ export const broadcastsMetrics = {
   /**
    * `broadcasts_audience_import_restarted_missing_audience_total{tenant}` —
    * import leg. One per tick that found the tick-1 Resend audience GONE
-   * (`404 not_found` on `createBroadcast` / `createContactImport`, measured
-   * 2026-10-29) and released the row's columns so the next tick runs a fresh
+   * (`404 not_found` on tick 2's `createBroadcast`, measured 2026-10-29; tick 1
+   * never reuses an audience, so its `createContactImport` 404 stays permanent) and released the row's columns so the next tick runs a fresh
    * tick 1 instead of failing the broadcast. Expected only after a hold on an
    * overlapping tick or a manual delete; a steady rate means something else is
    * deleting audiences (observability.md § 29.8).

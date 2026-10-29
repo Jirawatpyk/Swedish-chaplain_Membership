@@ -34,7 +34,7 @@ All changes are in the import leg (`build-audience-tick.ts`). It follows the leg
    A sender whose `/send` gets 404 re-reads the row, and returns non-terminal if the hold won.
 
    A dead inherited bid (`cancelled` / `not_found`) is replaced through a new CAS that swaps it only while it still equals the dead value (B3).
-4. **Dead-audience self-heal.** On a `createBroadcast` 404 for a missing audience (always one an earlier tick created), run the same restart as the hold — claim, delete the audience at Resend (404 = gone), release — and return non-terminal. Tick 1 never reuses an audience (a row with an audience and no import is torn down first, round 5), so `createContactImport` always targets this tick's audience and its 404 keeps the permanent rule: no loop. **Built differently from B4, and accepted.** The gateway is unchanged. The import leg matches `permanent` with code `not_found` (or `http_404`) at its two call sites only (`isAudienceMissing`), and two gateway pin tests keep the legacy classification (a 404 with no resource id stays `permanent`). The result is a new `audience_restarted` output, the counter `broadcasts_audience_import_restarted_missing_audience_total` and the phase `audience_restart`.
+4. **Dead-audience self-heal.** On a `createBroadcast` 404 for a missing audience (always one an earlier tick created), run the same restart as the hold — claim, delete the audience at Resend (404 = gone), release — and return non-terminal. Tick 1 never reuses an audience (a row with an audience and no import is torn down first, round 5), so `createContactImport` always targets this tick's audience and its 404 keeps the permanent rule: no loop. **Built differently from B4, and accepted.** The gateway is unchanged. The import leg matches `permanent` with code `not_found` (or `http_404`) at its one call site (`isAudienceMissing`, `createBroadcast` in `confirmImport`), and two gateway pin tests keep the legacy classification (a 404 with no resource id stays `permanent`). The result is a new `audience_restarted` output, the counter `broadcasts_audience_import_restarted_missing_audience_total` and the phase `audience_restart`.
 5. **A refused `/send` is probed** (`_probe-refused-send.ts`, both legs):
    - `queued` / `sending` / `sent` → advanced as sent;
    - `draft` / `cancelled` → the ordinary terminal path;
@@ -372,6 +372,19 @@ Filled in at Verify, one line per Done-when line.
   - #10: repo doubles hand-stubbed in 16 files;
   - tester F4 / F5: the pause size, re-probe second answers.
 
+**Verification of the round-5 fix, 29 Oct 2026** (the raisers re-ran):
+- **`senior-tester`: SHIP-READY.** F3 is CLOSED. Its zero-edit mutation run checked the new tests against the pre-fix source: the three new tests failed, and the other 164 passed. Raised one MEDIUM: the stale-audience teardown with a `not_found` id had no test. Closed by a guard test in `853ecd56a`. Its LOWs were also fixed in that commit and `aedf…`: the third site, a stale comment, an orphaned docblock, and an assertion on the pause.
+- **`spec-compliance-auditor`: PARTIALLY COMPLIANT.** HIGH-1 is CLOSED. Three findings remained, and each is now closed:
+  - **MEDIUM-A**, the `createBroadcast` self-heal treating `not_found` as dead: RED `853ecd56a` → GREEN `8f07e2a41`.
+  - **MEDIUM-B**, five stale texts: code docblocks, `metrics.ts`, `plan.md`, the runbook.
+  - **MEDIUM-C**, the go-live § 6.10 dangling paragraph.
+- **Gates on the final tree:**
+  - `pnpm check` exit 0 (`check:red-first`: 39 commits);
+  - `pnpm vitest run tests/contract/` 256/256 files;
+  - failure-paths + `build-audience-tick` 181/181;
+  - integration `audience-import-two-tick` 4/4, `eblast-send-time-standing` 11/11 (after `ff06a0b24`);
+  - `pnpm test:coverage` → CI (the maintainer's choice).
+
 ## Rollout
 
 - **Dark behind `FEATURE_F7_IMPORT_AUDIENCE`** (absent from Vercel): the whole import leg.
@@ -390,5 +403,5 @@ Filled in at Verify, one line per Done-when line.
 - **A live-leg regression from the helper extraction.** Noticed by the legacy unit and integration suites, the log names pinned in their tests, and `broadcasts_approved_overdue_count` in production.
 - **The fence double race.** A re-asserts its id, then B claims and deletes it in the milliseconds before A's `/send`. A gets 404, re-reads the row (`sendLostToHold`) and returns a concurrent skip; no mail, nothing terminal, B's restart proceeds. No double send.
 - **A transient `not_found` from Resend's GET.** Acting on a stale 404 for an accepted send — a fresh mint, a teardown, a refusal — would mail twice, kill a queued send, or record delivered mail as failed. Mitigated by one re-probe after 3 s (`REPROBE_PAUSE_MS`) in Step 1a, before every decision; GET answered consistently in every measurement on 2026-10-29 (immediately after `/send`, after a delete), but staleness cannot be induced, so this rests on that assumption. Noticed by two `send_already_accepted`-free sends for one broadcast in the Resend dashboard and by `broadcast_send_started` appearing twice for one `broadcast_id`.
-- **Three overlapping invocations** (a cron fired twice by hand) can let a re-submitted import be sent into an audience the hold is deleting: a lost E-Blast, not a double send. Closing it needs a lease column (out of scope). Documented in `broadcast-audience-build.md` § C.4.
+- **Three overlapping invocations** (a cron fired twice by hand) can let a re-submitted import be sent into an audience the hold is deleting: a lost E-Blast, not a double send. Closing it needs a lease column: spec 140. Documented in `broadcast-audience-build.md` § C.4.
 - **A fail-closed refusal can stall a row** (for example after a key rotation) until a human acts. Noticed by the `inherited_status` phase counter and `broadcasts_approved_overdue_count`. Recovery is in `broadcast-audience-build.md` § C.

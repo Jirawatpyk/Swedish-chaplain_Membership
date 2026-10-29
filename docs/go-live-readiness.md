@@ -373,8 +373,8 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
   broadcasts WHERE status = 'approved' AND resend_audience_id IS NOT NULL AND
   audience_import_id IS NULL` is 0, so no legacy tick is mid-push when the
   import leg starts tearing such rows down.
-  Spec 138 (the hold abandon, the pre-send persist, the row fence) is the other
-  prerequisite; both are named in `specs/138-f7-import-hold-abandon/spec.md`.
+- [ ] **Spec 138 is merged** (the hold abandon, the pre-send persist, the row
+  fence). Its `spec.md` names 139 and 140 as the remaining prerequisites.
 - [ ] Add `FEATURE_F7_IMPORT_AUDIENCE=true` → **redeploy immediately after**,
   in that order, with no unrelated merge in between.
 - [ ] **Observe the first send — CHECK RESEND FIRST, then the audit row.**
