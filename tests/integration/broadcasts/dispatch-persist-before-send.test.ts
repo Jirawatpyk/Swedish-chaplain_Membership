@@ -116,6 +116,7 @@ function makeGateway(tracker: Tracker): BroadcastsGatewayPort {
     },
     async deleteContactGlobally() {},
     async deleteAudience() {},
+    async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
     async deleteBroadcast(id) {
       tracker.deleteBroadcastCalls.push(id);
     },

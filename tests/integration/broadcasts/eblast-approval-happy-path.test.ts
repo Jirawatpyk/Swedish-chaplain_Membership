@@ -232,6 +232,7 @@ describe('F119 T038 — submit → format → send → approve → confirm, the 
       },
       async deleteContactGlobally() {},
       async deleteAudience() {},
+      async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
       async deleteBroadcast() {},
       async listAudiences() {
         return [];

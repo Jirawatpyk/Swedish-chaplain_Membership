@@ -504,6 +504,7 @@ function makeGateway(opts: GatewayOpts = {}): {
           throw new Error('Resend 500 on DELETE /audiences');
         }
       },
+      async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
       async deleteBroadcast(broadcastId: string) {
         deleteBroadcastCalls.push(broadcastId);
         if (opts.throwOnDeleteBroadcast === true) {

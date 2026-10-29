@@ -93,6 +93,7 @@ function makeRetryableGateway(): BroadcastsGatewayPort {
       return { kind: 'detached' as const };},
     async deleteContactGlobally() {},
     async deleteAudience() {},
+    async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
     async deleteBroadcast() {},
     async listAudiences() { return []; },
   };

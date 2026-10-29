@@ -186,6 +186,7 @@ function makeGateway(opts: {
     async removeContactFromAudience() {
       return { kind: 'detached' as const }; throw new Error('not used'); },
     async deleteContactGlobally() { throw new Error('not used'); },
+    async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
     async deleteBroadcast() { throw new Error('not used'); },
     async listAudiences() {
       if (opts.listThrows) throw new Error('Resend: list audiences 503');

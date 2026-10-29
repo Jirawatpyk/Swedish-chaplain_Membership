@@ -202,6 +202,7 @@ function makeGateway(args: {
       return { kind: 'detached' as const }; throw new Error('not used'); },
     async deleteContactGlobally() { throw new Error('not used'); },
     async deleteAudience() { throw new Error('not used'); },
+    async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
     async deleteBroadcast() { throw new Error('not used'); },
     async listAudiences() { return []; },
     async retrieveBroadcast() {

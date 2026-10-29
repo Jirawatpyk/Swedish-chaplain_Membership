@@ -26,6 +26,7 @@ import type {
   AudienceContactCount,
   BroadcastsGatewayPort,
   CreateBroadcastInput,
+  DeleteBroadcastOnceOutcome,
   GatewayRetryableSubKind,
   RetrievedBroadcastResource,
   RetrieveBroadcastOutcome,
@@ -688,6 +689,37 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   },
 
   /**
+   * Spec 139 P1 — the port docblock has the contract. A raw `fetch`, like
+   * `importFetch`, because the SDK takes no `signal` (resend@4.8.0) and this
+   * call must not outlive {@link DELETE_ONCE_TIMEOUT_MS} while the caller holds
+   * a row lock. One attempt; the outcome is the status class, never the
+   * provider's text (the log line carries the HTTP status only).
+   */
+  async deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome> {
+    let res: Response;
+    try {
+      res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(DELETE_ONCE_TIMEOUT_MS),
+        headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
+      });
+    } catch (e) {
+      // A timeout, an abort or a transport failure: whether the DELETE reached
+      // Resend is unknown, so nothing is decided.
+      logger.warn(
+        { broadcastId, err: e instanceof Error ? e.name : 'unknown' },
+        'resend.broadcasts.delete_once_transport_failed',
+      );
+      return { kind: 'retryable' };
+    }
+    // Drain the body so the connection is released; its text is not used.
+    await res.text().catch(() => '');
+    const outcome = deleteOnceOutcomeFor(res.status);
+    logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.delete_once');
+    return outcome;
+  },
+
+  /**
    * T086 — hand the WHOLE audience to Resend in one multipart request.
    *
    * Replaces the `addContactsToAudience` loop, which is serial and therefore
@@ -908,6 +940,21 @@ function throwImportError(
  * a measured ~481 ms round trip and still leaves the loop time to continue.
  */
 const IMPORT_FETCH_TIMEOUT_MS = 30_000;
+
+/**
+ * Spec 139 P1 — the erasure cascade holds the broadcast row's lock across this
+ * call, so it is bounded far tighter than an import: 10 s against a measured
+ * round trip of ~0.5 s.
+ */
+const DELETE_ONCE_TIMEOUT_MS = 10_000;
+
+function deleteOnceOutcomeFor(status: number): DeleteBroadcastOnceOutcome {
+  if (status >= 200 && status < 300) return { kind: 'deleted' };
+  if (status === 404 || status === 410) return { kind: 'absent' };
+  if (status === 403) return { kind: 'forbidden' };
+  if (status === 429 || status >= 500) return { kind: 'retryable' };
+  return { kind: 'other' };
+}
 
 async function importFetch(
   path: string,

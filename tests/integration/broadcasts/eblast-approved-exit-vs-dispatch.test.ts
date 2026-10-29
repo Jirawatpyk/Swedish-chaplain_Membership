@@ -271,6 +271,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
         },
         async deleteContactGlobally() {},
         async deleteAudience() {},
+        async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
         async deleteBroadcast(resourceId) {
           calls.deleted.push(resourceId);
         },
