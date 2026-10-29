@@ -3151,7 +3151,7 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
       {
         resendBroadcastId: 'rb-1',
         txId: expect.any(Number),
-        afterGatewayCalls: 3,
+        afterGatewayCalls: 4,
         fence: { expectedAudienceImportId: 'imp-1', replacesResendBroadcastId: 'rb-0' },
       },
     ]);

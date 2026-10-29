@@ -88,6 +88,16 @@ import type { ResolvedOrphan, ResolveSegmentError } from './resolve-segment-reci
  */
 export const IMPORT_STUCK_AFTER_MS = 30 * 60 * 1_000;
 
+/**
+ * The pause before re-probing an inherited id that answered `not_found`. A
+ * `not_found` makes `confirmImport` mint a FRESH resource; were that answer a
+ * stale or transient 404 for a send Resend in fact accepted, the audience would
+ * be mailed twice. GET has answered consistently in every measurement
+ * (2026-10-29), but a transient 404 cannot be induced to test it, so the id is
+ * declared dead only on a second `not_found` (maintainer, 29 Oct 2026).
+ */
+export const REPROBE_PAUSE_MS = 3_000;
+
 export type BuildAudienceTickOutput =
   | { readonly kind: 'import_submitted'; readonly importId: string; readonly recipientCount: number }
   | { readonly kind: 'import_pending'; readonly importId: string }
@@ -394,6 +404,8 @@ export interface BuildAudienceTickDeps {
    * a halted or ended membership, silently.
    */
   readonly sendStanding: DispatchStandingDeps;
+  /** Waits `ms` before the `not_found` re-probe (`REPROBE_PAUSE_MS`); tests pass a recorder. Default: a timer. */
+  readonly pauseBeforeReprobe?: (ms: number) => Promise<void>;
 }
 
 export interface BuildAudienceTickInput {
@@ -495,7 +507,7 @@ export async function buildAudienceTick(
   //
   // Reached only when nothing was handed to `/send`: the probe above returned
   // for a handed row.
-  const refused = await applySendStanding(deps, input, broadcast);
+  const refused = await applySendStanding(deps, input, broadcast, probe);
   if (refused !== null) return refused;
 
   return broadcast.audienceImportId === null
@@ -577,7 +589,12 @@ async function probeInheritedBroadcast(
     resendBroadcastId,
     importId: broadcast.audienceImportId,
   };
-  let retrieved: Awaited<ReturnType<BroadcastsGatewayPort['retrieveBroadcast']>>;
+  let retrieved: Awaited<ReturnType<BroadcastsGatewayPort['retrieveBroadcast']>> | null = null;
+  for (let attempt = 0; retrieved === null || (retrieved.kind === 'not_found' && attempt < 2); attempt += 1) {
+    if (attempt === 1) {
+      // A first `not_found` is re-asked once after a pause (`REPROBE_PAUSE_MS`).
+      await (deps.pauseBeforeReprobe ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(REPROBE_PAUSE_MS);
+    }
   try {
     retrieved = await deps.broadcastsGateway.retrieveBroadcast(resendBroadcastId);
   } catch (e) {
@@ -601,6 +618,7 @@ async function probeInheritedBroadcast(
         phase: 'inherited_status',
       }),
     };
+  }
   }
   if (retrieved.kind === 'not_found') {
     logger.warn({ ...ids, observedResendStatus: 'not_found' }, 'broadcasts.audience_import.inherited_broadcast_send_attempted');
@@ -654,6 +672,7 @@ async function applySendStanding(
   deps: BuildAudienceTickDeps,
   input: BuildAudienceTickInput,
   broadcast: Broadcast,
+  probe: InheritedProbe | null,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
   const standing = await decideDispatchStanding(
     deps.sendStanding,
@@ -666,7 +685,7 @@ async function applySendStanding(
     // Outside every tx: the Step-1 lock tx has committed.
     await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed');
     // Best-effort: the hold is already the decided answer, whatever this says.
-    await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold');
+    await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
     return ok({ kind: 'dispatch_held_member_suspended' });
   }
   if (standing.kind === 'refuse') {
@@ -708,6 +727,15 @@ interface RowIds {
   readonly audienceId: string | null;
   readonly importId: string | null;
   readonly resendBroadcastId: string | null;
+}
+
+/**
+ * The probe called the row's broadcast id DEAD: `not_found`, or `cancelled`.
+ * Only a draft can be sent (a non-draft `/send` answers 422, MEASURED
+ * 2026-10-29), so such a resource cannot be in flight on a sibling tick.
+ */
+function isDeadProbe(probe: InheritedProbe | null): boolean {
+  return probe !== null && !probe.handed && (probe.status === null || probe.status === 'cancelled');
 }
 
 function rowIds(broadcast: Broadcast): RowIds {
@@ -776,6 +804,7 @@ async function restartAudienceBuild(
   input: BuildAudienceTickInput,
   row: RowIds,
   why: 'hold' | 'audience_missing',
+  opts: { readonly bidIsDead: boolean },
 ): Promise<'restarted' | 'nothing' | 'lost' | 'failed'> {
   const { audienceId, importId, resendBroadcastId } = row;
   if (audienceId === null || audienceId === '') return 'nothing';
@@ -824,7 +853,11 @@ async function restartAudienceBuild(
     try {
       await deps.broadcastsGateway.deleteBroadcast(resendBroadcastId);
     } catch (e) {
-      return failed('delete_broadcast', e);
+      // A refusal means "a sibling sent it" only for a DRAFT. A dead id
+      // (`cancelled` / `not_found`) cannot be sending, so its refused delete
+      // must not stop the restart — that would fail every tick for ever.
+      if (!opts.bidIsDead || isRetryableThrow(classifyThrown(e).kind)) return failed('delete_broadcast', e);
+      logger.info({ ...ids, err: errKind(e) }, `broadcasts.audience_import.${names.failed}_dead_broadcast_kept`);
     }
   }
   // 3. The audience.
@@ -881,8 +914,9 @@ async function selfHealMissingAudience(
   deps: BuildAudienceTickDeps,
   input: BuildAudienceTickInput,
   row: RowIds,
+  bidIsDead: boolean,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
-  const outcome = await restartAudienceBuild(deps, input, row, 'audience_missing');
+  const outcome = await restartAudienceBuild(deps, input, row, 'audience_missing', { bidIsDead });
   if (outcome === 'restarted') return ok({ kind: 'audience_restarted' });
   if (outcome === 'lost') {
     return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
@@ -1333,7 +1367,7 @@ async function submitImport(
     // another every tick until the Free plan's three segments ran out.
     const inheritedAudience = (broadcast.resendAudienceId ?? '') !== '';
     if (inheritedAudience && isAudienceMissing(submitted.error)) {
-      return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId });
+      return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId }, false);
     }
     return onGatewayFailure(deps, input, broadcast, submitted.error, null);
   }
@@ -1689,7 +1723,7 @@ async function confirmImport(
       // dead inherited id with it — `restartAudienceBuild` deletes it, 404 =
       // fine, and the release clears it) and build afresh next tick.
       if (isAudienceMissing(createdRb.error)) {
-        return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId });
+        return selfHealMissingAudience(deps, input, { ...rowIds(broadcast), audienceId }, inheritedDead);
       }
       return onGatewayFailure(deps, input, broadcast, createdRb.error, importId);
     }
