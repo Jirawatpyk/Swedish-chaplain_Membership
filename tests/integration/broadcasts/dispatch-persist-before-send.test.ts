@@ -47,6 +47,8 @@ import { GatewayThrowable } from '@/modules/broadcasts/infrastructure/resend/res
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
+import { seedLiveRequester } from '../helpers/seed-live-requester';
 import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
 
 /**
@@ -60,6 +62,13 @@ const LIVE_STANDING = { membersBridge, membershipAccess: membershipAccessBridge 
 const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
 
 const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
+
+/**
+ * Spec 139 — the requester is a REAL live member: the send-standing gate
+ * refuses a `requested_by_member_id` with no `members` row like an erased one
+ * (P4). The plan it is seeded on needs a real user as `created_by`.
+ */
+let requesterUser: TestUser;
 
 interface Tracker {
   createAudienceCalls: number;
@@ -127,6 +136,7 @@ function makeGateway(tracker: Tracker): BroadcastsGatewayPort {
 }
 
 async function seedApprovedBroadcast(tenant: TestTenant, broadcastId: string): Promise<void> {
+  const { memberId } = await seedLiveRequester(tenant.ctx, requesterUser.userId);
   await runInTenant(tenant.ctx, (tx) =>
     tx.execute(sql`
       INSERT INTO broadcasts (
@@ -140,7 +150,7 @@ async function seedApprovedBroadcast(tenant: TestTenant, broadcastId: string): P
       ) VALUES (
         ${tenant.ctx.slug},
         ${broadcastId}::uuid,
-        ${randomUUID()}::uuid,
+        ${memberId}::uuid,
         ${'plan-x'},
         ${randomUUID()}::uuid,
         ${'member_self_service'},
@@ -188,10 +198,12 @@ describe('dispatch — resend_broadcast_id is persisted in its OWN tx before the
 
   beforeAll(async () => {
     tenant = await createTestTenant('test-swecham');
+    requesterUser = await createActiveTestUser('admin');
   });
 
   afterAll(async () => {
     await tenant.cleanup();
+    if (requesterUser) await deleteTestUser(requesterUser).catch(() => {});
   });
 
   it('a retryable send failure leaves the id COMMITTED on an approved row, and the next tick inherits it', async () => {
