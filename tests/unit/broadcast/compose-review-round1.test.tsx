@@ -205,39 +205,47 @@ describe('the phone bar', () => {
     expect(bar()).not.toHaveTextContent(c.views.blocked);
   });
 
-  // Only the Preview bar can give a two-line reason, so only it asks the page
-  // for the taller bottom scroll allowance (globals.css).
-  it('marks the bar as tall on Preview only', async () => {
+  // The bar asks the page for the taller bottom scroll allowance whenever it
+  // gives a reason (it may wrap to two lines), and not for a one-line count.
+  it('is tall while it gives a reason, not for a count', async () => {
     bp.current = 'base';
     renderForm();
+    await openPreview();
     expect(bar().closest('.chamber-compose-actionbar-tall')).toBeNull();
+    await userEvent.setup().click(screen.getByRole('tab', { name: c.views.write }));
+    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
     await openPreview();
     expect(bar().closest('.chamber-compose-actionbar-tall')).not.toBeNull();
   });
 
-  // Every reason is fixed on Write, so the reason in the bar takes the member
-  // there and puts focus on the field to fix (UX review, the maintainer's call).
-  it('tapping the subject reason opens Write and focuses the subject', async () => {
+  it('on Write, a refused audience is plain text, not a button', () => {
     bp.current = 'base';
+    count.current = { status: 'ready', count: 1240, ceiling: 500, exceeds: true };
     renderForm();
-    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
-    await openPreview();
-    await userEvent.setup().click(within(bar()).getByRole('button', { name: c.submitBlocked.subjectAddFirst }));
-    await waitFor(() => expect(screen.getByRole('tab', { name: c.views.write })).toHaveAttribute('aria-selected', 'true'));
-    await waitFor(() => expect(document.activeElement).toBe(document.getElementById('broadcast-subject')));
+    expect(bar()).toHaveTextContent(c.views.blocked);
+    expect(within(bar()).queryByRole('button', { name: c.views.blocked })).toBeNull();
   });
 
-  it('tapping the category reason opens Write and focuses the first category', async () => {
+  it('tapping a refused audience on Preview focuses the chosen audience', async () => {
+    bp.current = 'base';
+    count.current = { status: 'ready', count: 1240, ceiling: 500, exceeds: true };
+    renderForm();
+    await openPreview();
+    await userEvent.setup().click(within(bar()).getByRole('button', { name: c.views.blocked }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('radio', { name: c.segmentOption.all_members })),
+    );
+  });
+
+  it('tapping an empty custom list reason focuses the list', async () => {
     bp.current = 'base';
     renderForm();
-    await userEvent.setup().click(screen.getByRole('radio', { name: c.segmentOption.tier }));
+    await userEvent.setup().click(screen.getByRole('radio', { name: c.segmentOption.custom }));
     await openPreview();
-    await userEvent.setup().click(within(bar()).getByRole('button', { name: c.submitBlocked.tierChooseFirst }));
-    await waitFor(() =>
-      expect(document.activeElement).toBe(
-        screen.getByRole('checkbox', { name: enMessages.portal.broadcasts.list.tierCode.corporate }),
-      ),
+    await userEvent.setup().click(
+      within(bar()).getByRole('button', { name: c.errors.broadcast_custom_recipient_empty }),
     );
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById('custom-recipient-list')));
   });
 
   it('on Preview, shows the count once nothing blocks', async () => {
