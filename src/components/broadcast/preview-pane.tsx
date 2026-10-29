@@ -43,6 +43,14 @@ export interface PreviewPaneProps {
   /** Member compose posts to the member route, staff proxy to the staff one. */
   readonly endpoint: PreviewEndpoint;
   readonly locale: string;
+  /**
+   * PR K (board `Portal-broadcast-new-mobile-preview`) — `tab` is the phone's
+   * Preview tab, where the pane is the whole view: a caption over the email,
+   * with no header row, subject line or Preview button (the button repeated
+   * the tab, and the dialog's widths are no wider than the screen). `panel`,
+   * the default, is the desktop column and every other caller.
+   */
+  readonly variant?: 'panel' | 'tab';
 }
 
 export function PreviewPane({
@@ -50,9 +58,26 @@ export function PreviewPane({
   bodyHtml,
   endpoint,
   locale,
+  variant = 'panel',
 }: PreviewPaneProps): React.ReactElement {
   const t = useTranslations('portal.broadcasts.compose.fields');
   const state = usePreviewHtml({ endpoint, subject, bodyHtml, locale });
+  const frame = (
+    <div data-testid="preview-pane-frame-reservation" style={{ minHeight: PREVIEW_PANE_FRAME_HEIGHT }}>
+      <PreviewSurface state={state} height={PREVIEW_PANE_FRAME_HEIGHT} />
+    </div>
+  );
+
+  if (variant === 'tab') {
+    return (
+      <section data-compose-feature="preview-pane" aria-label={t('previewLabel')} className="flex min-w-0 flex-col gap-[10px]">
+        <p className="aura-text-caption text-[var(--aura-fg-secondary)]">{t('previewCaption')}</p>
+        <div className="min-w-0 overflow-x-hidden rounded-[var(--aura-radius-md)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-canvas)] py-2">
+          {frame}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -90,14 +115,7 @@ export function PreviewPane({
           them: measured, the pane was 436 px ready against 420 px reserved,
           every time. Contained then only by DOM ordering; anything rendered
           after the pane would have made it visible movement. */}
-      <div className="py-2">
-        <div
-          data-testid="preview-pane-frame-reservation"
-          style={{ minHeight: PREVIEW_PANE_FRAME_HEIGHT }}
-        >
-          <PreviewSurface state={state} height={PREVIEW_PANE_FRAME_HEIGHT} />
-        </div>
-      </div>
+      <div className="py-2">{frame}</div>
     </section>
   );
 }

@@ -6890,6 +6890,7 @@
           "scheduleHelp": "Lämna tomt för omedelbar granskning.",
           "scheduleClear": "Skicka så snart det godkänts",
           "previewLabel": "Förhandsgranskning",
+          "previewCaption": "Så som mottagarna ser det",
           "previewLoading": "Laddar förhandsgranskning…",
           "previewUnavailable": "Förhandsgranskning är tillfälligt otillgänglig",
           "previewUnavailableHint": "Uppdatera sidan för att försöka igen — ditt utkast är säkert.",
