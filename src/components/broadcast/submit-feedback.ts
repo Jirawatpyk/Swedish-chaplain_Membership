@@ -89,6 +89,64 @@ export type SubmitBlockedHintKey =
   | 'errors.broadcast_custom_recipient_empty'
   | 'errors.broadcast_custom_recipient_too_many';
 
+export type SubmitBarFixTarget = 'subject' | 'categories' | 'customList' | 'audience' | 'body';
+
+export type SubmitBarReason = {
+  readonly key:
+    | SubmitBlockedHintKey
+    | 'submitBlocked.subjectAddFirst'
+    | 'views.blocked'
+    | 'errors.broadcast_body_too_large';
+  readonly tone: 'muted' | 'danger';
+  /** The Write-tab field the bar's reason takes the member to (UX review). */
+  readonly fixTarget: SubmitBarFixTarget;
+};
+
+// One row per hint, so a new hint key cannot ship without its bar copy, tone
+// and fix target. The bar has one line of room beside Submit, so the reasons
+// that repeat the button's own words take a short form there. A missing input
+// is muted, like the hint line; a broken one is red.
+const BAR_REASONS: Record<SubmitBlockedHintKey, SubmitBarReason> = {
+  'submitBlocked.subjectRequired': { key: 'submitBlocked.subjectAddFirst', tone: 'muted', fixTarget: 'subject' },
+  'errors.broadcast_subject_too_long': { key: 'errors.broadcast_subject_too_long', tone: 'danger', fixTarget: 'subject' },
+  'submitBlocked.tierRequired': { key: 'submitBlocked.tierChooseFirst', tone: 'muted', fixTarget: 'categories' },
+  'submitBlocked.tierChooseFirst': { key: 'submitBlocked.tierChooseFirst', tone: 'muted', fixTarget: 'categories' },
+  'errors.broadcast_custom_recipient_empty': {
+    key: 'errors.broadcast_custom_recipient_empty',
+    tone: 'muted',
+    fixTarget: 'customList',
+  },
+  'errors.broadcast_custom_recipient_too_many': {
+    key: 'errors.broadcast_custom_recipient_too_many',
+    tone: 'danger',
+    fixTarget: 'customList',
+  },
+};
+
+const BAR_BLOCKED: SubmitBarReason = { key: 'views.blocked', tone: 'danger', fixTarget: 'audience' };
+const BAR_BODY: SubmitBarReason = { key: 'errors.broadcast_body_too_large', tone: 'danger', fixTarget: 'body' };
+
+/**
+ * What the phone bar beside Submit says instead of the count. On Write the
+ * reason is in the form, so only a refused audience is said there (as before).
+ * On Preview the Write tab's lines are out of sight (the maintainer, 29 Oct
+ * 2026), so the bar names the first thing to fix in the form's reading order:
+ * the form's reason, then the audience, then the over-size body; each names
+ * the Write field that fixes it. `null` keeps the count.
+ */
+export function submitBarReason(input: {
+  readonly view: 'write' | 'preview';
+  readonly hintKey: SubmitBlockedHintKey | null;
+  readonly countBlocked: boolean;
+  readonly bodyInvalid: boolean;
+}): SubmitBarReason | null {
+  if (input.view !== 'preview') return input.countBlocked ? BAR_BLOCKED : null;
+  if (input.hintKey !== null) return BAR_REASONS[input.hintKey];
+  if (input.countBlocked) return BAR_BLOCKED;
+  if (input.bodyInvalid) return BAR_BODY;
+  return null;
+}
+
 export function submitBlockedHintKey(input: {
   readonly subjectEmpty: boolean;
   readonly subjectTooLong: boolean;

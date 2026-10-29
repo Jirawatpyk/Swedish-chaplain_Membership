@@ -46,6 +46,8 @@ import {
   recipientNoteKey,
   selfExclusionHintKey,
   submitBlockedByCount,
+  submitBarReason,
+  type SubmitBarFixTarget,
   submitBlockedHintKey,
   type ComposeAudienceMode,
 } from '@/components/broadcast/submit-feedback';
@@ -93,6 +95,12 @@ const BODY_ERROR_ID = 'broadcast-body-error';
 /** U29 — the two elements a dimmed Submit points at, plus its own hint line. */
 const RECIPIENT_COUNT_TEXT_ID = 'broadcast-recipient-count';
 const SUBMIT_BLOCKED_HINT_ID = 'broadcast-submit-blocked';
+/** Where the phone bar's reason sends focus, for the fields with no ref here. */
+const BAR_FIX_SELECTORS: Record<'categories' | 'customList' | 'audience', string> = {
+  categories: '[data-compose-feature="tier-categories"] input[type="checkbox"]:not(:disabled)',
+  customList: '#custom-recipient-list',
+  audience: '[data-compose-feature="segment-picker"] input[type="radio"]:checked',
+};
 
 const SubmitSchema = z.object({
   subject: z.string().min(1).max(200),
@@ -371,6 +379,22 @@ export function ComposeForm({
     else if (serverError?.field === 'subject') subjectRef.current?.focus();
     else if (serverError?.field === 'body') bodyContainerRef.current?.focus();
   }, [serverError, readOnlyRefusal, phone, view]);
+
+  // PR J (UX review) — every reason the phone bar gives on Preview is fixed on
+  // Write, so tapping it opens Write and focuses that field once its panel is
+  // shown (a hidden panel cannot take focus).
+  const [barFixTarget, setBarFixTarget] = useState<SubmitBarFixTarget | null>(null);
+  useEffect(() => {
+    if (barFixTarget === null || view !== 'write') return;
+    setBarFixTarget(null);
+    const field: HTMLElement | null =
+      barFixTarget === 'subject'
+        ? subjectRef.current
+        : barFixTarget === 'body'
+          ? bodyContainerRef.current
+          : document.querySelector<HTMLElement>(BAR_FIX_SELECTORS[barFixTarget]);
+    field?.focus();
+  }, [barFixTarget, view]);
 
   const customLines = parseLines(customList);
   // /code-review 2026-09-07 (finding #6) — both are null for a segment
@@ -653,10 +677,30 @@ export function ComposeForm({
     />
   );
   const barCount = summaryRecipientCount(recipientCount, segment.kind, customLines.length);
-  // A refused audience says so in the bar, beside the Submit it switches off
-  // (the reason itself is the count line in the Write tab).
-  const barStart = countBlocked ? (
-    <span className="text-sm text-[var(--aura-fg-danger)]">{t('views.blocked')}</span>
+  // Why Submit is off, in place of the count: on Write only a refused audience
+  // (the form shows the rest), on Preview the first thing to fix
+  // (`submitBarReason`).
+  const barReason = submitBarReason({ view, hintKey: blockedHintKey, countBlocked, bodyInvalid });
+  const barStart = barReason !== null && view !== 'preview' ? (
+    // On Write the reason is in the form (the red count line), so the bar only
+    // names it; on Preview it is a button that takes the member to the fix.
+    <span className="text-sm text-[var(--aura-fg-danger)]">{t(barReason.key)}</span>
+  ) : barReason !== null ? (
+    <Button
+      variant="ghost"
+      // No side padding: the reason sits where the count did, and a short one
+      // keeps Submit on the same row at 390 (AURA's 24px ghost padding wrapped
+      // it by 4px, measured on the fixture).
+      className={`h-auto whitespace-normal px-0 text-start ${
+        barReason.tone === 'danger' ? 'text-[var(--aura-fg-danger)]' : 'text-[var(--aura-fg-secondary)]'
+      }`}
+      onClick={() => {
+        setView('write');
+        setBarFixTarget(barReason.fixTarget);
+      }}
+    >
+      {t(barReason.key)}
+    </Button>
   ) : barCount === null ? undefined : (
     <span className="text-sm">{t('recipientCount.readyShort', { count: barCount })}</span>
   );
@@ -964,7 +1008,9 @@ export function ComposeForm({
             ]}
           />
           <ActionBar
-            className="chamber-viewport-actionbar chamber-compose-actionbar"
+            className={`chamber-viewport-actionbar chamber-compose-actionbar${
+              barReason !== null ? ' chamber-compose-actionbar-tall' : ''
+            }`}
             label={t('views.actions')}
             start={barStart}
           >
