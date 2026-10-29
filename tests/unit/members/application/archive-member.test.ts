@@ -206,6 +206,7 @@ function makeDeps(overrides: Partial<{
             outcome: 'ok' as const,
             cancelledCount: 0,
             skippedConcurrentCount: 0,
+            alreadySentCount: 0,
           }) as const,
       ),
     };
@@ -462,6 +463,7 @@ describe('archiveMember use case (R009)', () => {
         outcome: 'ok' as const,
         cancelledCount: 0,
         skippedConcurrentCount: 0,
+        alreadySentCount: 0,
       }));
       const deps = makeDeps({
         broadcastsCascade: { cancelInFlightForMember },
@@ -550,6 +552,7 @@ describe('archiveMember use case (R009)', () => {
         cancelledCount: 2,
         skippedConcurrentCount: 1,
         unexpectedErrorCount: 3,
+        alreadySentCount: 0,
       }));
       const deps = makeDeps({
         broadcastsCascade: { cancelInFlightForMember },

@@ -755,13 +755,22 @@ export async function eraseMember(
   //    and must NOT roll back the committed scrub. Track whether every cascade
   //    reported a clean outcome — only then is the erasure "complete".
   let allCascadesClean = true;
+  // Spec 139 P7 — E-Blasts Resend had already accepted for sending when the
+  // cascade's DELETE arrived (residual 8c); carried on `member_erased`.
+  let broadcastsAlreadySentCount = 0;
 
   try {
     const r = await deps.broadcastsCascade.cancelInFlightForMember(deps.tenant, memberId, {
       cancellationReason: reason,
       initiatedByUserId: meta.actorUserId,
       requestId: meta.requestId,
+      // Spec 139 DE2 — erasure (and only erasure) deletes a minted-but-unsent
+      // draft at Resend and cancels the row; archive keeps the skip (DE4).
+      onDispatchBegun: 'delete_then_cancel',
     });
+    if (r.outcome === 'ok' || r.outcome === 'cascade_partial_failure') {
+      broadcastsAlreadySentCount = r.alreadySentCount;
+    }
     // Broadcasts `cascade_partial_failure` is NOT benign (unlike F8 renewals
     // below): it means `unexpectedErrorCount > 0` — one or more broadcasts hit
     // unexpected errors and genuinely remain in-flight. Keep it not-clean so the
@@ -1223,6 +1232,13 @@ export async function eraseMember(
             // first pass already discarded them, so this reads 0 — same L4
             // caveat as the two counts above, signalled by `re_drive`.
             invoice_drafts_discarded_count: invoiceDraftsDiscardedCount,
+            // Spec 139 P7 — E-Blasts of this member that Resend had already
+            // accepted for sending when the erasure's DELETE arrived (each has
+            // its `broadcast_concurrent_action_blocked` row, `resendOutcome:
+            // 'already_sent'`). Read by runbook step 4 before the erasure is
+            // ticked complete. Same re-drive caveat as the counts above: a
+            // re-drive counts only what THIS completing run met.
+            broadcasts_already_sent_count: broadcastsAlreadySentCount,
             // L4 (DPO-log honesty): on a re-drive completion (alreadyErased) the
             // first pass already stamped contacts.removed_at, so this pass's
             // linked-user read is [] and the two counts above are 0/0. The flag

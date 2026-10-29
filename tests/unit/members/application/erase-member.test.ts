@@ -714,6 +714,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
           cancelledCount: 2,
           skippedConcurrentCount: 0,
           unexpectedErrorCount: 1,
+          alreadySentCount: 0,
         }) as const,
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
