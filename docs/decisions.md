@@ -205,3 +205,12 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   - `FEATURE_F7_IMPORT_AUDIENCE` may be set only after 139 (erasure) and 140 have merged and no legacy row is in flight (`docs/go-live-readiness.md` § 6.10).
   - Also decided on 29 Oct: a `not_found` inherited id is re-probed once after 3 s, before any decision. The alternative was legacy parity: send to the dead id and let the send fail.
 - *Consequence*: go-live § 6.10 and `docs/operational-state.md` list the three preconditions. The spec 139 and spec 140 directories do not exist yet; each starts with feature-flow step 1 when the maintainer asks.
+
+**D-039 — Bottom bars: an edge strip below 640px, a floating card from 640px, on every bar** (2026-10-29)
+- *Context*: the app had two kinds of bottom bar, and both were half hand-built. Five form bars (member, plan, schedule, template, E-Blast detail) were made into edge strips on phones by app CSS (negative margins, `bottom: 0`, `width: auto`) and into a plain static row from 640px. The bulk, save and compose bars stayed AURA's floating card at every width. The portal pay bar was a hand-built `<section>` fixed below 768px. AURA #185 (5.69.0) added `ActionBar edgeBelow`.
+- *Decision* (the maintainer, 29 Oct 2026):
+  - Every viewport `ActionBar` is an edge strip below 640px and AURA's floating card from 640px: `edgeBelow="sm"`. A `position="container"` bar (inside a card or panel) is not a viewport bar and is left as it is.
+  - The portal pay bar uses the same 640px breakpoint.
+  - No bottom bar is built by hand. One that must stay names its reason (`stand-in until AURA #NN`, or `AURA app content:` for something that is not a bar, such as a toast).
+  - Rejected: keeping the form bars as a static row from 640px (the desktop boards' drawing), since two looks for one control was the problem; and `edgeBelow="md"` for the pay bar.
+- *Consequence*: PR N1. The form bars stop sitting static at the end of the form from 640px; they ride as the floating card. `useActionBarClearance` counts only a sticky bar, because AURA pads the page for its fixed edge strip. `tests/unit/architecture/viewport-actionbar-edge.test.ts` enforces both rules. The pay bar stays hand-built until AURA #191 (PageHeader can turn only some of its actions into the bar). The money-dialog footers move to AURA Dialog's `footer` in PR N2.
