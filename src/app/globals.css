@@ -300,9 +300,10 @@ html:has(.chamber-viewport-actionbar) {
   scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem + env(safe-area-inset-bottom, 0px));
 }
 /* Spec 122 US12d-3 — E-Blast compose's bar stacks its count over Submit at
-   320px (~89px), so its pages keep 1rem more. */
+   320px (~89px). PR J: on Preview it may give a two-line reason over Submit
+   instead (~122px), so its pages keep 2.5rem more. */
 html:has(.chamber-compose-actionbar) {
-  scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 6.5rem + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 8rem + env(safe-area-inset-bottom, 0px));
 }
 /* Spec 122 follow-up (maintainer, 22 Oct) — the members and renewal pipeline
    bulk bars keep the count and the buttons on one line when they fit. The

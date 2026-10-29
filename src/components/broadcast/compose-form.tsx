@@ -46,7 +46,7 @@ import {
   recipientNoteKey,
   selfExclusionHintKey,
   submitBlockedByCount,
-  submitBarReasonKey,
+  submitBarReason,
   submitBlockedHintKey,
   type ComposeAudienceMode,
 } from '@/components/broadcast/submit-feedback';
@@ -655,27 +655,19 @@ export function ComposeForm({
   );
   const barCount = summaryRecipientCount(recipientCount, segment.kind, customLines.length);
   // On Preview the Write tab's reason lines are out of sight, so the bar says
-  // why Submit is off in place of the count (the maintainer, 29 Oct: Preview
-  // only; on Write the reason is in the form and the bar keeps the count).
-  // Errors are red; a missing input is muted, like the in-form hint.
-  const barReasonKey =
-    view !== 'preview'
-      ? null
-      : blockedHintKey !== null
-        ? submitBarReasonKey(blockedHintKey)
-        : bodyInvalid
-          ? ('errors.broadcast_body_too_large' as const)
-          : null;
-  const barStart = countBlocked ? (
-    <span className="text-sm text-[var(--aura-fg-danger)]">{t('views.blocked')}</span>
-  ) : barReasonKey !== null ? (
+  // why Submit is off in place of the count; the form's reason comes before a
+  // refused audience (`submitBarReason`).
+  const barReason = submitBarReason({ view, hintKey: blockedHintKey, bodyInvalid });
+  const barStart = barReason !== null ? (
     <span
       className={`text-sm ${
-        barReasonKey.startsWith('errors.') ? 'text-[var(--aura-fg-danger)]' : 'text-[var(--aura-fg-secondary)]'
+        barReason.tone === 'danger' ? 'text-[var(--aura-fg-danger)]' : 'text-[var(--aura-fg-secondary)]'
       }`}
     >
-      {t(barReasonKey)}
+      {t(barReason.key)}
     </span>
+  ) : countBlocked ? (
+    <span className="text-sm text-[var(--aura-fg-danger)]">{t('views.blocked')}</span>
   ) : barCount === null ? undefined : (
     <span className="text-sm">{t('recipientCount.readyShort', { count: barCount })}</span>
   );

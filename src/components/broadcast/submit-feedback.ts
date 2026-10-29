@@ -90,12 +90,33 @@ export type SubmitBlockedHintKey =
   | 'errors.broadcast_custom_recipient_too_many';
 
 /**
- * The same reason for the phone bar beside Submit, which has one line of room
- * and sits away from the Write tab: a tier reason is always the short form
- * there; every other reason is the hint's own words.
+ * What the phone bar beside Submit says instead of the count, on the Preview
+ * tab only (the maintainer, 29 Oct 2026): there the Write tab's reason lines
+ * are out of sight. On Write the reason is in the form, so the bar keeps the
+ * count (`null`).
+ *
+ * The form's own reason first, in the hint's tone (muted: an input is still
+ * needed) and with the tier in its short form; then the over-size body, red
+ * like its own error line. The caller puts this before a refused count, so the
+ * bar names the first thing to fix in the form's reading order.
  */
-export function submitBarReasonKey(key: SubmitBlockedHintKey): SubmitBlockedHintKey {
-  return key === 'submitBlocked.tierRequired' ? 'submitBlocked.tierChooseFirst' : key;
+export type SubmitBarReason = {
+  readonly key: SubmitBlockedHintKey | 'errors.broadcast_body_too_large';
+  readonly tone: 'muted' | 'danger';
+};
+
+export function submitBarReason(input: {
+  readonly view: 'write' | 'preview';
+  readonly hintKey: SubmitBlockedHintKey | null;
+  readonly bodyInvalid: boolean;
+}): SubmitBarReason | null {
+  if (input.view !== 'preview') return null;
+  if (input.hintKey !== null) {
+    const key = input.hintKey === 'submitBlocked.tierRequired' ? 'submitBlocked.tierChooseFirst' : input.hintKey;
+    return { key, tone: 'muted' };
+  }
+  if (input.bodyInvalid) return { key: 'errors.broadcast_body_too_large', tone: 'danger' };
+  return null;
 }
 
 export function submitBlockedHintKey(input: {
