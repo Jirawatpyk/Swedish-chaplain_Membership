@@ -380,8 +380,15 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
   2. Then the logs: a submit tick logs `broadcasts.audience_import.submitted`;
      the confirming tick logs `broadcasts.audience_import.sent` and writes a
      `broadcast_send_started` audit row.
-  3. **Resend shows a send but there is no audit row** → do NOT flip the flag; a
-     flag flip here double-sends. **This is TWO states, not one** (round 4 D4),
+  3. **Resend shows a send but there is no audit row.** *(S8 CLOSED
+     2026-10-29: both legs now persist `resend_broadcast_id` BEFORE `/send`
+     and probe an inherited id with `retrieveBroadcast` — the legacy leg since
+     F4, the import leg since this change — so a row carrying the id is caught
+     up without a second send on EITHER leg, and a flag flip no longer
+     double-sends it. A second `/send` of an accepted broadcast is refused by
+     Resend itself, `422`, whatever the key — measured 2026-10-29. Still check
+     the two states below: they decide the audit-trail repair, not the send.)*
+     Do not flip the flag while you work it out. **This is TWO states, not one** (round 4 D4),
      and they need opposite actions — check
      `broadcasts_audit_emit_failed_total{event_type='broadcast_send_started'}`
      and the log `broadcasts.audience_import.send_record_lost` (severity
@@ -408,8 +415,8 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 
   | signal | moves within the hour? |
   |---|---|
-  | `broadcasts.dispatch_resolve_failed.total` | **yes, immediately** — 15-minute alarm, and since round 4 L4 both legs also write `cron.broadcasts.dispatch.server_error` with a bounded `errClass`, so it says WHICH side failed; since 2026-09-10 the counter itself carries a `phase` label (lock / resolve / inherited_status / persist_broadcast_id / gateway / terminal_write), so the alarm says which subsystem to open before a log is read |
-  | cron span `cron.import_submitted` / `cron.import_pending` (R2-15) | yes |
+  | `broadcasts.dispatch_resolve_failed.total` | **yes, immediately** — 15-minute alarm, and since round 4 L4 both legs also write `cron.broadcasts.dispatch.server_error` with a bounded `errClass`, so it says WHICH side failed; since 2026-09-10 the counter itself carries a `phase` label (lock / resolve / inherited_status / persist_broadcast_id / gateway / terminal_write; `audience_restart` since 2026-10-29), so the alarm says which subsystem to open before a log is read |
+  | cron span `cron.import_submitted` / `cron.import_pending` (R2-15), `cron.audience_restarted` (2026-10-29 — the tick-1 audience was gone at Resend and the row restarted) | yes |
   | `broadcasts.failed_to_dispatch.count{failure_reason}` | **no** — emitted only from terminal paths, and a first-send failure that is retrying is not terminal |
   | `broadcasts_dispatch_budget_exhausted_total` | **no** — needs `elapsedMs > 1 h` measured from the FIRST retryable failure of the attempt (`dispatch_first_failed_at`, mig `0311`, F119 PR-E), so it lands on the first tick past ~65 min after that failure, i.e. after the window closes |
   | `broadcasts_audience_import_stuck_count` | **no on its own** — it only fires if the dispatch cron ALSO stops turning stuck rows terminal, so a zero is not evidence of health (round 2 R2-16) |

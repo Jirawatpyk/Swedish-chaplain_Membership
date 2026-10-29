@@ -118,6 +118,13 @@ export interface RetrievedBroadcastResource {
    * as "already sent" by a `!== 'draft'` test, they skipped the send while still
    * advancing the row to `sending`, after which the reconciler stamped `sent` and
    * consumed the member's annual E-Blast quota for mail that never went out.
+   *
+   * `failed` and `scheduled` are real Resend statuses too (MEASURED 2026-10-29:
+   * deleting the audience of a `queued` broadcast turns it `failed` within 5 s,
+   * `sent_at` null, no mail) and still arrive here as `'unknown'`, refused by
+   * both dispatch legs' probes. Deliberately not mapped: the union is read by
+   * the live `reconcile-stuck-sending` too, and the import leg's fence closed
+   * the one path this code had to produce `failed`.
    */
   readonly status:
     | 'draft'
@@ -218,10 +225,13 @@ export interface BroadcastsGatewayPort {
    * That is OUR half of the contract, and it used to be justified here by "so
    * Resend short-circuits replays". Do not reason from that: the header was
    * MEASURED INERT on `POST /broadcasts` (2026-09-09 — two identical calls with
-   * the same key created two resources), and on `/send` it is UNMEASURED, because
-   * probing it means sending real mail from the production account. Sending the
-   * same key every attempt is the precondition for any collapsing the provider
-   * may or may not do; it is not evidence that collapsing happens.
+   * the same key created two resources). On `/send` it changes nothing either,
+   * MEASURED 2026-10-29 (live account, sink address only): a second `/send` of
+   * an accepted broadcast — same key, another key or none — answers `422
+   * validation_error "Only draft broadcasts can be sent or scheduled"`, and the
+   * provider delivers ONCE. So a repeat cannot double-send, and the repeat's
+   * 422 (classified `permanent`) must be probed, not believed
+   * (`_probe-refused-send.ts`); a `409` does not come back for it.
    *
    * Stable format: `broadcast-{tenantId}-{broadcastId}` per FR-020.
    */
@@ -381,32 +391,39 @@ export interface BroadcastsGatewayPort {
    * every call site — a failed reclaim is logged at critical and the tick's
    * outcome is unchanged, because the outcome was decided before the reclaim.
    *
+   * MEASURED 2026-10-29 (live account): `DELETE /broadcasts/{id}` on a
+   * `scheduled` broadcast → 200 (then GET → 404); on a `queued` one (~1 s after
+   * `/send`) → **403 `validation_error` "Only draft or scheduled broadcasts can
+   * be deleted"**, and the send still completes (queued ~15 s+, sent by 45 s).
+   * The adapter classifies that 403 `permanent`. DELETE on `sending` / `sent`
+   * is still UNMEASURED (assumed refused the same way).
+   *
    * **Never call this on an id read from the row** — with TWO exceptions. A
    * persisted id is the resource a send may already have gone out on, so on
    * any live path only an id this tick minted and failed to persist is safe to
-   * remove. The first exception is the import leg's tick-2 HOLD
-   * (`buildAudienceTick`'s `abandonPendingImportOnHold`), and only after
-   * `retrieveBroadcast` answered `draft`, `cancelled` or `not_found` IN THE
-   * SAME TICK — a resource never handed to `/send`. The race it leaves needs
-   * two overlapping ticks AND the member's payment landing between them: a
-   * sibling that sends that id first should make this delete fail (Resend's
-   * documentation says a queued or sent broadcast cannot be deleted — NOT
-   * MEASURED), and the hold then keeps every column and retries next tick; a
-   * delete that lands first makes the sibling's send 404 into its
-   * `resource_missing` arm — terminal, no mail sent, never a double send. The
-   * second exception is the F7 retention sweep (`sweepExpiredBroadcasts`,
-   * 0310): it calls this on the persisted `resend_broadcast_id` (and any
-   * per-batch `provider_broadcast_id`) of an E-Blast that is terminal AND past
-   * its `retention_years` — the send finished years ago, and removing the
-   * Resend copy (HTML body, a name naming the member and tenant) before the row
-   * is the point. NOT MEASURED there: the happy path above was measured on a
-   * DRAFT only, and Resend's documentation says a queued or sent broadcast
-   * cannot be deleted. The sweep treats that refusal (`permanent`) as
-   * "retained at the processor": our row is deleted anyway and the Resend copy
-   * stays under Resend's own retention, a disclosed RoPA residual (maintainer
-   * decision, 2026-09-25). A `retryable` failure keeps the row and its key.
-   * The status Resend answers for a sent broadcast is to be measured before
-   * 2031 (`docs/runbooks/cron-jobs.md` § F7 retention-sweep, "Resend copies").
+   * remove. The first exception is the import leg's restart
+   * (`buildAudienceTick`'s `restartAudienceBuild`: a HOLD, or the
+   * audience-missing self-heal), and only after `retrieveBroadcast` answered
+   * `draft`, `cancelled` or `not_found` IN THE SAME TICK — a resource never
+   * handed to `/send` — and only after the restart WON its claim on the row
+   * (`releaseAudienceImport`), which the sender's fenced attach excludes. A
+   * sibling that passed its fence and sent first makes this delete fail (the
+   * measured 403): the restart stops with the id still on the row and the
+   * next tick's probe finds it handed. A delete that lands first makes the
+   * sibling's send 404; it re-reads the row, finds the import gone, and answers
+   * a concurrent skip — no mail, never a double send. The second exception is
+   * the F7 retention sweep (`sweepExpiredBroadcasts`, 0310): it calls this on
+   * the persisted `resend_broadcast_id` (and any per-batch
+   * `provider_broadcast_id`) of an E-Blast that is terminal AND past its
+   * `retention_years` — the send finished years ago, and removing the Resend
+   * copy (HTML body, a name naming the member and tenant) before the row is the
+   * point. A `sent` broadcast's DELETE is UNMEASURED; the sweep treats a
+   * refusal (`permanent`) as "retained at the processor": our row is deleted
+   * anyway and the Resend copy stays under Resend's own retention, a disclosed
+   * RoPA residual (maintainer decision, 2026-09-25). A `retryable` failure
+   * keeps the row and its key. The status Resend answers for a sent broadcast
+   * is to be measured before 2031 (`docs/runbooks/cron-jobs.md` § F7
+   * retention-sweep, "Resend copies").
    */
   deleteBroadcast(broadcastId: string): Promise<void>;
 

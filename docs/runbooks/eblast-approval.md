@@ -236,12 +236,15 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
 - `broadcasts_approved_overdue_count` counts a held row after an hour and its alarm (≥ 1 for 30
   min) stays on for the whole hold. `broadcasts_dispatch_standing_held_total` climbing for the
   same tenant means "waiting for payment", not "stuck".
-- **Import leg only** (`FEATURE_F7_IMPORT_AUDIENCE` on): a hold on tick 2 **abandons the pending
-  import**. When the row carries a pre-send `resend_broadcast_id` that the inherited-id probe found
-  never handed to `/send` (`draft` / `cancelled` / `not_found`), it first deletes that Resend
-  broadcast; then it deletes the tick-1 Resend audience (a 404 / 410 counts as gone for both),
-  then detaches `resend_audience_id`, `resend_broadcast_id`, `audience_import_id` and the two
-  import stamps in one compare-and-set write (the broadcast id compared NULL-safe). The row stays `approved` with no import, so it holds none of the Free plan's three
+- **Import leg only** (`FEATURE_F7_IMPORT_AUDIENCE` on): a hold **abandons the audience build**,
+  in an order that makes the row the mutex (2026-10-29 — the dispatch cron holds no lease, and
+  deleting the audience of a `queued` broadcast turns it `failed` with no mail): it first CLAIMS
+  the row (a compare-and-set that NULLs only `audience_import_id` and its submit stamp — the
+  column a sending tick's pre-send write is fenced on), and only a won claim goes on to delete a
+  pre-send Resend broadcast the inherited-id probe found never handed to `/send` (`draft` /
+  `cancelled` / `not_found`), then the tick-1 Resend audience (a 404 / 410 counts as gone for
+  both), then releases `resend_audience_id` and `resend_broadcast_id` together in a second
+  compare-and-set. The row stays `approved` with no import, so it holds none of the Free plan's three
   audiences while it waits, `broadcasts.audience_import_stuck_count` does not count it (no false
   "import stuck" alarm), staff can cancel or re-time it, and when the member pays the next tick
   runs a fresh tick 1 against the audience as it is then — never a stale import refused as
@@ -249,17 +252,20 @@ handed over and cancel / re-time answer `sending_started` — wait one tick (5 m
   (info) + `broadcasts_audience_import_abandoned_on_hold_total` (+1 once per hold). A row whose
   send was already handed to Resend (the probe answers `queued` / `sending` / `sent`) is never
   held at all: the tick catches it up to `sending` instead.
-- **Import leg only — abandon failed.** `broadcasts.audience_import.hold_abandon_failed` (warn,
-  `step` = `delete_broadcast`, `delete_audience` or `detach`, `err` = class only): a delete or
-  the detach failed. A failed delete leaves every column as it was (a failed delete never
-  detaches — neither the broadcast, which holds the body and the member's name, nor the audience
-  may be left where no row points at it) and the next held tick retries. A failed detach is
-  retried in the same tick, up to 3 attempts (`attempts: 3` on the line); after that the row
-  points at deleted resources until the next held tick repairs it — see
-  `broadcast-audience-build.md` § C.4, residual (a). A single one is a blip; one on every tick
-  for the same row means the delete keeps failing — check the Resend status and the API key.
-  `broadcasts.audience_import.hold_abandon_lost` (info): the detach found the row already moved
-  by another writer (a cancel, a transition); nothing to do.
+- **Import leg only — abandon stopped.** `broadcasts.audience_import.hold_abandon_failed` (warn,
+  `step` = `release_import`, `delete_broadcast`, `delete_audience` or `release_audience`, `err` =
+  class only, `errorKind` = the gateway class): a step failed and the hold stopped there. Nothing
+  is ever left where no row points at it — the broadcast (which holds the body and the member's
+  name) and the audience keep their columns until they are deleted — and the next held tick redoes
+  what is left. **`step: 'delete_broadcast'` with `errorKind: 'permanent'` means a sibling tick
+  already sent that broadcast** (Resend refuses DELETE on a `queued` broadcast, `403`, measured
+  2026-10-29): the id stays on the row on purpose and the next tick catches the row up to
+  `sending`. A single failure is a blip; one on every tick for the same row means Resend (the
+  deletes) or Neon (the two writes) keeps failing — check the Resend status and the API key.
+  `broadcasts.audience_import.hold_abandon_lost` (info, `step` = `release_import` or
+  `release_audience`): another writer moved the row first (a sending tick's fenced write, a cancel,
+  a transition) — after a lost claim the hold deletes NOTHING; nothing to do. See
+  `broadcast-audience-build.md` § C.4.
 - **Both legs:** a hold does not spend the FR-021 retry budget. Since migration `0311` (F119
   PR-E) the hour counts from the FIRST retryable Resend failure of the dispatch attempt
   (`broadcasts.dispatch_first_failed_at`), not from `scheduled_for`, so a row resuming days late
