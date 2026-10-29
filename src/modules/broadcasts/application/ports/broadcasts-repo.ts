@@ -390,7 +390,8 @@ export interface BroadcastsRepo {
    *
    * Same CAS contract as `attachAudienceId`: idempotent on the SAME value,
    * `BroadcastConcurrentMutationError` on a different one or on a row no
-   * longer `approved`, `BroadcastNotFoundError` if the row is gone.
+   * longer `approved`, `BroadcastNotFoundError` if the row is gone. An EMPTY
+   * id on the row (`''`) counts as none — it is not an id (both legs).
    *
    * `fence` — the import leg passes it on EVERY call (the legacy leg passes
    * none; its write is unchanged):

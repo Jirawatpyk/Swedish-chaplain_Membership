@@ -1099,6 +1099,10 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.broadcastId, broadcastId),
             or(
               isNull(broadcasts.resendBroadcastId),
+              // An EMPTY id is not an id. Both legs skip the probe for `''`
+              // and mint, so a CAS that refused it looped mint → CAS-fail →
+              // reclaim on every tick for ever (code review #3, 2026-10-29).
+              eq(broadcasts.resendBroadcastId, ''),
               eq(broadcasts.resendBroadcastId, resendBroadcastId),
               fence?.replacesResendBroadcastId === undefined
                 ? undefined
