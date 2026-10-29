@@ -31,6 +31,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ok, err } from '@/lib/result';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
+import type { BroadcastStatus } from '@/modules/broadcasts';
 import { buildAudienceTick } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import type { BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
 import { broadcastsMetrics } from '@/lib/metrics';
@@ -328,7 +329,7 @@ function makeDeps(opts: {
   /** What a `findById` read-back finds for the import id; default: the row's. */
   readonly readBackImportId?: string | null;
   /** What a `findById` read-back finds for the status; default: the row's. */
-  readonly readBackStatus?: Broadcast['status'];
+  readonly readBackStatus?: BroadcastStatus;
 }): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder } {
   let txSeq = 0;
   const rec: Recorder = {
