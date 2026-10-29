@@ -882,6 +882,8 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
       repo.attachBroadcastId(tx, slug, id, 'rb_evil', { expectedAudienceImportId: 'imp_fence', replacesResendBroadcastId: 'rb_x' })],
     ['attachAudienceImport (fenced)', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never, id: ReturnType<typeof asBroadcastId>) =>
       repo.attachAudienceImport(tx, slug, id, 'imp_evil', { expectedResendAudienceId: 'aud_fence' })],
+    ['markAudienceImportCompleted', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never, id: ReturnType<typeof asBroadcastId>) =>
+      repo.markAudienceImportCompleted(tx, slug, id)],
   ] as const)('cross-tenant: %s with a tenant-B tx refuses tenant A\'s row', async (_label, call) => {
     if (!RUN_INTEGRATION) return;
     const { raw, id } = await seedBuilding(); // owned by TEST_TENANT
@@ -891,7 +893,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
     const slug = asTenantContext(TEST_TENANT).slug as never;
 
-    await expect(runInTenant(asTenantContext('e2e-tenant'), async (tx) => call(repo, tx, slug, id))).rejects.toThrow();
+    await expect(runInTenant(asTenantContext('e2e-tenant'), async (tx) => call(repo, tx, slug, id))).rejects.toThrow(/tx tenant mismatch/);
 
     expect(await readIds(raw)).toEqual({
       resend_audience_id: 'aud_fence',

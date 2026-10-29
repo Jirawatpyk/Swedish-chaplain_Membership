@@ -3070,7 +3070,7 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     expect(sendStarted(rec)?.payload).toMatchObject({ handedToSendOnPriorTick: true, actualSendAt: null, delaySeconds: null });
   });
 
-  it.each(['draft', 'cancelled'])('re-entry, the probe answers %s → the inherited resource is REUSED (no second createBroadcast) and sent with the same key', async (status) => {
+  it.each(['draft'])('re-entry, the probe answers %s → the inherited resource is REUSED (no second createBroadcast) and sent with the same key', async (status) => {
     const { deps, rec } = makeDeps({ ...TICK2, resendBroadcastId: 'rb-0', probe: { kind: 'present', status } });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
@@ -3120,6 +3120,23 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     expect(rec.memberEmails).toEqual([]);
   });
 
+  /**
+   * `cancelled` is a scheduled send Resend cancelled. Only a DRAFT can be sent
+   * (MEASURED 2026-10-29: a non-draft `/send` answers 422), so reusing it is a
+   * guaranteed refusal. It is as dead as `not_found`: mint fresh and replace.
+   */
+  it('re-entry, the probe answers CANCELLED → a FRESH resource is minted and replaces it; the cancelled one is never sent to', async () => {
+    const { deps, rec } = makeDeps({ ...TICK2, resendBroadcastId: 'rb-0', probe: { kind: 'present', status: 'cancelled' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: RECIPIENTS.length } });
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'getContactImport', 'createBroadcast', 'sendBroadcast']);
+    expect(rec.broadcastIdAttaches.map((a) => a.fence)).toEqual([{ expectedAudienceImportId: 'imp-1', replacesResendBroadcastId: 'rb-0' }]);
+    expect(rec.sends).toEqual(['rb-1']);
+    expect(sendStarted(rec)?.payload).toMatchObject({ handedToSendOnPriorTick: false, observedResendStatus: 'cancelled' });
+  });
+
   it('re-entry, NOT FOUND, the replacing CAS is LOST → the fresh resource is reclaimed and nothing is sent', async () => {
     const { deps, rec } = makeDeps({
       ...TICK2,
@@ -3145,7 +3162,7 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
    * import this tick sent with, so the answer is a concurrent skip — never
    * `failed_to_dispatch`, never a member email, never a terminal write.
    */
-  it('the send 404s AFTER a hold claimed the row (re-read: import and id gone) → a concurrent skip, nothing terminal, nobody told', async () => {
+  it('the send 404s AFTER a hold claimed the row (re-read: the import is gone, the id kept) → a concurrent skip, nothing terminal, nobody told', async () => {
     const { deps, rec } = makeDeps({
       ...TICK2,
       resendBroadcastId: 'rb-0',
@@ -3159,6 +3176,22 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
     expect(rec.transitions).toEqual([]);
     expect(rec.audits).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
+  });
+
+  it('the send 404s and the re-read shows ANOTHER broadcast id (the import still ours) → a concurrent skip, nothing terminal, nobody told', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      throwOn: { method: 'sendBroadcast', kind: 'resource_missing' },
+      readBackResendBroadcastId: 'rb-other',
+      readBackImportId: 'imp-1',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+    expect(rec.transitions).toEqual([]);
     expect(rec.memberEmails).toEqual([]);
   });
 
@@ -3258,6 +3291,20 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     expect(rec.completionStamps).toEqual([]);
     expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
     expect(sendStarted(rec)?.payload).toMatchObject({ importId: null, handedToSendOnPriorTick: true });
+  });
+
+  it("the probe answers SENT on a row whose audience id is '' → treated as no audience: the id is re-asserted, '' never written", async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: '',
+      resendBroadcastId: 'rb-legacy',
+      probe: { kind: 'present', status: 'sent', sentAt: minutesAgo(5).toISOString() },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? res.value.kind : res.error).toBe('sent');
+    expect(rec.resendIdWrites).toEqual([]);
+    expect(rec.broadcastIdAttaches.map((a) => a.resendBroadcastId)).toEqual(['rb-legacy']);
   });
 
   /** The handed path must never write `''` into `resend_audience_id`. */
@@ -3378,11 +3425,14 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
       {
         method: 'releaseResendAudience',
         expected: { resendAudienceId: 'aud-1', resendBroadcastId: null },
-        afterGatewayCalls: rec.gatewayCalls.indexOf('createBroadcast') + 1,
+        afterGatewayCalls: rec.gatewayCalls.indexOf('deleteAudience') + 1,
       },
     ]);
-    // The audience is already gone: nothing is deleted, nothing sent.
-    expect(rec.gatewayCalls).not.toContain('deleteAudience');
+    // Delete it anyway (404 = already gone) BEFORE forgetting it: a 404 that
+    // did not mean "gone" must not leave member emails in an audience no row
+    // points at (erasure and cleanup find audiences only through the row).
+    expect(rec.gatewayCalls.slice(-1)).toEqual(['deleteAudience']);
+    expect(rec.audiencesDeleted).toEqual(['aud-1']);
     expect(rec.sends).toEqual([]);
     expect(rec.transitions).toEqual([]);
     expect(rec.audits).toEqual([]);
@@ -3411,12 +3461,28 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res).toEqual({ ok: true, value: { kind: 'audience_restarted' } });
+    expect(rec.audiencesDeleted).toEqual(['aud-1']);
     expect(rec.releases).toEqual([
-      { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-1', resendBroadcastId: null }, afterGatewayCalls: 1 },
+      { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-1', resendBroadcastId: null }, afterGatewayCalls: 2 },
     ]);
     expect(rec.importsSubmitted).toEqual([]);
     expect(rec.transitions).toEqual([]);
     expect(rec.memberEmails).toEqual([]);
+  });
+
+  /**
+   * Bounded: an audience created on THIS tick that Resend then cannot find is
+   * not "deleted since" — restarting would mint another every tick and use up
+   * the Free plan's three segments. That 404 keeps the ordinary permanent rule.
+   */
+  it('createContactImport answers 404 for the audience THIS tick created → no restart loop: the ordinary permanent rule', async () => {
+    const { deps, rec } = makeDeps({ throwOn: { method: 'createContactImport', kind: 'permanent', code: 'not_found' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? res.value : res.error).not.toEqual({ kind: 'audience_restarted' });
+    expect(rec.releases).toEqual([]);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
   });
 
   it('a permanent createBroadcast refusal that is NOT a 404 still fails terminally and tells the member', async () => {
@@ -3458,6 +3524,32 @@ describe('buildAudienceTick — a refused /send is probed before it is believed'
     expect(rec.memberEmails).toEqual([]);
     expect(failedSpy).not.toHaveBeenCalled();
     expect(warnSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.send_already_accepted')).toBe(true);
+  });
+
+  it('422 + the probe answers queued → the send_started audit records the status Resend reported, not the pre-send one', async () => {
+    const { deps, rec } = makeDeps({ ...TICK2, throwOn: REFUSED, probe: { kind: 'present', status: 'queued' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? res.value.kind : res.error).toBe('sent');
+    expect(sendStarted(rec)?.payload).toMatchObject({ observedResendStatus: 'queued' });
+  });
+
+  /**
+   * Two overlapping senders on one draft: the winner flips the row to
+   * `sending`; the loser's 422 is probed as accepted and its own transition
+   * then loses. Nothing is wrong — the mail went out once — so it must not
+   * log the critical `sent_but_transition_lost` that pages a human.
+   */
+  it('422 + accepted, then the sending transition LOSES (the sibling flipped it) → no critical sent_but_transition_lost', async () => {
+    const { logger } = await import('@/lib/logger');
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({ ...TICK2, throwOn: REFUSED, probe: { kind: 'present', status: 'sent' }, transitionThrowsOn: 'sending' });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(errorSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.sent_but_transition_lost')).toBe(false);
+    expect(rec.memberEmails).toEqual([]);
   });
 
   // `cancelled` is a scheduled send Resend cancelled: never sent, the same reading
