@@ -345,13 +345,21 @@ describe('PR K — the phone tab look', () => {
   const f = enMessages.portal.broadcasts.compose.fields;
   const openLabel = enMessages.broadcast.editor.preview.openLabel;
 
-  it('`variant="tab"` shows the caption, and no subject heading or Preview button', () => {
+  it('`variant="tab"` shows the caption and the subject, and no Preview button', () => {
     stubFetch();
     renderPane({ variant: 'tab' });
     expect(screen.getByText(f.previewCaption)).toBeInTheDocument();
-    expect(screen.queryByRole('heading')).toBeNull();
+    // The delivered email carries the subject only in its <title>, so the card
+    // states it on top, as the board draws it (maintainer, 29 Oct).
+    expect(screen.getByRole('heading', { name: BASE.subject })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: openLabel })).toBeNull();
     expect(screen.getByRole('region', { name: f.previewLabel })).toBeInTheDocument();
+  });
+
+  it('`variant="tab"` with no subject has no heading at all', () => {
+    stubFetch();
+    renderPane({ variant: 'tab', subject: '  ' });
+    expect(screen.queryByRole('heading')).toBeNull();
   });
 
   it('the default keeps the header, the subject and the Preview button', () => {

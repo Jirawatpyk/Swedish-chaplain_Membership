@@ -6,7 +6,7 @@
  * screen's bottom edge, and a 16px gap.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 
 import { useActionBarClearance } from '@/hooks/use-action-bar-clearance';
 
@@ -15,14 +15,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function mountBar(className: string, height: number, bottom = '0px'): void {
+function mountBar(className: string, height: number, bottom = '0px', position = 'sticky'): HTMLElement {
   const bar = document.createElement('div');
   bar.className = className;
   bar.style.bottom = bottom;
+  bar.style.position = position;
   document.body.append(bar);
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     return { height: this.classList.contains(className) ? height : 0 } as DOMRect;
   });
+  return bar;
 }
 
 describe('useActionBarClearance', () => {
@@ -40,6 +42,49 @@ describe('useActionBarClearance', () => {
 
   it('is 0 when no bar matches', () => {
     const { result } = renderHook(() => useActionBarClearance(true, '.missing'));
+    expect(result.current).toBe(0);
+  });
+
+  // AURA un-sticks the bar on a short screen (400% zoom, a phone held
+  // sideways): it then sits in the page flow and covers nothing.
+  it('is 0 while the bar is not sticky or fixed', () => {
+    mountBar('my-bar', 114, '8px', 'static');
+    const { result } = renderHook(() => useActionBarClearance(true, '.my-bar'));
+    expect(result.current).toBe(0);
+  });
+
+  it('follows the bar when it grows (a reason wraps it to two rows)', () => {
+    let fire: () => void = () => {};
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(cb: () => void) {
+          fire = cb;
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+    let height = 62;
+    const bar = mountBar('my-bar', 0);
+    vi.spyOn(bar, 'getBoundingClientRect').mockImplementation(() => ({ height }) as DOMRect);
+    const { result } = renderHook(() => useActionBarClearance(true, '.my-bar'));
+    expect(result.current).toBe(78);
+    height = 114;
+    act(() => fire());
+    expect(result.current).toBe(130);
+    vi.unstubAllGlobals();
+  });
+
+  it('starts from 0 again when it turns back on and finds no bar', () => {
+    const bar = mountBar('my-bar', 114);
+    const { result, rerender } = renderHook(({ on }) => useActionBarClearance(on, '.my-bar'), {
+      initialProps: { on: true },
+    });
+    expect(result.current).toBe(130);
+    rerender({ on: false });
+    bar.remove();
+    rerender({ on: true });
     expect(result.current).toBe(0);
   });
 });

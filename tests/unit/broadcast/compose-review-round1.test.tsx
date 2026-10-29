@@ -214,13 +214,16 @@ describe('the phone bar', () => {
     const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       return { height: this.classList.contains('chamber-compose-actionbar') ? 114 : 0 } as DOMRect;
     });
-    renderForm();
-    const root = document.documentElement;
-    expect(root.style.scrollPaddingBottom).toBe('130px');
-    expect(document.querySelector('.chamber-compose-actionbar-tall')).toBeNull();
-    cleanup();
-    expect(root.style.scrollPaddingBottom).toBe('');
-    spy.mockRestore();
+    try {
+      renderForm();
+      const root = document.documentElement;
+      expect(root.style.scrollPaddingBottom).toBe('130px');
+      expect(document.querySelector('.chamber-compose-actionbar-tall')).toBeNull();
+      cleanup();
+      expect(root.style.scrollPaddingBottom).toBe('');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   // PR K — board `Portal-broadcast-new-mobile-preview`: the phone tab shows
