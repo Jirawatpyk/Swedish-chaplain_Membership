@@ -55,6 +55,14 @@ describe('findRedFirstViolations', () => {
     expect(v).toEqual([]);
   });
 
+  it('matches the invoices test folders for the invoicing module', () => {
+    const v = findRedFirstViolations([
+      c('aaa1111', 'test(invoicing): red', ['tests/contract/invoices/issue.test.ts']),
+      c('bbb2222', 'fix(invoicing): green', ['src/modules/invoicing/application/use-cases/issue.ts']),
+    ]);
+    expect(v).toEqual([]);
+  });
+
   it('covers domain/ as well as application/, and the [Spec Kit] prefix', () => {
     const v = findRedFirstViolations([
       c('bbb2222', '[Spec Kit] feat(members): green', ['src/modules/members/domain/member.ts']),

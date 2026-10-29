@@ -35,10 +35,19 @@ function commitType(subject: string): string | null {
   return HEADER.exec(subject)?.[1] ?? null;
 }
 
-/** `broadcasts` also owns `tests/unit/broadcast/` — the singular folder. */
+/**
+ * Test folders named other than their module: `tests/unit/broadcast/` (singular)
+ * and the `invoices/` folders under `tests/`. Every other module's tests use
+ * its exact name.
+ */
+const TEST_FOLDER_ALIASES: Readonly<Record<string, ReadonlyArray<string>>> = {
+  broadcasts: ['broadcast'],
+  invoicing: ['invoices'],
+};
+
 function touchesModuleTests(files: ReadonlyArray<string>, module: string): boolean {
-  const stem = module.endsWith('s') ? module.slice(0, -1) : module;
-  return files.some((f) => f.startsWith('tests/') && f.split('/').some((seg) => seg === module || seg === stem));
+  const names = [module, ...(TEST_FOLDER_ALIASES[module] ?? [])];
+  return files.some((f) => f.startsWith('tests/') && f.split('/').some((seg) => names.includes(seg)));
 }
 
 /** Commits oldest first. `allowShas` are grandfathered SHA prefixes. */

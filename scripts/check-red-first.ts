@@ -44,17 +44,27 @@ function main(): void {
       process.exit(1);
     }
   }
-  const shas = git(['rev-list', '--reverse', '--no-merges', `${base}..${head}`]).split('\n').filter(Boolean);
-  const commits: BranchCommit[] = shas.map((sha) => {
-    const subject = git(['show', '-s', '--format=%s', sha]).trim();
-    const body = git(['show', '-s', '--format=%b', sha]);
-    const files = git(['diff-tree', '--no-commit-id', '--name-only', '-r', sha]).split('\n').filter(Boolean);
-    return { sha, subject, body, files };
-  });
-  const violations = findRedFirstViolations(
-    commits,
-    ALLOW.map((a) => a.sha),
-  );
+  // ONE spawn for the whole range: each record is `\x1e<sha>\x1f<subject>\x1f<body>\x1f`
+  // then the `--name-only` file list. `--no-renames` lists both sides of a
+  // rename, as `diff-tree -r` did.
+  const log = git([
+    'log', '--reverse', '--no-merges', '--no-renames', '--name-only',
+    '--format=%x1e%H%x1f%s%x1f%b%x1f', `${base}..${head}`,
+  ]);
+  const commits: BranchCommit[] = log
+    .split('\x1e')
+    .filter((record) => record !== '')
+    .map((record) => {
+      const [sha = '', subject = '', body = '', files = ''] = record.split('\x1f');
+      return { sha, subject: subject.trim(), body, files: files.split('\n').filter(Boolean) };
+    });
+  const allowFor = (sha: string) => ALLOW.find((a) => sha.startsWith(a.sha));
+  const found = findRedFirstViolations(commits);
+  for (const v of found) {
+    const entry = allowFor(v.sha);
+    if (entry !== undefined) console.log(`check:red-first: allowed ${v.sha.slice(0, 9)} ${v.subject} — ${entry.why}`);
+  }
+  const violations = found.filter((v) => allowFor(v.sha) === undefined);
   if (violations.length > 0) {
     console.error(`check:red-first: ${violations.length} commit(s) change application/domain logic with no earlier test: commit for the module:`);
     for (const v of violations) console.error(`  ${v.sha.slice(0, 9)} ${v.subject}  [${v.modules.join(', ')}]`);
