@@ -681,7 +681,11 @@ export function ComposeForm({
   // (the form shows the rest), on Preview the first thing to fix
   // (`submitBarReason`).
   const barReason = submitBarReason({ view, hintKey: blockedHintKey, countBlocked, bodyInvalid });
-  const barStart = barReason !== null ? (
+  const barStart = barReason !== null && view !== 'preview' ? (
+    // On Write the reason is in the form (the red count line), so the bar only
+    // names it; on Preview it is a button that takes the member to the fix.
+    <span className="text-sm text-[var(--aura-fg-danger)]">{t(barReason.key)}</span>
+  ) : barReason !== null ? (
     <Button
       variant="ghost"
       size="sm"
@@ -1004,7 +1008,7 @@ export function ComposeForm({
           />
           <ActionBar
             className={`chamber-viewport-actionbar chamber-compose-actionbar${
-              view === 'preview' ? ' chamber-compose-actionbar-tall' : ''
+              barReason !== null ? ' chamber-compose-actionbar-tall' : ''
             }`}
             label={t('views.actions')}
             start={barStart}

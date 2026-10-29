@@ -89,15 +89,6 @@ export type SubmitBlockedHintKey =
   | 'errors.broadcast_custom_recipient_empty'
   | 'errors.broadcast_custom_recipient_too_many';
 
-/**
- * What the phone bar beside Submit says instead of the count. On Write the
- * reason is in the form, so only a refused audience is said there (as before).
- * On Preview the Write tab's lines are out of sight (the maintainer, 29 Oct
- * 2026), so the bar names the first thing to fix in the form's reading order:
- * the form's reason (subject and tier in a short form), then the audience,
- * then the over-size body. Each reason names the Write field that fixes it. A missing input is muted, like the hint line; a broken one
- * (too long, over the cap, too large, refused) is red. `null` keeps the count.
- */
 export type SubmitBarFixTarget = 'subject' | 'categories' | 'customList' | 'audience' | 'body';
 
 export type SubmitBarReason = {
@@ -111,44 +102,48 @@ export type SubmitBarReason = {
   readonly fixTarget: SubmitBarFixTarget;
 };
 
-// The bar has one line of room beside Submit: the reasons that repeat the
-// button's own words there take a short form.
-const BAR_SHORT_KEYS: Partial<Record<SubmitBlockedHintKey, SubmitBarReason['key']>> = {
-  'submitBlocked.subjectRequired': 'submitBlocked.subjectAddFirst',
-  'submitBlocked.tierRequired': 'submitBlocked.tierChooseFirst',
+// One row per hint, so a new hint key cannot ship without its bar copy, tone
+// and fix target. The bar has one line of room beside Submit, so the reasons
+// that repeat the button's own words take a short form there. A missing input
+// is muted, like the hint line; a broken one is red.
+const BAR_REASONS: Record<SubmitBlockedHintKey, SubmitBarReason> = {
+  'submitBlocked.subjectRequired': { key: 'submitBlocked.subjectAddFirst', tone: 'muted', fixTarget: 'subject' },
+  'errors.broadcast_subject_too_long': { key: 'errors.broadcast_subject_too_long', tone: 'danger', fixTarget: 'subject' },
+  'submitBlocked.tierRequired': { key: 'submitBlocked.tierChooseFirst', tone: 'muted', fixTarget: 'categories' },
+  'submitBlocked.tierChooseFirst': { key: 'submitBlocked.tierChooseFirst', tone: 'muted', fixTarget: 'categories' },
+  'errors.broadcast_custom_recipient_empty': {
+    key: 'errors.broadcast_custom_recipient_empty',
+    tone: 'muted',
+    fixTarget: 'customList',
+  },
+  'errors.broadcast_custom_recipient_too_many': {
+    key: 'errors.broadcast_custom_recipient_too_many',
+    tone: 'danger',
+    fixTarget: 'customList',
+  },
 };
 
-const BAR_ERROR_KEYS: ReadonlySet<SubmitBlockedHintKey> = new Set([
-  'errors.broadcast_subject_too_long',
-  'errors.broadcast_custom_recipient_too_many',
-]);
+const BAR_BLOCKED: SubmitBarReason = { key: 'views.blocked', tone: 'danger', fixTarget: 'audience' };
+const BAR_BODY: SubmitBarReason = { key: 'errors.broadcast_body_too_large', tone: 'danger', fixTarget: 'body' };
 
-const BAR_FIX_TARGETS: Record<SubmitBlockedHintKey, SubmitBarFixTarget> = {
-  'submitBlocked.subjectRequired': 'subject',
-  'errors.broadcast_subject_too_long': 'subject',
-  'submitBlocked.tierRequired': 'categories',
-  'submitBlocked.tierChooseFirst': 'categories',
-  'errors.broadcast_custom_recipient_empty': 'customList',
-  'errors.broadcast_custom_recipient_too_many': 'customList',
-};
-
+/**
+ * What the phone bar beside Submit says instead of the count. On Write the
+ * reason is in the form, so only a refused audience is said there (as before).
+ * On Preview the Write tab's lines are out of sight (the maintainer, 29 Oct
+ * 2026), so the bar names the first thing to fix in the form's reading order:
+ * the form's reason, then the audience, then the over-size body; each names
+ * the Write field that fixes it. `null` keeps the count.
+ */
 export function submitBarReason(input: {
   readonly view: 'write' | 'preview';
   readonly hintKey: SubmitBlockedHintKey | null;
   readonly countBlocked: boolean;
   readonly bodyInvalid: boolean;
 }): SubmitBarReason | null {
-  const blocked: SubmitBarReason = { key: 'views.blocked', tone: 'danger', fixTarget: 'audience' };
-  if (input.view !== 'preview') return input.countBlocked ? blocked : null;
-  if (input.hintKey !== null) {
-    return {
-      key: BAR_SHORT_KEYS[input.hintKey] ?? input.hintKey,
-      tone: BAR_ERROR_KEYS.has(input.hintKey) ? 'danger' : 'muted',
-      fixTarget: BAR_FIX_TARGETS[input.hintKey],
-    };
-  }
-  if (input.countBlocked) return blocked;
-  if (input.bodyInvalid) return { key: 'errors.broadcast_body_too_large', tone: 'danger', fixTarget: 'body' };
+  if (input.view !== 'preview') return input.countBlocked ? BAR_BLOCKED : null;
+  if (input.hintKey !== null) return BAR_REASONS[input.hintKey];
+  if (input.countBlocked) return BAR_BLOCKED;
+  if (input.bodyInvalid) return BAR_BODY;
   return null;
 }
 
