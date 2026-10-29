@@ -44,6 +44,7 @@ describe('sendTestCopy — the null-tx audit row lands on live Neon', () => {
         renderer: { render: (i) => `<!doctype html>${i.bodyHtml}` },
         mailer: { send: async () => ok({ messageId: 'fake-msg' }) },
         audit: f7AuditAdapter,
+        testCopyUnsubscribeUrl: 'https://app.example/unsubscribe/test-copy',
       },
       {
         tenantId: tenant.ctx.slug as never,

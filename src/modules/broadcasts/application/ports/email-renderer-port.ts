@@ -21,6 +21,13 @@ export interface RenderEmailInput {
   readonly tenantDisplayName: string;
   readonly locale: BroadcastRenderLocale;
   readonly brand: BrandSettings;
+  /**
+   * The footer's Unsubscribe link. Omitted for a real send: the footer then
+   * carries Resend Broadcasts' per-recipient merge tag, which Broadcasts
+   * substitutes. A caller on another path (the test copy, through the
+   * transactional sender) passes its own, or the link has no target.
+   */
+  readonly unsubscribeHref?: string;
 }
 
 export interface EmailRendererPort {

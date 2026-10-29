@@ -8482,6 +8482,13 @@
   },
   "public": {
     "unsubscribe": {
+      "testCopy": {
+        "metaTitle": "Test copy",
+        "heading": "This email was a test copy",
+        "body": "In the real E-Blast, the Unsubscribe link lets each recipient stop receiving E-Blasts from {tenantDisplayName}.",
+        "nothingChanged": "Nothing was changed: no one was unsubscribed.",
+        "optOut": "To stop receiving E-Blasts yourself, use the Unsubscribe link in any E-Blast you receive, or email <email></email>."
+      },
       "metaTitle": "Unsubscribe",
       "fallbackChamberName": "the chamber",
       "chamberWebsiteLink": "Visit the chamber website",

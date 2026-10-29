@@ -666,6 +666,10 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   history, or any allowance. It MUST go through the identical content-safety and rendering
   pipeline as a real send, including design blocks, the brand header and the footer, and is
   limited to 10 per user per hour *(checklist default)*.
+  *Amended 29 Oct 2026 (R105, the maintainer):* the one difference is the footer's Unsubscribe
+  link. A real send carries Resend Broadcasts' per-recipient merge tag, which the transactional
+  path cannot substitute, so a test copy's link opens `/unsubscribe/test-copy`, a page that says
+  it is a test and unsubscribes nobody.
 - **FR-038**: The writing tool MUST offer a visible control for every kind of content the platform
   keeps after sending — headings (H2 and H3 only; the subject is the email's title), quote,
   divider, bulleted and numbered lists, bold, underline, links with editable link text, images —

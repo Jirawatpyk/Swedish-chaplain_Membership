@@ -39,6 +39,8 @@ export const TENANT_SLUG_HEADER = 'x-tenant-slug';
  * `List-Unsubscribe` header — `/unsubscribe/<token>`, which is a page. Next.js
  * cannot host a page and a route handler in one segment, so that POST is
  * rewritten to `/api/unsubscribe/<token>`. GET keeps rendering the page.
+ * `/unsubscribe/test-copy` is a static page, not a token (a test copy carries
+ * no List-Unsubscribe header), so its POST is never rewritten.
  * Returns the rewrite target, or null when the request is not a one-click POST.
  */
 export function oneClickUnsubscribeRewriteTarget(
@@ -46,7 +48,7 @@ export function oneClickUnsubscribeRewriteTarget(
   pathname: string,
 ): string | null {
   if (method.toUpperCase() !== 'POST') return null;
-  const m = /^\/unsubscribe\/([^/]+)$/.exec(pathname);
+  const m = /^\/unsubscribe\/(?!test-copy$)([^/]+)$/.exec(pathname);
   return m ? `/api/unsubscribe/${m[1]}` : null;
 }
 
