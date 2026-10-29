@@ -463,6 +463,17 @@ export async function buildAudienceTick(
     const probed = await probeInheritedBroadcast(deps, input, broadcast, inheritedBroadcastId);
     if ('stop' in probed) return probed.stop;
     probe = probed.probe;
+    // A single `not_found` GET decides nothing (round 5): it is re-asked once
+    // after REPROBE_PAUSE_MS, BEFORE the standing gate, so a hold, a refusal
+    // and a send all act on the second answer. A stale 404 for an accepted send
+    // must not be minted over (a second send), torn down (an audience deleted
+    // under a queued send) or refused (`failed_to_dispatch` for delivered mail).
+    if (!probe.handed && probe.status === null) {
+      await (deps.pauseBeforeReprobe ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(REPROBE_PAUSE_MS);
+      const again = await probeInheritedBroadcast(deps, input, broadcast, inheritedBroadcastId);
+      if ('stop' in again) return again.stop;
+      probe = again.probe;
+    }
   }
   if (probe !== null && probe.handed) {
     return catchUpHanded(deps, input, broadcast, now, inheritedBroadcastId, probe);
@@ -738,12 +749,15 @@ interface RowIds {
 }
 
 /**
- * The probe called the row's broadcast id DEAD: `not_found`, or `cancelled`.
- * Only a draft can be sent (a non-draft `/send` answers 422, MEASURED
- * 2026-10-29), so such a resource cannot be in flight on a sibling tick.
+ * The probe called the row's broadcast id `cancelled`: it exists and can never
+ * be sent (only a draft can — a non-draft `/send` answers 422, MEASURED
+ * 2026-10-29), so a refused delete of it says nothing about a sibling tick.
+ * NOT `not_found`: the adapter already treats a 404 delete as success, so after
+ * a (twice-confirmed) `not_found` a REFUSED delete proves the resource exists
+ * and is not a draft — perhaps queued — and the teardown must stop (round 5).
  */
 function isDeadProbe(probe: InheritedProbe | null): boolean {
-  return probe !== null && !probe.handed && (probe.status === null || probe.status === 'cancelled');
+  return probe !== null && !probe.handed && probe.status === 'cancelled';
 }
 
 function rowIds(broadcast: Broadcast): RowIds {
@@ -1450,7 +1464,7 @@ async function confirmImport(
    * `resendBroadcastId` is `''` when the row carries none (a fresh mint). A
    * non-empty one was probed NOT handed to `/send`: `draft` is reused (never
    * minted twice), re-asserted through the sender's fence; `cancelled` and
-   * `observedResendStatus: null` (`not_found`, re-probed once first) are DEAD,
+   * `observedResendStatus: null` (`not_found`, already re-probed once in Step 1a) are DEAD,
    * so a fresh resource replaces them.
    */
   inherited: {
@@ -1458,19 +1472,6 @@ async function confirmImport(
     readonly observedResendStatus: 'draft' | 'cancelled' | null;
   },
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
-  // A `not_found` inherited id is re-asked once, after REPROBE_PAUSE_MS, before
-  // it is called dead — here, before the import poll, because this is where a
-  // fresh mint can follow (a stale 404 for an accepted send would mail the
-  // audience twice; after the count checks it could also go terminal for
-  // delivered mail). Hold and refuse ticks never pay the pause.
-  if (inherited.resendBroadcastId !== '' && inherited.observedResendStatus === null) {
-    await (deps.pauseBeforeReprobe ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(REPROBE_PAUSE_MS);
-    const again = await probeInheritedBroadcast(deps, input, broadcast, inherited.resendBroadcastId);
-    if ('stop' in again) return again.stop;
-    if (again.probe.handed) return catchUpHanded(deps, input, broadcast, now, inherited.resendBroadcastId, again.probe);
-    inherited = { ...inherited, observedResendStatus: again.probe.status };
-  }
-
   const polled = await viaGateway(() => deps.broadcastsGateway.getContactImport(importId));
   if (!polled.ok) return onGatewayFailure(deps, input, broadcast, polled.error, importId);
   const job = polled.value;
