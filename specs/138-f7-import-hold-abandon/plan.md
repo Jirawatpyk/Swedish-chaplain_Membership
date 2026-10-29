@@ -373,7 +373,7 @@ Filled in at Verify, one line per Done-when line.
   - tester F4 / F5: the pause size, re-probe second answers.
 
 **Verification of the round-5 fix, 29 Oct 2026** (the raisers re-ran):
-- **`senior-tester`: SHIP-READY.** F3 is CLOSED. Its zero-edit mutation run checked the new tests against the pre-fix source: the three new tests failed, and the other 164 passed. Raised one MEDIUM: the stale-audience teardown with a `not_found` id had no test. Closed by a guard test in `853ecd56a`. Its LOWs were also fixed in that commit and `aedf…`: the third site, a stale comment, an orphaned docblock, and an assertion on the pause.
+- **`senior-tester`: SHIP-READY.** F3 is CLOSED. Its zero-edit mutation run checked the new tests against the pre-fix source: the three new tests failed, and the other 164 passed. Raised one MEDIUM: the stale-audience teardown with a `not_found` id had no test. Closed by a guard test in `853ecd56a`. Its LOWs were also fixed in that commit and `8f07e2a41`: the third site, a stale comment, an orphaned docblock, and an assertion on the pause.
 - **`spec-compliance-auditor`: PARTIALLY COMPLIANT.** HIGH-1 is CLOSED. Three findings remained, and each is now closed:
   - **MEDIUM-A**, the `createBroadcast` self-heal treating `not_found` as dead: RED `853ecd56a` → GREEN `8f07e2a41`.
   - **MEDIUM-B**, five stale texts: code docblocks, `metrics.ts`, `plan.md`, the runbook.
