@@ -125,3 +125,29 @@ describe('BulkActionBar on AURA ActionBar (T504)', () => {
     expect(screen.queryByRole('button', { name: BULK.clear })).toBeNull();
   });
 });
+
+// PR M — the shared `useActionBarClearance` (WCAG 2.4.11): the bar's height,
+// plus the gap AURA sticks it above the screen edge, plus 16px, while a
+// selection shows; given back when it clears. jsdom has no AURA stylesheet.
+describe('BulkActionBar keeps a focused row clear of it', () => {
+  it('reserves the bar height, its bottom offset and a gap while rows are selected', () => {
+    const style = document.head.appendChild(document.createElement('style'));
+    style.textContent = '.chamber-viewport-actionbar { position: sticky; bottom: 12px; }';
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { height: this.classList.contains('chamber-viewport-actionbar') ? 64 : 0 } as DOMRect;
+    });
+    try {
+      const { rerender } = renderBar(['11111111-2222-3333-4444-555555555555']);
+      expect(document.documentElement.style.scrollPaddingBottom).toBe('92px');
+      rerender(
+        <NextIntlClientProvider locale="en" messages={enMessages}>
+          <BulkActionBar selectedIds={[]} selectedCompanyNames={[]} totalMatching={0} onClear={vi.fn()} />
+        </NextIntlClientProvider>,
+      );
+      expect(document.documentElement.style.scrollPaddingBottom).toBe('');
+    } finally {
+      spy.mockRestore();
+      style.remove();
+    }
+  });
+});

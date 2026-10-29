@@ -87,4 +87,12 @@ describe('useActionBarClearance', () => {
     rerender({ on: true });
     expect(result.current).toBe(0);
   });
+
+  // PR M — a bar that holds a ref is measured through it: no page-wide
+  // selector, so another bar on the page is never measured instead.
+  it('measures the element a ref points at', () => {
+    const bar = mountBar('no-class-needed', 70, '12px');
+    const { result } = renderHook(() => useActionBarClearance(true, { current: bar }));
+    expect(result.current).toBe(98);
+  });
 });
