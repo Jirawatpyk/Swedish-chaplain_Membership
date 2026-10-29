@@ -18,10 +18,13 @@
  * erasure) and the existing `member_not_in_good_standing` failure token; a
  * failed erasure read is `undecided`.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
 import { readMemberSendStanding } from '@/modules/broadcasts/application/use-cases/_member-send-standing';
-import { decideDispatchStanding } from '@/modules/broadcasts/application/use-cases/_dispatch-standing-gate';
+import {
+  decideDispatchStanding,
+  deleteErasedDraftBeforeRefusal,
+} from '@/modules/broadcasts/application/use-cases/_dispatch-standing-gate';
 import { readDispatchHold } from '@/modules/broadcasts/application/use-cases/read-dispatch-hold';
 import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
 
@@ -101,5 +104,58 @@ describe('readDispatchHold — an erased member is never "held" (spec 139)', () 
       due,
     );
     expect(r).toEqual({ ok: false, error: { kind: 'server_error', errClass: 'Error' } });
+  });
+});
+
+/**
+ * Spec 139 P2 — the DELETE a dispatch leg makes before it refuses an erased
+ * member's row. Cleared only on a confirmed delete (or a 403 on an id the probe
+ * called `cancelled`, which can never be sent); anything else decides nothing.
+ */
+describe('deleteErasedDraftBeforeRefusal (spec 139 P2)', () => {
+  const ids = { tenantId: 'test-tenant', broadcastId: 'b-1', leg: 'live' as const };
+  const gw = (answer: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other' | 'throws') => ({
+    deleteBroadcastOnce: vi.fn(async () => {
+      if (answer === 'throws') throw new Error('gateway wiring fault');
+      return { kind: answer };
+    }),
+  });
+
+  it.each([
+    ['no id on the row', null],
+    ['an empty id (not an id)', { resendBroadcastId: '', probedStatus: null }],
+  ] as const)('%s → cleared (none), no Resend call', async (_label, draft) => {
+    const g = gw('deleted');
+    expect(await deleteErasedDraftBeforeRefusal(g, ids, draft)).toEqual({ kind: 'cleared', draftOutcome: 'none' });
+    expect(g.deleteBroadcastOnce).not.toHaveBeenCalled();
+  });
+
+  it.each(['deleted', 'absent'] as const)('DELETE answers %s → cleared', async (answer) => {
+    const g = gw(answer);
+    expect(await deleteErasedDraftBeforeRefusal(g, ids, { resendBroadcastId: 'rb-1', probedStatus: 'draft' })).toEqual({
+      kind: 'cleared',
+      draftOutcome: answer,
+    });
+    expect(g.deleteBroadcastOnce).toHaveBeenCalledWith('rb-1');
+  });
+
+  it('403 on an id the probe called cancelled → cleared (a cancelled broadcast can never be sent)', async () => {
+    expect(
+      await deleteErasedDraftBeforeRefusal(gw('forbidden'), ids, { resendBroadcastId: 'rb-1', probedStatus: 'cancelled' }),
+    ).toEqual({ kind: 'cleared', draftOutcome: 'cancelled' });
+  });
+
+  it.each([
+    ['403 on a draft (a restricted key)', 'forbidden', 'draft', 'forbidden'],
+    ['403 on a not_found probe', 'forbidden', null, 'forbidden'],
+    ['retryable (a timeout included)', 'retryable', 'draft', 'retryable'],
+    ['other', 'other', 'draft', 'other'],
+    ['a throw', 'throws', 'draft', 'threw'],
+  ] as const)('%s → undecided', async (_label, answer, probedStatus, errClass) => {
+    expect(await deleteErasedDraftBeforeRefusal(gw(answer), ids, { resendBroadcastId: 'rb-1', probedStatus })).toEqual({
+      kind: 'undecided',
+      message: 'member_erased_draft_not_deleted',
+      errClass,
+    });
   });
 });

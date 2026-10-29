@@ -261,23 +261,23 @@ describe('membersBridge.getMemberErasedAt (spec 139 DE1)', () => {
 
   it('an erased member → its erased_at, read through findErasedAtById with the tenant context', async () => {
     f3.findErasedAtById.mockResolvedValueOnce(ok({ erasedAt: ERASED_AT }));
-    expect(await membersBridge.getMemberErasedAt?.(tenant, 'm-1')).toEqual({ erasedAt: ERASED_AT });
+    expect(await membersBridge.getMemberErasedAt(tenant, 'm-1')).toEqual({ erasedAt: ERASED_AT });
     expect(f3.findErasedAtById).toHaveBeenCalledWith(tenant, 'm-1');
   });
 
   it('a live member → { erasedAt: null }', async () => {
     f3.findErasedAtById.mockResolvedValueOnce(ok({ erasedAt: null }));
-    expect(await membersBridge.getMemberErasedAt?.(tenant, 'm-1')).toEqual({ erasedAt: null });
+    expect(await membersBridge.getMemberErasedAt(tenant, 'm-1')).toEqual({ erasedAt: null });
   });
 
   it('repo.not_found (no such member in this tenant) → null', async () => {
     f3.findErasedAtById.mockResolvedValueOnce(err({ code: 'repo.not_found' as const }));
-    expect(await membersBridge.getMemberErasedAt?.(tenant, 'm-1')).toBeNull();
+    expect(await membersBridge.getMemberErasedAt(tenant, 'm-1')).toBeNull();
   });
 
   it('repo.unexpected THROWS — an erasure gate must never fail open', async () => {
     f3.findErasedAtById.mockResolvedValueOnce(err({ code: 'repo.unexpected' as const, cause: new Error('neon down') }));
-    await expect(Promise.resolve().then(() => membersBridge.getMemberErasedAt?.(tenant, 'm-1'))).rejects.toThrow(
+    await expect(membersBridge.getMemberErasedAt(tenant, 'm-1')).rejects.toThrow(
       /repo\.unexpected/,
     );
   });

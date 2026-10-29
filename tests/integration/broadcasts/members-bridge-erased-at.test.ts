@@ -72,8 +72,8 @@ describe('spec 139 DE6 — getMemberErasedAt is tenant-scoped (live Neon, two te
   }, 120_000);
 
   it('each tenant reads its own member truthfully', async () => {
-    expect(await membersBridge.getMemberErasedAt?.(tenantA.ctx, erasedInA)).toEqual({ erasedAt: ERASED_AT });
-    expect(await membersBridge.getMemberErasedAt?.(tenantB.ctx, liveInB)).toEqual({ erasedAt: null });
+    expect(await membersBridge.getMemberErasedAt(tenantA.ctx, erasedInA)).toEqual({ erasedAt: ERASED_AT });
+    expect(await membersBridge.getMemberErasedAt(tenantB.ctx, liveInB)).toEqual({ erasedAt: null });
   });
 
   it.each([
@@ -81,6 +81,6 @@ describe('spec 139 DE6 — getMemberErasedAt is tenant-scoped (live Neon, two te
     { reader: 'B', owner: 'A (erased)' },
   ])('tenant $reader reading tenant $owner\'s member id → null (no such member here), never its state', async ({ reader }) => {
     const [ctx, foreignId] = reader === 'A' ? [tenantA.ctx, liveInB] : [tenantB.ctx, erasedInA];
-    expect(await membersBridge.getMemberErasedAt?.(ctx, foreignId)).toBeNull();
+    expect(await membersBridge.getMemberErasedAt(ctx, foreignId)).toBeNull();
   });
 });

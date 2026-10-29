@@ -48,11 +48,7 @@ function stubFetch(respond: () => Response | Promise<Response>): void {
   );
 }
 
-/**
- * Through `?.`, so that before the method exists every case fails on its own
- * assertion rather than on a TypeError.
- */
-const deleteOnce = (id: string) => resendBroadcastsGateway.deleteBroadcastOnce?.(id);
+const deleteOnce = (id: string) => resendBroadcastsGateway.deleteBroadcastOnce(id);
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
