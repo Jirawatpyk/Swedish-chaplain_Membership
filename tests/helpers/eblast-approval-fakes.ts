@@ -774,16 +774,16 @@ export function makeFakeApprovalStore(
         return true;
       },
     ),
-    // The import leg's restart, step 1 — the CLAIM: NULL the import id, its
-    // submit stamp and the broadcast id, KEEP the audience; a CAS on what the
-    // hold read (import + broadcast id NULL-safe), `approved`, no completion.
+    // The import leg's restart, step 1 — the CLAIM: NULL the import id and its
+    // submit stamp ONLY (the broadcast id and the audience stay); a CAS on what
+    // the caller read (the broadcast id NULL-safe), `approved`, no completion.
     releaseAudienceImport: vi.fn(
       async (
         _tx: unknown,
         tenantId: TenantSlug,
         broadcastId: BroadcastId,
         expected: {
-          readonly importId: string | null;
+          readonly importId: string;
           readonly resendAudienceId: string;
           readonly resendBroadcastId: string | null;
         },
@@ -793,39 +793,38 @@ export function makeFakeApprovalStore(
         if (
           row === undefined ||
           row.status !== 'approved' ||
-          (row.audienceImportId ?? null) !== expected.importId ||
+          row.audienceImportId !== expected.importId ||
           row.resendAudienceId !== expected.resendAudienceId ||
           (row.resendBroadcastId ?? null) !== expected.resendBroadcastId ||
           row.audienceImportCompletedAt !== null
         ) {
           return false;
         }
-        state.broadcasts.set(key, {
-          ...row,
-          resendBroadcastId: null,
-          audienceImportId: null,
-          audienceImportSubmittedAt: null,
-          updatedAt: store.now,
-        });
+        state.broadcasts.set(key, { ...row, audienceImportId: null, audienceImportSubmittedAt: null, updatedAt: store.now });
         return true;
       },
     ),
-    // Step 2, after the audience delete — NULL the audience column, only while
-    // the row carries no import and no broadcast id.
+    // The last step, after both deletes — NULL the audience AND the broadcast
+    // id, only while the row carries no import and both equal what was deleted.
     releaseResendAudience: vi.fn(
-      async (_tx: unknown, tenantId: TenantSlug, broadcastId: BroadcastId, expected: string): Promise<boolean> => {
+      async (
+        _tx: unknown,
+        tenantId: TenantSlug,
+        broadcastId: BroadcastId,
+        expected: { readonly resendAudienceId: string; readonly resendBroadcastId: string | null },
+      ): Promise<boolean> => {
         const key = keyOf(tenantId as string, broadcastId);
         const row = state.broadcasts.get(key);
         if (
           row === undefined ||
           row.status !== 'approved' ||
-          row.resendAudienceId !== expected ||
+          row.resendAudienceId !== expected.resendAudienceId ||
           row.audienceImportId !== null ||
-          row.resendBroadcastId !== null
+          (row.resendBroadcastId ?? null) !== expected.resendBroadcastId
         ) {
           return false;
         }
-        state.broadcasts.set(key, { ...row, resendAudienceId: null, updatedAt: store.now });
+        state.broadcasts.set(key, { ...row, resendAudienceId: null, resendBroadcastId: null, updatedAt: store.now });
         return true;
       },
     ),

@@ -1879,6 +1879,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
     // Gateway returns audience contact count of 1 but recipient list
     // has 2 โ€” mismatch triggers drift audit.
     const gw = makeGateway({
+      retrieveStatus: 'draft', // a refused send is probed (2026-10-29): draft = genuinely refused
       throwOnSend: { kind: 'permanent', reason: 'idempotency_conflict' },
       // override kind in maybeThrow path: use real shape via plain throw
       // shape with kind:'idempotency_conflict' instead.
@@ -1958,6 +1959,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
+      retrieveStatus: 'draft', // a refused send is probed (2026-10-29): draft = genuinely refused
       throwOnSend: { kind: 'permanent', reason: 'idempotency_conflict' },
       // One page of a larger audience: fewer than the 2 we resolved, and Resend
       // said there is more it did not return.
@@ -2041,6 +2043,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
+      retrieveStatus: 'draft', // a refused send is probed (2026-10-29): draft = genuinely refused
       throwOnSend: { kind: 'permanent', reason: 'idempotency_conflict' },
       // What Resend actually answers for an audience that is gone.
       audienceContactCount: 0,
@@ -3223,6 +3226,85 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
   });
 
   /**
+   * A second `/send` of a broadcast Resend already accepted answers `422
+   * validation_error "Only draft broadcasts can be sent or scheduled"` with
+   * ANY idempotency key (MEASURED 2026-10-29: four sends, one email). The
+   * adapter reads a 422 as `permanent`, so a `withRetry` replay after a lost
+   * response went terminal for delivered mail. A non-retryable send failure
+   * is now probed: handed → it was sent; `draft` → genuinely refused;
+   * anything else → refused fail closed (non-terminal).
+   */
+  describe('a refused /send is probed before it is believed (2026-10-29)', () => {
+    async function dispatchWith(gwOpts: GatewayOpts) {
+      const audit = makeAudit();
+      const email = makeEmailTransactional();
+      const repo = makeRepo({ lockedStatus: 'approved', broadcast: makeBroadcast('approved') });
+      const gw = makeGateway({ throwOnSend: { kind: 'permanent', reason: 'Resend 422' }, ...gwOpts });
+      const result = await dispatchScheduledBroadcast(
+        {
+          tenant,
+          broadcastsRepo: repo.port,
+          audienceMode: 'primary_only' as const,
+          audienceCeiling: 5000,
+          broadcastsGateway: gw.port,
+          membersBridge: makeMembersBridge({
+            recipients: [recipient('m-r1', 'one@example.com')],
+            primaryContact: 'sender@example.com',
+          }),
+          marketingUnsubscribes: makeMarketingUnsubscribes(),
+          eventAttendees: makeEventAttendees(),
+          audit: audit.port,
+          clock,
+          fromEmail: 'noreply@test.invalid-but-test-only',
+          tenantDisplayName: 'Test Chamber',
+          locale: 'en' as const,
+          plansBridge: makePlansBridge(),
+          emailTransactional: email.port,
+          sendStanding: OK_STANDING,
+          brandChrome: NO_BRAND_CHROME,
+        },
+        baseInput,
+      );
+      return { result, repo, audit, email };
+    }
+
+    it('422 + the probe answers sent → already accepted: advances to sending, no failed_to_dispatch, nobody told', async () => {
+      const { logger } = await import('@/lib/logger');
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      const { result, repo, audit, email } = await dispatchWith({ retrieveStatus: 'sent' });
+
+      expect(result.ok ? result.value.kind : result.error).toBe('sent');
+      expect(repo.transitions.map((t) => t.status)).toEqual(['sending']);
+      expect(audit.emits.map((e) => e.eventType)).not.toContain('broadcast_failed_to_dispatch');
+      expect(email.memberCalls).toEqual([]);
+      expect(warnSpy.mock.calls.some((c) => c[1] === 'broadcasts.dispatch.send_already_accepted')).toBe(true);
+    });
+
+    it('422 + the probe answers draft → a genuine refusal: terminal, member told (unchanged)', async () => {
+      const { result, repo, email } = await dispatchWith({ retrieveStatus: 'draft' });
+
+      expect(result.ok ? null : result.error.kind).toBe('broadcast_failed_to_dispatch');
+      expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+      expect(email.memberCalls).toHaveLength(1);
+    });
+
+    it('422 + the probe throws → REFUSED (fail closed): row approved, no clock, nobody told', async () => {
+      const { result, repo, audit, email } = await dispatchWith({
+        throwOnRetrieveBroadcast: { kind: 'permanent', reason: 'probe refused' },
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        error: { kind: 'dispatch.server_error', message: 'send_refused_unverifiable', errClass: 'gate', phase: 'inherited_status' },
+      });
+      expect(repo.transitions).toEqual([]);
+      expect(repo.retryStampCalls).toEqual([]);
+      expect(audit.emits).toEqual([]);
+      expect(email.memberCalls).toEqual([]);
+    });
+  });
+
+  /**
    * (7), REFUTED in the whole-branch review of the commit that implemented it.
    * The follow-up asked for the 409 arm's audience check on the probe-positive
    * path too. But an inherited id PROVES the prior tick's push completed (write
@@ -4244,6 +4326,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
+      retrieveStatus: 'draft', // a refused send is probed (2026-10-29): draft = genuinely refused
       throwOnSend: { kind: 'permanent', reason: 'Resend 422 — invalid template' },
     });
     const email = makeEmailTransactional();
@@ -4291,6 +4374,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
+      retrieveStatus: 'draft', // a refused send is probed (2026-10-29): draft = genuinely refused
       throwOnSend: { kind: 'permanent', reason: 'Resend 422 โ€” invalid template' },
     });
     const email = makeEmailTransactional();
@@ -4349,6 +4433,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
+      retrieveStatus: 'draft', // a refused send is probed (2026-10-29): draft = genuinely refused
       throwOnSend: { kind: 'permanent', reason: 'Resend 422 โ€” invalid template' },
     });
     const email = makeEmailTransactional();
@@ -4395,6 +4480,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
+      retrieveStatus: 'draft', // a refused send is probed (2026-10-29): draft = genuinely refused
       throwOnSend: { kind: 'permanent', reason: 'Resend 422 โ€” invalid template' },
     });
     const email = makeEmailTransactional({ shouldThrow: true });
@@ -4548,6 +4634,7 @@ describe('dispatch-scheduled-broadcast โ€” Wave 6 GREEN', () => {
       broadcast: makeBroadcast('approved'),
     });
     const gw = makeGateway({
+      retrieveStatus: 'draft', // a refused send is probed (2026-10-29): draft = genuinely refused
       throwOnSend: { kind: 'permanent', reason: 'Resend 422 โ€” invalid template' },
     });
     const email = makeEmailTransactional();

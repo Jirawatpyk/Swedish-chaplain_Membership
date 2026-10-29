@@ -118,6 +118,8 @@ interface Recorder {
   readonly memberEmails: Array<{ templateKey: string; reason: unknown }>;
   readonly sends: string[];
   readonly importsSubmitted: string[];
+  /** The audience fence each `attachAudienceImport` carried. */
+  readonly importFences: Array<{ readonly expectedResendAudienceId?: string } | undefined>;
   readonly plansChecked: string[];
   /** Round 3 finding 3-6 — was the Resend id persisted, and in which tx. */
   readonly resendIdWrites: Array<{ resendBroadcastId: string; resendAudienceId?: string | null; txId?: number | undefined }>;
@@ -140,10 +142,14 @@ interface Recorder {
   readonly releases: Array<
     | {
         method: 'releaseAudienceImport';
-        expected: { importId: string | null; resendAudienceId: string; resendBroadcastId: string | null };
+        expected: { importId: string; resendAudienceId: string; resendBroadcastId: string | null };
         afterGatewayCalls: number;
       }
-    | { method: 'releaseResendAudience'; expected: string; afterGatewayCalls: number }
+    | {
+        method: 'releaseResendAudience';
+        expected: { resendAudienceId: string; resendBroadcastId: string | null };
+        afterGatewayCalls: number;
+      }
   >;
   /**
    * Every pre-send `attachBroadcastId`: the id, its tx, the import-id fence it
@@ -154,7 +160,7 @@ interface Recorder {
     resendBroadcastId: string;
     txId?: number | undefined;
     afterGatewayCalls: number;
-    fence?: { readonly expectedAudienceImportId?: string } | undefined;
+    fence?: { readonly expectedAudienceImportId?: string; readonly replacesResendBroadcastId?: string } | undefined;
   }>;
   /** Every broadcast resource the tick asked Resend to delete. */
   readonly broadcastsDeleted: string[];
@@ -313,10 +319,14 @@ function makeDeps(opts: {
   readonly probe?:
     | { readonly kind: 'present'; readonly status: string; readonly sentAt?: string | null }
     | { readonly kind: 'not_found' };
+  /** `retrieveBroadcast` itself throws (a non-retryable gateway error). */
+  readonly probeThrows?: boolean;
   /** The pre-send `attachBroadcastId` fails: a lost CAS, a vanished row, or a DB fault. */
   readonly attachBroadcastIdThrows?: 'concurrent' | 'not_found' | 'other';
-  /** After a pre-send attach DB fault: what the read-back finds (`'throws'` = it fails too). */
+  /** What a `findById` read-back finds (`'throws'` = it fails); default: the row as the writes left it. */
   readonly readBackResendBroadcastId?: string | null | 'throws';
+  /** What a `findById` read-back finds for the import id; default: the row's. */
+  readonly readBackImportId?: string | null;
 }): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder } {
   let txSeq = 0;
   const rec: Recorder = {
@@ -325,6 +335,7 @@ function makeDeps(opts: {
     memberEmails: [],
     sends: [],
     importsSubmitted: [],
+    importFences: [],
     plansChecked: [],
     resendIdWrites: [],
     completionStamps: [],
@@ -365,6 +376,8 @@ function makeDeps(opts: {
     audienceImportCompletedAt: null,
     dispatchFirstFailedAt: opts.dispatchFirstFailedAt ?? null,
   };
+  // What `resend_broadcast_id` holds now — moved by a landed `attachBroadcastId`.
+  let rowResendBroadcastId: string | null = broadcast.resendBroadcastId;
 
   function maybeThrow(m: GatewayMethod): void {
     rec.gatewayCalls.push(m);
@@ -510,9 +523,16 @@ function makeDeps(opts: {
         async attachAudienceId() {
           maybeCasThrow('attachAudienceId');
         },
-        async attachAudienceImport(_tx: unknown, _t: unknown, _b: unknown, id: string) {
+        async attachAudienceImport(
+          _tx: unknown,
+          _t: unknown,
+          _b: unknown,
+          id: string,
+          fence?: { readonly expectedResendAudienceId?: string },
+        ) {
           maybeCasThrow('attachAudienceImport');
           rec.importsSubmitted.push(id);
+          rec.importFences.push(fence);
         },
         async markAudienceImportCompleted() {
           if (opts.completionStampThrows === true) {
@@ -541,7 +561,7 @@ function makeDeps(opts: {
           _tx: unknown,
           _t: unknown,
           _b: unknown,
-          expected: { importId: string | null; resendAudienceId: string; resendBroadcastId: string | null },
+          expected: { importId: string; resendAudienceId: string; resendBroadcastId: string | null },
         ) {
           rec.releases.push({ method: 'releaseAudienceImport', expected, afterGatewayCalls: rec.gatewayCalls.length });
           if (opts.releaseImportThrows === true) {
@@ -549,7 +569,12 @@ function makeDeps(opts: {
           }
           return opts.releaseImportLoses !== true;
         },
-        async releaseResendAudience(_tx: unknown, _t: unknown, _b: unknown, expected: string) {
+        async releaseResendAudience(
+          _tx: unknown,
+          _t: unknown,
+          _b: unknown,
+          expected: { resendAudienceId: string; resendBroadcastId: string | null },
+        ) {
           rec.releases.push({ method: 'releaseResendAudience', expected, afterGatewayCalls: rec.gatewayCalls.length });
           return opts.releaseAudienceLoses !== true;
         },
@@ -558,7 +583,7 @@ function makeDeps(opts: {
           _t: unknown,
           _b: unknown,
           rbId: string,
-          fence?: { readonly expectedAudienceImportId?: string },
+          fence?: { readonly expectedAudienceImportId?: string; readonly replacesResendBroadcastId?: string },
         ) {
           rec.broadcastIdAttaches.push({
             resendBroadcastId: rbId,
@@ -575,12 +600,20 @@ function makeDeps(opts: {
           if (opts.attachBroadcastIdThrows === 'other') {
             throw new Error('57P01 terminating connection due to administrator command');
           }
+          rowResendBroadcastId = rbId;
         },
         async findById() {
           if (opts.readBackResendBroadcastId === 'throws') {
             throw new Error('57P01 terminating connection due to administrator command');
           }
-          return { ...broadcast, resendBroadcastId: opts.readBackResendBroadcastId ?? null };
+          // The row as the writes above left it, unless a case overrides what
+          // the read-back finds (a write whose ack was lost, a sibling's write).
+          return {
+            ...broadcast,
+            resendBroadcastId:
+              opts.readBackResendBroadcastId === undefined ? rowResendBroadcastId : opts.readBackResendBroadcastId,
+            audienceImportId: opts.readBackImportId === undefined ? broadcast.audienceImportId : opts.readBackImportId,
+          };
         },
         async attachResendIds(tx: unknown, _t: unknown, _b: unknown, audId: string | null, rbId: string) {
           rec.resendIdWrites.push({ resendBroadcastId: rbId, resendAudienceId: audId, txId: (tx as { txId?: number } | null)?.txId });
@@ -664,6 +697,7 @@ function makeDeps(opts: {
         },
         async retrieveBroadcast(id: string) {
           maybeThrow('retrieveBroadcast');
+          if (opts.probeThrows === true) throw gatewayThrow('permanent', 'probe refused');
           const answer = opts.probe ?? { kind: 'present' as const, status: 'draft' };
           if (answer.kind === 'not_found') return { kind: 'not_found' as const };
           return {
@@ -2416,7 +2450,7 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
         expected: { importId: 'imp-1', resendAudienceId: 'aud-1', resendBroadcastId: null },
         afterGatewayCalls: 0,
       },
-      { method: 'releaseResendAudience', expected: 'aud-1', afterGatewayCalls: 1 },
+      { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-1', resendBroadcastId: null }, afterGatewayCalls: 1 },
     ]);
     expect(abandonedSpy).toHaveBeenCalledWith('test-tenant');
     const log = infoSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.abandoned_on_hold');
@@ -2454,7 +2488,9 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
 
     expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
     expect(rec.gatewayCalls).toEqual(['deleteAudience']);
-    expect(rec.releases).toEqual([{ method: 'releaseResendAudience', expected: 'aud-1', afterGatewayCalls: 1 }]);
+    expect(rec.releases).toEqual([
+      { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-1', resendBroadcastId: null }, afterGatewayCalls: 1 },
+    ]);
     expect(abandonedSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -2515,6 +2551,25 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
     const log = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.hold_abandon_failed');
     expect(log?.[0]).toMatchObject({ err: 'Error', step: 'delete_audience', broadcastId: BROADCAST_ID, importId: 'imp-1' });
     expect(JSON.stringify(log?.[0])).not.toContain('boom');
+  });
+
+  /**
+   * What an earlier hold leaves when its broadcast delete was refused or
+   * failed after the claim: import released, the broadcast id and the
+   * audience kept. The probe said `draft` this tick, so nothing went out: a
+   * held tick redoes the deletes and releases both columns — no claim, the
+   * import is already gone.
+   */
+  it('a hold on a row with an audience and a DRAFT broadcast id but NO import → deletes both, releases both columns', async () => {
+    const { deps, rec } = makeDeps({ resendAudienceId: 'aud-1', resendBroadcastId: 'rb-0', standing: { access: 'suspended' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcast', 'deleteAudience']);
+    expect(rec.releases).toEqual([
+      { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-1', resendBroadcastId: 'rb-0' }, afterGatewayCalls: 3 },
+    ]);
   });
 
   it('a row whose send was already handed to Resend (the probe answers sent) is never abandoned', async () => {
@@ -3039,18 +3094,81 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     expect(sendStarted(rec)?.payload).toMatchObject({ handedToSendOnPriorTick: false, observedResendStatus: status });
   });
 
-  it('re-entry, the probe answers NOT FOUND → the send is attempted on the inherited id, and its 404 reaches the resource_missing arm', async () => {
+  /**
+   * A DEAD inherited id is never sent to. `not_found` means the resource is
+   * gone at Resend — a hold on an overlapping tick deleted it, or someone did
+   * by hand — so sending it can only 404. Mint a fresh one into the same
+   * audience and REPLACE the dead id by CAS (only while the row still carries
+   * the dead id and the confirmed import), then send the fresh one.
+   */
+  it('re-entry, the probe answers NOT FOUND → a FRESH resource is minted, replaces the dead id by fenced CAS, and is sent', async () => {
+    const { deps, rec } = makeDeps({ ...TICK2, resendBroadcastId: 'rb-0', probe: { kind: 'not_found' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: RECIPIENTS.length } });
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'getContactImport', 'createBroadcast', 'sendBroadcast']);
+    expect(rec.broadcastIdAttaches).toEqual([
+      {
+        resendBroadcastId: 'rb-1',
+        txId: expect.any(Number),
+        afterGatewayCalls: 3,
+        fence: { expectedAudienceImportId: 'imp-1', replacesResendBroadcastId: 'rb-0' },
+      },
+    ]);
+    expect(rec.sends).toEqual(['rb-1']);
+    expect(rec.memberEmails).toEqual([]);
+  });
+
+  it('re-entry, NOT FOUND, the replacing CAS is LOST → the fresh resource is reclaimed and nothing is sent', async () => {
     const { deps, rec } = makeDeps({
       ...TICK2,
       resendBroadcastId: 'rb-0',
       probe: { kind: 'not_found' },
-      throwOn: { method: 'sendBroadcast', kind: 'resource_missing' },
+      attachBroadcastIdThrows: 'concurrent',
     });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+    expect(rec.gatewayCalls).not.toContain('sendBroadcast');
+    // Only the resource THIS tick minted — never the dead inherited one.
+    expect(rec.broadcastsDeleted).toEqual(['rb-1']);
+    expect(rec.transitions).toEqual([]);
+  });
+
+  /**
+   * The fence's remaining double race. This tick re-asserted its id (the fence
+   * passed), then a held tick claimed the row and deleted that broadcast, all
+   * before this tick's `/send` — which 404s. The hold won: no mail went out,
+   * and the row is the hold's now. Re-read it; it no longer carries the id and
+   * import this tick sent with, so the answer is a concurrent skip — never
+   * `failed_to_dispatch`, never a member email, never a terminal write.
+   */
+  it('the send 404s AFTER a hold claimed the row (re-read: import and id gone) → a concurrent skip, nothing terminal, nobody told', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      throwOn: { method: 'sendBroadcast', kind: 'resource_missing' },
+      readBackResendBroadcastId: 'rb-0',
+      readBackImportId: null,
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+    expect(rec.transitions).toEqual([]);
+    expect(rec.audits).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
+  });
+
+  it('the send 404s and the re-read shows the row UNCHANGED → still the resource_missing arm (an admin must look)', async () => {
+    const { deps, rec } = makeDeps({ ...TICK2, resendBroadcastId: 'rb-0', throwOn: { method: 'sendBroadcast', kind: 'resource_missing' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
     expect(res.ok ? null : res.error.kind).toBe('broadcast_resend_resource_missing');
-    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'getContactImport', 'sendBroadcast']);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
     expect(rec.memberEmails).toEqual([]);
   });
 
@@ -3176,13 +3294,15 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
   });
 
   /**
-   * The inherited draft is deleted BEFORE the claim, with the row intact — not
-   * after it. A delete Resend refuses (`403` once the broadcast is `queued`,
-   * measured 2026-10-29) means a sibling already sent it: had the claim NULLed
-   * the id first, a sibling dying after `/send` would leave a row with no id,
-   * and the next tick would mint and send again.
+   * The claim clears the import columns ONLY and keeps the broadcast id: a
+   * delete Resend refuses (`403` once the broadcast is `queued`, measured
+   * 2026-10-29) means a sibling already sent it, and the id must stay on the
+   * row so the next tick's probe finds it handed and catches the row up. Had
+   * the claim NULLed it, a sibling dying after `/send` would leave a row with
+   * no id, and the next tick would mint and send again. The id goes with the
+   * audience, in the last CAS, once both are deleted.
    */
-  it('tick 2 hold with an inherited DRAFT id → deletes the broadcast, THEN claims the row, THEN deletes the audience and releases it', async () => {
+  it('tick 2 hold with an inherited DRAFT id → claims the row, THEN deletes the broadcast and the audience, THEN releases both columns', async () => {
     const { deps, rec } = makeDeps({ ...TICK2, resendBroadcastId: 'rb-0', standing: { access: 'suspended' } });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
@@ -3195,9 +3315,9 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
       {
         method: 'releaseAudienceImport',
         expected: { importId: 'imp-1', resendAudienceId: 'aud-1', resendBroadcastId: 'rb-0' },
-        afterGatewayCalls: 2,
+        afterGatewayCalls: 1,
       },
-      { method: 'releaseResendAudience', expected: 'aud-1', afterGatewayCalls: 3 },
+      { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-1', resendBroadcastId: 'rb-0' }, afterGatewayCalls: 3 },
     ]);
     expect(rec.sends).toEqual([]);
   });
@@ -3207,7 +3327,7 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     // `403 validation_error` "Only draft or scheduled broadcasts can be
     // deleted" once it is `queued` (measured 2026-10-29): it is already out.
     ['permanent (a 403: already queued)', { kind: 'permanent', code: 'validation_error' }],
-  ] as const)('tick 2 hold, the inherited broadcast delete FAILS %s → nothing claimed, the audience kept, still held', async (_label, thrown) => {
+  ] as const)('tick 2 hold, the inherited broadcast delete FAILS %s → claimed, but the broadcast id and the audience are KEPT; still held', async (_label, thrown) => {
     const { logger } = await import('@/lib/logger');
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     const { deps, rec } = makeDeps({
@@ -3221,7 +3341,9 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
 
     expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
     expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcast']);
-    expect(rec.releases).toEqual([]);
+    // The claim landed (the import is released, so no sender can pass the
+    // fence any more); the id stays for the next tick's probe.
+    expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport']);
     const log = warnSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.hold_abandon_failed');
     expect(log?.[0]).toMatchObject({ err: 'Error', step: 'delete_broadcast', resendBroadcastId: 'rb-0', errorKind: thrown.kind });
   });
@@ -3253,7 +3375,11 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
         expected: { importId: 'imp-1', resendAudienceId: 'aud-1', resendBroadcastId: null },
         afterGatewayCalls: rec.gatewayCalls.indexOf('createBroadcast') + 1,
       },
-      { method: 'releaseResendAudience', expected: 'aud-1', afterGatewayCalls: rec.gatewayCalls.indexOf('createBroadcast') + 1 },
+      {
+        method: 'releaseResendAudience',
+        expected: { resendAudienceId: 'aud-1', resendBroadcastId: null },
+        afterGatewayCalls: rec.gatewayCalls.indexOf('createBroadcast') + 1,
+      },
     ]);
     // The audience is already gone: nothing is deleted, nothing sent.
     expect(rec.gatewayCalls).not.toContain('deleteAudience');
@@ -3265,13 +3391,29 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
     expect(warnSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.audience_missing_restarted')).toBe(true);
   });
 
+  /**
+   * The import lands only on a row that still carries the audience it was
+   * imported into: a hold on an overlapping tick may have deleted and released
+   * that audience between this tick's `createContactImport` and its attach.
+   */
+  it('tick 1 attaches its import FENCED on the audience it imported into', async () => {
+    const { deps, rec } = makeDeps({ resendAudienceId: 'aud-1' });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? res.value.kind : res.error).toBe('import_submitted');
+    expect(rec.importFences).toEqual([{ expectedResendAudienceId: 'aud-1' }]);
+  });
+
   it('createContactImport answers 404 (segment not found) on tick 1 → the audience is released, nothing terminal, nobody told', async () => {
     const { deps, rec } = makeDeps({ resendAudienceId: 'aud-1', throwOn: { method: 'createContactImport', kind: 'permanent', code: 'not_found' } });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res).toEqual({ ok: true, value: { kind: 'audience_restarted' } });
-    expect(rec.releases).toEqual([{ method: 'releaseResendAudience', expected: 'aud-1', afterGatewayCalls: 1 }]);
+    expect(rec.releases).toEqual([
+      { method: 'releaseResendAudience', expected: { resendAudienceId: 'aud-1', resendBroadcastId: null }, afterGatewayCalls: 1 },
+    ]);
     expect(rec.importsSubmitted).toEqual([]);
     expect(rec.transitions).toEqual([]);
     expect(rec.memberEmails).toEqual([]);
@@ -3285,5 +3427,65 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
     expect(res.ok ? null : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'gateway_permanent' });
     expect(rec.releases).toEqual([]);
     expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+});
+
+/**
+ * A second `/send` of a broadcast Resend already accepted answers `422
+ * validation_error "Only draft broadcasts can be sent or scheduled"`, whatever
+ * the idempotency key (MEASURED 2026-10-29, live account, sink address: one
+ * email delivered of four sends). `classifyResendError` reads a 422 as
+ * `permanent`, so a within-tick `withRetry` replay after a lost response — or
+ * two overlapping senders on one inherited draft — used to go terminal for
+ * mail that went out: `failed_to_dispatch`, the member told, the slot freed.
+ * So a non-retryable send failure asks Resend what became of the broadcast.
+ */
+describe('buildAudienceTick — a refused /send is probed before it is believed', () => {
+  const TICK2 = { ...POLLING, audienceImportSubmittedAt: NOW } as const;
+  const REFUSED = { method: 'sendBroadcast', kind: 'permanent', code: 'validation_error' } as const;
+
+  it.each(['queued', 'sending', 'sent'])('422 + the probe answers %s → already accepted: advances to sending, nothing terminal, nobody told', async (status) => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const failedSpy = vi.spyOn(broadcastsMetrics, 'failedToDispatchCount');
+    const { deps, rec } = makeDeps({ ...TICK2, throwOn: REFUSED, probe: { kind: 'present', status } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'sent', resendBroadcastId: 'rb-1', recipientCount: RECIPIENTS.length } });
+    expect(rec.gatewayCalls.slice(-2)).toEqual(['sendBroadcast', 'retrieveBroadcast']);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(rec.memberEmails).toEqual([]);
+    expect(failedSpy).not.toHaveBeenCalled();
+    expect(warnSpy.mock.calls.some((c) => c[1] === 'broadcasts.audience_import.send_already_accepted')).toBe(true);
+  });
+
+  it('422 + the probe answers draft → a genuine refusal: the ordinary permanent rule (terminal, member told)', async () => {
+    const { deps, rec } = makeDeps({ ...TICK2, throwOn: REFUSED, probe: { kind: 'present', status: 'draft' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? null : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'gateway_permanent' });
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.memberEmails).toHaveLength(1);
+  });
+
+  it.each([
+    ['the probe throws', { probeThrows: true }],
+    ['the probe answers a status this build cannot read', { probe: { kind: 'present', status: 'unknown' } }],
+    ['the probe answers not found', { probe: { kind: 'not_found' } }],
+  ] as const)('422 + %s → REFUSED (fail closed): row stays approved, no clock, nobody told', async (_label, extra) => {
+    const { deps, rec } = makeDeps({ ...TICK2, throwOn: REFUSED, dispatchFirstFailedAt: new Date(NOW.getTime() - 2 * 3_600_000), ...extra });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({
+      ok: false,
+      error: { kind: 'dispatch.server_error', message: 'send_refused_unverifiable', errClass: 'gate', phase: 'inherited_status' },
+    });
+    expect(rec.transitions).toEqual([]);
+    expect(rec.audits).toEqual([]);
+    expect(rec.retryStamps).toEqual([]);
+    expect(rec.memberEmails).toEqual([]);
   });
 });

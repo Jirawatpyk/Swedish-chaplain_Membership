@@ -397,7 +397,7 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     resendBroadcastId: string,
-    fence?: { readonly expectedAudienceImportId: string },
+    fence?: { readonly expectedAudienceImportId: string; readonly replacesResendBroadcastId?: string },
   ): Promise<void>;
 
 
@@ -428,6 +428,7 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     importId: string,
+    fence?: { readonly expectedResendAudienceId: string },
   ): Promise<void>;
 
   /**
@@ -482,7 +483,7 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
     expected: {
-      readonly importId: string | null;
+      readonly importId: string;
       readonly resendAudienceId: string;
       readonly resendBroadcastId: string | null;
     },
@@ -493,7 +494,7 @@ export interface BroadcastsRepo {
     tx: unknown,
     tenantId: TenantSlug,
     broadcastId: BroadcastId,
-    expectedResendAudienceId: string,
+    expected: { readonly resendAudienceId: string; readonly resendBroadcastId: string | null },
   ): Promise<boolean>;
 
   /**
