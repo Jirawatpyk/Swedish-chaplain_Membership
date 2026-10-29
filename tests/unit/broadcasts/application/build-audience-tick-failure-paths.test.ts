@@ -1787,8 +1787,9 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
   for (const method of ['attachAudienceId', 'attachAudienceImport'] as const) {
     it(`${method} losing its compare-and-set → invalid_state_transition, no state written, nobody told`, async () => {
       const { deps, rec } = makeDeps({
-        // `attachAudienceId` only runs when there is no audience yet.
-        resendAudienceId: method === 'attachAudienceId' ? null : 'aud-existing',
+        // Tick 1 always builds a FRESH audience now (a row still carrying one is
+        // torn down first), so both attaches run on this path.
+        resendAudienceId: null,
         casThrowOn: method,
         casThrow: 'concurrent',
       });
@@ -1811,7 +1812,7 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
 
     it(`${method} finding the row GONE → broadcast_not_found, not a false failure`, async () => {
       const { deps, rec } = makeDeps({
-        resendAudienceId: method === 'attachAudienceId' ? null : 'aud-existing',
+        resendAudienceId: null,
         casThrowOn: method,
         casThrow: 'not_found',
       });
@@ -1832,7 +1833,7 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
      */
     it(`${method} throwing something that is NOT a lost race still propagates`, async () => {
       const { deps } = makeDeps({
-        resendAudienceId: method === 'attachAudienceId' ? null : 'aud-existing',
+        resendAudienceId: null,
         casThrowOn: method,
         casThrow: 'other',
       });

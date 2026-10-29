@@ -37,6 +37,7 @@ const RECIPIENTS = ['a@example.com', 'b@example.com', 'c@example.com'];
 
 interface Recorder {
   readonly createdAudiences: string[];
+  readonly deletedAudiences: string[];
   readonly importsSubmitted: Array<{ audienceId: string; emails: readonly string[] }>;
   readonly broadcastsCreated: string[];
   readonly sends: string[];
@@ -88,6 +89,7 @@ function makeDeps(opts: {
 }): { deps: DepsWithEveryPort; rec: Recorder } {
   const rec: Recorder = {
     createdAudiences: [],
+    deletedAudiences: [],
     importsSubmitted: [],
     broadcastsCreated: [],
     sends: [],
@@ -226,6 +228,9 @@ function makeDeps(opts: {
         },
       },
       broadcastsGateway: {
+        async deleteAudience(id: string) {
+          rec.deletedAudiences.push(id);
+        },
         async createAudience(name: string) {
           rec.createdAudiences.push(name);
           return { audienceId: 'aud-new' };
@@ -479,16 +484,18 @@ describe('buildAudienceTick — the two happy ticks (T087)', () => {
     expect(rec.transitions).toEqual([]);
   });
 
-  it('tick 1 REUSES an audience left by a previous attempt instead of orphaning another', async () => {
-    // Same rule dispatchScheduledBroadcast follows: a retry after a downstream
-    // failure must not leak a second audience — on Resend Free, three is the
-    // whole allowance.
+  it('tick 1 DELETES an audience left by a previous attempt instead of reusing it, and imports nothing into it', async () => {
+    // Spec 138 (code review round 4): an audience on a row with no import may
+    // hold a stale set — contacts who unsubscribed or left since — so it is
+    // never reused. It is deleted (no orphan on Resend Free's three) and the
+    // next tick builds a fresh one.
     const { deps, rec } = makeDeps({ resendAudienceId: 'aud-existing' });
 
     await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(rec.importsSubmitted[0]!.audienceId).toBe('aud-existing');
-    expect(rec.createdAudiences).not.toContain('aud-new');
+    expect(rec.deletedAudiences).toEqual(['aud-existing']);
+    expect(rec.importsSubmitted).toEqual([]);
+    expect(rec.createdAudiences).toEqual([]);
   });
 
   it('tick 2: every clause passes → stamps completion, creates the broadcast, sends', async () => {

@@ -2991,7 +2991,7 @@ export const broadcastsMetrics = {
    * `audience_import_stuck_count`, so this is what still shows a restart that
    * keeps failing (observability.md § 29.8).
    */
-  audienceImportRestartFailed(tenantId: string, why: 'hold' | 'audience_missing', step: string): void {
+  audienceImportRestartFailed(tenantId: string, why: 'hold' | 'audience_missing' | 'stale_audience', step: string): void {
     safeMetric(() => {
       counter(
         'broadcasts_audience_import_restart_failed_total',
