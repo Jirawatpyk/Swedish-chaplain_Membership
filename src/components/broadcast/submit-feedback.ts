@@ -89,6 +89,15 @@ export type SubmitBlockedHintKey =
   | 'errors.broadcast_custom_recipient_empty'
   | 'errors.broadcast_custom_recipient_too_many';
 
+/**
+ * The same reason for the phone bar beside Submit, which has one line of room
+ * and sits away from the Write tab: a tier reason is always the short form
+ * there; every other reason is the hint's own words.
+ */
+export function submitBarReasonKey(key: SubmitBlockedHintKey): SubmitBlockedHintKey {
+  return key === 'submitBlocked.tierRequired' ? 'submitBlocked.tierChooseFirst' : key;
+}
+
 export function submitBlockedHintKey(input: {
   readonly subjectEmpty: boolean;
   readonly subjectTooLong: boolean;

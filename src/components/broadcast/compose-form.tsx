@@ -46,6 +46,7 @@ import {
   recipientNoteKey,
   selfExclusionHintKey,
   submitBlockedByCount,
+  submitBarReasonKey,
   submitBlockedHintKey,
   type ComposeAudienceMode,
 } from '@/components/broadcast/submit-feedback';
@@ -653,10 +654,16 @@ export function ComposeForm({
     />
   );
   const barCount = summaryRecipientCount(recipientCount, segment.kind, customLines.length);
-  // A refused audience says so in the bar, beside the Submit it switches off
-  // (the reason itself is the count line in the Write tab).
+  // Whatever switches Submit off is said in the bar beside it, in place of the
+  // count: the Write tab's own lines are out of sight on Preview. A refused
+  // audience and an over-size body are errors (red); a missing input is muted,
+  // like the hint line above the in-form buttons.
   const barStart = countBlocked ? (
     <span className="text-sm text-[var(--aura-fg-danger)]">{t('views.blocked')}</span>
+  ) : blockedHintKey !== null ? (
+    <span className="text-sm text-[var(--aura-fg-secondary)]">{t(submitBarReasonKey(blockedHintKey))}</span>
+  ) : bodyInvalid ? (
+    <span className="text-sm text-[var(--aura-fg-danger)]">{t('errors.broadcast_body_too_large')}</span>
   ) : barCount === null ? undefined : (
     <span className="text-sm">{t('recipientCount.readyShort', { count: barCount })}</span>
   );

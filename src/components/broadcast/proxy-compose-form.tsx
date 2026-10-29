@@ -58,6 +58,7 @@ import {
   PREFERENCE_TOAST_DURATION_MS,
   proxySelfExclusionNoticeKey,
   submitBlockedByCount,
+  submitBarReasonKey,
   submitBlockedHintKey,
 } from '@/components/broadcast/submit-feedback';
 import { z } from 'zod';
@@ -375,7 +376,7 @@ export function ProxyComposeForm({
    * already has its own visible warning, so it is associated rather than
    * repeated.
    */
-  function blockedReasonText(): string | null {
+  function blockedReasonText(forBar = false): string | null {
     if (member === null) return t('memberRequiredHint');
     if (memberMissingEmail) return null;
     const key = submitBlockedHintKey({
@@ -386,7 +387,8 @@ export function ProxyComposeForm({
       customListValid,
       customLineCount: customLines.length,
     });
-    return key === null ? null : tCompose(key);
+    if (key === null) return null;
+    return tCompose(forBar ? submitBarReasonKey(key) : key);
   }
   const blockedReasonMessage = blockedReasonText();
   const submitBlockedReasonIds = [
@@ -598,10 +600,17 @@ export function ProxyComposeForm({
   );
   // The bar states the count only once a member is picked (it is theirs).
   const barCount = member === null ? null : summaryRecipientCount(recipientCount, segment.kind, customLines.length);
-  // A refused audience says so in the bar, beside the Submit it switches off
-  // (the reason itself is the count line in the card).
+  // Whatever switches Submit off is said in the bar beside it, in place of the
+  // count, as on member compose. Errors are red; a missing input is muted.
+  const barReason = blockedReasonText(true);
   const barStart = countBlocked ? (
     <span className="text-sm text-[var(--aura-fg-danger)]">{tCompose('views.blocked')}</span>
+  ) : barReason !== null ? (
+    <span className="text-sm text-[var(--aura-fg-secondary)]">{barReason}</span>
+  ) : memberMissingEmail ? (
+    <span className="text-sm text-[var(--aura-fg-danger)]">{t('missingContactEmailWarning')}</span>
+  ) : bodyInvalid ? (
+    <span className="text-sm text-[var(--aura-fg-danger)]">{tCompose('errors.broadcast_body_too_large')}</span>
   ) : barCount === null ? undefined : (
     <span className="text-sm">{tCompose('recipientCount.readyShort', { count: barCount })}</span>
   );
