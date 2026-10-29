@@ -3432,7 +3432,12 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
    * flight: a refused delete of it says nothing about a sibling. Stopping
    * there would restart-fail every tick for ever.
    */
-  it('tick 2 hold with an inherited NOT-FOUND id → no re-probe pause (only a mint decision pays it)', async () => {
+  /**
+   * A single `not_found` GET decides nothing (round 5, senior-tester F3 and the
+   * auditor): it is re-asked once after REPROBE_PAUSE_MS BEFORE the standing
+   * gate, so a hold, a refusal and a send all act on the second answer.
+   */
+  it('tick 2 hold with an inherited NOT-FOUND id → re-probed BEFORE the hold acts', async () => {
     const { deps, rec } = makeDeps({
       ...TICK2,
       resendBroadcastId: 'rb-0',
@@ -3443,8 +3448,42 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
-    expect(rec.reprobePauses).toEqual([]);
-    expect(rec.gatewayCalls.filter((c) => c === 'retrieveBroadcast')).toHaveLength(1);
+    expect(rec.reprobePauses).toEqual([REPROBE_PAUSE_MS]);
+    expect(rec.gatewayCalls.slice(0, 2)).toEqual(['retrieveBroadcast', 'retrieveBroadcast']);
+  });
+
+  it('tick 2 hold, NOT-FOUND twice, then the broadcast delete is REFUSED → contradictory evidence: STOP, the id and the audience are kept', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'not_found' },
+      standing: { access: 'suspended' },
+      // A refusal (not a 404, which the adapter swallows) proves the resource
+      // EXISTS and is not a draft — perhaps queued. Never delete its audience.
+      throwOn: { method: 'deleteBroadcast', kind: 'permanent', code: 'validation_error' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.audiencesDeleted).toEqual([]);
+    expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport']);
+  });
+
+  it('a REFUSE (ended membership) with an inherited NOT-FOUND id that the re-probe finds SENT → caught up, never failed_to_dispatch', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'not_found' },
+      probeSecond: { kind: 'present', status: 'sent', sentAt: minutesAgo(1).toISOString() },
+      standing: { access: 'terminated' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? res.value.kind : res.error).toBe('sent');
+    expect(rec.transitions.map((t) => t.status)).toEqual(['sending']);
+    expect(rec.memberEmails).toEqual([]);
   });
 
   it('tick 2 hold with an inherited CANCELLED id whose delete is REFUSED → the audience is still deleted and both columns released', async () => {
