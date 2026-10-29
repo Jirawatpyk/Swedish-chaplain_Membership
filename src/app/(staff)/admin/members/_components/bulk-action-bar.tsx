@@ -8,8 +8,9 @@
  * takes its own space at the end (no spacer). It stays mounted with nothing
  * selected — hidden, but its live region stays, so the next selection is
  * announced. Shows "N selected" + the actions + Clear. The page's scroll
- * padding tracks its height so a focused row is never hidden behind it
- * (ADOPT-01 / WCAG 2.2 SC 2.4.11).
+ * padding keeps its height, its gap above the screen edge and 16px clear, so
+ * a focused row is never hidden behind it (ADOPT-01 / WCAG 2.2 SC 2.4.11;
+ * `useActionBarScrollPadding`, PR M).
  *
  * Cap enforcement: if > 100 rows are selected, the action buttons and menu
  * items are disabled with a message instructing the admin to split the
@@ -58,8 +59,7 @@
  */
 
 import { useState, useCallback, useMemo, useRef } from 'react';
-import { useActionBarClearance } from '@/hooks/use-action-bar-clearance';
-import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ActionBar, AuraProvider, Button, DropdownMenu, IconButton, type MenuItem } from '@jirawatpyk/aura-react';
@@ -149,8 +149,7 @@ export function BulkActionBar({
   // rather than guessed: the height depends on wrapping, locale label lengths
   // and whether the over-cap warning is showing.
   const barRef = useRef<HTMLDivElement | null>(null);
-  const barClearance = useActionBarClearance(visible, barRef);
-  useFixedBarScrollPadding(visible && barClearance > 0, barClearance);
+  useActionBarScrollPadding(visible, barRef);
 
   // Undo for a bulk archive — restores exactly the ids the archive returned via
   // the `unarchive` bulk action (domain `undelete`, 90-day window). Slim by

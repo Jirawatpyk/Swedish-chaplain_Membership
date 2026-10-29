@@ -296,15 +296,20 @@ html:has([data-auth-frame]) {
 html:has(.chamber-shell) {
   scroll-padding-top: calc(var(--aura-shell-bar-height, 56px) + var(--chamber-section-tabs-height, 0px) + var(--aura-space-8));
 }
-html:has(.chamber-viewport-actionbar) {
-  scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem + env(safe-area-inset-bottom, 0px));
-}
-/* Spec 122 US12d-3 — E-Blast compose's bar stacks its count over Submit at
-   320px (~89px), so its pages keep 1rem more. The member form then sets the
-   bar's measured clearance inline on the root (PR K), so this is the value
-   before the first measure and the staff form's. */
-html:has(.chamber-compose-actionbar) {
-  scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 6.5rem + env(safe-area-inset-bottom, 0px));
+/* PR M — only while the bar is sticky: on a short screen (AURA's
+   `max-height: 30rem`: 400% zoom, a phone held sideways) AURA puts it in the
+   page flow, where it covers nothing, so no allowance is kept for it. */
+@media (min-height: 30.01rem) {
+  html:has(.chamber-viewport-actionbar) {
+    scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem + env(safe-area-inset-bottom, 0px));
+  }
+  /* Spec 122 US12d-3 — E-Blast compose's bar stacks its count over Submit at
+     320px (~89px), so its pages keep 1rem more. The member form then sets the
+     bar's measured clearance inline on the root (PR K), so this is the value
+     before the first measure and the staff form's. */
+  html:has(.chamber-compose-actionbar) {
+    scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 6.5rem + env(safe-area-inset-bottom, 0px));
+  }
 }
 /* Spec 122 follow-up (maintainer, 22 Oct) — the members and renewal pipeline
    bulk bars keep the count and the buttons on one line when they fit. The

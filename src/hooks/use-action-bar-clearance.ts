@@ -14,6 +14,7 @@
  * stylesheet's own allowance stays in charge until a measure exists.
  */
 import { useEffect, useState, type RefObject } from 'react';
+import { useFixedBarScrollPadding } from './use-fixed-bar-scroll-padding';
 
 /** Room between the bar's top and a focused field. */
 const FOCUS_GAP_PX = 16;
@@ -58,4 +59,15 @@ export function useActionBarClearance(active: boolean, target: string | RefObjec
     };
   }, [active, target]);
   return active ? clearance : 0;
+}
+
+/**
+ * The pair every viewport bar needs: measure the bar, and keep that much clear
+ * at the bottom of the root scroller while it shows. Until the first measure
+ * (or while the bar is un-stuck) nothing is set inline, so the stylesheet's
+ * allowance stays in charge.
+ */
+export function useActionBarScrollPadding(active: boolean, target: string | RefObject<HTMLElement | null>): void {
+  const clearance = useActionBarClearance(active, target);
+  useFixedBarScrollPadding(active && clearance > 0, clearance);
 }

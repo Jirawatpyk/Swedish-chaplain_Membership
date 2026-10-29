@@ -21,8 +21,7 @@
  */
 import { useTranslations } from 'next-intl';
 import { ActionBar, Button } from '@jirawatpyk/aura-react';
-import { useActionBarClearance } from '@/hooks/use-action-bar-clearance';
-import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 
 const BAR_SELECTOR = '.chamber-viewport-actionbar';
 
@@ -42,8 +41,7 @@ export function StickySaveBar({
   readonly discardDisabled?: boolean;
 }) {
   const t = useTranslations('admin.invoiceSettings');
-  const clearance = useActionBarClearance(visible, BAR_SELECTOR);
-  useFixedBarScrollPadding(visible && clearance > 0, clearance);
+  useActionBarScrollPadding(visible, BAR_SELECTOR);
   if (!visible) return null;
   return (
     <ActionBar

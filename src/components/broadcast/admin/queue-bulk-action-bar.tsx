@@ -11,10 +11,11 @@
  * bulk-action surface for the queue.
  *
  * Spec 122 US12b — an AURA `ActionBar` (sticky, in the page flow, no
- * spacer) named by `toolbarLabel`; its measured height feeds the page's
+ * spacer) named by `toolbarLabel`; its clearance (height, offset above the
+ * screen edge and a gap; `useActionBarScrollPadding`, PR M) is the page's
  * scroll padding. Originally a fixed-bottom `role="toolbar"` + spacer,
- * mirroring `admin/members/_components/bulk-action-bar.tsx` (`:138-158` the
- * spacer effect, `:377-419` the bar shell + over-cap alert) and the
+ * mirroring `admin/members/_components/bulk-action-bar.tsx` (the bar shell +
+ * over-cap alert) and the
  * renewals `pipeline-bulk-action-bar.tsx`. Plain tab order — no
  * roving-tabindex, matching both precedents exactly.
  *
@@ -114,8 +115,7 @@
  * open state, which is out of scope for this hotfix.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useActionBarClearance } from '@/hooks/use-action-bar-clearance';
-import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ActionBar, Button } from '@jirawatpyk/aura-react';
@@ -227,8 +227,7 @@ export function QueueBulkActionBar({
   // edge and 16px clear (PR M, shared with the other viewport bars).
   const visible = !readOnly && selectedIds.length > 0;
   const barRef = useRef<HTMLDivElement | null>(null);
-  const barClearance = useActionBarClearance(visible, barRef);
-  useFixedBarScrollPadding(visible && barClearance > 0, barClearance);
+  useActionBarScrollPadding(visible, barRef);
 
   // Task 5 review carry-forward (Task 4) — memoized on `selectedIds` so the
   // `totalRecipients` memo below (keyed on this array's REFERENCE) actually
