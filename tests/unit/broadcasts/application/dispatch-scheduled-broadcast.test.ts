@@ -5604,3 +5604,76 @@ describe('dispatch-scheduled-broadcast — FR-021 budget anchors on the first fa
     expect(result.error.subKind).toBe('unclassified');
   });
 });
+
+/**
+ * Spec 139 P8 / DE3b — a tick that LOSES the race to the erasure cascade is a
+ * concurrent skip, not a failure. The cascade deletes the draft at Resend and
+ * cancels the row under its lock; this tick, already past its Step-1 lock, then
+ * meets a 404 on `/send`. Before 139 that 404 took the `resource_missing` arm:
+ * `failDispatchAndAudit` lost its `approved` CAS to the cancel, logged
+ * `cleanup_failed` at ERROR and answered a `terminal_write` server error. The
+ * arm now re-reads the row first; a row that is no longer `approved` answers
+ * `broadcast_invalid_state_transition` (the cron's `concurrent_skip`) with an
+ * INFO line, and writes nothing.
+ */
+describe('spec 139 P8 — a /send 404 after the row left approved is a concurrent skip', () => {
+  const inherited = { ...makeBroadcast('approved'), resendAudienceId: 'aud-prev', resendBroadcastId: 'rb-from-previous-tick' };
+  const send404 = {
+    throwOnSend: {
+      kind: 'resource_missing' as const,
+      reason: 'Resend 404 — broadcast not found',
+      resourceType: 'broadcast' as const,
+      resourceId: 'rb-from-previous-tick',
+    },
+    retrieveStatus: 'draft' as const,
+  };
+  const depsFor = (repo: ReturnType<typeof makeRepo>, gw: ReturnType<typeof makeGateway>, audit: ReturnType<typeof makeAudit>) => ({
+    tenant,
+    broadcastsRepo: repo.port,
+    audienceMode: 'primary_only' as const,
+    audienceCeiling: 5000,
+    broadcastsGateway: gw.port,
+    membersBridge: makeMembersBridge({ recipients: [recipient('m-r1', 'one@example.com')], primaryContact: 'sender@example.com' }),
+    marketingUnsubscribes: makeMarketingUnsubscribes(),
+    eventAttendees: makeEventAttendees(),
+    audit: audit.port,
+    clock,
+    fromEmail: 'noreply@test.invalid-but-test-only',
+    tenantDisplayName: 'Test Chamber',
+    locale: 'en' as const,
+    plansBridge: makePlansBridge(),
+    emailTransactional: makeEmailTransactional().port,
+    sendStanding: OK_STANDING,
+    brandChrome: NO_BRAND_CHROME,
+  });
+
+  it('the re-read finds the row cancelled → broadcast_invalid_state_transition (cancelled), no transition, no audit, an info line', async () => {
+    const infoSpy = vi.spyOn(logger, 'info');
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: inherited,
+      findByIdReturns: { ...inherited, status: 'cancelled' },
+    });
+    const gw = makeGateway(send404);
+    const result = await dispatchScheduledBroadcast(depsFor(repo, gw, audit), baseInput);
+    expect(result).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+    expect(gw.sendCalls).toHaveLength(1);
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ broadcastId, observedStatus: 'cancelled' }),
+      'broadcasts.dispatch.send_404_row_left_approved',
+    );
+    infoSpy.mockRestore();
+  });
+
+  it('the re-read finds the row still approved → the ordinary resource_missing arm, unchanged', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: inherited, findByIdReturns: inherited });
+    const gw = makeGateway(send404);
+    const result = await dispatchScheduledBroadcast(depsFor(repo, gw, audit), baseInput);
+    expect(result.ok ? null : result.error.kind).toBe('broadcast_resend_resource_missing');
+    expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+  });
+});

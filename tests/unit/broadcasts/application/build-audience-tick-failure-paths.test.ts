@@ -3882,3 +3882,36 @@ describe('buildAudienceTick — the remaining restart / fence arms', () => {
     expect(rec.transitions).toEqual([]);
   });
 });
+
+/**
+ * Spec 139 P8 / DE3b — the import leg's `/send` 404 after the ERASURE cascade
+ * won. The cascade deletes the draft and cancels the row; it leaves the row's
+ * import and broadcast ids where they were, so `sendLostToHold` (which looks
+ * only at those ids) read the row as "as this tick left it" and took the
+ * `resource_missing` arm: `failTerminally` lost its `approved` CAS to the
+ * cancel and answered `terminal_write` — a server error. A row that is no
+ * longer `approved` is now a concurrent skip at INFO, and nothing is written.
+ */
+describe('spec 139 P8 — a /send 404 after the row left approved is a concurrent skip', () => {
+  it('the re-read finds the row cancelled (ids unchanged) → broadcast_invalid_state_transition, no transition, no audit', async () => {
+    const { logger } = await import('@/lib/logger');
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      throwOn: { method: 'sendBroadcast', kind: 'resource_missing' },
+      readBackStatus: 'cancelled',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+    expect(rec.transitions).toEqual([]);
+    expect(rec.audits.map((a) => a.eventType)).not.toContain('broadcast_resend_resource_missing');
+    expect(rec.memberEmails).toHaveLength(0);
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ broadcastId: BROADCAST_ID, observedStatus: 'cancelled' }),
+      'broadcasts.audience_import.send_lost_to_hold',
+    );
+  });
+});
