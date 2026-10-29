@@ -26,6 +26,8 @@ In build order. Each slice is the thinnest DB → use case → API → UI path t
 
 One row per Done-when line. This is the build's task list: one behaviour per row, never one row per test file.
 
+If more than one writer can touch the same row (a cron that can overlap itself, a webhook racing a user action, a hold racing a send), add a **state table** before the build: the row's states × each external answer (probe, provider status) × each decision, with the handler and one named test per cell. A cell with no test is where the next review will land (retro 2026-10-29, spec 138).
+
 | Done-when line | Test that goes red first (file, name) | Level (unit / contract / integration / e2e) |
 |---|---|---|
 | … | … | … |

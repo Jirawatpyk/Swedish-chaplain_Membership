@@ -226,6 +226,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      */
     held: 0,
     /**
+     * Import leg — the tick-1 Resend audience was gone (`404 not_found`), the
+     * row's columns were released and the next tick runs a fresh tick 1.
+     * Neither a success nor a failure: nothing sent, nothing terminal.
+     */
+    audience_restarted: 0,
+    /**
      * Round 2 R2-1/R2-44 + round 3 finding 3-13 — the row is no longer what the
      * claim query saw: a cancel landed, another worker won the transition, or an
      * row was deleted between the claim and the write. Normal, self-healing,
@@ -332,6 +338,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             if (built.value.kind === 'sent') summary.succeeded++;
             else if (built.value.kind === 'import_submitted') summary.import_submitted++;
             else if (built.value.kind === 'dispatch_held_member_suspended') summary.held++;
+            else if (built.value.kind === 'audience_restarted') summary.audience_restarted++;
             else summary.import_pending++;
             continue;
           }
@@ -606,6 +613,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     cronSpan.setAttribute('cron.import_submitted', summary.import_submitted);
     cronSpan.setAttribute('cron.import_pending', summary.import_pending);
     cronSpan.setAttribute('cron.held', summary.held);
+    cronSpan.setAttribute('cron.audience_restarted', summary.audience_restarted);
     cronSpan.setAttribute('cron.retryable', summary.retryable);
     cronSpan.setAttribute('cron.permanent_failed', summary.permanent_failed);
     cronSpan.setAttribute('cron.concurrent_skip', summary.concurrent_skip);

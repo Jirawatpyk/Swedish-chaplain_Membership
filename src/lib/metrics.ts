@@ -2931,7 +2931,8 @@ export const broadcastsMetrics = {
       | 'inherited_status'
       | 'persist_broadcast_id'
       | 'gateway'
-      | 'terminal_write',
+      | 'terminal_write'
+      | 'audience_restart',
   ): void {
     safeMetric(() => {
       counter(
@@ -2959,6 +2960,60 @@ export const broadcastsMetrics = {
       counter(
         'broadcasts_dispatch_standing_held_total',
         'Dispatch ticks that held a due E-Blast: member suspended (awaiting payment); retried every tick',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts_audience_import_abandoned_on_hold_total{tenant}` — import leg
+   * (`FEATURE_F7_IMPORT_AUDIENCE`). One per HOLD that abandoned an audience
+   * build: the row claimed, its never-handed broadcast resource and its Resend
+   * audience deleted, and those columns released, so the resumed row runs a
+   * fresh tick 1. At most once per hold (a released row has nothing left to
+   * abandon). Not a failure; the warn log
+   * `broadcasts.audience_import.hold_abandon_failed` is the one to watch
+   * (observability.md § 29.8).
+   */
+  audienceImportAbandonedOnHold(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_import_abandoned_on_hold_total',
+        'Holds that abandoned an audience build (row claimed, Resend resources deleted, columns released)',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts_audience_import_restart_failed_total{tenant,why,step}` — import
+   * leg. One per audience restart (a hold abandon or the missing-audience
+   * self-heal) that stopped at `step`; the row keeps its ids and the next tick
+   * redoes the rest. Once the import is released the row leaves
+   * `audience_import_stuck_count`, so this is what still shows a restart that
+   * keeps failing (observability.md § 29.8).
+   */
+  audienceImportRestartFailed(tenantId: string, why: 'hold' | 'audience_missing' | 'stale_audience', step: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_import_restart_failed_total',
+        'Import-leg audience restarts (hold abandon or missing-audience self-heal) that stopped at a step; the next tick redoes it',
+      ).add(1, { tenant: tenantId, why, step });
+    });
+  },
+
+  /**
+   * `broadcasts_audience_import_restarted_missing_audience_total{tenant}` —
+   * import leg. One per tick that found the tick-1 Resend audience GONE
+   * (`404 not_found` on tick 2's `createBroadcast`, measured 2026-10-29; tick 1
+   * never reuses an audience, so its `createContactImport` 404 stays permanent) and released the row's columns so the next tick runs a fresh
+   * tick 1 instead of failing the broadcast. Expected only after a hold on an
+   * overlapping tick or a manual delete; a steady rate means something else is
+   * deleting audiences (observability.md § 29.8).
+   */
+  audienceImportRestartedOnMissingAudience(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_audience_import_restarted_missing_audience_total',
+        'Import-leg ticks that found the Resend audience gone and restarted the build',
       ).add(1, { tenant: tenantId });
     });
   },

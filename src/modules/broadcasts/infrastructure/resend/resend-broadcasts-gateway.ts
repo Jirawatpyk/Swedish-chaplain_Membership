@@ -383,14 +383,20 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
         // Body `{}` matches what the helper sends: `{scheduled_at: undefined}`
         // serialises to `{}`.
         //
-        // What this closes: a `withRetry` replay INSIDE one tick — a lost
-        // response or a 5xx after Resend already accepted the send no longer
-        // re-fires the broadcast.
+        // What a replay meets: MEASURED 2026-10-29, the key changes nothing —
+        // a `withRetry` replay INSIDE one tick (a lost response, or a 5xx after
+        // Resend already accepted the send) is answered `422 validation_error
+        // "Only draft broadcasts can be sent or scheduled"` whatever the key,
+        // and Resend delivers once. That 422 is classified `permanent` below;
+        // both dispatch legs probe it (`_probe-refused-send.ts`) rather than
+        // record a failure for mail that went out.
         //
-        // What it does NOT close (S8, a flag-flip blocker, see
-        // `build-audience-tick.ts`): `createBroadcast` carries no key at all, so
-        // a re-entered tick mints a NEW broadcast resource and sends to a
-        // different path, where no key can help.
+        // What it does NOT close: `createBroadcast` carries no key at all, so
+        // a re-entered tick that minted again would send a NEW resource, where
+        // no key can help. Neither leg relies on the key for that: both persist
+        // the minted id BEFORE this call (`attachBroadcastId`) and a re-entered
+        // tick probes it (`retrieveBroadcast`) and reuses it — S8, closed on
+        // the import leg in `build-audience-tick.ts`.
         const result = (await sdk.post(`/broadcasts/${broadcastId}/send`, {}, {
           idempotencyKey,
         })) as ResendSdkResponse<{ id: string }>;
@@ -965,6 +971,12 @@ function normaliseStatus(
       //
       // `'draft'` is the standing proof that this arm catches LIVE values, not
       // hypothetical future ones: it fell through here until 2026-09-10.
+      //
+      // `failed` and `scheduled` land here on purpose (both real — MEASURED
+      // 2026-10-29: a `queued` broadcast whose audience is deleted turns
+      // `failed`, no mail). Both dispatch legs refuse an `unknown` probe
+      // (fail closed); see `RetrievedBroadcastResource['status']` for why
+      // they are not mapped, and the dispatch legs for the recovery.
       logger.error(
         { rawStatus: raw },
         'resend.broadcasts.unknown_status',

@@ -17,10 +17,11 @@
  *     the duplicate is collapsed".** MEASURED 2026-09-09 against the live
  *     account: two identical `POST /broadcasts` calls carrying the SAME
  *     `Idempotency-Key` created TWO resources. The header is inert on that
- *     endpoint. `/broadcasts/{id}/send` cannot be probed without sending real
- *     mail, so its behaviour is unmeasured — and assuming a provider honours the
- *     header on one endpoint of an API surface where it ignores it on another is
- *     a guess, not a safety property.
+ *     endpoint. `/broadcasts/{id}/send` was measured later (2026-10-29, sink
+ *     address only): a second send of a non-draft broadcast answers 422
+ *     "Only draft broadcasts can be sent or scheduled", whatever the key — so
+ *     Resend refuses the duplicate, and a refused send is probed before it is
+ *     believed (`_probe-refused-send.ts`).
  *   - `idempotency_conflict` → success-replay; advance to 'sending'
  *     (Resend already accepted this broadcast on a prior attempt)
  *   - `resource_missing` (404) → emit `broadcast_resend_resource_missing`
@@ -42,6 +43,7 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { Broadcast, BroadcastId } from '../../domain/broadcast';
 import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
+import { AuditPortInvariantError } from '../ports/audit-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
@@ -56,7 +58,6 @@ import {
 import type {
   BroadcastsGatewayPort,
   AudienceContact,
-  GatewayRetryableSubKind,
   RetrievedBroadcastResource,
   RetrieveBroadcastOutcome,
 } from '../ports/broadcasts-gateway-port';
@@ -66,7 +67,7 @@ import type { MarketingUnsubscribesRepo } from '../ports/marketing-unsubscribes-
 import type { EventAttendeesRepository } from '../ports/event-attendees-repository';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
-import { classifyThrown } from './_classify-thrown';
+import { classifyThrown, retryableSubKind, type RetryableSubKind } from './_classify-thrown';
 import { emitExpiredPlanAuditIfApplicable } from './_expired-plan-audit';
 import { enqueueDispatchFailureNotification } from './_enqueue-dispatch-failure-notification';
 import {
@@ -90,23 +91,8 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 // WE attempt and Resend rejects; a paused cron, a hold or the read-only freeze
 // never spends it, because nothing failed.
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
-
-/**
- * The transport class a retryable gateway throw carried, or `unclassified`
- * when it carried none this build knows. Round 4 F8 removed the `?? 'api'`
- * default from `build-audience-tick.ts`; this leg kept it until F119 PR-E's
- * whole-branch review. `dispatch_budget_exhausted` pages on-call, so a fault
- * nobody classified must not arrive labelled as a real transport class — and
- * the old `as … ?? 'api'` cast also let a FIFTH string through to the metric
- * raw. Narrowed against the same four literals as `viaGateway` there.
- */
-type RetryableSubKind = GatewayRetryableSubKind | 'unclassified';
-
-function retryableSubKind(sub: string | undefined): RetryableSubKind {
-  return sub === 'network' || sub === 'timeout' || sub === 'server_5xx' || sub === 'api'
-    ? sub
-    : 'unclassified';
-}
+import { probeRefusedSend } from './_probe-refused-send';
+import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
 
 export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
@@ -602,10 +588,33 @@ export async function dispatchScheduledBroadcast(
         );
         return err({ kind: 'gateway_retryable', subKind, reason: shape.reason ?? 'retryable' });
       }
-      // Every other class follows the rules of every other gateway throw. This
-      // is not the Step-3 try, so it cannot borrow that catch; it borrows the
-      // function the catch calls.
-      return await settleGatewayThrow(deps, input, broadcast, now, e, shape);
+      // 2026-10-29 (reliability M2 / code review #4) — every OTHER class is
+      // refused too, FAIL CLOSED, exactly as the `unknown`-status arm below. It
+      // used to take `settleGatewayThrow`'s permanent arm: `failed_to_dispatch`,
+      // the member emailed that it did not go out, the quota slot released —
+      // when an unanswered probe (a 4xx other than 404 — the adapter answers a
+      // 404 as `not_found` — a 409, a throw with no `kind`) cannot say whether
+      // this inherited resource was already handed to `/send`. Non-terminal,
+      // no FR-021 clock; the route's `inherited_status` counter alarms. A
+      // wiring bug (`AuditPortInvariantError`) still throws.
+      if (e instanceof AuditPortInvariantError) throw e;
+      logger.error(
+        {
+          tenantId: deps.tenant.slug,
+          broadcastId: input.broadcastId as string,
+          resendBroadcastId,
+          // The classifier's kind — a closed set — never the provider's text.
+          errorKind: shape.kind,
+          severity: 'critical',
+        },
+        'broadcasts.dispatch.inherited_probe_refused',
+      );
+      return err({
+        kind: 'dispatch.server_error',
+        message: 'inherited_probe_failed',
+        errClass: shape.kind,
+        phase: 'inherited_status',
+      });
     }
     if (probe.kind === 'present') {
       observedResendStatus = probe.resource.status;
@@ -657,6 +666,17 @@ export async function dispatchScheduledBroadcast(
         //
         // Still the right trade: a stuck broadcast is recoverable by a human; a
         // duplicate send to 150 real members is not.
+        //
+        // `failed` and `scheduled` land here too, on purpose (2026-10-29). Both
+        // are real Resend statuses that `normaliseStatus` maps to `unknown`.
+        // MEASURED 2026-10-29: deleting the audience of a `queued` broadcast
+        // turns it `failed` within 5 s with `sent_at` null and no mail; this
+        // leg never deletes an `approved` row's audience, so a `failed` here
+        // means someone did by hand. Recovery is the one above: delete the
+        // resource at Resend (or re-create the E-Blast) — DELETE on `failed`
+        // is UNMEASURED. They are not mapped because the status union is read
+        // by `reconcile-stuck-sending` too, and widening a live union for a
+        // state this leg cannot produce is not the minimal change.
         logger.error(
           {
             tenantId: deps.tenant.slug,
@@ -1113,163 +1133,20 @@ export async function dispatchScheduledBroadcast(
       // — the WINNER is sending into it — and the arm deleted it, at INFO, under
       // a bucket the cron calls benign. Handling it here restores that premise
       // instead of patching around it.
-      try {
-        await deps.broadcastsRepo.withTx(async (tx) => {
-          await deps.broadcastsRepo.attachBroadcastId(
-            tx,
-            deps.tenant.slug,
-            input.broadcastId,
-            resendBroadcastId,
-          );
-        });
-      } catch (persistErr) {
-        if (persistErr instanceof BroadcastConcurrentMutationError) {
-          // A sibling tick attached first — or (F119 T166 R-H1) the row left
-          // `approved` since Step 1: the member withdrew their approval, the
-          // schedule was cancelled, a new working copy was opened, or an admin
-          // cancelled. Either way this tick must not send. We touch nothing of
-          // a sibling's — and reclaim the resource we just minted, which
-          // nothing else references: the CAS refused OUR id, so ours is
-          // orphaned by construction.
-          // (2026-09-10 follow-up 2: this used to log "we leak … because the
-          // gateway has no deleteBroadcast" at critical, every tick.)
-          await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
-            why: 'attach_lost',
-            observedStatus: persistErr.observedStatus,
-          });
-          return err({
-            kind: 'broadcast_invalid_state_transition',
-            observedStatus: persistErr.observedStatus,
-          });
-        }
-        // The row vanishing under us is NOT a fault. Every other sink in this
-        // module calls it `broadcast_not_found` and buckets it `concurrent_skip`
-        // at warn — the cron's own comment says "normal, self-healing, and NOT a
-        // failure of any kind".
-        //
-        // This comment used to justify the arm with "an erasure cascade can remove
-        // the row". It cannot: the cascade calls
-        // `cancelInFlightBroadcastsForMember` — cancel, not delete. The only
-        // DELETEs on `broadcasts` are the member draft route and the prune cron
-        // (both `status = 'draft'`, and this row is `approved`), and
-        // `scripts/reset-broadcast-quota.ts`, which skips rows whose audience is
-        // still live — and a row in THIS window is `approved` with a live
-        // audience, so that script cannot reach it either.
-        //
-        // So: **no code path in `src/` produces this today.** The arm is pure
-        // defence-in-depth, kept because routing a vanished row into the DB-fault
-        // arm would page at critical for something that can never be retried. The
-        // previous wording named that script as the reachable path, in the same
-        // sentence that said the script skips this row — a correction that
-        // refuted itself. The port docblock promises this class;
-        // routing it into the DB-fault arm below would page an operator at
-        // critical for a row that can never be retried.
-        if (persistErr instanceof BroadcastNotFoundError) {
-          // The row is gone, so nothing will ever reference the resource we
-          // minted seconds ago: reclaim it. Same call, same grading, as the CAS
-          // sibling above (2026-09-10 follow-up 6 — the two arms used to grade the
-          // same leak critical and warn respectively).
-          await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
-            why: 'row_vanished',
-          });
-          return err({
-            kind: 'broadcast_not_found',
-            broadcastId: input.broadcastId as string,
-          });
-        }
-        // Anything else is a DB fault — a Neon blip, a pooler drop, a timeout.
-        // **No mail has gone out yet.** Falling through to the gateway classifier
-        // made this `unknown` → non-retryable BY DESIGN → the permanent arm: the
-        // row went terminal, a raw driver message landed in an append-only audit
-        // row, and the member was emailed that their broadcast had FAILED. Before
-        // the send the safe direction is the opposite one — stay `approved` and
-        // let the next tick retry, which is the whole reason this write exists.
-        //
-        // `dispatch.server_error`, not `gateway_retryable`: the route logs
-        // `subKind` as a class of the RESEND transport (`network`/`timeout`/
-        // `server_5xx`/`api`), and none of those four is honest about Neon. This
-        // kind carries `errClass` instead and the route already buckets it
-        // `retryable` with its own counter.
-        //
-        // **NOT bounded by FR-021, on purpose.** A DB fault is not budgeted on
-        // either leg: round 4 F3 removed exactly that, because a budget measured
-        // from `scheduled_for` killed a row already an hour late on its FIRST
-        // blip. What made unbounded retry costly HERE was that each tick minted
-        // a fresh Resend resource and leaked it — the port had no
-        // `deleteBroadcast`. It does now (2026-09-10 follow-up 2), so the
-        // retry is bounded by `dispatch_resolve_failed.total{phase=
-        // "persist_broadcast_id"}` alarming, not by a clock.
-        //
-        // **The reclaim reads the row back FIRST.** This throw cannot say whether
-        // the write landed: a commit whose acknowledgement was lost on the pooler
-        // surfaces exactly like one that never reached the server. If the row
-        // now carries our id, deleting the resource would destroy the id the
-        // next tick inherits — it would probe `not_found`, send, 404, and fail
-        // the broadcast terminally for an admin to look at. So: id landed → keep
-        // it (the next tick inherits and sends); id absent → reclaim; read-back
-        // itself failed → keep it, because a junk draft in the dashboard is the
-        // cheaper wrong.
-        const persistFailureReason =
-          (persistErr as { code?: string } | null)?.code === '23505'
-            ? // Needs Resend to reissue an id, so it is the least likely member of
-              // this class — but the one an operator cannot otherwise name.
-              'duplicate_resend_broadcast_id'
-            : 'attach_broadcast_id_failed';
-        logger.error(
-          {
-            tenantId: deps.tenant.slug,
-            broadcastId: input.broadcastId as string,
-            resendBroadcastId,
-            err: errKind(persistErr),
-            // NOT `reason` — that key is in `REDACT_PATHS`, so this line printed
-            // `reason:"[REDACTED]"` and the token added specifically so an
-            // operator could name a 23505 reached no one. `logger.ts` prescribes
-            // exactly this: rename a safe operational field to a non-`reason` key.
-            // Proven by running the suite, not by reading the redact list.
-            persistFailureKind: persistFailureReason,
-            severity: 'critical',
-          },
-          'broadcasts.dispatch.attach_broadcast_id_failed',
-        );
-        let idLanded: boolean | null = null;
-        try {
-          const readBack = await deps.broadcastsRepo.findById(
-            deps.tenant.slug,
-            input.broadcastId,
-          );
-          idLanded = readBack?.resendBroadcastId === resendBroadcastId;
-        } catch (readErr) {
-          logger.warn(
-            {
-              err: errKind(readErr),
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              resendBroadcastId,
-            },
-            'broadcasts.dispatch.persist_read_back_failed_resource_kept',
-          );
-        }
-        if (idLanded === false) {
-          await reclaimMintedBroadcast(deps, input, resendBroadcastId, resendAudienceId, {
-            why: 'persist_failed',
-          });
-        } else if (idLanded === true) {
-          logger.warn(
-            {
-              tenantId: deps.tenant.slug,
-              broadcastId: input.broadcastId as string,
-              resendBroadcastId,
-            },
-            'broadcasts.dispatch.persist_ack_lost_id_kept',
-          );
-        }
-        return err({
-          kind: 'dispatch.server_error',
-          message: persistFailureReason,
-          errClass: errKind(persistErr),
-          phase: 'persist_broadcast_id',
-        });
-      }
+      //
+      // The write and its three refusal arms (a lost CAS, a vanished row, a DB
+      // fault with the read-back) live in `_persist-minted-broadcast-id.ts`,
+      // shared with the import leg since code review #8 (2026-10-29). This
+      // leg's behaviour, log names (`broadcasts.dispatch.*`), log fields and
+      // returned error shapes are unchanged; no fence (that is the import
+      // leg's).
+      const persistRefused = await persistBroadcastIdBeforeSend(deps, input, {
+        resendBroadcastId,
+        resendAudienceId,
+        minted: true,
+        logPrefix: 'broadcasts.dispatch',
+      });
+      if (persistRefused !== null) return err(persistRefused);
     }
 
     if (!alreadyHandedToSend) {
@@ -1392,6 +1269,31 @@ export async function dispatchScheduledBroadcast(
         resolved.estimatedCount,
       );
     } else {
+      // 2026-10-29 — a `/send` refused NON-retryably is probed before it is
+      // believed. MEASURED that day: a second `/send` of an accepted
+      // broadcast answers `422 validation_error` whatever the key (never the
+      // 409 the arm above waits for) and Resend delivers once — so a
+      // `withRetry` replay after a lost response went terminal here for mail
+      // that was out. `sendAttempted` makes the throw the send's own (it is
+      // the last call in the try). Handed → fall through to Step 4 like the
+      // replay; `draft` → the permanent handling below, unchanged; anything
+      // else → refused non-terminally (fail closed).
+      const refusedSend =
+        sendAttempted && (shape.kind === 'permanent' || shape.kind === 'unknown')
+          ? await probeRefusedSend(
+              deps.broadcastsGateway,
+              { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, resendBroadcastId },
+              'broadcasts.dispatch',
+            )
+          : null;
+      if (refusedSend?.kind === 'unverifiable') {
+        return err({
+          kind: 'dispatch.server_error',
+          message: 'send_refused_unverifiable',
+          errClass: 'gate',
+          phase: 'inherited_status',
+        });
+      }
       if (shape.kind === 'idempotency_conflict') {
         logger.error(
           {
@@ -1433,7 +1335,8 @@ export async function dispatchScheduledBroadcast(
           );
         }
       }
-      return await settleGatewayThrow(deps, input, broadcast, now, e, shape);
+      if (refusedSend?.kind !== 'accepted') return await settleGatewayThrow(deps, input, broadcast, now, e, shape);
+      observedResendStatus = refusedSend.status;
     }
   }
 
@@ -1739,10 +1642,10 @@ async function advanceToSending(ctx: {
     // **Round 4 F4 — this said "(Resend dedupes -> safe replay)" and that is not
     // a property we have.** MEASURED 2026-09-09 on the live account: two
     // IDENTICAL `POST /broadcasts` calls with the same `Idempotency-Key`
-    // returned two different ids. The header is inert there. The send endpoint
-    // could not be probed without sending real mail, so it is unmeasured —
-    // which is the point: "safe replay" was resting on an assumption nobody had
-    // checked, and the half that WAS checkable came back negative.
+    // returned two different ids. The header is inert there. The send endpoint,
+    // measured 2026-10-29, answers a second send 422 (never 409) whatever the
+    // key — "safe replay" rests on that refusal plus the probe of a refused
+    // send (`_probe-refused-send.ts`), not on the header.
     //
     // Worse for this particular path: the retry does not even reuse the same
     // resource. `resend_broadcast_id` was never persisted (that write is what
@@ -2260,57 +2163,6 @@ async function verifyAudienceOnReplay(
         actualRecipientCount: actualCount,
       },
       'broadcasts.dispatch.idempotency_replay',
-    );
-  }
-}
-
-/**
- * 2026-09-10 follow-ups (2) + (6). Reclaim a broadcast resource THIS TICK minted
- * and cannot keep. Best-effort, and the grade is decided by whether the reclaim
- * worked — on every arm alike: reclaimed → info; reclaim failed → error at
- * critical, because that is the one an operator has to act on (the resource
- * exists at Resend, no row references it, and no cron will find it —
- * `cleanup-orphaned-audiences` deletes audiences, not broadcasts).
- *
- * The tick's outcome is decided BEFORE this runs; nothing here changes the
- * return. And per the port docblock: never on an id read from the row.
- */
-async function reclaimMintedBroadcast(
-  deps: DispatchScheduledBroadcastDeps,
-  input: DispatchScheduledBroadcastInput,
-  resendBroadcastId: string,
-  resendAudienceId: string,
-  ctx: {
-    readonly why: 'attach_lost' | 'row_vanished' | 'persist_failed';
-    readonly observedStatus?: string;
-  },
-): Promise<void> {
-  try {
-    await deps.broadcastsGateway.deleteBroadcast(resendBroadcastId);
-    logger.info(
-      {
-        tenantId: deps.tenant.slug,
-        broadcastId: input.broadcastId as string,
-        resendBroadcastId,
-        resendAudienceId,
-        why: ctx.why,
-        ...(ctx.observedStatus === undefined ? {} : { observedStatus: ctx.observedStatus }),
-      },
-      'broadcasts.dispatch.minted_broadcast_reclaimed',
-    );
-  } catch (reclaimErr) {
-    logger.error(
-      {
-        err: errKind(reclaimErr),
-        tenantId: deps.tenant.slug,
-        broadcastId: input.broadcastId as string,
-        leakedResendBroadcastId: resendBroadcastId,
-        resendAudienceId,
-        why: ctx.why,
-        ...(ctx.observedStatus === undefined ? {} : { observedStatus: ctx.observedStatus }),
-        severity: 'critical',
-      },
-      'broadcasts.dispatch.minted_broadcast_leaked',
     );
   }
 }

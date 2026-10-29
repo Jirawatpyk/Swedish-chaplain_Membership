@@ -93,6 +93,30 @@ describe('resendBroadcastsGateway.createBroadcast — Resend contract', () => {
   });
 });
 
+/**
+ * `POST /broadcasts` on a DELETED audience answers `404 {name:"not_found",
+ * message:"Audience not found"}` (MEASURED 2026-10-29). Pinned UNCHANGED for
+ * the live legacy leg: with no resource id passed, a 404 classifies
+ * `permanent` with `code: 'not_found'` — never `resource_missing`. The import
+ * leg (opt-in, at its own call site) reads exactly this shape as "the audience
+ * is gone" and restarts the build; the legacy leg keeps its permanent arm.
+ */
+describe('resendBroadcastsGateway.createBroadcast — a 404 on a deleted audience', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('is permanent with code not_found and no resource id (the legacy classification, unchanged)', async () => {
+    vi.spyOn(fake.client.broadcasts, 'create').mockResolvedValue({
+      data: null,
+      error: { statusCode: 404, message: 'Audience not found', name: 'not_found' },
+    } as Awaited<ReturnType<typeof fake.client.broadcasts.create>>);
+
+    const thrown = await resendBroadcastsGateway.createBroadcast(input({})).catch((e: unknown) => e);
+
+    expect(thrown).toMatchObject({ kind: 'permanent', code: 'not_found' });
+    expect((thrown as { resourceId?: unknown }).resourceId).toBeUndefined();
+  });
+});
+
 describe('resendBroadcastsGateway.addContactsToAudience — 429 rate-limit handling (BUG-028)', () => {
   beforeEach(() => vi.clearAllMocks());
   afterEach(() => {

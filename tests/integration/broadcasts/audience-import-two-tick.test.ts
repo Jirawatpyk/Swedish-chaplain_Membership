@@ -55,13 +55,17 @@ interface FakeGateway {
   readonly port: unknown;
 }
 
-function makeFakeGateway(counts: {
-  total: number;
-  created: number;
-  updated: number;
-  skipped: number;
-  failed: number;
-}): FakeGateway {
+function makeFakeGateway(
+  counts: {
+    total: number;
+    created: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+  },
+  /** What the inherited-id probe answers for a row that already carries `resend_broadcast_id`. */
+  probeStatus: 'draft' | 'queued' | 'sending' | 'sent' = 'draft',
+): FakeGateway {
   const calls: string[] = [];
   const imports: Array<{ audienceId: string; emails: readonly string[] }> = [];
   const sends: string[] = [];
@@ -114,6 +118,10 @@ function makeFakeGateway(counts: {
       async sendBroadcast(id: string) {
         calls.push('sendBroadcast');
         sends.push(id);
+      },
+      async retrieveBroadcast(id: string) {
+        calls.push('retrieveBroadcast');
+        return { kind: 'present', resource: { id, status: probeStatus, sentAt: null } };
       },
     },
   };
@@ -177,6 +185,39 @@ async function seedApproved(): Promise<string> {
         'admin_proxy', 'T087 two-tick', '<p>x</p>', '<p>x</p>',
         'T087 Test', 'noreply@swecham.example', 'all_members', NULL,
         NULL, ${RECIPIENTS.length}, now(), now(), now()
+      )
+    `);
+  });
+  return broadcastId;
+}
+
+/**
+ * A row an earlier tick took all the way to the send: the import was submitted
+ * and its broadcast resource persisted BEFORE the send (the pre-send attach),
+ * then the tick died before the status flip — `approved`, both ids on the row.
+ */
+async function seedHandedToSend(resendBroadcastId: string): Promise<string> {
+  const broadcastId = randomUUID();
+  CREATED.push(broadcastId);
+  await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
+    await tx.execute(sql`
+      INSERT INTO broadcasts (
+        tenant_id, broadcast_id, status, requested_by_member_id,
+        requested_by_member_plan_id_snapshot, submitted_by_user_id,
+        actor_role, subject, body_html, body_source, from_name,
+        reply_to_email, segment_type, segment_params,
+        custom_recipient_emails, estimated_recipient_count,
+        submitted_at, approved_at, scheduled_for,
+        resend_audience_id, resend_broadcast_id,
+        audience_import_id, audience_import_submitted_at
+      ) VALUES (
+        ${TEST_TENANT}, ${broadcastId}::uuid, 'approved',
+        ${randomUUID()}::uuid, ${randomUUID()}::uuid, ${randomUUID()}::uuid,
+        'admin_proxy', 'T087 re-entry', '<p>x</p>', '<p>x</p>',
+        'T087 Test', 'noreply@swecham.example', 'all_members', NULL,
+        NULL, ${RECIPIENTS.length}, now(), now(), now(),
+        ${`aud-reentry-${randomUUID()}`}, ${resendBroadcastId},
+        ${`imp-reentry-${randomUUID()}`}, now() - interval '10 minutes'
       )
     `);
   });
@@ -305,6 +346,30 @@ describe.runIf(RUN_INTEGRATION)('T087 — two-tick import build (live Neon)', ()
     expect(row.status).toBe('failed_to_dispatch');
     expect(row.completed).toBe(false);
   }, 60_000);
+
+  /**
+   * S8, the double-send window, on live Neon. A tick that re-enters a row whose
+   * send an earlier tick handed to Resend must not send again: the probe
+   * answers `sent`, so the tick skips the poll, the mint and the send and only
+   * catches the row up — `sending`, the import stamped consumed.
+   */
+  it('a tick re-entering a row whose send was already handed to Resend (probe: sent) sends NOTHING and advances the row to sending', async () => {
+    const resendBroadcastId = `rb-live-${randomUUID()}`;
+    const raw = await seedHandedToSend(resendBroadcastId);
+    const gw = makeFakeGateway(
+      { total: RECIPIENTS.length, created: RECIPIENTS.length, updated: 0, skipped: 0, failed: 0 },
+      'sent',
+    );
+
+    const res = await buildAudienceTick(makeDeps(gw) as never, { broadcastId: asBroadcastId(raw) });
+
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'sent', resendBroadcastId });
+    expect(gw.calls).toEqual(['retrieveBroadcast']);
+    expect(gw.sends).toEqual([]);
+    const row = await readRow(raw);
+    expect(row.status).toBe('sending');
+    expect(row.completed).toBe(true);
+  });
 
   /**
    * S25 — the successor to `audience-cross-member-isolation.test.ts`, deleted in

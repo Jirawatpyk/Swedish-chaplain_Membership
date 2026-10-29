@@ -176,6 +176,22 @@ describe('createContactImport — the multipart contract (T086)', () => {
     expect(captured).toHaveLength(1);
   });
 
+  /**
+   * `POST /contacts/imports` into a DELETED audience answers `404
+   * {name:"not_found", message:"Segment not found"}` (MEASURED 2026-10-29).
+   * The import leg reads `permanent` + `code: 'not_found'` as "the audience is
+   * gone" and restarts the build; pinned so a classifier change cannot quietly
+   * turn that self-heal back into a terminal failure.
+   */
+  it('a 404 "Segment not found" (a deleted audience) is permanent with code not_found, one attempt', async () => {
+    stubFetch(() => jsonResponse(404, { statusCode: 404, name: 'not_found', message: 'Segment not found' }));
+
+    await expect(
+      resendBroadcastsGateway.createContactImport(AUDIENCE_ID, ['a@example.com']),
+    ).rejects.toMatchObject({ kind: 'permanent', code: 'not_found' });
+    expect(captured).toHaveLength(1);
+  });
+
   it('a 429 is RETRYABLE — the next attempt succeeds and the import is NOT resubmitted twice on success', async () => {
     // Deliberately "429 then 201" rather than "429 forever": exhausting the
     // 1/2/4/8/16 s schedule costs 31 real seconds, and the exhaustion path is

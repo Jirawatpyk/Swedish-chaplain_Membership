@@ -13,6 +13,7 @@
  * Two paths that classify differently are two paths an operator has to learn;
  * one shared reader is the point of this file.
  */
+import type { GatewayRetryableSubKind } from '../ports/broadcasts-gateway-port';
 
 export type GatewayThrownShape = {
   kind?: string;
@@ -63,4 +64,22 @@ export function classifyThrown(
  */
 export function isRetryableThrow(kind: string): boolean {
   return kind === 'retryable';
+}
+
+/**
+ * The transport class a retryable gateway throw carried, or `unclassified`
+ * when it carried none this build knows. Round 4 F8 removed the `?? 'api'`
+ * default from `build-audience-tick.ts`; the legacy leg kept it until F119
+ * PR-E's whole-branch review. `dispatch_budget_exhausted` pages on-call, so a
+ * fault nobody classified must not arrive labelled as a real transport class —
+ * and the old `as … ?? 'api'` cast also let a FIFTH string through to the
+ * metric raw. Narrowed against the same four literals as `viaGateway` in
+ * `build-audience-tick.ts` (which falls back to `undefined`, not this).
+ */
+export type RetryableSubKind = GatewayRetryableSubKind | 'unclassified';
+
+export function retryableSubKind(sub: string | undefined): RetryableSubKind {
+  return sub === 'network' || sub === 'timeout' || sub === 'server_5xx' || sub === 'api'
+    ? sub
+    : 'unclassified';
 }
