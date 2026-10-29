@@ -94,13 +94,28 @@ export type SubmitBlockedHintKey =
  * reason is in the form, so only a refused audience is said there (as before).
  * On Preview the Write tab's lines are out of sight (the maintainer, 29 Oct
  * 2026), so the bar names the first thing to fix in the form's reading order:
- * the form's reason (tier in its short form), then the audience, then the
- * over-size body. A missing input is muted, like the hint line; a broken one
+ * the form's reason (subject and tier in a short form), then the audience,
+ * then the over-size body. Each reason names the Write field that fixes it. A missing input is muted, like the hint line; a broken one
  * (too long, over the cap, too large, refused) is red. `null` keeps the count.
  */
+export type SubmitBarFixTarget = 'subject' | 'categories' | 'customList' | 'audience' | 'body';
+
 export type SubmitBarReason = {
-  readonly key: SubmitBlockedHintKey | 'views.blocked' | 'errors.broadcast_body_too_large';
+  readonly key:
+    | SubmitBlockedHintKey
+    | 'submitBlocked.subjectAddFirst'
+    | 'views.blocked'
+    | 'errors.broadcast_body_too_large';
   readonly tone: 'muted' | 'danger';
+  /** The Write-tab field the bar's reason takes the member to (UX review). */
+  readonly fixTarget: SubmitBarFixTarget;
+};
+
+// The bar has one line of room beside Submit: the reasons that repeat the
+// button's own words there take a short form.
+const BAR_SHORT_KEYS: Partial<Record<SubmitBlockedHintKey, SubmitBarReason['key']>> = {
+  'submitBlocked.subjectRequired': 'submitBlocked.subjectAddFirst',
+  'submitBlocked.tierRequired': 'submitBlocked.tierChooseFirst',
 };
 
 const BAR_ERROR_KEYS: ReadonlySet<SubmitBlockedHintKey> = new Set([
@@ -108,20 +123,32 @@ const BAR_ERROR_KEYS: ReadonlySet<SubmitBlockedHintKey> = new Set([
   'errors.broadcast_custom_recipient_too_many',
 ]);
 
+const BAR_FIX_TARGETS: Record<SubmitBlockedHintKey, SubmitBarFixTarget> = {
+  'submitBlocked.subjectRequired': 'subject',
+  'errors.broadcast_subject_too_long': 'subject',
+  'submitBlocked.tierRequired': 'categories',
+  'submitBlocked.tierChooseFirst': 'categories',
+  'errors.broadcast_custom_recipient_empty': 'customList',
+  'errors.broadcast_custom_recipient_too_many': 'customList',
+};
+
 export function submitBarReason(input: {
   readonly view: 'write' | 'preview';
   readonly hintKey: SubmitBlockedHintKey | null;
   readonly countBlocked: boolean;
   readonly bodyInvalid: boolean;
 }): SubmitBarReason | null {
-  const blocked: SubmitBarReason = { key: 'views.blocked', tone: 'danger' };
+  const blocked: SubmitBarReason = { key: 'views.blocked', tone: 'danger', fixTarget: 'audience' };
   if (input.view !== 'preview') return input.countBlocked ? blocked : null;
   if (input.hintKey !== null) {
-    const key = input.hintKey === 'submitBlocked.tierRequired' ? 'submitBlocked.tierChooseFirst' : input.hintKey;
-    return { key, tone: BAR_ERROR_KEYS.has(key) ? 'danger' : 'muted' };
+    return {
+      key: BAR_SHORT_KEYS[input.hintKey] ?? input.hintKey,
+      tone: BAR_ERROR_KEYS.has(input.hintKey) ? 'danger' : 'muted',
+      fixTarget: BAR_FIX_TARGETS[input.hintKey],
+    };
   }
   if (input.countBlocked) return blocked;
-  if (input.bodyInvalid) return { key: 'errors.broadcast_body_too_large', tone: 'danger' };
+  if (input.bodyInvalid) return { key: 'errors.broadcast_body_too_large', tone: 'danger', fixTarget: 'body' };
   return null;
 }
 

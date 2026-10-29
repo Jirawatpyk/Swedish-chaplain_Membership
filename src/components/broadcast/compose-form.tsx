@@ -47,6 +47,7 @@ import {
   selfExclusionHintKey,
   submitBlockedByCount,
   submitBarReason,
+  type SubmitBarFixTarget,
   submitBlockedHintKey,
   type ComposeAudienceMode,
 } from '@/components/broadcast/submit-feedback';
@@ -94,6 +95,12 @@ const BODY_ERROR_ID = 'broadcast-body-error';
 /** U29 — the two elements a dimmed Submit points at, plus its own hint line. */
 const RECIPIENT_COUNT_TEXT_ID = 'broadcast-recipient-count';
 const SUBMIT_BLOCKED_HINT_ID = 'broadcast-submit-blocked';
+/** Where the phone bar's reason sends focus, for the fields with no ref here. */
+const BAR_FIX_SELECTORS: Record<'categories' | 'customList' | 'audience', string> = {
+  categories: '[data-compose-feature="tier-categories"] input[type="checkbox"]:not(:disabled)',
+  customList: '#custom-recipient-list',
+  audience: '[data-compose-feature="segment-picker"] input[type="radio"]:checked',
+};
 
 const SubmitSchema = z.object({
   subject: z.string().min(1).max(200),
@@ -372,6 +379,22 @@ export function ComposeForm({
     else if (serverError?.field === 'subject') subjectRef.current?.focus();
     else if (serverError?.field === 'body') bodyContainerRef.current?.focus();
   }, [serverError, readOnlyRefusal, phone, view]);
+
+  // PR J (UX review) — every reason the phone bar gives on Preview is fixed on
+  // Write, so tapping it opens Write and focuses that field once its panel is
+  // shown (a hidden panel cannot take focus).
+  const [barFixTarget, setBarFixTarget] = useState<SubmitBarFixTarget | null>(null);
+  useEffect(() => {
+    if (barFixTarget === null || view !== 'write') return;
+    setBarFixTarget(null);
+    const field: HTMLElement | null =
+      barFixTarget === 'subject'
+        ? subjectRef.current
+        : barFixTarget === 'body'
+          ? bodyContainerRef.current
+          : document.querySelector<HTMLElement>(BAR_FIX_SELECTORS[barFixTarget]);
+    field?.focus();
+  }, [barFixTarget, view]);
 
   const customLines = parseLines(customList);
   // /code-review 2026-09-07 (finding #6) — both are null for a segment
@@ -659,13 +682,20 @@ export function ComposeForm({
   // (`submitBarReason`).
   const barReason = submitBarReason({ view, hintKey: blockedHintKey, countBlocked, bodyInvalid });
   const barStart = barReason !== null ? (
-    <span
-      className={`text-sm ${
+    <Button
+      variant="ghost"
+      size="sm"
+      touchHeight
+      className={`h-auto whitespace-normal text-start ${
         barReason.tone === 'danger' ? 'text-[var(--aura-fg-danger)]' : 'text-[var(--aura-fg-secondary)]'
       }`}
+      onClick={() => {
+        setView('write');
+        setBarFixTarget(barReason.fixTarget);
+      }}
     >
       {t(barReason.key)}
-    </span>
+    </Button>
   ) : barCount === null ? undefined : (
     <span className="text-sm">{t('recipientCount.readyShort', { count: barCount })}</span>
   );

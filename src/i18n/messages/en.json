@@ -6944,6 +6944,7 @@
         },
         "submitBlocked": {
           "subjectRequired": "Add a subject before submitting for review.",
+          "subjectAddFirst": "Add a subject first.",
           "tierRequired": "Choose at least one membership category before submitting for review.",
           "tierChooseFirst": "Choose a membership category first."
         },
