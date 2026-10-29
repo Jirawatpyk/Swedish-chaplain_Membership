@@ -6890,6 +6890,7 @@
           "scheduleHelp": "เว้นว่างไว้หากต้องการส่งตรวจสอบทันที",
           "scheduleClear": "ส่งทันทีที่ได้รับอนุมัติ",
           "previewLabel": "ตัวอย่าง",
+          "previewCaption": "ตามที่ผู้รับจะเห็น",
           "previewLoading": "กำลังโหลดตัวอย่าง…",
           "previewUnavailable": "ดูตัวอย่างไม่ได้ชั่วคราว",
           "previewUnavailableHint": "รีเฟรชหน้าเพื่อลองใหม่ — แบบร่างของคุณยังอยู่ครบ",

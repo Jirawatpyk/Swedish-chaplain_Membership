@@ -59,6 +59,8 @@ import { SegmentPicker, type SegmentPickerValue } from './segment-picker';
 import { CustomListInput, parseLines } from './custom-list-input';
 import { SchedulePicker } from './schedule-picker';
 import { PreviewPane } from './preview-pane';
+import { useActionBarClearance } from '@/hooks/use-action-bar-clearance';
+import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
 import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
 import { ComposeFormSkeleton } from './compose-form-skeleton';
 import { SubmitButton } from './submit-button';
@@ -269,6 +271,11 @@ export function ComposeForm({
   // Write / Preview tabs and Submit sits in a sticky bar with the count.
   const phone = useBreakpoint() === 'base';
   const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
+  // PR K — keep the phone bar's MEASURED height clear below a focused field:
+  // it is 62px on one row and 114px when its start slot wraps over Submit, so
+  // a fixed stylesheet allowance was either short or spare.
+  const barClearance = useActionBarClearance(phone && hydrated, '.chamber-compose-actionbar');
+  useFixedBarScrollPadding(phone && barClearance > 0, barClearance);
   const [view, setView] = useState<'write' | 'preview'>('write');
   const [liveQuota, setLiveQuota] = useState<QuotaSnapshot | null>(initialQuota);
   // F119 T140 — which template is applied, and the html the editor is seeded
@@ -965,8 +972,16 @@ export function ComposeForm({
         </Card>
   );
 
-  const preview = (
-    <PreviewPane subject={subject} bodyHtml={deferredBody} endpoint="/api/broadcasts/preview" locale={locale} />
+  // PR K — the phone tab shows the pane's tab look (board
+  // `Portal-broadcast-new-mobile-preview`); the desktop column the panel.
+  const preview = (variant: 'panel' | 'tab') => (
+    <PreviewPane
+      subject={subject}
+      bodyHtml={deferredBody}
+      endpoint="/api/broadcasts/preview"
+      locale={locale}
+      variant={variant}
+    />
   );
 
   // Review round 1 (US12d-3): the phone and desktop layouts are two trees,
@@ -1004,13 +1019,11 @@ export function ComposeForm({
                   </div>
                 ),
               },
-              { id: 'preview', label: t('views.preview'), content: <div className="pt-4">{preview}</div> },
+              { id: 'preview', label: t('views.preview'), content: preview('tab') },
             ]}
           />
           <ActionBar
-            className={`chamber-viewport-actionbar chamber-compose-actionbar${
-              barReason !== null ? ' chamber-compose-actionbar-tall' : ''
-            }`}
+            className="chamber-viewport-actionbar chamber-compose-actionbar"
             label={t('views.actions')}
             start={barStart}
           >
@@ -1025,7 +1038,7 @@ export function ComposeForm({
               the 72 rem container the pair needs (ux-standards § 18.2). */}
           <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,600px)]">
             {writeCard}
-            <div className="min-w-0 lg:sticky lg:top-[calc(var(--shell-bar-height,0px)+1rem)]">{preview}</div>
+            <div className="min-w-0 lg:sticky lg:top-[calc(var(--shell-bar-height,0px)+1rem)]">{preview('panel')}</div>
           </div>
         </>
       )}

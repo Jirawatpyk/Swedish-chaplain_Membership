@@ -31,7 +31,9 @@ vi.mock('@/components/broadcast/recipient-count', async (orig) => ({
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 vi.mock('@/components/broadcast/preview-pane', () => ({
-  PreviewPane: () => <section aria-label="Email preview" />,
+  PreviewPane: (props: { variant?: string }) => (
+    <section aria-label="Email preview" data-variant={props.variant ?? 'panel'} />
+  ),
 }));
 vi.mock('@/components/shell/tiptap-loader', () => ({
   loadTiptapEditor: () =>
@@ -205,17 +207,40 @@ describe('the phone bar', () => {
     expect(bar()).not.toHaveTextContent(c.views.blocked);
   });
 
-  // The bar asks the page for the taller bottom scroll allowance whenever it
-  // gives a reason (it may wrap to two lines), and not for a one-line count.
-  it('is tall while it gives a reason, not for a count', async () => {
+  // PR K — the page keeps the bar's MEASURED height (plus its gap) clear
+  // below a focused field, not a fixed allowance: 114px gives 130px.
+  it('keeps its measured height clear below a focused field', () => {
+    bp.current = 'base';
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { height: this.classList.contains('chamber-compose-actionbar') ? 114 : 0 } as DOMRect;
+    });
+    // AURA's stylesheet makes the bar sticky; jsdom loads none.
+    const sticky = document.head.appendChild(document.createElement('style'));
+    sticky.textContent = '.chamber-compose-actionbar { position: sticky; }';
+    try {
+      renderForm();
+      const root = document.documentElement;
+      expect(root.style.scrollPaddingBottom).toBe('130px');
+      expect(document.querySelector('.chamber-compose-actionbar-tall')).toBeNull();
+      cleanup();
+      expect(root.style.scrollPaddingBottom).toBe('');
+    } finally {
+      spy.mockRestore();
+      sticky.remove();
+    }
+  });
+
+  // PR K — board `Portal-broadcast-new-mobile-preview`: the phone tab shows
+  // the pane's tab look (caption, no header or Preview button); desktop keeps
+  // the panel.
+  it('the phone Preview tab uses the pane\'s tab look; desktop keeps the panel', () => {
     bp.current = 'base';
     renderForm();
-    await openPreview();
-    expect(bar().closest('.chamber-compose-actionbar-tall')).toBeNull();
-    await userEvent.setup().click(screen.getByRole('tab', { name: c.views.write }));
-    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
-    await openPreview();
-    expect(bar().closest('.chamber-compose-actionbar-tall')).not.toBeNull();
+    expect(screen.getByRole('region', { name: 'Email preview', hidden: true })).toHaveAttribute('data-variant', 'tab');
+    cleanup();
+    bp.current = 'lg';
+    renderForm();
+    expect(screen.getByRole('region', { name: 'Email preview' })).toHaveAttribute('data-variant', 'panel');
   });
 
   it('on Write, a refused audience is plain text, not a button', () => {

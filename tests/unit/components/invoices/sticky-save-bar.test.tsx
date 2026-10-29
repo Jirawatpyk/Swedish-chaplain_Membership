@@ -46,10 +46,14 @@ it('keeps its measured height clear below a focused field while it shows', () =>
   const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
     return { height: this.classList.contains('chamber-viewport-actionbar') ? 103 : 0 } as DOMRect;
   });
+  // AURA's stylesheet makes the bar sticky; jsdom loads none.
+  const sticky = document.head.appendChild(document.createElement('style'));
+  sticky.textContent = '.chamber-viewport-actionbar { position: sticky; }';
   const root = document.documentElement;
   const { unmount } = wrap(<StickySaveBar visible submitting={false} exists onDiscard={vi.fn()} />);
   expect(root.style.scrollPaddingBottom).toBe('119px');
   unmount();
   expect(root.style.scrollPaddingBottom).toBe('');
   spy.mockRestore();
+  sticky.remove();
 });
