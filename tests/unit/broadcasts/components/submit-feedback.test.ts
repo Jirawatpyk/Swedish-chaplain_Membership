@@ -27,6 +27,7 @@ import {
   showsSelfExclusionHint,
   submitBlockedByCount,
   submitBlockedHintKey,
+  submitBarReasonKey,
 } from '@/components/broadcast/submit-feedback';
 
 type Messages = Record<string, unknown>;
@@ -354,5 +355,18 @@ describe('recipientNoteKey', () => {
       expect(pick(messages, 'portal.broadcasts.compose.recipientNote.attendees')).toEqual(expect.any(String));
     }
     expect(en.portal.broadcasts.compose.recipientNote.attendees).toMatch(/including you/);
+  });
+});
+
+// The phone bar beside Submit has one line of room, so a tier reason is always
+// the short form there; every other reason is the hint's own words.
+describe('submitBarReasonKey', () => {
+  it.each([
+    ['submitBlocked.tierRequired', 'submitBlocked.tierChooseFirst'],
+    ['submitBlocked.tierChooseFirst', 'submitBlocked.tierChooseFirst'],
+    ['submitBlocked.subjectRequired', 'submitBlocked.subjectRequired'],
+    ['errors.broadcast_custom_recipient_empty', 'errors.broadcast_custom_recipient_empty'],
+  ] as const)('%s → %s', (key, expected) => {
+    expect(submitBarReasonKey(key)).toBe(expected);
   });
 });

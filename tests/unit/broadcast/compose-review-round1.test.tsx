@@ -149,6 +149,45 @@ describe('the phone bar', () => {
     expect(bar).toHaveTextContent(c.views.blocked);
     expect(bar).not.toHaveTextContent('1,240 recipients');
   });
+
+  // The Write tab's reason line is out of sight on Preview, so the bar by
+  // Submit says why it is off in its place of the count.
+  const bar = (): HTMLElement => screen.getByRole('region', { name: c.views.actions });
+
+  it('says a subject is missing instead of the count', () => {
+    bp.current = 'base';
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
+    expect(bar()).toHaveTextContent(c.submitBlocked.subjectRequired);
+    expect(bar()).not.toHaveTextContent('128 recipients');
+  });
+
+  it('says a category is missing in its short form', async () => {
+    bp.current = 'base';
+    renderForm();
+    await userEvent.setup().click(screen.getByRole('radio', { name: c.segmentOption.tier }));
+    expect(bar()).toHaveTextContent(c.submitBlocked.tierChooseFirst);
+    expect(bar()).not.toHaveTextContent(c.submitBlocked.tierRequired);
+  });
+
+  it('says the body is too large', () => {
+    bp.current = 'base';
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message body' }), {
+      target: { value: `<p>${'x'.repeat(200 * 1024)}</p>` },
+    });
+    expect(bar()).toHaveTextContent(c.errors.broadcast_body_too_large);
+  });
+
+  it('goes back to the count once nothing blocks', () => {
+    bp.current = 'base';
+    renderForm();
+    const subject = screen.getByRole('textbox', { name: c.fields.subject });
+    fireEvent.change(subject, { target: { value: '' } });
+    fireEvent.change(subject, { target: { value: 'Nordic Leadership Breakfast' } });
+    expect(bar()).toHaveTextContent('128 recipients');
+    expect(bar()).not.toHaveTextContent(c.submitBlocked.subjectRequired);
+  });
 });
 
 describe('Send options', () => {

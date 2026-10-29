@@ -12,6 +12,11 @@ import enMessages from '@/i18n/messages/en.json';
 import { ComposeForm } from '@/components/broadcast/compose-form';
 import { ProxyComposeForm } from '@/components/broadcast/proxy-compose-form';
 
+const bp = vi.hoisted(() => ({ current: 'lg' as 'base' | 'lg' }));
+vi.mock('@jirawatpyk/aura-react', async (orig) => ({
+  ...(await orig<typeof import('@jirawatpyk/aura-react')>()),
+  useBreakpoint: () => bp.current,
+}));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 vi.mock('@/components/broadcast/recipient-count', () => ({
@@ -70,6 +75,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.useRealTimers();
+  bp.current = 'lg';
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers(), json: async () => ({}) }),
@@ -134,5 +140,26 @@ describe('the membership categories on both compose forms (PR D)', () => {
     await user.type(screen.getByRole('textbox', { name: c.fields.subject }), 'Nordic Leadership Breakfast');
     await user.type(screen.getByRole('textbox', { name: 'Message body' }), 'Seats are limited.');
     await chooseCategoriesAndCheckGate();
+  });
+});
+
+describe('the phone bar on staff compose', () => {
+  const bar = (): HTMLElement => screen.getByRole('region', { name: c.views.actions });
+
+  it('says a member is needed, then a category, beside Submit', async () => {
+    bp.current = 'base';
+    render(
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <ProxyComposeForm audienceCeiling={5000} templates={[]} />
+      </NextIntlClientProvider>,
+    );
+    expect(bar()).toHaveTextContent(enMessages.admin.broadcasts.proxySubmitDialog.memberRequiredHint);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'pick-member' }));
+    await user.type(screen.getByRole('textbox', { name: c.fields.subject }), 'Nordic Leadership Breakfast');
+    await user.type(screen.getByRole('textbox', { name: 'Message body' }), 'Seats are limited.');
+    await user.click(screen.getByRole('radio', { name: c.segmentOption.tier }));
+    expect(bar()).toHaveTextContent(c.submitBlocked.tierChooseFirst);
+    expect(bar()).not.toHaveTextContent(c.submitBlocked.tierRequired);
   });
 });
