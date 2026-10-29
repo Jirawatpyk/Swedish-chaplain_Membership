@@ -688,8 +688,6 @@ export function ComposeForm({
   ) : barReason !== null ? (
     <Button
       variant="ghost"
-      size="sm"
-      touchHeight
       className={`h-auto whitespace-normal text-start ${
         barReason.tone === 'danger' ? 'text-[var(--aura-fg-danger)]' : 'text-[var(--aura-fg-secondary)]'
       }`}
