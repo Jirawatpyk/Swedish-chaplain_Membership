@@ -87,7 +87,7 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      `dispatchBegun: true` under this erasure's `request_id`, or the
      `broadcasts.cascade.concurrent_skip` warn log for the same `broadcastId`;
    - or directly: `SELECT broadcast_id, resend_broadcast_id FROM broadcasts
-     WHERE requested_by_member_id = '<member>' AND status = 'approved' AND
+     WHERE tenant_id = '<tenant>' AND requested_by_member_id = '<member>' AND status = 'approved' AND
      resend_broadcast_id IS NOT NULL;`
    For each, `DELETE /broadcasts/{resend_broadcast_id}` on the Broadcasts account
    while it is still `draft` or `scheduled` (200, MEASURED 2026-10-29): the

@@ -43,6 +43,22 @@ All changes are in the import leg (`build-audience-tick.ts`). It follows the leg
    When accepted, `broadcast_send_started` records the status the probe saw; a transition that then loses to a sibling already `sending` on the same resource logs info (`transition_already_sending`), not critical.
 6. **`failed` and `scheduled` stay `unknown`,** so they are refused fail-closed. `normaliseStatus` is unchanged because the LIVE `reconcile-stuck-sending` reads the same union.
 
+7. **The state table** (round 5; every cell names its handler and its test, so a review can check that nothing is missing). A row's Resend ids are `(import, bid, audience)`; ∅ means none.
+
+| Row | Probe of the bid | Standing `send` | Standing `hold` | Standing `refuse` |
+|---|---|---|---|---|
+| (∅, ∅, ∅) — fresh tick 1 | — | `submitImport`: fresh audience, fenced import ("tick 1 attaches its import FENCED") | nothing to tear down | `failTerminally` |
+| (∅, ∅, A) — tick 1 died, or a teardown stopped | — | `submitImport` → teardown `stale_audience`, never reused ("tick 1 on a row that still carries an audience…") | hold teardown, no claim ("a hold on a row with an audience … NO import") | `failTerminally`; `cleanup-audiences` reaps A |
+| (∅, B, A) — legacy carry-over or stopped teardown | handed | `catchUpHanded` ("legacy-leg carry-over … SENT") | same | same |
+| | draft | teardown deletes B; a refusal stops and keeps both ("DRAFT … REFUSED → it stops") | hold teardown, same rule | `failTerminally` |
+| | dead (cancelled / not_found) | teardown carries on past a refused delete ("DEAD (cancelled) … carries on"); a retryable delete stops ("… fails RETRYABLY → it stops") | hold teardown, same rule | `failTerminally` |
+| (I, ∅, A) — tick 2 | — | `confirmImport`: fresh mint, fenced persist, send ("persists the minted id BEFORE the send"); `createBroadcast` 404 → self-heal ("createBroadcast answers 404") | claim → delete → release ("tick 2 hold … claims") | `failTerminally` |
+| (I, B, A) — tick 2 re-entered | handed | `catchUpHanded` ("probe answers SENT / QUEUED") | same | same |
+| | draft | reuse B through the fence ("REUSED") | claim → delete B (refusal stops) → delete A → release ("inherited DRAFT id → claims…", "delete FAILS … 403") | `failTerminally` |
+| | cancelled | fresh mint replaces B ("probe answers CANCELLED") | claim → delete B (refusal carries on) → delete A → release ("inherited CANCELLED id whose delete is REFUSED") | `failTerminally` |
+| | not_found | re-probe after 3 s in `confirmImport`, then mint and replace, or catch up ("NOT FOUND twice", "re-probe finds it SENT") | no pause ("inherited NOT-FOUND id → no re-probe pause") | `failTerminally` |
+| | unknown / probe throws | refused fail-closed, no clock ("a status this build cannot read", "probe THROWS …") | same (the probe runs before standing) | same |
+
 **Alternatives not taken:**
 - **Detach first, delete later.** It orphans an audience that neither `reclaim-orphaned-audiences` nor erasure can see.
 - **Retry the detach ×3 in the tick.** This was the first build. It treated the symptom, and the code review noted that the ordering is the cause.
@@ -295,6 +311,50 @@ Filled in at Verify, one line per Done-when line.
 **Left as residuals:**
 - **The refused-send probe still reports phase `inherited_status`.** The runbook already routes `send_refused_unverifiable` there, and a new label value on the live metric is not worth adding now.
 - **Detecting the transient `not_found` rests on the GET-consistency assumption.** See Risks.
+
+**Review round 4, 29 Oct 2026** (on `02a6ed2bd`):
+- **`pdpa-gdpr`:** APPROVE WITH CONDITIONS. Every round-3 item is closed. New LOW: a `cancelled` copy left at Resend uncounted (now RoPA text), plus a `tenant_id` nit for the step-3b SQL.
+- **`senior-tester`:** SHIP-READY. New MEDIUM F1: `bidIsDead` was not pinned either way. LOWs F2–F6.
+- **`spec-compliance-auditor`:** PARTIALLY COMPLIANT. One MEDIUM: a fifth stale "NOT MEASURED" in `sweep-expired-broadcasts.ts`. LOWs.
+- **`/code-review high`:**
+  - two real bugs, both from the same half-finished-teardown state: a stopped teardown's audience reused by the next tick 1, and the `bidIsDead=false` hardcode in `submitImport`;
+  - a cancelled copy dropped with no record;
+  - the 3 s pause on hold ticks;
+  - the `check:red-first` limit;
+  - the silent re-read catch;
+  - the legacy inline handed test;
+  - the loop readability.
+- **Approach changed on the advisor's call:** one rule plus the state table above, instead of patching each transition.
+
+**Closed in round 5:**
+- **RED `c8c5169b0` → GREEN `2bbe708d7`:**
+  - the stale-audience teardown;
+  - the re-probe moved to `confirmImport` (single-shot probe, `catchUpHanded` shared);
+  - warn lines for dead copies;
+  - the re-read failure logged.
+- **Docs:**
+  - `sweep-expired-broadcasts.ts` measured text;
+  - `observability.md` rows;
+  - runbook § C;
+  - RoPA cancelled-copy sentence;
+  - step-3b `tenant_id`;
+  - changelog list;
+  - CI step renamed to "A module's logic commits follow a test commit for that module".
+- **RED honesty:**
+  - `f23e9d87f` also corrected an expectation in the GREEN commit (`afterGatewayCalls` 3 → 4).
+  - RED `c8c5169b0` missed `build-audience-tick.test.ts` "tick 1 REUSES an audience", which pinned the old behaviour. GREEN `2bbe708d7` rewrote it to the new rule.
+
+**Gates after round 5:**
+- `pnpm typecheck` clean.
+- unit `tests/unit/broadcasts` + `tests/unit/broadcast` + contract `tests/contract/broadcasts` + red-first: 329/331 files. The two failures were:
+  - the known `admin-eblast-detail-actions` 30 s load timeout (outside the diff, passes alone);
+  - `build-audience-tick.test.ts`, the reuse test, then rewritten: 12/12.
+- failure-paths 165/165.
+- integration `audience-import-two-tick` 4/4, `eblast-send-time-standing` 11/11, `audience-import-repo` 27/27.
+
+**Left as residuals:**
+- **The legacy Step 1b keeps its inline handed test (code-review #7).** It is the live leg, behaviour-identical.
+- **`check:red-first` accepts one earlier test commit for a module's later logic commits.** The CI step name now says that.
 
 ## Rollout
 

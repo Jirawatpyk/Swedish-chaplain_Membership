@@ -136,7 +136,7 @@ jobs:
       # commit changing application/domain code needs an earlier test: commit for
       # its module. PR-only: a squash merge leaves one commit on main. The
       # checkout is shallow, so fetch the history (trees only, no blobs) first.
-      - name: Every logic commit has a RED commit before it
+      - name: A module's logic commits follow a test commit for that module
         if: github.event_name == 'pull_request'
         env:
           RED_FIRST_BASE: ${{ github.event.pull_request.base.sha }}
