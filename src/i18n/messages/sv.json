@@ -8485,9 +8485,9 @@
       "testCopy": {
         "metaTitle": "Testkopia",
         "heading": "Det här mejlet var en testkopia",
-        "body": "I det E-Blast som skickas till mottagarna låter den här länken var och en sluta ta emot E-Blasts från {tenantDisplayName}.",
+        "body": "I det riktiga E-Blastet låter länken Avregistrera varje mottagare sluta ta emot E-Blasts från {tenantDisplayName}.",
         "nothingChanged": "Ingenting har ändrats: ingen har avregistrerats.",
-        "optOut": "Vill du själv sluta ta emot E-Blasts använder du länken Avregistrera i ett E-Blast du får, eller mejlar <email></email>."
+        "optOut": "Vill du själv sluta ta emot E-Blasts använder du länken Avregistrera i något E-Blast du får, eller mejlar <email></email>."
       },
       "metaTitle": "Avregistrering",
       "fallbackChamberName": "kammaren",

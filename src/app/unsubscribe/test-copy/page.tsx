@@ -43,16 +43,17 @@ export default async function TestCopyUnsubscribePage({ searchParams }: PageProp
   const tenantDisplayName = await resolveTenantDisplayName(env.tenant.slug);
   const { privacyContactEmail, privacyPolicyUrl } = env.broadcasts;
   return (
+    // Narrow on purpose, like `/unsubscribe/[token]`: one short message read on a phone.
     <main lang={locale} className="mx-auto flex min-h-screen max-w-md flex-col justify-center p-6">
       <Card>
         <div className="flex flex-col gap-[var(--aura-space-3)]">
-          <h1 className="aura-text-h3">{t('testCopy.heading')}</h1>
+          <h1 className="aura-text-h2 leading-snug">{t('testCopy.heading')}</h1>
           <p>{t('testCopy.body', { tenantDisplayName })}</p>
           <p className="text-[var(--aura-fg-secondary)]">{t('testCopy.nothingChanged')}</p>
           <p>
             {t.rich('testCopy.optOut', {
               email: () => (
-                <a href={`mailto:${privacyContactEmail}`} className="inline-block py-1 font-medium underline underline-offset-4">
+                <a href={`mailto:${privacyContactEmail}`} className="inline-block py-2 font-medium underline underline-offset-4 [overflow-wrap:anywhere]">
                   {privacyContactEmail}
                 </a>
               ),
@@ -63,7 +64,7 @@ export default async function TestCopyUnsubscribePage({ searchParams }: PageProp
               {t.rich('privacyLine', {
                 tenantDisplayName,
                 link: (chunks) => (
-                  <a href={privacyPolicyUrl} target="_blank" rel="noopener noreferrer" className="inline-block py-1 underline underline-offset-2">
+                  <a href={privacyPolicyUrl} target="_blank" rel="noopener noreferrer" className="inline-block py-2 underline underline-offset-2">
                     {chunks}
                     <span className="sr-only"> {t('opensInNewTab')}</span>
                   </a>

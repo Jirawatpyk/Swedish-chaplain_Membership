@@ -39,7 +39,7 @@ async function renderPage(lang?: string) {
 describe('/unsubscribe/test-copy', () => {
   it.each([
     ['en', /This email was a test copy/],
-    ['th', /อีเมลฉบับนี้เป็นอีเมลทดสอบ/],
+    ['th', /อีเมลฉบับนี้เป็นฉบับทดสอบ/],
     ['sv', /Det här mejlet var en testkopia/],
   ] as const)('%s: says it is a test copy, in the copy\'s language', async (lang, heading) => {
     await renderPage(lang);
