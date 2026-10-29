@@ -92,6 +92,7 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 // never spends it, because nothing failed.
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 import { reclaimMintedBroadcast } from './_reclaim-minted-broadcast';
+import { probeRefusedSend } from './_probe-refused-send';
 
 /**
  * The transport class a retryable gateway throw carried, or `unclassified`
@@ -1431,48 +1432,77 @@ export async function dispatchScheduledBroadcast(
         resolved.estimatedCount,
       );
     } else {
-      if (shape.kind === 'idempotency_conflict') {
-        logger.error(
-          {
-            tenantId: deps.tenant.slug,
-            broadcastId: input.broadcastId as string,
-            reason: shape.reason,
-          },
-          'broadcasts.dispatch.idempotency_conflict_pre_send',
-        );
-        // Verify-fix R3 (Errors-C1, 2026-05-02): emit DISTINCT audit
-        // event before falling through to the permanent handler so the
-        // forensic trail shows "two workers raced through createAudience"
-        // explicitly, separate from a generic Resend permanent error.
-        // Best-effort emit — the permanent handler below will also
-        // emit `broadcast_failed_to_dispatch`; both events together
-        // tell the full story.
-        try {
-          await deps.audit.emit(null, {
-            tenantId: deps.tenant.slug,
-            eventType: 'broadcast_dispatch_idempotency_conflict_pre_send',
-            actorUserId: 'system:cron',
-            summary: `Broadcast ${input.broadcastId} hit an idempotency conflict BEFORE any send was attempted this tick — the 409 came from an earlier call, not from /send, so there is nothing of ours to replay`,
-            payload: {
-              broadcastId: input.broadcastId,
-              reason: shape.reason,
-              resendAudienceId,
-              failedAt: now.toISOString(),
-            },
-            requestId: null,
-          });
-        } catch (auditErr) {
+      // 2026-10-29 — a `/send` refused NON-retryably is probed before it is
+      // believed. MEASURED that day: a second `/send` of an accepted
+      // broadcast answers `422 validation_error` whatever the key (never the
+      // 409 the arm above waits for) and Resend delivers once — so a
+      // `withRetry` replay after a lost response went terminal here for mail
+      // that was out. `sendAttempted` makes the throw the send's own (it is
+      // the last call in the try). Handed → fall through to Step 4 like the
+      // replay; `draft` → the permanent handling below, unchanged; anything
+      // else → refused non-terminally (fail closed).
+      const refusedSend =
+        sendAttempted && (shape.kind === 'permanent' || shape.kind === 'unknown')
+          ? await probeRefusedSend(
+              deps.broadcastsGateway,
+              { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, resendBroadcastId },
+              'broadcasts.dispatch',
+            )
+          : null;
+      if (refusedSend?.kind === 'unverifiable') {
+        return err({
+          kind: 'dispatch.server_error',
+          message: 'send_refused_unverifiable',
+          errClass: 'gate',
+          phase: 'inherited_status',
+        });
+      }
+      if (refusedSend?.kind === 'accepted') {
+        observedResendStatus = refusedSend.status;
+      } else {
+        if (shape.kind === 'idempotency_conflict') {
           logger.error(
             {
-              err: errKind(auditErr),
               tenantId: deps.tenant.slug,
               broadcastId: input.broadcastId as string,
+              reason: shape.reason,
             },
-            'broadcasts.dispatch.idempotency_conflict_pre_send_audit_emit_failed',
+            'broadcasts.dispatch.idempotency_conflict_pre_send',
           );
+          // Verify-fix R3 (Errors-C1, 2026-05-02): emit DISTINCT audit
+          // event before falling through to the permanent handler so the
+          // forensic trail shows "two workers raced through createAudience"
+          // explicitly, separate from a generic Resend permanent error.
+          // Best-effort emit — the permanent handler below will also
+          // emit `broadcast_failed_to_dispatch`; both events together
+          // tell the full story.
+          try {
+            await deps.audit.emit(null, {
+              tenantId: deps.tenant.slug,
+              eventType: 'broadcast_dispatch_idempotency_conflict_pre_send',
+              actorUserId: 'system:cron',
+              summary: `Broadcast ${input.broadcastId} hit an idempotency conflict BEFORE any send was attempted this tick — the 409 came from an earlier call, not from /send, so there is nothing of ours to replay`,
+              payload: {
+                broadcastId: input.broadcastId,
+                reason: shape.reason,
+                resendAudienceId,
+                failedAt: now.toISOString(),
+              },
+              requestId: null,
+            });
+          } catch (auditErr) {
+            logger.error(
+              {
+                err: errKind(auditErr),
+                tenantId: deps.tenant.slug,
+                broadcastId: input.broadcastId as string,
+              },
+              'broadcasts.dispatch.idempotency_conflict_pre_send_audit_emit_failed',
+            );
+          }
         }
+        return await settleGatewayThrow(deps, input, broadcast, now, e, shape);
       }
-      return await settleGatewayThrow(deps, input, broadcast, now, e, shape);
     }
   }
 

@@ -69,6 +69,7 @@ import {
 } from './_dispatch-standing-gate';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import { reclaimMintedBroadcast } from './_reclaim-minted-broadcast';
+import { probeRefusedSend } from './_probe-refused-send';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
@@ -1704,13 +1705,12 @@ async function confirmImport(
   const sendId = resendBroadcastId;
 
   // Same idempotency key shape the single-tick path uses, and the SAME key on
-  // a re-entered tick that reuses an inherited id. Round 3 finding 3-1:
-  // `resend@4.8.0`'s `broadcasts.send` dropped the key, so the gateway sends it
-  // via `post()`'s third argument — which makes a WITHIN-TICK replay
-  // (`withRetry` re-firing after a lost response) safe and the 409 arm below
-  // reachable. Whether `/send` honours the key ACROSS ticks is UNMEASURED
-  // (probing it sends real mail); the probe at Step 1a is what this leg relies
-  // on instead.
+  // a re-entered tick that reuses an inherited id (round 3 finding 3-1: the
+  // gateway sends it via `post()`'s third argument). MEASURED 2026-10-29: the
+  // key changes nothing on a repeat — Resend refuses ANY second `/send` of a
+  // non-draft broadcast with a 422 and delivers once — so neither a
+  // `withRetry` replay nor two senders on one inherited draft can double-send;
+  // the loser's 422 is probed below instead of believed.
   const sent = await viaGateway(() =>
     deps.broadcastsGateway.sendBroadcast(
       sendId,
@@ -1723,6 +1723,11 @@ async function confirmImport(
   // delivered broadcast, email the member that it did not go out, and refund the
   // quota slot (`countForMemberQuota` excludes `failed_to_dispatch`).
   //
+  // MEASURED 2026-10-29: Resend does NOT answer 409 for a second send — it
+  // answers `422 validation_error "Only draft broadcasts can be sent or
+  // scheduled"`, whatever the key, and delivers once. So this arm is all but
+  // unreachable; the 422 is caught below by asking Resend (`probeRefusedSend`).
+  //
   // Only on the send, and only with a broadcast id in hand: a 409 raised earlier
   // leaves nothing to advance to, which is exactly the distinction
   // `idempotency_conflict_pre_send` draws on the legacy leg.
@@ -1734,9 +1739,25 @@ async function confirmImport(
       const lostToHold = await sendLostToHold(deps, input, sendId, importId);
       if (lostToHold !== null) return lostToHold;
     }
-    return onGatewayFailure(deps, input, broadcast, failure, importId);
+    // A 422 on a second `/send` of an accepted broadcast (MEASURED 2026-10-29,
+    // `_probe-refused-send.ts`) reads `permanent` here — ask Resend before
+    // believing it.
+    if (!failure.retryable && (failure.kind === 'permanent' || failure.kind === 'unknown')) {
+      const verdict = await probeRefusedSend(
+        deps.broadcastsGateway,
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, resendBroadcastId: sendId },
+        'broadcasts.audience_import',
+      );
+      if (verdict.kind === 'unverifiable') {
+        return err({ kind: 'dispatch.server_error', message: 'send_refused_unverifiable', errClass: 'gate', phase: 'inherited_status' });
+      }
+      if (verdict.kind === 'refused') return onGatewayFailure(deps, input, broadcast, failure, importId);
+      // `accepted` — the mail is out: the replay arm's path below.
+    } else {
+      return onGatewayFailure(deps, input, broadcast, failure, importId);
+    }
   }
-  if (!sent.ok) {
+  if (!sent.ok && !sent.error.retryable && sent.error.kind === 'idempotency_conflict') {
     logger.warn(
       {
         tenantId: deps.tenant.slug,
