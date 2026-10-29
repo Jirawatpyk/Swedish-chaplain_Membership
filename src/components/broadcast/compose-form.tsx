@@ -245,6 +245,8 @@ export function ComposeForm({
     initialDraftId,
   );
   const [segment, setSegment] = useState<SegmentPickerValue>(initialSegment);
+  // Whether the categories show their own error (after the last is unticked).
+  const [tierErrorShown, setTierErrorShown] = useState<boolean>(false);
   const [customList, setCustomList] = useState<string>('');
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -412,6 +414,7 @@ export function ComposeForm({
     subjectEmpty: subject.length === 0,
     subjectTooLong: subject.length > 200,
     tierValid,
+    tierErrorShown,
     customListValid,
     customLineCount: customLines.length,
   });
@@ -728,6 +731,7 @@ export function ComposeForm({
               value={segment}
               onChange={setSegment}
               disabled={submitting}
+              onTierErrorShownChange={setTierErrorShown}
             />
 
             {/* UX-1 — set expectations before the live count settles: the

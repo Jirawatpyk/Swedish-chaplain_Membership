@@ -270,6 +270,8 @@ export function ProxyComposeForm({
     kind: 'all_members',
     tierCodes: [],
   });
+  // Whether the categories show their own error (after the last is unticked).
+  const [tierErrorShown, setTierErrorShown] = useState(false);
   const [customList, setCustomList] = useState('');
   const [scheduledFor, setScheduledFor] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -380,6 +382,7 @@ export function ProxyComposeForm({
       subjectEmpty: subject.length === 0,
       subjectTooLong: subject.length > 200,
       tierValid,
+      tierErrorShown,
       customListValid,
       customLineCount: customLines.length,
     });
@@ -702,6 +705,7 @@ export function ProxyComposeForm({
                 if (fieldError?.field === 'segment') setFieldError(null);
               }}
               disabled={submitting}
+              onTierErrorShownChange={setTierErrorShown}
             />
             {member !== null &&
             !memberMissingEmail &&

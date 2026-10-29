@@ -93,6 +93,19 @@ async function chooseCategoriesAndCheckGate(): Promise<void> {
   expect(submitButton()).toHaveAccessibleDescription(expect.stringContaining(c.submitBlocked.tierRequired));
   await user.click(screen.getByRole('checkbox', { name: cat.corporate }));
   expect(submitButton()).not.toHaveAccessibleDescription(expect.stringContaining(c.submitBlocked.tierRequired));
+
+  // Unticking the last one: the group says it in full, and the line by Submit
+  // shortens rather than repeating the sentence.
+  await user.click(screen.getByRole('checkbox', { name: cat.corporate }));
+  expect(screen.getAllByText(c.submitBlocked.tierRequired)).toHaveLength(1);
+  expect(submitButton()).toHaveAccessibleDescription(expect.stringContaining(c.submitBlocked.tierChooseFirst));
+  expect(submitButton()).not.toHaveAccessibleDescription(expect.stringContaining(c.submitBlocked.tierRequired));
+
+  // Away and back: the group's error goes with it, so the full hint returns.
+  await user.click(screen.getByRole('radio', { name: c.segmentOption.all_members }));
+  await user.click(screen.getByRole('radio', { name: c.segmentOption.tier }));
+  expect(screen.getAllByText(c.submitBlocked.tierRequired)).toHaveLength(1);
+  expect(submitButton()).toHaveAccessibleDescription(expect.stringContaining(c.submitBlocked.tierRequired));
 }
 
 describe('the membership categories on both compose forms (PR D)', () => {

@@ -73,12 +73,18 @@ export function submitBlockedByCount(state: RecipientCountState): boolean {
  * until you widen it"). A zero-length body would also block, but the editor
  * serialises an untouched document as `<p></p>`, so no surface can produce it.
  *
+ * The tier reason is said in full here until the categories show their own
+ * error (`tierErrorShown`, after the last one is unticked). From then on the
+ * group says it in full, and this line shortens to `tierChooseFirst`: a
+ * reason stays beside Submit, but the sentence is not repeated.
+ *
  * Keys are relative to `portal.broadcasts.compose`, the namespace both compose
- * forms translate against; two of the four already existed.
+ * forms translate against.
  */
 export type SubmitBlockedHintKey =
   | 'submitBlocked.subjectRequired'
   | 'submitBlocked.tierRequired'
+  | 'submitBlocked.tierChooseFirst'
   | 'errors.broadcast_subject_too_long'
   | 'errors.broadcast_custom_recipient_empty'
   | 'errors.broadcast_custom_recipient_too_many';
@@ -87,6 +93,7 @@ export function submitBlockedHintKey(input: {
   readonly subjectEmpty: boolean;
   readonly subjectTooLong: boolean;
   readonly tierValid: boolean;
+  readonly tierErrorShown: boolean;
   readonly customListValid: boolean;
   readonly customLineCount: number;
 }): SubmitBlockedHintKey | null {
@@ -94,7 +101,9 @@ export function submitBlockedHintKey(input: {
   // the first thing the member would fix.
   if (input.subjectEmpty) return 'submitBlocked.subjectRequired';
   if (input.subjectTooLong) return 'errors.broadcast_subject_too_long';
-  if (!input.tierValid) return 'submitBlocked.tierRequired';
+  if (!input.tierValid) {
+    return input.tierErrorShown ? 'submitBlocked.tierChooseFirst' : 'submitBlocked.tierRequired';
+  }
   if (!input.customListValid) {
     return input.customLineCount === 0
       ? 'errors.broadcast_custom_recipient_empty'
