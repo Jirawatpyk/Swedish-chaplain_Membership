@@ -205,6 +205,8 @@ function makeDeps(opts: {
     /** Round 4 F7 — the transport class the adapter observed. */
     readonly subKind?: string;
   };
+  /** A second gateway method that throws (same shape as `throwOn`). */
+  readonly throwOnAlso?: { readonly method: GatewayMethod; readonly kind: string; readonly code?: string };
   readonly droppedByPreference?: number;
   readonly orphans?: readonly string[];
   readonly memberPrimaryEmail?: string | null;
@@ -405,6 +407,9 @@ function makeDeps(opts: {
             }
           : { code: opts.throwOn.code, subKind: opts.throwOn.subKind },
       );
+    }
+    if (opts.throwOnAlso?.method === m) {
+      throw gatewayThrow(opts.throwOnAlso.kind, 'boom', { code: opts.throwOnAlso.code });
     }
   }
 
@@ -3427,12 +3432,6 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
   });
 
   /**
-   * Only a DRAFT can be sent (a non-draft `/send` answers 422, MEASURED
-   * 2026-10-29), so a resource the probe called `cancelled` cannot be in
-   * flight: a refused delete of it says nothing about a sibling. Stopping
-   * there would restart-fail every tick for ever.
-   */
-  /**
    * A single `not_found` GET decides nothing (round 5, senior-tester F3 and the
    * auditor): it is re-asked once after REPROBE_PAUSE_MS BEFORE the standing
    * gate, so a hold, a refusal and a send all act on the second answer.
@@ -3466,6 +3465,7 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(rec.reprobePauses).toEqual([REPROBE_PAUSE_MS]);
     expect(rec.audiencesDeleted).toEqual([]);
     expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport']);
   });
@@ -3539,6 +3539,21 @@ describe('buildAudienceTick — the double-send window: pre-send attach + inheri
  */
 describe('buildAudienceTick — the audience is gone at Resend: self-heal to a fresh tick 1', () => {
   const TICK2 = { ...POLLING, audienceImportSubmittedAt: NOW } as const;
+
+  it('createBroadcast 404 self-heal with an inherited NOT-FOUND id whose delete is REFUSED → stops: the audience is not deleted', async () => {
+    const { deps, rec } = makeDeps({
+      ...TICK2,
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'not_found' },
+      throwOn: { method: 'createBroadcast', kind: 'permanent', code: 'not_found' },
+      throwOnAlso: { method: 'deleteBroadcast', kind: 'permanent', code: 'validation_error' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? res.value : res.error).not.toEqual({ kind: 'audience_restarted' });
+    expect(rec.audiencesDeleted).toEqual([]);
+  });
 
   it('createBroadcast answers 404 (audience not found) on tick 2 → the import and audience are released, nothing terminal, nobody told', async () => {
     const { logger } = await import('@/lib/logger');
@@ -3640,6 +3655,22 @@ describe('buildAudienceTick — the audience is gone at Resend: self-heal to a f
     expect(rec.audiencesDeleted).toEqual([]);
     expect(rec.releases).toEqual([]);
     expect(rec.importsSubmitted).toEqual([]);
+  });
+
+  it('that teardown with a NOT-FOUND broadcast id (re-probed) whose delete is REFUSED → it stops: contradictory evidence, both kept', async () => {
+    const { deps, rec } = makeDeps({
+      resendAudienceId: 'aud-1',
+      resendBroadcastId: 'rb-0',
+      probe: { kind: 'not_found' },
+      throwOn: { method: 'deleteBroadcast', kind: 'permanent', code: 'validation_error' },
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.reprobePauses).toEqual([REPROBE_PAUSE_MS]);
+    expect(res.ok ? res.value : res.error).not.toEqual({ kind: 'audience_restarted' });
+    expect(rec.audiencesDeleted).toEqual([]);
+    expect(rec.releases).toEqual([]);
   });
 
   it('that teardown with a DEAD broadcast id whose delete fails RETRYABLY → it stops (a transient says nothing about the resource)', async () => {
