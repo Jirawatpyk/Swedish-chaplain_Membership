@@ -5,7 +5,7 @@
  *
  * Sticky-bottom bulk toolbar for the renewals pipeline (US3), mirroring
  * `admin/members/_components/bulk-action-bar.tsx`'s shape: `role="toolbar"`,
- * a measured-height spacer (`ResizeObserver`), the shared
+ * a measured scroll allowance (`useActionBarClearance`, PR M), the shared
  * `useDialogFinalFocus`/`lastTriggerRef`/`closedViaSuccessRef` focus-return
  * chain (reused verbatim from `@/components/broadcast/reason-confirmation-
  * dialog`), `BulkProgressIndicator`, and the `BULK_CAP` (100) guard.
@@ -88,8 +88,9 @@
  * after the table — no fixed bar, no measured spacer — and idle (its live
  * region kept) while nothing is selected, as the members bar (US5a). The
  * results panel sits in the flow just above it. While a selection is active
- * the bar's measured height (plus the gap it sticks above the screen edge)
- * is the page's scroll padding, so the last card scrolls clear of it.
+ * the bar's measured height, the gap it sticks above the screen edge and a
+ * 16px focus gap are the page's scroll padding, so the last card scrolls
+ * clear of it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -99,7 +100,7 @@ import { ActionBar, AuraProvider, Button } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { ConfirmationDialog } from '@/components/shell/confirmation-dialog';
 import { useDialogFinalFocus } from '@/components/broadcast/reason-confirmation-dialog';
-import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 import { BulkProgressIndicator } from '../../members/_components/bulk-progress-indicator';
 import { BULK_CAP } from '@/lib/members-bulk-constants';
 import {
@@ -359,27 +360,9 @@ export function PipelineBulkActionBar({
   // WCAG 2.2 SC 2.4.11 — the sticky bar must not cover the card a focus or a
   // scroll-into-view lands on. Measured, not guessed: on a phone the bar
   // wraps to two or three lines (locale, the over-cap note). The reserve is
-  // the bar plus the gap AURA sticks it above the screen edge (`bottom`).
+  // the bar, the gap AURA sticks it above the screen edge, and 16px (PR M).
   const barRef = useRef<HTMLDivElement | null>(null);
-  const [barBlock, setBarBlock] = useState(64);
-  useEffect(() => {
-    const el = barRef.current;
-    if (!el || !hasSelection) return undefined;
-    const measure = (height: number): void => {
-      const offset = Number.parseFloat(getComputedStyle(el).bottom);
-      setBarBlock(Math.ceil(height + (Number.isFinite(offset) ? offset : 0)));
-    };
-    if (typeof ResizeObserver === 'undefined') {
-      measure(el.offsetHeight);
-      return undefined;
-    }
-    const ro = new ResizeObserver(([entry]) => {
-      measure(entry?.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [hasSelection]);
-  useFixedBarScrollPadding(hasSelection, barBlock);
+  useActionBarScrollPadding(hasSelection, barRef);
 
   // MUST-FIX (review round 1, WCAG 2.1 AA SC 4.1.3) — when a run leaves an
   // issues/not-bulk-payable trail, the persisted results panel is the ONLY

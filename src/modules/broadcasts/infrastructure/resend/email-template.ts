@@ -145,7 +145,7 @@ function renderHeaderCell(safeTenantName: string, logoUrl: string | null): strin
   if (logoUrl === null) {
     return `<strong style="font-size:14px;color:#666">${safeTenantName}</strong>`;
   }
-  return `<img src="${escapeHtml(logoUrl)}" alt="${safeTenantName}" height="48" style="display:block;max-height:48px;height:auto;max-width:240px;border:0">`;
+  return `<img src="${escapeHtml(logoUrl)}" alt="${safeTenantName}" class="eb-logo" height="48" style="display:block;max-height:48px;height:auto;max-width:240px;border:0">`;
 }
 
 /**
@@ -155,6 +155,29 @@ function renderHeaderCell(safeTenantName: string, logoUrl: string | null): strin
 function renderPostalLine(physicalLine: string, postalAddress: string | null): string {
   if (postalAddress === null) return physicalLine;
   return escapeHtml(postalAddress).replace(/\n/g, '<br>');
+}
+
+/**
+ * PR L (29 Oct 2026) — the email fits a phone. The card is fluid up to 600px
+ * (Outlook desktop, which ignores `max-width`, keeps 600px through the MSO
+ * ghost table around it). An image in the body never outgrows the card: the
+ * sanitiser keeps `img[src,alt]` with no style, so each gets an inline cap
+ * (for a client that drops `<style>`) and the `.eb-body` rule backs it; the
+ * logo keeps its own 240px cap. Phones get 16px side padding instead of 32px
+ * on the card's own three cells (`.eb-cell`), never on a design block's.
+ * The footer is #6b6b6b at 12px (5.3:1 on white; #888 at 11px was 3.5:1,
+ * under WCAG AA, and small for Thai's stacked vowels).
+ */
+const PHONE_STYLE =
+  '.eb-body img{max-width:100%!important;height:auto!important}' +
+  '@media (max-width:480px){.eb-cell{padding-left:16px!important;padding-right:16px!important}}' +
+  // At 300px and below the card's content is narrower than the logo's 240px
+  // cap (300 − 24 − 32 = 244 at most), so there the logo follows the card.
+  '@media (max-width:300px){.eb-logo{max-width:100%!important;height:auto!important}}';
+
+/** The inline cap on a body image that carries no style of its own. */
+function capBodyImages(html: string): string {
+  return html.replace(/<img(?![^>]*\sstyle=)/g, '<img style="max-width:100%;height:auto"');
 }
 
 export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
@@ -196,30 +219,36 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
   // Design blocks are rendered AFTER sanitisation (the caller sanitised
   // `bodyHtml`) and the result is never fed back through DOMPurify. A body
   // without markers is returned as the identical string (T007).
-  const bodyHtml = applyDesignBlocks(input.bodyHtml, {
-    primaryColor: brand?.primaryColor ?? null,
-  });
+  const bodyHtml = capBodyImages(
+    applyDesignBlocks(input.bodyHtml, {
+      primaryColor: brand?.primaryColor ?? null,
+    }),
+  );
 
   return [
     '<!doctype html>',
     `<html lang="${input.locale}">`,
     '<head>',
     '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${safeSubject}</title>`,
+    `<style>${PHONE_STYLE}</style>`,
     '</head>',
     '<body style="margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1a1a1a;background:#f6f6f6">',
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f6">',
     '<tr><td align="center" style="padding:24px 12px">',
-    '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden">',
-    `<tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #eee">${renderHeaderCell(safeTenantName, brand?.logoUrl ?? null)}</td></tr>`,
-    `<tr><td style="padding:24px 32px;font-size:15px;line-height:1.6;color:#1a1a1a">${bodyHtml}</td></tr>`,
-    '<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;font-size:11px;line-height:1.5;color:#888">',
+    '<!--[if mso]><table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0"><tr><td><![endif]-->',
+    '<table role="presentation" class="eb-card" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:8px;overflow:hidden">',
+    `<tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #eee" class="eb-cell">${renderHeaderCell(safeTenantName, brand?.logoUrl ?? null)}</td></tr>`,
+    `<tr><td style="padding:24px 32px;font-size:15px;line-height:1.6;color:#1a1a1a" class="eb-cell eb-body">${bodyHtml}</td></tr>`,
+    '<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;font-size:12px;line-height:1.5;color:#6b6b6b" class="eb-cell">',
     `<p style="margin:0 0 8px 0">${receivedLine}</p>`,
     `<p style="margin:0 0 8px 0"><a href="${RESEND_UNSUBSCRIBE_MERGE_TAG}" style="color:#666;text-decoration:underline">${escapeHtml(f.unsubscribeCta)}</a> ${escapeHtml(f.unsubscribeSuffix)}</p>`,
     objectionLine === null ? '' : `<p style="margin:0 0 8px 0">${objectionLine}</p>`,
     `<p style="margin:0">${renderPostalLine(physicalLine, brand?.postalAddress ?? null)}</p>`,
     '</td></tr>',
     '</table>',
+    '<!--[if mso]></td></tr></table><![endif]-->',
     '</td></tr>',
     '</table>',
     '</body>',

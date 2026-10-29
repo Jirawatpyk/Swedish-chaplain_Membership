@@ -11,10 +11,11 @@
  * bulk-action surface for the queue.
  *
  * Spec 122 US12b — an AURA `ActionBar` (sticky, in the page flow, no
- * spacer) named by `toolbarLabel`; its measured height feeds the page's
+ * spacer) named by `toolbarLabel`; its clearance (height, offset above the
+ * screen edge and a gap; `useActionBarScrollPadding`, PR M) is the page's
  * scroll padding. Originally a fixed-bottom `role="toolbar"` + spacer,
- * mirroring `admin/members/_components/bulk-action-bar.tsx` (`:138-158` the
- * spacer effect, `:377-419` the bar shell + over-cap alert) and the
+ * mirroring `admin/members/_components/bulk-action-bar.tsx` (the bar shell +
+ * over-cap alert) and the
  * renewals `pipeline-bulk-action-bar.tsx`. Plain tab order — no
  * roving-tabindex, matching both precedents exactly.
  *
@@ -114,7 +115,7 @@
  * open state, which is out of scope for this hotfix.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ActionBar, Button } from '@jirawatpyk/aura-react';
@@ -221,37 +222,12 @@ export function QueueBulkActionBar({
     }
   }, [executing]);
 
-  // The bar's measured height feeds the page's scroll padding below, so a
-  // focused row scrolls into view above the sticky bar — same shape as the
-  // members `bulk-action-bar.tsx`.
+  // WCAG 2.2 SC 2.4.11 — a focused row scrolls into view above the sticky
+  // bar: the page keeps the bar's measured height, its gap above the screen
+  // edge and 16px clear (PR M, shared with the other viewport bars).
   const visible = !readOnly && selectedIds.length > 0;
   const barRef = useRef<HTMLDivElement | null>(null);
-  const [barHeight, setBarHeight] = useState(64);
-
-  useEffect(() => {
-    const el = barRef.current;
-    if (!el) return;
-    // Guard for jsdom/older browsers: without ResizeObserver keep the last
-    // measured value rather than collapsing to 0.
-    if (typeof ResizeObserver === 'undefined') {
-      setBarHeight(el.offsetHeight);
-      return;
-    }
-    const ro = new ResizeObserver(([entry]) => {
-      const h = entry?.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight;
-      // Round up — a fractional height would leave a sub-pixel sliver of the
-      // last row under the bar.
-      setBarHeight(Math.ceil(h));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-    // Re-observe on every hidden↔visible transition: the parent mounts this
-    // bar with nothing selected, so a `[]`-deps effect ran against a null ref
-    // and the padding stayed at its 64px default however tall the bar wrapped.
-  }, [visible]);
-
-  // WCAG 2.2 SC 2.4.11 — keep focus / scroll-into-view above the bar.
-  useFixedBarScrollPadding(visible, barHeight);
+  useActionBarScrollPadding(visible, barRef);
 
   // Task 5 review carry-forward (Task 4) — memoized on `selectedIds` so the
   // `totalRecipients` memo below (keyed on this array's REFERENCE) actually

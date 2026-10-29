@@ -6890,6 +6890,7 @@
           "scheduleHelp": "Leave blank to submit for immediate review.",
           "scheduleClear": "Send as soon as it's approved",
           "previewLabel": "Preview",
+          "previewCaption": "As recipients see it",
           "previewLoading": "Loading preview…",
           "previewUnavailable": "Preview is temporarily unavailable",
           "previewUnavailableHint": "Refresh the page to retry — your draft is safe.",
@@ -6944,8 +6945,9 @@
         },
         "submitBlocked": {
           "subjectRequired": "Add a subject before submitting for review.",
+          "subjectAddFirst": "Add a subject first.",
           "tierRequired": "Choose at least one membership category before submitting for review.",
-          "tierChooseFirst": "Choose a membership category first."
+          "tierChooseFirst": "Choose a category first."
         },
         "views": {
           "label": "Compose view",

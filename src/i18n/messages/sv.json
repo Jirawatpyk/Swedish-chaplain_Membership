@@ -6890,6 +6890,7 @@
           "scheduleHelp": "Lämna tomt för omedelbar granskning.",
           "scheduleClear": "Skicka så snart det godkänts",
           "previewLabel": "Förhandsgranskning",
+          "previewCaption": "Så som mottagarna ser det",
           "previewLoading": "Laddar förhandsgranskning…",
           "previewUnavailable": "Förhandsgranskning är tillfälligt otillgänglig",
           "previewUnavailableHint": "Uppdatera sidan för att försöka igen — ditt utkast är säkert.",
@@ -6944,8 +6945,9 @@
         },
         "submitBlocked": {
           "subjectRequired": "Lägg till ett ämne innan du skickar för granskning.",
+          "subjectAddFirst": "Ange ett ämne först.",
           "tierRequired": "Välj minst en medlemskategori innan du skickar för granskning.",
-          "tierChooseFirst": "Välj en medlemskategori först."
+          "tierChooseFirst": "Välj en kategori först."
         },
         "views": {
           "label": "Skrivvy",

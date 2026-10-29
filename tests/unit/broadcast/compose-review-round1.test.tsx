@@ -31,7 +31,9 @@ vi.mock('@/components/broadcast/recipient-count', async (orig) => ({
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 vi.mock('@/components/broadcast/preview-pane', () => ({
-  PreviewPane: () => <section aria-label="Email preview" />,
+  PreviewPane: (props: { variant?: string }) => (
+    <section aria-label="Email preview" data-variant={props.variant ?? 'panel'} />
+  ),
 }));
 vi.mock('@/components/shell/tiptap-loader', () => ({
   loadTiptapEditor: () =>
@@ -148,6 +150,134 @@ describe('the phone bar', () => {
     const bar = screen.getByRole('region', { name: c.views.actions });
     expect(bar).toHaveTextContent(c.views.blocked);
     expect(bar).not.toHaveTextContent('1,240 recipients');
+  });
+
+  // The Write tab's reason line is out of sight on Preview, so there the bar
+  // by Submit says why it is off in place of the count. On Write the reason is
+  // in the form, and the bar keeps the count.
+  const bar = (): HTMLElement => screen.getByRole('region', { name: c.views.actions });
+  const openPreview = (): Promise<void> =>
+    userEvent.setup().click(screen.getByRole('tab', { name: c.views.preview }));
+
+  it('on Preview, says a subject is missing instead of the count', async () => {
+    bp.current = 'base';
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
+    await openPreview();
+    expect(bar()).toHaveTextContent(c.submitBlocked.subjectAddFirst);
+    expect(bar()).not.toHaveTextContent('128 recipients');
+  });
+
+  it('on Preview, says a category is missing in its short form', async () => {
+    bp.current = 'base';
+    renderForm();
+    await userEvent.setup().click(screen.getByRole('radio', { name: c.segmentOption.tier }));
+    await openPreview();
+    expect(bar()).toHaveTextContent(c.submitBlocked.tierChooseFirst);
+    expect(bar()).not.toHaveTextContent(c.submitBlocked.tierRequired);
+  });
+
+  it('on Preview, says the body is too large', async () => {
+    bp.current = 'base';
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Message body' }), {
+      target: { value: `<p>${'x'.repeat(200 * 1024)}</p>` },
+    });
+    await openPreview();
+    expect(bar()).toHaveTextContent(c.errors.broadcast_body_too_large);
+  });
+
+  it('on Write, keeps the count: the reason is in the form there', () => {
+    bp.current = 'base';
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
+    expect(bar()).toHaveTextContent('128 recipients');
+    expect(bar()).not.toHaveTextContent(c.submitBlocked.subjectAddFirst);
+  });
+
+  // The form's own reason comes first, in its reading order: fixing the
+  // audience first would leave Submit dimmed with a new reason.
+  it('on Preview, a missing subject wins over a refused audience', async () => {
+    bp.current = 'base';
+    count.current = { status: 'ready', count: 1240, ceiling: 500, exceeds: true };
+    renderForm();
+    fireEvent.change(screen.getByRole('textbox', { name: c.fields.subject }), { target: { value: '' } });
+    await openPreview();
+    expect(bar()).toHaveTextContent(c.submitBlocked.subjectAddFirst);
+    expect(bar()).not.toHaveTextContent(c.views.blocked);
+  });
+
+  // PR K — the page keeps the bar's MEASURED height (plus its gap) clear
+  // below a focused field, not a fixed allowance: 114px gives 130px.
+  it('keeps its measured height clear below a focused field', () => {
+    bp.current = 'base';
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { height: this.classList.contains('chamber-compose-actionbar') ? 114 : 0 } as DOMRect;
+    });
+    // AURA's stylesheet makes the bar sticky; jsdom loads none.
+    const sticky = document.head.appendChild(document.createElement('style'));
+    sticky.textContent = '.chamber-compose-actionbar { position: sticky; }';
+    try {
+      renderForm();
+      const root = document.documentElement;
+      expect(root.style.scrollPaddingBottom).toBe('130px');
+      expect(document.querySelector('.chamber-compose-actionbar-tall')).toBeNull();
+      cleanup();
+      expect(root.style.scrollPaddingBottom).toBe('');
+    } finally {
+      spy.mockRestore();
+      sticky.remove();
+    }
+  });
+
+  // PR K — board `Portal-broadcast-new-mobile-preview`: the phone tab shows
+  // the pane's tab look (caption, no header or Preview button); desktop keeps
+  // the panel.
+  it('the phone Preview tab uses the pane\'s tab look; desktop keeps the panel', () => {
+    bp.current = 'base';
+    renderForm();
+    expect(screen.getByRole('region', { name: 'Email preview', hidden: true })).toHaveAttribute('data-variant', 'tab');
+    cleanup();
+    bp.current = 'lg';
+    renderForm();
+    expect(screen.getByRole('region', { name: 'Email preview' })).toHaveAttribute('data-variant', 'panel');
+  });
+
+  it('on Write, a refused audience is plain text, not a button', () => {
+    bp.current = 'base';
+    count.current = { status: 'ready', count: 1240, ceiling: 500, exceeds: true };
+    renderForm();
+    expect(bar()).toHaveTextContent(c.views.blocked);
+    expect(within(bar()).queryByRole('button', { name: c.views.blocked })).toBeNull();
+  });
+
+  it('tapping a refused audience on Preview focuses the chosen audience', async () => {
+    bp.current = 'base';
+    count.current = { status: 'ready', count: 1240, ceiling: 500, exceeds: true };
+    renderForm();
+    await openPreview();
+    await userEvent.setup().click(within(bar()).getByRole('button', { name: c.views.blocked }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('radio', { name: c.segmentOption.all_members })),
+    );
+  });
+
+  it('tapping an empty custom list reason focuses the list', async () => {
+    bp.current = 'base';
+    renderForm();
+    await userEvent.setup().click(screen.getByRole('radio', { name: c.segmentOption.custom }));
+    await openPreview();
+    await userEvent.setup().click(
+      within(bar()).getByRole('button', { name: c.errors.broadcast_custom_recipient_empty }),
+    );
+    await waitFor(() => expect(document.activeElement).toBe(document.getElementById('custom-recipient-list')));
+  });
+
+  it('on Preview, shows the count once nothing blocks', async () => {
+    bp.current = 'base';
+    renderForm();
+    await openPreview();
+    expect(bar()).toHaveTextContent('128 recipients');
   });
 });
 

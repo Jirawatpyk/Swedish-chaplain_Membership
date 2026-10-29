@@ -696,6 +696,10 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   *(checklist default)*.
 - **FR-041a**: Every E-Blast's email header MUST show the chamber's logo when one is on file and
   the chamber's name otherwise, automatically — it is not something a user adds or removes.
+  *Amended 29 Oct 2026 (PR L):* the email's card is fluid up to 600 px (Outlook desktop keeps
+  600 px), so on a phone it reads at full size with no sideways scroll, and body images are
+  capped at the card's width in every client that honours `max-width` (Outlook desktop does not:
+  there a very wide image still widens the card, as before).
 - **FR-041b**: The chamber's brand settings MUST be a single per-tenant settings page showing the
   logo, exactly one primary colour, and the chamber's postal address. The logo is the one already
   held for invoices and MUST be READ through a module interface — set once on its existing page,
@@ -725,6 +729,9 @@ anyone else; switch the flow off and verify today's flow behaves exactly as befo
   dialog that returns focus to the control on close and respects reduced-motion preferences.
   The same preview MUST be used on the member's compare screen (original vs formatted version)
   *(checklist default)*.
+  *Amended 29 Oct 2026 (spec 122 PR K, the maintainer):* below 640px the member compose page's
+  Preview tab is itself the full-width preview and has no dialog control; the dialog, with its
+  600/375 px widths, stays on desktop, staff compose and the approval workspace.
 - **FR-044**: Italic MUST NOT be offered when the user's interface language is Thai; italic
   content that arrives by paste or from a template is kept as-is — only the control is hidden
   *(checklist default)*.

@@ -23,7 +23,7 @@ const BASE = {
 const NO_BRAND = { primaryColor: null, postalAddress: null, logoUrl: null };
 
 function headerCell(html: string): string {
-  const m = /<tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #eee">([\s\S]*?)<\/td><\/tr>/.exec(html);
+  const m = /<tr><td style="padding:24px 32px 16px 32px;border-bottom:1px solid #eee"(?: class="[^"]*")?>([\s\S]*?)<\/td><\/tr>/.exec(html);
   expect(m).not.toBeNull();
   return m![1]!;
 }

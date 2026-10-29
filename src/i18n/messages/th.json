@@ -4102,7 +4102,7 @@
         "quotaBlockedError": "{company} ใช้โควตา E-Blast ของช่วงเวลานี้ครบแล้ว",
         "notInPlanError": "แพ็กเกจของ {company} ไม่รวมสิทธิ์ E-Blast",
         "submitErrorToast": "ส่ง E-Blast ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
-        "memberRequiredHint": "เลือกสมาชิกที่ส่ง E-Blast นี้แทนก่อนส่งขออนุมัติ",
+        "memberRequiredHint": "เลือกสมาชิกที่ส่ง E-Blast นี้แทนก่อนส่งเพื่อตรวจสอบ",
         "subjectEmptyError": "ต้องระบุหัวข้อ",
         "subjectTooLongError": "หัวข้อต้องมีไม่เกิน 200 ตัวอักษร",
         "bodyTooLargeError": "เนื้อหามีขนาดเกิน 200 KB",
@@ -6890,6 +6890,7 @@
           "scheduleHelp": "เว้นว่างไว้หากต้องการส่งตรวจสอบทันที",
           "scheduleClear": "ส่งทันทีที่ได้รับอนุมัติ",
           "previewLabel": "ตัวอย่าง",
+          "previewCaption": "ตามที่ผู้รับจะเห็น",
           "previewLoading": "กำลังโหลดตัวอย่าง…",
           "previewUnavailable": "ดูตัวอย่างไม่ได้ชั่วคราว",
           "previewUnavailableHint": "รีเฟรชหน้าเพื่อลองใหม่ — แบบร่างของคุณยังอยู่ครบ",
@@ -6943,8 +6944,9 @@
           "submit": "ส่งเพื่อตรวจสอบ"
         },
         "submitBlocked": {
-          "subjectRequired": "กรอกหัวข้อก่อนส่งขออนุมัติ",
-          "tierRequired": "เลือกประเภทสมาชิกภาพอย่างน้อยหนึ่งประเภทก่อนส่งขออนุมัติ",
+          "subjectRequired": "กรอกหัวข้อก่อนส่งเพื่อตรวจสอบ",
+          "subjectAddFirst": "กรอกหัวข้อก่อน",
+          "tierRequired": "เลือกประเภทสมาชิกภาพอย่างน้อยหนึ่งประเภทก่อนส่งเพื่อตรวจสอบ",
           "tierChooseFirst": "เลือกประเภทสมาชิกภาพก่อน"
         },
         "views": {

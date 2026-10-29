@@ -8,8 +8,9 @@
  * takes its own space at the end (no spacer). It stays mounted with nothing
  * selected — hidden, but its live region stays, so the next selection is
  * announced. Shows "N selected" + the actions + Clear. The page's scroll
- * padding tracks its height so a focused row is never hidden behind it
- * (ADOPT-01 / WCAG 2.2 SC 2.4.11).
+ * padding keeps its height, its gap above the screen edge and 16px clear, so
+ * a focused row is never hidden behind it (ADOPT-01 / WCAG 2.2 SC 2.4.11;
+ * `useActionBarScrollPadding`, PR M).
  *
  * Cap enforcement: if > 100 rows are selected, the action buttons and menu
  * items are disabled with a message instructing the admin to split the
@@ -57,8 +58,8 @@
  * the same shared mechanism rather than growing a second one.
  */
 
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useFixedBarScrollPadding } from '@/hooks/use-fixed-bar-scroll-padding';
+import { useState, useCallback, useMemo, useRef } from 'react';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ActionBar, AuraProvider, Button, DropdownMenu, IconButton, type MenuItem } from '@jirawatpyk/aura-react';
@@ -142,32 +143,13 @@ export function BulkActionBar({
     closedViaSuccessRef,
   );
 
-  // The bar's measured height feeds the page's scroll padding below, so a
-  // focused row scrolls into view ABOVE the sticky bar. Measured rather than
-  // guessed: the height depends on wrapping, locale label lengths and whether
-  // the over-cap warning is showing.
+  // WCAG 2.2 SC 2.4.11 — a focused row scrolls into view ABOVE the sticky
+  // bar: the page keeps the bar's measured height, its gap above the screen
+  // edge and 16px clear (PR M, shared with the other viewport bars). Measured
+  // rather than guessed: the height depends on wrapping, locale label lengths
+  // and whether the over-cap warning is showing.
   const barRef = useRef<HTMLDivElement | null>(null);
-  const [barHeight, setBarHeight] = useState(64);
-
-  useEffect(() => {
-    const el = barRef.current;
-    if (!el || !visible) return;
-    // Guard for jsdom/older browsers: without ResizeObserver keep the last
-    // measured value rather than collapsing to 0.
-    if (typeof ResizeObserver === 'undefined') {
-      setBarHeight(el.offsetHeight);
-      return;
-    }
-    const ro = new ResizeObserver(([entry]) => {
-      const h = entry?.borderBoxSize?.[0]?.blockSize ?? el.offsetHeight;
-      setBarHeight(Math.ceil(h));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [visible]);
-
-  // WCAG 2.2 SC 2.4.11 — keep focus / scroll-into-view above the bar.
-  useFixedBarScrollPadding(visible, barHeight);
+  useActionBarScrollPadding(visible, barRef);
 
   // Undo for a bulk archive — restores exactly the ids the archive returned via
   // the `unarchive` bulk action (domain `undelete`, 90-day window). Slim by

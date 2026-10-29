@@ -20,7 +20,7 @@ import { renderBroadcastHtml } from '@/modules/broadcasts/infrastructure/resend/
 const BASE = { subject: 'Hello', bodyHtml: '<p>Body</p>', tenantDisplayName: 'Chamber & Co' };
 
 function footer(html: string): string {
-  const m = /<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;[^"]*">([\s\S]*?)<\/td><\/tr>/.exec(html);
+  const m = /<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;[^"]*"(?: class="[^"]*")?>([\s\S]*?)<\/td><\/tr>/.exec(html);
   expect(m).not.toBeNull();
   return m![1]!;
 }

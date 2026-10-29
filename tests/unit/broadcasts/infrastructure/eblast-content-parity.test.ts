@@ -100,7 +100,8 @@ function editorSanitise(html: string, config = makeBroadcastSanitizerConfig({ im
 
 /** The user-content cell of the rendered email (between the header row and the footer row). */
 function bodyCell(fullHtml: string): string {
-  const start = fullHtml.indexOf('line-height:1.6;color:#1a1a1a">') + 'line-height:1.6;color:#1a1a1a">'.length;
+  const open = 'line-height:1.6;color:#1a1a1a" class="eb-cell eb-body">';
+  const start = fullHtml.indexOf(open) + open.length;
   const end = fullHtml.indexOf('</td></tr><tr><td style="padding:16px 32px 24px 32px;border-top');
   expect(start).toBeGreaterThan(30);
   expect(end).toBeGreaterThan(start);
