@@ -47,8 +47,17 @@ describe('useActionBarClearance', () => {
 
   // AURA un-sticks the bar on a short screen (400% zoom, a phone held
   // sideways): it then sits in the page flow and covers nothing.
-  it('is 0 while the bar is not sticky or fixed', () => {
+  it('is 0 while the bar is not sticky', () => {
     mountBar('my-bar', 114, '8px', 'static');
+    const { result } = renderHook(() => useActionBarClearance(true, '.my-bar'));
+    expect(result.current).toBe(0);
+  });
+
+  // D-039 — below 640px the bar is AURA's edge strip (`edgeBelow="sm"`),
+  // `position: fixed`: AURA pads the page and sets the scroll padding itself
+  // from `--aura-actionbar-height`, so the hook must not count it again.
+  it('is 0 while the bar is AURA’s fixed edge strip', () => {
+    mountBar('my-bar', 62, '0px', 'fixed');
     const { result } = renderHook(() => useActionBarClearance(true, '.my-bar'));
     expect(result.current).toBe(0);
   });
