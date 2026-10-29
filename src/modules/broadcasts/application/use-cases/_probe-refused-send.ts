@@ -18,9 +18,10 @@
  * The verdict, a POSITIVE test as on every probe in this module:
  *   - `accepted` — `queued` / `sending` / `sent`: the mail is out; the caller
  *     advances the row exactly as its replay arm does.
- *   - `refused` — `draft`: genuinely never sent; the caller's ordinary
- *     permanent handling stands.
- *   - `unverifiable` — anything else (`not_found`, `cancelled`, `unknown`) or
+ *   - `refused` — `draft`, or `cancelled` (a scheduled send Resend cancelled):
+ *     genuinely never sent — the reading the inherited-id probe (legacy Step
+ *     1b) gives both; the caller's ordinary permanent handling stands.
+ *   - `unverifiable` — anything else (`not_found`, `unknown`) or
  *     the probe itself failed: FAIL CLOSED — the caller refuses
  *     non-terminally (no terminal write, no FR-021 clock, nobody told).
  *
@@ -54,7 +55,7 @@ export async function probeRefusedSend(
     logger.warn({ ...ids, observedResendStatus: status }, `${logPrefix}.send_already_accepted`);
     return { kind: 'accepted', status };
   }
-  if (status === 'draft') return { kind: 'refused' };
+  if (status === 'draft' || status === 'cancelled') return { kind: 'refused' };
   logger.error({ ...ids, observedResendStatus: status, severity: 'critical' }, `${logPrefix}.send_refusal_unverifiable`);
   return { kind: 'unverifiable' };
 }
