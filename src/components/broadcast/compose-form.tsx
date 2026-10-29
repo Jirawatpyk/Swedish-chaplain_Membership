@@ -654,10 +654,10 @@ export function ComposeForm({
     />
   );
   const barCount = summaryRecipientCount(recipientCount, segment.kind, customLines.length);
-  // On Preview the Write tab's reason lines are out of sight, so the bar says
-  // why Submit is off in place of the count; the form's reason comes before a
-  // refused audience (`submitBarReason`).
-  const barReason = submitBarReason({ view, hintKey: blockedHintKey, bodyInvalid });
+  // Why Submit is off, in place of the count: on Write only a refused audience
+  // (the form shows the rest), on Preview the first thing to fix
+  // (`submitBarReason`).
+  const barReason = submitBarReason({ view, hintKey: blockedHintKey, countBlocked, bodyInvalid });
   const barStart = barReason !== null ? (
     <span
       className={`text-sm ${
@@ -666,8 +666,6 @@ export function ComposeForm({
     >
       {t(barReason.key)}
     </span>
-  ) : countBlocked ? (
-    <span className="text-sm text-[var(--aura-fg-danger)]">{t('views.blocked')}</span>
   ) : barCount === null ? undefined : (
     <span className="text-sm">{t('recipientCount.readyShort', { count: barCount })}</span>
   );
@@ -975,7 +973,9 @@ export function ComposeForm({
             ]}
           />
           <ActionBar
-            className="chamber-viewport-actionbar chamber-compose-actionbar"
+            className={`chamber-viewport-actionbar chamber-compose-actionbar${
+              view === 'preview' ? ' chamber-compose-actionbar-tall' : ''
+            }`}
             label={t('views.actions')}
             start={barStart}
           >

@@ -90,31 +90,37 @@ export type SubmitBlockedHintKey =
   | 'errors.broadcast_custom_recipient_too_many';
 
 /**
- * What the phone bar beside Submit says instead of the count, on the Preview
- * tab only (the maintainer, 29 Oct 2026): there the Write tab's reason lines
- * are out of sight. On Write the reason is in the form, so the bar keeps the
- * count (`null`).
- *
- * The form's own reason first, in the hint's tone (muted: an input is still
- * needed) and with the tier in its short form; then the over-size body, red
- * like its own error line. The caller puts this before a refused count, so the
- * bar names the first thing to fix in the form's reading order.
+ * What the phone bar beside Submit says instead of the count. On Write the
+ * reason is in the form, so only a refused audience is said there (as before).
+ * On Preview the Write tab's lines are out of sight (the maintainer, 29 Oct
+ * 2026), so the bar names the first thing to fix in the form's reading order:
+ * the form's reason (tier in its short form), then the audience, then the
+ * over-size body. A missing input is muted, like the hint line; a broken one
+ * (too long, over the cap, too large, refused) is red. `null` keeps the count.
  */
 export type SubmitBarReason = {
-  readonly key: SubmitBlockedHintKey | 'errors.broadcast_body_too_large';
+  readonly key: SubmitBlockedHintKey | 'views.blocked' | 'errors.broadcast_body_too_large';
   readonly tone: 'muted' | 'danger';
 };
+
+const BAR_ERROR_KEYS: ReadonlySet<SubmitBlockedHintKey> = new Set([
+  'errors.broadcast_subject_too_long',
+  'errors.broadcast_custom_recipient_too_many',
+]);
 
 export function submitBarReason(input: {
   readonly view: 'write' | 'preview';
   readonly hintKey: SubmitBlockedHintKey | null;
+  readonly countBlocked: boolean;
   readonly bodyInvalid: boolean;
 }): SubmitBarReason | null {
-  if (input.view !== 'preview') return null;
+  const blocked: SubmitBarReason = { key: 'views.blocked', tone: 'danger' };
+  if (input.view !== 'preview') return input.countBlocked ? blocked : null;
   if (input.hintKey !== null) {
     const key = input.hintKey === 'submitBlocked.tierRequired' ? 'submitBlocked.tierChooseFirst' : input.hintKey;
-    return { key, tone: 'muted' };
+    return { key, tone: BAR_ERROR_KEYS.has(key) ? 'danger' : 'muted' };
   }
+  if (input.countBlocked) return blocked;
   if (input.bodyInvalid) return { key: 'errors.broadcast_body_too_large', tone: 'danger' };
   return null;
 }
