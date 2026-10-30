@@ -139,14 +139,28 @@ vi.mock('@/components/layout', () => ({
   DetailContainer: ({ children }: { children?: unknown }) => children as ReactElement,
 }));
 vi.mock('@/components/layout/page-header', () => ({
-  // Render title + actions so the invoice-download marker (inside `actions`)
-  // reaches the output; `badge` is intentionally dropped (it only mounts the
-  // OptimisticPaidOverlay client component, irrelevant to this assertion).
-  PageHeader: ({ title, subtitle, actions }: { title?: unknown; subtitle?: unknown; actions?: unknown }) => (
-    <div data-marker="page-header">
+  // Render title, actions and the phone-bar actions in their own markers so
+  // the invoice-download marker (inside `actions`) and the pay bar (inside
+  // `actionsBar`, AURA #191) reach the output; `badge` is intentionally
+  // dropped (it only mounts the OptimisticPaidOverlay client component).
+  PageHeader: ({
+    title,
+    subtitle,
+    actions,
+    actionsBar,
+    actionsBarBelow,
+  }: {
+    title?: unknown;
+    subtitle?: unknown;
+    actions?: unknown;
+    actionsBar?: unknown;
+    actionsBarBelow?: string;
+  }) => (
+    <div data-marker="page-header" data-bar-below={actionsBarBelow ?? 'none'}>
       <span>{title as ReactElement}</span>
       {subtitle ? <p data-marker="subtitle">{subtitle as ReactElement}</p> : null}
-      <span>{actions as ReactElement}</span>
+      <span data-marker="actions">{actions as ReactElement}</span>
+      {actionsBar ? <span data-marker="actions-bar">{actionsBar as ReactElement}</span> : null}
     </div>
   ),
 }));
@@ -482,7 +496,7 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
     expect(html).toMatch(/data-testid="portal-invoice-auto-refund-notice" class="aura-alert aura-alert--info"/);
   });
 
-  it('an issued invoice puts Pay now in the header (the one primary action), a band fixed above the tabs on phones', async () => {
+  it('an issued invoice puts Pay now in the header (the one primary action), as AURA\u2019s phone bar (#191)', async () => {
     getInvoiceMock.mockResolvedValue({ ok: true, value: issuedUnpaid088Bill() });
     envFeatures.f5OnlinePayment = true;
     paymentSettingsResult = {
@@ -492,15 +506,28 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
       processorPublishableKey: 'pk_test_1',
     };
     const html = await renderPage();
-    const header = html.slice(html.indexOf('data-marker="page-header"'), html.indexOf('detailsHeading'));
-    const bar = /<section[^>]*data-testid="portal-invoice-pay-bar"[^>]*>/.exec(header)?.[0] ?? '';
-    // D-039: a bar below 640px, as every other bar (was 768px).
-    expect(bar).toContain('max-sm:fixed');
-    expect(bar).not.toContain('max-md:');
-    expect(bar).not.toMatch(/(^|\s)sticky(\s|")/);
+    // AURA 5.71 (#191): only the pay bar becomes the strip below 640px; the
+    // downloads stay in the page (`actions`).
+    expect(html).toContain('data-bar-below="sm"');
+    const actions = /data-marker="actions">(.*?)<\/span><span data-marker="actions-bar">/s.exec(html)?.[1] ?? '';
+    const barSlot = /data-marker="actions-bar">(.*)/s.exec(html)?.[1] ?? '';
+    expect(actions).not.toContain('portal-invoice-pay-bar');
+    const bar = /<section[^>]*data-testid="portal-invoice-pay-bar"[^>]*>/.exec(barSlot)?.[0] ?? '';
+    expect(bar).not.toBe('');
+    // AURA's strip pins it; the section is only the row inside.
+    expect(bar).not.toMatch(/max-(?:sm|md):fixed|(^|\s)sticky(\s|")/);
+    // AURA pads the page for its strip: no spacer of the app's own.
+    expect(html).not.toMatch(/aria-hidden="true" class="h-24 sm:hidden/);
     expect(html).toContain('summary.amountLabel');
     // With Pay now on the page the bill download steps down to secondary.
     expect(html).not.toMatch(/data-testid="portal-download-invoice"[^>]*aura-btn--primary|aura-btn--primary[^"]*"[^>]*data-testid="portal-download-invoice"/);
+  });
+
+  it('a paid invoice has no phone bar', async () => {
+    getInvoiceMock.mockResolvedValue({ ok: true, value: paidSeparateInvoice() });
+    const html = await renderPage();
+    expect(html).toContain('data-bar-below="none"');
+    expect(html).not.toContain('data-marker="actions-bar"');
   });
 
   it('an unpaid 088 bill reads the bill note as its subtitle; a paid one with its RC the paid line; legacy none', async () => {

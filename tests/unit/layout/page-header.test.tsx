@@ -63,6 +63,22 @@ describe('<PageHeader> on AURA PageHeader', () => {
     expect(screen.getByText('Total 107,000.00 THB incl. VAT').closest('.aura-page-header__status')).not.toBeNull();
   });
 
+  // AURA 5.71 (#191): only `actionsBar` becomes the phone bar; `actions` stay
+  // in the page (the portal invoice: downloads in the page, Pay now in the bar).
+  it('passes `actionsBar` through: only those actions become the phone bar (#191)', () => {
+    render(
+      <PageHeader
+        title="Invoice SC-2026-000130"
+        actions={<button type="button">Download PDF</button>}
+        actionsBar={<button type="button">Pay now</button>}
+        actionsBarBelow="sm"
+      />,
+    );
+    const bar = screen.getByRole('button', { name: 'Pay now' }).parentElement;
+    expect(bar).toHaveClass('aura-page-header__bar');
+    expect(bar).not.toContainElement(screen.getByRole('button', { name: 'Download PDF' }));
+  });
+
   it('an eyebrow of chips is a div row, not a paragraph', () => {
     render(<PageHeader title="Siam Nordic" eyebrow={<span data-testid="pill">Active</span>} />);
     const eyebrow = screen.getByTestId('pill').closest('.aura-page-header__eyebrow');
