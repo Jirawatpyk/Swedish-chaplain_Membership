@@ -75,10 +75,20 @@ function makeDeps(overrides: {
   lockedRowImpl?: (broadcastId: string) => Promise<Record<string, unknown> | null>;
   /** Spec 139 — what `deleteBroadcastOnce` answers (erasure mode only). Default: `deleted`. */
   deleteOutcome?: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other';
-  /** Spec 139 P5 — what the probe after a 403 answers; `'throws'` = it fails. Default: `sent`. */
-  probe?: 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled' | 'unknown' | 'not_found' | 'throws';
-  /** Spec 139 — the tenant already holds this broadcast's `already_sent` evidence row. Default: false. */
-  alreadySentEvidence?: boolean;
+  /**
+   * Spec 139 — what the bounded probe (`retrieveBroadcastOnce`) after a DELETE
+   * 404 or 403 answers; `'throws'` = a fake that breaks its never-throws
+   * contract. Default: `sent`.
+   */
+  probe?: 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled' | 'unknown' | 'not_found' | 'retryable' | 'other' | 'throws';
+  /**
+   * Spec 139 P7 — broadcasts this member already holds an `already_sent`
+   * evidence row for. The fake store also records every evidence row the
+   * cascade emits, so the count it answers is DERIVED, as the repo's is.
+   */
+  alreadySentEvidence?: ReadonlyArray<string>;
+  /** Spec 139 P7 — the end-of-cascade count read fails. */
+  evidenceCountThrows?: boolean;
 }) {
   const rows = (overrides.inFlightRows ?? []).map(makeBroadcastRow);
   // F119 round-4 B6 — mirror db.transaction: a callback that returns COMMITS,
@@ -124,34 +134,44 @@ function makeDeps(overrides: {
     findById: vi.fn(async (_t: unknown, broadcastId: string) =>
       overrides.findByIdImpl ? overrides.findByIdImpl(broadcastId) : { broadcastId, status: 'sending' },
     ),
-    hasAlreadySentEvidenceInTx: vi.fn(async (_tx: unknown, _t: unknown, broadcastId: string) => {
-      // Read on the emit's tx, or a concurrent re-drive could slip between them.
-      calls.push(openTx > 0 ? `evidence:${broadcastId}` : `evidence:${broadcastId}:no-tx`);
-      return overrides.alreadySentEvidence ?? false;
-    }),
+    readAlreadySentEvidenceInTx: vi.fn(
+      async (_tx: unknown, _t: unknown, query: { memberId: string; broadcastId: string | null }) => {
+        // Read on the emit's tx, or a concurrent re-drive could slip between them.
+        calls.push(`evidence:${query.broadcastId ?? 'count'}${openTx > 0 ? '' : ':no-tx'}`);
+        if (query.broadcastId === null && overrides.evidenceCountThrows === true) throw new Error('Neon: count failed');
+        return {
+          broadcastRecorded: query.broadcastId !== null && evidence.has(query.broadcastId),
+          memberBroadcastCount: evidence.size,
+        };
+      },
+    ),
   };
+  /** Spec 139 P7 — the `already_sent` evidence rows this member holds, by broadcast. */
+  const evidence = new Set<string>(overrides.alreadySentEvidence ?? []);
   const audit = {
-    emit: vi.fn(async () => {
+    emit: vi.fn(async (_tx: unknown, event: { payload: { broadcastId?: unknown; resendOutcome?: unknown } }) => {
       if (overrides.auditEmitImpl) {
         await overrides.auditEmitImpl();
       }
+      if (event.payload.resendOutcome === 'already_sent') evidence.add(String(event.payload.broadcastId));
     }),
   };
   const clock = { now: () => new Date('2026-05-03T00:00:00Z') };
   // Spec 139 — the gateway the erasure mode calls under the row lock. Recorded
-  // into `calls` so a test can prove the DELETE sits between the read and the CAS.
+  // into `calls` so a test can prove the DELETE and the probe sit between the
+  // locked read and the CAS — both bounded, both under the lock that did the
+  // DELETE (a call outside any tx is marked `:no-lock`).
   const broadcastsGateway = {
     deleteBroadcastOnce: vi.fn(async (id: string) => {
-      calls.push(`delete:${id}`);
+      calls.push(`delete:${id}${openTx > 0 ? '' : ':no-lock'}`);
       return { kind: overrides.deleteOutcome ?? 'deleted' };
     }),
-    retrieveBroadcast: vi.fn(async (id: string) => {
-      // The probe retries (`withRetry`, up to 31 s), so it must never run under the lock.
-      calls.push(openTx > 0 ? `probe:${id}:under-lock` : `probe:${id}`);
+    retrieveBroadcastOnce: vi.fn(async (id: string) => {
+      calls.push(`probe:${id}${openTx > 0 ? '' : ':no-lock'}`);
       const probe = overrides.probe ?? 'sent';
-      if (probe === 'throws') throw new Error('Resend 500 on GET /broadcasts');
-      if (probe === 'not_found') return { kind: 'not_found' as const };
-      return { kind: 'present' as const, resource: { id, status: probe, sentAt: null } };
+      if (probe === 'throws') throw new Error('a fake that breaks the never-throws contract');
+      if (probe === 'not_found' || probe === 'retryable' || probe === 'other') return { kind: probe };
+      return { kind: 'present' as const, status: probe };
     }),
   };
   return {
@@ -501,28 +521,26 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
   });
 
   /**
-   * Spec 139 DE2 — the ERASURE mode (`onDispatchBegun: 'delete_then_cancel'`).
+   * Spec 139 DE2 — the ERASURE mode (`onDispatchBegun: 'delete_then_cancel'`),
+   * review round 1's table. Every decision on the row is made UNDER the row
+   * lock that did the DELETE: a cancel decided later, on a status-only CAS,
+   * could follow an import tick that re-minted from pre-scrub content.
    *
-   * Both legs persist `resend_broadcast_id` BEFORE `/send`, so an `approved`
-   * row with an id may be a draft nobody has sent yet — and, on the import
-   * leg, one minted from the PRE-scrub content. Skipping it (D1, kept for
-   * archive above) let the dispatcher send an erased member's E-Blast. Under
-   * the existing row lock the cascade now asks Resend to DELETE it, ONCE:
+   * | DELETE (once) | GET once, under the lock    | decision                                   |
+   * | 200 deleted   | —                           | cancel, `resendOutcome: 'deleted'`         |
+   * | 404 absent    | not_found                   | cancel, `'absent'` (two not-founds)        |
+   * | 404 absent    | queued / sending / sent     | no row write; `already_sent` evidence      |
+   * | 404 absent    | draft / cancelled / unknown | unexpected (an inconsistent answer)        |
+   * | 403 forbidden | queued / sending / sent     | no row write; `already_sent` evidence      |
+   * | 403 forbidden | cancelled                   | cancel, `'cancelled_at_resend'`            |
+   * | 403 forbidden | draft / not_found / unknown | unexpected (a restricted key; fail closed) |
+   * | either call retryable / other / timeout     | unexpected                                 |
    *
-   *   - 200 / 404 → cancelled in the same tx; `broadcast_cancelled` carries
-   *     `resendOutcome` (`deleted` | `absent`);
-   *   - 403 → probed (P5: a restricted key answers 403 too): `queued` /
-   *     `sending` / `sent` → the row is left as it is and
-   *     `broadcast_concurrent_action_blocked` (`dispatchBegun: true`,
-   *     `resendOutcome: 'already_sent'`) is written on its own tx after the
-   *     lock tx (P6) — once per broadcast: a re-erasure that finds the row
-   *     already there writes no second one — and `alreadySentCount` + 1 on
-   *     every run; any other probe answer → unexpected;
-   *   - retryable / other → unexpected (row unchanged; the adapter reports
-   *     `cascade_partial_failure`, `member_erased` is withheld, the
-   *     `reconcile-erasures` cron drives it again).
+   * The evidence row is written on its own tx after the lock tx, under the
+   * evidence advisory lock, once per broadcast; `alreadySentCount` is DERIVED
+   * at the end from the evidence the member holds (P7), never accumulated.
    */
-  describe('spec 139 DE2 — the erasure mode deletes the draft, then cancels, under the lock', () => {
+  describe('spec 139 DE2 — the erasure mode decides every row under the lock that did the DELETE', () => {
     const erasureInput = { tenant, memberId, requestId: 'req-1', onDispatchBegun: 'delete_then_cancel' as const };
     const handedRow = (ids: Record<string, unknown> = {}) => async (id: string) =>
       id === broadcastIdA
@@ -532,81 +550,146 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       calls: string[];
       txOutcomes: string[];
       audit: { emit: ReturnType<typeof vi.fn> };
-      broadcastsGateway: { deleteBroadcastOnce: ReturnType<typeof vi.fn>; retrieveBroadcast: ReturnType<typeof vi.fn> };
+      broadcastsRepo: { readAlreadySentEvidenceInTx: ReturnType<typeof vi.fn> };
+      broadcastsGateway: { deleteBroadcastOnce: ReturnType<typeof vi.fn>; retrieveBroadcastOnce: ReturnType<typeof vi.fn> };
     };
     const eventsOf = (deps: Seen, eventType: string) =>
       deps.audit.emit.mock.calls.filter((c) => (c[1] as { eventType: string }).eventType === eventType);
+    const lockA = [`lock:${broadcastIdA}`, `read:${broadcastIdA}`, 'delete:rb-live-1'];
 
-    it.each(['deleted', 'absent'] as const)(
-      'DELETE answers %s → the row is cancelled in the same tx, broadcast_cancelled carries resendOutcome',
-      async (outcome) => {
-        const deps = makeDeps({
-          inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
-          lockedRowImpl: handedRow(),
-          deleteOutcome: outcome,
-        }) as unknown as Seen;
-        const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-        expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 } });
-        // The DELETE sits between the locked read and the CAS — one tx.
-        expect(deps.calls).toEqual([`lock:${broadcastIdA}`, `read:${broadcastIdA}`, 'delete:rb-live-1', `cas:${broadcastIdA}`]);
-        expect(deps.broadcastsGateway.deleteBroadcastOnce).toHaveBeenCalledTimes(1);
-        expect(deps.txOutcomes).toEqual(['committed']);
-        const [cancelled] = eventsOf(deps, 'broadcast_cancelled');
-        expect(cancelled?.[1]).toMatchObject({ payload: expect.objectContaining({ broadcastId: broadcastIdA, resendOutcome: outcome }) });
-        expect(eventsOf(deps, 'broadcast_concurrent_action_blocked')).toEqual([]);
-      },
-    );
+    it('DELETE answers deleted → cancelled in the same tx, no probe; broadcast_cancelled carries resendOutcome deleted', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+        lockedRowImpl: handedRow(),
+        deleteOutcome: 'deleted',
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 } });
+      expect(deps.calls).toEqual([...lockA, `cas:${broadcastIdA}`, 'evidence:count']);
+      expect(deps.broadcastsGateway.retrieveBroadcastOnce).not.toHaveBeenCalled();
+      // The cancel tx, then the count read.
+      expect(deps.txOutcomes).toEqual(['committed', 'committed']);
+      const [cancelled] = eventsOf(deps, 'broadcast_cancelled');
+      expect(cancelled?.[1]).toMatchObject({ payload: expect.objectContaining({ broadcastId: broadcastIdA, resendOutcome: 'deleted' }) });
+      expect(eventsOf(deps, 'broadcast_concurrent_action_blocked')).toEqual([]);
+    });
 
-    it.each(['queued', 'sending', 'sent'] as const)(
-      'DELETE answers 403 and the probe says %s → already sent: no transition, probed after the lock is released, the residual row on its own tx, alreadySentCount 1',
-      async (status) => {
-        const deps = makeDeps({
-          inFlightRows: [
-            { broadcastId: broadcastIdA, status: 'approved' },
-            { broadcastId: broadcastIdB, status: 'submitted' },
-          ],
-          lockedRowImpl: handedRow(),
-          deleteOutcome: 'forbidden',
-          probe: status,
-        }) as unknown as Seen;
-        const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-        expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1 } });
-        expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
-        expect(deps.calls.slice(0, 4)).toEqual([`lock:${broadcastIdA}`, `read:${broadcastIdA}`, 'delete:rb-live-1', 'probe:rb-live-1']);
-        // A's lock tx (nothing written), A's residual-row tx, B's cancel.
-        expect(deps.txOutcomes).toEqual(['committed', 'committed', 'committed']);
-        const blocked = eventsOf(deps, 'broadcast_concurrent_action_blocked');
-        expect(blocked).toHaveLength(1);
-        // P6 — durable: on the cascade's tx, never `emit(null)`.
-        expect(blocked[0]![0]).not.toBeNull();
-        expect(blocked[0]![1]).toMatchObject({
-          payload: expect.objectContaining({ broadcastId: broadcastIdA, dispatchBegun: true, resendOutcome: 'already_sent', observedResendStatus: status }),
-        });
-      },
-    );
+    it('DELETE answers absent and the probe UNDER the lock says not_found (two not-founds) → cancelled, resendOutcome absent', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+        lockedRowImpl: handedRow(),
+        deleteOutcome: 'absent',
+        probe: 'not_found',
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 } });
+      expect(deps.calls).toEqual([...lockA, 'probe:rb-live-1', `cas:${broadcastIdA}`, 'evidence:count']);
+      expect(deps.txOutcomes).toEqual(['committed', 'committed']);
+      const [cancelled] = eventsOf(deps, 'broadcast_cancelled');
+      expect(cancelled?.[1]).toMatchObject({ payload: expect.objectContaining({ broadcastId: broadcastIdA, resendOutcome: 'absent' }) });
+    });
 
-    it.each(['draft', 'cancelled', 'unknown', 'not_found', 'throws'] as const)(
-      'DELETE answers 403 but the probe says %s → unexpected (a restricted key, not a send): nothing written',
-      async (probe) => {
-        const deps = makeDeps({
-          inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
-          lockedRowImpl: handedRow(),
-          deleteOutcome: 'forbidden',
-          probe,
-        }) as unknown as Seen;
-        const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-        expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
-        expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
-        // The lock tx wrote nothing and committed; the probe ran after it.
-        expect(deps.txOutcomes).toEqual(['committed']);
-        expect(deps.calls).toContain('probe:rb-live-1');
-        expect(deps.audit.emit).not.toHaveBeenCalled();
-        expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['unexpected_error']);
-      },
-    );
+    it('DELETE answers forbidden and the probe says cancelled → cancelled, resendOutcome cancelled_at_resend (a cancelled broadcast can never be sent)', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+        lockedRowImpl: handedRow(),
+        deleteOutcome: 'forbidden',
+        probe: 'cancelled',
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 } });
+      expect(deps.calls).toEqual([...lockA, 'probe:rb-live-1', `cas:${broadcastIdA}`, 'evidence:count']);
+      const [cancelled] = eventsOf(deps, 'broadcast_cancelled');
+      expect(cancelled?.[1]).toMatchObject({ payload: expect.objectContaining({ resendOutcome: 'cancelled_at_resend' }) });
+    });
+
+    describe.each(['absent', 'forbidden'] as const)('DELETE answers %s', (deleteOutcome) => {
+      it.each(['queued', 'sending', 'sent'] as const)(
+        'and the probe under the lock says %s → already sent: the lock tx ends with no row write, the evidence row on its own tx, alreadySentCount derived 1',
+        async (status) => {
+          const deps = makeDeps({
+            inFlightRows: [
+              { broadcastId: broadcastIdA, status: 'approved' },
+              { broadcastId: broadcastIdB, status: 'submitted' },
+            ],
+            lockedRowImpl: handedRow(),
+            deleteOutcome,
+            probe: status,
+          }) as unknown as Seen;
+          const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+          expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1 } });
+          expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
+          // The probe ran under the row lock; the evidence check on a tx of its own after it.
+          expect(deps.calls.slice(0, 5)).toEqual([...lockA, 'probe:rb-live-1', `evidence:${broadcastIdA}`]);
+          expect(deps.calls.at(-1)).toBe('evidence:count');
+          // A's lock tx (nothing written), A's evidence tx, B's cancel, the count read.
+          expect(deps.txOutcomes).toEqual(['committed', 'committed', 'committed', 'committed']);
+          const blocked = eventsOf(deps, 'broadcast_concurrent_action_blocked');
+          expect(blocked).toHaveLength(1);
+          // P6 — durable: on the cascade's tx, never `emit(null)`.
+          expect(blocked[0]![0]).not.toBeNull();
+          expect(blocked[0]![1]).toMatchObject({
+            payload: expect.objectContaining({
+              broadcastId: broadcastIdA,
+              memberId,
+              dispatchBegun: true,
+              resendOutcome: 'already_sent',
+              observedResendStatus: status,
+              observedStatus: 'approved',
+            }),
+          });
+          // CR#9 — its own metric label, not `concurrent_skip`.
+          expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['already_sent', 'cancelled']);
+        },
+      );
+
+      it.each(['retryable', 'other', 'throws'] as const)(
+        'and the probe answers %s → unexpected: the lock tx rolls back, nothing written',
+        async (probe) => {
+          const deps = makeDeps({
+            inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+            lockedRowImpl: handedRow(),
+            deleteOutcome,
+            probe,
+          }) as unknown as Seen;
+          const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+          expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
+          expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
+          expect(deps.calls).toContain('probe:rb-live-1');
+          expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
+          expect(deps.audit.emit).not.toHaveBeenCalled();
+          expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['unexpected_error']);
+        },
+      );
+    });
+
+    it.each([
+      ['absent', 'draft'],
+      // Coordinator ruling (review round 1): a DELETE that said absent followed
+      // by a GET that finds the resource is inconsistent, and decides nothing.
+      ['absent', 'cancelled'],
+      ['absent', 'unknown'],
+      // A restricted key answers 403 too: only a positive probe is believed.
+      ['forbidden', 'draft'],
+      ['forbidden', 'not_found'],
+      ['forbidden', 'unknown'],
+    ] as const)('DELETE answers %s but the probe says %s → unexpected (fail closed): the lock tx rolls back, nothing written', async (deleteOutcome, probe) => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+        lockedRowImpl: handedRow(),
+        deleteOutcome,
+        probe,
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
+      expect(deps.calls).toEqual([...lockA, 'probe:rb-live-1', 'evidence:count']);
+      expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
+      expect(deps.audit.emit).not.toHaveBeenCalled();
+      expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['unexpected_error']);
+    });
 
     it.each(['retryable', 'other'] as const)(
-      'DELETE answers %s (a timeout included) → unexpected: the row unchanged, nothing written — the reconciler drives it again',
+      'DELETE answers %s (a timeout included) → unexpected, no probe: the row unchanged, nothing written — the reconciler drives it again',
       async (outcome) => {
         const deps = makeDeps({
           inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
@@ -616,8 +699,8 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
         expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
         expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
-        expect(deps.broadcastsGateway.retrieveBroadcast).not.toHaveBeenCalled();
-        expect(deps.txOutcomes).toEqual(['rolled_back']);
+        expect(deps.broadcastsGateway.retrieveBroadcastOnce).not.toHaveBeenCalled();
+        expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
         expect(deps.audit.emit).not.toHaveBeenCalled();
       },
     );
@@ -628,19 +711,82 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         lockedRowImpl: handedRow(),
         deleteOutcome: 'forbidden',
         probe: 'sent',
-        alreadySentEvidence: true,
+        alreadySentEvidence: [broadcastIdA],
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
       // member_erased must still say this E-Blast went out.
       expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1 } });
-      expect(eventsOf(deps, 'broadcast_concurrent_action_blocked')).toEqual([]);
       expect(deps.audit.emit).not.toHaveBeenCalled();
-      // The existence check runs on a tx of its own, after the probe.
-      expect(deps.calls).toEqual([`lock:${broadcastIdA}`, `read:${broadcastIdA}`, 'delete:rb-live-1', 'probe:rb-live-1', `evidence:${broadcastIdA}`]);
-      expect(deps.txOutcomes).toEqual(['committed', 'committed']);
+      expect(deps.calls).toEqual([...lockA, 'probe:rb-live-1', `evidence:${broadcastIdA}`, 'evidence:count']);
+      expect(deps.txOutcomes).toEqual(['committed', 'committed', 'committed']);
     });
 
-    it('403 + already sent, but the residual audit row cannot be written → unexpected (P6): the reconciler drives it again', async () => {
+    it('P7 — the count is DERIVED: a re-drive with nothing left in flight still reports every broadcast the member holds evidence for', async () => {
+      // The 403'd row moved on to `sending` after the first run, so it is no
+      // longer in flight; an accumulated count would say 0 here.
+      const deps = makeDeps({ inFlightRows: [], alreadySentEvidence: [broadcastIdA, broadcastIdB] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 2 } });
+      expect(deps.calls).toEqual(['evidence:count']);
+      expect(deps.broadcastsRepo.readAlreadySentEvidenceInTx).toHaveBeenCalledWith(expect.anything(), tenant.slug, { memberId, broadcastId: null });
+    });
+
+    it('P7 — the archive mode never reads the evidence: its count is 0', async () => {
+      const deps = makeDeps({ inFlightRows: [], alreadySentEvidence: [broadcastIdA] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 } });
+      expect(deps.broadcastsRepo.readAlreadySentEvidenceInTx).not.toHaveBeenCalled();
+    });
+
+    it('P7 — the count read fails → unexpected (member_erased is withheld), never a whole-cascade server error', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdB, status: 'submitted' }],
+        evidenceCountThrows: true,
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
+    });
+
+    it('P7 (a) — a lost race whose re-read finds the send started writes the already_sent evidence too (residual 8c), and it is counted', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+        applyTransitionImpl: async ({ broadcastId }) => {
+          throw new BroadcastConcurrentMutationError('test-tenant', broadcastId as never, 'approved');
+        },
+        findByIdImpl: async () => ({ status: 'partially_sent' }),
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 1 } });
+      const blocked = eventsOf(deps, 'broadcast_concurrent_action_blocked');
+      // The best-effort skip row, then the durable evidence row on its own tx.
+      expect(blocked).toHaveLength(2);
+      expect(blocked[0]![0]).toBeNull();
+      expect(blocked[1]![0]).not.toBeNull();
+      expect(blocked[1]![1]).toMatchObject({
+        payload: expect.objectContaining({
+          broadcastId: broadcastIdA,
+          memberId,
+          resendOutcome: 'already_sent',
+          observedStatus: 'partially_sent',
+          observedResendStatus: null,
+        }),
+      });
+    });
+
+    it('P7 (a) — the archive mode writes no evidence on a lost race to a started send', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+        applyTransitionImpl: async ({ broadcastId }) => {
+          throw new BroadcastConcurrentMutationError('test-tenant', broadcastId as never, 'approved');
+        },
+        findByIdImpl: async () => ({ status: 'sending' }),
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, { tenant, memberId, requestId: 'req-1' });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0 } });
+      expect(eventsOf(deps, 'broadcast_concurrent_action_blocked')).toHaveLength(1);
+    });
+
+    it('403 + already sent, but the evidence row cannot be written → unexpected (P6): the reconciler drives it again', async () => {
       const deps = makeDeps({
         inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
         lockedRowImpl: handedRow(),
@@ -652,7 +798,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
       expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
-      expect(deps.txOutcomes).toEqual(['committed', 'rolled_back']);
+      expect(deps.txOutcomes).toEqual(['committed', 'rolled_back', 'committed']);
     });
 
     it('DELETE 200, then the cancel tx rolls back (its audit write fails) → unexpected; the draft is gone, so a tick can only 404', async () => {
@@ -666,8 +812,8 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
       expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
-      expect(deps.calls).toEqual([`lock:${broadcastIdA}`, `read:${broadcastIdA}`, 'delete:rb-live-1', `cas:${broadcastIdA}`]);
-      expect(deps.txOutcomes).toEqual(['rolled_back']);
+      expect(deps.calls).toEqual([...lockA, `cas:${broadcastIdA}`, 'evidence:count']);
+      expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
     });
 
     it('an EMPTY id is not an id → cancelled without any Resend call', async () => {
