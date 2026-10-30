@@ -33,6 +33,8 @@ Rules: `.claude/rules/modules/broadcasts.md`; the auth and renewals module rules
   - `src/modules/renewals/infrastructure/resend-transactional-renewal-gateway.tsx` (the send option, and `mapResendError` for the two idempotency 409s)
   - `tests/unit/renewals/infrastructure/resend-transactional-renewal-gateway.test.ts`
   - `tests/contract/resend/renewals-email.contract.test.ts` (re-recorded)
+  - **Grown at build (30 Oct 2026, the maintainer's option A, below):** `application/ports/renewal-gateway.ts` (a replay success variant: `idempotentReplay: true`, `deliveryId: null`); `application/ports/renewal-reminder-event-repo.ts` + `infrastructure/drizzle/drizzle-renewal-reminder-event-repo.ts` (`deliveryId: string | null` on `transitionStatus` / `transitionFailedToSent`; the column is already nullable, so no migration); `application/use-cases/_lib/dispatch-one-cycle.ts`, `retry-failed-reminders.ts`, `accept-tier-upgrade.ts` (branch on the replay); the `renewal_reminder_sent` payload (`idempotent_replay: true`, `delivery_id` already nullable); a `renewalsMetrics` replay counter.
+  - **Env guard (moved here in review round 2):** `baseUrl` on the three `new Resend(…)`; `src/lib/env.ts` refuses `RESEND_DEBUG` when `NODE_ENV=production`.
 
 ## Data model and migration
 
@@ -76,6 +78,7 @@ n/a
 |---|---|---|
 | Solo-maintainer review (auth / PII email surface): the five checks in `review-and-ship` § 2 | No second human reviewer | — |
 | Slice 1's "RED" is the bump, not a test commit | The suite characterises existing behaviour, so it is green by design; each file's positive control is its recorded failing run | A test that fails before the change cannot exist for "nothing changes"; the positive control proves the suite can fail |
+| Slice 2: a 409 `invalid_idempotent_request` on a retry is read as "already sent under this key" (option A), with no delivery id | The cross-tick retry re-renders a different body (a redeem link signed with `now`), so the same key meets a changed payload; MEASURED 2026-10-30 that a 422 does not consume a key, so a 409 means an earlier request with that key SUCCEEDED — the double send the spec exists to stop. Residual: if Resend stores a key on its own 5xx (unmeasurable, undocumented), that reminder is recorded as sent and lost; the 422 result is the evidence it is unlikely. A replay row has no delivery id, so delivery webhooks cannot attach to it, and its `dispatched_at` is the replay time | Key = event id + body hash (option B): leaves the cross-tick double send open. Persisting the rendered body for a byte-stable retry: a schema change, spec 140 territory. A sentinel delivery id: a fabricated value in an audit field |
 | RS4's void-notice cron run waived; the E-Blast draft lifecycle checked at the gateway | Driving a draft through the UI reaches Resend only at dispatch, which sends; the void-notice flag is off in prod | The maintainer chose (30 Oct 2026) to run :3400 for password reset and the E-Blast surface, and to waive the void-notice run. The attachment is pinned by the contract case and a delivered sink send |
 
 ## Evidence

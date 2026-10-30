@@ -45,6 +45,11 @@
 - `contacts.list({ audienceId })` still returns `has_more`.
 - A network failure still has no `statusCode` of 400 or more.
 
+**Slice 2 premises (30 Oct 2026):**
+- **A reminder's body is not byte-stable across cron ticks.** `retry-failed-reminders.ts` rebuilds `renewal_link_url` with `buildRenewalCtaUrl(…, now)`; near expiry that is a redeem link signed with `now`. Within one tick the send loop renders once, so its attempts share a body.
+- DOCUMENTED (resend.com/docs/dashboard/emails/idempotency-keys, accessed 2026-10-30): keys are kept 24 h, up to 256 characters; same key + same payload → the same response, no second email; same key + different payload → 409 `invalid_idempotent_request`; a request in flight → 409 `concurrent_idempotent_requests`. Whether a failed request stores the key is not stated.
+- MEASURED 2026-10-30, transactional account, `delivered@resend.dev` only: same key + same body twice → 200 with the same id `01a18d68-5028-…` (one message at Resend, `delivered`); key used on a success, then a changed subject → 409 `invalid_idempotent_request`; key used on a request rejected 422 `validation_error`, then a valid body → 200, sent. **A rejected request does not consume the key.** A Resend 5xx cannot be provoked.
+
 ## User stories
 
 ### US1: The bump changes no email and no E-Blast call (slice 1)
@@ -65,7 +70,7 @@
 ### US2: A retried renewal email is not delivered twice (slice 2)
 **Done when:**
 - **RI1.** The reminder and tier-upgrade sends call `emails.send(payload, { idempotencyKey })`. The key is no longer in `payload.headers`. A unit test pins both halves and fails first on the current code; `tests/contract/resend/renewals-email.contract.test.ts` is re-recorded (the body loses `headers`, the request gains `Idempotency-Key`).
-- **RI1b.** Resend's idempotency 409s are mapped: `invalid_idempotent_request` (same key, different body) is permanent; `concurrent_idempotent_requests` is transient. A unit test per code.
+- **RI1b.** Resend's idempotency 409s are mapped: `invalid_idempotent_request` is read as **already sent under this key** (the maintainer's option A, 30 Oct 2026) — a success with `idempotentReplay: true` and no delivery id, recorded as sent with `idempotent_replay: true` in the audit and counted by a metric; `concurrent_idempotent_requests` is transient. A unit test per code.
 - **RI2.** MEASURED on the transactional account against the sink: two sends with the same key and the same body yield one message (the same id, or a documented 409); the same key with a changed body is recorded too, and the plan checks whether a reminder's body is byte-stable across cron ticks. Results recorded with their date.
 - **RI3.** The renewals docblock and the changelog say what changed.
 
