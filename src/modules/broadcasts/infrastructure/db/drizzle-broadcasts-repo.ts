@@ -1366,6 +1366,13 @@ export function makeDrizzleBroadcastsRepo(
       return found === true || found === 't';
     },
 
+    async readAlreadySentEvidenceInTx(txUnknown, _tenantIdArg: TenantSlug, _query) {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'readAlreadySentEvidenceInTx');
+      // RED stub (spec 139 review round 1): the read lands in the fix commit.
+      return { broadcastRecorded: false, memberBroadcastCount: 0 };
+    },
+
     async markAudienceImportCompleted(
       txUnknown,
       tenantIdArg: TenantSlug,

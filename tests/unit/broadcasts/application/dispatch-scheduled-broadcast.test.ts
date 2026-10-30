@@ -309,6 +309,9 @@ function makeRepo(opts: RepoOpts): {
       async hasAlreadySentEvidenceInTx() {
         return false;
       },
+      async readAlreadySentEvidenceInTx() {
+        return { broadcastRecorded: false, memberBroadcastCount: 0 };
+      },
       async clearDispatchRetryClock() {
         clears.count += 1;
         if (opts.clearDispatchRetryClockThrows !== undefined) {

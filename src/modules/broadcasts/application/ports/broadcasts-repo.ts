@@ -541,6 +541,29 @@ export interface BroadcastsRepo {
   ): Promise<boolean>;
 
   /**
+   * Spec 139 review round 1 (P7) — the erasure cascade's residual-8c evidence,
+   * read so the count is DERIVED, never accumulated: `memberBroadcastCount` is
+   * the number of DISTINCT broadcasts this tenant holds an `already_sent`
+   * evidence row for (`broadcast_concurrent_action_blocked`, payload
+   * `resendOutcome: 'already_sent'`) whose payload names `memberId`; it is what
+   * `member_erased` carries, so a re-drive's count is authoritative.
+   * `broadcastRecorded` — whether such a row exists for `broadcastId` (any
+   * member); `false` when `broadcastId` is `null`.
+   *
+   * With a `broadcastId`, the read first takes a transaction-scoped advisory
+   * lock on (tenant, broadcast) in the `broadcasts-evidence:` namespace, so a
+   * caller's check-then-insert on the SAME tx is serialised against a
+   * concurrent re-drive's: the second waits for the first to commit, then
+   * sees its row. Tenant-scoped by RLS AND an explicit `tenant_id` predicate
+   * (`audit_log`'s policy also admits `tenant_id IS NULL` rows).
+   */
+  readAlreadySentEvidenceInTx(
+    tx: unknown,
+    tenantId: TenantSlug,
+    query: { readonly memberId: string; readonly broadcastId: BroadcastId | null },
+  ): Promise<{ readonly broadcastRecorded: boolean; readonly memberBroadcastCount: number }>;
+
+  /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp
    * `dispatch_first_failed_at = COALESCE(dispatch_first_failed_at, at)` while
    * the row is still `approved`. Called by BOTH dispatch legs on a retryable

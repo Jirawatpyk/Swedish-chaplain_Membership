@@ -69,6 +69,7 @@ function makeRepoMocks(opts: {
     releaseAudienceImport: async () => false, // unused here.
     releaseResendAudience: async () => false, // unused here.
     hasAlreadySentEvidenceInTx: async () => false, // unused here.
+    readAlreadySentEvidenceInTx: async () => ({ broadcastRecorded: false, memberBroadcastCount: 0 }), // unused here.
     clearDispatchRetryClock: async () => {
       // no-op — F119 PR-E; unused here.
     },

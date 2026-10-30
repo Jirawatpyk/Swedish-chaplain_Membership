@@ -115,6 +115,9 @@ function makeRepo(opts: {
     async hasAlreadySentEvidenceInTx() {
       return false;
     },
+    async readAlreadySentEvidenceInTx() {
+      return { broadcastRecorded: false, memberBroadcastCount: 0 };
+    },
     async clearDispatchRetryClock() {},
     async listByTenantStatus() { return { rows: [], nextCursor: null }; },
     async countForMemberQuota() { return { submittedOrApproved: 0, sent: 0 }; },

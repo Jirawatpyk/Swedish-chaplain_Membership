@@ -214,6 +214,9 @@ function makeDeps(opts: {
         async hasAlreadySentEvidenceInTx() {
           return false;
         },
+        async readAlreadySentEvidenceInTx() {
+          return { broadcastRecorded: false, memberBroadcastCount: 0 };
+        },
         async clearDispatchRetryClock() {
           dispatchFirstFailedAt = null;
         },
