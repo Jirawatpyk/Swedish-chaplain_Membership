@@ -211,6 +211,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #192 | `ActionBar` pads the page (`--aura-actionbar-height`) for the LAST edge strip that mounted, even one in a hidden tab (`display: none`, 0px tall), so the visible strip gets no scroll padding (R109 finding 1, WCAG 2.4.11) | The renewal schedule editor mounts its save bar only in the active tier tab (`schedule-editor.tsx`); AURA should skip a strip that is not rendered |
+| #193 | `PageHeader actionsBar`'s strip stays (bordered, with its page padding) when everything in it is hidden — the portal pay bar hides on the optimistic-paid signal and never unmounts (R7) | `globals.css` hides a strip holding only a hidden `[data-slot="pay-bar"]`, labelled `stand-in until AURA #193`; the body's bottom padding (bottom nav + 12px) stays until the refresh |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

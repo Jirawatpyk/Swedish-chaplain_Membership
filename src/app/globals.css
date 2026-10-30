@@ -463,8 +463,11 @@ html:has(.chamber-shell) {
 /* AURA #191 (5.71) — the portal invoice's pay bar is PageHeader's
    `actionsBar` strip, which pads the page for itself. While PaySheet's
    optimistic-paid signal hides the pay bar (it hides, never unmounts: R7),
-   the strip holding it hides too, so no empty band waits for the refresh. */
-[data-slot="page-header"] :has(> [data-slot="pay-bar"][hidden]) {
+   the strip holding it hides too, so no empty band waits for the refresh;
+   only a strip holding nothing else, so a header cell that also holds the
+   downloads never goes. stand-in until AURA #193 (a bar whose content is all
+   hidden hides itself and drops its page padding). */
+[data-slot="page-header"] :has(> [data-slot="pay-bar"][hidden]):not(:has(> :not([data-slot="pay-bar"], [role="status"]))) {
   display: none;
 }
 

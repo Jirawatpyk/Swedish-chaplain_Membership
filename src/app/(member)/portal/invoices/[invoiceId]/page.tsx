@@ -384,7 +384,9 @@ export async function renderPortalInvoiceDetailView({
           <PayBar
             invoiceId={invoice.invoiceId}
             label={tPay('summary.amountLabel')}
-            className="flex items-center gap-3"
+            // `min-w-0`: AURA gives the bar's children `min-width: max-content`;
+            // the row shrinks so the amount wraps, never Pay now off the screen.
+            className="flex min-w-0 items-center gap-3"
           >
             <span className="flex min-w-0 flex-1 flex-col sm:hidden">
               <span className="text-xs text-[var(--aura-fg-secondary)]">{tPay('summary.amountLabel')}</span>
