@@ -34,7 +34,7 @@
  * branch on what actually documented the refund; rendering the credit-note copy
  * unconditionally is what produced "credit note  issued" with an empty number.
  */
-import { useEffect, useRef, useState, useId, useMemo } from 'react';
+import { useEffect, useRef, useState, useId, useMemo, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -270,8 +270,16 @@ export function RefundForm({
         : t('dialog.confirm'),
   });
 
+  // Held from the submit event, before RHF's async validation, until the POST
+  // settles: `submitting` flips only after validation and a render, so a
+  // second submit in that window would otherwise send a second refund.
+  const submittingRef = useRef(false);
+
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
-    if (amountSatang === null) return;
+    if (amountSatang === null) {
+      submittingRef.current = false;
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     // I5: track success-path entry so the
@@ -447,11 +455,24 @@ export function RefundForm({
       // is safe even when the dialog has already been torn down.
       void succeeded;
       setSubmitting(false);
+      submittingRef.current = false;
     }
   };
 
+  const submitOnce = (e: FormEvent<HTMLFormElement>) => {
+    if (submittingRef.current) {
+      e.preventDefault();
+      return;
+    }
+    submittingRef.current = true;
+    void handleSubmit(onSubmit, () => {
+      submittingRef.current = false;
+    })(e);
+  };
+
   // Cancel takes the first focus per FR-029(d) (destructive dialogs default
-  // to the safe action): AURA's modal focuses `[data-autofocus]` on open.
+  // to the safe action): `REFUND_FOOTER.autoFocusCancel` in ./index.tsx puts
+  // `data-autofocus` on the footer's Cancel, which AURA's modal focuses on open.
 
   // Map RHF zod-resolver error codes to localised messages. The
   // resolver puts the `message` field straight into errors; we
@@ -496,7 +517,7 @@ export function RefundForm({
   return (
     <form
       id={formId}
-      onSubmit={handleSubmit(onSubmit)}
+      onSubmit={submitOnce}
       className="flex flex-col gap-6"
       noValidate
     >

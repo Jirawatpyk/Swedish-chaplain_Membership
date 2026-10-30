@@ -212,7 +212,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
-| #194 | A `Dialog` with `footer` on a very short screen (320×256, i.e. 400% zoom; landscape with the keyboard open): the head, description and footer are `flex: none`, so the scrolling body can shrink to nothing and its fields can't be reached (WCAG 1.4.10). Ask: under `max-height: 30rem` the dialog scrolls as one box (handoff addendum 95, found in PR N2) | None: the money dialogs keep AURA's footer; nothing app-side |
+| #194 | A `Dialog` with `footer` on a very short screen (320×256, i.e. 400% zoom; landscape with the keyboard open): the head, description and footer are `flex: none`, so the scrolling body can shrink to nothing and its fields can't be reached (WCAG 1.4.10). Ask: under `max-height: 30rem` the dialog scrolls as one box (handoff addendum 95, found in PR N2) | `globals.css`, `stand-in until AURA #194`: under `max-height: 30rem` the `.aura-dialog` panel scrolls (`overflow-y: auto`) and `.aura-dialog__body` stops shrinking (`flex: none; min-height: auto; overflow: visible`), the footer at the end of the content; guarded by `tests/unit/styles/dialog-short-screen-css.test.ts` |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 

@@ -127,8 +127,10 @@ export function RecordPaymentDialog({
   // Cancel and Record payment sit in the Dialog's footer (PR N2), drawn from
   // the state the form reports; Record payment submits the form by its id.
   const formId = useId();
-  const initialFooter = () => ({ ...initialMoneyDialogFooter(t('submit')), canConfirm: true });
-  const [footer, setFooter] = useState<MoneyDialogFooterState>(initialFooter);
+  const [footer, setFooter] = useState<MoneyDialogFooterState>(() => ({
+    ...initialMoneyDialogFooter(t('submit')),
+    canConfirm: true,
+  }));
   // Raised right before the success close: the refresh that follows unmounts
   // the trigger, so focus must skip it (WCAG 2.4.3).
   const closedViaSuccessRef = useRef(false);
@@ -149,9 +151,6 @@ export function RecordPaymentDialog({
       onClose={() => setOpen(false)}
       onOpen={() => {
         closedViaSuccessRef.current = false;
-        // A fresh form reports its own state before paint; the last one's
-        // (in flight at its success close) must not disable Cancel meanwhile.
-        setFooter(initialFooter());
         setOpen(true);
       }}
       // No Escape or scrim close while the POST is in flight: a failure must

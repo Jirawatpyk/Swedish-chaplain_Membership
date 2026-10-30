@@ -111,80 +111,93 @@ export function PaymentForm({
     ? t('errors.dateRange', { min: issueDate ?? todayIso, max: todayIso })
     : null;
 
+  // Set before the POST, synchronously: `pending` flips only on the next
+  // render, so a second submit in the same tick would otherwise record twice.
+  const inFlightRef = useRef(false);
+
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (inFlightRef.current) return;
     setSubmitAttempted(true);
     setFormError(null);
     if (dateInvalid) {
       dateInputRef.current?.focus();
       return;
     }
+    inFlightRef.current = true;
     startTransition(async () => {
-      const res = await fetch(`/api/invoices/${invoiceId}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentMethod,
-          paymentReference: paymentReference.trim() || undefined,
-          paymentNotes: paymentNotes.trim() || undefined,
-          paymentDate,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const code = (body as { error?: { code?: string } })?.error?.code;
-        // FR-028/FR-032 — irreversible §87-mint failure → INLINE focused
-        // role="alert" (never a transient toast); a concurrent 409 →
-        // inline "already paid — refresh". The dialog stays open (no
-        // optimistic close) so the admin sees the outcome in context.
-        const routing = routeRecordPaymentError(code);
-        if (routing.kind === 'concurrent') {
-          setFormError({ kind: 'concurrent' });
-        } else {
-          const message =
-            routing.messageKey === 'errors.codeFallback' && routing.codeArg
-              ? t('errors.codeFallback', { code: routing.codeArg })
-              : t(routing.messageKey as 'errors.unknown');
-          setFormError({ kind: 'failure', message });
+      // Held after a success: the dialog closes and this form unmounts.
+      let recorded = false;
+      try {
+        const res = await fetch(`/api/invoices/${invoiceId}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentMethod,
+            paymentReference: paymentReference.trim() || undefined,
+            paymentNotes: paymentNotes.trim() || undefined,
+            paymentDate,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const code = (body as { error?: { code?: string } })?.error?.code;
+          // FR-028/FR-032 — irreversible §87-mint failure → INLINE focused
+          // role="alert" (never a transient toast); a concurrent 409 →
+          // inline "already paid — refresh". The dialog stays open (no
+          // optimistic close) so the admin sees the outcome in context.
+          const routing = routeRecordPaymentError(code);
+          if (routing.kind === 'concurrent') {
+            setFormError({ kind: 'concurrent' });
+          } else {
+            const message =
+              routing.messageKey === 'errors.codeFallback' && routing.codeArg
+                ? t('errors.codeFallback', { code: routing.codeArg })
+                : t(routing.messageKey as 'errors.unknown');
+            setFormError({ kind: 'failure', message });
+          }
+          return;
         }
-        return;
-      }
-      // FR-032 — doc-specific success toast: under the 088 flow the payment
-      // mints the §86/4 RC receipt number, so prefer "Tax receipt RC-… issued"
-      // (read from the response); fall back to the legacy "paid" copy otherwise.
-      const body = (await res.json().catch(() => ({}))) as {
-        receipt_document_number_raw?: string | null;
-        // Cluster 5 (Finding 1) — auto-email dispatch outcome.
-        email_dispatch?: string;
-      };
-      const rc =
-        typeof body.receipt_document_number_raw === 'string' && body.receipt_document_number_raw
-          ? body.receipt_document_number_raw
-          : null;
-      // Cluster 5 (Finding 1) — the receipt was NOT emailed because the member
-      // has no contact email on file. The payment still SUCCEEDED; append a
-      // non-blocking warning line so the admin knows to deliver it manually.
-      const noEmailWarning =
-        body.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
-      if (rc) {
-        toast.success(
-          t('successReceipt', { number: rc }),
-          noEmailWarning ? { description: noEmailWarning } : undefined,
-        );
-      } else {
-        const detail = documentNumber ? t('successDetail', { number: documentNumber }) : null;
-        const description = [detail, noEmailWarning].filter(Boolean).join(' ') || undefined;
-        toast.success(t('success'), description ? { description } : undefined);
-      }
-      if (onSuccess) {
-        // Dialog overlay wrapper — close first, then refresh so the
-        // detail page rerender lands with the dialog already gone.
-        onSuccess();
-        router.refresh();
-      } else {
-        // Legacy full-page caller — preserve original behaviour.
-        router.push(`/admin/invoices/${invoiceId}`);
-        router.refresh();
+        // FR-032 — doc-specific success toast: under the 088 flow the payment
+        // mints the §86/4 RC receipt number, so prefer "Tax receipt RC-… issued"
+        // (read from the response); fall back to the legacy "paid" copy otherwise.
+        const body = (await res.json().catch(() => ({}))) as {
+          receipt_document_number_raw?: string | null;
+          // Cluster 5 (Finding 1) — auto-email dispatch outcome.
+          email_dispatch?: string;
+        };
+        const rc =
+          typeof body.receipt_document_number_raw === 'string' && body.receipt_document_number_raw
+            ? body.receipt_document_number_raw
+            : null;
+        // Cluster 5 (Finding 1) — the receipt was NOT emailed because the member
+        // has no contact email on file. The payment still SUCCEEDED; append a
+        // non-blocking warning line so the admin knows to deliver it manually.
+        const noEmailWarning =
+          body.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
+        if (rc) {
+          toast.success(
+            t('successReceipt', { number: rc }),
+            noEmailWarning ? { description: noEmailWarning } : undefined,
+          );
+        } else {
+          const detail = documentNumber ? t('successDetail', { number: documentNumber }) : null;
+          const description = [detail, noEmailWarning].filter(Boolean).join(' ') || undefined;
+          toast.success(t('success'), description ? { description } : undefined);
+        }
+        recorded = true;
+        if (onSuccess) {
+          // Dialog overlay wrapper — close first, then refresh so the
+          // detail page rerender lands with the dialog already gone.
+          onSuccess();
+          router.refresh();
+        } else {
+          // Legacy full-page caller — preserve original behaviour.
+          router.push(`/admin/invoices/${invoiceId}`);
+          router.refresh();
+        }
+      } finally {
+        if (!recorded) inFlightRef.current = false;
       }
     });
   }

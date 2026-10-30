@@ -59,21 +59,16 @@ export function IssueInvoiceDialog(props: Props) {
   const t = useTranslations('admin.invoices.issue');
   const tDetail = useTranslations('admin.invoices.detail');
   const [open, setOpen] = useState(false);
-  const initialFooter = () =>
-    initialMoneyDialogFooter(t(props.taxAtPayment ? 'issueBillButtonPlain' : 'issueInvoiceButtonPlain'));
-  const [footer, setFooter] = useState<MoneyDialogFooterState>(initialFooter);
+  const [footer, setFooter] = useState<MoneyDialogFooterState>(() =>
+    initialMoneyDialogFooter(t(props.taxAtPayment ? 'issueBillButtonPlain' : 'issueInvoiceButtonPlain')),
+  );
 
   return (
     <Dialog
       role="alertdialog"
       size="lg"
       open={open}
-      onOpen={() => {
-        // A fresh form reports its own state before paint; the last one's
-        // (in flight at its success close) must not disable Cancel meanwhile.
-        setFooter(initialFooter());
-        setOpen(true);
-      }}
+      onOpen={() => setOpen(true)}
       onClose={() => setOpen(false)}
       dismissible={!footer.pending}
       trigger={

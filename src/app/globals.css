@@ -908,3 +908,17 @@ summary,
     pointer-events: none;
   }
 }
+
+/* Spec 122 PR N2 — a stand-in until AURA #194 (handoff addendum 95): AURA's
+   Dialog scrolls only its body, the head, description and footer being
+   `flex: none`, so on a screen 30rem tall or less (400% zoom, or landscape
+   with the keyboard open) the body can shrink to nothing and its fields can't
+   be reached (WCAG 1.4.10). There the whole panel scrolls as one box, the
+   footer at the end of its content; the same height AURA's own bars give way
+   at. Above it nothing changes. */
+@layer components {
+  @media (max-height: 30rem) {
+    .aura-dialog { overflow-y: auto; overscroll-behavior: contain; }
+    .aura-dialog__body { flex: none; min-height: auto; overflow: visible; }
+  }
+}

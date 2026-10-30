@@ -61,6 +61,20 @@ export function useReportMoneyDialogFooter(
       ...(hasConfirm ? { onConfirm: stableConfirm } : {}),
     });
   }, [onFooterChange, pending, canConfirm, confirmLabel, hasConfirm, stableConfirm]);
+  // When the form unmounts (its dialog closed, perhaps in flight at a success
+  // close), the footer goes idle, so however the dialog opens next, Cancel is
+  // enabled and Escape works before the new form reports.
+  const lastRef = useRef({ onFooterChange, confirmLabel });
+  useLayoutEffect(() => {
+    lastRef.current = { onFooterChange, confirmLabel };
+  });
+  useLayoutEffect(
+    () => () => {
+      const last = lastRef.current;
+      last.onFooterChange?.({ pending: false, canConfirm: false, confirmLabel: last.confirmLabel });
+    },
+    [],
+  );
 }
 
 /** What each dialog fixes about its buttons; exported from its shell. */
@@ -109,7 +123,8 @@ export function MoneyDialogFooter({
         fullWidth="below-sm"
         icon={confirmIcon}
         loading={pending}
-        disabled={!canConfirm}
+        // In flight it is only loading, even if the gate turns false meanwhile.
+        disabled={!canConfirm && !pending}
         {...(confirmTestId ? { 'data-testid': confirmTestId } : {})}
       >
         {confirmLabel}

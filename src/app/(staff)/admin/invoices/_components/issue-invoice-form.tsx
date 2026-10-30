@@ -224,7 +224,12 @@ export function IssueInvoiceForm({
     return () => window.removeEventListener('beforeunload', handler);
   }, [pending, vatTreatment, certNo, certDate, certBlobKey]);
 
+  // Set before the POST, synchronously: `pending` flips only on the next
+  // render, so a second call in the same tick would otherwise issue twice.
+  const inFlightRef = useRef(false);
+
   function confirm() {
+    if (!matches || inFlightRef.current) return;
     setFormError(null);
     // 088 T061b/T061g — fail-closed layer 1: block submit BEFORE any POST when
     // a zero-rated issue has a blank cert number (or a malformed date). Move
@@ -257,55 +262,63 @@ export function IssueInvoiceForm({
       expectedVatSatang: totals?.vatSatang ?? null,
     });
 
+    inFlightRef.current = true;
     startTransition(async () => {
-      const res = await fetch(
-        `/api/invoices/${invoiceId}/issue`,
-        body
-          ? {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify(body),
-            }
-          : { method: 'POST' },
-      );
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        const code = (errBody as { error?: { code?: string } })?.error?.code;
-        const routing = routeIssueError(code);
-        if (routing.kind === 'concurrent' || routing.kind === 'stale') {
-          setFormError({ kind: routing.kind });
-        } else {
-          const message =
-            routing.messageKey === 'errors.codeFallback' && routing.codeArg
-              ? t('errors.codeFallback', { code: routing.codeArg })
-              : t(routing.messageKey as 'errors.unknown');
-          setFormError({ kind: 'failure', message });
+      // Held after a success: the dialog closes and this form unmounts.
+      let issued = false;
+      try {
+        const res = await fetch(
+          `/api/invoices/${invoiceId}/issue`,
+          body
+            ? {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(body),
+              }
+            : { method: 'POST' },
+        );
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          const code = (errBody as { error?: { code?: string } })?.error?.code;
+          const routing = routeIssueError(code);
+          if (routing.kind === 'concurrent' || routing.kind === 'stale') {
+            setFormError({ kind: routing.kind });
+          } else {
+            const message =
+              routing.messageKey === 'errors.codeFallback' && routing.codeArg
+                ? t('errors.codeFallback', { code: routing.codeArg })
+                : t(routing.messageKey as 'errors.unknown');
+            setFormError({ kind: 'failure', message });
+          }
+          return;
         }
-        return;
+        const okBody = (await res.json().catch(() => ({}))) as {
+          bill_document_number_raw?: string | null;
+          document_number?: string | null;
+          // Cluster 5 (Finding 1) — auto-email dispatch outcome.
+          email_dispatch?: string;
+        };
+        const number =
+          (typeof okBody.bill_document_number_raw === 'string' &&
+            okBody.bill_document_number_raw) ||
+          (typeof okBody.document_number === 'string' && okBody.document_number) ||
+          null;
+        // Cluster 5 (Finding 1) — the invoice was NOT emailed because the buyer
+        // has no contact email on file. Issuance still SUCCEEDED; append a
+        // non-blocking warning line so the admin knows to deliver it manually.
+        const noEmailWarning =
+          okBody.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
+        toast.success(
+          number ? t('successWithNumber', { number }) : t('success'),
+          noEmailWarning ? { description: noEmailWarning } : undefined,
+        );
+        issued = true;
+        setTyped('');
+        onClose();
+        router.refresh();
+      } finally {
+        if (!issued) inFlightRef.current = false;
       }
-      const okBody = (await res.json().catch(() => ({}))) as {
-        bill_document_number_raw?: string | null;
-        document_number?: string | null;
-        // Cluster 5 (Finding 1) — auto-email dispatch outcome.
-        email_dispatch?: string;
-      };
-      const number =
-        (typeof okBody.bill_document_number_raw === 'string' &&
-          okBody.bill_document_number_raw) ||
-        (typeof okBody.document_number === 'string' && okBody.document_number) ||
-        null;
-      // Cluster 5 (Finding 1) — the invoice was NOT emailed because the buyer
-      // has no contact email on file. Issuance still SUCCEEDED; append a
-      // non-blocking warning line so the admin knows to deliver it manually.
-      const noEmailWarning =
-        okBody.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
-      toast.success(
-        number ? t('successWithNumber', { number }) : t('success'),
-        noEmailWarning ? { description: noEmailWarning } : undefined,
-      );
-      setTyped('');
-      onClose();
-      router.refresh();
     });
   }
 

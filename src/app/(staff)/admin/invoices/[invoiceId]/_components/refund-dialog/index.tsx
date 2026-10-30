@@ -112,8 +112,7 @@ export function RefundDialog({
   // Cancel and the confirm sit in the Dialog's footer (PR N2), drawn from the
   // state the form reports; the confirm submits the form by its id.
   const formId = useId();
-  const initialFooter = () => initialMoneyDialogFooter(tDialog('confirm'));
-  const [footer, setFooter] = useState<MoneyDialogFooterState>(initialFooter);
+  const [footer, setFooter] = useState<MoneyDialogFooterState>(() => initialMoneyDialogFooter(tDialog('confirm')));
 
   // Clear the `?refund=1` query param (preserving any other params) so a
   // refresh / shared link does not reopen the dialog. `router.replace`
@@ -210,12 +209,7 @@ export function RefundDialog({
     <Dialog
       role="alertdialog"
       open={open}
-      onOpen={() => {
-        // A fresh form reports its own state before paint; the last one's
-        // (in flight at its success close) must not disable Cancel meanwhile.
-        setFooter(initialFooter());
-        handleOpenChange(true);
-      }}
+      onOpen={() => handleOpenChange(true)}
       onClose={() => handleOpenChange(false)}
       // No Escape while the refund is being sent: its outcome must land in a
       // mounted form.
