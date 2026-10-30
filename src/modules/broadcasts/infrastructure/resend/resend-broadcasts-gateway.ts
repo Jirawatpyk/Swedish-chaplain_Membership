@@ -108,6 +108,26 @@ export class GatewayThrowable extends Error {
   }
 }
 
+/**
+ * Spec 141 review — refuse an empty identifier before the SDK sees it. On
+ * resend@6.35 a falsy `audienceId` is dropped from the path, so
+ * `contacts.remove` becomes `DELETE /contacts/{email}` (an ACCOUNT-WIDE delete
+ * shared by every tenant) and `contacts.list` becomes `GET /contacts`. An empty
+ * email makes the SDK answer a local `missing_required_field` with
+ * `statusCode: null`, which the classifier would retry for ~31 s.
+ */
+function assertNonEmpty(values: Readonly<Record<string, string>>): void {
+  for (const [field, value] of Object.entries(values)) {
+    if (value.trim() === '') {
+      throw new GatewayThrowable({
+        kind: 'permanent',
+        code: 'empty_identifier',
+        reason: `${field} is empty`,
+      });
+    }
+  }
+}
+
 function classifyResendError(
   err: ResendErrorShape | undefined | null,
   resourceType?: 'audience' | 'broadcast' | 'import',
@@ -238,6 +258,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     audienceId: string,
     contacts: ReadonlyArray<AudienceContact>,
   ): Promise<void> {
+    assertNonEmpty({ audienceId });
     if (contacts.length === 0) return;
 
     // The Resend Contacts API is one-at-a-time (no bulk endpoint). The
@@ -444,6 +465,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     // handling of the value it never produced was dead code that read as
     // covered. If Resend ever changes that, the throw reaches the caller's
     // unverifiable arm, which is where "we could not count" already goes.
+    assertNonEmpty({ audienceId });
     return await withRetry(
       async () => {
         const sdk = client();
@@ -543,6 +565,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     audienceId: string,
     email: string,
   ): Promise<RemoveContactOutcome> {
+    assertNonEmpty({ audienceId, email });
     try {
       await withRetry(
         async () => {
@@ -652,6 +675,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   },
 
   async deleteAudience(audienceId: string): Promise<void> {
+    assertNonEmpty({ audienceId });
     await withRetry(
       async () => {
         const sdk = client();
