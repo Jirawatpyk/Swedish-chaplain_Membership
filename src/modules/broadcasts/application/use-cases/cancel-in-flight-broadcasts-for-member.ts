@@ -323,7 +323,8 @@ export async function cancelInFlightBroadcastsForMember(
                   broadcastId: broadcast.broadcastId as string,
                   resendBroadcastId: resendId,
                   outcome: outcome.kind,
-                  lockHeldMs: Date.now() - startedAt,
+                  // The DELETE call alone, not the whole time the row lock is held.
+                  deleteMs: Date.now() - startedAt,
                   useCase: 'cancel-in-flight-broadcasts-for-member',
                 },
                 'broadcasts.cascade.dispatch_begun_delete',
