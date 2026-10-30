@@ -349,6 +349,12 @@ async function failDispatchAndAudit(
    * won) would still leave a refusal row for a broadcast that was cancelled.
    */
   extraAudit: AuditEmitInput | null = null,
+  /**
+   * Spec 139 review round 1 (CR#4) — the caller treats a lost CAS as a
+   * concurrent skip (it re-reads the row), so that loss is logged at info,
+   * never as `cleanup_failed`. Still answers `false`: nothing was written.
+   */
+  opts: { readonly concurrentLossIsSkip?: boolean } = {},
 ): Promise<boolean> {
   try {
     await deps.broadcastsRepo.withTx(async (tx) => {
@@ -380,6 +386,13 @@ async function failDispatchAndAudit(
       }
     });
   } catch (cleanupErr) {
+    if (opts.concurrentLossIsSkip === true && cleanupErr instanceof BroadcastConcurrentMutationError) {
+      logger.info(
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, phase },
+        'broadcasts.dispatch.terminal_write_lost_race',
+      );
+      return false;
+    }
     logger.error(
       {
         // FINAL round H-3. The sweep that claimed "genuinely none in a touched
@@ -436,6 +449,34 @@ function terminalWriteFailed(): Result<DispatchScheduledBroadcastOutput, Dispatc
   return err({ kind: 'dispatch.server_error', message: 'terminal_write_failed', phase: 'terminal_write' });
 }
 
+
+/**
+ * Spec 139 review round 1 (CR#4) — the erased refusal's terminal write did not
+ * commit. When the row has left `approved` (the erasure cascade cancelled it,
+ * or another tick moved it), that is a concurrent skip at info level: nothing
+ * of ours was written and nothing went out. A row still `approved`, gone, or a
+ * failed re-read keeps `terminalWriteFailed()` (the next tick retries).
+ */
+async function erasedRefusalLostRace(
+  deps: DispatchScheduledBroadcastDeps,
+  input: DispatchScheduledBroadcastInput,
+): Promise<Result<DispatchScheduledBroadcastOutput, DispatchScheduledBroadcastError>> {
+  let current: Broadcast | null = null;
+  try {
+    current = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+  } catch (readErr) {
+    logger.warn(
+      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, err: errKind(readErr) },
+      'broadcasts.dispatch.erased_refusal_reread_failed',
+    );
+  }
+  if (current === null || current.status === 'approved') return terminalWriteFailed();
+  logger.info(
+    { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, observedStatus: current.status },
+    'broadcasts.dispatch.erased_refusal_lost_race',
+  );
+  return err({ kind: 'broadcast_invalid_state_transition', observedStatus: current.status });
+}
 
 // `classifyThrown` moved to `_classify-thrown.ts` in 108 Phase 9 so
 // `buildAudienceTick` reads a thrown gateway error the SAME way this path does.
@@ -818,8 +859,10 @@ export async function dispatchScheduledBroadcast(
         MEMBER_STANDING_PHASE,
         reason,
         null,
+        null,
+        { concurrentLossIsSkip: true },
       );
-      if (!recorded) return terminalWriteFailed();
+      if (!recorded) return erasedRefusalLostRace(deps, input);
       return err({ kind: 'broadcast_failed_to_dispatch', reason });
     }
     // Anything but an explicit `send` is not a send (fail CLOSED): the

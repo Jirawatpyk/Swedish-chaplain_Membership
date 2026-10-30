@@ -764,7 +764,11 @@ async function applySendStanding(
         observed: null,
         expected: null,
       },
-      { notifyMember: false, payloadExtra: { standing: 'erased', resendDraftOutcome: cleared.draftOutcome } },
+      {
+        notifyMember: false,
+        payloadExtra: { standing: 'erased', resendDraftOutcome: cleared.draftOutcome },
+        concurrentLossIsSkip: true,
+      },
     );
   }
   return err({
@@ -2325,6 +2329,13 @@ async function failTerminally(
      */
     readonly payloadExtra?: Readonly<Record<string, string>>;
     /**
+     * Spec 139 review round 1 (CR#4) — the erased refusal: when the terminal
+     * CAS loses and a re-read shows the row is no longer `approved` (the
+     * erasure cascade cancelled it), answer a concurrent skip at info level,
+     * not `cleanup_failed` / a server error.
+     */
+    readonly concurrentLossIsSkip?: boolean;
+    /**
      * Round 4 F5 — set on the 404 path so the RETURNED kind is
      * `broadcast_resend_resource_missing` and the cron buckets it the way the
      * legacy leg does. The recorded terminal state, the audit event and the
@@ -2423,6 +2434,24 @@ async function failTerminally(
       }
     });
   } catch (cleanupErr) {
+    if (opts.concurrentLossIsSkip === true && cleanupErr instanceof BroadcastConcurrentMutationError) {
+      let current: Broadcast | null = null;
+      try {
+        current = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
+      } catch (readErr) {
+        logger.warn(
+          { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, err: errKind(readErr) },
+          'broadcasts.audience_import.terminal_reread_failed',
+        );
+      }
+      if (current !== null && current.status !== 'approved') {
+        logger.info(
+          { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, observedStatus: current.status },
+          'broadcasts.audience_import.terminal_write_lost_race',
+        );
+        return err({ kind: 'broadcast_invalid_state_transition', observedStatus: current.status });
+      }
+    }
     // Mirrors the single-tick path: if the transition itself failed, a concurrent
     // cancel probably won. Log loudly and do NOT notify — telling a member their
     // broadcast failed when it was cancelled is worse than silence.
