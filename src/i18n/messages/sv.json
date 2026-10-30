@@ -5312,7 +5312,9 @@
         "label": "Utfärda återbetalning…",
         "ariaLabel": "Utfärda en återbetalning för denna faktura",
         "settlingLabel": "Återbetalning behandlas…",
-        "settlingHint": "En återbetalning behandlas — ingen åtgärd behövs förrän den är klar."
+        "settlingHint": "En återbetalning behandlas — ingen åtgärd behövs förrän den är klar.",
+        "unconfirmedLabel": "Återbetalningen är obekräftad — ladda om för att kontrollera",
+        "unconfirmedHint": "En återbetalning kan ha gått igenom. Ladda om sidan och kontrollera Betalningshändelser innan du återbetalar igen."
       },
       "dialog": {
         "title": "Utfärda återbetalning?",

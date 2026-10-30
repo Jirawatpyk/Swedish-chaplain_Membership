@@ -127,6 +127,12 @@ type Props = {
    * flight (no Escape or scrim close), whether the refund may be sent, the label.
    */
   readonly onFooterChange?: (state: MoneyDialogFooterState) => void;
+  /**
+   * The refund's outcome is unconfirmed (it may have gone through): the
+   * dialog locks its trigger until a reload, and refreshes once back online
+   * when asked (`refreshWhenOnline`).
+   */
+  readonly onUnconfirmed?: (opts: { readonly refreshWhenOnline: boolean }) => void;
 };
 
 type MembershipEffect = 'keep' | 'cancel_membership';
@@ -162,6 +168,7 @@ export function RefundForm({
   onClose,
   formId,
   onFooterChange,
+  onUnconfirmed,
 }: Props) {
   const t = useTranslations('admin.refund');
   const tForm = useTranslations('admin.refund.form');
@@ -293,15 +300,21 @@ export function RefundForm({
     let succeeded = false;
     // Financial review (PR #703): once the server may have refunded, never
     // offer a retry. A retry mints a new refund id, so after a synchronous
-    // refund it would pay a second one. Close, refresh (Payment activity
-    // shows what happened) and say so.
-    const settleUnconfirmed = (message: string, { refresh = true }: { refresh?: boolean } = {}) => {
+    // refund it would pay a second one. The dialog locks its trigger until a
+    // reload (first, so nothing below can skip it), then this closes, warns,
+    // and refreshes so Payment activity shows what happened. On a network
+    // failure while offline the refresh waits for the connection: now it
+    // would fall back to a browser navigation onto the offline page and the
+    // warning would never be seen (R112 §3).
+    const settleUnconfirmed = (message: string, { network = false }: { network?: boolean } = {}) => {
       succeeded = true;
+      const offline = network && typeof navigator !== 'undefined' && navigator.onLine === false;
+      onUnconfirmed?.({ refreshWhenOnline: offline });
       try {
         toast.warning(message, { duration: Infinity, closeButton: true });
       } finally {
         onClose();
-        if (refresh) router.refresh();
+        if (!offline) router.refresh();
       }
     };
     try {
@@ -321,11 +334,9 @@ export function RefundForm({
         });
       } catch (e) {
         // The request may have reached the server before the connection
-        // dropped: its outcome is unknown. No refresh: with the connection
-        // still down it falls back to a browser navigation onto the offline
-        // page, and the warning would never be seen (R112 §3).
+        // dropped: its outcome is unknown.
         console.error('refund submit: outcome unknown', e);
-        settleUnconfirmed(tError('outcomeUnknown'), { refresh: false });
+        settleUnconfirmed(tError('outcomeUnknown'), { network: true });
         return;
       }
       if (!res.ok) {

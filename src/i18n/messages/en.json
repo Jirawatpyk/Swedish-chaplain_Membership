@@ -5312,7 +5312,9 @@
         "label": "Issue refund…",
         "ariaLabel": "Issue a refund for this invoice",
         "settlingLabel": "Refund settling…",
-        "settlingHint": "A refund is settling — no action needed until it completes."
+        "settlingHint": "A refund is settling — no action needed until it completes.",
+        "unconfirmedLabel": "Refund unconfirmed — reload to check",
+        "unconfirmedHint": "A refund may have gone through. Reload the page and check Payment activity before refunding again."
       },
       "dialog": {
         "title": "Issue refund?",

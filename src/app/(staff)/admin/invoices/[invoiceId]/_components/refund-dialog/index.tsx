@@ -18,7 +18,7 @@
  * `/admin/invoices/[id]?refund=1` so admins can refund without
  * leaving the keyboard.
  */
-import { useState, useCallback, useEffect, useId, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, useId, useRef, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
@@ -114,6 +114,27 @@ export function RefundDialog({
   const formId = useId();
   const [footer, setFooter] = useState<MoneyDialogFooterState>(() => initialMoneyDialogFooter(tDialog('confirm')));
 
+  // Financial review (PR #703): after an outcome the form couldn't confirm,
+  // this page may not show a refund that went through, and a second refund
+  // would be accepted as new. The trigger stays locked until a page reload
+  // (client state survives `router.refresh()`), so the admin reloads and
+  // checks Payment activity before refunding again.
+  const [unconfirmed, setUnconfirmed] = useState(false);
+  const unconfirmedRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // The dialog's own trigger is gone; keep focus on its locked stand-in.
+    if (unconfirmed) unconfirmedRef.current?.focus();
+  }, [unconfirmed]);
+  const handleUnconfirmed = useCallback(
+    ({ refreshWhenOnline }: { refreshWhenOnline: boolean }) => {
+      setUnconfirmed(true);
+      // Offline, a refresh now would fall back to a browser navigation onto
+      // the offline page (R112 §3); refresh once the connection is back.
+      if (refreshWhenOnline) window.addEventListener('online', () => router.refresh(), { once: true });
+    },
+    [router],
+  );
+
   // Clear the `?refund=1` query param (preserving any other params) so a
   // refresh / shared link does not reopen the dialog. `router.replace`
   // keeps history clean (no extra entry).
@@ -178,6 +199,27 @@ export function RefundDialog({
       </span>
     ) : null,
   ].filter((part) => part !== null);
+
+  if (unconfirmed) {
+    return (
+      <div className="flex flex-col items-start gap-1 sm:items-end max-sm:items-stretch">
+        <Button
+          ref={unconfirmedRef}
+          variant="danger-secondary"
+          touchHeight
+          icon="circle-alert"
+          disabled
+          aria-describedby="refund-unconfirmed-hint"
+          data-testid="refund-dialog-trigger"
+        >
+          {t('button.unconfirmedLabel')}
+        </Button>
+        <p id="refund-unconfirmed-hint" className="sr-only">
+          {t('button.unconfirmedHint')}
+        </p>
+      </div>
+    );
+  }
 
   // Gap E — a refund is settling: disable the trigger + surface a "settling"
   // affordance instead of the active dialog. Hooks above run unconditionally
@@ -271,6 +313,7 @@ export function RefundDialog({
           onClose={() => handleOpenChange(false)}
           formId={formId}
           onFooterChange={setFooter}
+          onUnconfirmed={handleUnconfirmed}
         />
       </div>
     </Dialog>
