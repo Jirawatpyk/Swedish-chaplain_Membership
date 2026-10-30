@@ -417,8 +417,9 @@ describe('refund: no retry once the outcome may be a refund', () => {
 
   beforeEach(() => {
     vi.useRealTimers();
-    vi.mocked(toast.warning).mockClear();
-    vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.warning).mockReset();
+    vi.mocked(toast.error).mockReset();
+    vi.mocked(toast.success).mockReset();
     refreshSpy.mockClear();
   });
 
@@ -474,6 +475,49 @@ describe('refund: no retry once the outcome may be a refund', () => {
   it('a request that fails on the network closes, refreshes and warns to check first', async () => {
     const spy = await submitPartial(() => Promise.reject(new TypeError('Failed to fetch')));
     await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown);
+  });
+
+  // Financial review M1: a 5xx that names no refusal (our internal_error, or
+  // no readable code: an edge timeout) may have refunded; no retry.
+  it('a 500 internal_error closes, refreshes and warns', async () => {
+    const spy = await submitPartial(async () =>
+      new Response(JSON.stringify({ error: { code: 'internal_error' } }), { status: 500 }),
+    );
+    await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown);
+  });
+
+  it('a 504 with no readable body closes, refreshes and warns', async () => {
+    const spy = await submitPartial(async () => new Response('<html>timeout</html>', { status: 504 }));
+    await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown);
+  });
+
+  // Financial review L4: telling the admin what happened can't turn a refund
+  // that went through into a retry.
+  it('a 201 whose success toast throws closes, refreshes and warns', async () => {
+    vi.mocked(toast.success).mockImplementationOnce(() => {
+      throw new Error('toast failed');
+    });
+    const spy = await submitPartial(async () =>
+      new Response(
+        JSON.stringify({ refund: { status: 'succeeded', creditNote: { kind: 'issued', id: 'cn', number: 'CN-1' } } }),
+        { status: 201 },
+      ),
+    );
+    await expectClosedWithWarning(spy, enMessages.admin.refund.success.unconfirmedToast);
+  });
+
+  // Financial review L1: even if the warning itself throws, the dialog closes
+  // and offers no retry.
+  it('if the warning toast throws, the dialog still closes with no retry', async () => {
+    vi.mocked(toast.warning).mockImplementationOnce(() => {
+      throw new Error('toast failed');
+    });
+    const spy = await submitPartial(() => Promise.reject(new TypeError('Failed to fetch')));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(refreshSpy).toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(posts(spy)).toHaveLength(1);
+    vi.unstubAllGlobals();
   });
 
   it('a refused request (429) still shows the error and can be retried', async () => {
