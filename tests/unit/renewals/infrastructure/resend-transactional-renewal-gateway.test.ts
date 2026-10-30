@@ -181,7 +181,7 @@ describe('resendTransactionalRenewalGateway', () => {
   });
 
   describe('happy path', () => {
-    it('sends with idempotency-key header + returns deliveryId + dispatchedAt', async () => {
+    it('sends the idempotency key as the request option, not an email header (spec 141 RI1)', async () => {
       const result = await resendTransactionalRenewalGateway.sendRenewalEmail(
         VALID_INPUT,
       );
@@ -191,9 +191,10 @@ describe('resendTransactionalRenewalGateway', () => {
       expect(result.value.dispatchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       expect(sendMock).toHaveBeenCalledTimes(1);
       const sentArgs = sendMock.mock.calls[0]![0];
-      expect(sentArgs.headers).toEqual({
-        'idempotency-key': 'reminder-event-id-1',
-      });
+      // The HTTP `Idempotency-Key` Resend dedupes on comes from the second
+      // argument; an `idempotency-key` in the email's own headers is not read.
+      expect(sentArgs.headers).toBeUndefined();
+      expect(sendMock.mock.calls[0]![1]).toEqual({ idempotencyKey: 'reminder-event-id-1' });
       expect(sentArgs.from).toBe('SweCham <test@swecham.example>');
       expect(sentArgs.to).toBe('admin@acme.example');
       expect(typeof sentArgs.subject).toBe('string');
@@ -300,6 +301,38 @@ describe('resendTransactionalRenewalGateway', () => {
       expect(sendMock).toHaveBeenCalledTimes(4);
     }, 30_000);
 
+    // Spec 141 RI1b — the two idempotency 409s (DOCUMENTED + MEASURED 2026-10-30).
+    it('invalid_idempotent_request → already sent under this key: ok, no delivery id, no retry', async () => {
+      sendMock.mockResolvedValueOnce({
+        data: null,
+        error: {
+          name: 'invalid_idempotent_request',
+          message: 'This idempotency key has already been used on a request that had a different payload.',
+        },
+      });
+      const result = await resendTransactionalRenewalGateway.sendRenewalEmail(VALID_INPUT);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.value.deliveryId).toBeNull();
+      expect(result.value.idempotentReplay).toBe(true);
+      expect(result.value.dispatchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(sendMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('concurrent_idempotent_requests → transient: retried, then the original id', async () => {
+      sendMock
+        .mockResolvedValueOnce({
+          data: null,
+          error: { name: 'concurrent_idempotent_requests', message: 'in progress' },
+        })
+        .mockResolvedValueOnce({ data: { id: 'original-id' }, error: null });
+      const result = await resendTransactionalRenewalGateway.sendRenewalEmail(VALID_INPUT);
+      expect(result.ok && result.value).toEqual(
+        expect.objectContaining({ deliveryId: 'original-id', idempotentReplay: false }),
+      );
+      expect(sendMock).toHaveBeenCalledTimes(2);
+    });
+
     it('5xx then success on 2nd attempt → ok', async () => {
       sendMock
         .mockResolvedValueOnce({
@@ -317,6 +350,22 @@ describe('resendTransactionalRenewalGateway', () => {
       if (!result.ok) return;
       expect(result.value.deliveryId).toBe('retry-success-id');
       expect(sendMock).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('tier-upgrade approval send (spec 141 RI1)', () => {
+    it('sends the idempotency key as the request option, not an email header', async () => {
+      await resendTransactionalRenewalGateway.sendTierUpgradeApprovalEmail({
+        tenantId: 'tenanta',
+        recipient: VALID_INPUT.recipient,
+        memberCompanyName: 'Acme Co',
+        targetPlanName: 'Corporate',
+        effectiveAtIso: '2026-08-15T00:00:00Z',
+        idempotencyKey: 'suggestion-id-1',
+        correlationId: 'corr-1',
+      });
+      expect(sendMock.mock.calls[0]![0].headers).toBeUndefined();
+      expect(sendMock.mock.calls[0]![1]).toEqual({ idempotencyKey: 'suggestion-id-1' });
     });
   });
 

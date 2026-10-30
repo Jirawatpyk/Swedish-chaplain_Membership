@@ -342,6 +342,26 @@ describe('dispatchOneCycle', () => {
       );
     });
 
+    it('spec 141 option A: an idempotent replay is recorded as sent, no delivery id, idempotent_replay in the audit', async () => {
+      const { deps, transitionReminderMock, emitInTxMock } = fakeDeps({
+        gatewayResult: ok({ deliveryId: null, dispatchedAt: '2026-10-30T00:00:00.000Z', idempotentReplay: true }),
+      });
+      const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
+      expect(result.kind).toBe('sent');
+      expect(transitionReminderMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ nextStatus: 'sent', deliveryId: null }),
+      );
+      expect(emitInTxMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          type: 'renewal_reminder_sent',
+          payload: expect.objectContaining({ delivery_id: null, idempotent_replay: true }),
+        }),
+        expect.anything(),
+      );
+    });
+
     it('locale: member.preferred_locale wins over the contact default (email-locale audit 2026-07-16)', async () => {
       // The member picked Thai in the portal (member.preferred_locale='th'); the
       // primary contact still carries the NOT-NULL DEFAULT 'en' (imported rows).

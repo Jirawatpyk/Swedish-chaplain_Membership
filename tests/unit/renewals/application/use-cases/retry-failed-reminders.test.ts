@@ -258,6 +258,28 @@ describe('retryFailedReminders', () => {
       );
     });
 
+    it('spec 141 option A: a retry that meets an idempotent replay flips failed→sent with no delivery id', async () => {
+      const { deps, emitInTxMock, transitionFailedToSentMock } = fakeDeps({
+        eligible: [buildFailedEvent()],
+        gatewayResult: ok({ deliveryId: null, dispatchedAt: NOW_ISO, idempotentReplay: true }),
+      });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      assertOk(result);
+      expect(result.value.summary.retrySucceeded).toBe(1);
+      expect(transitionFailedToSentMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ deliveryId: null }),
+      );
+      expect(emitInTxMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          type: 'renewal_reminder_sent',
+          payload: expect.objectContaining({ delivery_id: null, idempotent_replay: true }),
+        }),
+        expect.anything(),
+      );
+    });
+
     // BUG-2 — the retry pass must re-apply the dispatcher gates whose
     // conditions can flip during the 24h retry window. Each of these was a
     // silent re-send before the fix (retrySucceeded=1, gateway called).
