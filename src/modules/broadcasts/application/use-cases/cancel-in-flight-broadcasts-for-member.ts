@@ -101,9 +101,10 @@
  *     deciding after the lock is safe. `queued` / `sending` / `sent` means
  *     Resend had already accepted the send (residual 8c): the row is left as
  *     it is and `broadcast_concurrent_action_blocked` (`dispatchBegun: true`,
- *     `resendOutcome: 'already_sent'`) is written on its own tx — a failed
- *     write counts unexpected (P6); `alreadySentCount` carries it to
- *     `member_erased` (P7). Any other probe answer is unexpected.
+ *     `resendOutcome: 'already_sent'`) is written on its own tx, once per
+ *     broadcast (a re-erasure that finds it already there writes none) — a
+ *     failed write counts unexpected (P6); `alreadySentCount` carries it to
+ *     `member_erased` (P7) on every run. Any other probe answer is unexpected.
  *   - `retryable` (a timeout included — the DELETE may have landed) / `other`
  *     → unexpected, the row unchanged; the adapter reports
  *     `cascade_partial_failure`, `member_erased` is withheld, and the
@@ -393,8 +394,14 @@ export async function cancelInFlightBroadcastsForMember(
           const status = probe.kind === 'present' ? probe.resource.status : 'not_found';
           if (!isHandedStatus(status)) throw new DispatchBegunUnresolvedError(`forbidden_probe_${status}`);
           // P6 — the residual-8c evidence row on its own tx: a failed write
-          // counts unexpected, so `member_erased` is withheld.
-          await deps.broadcastsRepo.withTx(async (tx) => {
+          // counts unexpected, so `member_erased` is withheld. Written ONCE per
+          // broadcast: a re-erasure (manual, or the `reconcile-erasures`
+          // re-drive) that finds it already there writes no second one, but
+          // still counts the broadcast — `member_erased` must say it was sent.
+          const emitted = await deps.broadcastsRepo.withTx(async (tx): Promise<boolean> => {
+            if (await deps.broadcastsRepo.hasAlreadySentEvidenceInTx(tx, input.tenant.slug, broadcast.broadcastId)) {
+              return false;
+            }
             await deps.audit.emit(tx, {
               tenantId: input.tenant.slug,
               eventType: 'broadcast_concurrent_action_blocked',
@@ -412,15 +419,17 @@ export async function cancelInFlightBroadcastsForMember(
               },
               requestId: input.requestId,
             });
+            return true;
           });
           alreadySentCount += 1;
-          broadcastsMetrics.auditEmitCount(input.tenant.slug, 'broadcast_concurrent_action_blocked');
+          if (emitted) broadcastsMetrics.auditEmitCount(input.tenant.slug, 'broadcast_concurrent_action_blocked');
           broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'concurrent_skip');
           logger.warn(
             {
               tenantId: input.tenant.slug,
               broadcastId: broadcast.broadcastId as string,
               memberId: input.memberId as string,
+              evidenceExisted: !emitted,
               useCase: 'cancel-in-flight-broadcasts-for-member',
             },
             'broadcasts.cascade.dispatch_begun_already_sent',
