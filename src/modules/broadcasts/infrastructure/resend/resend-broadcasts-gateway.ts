@@ -20,6 +20,7 @@
  */
 import type { Resend } from 'resend';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import type {
   AudienceContact,
@@ -707,7 +708,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       // A timeout, an abort or a transport failure: whether the DELETE reached
       // Resend is unknown, so nothing is decided.
       logger.warn(
-        { broadcastId, err: e instanceof Error ? e.name : 'unknown' },
+        { broadcastId, err: errKind(e), timedOut: isTimeout(e) },
         'resend.broadcasts.delete_once_transport_failed',
       );
       return { kind: 'retryable' };
@@ -947,6 +948,15 @@ const IMPORT_FETCH_TIMEOUT_MS = 30_000;
  * round trip of ~0.5 s.
  */
 const DELETE_ONCE_TIMEOUT_MS = 10_000;
+
+/**
+ * `AbortSignal.timeout` rejects with a `TimeoutError` (a `DOMException`, so
+ * `errKind` alone reads only the class); kept apart from an abort or a network
+ * failure so a slow Resend is visible on the log line.
+ */
+function isTimeout(e: unknown): boolean {
+  return e instanceof Error && e.name === 'TimeoutError';
+}
 
 function deleteOnceOutcomeFor(status: number): DeleteBroadcastOnceOutcome {
   if (status >= 200 && status < 300) return { kind: 'deleted' };
