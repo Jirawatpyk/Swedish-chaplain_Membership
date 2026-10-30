@@ -32,11 +32,17 @@ import type {
   SubprocessorErasureResult,
 } from '../../application/ports/subprocessor-erasure-port';
 
-/** A string field of a thrown gateway error, or `null` — read by shape, never by type. */
+/**
+ * A string field of a thrown gateway error, or `null` — read by shape, never by
+ * type. `code` can be a provider's `name` copied from a response body, so only a
+ * plain identifier (`validation_error`, `empty_identifier`, `http_404`) is
+ * logged; anything else becomes `unrecognised`, never the text itself.
+ */
 function gatewayField(e: unknown, field: 'kind' | 'code'): string | null {
   if (typeof e !== 'object' || e === null) return null;
   const v = (e as Record<string, unknown>)[field];
-  return typeof v === 'string' ? v : null;
+  if (typeof v !== 'string') return null;
+  return /^[a-z0-9_]{1,64}$/.test(v) ? v : 'unrecognised';
 }
 
 /**

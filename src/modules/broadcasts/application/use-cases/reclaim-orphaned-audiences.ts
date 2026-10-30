@@ -60,6 +60,7 @@ import { asBroadcastId, type BroadcastId } from '../../domain/broadcast';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
+import { classifyThrown, isRetryableThrow } from './_classify-thrown';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -150,10 +151,11 @@ const RECLAIM_CONCURRENCY = 5;
 /** Resend 403 error message for the account's last audience. */
 // Spec 141: resend@6.35 deletes at `/segments`, whose refusal wording was not
 // measured (deleting the last one cannot be probed on an account prod shares),
-// so accept either noun after "delete". Matched only on a refusal (never a
-// retryable failure), so a transient error that mentions a segment still
-// counts as `failed`.
-const LAST_AUDIENCE_PATTERN = /\bdelete\b.*\blast (audience|segment)\b/i;
+// so a refusal is any message naming "last audience|segment" AND a delete /
+// remove verb, in either order. Matched only on a non-retryable error, so a
+// transient failure that mentions a segment still counts as `failed`.
+const LAST_AUDIENCE_PATTERN = /\blast (audience|segment)\b/i;
+const DELETE_VERB_PATTERN = /\b(delet|remov)\w*/i;
 
 export async function reclaimOrphanedAudiences(
   deps: ReclaimOrphanedAudiencesDeps,
@@ -300,8 +302,9 @@ export async function reclaimOrphanedAudiences(
       // created by the next broadcast dispatch.
       if (
         e instanceof Error &&
-        (e as { readonly kind?: unknown }).kind !== 'retryable' &&
-        LAST_AUDIENCE_PATTERN.test(e.message)
+        !isRetryableThrow(classifyThrown(e).kind) &&
+        LAST_AUDIENCE_PATTERN.test(e.message) &&
+        DELETE_VERB_PATTERN.test(e.message)
       ) {
         skippedLastAudience++;
         logger.info(
