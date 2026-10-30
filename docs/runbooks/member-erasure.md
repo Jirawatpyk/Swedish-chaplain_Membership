@@ -156,7 +156,8 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    FROM broadcasts b WHERE b.tenant_id = '<tenant>' AND b.status IN
    ('submitted','approved') AND NOT EXISTS (SELECT 1 FROM members m WHERE
    m.tenant_id = b.tenant_id AND m.member_id = b.requested_by_member_id);`
-   For each: if it carries a `resend_broadcast_id`, check it in the Resend
+   A `submitted` row (or an `approved` one with no Resend id) is cancelled
+   from the staff detail page as usual. For each other row: if it carries a `resend_broadcast_id`, check it in the Resend
    dashboard — a `draft` is deleted there; `queued` / `sending` / `sent` means
    mail went out (record it; do not cancel a row whose send is under way). Then
    cancel the row by hand. Staff cancel refuses a row with a Resend id
@@ -164,7 +165,9 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    RLS + FORCE: as the migration owner, or after `SET LOCAL app.current_tenant =
    '<tenant>'`): `UPDATE broadcasts SET status = 'cancelled', cancelled_at =
    now(), cancellation_reason = 'originator_member_deleted' WHERE tenant_id =
-   '<tenant>' AND broadcast_id = '<id>' AND status = 'approved';` A hand-written
+   '<tenant>' AND broadcast_id = '<id>' AND status = 'approved';` (the same
+   shape the erasure cascade's own cancel writes, which the immutability trigger
+   admits; not yet exercised by hand on prod). A hand-written
    UPDATE writes no audit row: record the ids, the Resend status you saw and the
    time on the incident ticket.
 
