@@ -25,6 +25,8 @@ import { renewalCycles } from '@/modules/renewals/infrastructure/schema-renewal-
 import { renewalReminderEvents } from '@/modules/renewals/infrastructure/schema-renewal-reminder-events';
 import { renewalEscalationTasks } from '@/modules/renewals/infrastructure/schema-renewal-escalation-tasks';
 import { dispatchRenewalCycle, makeRenewalsDeps } from '@/modules/renewals';
+import { buildRenewalCtaUrl } from '@/modules/renewals/application/use-cases/_lib/build-renewal-redeem-link-url';
+import { env } from '@/lib/env';
 import { DEFAULT_TEST_BENEFIT_MATRIX } from '../helpers/test-benefit-matrix';
 import { seedF8MembershipPlan } from '../helpers/seed-f8-plan';
 import { seedRenewalPolicies } from '../helpers/seed-renewal-policies';
@@ -327,6 +329,22 @@ describe('066 due-track dispatch pass (live Neon)', () => {
     for (const [input] of dueTrackCalls) {
       expect(input.templateId).toBe('due-track');
     }
+
+    // Spec 141: the due-track send signs its CTA at the reminder row's
+    // created_at — the instant a retry of that row re-signs at — so a retry is
+    // byte-identical and Resend's Idempotency-Key returns the first send.
+    const callA = dueTrackCalls.find(([input]) => input.idempotencyKey === rowsA[0]!.reminderEventId);
+    expect(callA).toBeDefined();
+    const [inputA] = callA!;
+    expect(inputA.templateVariables['renewal_link_url']).toBe(
+      buildRenewalCtaUrl(deps.tokenSigner, env.app.baseUrl, {
+        tenantId: tenantA.ctx.slug,
+        memberId: inputA.recipient.memberId,
+        cycleId: caseA.cycleId,
+        now: new Date(rowsA[0]!.createdAt),
+        expiresAtIso: String(inputA.templateVariables['cycle_expires_at']),
+      }),
+    );
   }, 120_000);
 
   it('pass 2 — idempotent replay: zero new due-track sends', async () => {

@@ -82,6 +82,8 @@ import {
   __setRetryDelaysForTesting,
 } from '@/modules/renewals/infrastructure/resend-transactional-renewal-gateway';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
+import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 
 
 const VALID_INPUT = {
@@ -329,6 +331,27 @@ describe('resendTransactionalRenewalGateway', () => {
       expect(result.error.kind).toBe('gateway_4xx');
       expect(sendMock).toHaveBeenCalledTimes(1);
     });
+
+    // resend@6.35 never throws on a network failure: it answers
+    // `application_error` (index.mjs:1750). With 429 and Resend's own 500 it is
+    // an ordinary transient — not an "unknown error name" that pages on-call.
+    it.each(['application_error', 'rate_limit_exceeded', 'internal_server_error'])(
+      '%s → transient, retried, and not reported as an unknown error name',
+      async (name) => {
+        const warn = vi.spyOn(logger, 'warn');
+        const unknown = vi.spyOn(renewalsMetrics, 'unknownResendErrorName');
+        sendMock.mockResolvedValueOnce({ data: null, error: { name, message: 'transient' } });
+        const result = await resendTransactionalRenewalGateway.sendRenewalEmail(VALID_INPUT);
+        expect(result.ok).toBe(true);
+        expect(sendMock).toHaveBeenCalledTimes(2);
+        expect(warn.mock.calls.map((c) => c[1])).not.toContain(
+          'resend.renewals.send.unknown_error_name_classified_as_transient',
+        );
+        expect(unknown).not.toHaveBeenCalled();
+        warn.mockRestore();
+        unknown.mockRestore();
+      },
+    );
 
     it('concurrent_idempotent_requests → transient: retried, then the original id', async () => {
       sendMock

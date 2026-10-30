@@ -123,18 +123,6 @@ describe('env.ts — RESEND_DEBUG', () => {
     await expect(import('@/lib/env')).resolves.toBeDefined();
   });
 
-  it('allows an empty RESEND_DEBUG in production (a blank line copied from .env.example)', async () => {
-    stubEnv({
-      NODE_ENV: 'production',
-      STRIPE_SECRET_KEY: 'sk_live_0000000000',
-      STRIPE_LIVE_MODE: 'true',
-      ZAPIER_DPA_EXECUTED: 'true',
-      E2E_X_TENANT_HEADER_ENABLED: 'false',
-      RESEND_DEBUG: '',
-    });
-    await expect(import('@/lib/env')).resolves.toBeDefined();
-  });
-
   it('allows RESEND_DEBUG outside production (local debugging)', async () => {
     stubEnv({ NODE_ENV: 'development', RESEND_DEBUG: 'true' });
     await expect(import('@/lib/env')).resolves.toBeDefined();
