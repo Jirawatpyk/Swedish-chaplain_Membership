@@ -93,7 +93,7 @@
  * or 403, ONE `retrieveBroadcastOnce` — both without backoff and bounded by a
  * 10 s hard timeout; after a 404 it first waits `REPROBE_PAUSE_MS` (3 s, the
  * import leg's re-probe pause, review round 2), so the lock is held for at most
- * ≈ 23 s (D-039). Resend arbitrates the DELETE against the tick's `/send`
+ * ≈ 23 s (D-040). Resend arbitrates the DELETE against the tick's `/send`
  * (DELETE answers 200 only on a draft, `/send` works only on a draft, and
  * after a DELETE both 404):
  *

@@ -63,7 +63,7 @@ As the chamber, when a member is erased under GDPR Art. 17 / PDPA § 33, none of
   - go-live § 6.10's 139 box is ticked;
   - `operational-state.md` is updated;
   - the changelog has an entry;
-  - D-039 records the row lock held across one Resend call.
+  - D-040 records the row lock held across one Resend call.
 - **DE6.** Cross-tenant: the new bridge read never returns another tenant's member.
 
 ### US2 — Every disclosure of a recipient list to Resend, and every audience delete, has an Art. 30 record (slice 2; does not gate the flip)

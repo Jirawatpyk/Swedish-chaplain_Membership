@@ -134,6 +134,8 @@ export interface RenderBroadcastHtmlInput {
    * "Sent by {name}." in the footer, platform colour on any CTA.
    */
   readonly brand?: BrandSettings;
+  /** See `RenderEmailInput.unsubscribeHref`; omitted ⇒ the Broadcasts merge tag (T007 baseline). */
+  readonly unsubscribeHref?: string | undefined;
 }
 
 /**
@@ -243,7 +245,7 @@ export function renderBroadcastHtml(input: RenderBroadcastHtmlInput): string {
     `<tr><td style="padding:24px 32px;font-size:15px;line-height:1.6;color:#1a1a1a" class="eb-cell eb-body">${bodyHtml}</td></tr>`,
     '<tr><td style="padding:16px 32px 24px 32px;border-top:1px solid #eee;font-size:12px;line-height:1.5;color:#6b6b6b" class="eb-cell">',
     `<p style="margin:0 0 8px 0">${receivedLine}</p>`,
-    `<p style="margin:0 0 8px 0"><a href="${RESEND_UNSUBSCRIBE_MERGE_TAG}" style="color:#666;text-decoration:underline">${escapeHtml(f.unsubscribeCta)}</a> ${escapeHtml(f.unsubscribeSuffix)}</p>`,
+    `<p style="margin:0 0 8px 0"><a href="${input.unsubscribeHref === undefined ? RESEND_UNSUBSCRIBE_MERGE_TAG : escapeHtml(input.unsubscribeHref)}" style="color:#666;text-decoration:underline">${escapeHtml(f.unsubscribeCta)}</a> ${escapeHtml(f.unsubscribeSuffix)}</p>`,
     objectionLine === null ? '' : `<p style="margin:0 0 8px 0">${objectionLine}</p>`,
     `<p style="margin:0">${renderPostalLine(physicalLine, brand?.postalAddress ?? null)}</p>`,
     '</td></tr>',

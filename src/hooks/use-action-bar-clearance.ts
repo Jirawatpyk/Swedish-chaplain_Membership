@@ -6,10 +6,12 @@
  * the screen's bottom edge (it rides above the bottom nav), plus a gap. Feed
  * it to `useFixedBarScrollPadding`.
  *
- * Measured rather than a fixed stylesheet allowance, because the bar's height
- * moves with its content: a phone bar wraps its start slot over the buttons
- * when the copy is long (the invoice save bar reaches about 103px at 390; the
- * E-Blast compose bar 62px on one row, 114px on two). A ResizeObserver keeps
+ * Only while the bar is AURA's sticky floating card (640px and up): below
+ * that it is AURA's fixed edge strip, which pads the page itself (D-039).
+ *
+ * Measured rather than a fixed stylesheet allowance, because the card's
+ * height moves with its content: a long status or start slot wraps it onto a
+ * second row (the E-Blast detail bar in Swedish at 640–767px, 200% text). A ResizeObserver keeps
  * the number current. Returns 0 while inactive or when no bar matches, so the
  * stylesheet's own allowance stays in charge until a measure exists.
  */
@@ -32,10 +34,13 @@ export function useActionBarClearance(active: boolean, target: string | RefObjec
     if (!bar) return;
     const measure = () => {
       const style = getComputedStyle(bar);
-      // AURA un-sticks the bar on a short screen (`max-height: 30rem`: 400%
-      // zoom, a phone held sideways), where it sits in the flow and covers
-      // nothing; padding the root there would only crowd the focused field.
-      if (style.position !== 'sticky' && style.position !== 'fixed') {
+      // Only the sticky floating card (from 640px) is ours to clear. Below
+      // 640px the bar is AURA's edge strip (`edgeBelow="sm"`, D-039),
+      // `position: fixed`, and AURA pads the page and sets the scroll padding
+      // itself from `--aura-actionbar-height`; counting it here would double
+      // it. On a short screen (`max-height: 30rem`: 400% zoom, a phone held
+      // sideways) AURA un-sticks the bar into the flow, where it covers nothing.
+      if (style.position !== 'sticky') {
         setClearance(0);
         return;
       }
@@ -43,17 +48,21 @@ export function useActionBarClearance(active: boolean, target: string | RefObjec
       setClearance(Math.ceil(bar.getBoundingClientRect().height + (Number.isFinite(offset) ? offset : 0) + FOCUS_GAP_PX));
     };
     measure();
-    // A size change re-measures; so does the short-screen switch, which moves
-    // the bar in or out of the flow without resizing it. A `bottom` change
-    // alone (the bottom nav hiding) is not seen: no page that uses this hides
-    // its nav.
+    // A size change re-measures; so do the short-screen switch, which moves
+    // the bar in or out of the flow without resizing it, and the 640px switch
+    // between AURA's sticky card and its fixed edge strip (D-039), so an
+    // inline value never outlives the card. A `bottom` change alone (the
+    // bottom nav hiding) is not seen: no page that uses this hides its nav.
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
     observer?.observe(bar);
-    const short = typeof window.matchMedia === 'function' ? window.matchMedia('(max-height: 30rem)') : null;
-    short?.addEventListener('change', measure);
+    const queries =
+      typeof window.matchMedia === 'function'
+        ? [window.matchMedia('(max-height: 30rem)'), window.matchMedia('(min-width: 40rem)')]
+        : [];
+    for (const q of queries) q.addEventListener('change', measure);
     return () => {
       observer?.disconnect();
-      short?.removeEventListener('change', measure);
+      for (const q of queries) q.removeEventListener('change', measure);
       // Never keep a number from the last time it was on.
       setClearance(0);
     };

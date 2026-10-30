@@ -494,7 +494,9 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
     const html = await renderPage();
     const header = html.slice(html.indexOf('data-marker="page-header"'), html.indexOf('detailsHeading'));
     const bar = /<section[^>]*data-testid="portal-invoice-pay-bar"[^>]*>/.exec(header)?.[0] ?? '';
-    expect(bar).toContain('max-md:fixed');
+    // D-039: a bar below 640px, as every other bar (was 768px).
+    expect(bar).toContain('max-sm:fixed');
+    expect(bar).not.toContain('max-md:');
     expect(bar).not.toMatch(/(^|\s)sticky(\s|")/);
     expect(html).toContain('summary.amountLabel');
     // With Pay now on the page the bill download steps down to secondary.

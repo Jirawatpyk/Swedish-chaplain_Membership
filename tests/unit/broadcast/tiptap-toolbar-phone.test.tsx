@@ -136,12 +136,15 @@ describe('phone toolbar — the staff boards\' row', () => {
     expect(marked.querySelector('[data-active-mark]')).not.toBeNull();
   });
 
-  it('while the host saves, every menu item is unavailable and says why', () => {
+  // AURA 5.70 (#186): an `aria-disabled` IconButton swallows clicks, so while
+  // the host saves the menu button is unavailable like every other control on
+  // the row, and its menu does not open (the maintainer, 30 Oct 2026).
+  it('while the host saves, the menu button is unavailable and opens nothing', () => {
     const { toolbar } = renderToolbar({ disabled: true });
-    const menu = openMenu(toolbar, t.insertMenu);
-    const items = Array.from(menu.querySelectorAll('[role^=menuitem]'));
-    expect(items.every((i) => i.getAttribute('aria-disabled') === 'true')).toBe(true);
-    expect(within(menu).getAllByText(t.saveWait)).toHaveLength(items.length);
+    const trigger = within(toolbar).getByRole('button', { name: t.insertMenu });
+    expect(trigger).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(trigger);
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it('the menu button keeps focus when the host starts saving (no remount, #662 review)', () => {

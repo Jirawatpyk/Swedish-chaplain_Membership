@@ -1,9 +1,10 @@
 /**
  * Spec 122 US12c-1 (UX review) — the staff E-Blast detail's action row on a
  * phone. With four actions it wraps onto two lines (~104px plus the safe
- * area), so: the lines follow the DOM order (Cancel / Reject first, the next
- * step after, WCAG 2.4.3), and a focused control scrolls clear of the pinned
- * bar (WCAG 2.4.11), which the shared 5.5rem pad is too short for.
+ * area), so the lines follow the DOM order (Cancel / Reject first, the next
+ * step after, WCAG 2.4.3). A focused control scrolls clear of it (WCAG 2.4.11)
+ * by AURA's measured edge-strip padding below 640px and the bar's own measured
+ * clearance from 640px (D-039; `use-action-bar-clearance.test.ts`).
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,9 +25,8 @@ describe('the E-Blast detail action row on a phone', () => {
     expect(rule).not.toMatch(/wrap-reverse/);
   });
 
-  it('keeps a focused control clear of its two-line bar', () => {
-    const rule = ruleAfter('html:has(.eblast-detail-actions) {');
-    expect(rule).toMatch(/scroll-padding-bottom:\s*calc\(var\(--aura-bottomnav-offset, 0px\) \+ 8rem/);
+  it('keeps no fixed 8rem allowance of its own: AURA measures the two-line strip (D-039)', () => {
+    expect(css).not.toContain('html:has(.eblast-detail-actions)');
   });
 
   it('keeps Reject · next step · ⋯ on one line: the next step shrinks and wraps its label (parity, 20 Oct)', () => {
@@ -43,7 +43,7 @@ describe('the E-Blast detail action row on a phone', () => {
   });
 
   it('leaves the 44px minimum to AURA: no min-height of its own on any bar button (AURA 5.54, #166)', () => {
-    const block = css.slice(css.indexOf('.eblast-detail-actions > div {'), css.indexOf('html:has(.eblast-detail-actions) {'));
+    const block = css.slice(css.indexOf('.eblast-detail-actions > div {'), css.indexOf("/* The plan wizard's Back / Next share"));
     expect(block.length).toBeGreaterThan(0);
     expect(block).not.toMatch(/min-height/);
   });
@@ -73,9 +73,8 @@ describe('the E-Blast detail action row on a phone', () => {
     expect(ruleAfter(`${only} > :nth-child(2) > div > button {`)).toMatch(/flex:\s*1 1 auto;/);
   });
 
-  it('reaches the bottom edge at the end of the scroll: the page\'s bottom padding sits above it, not under it', () => {
-    // The shared rule for every pinned bar (pinned-bar-edge-css.test.ts) covers this bar.
-    const rule = ruleAfter('.template-form-actions, .eblast-detail-actions) {\n    margin-bottom');
-    expect(rule).toMatch(/margin-bottom:\s*calc\(-1 \* var\(--page-padding-bottom\)\);/);
+  it('reaches the bottom edge as AURA\'s strip: no negative margin of its own (D-039)', () => {
+    // AURA pads the page's end by the strip's height (pinned-bar-edge-css.test.ts).
+    expect(css).not.toMatch(/\.eblast-detail-actions\)\s*\{\s*margin-bottom/);
   });
 });

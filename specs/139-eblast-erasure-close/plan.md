@@ -66,7 +66,7 @@ Spec: `specs/139-eblast-erasure-close/spec.md` · Size: L · Agreed by the user 
   - **the 24 test files that fake `getMembersHaltedInTenant`.** A fake cast with `as` and no `getMemberErasedAt` would throw, become `erasure_read_failed`, and silently flip "send" tests. Each fake gets the method explicitly.
 - **Residual 8c (pdpa).** "An E-Blast Resend had already accepted for sending before the erasure cascade's DELETE." It cannot be undone (Art. 19). Resend keeps the sent object under its own retention, which has not been measured. There is an Art. 28(3)(e) instruction item, as for 8a. The DSR answer quotes the `already_sent` row and the recipient count.
 - **Archive (pdpa L-1).** The runbook states that archive never stands in for an erasure request.
-- **D-039 first trusted** a single DELETE 404 (the import leg wants two). *Review round 1 (CR#1) replaced that:* a 404 is confirmed by the bounded GET under the lock, so the cascade also asks twice.
+- **D-040 first trusted** a single DELETE 404 (the import leg wants two). *Review round 1 (CR#1) replaced that:* a 404 is confirmed by the bounded GET under the lock, so the cascade also asks twice.
 
 **Slice 2 conditions (pdpa):**
 - **M-1:** the orphan sweeps run on one Resend team shared by every tenant, so a deleted row's `tenant_id` comes from our broadcast row. A deletion that cannot be attributed writes no tenant row. It is logged and counted, never filed under a guessed tenant.
@@ -75,7 +75,7 @@ Spec: `specs/139-eblast-erasure-close/spec.md` · Size: L · Agreed by the user 
 - **Payload:** `broadcast_id` (nullable for orphans), `related_member_id`, the audience id, `recipient_count`, `leg`, the delete `reason` and `outcome`. No addresses and no hashes.
 - **Slice 1's RoPA edits** must not name the slice-2 rows as evidence before they exist.
 
-**Rejected alternatives** (Complexity Tracking, D-039):
+**Rejected alternatives** (Complexity Tracking, D-040):
 - **Cancel first, then DELETE:** a 403 leaves a `cancelled` row whose mail went out, so the quota and the audit would lie.
 - **DELETE first, then cancel, with no lock:** the import leg re-probes `not_found`, waits 3 s, mints a new broadcast from the *pre-scrub* row and persists it while the row is still `approved`.
 - **A re-check of erasure between persist and `/send`:** this narrows the window but cannot close it. Only Resend's own arbitration (DELETE answers 200 only on a draft; `/send` works only on a draft) closes it.
@@ -301,7 +301,7 @@ reliability-guardian, pdpa-gdpr, security-engineer and `/code-review high` (CR2)
 | security **MEDIUM** — the reconciler's budget is per member, not per row | accepted bound (P7 above; `cron-jobs.md`; the route docblock): fail closed, the next tick resumes (docs) |
 | security **LOW** — no index for the evidence count read | deferred: `readAlreadySentEvidenceInTx` filters `audit_log` by tenant, event type and payload keys; per-erasure, not per-tick. Revisit if the erase route's p95 moves (no measurement taken in this round) |
 | security **LOW** — the P8 re-read did not lock | as CR2 #3 |
-| CR2 **#1** — no pause between the DELETE 404 and the GET, so "two not-founds" could be one stale answer read twice | `4fee38c3e` (refactor: `REPROBE_PAUSE_MS` to `_reprobe-pause.ts`, re-exported) → `2245f93fb` → `76448c076`: `pauseBeforeReprobe` dep (default a timer), after a 404 only. Lock hold ≤ ≈ 23 s: D-039, this plan, the docblock, the route comment (docs) |
+| CR2 **#1** — no pause between the DELETE 404 and the GET, so "two not-founds" could be one stale answer read twice | `4fee38c3e` (refactor: `REPROBE_PAUSE_MS` to `_reprobe-pause.ts`, re-exported) → `2245f93fb` → `76448c076`: `pauseBeforeReprobe` dep (default a timer), after a 404 only. Lock hold ≤ ≈ 23 s: D-040, this plan, the docblock, the route comment (docs) |
 | CR2 **#2** — 403 + `unknown` (a `failed` broadcast) stays unexpected for ever | kept unexpected (fail closed). Settling it needs `failed` out of `normaliseStatus`'s `unknown` on BOTH legs (both refuse it today) — deferred; runbook manual recovery "403 + `unknown`" (docs) |
 | CR2 **#3** — the lost-race re-reads did not take the row lock, so they could read `approved` under an in-flight cascade and log ERROR | `4e847aa1d` → `d30595ca5` (with #9) |
 | CR2 **#4** — P4 refused a missing requester as erased | `441197f34` → `29fc52461`: undecided at dispatch, `missing: true` on `erased`; runbook orphan recovery (maintainer decision 30 Oct 2026) |

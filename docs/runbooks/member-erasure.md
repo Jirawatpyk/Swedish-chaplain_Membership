@@ -81,7 +81,7 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    Resend action).** The cascade now handles an `approved` E-Blast that already
    carries a `resend_broadcast_id`: under the row lock it deletes the Resend
    draft once, probes it once after a 404 (3 s later) or a 403, and cancels the
-   row only when Resend's answers prove nothing can be sent (D-039); the
+   row only when Resend's answers prove nothing can be sent (D-040); the
    send-time gate refuses an erased member on both dispatch legs. Do **not** delete anything at
    Resend by hand. The one case it cannot undo is an E-Blast Resend had
    **already accepted for sending** (residual **8c**). Find it from the

@@ -22,6 +22,10 @@ describe('oneClickUnsubscribeRewriteTarget', () => {
     expect(oneClickUnsubscribeRewriteTarget('POST', '/api/unsubscribe/v1.abc.def')).toBeNull();
   });
 
+  it('leaves POST /unsubscribe/test-copy alone: it is a page, not a token', () => {
+    expect(oneClickUnsubscribeRewriteTarget('POST', '/unsubscribe/test-copy')).toBeNull();
+  });
+
   it('the API handler sits behind the F7 kill switch', () => {
     expect(matchesF7KillSwitchPath('/api/unsubscribe/v1.abc.def')).toBe(true);
   });

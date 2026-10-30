@@ -207,23 +207,21 @@ describe('the phone bar', () => {
     expect(bar()).not.toHaveTextContent(c.views.blocked);
   });
 
-  // PR K — the page keeps the bar's MEASURED height (plus its gap) clear
-  // below a focused field, not a fixed allowance: 114px gives 130px.
-  it('keeps its measured height clear below a focused field', () => {
+  // D-039 — the phone bar is AURA's edge strip (`edgeBelow="sm"`), which pads
+  // the page and sets the scroll padding itself; the form keeps no allowance
+  // of its own. Even with a measurable sticky bar (what PR K measured: 114px
+  // gave 130px) nothing is set inline.
+  it('the phone bar is AURA\'s edge strip and the form sets no scroll padding of its own', () => {
     bp.current = 'base';
     const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
       return { height: this.classList.contains('chamber-compose-actionbar') ? 114 : 0 } as DOMRect;
     });
-    // AURA's stylesheet makes the bar sticky; jsdom loads none.
     const sticky = document.head.appendChild(document.createElement('style'));
     sticky.textContent = '.chamber-compose-actionbar { position: sticky; }';
     try {
       renderForm();
-      const root = document.documentElement;
-      expect(root.style.scrollPaddingBottom).toBe('130px');
-      expect(document.querySelector('.chamber-compose-actionbar-tall')).toBeNull();
-      cleanup();
-      expect(root.style.scrollPaddingBottom).toBe('');
+      expect(document.querySelector('.chamber-compose-actionbar')).toHaveClass('aura-actionbar--edge-below-sm');
+      expect(document.documentElement.style.scrollPaddingBottom).toBe('');
     } finally {
       spy.mockRestore();
       sticky.remove();

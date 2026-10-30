@@ -47,8 +47,17 @@ describe('useActionBarClearance', () => {
 
   // AURA un-sticks the bar on a short screen (400% zoom, a phone held
   // sideways): it then sits in the page flow and covers nothing.
-  it('is 0 while the bar is not sticky or fixed', () => {
+  it('is 0 while the bar is not sticky', () => {
     mountBar('my-bar', 114, '8px', 'static');
+    const { result } = renderHook(() => useActionBarClearance(true, '.my-bar'));
+    expect(result.current).toBe(0);
+  });
+
+  // D-039 — below 640px the bar is AURA's edge strip (`edgeBelow="sm"`),
+  // `position: fixed`: AURA pads the page and sets the scroll padding itself
+  // from `--aura-actionbar-height`, so the hook must not count it again.
+  it('is 0 while the bar is AURA’s fixed edge strip', () => {
+    mountBar('my-bar', 62, '0px', 'fixed');
     const { result } = renderHook(() => useActionBarClearance(true, '.my-bar'));
     expect(result.current).toBe(0);
   });
@@ -94,5 +103,24 @@ describe('useActionBarClearance', () => {
     const bar = mountBar('no-class-needed', 70, '12px');
     const { result } = renderHook(() => useActionBarClearance(true, { current: bar }));
     expect(result.current).toBe(98);
+  });
+
+  // D-039 review — crossing 640px swaps AURA's sticky card for its fixed edge
+  // strip without always resizing the bar; the 640px query re-measures, so the
+  // card's inline value never outlives it.
+  it('re-measures when the width crosses 640px (card to edge strip)', () => {
+    const listeners = new Map<string, () => void>();
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: false,
+      addEventListener: (_: string, cb: () => void) => listeners.set(query, cb),
+      removeEventListener: () => {},
+    }));
+    const bar = mountBar('my-bar', 70, '12px');
+    const { result } = renderHook(() => useActionBarClearance(true, '.my-bar'));
+    expect(result.current).toBe(98);
+    bar.style.position = 'fixed';
+    act(() => listeners.get('(min-width: 40rem)')?.());
+    expect(result.current).toBe(0);
+    vi.unstubAllGlobals();
   });
 });

@@ -11,7 +11,7 @@
  *
  * The read now takes the row lock (`lockForUpdate`) inside a short tx of its
  * own, so it WAITS for an erasure cascade that is still deciding the row under
- * that lock (≈ 23 s at most, D-039) instead of reading `approved` from under it
+ * that lock (≈ 23 s at most, D-040) instead of reading `approved` from under it
  * and taking the error path. Each copy's own semantics are parameters:
  *
  *   - `stillOurs` — the row is as this tick left it (default: still

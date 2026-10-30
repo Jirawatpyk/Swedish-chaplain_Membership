@@ -623,7 +623,8 @@ export function IssueInvoiceForm({
           not scroll the summary out of view; on a phone they stack full
           width, the primary action on top (ux-standards § 11.1). Each is
           AURA's full-width button below sm, so the confirm's label (it names
-          the total) wraps instead of running out of the button at 320px. */}
+          the total) wraps instead of running out of the button at 320px.
+          PR N2: Dialog footer — moves to AURA Dialog's `footer` (D-039). */}
       <div className="sticky bottom-0 flex flex-wrap justify-end gap-[var(--aura-space-2)] bg-[var(--aura-bg-surface)] py-[var(--aura-space-3)] max-sm:flex-col-reverse">
         {/* Cancel takes the first focus (ux-standards § 6, the safe action). */}
         <Button

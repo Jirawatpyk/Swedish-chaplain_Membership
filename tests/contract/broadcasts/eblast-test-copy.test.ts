@@ -48,6 +48,7 @@ function makeDeps(o?: {
       },
       mailer: { send },
       audit,
+      testCopyUnsubscribeUrl: 'https://app.example/unsubscribe/test-copy',
     },
     send,
     audit,
@@ -82,6 +83,20 @@ describe('sendTestCopy — use case', () => {
     expect(msg.html).toContain('<p>Body</p>');
     expect(msg.html).not.toContain('<script>');
     expect(msg.html).toContain('<!--#b04a00-->');
+  });
+
+  // R105 (PR #692): the footer's Resend merge tag is substituted only by
+  // Resend Broadcasts, so on the transactional path it went out literal and
+  // the link had no target. A test copy points it at the explanation page,
+  // in the copy's own language; it unsubscribes nobody.
+  it('points the footer Unsubscribe link at the test-copy explanation page, in the copy\'s language', async () => {
+    const { deps } = makeDeps();
+    const render = vi.fn(deps.renderer.render);
+    await sendTestCopy({ ...deps, renderer: { render } }, { ...base, locale: 'th' });
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(render.mock.calls[0]![0]).toMatchObject({
+      unsubscribeHref: 'https://app.example/unsubscribe/test-copy?lang=th',
+    });
   });
 
   it('the Thai prefix is used for a th locale', async () => {

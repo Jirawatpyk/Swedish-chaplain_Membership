@@ -16,6 +16,7 @@ Any UI-touching change also gets an `enterprise-ux-designer` pass (see the `revi
 - Icon names are registered once per registry (`AuraBridge`, `@/lib/aura-server-icons`); TH/SV use AURA's locale packs.
 - Server files import static AURA components from `@jirawatpyk/aura-react/server`, never the root (`tests/unit/architecture/aura-server-imports.test.ts`).
 - The legacy kit in `src/components/ui/` is shadcn/ui on **Base UI** (not Radix): click a radio's LABEL; `disabled` shows as `aria-disabled`; a render-prop ref is easy to drop; Switch needs a PointerEvent polyfill in jsdom.
+- **Bottom bars** (D-039): every viewport `ActionBar` carries `edgeBelow="sm"` — an edge strip below 640px, the floating card from 640px; no hand-built bottom bar without a reason (`tests/unit/architecture/viewport-actionbar-edge.test.ts`).
 - Both command palettes use AURA `Command`. `cmdk` is banned outside its legacy host `src/components/ui/command.tsx` (pickers and `ui/combobox`, until US13).
 - **i18n**: a literal `t('key')` missing from `en.json` fails `check:i18n`; next-intl does NOT throw on a missing key at runtime, so a renamed key ships as `MISSING_MESSAGE`. No italic on Thai text; muted grey is the empty-value sentinel.
 - **Migrate and fix** (the maintainer, 25 Oct 2026; spec 122 Session 2026-10-25): a migration slice also fixes the problems its files already had (UX, a11y, mobile, copy, states). Sweep each migrated file whole, not only the diff. A fix that changes server behaviour, data, money or an API ships as its own PR right after (FR-011), named in the slice's PR.

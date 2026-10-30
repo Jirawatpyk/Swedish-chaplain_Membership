@@ -7,8 +7,9 @@
  *  2. Warms `/admin/sign-in`, `/admin`, `/portal/sign-in` and `/portal` so a cold
  *     Turbopack compile does not land inside a test's `beforeEach` — see
  *     `warmAdminRoutes` for why that was fatal rather than merely slow. Also
- *     sends one anonymous POST to each route in its `postRoutes` list (today the
- *     relink route), so a POST's first compile doesn't land inside a test either.
+ *     sends one anonymous request to each route in its `writeRoutes` list (relink,
+ *     plans, members, E-Blast review), so a write route's first compile doesn't
+ *     land inside a test either.
  *  3. Resets the F5 issued-invoice fixture row (E2E_ISSUED_INVOICE_ID)
  *     back to status='issued' so the Pay-now button renders again after
  *     a happy-path run flipped it to `paid`. Cascades through child
@@ -78,10 +79,16 @@ async function warmAdminRoutes(): Promise<void> {
   // `/api/members/[id]/undelete` and the choose-a-primary dialog opens only on
   // that 409, which first compiled the route — 10.6 s (9.6 s of it compiling)
   // against the test's 10 s wait for the dialog.
+  // And the E-Blast review queue (R106 / R107, 2026-10-29): whichever of AS2
+  // (approve; AS4 and bulk schedule post to it too) or AS3 (reject) ran first in a whole-file run compiled its route
+  // — approve 13.4 s, reject 17.0 s — against the dialog's 15 s `toBeHidden`,
+  // so the file passed alone and failed one test in a full run, on main too.
   // Sent with no session, so each route's guard answers before it reads the
   // ids or the body and writes no audit row (no actor to attribute) — 404 from
-  // the relink admin guard, 401 from `requireApiPermission` on the plans and
-  // members routes; the Origin header gets them past the proxy's CSRF list.
+  // the relink admin guard, 401 from `requireApiPermission` on the plans,
+  // members and broadcasts routes (503 from the proxy's F7 kill switch while
+  // `FEATURE_F7_BROADCASTS` is off, when the queue specs skip anyway); the
+  // Origin header gets them past the proxy's CSRF list.
   const nilId = '00000000-0000-0000-0000-000000000000';
   const writeRoutes: ReadonlyArray<{ method: 'POST' | 'DELETE'; route: string }> = [
     { method: 'POST', route: `/api/admin/events/${nilId}/registrations/${nilId}/relink` },
@@ -89,6 +96,9 @@ async function warmAdminRoutes(): Promise<void> {
     { method: 'DELETE', route: '/api/plans/2029/warm-up' },
     { method: 'POST', route: '/api/plans/2029/warm-up/undelete' },
     { method: 'POST', route: `/api/members/${nilId}/undelete` },
+    { method: 'POST', route: `/api/admin/broadcasts/${nilId}/approve` },
+    { method: 'POST', route: `/api/admin/broadcasts/${nilId}/reject` },
+    { method: 'POST', route: `/api/admin/broadcasts/${nilId}/cancel` },
   ];
   for (const { method, route } of writeRoutes) {
     try {

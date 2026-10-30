@@ -67,6 +67,12 @@ export interface SendTestCopyDeps {
   readonly renderer: EmailRendererPort;
   readonly mailer: TestCopyMailerPort;
   readonly audit: AuditPort;
+  /**
+   * Where the footer's Unsubscribe link points (R105): the explanation page,
+   * `<APP_BASE_URL>/unsubscribe/test-copy`. The real link is Resend
+   * Broadcasts' merge tag, which this transactional path never substitutes.
+   */
+  readonly testCopyUnsubscribeUrl: string;
 }
 
 export interface SendTestCopyInput {
@@ -146,6 +152,7 @@ export async function sendTestCopy(
     tenantDisplayName: input.tenantDisplayName,
     locale: input.locale,
     brand,
+    unsubscribeHref: `${deps.testCopyUnsubscribeUrl}?lang=${input.locale}`,
   });
 
   const sent = await deps.mailer.send({ to: input.actorEmail, subject, html });

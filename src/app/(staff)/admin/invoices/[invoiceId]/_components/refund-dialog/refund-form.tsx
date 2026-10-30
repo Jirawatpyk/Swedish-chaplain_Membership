@@ -688,7 +688,8 @@ export function RefundForm({
       {/* The buttons stick to the bottom of the dialog's scrolling body, so a
           long form never scrolls them away and focusing Cancel on open does
           not scroll the summary out of view; on a phone they stack full
-          width, the primary action on top (ux-standards § 11.1). */}
+          width, the primary action on top (ux-standards § 11.1).
+          PR N2: Dialog footer — moves to AURA Dialog's `footer` (D-039). */}
       <div className="sticky bottom-0 flex flex-wrap justify-end gap-[var(--aura-space-2)] bg-[var(--aura-bg-surface)] py-[var(--aura-space-3)] max-sm:flex-col-reverse">
         <Button type="button" variant="secondary" fullWidth="below-sm" data-autofocus disabled={submitting} onClick={onClose}>
           {t('dialog.cancel')}

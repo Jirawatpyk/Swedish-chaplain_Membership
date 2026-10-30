@@ -750,6 +750,19 @@ describe('<ScheduleEditor> on AURA (T738)', () => {
     expect(within(bar).getByRole('button', { name: 'Save schedule' })).toHaveClass('aura-btn--primary');
   });
 
+  // R109 finding 1 (WCAG 2.4.11) — AURA sizes the page's edge-strip padding
+  // from the last bar that mounted. A bar in a hidden tier tab measures 0px,
+  // so on a phone the active strip covered the steps: only the active tier
+  // mounts its bar.
+  it('mounts one save bar, in the active tier, also after switching tier', () => {
+    const { container } = renderEditor();
+    expect(container.querySelectorAll('.aura-actionbar')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('tab', { name: messages.admin.renewals.settings.schedules.tabs.premium }));
+    const bars = container.querySelectorAll('.aura-actionbar');
+    expect(bars).toHaveLength(1);
+    expect(bars[0]!.closest('[role="tabpanel"]')).toBeVisible();
+  });
+
   it('shows a failed save as an AURA danger Alert', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })));
     try {
