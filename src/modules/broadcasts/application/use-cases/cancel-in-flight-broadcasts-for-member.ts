@@ -439,6 +439,13 @@ export async function cancelInFlightBroadcastsForMember(
           if (locked.status === 'approved' && locked.resendBroadcastId !== null) {
             if (!erasure) return { kind: 'dispatch_begun' };
             if (locked.resendBroadcastId !== '') {
+              // Review round 2 (M-NEW-1) — the CAS below is on `fromStatus`; a
+              // row locked at another status cannot be cancelled by this
+              // attempt, so no Resend call is made for it. The caller re-reads
+              // and retries from the status it observes.
+              if (locked.status !== fromStatus) {
+                throw new BroadcastConcurrentMutationError(input.tenant.slug, broadcast.broadcastId, fromStatus);
+              }
               const settlement = await settleAtResend(broadcast, locked.resendBroadcastId);
               if (settlement.kind === 'already_sent') {
                 // Decided under the lock; nothing is written on the row.
