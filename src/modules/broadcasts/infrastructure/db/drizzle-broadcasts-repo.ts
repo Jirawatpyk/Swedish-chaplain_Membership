@@ -1901,6 +1901,13 @@ export function makeDrizzleBroadcastsRepo(
       // valuable here — refuse to redact against an unbound / wrong-tenant tx.
       await assertTenantBoundTx(tx, ctx.slug, 'scrubContentForMemberInTx');
       await tx.execute(sql`SET LOCAL app.allow_broadcast_redaction = 'on'`);
+      // Built outside the UPDATE's template: a nested backtick there would end
+      // the tenant-predicate source scan before it reaches `WHERE tenant_id`
+      // (tests/unit/broadcasts/infrastructure/tenant-sql-shape).
+      const cascadeReasons = sql.join(
+        CASCADE_CANCELLATION_REASONS.map((r) => sql`${r}`),
+        sql`, `,
+      );
       const rows = (await tx.execute(sql`
         UPDATE broadcasts SET
           subject = '[redacted]',
@@ -1923,10 +1930,7 @@ export function makeDrizzleBroadcastsRepo(
           -- is a typed note and is NULLed. Unchanged is permitted by the
           -- migration-0311 GUC arm (cancellation_reason is whitelisted).
           cancellation_reason = CASE
-            WHEN cancellation_reason IN (${sql.join(
-              CASCADE_CANCELLATION_REASONS.map((r) => sql`${r}`),
-              sql`, `,
-            )}) THEN cancellation_reason
+            WHEN cancellation_reason IN (${cascadeReasons}) THEN cancellation_reason
             ELSE NULL
           END,
           -- failure_reason is set from the raw gateway error message
