@@ -65,6 +65,10 @@ describe('resendBroadcastsGateway.retrieveBroadcastOnce (spec 139 review round 1
     ['sending', 'sending'],
     ['sent', 'sent'],
     ['cancelled', 'cancelled'],
+    // MEASURED 2026-10-30 (live account, sink only, 2 runs): a queued broadcast
+    // cancelled through POST /broadcasts/{id}/cancel answers `canceled` — ONE L,
+    // as Resend's docs spell it. It is the same state as ours.
+    ['canceled', 'cancelled'],
     ['failed', 'unknown'],
     ['scheduled', 'unknown'],
   ] as const)('200 with status %s → present %s: one GET /broadcasts/{id}, authorised, carrying an abort signal', async (raw, status) => {
