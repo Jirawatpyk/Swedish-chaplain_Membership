@@ -184,6 +184,11 @@ interface RepoOpts {
   readonly markDispatchRetryStartedReturns?: Date | null;
   /** F119 PR-E (H1 / M1) — the retry-clock reset itself fails. */
   readonly clearDispatchRetryClockThrows?: Error;
+  /**
+   * Spec 139 review round 2 — the terminal `failed_to_dispatch` CAS loses (a
+   * concurrent cancel won), as the repo throws it.
+   */
+  readonly failedToDispatchLosesCas?: boolean;
 }
 
 function makeRepo(opts: RepoOpts): {
@@ -197,10 +202,19 @@ function makeRepo(opts: RepoOpts): {
   retryStampCalls: Array<{ at: Date }>;
   /** F119 PR-E (H1 / M1) — every `clearDispatchRetryClock` call. */
   retryClearCalls: number;
+  /**
+   * Spec 139 review round 2 (code-review #3/#9) — every `lockForUpdate`. The
+   * Step-1 lock is the first; a re-read after a lost race takes the row lock
+   * again (so it waits for an in-flight cascade commit) and, from the second
+   * lock on, `findByIdInTx` answers what a re-read finds — the same knobs as
+   * `findById` (`findByIdReturns` / `findByIdThrows`).
+   */
+  readonly lockCalls: number;
 } {
   const transitions: Array<{ status: string; fields: unknown }> = [];
   const retryStampCalls: Array<{ at: Date }> = [];
   const clears = { count: 0 };
+  const locks = { count: 0 };
   const attachCalls: Array<{ audienceId: string; broadcastId: string }> = [];
   const attachAudienceCalls: Array<{ audienceId: string }> = [];
   const attachBroadcastIdCalls: Array<{ broadcastId: string }> = [];
@@ -213,6 +227,9 @@ function makeRepo(opts: RepoOpts): {
     retryStampCalls,
     get retryClearCalls() {
       return clears.count;
+    },
+    get lockCalls() {
+      return locks.count;
     },
     port: {
       async withTx(fn) {
@@ -232,12 +249,24 @@ function makeRepo(opts: RepoOpts): {
         return opts.findByIdReturns ?? null;
       },
       async findByIdInTx() {
+        if (locks.count >= 2) {
+          if (opts.findByIdThrows !== undefined) throw opts.findByIdThrows;
+          return opts.findByIdReturns ?? null;
+        }
         return opts.broadcast ?? null;
       },
       async lockForUpdate() {
+        locks.count += 1;
         return opts.lockedStatus ?? null;
       },
       async applyTransition(_tx, _t, _b, status, fields) {
+        if (opts.failedToDispatchLosesCas === true && status === 'failed_to_dispatch') {
+          throw new BroadcastConcurrentMutationError(
+            'test-tenant' as unknown as ConstructorParameters<typeof BroadcastConcurrentMutationError>[0],
+            _b,
+            'approved',
+          );
+        }
         transitions.push({ status, fields });
         if (opts.applyTransitionThrowsOnFinal && status === 'sending') {
           throw new Error('db write failed after resend success');
@@ -5668,6 +5697,36 @@ describe('spec 139 P8 — a /send 404 after the row left approved is a concurren
     expect(infoSpy).toHaveBeenCalledWith(
       expect.objectContaining({ broadcastId, observedStatus: 'cancelled' }),
       'broadcasts.dispatch.send_404_row_left_approved',
+    );
+    // Review round 2 (code-review #3) — the re-read takes the row lock, so it
+    // waits for an erasure cascade still deciding the row, never reading
+    // `approved` from under it.
+    expect(repo.lockCalls).toBe(2);
+    infoSpy.mockRestore();
+  });
+
+  // Review round 2 (code-review #3/#9) — the erased refusal's lost terminal
+  // CAS re-reads under the row lock too (the same shared helper).
+  it('the erased refusal loses its terminal CAS and the LOCKED re-read finds the row cancelled → a concurrent skip at info', async () => {
+    const infoSpy = vi.spyOn(logger, 'info');
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+      failedToDispatchLosesCas: true,
+      findByIdReturns: { ...makeBroadcast('approved'), status: 'cancelled' },
+    });
+    const gw = makeGateway({});
+    const result = await dispatchScheduledBroadcast(
+      { ...depsFor(repo, gw, audit), sendStanding: makeFakeSendStanding({ erased: true }) },
+      baseInput,
+    );
+    expect(result).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+    expect(repo.lockCalls).toBe(2);
+    expect(gw.sendCalls).toHaveLength(0);
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ broadcastId, observedStatus: 'cancelled' }),
+      'broadcasts.dispatch.erased_refusal_lost_race',
     );
     infoSpy.mockRestore();
   });

@@ -135,6 +135,13 @@ interface Recorder {
   /** Every audience the tick asked Resend to delete. */
   readonly audiencesDeleted: string[];
   probes: number;
+  /**
+   * Spec 139 review round 2 (code-review #3/#9) — every `lockForUpdate`. The
+   * Step-1 lock is the first; a re-read after a lost race takes the row lock
+   * again and, from the second lock on, `findByIdInTx` answers what the
+   * read-back knobs say (as `findById` does).
+   */
+  rowLocks: number;
   readonly reprobePauses: number[];
   /**
    * Every restart write a hold (or the audience-missing self-heal) made, in
@@ -355,11 +362,30 @@ function makeDeps(opts: {
     retryClears: [],
     audiencesDeleted: [],
     probes: 0,
+    rowLocks: 0,
     reprobePauses: [],
     releases: [],
     broadcastIdAttaches: [],
     broadcastsDeleted: [],
     sendKeys: [],
+  };
+
+  /**
+   * The row as the writes left it, unless a case overrides what a read-back
+   * finds (a write whose ack was lost, a sibling's write) — `findById`, and
+   * `findByIdInTx` under a second row lock (a lost-race re-read).
+   */
+  const readBack = async () => {
+    if (opts.readBackResendBroadcastId === 'throws') {
+      throw new Error('57P01 terminating connection due to administrator command');
+    }
+    return {
+      ...broadcast,
+      resendBroadcastId:
+        opts.readBackResendBroadcastId === undefined ? rowResendBroadcastId : opts.readBackResendBroadcastId,
+      audienceImportId: opts.readBackImportId === undefined ? broadcast.audienceImportId : opts.readBackImportId,
+      ...(opts.readBackStatus !== undefined ? { status: opts.readBackStatus } : {}),
+    };
   };
 
   const broadcast = {
@@ -534,11 +560,12 @@ function makeDeps(opts: {
           return fn({ txId: txSeq });
         },
         async lockForUpdate() {
+          rec.rowLocks += 1;
           if (opts.lockStatus === 'not_found') return null;
           return opts.lockStatus ?? 'approved';
         },
         async findByIdInTx() {
-          return broadcast;
+          return rec.rowLocks >= 2 ? readBack() : broadcast;
         },
         async attachAudienceId() {
           maybeCasThrow('attachAudienceId');
@@ -626,18 +653,7 @@ function makeDeps(opts: {
           rowResendBroadcastId = rbId;
         },
         async findById() {
-          if (opts.readBackResendBroadcastId === 'throws') {
-            throw new Error('57P01 terminating connection due to administrator command');
-          }
-          // The row as the writes above left it, unless a case overrides what
-          // the read-back finds (a write whose ack was lost, a sibling's write).
-          return {
-            ...broadcast,
-            resendBroadcastId:
-              opts.readBackResendBroadcastId === undefined ? rowResendBroadcastId : opts.readBackResendBroadcastId,
-            audienceImportId: opts.readBackImportId === undefined ? broadcast.audienceImportId : opts.readBackImportId,
-            ...(opts.readBackStatus !== undefined ? { status: opts.readBackStatus } : {}),
-          };
+          return readBack();
         },
         async attachResendIds(tx: unknown, _t: unknown, _b: unknown, audId: string | null, rbId: string) {
           rec.resendIdWrites.push({ resendBroadcastId: rbId, resendAudienceId: audId, txId: (tx as { txId?: number } | null)?.txId });
@@ -3915,6 +3931,32 @@ describe('spec 139 P8 — a /send 404 after the row left approved is a concurren
     expect(infoSpy).toHaveBeenCalledWith(
       expect.objectContaining({ broadcastId: BROADCAST_ID, observedStatus: 'cancelled' }),
       'broadcasts.audience_import.send_lost_to_hold',
+    );
+    // Review round 2 (code-review #3) — the re-read takes the row lock, so it
+    // waits for an erasure cascade still deciding the row.
+    expect(rec.rowLocks).toBe(2);
+  });
+
+  // Review round 2 (code-review #3/#9) — the erased refusal's lost terminal
+  // CAS (`failTerminally`'s concurrent-loss skip) re-reads under the row lock.
+  it('the erased refusal loses its terminal CAS and the LOCKED re-read finds the row cancelled → a concurrent skip at info', async () => {
+    const { logger } = await import('@/lib/logger');
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({
+      standing: { erased: true },
+      transitionThrowsOn: 'failed_to_dispatch',
+      transitionThrowKind: 'concurrent',
+      readBackStatus: 'cancelled',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+    expect(rec.rowLocks).toBe(2);
+    expect(rec.gatewayCalls).not.toContain('sendBroadcast');
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ broadcastId: BROADCAST_ID, observedStatus: 'cancelled' }),
+      'broadcasts.audience_import.terminal_write_lost_race',
     );
   });
 });
