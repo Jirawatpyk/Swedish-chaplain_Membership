@@ -436,8 +436,9 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
   failure this table exists to prevent.
 
 **§ 6.10 privacy sign-off** — date: ______ · reviewer: ______ · residual 8a
-acknowledged: ☐ · residual 8b closed (spec 139 slice 1 merged): ☐ · already-sent
-residual 8c acknowledged: ☐
+acknowledged: ☐ · residual 8b closed for sends (spec 139 slice 1 merged): ☐ · already-sent
+residual 8c acknowledged (incl. the gate→send window, recorded not prevented): ☐ · unsent-draft
+residual 8d acknowledged: ☐
 
 ---
 

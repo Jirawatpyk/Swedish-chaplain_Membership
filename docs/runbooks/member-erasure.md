@@ -80,21 +80,51 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
 3b. **AFTER step 3 — an E-Blast caught mid-dispatch (spec 139; no manual
    Resend action).** The cascade now handles an `approved` E-Blast that already
    carries a `resend_broadcast_id`: under the row lock it deletes the Resend
-   draft and cancels the row, and the send-time gate refuses an erased member on
-   both dispatch legs. Do **not** delete anything at Resend by hand. The one case
-   it cannot undo is an E-Blast Resend had **already accepted for sending**
-   before the cascade's DELETE (residual **8c**). Find it from the evidence, not
-   from memory:
-   - the `broadcast_concurrent_action_blocked` audit row with
-     `dispatchBegun: true` and `resendOutcome: 'already_sent'` under this
-     erasure's `request_id`, and the `member_erased` payload's
-     `broadcasts_already_sent_count`;
+   draft once, probes it once after a 404 or 403, and cancels the row only when
+   Resend's answers prove nothing can be sent (D-039); the send-time gate
+   refuses an erased member on both dispatch legs. Do **not** delete anything at
+   Resend by hand. The one case it cannot undo is an E-Blast Resend had
+   **already accepted for sending** (residual **8c**). Find it from the
+   evidence, not from memory:
+   - the `broadcast_concurrent_action_blocked` audit rows with
+     `resendOutcome: 'already_sent'` for this member — search by
+     `payload->>'memberId'`, **not only by this erasure's `request_id`**: a row
+     written by an earlier run or by a `reconcile-erasures` re-drive carries
+     that run's request id (`system:erase-reconcile`);
+     `SELECT payload->>'broadcastId', created_at, request_id FROM audit_log
+     WHERE tenant_id = '<tenant>' AND event_type =
+     'broadcast_concurrent_action_blocked' AND payload->>'resendOutcome' =
+     'already_sent' AND payload->>'memberId' = '<member>';`
+   - the `member_erased` payload's `broadcasts_already_sent_count`. It is
+     **derived from those evidence rows** (distinct broadcasts for the member,
+     read at the end of every erasure run), so the count on the LATEST
+     `member_erased` — a re-drive's included — is authoritative;
    - or from state: `SELECT broadcast_id, status, sent_at FROM broadcasts WHERE
      tenant_id = '<tenant>' AND requested_by_member_id = '<member>' AND status
-     IN ('sending','sent') AND sent_at >= '<member_erasure_requested time>';`
+     IN ('sending','sent','partially_sent','partial_delivery_accepted') AND
+     sent_at >= '<member_erasure_requested time>';`
    Record each on the DSR ticket with its recipient count (residual 8c wording
    in step 7). **Archive never stands in for an erasure request**: archiving a
    member still skips a dispatch-begun E-Blast and deletes nothing at Resend.
+
+   **A row the cascade cannot settle — manual recovery.** When Resend's
+   answers decide nothing (a 403 whose probe says `draft` or `not_found`, an
+   `unknown` status such as `failed`, or a 404 whose probe still finds the
+   broadcast), the row stays `approved`, the erasure stays not complete, and
+   `reconcile-erasures` re-drives it every 30 min without ever finishing.
+   Recognise it by: the log line `broadcasts.cascade.tx_or_audit_failed` with
+   `resendOutcome` such as `forbidden_probe_draft`, `forbidden_probe_not_found`,
+   `forbidden_probe_unknown`, `absent_probe_draft`, `absent_probe_cancelled` or
+   `absent_probe_unknown` (a plain `retryable` / `other` is a Resend outage and
+   heals itself); `members_erasure_outcome_total{outcome="still_pending"}`
+   staying non-zero for the member; and the erasure card showing a half-run
+   (step 8). What to do: a `forbidden_probe_draft` / `_not_found` almost always
+   means the Broadcasts API key lost its full-access scope — check the key in
+   the Resend dashboard (full access, the right team), restore it, and let the
+   next re-drive finish. An `unknown` (`failed`) broadcast cannot be sent;
+   confirm in the Resend dashboard that it is not `queued` / `sending` / `sent`,
+   delete it there, then let the next re-drive cancel the row (its DELETE then
+   answers 404 and the probe `not_found`). Record what you did on the DSR ticket.
 
 4. **Confirm completeness (US3-D evidence log).** Open
    **`/admin/compliance/erasure-log`**. Find the member's card and confirm:
@@ -104,7 +134,10 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    - the cascade outcomes look clean, **and** `member_erased`'s
      `broadcasts_already_sent_count` is 0 — a non-zero count is not a failure
      but residual 8c: record it on the DSR ticket (step 3b) before ticking the
-     erasure complete;
+     erasure complete. The count is derived from the evidence rows, so read it
+     from the LATEST `member_erased` (a re-drive's is authoritative); it must
+     equal the number of distinct broadcasts the step 3b evidence query
+     returns;
    - for a member who used E-Blasts: the `broadcast_content_redacted` row carries
      `versions_redacted`, `decision_reasons_redacted` and `notifications_cancelled`, and the
      three-count query in § E-Blast approval round returns zeros.
@@ -126,7 +159,7 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    fired `failed`/`partial` for this member, run the **manual remediation
    procedure** (§ Sub-processor erasure propagation) within the H-1 window.
 
-7. **Acknowledge the out-of-reach copies.** SIX copies cannot be erased by the
+7. **Acknowledge the out-of-reach copies.** SEVEN copies cannot be erased by the
    controller and are accepted residuals (§ Documented residuals + the RoPA):
    **(a)** a GDPR-export ZIP the subject **already downloaded** to their own
    device; **(b)** pre-erasure data in **backup / PITR snapshots** (re-erased
@@ -142,7 +175,11 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    cascade's DELETE** (residual 8c, step 3b) — it was delivered to N recipients,
    which cannot be undone (Art. 19, disproportionate effort), and Resend keeps
    the sent object (pre-erasure HTML and sender name) under its own retention,
-   which has not been measured. If the DSR
+   which has not been measured; **(g)** a **pre-scrub Resend draft no gate
+   reaches** (residual 8d) — a draft minted for an E-Blast that was already
+   terminal (`failed_to_dispatch`, or staff-cancelled with an id), or a minted
+   draft whose reclaim failed, can stay at Resend after the erasure; it is
+   never sent. If the DSR
    specifically asks about these, explain the limitation honestly; they do not
    block closure of the controller-copy erasure.
 

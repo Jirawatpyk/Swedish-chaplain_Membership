@@ -39,16 +39,18 @@ As the chamber, when a member is erased under GDPR Art. 17 / PDPA § 33, none of
   - Erasure is checked before the halt list.
   - A failed erasure read fails closed: the gate is undecided and nothing is sent.
   - The member gets no notification email (skipped explicitly).
-  - If the row still carries an id that was never handed over, the gate first deletes that draft at Resend. It refuses only once the draft is `deleted` or `absent`; otherwise it is undecided. A cascade that failed therefore never leaves a pre-scrub draft behind.
+  - If the row still carries an id that was never handed over, the gate first deletes that draft at Resend. It refuses only once the draft is `deleted` or `absent`; otherwise it is undecided. A cascade that failed therefore never leaves this row's pre-scrub draft behind. A draft no gate reaches (an E-Blast already terminal, or a reclaim that failed) can stay at Resend unsent: residual 8d.
   - A member who is not found is refused the same way.
-- **DE2.** On erasure, an `approved` row that carries `resendBroadcastId` is handled, not skipped. Under the row lock, the cascade calls `DELETE /broadcasts/{id}` once, with no retry backoff and a 10 s hard timeout:
-  - **200, or 404 (already absent):** the row is cancelled in the same transaction, and `broadcast_cancelled` carries `resendOutcome` = `deleted` or `absent`.
-  - **403, and a probe confirms `queued`, `sending` or `sent`:** the row is left as it is.
-    - The probe and this row come after the lock is released (the probe retries; D-039). On its own transaction, `broadcast_concurrent_action_blocked` records `dispatchBegun: true` and `resendOutcome: 'already_sent'`. If that write fails, the row counts as unexpected.
-    - `member_erased` carries `broadcasts_already_sent_count`.
+- **DE2.** On erasure, an `approved` row that carries `resendBroadcastId` is handled, not skipped. Every decision on the row is made under the row lock that did the DELETE (review round 1): a cancel decided later, on a status-only CAS, could follow an import tick that re-minted from pre-scrub content. Under the lock the cascade calls `DELETE /broadcasts/{id}` once and, after a 404 or 403, `GET /broadcasts/{id}` once — each with no retry backoff and a 10 s hard timeout, so the lock is held for about 20 s at most:
+  - **200:** the row is cancelled in the same transaction; `broadcast_cancelled` carries `resendOutcome: 'deleted'`.
+  - **404, and the GET answers not found:** cancelled, `resendOutcome: 'absent'` (two not-founds, as the import leg requires).
+  - **403, and the GET answers `cancelled`:** cancelled, `resendOutcome: 'cancelled_at_resend'` (a cancelled broadcast can never be sent; the gate's arm).
+  - **404 or 403, and the GET answers `queued`, `sending` or `sent`:** the lock transaction ends with no row write.
+    - Then, on its own transaction and under an advisory lock on the broadcast, `broadcast_concurrent_action_blocked` records `dispatchBegun: true` and `resendOutcome: 'already_sent'`, once per broadcast. If that write fails, the row counts as unexpected.
+    - A lost race whose re-read finds the row already sending or sent writes the same evidence.
+    - `member_erased` carries `broadcasts_already_sent_count`, derived at the end of every erasure run from those evidence rows (distinct broadcasts for the member), so a re-drive's count is authoritative.
     - This is residual 8c, stated in the DSR answer.
-  - **403 with any other probe answer:** unexpected.
-  - **Retryable failure:** the row is counted unexpected, so the cascade is `cascade_partial_failure` and `member_erased` is withheld. `reconcile-erasures` drives it again.
+  - **Any other answer is unexpected (fail closed):** 404 + `draft` / `cancelled` / `unknown` (an inconsistent answer), 403 + `draft` / not found / `unknown` (a restricted key also answers 403), and a retryable, other or timed-out answer from either call. The lock transaction rolls back, the cascade is `cascade_partial_failure`, `member_erased` is withheld, and `reconcile-erasures` drives it again.
 - **DE3.** A tick racing the erasure sends nothing.
   - If the cascade's DELETE wins, the tick's `/send` gets 404 and its transition loses to the cancel.
   - An import-leg tick cannot re-mint. Its persist CAS waits on the cascade's lock and then sees `cancelled`. Its lock step refuses a row that is not `approved`.
@@ -56,7 +58,7 @@ As the chamber, when a member is erased under GDPR Art. 17 / PDPA § 33, none of
 - **DE4.** Archive and bulk archive are unchanged: a dispatch-begun row is still skipped, and nothing is deleted at Resend. Only erasure selects the new handling, through an explicit cascade input.
 - **DE5.** Docs:
   - erasure runbook step 3b is retired;
-  - RoPA residual 8b is closed, and the accepted residual 8c is added;
+  - RoPA residual 8b is closed for sends (not for every Resend copy), the accepted residual 8c is added, and the open residual 8d records the unsent drafts no gate reaches;
   - runbook step 4 reads `broadcasts_already_sent_count`, and the runbook states that archive never stands in for an erasure;
   - go-live § 6.10's 139 box is ticked;
   - `operational-state.md` is updated;
