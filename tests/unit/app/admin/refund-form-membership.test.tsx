@@ -15,6 +15,8 @@ import { NextIntlClientProvider } from 'next-intl';
 import { toast } from '@/lib/toast';
 import enMessages from '@/i18n/messages/en.json';
 import { RefundForm } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form';
+import { WithMoneyDialogFooter } from '../../../helpers/money-dialog-footer-harness';
+import { REFUND_FOOTER } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
@@ -50,16 +52,21 @@ function renderForm(
 ) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-        <RefundForm
-          paymentId="pay_1"
-          invoiceId="inv_1"
-          memberCompanyName="Acme AB"
-          remainingRefundableSatang={535000n}
-          currencyCode="THB"
-          invoiceSubject={opts.subject ?? 'membership'}
-          invoiceHeadroomSatang={opts.headroom ?? 535000n}
-          onClose={() => undefined}
-        />
+        <WithMoneyDialogFooter config={REFUND_FOOTER}>
+          {(wire) => (
+            <RefundForm
+              paymentId="pay_1"
+              invoiceId="inv_1"
+              memberCompanyName="Acme AB"
+              remainingRefundableSatang={535000n}
+              currencyCode="THB"
+              invoiceSubject={opts.subject ?? 'membership'}
+              invoiceHeadroomSatang={opts.headroom ?? 535000n}
+              onClose={() => undefined}
+              {...wire}
+            />
+          )}
+        </WithMoneyDialogFooter>
     </NextIntlClientProvider>,
   );
 }
@@ -88,9 +95,12 @@ function mockFetch(status: number, body: Record<string, unknown>) {
   return fetchMock;
 }
 
+/** The refund POST's body; the credit-note preview GET may come first. */
 function sentBody(fetchMock: ReturnType<typeof mockFetch>): Record<string, unknown> {
-  const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-  return JSON.parse(init.body as string) as Record<string, unknown>;
+  const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit | undefined]>;
+  const posts = calls.filter(([, init]) => init?.method === 'POST');
+  expect(posts).toHaveLength(1);
+  return JSON.parse(posts[0]![1]!.body as string) as Record<string, unknown>;
 }
 
 describe('RefundForm — full membership refund: warning + Keep / End membership', () => {
@@ -138,7 +148,7 @@ describe('RefundForm — full membership refund: warning + Keep / End membership
         expect(screen.getByRole('radio', { name: new RegExp(m.end.label) })).toBeChecked(),
       );
       await submitFull();
-      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(sentBody(fetchMock)).toBeTruthy());
       expect(sentBody(fetchMock).membershipEffect).toBe('cancel_membership');
       await waitFor(() =>
         expect(vi.mocked(toast.info)).toHaveBeenCalledWith(m.outcome.scheduled),
@@ -155,7 +165,7 @@ describe('RefundForm — full membership refund: warning + Keep / End membership
     try {
       renderForm();
       await submitFull();
-      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(sentBody(fetchMock)).toBeTruthy());
       expect(sentBody(fetchMock).membershipEffect).toBe('keep');
     } finally {
       vi.unstubAllGlobals();

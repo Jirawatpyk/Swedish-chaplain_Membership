@@ -13,6 +13,8 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { RefundForm } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form';
+import { WithMoneyDialogFooter } from '../../../helpers/money-dialog-footer-harness';
+import { REFUND_FOOTER } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
@@ -52,16 +54,21 @@ afterEach(() => {
 function renderForm() {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <RefundForm
-        paymentId="pay_1"
-        invoiceId="inv_1"
-        memberCompanyName="Acme AB"
-        remainingRefundableSatang={3_852_000n}
-        currencyCode="THB"
-        invoiceSubject="event"
-        invoiceHeadroomSatang={3_852_000n}
-        onClose={() => undefined}
-      />
+      <WithMoneyDialogFooter config={REFUND_FOOTER}>
+        {(wire) => (
+          <RefundForm
+            paymentId="pay_1"
+            invoiceId="inv_1"
+            memberCompanyName="Acme AB"
+            remainingRefundableSatang={3_852_000n}
+            currencyCode="THB"
+            invoiceSubject="event"
+            invoiceHeadroomSatang={3_852_000n}
+            onClose={() => undefined}
+            {...wire}
+          />
+        )}
+      </WithMoneyDialogFooter>
     </NextIntlClientProvider>,
   );
 }

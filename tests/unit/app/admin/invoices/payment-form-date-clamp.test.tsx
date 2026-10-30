@@ -17,6 +17,8 @@ import { render, fireEvent } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { PaymentForm } from '@/app/(staff)/admin/invoices/_components/payment-form';
+import { WithMoneyDialogFooter } from '../../../../helpers/money-dialog-footer-harness';
+import { RECORD_PAYMENT_FOOTER } from '@/app/(staff)/admin/invoices/_components/record-payment-dialog';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
@@ -34,12 +36,17 @@ beforeEach(() => {
 function renderForm(props: { issueDate: string | null; todayIso: string }) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <PaymentForm
-        invoiceId="11111111-1111-4111-8111-111111111111"
-        documentNumber="SC-2026-000048"
-        issueDate={props.issueDate}
-        todayIso={props.todayIso}
-      />
+      <WithMoneyDialogFooter config={RECORD_PAYMENT_FOOTER}>
+        {(wire) => (
+          <PaymentForm
+            invoiceId="11111111-1111-4111-8111-111111111111"
+            documentNumber="SC-2026-000048"
+            issueDate={props.issueDate}
+            todayIso={props.todayIso}
+            {...wire}
+          />
+        )}
+      </WithMoneyDialogFooter>
     </NextIntlClientProvider>,
   );
 }

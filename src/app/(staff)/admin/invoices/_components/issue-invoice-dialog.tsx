@@ -32,29 +32,50 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
 import { IssueInvoiceForm, type IssueInvoiceFormProps } from './issue-invoice-form';
+import {
+  initialMoneyDialogFooter,
+  MoneyDialogFooter,
+  type MoneyDialogFooterConfig,
+  type MoneyDialogFooterState,
+} from './money-dialog-footer';
 
-type Props = Omit<IssueInvoiceFormProps, 'onClose' | 'onPendingChange'>;
+type Props = Omit<IssueInvoiceFormProps, 'onClose' | 'onFooterChange'>;
+
+/** Cancel takes the first focus; the confirm has the money-step check icon (§ Button icons). */
+export const ISSUE_INVOICE_FOOTER = {
+  confirmVariant: 'primary',
+  confirmIcon: 'check',
+  autoFocusCancel: true,
+} as const satisfies MoneyDialogFooterConfig;
 
 /**
  * Spec 122 US8b (T825) — AURA `Dialog role="alertdialog"`: its title names
- * it and the acknowledgement describes it; the form below carries its own
- * Cancel (first focus) and Issue. While the POST runs, Escape and the scrim
- * do nothing, so a failure lands in a mounted form.
+ * it and the acknowledgement describes it. Cancel (first focus) and Issue sit
+ * in the Dialog's footer (PR N2), drawn from the state the form reports.
+ * While the POST runs, Escape and the scrim do nothing, so a failure lands in
+ * a mounted form.
  */
 export function IssueInvoiceDialog(props: Props) {
   const t = useTranslations('admin.invoices.issue');
   const tDetail = useTranslations('admin.invoices.detail');
   const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(false);
+  const initialFooter = () =>
+    initialMoneyDialogFooter(t(props.taxAtPayment ? 'issueBillButtonPlain' : 'issueInvoiceButtonPlain'));
+  const [footer, setFooter] = useState<MoneyDialogFooterState>(initialFooter);
 
   return (
     <Dialog
       role="alertdialog"
       size="lg"
       open={open}
-      onOpen={() => setOpen(true)}
+      onOpen={() => {
+        // A fresh form reports its own state before paint; the last one's
+        // (in flight at its success close) must not disable Cancel meanwhile.
+        setFooter(initialFooter());
+        setOpen(true);
+      }}
       onClose={() => setOpen(false)}
-      dismissible={!pending}
+      dismissible={!footer.pending}
       trigger={
         <Button variant="primary" touchHeight>
           {tDetail('actions.issue')}
@@ -62,10 +83,18 @@ export function IssueInvoiceDialog(props: Props) {
       }
       title={t('title')}
       description={props.taxAtPayment ? t('review.immutableSnapshotAck') : t('irreversibleWarning')}
+      footer={
+        <MoneyDialogFooter
+          {...ISSUE_INVOICE_FOOTER}
+          state={footer}
+          cancelLabel={t('cancel')}
+          onCancel={() => setOpen(false)}
+        />
+      }
     >
       {/* The panel unmounts on close, so the typed phrase, treatment and
           certificate fields start fresh on every open. */}
-      <IssueInvoiceForm {...props} onClose={() => setOpen(false)} onPendingChange={setPending} />
+      <IssueInvoiceForm {...props} onClose={() => setOpen(false)} onFooterChange={setFooter} />
     </Dialog>
   );
 }

@@ -27,6 +27,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { PaymentForm } from '@/app/(staff)/admin/invoices/_components/payment-form';
+import { WithMoneyDialogFooter } from '../../../../helpers/money-dialog-footer-harness';
+import { RECORD_PAYMENT_FOOTER } from '@/app/(staff)/admin/invoices/_components/record-payment-dialog';
 
 const refreshMock = vi.fn();
 const pushMock = vi.fn();
@@ -53,12 +55,17 @@ const TODAY_ISO = '2030-03-15';
 function renderForm() {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <PaymentForm
-        invoiceId={INVOICE_ID}
-        documentNumber={DOC_NUMBER}
-        issueDate={ISSUE_DATE}
-        todayIso={TODAY_ISO}
-      />
+      <WithMoneyDialogFooter config={RECORD_PAYMENT_FOOTER}>
+        {(wire) => (
+          <PaymentForm
+            invoiceId={INVOICE_ID}
+            documentNumber={DOC_NUMBER}
+            issueDate={ISSUE_DATE}
+            todayIso={TODAY_ISO}
+            {...wire}
+          />
+        )}
+      </WithMoneyDialogFooter>
     </NextIntlClientProvider>,
   );
 }

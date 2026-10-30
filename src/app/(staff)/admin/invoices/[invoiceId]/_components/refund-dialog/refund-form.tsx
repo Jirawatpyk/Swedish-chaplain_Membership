@@ -40,7 +40,7 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { Alert, Button, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { Alert, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 // TYPE-ONLY, and it must stay that way. The invoicing barrel reaches
 // server-only modules; a value import here would drag them into a client
@@ -51,6 +51,10 @@ import { useLocale } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
 import { TypedPhraseConfirm } from './typed-phrase-confirm';
 import { useCreditNotePreview } from './use-credit-note-preview';
+import {
+  type MoneyDialogFooterState,
+  useReportMoneyDialogFooter,
+} from '@/app/(staff)/admin/invoices/_components/money-dialog-footer';
 
 const REASON_MAX = 500;
 
@@ -114,8 +118,13 @@ type Props = {
    */
   readonly invoiceHeadroomSatang: bigint;
   readonly onClose: () => void;
-  /** The request is in flight: the dialog stays open (no Escape or scrim close). */
-  readonly onPendingChange?: (pending: boolean) => void;
+  /** The form element's id, which the dialog footer's confirm submits (PR N2). */
+  readonly formId?: string;
+  /**
+   * The state of the buttons the dialog draws in its footer (PR N2): in
+   * flight (no Escape or scrim close), whether the refund may be sent, the label.
+   */
+  readonly onFooterChange?: (state: MoneyDialogFooterState) => void;
 };
 
 type MembershipEffect = 'keep' | 'cancel_membership';
@@ -149,7 +158,8 @@ export function RefundForm({
   invoiceSubject,
   invoiceHeadroomSatang,
   onClose,
-  onPendingChange,
+  formId,
+  onFooterChange,
 }: Props) {
   const t = useTranslations('admin.refund');
   const tForm = useTranslations('admin.refund.form');
@@ -165,9 +175,6 @@ export function RefundForm({
   const schema = useMemo(() => buildSchema(remainingThb), [remainingThb]);
 
   const [submitting, setSubmitting] = useState(false);
-  useEffect(() => {
-    onPendingChange?.(submitting);
-  }, [submitting, onPendingChange]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [typedPhrase, setTypedPhrase] = useState('');
   // 0306 — default Keep: ending a membership is never the silent default.
@@ -250,6 +257,19 @@ export function RefundForm({
   //   3. NOT submitting
   const canSubmit =
     isValid && !submitting && (!isFullRefund || phraseMatches);
+
+  // The dialog draws Cancel and the confirm in its footer (PR N2); the confirm
+  // submits this form from there (`form={formId}`), so Enter in a field still
+  // submits, and a disabled confirm still blocks it.
+  useReportMoneyDialogFooter(onFooterChange, {
+    pending: submitting,
+    canConfirm: canSubmit,
+    confirmLabel: submitting
+      ? t('dialog.processing')
+      : summaryAmountSatang !== null
+        ? t('dialog.confirmAmount', { amount: formatSatangThb(summaryAmountSatang, locale, currencyCode) })
+        : t('dialog.confirm'),
+  });
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
     if (amountSatang === null) return;
@@ -476,6 +496,7 @@ export function RefundForm({
 
   return (
     <form
+      id={formId}
       onSubmit={handleSubmit(onSubmit)}
       className="flex flex-col gap-6"
       noValidate
@@ -673,7 +694,7 @@ export function RefundForm({
         />
       )}
 
-      {/* Submit error — inline alert above buttons (FR-029(g)). */}
+      {/* Submit error — inline alert, above the footer's buttons (FR-029(g)). */}
       {submitError && (
         <div ref={errorRef} tabIndex={-1} className="outline-none">
           {/* Generic headline so a known business rejection (e.g. "refund in
@@ -684,32 +705,6 @@ export function RefundForm({
           </Alert>
         </div>
       )}
-
-      {/* The buttons stick to the bottom of the dialog's scrolling body, so a
-          long form never scrolls them away and focusing Cancel on open does
-          not scroll the summary out of view; on a phone they stack full
-          width, the primary action on top (ux-standards § 11.1).
-          PR N2: Dialog footer — moves to AURA Dialog's `footer` (D-039). */}
-      <div className="sticky bottom-0 flex flex-wrap justify-end gap-[var(--aura-space-2)] bg-[var(--aura-bg-surface)] py-[var(--aura-space-3)] max-sm:flex-col-reverse">
-        <Button type="button" variant="secondary" fullWidth="below-sm" data-autofocus disabled={submitting} onClick={onClose}>
-          {t('dialog.cancel')}
-        </Button>
-        <Button
-          type="submit"
-          variant="danger"
-          fullWidth="below-sm"
-          icon="rotate-ccw"
-          loading={submitting}
-          disabled={!canSubmit}
-          data-testid="refund-form-confirm"
-        >
-          {submitting
-            ? t('dialog.processing')
-            : summaryAmountSatang !== null
-              ? t('dialog.confirmAmount', { amount: formatSatangThb(summaryAmountSatang, locale, currencyCode) })
-              : t('dialog.confirm')}
-        </Button>
-      </div>
     </form>
   );
 }

@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Alert, Button, Select, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
+import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money-dialog-footer';
 import { routeRecordPaymentError } from './record-payment-error-routing';
 
 const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
@@ -18,8 +19,8 @@ export function PaymentForm({
   issueDate,
   todayIso,
   onSuccess,
-  onCancel,
-  onPendingChange,
+  formId,
+  onFooterChange,
 }: {
   invoiceId: string;
   documentNumber: string | null;
@@ -52,27 +53,26 @@ export function PaymentForm({
    * fall back to the previous navigate-and-refresh behaviour.
    */
   onSuccess?: () => void;
+  /** The form element's id, which the dialog footer's submit button names (PR N2). */
+  formId?: string;
   /**
-   * F5R1-UX5 — optional cancel callback for the RecordPaymentDialog
-   * overlay. When provided, renders a Cancel button next to Submit
-   * (financial-action heuristic: every form modifying money state
-   * should offer an explicit Cancel affordance, not rely solely on
-   * Esc / outside-click). Legacy full-page callers omit it.
+   * Spec 122 PR N2 — the state of the buttons the dialog draws in its footer
+   * (F5R1-UX5: an explicit Cancel beside Record payment). While a payment is
+   * in flight the dialog refuses Escape and the scrim until the POST settles
+   * (an error must land in a mounted form, and a stray tap must not drop what
+   * was typed).
    */
-  onCancel?: () => void;
-  /**
-   * Spec 122 US8 (T809) — tells the dialog wrapper a payment is in flight,
-   * so it can refuse Escape and the scrim until the POST settles (an error
-   * must land in a mounted form, and a stray tap must not drop what was typed).
-   */
-  onPendingChange?: (pending: boolean) => void;
+  onFooterChange?: (state: MoneyDialogFooterState) => void;
 }) {
   const t = useTranslations('admin.invoices.pay');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  useEffect(() => {
-    onPendingChange?.(pending);
-  }, [pending, onPendingChange]);
+  // The submit validates the date itself, so it is enabled until in flight.
+  useReportMoneyDialogFooter(onFooterChange, {
+    pending,
+    canConfirm: true,
+    confirmLabel: pending ? t('submitting') : t('submit'),
+  });
   const [paymentMethod, setPaymentMethod] = useState<(typeof METHODS)[number]>('bank_transfer');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
@@ -191,6 +191,7 @@ export function PaymentForm({
 
   return (
     <form
+      id={formId}
       onSubmit={submit}
       // method="post" — keep invoice/payment data out of the URL on a
       // pre-hydration native submit (CWE-598; see
@@ -264,17 +265,6 @@ export function PaymentForm({
         onChange={(e) => setPaymentNotes(e.target.value)}
         rows={3}
       />
-      <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:[&>*]:flex-1">
-        {onCancel && (
-          <Button type="button" variant="secondary" touchHeight onClick={onCancel} disabled={pending}>
-            {t('cancelDialog')}
-          </Button>
-        )}
-        {/* The board's check: this mints the §86/4 receipt. */}
-        <Button type="submit" variant="primary" icon="check" touchHeight loading={pending}>
-          {pending ? t('submitting') : t('submit')}
-        </Button>
-      </div>
     </form>
   );
 }

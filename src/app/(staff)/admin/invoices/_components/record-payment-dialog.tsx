@@ -24,10 +24,16 @@
  * `onOpenChange(false)` handled in PaymentForm.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
 import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
+import {
+  initialMoneyDialogFooter,
+  MoneyDialogFooter,
+  type MoneyDialogFooterConfig,
+  type MoneyDialogFooterState,
+} from './money-dialog-footer';
 import { PaymentForm } from './payment-form';
 
 type Props = {
@@ -85,6 +91,15 @@ type Props = {
 };
 
 /**
+ * No first focus on Cancel: this is a data-entry form, so the first field
+ * takes it. The board's check icon: this mints the §86/4 receipt.
+ */
+export const RECORD_PAYMENT_FOOTER = {
+  confirmVariant: 'primary',
+  confirmIcon: 'check',
+} as const satisfies MoneyDialogFooterConfig;
+
+/**
  * Record payment (088 FR-035) on AURA's dialog (spec 122 US8 T804). Below
  * 640px AURA's dialog is a bottom sheet (up to 92% of the height, rounded top
  * corners), which is the `Admin-record-payment-mobile` board — one component
@@ -109,7 +124,11 @@ export function RecordPaymentDialog({
   const t = useTranslations('admin.invoices.pay');
   const tDetail = useTranslations('admin.invoices.detail');
   const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(false);
+  // Cancel and Record payment sit in the Dialog's footer (PR N2), drawn from
+  // the state the form reports; Record payment submits the form by its id.
+  const formId = useId();
+  const initialFooter = () => ({ ...initialMoneyDialogFooter(t('submit')), canConfirm: true });
+  const [footer, setFooter] = useState<MoneyDialogFooterState>(initialFooter);
   // Raised right before the success close: the refresh that follows unmounts
   // the trigger, so focus must skip it (WCAG 2.4.3).
   const closedViaSuccessRef = useRef(false);
@@ -130,12 +149,15 @@ export function RecordPaymentDialog({
       onClose={() => setOpen(false)}
       onOpen={() => {
         closedViaSuccessRef.current = false;
+        // A fresh form reports its own state before paint; the last one's
+        // (in flight at its success close) must not disable Cancel meanwhile.
+        setFooter(initialFooter());
         setOpen(true);
       }}
       // No Escape or scrim close while the POST is in flight: a failure must
       // land in a mounted form. A scrim tap never closes it, so a stray tap on
       // the phone sheet cannot drop the reference and notes.
-      dismissible={!pending}
+      dismissible={!footer.pending}
       dismissOnScrim={false}
       finalFocus={finalFocus}
       // The `id="record-payment"` (default) stays so the payment-timeline
@@ -155,6 +177,15 @@ export function RecordPaymentDialog({
       }
       title={t('title')}
       description={t('description')}
+      footer={
+        <MoneyDialogFooter
+          {...RECORD_PAYMENT_FOOTER}
+          state={footer}
+          formId={formId}
+          cancelLabel={t('cancelDialog')}
+          onCancel={() => setOpen(false)}
+        />
+      }
     >
       <div className="flex flex-col gap-[var(--aura-space-4)]">
         {documentNumber ? (
@@ -192,8 +223,8 @@ export function RecordPaymentDialog({
             closedViaSuccessRef.current = true;
             setOpen(false);
           }}
-          onCancel={() => setOpen(false)}
-          onPendingChange={setPending}
+          formId={formId}
+          onFooterChange={setFooter}
         />
       </div>
     </Dialog>

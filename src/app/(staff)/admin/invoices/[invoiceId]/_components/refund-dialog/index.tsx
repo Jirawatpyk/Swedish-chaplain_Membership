@@ -7,8 +7,8 @@
  * trigger renders a danger-secondary button (T112) inline; the panel
  * hosts the title + description, the payment being refunded on one line
  * ("SC-… · Receipt RC-… · {amount}, {date}", boards Admin-refund-full /
- * -partial) and `<RefundForm>`, whose Cancel takes the first focus.
- * Cancel button is the default-focused element (FR-029(d) —
+ * -partial) and `<RefundForm>`; its footer (PR N2) holds Cancel and the
+ * confirm. Cancel button is the default-focused element (FR-029(d) —
  * destructive defaults to safe action). Confirm button shows a
  * spinner while the request is in flight (FR-029(e) — visual
  * processing indicator).
@@ -18,7 +18,7 @@
  * `/admin/invoices/[id]?refund=1` so admins can refund without
  * leaving the keyboard.
  */
-import { useState, useCallback, useEffect, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, useId, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
@@ -26,6 +26,12 @@ import { formatSatangThb } from '@/lib/format-thb';
 import { formatLocalisedDate } from '@/lib/format-date-localised';
 // TYPE-ONLY: the invoicing barrel reaches server-only modules.
 import type { CreditNoteWaiverReason } from '@/modules/invoicing';
+import {
+  initialMoneyDialogFooter,
+  MoneyDialogFooter,
+  type MoneyDialogFooterConfig,
+  type MoneyDialogFooterState,
+} from '@/app/(staff)/admin/invoices/_components/money-dialog-footer';
 import { RefundForm, waiverKey } from './refund-form';
 
 type Props = {
@@ -68,6 +74,14 @@ type Props = {
   readonly pendingRefundExists?: boolean;
 };
 
+/** FR-029(d): a destructive dialog opens on the safe action, Cancel. */
+export const REFUND_FOOTER = {
+  confirmVariant: 'danger',
+  confirmIcon: 'rotate-ccw',
+  confirmTestId: 'refund-form-confirm',
+  autoFocusCancel: true,
+} as const satisfies MoneyDialogFooterConfig;
+
 export function RefundDialog({
   paymentId,
   invoiceId,
@@ -95,7 +109,11 @@ export function RefundDialog({
   const [open, setOpen] = useState(
     !pendingRefundExists && searchParams.get('refund') === '1',
   );
-  const [submitting, setSubmitting] = useState(false);
+  // Cancel and the confirm sit in the Dialog's footer (PR N2), drawn from the
+  // state the form reports; the confirm submits the form by its id.
+  const formId = useId();
+  const initialFooter = () => initialMoneyDialogFooter(tDialog('confirm'));
+  const [footer, setFooter] = useState<MoneyDialogFooterState>(initialFooter);
 
   // Clear the `?refund=1` query param (preserving any other params) so a
   // refresh / shared link does not reopen the dialog. `router.replace`
@@ -192,11 +210,16 @@ export function RefundDialog({
     <Dialog
       role="alertdialog"
       open={open}
-      onOpen={() => handleOpenChange(true)}
+      onOpen={() => {
+        // A fresh form reports its own state before paint; the last one's
+        // (in flight at its success close) must not disable Cancel meanwhile.
+        setFooter(initialFooter());
+        handleOpenChange(true);
+      }}
       onClose={() => handleOpenChange(false)}
       // No Escape while the refund is being sent: its outcome must land in a
       // mounted form.
-      dismissible={!submitting}
+      dismissible={!footer.pending}
       trigger={
         <Button
           variant="danger-secondary"
@@ -212,6 +235,15 @@ export function RefundDialog({
         creditNoteWaiverReason !== null
           ? tDialog(`descriptionWaived.${waiverKey(creditNoteWaiverReason)}`)
           : tDialog('description')
+      }
+      footer={
+        <MoneyDialogFooter
+          {...REFUND_FOOTER}
+          state={footer}
+          formId={formId}
+          cancelLabel={tDialog('cancel')}
+          onCancel={() => handleOpenChange(false)}
+        />
       }
     >
       <div className="flex flex-col gap-[var(--aura-space-4)]">
@@ -243,7 +275,8 @@ export function RefundDialog({
           invoiceSubject={invoiceSubject}
           invoiceHeadroomSatang={invoiceHeadroomSatang}
           onClose={() => handleOpenChange(false)}
-          onPendingChange={setSubmitting}
+          formId={formId}
+          onFooterChange={setFooter}
         />
       </div>
     </Dialog>

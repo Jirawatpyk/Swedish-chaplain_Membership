@@ -56,6 +56,7 @@ import {
 } from '../_lib/issue-vat-treatment';
 import { routeIssueError } from './issue-error-routing';
 import { ZeroRateCertUploader } from './zero-rate-cert-uploader';
+import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money-dialog-footer';
 
 export type IssueInvoiceFormProps = {
   readonly invoiceId: string;
@@ -93,8 +94,11 @@ export type IssueInvoiceFormProps = {
   readonly billNumberPrefix?: string;
   /** Close the enclosing dialog (wired by the wrapper to `setOpen(false)`). */
   readonly onClose: () => void;
-  /** The POST is in flight: the dialog stays open (no Escape or scrim close). */
-  readonly onPendingChange?: (pending: boolean) => void;
+  /**
+   * The state of the buttons the dialog draws in its footer (PR N2): in
+   * flight (no Escape or scrim close), whether the phrase matches, the label.
+   */
+  readonly onFooterChange?: (state: MoneyDialogFooterState) => void;
 };
 
 export function IssueInvoiceForm({
@@ -109,7 +113,7 @@ export function IssueInvoiceForm({
   billNumberPrefix = 'SC',
   totalsByTreatment,
   onClose,
-  onPendingChange,
+  onFooterChange,
 }: IssueInvoiceFormProps) {
   const t = useTranslations('admin.invoices.issue');
   const tForm = useTranslations('admin.invoices.issue.form');
@@ -118,9 +122,6 @@ export function IssueInvoiceForm({
   const router = useRouter();
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
-  useEffect(() => {
-    onPendingChange?.(pending);
-  }, [pending, onPendingChange]);
 
   // 088 T021a / FR-032 — issue failure surfaces INLINE via a focused
   // role="alert" (never a transient toast); a concurrent 409 shows an inline
@@ -307,6 +308,22 @@ export function IssueInvoiceForm({
       router.refresh();
     });
   }
+
+  // The dialog draws Cancel and the confirm in its footer (PR N2). The confirm
+  // is a click, never a form submit: Enter in the phrase field must not issue.
+  // Board Admin-invoice-issue: it names the document and its total (priced for
+  // the chosen treatment, as the issue use case pins it); an unpriced draft
+  // names no amount.
+  useReportMoneyDialogFooter(onFooterChange, {
+    pending,
+    canConfirm: matches,
+    confirmLabel: pending
+      ? t('issuing')
+      : totalText !== null
+        ? t(taxAtPayment ? 'issueBillButton' : 'issueInvoiceButton', { total: totalText })
+        : t(taxAtPayment ? 'issueBillButtonPlain' : 'issueInvoiceButtonPlain'),
+    onConfirm: confirm,
+  });
 
   return (
     <>
@@ -616,46 +633,6 @@ export function IssueInvoiceForm({
             {t('confirmMismatch', { phrase: confirmPhrase })}
           </p>
         )}
-      </div>
-
-      {/* The buttons stick to the bottom of the dialog's scrolling body, so a
-          long form never scrolls them away and focusing Cancel on open does
-          not scroll the summary out of view; on a phone they stack full
-          width, the primary action on top (ux-standards § 11.1). Each is
-          AURA's full-width button below sm, so the confirm's label (it names
-          the total) wraps instead of running out of the button at 320px.
-          PR N2: Dialog footer — moves to AURA Dialog's `footer` (D-039). */}
-      <div className="sticky bottom-0 flex flex-wrap justify-end gap-[var(--aura-space-2)] bg-[var(--aura-bg-surface)] py-[var(--aura-space-3)] max-sm:flex-col-reverse">
-        {/* Cancel takes the first focus (ux-standards § 6, the safe action). */}
-        <Button
-          type="button"
-          variant="secondary"
-          fullWidth="below-sm"
-          data-autofocus
-          disabled={pending}
-          onClick={onClose}
-        >
-          {t('cancel')}
-        </Button>
-        <Button
-          type="button"
-          variant="primary"
-          fullWidth="below-sm"
-          loading={pending}
-          // Board Admin-invoice-issue: the confirm names the document and its
-          // total, with the money-step check icon (§ Button icons). The total
-          // is priced for the chosen treatment (zero-rated, VAT-inclusive) as
-          // the issue use case pins it; an unpriced draft names no amount.
-          icon="check"
-          disabled={!matches || pending}
-          onClick={confirm}
-        >
-          {pending
-            ? t('issuing')
-            : totalText !== null
-              ? t(taxAtPayment ? 'issueBillButton' : 'issueInvoiceButton', { total: totalText })
-              : t(taxAtPayment ? 'issueBillButtonPlain' : 'issueInvoiceButtonPlain')}
-        </Button>
       </div>
       </div>
     </>
