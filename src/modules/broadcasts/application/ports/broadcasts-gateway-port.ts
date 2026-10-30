@@ -189,6 +189,24 @@ export type DeleteBroadcastOnceOutcome =
   | { readonly kind: 'other' };
 
 /**
+ * Spec 139 review round 1 — what ONE `GET /broadcasts/{id}` answered
+ * (`retrieveBroadcastOnce`). The erasure cascade probes under the row lock
+ * after a DELETE 404 or 403, so the probe is bounded like the DELETE and never
+ * throws:
+ *
+ *   - `present` — Resend has the resource; `status` is `normaliseStatus`'s
+ *     reading (an unmeasured value is `'unknown'`, never invented);
+ *   - `not_found` (404, 410);
+ *   - `retryable` — a 5xx, a 429, a transport failure or the 10 s timeout;
+ *   - `other` — any other status, or a 2xx body without a status string.
+ */
+export type RetrieveBroadcastOnceOutcome =
+  | { readonly kind: 'present'; readonly status: RetrievedBroadcastResource['status'] }
+  | { readonly kind: 'not_found' }
+  | { readonly kind: 'retryable' }
+  | { readonly kind: 'other' };
+
+/**
  * What `getAudienceContactCount` answers. A plain record, not a discriminated
  * union — and it used to be one.
  *
@@ -272,6 +290,17 @@ export interface BroadcastsGatewayPort {
   retrieveBroadcast(
     broadcastId: string,
   ): Promise<RetrieveBroadcastOutcome>;
+
+  /**
+   * Spec 139 review round 1 — ONE `GET /broadcasts/{id}`: no `withRetry`
+   * backoff and a hard 10 s timeout, like {@link deleteBroadcastOnce}. The
+   * erasure cascade calls it while it still holds the broadcast row's lock
+   * (after a DELETE 404 or 403), so the row's whole decision is made under the
+   * lock that did the DELETE; together the two calls hold it for at most
+   * ≈ 20 s. Never throws: every failure is an arm of
+   * {@link RetrieveBroadcastOnceOutcome}.
+   */
+  retrieveBroadcastOnce(broadcastId: string): Promise<RetrieveBroadcastOnceOutcome>;
 
   /**
    * Round-4 IMP-5 — count contacts present in a Resend audience. Used

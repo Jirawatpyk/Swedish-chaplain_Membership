@@ -30,6 +30,7 @@ import type {
   DeleteBroadcastOnceOutcome,
   GatewayRetryableSubKind,
   RetrievedBroadcastResource,
+  RetrieveBroadcastOnceOutcome,
   RetrieveBroadcastOutcome,
   ResendAudienceSummary,
 } from '../../application/ports/broadcasts-gateway-port';
@@ -509,6 +510,11 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       }
       throw e;
     }
+  },
+
+  async retrieveBroadcastOnce(_broadcastId: string): Promise<RetrieveBroadcastOnceOutcome> {
+    // RED stub (spec 139 review round 1): the real fetch lands in the fix commit.
+    return { kind: 'other' };
   },
 
   async removeContactFromAudience(
