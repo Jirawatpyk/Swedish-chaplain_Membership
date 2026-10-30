@@ -31,8 +31,9 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { ok } from '@/lib/result';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { makeConfirmScheduleDeps } from '@/lib/broadcast-approval-deps';
@@ -780,5 +781,100 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     expect(r.ok ? r.value : r.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_not_in_good_standing' });
     expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
     expect((await readRow(row.broadcastId!)).status).toBe('failed_to_dispatch');
+  });
+  /**
+   * Review round 1 CR#4 — the erased refusal's terminal write loses its CAS
+   * because the erasure cascade cancelled the row in between (here: while the
+   * leg was deleting the draft). That is a concurrent skip at info level, not
+   * `cleanup_failed` / a server error, on both legs.
+   */
+  function cancelledDuringDelete(answers: Partial<Record<keyof BroadcastsGatewayPort, unknown>>, broadcastId: string) {
+    const inner = allowingGateway(answers);
+    const port = new Proxy(inner.port, {
+      get: (target, prop, receiver) =>
+        prop === 'deleteBroadcastOnce'
+          ? async (id: string) => {
+              const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+              await repo.withTx((tx) =>
+                repo.applyTransition(
+                  tx,
+                  tenant.ctx.slug,
+                  asBroadcastId(broadcastId),
+                  'cancelled',
+                  { cancelledAt: new Date(), cancelledByUserId: null, cancellationReason: 'gdpr_erasure_request' },
+                  'approved',
+                ),
+              );
+              return (Reflect.get(target, prop, receiver) as (rid: string) => Promise<unknown>)(id);
+            }
+          : Reflect.get(target, prop, receiver),
+    }) as BroadcastsGatewayPort;
+    return { calls: inner.calls, port };
+  }
+
+  const cleanupFailedLogged = (spy: ReturnType<typeof vi.spyOn>) =>
+    spy.mock.calls.some((c) => typeof c[1] === 'string' && c[1].endsWith('.cleanup_failed'));
+
+  it('CR#4 legacy: the erased refusal loses its CAS to the cascade cancel → a concurrent skip, no cleanup_failed, nothing written', async () => {
+    const memberId = await seedMember('erased');
+    const resendBroadcastId = `rb-erased-${randomUUID()}`;
+    const row = approvedRow(memberId, { resendAudienceId: `aud-erased-${randomUUID()}`, resendBroadcastId });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = cancelledDuringDelete(
+      {
+        retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+        deleteBroadcastOnce: { kind: 'deleted' },
+      },
+      row.broadcastId!,
+    );
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+    const errorSpy = vi.spyOn(logger, 'error');
+    try {
+      const r = await dispatchScheduledBroadcast(
+        { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+        { broadcastId: asBroadcastId(row.broadcastId!) },
+      );
+
+      expect(r).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+      expect(cleanupFailedLogged(errorSpy)).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
+    }
+    expect((await readRow(row.broadcastId!)).status).toBe('cancelled');
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  it('CR#4 import: the erased refusal loses its CAS to the cascade cancel → a concurrent skip, no cleanup_failed, nothing written', async () => {
+    const memberId = await seedMember('erased');
+    const resendBroadcastId = `rb-erased-${randomUUID()}`;
+    const row = approvedRow(memberId, {
+      resendAudienceId: `aud-erased-${randomUUID()}`,
+      resendBroadcastId,
+      audienceImportId: `imp-erased-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = cancelledDuringDelete(
+      {
+        retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+        deleteBroadcastOnce: { kind: 'deleted' },
+      },
+      row.broadcastId!,
+    );
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+    const errorSpy = vi.spyOn(logger, 'error');
+    try {
+      const r = await buildAudienceTick(
+        { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+        { broadcastId: asBroadcastId(row.broadcastId!) },
+      );
+
+      expect(r).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+      expect(cleanupFailedLogged(errorSpy)).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
+    }
+    expect((await readRow(row.broadcastId!)).status).toBe('cancelled');
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
   });
 });
