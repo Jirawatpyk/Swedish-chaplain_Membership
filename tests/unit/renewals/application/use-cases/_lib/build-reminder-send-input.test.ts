@@ -27,6 +27,7 @@ const base = {
   baseUrl: 'https://swecham.example',
   tenantId: 'tenanta',
   candidate,
+  primaryContact: candidate.primaryContact,
   stepId: 't-30.email',
   templateId: 'renewal.t-30.regular',
   reminderEventId: 'rem-1',

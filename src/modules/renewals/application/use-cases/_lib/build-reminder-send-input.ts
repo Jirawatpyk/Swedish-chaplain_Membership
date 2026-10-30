@@ -24,16 +24,17 @@ export function buildReminderSendInput(args: {
   readonly signer: RenewalLinkTokenSigner;
   readonly baseUrl: string;
   readonly tenantId: string;
-  readonly candidate: DispatchCandidate & {
-    readonly primaryContact: NonNullable<DispatchCandidate['primaryContact']>;
-  };
+  readonly candidate: DispatchCandidate;
+  /** The candidate's primary contact, already checked non-null by the caller. */
+  readonly primaryContact: NonNullable<DispatchCandidate['primaryContact']>;
   readonly stepId: string;
   readonly templateId: string;
   readonly reminderEventId: string;
   /** The reminder row's `created_at` — the instant the first attempt used. */
   readonly reminderCreatedAt: string;
 }): SendRenewalEmailInput {
-  const { cycle, member, primaryContact } = args.candidate;
+  const { cycle, member } = args.candidate;
+  const { primaryContact } = args;
   // Email-locale audit 2026-07-16 — member.preferred_locale (an EXPLICIT
   // member/admin choice, nullable) wins over contacts.preferred_language (NOT
   // NULL DEFAULT 'en' — indistinguishable from "never chose"). Fallback to

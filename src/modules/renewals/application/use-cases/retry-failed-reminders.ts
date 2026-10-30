@@ -261,24 +261,21 @@ async function attemptRetry(
   // and Resend answers the ORIGINAL message id instead of sending again
   // (within its 24 h key window). A changed recipient / locale / name makes
   // the body differ: Resend's 409 then reaches the permanent path below.
-  // Email-locale audit 2026-07-16 — member.preferred_locale (explicit choice)
-  // wins over the contact column's NOT-NULL DEFAULT 'en' (see dispatch-one-cycle).
-  const locale =
-    candidate.member.preferredLocale ??
-    candidate.primaryContact.preferredLanguage ??
-    'en';
-  const gatewayResult = await deps.renewalGateway.sendRenewalEmail(
-    buildReminderSendInput({
-      signer: deps.tokenSigner,
-      baseUrl: env.app.baseUrl,
-      tenantId: event.tenantId,
-      candidate: { ...candidate, primaryContact: candidate.primaryContact },
-      stepId: event.stepId,
-      templateId: event.templateId,
-      reminderEventId: event.reminderEventId,
-      reminderCreatedAt: event.createdAt,
-    }),
-  );
+  // The builder also resolves the locale (email-locale audit 2026-07-16);
+  // the audit reads the locale actually sent.
+  const sendInput = buildReminderSendInput({
+    signer: deps.tokenSigner,
+    baseUrl: env.app.baseUrl,
+    tenantId: event.tenantId,
+    candidate,
+    primaryContact: candidate.primaryContact,
+    stepId: event.stepId,
+    templateId: event.templateId,
+    reminderEventId: event.reminderEventId,
+    reminderCreatedAt: event.createdAt,
+  });
+  const locale = sendInput.recipient.preferredLocale;
+  const gatewayResult = await deps.renewalGateway.sendRenewalEmail(sendInput);
 
   return runInTenant(deps.tenant, async (tx) => {
     if (gatewayResult.ok) {

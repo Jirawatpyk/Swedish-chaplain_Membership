@@ -234,7 +234,7 @@ function mapResendError(
   // `createdAt`), so the recipient / locale / name changed after an attempt
   // Resend accepted — not retryable, and not "sent" either: permanent, so a
   // person decides through the manual-outreach task.
-  if (name === 'invalid_idempotent_request') {
+  if (name === 'invalid_idempotent_request' || name === 'invalid_idempotency_key') {
     return { kind: 'gateway_4xx', retryable: false, message };
   }
   // Spec 141 RI1b: another request with this key is still in flight —

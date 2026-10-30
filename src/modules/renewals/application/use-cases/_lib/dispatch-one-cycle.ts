@@ -1307,27 +1307,25 @@ export async function dispatchEmailStep(
       `dispatchEmailStep invariant: primaryContact null reached email branch — gate 11 regression`,
     );
   }
-  // Email-locale audit 2026-07-16 — member.preferred_locale (an EXPLICIT
-  // member/admin choice, nullable) wins over contacts.preferred_language (NOT
-  // NULL DEFAULT 'en' — indistinguishable from "never chose"). The prior order
-  // let the contact default shadow a member who picked TH/SV in the portal
-  // (the 110 imported contacts all default 'en'), so those members got English.
-  // Fallback to 'en' only when both are unset.
-  const locale = member.preferredLocale ?? primaryContact.preferredLanguage ?? 'en';
+  // Spec 141: the one builder the retry uses too (the byte-identical body).
+  // It also resolves the locale (email-locale audit 2026-07-16: the member's
+  // explicit preferred_locale wins over the contact's NOT NULL DEFAULT 'en');
+  // the audit reads the locale actually sent, never a second computation.
+  const sendInput = buildReminderSendInput({
+    signer: deps.tokenSigner,
+    baseUrl: env.app.baseUrl,
+    tenantId: ctx.tenantId,
+    candidate,
+    primaryContact,
+    stepId: step.stepId,
+    templateId: step.templateId,
+    reminderEventId,
+    reminderCreatedAt,
+  });
+  const locale = sendInput.recipient.preferredLocale;
 
   // External gateway call — outside tx (non-transactional).
-  const gatewayResult = await deps.renewalGateway.sendRenewalEmail(
-    buildReminderSendInput({
-      signer: deps.tokenSigner,
-      baseUrl: env.app.baseUrl,
-      tenantId: ctx.tenantId,
-      candidate: { ...candidate, primaryContact },
-      stepId: step.stepId,
-      templateId: step.templateId,
-      reminderEventId,
-      reminderCreatedAt,
-    }),
-  );
+  const gatewayResult = await deps.renewalGateway.sendRenewalEmail(sendInput);
 
   // Persist outcome — transition reminder_event + audit emit, atomic.
   return runInTenant(deps.tenant, async (tx) => {

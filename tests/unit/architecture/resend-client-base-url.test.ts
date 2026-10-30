@@ -69,7 +69,8 @@ describe('Resend clients pin baseUrl (spec 141)', () => {
 
   it('every new Resend(…) in src passes baseUrl: RESEND_API_BASE_URL', () => {
     const all: Array<{ file: string; call: string }> = [];
-    for (const file of sourceFiles(join(ROOT, 'src'))) {
+    // scripts/ too: an operator script holds a live key just as src does.
+    for (const file of [...sourceFiles(join(ROOT, 'src')), ...sourceFiles(join(ROOT, 'scripts'))]) {
       for (const call of resendConstructions(readFileSync(file, 'utf8'))) {
         all.push({ file: relative(ROOT, file).replace(/\\/g, '/'), call });
       }
