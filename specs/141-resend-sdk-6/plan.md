@@ -42,7 +42,7 @@ n/a
 
 | # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
-| 1 | The bump, behaviour identical | RS1–RS5 | security-engineer, pdpa-gdpr, spec-compliance-auditor | `141-resend-sdk-6-s1` | — · open |
+| 1 | The bump, behaviour identical | RS1–RS5 | security-engineer, pdpa-gdpr, spec-compliance-auditor | `141-resend-sdk-6-s1` | #704 · done |
 | 2 | Renewals send a real Idempotency-Key | RI1–RI3 | reliability-guardian, spec-compliance-auditor | `141-resend-sdk-6-s2` | — · open |
 
 ## Test plan
