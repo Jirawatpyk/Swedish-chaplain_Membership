@@ -42,6 +42,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
+import { RESEND_API_BASE_URL } from '@/lib/resend-api-base-url';
 import {
   RenewalReminderEmail,
   type RenewalReminderEmailProps,
@@ -95,7 +96,7 @@ let cachedResend: Resend | null = null;
 
 function resendClient(): Resend {
   if (!cachedResend) {
-    cachedResend = new Resend(env.resend.apiKey);
+    cachedResend = new Resend(env.resend.apiKey, { baseUrl: RESEND_API_BASE_URL });
   }
   return cachedResend;
 }

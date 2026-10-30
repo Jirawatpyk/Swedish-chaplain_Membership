@@ -35,6 +35,7 @@ import type {
   ResendAudienceSummary,
 } from '../../application/ports/broadcasts-gateway-port';
 import { env } from '@/lib/env';
+import { RESEND_API_BASE_URL } from '@/lib/resend-api-base-url';
 import { getResendBroadcastsClient } from './resend-broadcasts-client';
 import { renderBroadcastHtml } from './email-template';
 import { extractBareEmail, stripAngleBrackets } from './bare-email';
@@ -1034,7 +1035,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
  * understands — that keeps `permanent` / `retryable` meaning one thing across
  * the whole gateway, which the batch retry gate depends on.
  */
-const RESEND_API_BASE = 'https://api.resend.com';
+const RESEND_API_BASE = RESEND_API_BASE_URL;
 
 interface ResendImportResponse {
   readonly id?: string;

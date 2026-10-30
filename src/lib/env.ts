@@ -88,6 +88,11 @@ const schema = z.object({
   // default in `resend-client.ts`.
   RESEND_FROM_EMAIL: z.string().min(3).optional(),
 
+  // Read by the Resend SDK itself (logs request paths with emails). Parsed
+  // here only so production can refuse it at boot (spec 141); never set it in
+  // a deployed environment.
+  RESEND_DEBUG: z.string().optional(),
+
   // Auth cookie HMAC signing secret (≥32 bytes of entropy recommended).
   // Generate with: openssl rand -base64 48
   AUTH_COOKIE_SIGNING_SECRET: z.string().min(32),
@@ -933,6 +938,19 @@ if (raw.NODE_ENV === 'production' && raw.E2E_X_TENANT_HEADER_ENABLED) {
       '  - E2E_X_TENANT_HEADER_ENABLED must be false (or unset) when NODE_ENV=production. ' +
       'This flag is a Playwright throwaway-tenant test harness, not a production feature. ' +
       'Enabling it in prod would allow any client to override the deployed tenant slug via the X-Tenant header.',
+  );
+}
+
+// Spec 141 — resend@6.35 reads RESEND_DEBUG from the process env; when it is
+// set the SDK prints every failed request's path with `console.error`, outside
+// pino's redaction, and a contact call's path carries the member's email. No
+// client option turns it off, so production refuses to boot with it set to
+// anything. (RESEND_BASE_URL needs no guard: every client pins `baseUrl`.)
+if (raw.NODE_ENV === 'production' && raw.RESEND_DEBUG !== undefined && raw.RESEND_DEBUG !== '') {
+  throw new Error(
+    'Environment validation failed (src/lib/env.ts):\n' +
+      '  - RESEND_DEBUG must be unset when NODE_ENV=production. ' +
+      'The Resend SDK would log request paths, which carry member email addresses, to the console.',
   );
 }
 

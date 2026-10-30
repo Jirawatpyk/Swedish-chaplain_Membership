@@ -14,6 +14,7 @@
  */
 import { Resend } from 'resend';
 import { env } from '@/lib/env';
+import { RESEND_API_BASE_URL } from '@/lib/resend-api-base-url';
 
 let _instance: Resend | null = null;
 let _testOverride: Resend | null = null;
@@ -31,7 +32,7 @@ export function _setTestOverride(client: Resend | null): void {
 export function getResendBroadcastsClient(): Resend {
   if (_testOverride !== null) return _testOverride;
   if (_instance === null) {
-    _instance = new Resend(env.broadcasts.apiKey);
+    _instance = new Resend(env.broadcasts.apiKey, { baseUrl: RESEND_API_BASE_URL });
   }
   return _instance;
 }
