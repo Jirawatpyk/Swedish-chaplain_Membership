@@ -11,7 +11,7 @@ After the bump we:
 - fix only what the suite or `tsc` flags — review rounds 1–5 widened this to the Broadcasts gateway's error reading, the empty-id guard and `listAudiences` paging (§ Evidence);
 - leave `RESEND_DEBUG` unset.
 
-Slice 2 is ordinary TDD on the renewals gateway.
+Slice 2 is TDD on the renewals send path: the gateway sends the key as the request option; one builder (`_lib/build-reminder-send-input.ts`) gives dispatch and retry a byte-identical body, the CTA signed at the reminder row's `createdAt`; plus the env guard (pinned `baseUrl` on every Resend client, `RESEND_DEBUG=true` refused in production). The design changed after review round 1 (§ Complexity Tracking).
 
 **Paths kept compatible:** auth email, outbox email and renewals email. Their usage lines are in `spec.md` § Premises (D-041).
 
@@ -58,6 +58,8 @@ n/a
 | RI1 | `resend-transactional-renewal-gateway.test.ts`: "sends the idempotency key as the request option, not an email header". It fails on the current code. | unit |
 | RI1b | the same file: one case per idempotency 409 code | unit |
 | RI2 | the live sink measurement (Evidence) | manual |
+| RI1b (stable body) | `build-reminder-send-input.test.ts` (two calls at one `createdAt` deep-equal; the redeem token's `iat` is `createdAt`); `dispatch-one-cycle.test.ts` + `retry-failed-reminders.test.ts` (the CTA decided at `createdAt`, not the tick) | unit |
+| Env guard | `tests/contract/resend/base-url-pinned.contract.test.ts` (RESEND_BASE_URL cannot move any client); `tests/unit/architecture/resend-client-base-url.test.ts` (every `new Resend` pins `RESEND_API_BASE_URL`, positive-controlled); `tests/unit/lib/env-stripe.test.ts` (`RESEND_DEBUG=true` refused in production, other values boot) | contract / unit |
 
 ## Constitution Check
 
