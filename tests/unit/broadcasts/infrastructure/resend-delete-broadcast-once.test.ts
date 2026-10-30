@@ -21,6 +21,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import { logger } from '@/lib/logger';
 
 const BROADCAST_ID = 'bc_11111111-2222-4333-8444-555555555555';
 
@@ -107,6 +108,20 @@ describe('resendBroadcastsGateway.deleteBroadcastOnce (spec 139 P1)', () => {
     stubFetch(() => Promise.reject(thrown));
     expect(await deleteOnce(BROADCAST_ID)).toEqual({ kind: 'retryable' });
     expect(captured).toHaveLength(1);
+  });
+
+  it.each([
+    ['the 10 s timeout', Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' }), true],
+    ['a network failure', new TypeError('fetch failed'), false],
+  ])('%s → the transport-failure log carries errKind (the class) and timedOut', async (_why, thrown, timedOut) => {
+    const warn = vi.spyOn(logger, 'warn');
+    stubFetch(() => Promise.reject(thrown));
+    await deleteOnce(BROADCAST_ID);
+    expect(warn).toHaveBeenCalledWith(
+      { broadcastId: BROADCAST_ID, err: thrown.constructor.name, timedOut },
+      'resend.broadcasts.delete_once_transport_failed',
+    );
+    warn.mockRestore();
   });
 
   it.each([400, 401, 422])('%i → other', async (status) => {
