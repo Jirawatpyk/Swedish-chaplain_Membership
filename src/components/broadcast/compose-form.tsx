@@ -59,7 +59,6 @@ import { SegmentPicker, type SegmentPickerValue } from './segment-picker';
 import { CustomListInput, parseLines } from './custom-list-input';
 import { SchedulePicker } from './schedule-picker';
 import { PreviewPane } from './preview-pane';
-import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 import { QuotaDisplay, type QuotaSnapshot } from './quota-display';
 import { ComposeFormSkeleton } from './compose-form-skeleton';
 import { SubmitButton } from './submit-button';
@@ -270,10 +269,6 @@ export function ComposeForm({
   // Write / Preview tabs and Submit sits in a sticky bar with the count.
   const phone = useBreakpoint() === 'base';
   const hydrated = useSyncExternalStore(subscribeNever, () => true, () => false);
-  // PR K — keep the phone bar's MEASURED height clear below a focused field:
-  // it is 62px on one row and 114px when its start slot wraps over Submit, so
-  // a fixed stylesheet allowance was either short or spare.
-  useActionBarScrollPadding(phone && hydrated, '.chamber-compose-actionbar');
   const [view, setView] = useState<'write' | 'preview'>('write');
   const [liveQuota, setLiveQuota] = useState<QuotaSnapshot | null>(initialQuota);
   // F119 T140 — which template is applied, and the html the editor is seeded
@@ -1021,6 +1016,7 @@ export function ComposeForm({
             ]}
           />
           <ActionBar
+            edgeBelow="sm"
             className="chamber-viewport-actionbar chamber-compose-actionbar"
             label={t('views.actions')}
             start={barStart}

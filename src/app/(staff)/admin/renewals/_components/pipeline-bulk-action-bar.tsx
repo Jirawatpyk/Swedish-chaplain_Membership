@@ -561,11 +561,13 @@ export function PipelineBulkActionBar({
       )}
       <AuraProvider strings={barStrings}>
         <ActionBar
+          edgeBelow="sm"
           ref={barRef}
           // The app's marker for a viewport ActionBar: globals.css keeps a
           // focused field clear of it by this class, not AURA's modifier.
           // `chamber-bulk-actionbar`: the count takes its text's width.
-          className="chamber-viewport-actionbar chamber-bulk-actionbar"
+          // `pipeline-bulk-actions`: its two rows on a phone (globals.css).
+          className="chamber-viewport-actionbar chamber-bulk-actionbar pipeline-bulk-actions"
           label={t('toolbarLabel')}
           selected={count}
           onClearSelection={handleClearClick}

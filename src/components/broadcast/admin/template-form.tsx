@@ -40,6 +40,7 @@ import {
   TEMPLATE_MAX_NAME_LENGTH,
   TEMPLATE_MAX_SUBJECT_LENGTH,
 } from '@/modules/broadcasts/application/use-cases/_template-field-limits';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 
 // T113 (F7.1a US7) — share the F7 MVP Tiptap editor instance with the
 // admin templates surface. Same StarterKit + paste-sanitiser config as
@@ -75,6 +76,10 @@ interface Props {
 }
 
 export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement {
+  // D-039 — from 640px the bar is AURA's sticky floating card: keep its
+  // measured height clear of a focused field (below 640px AURA's edge strip
+  // pads the page itself).
+  useActionBarScrollPadding(true, '.template-form-actions');
   const t = useTranslations('admin.broadcasts.templates');
   const tLang = useTranslations('common');
   const router = useRouter();
@@ -322,10 +327,9 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
         </p>
       ) : null}
 
-      {/* Cancel before the primary action; pinned to the bottom of a phone
-          as the boards draw it (globals.css `.template-form-actions`, the
-          member and plan forms' bar). */}
-      <ActionBar className="chamber-viewport-actionbar template-form-actions">
+      {/* Cancel before the primary action; AURA's edge strip on a phone as
+          the boards draw it, its floating card from 640px (D-039). */}
+      <ActionBar edgeBelow="sm" className="chamber-viewport-actionbar template-form-actions">
         <Button
           type="button"
           variant="secondary"

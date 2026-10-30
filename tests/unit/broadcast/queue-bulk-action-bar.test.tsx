@@ -81,13 +81,17 @@ beforeAll(() => {
 });
 
 type RoCallback = (entries: ReadonlyArray<Record<string, unknown>>) => void;
-let roCb: RoCallback | undefined;
-let disconnectCount = 0;
+/** Every observer's callback: AURA 5.70's ActionBar runs its own beside the hook's. */
+let roCbs: RoCallback[] = [];
+/** Observers that watched the bar: the hook's, and from AURA 5.70 the ActionBar's own. */
+let barObservers = 0;
+let barDisconnects = 0;
 
 beforeEach(() => {
   vi.useRealTimers();
-  roCb = undefined;
-  disconnectCount = 0;
+  roCbs = [];
+  barObservers = 0;
+  barDisconnects = 0;
   routerRefresh.mockClear();
   toastFn.mockClear();
   toastSuccess.mockClear();
@@ -96,12 +100,18 @@ beforeEach(() => {
   vi.stubGlobal(
     'ResizeObserver',
     class {
+      private watchesBar = false;
       constructor(cb: RoCallback) {
-        roCb = cb;
+        roCbs.push(cb);
       }
-      observe() {}
+      observe(el: Element) {
+        if (el.classList.contains('chamber-viewport-actionbar') && !this.watchesBar) {
+          this.watchesBar = true;
+          barObservers++;
+        }
+      }
       disconnect() {
-        disconnectCount++;
+        if (this.watchesBar) barDisconnects++;
       }
       unobserve() {}
     },
@@ -220,7 +230,7 @@ describe('QueueBulkActionBar — bar shell + count (AURA ActionBar)', () => {
       renderBar();
       expect(scrollPadding()).toBe('96px');
       height.current = 120;
-      act(() => roCb?.([]));
+      act(() => roCbs.forEach((cb) => cb([])));
       expect(scrollPadding()).toBe('148px');
     } finally {
       restore();
@@ -232,9 +242,11 @@ describe('QueueBulkActionBar — bar shell + count (AURA ActionBar)', () => {
     try {
       const { unmount } = renderBar();
       expect(scrollPadding()).toBe('98px');
-      expect(disconnectCount).toBe(0);
+      expect(barObservers).toBeGreaterThanOrEqual(1);
+      expect(barDisconnects).toBe(0);
       unmount();
-      expect(disconnectCount).toBe(1);
+      // Every observer that watched the bar is let go (none leaks).
+      expect(barDisconnects).toBe(barObservers);
       expect(scrollPadding()).toBe('');
     } finally {
       restore();

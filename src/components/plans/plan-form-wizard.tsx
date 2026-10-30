@@ -60,6 +60,7 @@ import {
   type PlanCategory,
   type PlanSchemaInput,
 } from '@/modules/plans';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 
 const STEPS = ['basics', 'fees', 'benefits', 'review'] as const;
 type StepKey = (typeof STEPS)[number];
@@ -164,6 +165,10 @@ export function PlanFormWizard({
   onSubmit,
   onCancel,
 }: PlanFormWizardProps) {
+  // D-039 — from 640px the bar is AURA's sticky floating card: keep its
+  // measured height clear of a focused field (below 640px AURA's edge strip
+  // pads the page itself).
+  useActionBarScrollPadding(true, '.plan-form-actions');
   const t = useTranslations('admin.plans.create');
   const tLabels = useTranslations('admin.plans.create.labels');
   const tButtons = useTranslations('admin.plans.create.buttons');
@@ -556,6 +561,7 @@ export function PlanFormWizard({
       {/* AURA 5.20's start slot holds Cancel from 640px; on a phone the slot
           is hidden (`--start-wide`) and Cancel is the button above. */}
       <ActionBar
+        edgeBelow="sm"
         className="chamber-viewport-actionbar plan-form-actions plan-form-actions--even plan-form-actions--start-wide"
         start={
           onCancel ? (

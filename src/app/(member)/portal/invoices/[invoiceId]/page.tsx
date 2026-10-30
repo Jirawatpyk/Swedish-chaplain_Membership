@@ -376,15 +376,18 @@ export async function renderPortalInvoiceDetailView({
   // Spec 122 US4 — Pay now leads the header as the one primary action (the
   // `Pay-*` boards' backdrop); on phones the same element is the
   // `Portal-invoice-mobile` band — amount due, due date, Pay now — fixed
-  // above the bottom tabs. One element, so one pay sheet.
+  // above the bottom tabs below 640px (D-039, as every bar). One element, so
+  // one pay sheet. Hand-built: stand-in until AURA #191 — PageHeader's
+  // `actionsBarBelow` would move every header action (the downloads too)
+  // into the bar, and the board's bar holds only the amount and Pay now.
   const payBar =
     canPayOnline && paymentSettings && amountDueSatang !== null ? (
           <PayBar
             invoiceId={invoice.invoiceId}
             label={tPay('summary.amountLabel')}
-            className="portal-pay-bar flex items-center gap-3 max-md:fixed max-md:inset-x-0 max-md:bottom-[var(--aura-bottomnav-offset,0px)] max-md:z-[4] max-md:border-t max-md:border-[var(--aura-border-default)] max-md:bg-[var(--aura-bg-surface)] max-md:px-4 max-md:py-3 max-md:shadow-[var(--aura-shadow-enterprise)] [@media(max-height:560px)]:static [@media(max-height:560px)]:border-0 [@media(max-height:560px)]:p-0 [@media(max-height:560px)]:shadow-none"
+            className="portal-pay-bar flex items-center gap-3 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-[var(--aura-bottomnav-offset,0px)] max-sm:z-[4] max-sm:border-t max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:px-4 max-sm:py-3 max-sm:shadow-[var(--aura-shadow-enterprise)] [@media(max-height:560px)]:static [@media(max-height:560px)]:border-0 [@media(max-height:560px)]:p-0 [@media(max-height:560px)]:shadow-none"
           >
-            <span className="flex min-w-0 flex-1 flex-col md:hidden">
+            <span className="flex min-w-0 flex-1 flex-col sm:hidden">
               <span className="text-xs text-[var(--aura-fg-secondary)]">{tPay('summary.amountLabel')}</span>
               <span className="font-semibold tabular-nums">{formatSatangThb(amountDueSatang, userLocale)}</span>
               <span className="text-xs text-[var(--aura-fg-secondary)]">
@@ -922,7 +925,7 @@ export async function renderPortalInvoiceDetailView({
         ) : canPayOnline && paymentSettings ? (
           // The pay bar lives in the header (see `payBar`); on phones it is
           // fixed above the bottom tabs, so keep room for it here.
-          <div aria-hidden="true" className="h-24 md:hidden [@media(max-height:560px)]:hidden" />
+          <div aria-hidden="true" className="h-24 sm:hidden [@media(max-height:560px)]:hidden" />
         ) : (
           // FR-030 (#145) — the fallback offers a "Contact administrator" mailto.
           // Source is `env.billingContactEmails` (BILLING_CONTACT_EMAILS, a

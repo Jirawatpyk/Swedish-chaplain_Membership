@@ -581,30 +581,35 @@ export function ScheduleEditor({
               {saveError}
             </Alert>
           ) : null}
-          {/* The save bar: under the steps from 640px, pinned to the bottom of
-              a phone screen (globals.css, `.schedule-actions`). */}
-          <ActionBar
-            label={t('saveBarLabel')}
-            status={status}
-            className="chamber-viewport-actionbar schedule-actions"
-          >
-            <Button
-              variant="secondary"
-              icon="plus"
-              disabled={readOnly || pending}
-              onClick={() => replaceSteps(b, [...steps, emptyStep(b, steps)])}
+          {/* The save bar: AURA's edge strip on a phone, its floating card
+              under the steps from 640px (D-039). Only the active tier mounts
+              it: AURA pads the page for the last strip that mounted, and a
+              strip in a hidden tab measures 0px (R109; AURA #192). */}
+          {b === activeBucket ? (
+            <ActionBar
+              edgeBelow="sm"
+              label={t('saveBarLabel')}
+              status={status}
+              className="chamber-viewport-actionbar schedule-actions"
             >
-              {t('actions.addStep')}
-            </Button>
-            <Button
-              variant="primary"
-              loading={pending}
-              disabled={readOnly || steps.length === 0}
-              onClick={() => handleSave(b)}
-            >
-              {pending ? t('actions.saving') : t('actions.save')}
-            </Button>
-          </ActionBar>
+              <Button
+                variant="secondary"
+                icon="plus"
+                disabled={readOnly || pending}
+                onClick={() => replaceSteps(b, [...steps, emptyStep(b, steps)])}
+              >
+                {t('actions.addStep')}
+              </Button>
+              <Button
+                variant="primary"
+                loading={pending}
+                disabled={readOnly || steps.length === 0}
+                onClick={() => handleSave(b)}
+              >
+                {pending ? t('actions.saving') : t('actions.save')}
+              </Button>
+            </ActionBar>
+          ) : null}
         </div>
       ),
     };
