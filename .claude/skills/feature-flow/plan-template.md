@@ -6,6 +6,8 @@ Spec: `specs/<nnn-name>/spec.md` · Size: M / L · Agreed by the user on: <date>
 
 What we will build and how, in a few paragraphs. Name the alternatives considered and why each was not taken.
 
+**Real usage of any path this change keeps compatible:** `<count>` · `<source: query, log or metric>` · `<date>` — one line per path, or `n/a` with why. A path with no usage is a candidate for removal, not protection (`feature-flow` § 0).
+
 ## Files and modules
 
 The files to create or change, grouped by module. Name the `.claude/rules/modules/*.md` rules that apply, and any cross-module port touched (a change in one module's meaning leaves stale fixtures in the others).

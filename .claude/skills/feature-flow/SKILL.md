@@ -12,6 +12,7 @@ description: Drive a Chamber-OS change from idea to production through docs/work
 - Read `docs/decisions.md`. If the request contradicts a decision, or two sources disagree, stop and ask (`CLAUDE.md` § Precedence). Never pick one silently.
 - **Size it** (S / M / L, per `docs/workflow.md` § Sizes) and say the size and why in one line. When unsure, size up. Money, tax, tenancy, PII, auth and migrations are never S.
 - A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) uses the solo-maintainer review: record its five checks in `plan.md` § Complexity Tracking (`review-and-ship` § 2).
+- **Measure before you protect.** Before designing compatibility or safety for an existing path (a dispatch leg, an API, a flag-off branch, a migration of old rows), measure its real usage: a prod row count (the maintainer runs it, or a read-only query they order), or a log or metric count. Record the number, its source and the date in the spec's Premises. A path with no usage is a candidate for removal, not for protection (retro 2026-10-30, #701: two specs and nine review rounds kept a dispatch leg "LIVE" that had never carried one row).
 
 ## 1. Frame
 
@@ -19,7 +20,7 @@ description: Drive a Chamber-OS change from idea to production through docs/work
 - **M / L**: interview the user with `AskUserQuestion`. Cover the hard parts: edge cases, failure and refusal paths, roles, tenants, locales, money and tax effects, and what is out of scope. Skip questions the code already answers. Then write `specs/<nnn-name>/spec.md`:
   - user stories, each with **Done when** lines that are observable and checkable ("the refund row shows `succeeded` and the credit note number"), never vague ("works well");
   - **Out of scope**, and **Open questions** (which block the plan until answered);
-  - the **premises checked against the code**: what already exists that would make this pointless or contradictory?
+  - the **premises checked against the code**: what already exists that would make this pointless or contradictory? It includes a **usage line** (count · source · date) for every existing path the change keeps compatible (§ 0), and every provider fact the design relies on, marked MEASURED (date) or cited from the provider's docs;
 - **L**, or anything touching money / tax / tenancy / PII / auth / migrations: suggest the `spec-review-panel` Workflow. It runs only if the user opts in.
 
 ## 2. Branch
