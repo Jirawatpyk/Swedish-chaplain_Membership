@@ -247,6 +247,21 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     `);
   });
 
+  // Review round 3: on 6.35 `audiences.list` is the paginated `GET /segments`,
+  // so the gateway follows `has_more` instead of reading page 1 only.
+  it('listAudiences follows has_more across pages', async () => {
+    const calls = stubWire((n) =>
+      n === 1
+        ? json(200, { object: 'list', has_more: true, data: [{ id: 'aud_1', name: 'a', created_at: '2026-10-30T00:00:00Z' }] })
+        : json(200, { object: 'list', has_more: false, data: [{ id: 'aud_2', name: 'b', created_at: '2026-10-30T00:00:00Z' }] }),
+    );
+    const rows = await resendBroadcastsGateway.listAudiences();
+    expect({ ids: rows.map((r) => r.id), urls: calls.map((c) => c.url) }).toEqual({
+      ids: ['aud_1', 'aud_2'],
+      urls: ['https://api.resend.com/segments?limit=100', 'https://api.resend.com/segments?limit=100&after=aud_1'],
+    });
+  });
+
   it('deleteAudience, and a 404 counts as already gone', async () => {
     const calls = stubWire((n) =>
       n === 1 ? json(200, { object: 'audience', id: 'aud_1', deleted: true }) : json(404, { statusCode: 404, name: 'not_found', message: 'Audience not found' }),
@@ -357,6 +372,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['deleteBroadcast', () => resendBroadcastsGateway.deleteBroadcast('')],
       ['deleteContactGlobally', () => resendBroadcastsGateway.deleteContactGlobally('')],
       ['createContactImport', () => resendBroadcastsGateway.createContactImport('', ['a@example.com'])],
+      ['getContactImport', () => resendBroadcastsGateway.getContactImport('')],
       ['a null email from a nullable column', () =>
         resendBroadcastsGateway.removeContactFromAudience('aud_1', null as unknown as string)],
     ])('%s', async (_name, run) => {
