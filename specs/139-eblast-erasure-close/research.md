@@ -1,12 +1,8 @@
 # Research: Resend Broadcasts provider facts (spec 139; inherited by spec 140)
 
-Written 2026-10-30 from the current Resend docs and this repo's own measurements; every claim is labelled MEASURED, DOCUMENTED, UNKNOWN or ASSUMED. Spec 140 (the import-only dispatch leg with a lease) takes this as its provider premise and updates it in place. Measurements go to the sink address `delivered@resend.dev` only.
+Written 2026-10-30 from the current Resend docs and this repo's own measurements; every claim is labelled MEASURED, DOCUMENTED, UNKNOWN or ASSUMED. Spec 140 (the import-only dispatch leg with a lease) takes this as its provider premise and updates it in place.
 
----
-
-# Resend Broadcasts — provider brief for spec 140 (import-only dispatch + lease)
-
-Prepared 2026-10-30. Read-only research: repo (worktree `f139`, branch `139-eblast-erasure-close-s1`, HEAD `64b34d8c8`) + Resend public docs (fetched 2026-10-30) + Context7 (`/resend/resend-node`, `/llmstxt/resend_llms-full_txt`). No Resend API call was made for this brief.
+**Provenance.** The brief itself was read-only research: the repo (worktree `f139`, branch `139-eblast-erasure-close-s1`, HEAD `64b34d8c8`), the Resend public docs (fetched 2026-10-30) and Context7 (`/resend/resend-node`, `/llmstxt/resend_llms-full_txt`). Two later additions touched the **production** Resend account (dev and prod share the key): the Q1 probe (2026-10-30; two broadcasts created, sent to `delivered@resend.dev` only, cancelled while queued, the probe segment deleted) and the read-only Resend MCP inspection in the Addendum. No other address received mail.
 
 Labels used in every claim:
 - **MEASURED (date, where)**: probed against the live Broadcasts account and recorded in the repo.
@@ -20,12 +16,11 @@ Short paths: `GW` = `src/modules/broadcasts/infrastructure/resend/resend-broadca
 
 ## Summary
 
-1. **The status vocabularies did not line up** (the headline finding; Q1 below settled it: Resend answers `canceled`, and PR #698 maps it).
+1. **The status vocabularies did not line up. Settled 2026-10-30.**
    - DOCUMENTED: `draft, scheduled, queued, sent, canceled`, with **one L** (manage-broadcasts).
-   - Repo `normaliseStatus` maps `draft, queued, sending, sent, cancelled`, with **two L** (`GW:1055-1060`).
-   - MEASURED: `draft, scheduled, queued, sent, failed` (`RULE:22-27`).
-   - So `failed` is real but undocumented. `sending` is neither documented nor measured. `cancelled` is ASSUMED: no queued-cancel has ever been run here, and nothing in our code produces one (`ROPA:255`).
-   - If Resend answers `canceled`, two arms are dead code: spec 138's "cancelled → re-mint" and spec 139's "403 + GET cancelled → cancel". Both fall to `unknown`, which fails closed. That is safe, but unproved.
+   - MEASURED: `draft, scheduled, queued, sent, failed` (`RULE`), and `canceled` (one L) after a cancel on a queued broadcast (Q1, 2026-10-30).
+   - Until PR #698 the repo's `normaliseStatus` mapped only `cancelled` (two L), so `canceled` read `unknown` and **three** arms could never fire: the erasure cascade's 403 + cancelled, the dispatch gate's 403 on a cancelled id, and the import leg's cancelled re-mint (`GW:1062-1066`). PR #698 maps both spellings to our `cancelled`.
+   - Still open: `failed` is real but undocumented; `sending` is neither documented nor measured (Q2).
 2. **Resend itself is the draft-vs-send mutex.**
    - `/send` works only on a `draft`: a second send gets 422, with or without a key (MEASURED 2026-10-29).
    - DELETE works only on `draft` or `scheduled`: `queued` and `sent` get 403 (MEASURED 2026-10-29).
@@ -56,7 +51,7 @@ Short paths: `GW` = `src/modules/broadcasts/infrastructure/resend/resend-broadca
    - `validation_error` appears at both 403 and 422, so the state table must key on HTTP status, never on `name`.
 10. **Stale repo sources.**
     - `specs/010-email-broadcast/research.md` §1 and §9: wrong plan numbers, wrong SDK method names, "no bulk endpoint".
-    - `ROPA:262`: "Resend default (90 days)". This is likely stale: the docs state 30 days for "email data" and do not name broadcast logs separately.
+    - `ROPA:262` said "Resend default (90 days)" with no source; corrected by PR #702 to the documented 30 days for email data, with broadcast-log retention not documented separately and not measured.
 
 ---
 
@@ -109,7 +104,7 @@ Short paths: `GW` = `src/modules/broadcasts/infrastructure/resend/resend-broadca
 | same | docs conflict | the manage page says "draft only"; the API page says draft **or scheduled**. The measurement agrees with the API page | DOCUMENTED, inconsistent | cite the API page |
 | same | a key restricted to sending | 403 `restricted_api_key` / `invalid_permission` | DOCUMENTED (errors) | why 403 is probed, never trusted |
 | `POST /broadcasts/{id}/cancel` (no gateway method) | scheduled | → `draft` | DOCUMENTED; RoPA says MEASURED 2026-10-29 (`ROPA:255`, no probe file cited) | — |
-| same | queued | → `canceled`; unsent recipients are stopped, sent mail stays | DOCUMENTED; **UNMEASURED** | the only documented way to stop a queued send |
+| same | queued | → `canceled` (one L); DELETE then 403, re-send 422 | DOCUMENTED; **MEASURED 2026-10-30 (Q1)**. "Unsent recipients are stopped, sent mail stays" is DOCUMENTED only | the only documented way to stop a queued send |
 | `DELETE /audiences/{id}` (`deleteAudience` :654, 404/410 = ok) | idle | 200 | MEASURED | — |
 | same | its broadcast is `queued` | 200, **and the broadcast → `failed` within 5 s, no mail** | MEASURED 2026-10-29 | forbidden while any tick could send (D-037) |
 | same | its broadcast is `sent` | UNKNOWN effect on the sent object | UNKNOWN | cleanup crons do this routinely |
@@ -129,7 +124,7 @@ Short paths: `GW` = `src/modules/broadcasts/infrastructure/resend/resend-broadca
 ```
 create ─► draft ──/send──► queued ──► sent                (MEASURED: queued ≥15 s, sent by 45 s)
            │  ▲              │  └──audience deleted──► failed   (MEASURED; undocumented)
-           │  │              └──/cancel──► canceled           (DOCUMENTED; unmeasured; cannot be re-sent)
+           │  │              └──/cancel──► canceled           (DOCUMENTED; MEASURED 2026-10-30; re-send 422)
            │  └──/cancel── scheduled                           (DOCUMENTED; RoPA says measured)
            └──/send {scheduled_at}──► scheduled ──time──► queued?   (DOCUMENTED; the post-schedule step is UNKNOWN)
 DELETE: draft | scheduled → gone (404 after)  ·  queued | sent → 403
@@ -220,7 +215,7 @@ DELETE: draft | scheduled → gone (404 after)  ·  queued | sent → 403
 - 8a (`ROPA:1411`): contacts survive detach and audience delete (MEASURED). The global delete exists (`GW:591`) but is not called (shared team).
 - 8c (`ROPA:1413`): mail that was already sent cannot be undone. Our evidence for it is an audit row.
 - 8d (`ROPA:1414`): unsent pre-scrub drafts that no gate reaches.
-- `ROPA:262` says send logs last "Resend default (90 days)". **Likely stale**: the docs state 30 days for email data and do not name broadcast logs separately.
+- `ROPA:262` said send logs last "Resend default (90 days)"; PR #702 corrected it (30 days documented for email data; broadcast logs not documented separately, not measured).
 
 **Deletion APIs available:** DELETE broadcast (draft or scheduled only), DELETE segment / audience, DELETE contact (by id or email, global), cancel broadcast. No API deletes a sent broadcast object. That needs an Art. 28(3)(e) instruction, as the RoPA says.
 
@@ -260,9 +255,10 @@ Q1, Q3, Q5 and Q7 bear directly on spec 140's design. Q8 and Q9 bear on capacity
   - Nothing on this surface is idempotent by key.
   - Do not use `create {send:true}`.
 - **Status mapping is one decision point.** Put the provider vocabulary in the state table:
-  - `draft, scheduled, queued, sent, canceled, failed`, plus a guard for `cancelled` and `sending` until Q1 and Q2 are answered;
+  - `draft, scheduled, queued, sent, canceled, failed` (Q1 answered: `canceled`; keep the two-L `cancelled` alias only while code still names it), and `sending` until Q2 is answered;
   - import: `queued, in_progress, completed, failed`.
-  - Unknown values fail closed, as today. Measure Q1 before the table treats `canceled` as dead.
+  - Unknown values fail closed, as today. `canceled` is live (Q1), so every `cancelled` cell in the table is reachable and needs a decision (the import leg's operator-cancel re-mint, deferred from 139).
+  - **Import status `canceled` is ASSUMED** — not in the documented import vocabulary, yet `TICK:1547` matches it (and calls the vocabulary UNVERIFIED although `queued | in_progress | completed | failed` is DOCUMENTED). Spec 140's import table settles it: cite the doc or measure, then drop or keep the arm.
 - **Classify by HTTP status first, then by code.**
   - Split 409 `resource_locked` from the idempotency 409s.
   - Split the 429 quota codes (not retryable) from `rate_limit_exceeded`.
@@ -337,6 +333,6 @@ The Resend MCP is connected to the same account as `RESEND_BROADCASTS_API_KEY`: 
 
 - **Status spelling confirmed:** `get-broadcast` on the Q1 probe shows `Status: canceled`.
 - **Segments:** only `General` exists now. Every probe audience was deleted, so the Free-plan segment slots are free.
-- **Broadcasts outlive their segment.** All 10 remaining broadcasts point at segment ids that no longer exist. They keep their status (`sent`, `failed`, `canceled`) and their full HTML and plain text, which `get-broadcast` returns. This answers part of Q10: deleting a segment after `sent` leaves the broadcast object and its content in place. It is direct evidence for RoPA 8c and 8d: the pre-scrub content of a sent or failed broadcast stays readable at Resend until someone deletes it by hand (DELETE answers 403 for sent, failed and canceled).
+- **Broadcasts outlive their segment.** All 10 remaining broadcasts point at segment ids that no longer exist. They keep their status (`sent`, `failed`, `canceled`) and their full HTML and plain text, which `get-broadcast` returns. This answers part of Q10: deleting a segment after `sent` leaves the broadcast object and its content in place. It is direct evidence for RoPA 8c and 8d: the pre-scrub content of a sent or failed broadcast stays readable at Resend, and no API removes it: DELETE answers 403 on `sent` and `canceled` (MEASURED 2026-10-29 / 2026-10-30); DELETE on `failed` is **UNKNOWN** (not probed; ASSUMED 403 from the "only draft or scheduled" rule). Removal needs an Art. 28(3)(e) instruction to Resend.
 - **DELETE does remove the rest.** Broadcasts deleted with 200 (S1, the S2 drafts) are absent from `list-broadcasts`.
 - **Contacts outlive audience deletion (8a confirmed again).** 22 team-level contacts remain: the sink plus the maintainer's own `+` test addresses from 2026-09-08. Partial answer to Q8: these 22 count towards the 1,000 cap unless removed globally.

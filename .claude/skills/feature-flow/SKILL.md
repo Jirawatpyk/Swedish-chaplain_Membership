@@ -16,7 +16,7 @@ description: Drive a Chamber-OS change from idea to production through docs/work
 
 ## 1. Frame
 
-- **S**: state the Done-when lines in the reply; they go into the PR.
+- **S**: state the Done-when lines in the reply; they go into the PR, with the § 0 usage line when the change keeps an existing path compatible.
 - **M / L**: interview the user with `AskUserQuestion`. Cover the hard parts: edge cases, failure and refusal paths, roles, tenants, locales, money and tax effects, and what is out of scope. Skip questions the code already answers. Then write `specs/<nnn-name>/spec.md`:
   - user stories, each with **Done when** lines that are observable and checkable ("the refund row shows `succeeded` and the credit note number"), never vague ("works well");
   - **Out of scope**, and **Open questions** (which block the plan until answered);
