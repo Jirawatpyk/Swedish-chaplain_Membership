@@ -97,7 +97,7 @@ describe('env.ts — RESEND_DEBUG', () => {
     vi.unstubAllEnvs();
   });
 
-  it.each(['1', 'false', 'yes'])('throws for any non-empty RESEND_DEBUG in production (%s)', async (value) => {
+  it.each(['true', '1', 'false', 'yes'])('throws for any non-empty RESEND_DEBUG in production (%s)', async (value) => {
     stubEnv({
       NODE_ENV: 'production',
       STRIPE_SECRET_KEY: 'sk_live_0000000000',
@@ -109,18 +109,16 @@ describe('env.ts — RESEND_DEBUG', () => {
     await expect(import('@/lib/env')).rejects.toThrow(/RESEND_DEBUG.*NODE_ENV=production/i);
   });
 
-  it('throws when RESEND_DEBUG is set in production', async () => {
+  it('allows an empty RESEND_DEBUG in production (a blank line copied from .env.example)', async () => {
     stubEnv({
       NODE_ENV: 'production',
       STRIPE_SECRET_KEY: 'sk_live_0000000000',
       STRIPE_LIVE_MODE: 'true',
       ZAPIER_DPA_EXECUTED: 'true',
-      // `.env.local` (loaded by tests/setup.ts) turns the X-Tenant harness on;
-      // switch it off so the RESEND_DEBUG guard is the one that fires.
       E2E_X_TENANT_HEADER_ENABLED: 'false',
-      RESEND_DEBUG: 'true',
+      RESEND_DEBUG: '',
     });
-    await expect(import('@/lib/env')).rejects.toThrow(/RESEND_DEBUG.*NODE_ENV=production/i);
+    await expect(import('@/lib/env')).resolves.toBeDefined();
   });
 
   it('allows RESEND_DEBUG outside production (local debugging)', async () => {

@@ -52,7 +52,14 @@ describe('Resend clients pin baseUrl (spec 141)', () => {
     ).toEqual(['new Resend(key, { baseUrl: B })', 'new Resend(key)']);
   });
 
-  it('every new Resend(…) in src passes baseUrl', () => {
+  it('only the shared constant counts as pinned (an env-driven baseUrl does not)', () => {
+    expect(isPinned('new Resend(key, { baseUrl: RESEND_API_BASE_URL })')).toBe(true);
+    expect(isPinned('new Resend(key, { baseUrl: process.env.RESEND_BASE_URL })')).toBe(false);
+    expect(isPinned('new Resend(key, { baseUrl: undefined })')).toBe(false);
+    expect(isPinned('new Resend(key)')).toBe(false);
+  });
+
+  it('every new Resend(…) in src passes baseUrl: RESEND_API_BASE_URL', () => {
     const all: Array<{ file: string; call: string }> = [];
     for (const file of sourceFiles(join(ROOT, 'src'))) {
       for (const call of resendConstructions(readFileSync(file, 'utf8'))) {
@@ -61,6 +68,6 @@ describe('Resend clients pin baseUrl (spec 141)', () => {
     }
     // A scan that finds nothing proves nothing: there are three clients today.
     expect(all.length).toBeGreaterThanOrEqual(3);
-    expect(all.filter((c) => !/\bbaseUrl\b/.test(c.call))).toEqual([]);
+    expect(all.filter((c) => !isPinned(c.call))).toEqual([]);
   });
 });
