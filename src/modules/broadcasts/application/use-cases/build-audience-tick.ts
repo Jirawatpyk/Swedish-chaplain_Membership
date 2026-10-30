@@ -742,12 +742,13 @@ async function applySendStanding(
     );
   }
   if (standing.kind === 'refuse_erased') {
-    const inheritedId = broadcast.resendBroadcastId ?? '';
     const cleared = await deleteErasedDraftBeforeRefusal(
       deps.broadcastsGateway,
       { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, leg: 'import' },
       // Reached only for a NOT-handed probe (a handed row returned at Step 1a).
-      inheritedId === '' ? null : { resendBroadcastId: inheritedId, probedStatus: probe !== null && !probe.handed ? probe.status : null },
+      broadcast.resendBroadcastId === null
+        ? null
+        : { resendBroadcastId: broadcast.resendBroadcastId, probedStatus: probe !== null && !probe.handed ? probe.status : null },
     );
     if (cleared.kind === 'undecided') {
       return err({ kind: 'dispatch.server_error', message: cleared.message, errClass: cleared.errClass, phase: 'standing' });

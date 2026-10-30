@@ -792,13 +792,11 @@ export async function dispatchScheduledBroadcast(
       const cleared = await deleteErasedDraftBeforeRefusal(
         deps.broadcastsGateway,
         { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, leg: 'live' },
-        inheritedBroadcastId === ''
-          ? null
-          : {
-              resendBroadcastId: inheritedBroadcastId,
-              probedStatus:
-                observedResendStatus === 'draft' || observedResendStatus === 'cancelled' ? observedResendStatus : null,
-            },
+        {
+          resendBroadcastId: inheritedBroadcastId,
+          probedStatus:
+            observedResendStatus === 'draft' || observedResendStatus === 'cancelled' ? observedResendStatus : null,
+        },
       );
       if (cleared.kind === 'undecided') {
         return err({ kind: 'dispatch.server_error', message: cleared.message, errClass: cleared.errClass, phase: 'standing' });
