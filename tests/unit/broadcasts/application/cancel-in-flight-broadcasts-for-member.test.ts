@@ -85,11 +85,14 @@ function makeDeps(overrides: {
   const txOutcomes: Array<'committed' | 'rolled_back'> = [];
   /** D1 — the repo calls in order, so a test can prove the lock precedes the read. */
   const calls: string[] = [];
+  /** Spec 139 — how many txs are open, so a test can prove a Resend call ran outside the row lock. */
+  let openTx = 0;
   const snapshot = (broadcastId: string) =>
     (rows as Array<{ broadcastId: string }>).find((r) => r.broadcastId === broadcastId) ?? null;
   const broadcastsRepo = {
     listInFlightOwnedByMember: vi.fn(async () => rows),
     withTx: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => {
+      openTx += 1;
       try {
         const r = await fn({});
         txOutcomes.push('committed');
@@ -97,6 +100,8 @@ function makeDeps(overrides: {
       } catch (e) {
         txOutcomes.push('rolled_back');
         throw e;
+      } finally {
+        openTx -= 1;
       }
     }),
     lockForUpdate: vi.fn(async (_tx: unknown, _t: unknown, broadcastId: string) => {
@@ -134,7 +139,8 @@ function makeDeps(overrides: {
       return { kind: overrides.deleteOutcome ?? 'deleted' };
     }),
     retrieveBroadcast: vi.fn(async (id: string) => {
-      calls.push(`probe:${id}`);
+      // The probe retries (`withRetry`, up to 31 s), so it must never run under the lock.
+      calls.push(openTx > 0 ? `probe:${id}:under-lock` : `probe:${id}`);
       const probe = overrides.probe ?? 'sent';
       if (probe === 'throws') throw new Error('Resend 500 on GET /broadcasts');
       if (probe === 'not_found') return { kind: 'not_found' as const };
@@ -543,7 +549,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
     );
 
     it.each(['queued', 'sending', 'sent'] as const)(
-      'DELETE answers 403 and the probe says %s → already sent: no transition, the residual row written INSIDE the locked tx, alreadySentCount 1',
+      'DELETE answers 403 and the probe says %s → already sent: no transition, probed after the lock is released, the residual row on its own tx, alreadySentCount 1',
       async (status) => {
         const deps = makeDeps({
           inFlightRows: [
@@ -558,7 +564,8 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1 } });
         expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
         expect(deps.calls.slice(0, 4)).toEqual([`lock:${broadcastIdA}`, `read:${broadcastIdA}`, 'delete:rb-live-1', 'probe:rb-live-1']);
-        expect(deps.txOutcomes).toEqual(['committed', 'committed']);
+        // A's lock tx (nothing written), A's residual-row tx, B's cancel.
+        expect(deps.txOutcomes).toEqual(['committed', 'committed', 'committed']);
         const blocked = eventsOf(deps, 'broadcast_concurrent_action_blocked');
         expect(blocked).toHaveLength(1);
         // P6 — durable: on the cascade's tx, never `emit(null)`.
@@ -581,7 +588,10 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
         expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
         expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
-        expect(deps.txOutcomes).toEqual(['rolled_back']);
+        // The lock tx wrote nothing and committed; the probe ran after it.
+        expect(deps.txOutcomes).toEqual(['committed']);
+        expect(deps.calls).toContain('probe:rb-live-1');
+        expect(deps.audit.emit).not.toHaveBeenCalled();
         expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['unexpected_error']);
       },
     );
@@ -615,7 +625,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
       expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
-      expect(deps.txOutcomes).toEqual(['rolled_back']);
+      expect(deps.txOutcomes).toEqual(['committed', 'rolled_back']);
     });
 
     it('DELETE 200, then the cancel tx rolls back (its audit write fails) → unexpected; the draft is gone, so a tick can only 404', async () => {
