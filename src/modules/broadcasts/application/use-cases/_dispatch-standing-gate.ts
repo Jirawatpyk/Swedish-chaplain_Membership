@@ -122,8 +122,9 @@ export async function decideDispatchStanding(
 
 /**
  * What an erased refusal's DELETE of the row's pre-scrub draft decided (P2).
- * `cleared` — nothing of the member's is left at Resend that `/send` could
- * still accept, so the leg may refuse terminally; `draftOutcome` is what it
+ * `cleared` — the draft THIS ROW carries is gone, or can never be sent, so the
+ * leg may refuse terminally (other copies are not this function's reach —
+ * residual 8d, below); `draftOutcome` is what it
  * found (`none` = the row carried no id). `undecided` — the draft may still
  * be there: nothing is sent, the row stays `approved`, the next tick (or the
  * `reconcile-erasures` cron's cascade) tries again.
@@ -137,7 +138,13 @@ export type ErasedDraftClearance =
  * draft it still carries. Without this, an erasure cascade that failed
  * retryably (the next dispatch tick, every 5 min, reaches the gate before
  * `reconcile-erasures`, every 30 min) would make the row terminal and leave
- * the pre-scrub subject, body and from-name at Resend for good.
+ * the pre-scrub subject, body and from-name at Resend on that row's draft.
+ *
+ * It closes the SEND, not every Resend copy: a pre-scrub draft minted for an
+ * E-Blast that is already terminal (`failed_to_dispatch`, or staff-cancelled
+ * with an id), or a minted draft whose reclaim failed, is never on a row this
+ * gate reaches and can stay at Resend after the erasure. It is never sent —
+ * RoPA residual 8d (`docs/compliance/processing-records.md`).
  *
  * Called only for an id the same tick's probe said was never handed to
  * `/send` (`draft`, `cancelled`, or `not_found`) — a handed id never reaches

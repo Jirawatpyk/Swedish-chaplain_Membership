@@ -826,7 +826,8 @@ export async function dispatchScheduledBroadcast(
     if (standing.kind === 'refuse_erased') {
       // Spec 139 — the member is erased (or gone). P2: a draft the row still
       // carries (the probe above said it was never handed to `/send`) is
-      // deleted at Resend FIRST, so no pre-scrub copy outlives the refusal;
+      // deleted at Resend FIRST, so this row's pre-scrub draft does not
+      // outlive the refusal (other copies: RoPA residual 8d);
       // anything short of a confirmed delete decides nothing. P3: one audit
       // row only (`standing: 'erased'`), no "membership suspended" row, and no
       // member email (`broadcast` is not passed, so nothing is enqueued).
