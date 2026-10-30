@@ -148,7 +148,9 @@ function toSafeMessage(e: unknown): string {
 const RECLAIM_CONCURRENCY = 5;
 
 /** Resend 403 error message for the account's last audience. */
-const LAST_AUDIENCE_PATTERN = /cannot delete last audience/i;
+// Spec 141: resend@6.35 deletes at `/segments`, whose refusal wording was not
+// measured; accept either noun.
+const LAST_AUDIENCE_PATTERN = /cannot delete (the )?last (audience|segment)/i;
 
 export async function reclaimOrphanedAudiences(
   deps: ReclaimOrphanedAudiencesDeps,

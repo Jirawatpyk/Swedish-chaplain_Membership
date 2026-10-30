@@ -41,6 +41,10 @@ import { extractBareEmail, stripAngleBrackets } from './bare-email';
 
 const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
 
+/** `GET /segments` page size, and a stop for a runaway cursor. */
+const LIST_AUDIENCES_PAGE_SIZE = 100;
+const LIST_AUDIENCES_MAX_PAGES = 50;
+
 interface ResendErrorShape {
   readonly statusCode?: number | null;
   readonly name?: string;
@@ -116,9 +120,13 @@ export class GatewayThrowable extends Error {
  * method that takes an id or an email runs this first; a `null` from a
  * nullable column is refused the same way, as a `GatewayThrowable`.
  */
+function isBlankId(value: unknown): boolean {
+  return typeof value !== 'string' || value.trim() === '';
+}
+
 function assertNonEmpty(values: Readonly<Record<string, string>>): void {
   for (const [field, value] of Object.entries(values)) {
-    if (typeof value !== 'string' || value.trim() === '') {
+    if (isBlankId(value)) {
       throw new GatewayThrowable({
         kind: 'permanent',
         code: 'empty_identifier',
@@ -577,7 +585,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   async retrieveBroadcastOnce(broadcastId: string): Promise<RetrieveBroadcastOnceOutcome> {
     // One attempt and an outcome, never a throw: an empty id would read the
     // broadcast LIST at `/broadcasts/`, so it is unclassified, with no request.
-    if (typeof broadcastId !== 'string' || broadcastId.trim() === '') return { kind: 'other' };
+    if (isBlankId(broadcastId)) return { kind: 'other' };
     let res: Response;
     try {
       res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
@@ -693,23 +701,40 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   },
 
   async listAudiences(): Promise<ReadonlyArray<ResendAudienceSummary>> {
-    return withRetry(
-      async () => {
-        const sdk = client();
-        const result = (await sdk.audiences.list()) as ResendSdkResponse<{
-          object: string;
-          data: ReadonlyArray<{ id: string; name: string; created_at: string }>;
-        }>;
-        if (result.error) {
-          throw classifyResendError(result.error ?? undefined, 'audience');
-        }
-        const rows = result.data?.data ?? [];
-        logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
-        // Parse at the adapter boundary so callers work with Date, not raw strings.
-        return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) }));
-      },
-      { method: 'listAudiences' },
-    );
+    // Spec 141: on resend@6.35 `audiences.list` is the paginated
+    // `GET /segments`, so follow `has_more` (cursor = the last id) instead of
+    // reading page 1 only — reclaim-orphaned-audiences must see EVERY audience.
+    // Each page is its own `withRetry`, so a retry never re-reads earlier pages.
+    const rows: Array<{ id: string; name: string; created_at: string }> = [];
+    let after: string | undefined;
+    for (let page = 0; page < LIST_AUDIENCES_MAX_PAGES; page += 1) {
+      const result = await withRetry(
+        async () => {
+          const sdk = client();
+          const res = (await sdk.audiences.list({
+            limit: LIST_AUDIENCES_PAGE_SIZE,
+            ...(after !== undefined && { after }),
+          })) as ResendSdkResponse<{
+            object: string;
+            has_more?: boolean;
+            data: ReadonlyArray<{ id: string; name: string; created_at: string }>;
+          }>;
+          if (res.error) {
+            throw classifyResendError(res.error ?? undefined, 'audience');
+          }
+          return res.data;
+        },
+        { method: 'listAudiences' },
+      );
+      const pageRows = result?.data ?? [];
+      rows.push(...pageRows);
+      const last = pageRows.at(-1);
+      if (result?.has_more !== true || last === undefined) break;
+      after = last.id;
+    }
+    logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
+    // Parse at the adapter boundary so callers work with Date, not raw strings.
+    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) }));
   },
 
   async deleteAudience(audienceId: string): Promise<void> {
@@ -786,7 +811,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
    */
   async deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome> {
     // As `retrieveBroadcastOnce`: an empty id is unclassified, with no request.
-    if (typeof broadcastId !== 'string' || broadcastId.trim() === '') return { kind: 'other' };
+    if (isBlankId(broadcastId)) return { kind: 'other' };
     let res: Response;
     try {
       res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
@@ -936,6 +961,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       readonly failed: number;
     };
   }> {
+    assertNonEmpty({ importId });
     return withRetry(
       async () => {
         // `importId` is provider-controlled — it arrives as `body.id` from

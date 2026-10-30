@@ -241,7 +241,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "GET",
-          "url": "https://api.resend.com/segments",
+          "url": "https://api.resend.com/segments?limit=100",
         },
       ]
     `);
