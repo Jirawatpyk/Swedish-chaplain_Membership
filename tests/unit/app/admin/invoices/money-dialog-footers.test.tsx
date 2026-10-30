@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { toast } from '@/lib/toast';
@@ -424,24 +424,31 @@ describe('refund: no retry once the outcome may be a refund', () => {
     refreshSpy.mockClear();
   });
 
+  let rerenderRefund: (props: { pendingRefundExists: boolean }) => void = () => {};
+
   async function submitPartial(postImpl: () => Promise<Response>) {
     const spy = vi.fn((_url: string, init?: RequestInit) => (init?.method === 'POST' ? postImpl() : preview()));
     vi.stubGlobal('fetch', spy);
-    withIntl(
-      <RefundDialog
-        paymentId="pmt_1"
-        invoiceId="inv_1"
-        memberCompanyName="Acme AB"
-        remainingRefundableSatang={3_852_000n}
-        currencyCode="THB"
-        invoiceSubject="event"
-        invoiceHeadroomSatang={3_852_000n}
-        invoiceDocumentNumber="SC-2026-000088"
-        receiptDocumentNumberRaw="RC-2026-000088"
-        paidAmountSatang={3_852_000n}
-        paidAt="2026-02-01T03:00:00.000Z"
-      />,
+    const dialogFor = ({ pendingRefundExists }: { pendingRefundExists: boolean }) => (
+      <NextIntlClientProvider locale="en" messages={enMessages}>
+        <RefundDialog
+          paymentId="pmt_1"
+          invoiceId="inv_1"
+          memberCompanyName="Acme AB"
+          remainingRefundableSatang={3_852_000n}
+          currencyCode="THB"
+          invoiceSubject="event"
+          invoiceHeadroomSatang={3_852_000n}
+          invoiceDocumentNumber="SC-2026-000088"
+          receiptDocumentNumberRaw="RC-2026-000088"
+          paidAmountSatang={3_852_000n}
+          paidAt="2026-02-01T03:00:00.000Z"
+          pendingRefundExists={pendingRefundExists}
+        />
+      </NextIntlClientProvider>
     );
+    const { rerender } = render(dialogFor({ pendingRefundExists: false }));
+    rerenderRefund = (props) => rerender(dialogFor(props));
     fireEvent.click(screen.getByTestId('refund-dialog-trigger'));
     const dialog = screen.getByRole('alertdialog', { name: refund.title });
     fireEvent.change(within(dialog).getByTestId('refund-form-amount'), { target: { value: '100' } });
@@ -473,7 +480,10 @@ describe('refund: no retry once the outcome may be a refund', () => {
   // trigger stays locked until a reload; a second refund can't start here.
   function expectLatched() {
     const trigger = screen.getByTestId('refund-dialog-trigger');
-    expect(trigger).toBeDisabled();
+    // aria-disabled, not disabled: it keeps focus, so its hint is heard
+    // (review LOW-3); AURA swallows the click.
+    expect(trigger).toHaveAttribute('aria-disabled', 'true');
+    expect(trigger).toHaveFocus();
     expect(trigger).toHaveTextContent(enMessages.admin.refund.button.unconfirmedLabel);
     fireEvent.click(trigger);
     expect(screen.queryByRole('alertdialog')).toBeNull();
@@ -503,6 +513,51 @@ describe('refund: no retry once the outcome may be a refund', () => {
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     expectLatched();
     onLine.mockRestore();
+  });
+
+  // Review LOW-2: the 'online' listener goes with the dialog.
+  it('offline, then the page leaves: coming back online refreshes nothing', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    await submitPartial(() => Promise.reject(new TypeError('Failed to fetch')));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    cleanup();
+    onLine.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(refreshSpy).not.toHaveBeenCalled();
+    onLine.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  // Review LOW-4: once the server says a refund is settling, that is shown.
+  it('a settling refund the refresh reveals wins over the unconfirmed lock', async () => {
+    await submitPartial(() => Promise.reject(new TypeError('Failed to fetch')));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    rerenderRefund({ pendingRefundExists: true });
+    expect(screen.getByTestId('refund-dialog-trigger')).toHaveTextContent(enMessages.admin.refund.button.settlingLabel);
+    vi.unstubAllGlobals();
+  });
+
+  // Review: a success, a settling 202 and a refusal never lock.
+  it.each([
+    [
+      '201 success',
+      () =>
+        new Response(
+          JSON.stringify({ refund: { status: 'succeeded', creditNote: { kind: 'issued', id: 'cn', number: 'CN-1' } } }),
+          { status: 201 },
+        ),
+    ],
+    ['202 pending', () => new Response(JSON.stringify({ refund: { status: 'pending' } }), { status: 202 })],
+    ['f4_bridge_deferred', () => new Response(JSON.stringify({ error: { code: 'f4_bridge_deferred' } }), { status: 502 })],
+  ])('%s closes without locking the trigger', async (_label, respond) => {
+    await submitPartial(async () => respond());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    const trigger = screen.getByTestId('refund-dialog-trigger');
+    expect(trigger).not.toHaveAttribute('aria-disabled');
+    expect(trigger).toHaveTextContent(enMessages.admin.refund.button.label);
+    vi.unstubAllGlobals();
   });
 
   it('online, a request that fails on the network (a reset) refreshes, warns and locks', async () => {
