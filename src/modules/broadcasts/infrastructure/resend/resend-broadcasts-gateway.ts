@@ -41,8 +41,12 @@ import { extractBareEmail, stripAngleBrackets } from './bare-email';
 
 const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
 
+/** `GET /segments` page size, and a stop for a runaway cursor. */
+const LIST_AUDIENCES_PAGE_SIZE = 100;
+const LIST_AUDIENCES_MAX_PAGES = 50;
+
 interface ResendErrorShape {
-  readonly statusCode?: number;
+  readonly statusCode?: number | null;
   readonly name?: string;
   readonly message?: string;
 }
@@ -108,12 +112,68 @@ export class GatewayThrowable extends Error {
   }
 }
 
+/**
+ * Spec 141 review — refuse an empty identifier before the SDK sees it. On
+ * resend@6.35 a falsy `audienceId` is dropped from the path, so
+ * `contacts.remove` becomes `DELETE /contacts/{email}` (an ACCOUNT-WIDE delete
+ * shared by every tenant) and `contacts.list` becomes `GET /contacts`. Every
+ * method that takes an id or an email runs this first; a `null` from a
+ * nullable column is refused the same way, as a `GatewayThrowable`.
+ */
+function isBlankId(value: unknown): boolean {
+  return typeof value !== 'string' || value.trim() === '';
+}
+
+function assertNonEmpty(values: Readonly<Record<string, string>>): void {
+  for (const [field, value] of Object.entries(values)) {
+    if (isBlankId(value)) {
+      throw new GatewayThrowable({
+        kind: 'permanent',
+        code: 'empty_identifier',
+        reason: `${field} is empty`,
+      });
+    }
+  }
+}
+
+/**
+ * The HTTP status the gateway acts on, read as resend@4.8 read it (spec 141,
+ * the maintainer's option A, 30 Oct 2026).
+ *
+ * - `application_error` is the name the SDK gives every error it builds
+ *   itself: a non-JSON body (an edge's or proxy's HTML page, `index.mjs:1708`)
+ *   and anything its outer `catch` takes (`:1750`, `statusCode: null`) — a
+ *   thrown `fetch`, but also a 2xx whose body would not parse, which the SDK
+ *   cannot tell apart. 4.8 left `statusCode` undefined on the first and the
+ *   classifier read 500; 6.35 passes the page's status through, so an HTML 404
+ *   read as "already gone" — on the erasure path a false "already absent" in
+ *   the Art. 30 record. Read it as retryable again, whatever it carries, as 4.8
+ *   did; the `statusCode: null` case is tagged `network` (mostly a transport
+ *   failure, sometimes an unreadable success — a retried create can then mint
+ *   a second resource, as on 4.8).
+ * - Any other error with `statusCode: null` is a refusal the SDK made locally
+ *   without a request (`missing_required_field`, `invalid_parameter`): no
+ *   retry can fix it, so it reads as a 422.
+ * - A real Resend error (JSON, a specific name) keeps its status.
+ */
+function httpStatusOf(err: ResendErrorShape | undefined | null): number {
+  if (err?.name === 'application_error') return err.statusCode === null ? 0 : 500;
+  if (err?.statusCode === null) return 422;
+  return err?.statusCode ?? 500;
+}
+
+/** Resend itself said the resource is gone (404 or 410) — never an edge's page. */
+function isProviderGone(err: ResendErrorShape | undefined | null): boolean {
+  const status = httpStatusOf(err);
+  return status === 404 || status === 410;
+}
+
 function classifyResendError(
   err: ResendErrorShape | undefined | null,
   resourceType?: 'audience' | 'broadcast' | 'import',
   resourceId?: string,
 ): GatewayThrowable {
-  const status = err?.statusCode ?? 500;
+  const status = httpStatusOf(err);
   const reason = err?.message ?? 'unknown resend error';
   const code = err?.name ?? `http_${status}`;
 
@@ -239,6 +299,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     contacts: ReadonlyArray<AudienceContact>,
   ): Promise<void> {
     if (contacts.length === 0) return;
+    assertNonEmpty({ audienceId });
 
     // The Resend Contacts API is one-at-a-time (no bulk endpoint). The
     // account limit is 10 req/s, NOT the 2 this comment used to claim
@@ -312,6 +373,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   async createBroadcast(
     input: CreateBroadcastInput,
   ): Promise<{ readonly broadcastId: string }> {
+    assertNonEmpty({ audienceId: input.audienceId });
     return withRetry(
       async () => {
         const sdk = client();
@@ -362,9 +424,16 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     broadcastId: string,
     idempotencyKey: string,
   ): Promise<void> {
+    assertNonEmpty({ broadcastId });
     await withRetry(
       async () => {
         const sdk = client();
+        // Spec 141: resend@6.35.0 fixed this upstream — `broadcasts.send(id,
+        // payload, requestOptions)` now forwards the options to `post()`
+        // (`node_modules/resend/dist/index.mjs:310`). The raw `post()` below is
+        // kept, pinned on the wire by `tests/contract/resend/`; moving to
+        // `broadcasts.send` is spec 140's call. The 4.8 history follows.
+        //
         // ⚠️ NOT `sdk.broadcasts.send(...)`. Round 3 finding 3-1: in
         // resend@4.8.0 that helper is
         //   `send(id, payload) => this.resend.post(path, {scheduled_at})`
@@ -430,9 +499,12 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     // top-level keys are exactly `data,has_more,object`. The endpoint TELLS us
     // when the list is short, and we were not reading it.
     //
-    // The SDK models neither half — `ListContactsOptions` is `{ audienceId }`
-    // and `ListContactsResponseSuccess` is `{ object, data }` (resend@4.8.0) —
-    // so `has_more` is read off the runtime shape. Narrowed with `=== false`, so
+    // resend@4.8.0 modelled neither half (`ListContactsOptions` was
+    // `{ audienceId }`, `ListContactsResponseSuccess` was `{ object, data }`),
+    // so `has_more` is read off the runtime shape; 6.35 declares it, and the
+    // read is unchanged. On 6.35 this call goes to `/segments/{id}/contacts`:
+    // MEASURED 2026-10-30 with 110 contacts, both paths return all 110 with
+    // `has_more: false` (spec 141). Narrowed with `=== false`, so
     // that a missing field reads as "not complete": an absent signal must not be
     // reported as a verified-complete count. Because the field is undeclared, a
     // provider rename cannot fail the build — only this narrowing direction
@@ -444,6 +516,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     // handling of the value it never produced was dead code that read as
     // covered. If Resend ever changes that, the throw reaches the caller's
     // unverifiable arm, which is where "we could not count" already goes.
+    assertNonEmpty({ audienceId });
     return await withRetry(
       async () => {
         const sdk = client();
@@ -477,6 +550,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   async retrieveBroadcast(
     broadcastId: string,
   ): Promise<RetrieveBroadcastOutcome> {
+    assertNonEmpty({ broadcastId });
     try {
       const resource = await withRetry(
         async (): Promise<RetrievedBroadcastResource | null> => {
@@ -519,6 +593,9 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
    * carries the HTTP status and the outcome only, never the body.
    */
   async retrieveBroadcastOnce(broadcastId: string): Promise<RetrieveBroadcastOnceOutcome> {
+    // One attempt and an outcome, never a throw: an empty id would read the
+    // broadcast LIST at `/broadcasts/`, so it is unclassified, with no request.
+    if (isBlankId(broadcastId)) return { kind: 'other' };
     let res: Response;
     try {
       res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
@@ -534,7 +611,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       return { kind: 'retryable' };
     }
     const text = await res.text().catch(() => '');
-    const outcome = retrieveOnceOutcomeFor(res.status, text);
+    const outcome = retrieveOnceOutcomeFor(rawHttpStatusOf(res.status, text), text);
     logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.retrieve_once');
     return outcome;
   },
@@ -543,6 +620,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     audienceId: string,
     email: string,
   ): Promise<RemoveContactOutcome> {
+    assertNonEmpty({ audienceId, email });
     try {
       await withRetry(
         async () => {
@@ -589,6 +667,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
    * reported for members whose addresses were still at the processor.
    */
   async deleteContactGlobally(email: string): Promise<void> {
+    assertNonEmpty({ email });
     try {
       await withRetry(
         async () => {
@@ -623,7 +702,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       if (
         e instanceof GatewayThrowable &&
         e.kind === 'permanent' &&
-        (e.code === 'not_found' || e.code === 'http_404')
+        e.code === 'not_found'
       ) {
         return;
       }
@@ -632,26 +711,67 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   },
 
   async listAudiences(): Promise<ReadonlyArray<ResendAudienceSummary>> {
-    return withRetry(
-      async () => {
-        const sdk = client();
-        const result = (await sdk.audiences.list()) as ResendSdkResponse<{
-          object: string;
-          data: ReadonlyArray<{ id: string; name: string; created_at: string }>;
-        }>;
-        if (result.error) {
-          throw classifyResendError(result.error ?? undefined, 'audience');
-        }
-        const rows = result.data?.data ?? [];
-        logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
-        // Parse at the adapter boundary so callers work with Date, not raw strings.
-        return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) }));
-      },
-      { method: 'listAudiences' },
-    );
+    // Spec 141: on resend@6.35 `audiences.list` is the paginated
+    // `GET /segments`, so follow `has_more` (cursor = the last id) instead of
+    // reading page 1 only — reclaim-orphaned-audiences must see EVERY audience.
+    // Each page is its own `withRetry`, so a retry never re-reads earlier pages.
+    const byId = new Map<string, { id: string; name: string; created_at: string }>();
+    const seenCursors = new Set<string>();
+    let after: string | undefined;
+    let truncated = false;
+    for (let page = 0; ; page += 1) {
+      if (page === LIST_AUDIENCES_MAX_PAGES) {
+        truncated = true;
+        break;
+      }
+      const result = await withRetry(
+        async () => {
+          const sdk = client();
+          const res = (await sdk.audiences.list({
+            limit: LIST_AUDIENCES_PAGE_SIZE,
+            ...(after !== undefined && { after }),
+          })) as ResendSdkResponse<{
+            object: string;
+            has_more?: boolean;
+            data: ReadonlyArray<{ id: string; name: string; created_at: string }>;
+          }>;
+          if (res.error) {
+            throw classifyResendError(res.error ?? undefined, 'audience');
+          }
+          return res.data;
+        },
+        { method: 'listAudiences' },
+      );
+      const pageRows = result?.data ?? [];
+      for (const r of pageRows) byId.set(r.id, r);
+      const last = pageRows.at(-1);
+      if (result?.has_more !== true) break;
+      // `has_more` with an empty page leaves no cursor to follow: the list is cut.
+      if (last === undefined) {
+        truncated = true;
+        break;
+      }
+      // A cursor seen before would page forever over the same rows.
+      if (seenCursors.has(last.id)) {
+        truncated = true;
+        break;
+      }
+      seenCursors.add(last.id);
+      after = last.id;
+    }
+    const rows = [...byId.values()];
+    if (truncated) {
+      // Reclaim then sees fewer audiences than exist: it deletes less, never
+      // more, but say so rather than pass a cut list off as the whole.
+      logger.warn({ audienceCount: rows.length }, 'resend.broadcasts.audiences_list_truncated');
+    }
+    logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
+    // Parse at the adapter boundary so callers work with Date, not raw strings.
+    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: new Date(r.created_at) }));
   },
 
   async deleteAudience(audienceId: string): Promise<void> {
+    assertNonEmpty({ audienceId });
     await withRetry(
       async () => {
         const sdk = client();
@@ -666,10 +786,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           // Without the 410 branch, a Resend 410 would fall through to
           // `classifyResendError` → `permanent`, and the cleanup row would
           // re-fail every cron tick forever.
-          if (
-            result.error.statusCode === 404 ||
-            result.error.statusCode === 410
-          ) {
+          if (isProviderGone(result.error)) {
             logger.info({ audienceId }, 'resend.broadcasts.audience_already_absent');
             return; // idempotent: already gone
           }
@@ -693,6 +810,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
    * path is known to work, not assumed to.
    */
   async deleteBroadcast(broadcastId: string): Promise<void> {
+    assertNonEmpty({ broadcastId });
     await withRetry(
       async () => {
         const sdk = client();
@@ -702,10 +820,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           object: string;
         }>;
         if (result.error) {
-          if (
-            result.error.statusCode === 404 ||
-            result.error.statusCode === 410
-          ) {
+          if (isProviderGone(result.error)) {
             logger.info({ broadcastId }, 'resend.broadcasts.broadcast_already_absent');
             return; // idempotent: already gone
           }
@@ -719,12 +834,15 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
 
   /**
    * Spec 139 P1 — the port docblock has the contract. A raw `fetch`, like
-   * `importFetch`, because the SDK takes no `signal` (resend@4.8.0) and this
+   * `importFetch`, because the SDK took no `signal` when this was written
+   * (resend@4.8.0; 6.32+ accepts one, adopted by spec 140) and this
    * call must not outlive {@link DELETE_ONCE_TIMEOUT_MS} while the caller holds
    * a row lock. One attempt; the outcome is the status class, never the
    * provider's text (the log line carries the HTTP status only).
    */
   async deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome> {
+    // As `retrieveBroadcastOnce`: an empty id is unclassified, with no request.
+    if (isBlankId(broadcastId)) return { kind: 'other' };
     let res: Response;
     try {
       res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
@@ -741,9 +859,9 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       );
       return { kind: 'retryable' };
     }
-    // Drain the body so the connection is released; its text is not used.
-    await res.text().catch(() => '');
-    const outcome = deleteOnceOutcomeFor(res.status);
+    // The body decides one thing only: whether an error came from Resend.
+    const text = await res.text().catch(() => '');
+    const outcome = deleteOnceOutcomeFor(rawHttpStatusOf(res.status, text));
     logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.delete_once');
     return outcome;
   },
@@ -795,6 +913,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     audienceId: string,
     emails: readonly string[],
   ): Promise<{ readonly importId: string }> {
+    assertNonEmpty({ audienceId });
     return withRetry(
       async () => {
         // BOUNDARY VALIDATION (108 Phase 9 review S16). `EmailLower` looks like
@@ -873,6 +992,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       readonly failed: number;
     };
   }> {
+    assertNonEmpty({ importId });
     return withRetry(
       async () => {
         // `importId` is provider-controlled — it arrives as `body.id` from
@@ -907,7 +1027,8 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
 /**
  * T086 — the Contacts Import endpoints, spoken to with a raw `fetch`.
  *
- * `resend@4.8` has no `contacts.imports`, so these two are hand-rolled. The
+ * `resend@4.8` had no `contacts.imports`, so these two are hand-rolled (6.35
+ * has `contacts.imports`; spec 140 decides whether to move to it). The
  * SDK's own error envelope is not available either, so the response body is
  * mapped onto the same `ResendErrorShape` `classifyResendError` already
  * understands — that keeps `permanent` / `retryable` meaning one thing across
@@ -986,6 +1107,26 @@ function isTimeout(e: unknown): boolean {
   return e instanceof Error && e.name === 'TimeoutError';
 }
 
+/**
+ * The raw-fetch twin of `httpStatusOf` (spec 141, option A, extended to every
+ * call by the maintainer) for the one decision that matters: "gone". A 404 or
+ * 410 counts only when the body is Resend's own JSON error (it parses and
+ * carries a `name`); from an edge's or proxy's page it reads as a transient
+ * 500, so "gone" is never decided from a page Resend did not write. Every
+ * other status keeps the reading it has on `main` (raw fetch never went
+ * through the SDK, so it never had the 4.8 SDK reading to restore).
+ */
+function rawHttpStatusOf(status: number, text: string): number {
+  if (status !== 404 && status !== 410) return status;
+  try {
+    const body = JSON.parse(text) as { name?: unknown } | null;
+    if (body !== null && typeof body === 'object' && typeof body.name === 'string') return status;
+  } catch {
+    // not JSON — not Resend's answer
+  }
+  return 500;
+}
+
 function deleteOnceOutcomeFor(status: number): DeleteBroadcastOnceOutcome {
   if (status >= 200 && status < 300) return { kind: 'deleted' };
   if (status === 404 || status === 410) return { kind: 'absent' };
@@ -1040,7 +1181,7 @@ async function importFetch(
   } catch {
     body = { message: text.slice(0, 200) };
   }
-  if (!res.ok) throwImportError(res.status, body, resourceId);
+  if (!res.ok) throwImportError(rawHttpStatusOf(res.status, text), body, resourceId);
   return body;
 }
 

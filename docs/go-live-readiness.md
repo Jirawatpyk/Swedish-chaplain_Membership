@@ -268,6 +268,7 @@ Flip on only after each feature's gates above pass:
 
 ### 6.6 F7 Email Broadcast — send hardening
 - [ ] `RESEND_BROADCASTS_API_KEY` has **Full access** (Broadcasts + Audiences), not "Sending access" — verified in dev, staging, prod.
+- [ ] **Resend SDK platform risk (#363, spec 141):** `resend` exact-pinned at 6.35.0; `RESEND_DEBUG` and `RESEND_BASE_URL` absent from every Vercel environment (checked 2026-10-30); the `tests/contract/resend/` suite green. Re-check all three on any SDK bump.
 - [ ] `BROADCASTS_FROM_EMAIL` is a valid `local@domain` or `Display Name <local@domain>` (the gateway prepends the member's display name to this address).
 - [ ] F7 send hardening PR-1 merged (name ≤70, from un-wrapped, quota released on failed_to_dispatch).
 - [ ] **F7 send hardening PR-2 merged** (defect #5 — ephemeral per-broadcast audience + cleanup cron). After merge, each dispatch creates its OWN Resend audience and the `cleanup-audiences` cron deletes it once the broadcast is terminal.

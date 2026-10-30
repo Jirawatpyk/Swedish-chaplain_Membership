@@ -33,6 +33,19 @@ import type {
 } from '../../application/ports/subprocessor-erasure-port';
 
 /**
+ * A string field of a thrown gateway error, or `null` — read by shape, never by
+ * type. `code` can be a provider's `name` copied from a response body, so only a
+ * plain identifier (`validation_error`, `empty_identifier`, `http_404`) is
+ * logged; anything else becomes `unrecognised`, never the text itself.
+ */
+function gatewayField(e: unknown, field: 'kind' | 'code'): string | null {
+  if (typeof e !== 'object' || e === null) return null;
+  const v = (e as Record<string, unknown>)[field];
+  if (typeof v !== 'string') return null;
+  return /^[a-z0-9_]{1,64}$/.test(v) ? v : 'unrecognised';
+}
+
+/**
  * No-op sub-processor-erasure adapter for tests that don't exercise the F7
  * boundary (`SubprocessorErasurePort` is required in production deps; tests
  * inject this stub instead of leaving the dep `undefined`).
@@ -112,6 +125,12 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
             requestId: input.requestId,
             audienceId, // NEVER the email — forbidden-fields hygiene.
             errKind: e instanceof Error ? e.constructor.name : 'unknown',
+            // Spec 141: the gateway's own classification (`permanent` /
+            // `retryable` / …, and a fixed code such as `empty_identifier`),
+            // so the runbook can tell the failure causes apart. Never the
+            // `reason`, which can carry provider text.
+            gatewayKind: gatewayField(e, 'kind'),
+            gatewayCode: gatewayField(e, 'code'),
             cascade: 'subprocessor_resend',
           },
           'erase-member: subprocessor Resend contact detach failed',
