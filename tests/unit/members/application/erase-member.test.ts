@@ -724,6 +724,32 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(types).not.toContain('member_erased');
   });
 
+  // Spec 139 review round 1 — the partial-failure log names the derived
+  // already-sent count, so the runbook can read it off a stuck erasure too.
+  it('broadcasts cascade_partial_failure logs alreadySentCount with the per-row counts', async () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    try {
+      const deps = buildEraseDeps();
+      deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+        async () =>
+          ({
+            outcome: 'cascade_partial_failure',
+            cancelledCount: 0,
+            skippedConcurrentCount: 0,
+            unexpectedErrorCount: 1,
+            alreadySentCount: 3,
+          }) as const,
+      );
+      await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      const call = errorSpy.mock.calls.find(
+        (c) => (c[0] as { cascade?: string } | undefined)?.cascade === 'f7_in_flight_broadcast_cancel',
+      );
+      expect(call?.[0]).toMatchObject({ unexpectedErrorCount: 1, alreadySentCount: 3 });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   // The member_erased emit happens AFTER every cascade reports clean — but it
   // can still fail. Its catch must flip completed back to false so the result
   // never claims completion without the durable proof record (the US2
