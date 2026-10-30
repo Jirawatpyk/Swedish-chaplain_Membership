@@ -37,7 +37,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
-import { buildRenewalCtaUrl } from './_lib/build-renewal-redeem-link-url';
+import { buildReminderSendInput } from './_lib/build-reminder-send-input';
 // BUG-2 — retry pass must re-apply the FR-033 outreach-pause gate (Gate 10)
 // the same way the main dispatcher does. Same use-cases/ dir, no cycle
 // (pause file imports only zod/result/otel + RenewalsDeps type).
@@ -267,40 +267,18 @@ async function attemptRetry(
     candidate.member.preferredLocale ??
     candidate.primaryContact.preferredLanguage ??
     'en';
-  const gatewayResult = await deps.renewalGateway.sendRenewalEmail({
-    tenantId: event.tenantId,
-    cycleId: asCycleId(event.cycleId),
-    stepId: event.stepId,
-    templateId: event.templateId,
-    recipient: {
-      memberId: candidate.member.memberId,
-      toEmail: candidate.primaryContact.email,
-      toName:
-        `${candidate.primaryContact.firstName} ${candidate.primaryContact.lastName}`.trim(),
-      preferredLocale: locale,
-    },
-    templateVariables: {
-      member_first_name: candidate.primaryContact.firstName,
-      member_company_name: candidate.member.companyName,
-      cycle_expires_at: candidate.cycle.expiresAt,
-      tier_bucket: candidate.cycle.tierAtCycleStart,
-      step_id: event.stepId,
-      // S1-P0-4 + go-live #8: same redeem-vs-plain CTA decision as the original
-      // dispatch path (single source of truth), taken at the SAME instant — the
-      // reminder row's `createdAt` (spec 141) — so the retry renders the body
-      // the first attempt sent and Resend's idempotency returns its id.
-      renewal_link_url: buildRenewalCtaUrl(deps.tokenSigner, env.app.baseUrl, {
-        tenantId: event.tenantId,
-        memberId: candidate.member.memberId,
-        cycleId: event.cycleId,
-        now: new Date(event.createdAt),
-        expiresAtIso: candidate.cycle.expiresAt,
-      }),
-      // S1-P1-3: footer opt-out link target.
-      preferences_url: `${env.app.baseUrl}/portal/preferences/renewals`,
-    },
-    idempotencyKey: event.reminderEventId,
-  });
+  const gatewayResult = await deps.renewalGateway.sendRenewalEmail(
+    buildReminderSendInput({
+      signer: deps.tokenSigner,
+      baseUrl: env.app.baseUrl,
+      tenantId: event.tenantId,
+      candidate: { ...candidate, primaryContact: candidate.primaryContact },
+      stepId: event.stepId,
+      templateId: event.templateId,
+      reminderEventId: event.reminderEventId,
+      reminderCreatedAt: event.createdAt,
+    }),
+  );
 
   return runInTenant(deps.tenant, async (tx) => {
     if (gatewayResult.ok) {

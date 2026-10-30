@@ -43,6 +43,14 @@ export function resendConstructions(source: string): string[] {
   return calls;
 }
 
+/**
+ * Pinned = `baseUrl` set to the shared constant. Any other value — an env
+ * read, `undefined` — lets 6.35 fall back to RESEND_BASE_URL again.
+ */
+export function isPinned(call: string): boolean {
+  return /\bbaseUrl\s*:\s*RESEND_API_BASE_URL\b/.test(call);
+}
+
 describe('Resend clients pin baseUrl (spec 141)', () => {
   it('the parser finds a construction and tells a pinned one from an unpinned one (positive control)', () => {
     expect(

@@ -296,20 +296,23 @@ async function sendViaResendWithRetry(args: {
 
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
     try {
-      const response = await resend.emails.send({
-        from,
-        to: input.recipient.toEmail,
-        subject,
-        html,
-        text,
-        ...(input.replyToEmail
-          ? {
-              replyTo: input.replyToDisplayName
-                ? `${input.replyToDisplayName} <${input.replyToEmail}>`
-                : input.replyToEmail,
-            }
-          : {}),
-      }, { idempotencyKey: input.idempotencyKey });
+      const response = await resend.emails.send(
+        {
+          from,
+          to: input.recipient.toEmail,
+          subject,
+          html,
+          text,
+          ...(input.replyToEmail
+            ? {
+                replyTo: input.replyToDisplayName
+                  ? `${input.replyToDisplayName} <${input.replyToEmail}>`
+                  : input.replyToEmail,
+              }
+            : {}),
+        },
+        { idempotencyKey: input.idempotencyKey },
+      );
       if (response.error) {
         const mapped = mapResendError(response.error);
         // Permanent failures abort immediately. Transient (gateway_5xx)
@@ -670,13 +673,16 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
 
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
       try {
-        const response = await resend.emails.send({
-          from,
-          to: input.recipient.toEmail,
-          subject,
-          html,
-          text,
-        }, { idempotencyKey: input.idempotencyKey });
+        const response = await resend.emails.send(
+          {
+            from,
+            to: input.recipient.toEmail,
+            subject,
+            html,
+            text,
+          },
+          { idempotencyKey: input.idempotencyKey },
+        );
         if (response.error) {
           const mapped = mapResendError(response.error);
           if (mapped.kind !== 'gateway_5xx') {
@@ -687,7 +693,7 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
           return ok({
             deliveryId: response.data.id,
             dispatchedAt: new Date().toISOString(),
-            });
+          });
         }
       } catch (e) {
         lastError = {

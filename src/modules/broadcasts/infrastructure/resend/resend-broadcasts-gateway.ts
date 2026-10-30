@@ -1035,7 +1035,6 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
  * understands — that keeps `permanent` / `retryable` meaning one thing across
  * the whole gateway, which the batch retry gate depends on.
  */
-
 interface ResendImportResponse {
   readonly id?: string;
   readonly status?: string;
