@@ -168,6 +168,13 @@ n/a
 - **Corrected**: the retry window is about one dispatch pass (minutes), not seconds — the retry pass runs after the next tick's dispatch pass (spec § Premises, Complexity Tracking, changelog).
 - **Carried**: the tenant's renewal reply-to (`tenant_renewal_config.reply_to_email`) never reaches the gateway — pre-existing on `main`; wiring it changes every reminder body, so it is its own change (issue to open on merge). Persisting the rendered body for a guaranteed byte-identical retry — a schema change, spec 140 territory (as in round 1).
 
+
+**Slice 2 review round 4 (31 Oct 2026)** — `/code-review high`, 10 items; the review ends here under the stop rule:
+- **Fixed** (RED `96e033531` → GREEN `e879db389`): `application_error` (6.35's network failure), `rate_limit_exceeded` and `internal_server_error` are known transients — retried without the unknown-name WARN + metric that pages on-call; the scan gate also reads `.mts/.cts/.js/.mjs/.cjs`; a duplicate `RESEND_DEBUG` case removed.
+- **Tried and dropped**: an integration assertion that due-track signs its CTA at `createdAt`. Its positive control (due-track wired to `nowIso`) still passed: the fixture's cycles expire a year out, so the CTA is the plain portal link and carries no timestamp (`580d4e699`). The argument is required by type and goes through the unit-tested `buildReminderSendInput`.
+- **Already dispositioned** (rounds 1–3): a Resend 5xx stored under the key (unmeasurable; 422 and 429 measured not to); a 409 after a deploy / edit / secret rotation goes to a person; the retry window; folding the send loops; persisting the rendered body; `primaryContact` as its own builder argument (round 3's own fix, kept).
+- **Checks**: `pnpm check` exit 0; `tests/unit/renewals` + `tests/contract/resend` + env + scan gate 140 files, 1,726 tests passed.
+
 ## Rollout
 
 - **Slice 1:** goes live on merge, with no flag. Every email path runs on 6.x. Rollback is a revert commit.
