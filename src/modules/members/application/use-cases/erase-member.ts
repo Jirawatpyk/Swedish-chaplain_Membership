@@ -787,6 +787,8 @@ export async function eraseMember(
           cancelledCount: r.cancelledCount,
           skippedConcurrentCount: r.skippedConcurrentCount,
           unexpectedErrorCount: r.unexpectedErrorCount,
+          // Spec 139 — derived from the evidence rows (residual 8c).
+          alreadySentCount: r.alreadySentCount,
           cascade: 'f7_in_flight_broadcast_cancel',
         },
         'erase-member: broadcasts cascade partial — some broadcasts remain in flight',
