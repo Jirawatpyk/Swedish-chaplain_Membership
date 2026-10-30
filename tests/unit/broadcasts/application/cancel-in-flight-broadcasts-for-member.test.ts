@@ -38,6 +38,7 @@ import {
   cancelInFlightBroadcastsForMember,
 } from '@/modules/broadcasts/application/use-cases/cancel-in-flight-broadcasts-for-member';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
+import { REPROBE_PAUSE_MS } from '@/modules/broadcasts/application/use-cases/_reprobe-pause';
 import { asTenantContext } from '@/modules/tenants';
 import { asMemberId } from '@/modules/members';
 
@@ -174,11 +175,17 @@ function makeDeps(overrides: {
       return { kind: 'present' as const, status: probe };
     }),
   };
+  // Review round 2 (code-review #1) — the pause between a DELETE 404 and its
+  // confirming GET, recorded instead of waited.
+  const pauseBeforeReprobe = vi.fn(async (ms: number) => {
+    calls.push(`pause:${ms}${openTx > 0 ? '' : ':no-lock'}`);
+  });
   return {
     broadcastsRepo,
     audit,
     clock,
     broadcastsGateway,
+    pauseBeforeReprobe,
     txOutcomes,
     calls,
   } as never;
@@ -556,6 +563,8 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
     const eventsOf = (deps: Seen, eventType: string) =>
       deps.audit.emit.mock.calls.filter((c) => (c[1] as { eventType: string }).eventType === eventType);
     const lockA = [`lock:${broadcastIdA}`, `read:${broadcastIdA}`, 'delete:rb-live-1'];
+    /** Review round 2 (code-review #1) — the re-probe pause follows a DELETE 404 only. */
+    const pauseAfter = (deleteOutcome: 'absent' | 'forbidden') => (deleteOutcome === 'absent' ? [`pause:${REPROBE_PAUSE_MS}`] : []);
 
     it('DELETE answers deleted → cancelled in the same tx, no probe; broadcast_cancelled carries resendOutcome deleted', async () => {
       const deps = makeDeps({
@@ -583,7 +592,9 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
       expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 } });
-      expect(deps.calls).toEqual([...lockA, 'probe:rb-live-1', `cas:${broadcastIdA}`, 'evidence:count']);
+      // Review round 2 (code-review #1) — REPROBE_PAUSE_MS between the 404 and
+      // the GET, under the lock, as the import leg waits before its re-probe.
+      expect(deps.calls).toEqual([...lockA, `pause:${REPROBE_PAUSE_MS}`, 'probe:rb-live-1', `cas:${broadcastIdA}`, 'evidence:count']);
       expect(deps.txOutcomes).toEqual(['committed', 'committed']);
       const [cancelled] = eventsOf(deps, 'broadcast_cancelled');
       expect(cancelled?.[1]).toMatchObject({ payload: expect.objectContaining({ broadcastId: broadcastIdA, resendOutcome: 'absent' }) });
@@ -620,7 +631,13 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
           expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1 } });
           expect(deps.calls).not.toContain(`cas:${broadcastIdA}`);
           // The probe ran under the row lock; the evidence check on a tx of its own after it.
-          expect(deps.calls.slice(0, 5)).toEqual([...lockA, 'probe:rb-live-1', `evidence:${broadcastIdA}`]);
+          // A pause only after a 404, never after a 403.
+          expect(deps.calls.slice(0, deleteOutcome === 'absent' ? 6 : 5)).toEqual([
+            ...lockA,
+            ...pauseAfter(deleteOutcome),
+            'probe:rb-live-1',
+            `evidence:${broadcastIdA}`,
+          ]);
           expect(deps.calls.at(-1)).toBe('evidence:count');
           // A's lock tx (nothing written), A's evidence tx, B's cancel, the count read.
           expect(deps.txOutcomes).toEqual(['committed', 'committed', 'committed', 'committed']);
@@ -682,7 +699,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
       expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
-      expect(deps.calls).toEqual([...lockA, 'probe:rb-live-1', 'evidence:count']);
+      expect(deps.calls).toEqual([...lockA, ...pauseAfter(deleteOutcome), 'probe:rb-live-1', 'evidence:count']);
       expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
       expect(deps.audit.emit).not.toHaveBeenCalled();
       expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['unexpected_error']);
