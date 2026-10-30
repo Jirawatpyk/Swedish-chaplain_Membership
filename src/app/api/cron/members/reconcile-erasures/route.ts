@@ -60,9 +60,13 @@ const MAX_PER_TICK = 50;
 /**
  * Spec 139 — no new member is started once this much of `maxDuration` has
  * gone. A re-drive's broadcasts cascade holds each dispatch-begun row's lock
- * across up to two bounded Resend calls (≈ 20 s), so 50 members can outrun the
- * 300 s function; the members left are deferred, and the next tick (they are
- * still stuck) continues with them.
+ * across up to two bounded Resend calls and the 3 s re-probe pause after a 404
+ * (≈ 23 s, review round 2), so 50 members can outrun the 300 s function; the
+ * members left are deferred, and the next tick (they are still stuck)
+ * continues with them. The budget is checked BETWEEN members only: one member
+ * with several dispatch-begun rows (≈ 23 s each, × the cascade's CAS retries)
+ * can still overrun `maxDuration` — fail closed (the row's lock tx rolls
+ * back), and the next tick resumes. An accepted bound (plan.md, cron-jobs.md).
  */
 const TIME_BUDGET_MS = 240_000;
 

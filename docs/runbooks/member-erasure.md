@@ -80,9 +80,9 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
 3b. **AFTER step 3 — an E-Blast caught mid-dispatch (spec 139; no manual
    Resend action).** The cascade now handles an `approved` E-Blast that already
    carries a `resend_broadcast_id`: under the row lock it deletes the Resend
-   draft once, probes it once after a 404 or 403, and cancels the row only when
-   Resend's answers prove nothing can be sent (D-039); the send-time gate
-   refuses an erased member on both dispatch legs. Do **not** delete anything at
+   draft once, probes it once after a 404 (3 s later) or a 403, and cancels the
+   row only when Resend's answers prove nothing can be sent (D-039); the
+   send-time gate refuses an erased member on both dispatch legs. Do **not** delete anything at
    Resend by hand. The one case it cannot undo is an E-Blast Resend had
    **already accepted for sending** (residual **8c**). Find it from the
    evidence, not from memory:
@@ -99,10 +99,12 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      **derived from those evidence rows** (distinct broadcasts for the member,
      read at the end of every erasure run), so the count on the LATEST
      `member_erased` — a re-drive's included — is authoritative;
-   - or from state: `SELECT broadcast_id, status, sent_at FROM broadcasts WHERE
+   - and from state (**the STATE query — run it on every erasure**, step 4): `SELECT broadcast_id, status, sent_at FROM broadcasts WHERE
      tenant_id = '<tenant>' AND requested_by_member_id = '<member>' AND status
      IN ('sending','sent','partially_sent','partial_delivery_accepted') AND
-     sent_at >= '<member_erasure_requested time>';`
+     sent_at >= '<member_erasure_requested time>';` A row that was already
+     `sending` when the cascade listed the member's in-flight rows has **no
+     evidence row and is not in the count** — only this query finds it.
    Record each on the DSR ticket with its recipient count (residual 8c wording
    in step 7). **Archive never stands in for an erasure request**: archiving a
    member still skips a dispatch-begun E-Blast and deletes nothing at Resend.
@@ -121,10 +123,50 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    (step 8). What to do: a `forbidden_probe_draft` / `_not_found` almost always
    means the Broadcasts API key lost its full-access scope — check the key in
    the Resend dashboard (full access, the right team), restore it, and let the
-   next re-drive finish. An `unknown` (`failed`) broadcast cannot be sent;
-   confirm in the Resend dashboard that it is not `queued` / `sending` / `sent`,
-   delete it there, then let the next re-drive cancel the row (its DELETE then
-   answers 404 and the probe `not_found`). Record what you did on the DSR ticket.
+   next re-drive finish. An `absent_probe_*` answer (a 404 whose probe still
+   finds the broadcast) is inconsistent: re-check the broadcast in the Resend
+   dashboard; if it is a `draft`, delete it there and let the next re-drive
+   cancel the row (its DELETE then answers 404 and the probe `not_found`). A
+   `forbidden_probe_unknown` is a `failed` broadcast: the paragraph below.
+   Record what you did on the DSR ticket.
+
+   **403 + `unknown` (a broadcast `failed` at Resend) — manual recovery.** The
+   cascade reads Resend's `failed` as `unknown` on purpose (both legs refuse it
+   fail closed), so `forbidden_probe_unknown` never settles by itself, and
+   Resend refuses to DELETE a `failed` broadcast (403). A `failed` broadcast
+   cannot be sent. Confirm in the Resend dashboard that its status is `failed`
+   (not `queued` / `sending` / `sent` — those are 8c, recorded above), then
+   cancel the row by hand (the SQL below, with `cancellation_reason =
+   'gdpr_erasure_request'` or `'pdpa_deletion_request'` as the request was
+   filed). The next `reconcile-erasures` re-drive then finds nothing in flight
+   and completes the erasure. Mapping `failed` to a settled answer needs it out
+   of `normaliseStatus`'s `unknown` on both legs; it is deferred (plan.md §
+   Review round 2, code-review #2).
+
+   **A requester who no longer exists (spec 139 P4) — find and cancel by hand.**
+   `broadcasts.requested_by_member_id` has **no FK** to `members` (the dev branch
+   held six such rows on 30 Oct 2026). Erasure never deletes a member row, so
+   the dispatch gate does not treat a missing requester as erased: it sends
+   nothing, deletes nothing and leaves the row `approved` on every tick.
+   Recognise it by the WARN `broadcasts.dispatch.requester_not_found` (ids
+   only) every 5 min, `cron.broadcasts.dispatch.server_error` with `errClass:
+   requester_not_found`, and `broadcasts.dispatch_resolve_failed.total{phase=
+   "standing"}` above 0. Find them (read-only):
+   `SELECT b.broadcast_id, b.status, b.resend_broadcast_id, b.resend_audience_id
+   FROM broadcasts b WHERE b.tenant_id = '<tenant>' AND b.status IN
+   ('submitted','approved') AND NOT EXISTS (SELECT 1 FROM members m WHERE
+   m.tenant_id = b.tenant_id AND m.member_id = b.requested_by_member_id);`
+   For each: if it carries a `resend_broadcast_id`, check it in the Resend
+   dashboard — a `draft` is deleted there; `queued` / `sending` / `sent` means
+   mail went out (record it; do not cancel a row whose send is under way). Then
+   cancel the row by hand. Staff cancel refuses a row with a Resend id
+   (`sending_started`), so this is SQL, run by the maintainer (`broadcasts` is
+   RLS + FORCE: as the migration owner, or after `SET LOCAL app.current_tenant =
+   '<tenant>'`): `UPDATE broadcasts SET status = 'cancelled', cancelled_at =
+   now(), cancellation_reason = 'originator_member_deleted' WHERE tenant_id =
+   '<tenant>' AND broadcast_id = '<id>' AND status = 'approved';` A hand-written
+   UPDATE writes no audit row: record the ids, the Resend status you saw and the
+   time on the incident ticket.
 
 4. **Confirm completeness (US3-D evidence log).** Open
    **`/admin/compliance/erasure-log`**. Find the member's card and confirm:
@@ -138,6 +180,12 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      from the LATEST `member_erased` (a re-drive's is authoritative); it must
      equal the number of distinct broadcasts the step 3b evidence query
      returns;
+   - **run the step 3b STATE query on every erasure, whatever the count says**
+     (`sent_at >= member_erasure_requested`, statuses `sending` / `sent` /
+     `partially_sent` / `partial_delivery_accepted`). Any row it returns is
+     residual 8c **even when `broadcasts_already_sent_count` is 0**: a row
+     already `sending` when the cascade listed in-flight rows writes no evidence
+     row. Record each on the DSR ticket;
    - for a member who used E-Blasts: the `broadcast_content_redacted` row carries
      `versions_redacted`, `decision_reasons_redacted` and `notifications_cancelled`, and the
      three-count query in § E-Blast approval round returns zeros.

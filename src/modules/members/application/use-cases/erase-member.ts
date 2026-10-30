@@ -1238,8 +1238,10 @@ export async function eraseMember(
             // accepted for sending when the erasure's DELETE arrived (each has
             // its `broadcast_concurrent_action_blocked` row, `resendOutcome:
             // 'already_sent'`). Read by runbook step 4 before the erasure is
-            // ticked complete. Same re-drive caveat as the counts above: a
-            // re-drive counts only what THIS completing run met.
+            // ticked complete. NOT subject to the re-drive caveat above (review
+            // round 2, CR2#7): the count is DERIVED at the end of every run
+            // from ALL of this member's evidence rows (distinct broadcasts), so
+            // a re-drive's value is authoritative, not just what this run met.
             broadcasts_already_sent_count: broadcastsAlreadySentCount,
             // L4 (DPO-log honesty): on a re-drive completion (alreadyErased) the
             // first pass already stamped contacts.removed_at, so this pass's
