@@ -82,6 +82,31 @@ describe('IssueInvoiceDialog — buttons in the Dialog footer', () => {
     vi.unstubAllGlobals();
   });
 
+  // Financial-integrity review: the shell reads `pending` from the footer state.
+  it('while the issue POST is in flight, Escape does not close it, Cancel is disabled, a second click sends nothing', async () => {
+    vi.useRealTimers();
+    let settle: (r: Response) => void = () => {};
+    const fetchSpy = vi.fn(() => new Promise<Response>((resolve) => (settle = resolve)));
+    vi.stubGlobal('fetch', fetchSpy);
+    const dialog = open();
+    fireEvent.change(within(dialog).getByLabelText(/to confirm/i), { target: { value: 'ISSUE' } });
+    const confirm = within(dialog).getByRole('button', { name: 'Issue invoice · 8,560.00 THB' });
+    confirm.focus();
+    fireEvent.click(confirm);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveFocus();
+    expect(confirm).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(confirm);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(within(dialog).getByRole('button', { name: issue.cancel })).toBeDisabled();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.getByRole('alertdialog', { name: issue.title })).toBeInTheDocument();
+    await act(async () => {
+      settle({ ok: false, json: async () => ({ error: { code: 'invoice_not_draft' } }) } as Response);
+    });
+    vi.unstubAllGlobals();
+  });
+
   it('Cancel in the footer closes the dialog', () => {
     const dialog = open();
     fireEvent.click(within(dialog).getByRole('button', { name: issue.cancel }));

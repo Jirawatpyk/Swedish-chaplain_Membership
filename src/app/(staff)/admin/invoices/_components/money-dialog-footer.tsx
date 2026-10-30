@@ -10,13 +10,18 @@
  * form, so the form reports it with `useReportMoneyDialogFooter` and the shell
  * renders this footer. Each money handler, guard and label stays in its form.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Button, type IconName } from '@jirawatpyk/aura-react';
 
 export type MoneyDialogFooterState = {
   /** The request is in flight: Cancel is disabled and the confirm spins. */
   readonly pending: boolean;
-  /** The form's own gate (typed phrase, valid amount); never true while pending. */
+  /**
+   * The form's own gate (typed phrase, valid amount), apart from `pending`:
+   * while in flight the confirm is AURA's loading button, which swallows the
+   * click but keeps focus, never natively disabled (focus would drop to <body>,
+   * out of the modal).
+   */
   readonly canConfirm: boolean;
   /** The form's label for the confirm, e.g. the total it names. */
   readonly confirmLabel: string;
@@ -34,14 +39,16 @@ export function initialMoneyDialogFooter(confirmLabel: string): MoneyDialogFoote
 /**
  * Reports the footer state from a form before paint, so the footer never
  * draws a stale label or gate. `onConfirm` may change every render; the
- * reported one is a stable wrapper that runs the latest.
+ * reported one is a stable wrapper that runs the one of the last commit,
+ * swapped in before the state is reported, so a click never runs an older
+ * render's confirm (with an older total) than the label shows.
  */
 export function useReportMoneyDialogFooter(
   onFooterChange: ((state: MoneyDialogFooterState) => void) | undefined,
   { pending, canConfirm, confirmLabel, onConfirm }: MoneyDialogFooterState,
 ): void {
   const confirmRef = useRef(onConfirm);
-  useEffect(() => {
+  useLayoutEffect(() => {
     confirmRef.current = onConfirm;
   });
   const [stableConfirm] = useState(() => () => confirmRef.current?.());
@@ -49,7 +56,7 @@ export function useReportMoneyDialogFooter(
   useLayoutEffect(() => {
     onFooterChange?.({
       pending,
-      canConfirm: canConfirm && !pending,
+      canConfirm,
       confirmLabel,
       ...(hasConfirm ? { onConfirm: stableConfirm } : {}),
     });
@@ -102,7 +109,7 @@ export function MoneyDialogFooter({
         fullWidth="below-sm"
         icon={confirmIcon}
         loading={pending}
-        disabled={!canConfirm || pending}
+        disabled={!canConfirm}
         {...(confirmTestId ? { 'data-testid': confirmTestId } : {})}
       >
         {confirmLabel}

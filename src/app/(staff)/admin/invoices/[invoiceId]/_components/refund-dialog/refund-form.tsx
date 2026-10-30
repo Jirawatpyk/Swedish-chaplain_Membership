@@ -254,9 +254,8 @@ export function RefundForm({
   // Confirm enables only when:
   //   1. RHF schema is valid (amount + reason)
   //   2. NOT a full refund OR typed-phrase matches (full-refund gate)
-  //   3. NOT submitting
-  const canSubmit =
-    isValid && !submitting && (!isFullRefund || phraseMatches);
+  // While submitting it is AURA's loading button (the click swallowed).
+  const canSubmit = isValid && (!isFullRefund || phraseMatches);
 
   // The dialog draws Cancel and the confirm in its footer (PR N2); the confirm
   // submits this form from there (`form={formId}`), so Enter in a field still
