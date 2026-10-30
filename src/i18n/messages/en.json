@@ -5375,7 +5375,7 @@
         "deferredToast": "Refund sent — the money is on its way back to the member. The credit note completes automatically; no action is needed.",
         "waivedToast": "Refund processed — no credit note (ใบลดหนี้) was issued",
         "pendingWaivedToast": "Refund submitted — awaiting the payment processor. No credit note will be issued.",
-        "unconfirmedToast": "Refund sent, but we couldn't read the result — it may still be settling. Check Payment activity on this invoice before doing anything else, and don't retry the refund until you have.",
+        "unconfirmedToast": "Refund submitted, but we couldn't read the result — it may still be settling. Check Payment activity on this invoice before doing anything else, and don't retry the refund until you have.",
         "waivedReason": {
           "section105Receipt": "The original document was a Section 105 receipt (ใบเสร็จรับเงิน), not a Section 86/4 tax invoice, so there is no tax invoice for a Section 86/10 credit note to reference. The output VAT already filed on this sale has not been adjusted — pass this refund to the accountant at month close.",
           "invoiceVoided": "The invoice was voided, so there is no tax invoice left to credit. If this invoice had been paid and its output VAT already filed, pass this refund to the accountant at month close."

@@ -293,10 +293,13 @@ export function RefundForm({
     // refund it would pay a second one. Close, refresh (the payment timeline
     // shows what happened) and say so.
     const settleUnconfirmed = (message: string) => {
-      toast.warning(message, { duration: Infinity, closeButton: true });
       succeeded = true;
-      onClose();
-      router.refresh();
+      try {
+        toast.warning(message, { duration: Infinity, closeButton: true });
+      } finally {
+        onClose();
+        router.refresh();
+      }
     };
     try {
       let res: Response;
@@ -325,6 +328,12 @@ export function RefundForm({
           error?: { code?: string; remainingSatang?: string };
         };
         const code = body.error?.code ?? 'internal_error';
+        // A 5xx that names no refusal (our own internal_error, or no readable
+        // code: an edge timeout) may come after the refund was made.
+        if (res.status >= 500 && code === 'internal_error') {
+          settleUnconfirmed(tError('outcomeUnknown'));
+          return;
+        }
         // Money-remediation F-3 — NOT a failure. Stripe SETTLED this refund;
         // only the credit note is outstanding, and the stale-pending sweep
         // retries it automatically. The generic branch below would render it
@@ -336,8 +345,8 @@ export function RefundForm({
         // (the check:i18n route-code gate enforces it) as the fallback if this
         // special case is ever removed.
         if (code === 'f4_bridge_deferred') {
-          toast.success(t('success.deferredToast'));
           succeeded = true;
+          toast.success(t('success.deferredToast'));
           onClose();
           router.refresh();
           return;
