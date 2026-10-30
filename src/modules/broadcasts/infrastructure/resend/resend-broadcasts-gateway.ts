@@ -599,7 +599,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     if (isBlankId(broadcastId)) return { kind: 'other' };
     let res: Response;
     try {
-      res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
+      res = await fetch(`${RESEND_API_BASE_URL}/broadcasts/${encodeURIComponent(broadcastId)}`, {
         method: 'GET',
         signal: AbortSignal.timeout(DELETE_ONCE_TIMEOUT_MS),
         headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
@@ -846,7 +846,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     if (isBlankId(broadcastId)) return { kind: 'other' };
     let res: Response;
     try {
-      res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
+      res = await fetch(`${RESEND_API_BASE_URL}/broadcasts/${encodeURIComponent(broadcastId)}`, {
         method: 'DELETE',
         signal: AbortSignal.timeout(DELETE_ONCE_TIMEOUT_MS),
         headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
@@ -1035,7 +1035,6 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
  * understands — that keeps `permanent` / `retryable` meaning one thing across
  * the whole gateway, which the batch retry gate depends on.
  */
-const RESEND_API_BASE = RESEND_API_BASE_URL;
 
 interface ResendImportResponse {
   readonly id?: string;
@@ -1158,7 +1157,7 @@ async function importFetch(
 ): Promise<ResendImportResponse> {
   let res: Response;
   try {
-    res = await fetch(`${RESEND_API_BASE}${path}`, {
+    res = await fetch(`${RESEND_API_BASE_URL}${path}`, {
       ...init,
       signal: AbortSignal.timeout(IMPORT_FETCH_TIMEOUT_MS),
       headers: {

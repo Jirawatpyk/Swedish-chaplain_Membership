@@ -5,7 +5,7 @@
  * client is built) can never send the Bearer key, or a member's email, to
  * another host. The env var is set BEFORE any client module loads.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.hoisted(() => {
   process.env['RESEND_BASE_URL'] = 'https://elsewhere.invalid';
@@ -46,6 +46,11 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+// Set in `vi.hoisted` (before any client module loads), so undo it by hand:
+// a later file in the same worker must not inherit it.
+afterAll(() => {
+  delete process.env['RESEND_BASE_URL'];
 });
 
 describe('RESEND_BASE_URL cannot move any Resend client (spec 141)', () => {
