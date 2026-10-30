@@ -816,6 +816,42 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       expect(deps.txOutcomes).toEqual(['rolled_back', 'committed']);
     });
 
+    // Review round 2 (M-NEW-1) — the snapshot said `submitted`, but under the
+    // lock the row is `approved` with an id (the dispatcher approved and
+    // persisted in between). The CAS on the snapshot status cannot land, so a
+    // DELETE before it would be wasted — and the retry's DELETE would then meet
+    // a 404 for a draft THIS cascade deleted. The attempt throws the concurrent
+    // error BEFORE any Resend call; the re-read retries from `approved`.
+    it('the locked row is not at the snapshot status → no Resend call on that attempt; the retry from the status read DELETEs once → deleted', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'submitted' }],
+        lockedRowImpl: async (id) => ({ broadcastId: id, status: 'approved', resendBroadcastId: 'rb-live-1', audienceImportId: null }),
+        // The real CAS: it matches only the status the row is at.
+        applyTransitionImpl: async ({ broadcastId, expectedFrom }) => {
+          if (expectedFrom !== 'approved') {
+            throw new BroadcastConcurrentMutationError('test-tenant' as never, broadcastId as never, expectedFrom as never);
+          }
+          return { broadcastId };
+        },
+        findByIdImpl: async () => ({ status: 'approved' }),
+        deleteOutcome: 'deleted',
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 } });
+      expect(deps.broadcastsGateway.deleteBroadcastOnce).toHaveBeenCalledTimes(1);
+      expect(deps.calls).toEqual([
+        `lock:${broadcastIdA}`,
+        `read:${broadcastIdA}`,
+        ...lockA,
+        `cas:${broadcastIdA}`,
+        'evidence:count',
+      ]);
+      const [cancelled] = eventsOf(deps, 'broadcast_cancelled');
+      expect(cancelled?.[1]).toMatchObject({
+        payload: expect.objectContaining({ previousStatus: 'approved', resendOutcome: 'deleted' }),
+      });
+    });
+
     it('an EMPTY id is not an id → cancelled without any Resend call', async () => {
       const deps = makeDeps({
         inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
