@@ -73,7 +73,7 @@ describe('the E-Blast detail action row on a phone', () => {
     expect(ruleAfter(`${only} > :nth-child(2) > div > button {`)).toMatch(/flex:\s*1 1 auto;/);
   });
 
-  it('reaches the bottom edge as AURA's strip: no negative margin of its own (D-039)', () => {
+  it('reaches the bottom edge as AURA\'s strip: no negative margin of its own (D-039)', () => {
     // AURA pads the page's end by the strip's height (pinned-bar-edge-css.test.ts).
     expect(css).not.toMatch(/\.eblast-detail-actions\)\s*\{\s*margin-bottom/);
   });
