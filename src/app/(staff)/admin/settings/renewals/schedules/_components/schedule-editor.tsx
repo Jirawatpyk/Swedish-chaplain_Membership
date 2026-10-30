@@ -581,8 +581,8 @@ export function ScheduleEditor({
               {saveError}
             </Alert>
           ) : null}
-          {/* The save bar: under the steps from 640px, pinned to the bottom of
-              a phone screen (globals.css, `.schedule-actions`). */}
+          {/* The save bar: AURA's edge strip on a phone, its floating card
+              under the steps from 640px (D-039). */}
           <ActionBar
             edgeBelow="sm"
             label={t('saveBarLabel')}

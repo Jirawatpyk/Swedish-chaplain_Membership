@@ -60,6 +60,7 @@ import {
   type PlanCategory,
   type PlanSchemaInput,
 } from '@/modules/plans';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 
 const STEPS = ['basics', 'fees', 'benefits', 'review'] as const;
 type StepKey = (typeof STEPS)[number];
@@ -164,6 +165,10 @@ export function PlanFormWizard({
   onSubmit,
   onCancel,
 }: PlanFormWizardProps) {
+  // D-039 — from 640px the bar is AURA's sticky floating card: keep its
+  // measured height clear of a focused field (below 640px AURA's edge strip
+  // pads the page itself).
+  useActionBarScrollPadding(true, '.plan-form-actions');
   const t = useTranslations('admin.plans.create');
   const tLabels = useTranslations('admin.plans.create.labels');
   const tButtons = useTranslations('admin.plans.create.buttons');

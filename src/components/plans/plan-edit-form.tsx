@@ -47,6 +47,7 @@ import {
   LOCKED_FIELDS_ON_PRIOR_YEAR,
   type PlanSchemaInput,
 } from '@/modules/plans';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 
 export interface PlanEditFormProps {
   readonly initialValues: PlanSchemaInput;
@@ -72,6 +73,10 @@ export function PlanEditForm({
   onSubmit,
   onCancel,
 }: PlanEditFormProps) {
+  // D-039 — from 640px the bar is AURA's sticky floating card: keep its
+  // measured height clear of a focused field (below 640px AURA's edge strip
+  // pads the page itself).
+  useActionBarScrollPadding(true, '.plan-form-actions');
   const t = useTranslations('admin.plans.create.labels');
   const tEdit = useTranslations('admin.plans.edit');
   const tButtons = useTranslations('admin.plans.create.buttons');
@@ -272,8 +277,8 @@ export function PlanEditForm({
         )}
       />
 
-      {/* Cancel before the primary action (ux-standards § 11.1); pinned to
-          the bottom of a phone (globals.css `.plan-form-actions`). */}
+      {/* Cancel before the primary action (ux-standards § 11.1); AURA's edge
+          strip on a phone, its floating card from 640px (D-039). */}
       <ActionBar edgeBelow="sm" className="chamber-viewport-actionbar plan-form-actions">
         {onCancel ? (
           <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>

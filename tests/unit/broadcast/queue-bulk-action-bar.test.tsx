@@ -81,14 +81,15 @@ beforeAll(() => {
 });
 
 type RoCallback = (entries: ReadonlyArray<Record<string, unknown>>) => void;
-let roCb: RoCallback | undefined;
+/** Every observer's callback: AURA 5.70's ActionBar runs its own beside the hook's. */
+let roCbs: RoCallback[] = [];
 /** Observers that watched the bar: the hook's, and from AURA 5.70 the ActionBar's own. */
 let barObservers = 0;
 let barDisconnects = 0;
 
 beforeEach(() => {
   vi.useRealTimers();
-  roCb = undefined;
+  roCbs = [];
   barObservers = 0;
   barDisconnects = 0;
   routerRefresh.mockClear();
@@ -101,7 +102,7 @@ beforeEach(() => {
     class {
       private watchesBar = false;
       constructor(cb: RoCallback) {
-        roCb = cb;
+        roCbs.push(cb);
       }
       observe(el: Element) {
         if (el.classList.contains('chamber-viewport-actionbar') && !this.watchesBar) {
@@ -229,7 +230,7 @@ describe('QueueBulkActionBar — bar shell + count (AURA ActionBar)', () => {
       renderBar();
       expect(scrollPadding()).toBe('96px');
       height.current = 120;
-      act(() => roCb?.([]));
+      act(() => roCbs.forEach((cb) => cb([])));
       expect(scrollPadding()).toBe('148px');
     } finally {
       restore();

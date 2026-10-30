@@ -22,6 +22,7 @@ import { ActionBar, Button, Switch, TextField } from '@jirawatpyk/aura-react';
 import { CloneYearDialog } from '@/components/plans/clone-year-dialog';
 import { LocaleTextDisplay } from '@/components/plans/locale-text-display';
 import type { LocaleText } from '@/modules/plans';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 
 /** One row of the "plans to copy" preview (a subset of `PlanListItem`). */
 export interface CloneSourcePlan {
@@ -63,6 +64,10 @@ export function CloneYearClient({
   currencyCode,
   defaultSourcePlans,
 }: CloneYearClientProps) {
+  // D-039 — from 640px the bar is AURA's sticky floating card: keep its
+  // measured height clear of a focused field (below 640px AURA's edge strip
+  // pads the page itself).
+  useActionBarScrollPadding(true, '.plan-form-actions');
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations('admin.plans');
@@ -219,7 +224,10 @@ export function CloneYearClient({
   const countLabel = sourcePlanCount ?? '…';
 
   return (
-    <div className="space-y-[var(--aura-space-4)]">
+    // A gap, not `space-y`: on a phone the bar (the last child) is AURA's
+    // fixed edge strip, so a sibling margin would leave space under the
+    // preview at the card's end (D-039 review).
+    <div className="flex flex-col gap-[var(--aura-space-4)]">
       <p>
         {/* Visible years follow the locale (TH 2569); a half-typed value
             echoes back as typed. Inputs, the API body and URLs stay CE. */}

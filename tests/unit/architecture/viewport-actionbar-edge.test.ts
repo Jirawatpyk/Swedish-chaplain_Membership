@@ -26,9 +26,45 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-/** Comments blanked to spaces, so line numbers and offsets survive. */
-function blankComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (c) => c.replace(/[^\n]/g, ' '));
+/**
+ * Comments blanked to spaces, so line numbers and offsets survive. String
+ * aware: `//` in "https://…" and `/*` in accept="image/*" are not comments.
+ */
+export function blankComments(source: string): string {
+  let out = '';
+  let i = 0;
+  let quote: string | null = null;
+  while (i < source.length) {
+    const c = source[i]!;
+    const next = source[i + 1];
+    if (quote !== null) {
+      out += c;
+      if (c === '\\') {
+        out += next ?? '';
+        i += 2;
+        continue;
+      }
+      if (c === quote) quote = null;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      quote = c;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === '/' && (next === '/' || next === '*')) {
+      const end = next === '/' ? source.indexOf('\n', i) : source.indexOf('*/', i + 2) + 2;
+      const stop = end <= 1 ? source.length : next === '/' ? end : end;
+      out += source.slice(i, stop).replace(/[^\n]/g, ' ');
+      i = stop;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
 }
 
 const AURA_ACTIONBAR_IMPORT =
@@ -65,7 +101,8 @@ export function isHandBuiltBottomBar(line: string): boolean {
 }
 
 const REASON = /stand-in until AURA #\d+|AURA app content:|PR N2: Dialog footer/;
-const files = sourceFiles(join(ROOT, 'src')).filter((p) => !relative(ROOT, p).startsWith(join('src', 'components', 'ui')));
+const LEGACY_KIT = join('src', 'components', 'ui') + '/';
+const files = sourceFiles(join(ROOT, 'src')).filter((p) => !relative(ROOT, p).startsWith(LEGACY_KIT));
 
 const bars = files.flatMap((path) => {
   const source = readFileSync(path, 'utf8').replace(/\r/g, '');
@@ -76,9 +113,15 @@ const bars = files.flatMap((path) => {
 const handBuilt = files.flatMap((path) => {
   const raw = readFileSync(path, 'utf8').replace(/\r/g, '').split('\n');
   const code = blankComments(raw.join('\n')).split('\n');
-  return code.flatMap((line, i) =>
-    isHandBuiltBottomBar(line) ? [{ at: `${relative(ROOT, path)}:${i + 1}`, reasoned: raw.slice(Math.max(0, i - 12), i + 1).some((l) => REASON.test(l)) }] : [],
-  );
+  // Each bar needs its own reason: the window above it stops at the previous
+  // hand-built bar, so one label never covers a second bar below it.
+  let previous = -1;
+  return code.flatMap((line, i) => {
+    if (!isHandBuiltBottomBar(line)) return [];
+    const from = Math.max(0, i - 12, previous + 1);
+    previous = i;
+    return [{ at: `${relative(ROOT, path)}:${i + 1}`, reasoned: raw.slice(from, i + 1).some((l) => REASON.test(l)) }];
+  });
 });
 
 describe('D-039: bottom bars are an edge strip below 640px', () => {
@@ -98,6 +141,12 @@ describe('D-039: bottom bars are an edge strip below 640px', () => {
     expect(isHandBuiltBottomBar('className="sticky bottom-0 flex"')).toBe(true);
     expect(isHandBuiltBottomBar('className="fixed top-0 right-0"')).toBe(false);
     expect(isHandBuiltBottomBar('className="sticky top-0 bottom-4"')).toBe(false);
+  });
+
+  it('reads code past a URL or a glob in a string (positive control)', () => {
+    const code = blankComments('const a = "https://x"; const b = <i className="fixed inset-x-0 bottom-0" accept="image/*" />;');
+    expect(isHandBuiltBottomBar(code)).toBe(true);
+    expect(blankComments('a // b\nc /* d */ e')).toBe('a     \nc         e');
   });
 
   it('no hand-built bottom bar without a reason', () => {

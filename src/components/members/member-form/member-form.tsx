@@ -48,6 +48,7 @@ import { TaxBranchSection } from './sections/tax-branch-section';
 import { ContactFields } from './sections/contact-fields';
 import { SecondaryContactSection } from './sections/secondary-contact-section';
 import { FormSectionCard } from './form-section-card';
+import { useActionBarScrollPadding } from '@/hooks/use-action-bar-clearance';
 
 /** The note's leading "*" in the danger colour, as every field's asterisk
  * (hidden from screen readers, which read "fields are required"). */
@@ -89,6 +90,10 @@ export function MemberForm({
   mode = 'create',
   serverFieldError,
 }: Props) {
+  // D-039 — from 640px the bar is AURA's sticky floating card: keep its
+  // measured height clear of a focused field (below 640px AURA's edge strip
+  // pads the page itself).
+  useActionBarScrollPadding(true, '.member-form-actions');
   // Shared copy (section headers, required note, field labels) lives
   // under `admin.members.create.*` since it's identical for create +
   // edit. Only the submit button + submitting label differ per mode —
@@ -290,10 +295,10 @@ export function MemberForm({
           <p className="text-sm text-[var(--aura-fg-secondary)]">{tEdit('otherContactsNote')}</p>
         )}
 
-        {/* Cancel before the primary action (ux-standards § 11.1). Pinned to
-            the bottom of a phone, Cancel a third and the primary two thirds;
-            from 640px a plain right-aligned row at the end of the form
-            (globals.css `.member-form-actions`). */}
+        {/* Cancel before the primary action (ux-standards § 11.1). AURA's
+            edge strip on a phone, Cancel a third and the primary two thirds
+            (globals.css `.member-form-actions`); its floating card from 640px
+            (D-039). */}
         <ActionBar edgeBelow="sm" className="chamber-viewport-actionbar member-form-actions">
           {onCancel && (
             <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>

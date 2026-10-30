@@ -104,4 +104,23 @@ describe('useActionBarClearance', () => {
     const { result } = renderHook(() => useActionBarClearance(true, { current: bar }));
     expect(result.current).toBe(98);
   });
+
+  // D-039 review — crossing 640px swaps AURA's sticky card for its fixed edge
+  // strip without always resizing the bar; the 640px query re-measures, so the
+  // card's inline value never outlives it.
+  it('re-measures when the width crosses 640px (card to edge strip)', () => {
+    const listeners = new Map<string, () => void>();
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: false,
+      addEventListener: (_: string, cb: () => void) => listeners.set(query, cb),
+      removeEventListener: () => {},
+    }));
+    const bar = mountBar('my-bar', 70, '12px');
+    const { result } = renderHook(() => useActionBarClearance(true, '.my-bar'));
+    expect(result.current).toBe(98);
+    bar.style.position = 'fixed';
+    act(() => listeners.get('(min-width: 40rem)')?.());
+    expect(result.current).toBe(0);
+    vi.unstubAllGlobals();
+  });
 });

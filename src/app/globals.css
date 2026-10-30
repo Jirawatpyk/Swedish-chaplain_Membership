@@ -306,13 +306,6 @@ html:has(.chamber-shell) {
   html:has(.chamber-viewport-actionbar) {
     scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem + env(safe-area-inset-bottom, 0px));
   }
-  /* Spec 122 US12d-3 — E-Blast compose's bar stacks its count over Submit at
-     320px (~89px), so its pages keep 1rem more. The member form then sets the
-     bar's measured clearance inline on the root (PR K), so this is the value
-     before the first measure and the staff form's. */
-  html:has(.chamber-compose-actionbar) {
-    scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 6.5rem + env(safe-area-inset-bottom, 0px));
-  }
 }
 /* Spec 122 follow-up (maintainer, 22 Oct) — the members and renewal pipeline
    bulk bars keep the count and the buttons on one line when they fit. The
@@ -337,8 +330,16 @@ html:has(.chamber-shell) {
   :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div {
     padding-inline: var(--aura-space-4);
   }
+  /* The empty status cell is the bar's polite live region: hidden visually,
+     never with `display: none`, so the E-Blast detail's status is still
+     announced when it fills (D-039 review). */
   :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div > :first-child:empty {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div > :last-child {
     flex: 1 1 auto;
@@ -422,7 +423,7 @@ html:has(.chamber-shell) {
 /* Spec 122 US4 — the invoice page's sticky amount-due bar (~7rem) rides
    above the bottom nav on phones; keep a focused control clear of it.
    D-039: a bar below 640px, as every other bar (stand-in until AURA #191). */
-@media (max-width: 639.98px) and (min-height: 560.02px) {
+@media (width < 40rem) and (min-height: 560.02px) {
   html:has(.portal-pay-bar:not([hidden])) {
     scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 7.5rem);
   }

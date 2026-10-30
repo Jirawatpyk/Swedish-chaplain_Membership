@@ -207,14 +207,25 @@ describe('the phone bar', () => {
     expect(bar()).not.toHaveTextContent(c.views.blocked);
   });
 
-  // D-039 — on a phone the bar is AURA's edge strip (`edgeBelow="sm"`),
-  // which pads the page and sets the scroll padding itself; the form keeps
-  // no allowance of its own (it measured one in PR K).
+  // D-039 — the phone bar is AURA's edge strip (`edgeBelow="sm"`), which pads
+  // the page and sets the scroll padding itself; the form keeps no allowance
+  // of its own. Even with a measurable sticky bar (what PR K measured: 114px
+  // gave 130px) nothing is set inline.
   it('the phone bar is AURA\'s edge strip and the form sets no scroll padding of its own', () => {
     bp.current = 'base';
-    renderForm();
-    expect(document.querySelector('.chamber-compose-actionbar')).toHaveClass('aura-actionbar--edge-below-sm');
-    expect(document.documentElement.style.scrollPaddingBottom).toBe('');
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return { height: this.classList.contains('chamber-compose-actionbar') ? 114 : 0 } as DOMRect;
+    });
+    const sticky = document.head.appendChild(document.createElement('style'));
+    sticky.textContent = '.chamber-compose-actionbar { position: sticky; }';
+    try {
+      renderForm();
+      expect(document.querySelector('.chamber-compose-actionbar')).toHaveClass('aura-actionbar--edge-below-sm');
+      expect(document.documentElement.style.scrollPaddingBottom).toBe('');
+    } finally {
+      spy.mockRestore();
+      sticky.remove();
+    }
   });
 
   // PR K — board `Portal-broadcast-new-mobile-preview`: the phone tab shows
