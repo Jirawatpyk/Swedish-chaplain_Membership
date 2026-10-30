@@ -188,7 +188,8 @@ export type DispatchOneCycleOutcome =
   | {
       readonly kind: 'sent';
       readonly reminderEventId: string;
-      readonly deliveryId: string;
+      /** `null` on an idempotent replay (spec 141): already sent, id unknown. */
+      readonly deliveryId: string | null;
       readonly dispatchedAt: string;
     }
   | {
@@ -1361,6 +1362,9 @@ export async function dispatchEmailStep(
             // recovered within the bounded lookback (spec.md:194 FR-010).
             caught_up: catchUp.caughtUp,
             step_due_date: catchUp.stepDueDate,
+            // Spec 141: Resend refused the key as already used by a request
+            // that succeeded, so this reminder went out earlier; no id.
+            ...(gatewayResult.value.idempotentReplay === true && { idempotent_replay: true }),
           },
         },
         {
@@ -1372,6 +1376,7 @@ export async function dispatchEmailStep(
           summary: `Reminder sent to ${member.companyName} (${step.stepId})`,
         },
       );
+      if (gatewayResult.value.idempotentReplay === true) renewalsMetrics.reminderIdempotentReplay('dispatch');
       // Phase 9 / T231 — business-volume counter (FR-010 dispatcher
       // cadence dashboard). `tier_bucket` is bounded 5-value enum,
       // `offset_day` is bounded by tier-bucket schedule policy

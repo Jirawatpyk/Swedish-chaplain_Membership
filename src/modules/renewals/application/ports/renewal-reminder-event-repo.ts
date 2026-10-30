@@ -60,7 +60,8 @@ export interface ReminderEventTransitionInput {
   readonly reminderEventId: string;
   readonly nextStatus: Exclude<ReminderEventStatus, 'pending'>;
   readonly dispatchedAt?: string;
-  readonly deliveryId?: string;
+  /** `null` on an idempotent replay (spec 141): sent earlier, id unknown. */
+  readonly deliveryId?: string | null;
   readonly skipReason?: string;
   readonly failureReason?: string;
   /**
@@ -196,7 +197,7 @@ export interface RenewalReminderEventRepo {
       readonly tenantId: string;
       readonly reminderEventId: string;
       readonly dispatchedAt: string;
-      readonly deliveryId: string;
+      readonly deliveryId: string | null;
     },
   ): Promise<ReminderEvent>;
 

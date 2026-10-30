@@ -18,7 +18,7 @@ type SendResponse = {
 };
 const sendMock = vi.hoisted(() =>
   vi.fn(
-    async (_input: Record<string, unknown>): Promise<SendResponse> => ({
+    async (_input: Record<string, unknown>, _options?: { idempotencyKey?: string }): Promise<SendResponse> => ({
       data: { id: 'mock-resend-id-1' },
       error: null,
     }),
@@ -68,6 +68,7 @@ vi.mock('@/lib/env', () => ({
       apiKey: 'test-resend-key',
       fromEmail: 'SweCham <test@swecham.example>',
     },
+    app: { baseUrl: 'https://swecham.example' },
     log: { level: 'silent' },
     isProduction: false,
     isDevelopment: false,

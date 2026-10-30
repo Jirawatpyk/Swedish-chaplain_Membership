@@ -1105,6 +1105,13 @@ export interface F8AuditPayloadShapes {
     readonly step_due_date?: string;
     /** True when (re-)emitted by the retry-failed-reminders path. */
     readonly via_retry?: boolean;
+    /**
+     * Spec 141: true when Resend answered 409 `invalid_idempotent_request` —
+     * the key was already used by a request that succeeded, so the reminder
+     * went out earlier. `delivery_id` is then null (Resend does not return
+     * the original id), and delivery webhooks cannot attach to this row.
+     */
+    readonly idempotent_replay?: true;
   };
   /**
    * Discriminated union — `renewal_reminder_send_failed_permanent`

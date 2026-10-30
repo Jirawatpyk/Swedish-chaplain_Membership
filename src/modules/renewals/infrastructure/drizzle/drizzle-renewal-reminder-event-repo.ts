@@ -194,7 +194,7 @@ export function makeDrizzleRenewalReminderEventRepo(
         readonly tenantId: string;
         readonly reminderEventId: string;
         readonly dispatchedAt: string;
-        readonly deliveryId: string;
+        readonly deliveryId: string | null;
       },
     ): Promise<ReminderEvent> {
       const txDb = tx as unknown as typeof db;

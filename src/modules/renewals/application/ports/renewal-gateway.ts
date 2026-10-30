@@ -55,12 +55,29 @@ export interface SendRenewalEmailInput {
   readonly replyToDisplayName?: string;
 }
 
-export interface SendRenewalEmailResult {
-  /** Resend message id (non-null on success). */
-  readonly deliveryId: string;
-  /** Server-side dispatched-at ISO timestamp. */
-  readonly dispatchedAt: string;
-}
+/**
+ * Spec 141 (the maintainer's option A, 30 Oct 2026): a send either delivered
+ * now (`deliveryId` is Resend's message id), or Resend answered 409
+ * `invalid_idempotent_request` — this idempotency key was already used by an
+ * earlier request that SUCCEEDED (MEASURED: a rejected request does not consume
+ * a key), so the reminder already went out and must not be sent again. A
+ * replay carries no delivery id (Resend does not return the original), and its
+ * `dispatchedAt` is the replay time, not the original send time.
+ */
+export type SendRenewalEmailResult =
+  | {
+      /** Resend message id. */
+      readonly deliveryId: string;
+      /** Server-side dispatched-at ISO timestamp. */
+      readonly dispatchedAt: string;
+      readonly idempotentReplay?: false;
+    }
+  | {
+      readonly deliveryId: null;
+      /** The replay time — the original send time is unknown. */
+      readonly dispatchedAt: string;
+      readonly idempotentReplay: true;
+    };
 
 export type SendRenewalEmailError =
   | { readonly kind: 'recipient_unsubscribed' }

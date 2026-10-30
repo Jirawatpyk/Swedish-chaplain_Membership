@@ -36,6 +36,7 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
+import { renewalsMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
 import { buildRenewalCtaUrl } from './_lib/build-renewal-redeem-link-url';
 // BUG-2 — retry pass must re-apply the FR-033 outreach-pause gate (Gate 10)
@@ -374,6 +375,9 @@ async function attemptRetry(
             delivery_id: gatewayResult.value.deliveryId,
             recipient_locale: locale,
             via_retry: true,
+            // Spec 141: Resend refused the key as already used by a request
+            // that succeeded — an earlier attempt delivered; no id.
+            ...(gatewayResult.value.idempotentReplay === true && { idempotent_replay: true }),
           },
         },
         {
@@ -384,6 +388,7 @@ async function attemptRetry(
           requestId,
         },
       );
+      if (gatewayResult.value.idempotentReplay === true) renewalsMetrics.reminderIdempotentReplay('retry');
       // No need to call markRetryExhausted: the
       // `transitionFailedToSent` already cleared retry_until + flipped
       // status to 'sent', so the row no longer matches the

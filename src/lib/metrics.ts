@@ -3938,6 +3938,23 @@ export const renewalsMetrics = {
   },
 
   /**
+   * `renewals_reminder_idempotent_replay_total` — spec 141: Resend answered
+   * 409 `invalid_idempotent_request`, so a reminder was recorded as already
+   * sent (no delivery id). Expected to be rare (a retry after an attempt that
+   * timed out on our side but succeeded at Resend); a steady rate means
+   * something upstream is resending under used keys. `path` is
+   * `dispatch` | `retry` (bounded).
+   */
+  reminderIdempotentReplay(path: 'dispatch' | 'retry'): void {
+    safeMetric(() => {
+      counter(
+        'renewals_reminder_idempotent_replay_total',
+        'A renewal reminder recorded as already sent after a Resend idempotency 409',
+      ).add(1, { path });
+    });
+  },
+
+  /**
    * `renewals_redis_fallback_total` — K14-5 (R13-S2): Upstash outage on
    * the cron-401 rate-limit path. K13-1 fail-open semantics route the
    * request through to audit-emit + 401 (correct), but Vercel alert
