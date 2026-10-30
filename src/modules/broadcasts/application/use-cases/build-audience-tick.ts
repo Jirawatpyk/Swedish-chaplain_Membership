@@ -687,7 +687,7 @@ async function probeInheritedBroadcast(
  *   row every terminal failure writes, and the standing refusal under submit's
  *   own event types (`surface: 'dispatch'`), so "why was this member's E-Blast
  *   refused" stays one query across every surface.
- * - `refuse_erased` (spec 139 — the member is erased or gone) — PERMANENT too,
+ * - `refuse_erased` (spec 139 — the member is erased; a missing requester is undecided, P4) — PERMANENT too,
  *   but only once the row's never-handed draft is confirmed deleted at Resend
  *   (P2, `deleteErasedDraftBeforeRefusal`; otherwise nothing is decided). ONE
  *   audit row (`broadcast_failed_to_dispatch` with `standing: 'erased'`), no

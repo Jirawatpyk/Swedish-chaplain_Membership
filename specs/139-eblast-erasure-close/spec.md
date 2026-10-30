@@ -1,7 +1,7 @@
 # 139 — An erased member's E-Blast never goes out, and the Resend disclosure is audited
 
 **Size**: L (`docs/workflow.md` § Sizes: PII / GDPR erasure, a cross-module read members → broadcasts, a migration in slice 2).
-**Status**: planned. Plan agreed by the maintainer on 30 Oct 2026.
+**Status**: slice 1 built and reviewed in three rounds (PR #698); slice 2 not started. Plan agreed by the maintainer on 30 Oct 2026.
 **Source**: spec 138 § "Moved out: erasure" and D-038. `FEATURE_F7_IMPORT_AUDIENCE` may be set only after slice 1 of this spec (and spec 140) have merged.
 
 ## Why
@@ -39,7 +39,7 @@ As the chamber, when a member is erased under GDPR Art. 17 / PDPA § 33, none of
   - Erasure is checked before the halt list.
   - A failed erasure read fails closed: the gate is undecided and nothing is sent.
   - The member gets no notification email (skipped explicitly).
-  - If the row still carries an id that was never handed over, the gate first deletes that draft at Resend. It refuses only once the draft is `deleted` or `absent`; otherwise it is undecided. A cascade that failed therefore never leaves this row's pre-scrub draft behind. A draft no gate reaches (an E-Blast already terminal, or a reclaim that failed) can stay at Resend unsent: residual 8d.
+  - If the row still carries an id that was never handed over, the gate first deletes that draft at Resend. It refuses only once the draft is `deleted` or `absent`, or the DELETE answers 403 and the leg's own probe read `cancelled` (a cancelled broadcast can never be sent); otherwise it is undecided. A cascade that failed therefore never leaves this row's pre-scrub draft behind. A draft no gate reaches (an E-Blast already terminal, or a reclaim that failed) can stay at Resend unsent: residual 8d.
   - A requester who is **not found** is not refused at dispatch (review round 2, maintainer 30 Oct 2026): erasure never deletes a member row, so a missing one is not evidence of an erasure. On both legs the gate is undecided: nothing is sent, the draft is not deleted, the row stays `approved`, and a warn line `broadcasts.dispatch.requester_not_found` (ids only) is written. Submit, approve and confirm-schedule still refuse a missing member. `broadcasts.requested_by_member_id` has no FK to `members`, so such a row stays approved and unsent until it is cancelled by hand (runbook `member-erasure.md`).
 - **DE2.** On erasure, an `approved` row that carries `resendBroadcastId` is handled, not skipped. Every decision on the row is made under the row lock that did the DELETE (review round 1): a cancel decided later, on a status-only CAS, could follow an import tick that re-minted from pre-scrub content. Under the lock the cascade calls `DELETE /broadcasts/{id}` once and, after a 404 or 403, `GET /broadcasts/{id}` once — each with no retry backoff and a 10 s hard timeout; after a 404 it first waits 3 s (`REPROBE_PAUSE_MS`, the import leg's pause before its second not-found), so the lock is held for about 23 s at most (review round 2). A row locked at a status other than the one listed gets no Resend call on that attempt; the cascade re-reads and retries from the status it finds (review round 2):
   - **200:** the row is cancelled in the same transaction; `broadcast_cancelled` carries `resendOutcome: 'deleted'`.
@@ -57,13 +57,13 @@ As the chamber, when a member is erased under GDPR Art. 17 / PDPA § 33, none of
 - **DE3b.** A tick that loses the race to the cancel logs a concurrent skip at info level, not `server_error`, on both legs.
 - **DE4.** Archive and bulk archive are unchanged: a dispatch-begun row is still skipped, and nothing is deleted at Resend. Only erasure selects the new handling, through an explicit cascade input.
 - **DE5.** Docs:
-  - erasure runbook step 3b is retired;
+  - erasure runbook step 3b no longer asks for a manual Resend action (it now finds residual 8c from evidence and state);
   - RoPA residual 8b is closed for sends (not for every Resend copy), the accepted residual 8c is added, and the open residual 8d records the unsent drafts no gate reaches;
   - runbook step 4 reads `broadcasts_already_sent_count`, and the runbook states that archive never stands in for an erasure;
   - go-live § 6.10's 139 box is ticked;
   - `operational-state.md` is updated;
   - the changelog has an entry;
-  - D-040 records the row lock held across one Resend call.
+  - D-040 records the row lock held across at most two bounded Resend calls plus the 3 s pause after a 404 (≈ 23 s).
 - **DE6.** Cross-tenant: the new bridge read never returns another tenant's member.
 
 ### US2 — Every disclosure of a recipient list to Resend, and every audience delete, has an Art. 30 record (slice 2; does not gate the flip)

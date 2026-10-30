@@ -1139,7 +1139,7 @@ export interface FakeSendStandingOpts {
   /**
    * Spec 139 — the erasure read (`getMemberErasedAt`), made BEFORE the halt
    * read. `true` = the member is erased; `not_found` = no such member in the
-   * tenant (refused like an erasure, P4); `throws` = the read failed. Default:
+   * tenant (undecided at dispatch, refused at submit / approve / confirm, P4); `throws` = the read failed. Default:
    * a live member.
    */
   readonly erased?: boolean | 'not_found' | 'throws';

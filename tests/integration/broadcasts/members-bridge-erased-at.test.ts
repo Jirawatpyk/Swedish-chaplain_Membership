@@ -9,9 +9,9 @@
  *
  *   - each tenant reads its OWN member truthfully (A's `erased_at`, B's null);
  *   - a read of the OTHER tenant's member id, from either side, answers `null`
- *     ("no such member here"), never that member's erasure state. The gate
- *     refuses a `null` like an erasure (P4), so a cross-tenant id can never
- *     unlock a send either.
+ *     ("no such member here"), never that member's erasure state. A `null`
+ *     is undecided at dispatch and refused at submit / approve / confirm
+ *     (P4), so a cross-tenant id can never unlock a send either.
  */
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

@@ -973,7 +973,7 @@ const IMPORT_FETCH_TIMEOUT_MS = 30_000;
 /**
  * Spec 139 P1 — the erasure cascade holds the broadcast row's lock across the
  * DELETE and (after a 404 or 403) the GET, so each is bounded far tighter than
- * an import: 10 s against a measured round trip of ~0.5 s, ≈ 20 s at most.
+ * an import: 10 s against a measured round trip of ~0.5 s, ≈ 23 s at most with the 3 s pause after a 404 (D-040).
  */
 const DELETE_ONCE_TIMEOUT_MS = 10_000;
 

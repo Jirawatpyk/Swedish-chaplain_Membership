@@ -204,7 +204,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   - Spec 140 owns import-leg tick concurrency with a dispatch lease, which needs a migration. This supersedes D-037's "lease rejected".
   - `FEATURE_F7_IMPORT_AUDIENCE` may be set only after 139 (erasure) and 140 have merged and no legacy row is in flight (`docs/go-live-readiness.md` § 6.10).
   - Also decided on 29 Oct: a `not_found` inherited id is re-probed once after 3 s, before any decision. The alternative was legacy parity: send to the dead id and let the send fail.
-- *Consequence*: go-live § 6.10 and `docs/operational-state.md` list the three preconditions. The spec 139 and spec 140 directories do not exist yet; each starts with feature-flow step 1 when the maintainer asks.
+- *Consequence*: go-live § 6.10 and `docs/operational-state.md` list the three preconditions. (Later: spec 139 opened 30 Oct 2026; spec 140 also retires the legacy leg — a decision to be recorded with 140.)
 
 **D-039 — Bottom bars: an edge strip below 640px, a floating card from 640px, on every bar** (2026-10-29)
 - *Context*: the app had two kinds of bottom bar, and both were half hand-built. Five form bars (member, plan, schedule, template, E-Blast detail) were made into edge strips on phones by app CSS (negative margins, `bottom: 0`, `width: auto`) and into a plain static row from 640px. The bulk, save and compose bars stayed AURA's floating card at every width. The portal pay bar was a hand-built `<section>` fixed below 768px. AURA #185 (5.69.0) added `ActionBar edgeBelow`.

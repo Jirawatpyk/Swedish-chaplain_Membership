@@ -819,7 +819,7 @@ export async function dispatchScheduledBroadcast(
       return err({ kind: 'broadcast_failed_to_dispatch', reason });
     }
     if (standing.kind === 'refuse_erased') {
-      // Spec 139 — the member is erased (or gone). P2: a draft the row still
+      // Spec 139 — the member is erased (a missing requester is undecided, P4). P2: a draft the row still
       // carries (the probe above said it was never handed to `/send`) is
       // deleted at Resend FIRST, so this row's pre-scrub draft does not
       // outlive the refusal (other copies: RoPA residual 8d);

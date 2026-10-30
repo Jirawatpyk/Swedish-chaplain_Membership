@@ -216,7 +216,7 @@ e2e: none (cron and erasure server paths only; no UI).
 | DE2 200 arm | S1: a real Resend draft (`draft`) on an `approved` row. Erase → `200 cascadesComplete:true`; GET the draft → **404**; the row is `cancelled`; `broadcast_cancelled` has `resendOutcome:"deleted"`; `member_erased` has `broadcasts_already_sent_count:0`; log `dispatch_begun_delete outcome:"deleted"`. |
 | DE2 403 arm (8c) | S3: the row's id is a broadcast Resend had already `sent` to the sink. Erase → 200; the row stays `approved`; `broadcast_concurrent_action_blocked` has `{dispatchBegun:true, resendOutcome:"already_sent", observedResendStatus:"sent"}`; `member_erased` has `broadcasts_already_sent_count:1`; log `outcome:"forbidden"`, then the WARN `dispatch_begun_already_sent` (probed after the lock). Made due afterwards, the cron caught it up to `sending` with `broadcast_send_started` (the mail was really out). |
 | DE1 + P2 | S2: an erased member and a due row with a real draft. Cron `processed:2, permanent_failed:2`; the draft → **404**; the row is `failed_to_dispatch` / `member_not_in_good_standing`; audit `broadcast_failed_to_dispatch {standing:"erased", resendDraftOutcome:"deleted"}`; no "membership suspended" row. |
-| DE1, no id | P4: an erased member with no Resend id → `failed_to_dispatch`, `resendDraftOutcome:"none"`, no Resend call. A second cron tick → `processed:0`. |
+| DE1, no id | Erased member (seeded `erased_at`), row with no Resend id → `failed_to_dispatch`, `resendDraftOutcome:"none"`, no Resend call. A second cron tick → `processed:0`. |
 | Probes | Wrong cron secret → `401`. Erase as a plain admin → `403 forbidden` (`members.erasure` is super-admin only), nothing written. `identityVerified:false` → `400 invalid_body`. |
 | DE3 / DE3b | Not reachable live (the race needs a parked `/send`). Pinned by `tests/integration/broadcasts/erasure-vs-dispatch-begun.test.ts` 3/3 (live Neon; legacy, import tick 2, the import re-mint window). |
 | DE4 | `cancel-in-flight-broadcasts-for-member.test.ts`: the default-mode D1 cases (archive), no DELETE. |
@@ -326,7 +326,7 @@ No new cascade decision cell: M-NEW-1 is a pre-Resend guard; the pause adds a wa
 - **Slice 1 is live on merge for the legacy leg:** erasure now deletes and cancels a dispatch-begun draft.
   - No flag, because this is a privacy fix.
   - Rollback is a revert commit.
-  - Once it has merged, step 3b is retired from the runbook.
+  - Once it has merged, runbook step 3b needs no manual Resend action.
 - **Slice 2:** migration 0322 runs on deploy (`vercel-build`); the rows start on merge. Rollback is a revert commit; the enum values stay.
 
 ## Risks
@@ -337,3 +337,32 @@ No new cascade decision cell: M-NEW-1 is a pre-Resend guard; the pause adds a wa
 | An orphan requester's row (no FK) stays `approved` and unsent for ever (P4, review round 2) | WARN `broadcasts.dispatch.requester_not_found` every tick; `broadcasts.dispatch_resolve_failed.total{phase="standing"}` alarms; runbook `member-erasure.md` § "A requester who no longer exists" |
 | A Resend outage during erasure | `cascade_partial_failure` → `member_erased` is withheld → the `reconcile-erasures` cron and its gauge |
 | A 403 race: mail already sent | the `broadcast_concurrent_action_blocked` row with `resendOutcome: 'already_sent'`, quoted in the DSR answer |
+
+### Review round 3 (30 Oct 2026, on `1f95171bf`)
+
+| Reviewer | Verdict |
+|---|---|
+| `reliability-guardian` | PASS WITH CONDITIONS. M-NEW-1 and LOW-1 closed; LOW-2 accepted; the shared re-read keeps every caller's semantics |
+| `/code-review high` | 9 findings, none a send of an erased member's content |
+| `senior-tester` | NOT SHIP-READY on one item: the pinned coverage of `_dispatch-standing-gate.ts` (fixed below) |
+| `spec-compliance-auditor` | DE1–4 and DE6 MET; DE5 PARTIAL on wording (fixed below) |
+
+| Finding | Disposition |
+|---|---|
+| senior-tester CRITICAL — `recordRequesterNotFound` only reached by an integration test (pinned 100%) | `0a4f0a896`: P4 unit cases on both legs |
+| senior-tester HIGH — the 10 s timeout not pinned | `0a4f0a896`: `AbortSignal.timeout(10_000)` asserted on both once-methods |
+| senior-tester HIGH — the lost-race evidence write failure untested | `0a4f0a896` |
+| senior-tester MEDIUM — the re-read helper had no unit test of its own | `0a4f0a896`: `reread-after-lost-race.test.ts`, 8 arms |
+| senior-tester MEDIUM — the import leg's erased-draft retryable DELETE has no unit pair (the legacy leg has one) | listed; the arm is shared code (`deleteErasedDraftBeforeRefusal`), unit-tested in the gate tests |
+| senior-tester MEDIUM — DE6 does not tell RLS from the tenant predicate | listed (existing read); the two-layer pair is proved for the new evidence read |
+| **reliability MEDIUM / code-review #2 — new cell, import leg: a broadcast an operator cancels in the Resend dashboard now reads `cancelled`, so the import leg re-mints and sends** | **Deferred to spec 140** (maintainer: 140 rewrites the import leg's table and makes it the only leg). The leg is dark and prod has 0 broadcasts. Not measured: whether cancelling a partially delivered broadcast also reads `canceled`. On the LIVE legacy leg a canceled inherited id now ends `failed_to_dispatch` with the member's failure email (changelog). |
+| code-review #1 / #4 — `broadcasts_already_sent_count` misses (a) a first-pass evidence write that failed before the row reached `sending`, (b) a row already `sending` when the cascade listed rows | Accepted, documented: runbook step 4 runs the STATE query on every erasure regardless of the count (pdpa M-2), and RoPA 8c says such a row is found from state only. Deriving the count from state too is a spec 140 candidate |
+| code-review #3 — the reconciler always starts from the oldest stuck erasures, so slow ones can starve newer ones | Listed for spec 140 (a rotating order); a starved erasure shows as half-run, then OVERDUE, on the erasure-log card (runbook step 4) |
+| code-review #5 — `missing?: true` on the erased kind instead of its own kind | Listed (Low) |
+| code-review #6 — an erased member's submit says "membership suspended" | Accepted in round 1 (pdpa L-2, RoPA 8b) |
+| code-review #7–#9 — duplicated once-fetch setup, `countUnexpected` used at some sites only, one erasure read per row per tick | Listed (Low); spec 140's consolidation |
+| reliability LOW — the detail page logs `dispatch_hold_read_failed` on an orphan row and shows staff nothing | Listed (Low) |
+| reliability LOW — no wait-time field on the locking re-read | Listed (Low) |
+| reliability LOW — `reconcileUnresolvedStatus` label `cancelled` instead of `unknown` | No change needed: `cancelled` is already a documented `observed_status` value, and the alarm fires on any label (`docs/observability.md:1332`, `:1382`) |
+| auditor DE5 wording (spec Status, DE1 403+cancelled arm, step 3b, D-040 bound, the P4 Evidence label, changelog "closed for sends", the gateway comment, two stale comments, D-038's "directories do not exist") | Fixed in the docs commit after `0a4f0a896` |
+| auditor — the PR body was two rounds stale | Rewritten |
