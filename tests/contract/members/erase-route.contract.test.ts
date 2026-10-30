@@ -123,6 +123,13 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
     });
   });
 
+  it('spec 139 — declares a 300 s function budget, the same as the reconcile-erasures cron', async () => {
+    // The erasure cascade holds a broadcast row lock across up to two bounded
+    // Resend calls per row (≈ 20 s), so the platform default is not enough.
+    const route = await import('@/app/api/members/[memberId]/erase/route');
+    expect((route as { maxDuration?: number }).maxDuration).toBe(300);
+  });
+
   async function invoke(
     body: unknown,
     headers?: Record<string, string>,

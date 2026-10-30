@@ -51,6 +51,7 @@ function partialBridge(
     lookupContactEmailInTenant: notUsed as unknown as MembersBridgePort['lookupContactEmailInTenant'],
     lookupMemberPrimaryContactEmailInTenant:
       notUsed as unknown as MembersBridgePort['lookupMemberPrimaryContactEmailInTenant'],
+    getMemberErasedAt: notUsed as unknown as MembersBridgePort['getMemberErasedAt'],
     getMembersHaltedInTenant: notUsed as unknown as MembersBridgePort['getMembersHaltedInTenant'],
     setMemberHalt: notUsed as unknown as MembersBridgePort['setMemberHalt'],
     markBroadcastsAcknowledged,

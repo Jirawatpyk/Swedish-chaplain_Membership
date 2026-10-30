@@ -47,6 +47,13 @@ import {
 import type { MemberId } from '@/modules/members';
 import { buildEraseMemberDeps } from '@/modules/members/members-deps';
 
+/**
+ * Spec 139 — the same budget as the `reconcile-erasures` cron that re-drives
+ * this use case: the broadcasts cascade holds each dispatch-begun row's lock
+ * across up to two bounded Resend calls (≈ 20 s per row).
+ */
+export const maxDuration = 300;
+
 const paramsSchema = z.object({ memberId: z.string().uuid() });
 
 // Route-boundary schema — STRICTER than the core eraseMemberSchema: the Art.12

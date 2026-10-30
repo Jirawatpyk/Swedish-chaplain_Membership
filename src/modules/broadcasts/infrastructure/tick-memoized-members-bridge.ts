@@ -33,6 +33,10 @@
  * The staleness this admits is one tick (≤ 5 min) — the same bound the member
  * and contact caches already accept.
  *
+ * Spec 139 — `getMemberErasedAt` is deliberately NOT memoised (the spread
+ * forwards it): an erasure that commits mid-tick must stop the next row of the
+ * same tick, and a cached "not erased" would let it send.
+ *
  * Every other method is a pure pass-through (the spread forwards them) so we
  * don't accidentally cache mutating calls (`setMemberHalt`,
  * `markBroadcastsAcknowledged`) or per-member lookups whose freshness matters

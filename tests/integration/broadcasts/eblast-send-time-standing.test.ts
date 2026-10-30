@@ -31,8 +31,9 @@
  */
 import { and, eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { runInTenant } from '@/lib/db';
+import { logger } from '@/lib/logger';
 import { ok } from '@/lib/result';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
 import { makeConfirmScheduleDeps } from '@/lib/broadcast-approval-deps';
@@ -88,10 +89,12 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
 
   /**
    * A member who is `terminated` (a lapsed latest cycle), `suspended` (an
-   * `awaiting_payment` latest cycle: F8 access `suspended`) or `halted` (the
-   * F7 halt flag).
+   * `awaiting_payment` latest cycle: F8 access `suspended`), `halted` (the
+   * F7 halt flag) or `erased` (spec 139: `erased_at` set, no cycle — so F8
+   * access answers `full` and the halt list, which filters erased members,
+   * does not name them: only the erasure read refuses).
    */
-  async function seedMember(standing: 'terminated' | 'halted' | 'suspended'): Promise<string> {
+  async function seedMember(standing: 'terminated' | 'halted' | 'suspended' | 'erased'): Promise<string> {
     const memberId = randomUUID();
     await runInTenant(tenant.ctx, async (tx) => {
       await tx.insert(members).values({
@@ -103,6 +106,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
         planId,
         planYear: 2026,
         broadcastsHaltedUntilAdminReview: standing === 'halted',
+        ...(standing === 'erased' ? { erasedAt: new Date(Date.now() - 3_600_000) } : {}),
       });
       if (standing === 'suspended') {
         const periodTo = new Date('2027-01-01T00:00:00Z');
@@ -600,5 +604,363 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
       500,
     );
     expect(candidates).toContainEqual({ broadcastId: row.broadcastId, resendAudienceId: audienceId });
+  });
+
+  // ---- Spec 139 DE1 — an ERASED member's E-Blast is refused at send time ----
+  //
+  // The erased member below has no renewal cycle, so F8 access answers `full`,
+  // and the halt list filters erased members out — before 139 both reads said
+  // "send", and the pre-scrub Resend draft went out. The refusal is terminal,
+  // `/send` is never called, the only audit row is `broadcast_failed_to_dispatch`
+  // with `standing: 'erased'` (P3: no "membership suspended" row, and no member
+  // email — so not even the `…_notif_skipped_no_email` row), and a draft the
+  // row still carries is DELETED at Resend first (P2): refused only once the
+  // DELETE answers `deleted` / `absent`, else nothing is decided.
+
+  /** The one row an erased refusal writes, and its payload. */
+  async function expectErasedRefusalAudit(id: string): Promise<void> {
+    const audits = await dispatchAudits(id);
+    expect(audits.map((a) => a.eventType)).toEqual(['broadcast_failed_to_dispatch']);
+    expect(audits[0]!.payload).toMatchObject({ reason: 'member_not_in_good_standing', standing: 'erased' });
+  }
+
+  it('legacy dispatch for an ERASED member (no Resend id yet) → failed_to_dispatch (member_not_in_good_standing), the slot freed, no Resend call, one audit row with standing erased', async () => {
+    const memberId = await seedMember('erased');
+    const row = approvedRow(memberId);
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = recordingGateway();
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+
+    const r = await dispatchScheduledBroadcast(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason: 'member_not_in_good_standing' } });
+    const after = await readRow(row.broadcastId!);
+    expect(after.status).toBe('failed_to_dispatch');
+    expect(after.failureReason).toBe('member_not_in_good_standing');
+    expect(await reserved(memberId)).toBe(0);
+    expect(gw.calls).toEqual([]);
+    await expectErasedRefusalAudit(row.broadcastId!);
+  });
+
+  it('legacy dispatch for an ERASED member whose row carries a never-sent draft → the draft is DELETED first, then refused (P2)', async () => {
+    const memberId = await seedMember('erased');
+    const resendBroadcastId = `rb-erased-${randomUUID()}`;
+    const row = approvedRow(memberId, { resendAudienceId: `aud-erased-${randomUUID()}`, resendBroadcastId });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'deleted' },
+    });
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+
+    const r = await dispatchScheduledBroadcast(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason: 'member_not_in_good_standing' } });
+    expect(gw.calls).toEqual([
+      { method: 'retrieveBroadcast', args: [resendBroadcastId] },
+      { method: 'deleteBroadcastOnce', args: [resendBroadcastId] },
+    ]);
+    expect((await readRow(row.broadcastId!)).status).toBe('failed_to_dispatch');
+    await expectErasedRefusalAudit(row.broadcastId!);
+  });
+
+  it('legacy dispatch for an ERASED member whose draft DELETE fails retryably → undecided: nothing sent, the row stays approved, nothing written', async () => {
+    const memberId = await seedMember('erased');
+    const resendBroadcastId = `rb-erased-${randomUUID()}`;
+    const row = approvedRow(memberId, { resendAudienceId: `aud-erased-${randomUUID()}`, resendBroadcastId });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const before = await readRow(row.broadcastId!);
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'retryable' },
+    });
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+
+    const r = await dispatchScheduledBroadcast(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({
+      ok: false,
+      error: { kind: 'dispatch.server_error', message: 'member_erased_draft_not_deleted', errClass: 'retryable', phase: 'standing' },
+    });
+    expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
+    expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(await reserved(memberId)).toBe(1);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  it('import leg, tick 1, an ERASED member → failed_to_dispatch (member_not_in_good_standing), no Resend call, one audit row with standing erased', async () => {
+    const memberId = await seedMember('erased');
+    const row = approvedRow(memberId);
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = recordingGateway();
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r.ok ? r.value : r.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_not_in_good_standing' });
+    const after = await readRow(row.broadcastId!);
+    expect(after.status).toBe('failed_to_dispatch');
+    expect(after.failureReason).toBe('member_not_in_good_standing');
+    expect(await reserved(memberId)).toBe(0);
+    expect(gw.calls).toEqual([]);
+    await expectErasedRefusalAudit(row.broadcastId!);
+  });
+
+  it('import leg, tick 2, an ERASED member whose row carries a never-sent draft → the draft is DELETED first, then refused; the tick-1 audience is a cleanup candidate (P2)', async () => {
+    const memberId = await seedMember('erased');
+    const audienceId = `aud-erased-${randomUUID()}`;
+    const resendBroadcastId = `rb-erased-${randomUUID()}`;
+    const row = approvedRow(memberId, {
+      resendAudienceId: audienceId,
+      resendBroadcastId,
+      audienceImportId: `imp-erased-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'deleted' },
+    });
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r.ok ? r.value : r.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_not_in_good_standing' });
+    expect(gw.calls).toEqual([
+      { method: 'retrieveBroadcast', args: [resendBroadcastId] },
+      { method: 'deleteBroadcastOnce', args: [resendBroadcastId] },
+    ]);
+    const after = await readRow(row.broadcastId!);
+    expect(after.status).toBe('failed_to_dispatch');
+    expect(after.resendAudienceId).toBe(audienceId);
+    await expectErasedRefusalAudit(row.broadcastId!);
+    const candidates = await makeDrizzleBroadcastsRepo(tenant.ctx.slug).listTerminalBroadcastsWithLiveAudience(
+      tenant.ctx.slug,
+      new Date(Date.now() + 3_600_000),
+      500,
+    );
+    expect(candidates).toContainEqual({ broadcastId: row.broadcastId, resendAudienceId: audienceId });
+  });
+
+  it('import leg, an ERASED member whose inherited id the probe calls cancelled → a 403 on the DELETE is not a stall: a cancelled broadcast can never be sent, so it is refused', async () => {
+    const memberId = await seedMember('erased');
+    const resendBroadcastId = `rb-erased-${randomUUID()}`;
+    const row = approvedRow(memberId, {
+      resendAudienceId: `aud-erased-${randomUUID()}`,
+      resendBroadcastId,
+      audienceImportId: `imp-erased-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'cancelled', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'forbidden' },
+    });
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r.ok ? r.value : r.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_not_in_good_standing' });
+    expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
+    expect((await readRow(row.broadcastId!)).status).toBe('failed_to_dispatch');
+  });
+  /**
+   * Review round 1 CR#4 — the erased refusal's terminal write loses its CAS
+   * because the erasure cascade cancelled the row in between (here: while the
+   * leg was deleting the draft). That is a concurrent skip at info level, not
+   * `cleanup_failed` / a server error, on both legs.
+   */
+  function cancelledDuringDelete(answers: Partial<Record<keyof BroadcastsGatewayPort, unknown>>, broadcastId: string) {
+    const inner = allowingGateway(answers);
+    const port = new Proxy(inner.port, {
+      get: (target, prop, receiver) =>
+        prop === 'deleteBroadcastOnce'
+          ? async (id: string) => {
+              const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+              await repo.withTx((tx) =>
+                repo.applyTransition(
+                  tx,
+                  tenant.ctx.slug,
+                  asBroadcastId(broadcastId),
+                  'cancelled',
+                  { cancelledAt: new Date(), cancelledByUserId: null, cancellationReason: 'gdpr_erasure_request' },
+                  'approved',
+                ),
+              );
+              return (Reflect.get(target, prop, receiver) as (rid: string) => Promise<unknown>)(id);
+            }
+          : Reflect.get(target, prop, receiver),
+    }) as BroadcastsGatewayPort;
+    return { calls: inner.calls, port };
+  }
+
+  const cleanupFailedLogged = (spy: ReturnType<typeof vi.spyOn>) =>
+    spy.mock.calls.some((c) => typeof c[1] === 'string' && c[1].endsWith('.cleanup_failed'));
+
+  it('CR#4 legacy: the erased refusal loses its CAS to the cascade cancel → a concurrent skip, no cleanup_failed, nothing written', async () => {
+    const memberId = await seedMember('erased');
+    const resendBroadcastId = `rb-erased-${randomUUID()}`;
+    const row = approvedRow(memberId, { resendAudienceId: `aud-erased-${randomUUID()}`, resendBroadcastId });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = cancelledDuringDelete(
+      {
+        retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+        deleteBroadcastOnce: { kind: 'deleted' },
+      },
+      row.broadcastId!,
+    );
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+    const errorSpy = vi.spyOn(logger, 'error');
+    try {
+      const r = await dispatchScheduledBroadcast(
+        { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+        { broadcastId: asBroadcastId(row.broadcastId!) },
+      );
+
+      expect(r).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+      expect(cleanupFailedLogged(errorSpy)).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
+    }
+    expect((await readRow(row.broadcastId!)).status).toBe('cancelled');
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  it('CR#4 import: the erased refusal loses its CAS to the cascade cancel → a concurrent skip, no cleanup_failed, nothing written', async () => {
+    const memberId = await seedMember('erased');
+    const resendBroadcastId = `rb-erased-${randomUUID()}`;
+    const row = approvedRow(memberId, {
+      resendAudienceId: `aud-erased-${randomUUID()}`,
+      resendBroadcastId,
+      audienceImportId: `imp-erased-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = cancelledDuringDelete(
+      {
+        retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+        deleteBroadcastOnce: { kind: 'deleted' },
+      },
+      row.broadcastId!,
+    );
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+    const errorSpy = vi.spyOn(logger, 'error');
+    try {
+      const r = await buildAudienceTick(
+        { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+        { broadcastId: asBroadcastId(row.broadcastId!) },
+      );
+
+      expect(r).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+      expect(cleanupFailedLogged(errorSpy)).toBe(false);
+    } finally {
+      errorSpy.mockRestore();
+    }
+    expect((await readRow(row.broadcastId!)).status).toBe('cancelled');
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  /**
+   * Review round 2 (P4, maintainer 30 Oct 2026) — a requester who is NOT FOUND
+   * is no longer refused as erased at dispatch. Erasure never deletes a member
+   * row, so a missing one is not evidence of an erasure, and refusing would
+   * delete the draft and make the row terminal on a guess. `requested_by_member_id`
+   * has no FK to `members`, so such a row is reachable (the dev branch holds
+   * six). Both legs answer undecided: nothing sent, the draft NOT deleted, the
+   * row left exactly as it was, nothing audited, one warn line (ids only).
+   */
+  const requesterNotFound = {
+    ok: false,
+    error: {
+      kind: 'dispatch.server_error',
+      message: 'member_standing_requester_not_found',
+      errClass: 'requester_not_found',
+      phase: 'standing',
+    },
+  };
+
+  it('P4 legacy: a requester not found → undecided: the draft is not deleted, the row stays approved, nothing written', async () => {
+    const missingMemberId = randomUUID();
+    const resendBroadcastId = `rb-orphan-${randomUUID()}`;
+    const row = approvedRow(missingMemberId, { resendAudienceId: `aud-orphan-${randomUUID()}`, resendBroadcastId });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const before = await readRow(row.broadcastId!);
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'deleted' },
+    });
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+    const warnSpy = vi.spyOn(logger, 'warn');
+    try {
+      const r = await dispatchScheduledBroadcast(
+        { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+        { broadcastId: asBroadcastId(row.broadcastId!) },
+      );
+
+      expect(r).toEqual(requesterNotFound);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ broadcastId: row.broadcastId, leg: 'live' }),
+        'broadcasts.dispatch.requester_not_found',
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+    expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast']);
+    expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  it('P4 import: a requester not found → undecided: the draft is not deleted, the row stays approved, nothing written', async () => {
+    const missingMemberId = randomUUID();
+    const resendBroadcastId = `rb-orphan-${randomUUID()}`;
+    const row = approvedRow(missingMemberId, {
+      resendAudienceId: `aud-orphan-${randomUUID()}`,
+      resendBroadcastId,
+      audienceImportId: `imp-orphan-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const before = await readRow(row.broadcastId!);
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'deleted' },
+    });
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+    const warnSpy = vi.spyOn(logger, 'warn');
+    try {
+      const r = await buildAudienceTick(
+        { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+        { broadcastId: asBroadcastId(row.broadcastId!) },
+      );
+
+      expect(r).toEqual(requesterNotFound);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ broadcastId: row.broadcastId, leg: 'import' }),
+        'broadcasts.dispatch.requester_not_found',
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+    expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast']);
+    expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
   });
 });

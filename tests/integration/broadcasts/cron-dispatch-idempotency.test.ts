@@ -37,6 +37,8 @@ import {
   createTestTenant,
   type TestTenant,
 } from '../helpers/test-tenant';
+import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
+import { seedLiveRequester } from '../helpers/seed-live-requester';
 import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
 import { plansBridge } from '@/modules/broadcasts/infrastructure/plans-bridge';
 import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
@@ -58,6 +60,13 @@ const LIVE_STANDING = { membersBridge, membershipAccess: membershipAccessBridge 
 const NO_BRAND_CHROME = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
 
 const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
+
+/**
+ * Spec 139 — the requester is a REAL live member: the send-standing gate
+ * refuses a `requested_by_member_id` with no `members` row like an erased one
+ * (P4). The plan it is seeded on needs a real user as `created_by`.
+ */
+let requesterUser: TestUser;
 
 interface CallTracker {
   createAudienceCalls: number;
@@ -105,6 +114,8 @@ function makeTrackedGateway(tracker: CallTracker): BroadcastsGatewayPort {
       return { kind: 'detached' as const };},
     async deleteContactGlobally() {},
     async deleteAudience() {},
+    async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+    async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
     async deleteBroadcast() {},
     async listAudiences() { return []; },
   };
@@ -114,6 +125,7 @@ async function seedApprovedBroadcast(
   tenant: TestTenant,
   broadcastId: string,
 ): Promise<void> {
+  const { memberId } = await seedLiveRequester(tenant.ctx, requesterUser.userId);
   await runInTenant(tenant.ctx, (tx) =>
     tx.execute(sql`
       INSERT INTO broadcasts (
@@ -127,7 +139,7 @@ async function seedApprovedBroadcast(
       ) VALUES (
         ${tenant.ctx.slug},
         ${broadcastId}::uuid,
-        ${randomUUID()}::uuid,
+        ${memberId}::uuid,
         ${'plan-x'},
         ${randomUUID()}::uuid,
         ${'member_self_service'},
@@ -176,10 +188,12 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
 
   beforeAll(async () => {
     tenant = await createTestTenant('test-swecham');
+    requesterUser = await createActiveTestUser('admin');
   });
 
   afterAll(async () => {
     await tenant.cleanup();
+    if (requesterUser) await deleteTestUser(requesterUser).catch(() => {});
   });
 
   it('two concurrent dispatchScheduledBroadcast calls → exactly ONE Resend send + ONE sending transition', async () => {
@@ -315,6 +329,8 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
       return { kind: 'detached' as const };},
       async deleteContactGlobally() {},
       async deleteAudience() {},
+      async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+      async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
       async deleteBroadcast() {},
       async listAudiences() { return []; },
     };

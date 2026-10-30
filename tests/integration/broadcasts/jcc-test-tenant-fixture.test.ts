@@ -166,7 +166,20 @@ describe('T179 — JCC-test tenant fixture (multi-tenant readiness invariant)', 
       const repo = makeStubRepo(tenant.slug);
       const audit = makeStubAudit();
       const result = await cancelInFlightBroadcastsForMember(
-        { broadcastsRepo: repo.port, audit: audit.port, clock },
+        {
+          broadcastsRepo: repo.port,
+          audit: audit.port,
+          clock,
+          // Spec 139 — called only in the erasure mode; this is the default (archive) one.
+          broadcastsGateway: {
+            deleteBroadcastOnce: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
+            retrieveBroadcastOnce: async (): Promise<never> => {
+              throw new Error('not used in the archive mode');
+            },
+          },
+        },
         {
           tenant,
           memberId: `member-${tenant.slug}-1` as never,
@@ -176,7 +189,7 @@ describe('T179 — JCC-test tenant fixture (multi-tenant readiness invariant)', 
       );
       expect(result.ok).toBe(true);
       expect(result).toEqual(
-        ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0 }),
+        ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 }),
       );
 
       // Invariant: every repo + audit call carries the SAME tenant slug.

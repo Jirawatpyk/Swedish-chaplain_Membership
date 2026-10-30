@@ -119,7 +119,7 @@ describe('broadcasts repo — scrubContentForMemberInTx + tombstoneDeliveriesFor
    * erased member's email).
    */
   async function seedBroadcast(opts: {
-    status: 'draft' | 'submitted';
+    status: 'draft' | 'submitted' | 'cancelled';
     segment: Segment;
     owner?: string;
     customEmails?: readonly string[];
@@ -150,7 +150,8 @@ describe('broadcasts repo — scrubContentForMemberInTx + tombstoneDeliveriesFor
             : null,
         estimatedRecipientCount: 100,
         status: opts.status,
-        submittedAt: opts.status === 'submitted' ? new Date() : null,
+        submittedAt: opts.status !== 'draft' ? new Date() : null,
+        ...(opts.status === 'cancelled' && { cancelledAt: new Date(), cancelledByUserId: null }),
         ...(opts.rejectionReason !== undefined && {
           rejectionReason: opts.rejectionReason,
         }),
@@ -345,6 +346,44 @@ describe('broadcasts repo — scrubContentForMemberInTx + tombstoneDeliveriesFor
     expect(row?.cancellationReason).toBeNull();
   });
 
+  // Spec 139 — the erasure cascade cancels the member's in-flight row with its
+  // own system reason BEFORE the scrub runs. That value is one of the cascade's
+  // enum (`CascadeCancellationReason`), not a note anyone typed, so it carries
+  // no PII and the row keeps saying WHY it was cancelled. A free-text reason
+  // on the same scrub is still NULLed (the case above).
+  it.each(['gdpr_erasure_request', 'pdpa_deletion_request', 'originator_member_deleted'] as const)(
+    'keeps the cascade system reason %s on a cancelled row; a free-text reason is still NULLed',
+    async (systemReason) => {
+      const cascadeCancelled = await seedBroadcast({
+        status: 'cancelled',
+        segment: 'all_members',
+        cancellationReason: systemReason,
+      });
+      const freeText = await seedBroadcast({
+        status: 'cancelled',
+        segment: 'all_members',
+        cancellationReason: `${systemReason} — asked by quote-${randomUUID().slice(0, 8)}@example.com`,
+      });
+      const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+
+      await runInTenant(tenant.ctx, (tx) =>
+        repo.scrubContentForMemberInTx(tx, tenant.ctx.slug, asMemberId(memberId)),
+      );
+
+      const reasons = await runInTenant(tenant.ctx, async (tx) => {
+        const rows = await tx
+          .select({ broadcastId: broadcasts.broadcastId, cancellationReason: broadcasts.cancellationReason, subject: broadcasts.subject })
+          .from(broadcasts)
+          .where(sql`${broadcasts.broadcastId} IN (${cascadeCancelled}, ${freeText})`);
+        return new Map(rows.map((r) => [r.broadcastId, r]));
+      });
+      expect(reasons.get(cascadeCancelled)?.subject).toBe('[redacted]');
+      expect(reasons.get(cascadeCancelled)?.cancellationReason).toBe(systemReason);
+      expect(reasons.get(freeText)?.subject).toBe('[redacted]');
+      expect(reasons.get(freeText)?.cancellationReason).toBeNull();
+    },
+  );
+
   it('scrubs failure_reason (raw gateway error can echo the author own reply_to/from_name)', async () => {
     // 2026-06-19 /code-review #8: failure_reason is set from a raw gateway
     // error message (dispatch-scheduled-broadcast.ts: shape.reason ?? e.message)
@@ -373,6 +412,40 @@ describe('broadcasts repo — scrubContentForMemberInTx + tombstoneDeliveriesFor
     // The author email no longer survives as plaintext in failure_reason.
     expect(row?.failureReason).toBeNull();
   });
+
+  // Spec 139 review round 1 (CR#5) — the dispatch gate's refusal writes a
+  // fixed system token into failure_reason (an erased member is refused with
+  // `member_not_in_good_standing`; a halted one with `member_halted`). A token
+  // is not PII and says why the row ended, so the scrub keeps it — the same
+  // rule as the cascade's cancellation_reason. Free text is still NULLed.
+  it.each(['member_not_in_good_standing', 'member_halted'] as const)(
+    'keeps the standing refusal token %s in failure_reason; a free-text failure_reason is still NULLed',
+    async (token) => {
+      const refused = await seedBroadcast({ status: 'submitted', segment: 'all_members', failureReason: token });
+      const freeText = await seedBroadcast({
+        status: 'submitted',
+        segment: 'all_members',
+        failureReason: `${token}: 550 <quote-${randomUUID().slice(0, 8)}@example.com> rejected`,
+      });
+      const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+
+      await runInTenant(tenant.ctx, (tx) =>
+        repo.scrubContentForMemberInTx(tx, tenant.ctx.slug, asMemberId(memberId)),
+      );
+
+      const reasons = await runInTenant(tenant.ctx, async (tx) => {
+        const rows = await tx
+          .select({ broadcastId: broadcasts.broadcastId, failureReason: broadcasts.failureReason, subject: broadcasts.subject })
+          .from(broadcasts)
+          .where(sql`${broadcasts.broadcastId} IN (${refused}, ${freeText})`);
+        return new Map(rows.map((r) => [r.broadcastId, r]));
+      });
+      expect(reasons.get(refused)?.subject).toBe('[redacted]');
+      expect(reasons.get(refused)?.failureReason).toBe(token);
+      expect(reasons.get(freeText)?.subject).toBe('[redacted]');
+      expect(reasons.get(freeText)?.failureReason).toBeNull();
+    },
+  );
 
   it('re-drive over an already-scrubbed member returns scrubbedCount 0 (changed-rows, not matched)', async () => {
     // 2026-06-19 /code-review #4: the content UPDATE now filters on

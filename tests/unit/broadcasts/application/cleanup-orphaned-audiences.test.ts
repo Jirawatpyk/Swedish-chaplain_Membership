@@ -81,6 +81,9 @@ function makeRepo(opts: {
     async releaseResendAudience() {
       return false;
     },
+    async readAlreadySentEvidenceInTx() {
+      return { broadcastRecorded: false, memberBroadcastCount: 0 };
+    },
     async clearDispatchRetryClock() {},
     async listByTenantStatus() { return { rows: [], nextCursor: null }; },
     async countForMemberQuota() { return { submittedOrApproved: 0, sent: 0 }; },
@@ -146,6 +149,8 @@ function makeGateway(opts: {
       const err = opts.throws?.[audienceId];
       if (err !== undefined) throw err;
     },
+    async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+    async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
     async deleteBroadcast() { throw new Error('not used'); },
     async listAudiences() { return []; },
   };
@@ -291,6 +296,8 @@ describe('cleanupOrphanedAudiences (PR-2 Task 3)', () => {
       async removeContactFromAudience() {
       return { kind: 'detached' as const }; throw new Error('not used'); },
       async deleteContactGlobally() { throw new Error('not used'); },
+      async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+      async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
       async deleteBroadcast() { throw new Error('not used'); },
       async listAudiences() { return []; },
       async deleteAudience() {

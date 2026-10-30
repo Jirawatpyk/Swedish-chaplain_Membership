@@ -215,6 +215,11 @@ export async function approveBroadcast(
       // standing was read for it: fail CLOSED rather than approve unchecked.
       if (standing === null) throw new ApprovalDependencyError('member_send_standing', 'not_read_before_lock');
       switch (standing.kind) {
+        case 'erased':
+          // Spec 139 (P3) — the existing refusal, with NO refusal audit row:
+          // its event is labelled "membership suspended", and an erasure must
+          // never be recorded as one. Nothing written.
+          return err({ kind: 'member_not_in_good_standing', memberId: row.requestedByMemberId });
         case 'halted':
         case 'not_in_good_standing': {
           const refusal = standingRefusalAuditEvent({
@@ -234,6 +239,7 @@ export async function approveBroadcast(
             memberId: row.requestedByMemberId,
           });
         }
+        case 'erasure_read_failed':
         case 'halt_read_failed':
         case 'access_unavailable':
           // Fail CLOSED: the gate was not decided → approve.server_error,

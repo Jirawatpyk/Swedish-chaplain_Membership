@@ -208,6 +208,24 @@ export interface MembersBridgePort {
   ): Promise<ReadonlyArray<MemberHaltSummary>>;
 
   /**
+   * Spec 139 DE1 — the member's `erased_at` (GDPR Art. 17 / PDPA § 33), read
+   * FIRST by the send-standing gate: erasure takes a member off the halt list,
+   * and F8 access can still answer `full` for an erased member, so neither of
+   * the other two reads sees it. `erased_at` is sticky — the only erasure
+   * signal; erasure leaves `status` and the halt flags as they were.
+   *
+   * `{ erasedAt: null }` = a live member; `null` = no such member in THIS
+   * tenant (a member row is never deleted by erasure, so it is gone — and
+   * another tenant's id reads the same), which the gate refuses like an
+   * erasure (P4). NOT best-effort: a failed read THROWS, so the gate fails
+   * closed instead of reading "not erased". Never memoised per tick.
+   */
+  getMemberErasedAt(
+    tenantCtx: TenantContext,
+    memberId: string,
+  ): Promise<{ readonly erasedAt: Date | null } | null>;
+
+  /**
    * Q14 — admin clear-halt action. Emits
    * `broadcast_member_dispatch_resumed` audit at the use-case site.
    * Manager role denied.

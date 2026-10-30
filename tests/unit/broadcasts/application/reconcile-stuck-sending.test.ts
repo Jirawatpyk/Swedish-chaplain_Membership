@@ -151,6 +151,9 @@ function makeBroadcastsRepo(args: {
     async releaseResendAudience() {
       return false;
     },
+    async readAlreadySentEvidenceInTx() {
+      return { broadcastRecorded: false, memberBroadcastCount: 0 };
+    },
     async clearDispatchRetryClock() {},
     async listByTenantStatus() { return { rows: [], nextCursor: null }; },
     async countForMemberQuota() { return { submittedOrApproved: 0, sent: 0 }; },
@@ -202,6 +205,8 @@ function makeGateway(args: {
       return { kind: 'detached' as const }; throw new Error('not used'); },
     async deleteContactGlobally() { throw new Error('not used'); },
     async deleteAudience() { throw new Error('not used'); },
+    async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+    async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
     async deleteBroadcast() { throw new Error('not used'); },
     async listAudiences() { return []; },
     async retrieveBroadcast() {
@@ -251,6 +256,8 @@ function makeMembersBridge(): MembersBridgePort {
     async memberExistsInTenant() { return true; },
     async lookupContactEmailInTenant() { return null; },
     async lookupMemberPrimaryContactEmailInTenant() { return null; },
+    // Spec 139 — read first by the send-standing gate; a live member.
+    async getMemberErasedAt() { return { erasedAt: null }; },
     async getMembersHaltedInTenant() { return []; },
     async setMemberHalt() { return ok(undefined); },
     async markBroadcastsAcknowledged() { return ok({ previouslyNull: true }); },

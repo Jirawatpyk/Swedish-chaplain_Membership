@@ -1893,7 +1893,7 @@ function safeMetric(fn: () => void): void {
  * (see `broadcastsMetrics.cascadeOutcome`). Exported so callers, tests,
  * and dashboard code reference one symbol — Round 2 type-design fix.
  */
-export type BroadcastsCascadeOutcomeMetric = 'cancelled' | 'concurrent_skip' | 'unexpected_error';
+export type BroadcastsCascadeOutcomeMetric = 'cancelled' | 'concurrent_skip' | 'already_sent' | 'unexpected_error';
 
 export const broadcastsMetrics = {
   /**
@@ -3186,6 +3186,10 @@ export const broadcastsMetrics = {
    *                             flipped status between snapshot and applyTransition;
    *                             expected race, audited as
    *                             `broadcast_concurrent_action_blocked`
+   *   - `already_sent`        → spec 139: the erasure cascade's DELETE met an
+   *                             E-Blast Resend had already accepted for sending
+   *                             (residual 8c); the row is left, the evidence row
+   *                             written. Not a benign skip: the mail went out
    *   - `unexpected_error`    → tx or audit emit threw something other than
    *                             concurrent-mutation; broadcast was NOT cancelled.
    *                             Any non-zero rate = stop-the-line (signal-loss

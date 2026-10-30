@@ -26,6 +26,7 @@ export const noopBroadcastsCascadeAdapter: BroadcastsCascadePort = {
       outcome: 'ok',
       cancelledCount: 0,
       skippedConcurrentCount: 0,
+      alreadySentCount: 0,
     };
   },
 };
@@ -41,6 +42,8 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
         : {}),
       requestId: opts.requestId,
       initiatedByUserId: opts.initiatedByUserId,
+      // Spec 139 — only erasure sets it; unset keeps F7's `skip` default.
+      ...(opts.onDispatchBegun !== undefined ? { onDispatchBegun: opts.onDispatchBegun } : {}),
     });
     if (!result.ok) {
       // F7 cascade failure is non-fatal for F3 archival — the member
@@ -71,12 +74,14 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
         cancelledCount: result.value.cancelledCount,
         skippedConcurrentCount: result.value.skippedConcurrentCount,
         unexpectedErrorCount: result.value.unexpectedErrorCount,
+        alreadySentCount: result.value.alreadySentCount,
       };
     }
     return {
       outcome: 'ok',
       cancelledCount: result.value.cancelledCount,
       skippedConcurrentCount: result.value.skippedConcurrentCount,
+      alreadySentCount: result.value.alreadySentCount,
     };
   },
 };

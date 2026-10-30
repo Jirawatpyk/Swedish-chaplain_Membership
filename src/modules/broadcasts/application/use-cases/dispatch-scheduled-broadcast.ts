@@ -52,7 +52,10 @@ import {
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
   decideDispatchStanding,
+  deleteErasedDraftBeforeRefusal,
   recordDispatchHold,
+  recordRequesterNotFound,
+  REQUESTER_NOT_FOUND,
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
 import type {
@@ -93,6 +96,7 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 import { probeRefusedSend } from './_probe-refused-send';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
+import { rereadAfterLostRace } from './_reread-after-lost-race';
 
 export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
@@ -348,6 +352,12 @@ async function failDispatchAndAudit(
    * won) would still leave a refusal row for a broadcast that was cancelled.
    */
   extraAudit: AuditEmitInput | null = null,
+  /**
+   * Spec 139 review round 1 (CR#4) — the caller treats a lost CAS as a
+   * concurrent skip (it re-reads the row), so that loss is logged at info,
+   * never as `cleanup_failed`. Still answers `false`: nothing was written.
+   */
+  opts: { readonly concurrentLossIsSkip?: boolean } = {},
 ): Promise<boolean> {
   try {
     await deps.broadcastsRepo.withTx(async (tx) => {
@@ -379,6 +389,13 @@ async function failDispatchAndAudit(
       }
     });
   } catch (cleanupErr) {
+    if (opts.concurrentLossIsSkip === true && cleanupErr instanceof BroadcastConcurrentMutationError) {
+      logger.info(
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, phase },
+        'broadcasts.dispatch.terminal_write_lost_race',
+      );
+      return false;
+    }
     logger.error(
       {
         // FINAL round H-3. The sweep that claimed "genuinely none in a touched
@@ -435,6 +452,26 @@ function terminalWriteFailed(): Result<DispatchScheduledBroadcastOutput, Dispatc
   return err({ kind: 'dispatch.server_error', message: 'terminal_write_failed', phase: 'terminal_write' });
 }
 
+
+/**
+ * Spec 139 review round 1 (CR#4) — the erased refusal's terminal write did not
+ * commit. When the row has left `approved` (the erasure cascade cancelled it,
+ * or another tick moved it), that is a concurrent skip at info level: nothing
+ * of ours was written and nothing went out. A row still `approved`, gone, or a
+ * failed re-read keeps `terminalWriteFailed()` (the next tick retries). The
+ * re-read is the shared LOCKING one (review round 2, `_reread-after-lost-race.ts`).
+ */
+async function erasedRefusalLostRace(
+  deps: DispatchScheduledBroadcastDeps,
+  input: DispatchScheduledBroadcastInput,
+): Promise<Result<DispatchScheduledBroadcastOutput, DispatchScheduledBroadcastError>> {
+  const skip = await rereadAfterLostRace(deps.broadcastsRepo, deps.tenant.slug, input.broadcastId, {
+    logFields: { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string },
+    readFailedEvent: 'broadcasts.dispatch.erased_refusal_reread_failed',
+    skipEvent: 'broadcasts.dispatch.erased_refusal_lost_race',
+  });
+  return skip === null ? terminalWriteFailed() : err(skip);
+}
 
 // `classifyThrown` moved to `_classify-thrown.ts` in 108 Phase 9 so
 // `buildAudienceTick` reads a thrown gateway error the SAME way this path does.
@@ -781,10 +818,58 @@ export async function dispatchScheduledBroadcast(
       if (!recorded) return terminalWriteFailed();
       return err({ kind: 'broadcast_failed_to_dispatch', reason });
     }
+    if (standing.kind === 'refuse_erased') {
+      // Spec 139 — the member is erased (a missing requester is undecided, P4). P2: a draft the row still
+      // carries (the probe above said it was never handed to `/send`) is
+      // deleted at Resend FIRST, so this row's pre-scrub draft does not
+      // outlive the refusal (other copies: RoPA residual 8d);
+      // anything short of a confirmed delete decides nothing. P3: one audit
+      // row only (`standing: 'erased'`), no "membership suspended" row, and no
+      // member email (`broadcast` is not passed, so nothing is enqueued).
+      const cleared = await deleteErasedDraftBeforeRefusal(
+        deps.broadcastsGateway,
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, leg: 'live' },
+        {
+          resendBroadcastId: inheritedBroadcastId,
+          probedStatus:
+            observedResendStatus === 'draft' || observedResendStatus === 'cancelled' ? observedResendStatus : null,
+        },
+      );
+      if (cleared.kind === 'undecided') {
+        return err({ kind: 'dispatch.server_error', message: cleared.message, errClass: cleared.errClass, phase: 'standing' });
+      }
+      const { reason } = standing;
+      const recorded = await failDispatchAndAudit(
+        deps,
+        input,
+        now,
+        reason,
+        'broadcast_failed_to_dispatch',
+        {
+          broadcastId: input.broadcastId,
+          reason,
+          failedAt: now.toISOString(),
+          standing: 'erased',
+          resendDraftOutcome: cleared.draftOutcome,
+        },
+        MEMBER_STANDING_PHASE,
+        reason,
+        null,
+        null,
+        { concurrentLossIsSkip: true },
+      );
+      if (!recorded) return erasedRefusalLostRace(deps, input);
+      return err({ kind: 'broadcast_failed_to_dispatch', reason });
+    }
     // Anything but an explicit `send` is not a send (fail CLOSED): the
     // compiler narrows this to `undecided`, and a kind it does not know would
     // land here too rather than fall through to Step 2.
     if (standing.kind !== 'send') {
+      // Spec 139 P4 — a requester not in the tenant: nothing is sent, nothing
+      // deleted, the row stays `approved` (runbook: cancel it by hand).
+      if (standing.message === REQUESTER_NOT_FOUND) {
+        recordRequesterNotFound(deps.tenant.slug, input.broadcastId as string, 'live');
+      }
       return err({
         kind: 'dispatch.server_error',
         message: standing.message,
@@ -1245,6 +1330,26 @@ export async function dispatchScheduledBroadcast(
     }
 
     const shape = classifyThrown(e);
+
+    // ---- Spec 139 P8 — a `/send` 404 after the row left `approved` ----
+    //
+    // The erasure cascade deletes a never-sent draft at Resend and cancels the
+    // row under its lock; this tick, past its Step-1 lock, then meets a 404 on
+    // `/send`. The `resource_missing` arm below would lose its `approved` CAS
+    // to the cancel, log `cleanup_failed` at ERROR and answer a server error.
+    // Re-read first: a row that left `approved` is a concurrent skip — nothing
+    // went out, nothing is written. A row still `approved`, gone, or a failed
+    // re-read keeps the ordinary arm (an admin must look).
+    if (sendAttempted && shape.kind === 'resource_missing') {
+      // Review round 2 — the shared LOCKING re-read: it waits for a cascade
+      // still deciding the row, never reads `approved` from under it.
+      const skip = await rereadAfterLostRace(deps.broadcastsRepo, deps.tenant.slug, input.broadcastId, {
+        logFields: { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, resendBroadcastId },
+        readFailedEvent: 'broadcasts.dispatch.send_404_reread_failed',
+        skipEvent: 'broadcasts.dispatch.send_404_row_left_approved',
+      });
+      if (skip !== null) return err(skip);
+    }
 
     // ---- Idempotency conflict: success-replay ------------------------
     // Resend already accepted this broadcast on a prior attempt. Treat

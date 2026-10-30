@@ -270,6 +270,30 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
     expect(eraseMemberMock).not.toHaveBeenCalled();
   });
 
+  it('spec 139 — a time budget: no new member is started after ~240 s; the rest are deferred to the next tick', async () => {
+    stubStuck([
+      { memberId: 'm1', reason: 'gdpr_erasure_request' },
+      { memberId: 'm2', reason: 'gdpr_erasure_request' },
+      { memberId: 'm3', reason: 'gdpr_erasure_request' },
+    ]);
+    // Each re-drive takes 130 s of wall clock: m1 starts at 0 s, m2 at 130 s,
+    // and at 260 s the budget is spent, so m3 waits for the next tick.
+    let nowMs = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => nowMs);
+    eraseMemberMock.mockImplementation(async (memberId: string) => {
+      nowMs += 130_000;
+      return ok({ memberId, erasedAt: new Date(0), cascadesComplete: true });
+    });
+    const { POST } = await import(
+      '@/app/api/cron/members/reconcile-erasures/route'
+    );
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    expect(eraseMemberMock.mock.calls.map((c) => c[0])).toEqual(['m1', 'm2']);
+    const body = (await res.json()) as Record<string, number>;
+    expect(body).toEqual({ processed: 2, reconciled: 2, still_pending: 0, error: 0, deferred: 1 });
+  });
+
   it('no stuck members → 200 zeroed summary, eraseMember NOT called', async () => {
     stubStuck([]);
     const { POST } = await import(

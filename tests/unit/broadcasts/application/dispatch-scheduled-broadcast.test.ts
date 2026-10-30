@@ -184,6 +184,11 @@ interface RepoOpts {
   readonly markDispatchRetryStartedReturns?: Date | null;
   /** F119 PR-E (H1 / M1) — the retry-clock reset itself fails. */
   readonly clearDispatchRetryClockThrows?: Error;
+  /**
+   * Spec 139 review round 2 — the terminal `failed_to_dispatch` CAS loses (a
+   * concurrent cancel won), as the repo throws it.
+   */
+  readonly failedToDispatchLosesCas?: boolean;
 }
 
 function makeRepo(opts: RepoOpts): {
@@ -197,10 +202,19 @@ function makeRepo(opts: RepoOpts): {
   retryStampCalls: Array<{ at: Date }>;
   /** F119 PR-E (H1 / M1) — every `clearDispatchRetryClock` call. */
   retryClearCalls: number;
+  /**
+   * Spec 139 review round 2 (code-review #3/#9) — every `lockForUpdate`. The
+   * Step-1 lock is the first; a re-read after a lost race takes the row lock
+   * again (so it waits for an in-flight cascade commit) and, from the second
+   * lock on, `findByIdInTx` answers what a re-read finds — the same knobs as
+   * `findById` (`findByIdReturns` / `findByIdThrows`).
+   */
+  readonly lockCalls: number;
 } {
   const transitions: Array<{ status: string; fields: unknown }> = [];
   const retryStampCalls: Array<{ at: Date }> = [];
   const clears = { count: 0 };
+  const locks = { count: 0 };
   const attachCalls: Array<{ audienceId: string; broadcastId: string }> = [];
   const attachAudienceCalls: Array<{ audienceId: string }> = [];
   const attachBroadcastIdCalls: Array<{ broadcastId: string }> = [];
@@ -213,6 +227,9 @@ function makeRepo(opts: RepoOpts): {
     retryStampCalls,
     get retryClearCalls() {
       return clears.count;
+    },
+    get lockCalls() {
+      return locks.count;
     },
     port: {
       async withTx(fn) {
@@ -232,12 +249,24 @@ function makeRepo(opts: RepoOpts): {
         return opts.findByIdReturns ?? null;
       },
       async findByIdInTx() {
+        if (locks.count >= 2) {
+          if (opts.findByIdThrows !== undefined) throw opts.findByIdThrows;
+          return opts.findByIdReturns ?? null;
+        }
         return opts.broadcast ?? null;
       },
       async lockForUpdate() {
+        locks.count += 1;
         return opts.lockedStatus ?? null;
       },
       async applyTransition(_tx, _t, _b, status, fields) {
+        if (opts.failedToDispatchLosesCas === true && status === 'failed_to_dispatch') {
+          throw new BroadcastConcurrentMutationError(
+            'test-tenant' as unknown as ConstructorParameters<typeof BroadcastConcurrentMutationError>[0],
+            _b,
+            'approved',
+          );
+        }
         transitions.push({ status, fields });
         if (opts.applyTransitionThrowsOnFinal && status === 'sending') {
           throw new Error('db write failed after resend success');
@@ -305,6 +334,9 @@ function makeRepo(opts: RepoOpts): {
       },
       async releaseResendAudience() {
         return false;
+      },
+      async readAlreadySentEvidenceInTx() {
+        return { broadcastRecorded: false, memberBroadcastCount: 0 };
       },
       async clearDispatchRetryClock() {
         clears.count += 1;
@@ -504,6 +536,8 @@ function makeGateway(opts: GatewayOpts = {}): {
           throw new Error('Resend 500 on DELETE /audiences');
         }
       },
+      async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+      async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
       async deleteBroadcast(broadcastId: string) {
         deleteBroadcastCalls.push(broadcastId);
         if (opts.throwOnDeleteBroadcast === true) {
@@ -610,6 +644,8 @@ function makeMembersBridge(opts: {
     async lookupMemberPrimaryContactEmailInTenant() {
       return null;
     },
+    // Spec 139 — read first by the send-standing gate; a live member.
+    async getMemberErasedAt() { return { erasedAt: null }; },
     async getMembersHaltedInTenant() {
       return [];
     },
@@ -5025,6 +5061,32 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
     vi.restoreAllMocks();
   });
 
+  // Spec 139 P4 — a requester not in the tenant decides nothing at dispatch:
+  // no send, no Resend call (the gateway's deleteBroadcastOnce throws if
+  // reached), no transition, no audit row, and the leg's warn line.
+  it('a requester not found → undecided: nothing sent, deleted or written; the warn line names the leg', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const withDraft = { ...makeBroadcast('approved'), resendAudienceId: 'aud-prev', resendBroadcastId: 'rb-prev-draft' };
+    const { audit, repo, gw, email, deps } = standingDeps(makeFakeSendStanding({ erased: 'not_found' }), withDraft, {
+      retrieveStatus: 'draft',
+    });
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'dispatch.server_error', message: 'member_standing_requester_not_found', errClass: 'requester_not_found', phase: 'standing' },
+    });
+    expect(repo.transitions).toEqual([]);
+    expect(gw.sendCalls).toHaveLength(0);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      { tenantId: tenant.slug, broadcastId: baseInput.broadcastId, leg: 'live' },
+      'broadcasts.dispatch.requester_not_found',
+    );
+  });
+
   // PR-D — the membership refusal row names the access that refused it (at
   // dispatch always `terminated`: a suspended member is held); a halt row
   // carries no `access`.
@@ -5599,5 +5661,108 @@ describe('dispatch-scheduled-broadcast — FR-021 budget anchors on the first fa
     expect(result.ok).toBe(false);
     if (result.ok || result.error.kind !== 'gateway_retryable') throw new Error('expected gateway_retryable');
     expect(result.error.subKind).toBe('unclassified');
+  });
+});
+
+/**
+ * Spec 139 P8 / DE3b — a tick that LOSES the race to the erasure cascade is a
+ * concurrent skip, not a failure. The cascade deletes the draft at Resend and
+ * cancels the row under its lock; this tick, already past its Step-1 lock, then
+ * meets a 404 on `/send`. Before 139 that 404 took the `resource_missing` arm:
+ * `failDispatchAndAudit` lost its `approved` CAS to the cancel, logged
+ * `cleanup_failed` at ERROR and answered a `terminal_write` server error. The
+ * arm now re-reads the row first; a row that is no longer `approved` answers
+ * `broadcast_invalid_state_transition` (the cron's `concurrent_skip`) with an
+ * INFO line, and writes nothing.
+ */
+describe('spec 139 P8 — a /send 404 after the row left approved is a concurrent skip', () => {
+  const inherited = { ...makeBroadcast('approved'), resendAudienceId: 'aud-prev', resendBroadcastId: 'rb-from-previous-tick' };
+  const send404 = {
+    throwOnSend: {
+      kind: 'resource_missing' as const,
+      reason: 'Resend 404 — broadcast not found',
+      resourceType: 'broadcast' as const,
+      resourceId: 'rb-from-previous-tick',
+    },
+    retrieveStatus: 'draft' as const,
+  };
+  const depsFor = (repo: ReturnType<typeof makeRepo>, gw: ReturnType<typeof makeGateway>, audit: ReturnType<typeof makeAudit>) => ({
+    tenant,
+    broadcastsRepo: repo.port,
+    audienceMode: 'primary_only' as const,
+    audienceCeiling: 5000,
+    broadcastsGateway: gw.port,
+    membersBridge: makeMembersBridge({ recipients: [recipient('m-r1', 'one@example.com')], primaryContact: 'sender@example.com' }),
+    marketingUnsubscribes: makeMarketingUnsubscribes(),
+    eventAttendees: makeEventAttendees(),
+    audit: audit.port,
+    clock,
+    fromEmail: 'noreply@test.invalid-but-test-only',
+    tenantDisplayName: 'Test Chamber',
+    locale: 'en' as const,
+    plansBridge: makePlansBridge(),
+    emailTransactional: makeEmailTransactional().port,
+    sendStanding: OK_STANDING,
+    brandChrome: NO_BRAND_CHROME,
+  });
+
+  it('the re-read finds the row cancelled → broadcast_invalid_state_transition (cancelled), no transition, no audit, an info line', async () => {
+    const infoSpy = vi.spyOn(logger, 'info');
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: inherited,
+      findByIdReturns: { ...inherited, status: 'cancelled' },
+    });
+    const gw = makeGateway(send404);
+    const result = await dispatchScheduledBroadcast(depsFor(repo, gw, audit), baseInput);
+    expect(result).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+    expect(gw.sendCalls).toHaveLength(1);
+    expect(repo.transitions).toEqual([]);
+    expect(audit.emits).toEqual([]);
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ broadcastId, observedStatus: 'cancelled' }),
+      'broadcasts.dispatch.send_404_row_left_approved',
+    );
+    // Review round 2 (code-review #3) — the re-read takes the row lock, so it
+    // waits for an erasure cascade still deciding the row, never reading
+    // `approved` from under it.
+    expect(repo.lockCalls).toBe(2);
+    infoSpy.mockRestore();
+  });
+
+  // Review round 2 (code-review #3/#9) — the erased refusal's lost terminal
+  // CAS re-reads under the row lock too (the same shared helper).
+  it('the erased refusal loses its terminal CAS and the LOCKED re-read finds the row cancelled → a concurrent skip at info', async () => {
+    const infoSpy = vi.spyOn(logger, 'info');
+    const audit = makeAudit();
+    const repo = makeRepo({
+      lockedStatus: 'approved',
+      broadcast: makeBroadcast('approved'),
+      failedToDispatchLosesCas: true,
+      findByIdReturns: { ...makeBroadcast('approved'), status: 'cancelled' },
+    });
+    const gw = makeGateway({});
+    const result = await dispatchScheduledBroadcast(
+      { ...depsFor(repo, gw, audit), sendStanding: makeFakeSendStanding({ erased: true }) },
+      baseInput,
+    );
+    expect(result).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
+    expect(repo.lockCalls).toBe(2);
+    expect(gw.sendCalls).toHaveLength(0);
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ broadcastId, observedStatus: 'cancelled' }),
+      'broadcasts.dispatch.erased_refusal_lost_race',
+    );
+    infoSpy.mockRestore();
+  });
+
+  it('the re-read finds the row still approved → the ordinary resource_missing arm, unchanged', async () => {
+    const audit = makeAudit();
+    const repo = makeRepo({ lockedStatus: 'approved', broadcast: inherited, findByIdReturns: inherited });
+    const gw = makeGateway(send404);
+    const result = await dispatchScheduledBroadcast(depsFor(repo, gw, audit), baseInput);
+    expect(result.ok ? null : result.error.kind).toBe('broadcast_resend_resource_missing');
+    expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
   });
 });

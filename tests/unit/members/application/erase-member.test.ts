@@ -539,6 +539,36 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     }
   });
 
+  // Spec 139 DE2 wiring — erasure is the ONE caller that selects the cascade's
+  // `delete_then_cancel` mode (archive keeps the skip, DE4).
+  it('spec 139: asks the broadcasts cascade to delete-then-cancel a dispatch-begun E-Blast', async () => {
+    const deps = buildEraseDeps();
+    await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(deps.broadcastsCascade.cancelInFlightForMember).toHaveBeenCalledWith(
+      deps.tenant,
+      asMemberId('m-1'),
+      expect.objectContaining({ onDispatchBegun: 'delete_then_cancel' }),
+    );
+  });
+
+  // Spec 139 P7 — "clean" can no longer hide a sent E-Blast: the runbook reads
+  // this count before ticking the erasure complete (residual 8c).
+  it('spec 139: records broadcasts_already_sent_count on the member_erased DPO payload', async () => {
+    const deps = buildEraseDeps();
+    deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+      async () => ({ outcome: 'ok', cancelledCount: 1, skippedConcurrentCount: 0, alreadySentCount: 2 }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    const erased = deps.audit.recordInTx.mock.calls.find(
+      (c) => (c[2] as { type: string }).type === 'member_erased',
+    );
+    expect(erased, 'member_erased was not emitted').toBeDefined();
+    expect((erased?.[2] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      broadcasts_already_sent_count: 2,
+    });
+  });
+
   it('records the discarded-draft count on the member_erased DPO payload', async () => {
     // Erasure is a compliance path — a silent discard is not acceptable. F4
     // emits `invoice_draft_deleted` per document; this count is the DPO-facing
@@ -684,6 +714,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
           cancelledCount: 2,
           skippedConcurrentCount: 0,
           unexpectedErrorCount: 1,
+          alreadySentCount: 0,
         }) as const,
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
@@ -691,6 +722,32 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     if (res.ok) expect(res.value.cascadesComplete).toBe(false);
     const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
     expect(types).not.toContain('member_erased');
+  });
+
+  // Spec 139 review round 1 — the partial-failure log names the derived
+  // already-sent count, so the runbook can read it off a stuck erasure too.
+  it('broadcasts cascade_partial_failure logs alreadySentCount with the per-row counts', async () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    try {
+      const deps = buildEraseDeps();
+      deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+        async () =>
+          ({
+            outcome: 'cascade_partial_failure',
+            cancelledCount: 0,
+            skippedConcurrentCount: 0,
+            unexpectedErrorCount: 1,
+            alreadySentCount: 3,
+          }) as const,
+      );
+      await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      const call = errorSpy.mock.calls.find(
+        (c) => (c[0] as { cascade?: string } | undefined)?.cascade === 'f7_in_flight_broadcast_cancel',
+      );
+      expect(call?.[0]).toMatchObject({ unexpectedErrorCount: 1, alreadySentCount: 3 });
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   // The member_erased emit happens AFTER every cascade reports clean — but it

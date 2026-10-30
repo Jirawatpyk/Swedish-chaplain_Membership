@@ -59,6 +59,13 @@ export interface BroadcastsCascadePort {
    * Returns the count of broadcasts cancelled + count skipped due to
    * concurrent dispatch worker race (skipped broadcasts deliver
    * normally — the archive happened after the dispatch decision).
+   *
+   * Spec 139 — `onDispatchBegun` says what to do with an `approved` E-Blast
+   * whose Resend broadcast was already minted (its send may not have
+   * happened). Unset (archive, bulk archive): F7's default, skip it and let
+   * it deliver. `'delete_then_cancel'` (erasure only): F7 deletes the draft
+   * at Resend under the row lock, then cancels; an E-Blast Resend had
+   * already accepted is counted in `alreadySentCount` (residual 8c).
    */
   cancelInFlightForMember(
     tenant: TenantContext,
@@ -67,6 +74,7 @@ export interface BroadcastsCascadePort {
       readonly cancellationReason?: SystemCancellationReason;
       readonly initiatedByUserId: string | null;
       readonly requestId: string | null;
+      readonly onDispatchBegun?: 'skip' | 'delete_then_cancel';
     },
   ): Promise<CascadeResult>;
 }
@@ -114,11 +122,14 @@ export type CascadeResult =
       readonly outcome: 'ok';
       readonly cancelledCount: number;
       readonly skippedConcurrentCount: number;
+      /** Spec 139 P7 — E-Blasts Resend had already accepted when the erasure's DELETE arrived (0 outside erasure). */
+      readonly alreadySentCount: number;
     }
   | {
       readonly outcome: 'cascade_partial_failure';
       readonly cancelledCount: number;
       readonly skippedConcurrentCount: number;
       readonly unexpectedErrorCount: number;
+      readonly alreadySentCount: number;
     }
   | { readonly outcome: 'cascade_failed' };
