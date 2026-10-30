@@ -77,6 +77,8 @@ function makeDeps(overrides: {
   deleteOutcome?: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other';
   /** Spec 139 P5 — what the probe after a 403 answers; `'throws'` = it fails. Default: `sent`. */
   probe?: 'draft' | 'queued' | 'sending' | 'sent' | 'cancelled' | 'unknown' | 'not_found' | 'throws';
+  /** Spec 139 — the tenant already holds this broadcast's `already_sent` evidence row. Default: false. */
+  alreadySentEvidence?: boolean;
 }) {
   const rows = (overrides.inFlightRows ?? []).map(makeBroadcastRow);
   // F119 round-4 B6 — mirror db.transaction: a callback that returns COMMITS,
@@ -122,6 +124,11 @@ function makeDeps(overrides: {
     findById: vi.fn(async (_t: unknown, broadcastId: string) =>
       overrides.findByIdImpl ? overrides.findByIdImpl(broadcastId) : { broadcastId, status: 'sending' },
     ),
+    hasAlreadySentEvidenceInTx: vi.fn(async (_tx: unknown, _t: unknown, broadcastId: string) => {
+      // Read on the emit's tx, or a concurrent re-drive could slip between them.
+      calls.push(openTx > 0 ? `evidence:${broadcastId}` : `evidence:${broadcastId}:no-tx`);
+      return overrides.alreadySentEvidence ?? false;
+    }),
   };
   const audit = {
     emit: vi.fn(async () => {
@@ -507,8 +514,10 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
    *   - 403 → probed (P5: a restricted key answers 403 too): `queued` /
    *     `sending` / `sent` → the row is left as it is and
    *     `broadcast_concurrent_action_blocked` (`dispatchBegun: true`,
-   *     `resendOutcome: 'already_sent'`) is written INSIDE the locked tx (P6),
-   *     `alreadySentCount` + 1; any other probe answer → unexpected;
+   *     `resendOutcome: 'already_sent'`) is written on its own tx after the
+   *     lock tx (P6) — once per broadcast: a re-erasure that finds the row
+   *     already there writes no second one — and `alreadySentCount` + 1 on
+   *     every run; any other probe answer → unexpected;
    *   - retryable / other → unexpected (row unchanged; the adapter reports
    *     `cascade_partial_failure`, `member_erased` is withheld, the
    *     `reconcile-erasures` cron drives it again).
@@ -612,6 +621,24 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         expect(deps.audit.emit).not.toHaveBeenCalled();
       },
     );
+
+    it('a re-erasure (manual, or the reconcile-erasures re-drive) whose evidence row already exists writes no second one; alreadySentCount still counts the broadcast', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+        lockedRowImpl: handedRow(),
+        deleteOutcome: 'forbidden',
+        probe: 'sent',
+        alreadySentEvidence: true,
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      // member_erased must still say this E-Blast went out.
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1 } });
+      expect(eventsOf(deps, 'broadcast_concurrent_action_blocked')).toEqual([]);
+      expect(deps.audit.emit).not.toHaveBeenCalled();
+      // The existence check runs on a tx of its own, after the probe.
+      expect(deps.calls).toEqual([`lock:${broadcastIdA}`, `read:${broadcastIdA}`, 'delete:rb-live-1', 'probe:rb-live-1', `evidence:${broadcastIdA}`]);
+      expect(deps.txOutcomes).toEqual(['committed', 'committed']);
+    });
 
     it('403 + already sent, but the residual audit row cannot be written → unexpected (P6): the reconciler drives it again', async () => {
       const deps = makeDeps({

@@ -525,6 +525,22 @@ export interface BroadcastsRepo {
   ): Promise<boolean>;
 
   /**
+   * Spec 139 residual 8c — whether this tenant already holds the erasure
+   * cascade's "Resend had already accepted it for sending" evidence row for
+   * `broadcastId`: a `broadcast_concurrent_action_blocked` audit row whose
+   * payload has this `broadcastId` and `resendOutcome: 'already_sent'`. The
+   * cascade reads it on the same tx as the emit, so a re-erasure (manual, or
+   * the `reconcile-erasures` re-drive) writes that row once per broadcast.
+   * A read; tenant-scoped by RLS AND an explicit `tenant_id` predicate
+   * (`audit_log`'s policy also admits `tenant_id IS NULL` rows).
+   */
+  hasAlreadySentEvidenceInTx(
+    tx: unknown,
+    tenantId: TenantSlug,
+    broadcastId: BroadcastId,
+  ): Promise<boolean>;
+
+  /**
    * F119 PR-E (migration 0311) — start the FR-021 retry clock: stamp
    * `dispatch_first_failed_at = COALESCE(dispatch_first_failed_at, at)` while
    * the row is still `approved`. Called by BOTH dispatch legs on a retryable

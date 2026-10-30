@@ -193,6 +193,9 @@ function makeBroadcastsRepo(state: State): BroadcastsRepo {
     async releaseResendAudience() {
       return false;
     },
+    async hasAlreadySentEvidenceInTx() {
+      return false;
+    },
     async clearDispatchRetryClock() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };

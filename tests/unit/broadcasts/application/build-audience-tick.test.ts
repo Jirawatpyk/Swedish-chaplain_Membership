@@ -211,6 +211,9 @@ function makeDeps(opts: {
         async releaseResendAudience() {
           return false;
         },
+        async hasAlreadySentEvidenceInTx() {
+          return false;
+        },
         async clearDispatchRetryClock() {
           dispatchFirstFailedAt = null;
         },

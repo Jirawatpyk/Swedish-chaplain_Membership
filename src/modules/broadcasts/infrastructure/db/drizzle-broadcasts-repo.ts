@@ -1341,6 +1341,10 @@ export function makeDrizzleBroadcastsRepo(
       return updated.length === 1;
     },
 
+    async hasAlreadySentEvidenceInTx(): Promise<boolean> {
+      return false;
+    },
+
     async markAudienceImportCompleted(
       txUnknown,
       tenantIdArg: TenantSlug,

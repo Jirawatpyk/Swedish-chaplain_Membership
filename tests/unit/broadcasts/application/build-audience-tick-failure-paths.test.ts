@@ -598,6 +598,9 @@ function makeDeps(opts: {
           rec.releases.push({ method: 'releaseResendAudience', expected, afterGatewayCalls: rec.gatewayCalls.length });
           return opts.releaseAudienceLoses !== true;
         },
+        async hasAlreadySentEvidenceInTx() {
+          return false;
+        },
         async attachBroadcastId(
           tx: unknown,
           _t: unknown,
