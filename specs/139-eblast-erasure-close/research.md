@@ -50,7 +50,7 @@ Short paths: `GW` = `src/modules/broadcasts/infrastructure/resend/resend-broadca
 9. **Classifier gaps against the documented error codes** (`GW:111-164`).
    - Every 409 becomes `idempotency_conflict`, but 409 `resource_locked` exists ("another request is already updating this resource").
    - Every 429 becomes retryable, but `daily_quota_exceeded` and `monthly_quota_exceeded` are 429s that do not clear in 31 s.
-   - `validation_error` appears at both 403 and 422, so the state table must key on HTTP status, never on `name`.
+   - `validation_error` is DOCUMENTED at 400, 401 and 403 (errors page, accessed 2026-10-30), and MEASURED at 422 on a refused `/send` and at 403 on a refused DELETE (2026-10-29). The state table must key on HTTP status, never on `name`.
 10. **Stale repo sources.**
     - `specs/010-email-broadcast/research.md` §1 and §9: wrong plan numbers, wrong SDK method names, "no bulk endpoint".
     - `ROPA:262` said "Resend default (90 days)" with no source; corrected by PR #702 to the documented 30 days for email data, with broadcast-log retention not documented separately and not measured.
@@ -103,8 +103,8 @@ Short paths: `GW` = `src/modules/broadcasts/infrastructure/resend/resend-broadca
 | same | queued, or sent | 403 validation_error "Only draft or scheduled broadcasts can be deleted"; the send completes | MEASURED 2026-10-29 | `forbidden` → probed under the lock (D-040) |
 | same | sending | assumed 403 | **inferred** from the message (`S138:96`) | — |
 | same | canceled | 403 "Only draft or scheduled broadcasts can be deleted" | MEASURED 2026-10-30 (Q1) | spec 139: 403 + probe `cancelled` → cancel the row |
-| same | docs conflict | the manage page says "draft only"; the API page says draft **or scheduled**. The measurement agrees with the API page | DOCUMENTED, inconsistent | cite the API page |
-| same | a key restricted to sending | 403 `restricted_api_key` / `invalid_permission` | DOCUMENTED (errors) | why 403 is probed, never trusted |
+| same | the docs | the manage page says "Only draft (including scheduled) Broadcasts can be deleted. Once a Broadcast has been sent or queued, it can't be deleted"; the API page agrees, and so does the measurement | DOCUMENTED (both pages, accessed 2026-10-30), consistent | — |
+| same | a key restricted to sending | **401** `restricted_api_key` ("restricted to only send emails"); 403 `restricted_api_key` means "API key is not active", 403 `invalid_permission` an OAuth token missing scopes | DOCUMENTED (errors page, accessed 2026-10-30) | a 403 is still probed before it is believed: it is not proof of `queued` / `sent` |
 | `POST /broadcasts/{id}/cancel` (no gateway method) | scheduled | → `draft` | DOCUMENTED; RoPA says MEASURED 2026-10-29 (`ROPA:255`, no probe file cited) | — |
 | same | queued | → `canceled` (one L); DELETE then 403, re-send 422 | DOCUMENTED; **MEASURED 2026-10-30 (Q1)**. "Unsent recipients are stopped, sent mail stays" is DOCUMENTED only | the only documented way to stop a queued send |
 | `DELETE /audiences/{id}` (`deleteAudience` :654, 404/410 = ok) | idle | 200 | MEASURED | — |
@@ -264,7 +264,7 @@ Q1, Q3, Q5 and Q7 bear directly on spec 140's design. Q8 and Q9 bear on capacity
 - **Classify by HTTP status first, then by code.**
   - Split 409 `resource_locked` from the idempotency 409s.
   - Split the 429 quota codes (not retryable) from `rate_limit_exceeded`.
-  - Never trust a bare 403: a restricted key also answers 403.
+  - Never trust a bare 403: an inactive key (403 `restricted_api_key`) or a scope-less OAuth token (403 `invalid_permission`) also answers 403; a send-only key answers 401.
 - **Bound every call.** Use `AbortSignal.timeout` everywhere, as the `*Once` variants do (or verify Q11), so the lease TTL can be computed. The SDK upgrade is the natural time for this: the 6.x source declares `signal`, and the current SDK/docs use `segmentId`, and for leaving the deprecated Audiences API.
 - **Completion is poll-only.** No broadcast or import webhooks exist, so the lease holder or the next holder must poll. The 30-min import ceiling (`IMPORT_STUCK_AFTER_MS`, `TICK:94`) and the 2-in-flight segment limit set the queueing behaviour.
 - **Recovery for a dead holder.**
@@ -335,6 +335,6 @@ The Resend MCP is connected to the same account as `RESEND_BROADCASTS_API_KEY`: 
 
 - **Status spelling confirmed:** `get-broadcast` on the Q1 probe shows `Status: canceled`.
 - **Segments:** only `General` exists now. Every probe audience was deleted, so the Free-plan segment slots are free.
-- **Broadcasts outlive their segment.** All 10 remaining broadcasts point at segment ids that no longer exist. They keep their status (`sent`, `failed`, `canceled`) and their full HTML and plain text, which `get-broadcast` returns. This answers part of Q10: deleting a segment after `sent` leaves the broadcast object and its content in place. It is direct evidence for RoPA 8c and 8d: the pre-scrub content of a sent or failed broadcast stays readable at Resend, and no API removes it: DELETE answers 403 on `sent` and `canceled` (MEASURED 2026-10-29 / 2026-10-30); DELETE on `failed` is **UNKNOWN** (not probed; ASSUMED 403 from the "only draft or scheduled" rule). Removal needs an Art. 28(3)(e) instruction to Resend.
+- **Broadcasts outlive their segment.** All 10 remaining broadcasts point at segment ids that no longer exist. They keep their status (`sent`, `failed`, `canceled`) and their full HTML and plain text, which `get-broadcast` returns. This answers part of Q10: deleting a segment after `sent` leaves the broadcast object and its content in place. It is direct evidence for RoPA 8c (a sent copy) and for the canceled part of 8d: that content stays readable at Resend, and DELETE answers 403 on `sent` and `canceled` (MEASURED 2026-10-29 / 2026-10-30), so removal is manual (dashboard, unverified) or an Art. 28(3)(a)/(e) and PDPA s.33 instruction. A **draft** (the rest of 8d) is deletable through the API (200, MEASURED). DELETE on `failed` is **UNKNOWN** (not probed; the docs' "only draft (including scheduled)" rule suggests 403).
 - **DELETE does remove the rest.** Broadcasts deleted with 200 (S1, the S2 drafts) are absent from `list-broadcasts`.
 - **Contacts outlive audience deletion (8a confirmed again).** 22 team-level contacts remain: the sink plus the maintainer's own `+` test addresses from 2026-09-08. Partial answer to Q8: these 22 count towards the 1,000 cap unless removed globally.
