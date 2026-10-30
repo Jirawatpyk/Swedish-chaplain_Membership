@@ -13,8 +13,8 @@
  * page's single cross-tab refresh.
  *
  * AURA #191 (5.71): the page passes it as PageHeader's `actionsBar`, so below
- * 640px it is the content of AURA's strip; `data-slot="pay-bar"` lets
- * globals.css hide that strip too while this is hidden.
+ * 640px it is the content of AURA's strip; while this is hidden, AURA 5.74
+ * (#193) hides the strip and drops its page padding.
  */
 import { useOptimisticPaid } from './optimistic-paid';
 

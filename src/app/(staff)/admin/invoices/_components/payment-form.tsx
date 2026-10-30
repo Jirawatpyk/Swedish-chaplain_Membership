@@ -8,6 +8,7 @@ import { useEffect, useRef, useState, useTransition } from 'react';
 import { useTranslations } from 'next-intl';
 import { Alert, Button, Select, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
+import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money-dialog-footer';
 import { routeRecordPaymentError } from './record-payment-error-routing';
 
 const METHODS = ['bank_transfer', 'cheque', 'cash', 'other'] as const;
@@ -18,8 +19,8 @@ export function PaymentForm({
   issueDate,
   todayIso,
   onSuccess,
-  onCancel,
-  onPendingChange,
+  formId,
+  onFooterChange,
 }: {
   invoiceId: string;
   documentNumber: string | null;
@@ -52,27 +53,26 @@ export function PaymentForm({
    * fall back to the previous navigate-and-refresh behaviour.
    */
   onSuccess?: () => void;
+  /** The form element's id, which the dialog footer's submit button names (PR N2). */
+  formId?: string;
   /**
-   * F5R1-UX5 — optional cancel callback for the RecordPaymentDialog
-   * overlay. When provided, renders a Cancel button next to Submit
-   * (financial-action heuristic: every form modifying money state
-   * should offer an explicit Cancel affordance, not rely solely on
-   * Esc / outside-click). Legacy full-page callers omit it.
+   * Spec 122 PR N2 — the state of the buttons the dialog draws in its footer
+   * (F5R1-UX5: an explicit Cancel beside Record payment). While a payment is
+   * in flight the dialog refuses Escape and the scrim until the POST settles
+   * (an error must land in a mounted form, and a stray tap must not drop what
+   * was typed).
    */
-  onCancel?: () => void;
-  /**
-   * Spec 122 US8 (T809) — tells the dialog wrapper a payment is in flight,
-   * so it can refuse Escape and the scrim until the POST settles (an error
-   * must land in a mounted form, and a stray tap must not drop what was typed).
-   */
-  onPendingChange?: (pending: boolean) => void;
+  onFooterChange?: (state: MoneyDialogFooterState) => void;
 }) {
   const t = useTranslations('admin.invoices.pay');
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  useEffect(() => {
-    onPendingChange?.(pending);
-  }, [pending, onPendingChange]);
+  // The submit validates the date itself, so it is enabled until in flight.
+  useReportMoneyDialogFooter(onFooterChange, {
+    pending,
+    canConfirm: true,
+    confirmLabel: pending ? t('submitting') : t('submit'),
+  });
   const [paymentMethod, setPaymentMethod] = useState<(typeof METHODS)[number]>('bank_transfer');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
@@ -111,86 +111,100 @@ export function PaymentForm({
     ? t('errors.dateRange', { min: issueDate ?? todayIso, max: todayIso })
     : null;
 
+  // Set before the POST, synchronously: `pending` flips only on the next
+  // render, so a second submit in the same tick would otherwise record twice.
+  const inFlightRef = useRef(false);
+
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (inFlightRef.current) return;
     setSubmitAttempted(true);
     setFormError(null);
     if (dateInvalid) {
       dateInputRef.current?.focus();
       return;
     }
+    inFlightRef.current = true;
     startTransition(async () => {
-      const res = await fetch(`/api/invoices/${invoiceId}/pay`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentMethod,
-          paymentReference: paymentReference.trim() || undefined,
-          paymentNotes: paymentNotes.trim() || undefined,
-          paymentDate,
-        }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const code = (body as { error?: { code?: string } })?.error?.code;
-        // FR-028/FR-032 — irreversible §87-mint failure → INLINE focused
-        // role="alert" (never a transient toast); a concurrent 409 →
-        // inline "already paid — refresh". The dialog stays open (no
-        // optimistic close) so the admin sees the outcome in context.
-        const routing = routeRecordPaymentError(code);
-        if (routing.kind === 'concurrent') {
-          setFormError({ kind: 'concurrent' });
-        } else {
-          const message =
-            routing.messageKey === 'errors.codeFallback' && routing.codeArg
-              ? t('errors.codeFallback', { code: routing.codeArg })
-              : t(routing.messageKey as 'errors.unknown');
-          setFormError({ kind: 'failure', message });
+      // Held after a success: the dialog closes and this form unmounts.
+      let recorded = false;
+      try {
+        const res = await fetch(`/api/invoices/${invoiceId}/pay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentMethod,
+            paymentReference: paymentReference.trim() || undefined,
+            paymentNotes: paymentNotes.trim() || undefined,
+            paymentDate,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          const code = (body as { error?: { code?: string } })?.error?.code;
+          // FR-028/FR-032 — irreversible §87-mint failure → INLINE focused
+          // role="alert" (never a transient toast); a concurrent 409 →
+          // inline "already paid — refresh". The dialog stays open (no
+          // optimistic close) so the admin sees the outcome in context.
+          const routing = routeRecordPaymentError(code);
+          if (routing.kind === 'concurrent') {
+            setFormError({ kind: 'concurrent' });
+          } else {
+            const message =
+              routing.messageKey === 'errors.codeFallback' && routing.codeArg
+                ? t('errors.codeFallback', { code: routing.codeArg })
+                : t(routing.messageKey as 'errors.unknown');
+            setFormError({ kind: 'failure', message });
+          }
+          return;
         }
-        return;
-      }
-      // FR-032 — doc-specific success toast: under the 088 flow the payment
-      // mints the §86/4 RC receipt number, so prefer "Tax receipt RC-… issued"
-      // (read from the response); fall back to the legacy "paid" copy otherwise.
-      const body = (await res.json().catch(() => ({}))) as {
-        receipt_document_number_raw?: string | null;
-        // Cluster 5 (Finding 1) — auto-email dispatch outcome.
-        email_dispatch?: string;
-      };
-      const rc =
-        typeof body.receipt_document_number_raw === 'string' && body.receipt_document_number_raw
-          ? body.receipt_document_number_raw
-          : null;
-      // Cluster 5 (Finding 1) — the receipt was NOT emailed because the member
-      // has no contact email on file. The payment still SUCCEEDED; append a
-      // non-blocking warning line so the admin knows to deliver it manually.
-      const noEmailWarning =
-        body.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
-      if (rc) {
-        toast.success(
-          t('successReceipt', { number: rc }),
-          noEmailWarning ? { description: noEmailWarning } : undefined,
-        );
-      } else {
-        const detail = documentNumber ? t('successDetail', { number: documentNumber }) : null;
-        const description = [detail, noEmailWarning].filter(Boolean).join(' ') || undefined;
-        toast.success(t('success'), description ? { description } : undefined);
-      }
-      if (onSuccess) {
-        // Dialog overlay wrapper — close first, then refresh so the
-        // detail page rerender lands with the dialog already gone.
-        onSuccess();
-        router.refresh();
-      } else {
-        // Legacy full-page caller — preserve original behaviour.
-        router.push(`/admin/invoices/${invoiceId}`);
-        router.refresh();
+        // FR-032 — doc-specific success toast: under the 088 flow the payment
+        // mints the §86/4 RC receipt number, so prefer "Tax receipt RC-… issued"
+        // (read from the response); fall back to the legacy "paid" copy otherwise.
+        const body = (await res.json().catch(() => ({}))) as {
+          receipt_document_number_raw?: string | null;
+          // Cluster 5 (Finding 1) — auto-email dispatch outcome.
+          email_dispatch?: string;
+        };
+        const rc =
+          typeof body.receipt_document_number_raw === 'string' && body.receipt_document_number_raw
+            ? body.receipt_document_number_raw
+            : null;
+        // Cluster 5 (Finding 1) — the receipt was NOT emailed because the member
+        // has no contact email on file. The payment still SUCCEEDED; append a
+        // non-blocking warning line so the admin knows to deliver it manually.
+        const noEmailWarning =
+          body.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
+        if (rc) {
+          toast.success(
+            t('successReceipt', { number: rc }),
+            noEmailWarning ? { description: noEmailWarning } : undefined,
+          );
+        } else {
+          const detail = documentNumber ? t('successDetail', { number: documentNumber }) : null;
+          const description = [detail, noEmailWarning].filter(Boolean).join(' ') || undefined;
+          toast.success(t('success'), description ? { description } : undefined);
+        }
+        recorded = true;
+        if (onSuccess) {
+          // Dialog overlay wrapper — close first, then refresh so the
+          // detail page rerender lands with the dialog already gone.
+          onSuccess();
+          router.refresh();
+        } else {
+          // Legacy full-page caller — preserve original behaviour.
+          router.push(`/admin/invoices/${invoiceId}`);
+          router.refresh();
+        }
+      } finally {
+        if (!recorded) inFlightRef.current = false;
       }
     });
   }
 
   return (
     <form
+      id={formId}
       onSubmit={submit}
       // method="post" — keep invoice/payment data out of the URL on a
       // pre-hydration native submit (CWE-598; see
@@ -264,17 +278,6 @@ export function PaymentForm({
         onChange={(e) => setPaymentNotes(e.target.value)}
         rows={3}
       />
-      <div className="flex flex-wrap justify-end gap-[var(--aura-space-2)] max-sm:[&>*]:flex-1">
-        {onCancel && (
-          <Button type="button" variant="secondary" touchHeight onClick={onCancel} disabled={pending}>
-            {t('cancelDialog')}
-          </Button>
-        )}
-        {/* The board's check: this mints the §86/4 receipt. */}
-        <Button type="submit" variant="primary" icon="check" touchHeight loading={pending}>
-          {pending ? t('submitting') : t('submit')}
-        </Button>
-      </div>
     </form>
   );
 }

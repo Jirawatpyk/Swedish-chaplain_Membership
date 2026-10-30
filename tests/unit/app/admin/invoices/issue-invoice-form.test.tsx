@@ -18,10 +18,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { IssueInvoiceForm } from '@/app/(staff)/admin/invoices/_components/issue-invoice-form';
-import { IssueInvoiceDialog } from '@/app/(staff)/admin/invoices/_components/issue-invoice-dialog';
+import { IssueInvoiceDialog, ISSUE_INVOICE_FOOTER } from '@/app/(staff)/admin/invoices/_components/issue-invoice-dialog';
 import { buildIssueTotalsByTreatment } from '@/app/(staff)/admin/invoices/[invoiceId]/_lib/issue-totals-by-treatment';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
+import { WithMoneyDialogFooter } from '../../../../helpers/money-dialog-footer-harness';
 
 const refreshMock = vi.fn();
 vi.mock('next/navigation', () => ({
@@ -56,16 +57,21 @@ function renderForm(
 ) {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-      <IssueInvoiceForm
-        invoiceId="inv-1"
-        summary={BASE_SUMMARY}
-        taxAtPayment
-        isMembership={false}
-        buyerIsVatRegistrant={false}
-        totalsByTreatment={priced(800_000)}
-        onClose={() => undefined}
-        {...overrides}
-      />
+      <WithMoneyDialogFooter config={ISSUE_INVOICE_FOOTER}>
+        {(wire) => (
+          <IssueInvoiceForm
+            invoiceId="inv-1"
+            summary={BASE_SUMMARY}
+            taxAtPayment
+            isMembership={false}
+            buyerIsVatRegistrant={false}
+            totalsByTreatment={priced(800_000)}
+            onClose={() => undefined}
+            {...overrides}
+            onFooterChange={wire.onFooterChange}
+          />
+        )}
+      </WithMoneyDialogFooter>
     </NextIntlClientProvider>,
   );
 }
@@ -607,17 +613,3 @@ describe('IssueInvoiceDialog — AURA alertdialog', () => {
   });
 });
 
-describe('IssueInvoiceForm — the buttons stay in view (spec 122 US8b, UX review)', () => {
-  it('keeps Cancel and Issue in a row stuck to the bottom of the scrolling dialog body, stacked full width on a phone', () => {
-    renderForm();
-    const cancel = screen.getByRole('button', { name: enMessages.admin.invoices.issue.cancel });
-    const row = cancel.parentElement!;
-    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse');
-    // Each button is AURA's full-width button below sm (natural width above),
-    // so the confirm's label, which names the total, wraps at 320px instead
-    // of running out of the button (spec 122 follow-up 5).
-    for (const button of row.querySelectorAll('button')) {
-      expect(button).toHaveClass('aura-btn--full-below-sm');
-    }
-  });
-});

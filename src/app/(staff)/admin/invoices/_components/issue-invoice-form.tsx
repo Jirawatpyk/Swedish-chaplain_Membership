@@ -56,6 +56,7 @@ import {
 } from '../_lib/issue-vat-treatment';
 import { routeIssueError } from './issue-error-routing';
 import { ZeroRateCertUploader } from './zero-rate-cert-uploader';
+import { type MoneyDialogFooterState, useReportMoneyDialogFooter } from './money-dialog-footer';
 
 export type IssueInvoiceFormProps = {
   readonly invoiceId: string;
@@ -93,8 +94,11 @@ export type IssueInvoiceFormProps = {
   readonly billNumberPrefix?: string;
   /** Close the enclosing dialog (wired by the wrapper to `setOpen(false)`). */
   readonly onClose: () => void;
-  /** The POST is in flight: the dialog stays open (no Escape or scrim close). */
-  readonly onPendingChange?: (pending: boolean) => void;
+  /**
+   * The state of the buttons the dialog draws in its footer (PR N2): in
+   * flight (no Escape or scrim close), whether the phrase matches, the label.
+   */
+  readonly onFooterChange?: (state: MoneyDialogFooterState) => void;
 };
 
 export function IssueInvoiceForm({
@@ -109,7 +113,7 @@ export function IssueInvoiceForm({
   billNumberPrefix = 'SC',
   totalsByTreatment,
   onClose,
-  onPendingChange,
+  onFooterChange,
 }: IssueInvoiceFormProps) {
   const t = useTranslations('admin.invoices.issue');
   const tForm = useTranslations('admin.invoices.issue.form');
@@ -118,9 +122,6 @@ export function IssueInvoiceForm({
   const router = useRouter();
   const [typed, setTyped] = useState('');
   const [pending, startTransition] = useTransition();
-  useEffect(() => {
-    onPendingChange?.(pending);
-  }, [pending, onPendingChange]);
 
   // 088 T021a / FR-032 — issue failure surfaces INLINE via a focused
   // role="alert" (never a transient toast); a concurrent 409 shows an inline
@@ -223,7 +224,12 @@ export function IssueInvoiceForm({
     return () => window.removeEventListener('beforeunload', handler);
   }, [pending, vatTreatment, certNo, certDate, certBlobKey]);
 
+  // Set before the POST, synchronously: `pending` flips only on the next
+  // render, so a second call in the same tick would otherwise issue twice.
+  const inFlightRef = useRef(false);
+
   function confirm() {
+    if (!matches || inFlightRef.current) return;
     setFormError(null);
     // 088 T061b/T061g — fail-closed layer 1: block submit BEFORE any POST when
     // a zero-rated issue has a blank cert number (or a malformed date). Move
@@ -256,57 +262,81 @@ export function IssueInvoiceForm({
       expectedVatSatang: totals?.vatSatang ?? null,
     });
 
+    inFlightRef.current = true;
     startTransition(async () => {
-      const res = await fetch(
-        `/api/invoices/${invoiceId}/issue`,
-        body
-          ? {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify(body),
-            }
-          : { method: 'POST' },
-      );
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        const code = (errBody as { error?: { code?: string } })?.error?.code;
-        const routing = routeIssueError(code);
-        if (routing.kind === 'concurrent' || routing.kind === 'stale') {
-          setFormError({ kind: routing.kind });
-        } else {
-          const message =
-            routing.messageKey === 'errors.codeFallback' && routing.codeArg
-              ? t('errors.codeFallback', { code: routing.codeArg })
-              : t(routing.messageKey as 'errors.unknown');
-          setFormError({ kind: 'failure', message });
+      // Held after a success: the dialog closes and this form unmounts.
+      let issued = false;
+      try {
+        const res = await fetch(
+          `/api/invoices/${invoiceId}/issue`,
+          body
+            ? {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(body),
+              }
+            : { method: 'POST' },
+        );
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          const code = (errBody as { error?: { code?: string } })?.error?.code;
+          const routing = routeIssueError(code);
+          if (routing.kind === 'concurrent' || routing.kind === 'stale') {
+            setFormError({ kind: routing.kind });
+          } else {
+            const message =
+              routing.messageKey === 'errors.codeFallback' && routing.codeArg
+                ? t('errors.codeFallback', { code: routing.codeArg })
+                : t(routing.messageKey as 'errors.unknown');
+            setFormError({ kind: 'failure', message });
+          }
+          return;
         }
-        return;
+        const okBody = (await res.json().catch(() => ({}))) as {
+          bill_document_number_raw?: string | null;
+          document_number?: string | null;
+          // Cluster 5 (Finding 1) — auto-email dispatch outcome.
+          email_dispatch?: string;
+        };
+        const number =
+          (typeof okBody.bill_document_number_raw === 'string' &&
+            okBody.bill_document_number_raw) ||
+          (typeof okBody.document_number === 'string' && okBody.document_number) ||
+          null;
+        // Cluster 5 (Finding 1) — the invoice was NOT emailed because the buyer
+        // has no contact email on file. Issuance still SUCCEEDED; append a
+        // non-blocking warning line so the admin knows to deliver it manually.
+        const noEmailWarning =
+          okBody.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
+        toast.success(
+          number ? t('successWithNumber', { number }) : t('success'),
+          noEmailWarning ? { description: noEmailWarning } : undefined,
+        );
+        issued = true;
+        setTyped('');
+        onClose();
+        router.refresh();
+      } finally {
+        if (!issued) inFlightRef.current = false;
       }
-      const okBody = (await res.json().catch(() => ({}))) as {
-        bill_document_number_raw?: string | null;
-        document_number?: string | null;
-        // Cluster 5 (Finding 1) — auto-email dispatch outcome.
-        email_dispatch?: string;
-      };
-      const number =
-        (typeof okBody.bill_document_number_raw === 'string' &&
-          okBody.bill_document_number_raw) ||
-        (typeof okBody.document_number === 'string' && okBody.document_number) ||
-        null;
-      // Cluster 5 (Finding 1) — the invoice was NOT emailed because the buyer
-      // has no contact email on file. Issuance still SUCCEEDED; append a
-      // non-blocking warning line so the admin knows to deliver it manually.
-      const noEmailWarning =
-        okBody.email_dispatch === 'skipped_no_email' ? t('successNoEmailWarning') : null;
-      toast.success(
-        number ? t('successWithNumber', { number }) : t('success'),
-        noEmailWarning ? { description: noEmailWarning } : undefined,
-      );
-      setTyped('');
-      onClose();
-      router.refresh();
     });
   }
+
+  // The dialog draws Cancel and the confirm in its footer (PR N2). The confirm
+  // is a click, never a form submit: Enter in the phrase field must not issue.
+  // Board Admin-invoice-issue: it names the document and its total (priced for
+  // the chosen treatment, as the issue use case pins it); an unpriced draft
+  // names no amount.
+  useReportMoneyDialogFooter(onFooterChange, {
+    pending,
+    canConfirm: matches,
+    confirmLabel: pending
+      ? t('issuing')
+      : totalText !== null
+        ? t(taxAtPayment ? 'issueBillButton' : 'issueInvoiceButton', { total: totalText })
+        : t(taxAtPayment ? 'issueBillButtonPlain' : 'issueInvoiceButtonPlain'),
+    onConfirm: confirm,
+  });
 
   return (
     <>
@@ -616,46 +646,6 @@ export function IssueInvoiceForm({
             {t('confirmMismatch', { phrase: confirmPhrase })}
           </p>
         )}
-      </div>
-
-      {/* The buttons stick to the bottom of the dialog's scrolling body, so a
-          long form never scrolls them away and focusing Cancel on open does
-          not scroll the summary out of view; on a phone they stack full
-          width, the primary action on top (ux-standards § 11.1). Each is
-          AURA's full-width button below sm, so the confirm's label (it names
-          the total) wraps instead of running out of the button at 320px.
-          PR N2: Dialog footer — moves to AURA Dialog's `footer` (D-039). */}
-      <div className="sticky bottom-0 flex flex-wrap justify-end gap-[var(--aura-space-2)] bg-[var(--aura-bg-surface)] py-[var(--aura-space-3)] max-sm:flex-col-reverse">
-        {/* Cancel takes the first focus (ux-standards § 6, the safe action). */}
-        <Button
-          type="button"
-          variant="secondary"
-          fullWidth="below-sm"
-          data-autofocus
-          disabled={pending}
-          onClick={onClose}
-        >
-          {t('cancel')}
-        </Button>
-        <Button
-          type="button"
-          variant="primary"
-          fullWidth="below-sm"
-          loading={pending}
-          // Board Admin-invoice-issue: the confirm names the document and its
-          // total, with the money-step check icon (§ Button icons). The total
-          // is priced for the chosen treatment (zero-rated, VAT-inclusive) as
-          // the issue use case pins it; an unpriced draft names no amount.
-          icon="check"
-          disabled={!matches || pending}
-          onClick={confirm}
-        >
-          {pending
-            ? t('issuing')
-            : totalText !== null
-              ? t(taxAtPayment ? 'issueBillButton' : 'issueInvoiceButton', { total: totalText })
-              : t(taxAtPayment ? 'issueBillButtonPlain' : 'issueInvoiceButtonPlain')}
-        </Button>
       </div>
       </div>
     </>

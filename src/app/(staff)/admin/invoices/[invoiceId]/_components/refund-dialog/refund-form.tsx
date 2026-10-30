@@ -34,14 +34,16 @@
  * branch on what actually documented the refund; rendering the credit-note copy
  * unconditionally is what produced "credit note  issued" with an empty number.
  */
-import { useEffect, useRef, useState, useId, useMemo } from 'react';
+import { useEffect, useRef, useState, useId, useMemo, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { Alert, Button, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { Alert, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 // TYPE-ONLY, and it must stay that way. The invoicing barrel reaches
 // server-only modules; a value import here would drag them into a client
 // bundle. `import type` is erased at compile time, so this costs nothing at
@@ -51,6 +53,10 @@ import { useLocale } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
 import { TypedPhraseConfirm } from './typed-phrase-confirm';
 import { useCreditNotePreview } from './use-credit-note-preview';
+import {
+  type MoneyDialogFooterState,
+  useReportMoneyDialogFooter,
+} from '@/app/(staff)/admin/invoices/_components/money-dialog-footer';
 
 const REASON_MAX = 500;
 
@@ -114,8 +120,19 @@ type Props = {
    */
   readonly invoiceHeadroomSatang: bigint;
   readonly onClose: () => void;
-  /** The request is in flight: the dialog stays open (no Escape or scrim close). */
-  readonly onPendingChange?: (pending: boolean) => void;
+  /** The form element's id, which the dialog footer's confirm submits (PR N2). */
+  readonly formId?: string;
+  /**
+   * The state of the buttons the dialog draws in its footer (PR N2): in
+   * flight (no Escape or scrim close), whether the refund may be sent, the label.
+   */
+  readonly onFooterChange?: (state: MoneyDialogFooterState) => void;
+  /**
+   * The refund's outcome is unconfirmed (it may have gone through): the
+   * dialog locks its trigger until a reload, and refreshes once back online
+   * when asked (`refreshWhenOnline`).
+   */
+  readonly onUnconfirmed?: (opts: { readonly refreshWhenOnline: boolean }) => void;
 };
 
 type MembershipEffect = 'keep' | 'cancel_membership';
@@ -149,12 +166,15 @@ export function RefundForm({
   invoiceSubject,
   invoiceHeadroomSatang,
   onClose,
-  onPendingChange,
+  formId,
+  onFooterChange,
+  onUnconfirmed,
 }: Props) {
   const t = useTranslations('admin.refund');
   const tForm = useTranslations('admin.refund.form');
   const tFormErr = useTranslations('admin.refund.form.errors');
   const tError = useTranslations('admin.refund.error');
+  const readOnlyToast = useReadOnlyToast();
   const locale = useLocale();
   const router = useRouter();
   const remainingThb = Number(remainingRefundableSatang) / 100;
@@ -165,9 +185,6 @@ export function RefundForm({
   const schema = useMemo(() => buildSchema(remainingThb), [remainingThb]);
 
   const [submitting, setSubmitting] = useState(false);
-  useEffect(() => {
-    onPendingChange?.(submitting);
-  }, [submitting, onPendingChange]);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [typedPhrase, setTypedPhrase] = useState('');
   // 0306 — default Keep: ending a membership is never the silent default.
@@ -247,12 +264,32 @@ export function RefundForm({
   // Confirm enables only when:
   //   1. RHF schema is valid (amount + reason)
   //   2. NOT a full refund OR typed-phrase matches (full-refund gate)
-  //   3. NOT submitting
-  const canSubmit =
-    isValid && !submitting && (!isFullRefund || phraseMatches);
+  // While submitting it is AURA's loading button (the click swallowed).
+  const canSubmit = isValid && (!isFullRefund || phraseMatches);
+
+  // The dialog draws Cancel and the confirm in its footer (PR N2); the confirm
+  // submits this form from there (`form={formId}`), so Enter in a field still
+  // submits, and a disabled confirm still blocks it.
+  useReportMoneyDialogFooter(onFooterChange, {
+    pending: submitting,
+    canConfirm: canSubmit,
+    confirmLabel: submitting
+      ? t('dialog.processing')
+      : summaryAmountSatang !== null
+        ? t('dialog.confirmAmount', { amount: formatSatangThb(summaryAmountSatang, locale, currencyCode) })
+        : t('dialog.confirm'),
+  });
+
+  // Held from the submit event, before RHF's async validation, until the POST
+  // settles: `submitting` flips only after validation and a render, so a
+  // second submit in that window would otherwise send a second refund.
+  const submittingRef = useRef(false);
 
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
-    if (amountSatang === null) return;
+    if (amountSatang === null) {
+      submittingRef.current = false;
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
     // I5: track success-path entry so the
@@ -261,24 +298,65 @@ export function RefundForm({
     // safe for unmounted components, React 19 silently ignores) or
     // reset it for the failure-stays-open paths.
     let succeeded = false;
+    // Financial review (PR #703): once the server may have refunded, never
+    // offer a retry. A retry mints a new refund id, so after a synchronous
+    // refund it would pay a second one. The dialog locks its trigger until a
+    // reload (first, so nothing below can skip it), then this closes, warns,
+    // and refreshes so Payment activity shows what happened. On a network
+    // failure while offline the refresh waits for the connection: now it
+    // would fall back to a browser navigation onto the offline page and the
+    // warning would never be seen (R112 §3).
+    const settleUnconfirmed = (message: string, { network = false }: { network?: boolean } = {}) => {
+      succeeded = true;
+      const offline = network && typeof navigator !== 'undefined' && navigator.onLine === false;
+      onUnconfirmed?.({ refreshWhenOnline: offline });
+      try {
+        toast.warning(message, { duration: Infinity, closeButton: true });
+      } finally {
+        onClose();
+        if (!offline) router.refresh();
+      }
+    };
     try {
-      const res = await fetch('/api/refunds/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paymentId,
-          amountSatang: Number(amountSatang),
-          reason: values.reason.trim(),
-          // Only sent when the choice was shown; a partial / event refund
-          // never touches membership.
-          ...(isFullMembershipRefund ? { membershipEffect } : {}),
-        }),
-      });
+      let res: Response;
+      try {
+        res = await fetch('/api/refunds/initiate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentId,
+            amountSatang: Number(amountSatang),
+            reason: values.reason.trim(),
+            // Only sent when the choice was shown; a partial / event refund
+            // never touches membership.
+            ...(isFullMembershipRefund ? { membershipEffect } : {}),
+          }),
+        });
+      } catch (e) {
+        // The request may have reached the server before the connection
+        // dropped: its outcome is unknown.
+        console.error('refund submit: outcome unknown', e);
+        settleUnconfirmed(tError('outcomeUnknown'), { network: true });
+        return;
+      }
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
+        const raw: unknown = await res.json().catch(() => ({}));
+        // The write freeze (READ_ONLY_MODE): nothing ran. Its proxy reply is
+        // the flat `{ error: 'read-only-mode' }`, which names no code below.
+        if (isReadOnlyRefusal(res.status, raw)) {
+          setSubmitError(readOnlyToast());
+          return;
+        }
+        const body = raw as {
           error?: { code?: string; remainingSatang?: string };
         };
         const code = body.error?.code ?? 'internal_error';
+        // A 5xx that names no refusal (our own internal_error, or no readable
+        // code: an edge timeout) may come after the refund was made.
+        if (res.status >= 500 && code === 'internal_error') {
+          settleUnconfirmed(tError('outcomeUnknown'));
+          return;
+        }
         // Money-remediation F-3 — NOT a failure. Stripe SETTLED this refund;
         // only the credit note is outstanding, and the stale-pending sweep
         // retries it automatically. The generic branch below would render it
@@ -290,8 +368,8 @@ export function RefundForm({
         // (the check:i18n route-code gate enforces it) as the fallback if this
         // special case is ever removed.
         if (code === 'f4_bridge_deferred') {
-          toast.success(t('success.deferredToast'));
           succeeded = true;
+          toast.success(t('success.deferredToast'));
           onClose();
           router.refresh();
           return;
@@ -336,7 +414,9 @@ export function RefundForm({
         toast.error(msg);
         return;
       }
-      const body = (await res.json()) as {
+      // A 2xx: the refund went through or is settling. A body that can't be
+      // read is never shown as a failure.
+      const body = (await res.json().catch(() => null)) as {
         membership_end?: string;
         refund: {
           status?: string;
@@ -350,89 +430,127 @@ export function RefundForm({
             | { kind: 'waived'; reason: WaiverReason };
           creditNoteWaiverReason?: WaiverReason | null;
         };
-      };
-      // #1 (2026-07-11) — an async Stripe refund returns 202 with a
-      // `pending` row (no credit note yet). Show an "awaiting confirmation"
-      // toast; the `charge.refund.updated` webhook books the credit note
-      // once the refund settles. A synchronous `succeeded` refund (201)
-      // carries the credit-note number.
-      if (res.status === 202 || body.refund.status === 'pending') {
-        // Track B — the waiver decision is made at pre-flight, so even a
-        // still-settling refund knows whether a §86/10 will ever follow.
-        // Telling this admin "the credit note is issued once the refund
-        // settles" would be false for the whole life of that refund.
-        const pendingWaiver = body.refund.creditNoteWaiverReason ?? null;
-        if (pendingWaiver) {
-          // `warning`, not `success`: the money went back, but the message is a
-          // CAUTION — an output-VAT adjustment is now owed. The green check of
-          // `toast.success` reads as "all done"; the triangle of `toast.warning`
-          // matches "succeeded, but act". `closeButton` is REQUIRED alongside
-          // `duration: Infinity` — a toast that never auto-dismisses and has no
-          // focusable dismiss control strands a keyboard/screen-reader admin
-          // under it on every subsequent screen (WCAG 2.1.1 / ux-standards §4.2).
-          toast.warning(t('success.pendingWaivedToast'), {
-            description: t(`success.waivedReason.${waiverKey(pendingWaiver)}`),
+      } | null;
+      if (!body?.refund) {
+        settleUnconfirmed(t('success.unconfirmedToast'));
+        return;
+      }
+      // Telling the admin what happened must not turn a refund that went
+      // through into an error with a retry.
+      try {
+        // #1 (2026-07-11) — an async Stripe refund returns 202 with a
+        // `pending` row (no credit note yet). Show an "awaiting confirmation"
+        // toast; the `charge.refund.updated` webhook books the credit note
+        // once the refund settles. A synchronous `succeeded` refund (201)
+        // carries the credit-note number.
+        if (res.status === 202 || body.refund.status === 'pending') {
+          // Track B — the waiver decision is made at pre-flight, so even a
+          // still-settling refund knows whether a §86/10 will ever follow.
+          // Telling this admin "the credit note is issued once the refund
+          // settles" would be false for the whole life of that refund.
+          const pendingWaiver = body.refund.creditNoteWaiverReason ?? null;
+          if (pendingWaiver) {
+            // `warning`, not `success`: the money went back, but the message is a
+            // CAUTION — an output-VAT adjustment is now owed. The green check of
+            // `toast.success` reads as "all done"; the triangle of `toast.warning`
+            // matches "succeeded, but act". `closeButton` is REQUIRED alongside
+            // `duration: Infinity` — a toast that never auto-dismisses and has no
+            // focusable dismiss control strands a keyboard/screen-reader admin
+            // under it on every subsequent screen (WCAG 2.1.1 / ux-standards §4.2).
+            toast.warning(t('success.pendingWaivedToast'), {
+              description: t(`success.waivedReason.${waiverKey(pendingWaiver)}`),
+              duration: Infinity,
+              closeButton: true,
+            });
+          } else {
+            toast.success(t('success.pendingToast'));
+          }
+        } else if (body.refund.creditNote?.kind === 'waived') {
+          // No credit note exists and none ever will. The description carries
+          // the ground AND the consequence — an output-VAT adjustment is now
+          // owed that nothing in this system performs. It does NOT tell the
+          // admin how to file: whether that VAT may be reduced at all, by what
+          // instrument, and in which ภ.พ.30 month are open questions for the
+          // chamber's accountant. Turning an unanswered tax question into an
+          // instruction would be a worse lie than the one being removed here.
+          //
+          // `warning` + persistent + `closeButton`: this is a caution, it is the
+          // only moment the admin is told, and it must be dismissible by keyboard
+          // and screen reader — see the pending-waived arm above for the full
+          // reasoning.
+          toast.warning(t('success.waivedToast'), {
+            description: t(
+              `success.waivedReason.${waiverKey(body.refund.creditNote.reason)}`,
+            ),
             duration: Infinity,
             closeButton: true,
           });
         } else {
-          toast.success(t('success.pendingToast'));
+          toast.success(
+            t('success.toast', { number: body.refund.creditNoteNumber ?? '' }),
+          );
         }
-      } else if (body.refund.creditNote?.kind === 'waived') {
-        // No credit note exists and none ever will. The description carries
-        // the ground AND the consequence — an output-VAT adjustment is now
-        // owed that nothing in this system performs. It does NOT tell the
-        // admin how to file: whether that VAT may be reduced at all, by what
-        // instrument, and in which ภ.พ.30 month are open questions for the
-        // chamber's accountant. Turning an unanswered tax question into an
-        // instruction would be a worse lie than the one being removed here.
-        //
-        // `warning` + persistent + `closeButton`: this is a caution, it is the
-        // only moment the admin is told, and it must be dismissible by keyboard
-        // and screen reader — see the pending-waived arm above for the full
-        // reasoning.
-        toast.warning(t('success.waivedToast'), {
-          description: t(
-            `success.waivedReason.${waiverKey(body.refund.creditNote.reason)}`,
-          ),
-          duration: Infinity,
-          closeButton: true,
-        });
-      } else {
-        toast.success(
-          t('success.toast', { number: body.refund.creditNoteNumber ?? '' }),
-        );
+      } catch (e) {
+        console.error('refund submit: unexpected 2xx body', e);
+        settleUnconfirmed(t('success.unconfirmedToast'));
+        return;
       }
-      // 0306 — what happened to the membership (only when End was chosen).
-      const membershipEnd = body.membership_end;
-      if (
-        membershipEnd !== undefined &&
-        (MEMBERSHIP_END_OUTCOMES as readonly string[]).includes(membershipEnd)
-      ) {
-        toast.info(t(`membership.outcome.${membershipEnd as MembershipEndOutcome}`));
+      // After the refund's own toast, a failure here is only logged: the
+      // refund is settled and already said so.
+      try {
+        // 0306 — what happened to the membership (only when End was chosen).
+        const membershipEnd = body.membership_end;
+        if (
+          membershipEnd !== undefined &&
+          (MEMBERSHIP_END_OUTCOMES as readonly string[]).includes(membershipEnd)
+        ) {
+          toast.info(t(`membership.outcome.${membershipEnd as MembershipEndOutcome}`));
+        }
+      } catch (e) {
+        console.error('refund submit: membership outcome toast failed', e);
       }
       succeeded = true;
       onClose();
       router.refresh();
     } catch (e) {
+      // After a success (`onClose` or `router.refresh` threw) there is
+      // nothing to retry.
+      if (succeeded) {
+        console.error('refund submit: close after success failed', e);
+        return;
+      }
       const msg = tError('internal_error');
       setSubmitError(msg);
       toast.error(msg);
-       
-      // network/parse errors during dev; pino in production.
+      // Only a failure the server answered gets here: a network error and
+      // any 2xx are settled above.
       console.error('refund submit failed', e);
     } finally {
       // Always reset submitting so a stale spinner cannot freeze the
       // dialog if `onClose` or `router.refresh` throws after success.
       // React 19 ignores setState on an unmounted component, so this
       // is safe even when the dialog has already been torn down.
-      void succeeded;
       setSubmitting(false);
+      // Held after a success, as in issue and record payment: the dialog
+      // closes and this form unmounts.
+      if (!succeeded) submittingRef.current = false;
     }
   };
 
+  const submitOnce = (e: FormEvent<HTMLFormElement>) => {
+    if (submittingRef.current) {
+      e.preventDefault();
+      return;
+    }
+    submittingRef.current = true;
+    void handleSubmit(onSubmit, () => {
+      submittingRef.current = false;
+    })(e);
+  };
+
   // Cancel takes the first focus per FR-029(d) (destructive dialogs default
-  // to the safe action): AURA's modal focuses `[data-autofocus]` on open.
+  // to the safe action): `REFUND_FOOTER.autoFocusCancel` in ./index.tsx puts
+  // `data-autofocus` on the footer's Cancel, which AURA's modal focuses on open.
 
   // Map RHF zod-resolver error codes to localised messages. The
   // resolver puts the `message` field straight into errors; we
@@ -476,7 +594,8 @@ export function RefundForm({
 
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
+      id={formId}
+      onSubmit={submitOnce}
       className="flex flex-col gap-6"
       noValidate
     >
@@ -673,7 +792,7 @@ export function RefundForm({
         />
       )}
 
-      {/* Submit error — inline alert above buttons (FR-029(g)). */}
+      {/* Submit error — inline alert, above the footer's buttons (FR-029(g)). */}
       {submitError && (
         <div ref={errorRef} tabIndex={-1} className="outline-none">
           {/* Generic headline so a known business rejection (e.g. "refund in
@@ -684,32 +803,6 @@ export function RefundForm({
           </Alert>
         </div>
       )}
-
-      {/* The buttons stick to the bottom of the dialog's scrolling body, so a
-          long form never scrolls them away and focusing Cancel on open does
-          not scroll the summary out of view; on a phone they stack full
-          width, the primary action on top (ux-standards § 11.1).
-          PR N2: Dialog footer — moves to AURA Dialog's `footer` (D-039). */}
-      <div className="sticky bottom-0 flex flex-wrap justify-end gap-[var(--aura-space-2)] bg-[var(--aura-bg-surface)] py-[var(--aura-space-3)] max-sm:flex-col-reverse">
-        <Button type="button" variant="secondary" fullWidth="below-sm" data-autofocus disabled={submitting} onClick={onClose}>
-          {t('dialog.cancel')}
-        </Button>
-        <Button
-          type="submit"
-          variant="danger"
-          fullWidth="below-sm"
-          icon="rotate-ccw"
-          loading={submitting}
-          disabled={!canSubmit}
-          data-testid="refund-form-confirm"
-        >
-          {submitting
-            ? t('dialog.processing')
-            : summaryAmountSatang !== null
-              ? t('dialog.confirmAmount', { amount: formatSatangThb(summaryAmountSatang, locale, currencyCode) })
-              : t('dialog.confirm')}
-        </Button>
-      </div>
     </form>
   );
 }

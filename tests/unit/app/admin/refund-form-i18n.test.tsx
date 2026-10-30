@@ -13,6 +13,8 @@ import { NextIntlClientProvider } from 'next-intl';
 import { toast } from '@/lib/toast';
 import enMessages from '@/i18n/messages/en.json';
 import { RefundForm } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form';
+import { WithMoneyDialogFooter } from '../../../helpers/money-dialog-footer-harness';
+import { REFUND_FOOTER } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
@@ -33,16 +35,21 @@ beforeEach(() => {
 function renderForm() {
   return render(
     <NextIntlClientProvider locale="en" messages={enMessages}>
-        <RefundForm
-          paymentId="pay_1"
-          invoiceId="inv_1"
-          memberCompanyName="Acme AB"
-          remainingRefundableSatang={535000n}
-          currencyCode="THB"
-          invoiceSubject="event"
-          invoiceHeadroomSatang={535000n}
-          onClose={() => undefined}
-        />
+        <WithMoneyDialogFooter config={REFUND_FOOTER}>
+          {(wire) => (
+            <RefundForm
+              paymentId="pay_1"
+              invoiceId="inv_1"
+              memberCompanyName="Acme AB"
+              remainingRefundableSatang={535000n}
+              currencyCode="THB"
+              invoiceSubject="event"
+              invoiceHeadroomSatang={535000n}
+              onClose={() => undefined}
+              {...wire}
+            />
+          )}
+        </WithMoneyDialogFooter>
     </NextIntlClientProvider>,
   );
 }
@@ -234,16 +241,21 @@ describe('RefundForm — I6: f4_bridge_deferred is a settled refund, not a failu
     try {
       render(
         <NextIntlClientProvider locale="en" messages={enMessages}>
-            <RefundForm
-              paymentId="pay_1"
-              invoiceId="inv_1"
-              memberCompanyName="Acme AB"
-              remainingRefundableSatang={535000n}
-              currencyCode="THB"
-              invoiceSubject="event"
-              invoiceHeadroomSatang={535000n}
-              onClose={onClose}
-            />
+            <WithMoneyDialogFooter config={REFUND_FOOTER}>
+              {(wire) => (
+                <RefundForm
+                  paymentId="pay_1"
+                  invoiceId="inv_1"
+                  memberCompanyName="Acme AB"
+                  remainingRefundableSatang={535000n}
+                  currencyCode="THB"
+                  invoiceSubject="event"
+                  invoiceHeadroomSatang={535000n}
+                  onClose={onClose}
+                  {...wire}
+                />
+              )}
+            </WithMoneyDialogFooter>
         </NextIntlClientProvider>,
       );
       await submitPartialRefund();
@@ -273,16 +285,21 @@ describe('RefundForm — Track B: the waived-refund toast tells the truth', () =
   function renderWith(onClose: () => void) {
     render(
       <NextIntlClientProvider locale="en" messages={enMessages}>
-          <RefundForm
-            paymentId="pay_1"
-            invoiceId="inv_1"
-            memberCompanyName="Acme AB"
-            remainingRefundableSatang={535000n}
-            currencyCode="THB"
-            invoiceSubject="event"
-            invoiceHeadroomSatang={535000n}
-            onClose={onClose}
-          />
+          <WithMoneyDialogFooter config={REFUND_FOOTER}>
+            {(wire) => (
+              <RefundForm
+                paymentId="pay_1"
+                invoiceId="inv_1"
+                memberCompanyName="Acme AB"
+                remainingRefundableSatang={535000n}
+                currencyCode="THB"
+                invoiceSubject="event"
+                invoiceHeadroomSatang={535000n}
+                onClose={onClose}
+                {...wire}
+              />
+            )}
+          </WithMoneyDialogFooter>
       </NextIntlClientProvider>,
     );
   }
@@ -386,12 +403,3 @@ describe('RefundForm — Track B: the waived-refund toast tells the truth', () =
   });
 });
 
-describe('RefundForm — the buttons stay in view (spec 122 US8b, UX review)', () => {
-  it('keeps Cancel and Confirm in a row stuck to the bottom of the scrolling dialog body, stacked full width on a phone', () => {
-    renderForm();
-    const row = screen.getByTestId('refund-form-confirm').parentElement!;
-    expect(row).toHaveClass('sticky', 'bottom-0', 'max-sm:flex-col-reverse');
-    // AURA's full width below sm (5.53): 44px and the long amount label wraps.
-    for (const button of row.querySelectorAll('button')) expect(button).toHaveClass('aura-btn--full-below-sm');
-  });
-});
