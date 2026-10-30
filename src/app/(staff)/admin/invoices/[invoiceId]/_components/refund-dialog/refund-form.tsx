@@ -293,15 +293,15 @@ export function RefundForm({
     let succeeded = false;
     // Financial review (PR #703): once the server may have refunded, never
     // offer a retry. A retry mints a new refund id, so after a synchronous
-    // refund it would pay a second one. Close, refresh (the payment timeline
+    // refund it would pay a second one. Close, refresh (Payment activity
     // shows what happened) and say so.
-    const settleUnconfirmed = (message: string) => {
+    const settleUnconfirmed = (message: string, { refresh = true }: { refresh?: boolean } = {}) => {
       succeeded = true;
       try {
         toast.warning(message, { duration: Infinity, closeButton: true });
       } finally {
         onClose();
-        router.refresh();
+        if (refresh) router.refresh();
       }
     };
     try {
@@ -321,9 +321,11 @@ export function RefundForm({
         });
       } catch (e) {
         // The request may have reached the server before the connection
-        // dropped: its outcome is unknown.
+        // dropped: its outcome is unknown. No refresh: with the connection
+        // still down it falls back to a browser navigation onto the offline
+        // page, and the warning would never be seen (R112 §3).
         console.error('refund submit: outcome unknown', e);
-        settleUnconfirmed(tError('outcomeUnknown'));
+        settleUnconfirmed(tError('outcomeUnknown'), { refresh: false });
         return;
       }
       if (!res.ok) {
