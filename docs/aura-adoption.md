@@ -210,6 +210,7 @@ Open items (the ratchet in `tests/unit/architecture/aura-internal-class-ratchet.
 | Item | AURA gap | Chamber-OS stand-in |
 |---|---|---|
 | #191 | `PageHeader` `actionsBarBelow` turns every header action into the phone bar; the portal invoice board's bar holds only amount due and Pay now (handoff addendum 92) | The portal pay bar stays a hand-built `<section>` (`max-sm:fixed`), labelled in `portal/invoices/[invoiceId]/page.tsx` and its `globals.css` scroll padding |
+| #192 | `ActionBar` pads the page (`--aura-actionbar-height`) for the LAST edge strip that mounted, even one in a hidden tab (`display: none`, 0px tall), so the visible strip gets no scroll padding (R109 finding 1, WCAG 2.4.11) | The renewal schedule editor mounts its save bar only in the active tier tab (`schedule-editor.tsx`); AURA should skip a strip that is not rendered |
 
 Addendum 16 (items 101–108, found in US5b-1, the member detail page) shipped in 5.14.0 and 5.16.0. US5b-1 dropped each stand-in:
 
