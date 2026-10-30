@@ -512,9 +512,31 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     }
   },
 
-  async retrieveBroadcastOnce(_broadcastId: string): Promise<RetrieveBroadcastOnceOutcome> {
-    // RED stub (spec 139 review round 1): the real fetch lands in the fix commit.
-    return { kind: 'other' };
+  /**
+   * Spec 139 review round 1 — the port docblock has the contract. A raw
+   * `fetch` with the same 10 s bound as {@link deleteBroadcastOnce}, because
+   * the erasure cascade calls it under the broadcast row's lock. The log line
+   * carries the HTTP status and the outcome only, never the body.
+   */
+  async retrieveBroadcastOnce(broadcastId: string): Promise<RetrieveBroadcastOnceOutcome> {
+    let res: Response;
+    try {
+      res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(DELETE_ONCE_TIMEOUT_MS),
+        headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
+      });
+    } catch (e) {
+      logger.warn(
+        { broadcastId, err: errKind(e), timedOut: isTimeout(e) },
+        'resend.broadcasts.retrieve_once_transport_failed',
+      );
+      return { kind: 'retryable' };
+    }
+    const text = await res.text().catch(() => '');
+    const outcome = retrieveOnceOutcomeFor(res.status, text);
+    logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.retrieve_once');
+    return outcome;
   },
 
   async removeContactFromAudience(
@@ -949,9 +971,9 @@ function throwImportError(
 const IMPORT_FETCH_TIMEOUT_MS = 30_000;
 
 /**
- * Spec 139 P1 — the erasure cascade holds the broadcast row's lock across this
- * call, so it is bounded far tighter than an import: 10 s against a measured
- * round trip of ~0.5 s.
+ * Spec 139 P1 — the erasure cascade holds the broadcast row's lock across the
+ * DELETE and (after a 404 or 403) the GET, so each is bounded far tighter than
+ * an import: 10 s against a measured round trip of ~0.5 s, ≈ 20 s at most.
  */
 const DELETE_ONCE_TIMEOUT_MS = 10_000;
 
@@ -968,6 +990,21 @@ function deleteOnceOutcomeFor(status: number): DeleteBroadcastOnceOutcome {
   if (status >= 200 && status < 300) return { kind: 'deleted' };
   if (status === 404 || status === 410) return { kind: 'absent' };
   if (status === 403) return { kind: 'forbidden' };
+  if (status === 429 || status >= 500) return { kind: 'retryable' };
+  return { kind: 'other' };
+}
+
+function retrieveOnceOutcomeFor(status: number, text: string): RetrieveBroadcastOnceOutcome {
+  if (status >= 200 && status < 300) {
+    let raw: unknown;
+    try {
+      raw = (JSON.parse(text) as { status?: unknown } | null)?.status;
+    } catch {
+      return { kind: 'other' };
+    }
+    return typeof raw === 'string' ? { kind: 'present', status: normaliseStatus(raw) } : { kind: 'other' };
+  }
+  if (status === 404 || status === 410) return { kind: 'not_found' };
   if (status === 429 || status >= 500) return { kind: 'retryable' };
   return { kind: 'other' };
 }
