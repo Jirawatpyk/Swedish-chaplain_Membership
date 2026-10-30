@@ -351,9 +351,10 @@ export function RefundForm({
           error?: { code?: string; remainingSatang?: string };
         };
         const code = body.error?.code ?? 'internal_error';
-        // A 5xx that names no refusal (our own internal_error, or no readable
-        // code: an edge timeout) may come after the refund was made.
-        if (res.status >= 500 && code === 'internal_error') {
+        // A 5xx that names no refusal (our own internal_error, no readable
+        // code: an edge timeout, or Stripe's answer lost:
+        // processor_outcome_unknown) may come after the refund was made.
+        if (res.status >= 500 && (code === 'internal_error' || code === 'processor_outcome_unknown')) {
           settleUnconfirmed(tError('outcomeUnknown'));
           return;
         }

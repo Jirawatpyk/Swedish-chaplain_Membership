@@ -250,7 +250,8 @@ An async Stripe refund (`pending` / `requires_action` at creation, e.g. some Pro
 | 409 | `payment_not_refundable` | payment status ≠ `succeeded`/`partially_refunded` |
 | 409 | `refund_exceeds_remaining` | `amountSatang > remaining` (FR-011b pre-flight) |
 | 409 | `refund_in_progress` | another concurrent refund holds the row lock; client may retry |
-| 502 | `processor_unavailable` | Stripe `refunds.create` failed with retryable error after exhausted retries; `refunds` row inserted with `status='failed'` |
+| 502 | `processor_unavailable` | Stripe `refunds.create` failed with a `permanent` error (a refusal, or a refund that settled `failed`/`canceled`): no money moved; `refunds` row finalised `status='failed'`; a retry is safe |
+| 502 | `processor_outcome_unknown` | Stripe `refunds.create` failed with a `retryable` or `idempotency_conflict` error: the outcome is unknown, so the `refunds` row stays `pending` (no `processor_refund_id`) for the stale-pending sweep to escalate; the client must NOT retry (Task B) |
 | 502 | `f4_preflight_read_error` | the PRE-FLIGHT F4 credited-total read (`getInvoiceCreditedTotal`) failed BEFORE any Stripe call — money did NOT move, safe to retry, NO orphaned Stripe refund exists (DISTINCT from `f4_bridge_error` below — B.1 review Fix#1) |
 | 502 | `f4_bridge_error` | Stripe `refunds.create` DID succeed but the POST-Stripe F4 credit-note bridge failed — money moved; ops reconciles via `docs/runbooks/out-of-band-refund.md` |
 

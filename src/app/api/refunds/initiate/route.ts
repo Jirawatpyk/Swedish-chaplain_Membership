@@ -134,8 +134,14 @@ function httpStatusForUseCaseError(error: IssueRefundError): {
       return { status: 422, routeCode: 'membership_effect_not_applicable' };
     case 'tenant_settings_missing':
       return { status: 422, routeCode: 'tenant_settings_incomplete' };
+    // Task B — only a `permanent` gateway failure proves the money stayed
+    // put (the row is finalised `failed`), so only it may say "retry". A
+    // `retryable` or `idempotency_conflict` failure leaves the row `pending`
+    // for the stale-pending sweep: the refund may have gone through.
     case 'processor_unavailable':
-      return { status: 502, routeCode: 'processor_unavailable' };
+      return error.kind === 'permanent'
+        ? { status: 502, routeCode: 'processor_unavailable' }
+        : { status: 502, routeCode: 'processor_outcome_unknown' };
     case 'f4_preflight_read_error':
       // B.1 review Fix#1: the PRE-FLIGHT F4 credited-total read failed BEFORE
       // any Stripe call — money did NOT move, the refund is safe to retry, and
