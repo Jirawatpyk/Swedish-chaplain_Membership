@@ -436,6 +436,23 @@ html:has(.chamber-shell) {
     width: 100%;
   }
 }
+@media (max-width: 1023.98px) {
+  /* PR #697 review — the page header: a back link in the actions hides below
+     1024px (`max-lg:hidden`), but its empty cell stayed, so the stacked
+     phone header kept a 16px gap under the subtitle for nothing. The cell
+     (the header's last child after its text) now hides once every action
+     in it does. */
+  [data-slot="page-header"] > :last-child:not(:first-child):not(:has(> :not(.max-lg\:hidden))) {
+    display: none;
+  }
+}
+@media (max-width: 639.98px) {
+  /* PR #697 review — the page header, as above, for actions hidden below
+     640px or 768px too. */
+  [data-slot="page-header"] > :last-child:not(:first-child):not(:has(> :not(.max-lg\:hidden, .max-md\:hidden, .max-sm\:hidden))) {
+    display: none;
+  }
+}
 @media (min-width: 640px) {
   /* The E-Blast detail's status line is the phone board's only (the desktop
      board draws the row of buttons alone at the end of the page). */
