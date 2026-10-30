@@ -73,6 +73,10 @@ Produce a structured Markdown report (conversational prose in Thai per user pref
 ## FR / SC traceability
 | ID | Status | Implementing code / test | Note |
 
+## Premises (usage lines and provider facts)
+- <each path the change keeps compatible: its usage line (count · source · date), or MISSING → Medium>
+- <each provider fact the design relies on: MEASURED (date) / DOCUMENTED (url), or unlabelled → Medium>
+
 ## Constitution & convention flags
 - <Clean Arch / tenant-isolation / audit / i18n / timestamp findings>
 

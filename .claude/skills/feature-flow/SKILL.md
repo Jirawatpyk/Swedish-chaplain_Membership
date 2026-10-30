@@ -16,7 +16,7 @@ description: Drive a Chamber-OS change from idea to production through docs/work
 
 ## 1. Frame
 
-- **S**: state the Done-when lines in the reply; they go into the PR, with the § 0 usage line when the change keeps an existing path compatible.
+- **S**: state the Done-when lines in the reply; they go into the PR, with the § 0 usage line when the change keeps an existing path compatible, and a MEASURED or doc-cited label on every provider fact it relies on.
 - **M / L**: interview the user with `AskUserQuestion`. Cover the hard parts: edge cases, failure and refusal paths, roles, tenants, locales, money and tax effects, and what is out of scope. Skip questions the code already answers. Then write `specs/<nnn-name>/spec.md`:
   - user stories, each with **Done when** lines that are observable and checkable ("the refund row shows `succeeded` and the credit note number"), never vague ("works well");
   - **Out of scope**, and **Open questions** (which block the plan until answered);
@@ -29,7 +29,7 @@ A worktree from an up-to-date `origin/main` at a short path (e.g. `%TEMP%\fNN`),
 
 ## 3. Plan (M / L)
 
-Ask to enter plan mode (the EnterPlanMode tool; the user approves — or the user switches to Plan mode themselves). Draft in plan mode (`superpowers:writing-plans` helps), present the plan for approval when leaving plan mode, then save it as `specs/<nnn-name>/plan.md` from `plan-template.md` in this skill's folder. It covers:
+Ask to enter plan mode (the EnterPlanMode tool; the user approves — or the user switches to Plan mode themselves). **Before presenting the plan, check its Approach carries the usage line for every path it keeps compatible (§ 0) and that every provider fact is labelled; a plan without them is not ready to present** — this is where the guard bites, before any build cost (retro 2026-10-30). Draft in plan mode (`superpowers:writing-plans` helps), present the plan for approval when leaving plan mode, then save it as `specs/<nnn-name>/plan.md` from `plan-template.md` in this skill's folder. It covers:
 - the approach and the alternatives not taken;
 - the files to touch and the module rules that apply;
 - the data model and migration;

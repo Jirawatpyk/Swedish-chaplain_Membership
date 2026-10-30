@@ -2,6 +2,8 @@
 
 Written 2026-10-30 from the current Resend docs and this repo's own measurements; every claim is labelled MEASURED, DOCUMENTED, UNKNOWN or ASSUMED. Spec 140 (the import-only dispatch leg with a lease) takes this as its provider premise and updates it in place.
 
+**Line references** (`GW:`, `TICK:`, `RULE:`) were taken on the 139 branch and can drift; the `TICK:` ones are re-checked against `main` at `3e31cbdfa`. Search by the symbol named next to each.
+
 **Provenance.** The brief itself was read-only research: the repo (worktree `f139`, branch `139-eblast-erasure-close-s1`, HEAD `64b34d8c8`), the Resend public docs (fetched 2026-10-30) and Context7 (`/resend/resend-node`, `/llmstxt/resend_llms-full_txt`). Two later additions touched the **production** Resend account (dev and prod share the key): the Q1 probe (2026-10-30; two broadcasts created, sent to `delivered@resend.dev` only, cancelled while queued, the probe segment deleted) and the read-only Resend MCP inspection in the Addendum. No other address received mail.
 
 Labels used in every claim:
@@ -36,13 +38,13 @@ Short paths: `GW` = `src/modules/broadcasts/infrastructure/resend/resend-broadca
 6. **Import completion rule.**
    - DOCUMENTED import statuses: `queued | in_progress | completed | failed`.
    - MEASURED: `completed` with all-zero counts happens (1 in 5 probes, R9 V2(c)). So `total === resolvedCount` is load-bearing.
-   - The repo also treats an undocumented `canceled` as terminal (`TICK:1540`), and gives up after 30 min (`TICK:91`).
+   - The repo also treats an undocumented `canceled` as terminal (`TICK:1548`), and gives up after 30 min (`IMPORT_STUCK_AFTER_MS`, `TICK:94`).
 7. **The Free plan binds first.**
    - The 1,000-contact cap is DOCUMENTED, and MEASURED on the billing page.
    - 3 segments, one of them `General`, so at most two in flight. MEASURED from the billing page 2026-09-08 (`R108:476`); the docs give no segment limit.
    - Whether the 1,000 cap counts team-level ("global") contacts is UNKNOWN (`R108:431`).
 8. **SDK.**
-   - Pinned `^4.0.1`, installed 4.8.0; the latest is 6.35.0 (npm, 2026-10-27).
+   - Ranged `^4.0.1` in `package.json`, installed 4.8.0; the latest is 6.35.0 (npm, 2026-10-27).
    - 4.8.0 declares no `signal`, but its `post`/`get` spread `options` into the fetch init (`node_modules/resend/dist/index.js:597-616`). A `signal` would therefore reach `fetch`. That is read from the source and not measured.
    - 6.x declares `RequestOptions { headers?, signal? }`. Neither version has a built-in timeout.
 9. **Classifier gaps against the documented error codes** (`GW:111-164`).
@@ -71,10 +73,10 @@ Short paths: `GW` = `src/modules/broadcasts/infrastructure/resend/resend-broadca
 | same | the CSV pushes past the 1,000-contact cap | UNKNOWN, for the import (the serial push answered 4xx, `R108:483`) | UNKNOWN | `permanent` assumed |
 | same | a retry after a lost response | creates a second job (no key accepted) | ASSUMED from the docs' lack of key support; `GW:776-793` | accepted residual |
 | same | the file | ≤200 MB; `on_conflict` upsert (default) / skip | DOCUMENTED (create-contact-import) | upsert |
-| `GET /contacts/imports/{id}` (`getContactImport` :866) | in flight | `queued` / `in_progress` | DOCUMENTED (list-contact-imports) | polled until 30 min (`TICK:1589`) |
+| `GET /contacts/imports/{id}` (`getContactImport` :866) | in flight | `queued` / `in_progress` | DOCUMENTED (list-contact-imports) | polled until 30 min (`TICK:1597`) |
 | same | done | `completed` + counts `{total,created,updated,skipped,failed}`, `completed_at` | DOCUMENTED; MEASURED ~306 ms for 1 row | `completed_at` is not read |
 | same | done, nothing attached | `completed`, all counts 0 | MEASURED 2026-09-08, 1 in 5 (`R108` V2(c)) | caught by `total === resolvedCount` |
-| same | `failed` | DOCUMENTED | — | terminal `provider_failed` (`TICK:1540`) |
+| same | `failed` | DOCUMENTED | — | terminal `provider_failed` (`TICK:1548`) |
 | same | `canceled` | **not a documented import status** | ASSUMED | terminal |
 | same | the segment was deleted after completion | still `completed` | MEASURED 2026-10-29 (`S138:34`) | — |
 | same | the segment was deleted **before** completion | UNKNOWN | UNKNOWN | — |
@@ -228,7 +230,7 @@ Every probe uses only `delivered@resend.dev`, a throwaway segment and a self-ide
 | # | Question | Probe | Settles |
 |---|---|---|---|
 | Q1 | The exact status string after cancelling a queued send (`canceled` or `cancelled`), and whether a DELETE on it answers 403 | create → `/send` → `POST /broadcasts/{id}/cancel` within ~2 s (queued lasts ≥15 s) → GET → DELETE → GET | The `normaliseStatus` cell. Whether the spec 138 re-mint arm and the spec 139 "403 + cancelled" arm can fire. Whether cancel-queued can serve as lease recovery ("stop a send whose owner died"). |
-|  | **ANSWERED 2026-10-30 (MEASURED, sink only, 2 runs):** cancel on a queued broadcast → 200, then GET = `"canceled"` (one L) at +0/2/15/45 s; DELETE → 403 "Only draft or scheduled broadcasts can be deleted"; GET after → 200; re-send → 422. Our `normaliseStatus` must map `canceled` (fix added to 139 s1 round 3). |  |  |
+|  | **ANSWERED 2026-10-30 (MEASURED, sink only, 2 runs):** cancel on a queued broadcast → 200, then GET = `"canceled"` (one L) at +0/2/15/45 s; DELETE → 403 "Only draft or scheduled broadcasts can be deleted"; GET after → 200; re-send → 422. Our `normaliseStatus` must map `canceled` (fixed in PR #698). |  |  |
 | Q2 | Does `sending` exist? | poll GET every 250 ms from `/send` to `sent` | Whether the `sending` arm is real or dead |
 | Q3 | Can a 404 be stale (GET or DELETE)? | create → immediate GET/DELETE ×N; `/send` → GET at 0/100/500 ms | Whether the two-not-found rule (3 s re-probe) is needed or enough |
 | Q4 | When does a broadcast go `failed` besides an audience delete? | send to a segment emptied just before `/send`; send with an unverified `from` domain | Which recovery `failed` needs (refuse vs re-mint); whether the lease can mint safely after `failed` |
@@ -258,13 +260,13 @@ Q1, Q3, Q5 and Q7 bear directly on spec 140's design. Q8 and Q9 bear on capacity
   - `draft, scheduled, queued, sent, canceled, failed` (Q1 answered: `canceled`; keep the two-L `cancelled` alias only while code still names it), and `sending` until Q2 is answered;
   - import: `queued, in_progress, completed, failed`.
   - Unknown values fail closed, as today. `canceled` is live (Q1), so every `cancelled` cell in the table is reachable and needs a decision (the import leg's operator-cancel re-mint, deferred from 139).
-  - **Import status `canceled` is ASSUMED** — not in the documented import vocabulary, yet `TICK:1547` matches it (and calls the vocabulary UNVERIFIED although `queued | in_progress | completed | failed` is DOCUMENTED). Spec 140's import table settles it: cite the doc or measure, then drop or keep the arm.
+  - **Import status `canceled` is ASSUMED** — not in the documented import vocabulary, yet `TICK:1548` matches it (and calls the vocabulary UNVERIFIED although `queued | in_progress | completed | failed` is DOCUMENTED). Spec 140's import table settles it: cite the doc or measure, then drop or keep the arm.
 - **Classify by HTTP status first, then by code.**
   - Split 409 `resource_locked` from the idempotency 409s.
   - Split the 429 quota codes (not retryable) from `rate_limit_exceeded`.
   - Never trust a bare 403: a restricted key also answers 403.
 - **Bound every call.** Use `AbortSignal.timeout` everywhere, as the `*Once` variants do (or verify Q11), so the lease TTL can be computed. The SDK upgrade is the natural time for this: the 6.x source declares `signal`, and the current SDK/docs use `segmentId`, and for leaving the deprecated Audiences API.
-- **Completion is poll-only.** No broadcast or import webhooks exist, so the lease holder or the next holder must poll. The 30-min import ceiling (`TICK:91`) and the 2-in-flight segment limit set the queueing behaviour.
+- **Completion is poll-only.** No broadcast or import webhooks exist, so the lease holder or the next holder must poll. The 30-min import ceiling (`IMPORT_STUCK_AFTER_MS`, `TICK:94`) and the 2-in-flight segment limit set the queueing behaviour.
 - **Recovery for a dead holder.**
   - The next holder probes the broadcast first: `queued` or `sent` means catch up, `draft` means reuse, 404 means re-probe and then re-mint.
   - Only then does it touch the audience.
