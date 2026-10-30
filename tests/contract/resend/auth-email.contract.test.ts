@@ -8,6 +8,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+// resend@6.35 reads RESEND_BASE_URL / RESEND_USER_AGENT from the process env
+// when a client is built; clear them first so every recorded URL and header
+// is the SDK default on every machine (spec 141 review round 5).
+vi.hoisted(() => {
+  delete process.env['RESEND_BASE_URL'];
+  delete process.env['RESEND_USER_AGENT'];
+});
+
 // Pin the env the sender reads at module load, so the recorded `from` is the
 // hard-coded fallback on every machine, not each developer's RESEND_FROM_EMAIL.
 vi.mock('@/lib/env', () => ({

@@ -8,6 +8,14 @@
  * email headers to the HTTP `Idempotency-Key` and re-records these snapshots.
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// resend@6.35 reads RESEND_BASE_URL / RESEND_USER_AGENT from the process env
+// when a client is built; clear them first so every recorded URL and header
+// is the SDK default on every machine (spec 141 review round 5).
+vi.hoisted(() => {
+  delete process.env['RESEND_BASE_URL'];
+  delete process.env['RESEND_USER_AGENT'];
+});
 import { json, stubWire } from './_wire';
 
 vi.mock('@react-email/components', () => ({

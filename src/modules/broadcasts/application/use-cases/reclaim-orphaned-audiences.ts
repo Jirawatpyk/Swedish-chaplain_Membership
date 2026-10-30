@@ -150,8 +150,10 @@ const RECLAIM_CONCURRENCY = 5;
 /** Resend 403 error message for the account's last audience. */
 // Spec 141: resend@6.35 deletes at `/segments`, whose refusal wording was not
 // measured (deleting the last one cannot be probed on an account prod shares),
-// so match the noun phrase alone. A false match only SKIPS a delete.
-const LAST_AUDIENCE_PATTERN = /\blast (audience|segment)\b/i;
+// so accept either noun after "delete". Matched only on a refusal (never a
+// retryable failure), so a transient error that mentions a segment still
+// counts as `failed`.
+const LAST_AUDIENCE_PATTERN = /\bdelete\b.*\blast (audience|segment)\b/i;
 
 export async function reclaimOrphanedAudiences(
   deps: ReclaimOrphanedAudiencesDeps,
@@ -296,7 +298,11 @@ export async function reclaimOrphanedAudiences(
       // Treat as a benign skip: NOT a failure (don't increment `failed`), NOT
       // deleted. The audience will become eligible once another audience is
       // created by the next broadcast dispatch.
-      if (e instanceof Error && LAST_AUDIENCE_PATTERN.test(e.message)) {
+      if (
+        e instanceof Error &&
+        (e as { readonly kind?: unknown }).kind !== 'retryable' &&
+        LAST_AUDIENCE_PATTERN.test(e.message)
+      ) {
         skippedLastAudience++;
         logger.info(
           { audienceId: orphan.audienceId },

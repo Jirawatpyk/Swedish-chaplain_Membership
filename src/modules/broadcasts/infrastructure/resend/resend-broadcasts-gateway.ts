@@ -745,7 +745,12 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       const pageRows = result?.data ?? [];
       for (const r of pageRows) byId.set(r.id, r);
       const last = pageRows.at(-1);
-      if (result?.has_more !== true || last === undefined) break;
+      if (result?.has_more !== true) break;
+      // `has_more` with an empty page leaves no cursor to follow: the list is cut.
+      if (last === undefined) {
+        truncated = true;
+        break;
+      }
       // A cursor seen before would page forever over the same rows.
       if (seenCursors.has(last.id)) {
         truncated = true;
@@ -1104,13 +1109,15 @@ function isTimeout(e: unknown): boolean {
 
 /**
  * The raw-fetch twin of `httpStatusOf` (spec 141, option A, extended to every
- * call by the maintainer): an error status counts only when the body is
- * Resend's own JSON error (it parses and carries a `name`). Any other error
- * body — an edge's or proxy's HTML page, even one with status 404 — reads as a
- * transient 500, so "gone" is never decided from a page Resend did not write.
+ * call by the maintainer) for the one decision that matters: "gone". A 404 or
+ * 410 counts only when the body is Resend's own JSON error (it parses and
+ * carries a `name`); from an edge's or proxy's page it reads as a transient
+ * 500, so "gone" is never decided from a page Resend did not write. Every
+ * other status keeps the reading it has on `main` (raw fetch never went
+ * through the SDK, so it never had the 4.8 SDK reading to restore).
  */
 function rawHttpStatusOf(status: number, text: string): number {
-  if (status < 400) return status;
+  if (status !== 404 && status !== 410) return status;
   try {
     const body = JSON.parse(text) as { name?: unknown } | null;
     if (body !== null && typeof body === 'object' && typeof body.name === 'string') return status;

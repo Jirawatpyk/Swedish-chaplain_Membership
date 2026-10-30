@@ -703,14 +703,16 @@ When the alert fires:
    member's email is recoverable only from your offline DSR intake record (the
    member's own erasure request) — it is gone from the database by design.
 
-   Two failure causes look different in that `warn` line (spec 141):
-   - **`empty_identifier`** — the captured `audienceId` itself was empty, so
-     the gateway refused before any request and there is nothing to open in
-     Resend. Check the source row (`broadcasts.resend_audience_id` for that
-     broadcast) instead; the member's email may still sit in whichever
-     audience that broadcast really used, so find it from the broadcast, not
-     from the log.
-   - **retries exhausted (`retryable`)** — Resend answered a transient error
+   The `warn` line's `gatewayKind` and `gatewayCode` fields tell two failure
+   causes apart (spec 141):
+   - **`gatewayCode: empty_identifier`** (`gatewayKind: permanent`) — the
+     gateway refused before any request: either the captured `audienceId` was
+     empty (it shows as `audienceId: ""`) or the captured email was. No request
+     reached Resend, and the log carries no broadcast id to trace the pair
+     back. Search the Resend dashboard (Audiences / Segments, then Contacts)
+     for the member's email from the DSR intake record, and remove it from
+     every audience it is still in.
+   - **`gatewayKind: retryable`** (retries exhausted) — Resend answered a transient error
      six times in a row. A non-JSON answer (an edge's or proxy's HTML page,
      even one with status 404) is read as transient on purpose, so a `failed`
      count can come from an edge problem, not a Resend outage; the contact is
