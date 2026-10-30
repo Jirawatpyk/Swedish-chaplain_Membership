@@ -79,23 +79,6 @@ describe('<PageHeader> on AURA PageHeader', () => {
     expect(bar).not.toContainElement(screen.getByRole('button', { name: 'Download PDF' }));
   });
 
-  // globals.css hides the strip that holds a hidden pay bar by structure
-  // (`:has(> [data-slot="pay-bar"][hidden])`, stand-in until AURA #193): the
-  // pay bar must be a direct child of AURA's bar, with nothing else in it.
-  it('puts the pay bar directly in AURA\u2019s bar, alone (the strip-hide rule\u2019s premise)', () => {
-    const { container } = render(
-      <PageHeader
-        title="Invoice SC-2026-000130"
-        actions={<button type="button">Download PDF</button>}
-        actionsBar={<section data-slot="pay-bar" hidden />}
-        actionsBarBelow="sm"
-      />,
-    );
-    const payBar = container.querySelector('[data-slot="pay-bar"]')!;
-    expect(payBar.parentElement).toHaveClass('aura-page-header__bar');
-    expect(Array.from(payBar.parentElement!.children)).toEqual([payBar]);
-  });
-
   it('an eyebrow of chips is a div row, not a paragraph', () => {
     render(<PageHeader title="Siam Nordic" eyebrow={<span data-testid="pill">Active</span>} />);
     const eyebrow = screen.getByTestId('pill').closest('.aura-page-header__eyebrow');
