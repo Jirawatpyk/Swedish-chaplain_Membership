@@ -326,4 +326,23 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     await expect(resendBroadcastsGateway.createAudience('probe')).rejects.toMatchObject({ kind: 'permanent' });
     expect(calls).toHaveLength(1);
   });
+
+  // Review round 1 (spec 141): on 6.35 a falsy `audienceId` makes the SDK
+  // drop the audience from the path — `contacts.remove` becomes
+  // `DELETE /contacts/{email}`, an ACCOUNT-WIDE delete shared by every tenant,
+  // and `contacts.list` becomes `GET /contacts`. The gateway refuses an empty id
+  // (or an empty email) before any request.
+  describe('an empty id never reaches the SDK', () => {
+    it.each([
+      ['removeContactFromAudience, empty audience', () => resendBroadcastsGateway.removeContactFromAudience('', 'a@example.com')],
+      ['removeContactFromAudience, empty email', () => resendBroadcastsGateway.removeContactFromAudience('aud_1', '')],
+      ['addContactsToAudience', () => resendBroadcastsGateway.addContactsToAudience('', [{ emailLower: 'a@example.com' }])],
+      ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount('')],
+      ['deleteAudience', () => resendBroadcastsGateway.deleteAudience('')],
+    ])('%s', async (_name, run) => {
+      const calls = stubWire(() => json(200, { object: 'list', has_more: false, data: [] }));
+      await expect(run()).rejects.toMatchObject({ kind: 'permanent', code: 'empty_identifier' });
+      expect(calls).toHaveLength(0);
+    });
+  });
 });
