@@ -314,6 +314,13 @@ reliability-guardian, pdpa-gdpr, security-engineer and `/code-review high` (CR2)
 
 No new cascade decision cell: M-NEW-1 is a pre-Resend guard; the pause adds a wait, not an answer; `canceled` lands in cells already decided (404 + `cancelled` → unexpected; 403 + `cancelled` → cancel).
 
+**Gates after round 2, on `0a504dc76`** (this gate list is the only edit after them, docs only):
+- `pnpm check` exit 0 (red-first: 64 commits, every logic change has a RED before it; one pre-existing lint warning in `tests/unit/layout/breadcrumb-provider.test.tsx`, not touched here);
+- `pnpm vitest run tests/contract/` 256 files, 2838 passed + 2 todo;
+- unit broadcasts + broadcast + members: 472 files, 5239/5239;
+- integration by path, each exit 0: erasure-vs-dispatch-begun 3, already-sent-evidence 6, eblast-send-time-standing 21, member-erasure-cascade 4, scrub-content-for-member 24, dispatch-persist-before-send 2, audience-import-two-tick 4, eblast-approved-exit-vs-dispatch 7, members/erase-member-cascade-real 2, members/reconcile-erasures 2.
+- **Not run locally:** the full `pnpm test:coverage` (CI runs it); no live Verify of round 2 (the pause, the locked re-read and P4 are pinned by unit and integration tests; `canceled` by the gateway unit tests and the coordinator's live measurement).
+
 ## Rollout
 
 - **Slice 1 is live on merge for the legacy leg:** erasure now deletes and cancels a dispatch-begun draft.
