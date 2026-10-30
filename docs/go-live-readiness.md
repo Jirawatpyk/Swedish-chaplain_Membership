@@ -365,8 +365,9 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 
 **The flip, then the observation:**
 
-- [ ] **Spec 139 (erasure: an erased member's approved E-Blast caught between the
-  pre-send persist and the send) is MERGED.** Do not set the flag before it.
+- [x] **Spec 139 slice 1 (erasure: an erased member's approved E-Blast caught
+  between the pre-send persist and the send) is MERGED** (PR #TBD). Slice 2
+  (the Art. 30 audit events) does not gate the flip.
 - [ ] **Spec 140 (import-leg tick concurrency: a dispatch lease for rows with no
   import id) is MERGED.** Spec 138's row fence does not reach those rows.
 - [ ] **No legacy-leg row is in flight** at the flip: `SELECT COUNT(*) FROM
@@ -435,7 +436,8 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
   failure this table exists to prevent.
 
 **§ 6.10 privacy sign-off** — date: ______ · reviewer: ______ · residual 8a
-acknowledged: ☐ · residual 8b closed by spec 139: ☐
+acknowledged: ☐ · residual 8b closed (spec 139 slice 1 merged): ☐ · already-sent
+residual 8c acknowledged: ☐
 
 ---
 

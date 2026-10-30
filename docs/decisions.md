@@ -205,3 +205,12 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   - `FEATURE_F7_IMPORT_AUDIENCE` may be set only after 139 (erasure) and 140 have merged and no legacy row is in flight (`docs/go-live-readiness.md` § 6.10).
   - Also decided on 29 Oct: a `not_found` inherited id is re-probed once after 3 s, before any decision. The alternative was legacy parity: send to the dead id and let the send fail.
 - *Consequence*: go-live § 6.10 and `docs/operational-state.md` list the three preconditions. The spec 139 and spec 140 directories do not exist yet; each starts with feature-flow step 1 when the maintainer asks.
+
+**D-039 — The erasure cascade holds the E-Blast row lock across one Resend DELETE** (2026-10-30)
+- *Context*: spec 139. An erased member's E-Blast caught between the pre-send persist of `resend_broadcast_id` and `/send` could still go out (RoPA 8b). Resend decides draft-vs-send on its side: `DELETE /broadcasts/{id}` succeeds only on a draft or scheduled broadcast, and `/send` only on a draft (measured 2026-10-29). Our side needs one arbiter for the row as well.
+- *Decision* (the maintainer, 30 Oct 2026):
+  - In erasure mode only, the cascade locks the row (`lockForUpdate`), calls `deleteBroadcastOnce` (one attempt, `AbortSignal.timeout(10_000)`, typed outcome), and on 200/404 cancels the row in the same transaction. A 403 is probed with `retrieveBroadcast`: `queued`/`sending`/`sent` is recorded as already sent (residual 8c), anything else counts as unexpected. A timeout or other failure counts as unexpected, so `member_erased` is withheld and `reconcile-erasures` drives it again.
+  - A single DELETE 404 is trusted as "already absent". The import leg asks twice before calling an id dead; here the id is our own and a stale 404 has never been observed.
+  - Archive keeps skipping dispatch-begun rows; it is not an erasure.
+- *Rejected*: cancel first, then DELETE (a 403 would leave a `cancelled` row whose mail went out, so quota and audit would lie); DELETE first, then cancel with no lock (the import leg re-probes `not_found`, waits 3 s and re-mints from the pre-scrub row while it is still `approved`); a re-check of erasure between persist and `/send` (narrows the window, cannot close it).
+- *Consequence*: a dispatch tick may wait up to the 10 s timeout behind an erasure. Runbook `member-erasure.md` step 3b no longer asks for a manual Resend DELETE.
