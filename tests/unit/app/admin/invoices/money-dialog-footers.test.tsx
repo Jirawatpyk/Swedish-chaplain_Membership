@@ -5,12 +5,16 @@
  * with the primary action on top, which the hand-built sticky rows used to do.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { IssueInvoiceDialog } from '@/app/(staff)/admin/invoices/_components/issue-invoice-dialog';
 import { RecordPaymentDialog } from '@/app/(staff)/admin/invoices/_components/record-payment-dialog';
 import { RefundDialog } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog';
+import { PaymentForm } from '@/app/(staff)/admin/invoices/_components/payment-form';
+import { RECORD_PAYMENT_FOOTER } from '@/app/(staff)/admin/invoices/_components/record-payment-dialog';
+import { WithMoneyDialogFooter } from '../../../../helpers/money-dialog-footer-harness';
 import { buildIssueTotalsByTreatment } from '@/app/(staff)/admin/invoices/[invoiceId]/_lib/issue-totals-by-treatment';
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
@@ -200,6 +204,201 @@ describe('the confirm keeps focus while the request is in flight', () => {
     await act(async () => {
       settle({ ok: false, json: async () => ({ error: { code: 'invoice_not_payable' } }) } as Response);
     });
+    vi.unstubAllGlobals();
+  });
+});
+
+// PR N2 review (financial L2/L3, code review 1): each money handler guards
+// itself against a second call in the same tick, before React re-renders the
+// footer into its loading state.
+describe('a second submit in the same tick sends nothing', () => {
+  type Call = [string, RequestInit | undefined];
+  const posts = (spy: ReturnType<typeof vi.fn>) =>
+    (spy.mock.calls as unknown as Call[]).filter(([, init]) => init?.method === 'POST');
+
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('issue invoice: two confirm clicks before a re-render issue once', async () => {
+    let settle: (r: Response) => void = () => {};
+    const fetchSpy = vi.fn(() => new Promise<Response>((resolve) => (settle = resolve)));
+    vi.stubGlobal('fetch', fetchSpy);
+    withIntl(
+      <IssueInvoiceDialog
+        invoiceId="inv-1"
+        summary={{ memberName: 'Embassy of Sweden', planDisplayName: 'Expo booth', planYear: 2026 }}
+        taxAtPayment
+        isMembership
+        buyerIsVatRegistrant
+        totalsByTreatment={buildIssueTotalsByTreatment({
+          lineSum: Money.fromSatangUnsafe(800_000),
+          vatInclusive: false,
+          standardRate: VatRate.ofUnsafe('0.0700'),
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Issue…' }));
+    const dialog = screen.getByRole('alertdialog', { name: issue.title });
+    fireEvent.change(within(dialog).getByLabelText(/to confirm/i), { target: { value: 'ISSUE' } });
+    const confirm = within(dialog).getByRole('button', { name: 'Issue invoice · 8,560.00 THB' });
+    act(() => {
+      confirm.click();
+      confirm.click();
+    });
+    expect(posts(fetchSpy)).toHaveLength(1);
+    await act(async () => {
+      settle({ ok: false, json: async () => ({ error: { code: 'invoice_not_draft' } }) } as Response);
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it('record payment: two submits before a re-render record once', async () => {
+    let settle: (r: Response) => void = () => {};
+    const fetchSpy = vi.fn(() => new Promise<Response>((resolve) => (settle = resolve)));
+    vi.stubGlobal('fetch', fetchSpy);
+    withIntl(
+      <RecordPaymentDialog invoiceId="inv-1" documentNumber="SC-2026-000127" issueDate="2026-09-16" todayIso="2026-09-20" />,
+    );
+    fireEvent.click(screen.getByTestId('record-payment-trigger'));
+    const form = screen.getByRole('dialog', { name: pay.title }).querySelector('form')!;
+    act(() => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(posts(fetchSpy)).toHaveLength(1);
+    await act(async () => {
+      settle({ ok: false, json: async () => ({ error: { code: 'invoice_not_payable' } }) } as Response);
+    });
+    vi.unstubAllGlobals();
+  });
+
+  function openRefund(fetchSpy: ReturnType<typeof vi.fn>) {
+    vi.stubGlobal('fetch', fetchSpy);
+    withIntl(
+      <RefundDialog
+        paymentId="pmt_1"
+        invoiceId="inv_1"
+        memberCompanyName="Acme AB"
+        remainingRefundableSatang={3_852_000n}
+        currencyCode="THB"
+        invoiceSubject="event"
+        invoiceHeadroomSatang={3_852_000n}
+        invoiceDocumentNumber="SC-2026-000088"
+        receiptDocumentNumberRaw="RC-2026-000088"
+        paidAmountSatang={3_852_000n}
+        paidAt="2026-02-01T03:00:00.000Z"
+      />,
+    );
+    fireEvent.click(screen.getByTestId('refund-dialog-trigger'));
+    return screen.getByRole('alertdialog', { name: refund.title });
+  }
+
+  async function fillPartialRefund(dialog: HTMLElement) {
+    fireEvent.change(within(dialog).getByTestId('refund-form-amount'), { target: { value: '100' } });
+    fireEvent.change(within(dialog).getByTestId('refund-form-reason'), { target: { value: 'duplicate charge' } });
+    fireEvent.blur(within(dialog).getByTestId('refund-form-reason'));
+    const confirm = within(dialog).getByTestId('refund-form-confirm');
+    await waitFor(() => expect(confirm).toBeEnabled());
+    return confirm;
+  }
+
+  // The refund route's POST stays pending; the preview GET answers at once.
+  function refundFetch() {
+    let settle: (r: Response) => void = () => {};
+    const spy = vi.fn((_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? new Promise<Response>((resolve) => (settle = resolve))
+        : Promise.resolve(new Response(JSON.stringify({ creditNote: { kind: 'blocked' } }))),
+    );
+    return { spy, settle: (r: Response) => settle(r) };
+  }
+
+  it('refund: two submits while validation runs send one refund', async () => {
+    const { spy, settle } = refundFetch();
+    const dialog = openRefund(spy);
+    await fillPartialRefund(dialog);
+    const form = dialog.querySelector('form')!;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await waitFor(() => expect(posts(spy)).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posts(spy)).toHaveLength(1);
+    await act(async () => {
+      settle(new Response(JSON.stringify({ error: { code: 'rate_limited' } }), { status: 429 }));
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it('refund: a submit that fails validation does not hold the guard', async () => {
+    const { spy, settle } = refundFetch();
+    const dialog = openRefund(spy);
+    const form = dialog.querySelector('form')!;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    expect(posts(spy)).toHaveLength(0);
+    await fillPartialRefund(dialog);
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await waitFor(() => expect(posts(spy)).toHaveLength(1));
+    await act(async () => {
+      settle(new Response(JSON.stringify({ error: { code: 'rate_limited' } }), { status: 429 }));
+    });
+    vi.unstubAllGlobals();
+  });
+
+  // Code review 2: the gate can turn false while the refund is in flight; the
+  // confirm stays AURA's loading button, never natively disabled.
+  it('refund: clearing the reason in flight keeps the confirm focused and busy', async () => {
+    const { spy, settle } = refundFetch();
+    const dialog = openRefund(spy);
+    const confirm = await fillPartialRefund(dialog);
+    confirm.focus();
+    fireEvent.click(confirm);
+    await waitFor(() => expect(confirm).toHaveAttribute('aria-busy', 'true'));
+    fireEvent.change(within(dialog).getByTestId('refund-form-reason'), { target: { value: '' } });
+    fireEvent.blur(within(dialog).getByTestId('refund-form-reason'));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(confirm).not.toBeDisabled();
+    expect(confirm).toHaveFocus();
+    await act(async () => {
+      settle(new Response(JSON.stringify({ error: { code: 'rate_limited' } }), { status: 429 }));
+    });
+    vi.unstubAllGlobals();
+  });
+});
+
+// Code review 4: a form that unmounts in flight (its success close) leaves
+// the footer idle, so however the dialog opens next, Cancel is enabled.
+describe('the footer goes idle when its form unmounts', () => {
+  it('a form unmounted while in flight leaves Cancel enabled', () => {
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
+    function Host() {
+      const [show, setShow] = useState(true);
+      return (
+        <>
+          <button type="button" onClick={() => setShow(false)}>
+            unmount
+          </button>
+          <WithMoneyDialogFooter config={RECORD_PAYMENT_FOOTER}>
+            {(wire) =>
+              show ? (
+                <PaymentForm invoiceId="inv-1" documentNumber="SC-1" issueDate="2026-09-16" todayIso="2026-09-20" {...wire} />
+              ) : null
+            }
+          </WithMoneyDialogFooter>
+        </>
+      );
+    }
+    withIntl(<Host />);
+    fireEvent.click(screen.getByRole('button', { name: pay.submit }));
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'unmount' }));
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
     vi.unstubAllGlobals();
   });
 });
