@@ -112,13 +112,13 @@ export class GatewayThrowable extends Error {
  * Spec 141 review — refuse an empty identifier before the SDK sees it. On
  * resend@6.35 a falsy `audienceId` is dropped from the path, so
  * `contacts.remove` becomes `DELETE /contacts/{email}` (an ACCOUNT-WIDE delete
- * shared by every tenant) and `contacts.list` becomes `GET /contacts`. An empty
- * email makes the SDK answer a local `missing_required_field` with
- * `statusCode: null`, which the classifier would retry for ~31 s.
+ * shared by every tenant) and `contacts.list` becomes `GET /contacts`. Every
+ * method that takes an id or an email runs this first; a `null` from a
+ * nullable column is refused the same way, as a `GatewayThrowable`.
  */
 function assertNonEmpty(values: Readonly<Record<string, string>>): void {
   for (const [field, value] of Object.entries(values)) {
-    if (value.trim() === '') {
+    if (typeof value !== 'string' || value.trim() === '') {
       throw new GatewayThrowable({
         kind: 'permanent',
         code: 'empty_identifier',
@@ -128,12 +128,34 @@ function assertNonEmpty(values: Readonly<Record<string, string>>): void {
   }
 }
 
+/**
+ * The HTTP status the gateway acts on, read as resend@4.8 read it (spec 141,
+ * the maintainer's option A, 30 Oct 2026).
+ *
+ * - `application_error` is the name the SDK gives every error it builds
+ *   itself: a non-JSON body (an edge's or proxy's HTML page, `index.mjs:1708`)
+ *   and a thrown `fetch` (`:1750`). 4.8 left `statusCode` undefined on the
+ *   first and the classifier read 500; 6.35 passes the page's status through,
+ *   so an HTML 404 read as "already gone" — on the erasure path a false
+ *   "already absent" in the Art. 30 record. Read it as 500 again, whatever it
+ *   carries; a thrown fetch (`statusCode: null`) is the network class.
+ * - Any other error with `statusCode: null` is a refusal the SDK made locally
+ *   without a request (`missing_required_field`, `invalid_parameter`): no
+ *   retry can fix it, so it reads as a 422.
+ * - A real Resend error (JSON, a specific name) keeps its status.
+ */
+function httpStatusOf(err: ResendErrorShape | undefined | null): number {
+  if (err?.name === 'application_error') return err.statusCode === null ? 0 : 500;
+  if (err?.statusCode === null) return 422;
+  return err?.statusCode ?? 500;
+}
+
 function classifyResendError(
   err: ResendErrorShape | undefined | null,
   resourceType?: 'audience' | 'broadcast' | 'import',
   resourceId?: string,
 ): GatewayThrowable {
-  const status = err?.statusCode ?? 500;
+  const status = httpStatusOf(err);
   const reason = err?.message ?? 'unknown resend error';
   const code = err?.name ?? `http_${status}`;
 
@@ -333,6 +355,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   async createBroadcast(
     input: CreateBroadcastInput,
   ): Promise<{ readonly broadcastId: string }> {
+    assertNonEmpty({ audienceId: input.audienceId });
     return withRetry(
       async () => {
         const sdk = client();
@@ -383,6 +406,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     broadcastId: string,
     idempotencyKey: string,
   ): Promise<void> {
+    assertNonEmpty({ broadcastId });
     await withRetry(
       async () => {
         const sdk = client();
@@ -508,6 +532,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
   async retrieveBroadcast(
     broadcastId: string,
   ): Promise<RetrieveBroadcastOutcome> {
+    assertNonEmpty({ broadcastId });
     try {
       const resource = await withRetry(
         async (): Promise<RetrievedBroadcastResource | null> => {
@@ -550,6 +575,9 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
    * carries the HTTP status and the outcome only, never the body.
    */
   async retrieveBroadcastOnce(broadcastId: string): Promise<RetrieveBroadcastOnceOutcome> {
+    // One attempt and an outcome, never a throw: an empty id would read the
+    // broadcast LIST at `/broadcasts/`, so it is unclassified, with no request.
+    if (typeof broadcastId !== 'string' || broadcastId.trim() === '') return { kind: 'other' };
     let res: Response;
     try {
       res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
@@ -621,6 +649,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
    * reported for members whose addresses were still at the processor.
    */
   async deleteContactGlobally(email: string): Promise<void> {
+    assertNonEmpty({ email });
     try {
       await withRetry(
         async () => {
@@ -699,10 +728,8 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           // Without the 410 branch, a Resend 410 would fall through to
           // `classifyResendError` → `permanent`, and the cleanup row would
           // re-fail every cron tick forever.
-          if (
-            result.error.statusCode === 404 ||
-            result.error.statusCode === 410
-          ) {
+          const status = httpStatusOf(result.error);
+          if (status === 404 || status === 410) {
             logger.info({ audienceId }, 'resend.broadcasts.audience_already_absent');
             return; // idempotent: already gone
           }
@@ -726,6 +753,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
    * path is known to work, not assumed to.
    */
   async deleteBroadcast(broadcastId: string): Promise<void> {
+    assertNonEmpty({ broadcastId });
     await withRetry(
       async () => {
         const sdk = client();
@@ -735,10 +763,8 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           object: string;
         }>;
         if (result.error) {
-          if (
-            result.error.statusCode === 404 ||
-            result.error.statusCode === 410
-          ) {
+          const status = httpStatusOf(result.error);
+          if (status === 404 || status === 410) {
             logger.info({ broadcastId }, 'resend.broadcasts.broadcast_already_absent');
             return; // idempotent: already gone
           }
@@ -759,6 +785,8 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
    * provider's text (the log line carries the HTTP status only).
    */
   async deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome> {
+    // As `retrieveBroadcastOnce`: an empty id is unclassified, with no request.
+    if (typeof broadcastId !== 'string' || broadcastId.trim() === '') return { kind: 'other' };
     let res: Response;
     try {
       res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
@@ -829,6 +857,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     audienceId: string,
     emails: readonly string[],
   ): Promise<{ readonly importId: string }> {
+    assertNonEmpty({ audienceId });
     return withRetry(
       async () => {
         // BOUNDARY VALIDATION (108 Phase 9 review S16). `EmailLower` looks like
