@@ -302,6 +302,25 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     `);
   });
 
+  // architect pre-read: 6.35 attaches `statusCode` to a non-JSON error body,
+  // where 4.8 left it undefined (read as 500, so retried). Pinned here so the
+  // bump shows the change rather than hiding it.
+  it('a 413 with a non-JSON body: how many attempts', async () => {
+    vi.useFakeTimers();
+    const calls = stubWire(() => new Response('<html>Request Entity Too Large</html>', { status: 413, headers: { 'content-type': 'text/html' } }));
+    const done = resendBroadcastsGateway.createAudience('probe').then(
+      () => 'resolved',
+      (e: { kind?: string }) => e.kind ?? 'threw',
+    );
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ outcome: await done, attempts: calls.length }).toMatchInlineSnapshot(`
+      {
+        "attempts": 6,
+        "outcome": "retryable",
+      }
+    `);
+  });
+
   it('a 422 on create is permanent (no retry)', async () => {
     const calls = stubWire(() => json(422, { statusCode: 422, name: 'validation_error', message: 'Invalid `from` field.' }));
     await expect(resendBroadcastsGateway.createAudience('probe')).rejects.toMatchObject({ kind: 'permanent' });
