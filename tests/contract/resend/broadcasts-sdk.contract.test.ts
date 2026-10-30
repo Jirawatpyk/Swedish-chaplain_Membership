@@ -262,6 +262,20 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     });
   });
 
+  it('listAudiences stops on a repeated cursor and returns each audience once', async () => {
+    const calls = stubWire(() =>
+      json(200, { object: 'list', has_more: true, data: [{ id: 'aud_1', name: 'a', created_at: '2026-10-30T00:00:00Z' }] }),
+    );
+    const rows = await resendBroadcastsGateway.listAudiences();
+    expect({ ids: rows.map((r) => r.id), pages: calls.length }).toEqual({ ids: ['aud_1'], pages: 2 });
+  });
+
+  it('addContactsToAudience with no contacts is a no-op, even for a blank id (no request)', async () => {
+    const calls = stubWire(() => json(201, { object: 'contact', id: 'c_1' }));
+    await expect(resendBroadcastsGateway.addContactsToAudience('', [])).resolves.toBeUndefined();
+    expect(calls).toHaveLength(0);
+  });
+
   it('deleteAudience, and a 404 counts as already gone', async () => {
     const calls = stubWire((n) =>
       n === 1 ? json(200, { object: 'audience', id: 'aud_1', deleted: true }) : json(404, { statusCode: 404, name: 'not_found', message: 'Audience not found' }),

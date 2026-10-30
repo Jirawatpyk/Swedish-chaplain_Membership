@@ -482,7 +482,7 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     const audienceId = 'aud-last-seg';
     const gateway = makeGateway({
       audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
-      throws: { [audienceId]: new Error('Cannot delete last segment') },
+      throws: { [audienceId]: new Error('You cannot delete your last segment') },
     });
     const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
     const result = await reclaimOrphanedAudiences(
