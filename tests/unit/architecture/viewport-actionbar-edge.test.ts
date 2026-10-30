@@ -13,9 +13,8 @@
  *     - in `.css` under `src/`, a rule with `position: fixed | sticky` and
  *       `bottom` / `inset`.
  *     One stays only with a reason within the 12 lines above it (and below the
- *     previous one): `stand-in until AURA #NN`, `AURA app content:` (not a bar,
- *     e.g. a toast), or `PR N2: Dialog footer` (the money-dialog footers, moved
- *     to AURA Dialog's `footer` in PR N2).
+ *     previous one): `stand-in until AURA #NN`, or `AURA app content:` (not a
+ *     bar, e.g. a toast). A dialog's buttons go in AURA Dialog's `footer`.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -139,7 +138,7 @@ export function cssBottomBarRules(css: string): number[] {
 
 const lineOf = (source: string, offset: number) => source.slice(0, offset).split('\n').length - 1;
 
-const REASON = /stand-in until AURA #\d+|AURA app content:|PR N2: Dialog footer/;
+const REASON = /stand-in until AURA #\d+|AURA app content:/;
 const LEGACY_KIT = join('src', 'components', 'ui') + '/';
 const outsideKit = (p: string) => !relative(ROOT, p).startsWith(LEGACY_KIT);
 const files = sourceFiles(join(ROOT, 'src'), /\.tsx$/).filter(outsideKit);
@@ -220,9 +219,10 @@ describe('D-039: bottom bars are an edge strip below 640px', () => {
   });
 
   it('finds the reasoned hand-built bars that stay (positive control)', () => {
-    // Two money-dialog footers (PR N2) and the bulk progress toast; the portal
-    // pay bar is AURA PageHeader's `actionsBar` strip since 5.71 (#191).
-    expect(handBuilt.filter((h) => h.reasoned).length).toBeGreaterThanOrEqual(3);
+    // The bulk progress toast; the money dialogs' buttons are in AURA Dialog's
+    // footer (PR N2) and the portal pay bar is AURA PageHeader's `actionsBar`
+    // strip since 5.71 (#191).
+    expect(handBuilt.filter((h) => h.reasoned).length).toBeGreaterThanOrEqual(1);
   });
 
   it('no hand-built bottom bar without a reason', () => {
