@@ -79,7 +79,15 @@ n/a
 
 ## Evidence
 
-(Filled in at Verify.)
+### Slice 1 (30 Oct 2026)
+
+| Done-when | Evidence |
+|---|---|
+| RS1 | `tests/contract/resend/` written on 4.8 (`3920dd2a9`, `55783a423`): auth 6, renewals 3, broadcasts 13 cases. **Positive controls** on 4.8 (one asserted value mutated, then restored), each failing alone: auth "a plain send", renewals "a reminder send", broadcasts "sendBroadcast carries the Idempotency-Key header". |
+| RS2 | `resend` exact `6.35.0`, lockfile integrity `sha512-sScNQHunU2Np7oICQ/44GXif8cQ0lp2WPEo9nDtTnM1koPvgJwH/SEee8mJwYRwyIfi+uj7IetKiYspfyYBYaA==` (`f69ca27f6`). The bump turned **5** cases red, all accepted and re-recorded: `createAudience`, `getAudienceContactCount`, `listAudiences`, `deleteAudience` (`/audiences…` → `/segments…`, measured equivalent, spec § Premises), and the non-JSON 413 (6 retryable attempts → 1, `permanent`). Every other pinned request is byte-identical (auth plain / text / PDF attachment, renewals, broadcasts create / send with Idempotency-Key / get / contacts create & remove). Resend-related suites on 6.35: **52 files, 559 tests passed**. `pnpm check` exit 0. `pnpm build` exit 0 (compiled; 129/129 pages) — run with `E2E_X_TENANT_HEADER_ENABLED=false` and a placeholder `TENANT_PRIVACY_CONTACT_EMAIL`, because `.env.local` is a dev file that `env.ts` refuses under a production build; no `Module not found` for the optional `@react-email/render` peer. |
+| RS3 | `node_modules/resend/dist/index.mjs` (6.35.0): `post` public at `:1764`, sets `Idempotency-Key` from its options at `:1769`; `this.audiences = this.segments` at `:1646`; `RESEND_BASE_URL` `:1633`, `RESEND_DEBUG` `:1639`. `emails` / `batch` still instance fields and the Buffer attachment still serialises as `{type:'Buffer',data:[…]}` (architect pre-read from the v6.35.0 source; the attachment pinned by the contract case). A network failure carries `statusCode: null` → read as 500 (architect pre-read). `has_more`: server-side; measured `has_more:false` on both paths. |
+| RS4 | **Live, through the real adapters on 6.35** (a throwaway `tsx` probe, deleted; real Resend, `delivered@resend.dev` only, no broadcast sent): `emailSender.send` with a PDF attachment → Resend `last_event: delivered`; Broadcasts gateway `createAudience` (now `/segments`) → `addContactsToAudience` → `getAudienceContactCount` `{count:1, complete:true}` → `createBroadcast` → `retrieveBroadcast` `draft` → `deleteBroadcast` → `not_found` → `deleteAudience` → absent from the list. **Deviation:** not driven through the :3400 UI (password-reset form, void-notice cron) — the machine's memory reaper had killed two builds; the adapter is the same code those paths call. |
+| RS5 | `14d9a324f`: broadcasts rule (SDK pin, segments alias, never `RESEND_DEBUG` / `RESEND_BASE_URL`), 139 research SDK line, changelog, email-broadcast-analysis and go-live § 6.6 platform-risk notes. `RESEND_DEBUG` and `RESEND_BASE_URL` absent from the Vercel project's env listing (88 keys, names only; 2026-10-30). |
 
 ## Rollout
 
