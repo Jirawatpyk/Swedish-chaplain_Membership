@@ -5403,7 +5403,7 @@
         "f4_bridge_deferred": "Återbetalningen är skickad — pengarna är på väg tillbaka till medlemmen. Kreditnotan utfärdas fortfarande och slutförs automatiskt. Ingen åtgärd behövs, och du får inte försöka återbetala igen.",
         "refund_needs_reconciliation": "En tidigare återbetalning på denna betalning genomfördes hos betalningsleverantören men registrerades som misslyckad, så fler återbetalningar är blockerade tills den har stämts av manuellt. Inga pengar flyttades av detta försök. Kontakta supporten för avstämning.",
         "internal_error": "Ett oväntat fel uppstod. Försök igen.",
-        "outcomeUnknown": "Anslutningen bröts, så vi kunde inte bekräfta om återbetalningen gick igenom. Kontrollera Betalningshändelser på den här fakturan innan du gör något annat, och försök inte återbetala igen förrän du har gjort det."
+        "outcomeUnknown": "Vi kunde inte bekräfta om återbetalningen gick igenom. Kontrollera Betalningshändelser på den här fakturan innan du gör något annat, och försök inte återbetala igen förrän du har gjort det."
       },
       "cmdk": {
         "label": "Utfärda återbetalning",

@@ -47,11 +47,12 @@ export function useReportMoneyDialogFooter(
   onFooterChange: ((state: MoneyDialogFooterState) => void) | undefined,
   { pending, canConfirm, confirmLabel, onConfirm }: MoneyDialogFooterState,
 ): void {
-  const confirmRef = useRef(onConfirm);
+  // The latest props, swapped in before the state is reported.
+  const latestRef = useRef({ onConfirm, onFooterChange, confirmLabel });
   useLayoutEffect(() => {
-    confirmRef.current = onConfirm;
+    latestRef.current = { onConfirm, onFooterChange, confirmLabel };
   });
-  const [stableConfirm] = useState(() => () => confirmRef.current?.());
+  const [stableConfirm] = useState(() => () => latestRef.current.onConfirm?.());
   const hasConfirm = onConfirm !== undefined;
   useLayoutEffect(() => {
     onFooterChange?.({
@@ -64,13 +65,9 @@ export function useReportMoneyDialogFooter(
   // When the form unmounts (its dialog closed, perhaps in flight at a success
   // close), the footer goes idle, so however the dialog opens next, Cancel is
   // enabled and Escape works before the new form reports.
-  const lastRef = useRef({ onFooterChange, confirmLabel });
-  useLayoutEffect(() => {
-    lastRef.current = { onFooterChange, confirmLabel };
-  });
   useLayoutEffect(
     () => () => {
-      const last = lastRef.current;
+      const last = latestRef.current;
       last.onFooterChange?.({ pending: false, canConfirm: false, confirmLabel: last.confirmLabel });
     },
     [],

@@ -42,6 +42,8 @@ import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { Alert, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
+import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
+import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 // TYPE-ONLY, and it must stay that way. The invoicing barrel reaches
 // server-only modules; a value import here would drag them into a client
 // bundle. `import type` is erased at compile time, so this costs nothing at
@@ -165,6 +167,7 @@ export function RefundForm({
   const tForm = useTranslations('admin.refund.form');
   const tFormErr = useTranslations('admin.refund.form.errors');
   const tError = useTranslations('admin.refund.error');
+  const readOnlyToast = useReadOnlyToast();
   const locale = useLocale();
   const router = useRouter();
   const remainingThb = Number(remainingRefundableSatang) / 100;
@@ -324,7 +327,14 @@ export function RefundForm({
         return;
       }
       if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
+        const raw: unknown = await res.json().catch(() => ({}));
+        // The write freeze (READ_ONLY_MODE): nothing ran. Its proxy reply is
+        // the flat `{ error: 'read-only-mode' }`, which names no code below.
+        if (isReadOnlyRefusal(res.status, raw)) {
+          setSubmitError(readOnlyToast());
+          return;
+        }
+        const body = raw as {
           error?: { code?: string; remainingSatang?: string };
         };
         const code = body.error?.code ?? 'internal_error';
@@ -467,6 +477,14 @@ export function RefundForm({
             t('success.toast', { number: body.refund.creditNoteNumber ?? '' }),
           );
         }
+      } catch (e) {
+        console.error('refund submit: unexpected 2xx body', e);
+        settleUnconfirmed(t('success.unconfirmedToast'));
+        return;
+      }
+      // After the refund's own toast, a failure here is only logged: the
+      // refund is settled and already said so.
+      try {
         // 0306 — what happened to the membership (only when End was chosen).
         const membershipEnd = body.membership_end;
         if (
@@ -476,9 +494,7 @@ export function RefundForm({
           toast.info(t(`membership.outcome.${membershipEnd as MembershipEndOutcome}`));
         }
       } catch (e) {
-        console.error('refund submit: unexpected 2xx body', e);
-        settleUnconfirmed(t('success.unconfirmedToast'));
-        return;
+        console.error('refund submit: membership outcome toast failed', e);
       }
       succeeded = true;
       onClose();
