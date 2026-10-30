@@ -125,15 +125,23 @@ export function RefundDialog({
     // The dialog's own trigger is gone; keep focus on its locked stand-in.
     if (unconfirmed) unconfirmedRef.current?.focus();
   }, [unconfirmed]);
-  const handleUnconfirmed = useCallback(
-    ({ refreshWhenOnline }: { refreshWhenOnline: boolean }) => {
-      setUnconfirmed(true);
-      // Offline, a refresh now would fall back to a browser navigation onto
-      // the offline page (R112 §3); refresh once the connection is back.
-      if (refreshWhenOnline) window.addEventListener('online', () => router.refresh(), { once: true });
-    },
-    [router],
-  );
+  // Offline, a refresh now would fall back to a browser navigation onto the
+  // offline page (R112 §3); refresh once the connection is back, while this
+  // dialog is still on the page.
+  const [refreshWhenOnline, setRefreshWhenOnline] = useState(false);
+  useEffect(() => {
+    if (!refreshWhenOnline) return;
+    const onOnline = () => {
+      setRefreshWhenOnline(false);
+      router.refresh();
+    };
+    window.addEventListener('online', onOnline, { once: true });
+    return () => window.removeEventListener('online', onOnline);
+  }, [refreshWhenOnline, router]);
+  const handleUnconfirmed = useCallback((opts: { refreshWhenOnline: boolean }) => {
+    setUnconfirmed(true);
+    if (opts.refreshWhenOnline) setRefreshWhenOnline(true);
+  }, []);
 
   // Clear the `?refund=1` query param (preserving any other params) so a
   // refresh / shared link does not reopen the dialog. `router.replace`
@@ -200,27 +208,6 @@ export function RefundDialog({
     ) : null,
   ].filter((part) => part !== null);
 
-  if (unconfirmed) {
-    return (
-      <div className="flex flex-col items-start gap-1 sm:items-end max-sm:items-stretch">
-        <Button
-          ref={unconfirmedRef}
-          variant="danger-secondary"
-          touchHeight
-          icon="circle-alert"
-          disabled
-          aria-describedby="refund-unconfirmed-hint"
-          data-testid="refund-dialog-trigger"
-        >
-          {t('button.unconfirmedLabel')}
-        </Button>
-        <p id="refund-unconfirmed-hint" className="sr-only">
-          {t('button.unconfirmedHint')}
-        </p>
-      </div>
-    );
-  }
-
   // Gap E — a refund is settling: disable the trigger + surface a "settling"
   // affordance instead of the active dialog. Hooks above run unconditionally
   // (rules-of-hooks); the branch is a prop-driven render fork.
@@ -242,6 +229,31 @@ export function RefundDialog({
         </Button>
         <p id="refund-settling-hint" className="sr-only">
           {t('button.settlingHint')}
+        </p>
+      </div>
+    );
+  }
+
+  // After the settling branch: once a refresh shows the server's own view of
+  // a pending refund, that wins. `aria-disabled`, not `disabled`: the button
+  // keeps the focus the closed dialog hands back, so its hint is heard; AURA
+  // swallows the click.
+  if (unconfirmed) {
+    return (
+      <div className="flex flex-col items-start gap-1 sm:items-end max-sm:items-stretch">
+        <Button
+          ref={unconfirmedRef}
+          variant="danger-secondary"
+          touchHeight
+          icon="circle-alert"
+          aria-disabled
+          aria-describedby="refund-unconfirmed-hint"
+          data-testid="refund-dialog-trigger"
+        >
+          {t('button.unconfirmedLabel')}
+        </Button>
+        <p id="refund-unconfirmed-hint" className="sr-only">
+          {t('button.unconfirmedHint')}
         </p>
       </div>
     );
