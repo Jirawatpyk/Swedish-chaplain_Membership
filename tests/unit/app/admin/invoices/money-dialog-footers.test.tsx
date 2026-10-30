@@ -453,9 +453,14 @@ describe('refund: no retry once the outcome may be a refund', () => {
     return spy;
   }
 
-  async function expectClosedWithWarning(spy: ReturnType<typeof vi.fn>, message: string) {
+  async function expectClosedWithWarning(
+    spy: ReturnType<typeof vi.fn>,
+    message: string,
+    { refreshed = true }: { refreshed?: boolean } = {},
+  ) {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(refreshSpy).toHaveBeenCalled();
+    if (refreshed) expect(refreshSpy).toHaveBeenCalled();
+    else expect(refreshSpy).not.toHaveBeenCalled();
     expect(vi.mocked(toast.warning).mock.calls[0]?.[0]).toBe(message);
     expect(toast.error).not.toHaveBeenCalled();
     expect(screen.queryByTestId('refund-form-error')).toBeNull();
@@ -473,9 +478,11 @@ describe('refund: no retry once the outcome may be a refund', () => {
     await expectClosedWithWarning(spy, enMessages.admin.refund.success.unconfirmedToast);
   });
 
-  it('a request that fails on the network closes, refreshes and warns to check first', async () => {
+  // R112 §3: with the connection still down, a refresh falls back to a browser
+  // navigation onto the offline page and the warning is lost, so it doesn't.
+  it('a request that fails on the network closes and warns to check first, without a refresh', async () => {
     const spy = await submitPartial(() => Promise.reject(new TypeError('Failed to fetch')));
-    await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown);
+    await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown, { refreshed: false });
   });
 
   // Financial review M1: a 5xx that names no refusal (our internal_error, or
@@ -515,7 +522,7 @@ describe('refund: no retry once the outcome may be a refund', () => {
     });
     const spy = await submitPartial(() => Promise.reject(new TypeError('Failed to fetch')));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(refreshSpy).toHaveBeenCalled();
+    expect(refreshSpy).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
     expect(posts(spy)).toHaveLength(1);
     vi.unstubAllGlobals();
