@@ -115,8 +115,8 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    Recognise it by: the log line `broadcasts.cascade.tx_or_audit_failed` with
    `resendOutcome` such as `forbidden_probe_draft`, `forbidden_probe_not_found`,
    `forbidden_probe_unknown`, `absent_probe_draft`, `absent_probe_cancelled` or
-   `absent_probe_unknown` (a plain `retryable` / `other` is a Resend outage and
-   heals itself); `members_erasure_outcome_total{outcome="still_pending"}`
+   `absent_probe_unknown` (`retryable` / `other`, or any `*_probe_retryable` /
+   `*_probe_other`, is a Resend outage and heals itself); `members_erasure_outcome_total{outcome="still_pending"}`
    staying non-zero for the member; and the erasure card showing a half-run
    (step 8). What to do: a `forbidden_probe_draft` / `_not_found` almost always
    means the Broadcasts API key lost its full-access scope — check the key in

@@ -2183,7 +2183,7 @@ For the resolved tenant, inside `runInTenant`:
    - **Notifications**: email on ≥3 consecutive failures
 3. Click **Run** to verify a 200 OK response:
    ```json
-   { "processed": 0, "reconciled": 0, "still_pending": 0, "error": 0 }
+   { "processed": 0, "reconciled": 0, "still_pending": 0, "error": 0, "deferred": 0 }
    ```
    All-zero is the expected steady state (no stuck erasures pending).
 
@@ -2197,7 +2197,8 @@ cron-job.org does not retry-storm during a pause window.
 
 | HTTP code | Body | Operator action |
 |-----------|------|-----------------|
-| 200 + all-zero summary | `{ processed:0, reconciled:0, still_pending:0, error:0 }` | Healthy steady state (nothing stuck) — None |
+| 200 + all-zero summary | `{ processed:0, reconciled:0, still_pending:0, error:0, deferred:0 }` | Healthy steady state (nothing stuck) — None |
+| 200 + `deferred > 0` | Spec 139: the tick stopped starting members at 240 s of its 300 s (a dispatch-begun E-Blast can hold its row lock ≈ 20 s per re-drive); the rest are still stuck and the next tick continues | None if it drains over the next ticks; WARN `cron.members.reconcile_erasures.budget_deferred`. Sustained → investigate a slow Resend (the cascade's `resendMs`) |
 | 200 + `reconciled > 0` | A stuck erasure completed this tick | None — expected after a transient cascade fault clears |
 | 200 + `still_pending > 0`, `error: 0` | A cascade is STILL failing — TRANSIENT, retried next tick | Inspect the per-cascade pino error (`erase-member: <cascade> not clean / threw`). If sustained over ≥3 ticks → alarm (see § Alert rules). **If accompanied by a `last_admin` signal → manual operator action (see below).** |
 | 500 + `error > 0` | An uncaught throw from `eraseMember` (bug / DB blip) | Harness retries. Inspect `cron.members.reconcile_erasures.uncaught` (stack). |

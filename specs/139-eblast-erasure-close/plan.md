@@ -263,7 +263,13 @@ e2e: none (cron and erasure server paths only; no UI).
 | security L3 — a minted draft whose reclaim fails stays at Resend (pre-existing) | residual 8d (docs), follow-up issue TBD |
 | security Info — 403 + draft loops for ever; wants a signal | the `broadcasts.cascade.tx_or_audit_failed` line with `resendOutcome`, `members_erasure_outcome_total{still_pending}` and the half-run card; runbook recovery (docs). No new alert rule (no alerting backend is bound in code) |
 
-**Gates after round 1:** see the build report for the exact counts.
+**Gates after round 1, on `3b48d29a9`:**
+- `pnpm check` exit 0 (red-first: 46 commits, every logic change has a RED before it);
+- `pnpm vitest run tests/contract/` 256 files, 2838 passed + 2 todo;
+- unit broadcasts + broadcast + members: 472 files, 5232/5232;
+- integration by path, each exit 0: erasure-vs-dispatch-begun 3, already-sent-evidence 6, scrub-content-for-member 24, member-erasure-cascade 4, eblast-send-time-standing 19, audience-import-repo 28, members/erase-member-cascade-real 2, members/erase-member-f7-content 5, members/reconcile-erasures 2; and the files whose fakes changed: eblast-approved-exit-vs-dispatch 7, jcc-test-tenant-fixture 3, halt-flag-precondition 7.
+- **Not run locally:** the full `pnpm test:coverage` (CI runs it).
+- **The live Verify on `71a7f9318` was not repeated after round 1.** The round-1 behaviour is pinned by the unit table in `cancel-in-flight-broadcasts-for-member.test.ts` and the integration files above; the 404 + GET arms and 403 + `cancelled` are pinned at unit level only (no integration interleave reaches them). The Verify row "DE2 403 arm (8c) … (probed after the lock)" above is evidence of the pre-round-1 build, not of the current one.
 
 ## Rollout
 
