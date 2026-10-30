@@ -192,6 +192,14 @@ e2e: none (cron and erasure server paths only; no UI).
 
 ### Slice 1
 
+**Live re-Verify after review round 1, 30 Oct 2026, on `8e3057fa3`.** Same set-up as the first run (:3400, dev Neon, live Resend, sink only, super-admin through the real erase route). Seeds were removed afterwards.
+
+| Case | Observed |
+|---|---|
+| S1: a draft on an `approved` row | Erase → 200 `cascadesComplete:true`. The draft → **404**. The row is `cancelled` with **`cancellation_reason:"gdpr_erasure_request"`**, so the scrub kept the cascade's reason. `broadcast_cancelled` has `resendOutcome:"deleted"`. `member_erased` has `broadcasts_already_sent_count:0`. |
+| S3: a broadcast Resend had already `queued` | Erase → 200. The row stays `approved`. One `broadcast_concurrent_action_blocked` with `resendOutcome:"already_sent"` and `observedResendStatus:"queued"`. `member_erased` has `broadcasts_already_sent_count:1`. Log: `dispatch_begun_delete outcome:"forbidden"`, then the WARN `dispatch_begun_already_sent`. |
+| S3 re-erasure (a re-drive) | Erase again → 200. There is still **one** evidence row, so the dedupe holds. The second `member_erased` (`re_drive:true`) also says `broadcasts_already_sent_count:1`, the derived count. |
+
 **Live Verify, 30 Oct 2026, on `71a7f9318`** (`run-chamber-os`: the branch on :3400 from the `f139` worktree, dev Neon, tenant `swecham`, the live Resend Broadcasts account, recipient `delivered@resend.dev` only).
 - Before seeding, `SELECT … status='approved' AND scheduled_for <= now()` on dev returned 0 rows, so the cron touched only the seeds.
 - The real surfaces were driven: `POST /api/members/{id}/erase` as the e2e super-admin, and `GET /api/cron/broadcasts/dispatch-scheduled`.
