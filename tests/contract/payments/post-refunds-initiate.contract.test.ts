@@ -646,6 +646,13 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
       expect(error['messageThai']).toBeDefined();
       // PCI hygiene, as for processor_unavailable.
       expect(bodyText).not.toContain('FORBIDDEN_DETAIL');
+      // PCI review MEDIUM: the copy says not to retry, so no Retry-After
+      // tells a client or proxy to.
+      expect(res.headers.get('Retry-After')).toBeNull();
+      // PCI review HIGH: a refund's gateway `reason` is Stripe's raw message
+      // (an idempotency error repeats the key); it never reaches the logs.
+      const { logger } = await import('@/lib/logger');
+      expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain('FORBIDDEN_DETAIL');
     },
   );
 
