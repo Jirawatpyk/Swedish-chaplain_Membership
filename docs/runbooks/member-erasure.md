@@ -703,6 +703,19 @@ When the alert fires:
    member's email is recoverable only from your offline DSR intake record (the
    member's own erasure request) — it is gone from the database by design.
 
+   Two failure causes look different in that `warn` line (spec 141):
+   - **`empty_identifier`** — the captured `audienceId` itself was empty, so
+     the gateway refused before any request and there is nothing to open in
+     Resend. Check the source row (`broadcasts.resend_audience_id` for that
+     broadcast) instead; the member's email may still sit in whichever
+     audience that broadcast really used, so find it from the broadcast, not
+     from the log.
+   - **retries exhausted (`retryable`)** — Resend answered a transient error
+     six times in a row. A non-JSON answer (an edge's or proxy's HTML page,
+     even one with status 404) is read as transient on purpose, so a `failed`
+     count can come from an edge problem, not a Resend outage; the contact is
+     NOT known to be gone. Remediate it like any other failure.
+
 2. **Remove the contact via the Resend dashboard.** For each stuck audience,
    open Resend → Audiences (the dashboard may label it **Segments**: since SDK 6.35 the two are one resource, spec 141) → the audience → remove the contact by the member's
    email (from the DSR intake record). A 404 / "not found" is success (already
