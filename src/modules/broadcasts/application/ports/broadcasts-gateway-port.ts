@@ -172,11 +172,13 @@ export type RemoveContactOutcome =
  * (`deleteBroadcastOnce`). A union, not `void`, because the erasure cascade
  * acts on each arm differently:
  *
- *   - `deleted` (200) / `absent` (404, 410) — the resource is gone, so the row
- *     can be cancelled;
- *   - `forbidden` (403) — MEASURED 2026-10-29: Resend's answer for a `queued`
- *     or `sent` broadcast, but a restricted key answers 403 too, so the caller
- *     probes before it believes "already sent" (P5);
+ *   - `deleted` (200) — the draft is gone, so the row can be cancelled;
+ *   - `absent` (404, 410) — gone by this answer; the erasure cascade confirms
+ *     it with one `retrieveBroadcastOnce` before it cancels (two not-founds,
+ *     as the import leg requires before it re-mints);
+ *   - `forbidden` (403) — MEASURED 2026-10-29: Resend's answer for a `queued`,
+ *     `sent` or `cancelled` broadcast, but a restricted key answers 403 too, so
+ *     the caller probes before it believes "already sent" (P5);
  *   - `retryable` — a 5xx, a 429, a transport failure or the 10 s timeout. A
  *     timeout is ambiguous (the DELETE may have landed), so nothing is decided;
  *   - `other` — any other status.
