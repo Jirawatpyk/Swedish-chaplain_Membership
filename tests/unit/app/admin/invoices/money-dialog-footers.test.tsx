@@ -9,9 +9,11 @@ import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
+import { toast } from '@/lib/toast';
+import { RefundForm } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog/refund-form';
 import { IssueInvoiceDialog } from '@/app/(staff)/admin/invoices/_components/issue-invoice-dialog';
 import { RecordPaymentDialog } from '@/app/(staff)/admin/invoices/_components/record-payment-dialog';
-import { RefundDialog } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog';
+import { RefundDialog, REFUND_FOOTER } from '@/app/(staff)/admin/invoices/[invoiceId]/_components/refund-dialog';
 import { PaymentForm } from '@/app/(staff)/admin/invoices/_components/payment-form';
 import { RECORD_PAYMENT_FOOTER } from '@/app/(staff)/admin/invoices/_components/record-payment-dialog';
 import { WithMoneyDialogFooter } from '../../../../helpers/money-dialog-footer-harness';
@@ -19,11 +21,12 @@ import { buildIssueTotalsByTreatment } from '@/app/(staff)/admin/invoices/[invoi
 import { Money } from '@/modules/invoicing/domain/value-objects/money';
 import { VatRate } from '@/modules/invoicing/domain/value-objects/vat-rate';
 
+const { refreshSpy } = vi.hoisted(() => ({ refreshSpy: vi.fn() }));
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), replace: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), refresh: refreshSpy, replace: vi.fn() }),
   useSearchParams: () => new URLSearchParams(''),
 }));
-vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() } }));
 
 const issue = enMessages.admin.invoices.issue;
 const pay = enMessages.admin.invoices.pay;
@@ -399,6 +402,135 @@ describe('the footer goes idle when its form unmounts', () => {
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'unmount' }));
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+    vi.unstubAllGlobals();
+  });
+});
+
+// Financial review L3 (PR #703): once the server may have refunded (any 2xx,
+// or a request whose fate is unknown), the dialog never offers a retry: a
+// retry after a synchronous refund would pay a second partial refund.
+describe('refund: no retry once the outcome may be a refund', () => {
+  type Call = [string, RequestInit | undefined];
+  const posts = (spy: ReturnType<typeof vi.fn>) =>
+    (spy.mock.calls as unknown as Call[]).filter(([, init]) => init?.method === 'POST');
+  const preview = () => Promise.resolve(new Response(JSON.stringify({ creditNote: { kind: 'blocked' } })));
+
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.mocked(toast.warning).mockClear();
+    vi.mocked(toast.error).mockClear();
+    refreshSpy.mockClear();
+  });
+
+  async function submitPartial(postImpl: () => Promise<Response>) {
+    const spy = vi.fn((_url: string, init?: RequestInit) => (init?.method === 'POST' ? postImpl() : preview()));
+    vi.stubGlobal('fetch', spy);
+    withIntl(
+      <RefundDialog
+        paymentId="pmt_1"
+        invoiceId="inv_1"
+        memberCompanyName="Acme AB"
+        remainingRefundableSatang={3_852_000n}
+        currencyCode="THB"
+        invoiceSubject="event"
+        invoiceHeadroomSatang={3_852_000n}
+        invoiceDocumentNumber="SC-2026-000088"
+        receiptDocumentNumberRaw="RC-2026-000088"
+        paidAmountSatang={3_852_000n}
+        paidAt="2026-02-01T03:00:00.000Z"
+      />,
+    );
+    fireEvent.click(screen.getByTestId('refund-dialog-trigger'));
+    const dialog = screen.getByRole('alertdialog', { name: refund.title });
+    fireEvent.change(within(dialog).getByTestId('refund-form-amount'), { target: { value: '100' } });
+    fireEvent.change(within(dialog).getByTestId('refund-form-reason'), { target: { value: 'duplicate charge' } });
+    fireEvent.blur(within(dialog).getByTestId('refund-form-reason'));
+    const confirm = within(dialog).getByTestId('refund-form-confirm');
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    return spy;
+  }
+
+  async function expectClosedWithWarning(spy: ReturnType<typeof vi.fn>, message: string) {
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(refreshSpy).toHaveBeenCalled();
+    expect(vi.mocked(toast.warning).mock.calls[0]?.[0]).toBe(message);
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('refund-form-error')).toBeNull();
+    expect(posts(spy)).toHaveLength(1);
+    vi.unstubAllGlobals();
+  }
+
+  it('a 201 whose body cannot be read closes, refreshes and warns', async () => {
+    const spy = await submitPartial(async () => new Response('<html>gateway</html>', { status: 201 }));
+    await expectClosedWithWarning(spy, enMessages.admin.refund.success.unconfirmedToast);
+  });
+
+  it('a 201 without a refund in its body closes, refreshes and warns', async () => {
+    const spy = await submitPartial(async () => new Response('{}', { status: 201 }));
+    await expectClosedWithWarning(spy, enMessages.admin.refund.success.unconfirmedToast);
+  });
+
+  it('a request that fails on the network closes, refreshes and warns to check first', async () => {
+    const spy = await submitPartial(() => Promise.reject(new TypeError('Failed to fetch')));
+    await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown);
+  });
+
+  it('a refused request (429) still shows the error and can be retried', async () => {
+    const spy = await submitPartial(async () => new Response(JSON.stringify({ error: { code: 'rate_limited' } }), { status: 429 }));
+    await waitFor(() => expect(screen.getByTestId('refund-form-error')).toBeInTheDocument());
+    const confirm = screen.getByTestId('refund-form-confirm');
+    await waitFor(() => expect(confirm).not.toHaveAttribute('aria-busy'));
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posts(spy)).toHaveLength(2));
+    vi.unstubAllGlobals();
+  });
+
+  // Financial review L1: after a success the guard stays held, as in issue
+  // and record payment, even if the form were still mounted.
+  it('after a refund succeeds, the still-mounted form sends nothing more', async () => {
+    const spy = vi.fn((_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? Promise.resolve(
+            new Response(
+              JSON.stringify({ refund: { status: 'succeeded', creditNote: { kind: 'issued', id: 'cn', number: 'CN-1' } } }),
+              { status: 201 },
+            ),
+          )
+        : preview(),
+    );
+    vi.stubGlobal('fetch', spy);
+    const { container } = withIntl(
+      <WithMoneyDialogFooter config={REFUND_FOOTER}>
+        {(wire) => (
+          <RefundForm
+            paymentId="pmt_1"
+            invoiceId="inv_1"
+            memberCompanyName="Acme AB"
+            remainingRefundableSatang={3_852_000n}
+            currencyCode="THB"
+            invoiceSubject="event"
+            invoiceHeadroomSatang={3_852_000n}
+            onClose={() => undefined}
+            {...wire}
+          />
+        )}
+      </WithMoneyDialogFooter>,
+    );
+    fireEvent.change(screen.getByTestId('refund-form-amount'), { target: { value: '100' } });
+    fireEvent.change(screen.getByTestId('refund-form-reason'), { target: { value: 'duplicate charge' } });
+    fireEvent.blur(screen.getByTestId('refund-form-reason'));
+    const confirm = screen.getByTestId('refund-form-confirm');
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(refreshSpy).toHaveBeenCalled());
+    await waitFor(() => expect(confirm).not.toHaveAttribute('aria-busy'));
+    const form = container.querySelector('form')!;
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posts(spy)).toHaveLength(1);
     vi.unstubAllGlobals();
   });
 });
