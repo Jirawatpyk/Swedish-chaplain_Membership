@@ -130,3 +130,14 @@ describe('resendBroadcastsGateway.deleteBroadcastOnce (spec 139 P1)', () => {
     expect(captured).toHaveLength(1);
   });
 });
+
+// Spec 139 (senior-tester) — D-040's lock-hold bound rests on this number:
+// each call is ONE bounded fetch of 10 s, never the SDK's untimed request.
+it('bounds the DELETE with AbortSignal.timeout(10_000)', async () => {
+  const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+  stubFetch(() => json(200, { object: 'broadcast', id: BROADCAST_ID, deleted: true }));
+  await deleteOnce(BROADCAST_ID);
+  expect(timeoutSpy).toHaveBeenCalledTimes(1);
+  expect(timeoutSpy).toHaveBeenCalledWith(10_000);
+  timeoutSpy.mockRestore();
+});

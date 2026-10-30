@@ -794,6 +794,26 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       });
     });
 
+    // senior-tester (round 3) — the evidence write on the lost-race path is
+    // the only record of that send; if it fails the row must count
+    // unexpected, so `member_erased` is withheld and the erasure re-driven.
+    it('P7 (a) — the lost-race evidence write fails → unexpected, nothing counted as sent', async () => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+        applyTransitionImpl: async ({ broadcastId }) => {
+          throw new BroadcastConcurrentMutationError('test-tenant' as never, broadcastId as never, 'approved');
+        },
+        findByIdImpl: async () => ({ status: 'sending' }),
+        auditEmitImpl: async () => {
+          throw new TypeError('audit payload rejected');
+        },
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result.ok).toBe(true);
+      expect(result.ok ? result.value.unexpectedErrorCount : null).toBe(1);
+      expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).not.toContain('already_sent');
+    });
+
     it('P7 (a) — the archive mode writes no evidence on a lost race to a started send', async () => {
       const deps = makeDeps({
         inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],

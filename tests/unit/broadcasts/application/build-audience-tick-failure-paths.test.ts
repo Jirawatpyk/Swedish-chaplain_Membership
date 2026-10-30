@@ -3937,6 +3937,27 @@ describe('spec 139 P8 — a /send 404 after the row left approved is a concurren
     expect(rec.rowLocks).toBe(2);
   });
 
+  // Spec 139 P4 — a requester not in the tenant decides nothing on the import
+  // leg either: no Resend call, no transition, no audit row; the warn line
+  // names the leg.
+  it('a requester not found → undecided: no Resend call, nothing written; the warn line names the import leg', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({ standing: { erased: 'not_found' } });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok).toBe(false);
+    expect(res.ok ? null : res.error).toMatchObject({ kind: 'dispatch.server_error', message: 'member_standing_requester_not_found' });
+    expect(rec.transitions).toEqual([]);
+    expect(rec.gatewayCalls).toEqual([]);
+    expect(rec.audits).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ broadcastId: BROADCAST_ID, leg: 'import' }),
+      'broadcasts.dispatch.requester_not_found',
+    );
+  });
+
   // Review round 2 (code-review #3/#9) — the erased refusal's lost terminal
   // CAS (`failTerminally`'s concurrent-loss skip) re-reads under the row lock.
   it('the erased refusal loses its terminal CAS and the LOCKED re-read finds the row cancelled → a concurrent skip at info', async () => {

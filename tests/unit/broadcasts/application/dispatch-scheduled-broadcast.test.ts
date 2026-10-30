@@ -5061,6 +5061,32 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
     vi.restoreAllMocks();
   });
 
+  // Spec 139 P4 — a requester not in the tenant decides nothing at dispatch:
+  // no send, no Resend call (the gateway's deleteBroadcastOnce throws if
+  // reached), no transition, no audit row, and the leg's warn line.
+  it('a requester not found → undecided: nothing sent, deleted or written; the warn line names the leg', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const withDraft = { ...makeBroadcast('approved'), resendAudienceId: 'aud-prev', resendBroadcastId: 'rb-prev-draft' };
+    const { audit, repo, gw, email, deps } = standingDeps(makeFakeSendStanding({ erased: 'not_found' }), withDraft, {
+      retrieveStatus: 'draft',
+    });
+
+    const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'dispatch.server_error', message: 'member_standing_requester_not_found', errClass: 'requester_not_found', phase: 'standing' },
+    });
+    expect(repo.transitions).toEqual([]);
+    expect(gw.sendCalls).toHaveLength(0);
+    expect(audit.emits).toEqual([]);
+    expect(email.memberCalls).toEqual([]);
+    expect(warnSpy).toHaveBeenCalledWith(
+      { tenantId: tenant.slug, broadcastId: baseInput.broadcastId, leg: 'live' },
+      'broadcasts.dispatch.requester_not_found',
+    );
+  });
+
   // PR-D — the membership refusal row names the access that refused it (at
   // dispatch always `terminated`: a suspended member is held); a halt row
   // carries no `access`.
