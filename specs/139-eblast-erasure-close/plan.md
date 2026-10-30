@@ -239,7 +239,7 @@ e2e: none (cron and erasure server paths only; no UI).
 | CR#3 — 403 + cancelled / unknown stayed unexpected for ever, unlike the gate's cancelled arm | 403 + `cancelled` cancels (`cancelled_at_resend`) in `34bbf693c`; 403 + `unknown` stays unexpected (fail closed) — runbook manual recovery (docs) |
 | CR#4 — the erased refusal's terminal CAS racing the cascade logged `cleanup_failed` + `server_error` | `ffa0aae49` → `8d0ec3bc1` (both legs: re-read, a non-`approved` row is a concurrent skip at info) |
 | CR#5 — the scrub NULLed the erased refusal's `failure_reason` token | `b1afb7739` → `2bfe9eddf` (`member_not_in_good_standing` / `member_halted` kept; free text NULLed) |
-| CR#6 — the P2 docblock overclaimed; terminal rows keep minted pre-scrub drafts; 8b rested on in-flight rows only | Deferred and documented: residual **8d** (OPEN, follow-up issue TBD); docblock + call-site comment `1ee307d41`; 8b says "closed for sends" (docs) |
+| CR#6 — the P2 docblock overclaimed; terminal rows keep minted pre-scrub drafts; 8b rested on in-flight rows only | Deferred and documented: residual **8d** (OPEN, follow-up issue #699); docblock + call-site comment `1ee307d41`; 8b says "closed for sends" (docs) |
 | CR#7 — closure variables out of `withTx` | `34bbf693c` (the lock tx returns `{kind, lockedStatus, resendStatus}`) |
 | CR#8 — the cascade reason tuple lived in a use case; members' union could drift | `e5df65439` (Domain value object; a type test pins it equal to `SystemCancellationReason`) |
 | CR#9 — `already_sent` was labelled `concurrent_skip` | `34bbf693c` (`already_sent` label in `src/lib/metrics.ts`; `docs/observability.md` § 14.8.1 row) |
@@ -260,7 +260,7 @@ e2e: none (cron and erasure server paths only; no UI).
 | pdpa L-4 — plan.md "in the locked tx" | as reliability L4 |
 | security L1 — the gate→send TOCTOU can still let an E-Blast out | accepted as 8c; RoPA 8c and the go-live § 6.10 sign-off say so (docs) |
 | security L2 — check-then-insert without serialisation | as reliability L8 |
-| security L3 — a minted draft whose reclaim fails stays at Resend (pre-existing) | residual 8d (docs), follow-up issue TBD |
+| security L3 — a minted draft whose reclaim fails stays at Resend (pre-existing) | residual 8d (docs), follow-up issue #699 |
 | security Info — 403 + draft loops for ever; wants a signal | the `broadcasts.cascade.tx_or_audit_failed` line with `resendOutcome`, `members_erasure_outcome_total{still_pending}` and the half-run card; runbook recovery (docs). No new alert rule (no alerting backend is bound in code) |
 
 **Gates after round 1, on `3b48d29a9`:**
