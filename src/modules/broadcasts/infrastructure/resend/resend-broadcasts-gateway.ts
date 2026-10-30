@@ -601,7 +601,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       return { kind: 'retryable' };
     }
     const text = await res.text().catch(() => '');
-    const outcome = retrieveOnceOutcomeFor(res.status, text);
+    const outcome = retrieveOnceOutcomeFor(rawHttpStatusOf(res.status, text), text);
     logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.retrieve_once');
     return outcome;
   },
@@ -692,7 +692,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       if (
         e instanceof GatewayThrowable &&
         e.kind === 'permanent' &&
-        (e.code === 'not_found' || e.code === 'http_404')
+        e.code === 'not_found'
       ) {
         return;
       }
@@ -828,9 +828,9 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       );
       return { kind: 'retryable' };
     }
-    // Drain the body so the connection is released; its text is not used.
-    await res.text().catch(() => '');
-    const outcome = deleteOnceOutcomeFor(res.status);
+    // The body decides one thing only: whether an error came from Resend.
+    const text = await res.text().catch(() => '');
+    const outcome = deleteOnceOutcomeFor(rawHttpStatusOf(res.status, text));
     logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.delete_once');
     return outcome;
   },
@@ -1076,6 +1076,24 @@ function isTimeout(e: unknown): boolean {
   return e instanceof Error && e.name === 'TimeoutError';
 }
 
+/**
+ * The raw-fetch twin of `httpStatusOf` (spec 141, option A, extended to every
+ * call by the maintainer): an error status counts only when the body is
+ * Resend's own JSON error (it parses and carries a `name`). Any other error
+ * body — an edge's or proxy's HTML page, even one with status 404 — reads as a
+ * transient 500, so "gone" is never decided from a page Resend did not write.
+ */
+function rawHttpStatusOf(status: number, text: string): number {
+  if (status < 400) return status;
+  try {
+    const body = JSON.parse(text) as { name?: unknown } | null;
+    if (body !== null && typeof body === 'object' && typeof body.name === 'string') return status;
+  } catch {
+    // not JSON — not Resend's answer
+  }
+  return 500;
+}
+
 function deleteOnceOutcomeFor(status: number): DeleteBroadcastOnceOutcome {
   if (status >= 200 && status < 300) return { kind: 'deleted' };
   if (status === 404 || status === 410) return { kind: 'absent' };
@@ -1130,7 +1148,7 @@ async function importFetch(
   } catch {
     body = { message: text.slice(0, 200) };
   }
-  if (!res.ok) throwImportError(res.status, body, resourceId);
+  if (!res.ok) throwImportError(rawHttpStatusOf(res.status, text), body, resourceId);
   return body;
 }
 
