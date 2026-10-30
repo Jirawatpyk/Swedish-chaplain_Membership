@@ -255,7 +255,11 @@ async function attemptRetry(
     return { kind: 'blocked_by_gate' };
   }
   // Re-fire the gateway with the SAME idempotency key as the original
-  // attempt — Resend dedupes server-side.
+  // attempt — Resend dedupes server-side on the HTTP Idempotency-Key (spec
+  // 141; before it the key rode in the email headers and nothing deduped).
+  // The body is re-rendered here (the CTA link is signed with `now`), so if an
+  // earlier attempt under this key DID reach the member, Resend answers 409
+  // and the gateway returns an idempotent replay: recorded as sent, no id.
   // Email-locale audit 2026-07-16 — member.preferred_locale (explicit choice)
   // wins over the contact column's NOT-NULL DEFAULT 'en' (see dispatch-one-cycle).
   const locale =

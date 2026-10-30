@@ -45,7 +45,7 @@ n/a
 | # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
 | 1 | The bump, behaviour identical | RS1–RS5 | security-engineer, pdpa-gdpr, spec-compliance-auditor | `141-resend-sdk-6-s1` | #704 · done |
-| 2 | Renewals send a real Idempotency-Key | RI1–RI3 | reliability-guardian, spec-compliance-auditor | `141-resend-sdk-6-s2` | — · open |
+| 2 | Renewals send a real Idempotency-Key | RI1–RI3 | reliability-guardian, spec-compliance-auditor | `141-resend-sdk-6-s2` | #TBD · open |
 
 ## Test plan
 
@@ -133,6 +133,18 @@ n/a
 - **Already dispositioned** (the stop rule): email unencoded in the `contacts.remove` path, the id choke point / branded id, the twin status readers and their invented statuses → spec 140. **Pre-existing on `main`**, carried to spec 140: an import answering 2xx with no id is classified 502 and retried; `listAudiences` has no overall time budget across pages (one page today); a whitespace-only id is refused here while two callers test only `''`.
 - **Checks**: reclaim + erasure adapter + `tests/contract/resend/` 92 passed; `pnpm check` exit 0; the 4 gateway integration files on dev, 14 passed.
 - **Review ends here** under the stop rule: no new High or Medium remains.
+
+### Slice 2 (30 Oct 2026)
+
+| Done-when | Evidence |
+|---|---|
+| Step 0 | DOCUMENTED + MEASURED idempotency facts in spec § Premises (slice 2): same key + same body → same id `01a18d68-5028-…`, one email; same key + changed body → 409 `invalid_idempotent_request`; a 422 does not consume the key. The maintainer chose option A on these facts. |
+| RI1 | RED `d6467805c` → GREEN `622349fd5`: both sends call `emails.send(payload, { idempotencyKey })` with no `idempotency-key` in `payload.headers` (`resend-transactional-renewal-gateway.test.ts` — the reminder case and the tier-upgrade case). The tier-upgrade case first failed on the test's env mock lacking `app.baseUrl` (fixed in GREEN); its positive control on the committed GREEN — the key put back into `headers` — fails `expected { Object (idempotency-key) } to be undefined`. `tests/contract/resend/renewals-email.contract.test.ts` re-recorded: the body loses `headers`, the request gains `Idempotency-Key: reminder-event-id-1`. |
+| RI1b | Same RED / GREEN: `invalid_idempotent_request` → `ok({ deliveryId: null, idempotentReplay: true })`, one call; `concurrent_idempotent_requests` → transient, retried, then the original id. `dispatch-one-cycle` and `retry-failed-reminders` record the replay as sent with `deliveryId: null` and `idempotent_replay: true` in `renewal_reminder_sent`, and count `renewals_reminder_idempotent_replay_total{path}`. The repo's single-row transitions take `deliveryId: string \| null` (the column was already nullable; `bulkTransitionToSent` has no caller and is unchanged). |
+| RI2 | MEASURED 2026-10-30 17:07 UTC through the real gateway (a throwaway tsx probe, deleted; `delivered@resend.dev` only), one key three times: send → `01a18dc8-350e-7500-90ae-0cfdb1009213`; same body → the same id; changed `renewal_link_url` → `idempotentReplay: true`, no id. Resend lists exactly one "Renewal reminder: Regular membership in 30 days", `delivered`. |
+| RI3 | The gateway docblock and the `retry-failed-reminders.ts` comment say what is now true; changelog. |
+| Env guard | RED `2de8f0459` → GREEN `c5e27a255`: with `RESEND_BASE_URL=https://elsewhere.invalid` set before any client loads, the auth sender, the Broadcasts gateway and the renewals gateway all reach `api.resend.com` (`tests/contract/resend/base-url-pinned.contract.test.ts`; RED: all three hit `elsewhere.invalid`); `env.ts` throws on `RESEND_DEBUG` in production and allows it in development (`tests/unit/lib/env-stripe.test.ts`; RED: "promise resolved … instead of rejecting"). `.env.example` documents `RESEND_DEBUG`; go-live § 6.6 and the broadcasts rule say "enforced in code". |
+| Checks | `pnpm check` exit 0 (after `pnpm install` brought the worktree to AURA 5.71.0 from #700); `tests/unit/renewals` 132 files, 1,633 tests passed (before the env guard); `tests/contract/resend/` + env 71 passed; renewals integration on dev: 10 files, 43 tests passed (`audit-emit-rollback`, `concurrent-admin-race`, `concurrent-admin-send`, `cross-tenant-isolation`, `cross-year-catchup-double-send`, `dispatch-cron-idempotency`, `dispatch-missed-cron-catchup`, `dispatch-unreconciled-invoice-guard`, `tier-upgrade-on-offline-mark`, `tier-upgrade-pending`). |
 
 ## Rollout
 
