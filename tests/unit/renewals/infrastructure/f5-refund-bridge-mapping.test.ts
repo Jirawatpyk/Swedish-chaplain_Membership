@@ -143,12 +143,16 @@ describe('f5RefundBridge outcome mapping (F8-RP)', () => {
 
   it('REGRESSION: genuine processor_unavailable → refund_failed (unchanged)', async () => {
     issueRefundMock.mockResolvedValue(
-      err({ code: 'processor_unavailable', kind: 'permanent', reason: 'failed' }),
+      err({ code: 'processor_unavailable', kind: 'permanent', reason: 'sk_live_FORBIDDEN_DETAIL' }),
     );
     const result = await f5RefundBridge.issueRefundForInvoice(INPUT);
     expect(result.status).toBe('refund_failed');
     if (result.status === 'refund_failed') {
       expect(result.errorCode).toBe('processor_unavailable');
+      // Task B code review: a refund's gateway `reason` is Stripe's raw
+      // message, and the reject route returns `detail` to the browser. Only
+      // the bounded kind goes out.
+      expect(result.detail).toBe('permanent');
     }
   });
 
