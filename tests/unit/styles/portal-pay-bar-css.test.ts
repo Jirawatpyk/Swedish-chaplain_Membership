@@ -17,9 +17,11 @@ describe('portal pay bar on AURA PageHeader (#191)', () => {
     expect(css).not.toContain('.portal-pay-bar');
   });
 
-  it('hides the strip that holds a hidden pay bar', () => {
-    expect(css).toMatch(
-      /\[data-slot="page-header"\] :has\(> \[data-slot="pay-bar"\]\[hidden\]\) \{\s*display: none;/,
-    );
+  it('hides the strip that holds a hidden pay bar, only when nothing else is in it', () => {
+    const rule = /\[data-slot="page-header"\] :has\(> \[data-slot="pay-bar"\]\[hidden\]\):not\(:has\(> :not\(\[data-slot="pay-bar"\], \[role="status"\]\)\)\) \{\s*display: none;/;
+    expect(css).toMatch(rule);
+    // An AURA gap, labelled so it is removed when AURA hides such a strip.
+    const at = css.search(rule);
+    expect(css.slice(Math.max(0, at - 600), at)).toContain('stand-in until AURA #193');
   });
 });

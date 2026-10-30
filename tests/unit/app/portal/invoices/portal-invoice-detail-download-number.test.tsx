@@ -509,13 +509,19 @@ describe('PortalInvoiceDetailPage — AURA layout (spec 122 US4, `Invoice-paid` 
     // AURA 5.71 (#191): only the pay bar becomes the strip below 640px; the
     // downloads stay in the page (`actions`).
     expect(html).toContain('data-bar-below="sm"');
-    const actions = /data-marker="actions">(.*?)<\/span><span data-marker="actions-bar">/s.exec(html)?.[1] ?? '';
-    const barSlot = /data-marker="actions-bar">(.*)/s.exec(html)?.[1] ?? '';
+    const slots = /data-marker="actions">(.*?)<\/span><span data-marker="actions-bar">(.*?)<\/span><\/div>/s.exec(html);
+    expect(slots, 'both header slots render').not.toBeNull();
+    const [, actions, barSlot] = slots!;
     expect(actions).not.toContain('portal-invoice-pay-bar');
-    const bar = /<section[^>]*data-testid="portal-invoice-pay-bar"[^>]*>/.exec(barSlot)?.[0] ?? '';
+    expect(html.match(/data-testid="portal-invoice-pay-bar"/g)).toHaveLength(1);
+    const bar = /<section[^>]*data-testid="portal-invoice-pay-bar"[^>]*>/.exec(barSlot!)?.[0] ?? '';
     expect(bar).not.toBe('');
     // AURA's strip pins it; the section is only the row inside.
     expect(bar).not.toMatch(/max-(?:sm|md):fixed|(^|\s)sticky(\s|")/);
+    // AURA gives the bar's children `min-width: max-content`; the row may
+    // shrink, so a long amount or 200% text wraps instead of pushing Pay now
+    // off the screen (review M1, WCAG 1.4.10).
+    expect(bar).toMatch(/class="[^"]*\bmin-w-0\b/);
     // AURA pads the page for its strip: no spacer of the app's own.
     expect(html).not.toMatch(/aria-hidden="true" class="h-24 sm:hidden/);
     expect(html).toContain('summary.amountLabel');
