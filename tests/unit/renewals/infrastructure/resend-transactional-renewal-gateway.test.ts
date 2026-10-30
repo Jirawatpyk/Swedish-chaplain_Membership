@@ -318,6 +318,18 @@ describe('resendTransactionalRenewalGateway', () => {
       expect(sendMock).toHaveBeenCalledTimes(1);
     });
 
+    it('invalid_idempotency_key → gateway_4xx permanent, no retry (a malformed key never becomes valid)', async () => {
+      sendMock.mockResolvedValueOnce({
+        data: null,
+        error: { name: 'invalid_idempotency_key', message: 'The key must be between 1-256 chars.' },
+      });
+      const result = await resendTransactionalRenewalGateway.sendRenewalEmail(VALID_INPUT);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('gateway_4xx');
+      expect(sendMock).toHaveBeenCalledTimes(1);
+    });
+
     it('concurrent_idempotent_requests → transient: retried, then the original id', async () => {
       sendMock
         .mockResolvedValueOnce({

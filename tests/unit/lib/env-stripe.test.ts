@@ -97,7 +97,7 @@ describe('env.ts — RESEND_DEBUG', () => {
     vi.unstubAllEnvs();
   });
 
-  it.each(['true', '1', 'false', 'yes'])('throws for any non-empty RESEND_DEBUG in production (%s)', async (value) => {
+  it.each(['true'])('throws when RESEND_DEBUG turns the SDK debug log on in production (%s)', async (value) => {
     stubEnv({
       NODE_ENV: 'production',
       STRIPE_SECRET_KEY: 'sk_live_0000000000',
@@ -107,6 +107,20 @@ describe('env.ts — RESEND_DEBUG', () => {
       RESEND_DEBUG: value,
     });
     await expect(import('@/lib/env')).rejects.toThrow(/RESEND_DEBUG.*NODE_ENV=production/i);
+  });
+
+  // resend@6.35 logs only when RESEND_DEBUG === 'true' (dist/index.mjs:1639);
+  // refusing a harmless 'false' would take production down on an env edit.
+  it.each(['false', '0', ''])('allows a RESEND_DEBUG that leaves the SDK log off in production (%j)', async (value) => {
+    stubEnv({
+      NODE_ENV: 'production',
+      STRIPE_SECRET_KEY: 'sk_live_0000000000',
+      STRIPE_LIVE_MODE: 'true',
+      ZAPIER_DPA_EXECUTED: 'true',
+      E2E_X_TENANT_HEADER_ENABLED: 'false',
+      RESEND_DEBUG: value,
+    });
+    await expect(import('@/lib/env')).resolves.toBeDefined();
   });
 
   it('allows an empty RESEND_DEBUG in production (a blank line copied from .env.example)', async () => {
