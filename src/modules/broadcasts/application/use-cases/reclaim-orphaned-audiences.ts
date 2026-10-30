@@ -149,8 +149,9 @@ const RECLAIM_CONCURRENCY = 5;
 
 /** Resend 403 error message for the account's last audience. */
 // Spec 141: resend@6.35 deletes at `/segments`, whose refusal wording was not
-// measured; accept either noun.
-const LAST_AUDIENCE_PATTERN = /cannot delete (the )?last (audience|segment)/i;
+// measured (deleting the last one cannot be probed on an account prod shares),
+// so match the noun phrase alone. A false match only SKIPS a delete.
+const LAST_AUDIENCE_PATTERN = /\blast (audience|segment)\b/i;
 
 export async function reclaimOrphanedAudiences(
   deps: ReclaimOrphanedAudiencesDeps,

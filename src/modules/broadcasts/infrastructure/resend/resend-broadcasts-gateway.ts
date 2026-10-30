@@ -142,11 +142,15 @@ function assertNonEmpty(values: Readonly<Record<string, string>>): void {
  *
  * - `application_error` is the name the SDK gives every error it builds
  *   itself: a non-JSON body (an edge's or proxy's HTML page, `index.mjs:1708`)
- *   and a thrown `fetch` (`:1750`). 4.8 left `statusCode` undefined on the
- *   first and the classifier read 500; 6.35 passes the page's status through,
- *   so an HTML 404 read as "already gone" — on the erasure path a false
- *   "already absent" in the Art. 30 record. Read it as 500 again, whatever it
- *   carries; a thrown fetch (`statusCode: null`) is the network class.
+ *   and anything its outer `catch` takes (`:1750`, `statusCode: null`) — a
+ *   thrown `fetch`, but also a 2xx whose body would not parse, which the SDK
+ *   cannot tell apart. 4.8 left `statusCode` undefined on the first and the
+ *   classifier read 500; 6.35 passes the page's status through, so an HTML 404
+ *   read as "already gone" — on the erasure path a false "already absent" in
+ *   the Art. 30 record. Read it as retryable again, whatever it carries, as 4.8
+ *   did; the `statusCode: null` case is tagged `network` (mostly a transport
+ *   failure, sometimes an unreadable success — a retried create can then mint
+ *   a second resource, as on 4.8).
  * - Any other error with `statusCode: null` is a refusal the SDK made locally
  *   without a request (`missing_required_field`, `invalid_parameter`): no
  *   retry can fix it, so it reads as a 422.
@@ -156,6 +160,12 @@ function httpStatusOf(err: ResendErrorShape | undefined | null): number {
   if (err?.name === 'application_error') return err.statusCode === null ? 0 : 500;
   if (err?.statusCode === null) return 422;
   return err?.statusCode ?? 500;
+}
+
+/** Resend itself said the resource is gone (404 or 410) — never an edge's page. */
+function isProviderGone(err: ResendErrorShape | undefined | null): boolean {
+  const status = httpStatusOf(err);
+  return status === 404 || status === 410;
 }
 
 function classifyResendError(
@@ -288,8 +298,8 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     audienceId: string,
     contacts: ReadonlyArray<AudienceContact>,
   ): Promise<void> {
-    assertNonEmpty({ audienceId });
     if (contacts.length === 0) return;
+    assertNonEmpty({ audienceId });
 
     // The Resend Contacts API is one-at-a-time (no bulk endpoint). The
     // account limit is 10 req/s, NOT the 2 this comment used to claim
@@ -705,9 +715,15 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     // `GET /segments`, so follow `has_more` (cursor = the last id) instead of
     // reading page 1 only — reclaim-orphaned-audiences must see EVERY audience.
     // Each page is its own `withRetry`, so a retry never re-reads earlier pages.
-    const rows: Array<{ id: string; name: string; created_at: string }> = [];
+    const byId = new Map<string, { id: string; name: string; created_at: string }>();
+    const seenCursors = new Set<string>();
     let after: string | undefined;
-    for (let page = 0; page < LIST_AUDIENCES_MAX_PAGES; page += 1) {
+    let truncated = false;
+    for (let page = 0; ; page += 1) {
+      if (page === LIST_AUDIENCES_MAX_PAGES) {
+        truncated = true;
+        break;
+      }
       const result = await withRetry(
         async () => {
           const sdk = client();
@@ -727,10 +743,22 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
         { method: 'listAudiences' },
       );
       const pageRows = result?.data ?? [];
-      rows.push(...pageRows);
+      for (const r of pageRows) byId.set(r.id, r);
       const last = pageRows.at(-1);
       if (result?.has_more !== true || last === undefined) break;
+      // A cursor seen before would page forever over the same rows.
+      if (seenCursors.has(last.id)) {
+        truncated = true;
+        break;
+      }
+      seenCursors.add(last.id);
       after = last.id;
+    }
+    const rows = [...byId.values()];
+    if (truncated) {
+      // Reclaim then sees fewer audiences than exist: it deletes less, never
+      // more, but say so rather than pass a cut list off as the whole.
+      logger.warn({ audienceCount: rows.length }, 'resend.broadcasts.audiences_list_truncated');
     }
     logger.info({ audienceCount: rows.length }, 'resend.broadcasts.audiences_listed');
     // Parse at the adapter boundary so callers work with Date, not raw strings.
@@ -753,8 +781,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           // Without the 410 branch, a Resend 410 would fall through to
           // `classifyResendError` → `permanent`, and the cleanup row would
           // re-fail every cron tick forever.
-          const status = httpStatusOf(result.error);
-          if (status === 404 || status === 410) {
+          if (isProviderGone(result.error)) {
             logger.info({ audienceId }, 'resend.broadcasts.audience_already_absent');
             return; // idempotent: already gone
           }
@@ -788,8 +815,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
           object: string;
         }>;
         if (result.error) {
-          const status = httpStatusOf(result.error);
-          if (status === 404 || status === 410) {
+          if (isProviderGone(result.error)) {
             logger.info({ broadcastId }, 'resend.broadcasts.broadcast_already_absent');
             return; // idempotent: already gone
           }
