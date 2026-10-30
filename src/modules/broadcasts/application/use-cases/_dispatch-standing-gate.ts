@@ -50,6 +50,7 @@ import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastsGatewayPort, DeleteBroadcastOnceOutcome } from '../ports/broadcasts-gateway-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
+import type { StandingRefusalFailureReason } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { readMemberSendStanding, type MemberSendStandingDeps, type StandingRefusal } from './_member-send-standing';
 
 /** The standing reads a dispatch leg makes. */
@@ -70,10 +71,10 @@ export type DispatchStandingDecision =
       readonly kind: 'refuse';
       /** Which refusal audit row (`standingRefusalAuditEvent`) to write — the standing itself, so the row names its `access`. */
       readonly refusal: StandingRefusal;
-      /** The member-facing / `failure_reason` token. */
-      readonly reason: 'member_halted' | 'member_not_in_good_standing';
+      /** The member-facing / `failure_reason` token (kept by the erasure scrub). */
+      readonly reason: StandingRefusalFailureReason;
     }
-  | { readonly kind: 'refuse_erased'; readonly reason: 'member_not_in_good_standing' }
+  | { readonly kind: 'refuse_erased'; readonly reason: Extract<StandingRefusalFailureReason, 'member_not_in_good_standing'> }
   | { readonly kind: 'undecided'; readonly message: string; readonly errClass: string };
 
 export async function decideDispatchStanding(

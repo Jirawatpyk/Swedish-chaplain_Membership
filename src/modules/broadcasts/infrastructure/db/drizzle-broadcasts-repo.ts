@@ -48,6 +48,7 @@ import {
   TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
 import { CASCADE_CANCELLATION_REASONS } from '../../domain/value-objects/cascade-cancellation-reason';
+import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 
 /**
@@ -1918,6 +1919,10 @@ export function makeDrizzleBroadcastsRepo(
         CASCADE_CANCELLATION_REASONS.map((r) => sql`${r}`),
         sql`, `,
       );
+      const refusalTokens = sql.join(
+        STANDING_REFUSAL_FAILURE_REASONS.map((r) => sql`${r}`),
+        sql`, `,
+      );
       const rows = (await tx.execute(sql`
         UPDATE broadcasts SET
           subject = '[redacted]',
@@ -1949,8 +1954,14 @@ export function makeDrizzleBroadcastsRepo(
           -- author's OWN PII, the same address the scrub redacts above on
           -- this row. NULL it too so no copy survives (2026-06-19
           -- /code-review #8). The migration-0224 GUC arm whitelists this
-          -- column so the change is permitted on a post-draft row.
-          failure_reason = NULL,
+          -- column so the change is permitted on a post-draft row. Spec 139
+          -- (CR#5): a standing refusal's fixed token (member_halted /
+          -- member_not_in_good_standing) is a system value, not PII, so it
+          -- is kept, as cancellation_reason keeps the cascade's own reason.
+          failure_reason = CASE
+            WHEN failure_reason IN (${refusalTokens}) THEN failure_reason
+            ELSE NULL
+          END,
           custom_recipient_emails = CASE
             WHEN segment_type = 'custom' THEN ARRAY['[redacted]']::text[]
             ELSE NULL
