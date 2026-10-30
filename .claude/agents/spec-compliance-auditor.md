@@ -29,6 +29,8 @@ Unless the user explicitly says otherwise, audit the **most recently implemented
 
 A spec written by the `feature-flow` skill has **Done when** lines instead of numbered acceptance scenarios, and usually no `tasks.md`. Treat each Done-when line as an AS. The evidence collected in Verify (test names, numbers, screenshots) is in `plan.md` § Evidence. For each line, check both that the code satisfies it and that the cited evidence actually proves it: a line with no evidence, or evidence that does not prove it, is **FAIL** and is reported as a **High** finding.
 
+Also check the premises. A spec or plan that keeps an existing path compatible (or protects it) without a measured **usage line** (count · source · date), or that relies on a provider fact (a status string, an error code, a limit) marked neither MEASURED nor cited from the provider's docs, is a **Medium** finding (`feature-flow` § 0, retro 2026-10-30).
+
 ## Audit methodology
 
 For each user story (process P1 → P2 → P3 in priority order):
@@ -70,6 +72,10 @@ Produce a structured Markdown report (conversational prose in Thai per user pref
 
 ## FR / SC traceability
 | ID | Status | Implementing code / test | Note |
+
+## Premises (usage lines and provider facts)
+- <each path the change keeps compatible: its usage line (count · source · date), or MISSING → Medium>
+- <each provider fact the design relies on: MEASURED (date) / DOCUMENTED (url), or unlabelled → Medium>
 
 ## Constitution & convention flags
 - <Clean Arch / tenant-isolation / audit / i18n / timestamp findings>

@@ -12,14 +12,15 @@ description: Drive a Chamber-OS change from idea to production through docs/work
 - Read `docs/decisions.md`. If the request contradicts a decision, or two sources disagree, stop and ask (`CLAUDE.md` § Precedence). Never pick one silently.
 - **Size it** (S / M / L, per `docs/workflow.md` § Sizes) and say the size and why in one line. When unsure, size up. Money, tax, tenancy, PII, auth and migrations are never S.
 - A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) uses the solo-maintainer review: record its five checks in `plan.md` § Complexity Tracking (`review-and-ship` § 2).
+- **Measure before you protect.** Before designing compatibility or safety for an existing path (a dispatch leg, an API, a flag-off branch, a migration of old rows), measure its real usage: a prod row count (the maintainer runs it, or a read-only query they order), or a log or metric count. Record the number, its source and the date in the spec's Premises. A path with no usage is a candidate for removal, not for protection (retro 2026-10-30, #701, D-041: two specs and nine review rounds kept a dispatch leg "LIVE" while prod held 0 rows of it).
 
 ## 1. Frame
 
-- **S**: state the Done-when lines in the reply; they go into the PR.
+- **S**: state the Done-when lines in the reply; they go into the PR, with the § 0 usage line when the change keeps an existing path compatible, and a MEASURED or doc-cited label on every provider fact it relies on.
 - **M / L**: interview the user with `AskUserQuestion`. Cover the hard parts: edge cases, failure and refusal paths, roles, tenants, locales, money and tax effects, and what is out of scope. Skip questions the code already answers. Then write `specs/<nnn-name>/spec.md`:
   - user stories, each with **Done when** lines that are observable and checkable ("the refund row shows `succeeded` and the credit note number"), never vague ("works well");
   - **Out of scope**, and **Open questions** (which block the plan until answered);
-  - the **premises checked against the code**: what already exists that would make this pointless or contradictory?
+  - the **premises checked against the code**: what already exists that would make this pointless or contradictory? It includes a **usage line** (count · source · date) for every existing path the change keeps compatible (§ 0), and every provider fact the design relies on, marked MEASURED (date) or cited from the provider's docs;
 - **L**, or anything touching money / tax / tenancy / PII / auth / migrations: suggest the `spec-review-panel` Workflow. It runs only if the user opts in.
 
 ## 2. Branch
@@ -28,7 +29,7 @@ A worktree from an up-to-date `origin/main` at a short path (e.g. `%TEMP%\fNN`),
 
 ## 3. Plan (M / L)
 
-Ask to enter plan mode (the EnterPlanMode tool; the user approves — or the user switches to Plan mode themselves). Draft in plan mode (`superpowers:writing-plans` helps), present the plan for approval when leaving plan mode, then save it as `specs/<nnn-name>/plan.md` from `plan-template.md` in this skill's folder. It covers:
+Ask to enter plan mode (the EnterPlanMode tool; the user approves — or the user switches to Plan mode themselves). Draft in plan mode (`superpowers:writing-plans` helps). **Before presenting it, check that the spec's Premises carry the usage line for every path the plan keeps compatible (§ 0) and that every provider fact is labelled; a plan resting on premises without them is not ready to present** — this is where the guard bites, before any build cost (D-041). Present the plan for approval when leaving plan mode, then save it as `specs/<nnn-name>/plan.md` from `plan-template.md` in this skill's folder. It covers:
 - the approach and the alternatives not taken;
 - the files to touch and the module rules that apply;
 - the data model and migration;
@@ -71,6 +72,7 @@ Reviews run in subagents; the writer never reviews its own code. How findings cl
 ## 8. PR
 
 Fill in `.github/pull_request_template.md`:
+- for S, before `gh pr create`: the § 0 usage line and the provider-fact labels are in the body, or the PR is not opened (no auditor runs on S, so this is its only check);
 - the Done-when lines with their evidence;
 - the Definition of Done checklist, ticked only where the evidence exists;
 - every review finding and how it was closed;
