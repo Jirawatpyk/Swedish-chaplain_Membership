@@ -179,7 +179,43 @@ e2e: none (cron and erasure server paths only; no UI).
 
 ## Evidence
 
-(filled in at Verify, one block per slice)
+### Slice 1
+
+**Live Verify, 30 Oct 2026, on `71a7f9318`** (`run-chamber-os`: the branch on :3400 from the `f139` worktree, dev Neon, tenant `swecham`, the live Resend Broadcasts account, recipient `delivered@resend.dev` only).
+- Before seeding, `SELECT … status='approved' AND scheduled_for <= now()` on dev returned 0 rows, so the cron touched only the seeds.
+- The real surfaces were driven: `POST /api/members/{id}/erase` as the e2e super-admin, and `GET /api/cron/broadcasts/dispatch-scheduled`.
+- Seeds removed afterwards: 4 members, 4 broadcasts, the Resend audience.
+
+| Done-when | Evidence |
+|---|---|
+| DE2 200 arm | S1: a real Resend draft (`draft`) on an `approved` row. Erase → `200 cascadesComplete:true`; GET the draft → **404**; the row is `cancelled`; `broadcast_cancelled` has `resendOutcome:"deleted"`; `member_erased` has `broadcasts_already_sent_count:0`; log `dispatch_begun_delete outcome:"deleted"`. |
+| DE2 403 arm (8c) | S3: the row's id is a broadcast Resend had already `sent` to the sink. Erase → 200; the row stays `approved`; `broadcast_concurrent_action_blocked` has `{dispatchBegun:true, resendOutcome:"already_sent", observedResendStatus:"sent"}`; `member_erased` has `broadcasts_already_sent_count:1`; log `outcome:"forbidden"`, then the WARN `dispatch_begun_already_sent` (probed after the lock). Made due afterwards, the cron caught it up to `sending` with `broadcast_send_started` (the mail was really out). |
+| DE1 + P2 | S2: an erased member and a due row with a real draft. Cron `processed:2, permanent_failed:2`; the draft → **404**; the row is `failed_to_dispatch` / `member_not_in_good_standing`; audit `broadcast_failed_to_dispatch {standing:"erased", resendDraftOutcome:"deleted"}`; no "membership suspended" row. |
+| DE1, no id | P4: an erased member with no Resend id → `failed_to_dispatch`, `resendDraftOutcome:"none"`, no Resend call. A second cron tick → `processed:0`. |
+| Probes | Wrong cron secret → `401`. Erase as a plain admin → `403 forbidden` (`members.erasure` is super-admin only), nothing written. `identityVerified:false` → `400 invalid_body`. |
+| DE3 / DE3b | Not reachable live (the race needs a parked `/send`). Pinned by `tests/integration/broadcasts/erasure-vs-dispatch-begun.test.ts` 3/3 (live Neon; legacy, import tick 2, the import re-mint window). |
+| DE4 | `cancel-in-flight-broadcasts-for-member.test.ts`: the default-mode D1 cases (archive), no DELETE. |
+| DE6 | `tests/integration/broadcasts/members-bridge-erased-at.test.ts` 3/3. |
+
+**Findings from Verify, fixed after it** (maintainer: "แก้ finding แล้วทำต่อเลย"). Each is pinned by a test; the live run was not repeated.
+- **A re-erasure wrote a second `already_sent` row** (measured: 2 rows after 2 erasures). Fixed in `ecbe9fd0b` / `33849eaa6` with `hasAlreadySentEvidenceInTx`, a tenant-scoped EXISTS on `audit_log`. Tests: `tests/integration/broadcasts/already-sent-evidence.test.ts` 4/4, and the unit "a re-erasure … writes no second one".
+  - Residual: two concurrent re-drives could both miss the row, because EXISTS is not a lock (403 path only).
+- **The content scrub NULLed the cascade's own `cancellation_reason`.** Fixed in `4e036c626` / `55832a161` / `b02f1d595`: `gdpr_erasure_request`, `pdpa_deletion_request` and `originator_member_deleted` are kept; free text is still NULLed. Tests: `scrub-content-for-member` 22/22 and `erase-member-cascade-real` 2/2.
+  - The tenant-sql-shape scan was red on `55832a161`..`33849eaa6` and green from `b02f1d595`.
+- **The log field `lockHeldMs` measured only the DELETE.** Renamed to `deleteMs` in `4b849e254`.
+
+**Gates on `b02f1d595`:**
+- `pnpm check` exit 0 (red-first: 23 commits);
+- `pnpm vitest run tests/contract/` 2836 passed;
+- unit broadcasts + broadcast + members: 5192/5192;
+- integration by path, all exit 0: scrub-content-for-member 22, already-sent-evidence 4, audience-import-repo 28, member-erasure-cascade 4, erasure-vs-dispatch-begun 3, erase-member-f7-content 5, eblast-erasure-reach 2, erase-member-cascade-real 2, halt-flag-precondition 7.
+- **Not run locally:** the full `pnpm test:coverage` (CI runs it).
+
+**RED evidence:** in each `test(…)` commit message and the build report; every RED failed on an assertion.
+- The `?.` calls in `37fa2113e` were removed in `97abda837`.
+- The RED commit `ecbe9fd0b` also carries the port declaration and a stub returning `false`, so that the tests failed on an assertion, not on "is not a function".
+
+**Dev litter:** each run of `already-sent-evidence.test.ts` leaves one `audit_log` row with `tenant_id IS NULL` (summary `spec 139 evidence fixture`), because `audit_log` is append-only.
 
 ## Rollout
 
