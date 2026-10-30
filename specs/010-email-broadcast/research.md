@@ -8,6 +8,8 @@ This document resolves the open questions enumerated in `plan.md` § Phase 0. Ea
 
 ## 1. Resend Broadcasts API surface
 
+> **Stale on provider facts (noted 2026-10-30, #701).** The plan numbers and SDK method names below are out of date. The current, labelled facts (MEASURED / DOCUMENTED / UNKNOWN) are in `specs/139-eblast-erasure-close/research.md`.
+
 ### Decision
 
 F7 uses the Resend SDK's **Broadcasts** product surface (distinct from the Transactional product F1+F4 already use). Specifically:
@@ -330,6 +332,8 @@ Concretely:
 ---
 
 ## 9. Resend Broadcasts API — recipient list payload
+
+> **Stale on provider facts (noted 2026-10-30, #701).** See `specs/139-eblast-erasure-close/research.md` for the current recipient, segment and contact-import facts.
 
 ### Decision
 
