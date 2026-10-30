@@ -57,6 +57,15 @@ export const maxDuration = 300;
 
 const MAX_PER_TICK = 50;
 
+/**
+ * Spec 139 — no new member is started once this much of `maxDuration` has
+ * gone. A re-drive's broadcasts cascade holds each dispatch-begun row's lock
+ * across up to two bounded Resend calls (≈ 20 s), so 50 members can outrun the
+ * 300 s function; the members left are deferred, and the next tick (they are
+ * still stuck) continues with them.
+ */
+const TIME_BUDGET_MS = 240_000;
+
 // System-actor sentinels for the re-driven erasure (COMP-1 US2a convention —
 // the F1 cascade uses `requestId = 'system:erase-cascade'`; this reconciler
 // uses its own distinct requestId so the DPO log can attribute a re-drive to
@@ -74,6 +83,7 @@ const SYSTEM_REQUEST_ID = 'system:erase-reconcile';
 export const GET = POST;
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const startedAt = Date.now();
   // Constant-time Bearer check via the shared helper (parity with the F4/F5/F7
   // cron routes) — closes the timing side-channel on a CRON_SECRET brute-force.
   if (!verifyCronBearer(request.headers.get('authorization'), env.cron.secret)) {
@@ -141,8 +151,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Sequential per-member re-drive. Each `eraseMember` re-opens its own txs
   // (the durable scrub + each post-commit cascade adapter), so there is no
   // shared cross-member state; sequential keeps the failure isolation simple
-  // and the count at ≤50/tick (MAX_PER_TICK) is well within maxDuration.
-  for (const { memberId, reason } of stuck) {
+  // and the count at ≤50/tick (MAX_PER_TICK); TIME_BUDGET_MS keeps the loop
+  // inside maxDuration (spec 139).
+  let deferred = 0;
+  for (const [index, { memberId, reason }] of stuck.entries()) {
+    if (Date.now() - startedAt >= TIME_BUDGET_MS) {
+      deferred = stuck.length - index;
+      break;
+    }
     try {
       const res = await eraseMember(
         memberId,
@@ -197,7 +213,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     reconciled: summary.reconciled,
     still_pending: summary.still_pending,
     error: summary.error,
+    // Members still stuck that this tick did not start (the time budget); the
+    // next tick picks them up.
+    deferred,
   };
+  if (deferred > 0) {
+    logger.warn(
+      { tenantId: tenant.slug, deferred, budgetMs: TIME_BUDGET_MS },
+      'cron.members.reconcile_erasures.budget_deferred',
+    );
+  }
 
   logger.info(
     { tenantId: tenant.slug, ...body },
