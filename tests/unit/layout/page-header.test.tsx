@@ -63,6 +63,39 @@ describe('<PageHeader> on AURA PageHeader', () => {
     expect(screen.getByText('Total 107,000.00 THB incl. VAT').closest('.aura-page-header__status')).not.toBeNull();
   });
 
+  // AURA 5.71 (#191): only `actionsBar` becomes the phone bar; `actions` stay
+  // in the page (the portal invoice: downloads in the page, Pay now in the bar).
+  it('passes `actionsBar` through: only those actions become the phone bar (#191)', () => {
+    render(
+      <PageHeader
+        title="Invoice SC-2026-000130"
+        actions={<button type="button">Download PDF</button>}
+        actionsBar={<button type="button">Pay now</button>}
+        actionsBarBelow="sm"
+      />,
+    );
+    const bar = screen.getByRole('button', { name: 'Pay now' }).parentElement;
+    expect(bar).toHaveClass('aura-page-header__bar');
+    expect(bar).not.toContainElement(screen.getByRole('button', { name: 'Download PDF' }));
+  });
+
+  // globals.css hides the strip that holds a hidden pay bar by structure
+  // (`:has(> [data-slot="pay-bar"][hidden])`, stand-in until AURA #193): the
+  // pay bar must be a direct child of AURA's bar, with nothing else in it.
+  it('puts the pay bar directly in AURA\u2019s bar, alone (the strip-hide rule\u2019s premise)', () => {
+    const { container } = render(
+      <PageHeader
+        title="Invoice SC-2026-000130"
+        actions={<button type="button">Download PDF</button>}
+        actionsBar={<section data-slot="pay-bar" hidden />}
+        actionsBarBelow="sm"
+      />,
+    );
+    const payBar = container.querySelector('[data-slot="pay-bar"]')!;
+    expect(payBar.parentElement).toHaveClass('aura-page-header__bar');
+    expect(Array.from(payBar.parentElement!.children)).toEqual([payBar]);
+  });
+
   it('an eyebrow of chips is a div row, not a paragraph', () => {
     render(<PageHeader title="Siam Nordic" eyebrow={<span data-testid="pill">Active</span>} />);
     const eyebrow = screen.getByTestId('pill').closest('.aura-page-header__eyebrow');

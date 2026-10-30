@@ -375,17 +375,18 @@ export async function renderPortalInvoiceDetailView({
 
   // Spec 122 US4 — Pay now leads the header as the one primary action (the
   // `Pay-*` boards' backdrop); on phones the same element is the
-  // `Portal-invoice-mobile` band — amount due, due date, Pay now — fixed
-  // above the bottom tabs below 640px (D-039, as every bar). One element, so
-  // one pay sheet. Hand-built: stand-in until AURA #191 — PageHeader's
-  // `actionsBarBelow` would move every header action (the downloads too)
-  // into the bar, and the board's bar holds only the amount and Pay now.
+  // `Portal-invoice-mobile` band — amount due, due date, Pay now — AURA
+  // PageHeader's `actionsBar` strip below 640px (D-039, AURA #191): only it
+  // becomes the bar, the downloads stay in the page. One element, so one pay
+  // sheet; AURA pins it above the bottom tabs and pads the page for it.
   const payBar =
     canPayOnline && paymentSettings && amountDueSatang !== null ? (
           <PayBar
             invoiceId={invoice.invoiceId}
             label={tPay('summary.amountLabel')}
-            className="portal-pay-bar flex items-center gap-3 max-sm:fixed max-sm:inset-x-0 max-sm:bottom-[var(--aura-bottomnav-offset,0px)] max-sm:z-[4] max-sm:border-t max-sm:border-[var(--aura-border-default)] max-sm:bg-[var(--aura-bg-surface)] max-sm:px-4 max-sm:py-3 max-sm:shadow-[var(--aura-shadow-enterprise)] [@media(max-height:560px)]:static [@media(max-height:560px)]:border-0 [@media(max-height:560px)]:p-0 [@media(max-height:560px)]:shadow-none"
+            // `min-w-0`: AURA gives the bar's children `min-width: max-content`;
+            // the row shrinks so the amount wraps, never Pay now off the screen.
+            className="flex min-w-0 items-center gap-3"
           >
             <span className="flex min-w-0 flex-1 flex-col sm:hidden">
               <span className="text-xs text-[var(--aura-fg-secondary)]">{tPay('summary.amountLabel')}</span>
@@ -434,11 +435,14 @@ export async function renderPortalInvoiceDetailView({
             whenPaid={renderStatusBadge('paid')}
           />
         }
+        {...(payBar ? { actionsBarBelow: 'sm' as const } : {})}
+        actionsBar={payBar}
         actions={
-          invoice.pdf || payBar ? (
+          invoice.pdf ? (
             // Spec 122 US4 — downloads, then Email me a copy, then Pay now
-            // (the `Invoice-paid` / `Pay-*` boards); stacked full width on
-            // phones (`Portal-invoice-mobile`).
+            // (`actionsBar`, after these from 640px; the `Invoice-paid` /
+            // `Pay-*` boards); stacked full width on phones
+            // (`Portal-invoice-mobile`).
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
               {invoice.pdf ? (
                 <>
@@ -556,7 +560,6 @@ export async function renderPortalInvoiceDetailView({
                   ) : null}
                 </>
               ) : null}
-              {payBar}
             </div>
           ) : null
         }
@@ -923,9 +926,9 @@ export async function renderPortalInvoiceDetailView({
             {t('legacyNoTinNotPayable')}
           </Alert>
         ) : canPayOnline && paymentSettings ? (
-          // The pay bar lives in the header (see `payBar`); on phones it is
-          // fixed above the bottom tabs, so keep room for it here.
-          <div aria-hidden="true" className="h-24 sm:hidden [@media(max-height:560px)]:hidden" />
+          // The pay bar lives in the header (see `payBar`); on phones AURA's
+          // strip pads the page for itself.
+          null
         ) : (
           // FR-030 (#145) — the fallback offers a "Contact administrator" mailto.
           // Source is `env.billingContactEmails` (BILLING_CONTACT_EMAILS, a

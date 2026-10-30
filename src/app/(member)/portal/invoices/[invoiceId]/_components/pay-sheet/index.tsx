@@ -120,17 +120,29 @@ export interface PaySheetProps {
  * AURA's Drawer hands focus back to whatever was focused when it opened —
  * Pay now, normally. Two paths leave that target gone or wrong (UX review
  * M1, SC 2.4.3): a `?pay=1` open remembered `<body>`, and a settled payment
- * unmounted Pay now under the confirmation panel. After the drawer's own
- * restore runs, land on Pay now if it is still there, else the layout's
+ * unmounted Pay now under the confirmation panel. A third (PR #700 review M2)
+ * HIDES it: the optimistic-paid signal sets `hidden` on PayBar's section,
+ * and a hidden button cannot take focus. After the drawer's own restore
+ * runs, land on Pay now if it is still shown, else the layout's
  * `<main id="main-content" tabIndex={-1}>`.
  */
+function isShown(el: Element | null): el is HTMLElement {
+  return (
+    el instanceof HTMLElement &&
+    el.isConnected &&
+    el.closest('[hidden]') === null &&
+    // CSS hiding (the AURA strip, `visibility`), where the browser can tell;
+    // never opacity, which the drawer's exit animation still uses.
+    el.checkVisibility?.({ visibilityProperty: true }) !== false
+  );
+}
+
 function settleFocusAfterClose(): void {
   setTimeout(() => {
     const active = document.activeElement;
-    if (active && active !== document.body && active.isConnected) return;
-    const target =
-      document.querySelector<HTMLElement>('[data-testid="pay-now-button"]') ??
-      document.getElementById('main-content');
+    if (active !== document.body && isShown(active)) return;
+    const payNow = document.querySelector('[data-testid="pay-now-button"]');
+    const target = isShown(payNow) ? payNow : document.getElementById('main-content');
     target?.focus();
   }, 0);
 }
@@ -409,7 +421,8 @@ export function PaySheet({
        * top-to-bottom container across card form → 3DS → confirmation).
        * The title is "Pay invoice", the description the document number in
        * mono; Escape, the scrim and the close button all close it, and
-       * focus returns to Pay now. The panel and the close button carry the
+       * focus returns to Pay now, or to `#main-content` when Pay now is hidden
+       * (settleFocusAfterClose). The panel and the close button carry the
        * test ids the e2e suite reads, and the close button is named after
        * the drawer (AURA 5.9, handoff #70).
        */}
