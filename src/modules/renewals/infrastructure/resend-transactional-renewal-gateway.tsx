@@ -187,6 +187,13 @@ const PERMANENT_RESEND_ERROR_PATTERNS: ReadonlyArray<string> = [
   'sender_blocked',
 ];
 
+/** Resend error names that are transient by nature (spec 141). */
+const KNOWN_TRANSIENT_RESEND_NAMES: ReadonlySet<string> = new Set([
+  'application_error',
+  'rate_limit_exceeded',
+  'internal_server_error',
+]);
+
 function isPermanentResendName(nameLower: string): boolean {
   return PERMANENT_RESEND_ERROR_PATTERNS.some((p) => nameLower.includes(p));
 }
@@ -240,6 +247,15 @@ function mapResendError(
   // Spec 141 RI1b: another request with this key is still in flight —
   // transient; the next attempt gets that request's answer.
   if (name === 'concurrent_idempotent_requests') {
+    return { kind: 'gateway_5xx', retryable: true, message };
+  }
+  // Spec 141: known transient names. resend@6.35 never throws on a network
+  // failure — it answers `application_error` (index.mjs:1750) — and Resend's
+  // own 429 / 500 carry these names. Retried like any 5xx, but not reported as
+  // an unknown name: that WARN + metric pages on-call and is reserved for a
+  // name nobody has classified yet. (A 429 does not consume the idempotency
+  // key — MEASURED 2026-10-30 — so the retry still delivers.)
+  if (KNOWN_TRANSIENT_RESEND_NAMES.has(name)) {
     return { kind: 'gateway_5xx', retryable: true, message };
   }
   // Truly-unknown name → log a WARN + emit metrics counter so the team
