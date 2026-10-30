@@ -413,6 +413,40 @@ describe('broadcasts repo — scrubContentForMemberInTx + tombstoneDeliveriesFor
     expect(row?.failureReason).toBeNull();
   });
 
+  // Spec 139 review round 1 (CR#5) — the dispatch gate's refusal writes a
+  // fixed system token into failure_reason (an erased member is refused with
+  // `member_not_in_good_standing`; a halted one with `member_halted`). A token
+  // is not PII and says why the row ended, so the scrub keeps it — the same
+  // rule as the cascade's cancellation_reason. Free text is still NULLed.
+  it.each(['member_not_in_good_standing', 'member_halted'] as const)(
+    'keeps the standing refusal token %s in failure_reason; a free-text failure_reason is still NULLed',
+    async (token) => {
+      const refused = await seedBroadcast({ status: 'submitted', segment: 'all_members', failureReason: token });
+      const freeText = await seedBroadcast({
+        status: 'submitted',
+        segment: 'all_members',
+        failureReason: `${token}: 550 <quote-${randomUUID().slice(0, 8)}@example.com> rejected`,
+      });
+      const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
+
+      await runInTenant(tenant.ctx, (tx) =>
+        repo.scrubContentForMemberInTx(tx, tenant.ctx.slug, asMemberId(memberId)),
+      );
+
+      const reasons = await runInTenant(tenant.ctx, async (tx) => {
+        const rows = await tx
+          .select({ broadcastId: broadcasts.broadcastId, failureReason: broadcasts.failureReason, subject: broadcasts.subject })
+          .from(broadcasts)
+          .where(sql`${broadcasts.broadcastId} IN (${refused}, ${freeText})`);
+        return new Map(rows.map((r) => [r.broadcastId, r]));
+      });
+      expect(reasons.get(refused)?.subject).toBe('[redacted]');
+      expect(reasons.get(refused)?.failureReason).toBe(token);
+      expect(reasons.get(freeText)?.subject).toBe('[redacted]');
+      expect(reasons.get(freeText)?.failureReason).toBeNull();
+    },
+  );
+
   it('re-drive over an already-scrubbed member returns scrubbedCount 0 (changed-rows, not matched)', async () => {
     // 2026-06-19 /code-review #4: the content UPDATE now filters on
     // `subject <> '[redacted]'`, so a second pass over already-scrubbed rows
