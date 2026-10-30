@@ -72,6 +72,7 @@ import {
 } from './_dispatch-standing-gate';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
+import { rereadAfterLostRace } from './_reread-after-lost-race';
 import { isHandedStatus, probeRefusedSend } from './_probe-refused-send';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
@@ -1933,33 +1934,21 @@ async function sendLostToHold(
   sendId: string,
   importId: string,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
-  let row: Broadcast | null;
-  try {
-    row = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
-  } catch (readErr) {
-    logger.warn(
-      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId: sendId, err: errKind(readErr) },
-      'broadcasts.audience_import.send_404_reread_failed',
-    );
-    return null;
-  }
-  // Spec 139 P8 — the erasure cascade's cancel leaves both ids where they
-  // were, so the status is part of "as this tick left it": a row no longer
-  // `approved` lost to a cancel and is a concurrent skip too.
-  if (row !== null && row.status === 'approved' && row.resendBroadcastId === sendId && row.audienceImportId === importId) {
-    return null;
-  }
-  logger.info(
-    {
-      tenantId: deps.tenant.slug,
-      broadcastId: input.broadcastId,
-      resendBroadcastId: sendId,
-      importId,
-      observedStatus: row?.status ?? null,
-    },
-    'broadcasts.audience_import.send_lost_to_hold',
-  );
-  return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+  // Review round 2 — the shared LOCKING re-read (it waits for a cascade still
+  // deciding the row). Spec 139 P8 — the erasure cascade's cancel leaves both
+  // ids where they were, so the status is part of "as this tick left it": a
+  // row no longer `approved` lost to a cancel and is a concurrent skip too. A
+  // row that is GONE is a skip here (the hold or the cascade won), unlike the
+  // other three callers.
+  const skip = await rereadAfterLostRace(deps.broadcastsRepo, deps.tenant.slug, input.broadcastId, {
+    logFields: { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId: sendId, importId },
+    readFailedEvent: 'broadcasts.audience_import.send_404_reread_failed',
+    skipEvent: 'broadcasts.audience_import.send_lost_to_hold',
+    stillOurs: (row) => row.status === 'approved' && row.resendBroadcastId === sendId && row.audienceImportId === importId,
+    vanishedRowIsSkip: true,
+    reportObservedStatus: 'unknown_or_already_processed',
+  });
+  return skip === null ? null : err(skip);
 }
 
 /** What the post-send writes need to know about the send they record. */
@@ -2440,22 +2429,15 @@ async function failTerminally(
     });
   } catch (cleanupErr) {
     if (opts.concurrentLossIsSkip === true && cleanupErr instanceof BroadcastConcurrentMutationError) {
-      let current: Broadcast | null = null;
-      try {
-        current = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
-      } catch (readErr) {
-        logger.warn(
-          { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, err: errKind(readErr) },
-          'broadcasts.audience_import.terminal_reread_failed',
-        );
-      }
-      if (current !== null && current.status !== 'approved') {
-        logger.info(
-          { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, observedStatus: current.status },
-          'broadcasts.audience_import.terminal_write_lost_race',
-        );
-        return err({ kind: 'broadcast_invalid_state_transition', observedStatus: current.status });
-      }
+      // Review round 2 — the shared LOCKING re-read (it waits for a cascade
+      // still deciding the row); a row still `approved`, gone, or a failed
+      // re-read falls through to `cleanup_failed`, as before.
+      const skip = await rereadAfterLostRace(deps.broadcastsRepo, deps.tenant.slug, input.broadcastId, {
+        logFields: { tenantId: deps.tenant.slug, broadcastId: input.broadcastId },
+        readFailedEvent: 'broadcasts.audience_import.terminal_reread_failed',
+        skipEvent: 'broadcasts.audience_import.terminal_write_lost_race',
+      });
+      if (skip !== null) return err(skip);
     }
     // Mirrors the single-tick path: if the transition itself failed, a concurrent
     // cancel probably won. Log loudly and do NOT notify — telling a member their

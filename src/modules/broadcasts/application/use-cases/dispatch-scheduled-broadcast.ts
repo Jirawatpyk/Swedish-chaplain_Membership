@@ -96,6 +96,7 @@ import { resendDashboardName } from '../format/resend-dashboard-name';
 import { dispatchRetryEpoch, resetDispatchRetryClock, RETRY_BUDGET_MS } from './_dispatch-retry-epoch';
 import { probeRefusedSend } from './_probe-refused-send';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
+import { rereadAfterLostRace } from './_reread-after-lost-race';
 
 export type DispatchScheduledBroadcastError =
   | { readonly kind: 'broadcast_not_found'; readonly broadcastId: string }
@@ -457,27 +458,19 @@ function terminalWriteFailed(): Result<DispatchScheduledBroadcastOutput, Dispatc
  * commit. When the row has left `approved` (the erasure cascade cancelled it,
  * or another tick moved it), that is a concurrent skip at info level: nothing
  * of ours was written and nothing went out. A row still `approved`, gone, or a
- * failed re-read keeps `terminalWriteFailed()` (the next tick retries).
+ * failed re-read keeps `terminalWriteFailed()` (the next tick retries). The
+ * re-read is the shared LOCKING one (review round 2, `_reread-after-lost-race.ts`).
  */
 async function erasedRefusalLostRace(
   deps: DispatchScheduledBroadcastDeps,
   input: DispatchScheduledBroadcastInput,
 ): Promise<Result<DispatchScheduledBroadcastOutput, DispatchScheduledBroadcastError>> {
-  let current: Broadcast | null = null;
-  try {
-    current = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
-  } catch (readErr) {
-    logger.warn(
-      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, err: errKind(readErr) },
-      'broadcasts.dispatch.erased_refusal_reread_failed',
-    );
-  }
-  if (current === null || current.status === 'approved') return terminalWriteFailed();
-  logger.info(
-    { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, observedStatus: current.status },
-    'broadcasts.dispatch.erased_refusal_lost_race',
-  );
-  return err({ kind: 'broadcast_invalid_state_transition', observedStatus: current.status });
+  const skip = await rereadAfterLostRace(deps.broadcastsRepo, deps.tenant.slug, input.broadcastId, {
+    logFields: { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string },
+    readFailedEvent: 'broadcasts.dispatch.erased_refusal_reread_failed',
+    skipEvent: 'broadcasts.dispatch.erased_refusal_lost_race',
+  });
+  return skip === null ? terminalWriteFailed() : err(skip);
 }
 
 // `classifyThrown` moved to `_classify-thrown.ts` in 108 Phase 9 so
@@ -1348,27 +1341,14 @@ export async function dispatchScheduledBroadcast(
     // went out, nothing is written. A row still `approved`, gone, or a failed
     // re-read keeps the ordinary arm (an admin must look).
     if (sendAttempted && shape.kind === 'resource_missing') {
-      let current: Broadcast | null = null;
-      try {
-        current = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
-      } catch (readErr) {
-        logger.warn(
-          { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, err: errKind(readErr) },
-          'broadcasts.dispatch.send_404_reread_failed',
-        );
-      }
-      if (current !== null && current.status !== 'approved') {
-        logger.info(
-          {
-            tenantId: deps.tenant.slug,
-            broadcastId: input.broadcastId as string,
-            resendBroadcastId,
-            observedStatus: current.status,
-          },
-          'broadcasts.dispatch.send_404_row_left_approved',
-        );
-        return err({ kind: 'broadcast_invalid_state_transition', observedStatus: current.status });
-      }
+      // Review round 2 — the shared LOCKING re-read: it waits for a cascade
+      // still deciding the row, never reads `approved` from under it.
+      const skip = await rereadAfterLostRace(deps.broadcastsRepo, deps.tenant.slug, input.broadcastId, {
+        logFields: { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, resendBroadcastId },
+        readFailedEvent: 'broadcasts.dispatch.send_404_reread_failed',
+        skipEvent: 'broadcasts.dispatch.send_404_row_left_approved',
+      });
+      if (skip !== null) return err(skip);
     }
 
     // ---- Idempotency conflict: success-replay ------------------------
