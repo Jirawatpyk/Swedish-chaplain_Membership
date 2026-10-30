@@ -212,6 +212,16 @@ describe('subprocessorErasureAdapter', () => {
     });
   });
 
+  it('a gateway code that is not a plain identifier is logged as "unrecognised", never verbatim', async () => {
+    removeContactFromAudience.mockRejectedValue(
+      Object.assign(new Error('x'), { kind: 'permanent', code: 'Contact a@example.com is invalid' }),
+    );
+    await subprocessorErasureAdapter.propagate(inputWith([{ audienceId: 'aud-1', email: 'a@example.com' }]));
+    const logPayload = loggerWarn.mock.calls[0]![0] as Record<string, unknown>;
+    expect(logPayload.gatewayCode).toBe('unrecognised');
+    expect(JSON.stringify(logPayload)).not.toContain('a@example.com');
+  });
+
   it('a non-Error throwable → errKind "unknown", counted failed, never dropped', async () => {
     // The production gateway only ever throws a GatewayThrowable (an Error
     // subclass), so this arm is unreachable in prod — but pin the defensive

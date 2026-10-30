@@ -492,6 +492,23 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
   });
 
+  it.each([
+    'The last segment cannot be deleted',
+    'Cannot remove the last segment',
+  ])('(f4) other wordings of the refusal are a benign skip too: %s', async (message) => {
+    const audienceId = 'aud-last-worded';
+    const gateway = makeGateway({
+      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
+      throws: { [audienceId]: new Error(message) },
+    });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50 },
+    );
+    expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
+  });
+
   it('(f3) a retryable failure whose text mentions a last segment is still a failure, not a skip', async () => {
     const audienceId = 'aud-not-last';
     const gateway = makeGateway({
