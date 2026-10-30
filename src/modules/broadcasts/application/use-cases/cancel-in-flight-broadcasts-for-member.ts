@@ -126,6 +126,7 @@ import type { MemberId } from '@/modules/members';
 import type { Broadcast } from '../../domain/broadcast';
 import { isInProgress } from '../../domain/stage/in-progress-statuses';
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
+import type { CascadeCancellationReason } from '../../domain/value-objects/cascade-cancellation-reason';
 import type { AuditPort } from '../ports/audit-port';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import {
@@ -139,21 +140,12 @@ export type CancelInFlightForMemberError =
   | { readonly kind: 'cascade.server_error'; readonly message: string };
 
 /**
- * Round 3 type-design fix — bounded enum mirrors
- * `SystemCancellationReason` in the F3 cascade port. Kept as its own
- * type alias here so this F7 use-case does not import F3 types
- * (Clean Architecture — F7 has no compile dep on F3).
- *
- * Spec 139 — also the set the erasure content scrub
- * (`scrubContentForMemberInTx`) leaves on a row: these are system values, not
- * notes anyone typed, so they carry no PII.
+ * Round 3 type-design fix — the bounded enum lives in this module's Domain
+ * (`cascade-cancellation-reason.ts`, spec 139 CR#8) and mirrors
+ * `SystemCancellationReason` in the F3 cascade port, so this F7 use case does
+ * not import F3 types (Clean Architecture — F7 has no compile dep on F3).
  */
-export const CASCADE_CANCELLATION_REASONS = [
-  'originator_member_deleted',
-  'gdpr_erasure_request',
-  'pdpa_deletion_request',
-] as const;
-export type CascadeCancellationReason = (typeof CASCADE_CANCELLATION_REASONS)[number];
+export type { CascadeCancellationReason };
 
 export interface CancelInFlightForMemberInput {
   readonly tenant: TenantContext;

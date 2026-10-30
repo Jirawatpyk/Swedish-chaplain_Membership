@@ -47,7 +47,7 @@ import {
   BroadcastNotFoundError,
   TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
-import { CASCADE_CANCELLATION_REASONS } from '../../application/use-cases/cancel-in-flight-broadcasts-for-member';
+import { CASCADE_CANCELLATION_REASONS } from '../../domain/value-objects/cascade-cancellation-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 
 /**
