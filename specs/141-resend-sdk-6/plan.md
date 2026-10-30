@@ -112,6 +112,12 @@ n/a
 - **Refuted / carried**: pdpa "HIGH" (up to 31 s of retry per audience inside `eraseMember`) is the 4.8 behaviour live on `main` today, restored by option A, not introduced here — carried to spec 140 with the lease work. The branded non-empty id type (code-review altitude) is a port-wide change, carried to spec 140. `RESEND_DEBUG` / `RESEND_BASE_URL` code guard: slice 2.
 - **Checks**: `tests/contract/resend/` + `tests/unit/broadcasts/infrastructure` 48 files / 539 tests (one `broadcasts-deps` case timed out while a second suite ran alongside; solo 10/10); the earlier full run `tests/contract/` + `tests/unit/{broadcasts,broadcast,members}` 733 files / 8,151 tests; `pnpm check` exit 0; the 4 gateway integration files on dev, 14 tests passed.
 
+**Review round 4 (30 Oct 2026)** — security-engineer APPROVE (no High / Medium); `/code-review high` 8 findings:
+- **Fixed** (RED `6b2887022`, GREEN `1930154bd`): `listAudiences` keeps each audience once and stops on a cursor it has seen, logging `audiences_list_truncated` at the page cap or on a repeat; an empty contact list is a no-op again before the id guard (the old behaviour); `isProviderGone` is the one already-gone check for `deleteAudience` / `deleteBroadcast`; the reclaim refusal matches `\blast (audience|segment)\b` (a false match only skips a delete).
+- **Corrected wording**: the SDK's outer `catch` (`statusCode: null`) also takes a 2xx whose body would not parse, so the docblock no longer calls it "never reached Resend"; a retried create can then mint a second resource — **as on 4.8**, not new.
+- **Refuted**: a 404 with no `name` on `DELETE /contacts/{email}` is not Resend's answer (MEASURED `{"statusCode":404,"name":"not_found"}`), so dropping the `http_404` arm cannot fail a real "already gone". Paging every `/segments` page per tenant tick: correctness over cost at 3 segments today. Altitude (one id choke point): carried to spec 140, as in round 3.
+- **Checks**: `tests/contract/resend/` + reclaim + `broadcasts-deps` 85 passed; `pnpm check` exit 0; the 4 gateway integration files on dev, 14 passed.
+
 ## Rollout
 
 - **Slice 1:** goes live on merge, with no flag. Every email path runs on 6.x. Rollback is a revert commit.
