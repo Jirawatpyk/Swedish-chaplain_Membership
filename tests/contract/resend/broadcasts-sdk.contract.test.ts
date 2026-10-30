@@ -13,6 +13,7 @@
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
+import type { CreateBroadcastInput } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { json, stubWire, type WireCall } from './_wire';
 
 const compact = (calls: readonly WireCall[]) =>
@@ -101,7 +102,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
         broadcastNameForResendDashboard: 'SweCham — Hello',
         tenantDisplayName: 'SweCham',
         locale: 'en',
-      } as never),
+      } satisfies CreateBroadcastInput),
     ).resolves.toEqual({ broadcastId: 'bc_1' });
     expect(compact(calls)).toMatchInlineSnapshot(`
       [
@@ -343,6 +344,83 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       const calls = stubWire(() => json(200, { object: 'list', has_more: false, data: [] }));
       await expect(run()).rejects.toMatchObject({ kind: 'permanent', code: 'empty_identifier' });
       expect(calls).toHaveLength(0);
+    });
+  });
+
+  it('a network failure is retryable (network)', async () => {
+    vi.useFakeTimers();
+    let n = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        n += 1;
+        if (n === 1) throw new TypeError('fetch failed');
+        return json(201, { object: 'audience', id: 'aud_net', name: 'probe' });
+      }),
+    );
+    const done = resendBroadcastsGateway.createAudience('probe');
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ value: await done, attempts: n }).toMatchInlineSnapshot(`
+      {
+        "attempts": 2,
+        "value": {
+          "audienceId": "aud_net",
+        },
+      }
+    `);
+  });
+
+  // Accepted by the maintainer (30 Oct 2026): on 6.35 a non-JSON error body
+  // carries its real HTTP status, so an HTML 404 from an edge reads as
+  // "missing" / "already gone", where 4.8 read every such body as a 500 and
+  // retried. Pinned so the next bump shows any change.
+  describe('a non-JSON error body keeps its HTTP status (6.35)', () => {
+    const settle = (p: Promise<unknown>) =>
+      p.then(
+        (v) => ({ resolved: v ?? null }),
+        (e: { kind?: string; code?: string }) => ({ rejected: e.kind ?? 'threw', code: e.code ?? null }),
+      );
+    it('retrieveBroadcast, HTML 404', async () => {
+      stubWire(() => new Response('<html>404</html>', { status: 404, headers: { 'content-type': 'text/html' } }));
+      expect(await settle(resendBroadcastsGateway.retrieveBroadcast('bc_1'))).toMatchInlineSnapshot(`
+        {
+          "resolved": {
+            "kind": "not_found",
+          },
+        }
+      `);
+    });
+    it('deleteAudience, HTML 404', async () => {
+      stubWire(() => new Response('<html>404</html>', { status: 404, headers: { 'content-type': 'text/html' } }));
+      expect(await settle(resendBroadcastsGateway.deleteAudience('aud_1'))).toMatchInlineSnapshot(`
+        {
+          "resolved": null,
+        }
+      `);
+    });
+    it('sendBroadcast, HTML 409', async () => {
+      stubWire(() => new Response('<html>409</html>', { status: 409, headers: { 'content-type': 'text/html' } }));
+      expect(await settle(resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'))).toMatchInlineSnapshot(`
+        {
+          "code": null,
+          "rejected": "idempotency_conflict",
+        }
+      `);
+    });
+    it('createAudience, HTML 429', async () => {
+      vi.useFakeTimers();
+      const calls = stubWire(() => new Response('<html>429</html>', { status: 429, headers: { 'content-type': 'text/html' } }));
+      const done = settle(resendBroadcastsGateway.createAudience('probe'));
+      await vi.advanceTimersByTimeAsync(40_000);
+      expect({ outcome: await done, attempts: calls.length }).toMatchInlineSnapshot(`
+        {
+          "attempts": 6,
+          "outcome": {
+            "code": null,
+            "rejected": "retryable",
+          },
+        }
+      `);
     });
   });
 });

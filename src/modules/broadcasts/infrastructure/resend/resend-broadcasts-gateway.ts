@@ -42,7 +42,7 @@ import { extractBareEmail, stripAngleBrackets } from './bare-email';
 const RETRY_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
 
 interface ResendErrorShape {
-  readonly statusCode?: number;
+  readonly statusCode?: number | null;
   readonly name?: string;
   readonly message?: string;
 }
@@ -386,6 +386,12 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     await withRetry(
       async () => {
         const sdk = client();
+        // Spec 141: resend@6.35.0 fixed this upstream — `broadcasts.send(id,
+        // payload, requestOptions)` now forwards the options to `post()`
+        // (`node_modules/resend/dist/index.mjs:310`). The raw `post()` below is
+        // kept, pinned on the wire by `tests/contract/resend/`; moving to
+        // `broadcasts.send` is spec 140's call. The 4.8 history follows.
+        //
         // ⚠️ NOT `sdk.broadcasts.send(...)`. Round 3 finding 3-1: in
         // resend@4.8.0 that helper is
         //   `send(id, payload) => this.resend.post(path, {scheduled_at})`
@@ -451,9 +457,12 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     // top-level keys are exactly `data,has_more,object`. The endpoint TELLS us
     // when the list is short, and we were not reading it.
     //
-    // The SDK models neither half — `ListContactsOptions` is `{ audienceId }`
-    // and `ListContactsResponseSuccess` is `{ object, data }` (resend@4.8.0) —
-    // so `has_more` is read off the runtime shape. Narrowed with `=== false`, so
+    // resend@4.8.0 modelled neither half (`ListContactsOptions` was
+    // `{ audienceId }`, `ListContactsResponseSuccess` was `{ object, data }`),
+    // so `has_more` is read off the runtime shape; 6.35 declares it, and the
+    // read is unchanged. On 6.35 this call goes to `/segments/{id}/contacts`:
+    // MEASURED 2026-10-30 with 110 contacts, both paths return all 110 with
+    // `has_more: false` (spec 141). Narrowed with `=== false`, so
     // that a missing field reads as "not complete": an absent signal must not be
     // reported as a verified-complete count. Because the field is undeclared, a
     // provider rename cannot fail the build — only this narrowing direction
@@ -743,7 +752,8 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
 
   /**
    * Spec 139 P1 — the port docblock has the contract. A raw `fetch`, like
-   * `importFetch`, because the SDK takes no `signal` (resend@4.8.0) and this
+   * `importFetch`, because the SDK took no `signal` when this was written
+   * (resend@4.8.0; 6.32+ accepts one, adopted by spec 140) and this
    * call must not outlive {@link DELETE_ONCE_TIMEOUT_MS} while the caller holds
    * a row lock. One attempt; the outcome is the status class, never the
    * provider's text (the log line carries the HTTP status only).
@@ -931,7 +941,8 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
 /**
  * T086 — the Contacts Import endpoints, spoken to with a raw `fetch`.
  *
- * `resend@4.8` has no `contacts.imports`, so these two are hand-rolled. The
+ * `resend@4.8` had no `contacts.imports`, so these two are hand-rolled (6.35
+ * has `contacts.imports`; spec 140 decides whether to move to it). The
  * SDK's own error envelope is not available either, so the response body is
  * mapped onto the same `ResendErrorShape` `classifyResendError` already
  * understands — that keeps `permanent` / `retryable` meaning one thing across

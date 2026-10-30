@@ -46,8 +46,9 @@ import {
   resendTransactionalRenewalGateway,
 } from '@/modules/renewals/infrastructure/resend-transactional-renewal-gateway';
 import { asCycleId } from '@/modules/renewals/domain/renewal-cycle';
+import type { SendRenewalEmailInput } from '@/modules/renewals/application/ports/renewal-gateway';
 
-const INPUT = {
+const INPUT: SendRenewalEmailInput = {
   tenantId: 'tenanta',
   cycleId: asCycleId('00000000-0000-0000-0000-000000000c01'),
   stepId: 't-30.email',
@@ -79,7 +80,7 @@ afterEach(() => {
 describe('renewals gateway on the wire (spec 141)', () => {
   it('a reminder send', async () => {
     const calls = stubWire(() => json(200, { id: 'rs-1' }));
-    const res = await resendTransactionalRenewalGateway.sendRenewalEmail(INPUT as never);
+    const res = await resendTransactionalRenewalGateway.sendRenewalEmail(INPUT);
     expect(res.ok).toBe(true);
     expect(calls).toMatchInlineSnapshot(`
       [
@@ -110,7 +111,7 @@ describe('renewals gateway on the wire (spec 141)', () => {
       ...INPUT,
       replyToEmail: 'office@swecham.example',
       replyToDisplayName: 'SweCham Office',
-    } as never);
+    } satisfies SendRenewalEmailInput);
     expect(calls).toMatchInlineSnapshot(`
       [
         {
@@ -137,7 +138,7 @@ describe('renewals gateway on the wire (spec 141)', () => {
 
   it('reads a 422 validation_error as a permanent failure, with no retry', async () => {
     const calls = stubWire(() => json(422, { statusCode: 422, name: 'validation_error', message: 'Invalid `to` field.' }));
-    const res = await resendTransactionalRenewalGateway.sendRenewalEmail(INPUT as never);
+    const res = await resendTransactionalRenewalGateway.sendRenewalEmail(INPUT);
     expect(res).toMatchInlineSnapshot(`
       {
         "error": {
@@ -163,7 +164,15 @@ describe('renewals gateway on the wire (spec 141)', () => {
         return json(200, { id: 'msg-net' });
       }),
     );
-    const res = await resendTransactionalRenewalGateway.sendRenewalEmail(INPUT as never);
+    const res = await resendTransactionalRenewalGateway.sendRenewalEmail(INPUT);
     expect({ ok: res.ok, attempts: n }).toEqual({ ok: true, attempts: 2 });
+  });
+
+  it('reads a 500 as transient and retries it', async () => {
+    const calls = stubWire((n) =>
+      n === 1 ? json(500, { statusCode: 500, name: 'application_error', message: 'boom' }) : json(200, { id: 'msg-500' }),
+    );
+    const res = await resendTransactionalRenewalGateway.sendRenewalEmail(INPUT);
+    expect({ ok: res.ok, attempts: calls.length }).toEqual({ ok: true, attempts: 2 });
   });
 });

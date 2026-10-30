@@ -7,6 +7,20 @@
  * member's email rides on, or how the reply is read, turns it red.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// Pin the env the sender reads at module load, so the recorded `from` is the
+// hard-coded fallback on every machine, not each developer's RESEND_FROM_EMAIL.
+vi.mock('@/lib/env', () => ({
+  env: {
+    resend: { apiKey: 're_contract_test_key', fromEmail: undefined },
+    log: { level: 'silent' },
+    isProduction: false,
+    isDevelopment: false,
+    isTest: true,
+    nodeEnv: 'test' as const,
+  },
+}));
+
 import { emailSender } from '@/modules/auth/infrastructure/email/resend-client';
 import { json, stubWire } from './_wire';
 
