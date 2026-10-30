@@ -304,8 +304,8 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
   });
 
   // architect pre-read: 6.35 attaches `statusCode` to a non-JSON error body,
-  // where 4.8 left it undefined (read as 500, so retried). Pinned here so the
-  // bump shows the change rather than hiding it.
+  // where 4.8 left it undefined (read as 500, so retried). The gateway keeps
+  // the 4.8 reading (option A, 30 Oct 2026); see the block at the end.
   it('a 413 with a non-JSON body: how many attempts', async () => {
     vi.useFakeTimers();
     const calls = stubWire(() => new Response('<html>Request Entity Too Large</html>', { status: 413, headers: { 'content-type': 'text/html' } }));
@@ -316,8 +316,8 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     await vi.advanceTimersByTimeAsync(40_000);
     expect({ outcome: await done, attempts: calls.length }).toMatchInlineSnapshot(`
       {
-        "attempts": 1,
-        "outcome": "permanent",
+        "attempts": 6,
+        "outcome": "retryable",
       }
     `);
   });
@@ -340,11 +340,52 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       ['addContactsToAudience', () => resendBroadcastsGateway.addContactsToAudience('', [{ emailLower: 'a@example.com' }])],
       ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount('')],
       ['deleteAudience', () => resendBroadcastsGateway.deleteAudience('')],
+      ['createBroadcast', () =>
+        resendBroadcastsGateway.createBroadcast({
+          audienceId: '',
+          subject: 'Hello',
+          htmlBody: '<p>hi</p>',
+          fromName: 'SweCham',
+          fromEmail: 'noreply@example.com',
+          replyToEmail: 'office@example.com',
+          broadcastNameForResendDashboard: 'SweCham — Hello',
+          tenantDisplayName: 'SweCham',
+          locale: 'en',
+        })],
+      ['sendBroadcast', () => resendBroadcastsGateway.sendBroadcast('', 'idem-key-1')],
+      ['retrieveBroadcast', () => resendBroadcastsGateway.retrieveBroadcast('')],
+      ['deleteBroadcast', () => resendBroadcastsGateway.deleteBroadcast('')],
+      ['deleteContactGlobally', () => resendBroadcastsGateway.deleteContactGlobally('')],
+      ['createContactImport', () => resendBroadcastsGateway.createContactImport('', ['a@example.com'])],
+      ['a null email from a nullable column', () =>
+        resendBroadcastsGateway.removeContactFromAudience('aud_1', null as unknown as string)],
     ])('%s', async (_name, run) => {
       const calls = stubWire(() => json(200, { object: 'list', has_more: false, data: [] }));
       await expect(run()).rejects.toMatchObject({ kind: 'permanent', code: 'empty_identifier' });
       expect(calls).toHaveLength(0);
     });
+
+    it.each([
+      ['retrieveBroadcastOnce', () => resendBroadcastsGateway.retrieveBroadcastOnce('')],
+      ['deleteBroadcastOnce', () => resendBroadcastsGateway.deleteBroadcastOnce('')],
+    ])('%s answers other, with no request', async (_name, run) => {
+      const calls = stubWire(() => json(200, { object: 'list', data: [] }));
+      await expect(run()).resolves.toEqual({ kind: 'other' });
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  it('a network failure that never clears is retryable, tagged network', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }));
+    const done = resendBroadcastsGateway.createAudience('probe').then(
+      () => null,
+      (e: { kind?: string; subKind?: string }) => ({ kind: e.kind, subKind: e.subKind }),
+    );
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(await done).toEqual({ kind: 'retryable', subKind: 'network' });
   });
 
   it('a network failure is retryable (network)', async () => {
@@ -370,57 +411,46 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     `);
   });
 
-  // Accepted by the maintainer (30 Oct 2026): on 6.35 a non-JSON error body
-  // carries its real HTTP status, so an HTML 404 from an edge reads as
-  // "missing" / "already gone", where 4.8 read every such body as a 500 and
-  // retried. Pinned so the next bump shows any change.
-  describe('a non-JSON error body keeps its HTTP status (6.35)', () => {
-    const settle = (p: Promise<unknown>) =>
-      p.then(
-        (v) => ({ resolved: v ?? null }),
-        (e: { kind?: string; code?: string }) => ({ rejected: e.kind ?? 'threw', code: e.code ?? null }),
-      );
-    it('retrieveBroadcast, HTML 404', async () => {
-      stubWire(() => new Response('<html>404</html>', { status: 404, headers: { 'content-type': 'text/html' } }));
-      expect(await settle(resendBroadcastsGateway.retrieveBroadcast('bc_1'))).toMatchInlineSnapshot(`
-        {
-          "resolved": {
-            "kind": "not_found",
-          },
-        }
-      `);
-    });
-    it('deleteAudience, HTML 404', async () => {
-      stubWire(() => new Response('<html>404</html>', { status: 404, headers: { 'content-type': 'text/html' } }));
-      expect(await settle(resendBroadcastsGateway.deleteAudience('aud_1'))).toMatchInlineSnapshot(`
-        {
-          "resolved": null,
-        }
-      `);
-    });
-    it('sendBroadcast, HTML 409', async () => {
-      stubWire(() => new Response('<html>409</html>', { status: 409, headers: { 'content-type': 'text/html' } }));
-      expect(await settle(resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1'))).toMatchInlineSnapshot(`
-        {
-          "code": null,
-          "rejected": "idempotency_conflict",
-        }
-      `);
-    });
-    it('createAudience, HTML 429', async () => {
+  // The maintainer's choice (30 Oct 2026, option A): a non-JSON error body
+  // (an edge's or proxy's HTML page) is read as 4.8 read it, a transient 500
+  // retried six times, whatever status it carries. 6.35 started passing that
+  // status through, so an HTML 404 read as "already gone" — on the erasure path
+  // a false "already absent" in the Art. 30 record. Only a real Resend error
+  // (JSON, a specific `name`) keeps its status.
+  describe('a non-JSON error body is a transient 500, as on 4.8', () => {
+    const html = (status: number) => () =>
+      new Response(`<html>${status}</html>`, { status, headers: { 'content-type': 'text/html' } });
+    it.each([
+      ['retrieveBroadcast, HTML 404', 404, () => resendBroadcastsGateway.retrieveBroadcast('bc_1')],
+      ['deleteAudience, HTML 404', 404, () => resendBroadcastsGateway.deleteAudience('aud_1')],
+      ['deleteBroadcast, HTML 410', 410, () => resendBroadcastsGateway.deleteBroadcast('bc_1')],
+      ['removeContactFromAudience, HTML 404 (the erasure path)', 404, () =>
+        resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com')],
+      ['addContactsToAudience, HTML 404', 404, () =>
+        resendBroadcastsGateway.addContactsToAudience('aud_1', [{ emailLower: 'a@example.com' }])],
+      ['sendBroadcast, HTML 409', 409, () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1')],
+      ['createAudience, HTML 413', 413, () => resendBroadcastsGateway.createAudience('probe')],
+      ['createAudience, HTML 429', 429, () => resendBroadcastsGateway.createAudience('probe')],
+    ])('%s', async (_name, status, run) => {
       vi.useFakeTimers();
-      const calls = stubWire(() => new Response('<html>429</html>', { status: 429, headers: { 'content-type': 'text/html' } }));
-      const done = settle(resendBroadcastsGateway.createAudience('probe'));
+      const calls = stubWire(html(status));
+      const done = (run() as Promise<unknown>).then(
+        () => ({ outcome: 'resolved' }),
+        (e: { kind?: string; subKind?: string }) => ({ outcome: e.kind ?? 'threw', subKind: e.subKind ?? null }),
+      );
       await vi.advanceTimersByTimeAsync(40_000);
-      expect({ outcome: await done, attempts: calls.length }).toMatchInlineSnapshot(`
-        {
-          "attempts": 6,
-          "outcome": {
-            "code": null,
-            "rejected": "retryable",
-          },
-        }
-      `);
+      expect({ ...(await done), attempts: calls.length }).toEqual({
+        outcome: 'retryable',
+        subKind: 'server_5xx',
+        attempts: 6,
+      });
+    });
+
+    it('removeContactFromAudience, a real JSON 404 is still already absent', async () => {
+      stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Contact not found' }));
+      await expect(resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com')).resolves.toEqual({
+        kind: 'already_absent',
+      });
     });
   });
 });
