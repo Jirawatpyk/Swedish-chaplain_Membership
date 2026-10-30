@@ -8,7 +8,7 @@ Spec: `specs/141-resend-sdk-6/spec.md` · Size: L · Agreed by the user on: 30 O
 
 After the bump we:
 - check the five confirm points in `node_modules/resend`;
-- fix only what the suite or `tsc` flags;
+- fix only what the suite or `tsc` flags — review rounds 1–5 widened this to the Broadcasts gateway's error reading, the empty-id guard and `listAudiences` paging (§ Evidence);
 - leave `RESEND_DEBUG` unset.
 
 Slice 2 is ordinary TDD on the renewals gateway.
@@ -27,7 +27,7 @@ Rules: `.claude/rules/modules/broadcasts.md`; the auth and renewals module rules
   - `package.json`, `pnpm-lock.yaml`
   - new `tests/contract/resend/{auth-email,renewals-email,broadcasts-sdk}.contract.test.ts`
   - `tests/support/broadcasts/resend-contract-fake.ts` (only if 6.x needs it)
-  - `src/**` only where the suite or `tsc` flags it
+  - `src/**` only where the suite or `tsc` flags it — as built: `src/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway.ts` (`httpStatusOf`, `rawHttpStatusOf`, `isProviderGone`, `assertNonEmpty`, `listAudiences` paging, comments), `src/modules/broadcasts/application/use-cases/reclaim-orphaned-audiences.ts` (the last-audience refusal), `src/modules/members/infrastructure/adapters/subprocessor-erasure-adapter.ts` (`gatewayKind` / `gatewayCode` on the failure log); `docs/runbooks/member-erasure.md`
   - docs: `.claude/rules/modules/broadcasts.md`, `specs/139-eblast-erasure-close/research.md`, `docs/changelog.md`, `docs/email-broadcast-analysis.md`, `docs/go-live-readiness.md`
 - **Slice 2:**
   - `src/modules/renewals/infrastructure/resend-transactional-renewal-gateway.tsx` (the send option, and `mapResendError` for the two idempotency 409s)
@@ -117,6 +117,12 @@ n/a
 - **Corrected wording**: the SDK's outer `catch` (`statusCode: null`) also takes a 2xx whose body would not parse, so the docblock no longer calls it "never reached Resend"; a retried create can then mint a second resource — **as on 4.8**, not new.
 - **Refuted**: a 404 with no `name` on `DELETE /contacts/{email}` is not Resend's answer (MEASURED `{"statusCode":404,"name":"not_found"}`), so dropping the `http_404` arm cannot fail a real "already gone". Paging every `/segments` page per tenant tick: correctness over cost at 3 segments today. Altitude (one id choke point): carried to spec 140, as in round 3.
 - **Checks**: `tests/contract/resend/` + reclaim + `broadcasts-deps` 85 passed; `pnpm check` exit 0; the 4 gateway integration files on dev, 14 passed.
+
+**Review round 5 (30 Oct 2026)** — `/code-review high`, 8 findings, half of them induced by rounds 3–4:
+- **Fixed** (RED `f3c138ac6`, GREEN `3620c71a5`): `rawHttpStatusOf` now decides only "gone" — a raw 404 / 410 needs Resend's JSON error, every other raw status keeps its reading on `main` (a raw non-JSON 413 on the import upload stays permanent, one attempt); an empty page that still says `has_more` logs `audiences_list_truncated`; the reclaim skip needs "delete … last audience|segment" and never applies to a retryable error; the erasure adapter's failure log carries `gatewayKind` / `gatewayCode` (fixed enum values, never the provider's text), and the runbook reads those fields instead of claiming the line already told the causes apart, and no longer points at a broadcast id the log does not carry; the contract files clear `RESEND_BASE_URL` / `RESEND_USER_AGENT` before the SDK is built (positive control: with `RESEND_BASE_URL` set and the clear removed, 11 cases fail).
+- **Carried**: the `RESEND_BASE_URL` host split between SDK and raw-fetch calls joins the slice-2 env guard; the twin status rules (one keyed on the SDK's `application_error`, one on the body) and the id choke point: spec 140.
+- **Checks**: `tests/contract/resend/` + reclaim + erasure adapter 89 passed (also with `RESEND_BASE_URL` set); `pnpm check` exit 0; the 4 gateway integration files on dev, 14 passed. `broadcasts-deps`: its two cold-import cases timed out at 30 s on this machine under memory pressure after rounds 3–5 (they passed 10/10 solo in round 3, and nothing in this diff is on that file's import path). The last full local unit run is round 3 GREEN (8,151); since then only the targeted suites above ran locally, and CI's coverage job is the full run.
+- **Stop rule for the review** (set before round 6): a round that returns only items already dispositioned above ends the review.
 
 ## Rollout
 
