@@ -44,7 +44,7 @@ Short paths: `GW` = `src/modules/broadcasts/infrastructure/resend/resend-broadca
    - 3 segments, one of them `General`, so at most two in flight. MEASURED from the billing page 2026-09-08 (`R108:476`); the docs give no segment limit.
    - Whether the 1,000 cap counts team-level ("global") contacts is UNKNOWN (`R108:431`).
 8. **SDK.**
-   - Ranged `^4.0.1` in `package.json`, installed 4.8.0; the latest is 6.35.0 (npm, 2026-10-27).
+   - Was ranged `^4.0.1`, installed 4.8.0; **exact-pinned at 6.35.0 by spec 141** (2026-10-30). In 6.35 `audiences` is an alias of `segments`, so `audiences.*` and `contacts.list` hit `/segments…`; MEASURED equivalent to `/audiences` on 2026-10-30 (`specs/141-resend-sdk-6/spec.md` § Premises).
    - 4.8.0 declares no `signal`, but its `post`/`get` spread `options` into the fetch init (`node_modules/resend/dist/index.js:597-616`). A `signal` would therefore reach `fetch`. That is read from the source and not measured.
    - 6.x declares `RequestOptions { headers?, signal? }`. Neither version has a built-in timeout.
 9. **Classifier gaps against the documented error codes** (`GW:111-164`).

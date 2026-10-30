@@ -92,6 +92,7 @@ separate product in 2024, purpose-built for marketing/bulk email.
 - No drip campaigns / automation sequences (F8 Renewal Reminders uses
   transactional, not Broadcasts)
 - Newer product than Mailchimp (some rough edges expected)
+- **Platform risk (#363, spec 141):** the provider moves under us. Between SDK 4.8 and 6.35 the Audiences API was deprecated in favour of Segments, and the SDK silently re-pointed `audiences.*` to `/segments`; `Idempotency-Key` is inert on the Broadcasts surface; statuses such as `canceled` and `failed` are undocumented or spelt differently from what the code assumed. Mitigations: the SDK is exact-pinned, every SDK call is pinned on the wire in `tests/contract/resend/`, and every provider value the code matches on must be MEASURED or cited (D-041).
 
 ---
 
