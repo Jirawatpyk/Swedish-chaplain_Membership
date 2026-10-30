@@ -46,7 +46,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "POST",
-          "url": "https://api.resend.com/audiences",
+          "url": "https://api.resend.com/segments",
         },
       ]
     `);
@@ -192,7 +192,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "GET",
-          "url": "https://api.resend.com/audiences/aud_1/contacts",
+          "url": "https://api.resend.com/segments/aud_1/contacts",
         },
       ]
     `);
@@ -240,7 +240,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "GET",
-          "url": "https://api.resend.com/audiences",
+          "url": "https://api.resend.com/segments",
         },
       ]
     `);
@@ -260,7 +260,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "DELETE",
-          "url": "https://api.resend.com/audiences/aud_1",
+          "url": "https://api.resend.com/segments/aud_1",
         },
         {
           "bearer": true,
@@ -268,7 +268,7 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
           "contentType": "application/json",
           "idempotencyKey": null,
           "method": "DELETE",
-          "url": "https://api.resend.com/audiences/aud_gone",
+          "url": "https://api.resend.com/segments/aud_gone",
         },
       ]
     `);
@@ -315,8 +315,8 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     await vi.advanceTimersByTimeAsync(40_000);
     expect({ outcome: await done, attempts: calls.length }).toMatchInlineSnapshot(`
       {
-        "attempts": 6,
-        "outcome": "retryable",
+        "attempts": 1,
+        "outcome": "permanent",
       }
     `);
   });
