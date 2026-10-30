@@ -89,6 +89,24 @@ describe('retrieveBroadcast — the adapter must not invent a status it did not 
     expect(outcome.resource.status).toBe('draft');
   });
 
+  /**
+   * MEASURED 2026-10-30 (live account, sink only, 2 runs): after
+   * `POST /broadcasts/{id}/cancel` on a QUEUED broadcast, GET answers
+   * `"status": "canceled"` (ONE L) at +0/2/15/45 s; Resend's docs spell it the
+   * same way. Read as `unknown`, every arm built on `cancelled` (the erasure
+   * cascade's 403 + cancelled, the gate's 403 on a cancelled id, the import
+   * leg's cancelled re-mint) could never fire.
+   */
+  it.each(['canceled', 'cancelled'])('`%s` maps to our `cancelled`', async (raw) => {
+    stubGet(200, { object: 'broadcast', id: BROADCAST_ID, status: raw, sent_at: null });
+
+    const outcome = await resendBroadcastsGateway.retrieveBroadcast(BROADCAST_ID);
+
+    expect(outcome.kind).toBe('present');
+    if (outcome.kind !== 'present') return;
+    expect(outcome.resource.status).toBe('cancelled');
+  });
+
   it('`sent` passes through with its timestamp, which the replay audit row needs', async () => {
     stubGet(200, {
       object: 'broadcast',

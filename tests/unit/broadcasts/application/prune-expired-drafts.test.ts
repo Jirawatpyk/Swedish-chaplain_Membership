@@ -94,6 +94,9 @@ function makeRepo(opts: {
       async releaseResendAudience() {
         return false;
       },
+      async readAlreadySentEvidenceInTx() {
+        return { broadcastRecorded: false, memberBroadcastCount: 0 };
+      },
       async clearDispatchRetryClock() {},
       async listByTenantStatus() {
         return { rows: [], nextCursor: null };

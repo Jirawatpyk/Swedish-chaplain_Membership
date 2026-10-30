@@ -39,12 +39,15 @@ import { broadcasts, broadcastVersions, type NewBroadcastRow } from '@/modules/b
 import { asMemberId } from '@/modules/members';
 import { env } from '@/lib/env';
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
+import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
+import { seedLiveRequester } from '../helpers/seed-live-requester';
 
 const CAP = IN_PROGRESS_BROADCAST_STATUSES.length; // 6 — one broadcast per in-progress stage
 const MARKETER = randomUUID();
 
 describe('F119 T075 — one allowance place per in-progress E-Blast, whatever the stage and however many rounds (live Neon)', () => {
   let tenant: TestTenant;
+  let requesterUser: TestUser;
   const memberId = randomUUID();
   const ids = new Map<string, string>();
 
@@ -69,6 +72,10 @@ describe('F119 T075 — one allowance place per in-progress E-Blast, whatever th
 
   beforeAll(async () => {
     tenant = await createTestTenant('test-swecham');
+    // Spec 139 — the send-standing gate refuses a requester with no `members`
+    // row like an erased one (P4), so the member is a REAL live one.
+    requesterUser = await createActiveTestUser('admin');
+    await seedLiveRequester(tenant.ctx, requesterUser.userId, memberId);
     const rows: NewBroadcastRow[] = IN_PROGRESS_BROADCAST_STATUSES.map((status) => {
       const broadcastId = randomUUID();
       ids.set(status, broadcastId);
@@ -98,6 +105,7 @@ describe('F119 T075 — one allowance place per in-progress E-Blast, whatever th
 
   afterAll(async () => {
     await tenant?.cleanup().catch(() => {});
+    if (requesterUser) await deleteTestUser(requesterUser).catch(() => {});
   });
 
   it('a broadcast in EACH in-progress stage holds exactly one place: reserved = 6 at a plan limit of 6, so the next submit is refused', async () => {

@@ -47,6 +47,8 @@ import {
   BroadcastNotFoundError,
   TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
+import { CASCADE_CANCELLATION_REASONS } from '../../domain/value-objects/cascade-cancellation-reason';
+import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 
 /**
@@ -1340,6 +1342,41 @@ export function makeDrizzleBroadcastsRepo(
       return updated.length === 1;
     },
 
+    /**
+     * See the port docblock. The literals mirror the cascade's evidence emit
+     * in `cancel-in-flight-broadcasts-for-member.ts` (`eventType`, and the
+     * payload's `broadcastId` + `memberId` + `resendOutcome`). The
+     * `broadcasts-evidence:` lock key is disjoint from the row lock's
+     * `broadcasts:` (`lockForUpdate`), so recording evidence never waits on a
+     * cascade or a dispatch tick holding the row. `tenant_id = ${tenantIdArg}`
+     * is load-bearing (the `audit_log` policy also admits `tenant_id IS NULL`
+     * rows). Rare path, so no index is claimed for it.
+     */
+    async readAlreadySentEvidenceInTx(txUnknown, tenantIdArg: TenantSlug, query) {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'readAlreadySentEvidenceInTx');
+      const broadcastId = query.broadcastId === null ? null : (query.broadcastId as string);
+      if (broadcastId !== null) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-evidence:' || ${tenantIdArg} || ':' || ${broadcastId}, 0))`,
+        );
+      }
+      const rows = (await tx.execute(sql`
+        SELECT
+          COALESCE(bool_or(payload->>'broadcastId' = ${broadcastId}::text), false) AS broadcast_recorded,
+          (count(DISTINCT payload->>'broadcastId') FILTER (WHERE payload->>'memberId' = ${query.memberId}::text))::int AS member_count
+        FROM audit_log
+        WHERE tenant_id = ${tenantIdArg}
+          AND event_type = 'broadcast_concurrent_action_blocked'
+          AND payload->>'resendOutcome' = 'already_sent'
+      `)) as unknown as Array<{ broadcast_recorded: boolean | 't' | 'f'; member_count: number | string }>;
+      const row = rows[0];
+      return {
+        broadcastRecorded: row?.broadcast_recorded === true || row?.broadcast_recorded === 't',
+        memberBroadcastCount: Number(row?.member_count ?? 0),
+      };
+    },
+
     async markAudienceImportCompleted(
       txUnknown,
       tenantIdArg: TenantSlug,
@@ -1842,7 +1879,9 @@ export function makeDrizzleBroadcastsRepo(
      * rejection_reason/cancellation_reason/failure_reason → NULL (nullable
      * free-text that can echo the member's PII — the reason notes from a
      * manual reject/cancel, and failure_reason from a raw gateway error that
-     * can quote the author's reply_to_email/from_name), and
+     * can quote the author's reply_to_email/from_name) — EXCEPT a
+     * cancellation_reason that is one of the erasure cascade's own values
+     * (`CASCADE_CANCELLATION_REASONS`, spec 139), which is kept — and
      * custom_recipient_emails → `['[redacted]']` on `custom` rows (the
      * `broadcasts_custom_recipient_cap` CHECK, migration 0064, forbids a
      * 0-element / NULL array on a `custom` row, so a plain `= NULL` would
@@ -1873,6 +1912,17 @@ export function makeDrizzleBroadcastsRepo(
       // valuable here — refuse to redact against an unbound / wrong-tenant tx.
       await assertTenantBoundTx(tx, ctx.slug, 'scrubContentForMemberInTx');
       await tx.execute(sql`SET LOCAL app.allow_broadcast_redaction = 'on'`);
+      // Built outside the UPDATE's template: a nested backtick there would end
+      // the tenant-predicate source scan before it reaches `WHERE tenant_id`
+      // (tests/unit/broadcasts/infrastructure/tenant-sql-shape).
+      const cascadeReasons = sql.join(
+        CASCADE_CANCELLATION_REASONS.map((r) => sql`${r}`),
+        sql`, `,
+      );
+      const refusalTokens = sql.join(
+        STANDING_REFUSAL_FAILURE_REASONS.map((r) => sql`${r}`),
+        sql`, `,
+      );
       const rows = (await tx.execute(sql`
         UPDATE broadcasts SET
           subject = '[redacted]',
@@ -1887,15 +1937,31 @@ export function makeDrizzleBroadcastsRepo(
           -- contains erik@acme.com"), so NULL them to complete Art.17 /
           -- PDPA §33 erasure.
           rejection_reason = NULL,
-          cancellation_reason = NULL,
+          -- Spec 139: the erasure cascade cancels the member's in-flight rows
+          -- BEFORE this scrub, with one of its own system values
+          -- (CascadeCancellationReason: originator_member_deleted /
+          -- gdpr_erasure_request / pdpa_deletion_request). That is not PII,
+          -- and it is why the row is cancelled, so it is kept; anything else
+          -- is a typed note and is NULLed. Unchanged is permitted by the
+          -- migration-0311 GUC arm (cancellation_reason is whitelisted).
+          cancellation_reason = CASE
+            WHEN cancellation_reason IN (${cascadeReasons}) THEN cancellation_reason
+            ELSE NULL
+          END,
           -- failure_reason is set from the raw gateway error message
           -- (dispatch-scheduled-broadcast.ts: shape.reason ?? e.message),
           -- which can echo the broadcast's reply_to_email / from_name — the
           -- author's OWN PII, the same address the scrub redacts above on
           -- this row. NULL it too so no copy survives (2026-06-19
           -- /code-review #8). The migration-0224 GUC arm whitelists this
-          -- column so the change is permitted on a post-draft row.
-          failure_reason = NULL,
+          -- column so the change is permitted on a post-draft row. Spec 139
+          -- (CR#5): a standing refusal's fixed token (member_halted /
+          -- member_not_in_good_standing) is a system value, not PII, so it
+          -- is kept, as cancellation_reason keeps the cascade's own reason.
+          failure_reason = CASE
+            WHEN failure_reason IN (${refusalTokens}) THEN failure_reason
+            ELSE NULL
+          END,
           custom_recipient_emails = CASE
             WHEN segment_type = 'custom' THEN ARRAY['[redacted]']::text[]
             ELSE NULL

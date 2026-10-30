@@ -570,6 +570,7 @@ metric below per re-driven member.
 |---|---|---|---|
 | `members_erasure_outcome_total` | counter | `{outcome, tenant}` where `outcome ∈ {reconciled, still_pending, error}` | one per re-driven member in `/api/cron/members/reconcile-erasures` (`erasureMetrics.outcome`) |
 | `auth_erase_cascade_outcome_total` | counter | `{outcome}` where `outcome ∈ {failed, last_admin, threw}` | emitted INSIDE the F1 linked-login erasure cascade (`authMetrics.eraseCascadeOutcome`) when an `eraseUser` re-drive does not complete. **`last_admin` is the non-auto-recoverable signal** — see § 14.8.3. |
+| `broadcasts_cascade_outcome_total` | counter | `{outcome, tenant}` where `outcome ∈ {cancelled, concurrent_skip, already_sent, unexpected_error}` | one per in-flight broadcast in the F3 archive / erasure cascade (`broadcastsMetrics.cascadeOutcome`). `already_sent` (spec 139) = the erasure met an E-Blast Resend had already accepted for sending (residual 8c, its evidence row written); it is NOT a benign skip. Any `unexpected_error` = the erasure is withheld and re-driven (stop-the-line). |
 
 `outcome` semantics for `members_erasure_outcome_total`:
 

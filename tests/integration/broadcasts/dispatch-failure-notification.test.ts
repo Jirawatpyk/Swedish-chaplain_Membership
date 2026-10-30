@@ -31,6 +31,8 @@ import {
   createTwoTestTenants,
   type TestTenant,
 } from '../helpers/test-tenant';
+import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
+import { seedLiveRequester } from '../helpers/seed-live-requester';
 import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
 import { plansBridge } from '@/modules/broadcasts/infrastructure/plans-bridge';
 import { eventAttendeesStub } from '@/modules/broadcasts/infrastructure/event-attendees-stub';
@@ -93,12 +95,21 @@ function makeRetryableGateway(): BroadcastsGatewayPort {
       return { kind: 'detached' as const };},
     async deleteContactGlobally() {},
     async deleteAudience() {},
+    async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+    async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
     async deleteBroadcast() {},
     async listAudiences() { return []; },
   };
 }
 
 const FROZEN_NOW = new Date('2026-06-15T05:00:00Z');
+
+/**
+ * Spec 139 — the requester is a REAL live member: the send-standing gate
+ * refuses a `requested_by_member_id` with no `members` row like an erased one
+ * (P4). The plan it is seeded on needs a real user as `created_by`.
+ */
+let requesterUser: TestUser;
 
 interface SeedSpec {
   readonly broadcastId: string;
@@ -124,6 +135,7 @@ async function seedApprovedBroadcast(
     spec.firstFailedMinutesAgo === undefined
       ? null
       : new Date(FROZEN_NOW.getTime() - spec.firstFailedMinutesAgo * 60 * 1000).toISOString();
+  await seedLiveRequester(tenant.ctx, requesterUser.userId, spec.memberId);
   await runInTenant(tenant.ctx, (tx) =>
     tx.execute(sql`
       INSERT INTO broadcasts (
@@ -189,6 +201,7 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
 
   beforeAll(async () => {
     const t = await createTwoTestTenants();
+    requesterUser = await createActiveTestUser('admin');
     tenantA = t.a;
     tenantB = t.b;
   });
@@ -196,6 +209,7 @@ describe('Phase 8 / Slice E — dispatch-failure-notification integration (live 
   afterAll(async () => {
     await tenantA.cleanup();
     await tenantB.cleanup();
+    if (requesterUser) await deleteTestUser(requesterUser).catch(() => {});
   });
 
   it('past-budget retryable failure → outbox row inserted with broadcast_failed_to_dispatch_notification + tenant isolation holds', async () => {

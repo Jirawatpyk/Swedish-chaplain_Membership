@@ -75,6 +75,8 @@ function makeBridges(seed: SeedOpts = {}): {
           broadcastsHaltedUntilAdminReview: false,
         };
       },
+      // Spec 139 — read first by the send-standing gate; a live member.
+      async getMemberErasedAt() { return { erasedAt: null }; },
       async getMembersHaltedInTenant() {
         return [];
       },

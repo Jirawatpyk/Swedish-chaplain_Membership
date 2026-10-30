@@ -24,6 +24,14 @@
  *   - `refuse`    — PERMANENT (`failed_to_dispatch`): the member's E-Blasts are
  *                   halted, or the membership has ENDED (F8 `terminated`:
  *                   cancelled / coverage ended, lapsed, refunded).
+ *   - `refuse_erased` — spec 139: PERMANENT too, for a member who is erased.
+ *                   (A requester NOT FOUND is `undecided` since review round 2,
+ *                   P4: erasure never deletes a member row.) Its own kind because
+ *                   it writes no standing-refusal audit row and sends the
+ *                   member no email (P3), and because the leg must first
+ *                   delete a pre-scrub draft the row still carries (P2,
+ *                   `deleteErasedDraftBeforeRefusal`). The `failure_reason`
+ *                   token is the existing `member_not_in_good_standing`.
  *   - `undecided` — a read failed, or answered something this build does not
  *                   know. Fail CLOSED: nothing is sent, the row stays
  *                   `approved`, the leg answers `dispatch.server_error` (phase
@@ -37,10 +45,13 @@
  *
  * Pure Application — no framework imports.
  */
+import { errKind } from '@/lib/log-id';
 import { logger } from '@/lib/logger';
 import { broadcastsMetrics } from '@/lib/metrics';
 import type { TenantContext } from '@/modules/tenants';
+import type { BroadcastsGatewayPort, DeleteBroadcastOnceOutcome } from '../ports/broadcasts-gateway-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
+import type { StandingRefusalFailureReason } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { readMemberSendStanding, type MemberSendStandingDeps, type StandingRefusal } from './_member-send-standing';
 
 /** The standing reads a dispatch leg makes. */
@@ -51,7 +62,7 @@ export interface DispatchStandingDeps extends MemberSendStandingDeps {
    * tick) MUST set it to the raw bridge; absent, `membersBridge` itself is
    * re-read, which is only fresh when it is not memoised.
    */
-  readonly haltReadFresh?: Pick<MembersBridgePort, 'getMembersHaltedInTenant'>;
+  readonly haltReadFresh?: Pick<MembersBridgePort, 'getMemberErasedAt' | 'getMembersHaltedInTenant'>;
 }
 
 export type DispatchStandingDecision =
@@ -61,10 +72,14 @@ export type DispatchStandingDecision =
       readonly kind: 'refuse';
       /** Which refusal audit row (`standingRefusalAuditEvent`) to write — the standing itself, so the row names its `access`. */
       readonly refusal: StandingRefusal;
-      /** The member-facing / `failure_reason` token. */
-      readonly reason: 'member_halted' | 'member_not_in_good_standing';
+      /** The member-facing / `failure_reason` token (kept by the erasure scrub). */
+      readonly reason: StandingRefusalFailureReason;
     }
+  | { readonly kind: 'refuse_erased'; readonly reason: Extract<StandingRefusalFailureReason, 'member_not_in_good_standing'> }
   | { readonly kind: 'undecided'; readonly message: string; readonly errClass: string };
+
+/** The `undecided` message for a requester that is not in the tenant (P4). */
+export const REQUESTER_NOT_FOUND = 'member_standing_requester_not_found';
 
 export async function decideDispatchStanding(
   deps: DispatchStandingDeps,
@@ -85,12 +100,23 @@ export async function decideDispatchStanding(
   switch (standing.kind) {
     case 'ok':
       return { kind: 'send' };
+    case 'erased':
+      // Review round 2 (P4, maintainer 30 Oct 2026) — erasure never deletes a
+      // member row, so a requester NOT FOUND is not evidence of an erasure:
+      // refusing would delete the draft and end the row on a guess. Undecided
+      // instead — nothing sent, nothing deleted, the row stays `approved`; the
+      // runbook says how to find and cancel such a row by hand.
+      return standing.missing === true
+        ? { kind: 'undecided', message: REQUESTER_NOT_FOUND, errClass: 'requester_not_found' }
+        : { kind: 'refuse_erased', reason: 'member_not_in_good_standing' };
     case 'halted':
       return { kind: 'refuse', refusal: standing, reason: 'member_halted' };
     case 'not_in_good_standing':
       return standing.access === 'suspended'
         ? { kind: 'hold' }
         : { kind: 'refuse', refusal: standing, reason: 'member_not_in_good_standing' };
+    case 'erasure_read_failed':
+      return { kind: 'undecided', message: 'member_standing_erasure_read_failed', errClass: standing.errKind };
     case 'halt_read_failed':
       return { kind: 'undecided', message: 'member_standing_halt_read_failed', errClass: standing.errKind };
     case 'access_unavailable':
@@ -103,6 +129,80 @@ export async function decideDispatchStanding(
       return { kind: 'undecided', message: 'member_standing_unrouted', errClass: 'gate' };
     }
   }
+}
+
+/**
+ * What an erased refusal's DELETE of the row's pre-scrub draft decided (P2).
+ * `cleared` — the draft THIS ROW carries is gone, or can never be sent, so the
+ * leg may refuse terminally (other copies are not this function's reach —
+ * residual 8d, below); `draftOutcome` is what it
+ * found (`none` = the row carried no id). `undecided` — the draft may still
+ * be there: nothing is sent, the row stays `approved`, the next tick (or the
+ * `reconcile-erasures` cron's cascade) tries again.
+ */
+export type ErasedDraftClearance =
+  | { readonly kind: 'cleared'; readonly draftOutcome: 'none' | 'deleted' | 'absent' | 'cancelled' }
+  | { readonly kind: 'undecided'; readonly message: 'member_erased_draft_not_deleted'; readonly errClass: string };
+
+/**
+ * Spec 139 P2 — before an erased member's row is refused, delete the Resend
+ * draft it still carries. Without this, an erasure cascade that failed
+ * retryably (the next dispatch tick, every 5 min, reaches the gate before
+ * `reconcile-erasures`, every 30 min) would make the row terminal and leave
+ * the pre-scrub subject, body and from-name at Resend on that row's draft.
+ *
+ * It closes the SEND, not every Resend copy: a pre-scrub draft minted for an
+ * E-Blast that is already terminal (`failed_to_dispatch`, or staff-cancelled
+ * with an id), or a minted draft whose reclaim failed, is never on a row this
+ * gate reaches and can stay at Resend after the erasure. It is never sent —
+ * RoPA residual 8d (`docs/compliance/processing-records.md`).
+ *
+ * Called only for an id the same tick's probe said was never handed to
+ * `/send` (`draft`, `cancelled`, or `not_found`) — a handed id never reaches
+ * the gate. One `deleteBroadcastOnce`: `deleted` / `absent` clear; `forbidden`
+ * clears ONLY when the probe said `cancelled` (Resend answers 403 to a DELETE
+ * of a cancelled broadcast, and a cancelled broadcast can never be sent — only
+ * a draft can, MEASURED 2026-10-29 — so refusing it cannot strand a send;
+ * without this arm such a row would be undecided on every tick for ever). Any
+ * other answer, or a throw, is `undecided`.
+ *
+ * Kept OUT of `decideDispatchStanding`, which the staff detail page reads
+ * (`read-dispatch-hold.ts`): a page read must never delete anything.
+ */
+export async function deleteErasedDraftBeforeRefusal(
+  gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce'>,
+  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
+  draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
+): Promise<ErasedDraftClearance> {
+  if (draft === null || draft.resendBroadcastId === '') return { kind: 'cleared', draftOutcome: 'none' };
+  const logIds = { ...ids, resendBroadcastId: draft.resendBroadcastId, probedStatus: draft.probedStatus ?? 'not_found' };
+  let outcome: DeleteBroadcastOnceOutcome['kind'];
+  try {
+    outcome = (await gateway.deleteBroadcastOnce(draft.resendBroadcastId)).kind;
+  } catch (e) {
+    logger.warn({ ...logIds, err: errKind(e) }, 'broadcasts.dispatch.erased_draft_delete_threw');
+    return { kind: 'undecided', message: 'member_erased_draft_not_deleted', errClass: 'threw' };
+  }
+  if (outcome === 'deleted' || outcome === 'absent') {
+    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_deleted');
+    return { kind: 'cleared', draftOutcome: outcome };
+  }
+  if (outcome === 'forbidden' && draft.probedStatus === 'cancelled') {
+    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_cancelled_unsendable');
+    return { kind: 'cleared', draftOutcome: 'cancelled' };
+  }
+  logger.warn({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_delete_unconfirmed');
+  return { kind: 'undecided', message: 'member_erased_draft_not_deleted', errClass: outcome };
+}
+
+/**
+ * Spec 139 P4 — the warn line a leg writes when the requester is not in the
+ * tenant (`REQUESTER_NOT_FOUND`). Ids only. Written by the legs, not by
+ * `decideDispatchStanding`, so the staff detail page's read stays quiet; the
+ * cron also counts it under `dispatchResolveFailedTotal{phase=standing}`.
+ */
+export function recordRequesterNotFound(tenantSlug: string, broadcastId: string, leg: 'live' | 'import'): void {
+  logger.warn({ tenantId: tenantSlug, broadcastId, leg }, 'broadcasts.dispatch.requester_not_found');
 }
 
 /**

@@ -206,6 +206,7 @@ function makeDeps(overrides: Partial<{
             outcome: 'ok' as const,
             cancelledCount: 0,
             skippedConcurrentCount: 0,
+            alreadySentCount: 0,
           }) as const,
       ),
     };
@@ -462,6 +463,7 @@ describe('archiveMember use case (R009)', () => {
         outcome: 'ok' as const,
         cancelledCount: 0,
         skippedConcurrentCount: 0,
+        alreadySentCount: 0,
       }));
       const deps = makeDeps({
         broadcastsCascade: { cancelInFlightForMember },
@@ -488,6 +490,9 @@ describe('archiveMember use case (R009)', () => {
       expect(call[2].cancellationReason).toBe('originator_member_deleted');
       expect(call[2].initiatedByUserId).toBe('admin-7');
       expect(call[2].requestId).toBe('req-7');
+      // Spec 139 DE4 — archive never selects the erasure mode, so a
+      // dispatch-begun E-Blast is still skipped and nothing is deleted at Resend.
+      expect(Object.prototype.hasOwnProperty.call(call[2], 'onDispatchBegun')).toBe(false);
       // Happy path MUST NOT emit unexpected_error — would break alert.
       const unexpectedErrorCalls = cascadeOutcomeSpy.mock.calls.filter(
         (c) => c[1] === 'unexpected_error',
@@ -547,6 +552,7 @@ describe('archiveMember use case (R009)', () => {
         cancelledCount: 2,
         skippedConcurrentCount: 1,
         unexpectedErrorCount: 3,
+        alreadySentCount: 0,
       }));
       const deps = makeDeps({
         broadcastsCascade: { cancelInFlightForMember },

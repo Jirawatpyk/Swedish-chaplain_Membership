@@ -458,6 +458,7 @@ describe('T149a — the outbox drainer skips the five eblast_* notification type
       },
       sanitizer: dompurifySanitizer,
       membersBridge: {
+        getMemberErasedAt: async () => ({ erasedAt: null }),
         getMembersHaltedInTenant: async () => [],
         getMemberPrimaryContact: async () => unsafeBrandEmailLower('owner@acme.test'),
         getMembersBySegment: async () => [

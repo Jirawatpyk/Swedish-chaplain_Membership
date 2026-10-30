@@ -1136,20 +1136,44 @@ export interface FakeSendStandingOpts {
    * gate falls back to `membersBridge`).
    */
   readonly haltReadFresh?: { readonly halted?: readonly string[]; readonly throws?: boolean };
+  /**
+   * Spec 139 — the erasure read (`getMemberErasedAt`), made BEFORE the halt
+   * read. `true` = the member is erased; `not_found` = no such member in the
+   * tenant (undecided at dispatch, refused at submit / approve / confirm, P4); `throws` = the read failed. Default:
+   * a live member.
+   */
+  readonly erased?: boolean | 'not_found' | 'throws';
 }
+
+const ERASED_AT = new Date('2026-09-01T00:00:00Z');
+
+/** The bridge's erasure read, answering per {@link FakeSendStandingOpts.erased}. */
+const erasedAtFake = (erased: FakeSendStandingOpts['erased']) =>
+  vi.fn(async () => {
+    if (erased === 'throws') throw new Error('erasure read failed');
+    if (erased === 'not_found') return null;
+    return { erasedAt: erased === true ? ERASED_AT : null };
+  });
 
 const haltedRows = (ids: readonly string[] | undefined) =>
   (ids ?? []).map((memberId) => ({ memberId, displayName: 'Halted Co', haltedSinceAt: APPROVAL_NOW }));
 
-/** The two reads submit, approve-as-submitted and the promotion share; default: in good standing. */
+/** The reads submit, approve-as-submitted and the promotion share (erasure, halt, access); default: in good standing. */
 export function makeFakeSendStanding(opts: FakeSendStandingOpts = {}): MemberSendStandingDeps & {
-  readonly membersBridge: { readonly getMembersHaltedInTenant: ReturnType<typeof vi.fn> };
+  readonly membersBridge: {
+    readonly getMembersHaltedInTenant: ReturnType<typeof vi.fn>;
+    readonly getMemberErasedAt: ReturnType<typeof vi.fn>;
+  };
   readonly membershipAccess: { readonly getMembershipAccess: ReturnType<typeof vi.fn> };
-  readonly haltReadFresh?: { readonly getMembersHaltedInTenant: ReturnType<typeof vi.fn> };
+  readonly haltReadFresh?: {
+    readonly getMembersHaltedInTenant: ReturnType<typeof vi.fn>;
+    readonly getMemberErasedAt: ReturnType<typeof vi.fn>;
+  };
 } {
   const fresh = opts.haltReadFresh;
   return {
     membersBridge: {
+      getMemberErasedAt: erasedAtFake(opts.erased),
       getMembersHaltedInTenant: vi.fn(async () => {
         if (opts.haltReadThrows === true) throw new Error('halt read failed');
         return haltedRows(opts.halted);
@@ -1159,6 +1183,7 @@ export function makeFakeSendStanding(opts: FakeSendStandingOpts = {}): MemberSen
       ? {}
       : {
           haltReadFresh: {
+            getMemberErasedAt: erasedAtFake(opts.erased),
             getMembersHaltedInTenant: vi.fn(async () => {
               if (fresh.throws === true) throw new Error('fresh halt read failed');
               return haltedRows(fresh.halted);

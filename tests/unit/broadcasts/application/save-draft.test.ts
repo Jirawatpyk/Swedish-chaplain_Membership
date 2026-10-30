@@ -188,6 +188,9 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
       async releaseResendAudience() {
         return false;
       },
+      async readAlreadySentEvidenceInTx() {
+        return { broadcastRecorded: false, memberBroadcastCount: 0 };
+      },
       async clearDispatchRetryClock() {},
     async listByTenantStatus() {
       return { rows: [], nextCursor: null };
@@ -240,6 +243,8 @@ function makeMembersBridge(opts: FixtureOpts = {}): MembersBridgePort {
     async lookupMemberPrimaryContactEmailInTenant() {
       return null;
     },
+    // Spec 139 — read first by the send-standing gate; a live member.
+    async getMemberErasedAt() { return { erasedAt: null }; },
     async getMembersHaltedInTenant() {
       return [];
     },

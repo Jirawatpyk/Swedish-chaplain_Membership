@@ -20,14 +20,17 @@
  */
 import type { Resend } from 'resend';
 import { logger } from '@/lib/logger';
+import { errKind } from '@/lib/log-id';
 import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import type {
   AudienceContact,
   AudienceContactCount,
   BroadcastsGatewayPort,
   CreateBroadcastInput,
+  DeleteBroadcastOnceOutcome,
   GatewayRetryableSubKind,
   RetrievedBroadcastResource,
+  RetrieveBroadcastOnceOutcome,
   RetrieveBroadcastOutcome,
   ResendAudienceSummary,
 } from '../../application/ports/broadcasts-gateway-port';
@@ -509,6 +512,33 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     }
   },
 
+  /**
+   * Spec 139 review round 1 — the port docblock has the contract. A raw
+   * `fetch` with the same 10 s bound as {@link deleteBroadcastOnce}, because
+   * the erasure cascade calls it under the broadcast row's lock. The log line
+   * carries the HTTP status and the outcome only, never the body.
+   */
+  async retrieveBroadcastOnce(broadcastId: string): Promise<RetrieveBroadcastOnceOutcome> {
+    let res: Response;
+    try {
+      res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(DELETE_ONCE_TIMEOUT_MS),
+        headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
+      });
+    } catch (e) {
+      logger.warn(
+        { broadcastId, err: errKind(e), timedOut: isTimeout(e) },
+        'resend.broadcasts.retrieve_once_transport_failed',
+      );
+      return { kind: 'retryable' };
+    }
+    const text = await res.text().catch(() => '');
+    const outcome = retrieveOnceOutcomeFor(res.status, text);
+    logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.retrieve_once');
+    return outcome;
+  },
+
   async removeContactFromAudience(
     audienceId: string,
     email: string,
@@ -685,6 +715,37 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
       },
       { method: 'deleteBroadcast' },
     );
+  },
+
+  /**
+   * Spec 139 P1 — the port docblock has the contract. A raw `fetch`, like
+   * `importFetch`, because the SDK takes no `signal` (resend@4.8.0) and this
+   * call must not outlive {@link DELETE_ONCE_TIMEOUT_MS} while the caller holds
+   * a row lock. One attempt; the outcome is the status class, never the
+   * provider's text (the log line carries the HTTP status only).
+   */
+  async deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome> {
+    let res: Response;
+    try {
+      res = await fetch(`${RESEND_API_BASE}/broadcasts/${encodeURIComponent(broadcastId)}`, {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(DELETE_ONCE_TIMEOUT_MS),
+        headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
+      });
+    } catch (e) {
+      // A timeout, an abort or a transport failure: whether the DELETE reached
+      // Resend is unknown, so nothing is decided.
+      logger.warn(
+        { broadcastId, err: errKind(e), timedOut: isTimeout(e) },
+        'resend.broadcasts.delete_once_transport_failed',
+      );
+      return { kind: 'retryable' };
+    }
+    // Drain the body so the connection is released; its text is not used.
+    await res.text().catch(() => '');
+    const outcome = deleteOnceOutcomeFor(res.status);
+    logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.delete_once');
+    return outcome;
   },
 
   /**
@@ -909,6 +970,45 @@ function throwImportError(
  */
 const IMPORT_FETCH_TIMEOUT_MS = 30_000;
 
+/**
+ * Spec 139 P1 — the erasure cascade holds the broadcast row's lock across the
+ * DELETE and (after a 404 or 403) the GET, so each is bounded far tighter than
+ * an import: 10 s against a measured round trip of ~0.5 s, ≈ 23 s at most with the 3 s pause after a 404 (D-040).
+ */
+const DELETE_ONCE_TIMEOUT_MS = 10_000;
+
+/**
+ * `AbortSignal.timeout` rejects with a `TimeoutError` (a `DOMException`, so
+ * `errKind` alone reads only the class); kept apart from an abort or a network
+ * failure so a slow Resend is visible on the log line.
+ */
+function isTimeout(e: unknown): boolean {
+  return e instanceof Error && e.name === 'TimeoutError';
+}
+
+function deleteOnceOutcomeFor(status: number): DeleteBroadcastOnceOutcome {
+  if (status >= 200 && status < 300) return { kind: 'deleted' };
+  if (status === 404 || status === 410) return { kind: 'absent' };
+  if (status === 403) return { kind: 'forbidden' };
+  if (status === 429 || status >= 500) return { kind: 'retryable' };
+  return { kind: 'other' };
+}
+
+function retrieveOnceOutcomeFor(status: number, text: string): RetrieveBroadcastOnceOutcome {
+  if (status >= 200 && status < 300) {
+    let raw: unknown;
+    try {
+      raw = (JSON.parse(text) as { status?: unknown } | null)?.status;
+    } catch {
+      return { kind: 'other' };
+    }
+    return typeof raw === 'string' ? { kind: 'present', status: normaliseStatus(raw) } : { kind: 'other' };
+  }
+  if (status === 404 || status === 410) return { kind: 'not_found' };
+  if (status === 429 || status >= 500) return { kind: 'retryable' };
+  return { kind: 'other' };
+}
+
 async function importFetch(
   path: string,
   init: RequestInit,
@@ -958,6 +1058,14 @@ function normaliseStatus(
     case 'sent':
     case 'cancelled':
       return raw;
+    // MEASURED 2026-10-30 (live account, sink only, 2 runs): a queued broadcast
+    // cancelled through POST /broadcasts/{id}/cancel answers `canceled` — ONE
+    // L, as Resend's docs spell it — at +0/2/15/45 s. The same state as our
+    // `cancelled`; read as `unknown`, every arm built on `cancelled` (the
+    // erasure cascade's 403 + cancelled, the gate's 403 on a cancelled id, the
+    // import leg's cancelled re-mint) could never fire.
+    case 'canceled':
+      return 'cancelled';
     default:
       // Say "unknown", do not INVENT 'queued'.
       //

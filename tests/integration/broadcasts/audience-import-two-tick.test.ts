@@ -20,7 +20,7 @@
  * was established directly against the API (research § R9 V2 + V4) and is not
  * re-litigated here.
  */
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { ok } from '@/lib/result';
@@ -33,6 +33,8 @@ import { f7AuditAdapter } from '@/modules/broadcasts/infrastructure/audit-adapte
 import { systemClock } from '@/modules/broadcasts/infrastructure/broadcasts-deps';
 import { membersBridge } from '@/modules/broadcasts/infrastructure/members-bridge';
 import { membershipAccessBridge } from '@/modules/broadcasts/infrastructure/membership-access-bridge';
+import { createActiveTestUser, deleteTestUser, type TestUser } from '../helpers/test-users';
+import { seedLiveRequester } from '../helpers/seed-live-requester';
 
 /**
  * F119 PR-A — the send-time standing reads, REAL on both halves (the F3 halt
@@ -44,6 +46,18 @@ const LIVE_STANDING = { membersBridge, membershipAccess: membershipAccessBridge 
 const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL);
 const TEST_TENANT = 'swecham';
 const CREATED: string[] = [];
+
+/**
+ * Spec 139 — the requester is a REAL live member: the send-standing gate
+ * refuses a `requested_by_member_id` with no `members` row like an erased one
+ * (P4). Seeded into the shared tenant in `beforeAll` and removed in `afterAll`.
+ */
+let requesterUser: TestUser | null = null;
+let requester: { readonly memberId: string; readonly planId: string } | null = null;
+const requesterMemberId = (): string => {
+  if (requester === null) throw new Error('requester not seeded');
+  return requester.memberId;
+};
 
 /** Synthetic and unroutable (RFC 2606) — nothing here can reach a person. */
 const RECIPIENTS = ['t087-a@example.com', 't087-b@example.com', 't087-c@example.com'];
@@ -181,7 +195,7 @@ async function seedApproved(): Promise<string> {
         submitted_at, approved_at, scheduled_for
       ) VALUES (
         ${TEST_TENANT}, ${broadcastId}::uuid, 'approved',
-        ${randomUUID()}::uuid, ${randomUUID()}::uuid, ${randomUUID()}::uuid,
+        ${requesterMemberId()}::uuid, ${randomUUID()}::uuid, ${randomUUID()}::uuid,
         'admin_proxy', 'T087 two-tick', '<p>x</p>', '<p>x</p>',
         'T087 Test', 'noreply@swecham.example', 'all_members', NULL,
         NULL, ${RECIPIENTS.length}, now(), now(), now()
@@ -212,7 +226,7 @@ async function seedHandedToSend(resendBroadcastId: string): Promise<string> {
         audience_import_id, audience_import_submitted_at
       ) VALUES (
         ${TEST_TENANT}, ${broadcastId}::uuid, 'approved',
-        ${randomUUID()}::uuid, ${randomUUID()}::uuid, ${randomUUID()}::uuid,
+        ${requesterMemberId()}::uuid, ${randomUUID()}::uuid, ${randomUUID()}::uuid,
         'admin_proxy', 'T087 re-entry', '<p>x</p>', '<p>x</p>',
         'T087 Test', 'noreply@swecham.example', 'all_members', NULL,
         NULL, ${RECIPIENTS.length}, now(), now(), now(),
@@ -249,6 +263,11 @@ async function readRow(raw: string): Promise<{
 }
 
 describe.runIf(RUN_INTEGRATION)('T087 — two-tick import build (live Neon)', () => {
+  beforeAll(async () => {
+    requesterUser = await createActiveTestUser('admin');
+    requester = await seedLiveRequester(asTenantContext(TEST_TENANT), requesterUser.userId);
+  });
+
   afterAll(async () => {
     await runInTenant(asTenantContext(TEST_TENANT), async (tx) => {
       for (const id of CREATED) {
@@ -257,7 +276,16 @@ describe.runIf(RUN_INTEGRATION)('T087 — two-tick import build (live Neon)', ()
           WHERE tenant_id = ${TEST_TENANT} AND broadcast_id = ${id}::uuid
         `);
       }
+      if (requester !== null) {
+        await tx.execute(sql`
+          DELETE FROM members WHERE tenant_id = ${TEST_TENANT} AND member_id = ${requester.memberId}::uuid
+        `);
+        await tx.execute(sql`
+          DELETE FROM membership_plans WHERE tenant_id = ${TEST_TENANT} AND plan_id = ${requester.planId}
+        `);
+      }
     });
+    if (requesterUser !== null) await deleteTestUser(requesterUser).catch(() => {});
   });
 
   it('tick 1 submits and sends NOTHING; tick 2 confirms and sends once', async () => {

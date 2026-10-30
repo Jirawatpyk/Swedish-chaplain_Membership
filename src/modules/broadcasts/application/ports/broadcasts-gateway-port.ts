@@ -168,6 +168,47 @@ export type RemoveContactOutcome =
   | { readonly kind: 'already_absent' };
 
 /**
+ * Spec 139 P1 — what ONE `DELETE /broadcasts/{id}` answered
+ * (`deleteBroadcastOnce`). A union, not `void`, because the erasure cascade
+ * acts on each arm differently:
+ *
+ *   - `deleted` (200) — the draft is gone, so the row can be cancelled;
+ *   - `absent` (404, 410) — gone by this answer; the erasure cascade confirms
+ *     it with one `retrieveBroadcastOnce` before it cancels (two not-founds,
+ *     as the import leg requires before it re-mints);
+ *   - `forbidden` (403) — MEASURED 2026-10-29: Resend's answer for a `queued`,
+ *     `sent` or `cancelled` broadcast, but a restricted key answers 403 too, so
+ *     the caller probes before it believes "already sent" (P5);
+ *   - `retryable` — a 5xx, a 429, a transport failure or the 10 s timeout. A
+ *     timeout is ambiguous (the DELETE may have landed), so nothing is decided;
+ *   - `other` — any other status.
+ */
+export type DeleteBroadcastOnceOutcome =
+  | { readonly kind: 'deleted' }
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'forbidden' }
+  | { readonly kind: 'retryable' }
+  | { readonly kind: 'other' };
+
+/**
+ * Spec 139 review round 1 — what ONE `GET /broadcasts/{id}` answered
+ * (`retrieveBroadcastOnce`). The erasure cascade probes under the row lock
+ * after a DELETE 404 or 403, so the probe is bounded like the DELETE and never
+ * throws:
+ *
+ *   - `present` — Resend has the resource; `status` is `normaliseStatus`'s
+ *     reading (an unmeasured value is `'unknown'`, never invented);
+ *   - `not_found` (404, 410);
+ *   - `retryable` — a 5xx, a 429, a transport failure or the 10 s timeout;
+ *   - `other` — any other status, or a 2xx body without a status string.
+ */
+export type RetrieveBroadcastOnceOutcome =
+  | { readonly kind: 'present'; readonly status: RetrievedBroadcastResource['status'] }
+  | { readonly kind: 'not_found' }
+  | { readonly kind: 'retryable' }
+  | { readonly kind: 'other' };
+
+/**
  * What `getAudienceContactCount` answers. A plain record, not a discriminated
  * union — and it used to be one.
  *
@@ -251,6 +292,17 @@ export interface BroadcastsGatewayPort {
   retrieveBroadcast(
     broadcastId: string,
   ): Promise<RetrieveBroadcastOutcome>;
+
+  /**
+   * Spec 139 review round 1 — ONE `GET /broadcasts/{id}`: no `withRetry`
+   * backoff and a hard 10 s timeout, like {@link deleteBroadcastOnce}. The
+   * erasure cascade calls it while it still holds the broadcast row's lock
+   * (after a DELETE 404 or 403), so the row's whole decision is made under the
+   * lock that did the DELETE; together the two calls hold it for at most
+   * ≈ 20 s. Never throws: every failure is an arm of
+   * {@link RetrieveBroadcastOnceOutcome}.
+   */
+  retrieveBroadcastOnce(broadcastId: string): Promise<RetrieveBroadcastOnceOutcome>;
 
   /**
    * Round-4 IMP-5 — count contacts present in a Resend audience. Used
@@ -429,6 +481,24 @@ export interface BroadcastsGatewayPort {
    * (`docs/runbooks/cron-jobs.md` § F7 retention-sweep, "Resend copies").
    */
   deleteBroadcast(broadcastId: string): Promise<void>;
+
+  /**
+   * Spec 139 P1 — ONE `DELETE /broadcasts/{id}`: no `withRetry` backoff and a
+   * hard 10 s timeout (the SDK has none). The erasure cascade calls it while it
+   * holds the broadcast row's lock, so a slow Resend must not hold that lock —
+   * and every dispatch tick that reaches the row — for the 31 s of backoff
+   * `deleteBroadcast` can spend. Never throws: every failure is an arm of
+   * {@link DeleteBroadcastOnceOutcome}.
+   *
+   * The second caller is the dispatch legs' erased refusal (P2), which deletes
+   * a pre-scrub draft the probe said was never handed to `/send` before it
+   * refuses the row. Both are exceptions to `deleteBroadcast`'s "never on an
+   * id read from the row" rule for the same reason: Resend arbitrates — DELETE
+   * answers 200 only on a draft or scheduled broadcast, and `/send` works only
+   * on a draft — so a DELETE that lands first makes any later `/send` 404, and
+   * a send that landed first makes the DELETE 403.
+   */
+  deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome>;
 
   /**
    * PR-2 orphan-reclaim — list all Resend audiences for the configured

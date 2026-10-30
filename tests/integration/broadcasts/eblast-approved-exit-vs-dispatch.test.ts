@@ -271,6 +271,8 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
         },
         async deleteContactGlobally() {},
         async deleteAudience() {},
+        async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+        async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
         async deleteBroadcast(resourceId) {
           calls.deleted.push(resourceId);
         },
@@ -385,15 +387,32 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
   // `approved` too, and it ran its own status-only CAS with no lock and no
   // hand-over check: an attach committing under it left the row `cancelled`
   // WITH a Resend id (the email went out, the allowance was freed). It now
-  // locks, reads, and skips a handed-over row. Its own member, so the cascade
-  // never sweeps the rows the cases above leave for `memberId`.
-  describe('(d) the erasure cascade racing an in-flight attach', () => {
-    it('the attach commits while the cascade is waiting → the row is skipped and stays approved with its id', async () => {
-      const { memberId: erasedMemberId } = await seedPortalMemberWithContact(tenant, planId, { companyName: 'Cascade Race Co' });
-      const { id } = await seedApprovedRound({ requestedByMemberId: erasedMemberId });
+  // locks, reads, and acts on a handed-over row. Its own member, so the
+  // cascade never sweeps the rows the cases above leave for `memberId`.
+  //
+  // Spec 139 DE2 / DE4 — what it does with that row depends on the caller.
+  // ARCHIVE (the default) still skips it and leaves it to deliver. ERASURE
+  // (`onDispatchBegun: 'delete_then_cancel'`) deletes the never-sent draft at
+  // Resend under the lock and cancels the row: skipping it let the dispatcher
+  // send an erased member's pre-scrub E-Blast.
+  describe('(d) the member cascade racing an in-flight attach', () => {
+    async function raceTheCascade(mode: 'archive' | 'erasure') {
+      const { memberId: subjectMemberId } = await seedPortalMemberWithContact(tenant, planId, { companyName: `Cascade Race Co (${mode})` });
+      const { id } = await seedApprovedRound({ requestedByMemberId: subjectMemberId });
       const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
       const bid = asBroadcastId(id);
       const resendId = `rb-cascade-race-${randomUUID().slice(0, 8)}`;
+      const deletes: string[] = [];
+      // Resend is a fake: the real factory composes the live gateway.
+      const gateway = {
+        async deleteBroadcastOnce(rid: string) {
+          deletes.push(rid);
+          return { kind: 'deleted' as const };
+        },
+        async retrieveBroadcastOnce(): Promise<never> {
+          throw new Error('retrieveBroadcastOnce is not used here');
+        },
+      };
 
       let attached!: () => void;
       const attachedP = new Promise<void>((resolve) => (attached = resolve));
@@ -406,21 +425,36 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
       });
       await attachedP;
 
-      const cascadeP = cancelInFlightBroadcastsForMember(makeCancelInFlightBroadcastsForMemberDeps(tenant.ctx.slug), {
-        tenant: tenant.ctx,
-        memberId: erasedMemberId,
-        cancellationReason: 'gdpr_erasure_request',
-        requestId: null,
-      });
+      const cascadeP = cancelInFlightBroadcastsForMember(
+        { ...makeCancelInFlightBroadcastsForMemberDeps(tenant.ctx.slug), broadcastsGateway: gateway },
+        {
+          tenant: tenant.ctx,
+          memberId: subjectMemberId,
+          cancellationReason: mode === 'erasure' ? 'gdpr_erasure_request' : 'originator_member_deleted',
+          requestId: null,
+          ...(mode === 'erasure' ? { onDispatchBegun: 'delete_then_cancel' as const } : {}),
+        },
+      );
       // Long enough for the cascade to have listed the row and reached its
       // CAS (unfixed) or to be waiting on the lock (fixed).
       await new Promise((resolve) => setTimeout(resolve, 1_500));
       release();
       await attach;
+      return { cascaded: await cascadeP, id, resendId, deletes };
+    }
 
-      const cascaded = await cascadeP;
-      expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0 } });
+    it('ARCHIVE: the attach commits while the cascade is waiting → the row is skipped and stays approved with its id; nothing is deleted at Resend', async () => {
+      const { cascaded, id, resendId, deletes } = await raceTheCascade('archive');
+      expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 0 } });
       expect(await readRow(id)).toMatchObject({ status: 'approved', resendBroadcastId: resendId, cancelledAt: null });
+      expect(deletes).toEqual([]);
+    }, 60_000);
+
+    it('ERASURE: the attach commits while the cascade is waiting → the draft is deleted at Resend under the lock and the row is cancelled', async () => {
+      const { cascaded, id, resendId, deletes } = await raceTheCascade('erasure');
+      expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 } });
+      expect(deletes).toEqual([resendId]);
+      expect(await readRow(id)).toMatchObject({ status: 'cancelled', resendBroadcastId: resendId, cancellationReason: 'gdpr_erasure_request' });
     }, 60_000);
   });
 });

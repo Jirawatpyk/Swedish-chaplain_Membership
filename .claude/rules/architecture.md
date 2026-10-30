@@ -75,7 +75,7 @@ specs/<nnn-feature>/                   # Spec Kit artefacts — one dir per feat
 
 ## Advisory-lock namespaces — deliberately DISJOINT
 
-`invoicing:` (F4 — per tenant+document_type+fiscal_year, keeps §87 numbering gap-free) · `payments:` (F5 — per tenant+invoice, a TOCTOU guard, NOT numbering) · `broadcasts:` (F7 — per tenant+broadcast) · `broadcasts-image:` (F119 — per tenant+content_hash, serialises the image sweep against a dedup upload; `hashtextextended`). Same primitive, four contracts; never reuse a namespace across modules.
+`invoicing:` (F4 — per tenant+document_type+fiscal_year, keeps §87 numbering gap-free) · `payments:` (F5 — per tenant+invoice, a TOCTOU guard, NOT numbering) · `broadcasts:` (F7 — per tenant+broadcast) · `broadcasts-image:` (F119 — per tenant+content_hash, serialises the image sweep against a dedup upload; `hashtextextended`) · `broadcasts-quota:` (F7 — the annual E-Blast quota) · `broadcasts-evidence:` (spec 139 — per tenant+broadcast, serialises the erasure cascade's residual-8c evidence check-then-insert; `hashtextextended`). Same primitive, one contract per namespace; never reuse a namespace across modules.
 
 ## Audit log
 

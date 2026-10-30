@@ -12,6 +12,18 @@
  *   l. F8 membership access — a `suspended` or `terminated` member spends no
  *      E-Blast benefit (059-membership-suspension).
  *
+ * Spec 139 adds a third, read FIRST: ERASURE (GDPR Art. 17 / PDPA § 33).
+ * Erasure takes a member OFF the halt list (its read filters `erased_at IS
+ * NULL`), and F8 access can still answer `full` for an erased member (a
+ * cancelled-not-expired, completed or missing cycle), so neither rule above
+ * sees it — an erased member's E-Blast read as "in good standing" at send
+ * time. `erased` is a member that is erased or no longer exists in the
+ * tenant (P4, `missing: true` — undecided at send time since review round 2);
+ * it writes no standing-refusal audit row on any surface (P3) —
+ * the event those rows use is labelled "membership suspended", and an erasure
+ * must never be recorded as one, so `StandingRefusal` excludes it and the
+ * compiler refuses to build such a row.
+ *
  * `submitBroadcast`, `approveBroadcast` (approve-as-submitted),
  * `confirmSchedule`'s promotion (`member_approved → approved`) and BOTH
  * dispatch legs (`dispatchScheduledBroadcast`, `buildAudienceTick`) all read
@@ -28,9 +40,10 @@
  * the maintainer's rule. Mail a prior tick already handed to Resend is never
  * refused.
  *
- * Fail CLOSED, never open: a halt read that throws is `halt_read_failed`, an
- * access lookup error is `access_unavailable` — each caller turns both into a
- * server error, never into "in good standing".
+ * Fail CLOSED, never open: an erasure read that throws is
+ * `erasure_read_failed`, a halt read that throws is `halt_read_failed`, an
+ * access lookup error is `access_unavailable` — each caller turns all three
+ * into a server error, never into "in good standing".
  *
  * Pure Application — no framework imports.
  */
@@ -40,22 +53,35 @@ import type { AuditEmitInput, F7AuditEventType } from '../ports/audit-port';
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { MembershipAccessLookupError, MembershipAccessPort } from '../ports/membership-access-port';
 
-/** The two reads, as every caller wires them. */
+/** The reads, as every caller wires them (erasure + halt through the bridge, then F8 access). */
 export interface MemberSendStandingDeps {
-  readonly membersBridge: Pick<MembersBridgePort, 'getMembersHaltedInTenant'>;
+  readonly membersBridge: Pick<MembersBridgePort, 'getMemberErasedAt' | 'getMembersHaltedInTenant'>;
   readonly membershipAccess: MembershipAccessPort;
 }
 
 export type MemberSendStanding =
   | { readonly kind: 'ok' }
+  /**
+   * Spec 139 — erased, or no such member in the tenant (P4). Never audited as a
+   * standing refusal (P3). `missing` marks the second case (review round 2):
+   * submit, approve and confirm-schedule refuse both alike, but the send-time
+   * gate does not refuse a missing requester (`decideDispatchStanding`).
+   */
+  | { readonly kind: 'erased'; readonly missing?: true }
   | { readonly kind: 'halted' }
   | { readonly kind: 'not_in_good_standing'; readonly access: 'suspended' | 'terminated' }
+  /** Spec 139 — the erasure read threw — the gate was not decided (the error CLASS only). */
+  | { readonly kind: 'erasure_read_failed'; readonly errKind: string }
   /** The halt read threw — the gate was not decided (the error CLASS only). */
   | { readonly kind: 'halt_read_failed'; readonly errKind: string }
   /** The access lookup answered its error arm — the gate was not decided. */
   | { readonly kind: 'access_unavailable'; readonly errorKind: MembershipAccessLookupError['kind'] };
 
-/** The two standings that refuse a send — the arms of {@link MemberSendStanding} that decided "no". */
+/**
+ * The two standings whose refusal is AUDITED under submit's event types. Not
+ * `erased`, which refuses too but writes no such row (P3) — kept out so that
+ * `standingRefusalAuditEvent` cannot be handed one.
+ */
 export type StandingRefusal = Extract<MemberSendStanding, { readonly kind: 'halted' | 'not_in_good_standing' }>;
 
 /**
@@ -114,12 +140,24 @@ export function standingRefusalAuditEvent(input: StandingRefusalAuditInput): Aud
   };
 }
 
-/** The halt rule first, then membership access — the order submit has always applied. */
+/**
+ * Erasure first (spec 139), then the halt rule, then membership access — the
+ * last two in the order submit has always applied.
+ */
 export async function readMemberSendStanding(
   deps: MemberSendStandingDeps,
   tenant: TenantContext,
   memberId: string,
 ): Promise<MemberSendStanding> {
+  let erasure: { readonly erasedAt: Date | null } | null;
+  try {
+    erasure = await deps.membersBridge.getMemberErasedAt(tenant, memberId);
+  } catch (e) {
+    return { kind: 'erasure_read_failed', errKind: errKind(e) };
+  }
+  if (erasure === null) return { kind: 'erased', missing: true };
+  if (erasure.erasedAt !== null) return { kind: 'erased' };
+
   let halted: ReadonlyArray<{ readonly memberId: string }>;
   try {
     halted = await deps.membersBridge.getMembersHaltedInTenant(tenant);

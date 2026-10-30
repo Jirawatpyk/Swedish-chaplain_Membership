@@ -64,11 +64,15 @@ import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
   decideDispatchStanding,
+  deleteErasedDraftBeforeRefusal,
   recordDispatchHold,
+  recordRequesterNotFound,
+  REQUESTER_NOT_FOUND,
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
 import { persistBroadcastIdBeforeSend } from './_persist-minted-broadcast-id';
+import { rereadAfterLostRace } from './_reread-after-lost-race';
 import { isHandedStatus, probeRefusedSend } from './_probe-refused-send';
 import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
@@ -80,6 +84,7 @@ import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { ResolvedOrphan, ResolveSegmentError } from './resolve-segment-recipients';
+import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
 /**
  * FR-044 (f). Measured from the SUBMIT, not from `scheduled_for`: a broadcast
@@ -89,14 +94,11 @@ import type { ResolvedOrphan, ResolveSegmentError } from './resolve-segment-reci
 export const IMPORT_STUCK_AFTER_MS = 30 * 60 * 1_000;
 
 /**
- * The pause before re-probing an inherited id that answered `not_found`. A
- * `not_found` makes `confirmImport` mint a FRESH resource; were that answer a
- * stale or transient 404 for a send Resend in fact accepted, the audience would
- * be mailed twice. GET has answered consistently in every measurement
- * (2026-10-29), but a transient 404 cannot be induced to test it, so the id is
- * declared dead only on a second `not_found` (maintainer, 29 Oct 2026).
+ * The pause before re-probing an inherited id that answered `not_found` — in
+ * `_reprobe-pause.ts` since spec 139 review round 2, so the erasure cascade's
+ * DELETE-404 re-probe waits exactly as long. Re-exported for existing importers.
  */
-export const REPROBE_PAUSE_MS = 3_000;
+export { REPROBE_PAUSE_MS };
 
 export type BuildAudienceTickOutput =
   | { readonly kind: 'import_submitted'; readonly importId: string; readonly recipientCount: number }
@@ -186,7 +188,9 @@ export const IMPORT_FAILURE_REASONS = [
   /**
    * F119 PR-A — the membership had ENDED (F8 `terminated`: cancelled /
    * coverage ended, lapsed, refunded) at send time. A `suspended` membership is
-   * HELD, never refused, so this token no longer means "suspended".
+   * HELD, never refused, so this token no longer means "suspended". Spec 139:
+   * also the token of an ERASED member's refusal (no member email is sent for
+   * that one; the audit payload says `standing: 'erased'`).
    */
   'member_not_in_good_standing',
 ] as const;
@@ -469,7 +473,7 @@ export async function buildAudienceTick(
     // must not be minted over (a second send), torn down (an audience deleted
     // under a queued send) or refused (`failed_to_dispatch` for delivered mail).
     if (!probe.handed && probe.status === null) {
-      await (deps.pauseBeforeReprobe ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(REPROBE_PAUSE_MS);
+      await (deps.pauseBeforeReprobe ?? sleepBeforeReprobe)(REPROBE_PAUSE_MS);
       const again = await probeInheritedBroadcast(deps, input, broadcast, inheritedBroadcastId);
       if ('stop' in again) return again.stop;
       probe = again.probe;
@@ -683,6 +687,11 @@ async function probeInheritedBroadcast(
  *   row every terminal failure writes, and the standing refusal under submit's
  *   own event types (`surface: 'dispatch'`), so "why was this member's E-Blast
  *   refused" stays one query across every surface.
+ * - `refuse_erased` (spec 139 — the member is erased; a missing requester is undecided, P4) — PERMANENT too,
+ *   but only once the row's never-handed draft is confirmed deleted at Resend
+ *   (P2, `deleteErasedDraftBeforeRefusal`; otherwise nothing is decided). ONE
+ *   audit row (`broadcast_failed_to_dispatch` with `standing: 'erased'`), no
+ *   standing-refusal row and no member email (P3).
  * - anything else — a read that FAILED decides nothing: `dispatch.server_error`
  *   with phase `standing`, the row stays `approved` and the next tick asks
  *   again. Fail CLOSED: an unknown decision lands here too, never at the send.
@@ -732,6 +741,41 @@ async function applySendStanding(
         }),
       },
     );
+  }
+  if (standing.kind === 'refuse_erased') {
+    const cleared = await deleteErasedDraftBeforeRefusal(
+      deps.broadcastsGateway,
+      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, leg: 'import' },
+      // Reached only for a NOT-handed probe (a handed row returned at Step 1a).
+      broadcast.resendBroadcastId === null
+        ? null
+        : { resendBroadcastId: broadcast.resendBroadcastId, probedStatus: probe !== null && !probe.handed ? probe.status : null },
+    );
+    if (cleared.kind === 'undecided') {
+      return err({ kind: 'dispatch.server_error', message: cleared.message, errClass: cleared.errClass, phase: 'standing' });
+    }
+    return failTerminally(
+      deps,
+      input,
+      broadcast,
+      {
+        kind: 'audience_import_failed',
+        reason: standing.reason,
+        importId: broadcast.audienceImportId,
+        observed: null,
+        expected: null,
+      },
+      {
+        notifyMember: false,
+        payloadExtra: { standing: 'erased', resendDraftOutcome: cleared.draftOutcome },
+        concurrentLossIsSkip: true,
+      },
+    );
+  }
+  // Spec 139 P4 — a requester not in the tenant: nothing is sent, nothing
+  // deleted, the row stays `approved` (runbook: cancel it by hand).
+  if (standing.message === REQUESTER_NOT_FOUND) {
+    recordRequesterNotFound(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
   }
   return err({
     kind: 'dispatch.server_error',
@@ -1879,8 +1923,9 @@ async function confirmImport(
  * broadcast resource, all before this tick's `/send` — which 404s. The hold
  * won and nothing went out, so this is no failure of the broadcast: re-read
  * the row, and when it no longer carries the import this tick confirmed or the
- * id it sent, answer a concurrent skip (never `failed_to_dispatch`, never a
- * member email). `null` — the row is as this tick left it, or the re-read
+ * id it sent — or (spec 139 P8) is no longer `approved`, because the erasure
+ * cascade deleted the draft and cancelled it — answer a concurrent skip
+ * (never `failed_to_dispatch`, never a member email). `null` — the row is as this tick left it, or the re-read
  * failed: the ordinary `resource_missing` arm (an admin must look).
  */
 async function sendLostToHold(
@@ -1889,22 +1934,21 @@ async function sendLostToHold(
   sendId: string,
   importId: string,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
-  let row: Broadcast | null;
-  try {
-    row = await deps.broadcastsRepo.findById(deps.tenant.slug, input.broadcastId);
-  } catch (readErr) {
-    logger.warn(
-      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId: sendId, err: errKind(readErr) },
-      'broadcasts.audience_import.send_404_reread_failed',
-    );
-    return null;
-  }
-  if (row !== null && row.resendBroadcastId === sendId && row.audienceImportId === importId) return null;
-  logger.info(
-    { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId: sendId, importId },
-    'broadcasts.audience_import.send_lost_to_hold',
-  );
-  return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+  // Review round 2 — the shared LOCKING re-read (it waits for a cascade still
+  // deciding the row). Spec 139 P8 — the erasure cascade's cancel leaves both
+  // ids where they were, so the status is part of "as this tick left it": a
+  // row no longer `approved` lost to a cancel and is a concurrent skip too. A
+  // row that is GONE is a skip here (the hold or the cascade won), unlike the
+  // other three callers.
+  const skip = await rereadAfterLostRace(deps.broadcastsRepo, deps.tenant.slug, input.broadcastId, {
+    logFields: { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId: sendId, importId },
+    readFailedEvent: 'broadcasts.audience_import.send_404_reread_failed',
+    skipEvent: 'broadcasts.audience_import.send_lost_to_hold',
+    stillOurs: (row) => row.status === 'approved' && row.resendBroadcastId === sendId && row.audienceImportId === importId,
+    vanishedRowIsSkip: true,
+    reportObservedStatus: 'unknown_or_already_processed',
+  });
+  return skip === null ? null : err(skip);
 }
 
 /** What the post-send writes need to know about the send they record. */
@@ -2273,6 +2317,19 @@ async function failTerminally(
      */
     readonly extraAudit?: AuditEmitInput;
     /**
+     * Spec 139 P3 — keys added to the `broadcast_failed_to_dispatch` payload
+     * (ids and closed tokens only): an erased refusal records `standing:
+     * 'erased'` there instead of writing a standing-refusal row.
+     */
+    readonly payloadExtra?: Readonly<Record<string, string>>;
+    /**
+     * Spec 139 review round 1 (CR#4) — the erased refusal: when the terminal
+     * CAS loses and a re-read shows the row is no longer `approved` (the
+     * erasure cascade cancelled it), answer a concurrent skip at info level,
+     * not `cleanup_failed` / a server error.
+     */
+    readonly concurrentLossIsSkip?: boolean;
+    /**
      * Round 4 F5 — set on the 404 path so the RETURNED kind is
      * `broadcast_resend_resource_missing` and the cron buckets it the way the
      * legacy leg does. The recorded terminal state, the audit event and the
@@ -2362,6 +2419,7 @@ async function failTerminally(
           importId: error.importId,
           reason,
           failedAt: now.toISOString(),
+          ...(opts.payloadExtra ?? {}),
         },
         requestId: null,
       });
@@ -2370,6 +2428,17 @@ async function failTerminally(
       }
     });
   } catch (cleanupErr) {
+    if (opts.concurrentLossIsSkip === true && cleanupErr instanceof BroadcastConcurrentMutationError) {
+      // Review round 2 — the shared LOCKING re-read (it waits for a cascade
+      // still deciding the row); a row still `approved`, gone, or a failed
+      // re-read falls through to `cleanup_failed`, as before.
+      const skip = await rereadAfterLostRace(deps.broadcastsRepo, deps.tenant.slug, input.broadcastId, {
+        logFields: { tenantId: deps.tenant.slug, broadcastId: input.broadcastId },
+        readFailedEvent: 'broadcasts.audience_import.terminal_reread_failed',
+        skipEvent: 'broadcasts.audience_import.terminal_write_lost_race',
+      });
+      if (skip !== null) return err(skip);
+    }
     // Mirrors the single-tick path: if the transition itself failed, a concurrent
     // cancel probably won. Log loudly and do NOT notify — telling a member their
     // broadcast failed when it was cancelled is worse than silence.

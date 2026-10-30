@@ -138,6 +138,54 @@ describe('f7BroadcastsCascadeAdapter (G4)', () => {
   });
 });
 
+/**
+ * Spec 139 DE2 wiring / P7 — the erasure caller selects the cascade's
+ * `delete_then_cancel` mode through this port, and the count of E-Blasts
+ * Resend had already accepted travels back to `member_erased`. Archive passes
+ * no mode, so the F7 default (`skip`) applies (DE4).
+ */
+describe('f7BroadcastsCascadeAdapter — spec 139 erasure mode', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('forwards onDispatchBegun to the F7 use case when the caller sets it', async () => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 }),
+    );
+    await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
+      cancellationReason: 'gdpr_erasure_request',
+      initiatedByUserId: 'admin-7',
+      requestId: 'req-7',
+      onDispatchBegun: 'delete_then_cancel',
+    } as never);
+    expect(cancelInFlightBroadcastsForMember.mock.calls[0]![1]).toMatchObject({ onDispatchBegun: 'delete_then_cancel' });
+  });
+
+  it('omits onDispatchBegun when the caller does not set it (archive keeps the F7 default)', async () => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({ cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 }),
+    );
+    await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, { initiatedByUserId: null, requestId: 'req-7' });
+    const passed = cancelInFlightBroadcastsForMember.mock.calls[0]![1];
+    expect(Object.prototype.hasOwnProperty.call(passed, 'onDispatchBegun')).toBe(false);
+  });
+
+  it.each([
+    { unexpectedErrorCount: 0, outcome: 'ok' },
+    { unexpectedErrorCount: 2, outcome: 'cascade_partial_failure' },
+  ])('carries alreadySentCount on the $outcome arm', async ({ unexpectedErrorCount, outcome }) => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount, alreadySentCount: 3 }),
+    );
+    const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
+      initiatedByUserId: 'admin-7',
+      requestId: 'req-7',
+    });
+    expect(result).toMatchObject({ outcome, alreadySentCount: 3 });
+  });
+});
+
 describe('noopBroadcastsCascadeAdapter', () => {
   it('returns outcome="ok" + zeros without invoking F7', async () => {
     const result = await noopBroadcastsCascadeAdapter.cancelInFlightForMember(

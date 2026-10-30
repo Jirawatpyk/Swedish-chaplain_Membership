@@ -380,6 +380,25 @@ export async function submitBroadcast(
   // unexpected error. Neither is acceptable on a write path.
   const standing = await readMemberSendStanding(deps, deps.tenant, input.memberId);
   switch (standing.kind) {
+    case 'erasure_read_failed':
+      logger.error(
+        { tenantId: deps.tenant.slug, memberId: input.memberId, err: standing.errKind },
+        'broadcasts.submit.erasure_read_failed',
+      );
+      return err({
+        kind: 'submit.server_error' as const,
+        message: 'erasure state unavailable',
+      });
+    case 'erased':
+      // Spec 139 (P3) — refused with the existing standing refusal, but WITHOUT
+      // its reject audit row: `broadcast_membership_suspended_blocked` is
+      // labelled "membership suspended", and an erasure must never be recorded
+      // as one. (An erased member's login is anonymised, so this is reached
+      // only through a caller that skipped its own erasure check.)
+      return err({
+        kind: 'broadcast_membership_suspended_blocked',
+        memberId: input.memberId,
+      });
     case 'halt_read_failed':
       logger.error(
         { tenantId: deps.tenant.slug, memberId: input.memberId, err: standing.errKind },

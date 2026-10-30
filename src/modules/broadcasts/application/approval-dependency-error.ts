@@ -26,6 +26,8 @@ import type { MemberSendStanding } from './use-cases/_member-send-standing';
 export type ApprovalDependency =
   /** The send-time standing was not read for the row the lock returned. */
   | 'member_send_standing'
+  /** Spec 139 — `getMemberErasedAt` threw. */
+  | 'member_erasure'
   /** `getMembersHaltedInTenant` threw. */
   | 'member_halt_flag'
   /** The F8 membership-access lookup answered its error arm. */
@@ -57,9 +59,17 @@ export function approvalErrKind(e: unknown): string {
 
 /** The standing read that could not be answered, as the error the fail-closed arm throws. */
 export function standingUnavailableError(
-  standing: Extract<MemberSendStanding, { readonly kind: 'halt_read_failed' | 'access_unavailable' }>,
+  standing: Extract<
+    MemberSendStanding,
+    { readonly kind: 'erasure_read_failed' | 'halt_read_failed' | 'access_unavailable' }
+  >,
 ): ApprovalDependencyError {
-  return standing.kind === 'halt_read_failed'
-    ? new ApprovalDependencyError('member_halt_flag', standing.errKind)
-    : new ApprovalDependencyError('membership_access', standing.errorKind);
+  switch (standing.kind) {
+    case 'erasure_read_failed':
+      return new ApprovalDependencyError('member_erasure', standing.errKind);
+    case 'halt_read_failed':
+      return new ApprovalDependencyError('member_halt_flag', standing.errKind);
+    case 'access_unavailable':
+      return new ApprovalDependencyError('membership_access', standing.errorKind);
+  }
 }
