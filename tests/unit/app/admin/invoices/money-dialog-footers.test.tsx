@@ -5,7 +5,7 @@
  * with the primary action on top, which the hand-built sticky rows used to do.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { NextIntlClientProvider } from 'next-intl';
 import enMessages from '@/i18n/messages/en.json';
 import { IssueInvoiceDialog } from '@/app/(staff)/admin/invoices/_components/issue-invoice-dialog';
@@ -142,5 +142,39 @@ describe('RecordPaymentDialog — buttons in the Dialog footer', () => {
     expect((submit as HTMLButtonElement).form).toBe(dialog.querySelector('form'));
     // Its first focus is still the first field, not Cancel.
     expect(cancel).not.toHaveFocus();
+  });
+});
+
+// Mobile/a11y review (PR N2, M1): while the request is in flight the confirm
+// is AURA's loading button (aria-busy, aria-disabled, the click swallowed),
+// never natively disabled, so it keeps focus inside the modal and a screen
+// reader hears its in-flight label.
+describe('the confirm keeps focus while the request is in flight', () => {
+  it('Record payment stays focused and busy, not disabled, until the POST settles', async () => {
+    vi.useRealTimers();
+    let settle: (r: Response) => void = () => {};
+    const fetchSpy = vi.fn(() => new Promise<Response>((resolve) => (settle = resolve)));
+    vi.stubGlobal('fetch', fetchSpy);
+    withIntl(
+      <RecordPaymentDialog invoiceId="inv-1" documentNumber="SC-2026-000127" issueDate="2026-09-16" todayIso="2026-09-20" />,
+    );
+    fireEvent.click(screen.getByTestId('record-payment-trigger'));
+    const dialog = screen.getByRole('dialog', { name: pay.title });
+    const submit = within(dialog).getByRole('button', { name: pay.submit });
+    submit.focus();
+    fireEvent.click(submit);
+    const busy = within(dialog).getByRole('button', { name: pay.submitting });
+    expect(busy).toBe(submit);
+    expect(busy).not.toBeDisabled();
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+    expect(busy).toHaveAttribute('aria-disabled', 'true');
+    expect(busy).toHaveFocus();
+    // A second click while busy sends nothing more.
+    fireEvent.click(busy);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      settle({ ok: false, json: async () => ({ error: { code: 'invoice_not_payable' } }) } as Response);
+    });
+    vi.unstubAllGlobals();
   });
 });
