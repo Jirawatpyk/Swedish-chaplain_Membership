@@ -97,6 +97,18 @@ describe('env.ts — RESEND_DEBUG', () => {
     vi.unstubAllEnvs();
   });
 
+  it.each(['1', 'false', 'yes'])('throws for any non-empty RESEND_DEBUG in production (%s)', async (value) => {
+    stubEnv({
+      NODE_ENV: 'production',
+      STRIPE_SECRET_KEY: 'sk_live_0000000000',
+      STRIPE_LIVE_MODE: 'true',
+      ZAPIER_DPA_EXECUTED: 'true',
+      E2E_X_TENANT_HEADER_ENABLED: 'false',
+      RESEND_DEBUG: value,
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/RESEND_DEBUG.*NODE_ENV=production/i);
+  });
+
   it('throws when RESEND_DEBUG is set in production', async () => {
     stubEnv({
       NODE_ENV: 'production',

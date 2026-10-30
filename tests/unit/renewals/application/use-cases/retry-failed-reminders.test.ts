@@ -278,6 +278,14 @@ describe('retryFailedReminders', () => {
         }),
         expect.anything(),
       );
+      expect(emitInTxMock).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          type: 'renewal_reminder_retried',
+          payload: expect.objectContaining({ new_delivery_id: null, idempotent_replay: true }),
+        }),
+        expect.anything(),
+      );
     });
 
     // BUG-2 — the retry pass must re-apply the dispatcher gates whose
