@@ -1366,11 +1366,39 @@ export function makeDrizzleBroadcastsRepo(
       return found === true || found === 't';
     },
 
-    async readAlreadySentEvidenceInTx(txUnknown, _tenantIdArg: TenantSlug, _query) {
+    /**
+     * See the port docblock. The literals mirror the cascade's evidence emit
+     * in `cancel-in-flight-broadcasts-for-member.ts` (`eventType`, and the
+     * payload's `broadcastId` + `memberId` + `resendOutcome`). The
+     * `broadcasts-evidence:` lock key is disjoint from the row lock's
+     * `broadcasts:` (`lockForUpdate`), so recording evidence never waits on a
+     * cascade or a dispatch tick holding the row. `tenant_id = ${tenantIdArg}`
+     * is load-bearing (the `audit_log` policy also admits `tenant_id IS NULL`
+     * rows). Rare path, so no index is claimed for it.
+     */
+    async readAlreadySentEvidenceInTx(txUnknown, tenantIdArg: TenantSlug, query) {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'readAlreadySentEvidenceInTx');
-      // RED stub (spec 139 review round 1): the read lands in the fix commit.
-      return { broadcastRecorded: false, memberBroadcastCount: 0 };
+      const broadcastId = query.broadcastId === null ? null : (query.broadcastId as string);
+      if (broadcastId !== null) {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended('broadcasts-evidence:' || ${tenantIdArg} || ':' || ${broadcastId}, 0))`,
+        );
+      }
+      const rows = (await tx.execute(sql`
+        SELECT
+          COALESCE(bool_or(payload->>'broadcastId' = ${broadcastId}::text), false) AS broadcast_recorded,
+          (count(DISTINCT payload->>'broadcastId') FILTER (WHERE payload->>'memberId' = ${query.memberId}::text))::int AS member_count
+        FROM audit_log
+        WHERE tenant_id = ${tenantIdArg}
+          AND event_type = 'broadcast_concurrent_action_blocked'
+          AND payload->>'resendOutcome' = 'already_sent'
+      `)) as unknown as Array<{ broadcast_recorded: boolean | 't' | 'f'; member_count: number | string }>;
+      const row = rows[0];
+      return {
+        broadcastRecorded: row?.broadcast_recorded === true || row?.broadcast_recorded === 't',
+        memberBroadcastCount: Number(row?.member_count ?? 0),
+      };
     },
 
     async markAudienceImportCompleted(
