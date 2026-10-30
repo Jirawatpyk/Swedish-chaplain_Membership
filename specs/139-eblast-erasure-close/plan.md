@@ -44,7 +44,7 @@ Spec: `specs/139-eblast-erasure-close/spec.md` · Size: L · Agreed by the user 
 - **P5 — A 403 is probed before it is believed** (architect M4). A restricted key also answers 403. On `forbidden`, the cascade calls `retrieveBroadcast`:
   - `queued`, `sending` or `sent` → `already_sent`;
   - anything else → unexpected.
-- **P6 — The 403 evidence row is durable** (pdpa H-2, architect L). It is written inside the locked cascade transaction, not through `skipConcurrent`'s `audit.emit(null)`. A failed write counts as unexpected, so the reconciler drives the erasure again.
+- **P6 — The 403 evidence row is durable** (pdpa H-2, architect L). It is written on its own transaction through `deps.audit.emit(tx, …)`, not through `skipConcurrent`'s `audit.emit(null)`. A failed write counts as unexpected, so the reconciler drives the erasure again. *Revised at /simplify (30 Oct):* the 403 probe and this row come **after** the lock tx ends, because `retrieveBroadcast` retries (up to 31 s) and the SDK has no timeout; a queued / sending / sent broadcast never returns to draft, so deciding outside the lock is safe.
 - **P7 — "Clean" can no longer hide a sent E-Blast** (pdpa H-3).
   - The cascade result gains `alreadySentCount`.
   - The members adapter carries it into the `member_erased` payload as `broadcasts_already_sent_count`. This is a payload key, not a new event.

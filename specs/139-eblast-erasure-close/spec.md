@@ -44,7 +44,7 @@ As the chamber, when a member is erased under GDPR Art. 17 / PDPA § 33, none of
 - **DE2.** On erasure, an `approved` row that carries `resendBroadcastId` is handled, not skipped. Under the row lock, the cascade calls `DELETE /broadcasts/{id}` once, with no retry backoff and a 10 s hard timeout:
   - **200, or 404 (already absent):** the row is cancelled in the same transaction, and `broadcast_cancelled` carries `resendOutcome` = `deleted` or `absent`.
   - **403, and a probe confirms `queued`, `sending` or `sent`:** the row is left as it is.
-    - Inside the locked transaction, `broadcast_concurrent_action_blocked` records `dispatchBegun: true` and `resendOutcome: 'already_sent'`. If that write fails, the row counts as unexpected.
+    - The probe and this row come after the lock is released (the probe retries; D-039). On its own transaction, `broadcast_concurrent_action_blocked` records `dispatchBegun: true` and `resendOutcome: 'already_sent'`. If that write fails, the row counts as unexpected.
     - `member_erased` carries `broadcasts_already_sent_count`.
     - This is residual 8c, stated in the DSR answer.
   - **403 with any other probe answer:** unexpected.

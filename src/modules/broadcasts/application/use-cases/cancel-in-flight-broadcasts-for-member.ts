@@ -94,13 +94,16 @@
  *     carries `resendOutcome`. A tick past its persist then meets a 404 and
  *     answers a concurrent skip; an import tick re-minting over the deleted id
  *     waits on this lock in its persist CAS and then sees `cancelled`.
- *   - `forbidden` (403) → probed, because a restricted key answers 403 too
- *     (P5): `queued` / `sending` / `sent` means Resend had already accepted
- *     the send (residual 8c) — the row is left as it is and
- *     `broadcast_concurrent_action_blocked` (`dispatchBegun: true`,
- *     `resendOutcome: 'already_sent'`) is written INSIDE this locked tx, so a
- *     failed write rolls back and counts unexpected (P6); `alreadySentCount`
- *     carries it to `member_erased` (P7). Any other probe answer is unexpected.
+ *   - `forbidden` (403) → the lock tx ends with nothing written, then the id
+ *     is probed, because a restricted key answers 403 too (P5). The probe
+ *     retries and the SDK has no timeout, so it never runs under the lock
+ *     (D-039); a queued / sending / sent broadcast never returns to draft, so
+ *     deciding after the lock is safe. `queued` / `sending` / `sent` means
+ *     Resend had already accepted the send (residual 8c): the row is left as
+ *     it is and `broadcast_concurrent_action_blocked` (`dispatchBegun: true`,
+ *     `resendOutcome: 'already_sent'`) is written on its own tx — a failed
+ *     write counts unexpected (P6); `alreadySentCount` carries it to
+ *     `member_erased` (P7). Any other probe answer is unexpected.
  *   - `retryable` (a timeout included — the DELETE may have landed) / `other`
  *     → unexpected, the row unchanged; the adapter reports
  *     `cascade_partial_failure`, `member_erased` is withheld, and the
@@ -129,6 +132,7 @@ import {
   type BroadcastsRepo,
 } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
+import { isHandedStatus } from './_probe-refused-send';
 
 export type CancelInFlightForMemberError =
   | { readonly kind: 'cascade.server_error'; readonly message: string };
@@ -205,8 +209,9 @@ export interface CancelInFlightForMemberDeps {
 
 /**
  * Spec 139 — the erasure mode's DELETE (or the probe after a 403) did not
- * settle the row. Thrown inside the locked tx so it rolls back and the row is
- * counted unexpected; `outcome` names what Resend answered, for the log.
+ * settle the row. Thrown inside the locked tx (or after it, for a 403 probe)
+ * so nothing is written and the row is counted unexpected; `outcome` names
+ * what Resend answered, for the log.
  */
 class DispatchBegunUnresolvedError extends Error {
   constructor(public readonly outcome: string) {
@@ -272,8 +277,8 @@ export async function cancelInFlightBroadcastsForMember(
      * One cancel attempt in its own tx. `lost` = the CAS matched nothing, or
      * the row is gone (the caller re-reads); `dispatch_begun` = the locked row
      * is `approved` and already handed over (D1 — the caller skips it; the
-     * `'skip'` mode only); `already_sent` = spec 139's 403 arm, its audit row
-     * already written in the tx; every other outcome is final and already
+     * `'skip'` mode only); `already_sent` = spec 139's 403 arm, probed after
+     * the lock tx and its audit row written; every other outcome is final and already
      * counted.
      *
      * F119 round-4 B6 — every throw LEAVES the tx, so the tx rolls back. The
@@ -286,7 +291,9 @@ export async function cancelInFlightBroadcastsForMember(
       fromStatus: BroadcastStatus,
     ): Promise<{ readonly kind: 'cancelled' | 'lost' | 'dispatch_begun' | 'already_sent' | 'unexpected' }> => {
       try {
-        const settled = await deps.broadcastsRepo.withTx(async (tx): Promise<'cancelled' | 'dispatch_begun' | 'already_sent'> => {
+        let forbiddenId: string | null = null;
+        let lockedStatus: BroadcastStatus | null = null;
+        const settled = await deps.broadcastsRepo.withTx(async (tx): Promise<'cancelled' | 'dispatch_begun' | 'forbidden'> => {
           // D1 — lock, THEN read: an in-flight attach commits before this read
           // returns, so its id is seen. Nothing is written on the skip, so the
           // tx ends clean. The CAS below stays on `fromStatus`; a locked row
@@ -294,6 +301,7 @@ export async function cancelInFlightBroadcastsForMember(
           await deps.broadcastsRepo.lockForUpdate(tx, input.tenant.slug, broadcast.broadcastId);
           const locked = await deps.broadcastsRepo.findByIdInTx(tx, input.tenant.slug, broadcast.broadcastId);
           if (locked === null) throw new BroadcastConcurrentMutationError(input.tenant.slug, broadcast.broadcastId, fromStatus);
+          lockedStatus = locked.status;
           let resendOutcome: 'deleted' | 'absent' | null = null;
           if (locked.status === 'approved' && locked.resendBroadcastId !== null) {
             if (onDispatchBegun === 'skip') return 'dispatch_begun';
@@ -316,33 +324,11 @@ export async function cancelInFlightBroadcastsForMember(
               if (outcome.kind === 'deleted' || outcome.kind === 'absent') {
                 resendOutcome = outcome.kind;
               } else if (outcome.kind === 'forbidden') {
-                // P5 — a restricted key answers 403 too: believe "already sent"
-                // only from the probe. A probe that throws leaves the tx too.
-                const probe = await deps.broadcastsGateway.retrieveBroadcast(resendId);
-                const status = probe.kind === 'present' ? probe.resource.status : 'not_found';
-                if (status !== 'queued' && status !== 'sending' && status !== 'sent') {
-                  throw new DispatchBegunUnresolvedError(`forbidden_probe_${status}`);
-                }
-                // P6 — the residual-8c evidence row, inside the locked tx: a
-                // failed write rolls back and counts unexpected.
-                await deps.audit.emit(tx, {
-                  tenantId: input.tenant.slug,
-                  eventType: 'broadcast_concurrent_action_blocked',
-                  actorUserId: input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
-                  summary: `Erasure cascade could not stop broadcast ${broadcast.broadcastId} — Resend had already accepted it for sending`,
-                  payload: {
-                    broadcastId: broadcast.broadcastId,
-                    memberId: input.memberId as string,
-                    cascade: 'f3_member_archival_or_erasure',
-                    snapshotStatus: broadcast.status,
-                    observedStatus: locked.status,
-                    dispatchBegun: true,
-                    resendOutcome: 'already_sent',
-                    observedResendStatus: status,
-                  },
-                  requestId: input.requestId,
-                });
-                return 'already_sent';
+                // P5 — a 403 is decided AFTER the lock is released: the probe
+                // retries (up to 31 s, and the SDK has no timeout), so it may
+                // not run under the lock (D-039). Nothing is written here.
+                forbiddenId = resendId;
+                return 'forbidden';
               } else {
                 throw new DispatchBegunUnresolvedError(outcome.kind);
               }
@@ -391,7 +377,36 @@ export async function cancelInFlightBroadcastsForMember(
           return 'cancelled';
         });
         if (settled === 'dispatch_begun') return { kind: 'dispatch_begun' as const };
-        if (settled === 'already_sent') {
+        if (settled === 'forbidden' && forbiddenId !== null) {
+          // P5 — a restricted key answers 403 too: believe "already sent" only
+          // from the probe. A queued / sending / sent broadcast never returns to
+          // draft, so deciding outside the lock is safe. A probe that throws,
+          // or any other answer, counts unexpected; the reconciler re-drives.
+          const resendId: string = forbiddenId;
+          const probe = await deps.broadcastsGateway.retrieveBroadcast(resendId);
+          const status = probe.kind === 'present' ? probe.resource.status : 'not_found';
+          if (!isHandedStatus(status)) throw new DispatchBegunUnresolvedError(`forbidden_probe_${status}`);
+          // P6 — the residual-8c evidence row on its own tx: a failed write
+          // counts unexpected, so `member_erased` is withheld.
+          await deps.broadcastsRepo.withTx(async (tx) => {
+            await deps.audit.emit(tx, {
+              tenantId: input.tenant.slug,
+              eventType: 'broadcast_concurrent_action_blocked',
+              actorUserId: input.initiatedByUserId ?? SYSTEM_ACTOR_USER_ID,
+              summary: `Erasure cascade could not stop broadcast ${broadcast.broadcastId} — Resend had already accepted it for sending`,
+              payload: {
+                broadcastId: broadcast.broadcastId,
+                memberId: input.memberId as string,
+                cascade: 'f3_member_archival_or_erasure',
+                snapshotStatus: broadcast.status,
+                observedStatus: lockedStatus,
+                dispatchBegun: true,
+                resendOutcome: 'already_sent',
+                observedResendStatus: status,
+              },
+              requestId: input.requestId,
+            });
+          });
           alreadySentCount += 1;
           broadcastsMetrics.auditEmitCount(input.tenant.slug, 'broadcast_concurrent_action_blocked');
           broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'concurrent_skip');
