@@ -156,7 +156,7 @@ export const f5RefundBridge: F5RefundBridge = {
                 // to the browser (Task B code review).
                 refundResult.error.code === 'processor_unavailable'
                 ? refundResult.error.kind
-              : refundResult.error.code,
+                : refundResult.error.code,
       };
     }
     // F8-RP (2026-07-11): `issueRefund` discriminates on the Stripe refund
