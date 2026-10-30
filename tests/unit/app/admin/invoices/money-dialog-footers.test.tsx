@@ -420,6 +420,7 @@ describe('refund: no retry once the outcome may be a refund', () => {
     vi.mocked(toast.warning).mockReset();
     vi.mocked(toast.error).mockReset();
     vi.mocked(toast.success).mockReset();
+    vi.mocked(toast.info).mockReset();
     refreshSpy.mockClear();
   });
 
@@ -517,6 +518,38 @@ describe('refund: no retry once the outcome may be a refund', () => {
     expect(refreshSpy).toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
     expect(posts(spy)).toHaveLength(1);
+    vi.unstubAllGlobals();
+  });
+
+  // Code review (PR #703): the write freeze answers 503 with a flat
+  // `{ error: 'read-only-mode' }`; nothing ran, so it is said as such.
+  it('the read-only 503 says the write freeze, keeps the dialog and is not unconfirmed', async () => {
+    const spy = await submitPartial(async () => new Response(JSON.stringify({ error: 'read-only-mode' }), { status: 503 }));
+    await waitFor(() => expect(toast.warning).toHaveBeenCalled());
+    expect(vi.mocked(toast.warning).mock.calls[0]?.[0]).toBe(enMessages.errors.readOnlyMode);
+    expect(screen.getByRole('alertdialog', { name: refund.title })).toBeInTheDocument();
+    expect(posts(spy)).toHaveLength(1);
+    vi.unstubAllGlobals();
+  });
+
+  // Code review: a failing membership-outcome toast after the success toast
+  // must not add a contradicting "couldn't read the result" warning.
+  it('a throwing membership-outcome toast after a success adds no unconfirmed warning', async () => {
+    vi.mocked(toast.info).mockImplementationOnce(() => {
+      throw new Error('toast failed');
+    });
+    await submitPartial(async () =>
+      new Response(
+        JSON.stringify({
+          membership_end: 'ended',
+          refund: { status: 'succeeded', creditNote: { kind: 'issued', id: 'cn', number: 'CN-1' } },
+        }),
+        { status: 201 },
+      ),
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(toast.success).toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 
