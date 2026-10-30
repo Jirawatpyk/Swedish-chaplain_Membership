@@ -115,6 +115,7 @@ function makeTrackedGateway(tracker: CallTracker): BroadcastsGatewayPort {
     async deleteContactGlobally() {},
     async deleteAudience() {},
     async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+    async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
     async deleteBroadcast() {},
     async listAudiences() { return []; },
   };
@@ -329,6 +330,7 @@ describe('Phase 8 / T165 — concurrent cron dispatch idempotency (live Neon)', 
       async deleteContactGlobally() {},
       async deleteAudience() {},
       async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+      async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
       async deleteBroadcast() {},
       async listAudiences() { return []; },
     };

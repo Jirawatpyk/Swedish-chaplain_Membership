@@ -508,6 +508,7 @@ function makeGateway(opts: GatewayOpts = {}): {
         }
       },
       async deleteBroadcastOnce(): Promise<never> { throw new Error('deleteBroadcastOnce is not used here'); },
+      async retrieveBroadcastOnce(): Promise<never> { throw new Error('retrieveBroadcastOnce is not used here'); },
       async deleteBroadcast(broadcastId: string) {
         deleteBroadcastCalls.push(broadcastId);
         if (opts.throwOnDeleteBroadcast === true) {
