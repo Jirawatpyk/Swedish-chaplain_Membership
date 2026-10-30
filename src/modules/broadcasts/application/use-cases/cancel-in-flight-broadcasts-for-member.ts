@@ -91,9 +91,11 @@
  * an import tick that re-minted the E-Blast from pre-scrub content in between.
  * Under the lock the cascade makes ONE `deleteBroadcastOnce` and, after a 404
  * or 403, ONE `retrieveBroadcastOnce` — both without backoff and bounded by a
- * 10 s hard timeout, so the lock is held for at most ≈ 20 s (D-039). Resend
- * arbitrates the DELETE against the tick's `/send` (DELETE answers 200 only on
- * a draft, `/send` works only on a draft, and after a DELETE both 404):
+ * 10 s hard timeout; after a 404 it first waits `REPROBE_PAUSE_MS` (3 s, the
+ * import leg's re-probe pause, review round 2), so the lock is held for at most
+ * ≈ 23 s (D-039). Resend arbitrates the DELETE against the tick's `/send`
+ * (DELETE answers 200 only on a draft, `/send` works only on a draft, and
+ * after a DELETE both 404):
  *
  *   | DELETE        | GET (under the lock)        | decision                                 |
  *   | 200 deleted   | —                           | cancel, `resendOutcome: 'deleted'`       |
@@ -152,6 +154,7 @@ import {
 } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
 import { isHandedStatus } from './_probe-refused-send';
+import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
 export type CancelInFlightForMemberError =
   | { readonly kind: 'cascade.server_error'; readonly message: string };
@@ -223,6 +226,12 @@ export interface CancelInFlightForMemberDeps {
   readonly clock: ClockPort;
   /** Spec 139 — read only in the `'delete_then_cancel'` mode, under the row lock. */
   readonly broadcastsGateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>;
+  /**
+   * Spec 139 review round 2 (code-review #1) — waits `REPROBE_PAUSE_MS` between
+   * a DELETE 404 and its confirming GET, as the import leg waits before its own
+   * re-probe. Default: a timer; tests pass a recorder.
+   */
+  readonly pauseBeforeReprobe?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -329,6 +338,13 @@ export async function cancelInFlightBroadcastsForMember(
       if (deleted.kind !== 'absent' && deleted.kind !== 'forbidden') {
         throw new DispatchBegunUnresolvedError(deleted.kind);
       }
+      // Review round 2 (code-review #1) — two not-founds need time between
+      // them, or the GET can repeat a stale 404 for a send Resend accepted:
+      // the same pause the import leg takes before it re-mints. Not after a
+      // 403, which is not a not-found.
+      if (deleted.kind === 'absent') {
+        await (deps.pauseBeforeReprobe ?? sleepBeforeReprobe)(REPROBE_PAUSE_MS);
+      }
       const probe = await deps.broadcastsGateway.retrieveBroadcastOnce(resendId);
       const probed = probe.kind === 'present' ? probe.status : probe.kind;
       logger.info(
@@ -338,7 +354,7 @@ export async function cancelInFlightBroadcastsForMember(
           resendBroadcastId: resendId,
           outcome: deleted.kind,
           probe: probed,
-          // Both calls: the time the row lock was held for Resend.
+          // Both calls (and the pause after a 404): the time the row lock was held for Resend.
           resendMs: Date.now() - startedAt,
           deleteMs,
         },
