@@ -1058,6 +1058,14 @@ function normaliseStatus(
     case 'sent':
     case 'cancelled':
       return raw;
+    // MEASURED 2026-10-30 (live account, sink only, 2 runs): a queued broadcast
+    // cancelled through POST /broadcasts/{id}/cancel answers `canceled` — ONE
+    // L, as Resend's docs spell it — at +0/2/15/45 s. The same state as our
+    // `cancelled`; read as `unknown`, every arm built on `cancelled` (the
+    // erasure cascade's 403 + cancelled, the gate's 403 on a cancelled id, the
+    // import leg's cancelled re-mint) could never fire.
+    case 'canceled':
+      return 'cancelled';
     default:
       // Say "unknown", do not INVENT 'queued'.
       //
