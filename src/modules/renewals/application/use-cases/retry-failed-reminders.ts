@@ -36,7 +36,6 @@ import { z } from 'zod';
 import { ok, err, type Result } from '@/lib/result';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
-import { renewalsMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
 import { buildRenewalCtaUrl } from './_lib/build-renewal-redeem-link-url';
 // BUG-2 — retry pass must re-apply the FR-033 outreach-pause gate (Gate 10)
@@ -257,9 +256,11 @@ async function attemptRetry(
   // Re-fire the gateway with the SAME idempotency key as the original
   // attempt — Resend dedupes server-side on the HTTP Idempotency-Key (spec
   // 141; before it the key rode in the email headers and nothing deduped).
-  // The body is re-rendered here (the CTA link is signed with `now`), so if an
-  // earlier attempt under this key DID reach the member, Resend answers 409
-  // and the gateway returns an idempotent replay: recorded as sent, no id.
+  // The CTA is signed with the reminder row's `createdAt`, the instant the
+  // first attempt used, so an unchanged member renders a byte-identical body
+  // and Resend answers the ORIGINAL message id instead of sending again
+  // (within its 24 h key window). A changed recipient / locale / name makes
+  // the body differ: Resend's 409 then reaches the permanent path below.
   // Email-locale audit 2026-07-16 — member.preferred_locale (explicit choice)
   // wins over the contact column's NOT-NULL DEFAULT 'en' (see dispatch-one-cycle).
   const locale =
@@ -285,13 +286,14 @@ async function attemptRetry(
       tier_bucket: candidate.cycle.tierAtCycleStart,
       step_id: event.stepId,
       // S1-P0-4 + go-live #8: same redeem-vs-plain CTA decision as the original
-      // dispatch path (single source of truth). A retry dispatched closer to
-      // expiry can upgrade an early step's plain link back to a redeem-link.
+      // dispatch path (single source of truth), taken at the SAME instant — the
+      // reminder row's `createdAt` (spec 141) — so the retry renders the body
+      // the first attempt sent and Resend's idempotency returns its id.
       renewal_link_url: buildRenewalCtaUrl(deps.tokenSigner, env.app.baseUrl, {
         tenantId: event.tenantId,
         memberId: candidate.member.memberId,
         cycleId: event.cycleId,
-        now: new Date(nowIso),
+        now: new Date(event.createdAt),
         expiresAtIso: candidate.cycle.expiresAt,
       }),
       // S1-P1-3: footer opt-out link target.
@@ -379,9 +381,6 @@ async function attemptRetry(
             delivery_id: gatewayResult.value.deliveryId,
             recipient_locale: locale,
             via_retry: true,
-            // Spec 141: Resend refused the key as already used by a request
-            // that succeeded — an earlier attempt delivered; no id.
-            ...(gatewayResult.value.idempotentReplay === true && { idempotent_replay: true }),
           },
         },
         {
@@ -392,7 +391,6 @@ async function attemptRetry(
           requestId,
         },
       );
-      if (gatewayResult.value.idempotentReplay === true) renewalsMetrics.reminderIdempotentReplay('retry');
       // No need to call markRetryExhausted: the
       // `transitionFailedToSent` already cleared retry_until + flipped
       // status to 'sent', so the row no longer matches the

@@ -220,6 +220,7 @@ export async function dispatchDueTrackCycle(
       emailStep,
       reminderEventId,
       catchUp,
+      reminderInsert.row.createdAt,
     );
   } catch (e) {
     return await defensivelyMarkFailedForRetry(

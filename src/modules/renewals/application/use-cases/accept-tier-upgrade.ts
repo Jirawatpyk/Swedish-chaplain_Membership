@@ -117,7 +117,7 @@ const SCHEDULED_PLAN_CHANGES_PENDING_UNIQ = 'scheduled_plan_changes_pending_uniq
  */
 type GatewayResult =
   | { readonly kind: 'no_recipient' }
-  | { readonly kind: 'sent'; readonly deliveryId: string | null; readonly recipientHash: Sha256Hex }
+  | { readonly kind: 'sent'; readonly deliveryId: string; readonly recipientHash: Sha256Hex }
   | {
       readonly kind: 'failed';
       readonly recipientHash: Sha256Hex;
@@ -132,7 +132,7 @@ type GatewayResult =
 // the runtime `_exhaustive: never` pin in the if-chain below).
 type _GatewayResultArmsLocked =
   | { readonly kind: 'no_recipient' }
-  | { readonly kind: 'sent'; readonly deliveryId: string | null; readonly recipientHash: Sha256Hex }
+  | { readonly kind: 'sent'; readonly deliveryId: string; readonly recipientHash: Sha256Hex }
   | {
       readonly kind: 'failed';
       readonly recipientHash: Sha256Hex;

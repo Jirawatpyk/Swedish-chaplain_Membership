@@ -12,12 +12,14 @@
  *
  * Resend's idempotency (DOCUMENTED + MEASURED 2026-10-30, spec 141 § Premises):
  * the same key + the same body answers the original id without a second
- * email; the same key + a different body answers 409
+ * email (within 24 h); the same key + a different body answers 409
  * `invalid_idempotent_request`; a request Resend rejected (422) does not
- * consume the key. A cross-tick retry re-renders the body (the redeem link is
- * signed with `now`), so that 409 means an earlier attempt under this key
- * SUCCEEDED: it is read as an idempotent replay — already sent, no delivery
- * id (the maintainer's option A). `concurrent_idempotent_requests` is
+ * consume the key. Callers sign the CTA with the reminder row's `createdAt`,
+ * so a retry for an unchanged member renders the same body and gets the
+ * original id back. A 409 `invalid_idempotent_request` therefore means the
+ * recipient, locale or name changed after an attempt Resend accepted — it is
+ * permanent (`gateway_4xx`), so the failed-permanent path opens a manual
+ * outreach task for a person to decide. `concurrent_idempotent_requests` is
  * transient.
  *
  * **NOT using F1's `emailSender`** because:
@@ -227,6 +229,14 @@ function mapResendError(
   if (isPermanentResendName(name)) {
     return { kind: 'gateway_4xx', retryable: false, message };
   }
+  // Spec 141 RI1b: this key was already used with a different body. The
+  // body is stable for an unchanged member (CTA signed at the row's
+  // `createdAt`), so the recipient / locale / name changed after an attempt
+  // Resend accepted — not retryable, and not "sent" either: permanent, so a
+  // person decides through the manual-outreach task.
+  if (name === 'invalid_idempotent_request') {
+    return { kind: 'gateway_4xx', retryable: false, message };
+  }
   // Spec 141 RI1b: another request with this key is still in flight —
   // transient; the next attempt gets that request's answer.
   if (name === 'concurrent_idempotent_requests') {
@@ -254,23 +264,6 @@ function mapResendError(
     renewalsMetrics.unknownResendErrorName(resendError.name);
   }
   return { kind: 'gateway_5xx', retryable: true, message };
-}
-
-/**
- * Spec 141 RI1b (option A): Resend's 409 `invalid_idempotent_request` — this
- * key was already used by a request that succeeded — means the email already
- * went out under it.
- */
-function isIdempotentReplay(resendError: { name?: string }): boolean {
-  return (resendError.name ?? '').toLowerCase() === 'invalid_idempotent_request';
-}
-
-function idempotentReplayResult(
-  tenantId: string,
-  idempotencyKey: string,
-): Result<SendRenewalEmailResult, SendRenewalEmailError> {
-  logger.warn({ tenantId, idempotencyKey }, 'resend.renewals.send.idempotent_replay');
-  return ok({ deliveryId: null, dispatchedAt: new Date().toISOString(), idempotentReplay: true });
 }
 
 async function delay(ms: number): Promise<void> {
@@ -318,9 +311,6 @@ async function sendViaResendWithRetry(args: {
           : {}),
       }, { idempotencyKey: input.idempotencyKey });
       if (response.error) {
-        if (isIdempotentReplay(response.error)) {
-          return idempotentReplayResult(input.tenantId, input.idempotencyKey);
-        }
         const mapped = mapResendError(response.error);
         // Permanent failures abort immediately. Transient (gateway_5xx)
         // falls through to retry.
@@ -342,7 +332,6 @@ async function sendViaResendWithRetry(args: {
         return ok({
           deliveryId: response.data.id,
           dispatchedAt: new Date().toISOString(),
-          idempotentReplay: false,
         });
       }
     } catch (e) {
@@ -689,9 +678,6 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
           text,
         }, { idempotencyKey: input.idempotencyKey });
         if (response.error) {
-          if (isIdempotentReplay(response.error)) {
-            return idempotentReplayResult(input.tenantId, input.idempotencyKey);
-          }
           const mapped = mapResendError(response.error);
           if (mapped.kind !== 'gateway_5xx') {
             return err(mapped);
@@ -701,8 +687,7 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
           return ok({
             deliveryId: response.data.id,
             dispatchedAt: new Date().toISOString(),
-            idempotentReplay: false,
-          });
+            });
         }
       } catch (e) {
         lastError = {
