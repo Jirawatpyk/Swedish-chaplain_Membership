@@ -5390,7 +5390,7 @@
         "refund_exceeds_remaining": "Refund amount exceeds the remaining refundable balance ({remaining} THB).",
         "membership_effect_not_applicable": "Ending the membership only applies to a full refund of a membership invoice. Refund the full remaining amount, or choose Keep membership.",
         "refund_in_progress": "A refund is already settling for this payment — no action is needed. It finishes on its own once the payment processor confirms.",
-        "processor_unavailable": "Payment processor temporarily unavailable. Please retry.",
+        "processor_unavailable": "The payment processor declined the refund, so no money was refunded. Check the details, then try again.",
         "processor_outcome_unknown": "We couldn't confirm whether the refund went through. Reload the page and check Payment activity on this invoice before doing anything else, and don't retry the refund until you have.",
         "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",
         "f4_preflight_read_error": "Couldn't verify the refundable balance right now. No money was moved — please retry.",

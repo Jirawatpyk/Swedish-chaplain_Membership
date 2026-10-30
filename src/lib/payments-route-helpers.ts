@@ -15,7 +15,10 @@
  *                              responses must never enter shared caches)
  *   - `Retry-After`          — only on `429 rate_limited` and on retryable
  *                              `502 processor_unavailable` (Q2 fold-in:
- *                              derivation lives here, not at call sites)
+ *                              derivation lives here, not at call sites).
+ *                              The refund route answers a retryable
+ *                              failure with `processor_outcome_unknown`
+ *                              and never sends it (Task B)
  *
  * Centralising the shape prevents the contract from drifting per-route
  * (e.g. one route forgetting `Cache-Control` after a future copy-paste).
