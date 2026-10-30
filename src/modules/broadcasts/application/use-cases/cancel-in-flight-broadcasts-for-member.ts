@@ -619,16 +619,21 @@ export async function cancelInFlightBroadcastsForMember(
           break;
         }
         if (current === null || !isInProgress(current.status)) {
-          await skipConcurrent(broadcast, current?.status ?? null);
           // P7 (a) — the send started before the cascade got the row: that is
-          // residual 8c too, so the erasure records its evidence.
+          // residual 8c too, so the erasure records its evidence — ONE row
+          // (review round 2, reliability LOW-1): not the best-effort skip row,
+          // which would call a send the erasure could not stop a benign
+          // concurrent transition. Counted as already sent, not as a skip.
           if (erasure && current !== null && hasSendingStarted(current.status)) {
             try {
               await recordAlreadySent(broadcast, { status: current.status, resendStatus: null });
+              broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'already_sent');
             } catch (e) {
               countUnexpected(e, broadcast, fromStatus, 'broadcasts.cascade.tx_or_audit_failed');
             }
+            break;
           }
+          await skipConcurrent(broadcast, current?.status ?? null);
           break;
         }
         if (retries >= CASCADE_CAS_RETRIES) {
