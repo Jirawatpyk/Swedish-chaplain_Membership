@@ -81,6 +81,7 @@ import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { PlansBridgePort } from '../ports/plans-bridge-port';
 import type { EmailTransactionalPort } from '../ports/email-transactional-port';
 import type { ResolvedOrphan, ResolveSegmentError } from './resolve-segment-recipients';
+import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
 /**
  * FR-044 (f). Measured from the SUBMIT, not from `scheduled_for`: a broadcast
@@ -90,14 +91,11 @@ import type { ResolvedOrphan, ResolveSegmentError } from './resolve-segment-reci
 export const IMPORT_STUCK_AFTER_MS = 30 * 60 * 1_000;
 
 /**
- * The pause before re-probing an inherited id that answered `not_found`. A
- * `not_found` makes `confirmImport` mint a FRESH resource; were that answer a
- * stale or transient 404 for a send Resend in fact accepted, the audience would
- * be mailed twice. GET has answered consistently in every measurement
- * (2026-10-29), but a transient 404 cannot be induced to test it, so the id is
- * declared dead only on a second `not_found` (maintainer, 29 Oct 2026).
+ * The pause before re-probing an inherited id that answered `not_found` — in
+ * `_reprobe-pause.ts` since spec 139 review round 2, so the erasure cascade's
+ * DELETE-404 re-probe waits exactly as long. Re-exported for existing importers.
  */
-export const REPROBE_PAUSE_MS = 3_000;
+export { REPROBE_PAUSE_MS };
 
 export type BuildAudienceTickOutput =
   | { readonly kind: 'import_submitted'; readonly importId: string; readonly recipientCount: number }
@@ -472,7 +470,7 @@ export async function buildAudienceTick(
     // must not be minted over (a second send), torn down (an audience deleted
     // under a queued send) or refused (`failed_to_dispatch` for delivered mail).
     if (!probe.handed && probe.status === null) {
-      await (deps.pauseBeforeReprobe ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms))))(REPROBE_PAUSE_MS);
+      await (deps.pauseBeforeReprobe ?? sleepBeforeReprobe)(REPROBE_PAUSE_MS);
       const again = await probeInheritedBroadcast(deps, input, broadcast, inheritedBroadcastId);
       if ('stop' in again) return again.stop;
       probe = again.probe;
