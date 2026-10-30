@@ -492,6 +492,26 @@ describe('reclaimOrphanedAudiences (PR-2 Task 3)', () => {
     expect(result.ok && result.value).toMatchObject({ failed: 0, skippedLastAudience: 1 });
   });
 
+  it('(f3) a retryable failure whose text mentions a last segment is still a failure, not a skip', async () => {
+    const audienceId = 'aud-not-last';
+    const gateway = makeGateway({
+      audiences: [{ id: audienceId, name: `broadcast-${TENANT_SLUG}-${UUID_A}`, createdAt: PAST_GRACE_DATE }],
+      throws: {
+        [audienceId]: new GatewayThrowable({
+          kind: 'retryable',
+          subKind: 'server_5xx',
+          reason: 'upstream timeout while reading the last segment page',
+        }),
+      },
+    });
+    const repo = makeRepo({ existing: new Set<BroadcastId>([]) });
+    const result = await reclaimOrphanedAudiences(
+      { tenant, broadcastsRepo: repo.port, broadcastsGateway: gateway.port, clock },
+      { graceMs: GRACE_MS, limit: 50 },
+    );
+    expect(result.ok && result.value).toMatchObject({ failed: 1, skippedLastAudience: 0 });
+  });
+
   // ---------------------------------------------------------------------------
   // M-1 (review fix): existingBroadcastIds throwing → server_error, no deletes
   // ---------------------------------------------------------------------------

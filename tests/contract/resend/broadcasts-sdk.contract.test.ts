@@ -14,6 +14,7 @@ import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resendBroadcastsGateway } from '@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway';
 import type { CreateBroadcastInput } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { logger } from '@/lib/logger';
 import { json, stubWire, type WireCall } from './_wire';
 
 const compact = (calls: readonly WireCall[]) =>
@@ -270,6 +271,18 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     expect({ ids: rows.map((r) => r.id), pages: calls.length }).toEqual({ ids: ['aud_1'], pages: 2 });
   });
 
+  it('listAudiences: an empty page that still says has_more is logged as truncated', async () => {
+    const warn = vi.spyOn(logger, 'warn');
+    stubWire((n) =>
+      n === 1
+        ? json(200, { object: 'list', has_more: true, data: [{ id: 'aud_1', name: 'a', created_at: '2026-10-30T00:00:00Z' }] })
+        : json(200, { object: 'list', has_more: true, data: [] }),
+    );
+    await resendBroadcastsGateway.listAudiences();
+    expect(warn.mock.calls.map((c) => c[1])).toContain('resend.broadcasts.audiences_list_truncated');
+    warn.mockRestore();
+  });
+
   it('addContactsToAudience with no contacts is a no-op, even for a blank id (no request)', async () => {
     const calls = stubWire(() => json(201, { object: 'contact', id: 'c_1' }));
     await expect(resendBroadcastsGateway.addContactsToAudience('', [])).resolves.toBeUndefined();
@@ -502,6 +515,14 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       await vi.advanceTimersByTimeAsync(40_000);
       expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'retryable', attempts: 6 });
     });
+    it('createContactImport, a raw non-JSON 413 stays permanent (only 404 / 410 need Resend\'s JSON)', async () => {
+      const calls = stubWire(html(413));
+      await expect(resendBroadcastsGateway.createContactImport('aud_1', ['a@example.com'])).rejects.toMatchObject({
+        kind: 'permanent',
+      });
+      expect(calls).toHaveLength(1);
+    });
+
     it('deleteContactGlobally, a real JSON 404 is still gone', async () => {
       stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Contact not found' }));
       await expect(resendBroadcastsGateway.deleteContactGlobally('a@example.com')).resolves.toBeUndefined();

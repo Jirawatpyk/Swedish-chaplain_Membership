@@ -200,6 +200,18 @@ describe('subprocessorErasureAdapter', () => {
     expect(serialised).not.toContain('secret@example.com');
   });
 
+  it('the failure log names the gateway kind and code, so the runbook can tell the causes apart', async () => {
+    removeContactFromAudience.mockRejectedValue(
+      Object.assign(new Error('email is empty'), { kind: 'permanent', code: 'empty_identifier' }),
+    );
+    await subprocessorErasureAdapter.propagate(inputWith([{ audienceId: 'aud-1', email: '' }]));
+    const logPayload = loggerWarn.mock.calls[0]![0] as Record<string, unknown>;
+    expect({ gatewayKind: logPayload.gatewayKind, gatewayCode: logPayload.gatewayCode }).toEqual({
+      gatewayKind: 'permanent',
+      gatewayCode: 'empty_identifier',
+    });
+  });
+
   it('a non-Error throwable → errKind "unknown", counted failed, never dropped', async () => {
     // The production gateway only ever throws a GatewayThrowable (an Error
     // subclass), so this arm is unreachable in prod — but pin the defensive
