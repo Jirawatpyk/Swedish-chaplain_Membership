@@ -274,7 +274,7 @@ export function PlanEditForm({
 
       {/* Cancel before the primary action (ux-standards § 11.1); pinned to
           the bottom of a phone (globals.css `.plan-form-actions`). */}
-      <ActionBar className="chamber-viewport-actionbar plan-form-actions">
+      <ActionBar edgeBelow="sm" className="chamber-viewport-actionbar plan-form-actions">
         {onCancel ? (
           <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>
             {tButtons('cancel')}

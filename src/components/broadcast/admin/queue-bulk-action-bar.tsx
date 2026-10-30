@@ -456,6 +456,7 @@ export function QueueBulkActionBar({
           the selection count (I-1, PR2 whole-branch review), so the bar's
           `selected` / built-in Clear are not used. */}
       <ActionBar
+        edgeBelow="sm"
         ref={barRef}
         // The app's marker for a viewport ActionBar: globals.css keeps a
         // focused field clear of it by this class, not AURA's modifier.

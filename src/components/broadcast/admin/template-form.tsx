@@ -325,7 +325,7 @@ export function AdminTemplateForm({ mode, initial }: Props): React.ReactElement 
       {/* Cancel before the primary action; pinned to the bottom of a phone
           as the boards draw it (globals.css `.template-form-actions`, the
           member and plan forms' bar). */}
-      <ActionBar className="chamber-viewport-actionbar template-form-actions">
+      <ActionBar edgeBelow="sm" className="chamber-viewport-actionbar template-form-actions">
         <Button
           type="button"
           variant="secondary"

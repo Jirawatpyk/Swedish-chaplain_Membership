@@ -556,6 +556,7 @@ export function PlanFormWizard({
       {/* AURA 5.20's start slot holds Cancel from 640px; on a phone the slot
           is hidden (`--start-wide`) and Cancel is the button above. */}
       <ActionBar
+        edgeBelow="sm"
         className="chamber-viewport-actionbar plan-form-actions plan-form-actions--even plan-form-actions--start-wide"
         start={
           onCancel ? (

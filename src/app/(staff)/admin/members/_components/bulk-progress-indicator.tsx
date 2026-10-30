@@ -59,6 +59,8 @@ export function BulkProgressIndicator({
     return () => window.clearInterval(id);
   }, []);
 
+  // AURA app content: a floating progress toast over the page, not a bottom
+  // bar (D-039 gate).
   return (
     <div
       className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-[var(--aura-radius-lg)] border border-[var(--aura-border-default)] bg-[var(--aura-bg-surface)] px-6 py-4 shadow-[var(--aura-shadow-overlay)]"

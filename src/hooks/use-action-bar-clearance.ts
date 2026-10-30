@@ -6,6 +6,9 @@
  * the screen's bottom edge (it rides above the bottom nav), plus a gap. Feed
  * it to `useFixedBarScrollPadding`.
  *
+ * Only while the bar is AURA's sticky floating card (640px and up): below
+ * that it is AURA's fixed edge strip, which pads the page itself (D-039).
+ *
  * Measured rather than a fixed stylesheet allowance, because the bar's height
  * moves with its content: a phone bar wraps its start slot over the buttons
  * when the copy is long (the invoice save bar reaches about 103px at 390; the
@@ -32,10 +35,13 @@ export function useActionBarClearance(active: boolean, target: string | RefObjec
     if (!bar) return;
     const measure = () => {
       const style = getComputedStyle(bar);
-      // AURA un-sticks the bar on a short screen (`max-height: 30rem`: 400%
-      // zoom, a phone held sideways), where it sits in the flow and covers
-      // nothing; padding the root there would only crowd the focused field.
-      if (style.position !== 'sticky' && style.position !== 'fixed') {
+      // Only the sticky floating card (from 640px) is ours to clear. Below
+      // 640px the bar is AURA's edge strip (`edgeBelow="sm"`, D-039),
+      // `position: fixed`, and AURA pads the page and sets the scroll padding
+      // itself from `--aura-actionbar-height`; counting it here would double
+      // it. On a short screen (`max-height: 30rem`: 400% zoom, a phone held
+      // sideways) AURA un-sticks the bar into the flow, where it covers nothing.
+      if (style.position !== 'sticky') {
         setClearance(0);
         return;
       }

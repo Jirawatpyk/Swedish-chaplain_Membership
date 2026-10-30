@@ -45,6 +45,7 @@ export function StickySaveBar({
   if (!visible) return null;
   return (
     <ActionBar
+      edgeBelow="sm"
       // The app's marker for a viewport ActionBar: globals.css keeps a focused
       // field clear of it by this class, not AURA's modifier.
       className="chamber-viewport-actionbar"

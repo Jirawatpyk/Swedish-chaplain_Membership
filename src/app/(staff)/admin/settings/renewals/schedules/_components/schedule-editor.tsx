@@ -584,6 +584,7 @@ export function ScheduleEditor({
           {/* The save bar: under the steps from 640px, pinned to the bottom of
               a phone screen (globals.css, `.schedule-actions`). */}
           <ActionBar
+            edgeBelow="sm"
             label={t('saveBarLabel')}
             status={status}
             className="chamber-viewport-actionbar schedule-actions"

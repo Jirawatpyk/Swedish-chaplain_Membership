@@ -298,8 +298,11 @@ html:has(.chamber-shell) {
 }
 /* PR M — only while the bar is sticky: on a short screen (AURA's
    `max-height: 30rem`: 400% zoom, a phone held sideways) AURA puts it in the
-   page flow, where it covers nothing, so no allowance is kept for it. */
-@media (min-height: 30.01rem) {
+   page flow, where it covers nothing, so no allowance is kept for it.
+   D-039 — and only from 640px: below that the bar is AURA's edge strip
+   (`edgeBelow="sm"`), which sets the root's scroll padding itself from its
+   measured height; this unlayered rule would override AURA's layered one. */
+@media (min-width: 640px) and (min-height: 30.01rem) {
   html:has(.chamber-viewport-actionbar) {
     scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 5.5rem + env(safe-area-inset-bottom, 0px));
   }
@@ -322,33 +325,15 @@ html:has(.chamber-shell) {
 }
 /* Spec 122 US5b-2 — the member form's action bar (boards `Admin-member-new`,
    `-edit`, each with `-mobile`), and US6 the plan forms' (`Admin-plan-new`,
-   `-edit`, `Admin-plans-clone`, each with `-mobile`). On a phone it is pinned edge to edge to the
-   bottom of the screen, Cancel a third and the primary button two thirds;
-   from 640px it is a plain right-aligned row at the end of the form. Only the
-   app's class and the bar's element structure (inner row → status, [start,] actions)
-   are read, never AURA's own classes. The bar never shows a status, so its
-   empty status cell gives the actions the whole row on a phone. */
+   `-edit`, `Admin-plans-clone`, each with `-mobile`). On a phone it is AURA's
+   edge strip (`edgeBelow="sm"`, D-039), Cancel a third and the primary button
+   two thirds; from 640px it is AURA's floating card. Only the app's class and
+   the bar's element structure (inner row → status, [start,] actions) are
+   read, never AURA's own classes. The bar never shows a status, so its empty
+   status cell gives the actions the whole row on a phone. */
 @media (max-width: 639.98px) {
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) {
-    bottom: 0;
-    margin-inline: calc(-1 * var(--page-padding-x));
-    border-inline: 0;
-    border-bottom: 0;
-    border-radius: 0;
-    box-shadow: none;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    /* AURA 5.20 gives the bar `width: 100%`; `auto` lets the negative
-       margins above carry it to the screen edges. */
-    width: auto;
-  }
-  /* Each bar is its form's last element: it takes the page's bottom padding,
-     so at the end of the scroll it still meets the screen edge (measured at
-     390: 32px under the bar before; spec 122 US12c-1 follow-up, 20 Oct). */
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) {
-    margin-bottom: calc(-1 * var(--page-padding-bottom));
-  }
-  /* AURA pads the bar's row 16px at its start and 12px at its end; pinned
-     edge to edge, the buttons sit 16px from both screen edges, as drawn. */
+  /* AURA pads the bar's row 16px at its start and 12px at its end; on the
+     edge strip the buttons sit 16px from both screen edges, as drawn. */
   :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div {
     padding-inline: var(--aura-space-4);
   }
@@ -364,14 +349,6 @@ html:has(.chamber-shell) {
   }
   :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div > :last-child > :first-child:not(:last-child) {
     flex: 1 1 0;
-  }
-  /* The clone bar and the template form's bar sit inside their card (boards
-     `Admin-plans-clone-mobile`, `Admin-broadcast-template-edit-mobile`): they
-     also reach past the card's padding and border to the screen edges. */
-  .plan-form-actions--in-card,
-  .template-form-actions {
-    margin-inline: calc(-1 * (var(--page-padding-x) + var(--aura-space-4) + 1px));
-    margin-bottom: calc(-1 * (var(--page-padding-bottom) + var(--aura-space-4) + 1px));
   }
   /* The plan wizard keeps Cancel in the page on a phone: its start slot
      (status, start, actions) leaves the pinned bar. */
@@ -430,9 +407,6 @@ html:has(.chamber-shell) {
     height: auto;
     white-space: normal;
   }
-  html:has(.eblast-detail-actions) {
-    scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 8rem + env(safe-area-inset-bottom, 0px));
-  }
   /* The plan wizard's Back / Next share the bar evenly (board `Admin-plan-new-mobile`). */
   .plan-form-actions--even > div > :last-child > * {
     flex: 1 1 0;
@@ -444,22 +418,11 @@ html:has(.chamber-shell) {
   .eblast-detail-actions > div > :first-child {
     display: none;
   }
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) {
-    position: static;
-    margin-top: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-  }
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div {
-    min-height: 0;
-    padding: 0;
-  }
 }
 /* Spec 122 US4 — the invoice page's sticky amount-due bar (~7rem) rides
-   above the bottom nav on phones; keep a focused control clear of it. */
-@media (max-width: 767.98px) and (min-height: 560.02px) {
+   above the bottom nav on phones; keep a focused control clear of it.
+   D-039: a bar below 640px, as every other bar (stand-in until AURA #191). */
+@media (max-width: 639.98px) and (min-height: 560.02px) {
   html:has(.portal-pay-bar:not([hidden])) {
     scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 7.5rem);
   }

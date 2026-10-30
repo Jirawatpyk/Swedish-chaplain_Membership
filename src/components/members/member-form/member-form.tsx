@@ -294,7 +294,7 @@ export function MemberForm({
             the bottom of a phone, Cancel a third and the primary two thirds;
             from 640px a plain right-aligned row at the end of the form
             (globals.css `.member-form-actions`). */}
-        <ActionBar className="chamber-viewport-actionbar member-form-actions">
+        <ActionBar edgeBelow="sm" className="chamber-viewport-actionbar member-form-actions">
           {onCancel && (
             <Button type="button" variant="secondary" onClick={onCancel} disabled={submitting}>
               {cancelLabel}
