@@ -84,3 +84,47 @@ describe('env.ts — F5 cross-field assertions', () => {
     await expect(import('@/lib/env')).rejects.toThrow(/E2E_X_TENANT_HEADER_ENABLED.*false.*when NODE_ENV=production/i);
   });
 });
+
+// Spec 141 slice 2 — resend@6.35 reads RESEND_DEBUG from the process env and,
+// when set, prints every failed request's path with `console.error`; a contact
+// call's path carries the member's email. No constructor option turns it off,
+// so production refuses to boot with it.
+describe('env.ts — RESEND_DEBUG', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(['true'])('throws when RESEND_DEBUG turns the SDK debug log on in production (%s)', async (value) => {
+    stubEnv({
+      NODE_ENV: 'production',
+      STRIPE_SECRET_KEY: 'sk_live_0000000000',
+      STRIPE_LIVE_MODE: 'true',
+      ZAPIER_DPA_EXECUTED: 'true',
+      E2E_X_TENANT_HEADER_ENABLED: 'false',
+      RESEND_DEBUG: value,
+    });
+    await expect(import('@/lib/env')).rejects.toThrow(/RESEND_DEBUG.*NODE_ENV=production/i);
+  });
+
+  // resend@6.35 logs only when RESEND_DEBUG === 'true' (dist/index.mjs:1639);
+  // refusing a harmless 'false' would take production down on an env edit.
+  it.each(['false', '0', ''])('allows a RESEND_DEBUG that leaves the SDK log off in production (%j)', async (value) => {
+    stubEnv({
+      NODE_ENV: 'production',
+      STRIPE_SECRET_KEY: 'sk_live_0000000000',
+      STRIPE_LIVE_MODE: 'true',
+      ZAPIER_DPA_EXECUTED: 'true',
+      E2E_X_TENANT_HEADER_ENABLED: 'false',
+      RESEND_DEBUG: value,
+    });
+    await expect(import('@/lib/env')).resolves.toBeDefined();
+  });
+
+  it('allows RESEND_DEBUG outside production (local debugging)', async () => {
+    stubEnv({ NODE_ENV: 'development', RESEND_DEBUG: 'true' });
+    await expect(import('@/lib/env')).resolves.toBeDefined();
+  });
+});

@@ -58,8 +58,10 @@ export function buildRenewalRedeemLinkUrl(
  * extending the token lifetime purely to cover advisory early nudges.
  *
  * Single source of truth for BOTH the first-attempt dispatch and the retry path so
- * the redeem-vs-plain decision never drifts between them. Date-based (not offset-day
- * based) so a retry dispatched closer to expiry correctly upgrades to a redeem-link.
+ * the redeem-vs-plain decision never drifts between them. Both pass the reminder
+ * row's `createdAt` as `now` (spec 141): the token and the decision are those of
+ * the first attempt, so a retry renders a byte-identical body and Resend's
+ * Idempotency-Key returns the original message instead of sending a second one.
  *
  * Pure Application — no framework/ORM imports (Constitution Principle III).
  */

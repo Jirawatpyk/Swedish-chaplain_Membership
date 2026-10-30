@@ -96,16 +96,13 @@ describe('renewals gateway on the wire (spec 141)', () => {
           "bearer": true,
           "body": {
             "from": "SweCham <test@swecham.example>",
-            "headers": {
-              "idempotency-key": "reminder-event-id-1",
-            },
             "html": "<html><body>Rendered</body></html>",
             "subject": "Renewal reminder: Regular membership in 30 days",
             "text": "Rendered text",
             "to": "admin@acme.example",
           },
           "contentType": "application/json",
-          "idempotencyKey": null,
+          "idempotencyKey": "reminder-event-id-1",
           "method": "POST",
           "url": "https://api.resend.com/emails",
         },
@@ -126,9 +123,6 @@ describe('renewals gateway on the wire (spec 141)', () => {
           "bearer": true,
           "body": {
             "from": "SweCham <test@swecham.example>",
-            "headers": {
-              "idempotency-key": "reminder-event-id-1",
-            },
             "html": "<html><body>Rendered</body></html>",
             "reply_to": "SweCham Office <office@swecham.example>",
             "subject": "Renewal reminder: Regular membership in 30 days",
@@ -136,7 +130,7 @@ describe('renewals gateway on the wire (spec 141)', () => {
             "to": "admin@acme.example",
           },
           "contentType": "application/json",
-          "idempotencyKey": null,
+          "idempotencyKey": "reminder-event-id-1",
           "method": "POST",
           "url": "https://api.resend.com/emails",
         },

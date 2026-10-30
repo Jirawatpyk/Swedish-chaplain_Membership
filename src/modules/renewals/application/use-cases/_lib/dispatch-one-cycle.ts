@@ -41,7 +41,7 @@ import { env } from '@/lib/env';
 import { renewalsMetrics } from '@/lib/metrics';
 import { renewalsTracer, withActiveSpan } from '@/lib/otel-tracer';
 import type { RenewalsDeps } from '../../../infrastructure/renewals-deps';
-import { buildRenewalCtaUrl } from './build-renewal-redeem-link-url';
+import { buildReminderSendInput } from './build-reminder-send-input';
 import {
   findDueStepsForDate,
 } from '../../../domain/tenant-renewal-schedule-policy';
@@ -1131,7 +1131,15 @@ async function fireStep(
   };
   try {
     if (step.channel === 'email') {
-      return await dispatchEmailStep(deps, candidate, ctx, step, reminderEventId, catchUp);
+      return await dispatchEmailStep(
+        deps,
+        candidate,
+        ctx,
+        step,
+        reminderEventId,
+        catchUp,
+        reminderInsert.row.createdAt,
+      );
     }
     // Task channel — the `year_in_cycle` recorded on the audit is the
     // STEP-anchored year (063 #1) so it matches the reminder_event row.
@@ -1284,6 +1292,12 @@ export async function dispatchEmailStep(
   step: ReminderStep & { channel: 'email' },
   reminderEventId: string,
   catchUp: CatchUpInfo,
+  /**
+   * Spec 141: the reminder row's `createdAt`. The CTA is signed at this
+   * instant, and the retry path signs at the same one, so a retry renders a
+   * byte-identical body and Resend's Idempotency-Key returns the first send.
+   */
+  reminderCreatedAt: string,
 ): Promise<DispatchOneCycleOutcome> {
   const { cycle, member, primaryContact } = candidate;
   // Type narrowing — Gate 11 already guarantees primaryContact !== null
@@ -1293,47 +1307,25 @@ export async function dispatchEmailStep(
       `dispatchEmailStep invariant: primaryContact null reached email branch — gate 11 regression`,
     );
   }
-  // Email-locale audit 2026-07-16 — member.preferred_locale (an EXPLICIT
-  // member/admin choice, nullable) wins over contacts.preferred_language (NOT
-  // NULL DEFAULT 'en' — indistinguishable from "never chose"). The prior order
-  // let the contact default shadow a member who picked TH/SV in the portal
-  // (the 110 imported contacts all default 'en'), so those members got English.
-  // Fallback to 'en' only when both are unset.
-  const locale = member.preferredLocale ?? primaryContact.preferredLanguage ?? 'en';
-
-  // External gateway call — outside tx (non-transactional).
-  const gatewayResult = await deps.renewalGateway.sendRenewalEmail({
+  // Spec 141: the one builder the retry uses too (the byte-identical body).
+  // It also resolves the locale (email-locale audit 2026-07-16: the member's
+  // explicit preferred_locale wins over the contact's NOT NULL DEFAULT 'en');
+  // the audit reads the locale actually sent, never a second computation.
+  const sendInput = buildReminderSendInput({
+    signer: deps.tokenSigner,
+    baseUrl: env.app.baseUrl,
     tenantId: ctx.tenantId,
-    cycleId: asCycleId(cycle.cycleId),
+    candidate,
+    primaryContact,
     stepId: step.stepId,
     templateId: step.templateId,
-    recipient: {
-      memberId: member.memberId,
-      toEmail: primaryContact.email,
-      toName: `${primaryContact.firstName} ${primaryContact.lastName}`.trim(),
-      preferredLocale: locale,
-    },
-    templateVariables: {
-      member_first_name: primaryContact.firstName,
-      member_company_name: member.companyName,
-      cycle_expires_at: cycle.expiresAt,
-      tier_bucket: cycle.tierAtCycleStart,
-      step_id: step.stepId,
-      // S1-P0-4 + go-live #8: signed-token redeem-link (auto-sign-in) when the
-      // token will still be valid at expiry, else the authenticated renewal page
-      // for early reminders (T-60/T-90) whose redeem-link would expire first.
-      renewal_link_url: buildRenewalCtaUrl(deps.tokenSigner, env.app.baseUrl, {
-        tenantId: ctx.tenantId,
-        memberId: member.memberId,
-        cycleId: cycle.cycleId,
-        now: new Date(ctx.nowIso),
-        expiresAtIso: cycle.expiresAt,
-      }),
-      // S1-P1-3: footer opt-out link target.
-      preferences_url: `${env.app.baseUrl}/portal/preferences/renewals`,
-    },
-    idempotencyKey: reminderEventId,
+    reminderEventId,
+    reminderCreatedAt,
   });
+  const locale = sendInput.recipient.preferredLocale;
+
+  // External gateway call — outside tx (non-transactional).
+  const gatewayResult = await deps.renewalGateway.sendRenewalEmail(sendInput);
 
   // Persist outcome — transition reminder_event + audit emit, atomic.
   return runInTenant(deps.tenant, async (tx) => {
