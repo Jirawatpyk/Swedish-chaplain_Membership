@@ -366,7 +366,7 @@ Operator actions specific to the refund-lifecycle bugfix batch (migration 0241/0
 **The flip, then the observation:**
 
 - [x] **Spec 139 slice 1 (erasure: an erased member's approved E-Blast caught
-  between the pre-send persist and the send) is MERGED** (PR #TBD). Slice 2
+  between the pre-send persist and the send) is MERGED** (PR #698). Slice 2
   (the Art. 30 audit events) does not gate the flip.
 - [ ] **Spec 140 (import-leg tick concurrency: a dispatch lease for rows with no
   import id) is MERGED.** Spec 138's row fence does not reach those rows.
