@@ -462,6 +462,37 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
       });
     });
 
+    // Review round 3 (the maintainer: "fix it"): the raw-fetch calls follow
+    // the same rule — "gone" needs Resend's own JSON error, never an HTML page.
+    it.each([
+      ['deleteBroadcastOnce', () => resendBroadcastsGateway.deleteBroadcastOnce('bc_1')],
+      ['retrieveBroadcastOnce', () => resendBroadcastsGateway.retrieveBroadcastOnce('bc_1')],
+    ])('%s, HTML 404 is retryable, not gone', async (_name, run) => {
+      stubWire(html(404));
+      await expect(run()).resolves.toEqual({ kind: 'retryable' });
+    });
+    it.each([
+      ['deleteBroadcastOnce', () => resendBroadcastsGateway.deleteBroadcastOnce('bc_1'), { kind: 'absent' }],
+      ['retrieveBroadcastOnce', () => resendBroadcastsGateway.retrieveBroadcastOnce('bc_1'), { kind: 'not_found' }],
+    ])('%s, a real JSON 404 is still gone', async (_name, run, expected) => {
+      stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Broadcast not found' }));
+      await expect(run()).resolves.toEqual(expected);
+    });
+    it('deleteContactGlobally, HTML 404 is retried, not gone', async () => {
+      vi.useFakeTimers();
+      const calls = stubWire(html(404));
+      const done = resendBroadcastsGateway.deleteContactGlobally('a@example.com').then(
+        () => ({ outcome: 'resolved' }),
+        (e: { kind?: string }) => ({ outcome: e.kind ?? 'threw' }),
+      );
+      await vi.advanceTimersByTimeAsync(40_000);
+      expect({ ...(await done), attempts: calls.length }).toEqual({ outcome: 'retryable', attempts: 6 });
+    });
+    it('deleteContactGlobally, a real JSON 404 is still gone', async () => {
+      stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Contact not found' }));
+      await expect(resendBroadcastsGateway.deleteContactGlobally('a@example.com')).resolves.toBeUndefined();
+    });
+
     it('removeContactFromAudience, a real JSON 404 is still already absent', async () => {
       stubWire(() => json(404, { statusCode: 404, name: 'not_found', message: 'Contact not found' }));
       await expect(resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com')).resolves.toEqual({
