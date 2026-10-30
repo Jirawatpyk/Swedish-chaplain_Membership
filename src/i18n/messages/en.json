@@ -5313,7 +5313,7 @@
         "ariaLabel": "Issue a refund for this invoice",
         "settlingLabel": "Refund settling…",
         "settlingHint": "A refund is settling — no action needed until it completes.",
-        "unconfirmedLabel": "Refund unconfirmed — reload to check",
+        "unconfirmedLabel": "Refund unconfirmed",
         "unconfirmedHint": "A refund may have gone through. Reload the page and check Payment activity before refunding again."
       },
       "dialog": {
@@ -5377,7 +5377,7 @@
         "deferredToast": "Refund sent — the money is on its way back to the member. The credit note completes automatically; no action is needed.",
         "waivedToast": "Refund processed — no credit note (ใบลดหนี้) was issued",
         "pendingWaivedToast": "Refund submitted — awaiting the payment processor. No credit note will be issued.",
-        "unconfirmedToast": "Refund submitted, but we couldn't read the result — it may still be settling. Check Payment activity on this invoice before doing anything else, and don't retry the refund until you have.",
+        "unconfirmedToast": "Refund submitted, but we couldn't read the result — it may still be settling. Check Payment activity on this invoice before doing anything else, and don't retry the refund until you have. Reload the page to see the latest state.",
         "waivedReason": {
           "section105Receipt": "The original document was a Section 105 receipt (ใบเสร็จรับเงิน), not a Section 86/4 tax invoice, so there is no tax invoice for a Section 86/10 credit note to reference. The output VAT already filed on this sale has not been adjusted — pass this refund to the accountant at month close.",
           "invoiceVoided": "The invoice was voided, so there is no tax invoice left to credit. If this invoice had been paid and its output VAT already filed, pass this refund to the accountant at month close."
@@ -5405,7 +5405,7 @@
         "f4_bridge_deferred": "Refund sent — the money is on its way back to the member. The credit note is still being issued and completes automatically. No action is needed, and you must not retry this refund.",
         "refund_needs_reconciliation": "An earlier refund on this payment settled at the payment processor but was recorded as failed, so further refunds are blocked until it has been reconciled manually. No money was moved by this attempt. Contact support to reconcile it.",
         "internal_error": "An unexpected error occurred. Please try again.",
-        "outcomeUnknown": "We couldn't confirm whether the refund went through. Check Payment activity on this invoice before doing anything else, and don't retry the refund until you have."
+        "outcomeUnknown": "We couldn't confirm whether the refund went through. Check Payment activity on this invoice before doing anything else, and don't retry the refund until you have. Reload the page to see the latest state."
       },
       "cmdk": {
         "label": "Issue refund",

@@ -216,7 +216,7 @@ export function RefundDialog({
       // The hint stays the trigger's description but is not drawn: the page's
       // settling note says it once (board Admin-refund-settling); the label
       // already says it settles.
-      <div className="flex flex-col items-start gap-1 sm:items-end max-sm:items-stretch">
+      <>
         <Button
           variant="danger-secondary"
           touchHeight
@@ -230,17 +230,19 @@ export function RefundDialog({
         <p id="refund-settling-hint" className="sr-only">
           {t('button.settlingHint')}
         </p>
-      </div>
+      </>
     );
   }
 
   // After the settling branch: once a refresh shows the server's own view of
   // a pending refund, that wins. `aria-disabled`, not `disabled`: the button
   // keeps the focus the closed dialog hands back, so its hint is heard; AURA
-  // swallows the click.
+  // swallows the click. Both branches return a fragment: a wrapping element
+  // would take the button out of AURA's phone action bar, which wraps only
+  // its direct buttons, and the label would overflow.
   if (unconfirmed) {
     return (
-      <div className="flex flex-col items-start gap-1 sm:items-end max-sm:items-stretch">
+      <>
         <Button
           ref={unconfirmedRef}
           variant="danger-secondary"
@@ -255,7 +257,7 @@ export function RefundDialog({
         <p id="refund-unconfirmed-hint" className="sr-only">
           {t('button.unconfirmedHint')}
         </p>
-      </div>
+      </>
     );
   }
 
