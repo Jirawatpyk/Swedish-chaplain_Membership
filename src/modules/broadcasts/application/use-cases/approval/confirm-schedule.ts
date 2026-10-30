@@ -320,22 +320,24 @@ export async function confirmSchedule(
       });
     }
     // Spec 139 (P3) — an erased member's refusal writes NO row: its event is
-    // labelled "membership suspended", and an erasure must never be one.
-    const audited: StandingRefusal | null =
+    // labelled "membership suspended", and an erasure must never be one. The
+    // member id travels with the standing (review round 2), so no second kind
+    // check is needed to read it.
+    const audited: { readonly refusal: StandingRefusal; readonly memberId: string } | null =
       refusal.kind === 'member_halted'
-        ? { kind: 'halted' }
+        ? { refusal: { kind: 'halted' }, memberId: refusal.memberId }
         : refusal.kind === 'member_not_in_good_standing' && refusal.access !== 'erased'
-          ? { kind: 'not_in_good_standing', access: refusal.access }
+          ? { refusal: { kind: 'not_in_good_standing', access: refusal.access }, memberId: refusal.memberId }
           : null;
-    if (audited !== null && (refusal.kind === 'member_halted' || refusal.kind === 'member_not_in_good_standing')) {
+    if (audited !== null) {
       // T166 follow-up — submit's own refusal row, written AFTER the rollback
       // (a row on the refused tx would roll back with it): best-effort on
       // autocommit, exactly like the cross-tenant probe above.
       const event = standingRefusalAuditEvent({
-        refusal: audited,
+        refusal: audited.refusal,
         surface: 'schedule_confirm',
         tenantSlug: slug,
-        memberId: refusal.memberId,
+        memberId: audited.memberId,
         broadcastId: input.broadcastId as string,
         actorUserId: input.actorUserId,
         actorRole: input.actorRole,
