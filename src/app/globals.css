@@ -327,7 +327,7 @@ html:has(.chamber-shell) {
 @media (max-width: 639.98px) {
   /* AURA pads the bar's row 16px at its start and 12px at its end; on the
      edge strip the buttons sit 16px from both screen edges, as drawn. */
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .eblast-detail-actions) > div {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .invoice-settings-actions, .eblast-detail-actions) > div {
     padding-inline: var(--aura-space-4);
   }
   /* The empty status cell is the bar's polite live region: hidden visually,
@@ -341,14 +341,14 @@ html:has(.chamber-shell) {
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div > :last-child {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .invoice-settings-actions) > div > :last-child {
     flex: 1 1 auto;
     flex-wrap: nowrap;
   }
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div > :last-child > * {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .invoice-settings-actions) > div > :last-child > * {
     flex: 2 1 0;
   }
-  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions) > div > :last-child > :first-child:not(:last-child) {
+  :is(.member-form-actions, .plan-form-actions, .schedule-actions, .template-form-actions, .invoice-settings-actions) > div > :last-child > :first-child:not(:last-child) {
     flex: 1 1 0;
   }
   /* The plan wizard keeps Cancel in the page on a phone: its start slot
@@ -411,6 +411,29 @@ html:has(.chamber-shell) {
   /* The plan wizard's Back / Next share the bar evenly (board `Admin-plan-new-mobile`). */
   .plan-form-actions--even > div > :last-child > * {
     flex: 1 1 0;
+  }
+}
+@media (max-width: 639.98px) {
+  /* PR #697 review (maintainer, 30 Oct) — the renewals bulk bar: "1 selected"
+     and Clear selection on the first row, Send reminder and Mark paid side by
+     side on the second, so Mark paid never drops onto a row of its own. The
+     actions cell (no role of its own) hands its buttons to the grid; DOM
+     order is kept, so Tab follows the rows. */
+  .pipeline-bulk-actions > div {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
+    gap: var(--aura-space-2);
+    padding-inline: var(--aura-space-4);
+  }
+  .pipeline-bulk-actions > div > :last-child {
+    display: contents;
+  }
+  .pipeline-bulk-actions > div > :last-child > :first-child {
+    justify-self: end;
+  }
+  .pipeline-bulk-actions > div > :last-child > :not(:first-child) {
+    width: 100%;
   }
 }
 @media (min-width: 640px) {

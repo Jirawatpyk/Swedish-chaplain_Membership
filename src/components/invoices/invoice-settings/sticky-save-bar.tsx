@@ -48,19 +48,20 @@ export function StickySaveBar({
       edgeBelow="sm"
       // The app's marker for a viewport ActionBar: globals.css keeps a focused
       // field clear of it by this class, not AURA's modifier.
-      className="chamber-viewport-actionbar"
+      // `invoice-settings-actions`: how the buttons share the bar (globals.css).
+      className="chamber-viewport-actionbar invoice-settings-actions"
       label={t('stickyBar.label')}
       status={t('stickyBar.unsaved')}
-      // UX review M5: Discard sits in the start slot as a ghost button, away
-      // from the primary Save, so a stray Enter on the wrong button is less likely.
-      start={
-        <Button type="button" variant="ghost" disabled={submitting || discardDisabled} onClick={onDiscard}>
-          {t('stickyBar.discard')}
-        </Button>
-      }
     >
-      {/* 088 FR-036 (44px on phones): the ActionBar sizes its Buttons below
+      {/* PR #697 review (maintainer, 30 Oct): Discard sits beside Save, as
+          Cancel does on every form bar and as the board draws it (it was
+          the start slot, which AURA puts at the far left, UX review M5). On
+          a phone Discard takes a third and Save two thirds (globals.css).
+          088 FR-036 (44px on phones): the ActionBar sizes its Buttons below
           640px since AURA 5.54, as on every other save bar. */}
+      <Button type="button" variant="secondary" disabled={submitting || discardDisabled} onClick={onDiscard}>
+        {t('stickyBar.discard')}
+      </Button>
       <Button type="submit" loading={submitting}>
         {exists ? t('actions.save') : t('actions.create')}
       </Button>
