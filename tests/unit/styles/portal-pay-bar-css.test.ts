@@ -19,7 +19,7 @@ describe('portal pay bar on AURA PageHeader (#191)', () => {
 
   it('hides the strip that holds a hidden pay bar', () => {
     expect(css).toMatch(
-      /\[data-slot="page-header"\] :has\(> \[data-testid="portal-invoice-pay-bar"\]\[hidden\]\) \{\s*display: none;/,
+      /\[data-slot="page-header"\] :has\(> \[data-slot="pay-bar"\]\[hidden\]\) \{\s*display: none;/,
     );
   });
 });

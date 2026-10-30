@@ -460,13 +460,12 @@ html:has(.chamber-shell) {
     display: none;
   }
 }
-/* Spec 122 US4 — the invoice page's sticky amount-due bar (~7rem) rides
-   above the bottom nav on phones; keep a focused control clear of it.
-   D-039: a bar below 640px, as every other bar (stand-in until AURA #191). */
-@media (width < 40rem) and (min-height: 560.02px) {
-  html:has(.portal-pay-bar:not([hidden])) {
-    scroll-padding-bottom: calc(var(--aura-bottomnav-offset, 0px) + 7.5rem);
-  }
+/* AURA #191 (5.71) — the portal invoice's pay bar is PageHeader's
+   `actionsBar` strip, which pads the page for itself. While PaySheet's
+   optimistic-paid signal hides the pay bar (it hides, never unmounts: R7),
+   the strip holding it hides too, so no empty band waits for the refresh. */
+[data-slot="page-header"] :has(> [data-slot="pay-bar"][hidden]) {
+  display: none;
 }
 
 body {

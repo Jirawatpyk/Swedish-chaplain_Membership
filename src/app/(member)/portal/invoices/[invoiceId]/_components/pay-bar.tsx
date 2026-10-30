@@ -11,6 +11,10 @@
  * it mid-render). The drawer portals to `document.body`, so `hidden` here
  * does not hide it. No `onCrossTabPaid` — `OptimisticPaidOverlay` owns the
  * page's single cross-tab refresh.
+ *
+ * AURA #191 (5.71): the page passes it as PageHeader's `actionsBar`, so below
+ * 640px it is the content of AURA's strip; `data-slot="pay-bar"` lets
+ * globals.css hide that strip too while this is hidden.
  */
 import { useOptimisticPaid } from './optimistic-paid';
 
@@ -24,7 +28,7 @@ export interface PayBarProps {
 export function PayBar({ invoiceId, label, className, children }: PayBarProps) {
   const paid = useOptimisticPaid(invoiceId);
   return (
-    <section aria-label={label} data-testid="portal-invoice-pay-bar" hidden={paid} className={className}>
+    <section aria-label={label} data-slot="pay-bar" data-testid="portal-invoice-pay-bar" hidden={paid} className={className}>
       {children}
     </section>
   );

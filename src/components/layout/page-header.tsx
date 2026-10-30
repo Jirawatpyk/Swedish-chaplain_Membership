@@ -37,6 +37,13 @@ type PageHeaderProps = {
    */
   actionsBarBelow?: 'sm' | 'md';
   actionsStatus?: ReactNode;
+  /**
+   * AURA #191 (5.71) — with `actionsBarBelow`, only these become the phone
+   * bar and `actions` stay in the page (the portal invoice: downloads in the
+   * page, Pay now in the bar). From the breakpoint up they sit after
+   * `actions` in the header row.
+   */
+  actionsBar?: ReactNode;
 };
 
 /**
@@ -67,6 +74,7 @@ export function PageHeader({
   size = 'default',
   actionsBarBelow,
   actionsStatus,
+  actionsBar,
 }: PageHeaderProps) {
   const portal = useDensity() === 'comfortable';
   return (
@@ -84,6 +92,7 @@ export function PageHeader({
       actionsFullWidthBelow="sm"
       actionsBarBelow={actionsBarBelow}
       actionsStatus={actionsStatus}
+      actionsBar={actionsBar}
       actionsAlign={portal ? 'start' : 'end'}
       focusTitleOnMount={autoFocusTitle}
       className={className}

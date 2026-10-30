@@ -220,8 +220,9 @@ describe('D-039: bottom bars are an edge strip below 640px', () => {
   });
 
   it('finds the reasoned hand-built bars that stay (positive control)', () => {
-    // The pay bar (#191), two money-dialog footers (PR N2), the bulk progress toast.
-    expect(handBuilt.filter((h) => h.reasoned).length).toBeGreaterThanOrEqual(4);
+    // Two money-dialog footers (PR N2) and the bulk progress toast; the portal
+    // pay bar is AURA PageHeader's `actionsBar` strip since 5.71 (#191).
+    expect(handBuilt.filter((h) => h.reasoned).length).toBeGreaterThanOrEqual(3);
   });
 
   it('no hand-built bottom bar without a reason', () => {
