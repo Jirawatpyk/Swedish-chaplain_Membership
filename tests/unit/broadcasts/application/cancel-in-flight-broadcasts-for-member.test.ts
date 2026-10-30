@@ -751,7 +751,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       const deps = makeDeps({
         inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
         applyTransitionImpl: async ({ broadcastId }) => {
-          throw new BroadcastConcurrentMutationError('test-tenant', broadcastId as never, 'approved');
+          throw new BroadcastConcurrentMutationError('test-tenant' as never, broadcastId as never, 'approved');
         },
         findByIdImpl: async () => ({ status: 'partially_sent' }),
       }) as unknown as Seen;
@@ -777,7 +777,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       const deps = makeDeps({
         inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
         applyTransitionImpl: async ({ broadcastId }) => {
-          throw new BroadcastConcurrentMutationError('test-tenant', broadcastId as never, 'approved');
+          throw new BroadcastConcurrentMutationError('test-tenant' as never, broadcastId as never, 'approved');
         },
         findByIdImpl: async () => ({ status: 'sending' }),
       }) as unknown as Seen;

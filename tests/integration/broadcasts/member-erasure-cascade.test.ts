@@ -234,8 +234,8 @@ const UNUSED_GATEWAY = {
   async deleteBroadcastOnce(): Promise<never> {
     throw new Error('deleteBroadcastOnce must not be called in the archive mode');
   },
-  async retrieveBroadcast(): Promise<never> {
-    throw new Error('retrieveBroadcast must not be called in the archive mode');
+  async retrieveBroadcastOnce(): Promise<never> {
+    throw new Error('retrieveBroadcastOnce must not be called in the archive mode');
   },
 };
 

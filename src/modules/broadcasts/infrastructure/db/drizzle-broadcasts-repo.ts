@@ -1342,31 +1342,6 @@ export function makeDrizzleBroadcastsRepo(
     },
 
     /**
-     * See the port docblock. The literals mirror the cascade's emit in
-     * `cancel-in-flight-broadcasts-for-member.ts` (`eventType`, and the
-     * payload's `broadcastId` + `resendOutcome`); the string event type is
-     * coerced to the `audit_event_type` enum. `tenant_id = ${tenantIdArg}` is
-     * load-bearing, not redundant with RLS: the `audit_log` policy also admits
-     * `tenant_id IS NULL` rows. Rare path (a 403 on an erasure's DELETE), so
-     * no index is claimed for it.
-     */
-    async hasAlreadySentEvidenceInTx(txUnknown, tenantIdArg: TenantSlug, broadcastId: BroadcastId): Promise<boolean> {
-      const tx = txUnknown as TenantTx;
-      await assertTenantBoundTx(tx, ctx.slug, 'hasAlreadySentEvidenceInTx');
-      const rows = (await tx.execute(sql`
-        SELECT EXISTS (
-          SELECT 1 FROM audit_log
-          WHERE tenant_id = ${tenantIdArg}
-            AND event_type = 'broadcast_concurrent_action_blocked'
-            AND payload->>'broadcastId' = ${broadcastId as string}
-            AND payload->>'resendOutcome' = 'already_sent'
-        ) AS found
-      `)) as unknown as Array<{ found: boolean | 't' | 'f' }>;
-      const found = rows[0]?.found;
-      return found === true || found === 't';
-    },
-
-    /**
      * See the port docblock. The literals mirror the cascade's evidence emit
      * in `cancel-in-flight-broadcasts-for-member.ts` (`eventType`, and the
      * payload's `broadcastId` + `memberId` + `resendOutcome`). The

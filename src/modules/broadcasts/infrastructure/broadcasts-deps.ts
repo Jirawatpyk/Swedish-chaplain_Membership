@@ -626,7 +626,8 @@ export function makeCancelInFlightBroadcastsForMemberDeps(tenantId: string) {
     audit: f7AuditAdapter,
     clock: systemClock,
     // Spec 139 DE2 — read only in the erasure mode (`delete_then_cancel`):
-    // ONE `deleteBroadcastOnce` under the row lock, and the probe after a 403.
+    // ONE `deleteBroadcastOnce` and, after a 404 / 403, ONE
+    // `retrieveBroadcastOnce`, both under the row lock.
     broadcastsGateway: resendBroadcastsGateway,
   };
 }

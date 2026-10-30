@@ -409,8 +409,8 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
           deletes.push(rid);
           return { kind: 'deleted' as const };
         },
-        async retrieveBroadcast(): Promise<never> {
-          throw new Error('retrieveBroadcast is not used here');
+        async retrieveBroadcastOnce(): Promise<never> {
+          throw new Error('retrieveBroadcastOnce is not used here');
         },
       };
 

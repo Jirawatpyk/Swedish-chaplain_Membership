@@ -140,6 +140,13 @@ function fakeResend(opts: { parkSend?: ReturnType<typeof gate>; parkDelete?: Ret
       if (s === undefined || s === 'deleted') return { kind: 'not_found' as const };
       return { kind: 'present' as const, resource: { id, status: s, sentAt: null } };
     },
+    // The cascade's bounded probe under the row lock: the same state.
+    async retrieveBroadcastOnce(id: string) {
+      calls.push('retrieveBroadcastOnce');
+      const s = state.get(id);
+      if (s === undefined || s === 'deleted') return { kind: 'not_found' as const };
+      return { kind: 'present' as const, status: s };
+    },
     async deleteBroadcastOnce(id: string) {
       calls.push('deleteBroadcastOnce');
       const s = state.get(id);

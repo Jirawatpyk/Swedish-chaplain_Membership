@@ -175,7 +175,7 @@ describe('T179 — JCC-test tenant fixture (multi-tenant readiness invariant)', 
             deleteBroadcastOnce: async (): Promise<never> => {
               throw new Error('not used in the archive mode');
             },
-            retrieveBroadcast: async (): Promise<never> => {
+            retrieveBroadcastOnce: async (): Promise<never> => {
               throw new Error('not used in the archive mode');
             },
           },

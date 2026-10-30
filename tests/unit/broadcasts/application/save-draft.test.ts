@@ -188,9 +188,6 @@ function makeBroadcastsRepo(opts: FixtureOpts = {}): BroadcastsRepoStub {
       async releaseResendAudience() {
         return false;
       },
-      async hasAlreadySentEvidenceInTx() {
-        return false;
-      },
       async readAlreadySentEvidenceInTx() {
         return { broadcastRecorded: false, memberBroadcastCount: 0 };
       },
