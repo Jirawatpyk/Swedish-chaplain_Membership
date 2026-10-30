@@ -258,34 +258,18 @@ describe('retryFailedReminders', () => {
       );
     });
 
-    it('spec 141 option A: a retry that meets an idempotent replay flips failed→sent with no delivery id', async () => {
-      const { deps, emitInTxMock, transitionFailedToSentMock } = fakeDeps({
-        eligible: [buildFailedEvent()],
-        gatewayResult: ok({ deliveryId: null, dispatchedAt: NOW_ISO, idempotentReplay: true }),
-      });
+    it('spec 141: the retry decides and signs the CTA at the reminder row createdAt, as the first attempt did', async () => {
+      // NOW (05-15 12:00) + 30 days reaches the 06-14 expiry → a redeem-link if
+      // decided at the retry tick; the row's createdAt (05-14 10:00) + 30 days
+      // does not → the plain link the first attempt rendered. Same body, so
+      // Resend's Idempotency-Key returns the first send instead of a second one.
+      const { deps, gatewayMock } = fakeDeps({ eligible: [buildFailedEvent()] });
       const result = await retryFailedReminders(deps, VALID_INPUT);
       assertOk(result);
-      expect(result.value.summary.retrySucceeded).toBe(1);
-      expect(transitionFailedToSentMock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ deliveryId: null }),
-      );
-      expect(emitInTxMock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          type: 'renewal_reminder_sent',
-          payload: expect.objectContaining({ delivery_id: null, idempotent_replay: true }),
-        }),
-        expect.anything(),
-      );
-      expect(emitInTxMock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          type: 'renewal_reminder_retried',
-          payload: expect.objectContaining({ new_delivery_id: null, idempotent_replay: true }),
-        }),
-        expect.anything(),
-      );
+      const vars = (gatewayMock.mock.calls[0] as unknown as [{ templateVariables: Record<string, unknown> }])[0]
+        .templateVariables;
+      expect(String(vars['renewal_link_url'])).not.toContain('redeem-link');
+      expect(String(vars['renewal_link_url'])).toContain('/portal/renewal/');
     });
 
     // BUG-2 — the retry pass must re-apply the dispatcher gates whose

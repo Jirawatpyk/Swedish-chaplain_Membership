@@ -342,24 +342,23 @@ describe('dispatchOneCycle', () => {
       );
     });
 
-    it('spec 141 option A: an idempotent replay is recorded as sent, no delivery id, idempotent_replay in the audit', async () => {
-      const { deps, transitionReminderMock, emitInTxMock } = fakeDeps({
-        gatewayResult: ok({ deliveryId: null, dispatchedAt: '2026-10-30T00:00:00.000Z', idempotentReplay: true }),
+    it('spec 141: the CTA is decided and signed at the reminder row createdAt, not the tick', async () => {
+      // NOW (05-15) + 30-day token TTL reaches the 06-14 expiry → a redeem-link
+      // if decided at the tick. The row was created 05-14, one day earlier, so
+      // decided at createdAt the token would not outlive the cycle → plain link.
+      // The retry path decides at the same createdAt, so both render one body.
+      const { deps, gatewayMock, insertReminderMock } = fakeDeps({});
+      const base = insertReminderMock.getMockImplementation()!;
+      insertReminderMock.mockImplementation(async (...args: Parameters<typeof base>) => {
+        const r = await base(...args);
+        return { ...r, row: { ...r.row, createdAt: '2026-05-14T00:00:00.000Z' } };
       });
       const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
       expect(result.kind).toBe('sent');
-      expect(transitionReminderMock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ nextStatus: 'sent', deliveryId: null }),
-      );
-      expect(emitInTxMock).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({
-          type: 'renewal_reminder_sent',
-          payload: expect.objectContaining({ delivery_id: null, idempotent_replay: true }),
-        }),
-        expect.anything(),
-      );
+      const vars = (gatewayMock.mock.calls[0] as unknown as [{ templateVariables: Record<string, unknown> }])[0]
+        .templateVariables;
+      expect(String(vars['renewal_link_url'])).not.toContain('redeem-link');
+      expect(String(vars['renewal_link_url'])).toContain('/portal/renewal/');
     });
 
     it('locale: member.preferred_locale wins over the contact default (email-locale audit 2026-07-16)', async () => {

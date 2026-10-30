@@ -303,7 +303,7 @@ describe('resendTransactionalRenewalGateway', () => {
     }, 30_000);
 
     // Spec 141 RI1b — the two idempotency 409s (DOCUMENTED + MEASURED 2026-10-30).
-    it('invalid_idempotent_request → already sent under this key: ok, no delivery id, no retry', async () => {
+    it('invalid_idempotent_request → gateway_4xx permanent, no retry (the body changed under a used key)', async () => {
       sendMock.mockResolvedValueOnce({
         data: null,
         error: {
@@ -312,11 +312,9 @@ describe('resendTransactionalRenewalGateway', () => {
         },
       });
       const result = await resendTransactionalRenewalGateway.sendRenewalEmail(VALID_INPUT);
-      expect(result.ok).toBe(true);
-      if (!result.ok) return;
-      expect(result.value.deliveryId).toBeNull();
-      expect(result.value.idempotentReplay).toBe(true);
-      expect(result.value.dispatchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error.kind).toBe('gateway_4xx');
       expect(sendMock).toHaveBeenCalledTimes(1);
     });
 
@@ -328,9 +326,7 @@ describe('resendTransactionalRenewalGateway', () => {
         })
         .mockResolvedValueOnce({ data: { id: 'original-id' }, error: null });
       const result = await resendTransactionalRenewalGateway.sendRenewalEmail(VALID_INPUT);
-      expect(result.ok && result.value).toEqual(
-        expect.objectContaining({ deliveryId: 'original-id', idempotentReplay: false }),
-      );
+      expect(result.ok && result.value.deliveryId).toBe('original-id');
       expect(sendMock).toHaveBeenCalledTimes(2);
     });
 

@@ -412,43 +412,6 @@ describe('F8 tier-upgrade pending lifecycle — integration (T203)', () => {
     expect(notifyAudits.length).toBeGreaterThanOrEqual(1);
   }, 60_000);
 
-  it('spec 141: a tier-upgrade email replay (Resend 409) is notified with idempotent_replay and no delivery id', async () => {
-    const seeded = await seedSuggestionState(tenant, admin, {
-      daysUntilExpiry: 60,
-      turnoverThb: 120_000_000,
-    });
-    const baseDeps = makeRenewalsDeps(tenant.ctx.slug);
-    const deps: RenewalsDeps = {
-      ...baseDeps,
-      renewalGateway: {
-        ...baseDeps.renewalGateway,
-        sendTierUpgradeApprovalEmail: async () =>
-          ok({ deliveryId: null, dispatchedAt: '2026-01-01T00:00:00.000Z', idempotentReplay: true as const }),
-      },
-    };
-    const result = await acceptTierUpgrade(deps, {
-      tenantId: tenant.ctx.slug,
-      suggestionId: seeded.suggestionId,
-      actorUserId: admin.userId,
-      actorRole: 'admin',
-      correlationId: randomUUID(),
-    });
-    expect(result.ok).toBe(true);
-    const notifyAudits = await runInTenant(tenant.ctx, (tx) =>
-      (tx as unknown as typeof db)
-        .select()
-        .from(auditLog)
-        .where(
-          and(
-            eq(auditLog.eventType, 'tier_upgrade_pending_member_notified'),
-            sql`${auditLog.payload}->>'suggestion_id' = ${seeded.suggestionId}`,
-          ),
-        ),
-    );
-    expect(notifyAudits).toHaveLength(1);
-    expect(notifyAudits[0]!.payload).toMatchObject({ delivery_id: null, idempotent_replay: true });
-  }, 60_000);
-
   it('accept happy path — pending state + scheduled-plan-change + audit', async () => {
     const seeded = await seedSuggestionState(tenant, admin, {
       daysUntilExpiry: 60,
