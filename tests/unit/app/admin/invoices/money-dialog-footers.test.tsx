@@ -465,7 +465,18 @@ describe('refund: no retry once the outcome may be a refund', () => {
     expect(toast.error).not.toHaveBeenCalled();
     expect(screen.queryByTestId('refund-form-error')).toBeNull();
     expect(posts(spy)).toHaveLength(1);
+    expectLatched();
     vi.unstubAllGlobals();
+  }
+
+  // Financial review HIGH-1: the page may not show the refund yet, so the
+  // trigger stays locked until a reload; a second refund can't start here.
+  function expectLatched() {
+    const trigger = screen.getByTestId('refund-dialog-trigger');
+    expect(trigger).toBeDisabled();
+    expect(trigger).toHaveTextContent(enMessages.admin.refund.button.unconfirmedLabel);
+    fireEvent.click(trigger);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   }
 
   it('a 201 whose body cannot be read closes, refreshes and warns', async () => {
@@ -480,9 +491,23 @@ describe('refund: no retry once the outcome may be a refund', () => {
 
   // R112 §3: with the connection still down, a refresh falls back to a browser
   // navigation onto the offline page and the warning is lost, so it doesn't.
-  it('a request that fails on the network closes and warns to check first, without a refresh', async () => {
+  it('offline, a failed request warns without a refresh, and refreshes once back online', async () => {
+    const onLine = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     const spy = await submitPartial(() => Promise.reject(new TypeError('Failed to fetch')));
     await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown, { refreshed: false });
+    onLine.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    expectLatched();
+    onLine.mockRestore();
+  });
+
+  it('online, a request that fails on the network (a reset) refreshes, warns and locks', async () => {
+    const spy = await submitPartial(() => Promise.reject(new TypeError('Failed to fetch')));
+    await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown);
   });
 
   // Financial review M1: a 5xx that names no refusal (our internal_error, or
@@ -522,9 +547,10 @@ describe('refund: no retry once the outcome may be a refund', () => {
     });
     const spy = await submitPartial(() => Promise.reject(new TypeError('Failed to fetch')));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(refreshSpy).not.toHaveBeenCalled();
     expect(toast.error).not.toHaveBeenCalled();
     expect(posts(spy)).toHaveLength(1);
+    // Financial review MEDIUM-1: with no toast, the lock is the only cue left.
+    expectLatched();
     vi.unstubAllGlobals();
   });
 
@@ -567,6 +593,10 @@ describe('refund: no retry once the outcome may be a refund', () => {
     await waitFor(() => expect(confirm).not.toHaveAttribute('aria-busy'));
     fireEvent.click(confirm);
     await waitFor(() => expect(posts(spy)).toHaveLength(2));
+    // A refusal the server answered never locks the trigger.
+    await waitFor(() => expect(confirm).not.toHaveAttribute('aria-busy'));
+    fireEvent.click(screen.getByRole('button', { name: refund.cancel }));
+    expect(screen.getByTestId('refund-dialog-trigger')).toBeEnabled();
     vi.unstubAllGlobals();
   });
 
