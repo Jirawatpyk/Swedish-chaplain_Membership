@@ -54,6 +54,8 @@ import {
   decideDispatchStanding,
   deleteErasedDraftBeforeRefusal,
   recordDispatchHold,
+  recordRequesterNotFound,
+  REQUESTER_NOT_FOUND,
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
 import type {
@@ -870,6 +872,11 @@ export async function dispatchScheduledBroadcast(
     // compiler narrows this to `undecided`, and a kind it does not know would
     // land here too rather than fall through to Step 2.
     if (standing.kind !== 'send') {
+      // Spec 139 P4 — a requester not in the tenant: nothing is sent, nothing
+      // deleted, the row stays `approved` (runbook: cancel it by hand).
+      if (standing.message === REQUESTER_NOT_FOUND) {
+        recordRequesterNotFound(deps.tenant.slug, input.broadcastId as string, 'live');
+      }
       return err({
         kind: 'dispatch.server_error',
         message: standing.message,

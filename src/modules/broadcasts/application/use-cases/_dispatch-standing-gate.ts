@@ -24,8 +24,9 @@
  *   - `refuse`    — PERMANENT (`failed_to_dispatch`): the member's E-Blasts are
  *                   halted, or the membership has ENDED (F8 `terminated`:
  *                   cancelled / coverage ended, lapsed, refunded).
- *   - `refuse_erased` — spec 139: PERMANENT too, for a member who is erased or
- *                   no longer exists in the tenant (P4). Its own kind because
+ *   - `refuse_erased` — spec 139: PERMANENT too, for a member who is erased.
+ *                   (A requester NOT FOUND is `undecided` since review round 2,
+ *                   P4: erasure never deletes a member row.) Its own kind because
  *                   it writes no standing-refusal audit row and sends the
  *                   member no email (P3), and because the leg must first
  *                   delete a pre-scrub draft the row still carries (P2,
@@ -77,6 +78,9 @@ export type DispatchStandingDecision =
   | { readonly kind: 'refuse_erased'; readonly reason: Extract<StandingRefusalFailureReason, 'member_not_in_good_standing'> }
   | { readonly kind: 'undecided'; readonly message: string; readonly errClass: string };
 
+/** The `undecided` message for a requester that is not in the tenant (P4). */
+export const REQUESTER_NOT_FOUND = 'member_standing_requester_not_found';
+
 export async function decideDispatchStanding(
   deps: DispatchStandingDeps,
   tenant: TenantContext,
@@ -97,7 +101,14 @@ export async function decideDispatchStanding(
     case 'ok':
       return { kind: 'send' };
     case 'erased':
-      return { kind: 'refuse_erased', reason: 'member_not_in_good_standing' };
+      // Review round 2 (P4, maintainer 30 Oct 2026) — erasure never deletes a
+      // member row, so a requester NOT FOUND is not evidence of an erasure:
+      // refusing would delete the draft and end the row on a guess. Undecided
+      // instead — nothing sent, nothing deleted, the row stays `approved`; the
+      // runbook says how to find and cancel such a row by hand.
+      return standing.missing === true
+        ? { kind: 'undecided', message: REQUESTER_NOT_FOUND, errClass: 'requester_not_found' }
+        : { kind: 'refuse_erased', reason: 'member_not_in_good_standing' };
     case 'halted':
       return { kind: 'refuse', refusal: standing, reason: 'member_halted' };
     case 'not_in_good_standing':
@@ -182,6 +193,16 @@ export async function deleteErasedDraftBeforeRefusal(
   }
   logger.warn({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_delete_unconfirmed');
   return { kind: 'undecided', message: 'member_erased_draft_not_deleted', errClass: outcome };
+}
+
+/**
+ * Spec 139 P4 — the warn line a leg writes when the requester is not in the
+ * tenant (`REQUESTER_NOT_FOUND`). Ids only. Written by the legs, not by
+ * `decideDispatchStanding`, so the staff detail page's read stays quiet; the
+ * cron also counts it under `dispatchResolveFailedTotal{phase=standing}`.
+ */
+export function recordRequesterNotFound(tenantSlug: string, broadcastId: string, leg: 'live' | 'import'): void {
+  logger.warn({ tenantId: tenantSlug, broadcastId, leg }, 'broadcasts.dispatch.requester_not_found');
 }
 
 /**

@@ -66,6 +66,8 @@ import {
   decideDispatchStanding,
   deleteErasedDraftBeforeRefusal,
   recordDispatchHold,
+  recordRequesterNotFound,
+  REQUESTER_NOT_FOUND,
   type DispatchStandingDeps,
 } from './_dispatch-standing-gate';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
@@ -768,6 +770,11 @@ async function applySendStanding(
         concurrentLossIsSkip: true,
       },
     );
+  }
+  // Spec 139 P4 — a requester not in the tenant: nothing is sent, nothing
+  // deleted, the row stays `approved` (runbook: cancel it by hand).
+  if (standing.message === REQUESTER_NOT_FOUND) {
+    recordRequesterNotFound(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
   }
   return err({
     kind: 'dispatch.server_error',

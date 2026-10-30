@@ -18,7 +18,8 @@
  * cancelled-not-expired, completed or missing cycle), so neither rule above
  * sees it — an erased member's E-Blast read as "in good standing" at send
  * time. `erased` is a member that is erased or no longer exists in the
- * tenant (P4); it writes no standing-refusal audit row on any surface (P3) —
+ * tenant (P4, `missing: true` — undecided at send time since review round 2);
+ * it writes no standing-refusal audit row on any surface (P3) —
  * the event those rows use is labelled "membership suspended", and an erasure
  * must never be recorded as one, so `StandingRefusal` excludes it and the
  * compiler refuses to build such a row.
@@ -60,8 +61,13 @@ export interface MemberSendStandingDeps {
 
 export type MemberSendStanding =
   | { readonly kind: 'ok' }
-  /** Spec 139 — erased, or no such member in the tenant (P4). Never audited as a standing refusal (P3). */
-  | { readonly kind: 'erased' }
+  /**
+   * Spec 139 — erased, or no such member in the tenant (P4). Never audited as a
+   * standing refusal (P3). `missing` marks the second case (review round 2):
+   * submit, approve and confirm-schedule refuse both alike, but the send-time
+   * gate does not refuse a missing requester (`decideDispatchStanding`).
+   */
+  | { readonly kind: 'erased'; readonly missing?: true }
   | { readonly kind: 'halted' }
   | { readonly kind: 'not_in_good_standing'; readonly access: 'suspended' | 'terminated' }
   /** Spec 139 — the erasure read threw — the gate was not decided (the error CLASS only). */
@@ -149,7 +155,8 @@ export async function readMemberSendStanding(
   } catch (e) {
     return { kind: 'erasure_read_failed', errKind: errKind(e) };
   }
-  if (erasure === null || erasure.erasedAt !== null) return { kind: 'erased' };
+  if (erasure === null) return { kind: 'erased', missing: true };
+  if (erasure.erasedAt !== null) return { kind: 'erased' };
 
   let halted: ReadonlyArray<{ readonly memberId: string }>;
   try {
