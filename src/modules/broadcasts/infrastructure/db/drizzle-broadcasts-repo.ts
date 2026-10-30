@@ -47,6 +47,7 @@ import {
   BroadcastNotFoundError,
   TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
+import { CASCADE_CANCELLATION_REASONS } from '../../application/use-cases/cancel-in-flight-broadcasts-for-member';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 
 /**
@@ -1842,7 +1843,9 @@ export function makeDrizzleBroadcastsRepo(
      * rejection_reason/cancellation_reason/failure_reason → NULL (nullable
      * free-text that can echo the member's PII — the reason notes from a
      * manual reject/cancel, and failure_reason from a raw gateway error that
-     * can quote the author's reply_to_email/from_name), and
+     * can quote the author's reply_to_email/from_name) — EXCEPT a
+     * cancellation_reason that is one of the erasure cascade's own values
+     * (`CASCADE_CANCELLATION_REASONS`, spec 139), which is kept — and
      * custom_recipient_emails → `['[redacted]']` on `custom` rows (the
      * `broadcasts_custom_recipient_cap` CHECK, migration 0064, forbids a
      * 0-element / NULL array on a `custom` row, so a plain `= NULL` would
@@ -1887,7 +1890,20 @@ export function makeDrizzleBroadcastsRepo(
           -- contains erik@acme.com"), so NULL them to complete Art.17 /
           -- PDPA §33 erasure.
           rejection_reason = NULL,
-          cancellation_reason = NULL,
+          -- Spec 139: the erasure cascade cancels the member's in-flight rows
+          -- BEFORE this scrub, with one of its own system values
+          -- (CascadeCancellationReason: originator_member_deleted /
+          -- gdpr_erasure_request / pdpa_deletion_request). That is not PII,
+          -- and it is why the row is cancelled, so it is kept; anything else
+          -- is a typed note and is NULLed. Unchanged is permitted by the
+          -- migration-0311 GUC arm (cancellation_reason is whitelisted).
+          cancellation_reason = CASE
+            WHEN cancellation_reason IN (${sql.join(
+              CASCADE_CANCELLATION_REASONS.map((r) => sql`${r}`),
+              sql`, `,
+            )}) THEN cancellation_reason
+            ELSE NULL
+          END,
           -- failure_reason is set from the raw gateway error message
           -- (dispatch-scheduled-broadcast.ts: shape.reason ?? e.message),
           -- which can echo the broadcast's reply_to_email / from_name — the

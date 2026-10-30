@@ -142,11 +142,17 @@ export type CancelInFlightForMemberError =
  * `SystemCancellationReason` in the F3 cascade port. Kept as its own
  * type alias here so this F7 use-case does not import F3 types
  * (Clean Architecture — F7 has no compile dep on F3).
+ *
+ * Spec 139 — also the set the erasure content scrub
+ * (`scrubContentForMemberInTx`) leaves on a row: these are system values, not
+ * notes anyone typed, so they carry no PII.
  */
-export type CascadeCancellationReason =
-  | 'originator_member_deleted'
-  | 'gdpr_erasure_request'
-  | 'pdpa_deletion_request';
+export const CASCADE_CANCELLATION_REASONS = [
+  'originator_member_deleted',
+  'gdpr_erasure_request',
+  'pdpa_deletion_request',
+] as const;
+export type CascadeCancellationReason = (typeof CASCADE_CANCELLATION_REASONS)[number];
 
 export interface CancelInFlightForMemberInput {
   readonly tenant: TenantContext;
