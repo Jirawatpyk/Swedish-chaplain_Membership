@@ -124,6 +124,13 @@ n/a
 - **Checks**: `tests/contract/resend/` + reclaim + erasure adapter 89 passed (also with `RESEND_BASE_URL` set); `pnpm check` exit 0; the 4 gateway integration files on dev, 14 passed. `broadcasts-deps`: its two cold-import cases timed out at 30 s on this machine under memory pressure after rounds 3–5 (they passed 10/10 solo in round 3, and nothing in this diff is on that file's import path). The last full local unit run is round 3 GREEN (8,151); since then only the targeted suites above ran locally, and CI's coverage job is the full run.
 - **Stop rule for the review** (set before round 6): a round that returns only items already dispositioned above ends the review.
 
+**Review round 6 (30 Oct 2026)** — spec-compliance-auditor COMPLIANT (RS1–RS5 MET; all 16 cited hashes exist, RED → GREEN order checked); pdpa APPROVE; `/code-review high` 10 findings:
+- **Refuted by MEASUREMENT** (2026-10-30, live account, a made-up id / sink address): `GET` and `DELETE /broadcasts/{missing id}` and `DELETE /contacts/{missing}` all answer `404 application/json {"statusCode":404,"message":"… not found","name":"not_found"}` — so `rawHttpStatusOf` still reads a real "gone" as gone and the erasure cascade cannot stall on it.
+- **Fixed** (RED `24e00870a`, GREEN `e187930aa`): the reclaim skip takes any message naming "last audience|segment" with a delete / remove verb in either order ("The last segment cannot be deleted", "Cannot remove the last segment"), still never on a retryable error, read through `_classify-thrown`; the erasure log's `gatewayCode` logs only a plain identifier, anything else as `unrecognised` (pdpa Low + code-review).
+- **Already dispositioned** (the stop rule): email unencoded in the `contacts.remove` path, the id choke point / branded id, the twin status readers and their invented statuses → spec 140. **Pre-existing on `main`**, carried to spec 140: an import answering 2xx with no id is classified 502 and retried; `listAudiences` has no overall time budget across pages (one page today); a whitespace-only id is refused here while two callers test only `''`.
+- **Checks**: reclaim + erasure adapter + `tests/contract/resend/` 92 passed; `pnpm check` exit 0; the 4 gateway integration files on dev, 14 passed.
+- **Review ends here** under the stop rule: no new High or Medium remains.
+
 ## Rollout
 
 - **Slice 1:** goes live on merge, with no flag. Every email path runs on 6.x. Rollback is a revert commit.
