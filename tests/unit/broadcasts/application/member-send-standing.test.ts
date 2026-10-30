@@ -8,7 +8,9 @@
  * reader now asks `getMemberErasedAt` BEFORE the halt list:
  *
  *   - erased, or no such member in the tenant (P4) → `erased`, and neither the
- *     halt list nor F8 access is read;
+ *     halt list nor F8 access is read; a member not found carries
+ *     `missing: true` (review round 2), so the send-time gate can tell the two
+ *     apart;
  *   - the erasure read throws → `erasure_read_failed` (fail CLOSED);
  *   - a live member → the halt rule, then F8 access, as before.
  *
@@ -16,7 +18,11 @@
  * permanent refusal, `refuse_erased`, which carries no standing-refusal audit
  * row (P3: the member-visible "membership suspended" event must never label an
  * erasure) and the existing `member_not_in_good_standing` failure token; a
- * failed erasure read is `undecided`.
+ * failed erasure read is `undecided`. A requester NOT FOUND is `undecided` at
+ * send time too (P4, maintainer 30 Oct 2026): nothing is sent, nothing is
+ * deleted and the row stays `approved` — erasure never deletes a member row, so
+ * a missing one is not evidence of an erasure. Submit, approve and
+ * confirm-schedule keep refusing it (non-destructive).
  */
 import { describe, expect, it, vi } from 'vitest';
 import { asTenantContext } from '@/modules/tenants';
@@ -32,12 +38,13 @@ const tenant = asTenantContext('test-tenant');
 
 describe('readMemberSendStanding — erasure is read first (spec 139 DE1)', () => {
   it.each([
-    ['erased', true],
-    ['not found in the tenant (P4)', 'not_found'],
-  ] as const)('a member %s → erased; the halt list and F8 access are never read', async (_label, erased) => {
+    ['erased', true, { kind: 'erased' }],
+    // Review round 2 (P4) — `missing` tells the send-time gate it is not an erasure.
+    ['not found in the tenant (P4)', 'not_found', { kind: 'erased', missing: true }],
+  ] as const)('a member %s → erased; the halt list and F8 access are never read', async (_label, erased, expected) => {
     // Halted AND terminated too: erasure must win over both.
     const deps = makeFakeSendStanding({ erased, halted: ['m-1'], access: 'terminated' });
-    expect(await readMemberSendStanding(deps, tenant, 'm-1')).toEqual({ kind: 'erased' });
+    expect(await readMemberSendStanding(deps, tenant, 'm-1')).toEqual(expected);
     expect(deps.membersBridge.getMemberErasedAt).toHaveBeenCalledWith(tenant, 'm-1');
     expect(deps.membersBridge.getMembersHaltedInTenant).not.toHaveBeenCalled();
     expect(deps.membershipAccess.getMembershipAccess).not.toHaveBeenCalled();
@@ -62,13 +69,21 @@ describe('readMemberSendStanding — erasure is read first (spec 139 DE1)', () =
 });
 
 describe('decideDispatchStanding — the send-time answer for an erased member (spec 139 DE1, P3)', () => {
-  it.each([
-    ['erased', true],
-    ['not found (P4)', 'not_found'],
-  ] as const)('%s → refuse_erased (member_not_in_good_standing), no standing-refusal audit row to write', async (_label, erased) => {
-    expect(await decideDispatchStanding(makeFakeSendStanding({ erased }), tenant, 'm-1')).toEqual({
+  it('erased → refuse_erased (member_not_in_good_standing), no standing-refusal audit row to write', async () => {
+    expect(await decideDispatchStanding(makeFakeSendStanding({ erased: true }), tenant, 'm-1')).toEqual({
       kind: 'refuse_erased',
       reason: 'member_not_in_good_standing',
+    });
+  });
+
+  // Review round 2 (P4, maintainer 30 Oct 2026) — a requester not found is no
+  // longer refused as erased at dispatch: no draft is deleted, no row turns
+  // terminal, nothing is sent; the leg answers a server error (phase standing).
+  it('a requester not found → undecided (requester_not_found): never refused, never a DELETE', async () => {
+    expect(await decideDispatchStanding(makeFakeSendStanding({ erased: 'not_found' }), tenant, 'm-1')).toEqual({
+      kind: 'undecided',
+      message: 'member_standing_requester_not_found',
+      errClass: 'requester_not_found',
     });
   });
 
@@ -96,6 +111,14 @@ describe('readDispatchHold — an erased member is never "held" (spec 139)', () 
   it('erased → not held (the cron refuses it)', async () => {
     const r = await readDispatchHold({ tenant, sendStanding: makeFakeSendStanding({ erased: true }), clock: { now: () => NOW } }, due);
     expect(r).toEqual({ ok: true, value: false });
+  });
+
+  it('a requester not found → server_error (requester_not_found), never "held" (the page shows no note)', async () => {
+    const r = await readDispatchHold(
+      { tenant, sendStanding: makeFakeSendStanding({ erased: 'not_found' }), clock: { now: () => NOW } },
+      due,
+    );
+    expect(r).toEqual({ ok: false, error: { kind: 'server_error', errClass: 'requester_not_found' } });
   });
 
   it('the erasure read fails → server_error with its class, never "held"', async () => {

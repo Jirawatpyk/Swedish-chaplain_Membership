@@ -877,4 +877,90 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     expect((await readRow(row.broadcastId!)).status).toBe('cancelled');
     expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
   });
+
+  /**
+   * Review round 2 (P4, maintainer 30 Oct 2026) — a requester who is NOT FOUND
+   * is no longer refused as erased at dispatch. Erasure never deletes a member
+   * row, so a missing one is not evidence of an erasure, and refusing would
+   * delete the draft and make the row terminal on a guess. `requested_by_member_id`
+   * has no FK to `members`, so such a row is reachable (the dev branch holds
+   * six). Both legs answer undecided: nothing sent, the draft NOT deleted, the
+   * row left exactly as it was, nothing audited, one warn line (ids only).
+   */
+  const requesterNotFound = {
+    ok: false,
+    error: {
+      kind: 'dispatch.server_error',
+      message: 'member_standing_requester_not_found',
+      errClass: 'requester_not_found',
+      phase: 'standing',
+    },
+  };
+
+  it('P4 legacy: a requester not found → undecided: the draft is not deleted, the row stays approved, nothing written', async () => {
+    const missingMemberId = randomUUID();
+    const resendBroadcastId = `rb-orphan-${randomUUID()}`;
+    const row = approvedRow(missingMemberId, { resendAudienceId: `aud-orphan-${randomUUID()}`, resendBroadcastId });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const before = await readRow(row.broadcastId!);
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'deleted' },
+    });
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+    const warnSpy = vi.spyOn(logger, 'warn');
+    try {
+      const r = await dispatchScheduledBroadcast(
+        { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+        { broadcastId: asBroadcastId(row.broadcastId!) },
+      );
+
+      expect(r).toEqual(requesterNotFound);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ broadcastId: row.broadcastId, leg: 'live' }),
+        'broadcasts.dispatch.requester_not_found',
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+    expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast']);
+    expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  it('P4 import: a requester not found → undecided: the draft is not deleted, the row stays approved, nothing written', async () => {
+    const missingMemberId = randomUUID();
+    const resendBroadcastId = `rb-orphan-${randomUUID()}`;
+    const row = approvedRow(missingMemberId, {
+      resendAudienceId: `aud-orphan-${randomUUID()}`,
+      resendBroadcastId,
+      audienceImportId: `imp-orphan-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const before = await readRow(row.broadcastId!);
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'deleted' },
+    });
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+    const warnSpy = vi.spyOn(logger, 'warn');
+    try {
+      const r = await buildAudienceTick(
+        { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+        { broadcastId: asBroadcastId(row.broadcastId!) },
+      );
+
+      expect(r).toEqual(requesterNotFound);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ broadcastId: row.broadcastId, leg: 'import' }),
+        'broadcasts.dispatch.requester_not_found',
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+    expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast']);
+    expect(await readRow(row.broadcastId!)).toEqual(before);
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
 });
