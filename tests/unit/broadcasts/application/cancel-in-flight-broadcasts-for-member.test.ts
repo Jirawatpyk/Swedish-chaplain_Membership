@@ -747,7 +747,11 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       expect(result).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 1, alreadySentCount: 0 } });
     });
 
-    it('P7 (a) — a lost race whose re-read finds the send started writes the already_sent evidence too (residual 8c), and it is counted', async () => {
+    // Review round 2 (reliability LOW-1) — ONE evidence row, not two: the
+    // best-effort skip row (`emit(null)`) said "concurrent transition" about a
+    // send the erasure could not stop. Only the durable `already_sent` row is
+    // written, and the row counts as already sent, never as a benign skip.
+    it('P7 (a) — a lost race whose re-read finds the send started writes ONLY the already_sent evidence row (residual 8c), counted as already sent, not as a skip', async () => {
       const deps = makeDeps({
         inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
         applyTransitionImpl: async ({ broadcastId }) => {
@@ -756,13 +760,13 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         findByIdImpl: async () => ({ status: 'partially_sent' }),
       }) as unknown as Seen;
       const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
-      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 1, unexpectedErrorCount: 0, alreadySentCount: 1 } });
+      expect(result).toEqual({ ok: true, value: { cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 1 } });
+      expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['already_sent']);
       const blocked = eventsOf(deps, 'broadcast_concurrent_action_blocked');
-      // The best-effort skip row, then the durable evidence row on its own tx.
-      expect(blocked).toHaveLength(2);
-      expect(blocked[0]![0]).toBeNull();
-      expect(blocked[1]![0]).not.toBeNull();
-      expect(blocked[1]![1]).toMatchObject({
+      // The durable evidence row only, on its own tx.
+      expect(blocked).toHaveLength(1);
+      expect(blocked[0]![0]).not.toBeNull();
+      expect(blocked[0]![1]).toMatchObject({
         payload: expect.objectContaining({
           broadcastId: broadcastIdA,
           memberId,
