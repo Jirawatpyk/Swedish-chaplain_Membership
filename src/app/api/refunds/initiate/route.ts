@@ -471,12 +471,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // text. Unlike initiate-payment's closed-union `reason`, a refund's
     // gateway `reason` IS Stripe's own message (an idempotency error repeats
     // the key), so it is not logged at all (Task B PCI review).
-    const { processorErrorKind, retryAfterSeconds: helperRetryAfter } =
-      buildUseCaseErrorTelemetry(result.error);
-    // An unknown outcome's copy says NOT to retry; no Retry-After may tell a
-    // client or proxy otherwise (Task B PCI review).
-    const retryAfterSeconds =
-      routeCode === 'processor_outcome_unknown' ? undefined : helperRetryAfter;
+    // No Retry-After on any use-case error: the helper sets it only for a
+    // `retryable` processor failure, which this route answers with
+    // `processor_outcome_unknown`, whose copy says NOT to retry (Task B).
+    const { processorErrorKind } = buildUseCaseErrorTelemetry(result.error);
     logger.warn(
       {
         requestId,
@@ -510,7 +508,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       'refunds.initiate.use_case_error',
     );
     return errorResponse(status, routeCode, correlationId, {
-      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
       // The authoritative cap, so the dialog quotes it instead of its
       // page-load figure (which can be stale after a credit note / refund).
       ...(result.error.code === 'refund_exceeds_remaining'

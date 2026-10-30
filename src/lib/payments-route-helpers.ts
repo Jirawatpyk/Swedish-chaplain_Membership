@@ -127,9 +127,11 @@ export function errorResponse(
  *   - `processorErrorKind` — bounded discriminator for log payload
  *     (`undefined` on error codes other than `processor_unavailable`,
  *     and on cancel-payment's variant which lacks the `kind` field)
- *   - `processorErrorReason` — closed-union literal for log payload
- *     (NEVER raw Stripe SDK text — every F5 use-case's
- *     `reason` is a typed literal-union)
+ *   - `processorErrorReason` — the use case's `reason`, verbatim. A
+ *     closed-union literal for initiate-payment, and the `kind` for
+ *     cancel-payment, so those routes may log it. issue-refund's `reason`
+ *     IS Stripe's raw message (an idempotency error repeats the key): the
+ *     refund route must never log or return it (Task B PCI review)
  *   - `retryAfterSeconds` — `30` for retryable processor failures (or
  *     for any `processor_unavailable` on routes whose error union
  *     lacks a `kind` field, e.g. cancel-payment); `undefined` for

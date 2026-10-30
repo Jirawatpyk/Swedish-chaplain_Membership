@@ -151,8 +151,11 @@ export const f5RefundBridge: F5RefundBridge = {
             ? refundResult.error.detail
             : refundResult.error.code === 'f4_preflight_credit_note_blocked'
               ? refundResult.error.reason.code
-              : 'reason' in refundResult.error
-                ? String(refundResult.error.reason)
+              : // Only the bounded kind: a refund's gateway `reason` is
+                // Stripe's raw message, and the reject route returns `detail`
+                // to the browser (Task B code review).
+                refundResult.error.code === 'processor_unavailable'
+                ? refundResult.error.kind
               : refundResult.error.code,
       };
     }
