@@ -131,8 +131,9 @@ function isShown(el: Element | null): el is HTMLElement {
     el instanceof HTMLElement &&
     el.isConnected &&
     el.closest('[hidden]') === null &&
-    // CSS hiding (the AURA strip), where the browser can tell.
-    el.checkVisibility?.() !== false
+    // CSS hiding (the AURA strip, `visibility`), where the browser can tell;
+    // never opacity, which the drawer's exit animation still uses.
+    el.checkVisibility?.({ visibilityProperty: true }) !== false
   );
 }
 
@@ -420,7 +421,8 @@ export function PaySheet({
        * top-to-bottom container across card form → 3DS → confirmation).
        * The title is "Pay invoice", the description the document number in
        * mono; Escape, the scrim and the close button all close it, and
-       * focus returns to Pay now. The panel and the close button carry the
+       * focus returns to Pay now, or to `#main-content` when Pay now is hidden
+       * (settleFocusAfterClose). The panel and the close button carry the
        * test ids the e2e suite reads, and the close button is named after
        * the drawer (AURA 5.9, handoff #70).
        */}

@@ -240,6 +240,40 @@ describe('<PaySheet>', () => {
     }
   });
 
+  // The same, opened from Pay now (the drawer hands focus back to it): it is
+  // hidden only after opening, so the drawer's own restore lands on a hidden
+  // button and must not be kept.
+  it('opened from Pay now, then Pay now is hidden: closing lands focus on <main>', () => {
+    const main = document.createElement('main');
+    main.id = 'main-content';
+    main.tabIndex = -1;
+    document.body.appendChild(main);
+    try {
+      render(
+        <NextIntlClientProvider locale="en" messages={messages}>
+          <PaySheet invoice={invoice} enabledMethods={['card', 'promptpay']} tenantPublishableKey="pk_test_fake">
+            {(open) => (
+              <section data-testid="pay-bar">
+                <button type="button" onClick={open} data-testid="pay-now-button">
+                  Pay now
+                </button>
+              </section>
+            )}
+          </PaySheet>
+        </NextIntlClientProvider>,
+      );
+      const payNow = screen.getByTestId('pay-now-button');
+      payNow.focus();
+      fireEvent.click(payNow);
+      screen.getByTestId('pay-bar').hidden = true;
+      fireEvent.keyDown(screen.getByTestId('pay-sheet-content'), { key: 'Escape' });
+      act(() => vi.runOnlyPendingTimers());
+      expect(main).toHaveFocus();
+    } finally {
+      main.remove();
+    }
+  });
+
   it('PCI: never writes to localStorage or sessionStorage during drawer lifecycle', () => {
     searchParamsMock.current = new URLSearchParams('pay=1');
     renderPaySheet();
