@@ -704,7 +704,7 @@ When the alert fires:
    member's own erasure request) — it is gone from the database by design.
 
 2. **Remove the contact via the Resend dashboard.** For each stuck audience,
-   open Resend → Audiences → the audience → remove the contact by the member's
+   open Resend → Audiences (the dashboard may label it **Segments**: since SDK 6.35 the two are one resource, spec 141) → the audience → remove the contact by the member's
    email (from the DSR intake record). A 404 / "not found" is success (already
    absent → the erasure goal holds).
 

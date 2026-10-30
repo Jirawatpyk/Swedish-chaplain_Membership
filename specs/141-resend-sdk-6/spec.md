@@ -33,7 +33,7 @@
 - 6.32: `signal` and request options on every method.
 - 6.35: API error logging becomes opt-in via `RESEND_DEBUG` (`index.mjs:1639`). Under it the SDK prints the request path, which carries an email on contact calls; 6.34 logged whenever `NODE_ENV` was not production. Hence the exact pin at 6.35. `RESEND_BASE_URL` (`:1633`) would redirect every Bearer key.
 - 6.35 attaches `statusCode` to a non-JSON error body; 4.8 left it undefined, so the Broadcasts classifier read 500 and retried.
-- 6.35 adds two transitive dependencies, `postal-mime` and `standardwebhooks` (security pre-read: provenance-signed, no install scripts, neither on a path we call).
+- 6.35 adds two transitive dependencies, `postal-mime` and `standardwebhooks` (security review: `resend`, `postal-mime` and `standardwebhooks` carry SLSA provenance; their own deps `@stablelib/base64` and `fast-sha256` do not; no install scripts; lockfile integrity matches the registry; neither new dep is on a path we call).
 
 **Measured 2026-10-30 on the live Broadcasts account (sink only, no send; probe segment and audience deleted):** an id created at `/audiences` reads at `/segments/{id}` (200), and one created at `/segments` reads at `/audiences/{id}`; both lists show both; `GET /audiences/{id}/contacts` and `/segments/{id}/contacts` answer the same count with `has_more: false`; a contact removed through `/audiences/{id}/contacts/{email}` is gone from `/segments/{id}/contacts`; `DELETE /segments/{id}` makes `GET /audiences/{id}` 404. **Audiences and segments are one resource under two paths.**
 
@@ -53,8 +53,8 @@
 - **RS3.** Each of the five confirm points is recorded as checked in the 6.x source (`node_modules/resend`), with the file and the finding.
 - **RS4.** Live Verify on :3400 against dev, with a sink address only:
   - a password-reset email arrives;
-  - with `FEATURE_F4_VOID_ATTACHMENT` on for the :3400 run only, a void notice with its PDF attachment goes through the outbox cron and arrives;
-  - an E-Blast draft create → get → delete answers as before.
+  - with `FEATURE_F4_VOID_ATTACHMENT` on for the :3400 run only, a void notice with its PDF attachment goes through the outbox cron and arrives; **waived by the maintainer on 30 Oct 2026** (plan.md § Complexity Tracking);
+  - an E-Blast draft create → get → delete answers as before. **Met at the gateway, not the UI** (a draft reaches Resend only at dispatch, which sends; plan.md § Complexity Tracking).
 - **RS5.** Docs updated:
   - the broadcasts module rule's stack line;
   - the SDK line in `specs/139-eblast-erasure-close/research.md`;
