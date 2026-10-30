@@ -259,7 +259,7 @@ Q1, Q3, Q5 and Q7 bear directly on spec 140's design. Q8 and Q9 bear on capacity
 - **Status mapping is one decision point.** Put the provider vocabulary in the state table:
   - `draft, scheduled, queued, sent, canceled, failed` (Q1 answered: `canceled`; keep the two-L `cancelled` alias only while code still names it), and `sending` until Q2 is answered;
   - import: `queued, in_progress, completed, failed`.
-  - Unknown values fail closed, as today. `canceled` is live (Q1), so every `cancelled` cell in the table is reachable and needs a decision (the import leg's operator-cancel re-mint, deferred from 139).
+  - Unknown values fail closed, as today. `canceled` is live (Q1), so every `cancelled` cell in the table is reachable. The import leg's cancelled re-mint arm already exists and is live since PR #698 (`TICK` `inheritedDead`); what was deferred from 139 to 140 is the decision whether it may run when an operator cancelled the broadcast in the Resend dashboard.
   - **Import status `canceled` is ASSUMED** — not in the documented import vocabulary, yet `TICK:1548` matches it (and calls the vocabulary UNVERIFIED although `queued | in_progress | completed | failed` is DOCUMENTED). Spec 140's import table settles it: cite the doc or measure, then drop or keep the arm.
 - **Classify by HTTP status first, then by code.**
   - Split 409 `resource_locked` from the idempotency 409s.
@@ -271,8 +271,8 @@ Q1, Q3, Q5 and Q7 bear directly on spec 140's design. Q8 and Q9 bear on capacity
   - The next holder probes the broadcast first: `queued` or `sent` means catch up, `draft` means reuse, 404 means re-probe and then re-mint.
   - Only then does it touch the audience.
   - Cancel-queued (Q1) is the only documented way to stop a send already handed over. Decide whether the lease uses it.
-- **Erasure (D-040) holds a row lock for up to ~20 s across two Resend calls.** The lease must be ordered against that lock, not around it.
-- **The legacy leg is being deleted.** The flip precondition "no legacy row in flight" (D-038, go-live § 6.10) still needs a drain check in 140.
+- **Erasure (D-040) holds a row lock for up to ~23 s across two Resend calls** (10 s DELETE + 3 s `REPROBE_PAUSE_MS` + 10 s GET). The lease must be ordered against that lock, not around it.
+- **The legacy leg's retirement is planned for spec 140** (decision D-042, not yet made). Until then the flip precondition "no legacy row in flight" (D-038, go-live § 6.10) still needs a drain check in 140.
 
 ---
 
@@ -307,10 +307,10 @@ Other sources:
 - Context7 `/resend/resend-node` (`RequestOptions`, `fetchRequest`) and `/llmstxt/resend_llms-full_txt`.
 - npm `resend` 6.35.0, modified 2026-10-27.
 
-Repo files (worktree `C:\Users\Jirawat.p\AppData\Local\Temp\f139`):
+Repo files:
 - `.claude/rules/modules/broadcasts.md:21-27`
 - `src/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway.ts` (lines cited above)
-- `src/modules/broadcasts/application/use-cases/build-audience-tick.ts:91, 1515-1600`
+- `src/modules/broadcasts/application/use-cases/build-audience-tick.ts:94, 1515-1600`
 - `specs/138-f7-import-hold-abandon/spec.md:22-42, 98-117`
 - `specs/139-eblast-erasure-close/spec.md:18-28, 44-53`; `plan.md:31-49, 195-224, 294`
 - `docs/decisions.md` D-037, D-038, D-040

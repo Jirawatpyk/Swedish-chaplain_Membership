@@ -6,7 +6,7 @@ Spec: `specs/<nnn-name>/spec.md` · Size: M / L · Agreed by the user on: <date>
 
 What we will build and how, in a few paragraphs. Name the alternatives considered and why each was not taken.
 
-**Real usage of any path this change keeps compatible:** `<count>` · `<source: query, log or metric>` · `<date>` — one line per path, or `n/a` with why. A path with no usage is a candidate for removal, not protection (`feature-flow` § 0).
+**Paths kept compatible:** name each one and point at its usage line in `spec.md` § Premises (count · source · date lives there only, D-041). A path with no usage is a candidate for removal, not protection.
 
 ## Files and modules
 
