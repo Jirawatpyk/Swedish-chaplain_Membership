@@ -591,6 +591,24 @@ export function buildBroadcastRecipientContactsQuery(
     .limit(params.limit);
 }
 
+/**
+ * Spec 140 s1 review round 4 (code-review #4) — "this erasure is stuck", ONE
+ * fragment for the reconciler's candidate query and its gauge count, so the two
+ * cannot drift: erased, and no `member_erased` completion audit for the member.
+ * The `audit_log` subquery's tenant filter is LOAD-BEARING (permissive RLS on
+ * `audit_log`; see `findStuckErasuresInTx`). Expects the outer `members` alias
+ * `m`, whose own `tenant_id` predicate the caller states.
+ */
+function stuckErasurePredicate(tenantSlug: string): SQL {
+  return sql`m.erased_at IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM audit_log al2
+          WHERE al2.tenant_id = ${tenantSlug}
+            AND al2.event_type = 'member_erased'
+            AND al2.payload->>'member_id' = m.member_id::text
+        )`;
+}
+
 export const drizzleMemberRepo: MemberRepo = {
   async findById(ctx, memberId) {
     try {
@@ -734,13 +752,7 @@ export const drizzleMemberRepo: MemberRepo = {
              ) AS reason
       FROM members m
       WHERE m.tenant_id = ${tenantSlug}
-        AND m.erased_at IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM audit_log al2
-          WHERE al2.tenant_id = ${tenantSlug}
-            AND al2.event_type = 'member_erased'
-            AND al2.payload->>'member_id' = m.member_id::text
-        )
+        AND ${stuckErasurePredicate(tenantSlug)}
       ORDER BY m.erased_at ASC
       LIMIT ${limit}
       FOR UPDATE OF m SKIP LOCKED
@@ -763,13 +775,7 @@ export const drizzleMemberRepo: MemberRepo = {
       SELECT count(*)::int AS stuck
       FROM members m
       WHERE m.tenant_id = ${tenantSlug}
-        AND m.erased_at IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM audit_log al2
-          WHERE al2.tenant_id = ${tenantSlug}
-            AND al2.event_type = 'member_erased'
-            AND al2.payload->>'member_id' = m.member_id::text
-        )
+        AND ${stuckErasurePredicate(tenantSlug)}
     `)) as unknown as Array<{ stuck: number | string }>;
     return Number(rows[0]?.stuck ?? 0);
   },

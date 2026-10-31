@@ -59,6 +59,8 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
       // via the audit-driven cleanup runbook.
       logger.error(
         {
+          // The F7 use case carries the error CLASS here (`errKind`), never a
+          // message (spec 140 s1 review round 4).
           err: result.error.message,
           tenantId: tenant.slug,
           memberId: memberId as string,

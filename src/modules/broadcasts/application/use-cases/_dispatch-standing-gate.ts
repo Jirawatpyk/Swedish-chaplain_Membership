@@ -216,7 +216,12 @@ export async function deleteDraftBeforeRefusal(
     logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
     return { kind: 'cleared', draftOutcome: 'cancelled' };
   }
-  logger.warn({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
+  // Review round 4 (code-review #9) — a standing refusal's 403 is decided by
+  // the probe in `deleteDraftBeforeStandingRefusal`, which logs the final
+  // outcome once; this line would be a premature second warn.
+  if (!(ids.refusal === 'standing' && outcome === 'forbidden')) {
+    logger.warn({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
+  }
   return { kind: 'undecided', errClass: outcome, resendBroadcastId: draft.resendBroadcastId };
 }
 

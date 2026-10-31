@@ -914,7 +914,9 @@ export async function cancelInFlightBroadcastsForMember(
   } catch (e) {
     return err({
       kind: 'cascade.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
+      // Review round 4 (code-review #8) — the error CLASS only: a message can
+      // embed SQL parameter values, and the members adapter logs this field.
+      message: errKind(e),
     });
   }
 }
