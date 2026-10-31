@@ -228,8 +228,21 @@ export async function deleteDraftBeforeRefusal(
  */
 export type StandingDraftClearance =
   | Extract<DraftClearance, { kind: 'cleared' }>
-  | { readonly kind: 'undeleted'; readonly errClass: RefusedDraftErrClass }
+  | { readonly kind: 'undeleted'; readonly errClass: StandingDraftErrClass }
   | { readonly kind: 'handed'; readonly resendStatus: 'queued' | 'sending' | 'sent' };
+
+/**
+ * Spec 140 s1 review round 2 (code-review #6) — why a standing refusal's draft
+ * stayed, as a CLOSED set for `resendDraftErrClass`: the DELETE's own answer
+ * (`retryable` / `other` / `threw`), or, after a 403, what the one GET read
+ * (`probe_*`, `threw`). Never the provider's text.
+ */
+export type StandingDraftErrClass =
+  | Exclude<RefusedDraftErrClass, 'forbidden'>
+  | 'probe_draft'
+  | 'probe_not_found'
+  | 'probe_retryable'
+  | 'probe_other';
 
 /**
  * Spec 140 s1 review round 1 (reliability M-1, code-review #4, security L2) —
@@ -252,22 +265,37 @@ export async function deleteDraftBeforeStandingRefusal(
   if (cleared.errClass !== 'forbidden') return { kind: 'undeleted', errClass: cleared.errClass };
   // A DELETE was made, so the row carried an id: a null `draft` clears as `none`.
   const resendBroadcastId = (draft as NonNullable<typeof draft>).resendBroadcastId;
-  let probed: string;
+  const logIds = { ...ids, refusal: 'standing', resendBroadcastId };
+  let probe: Awaited<ReturnType<BroadcastsGatewayPort['retrieveBroadcastOnce']>>;
   try {
-    const probe = await gateway.retrieveBroadcastOnce(resendBroadcastId);
-    probed = probe.kind === 'present' ? probe.status : probe.kind;
-  } catch {
-    probed = 'threw';
+    probe = await gateway.retrieveBroadcastOnce(resendBroadcastId);
+  } catch (e) {
+    logger.warn({ ...logIds, err: errKind(e) }, 'broadcasts.dispatch.refused_draft_probe_threw');
+    return { kind: 'undeleted', errClass: 'threw' };
   }
+  const probed = probe.kind === 'present' ? probe.status : probe.kind;
   if (isHandedStatus(probed)) {
-    logger.warn(
-      { ...ids, refusal: 'standing', resendBroadcastId, observedResendStatus: probed },
-      'broadcasts.dispatch.refused_draft_handed_by_sibling',
-    );
+    logger.warn({ ...logIds, observedResendStatus: probed }, 'broadcasts.dispatch.refused_draft_handed_by_sibling');
     return { kind: 'handed', resendStatus: probed };
   }
-  return { kind: 'undeleted', errClass: 'forbidden' };
+  // Review round 2 (code-review #6) — a `cancelled` reading is an unsendable
+  // copy: cleared, as `deleteDraftBeforeRefusal` clears a 403 on an id its
+  // probe already called cancelled.
+  if (probed === 'cancelled') {
+    logger.info({ ...logIds, observedResendStatus: probed }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
+    return { kind: 'cleared', draftOutcome: 'cancelled' };
+  }
+  const errClass = PROBE_ERR_CLASS[probed] ?? 'probe_other';
+  logger.warn({ ...logIds, observedResendStatus: probed, errClass }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
+  return { kind: 'undeleted', errClass };
 }
+
+/** What a non-handed, non-cancelled GET after a 403 is recorded as; anything else is `probe_other`. */
+const PROBE_ERR_CLASS: Readonly<Record<string, StandingDraftErrClass>> = {
+  draft: 'probe_draft',
+  not_found: 'probe_not_found',
+  retryable: 'probe_retryable',
+};
 
 /**
  * Spec 139 P4 — the warn line a leg writes when the requester is not in the

@@ -28,7 +28,7 @@ import {
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import type { MemberReminderStage } from '../../domain/approval/approval-schedule-policy';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
-import { IN_PROGRESS_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
+import { IN_PROGRESS_BROADCAST_STATUSES, SENDING_STARTED_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
 import {
   RETENTION_ANCHOR_FIELD,
   type RetentionAnchorField,
@@ -508,13 +508,14 @@ function inProgressStatusPredicate(): SQL {
 
 /**
  * Spec 140 s1 — the erasure cascade's terminal-draft list: the COMPLEMENT of
- * `inProgressStatusPredicate` minus `sent` (port docblock says what lands in
- * it). Derived from the same Domain constant, so a new in-progress status is
- * excluded here the day it is added.
+ * `inProgressStatusPredicate` minus every handed status — `sent`, and since
+ * review round 2 `sending`, `partially_sent`, `partial_delivery_accepted`
+ * (port docblock says why). Derived from the Domain constants, so a new
+ * in-progress or sending-started status is excluded the day it is added.
  */
 function terminalDraftStatusPredicate(): SQL {
   const list = sql.join(
-    [...IN_PROGRESS_BROADCAST_STATUSES, 'sent' as const].map((s) => sql`${s}`),
+    [...IN_PROGRESS_BROADCAST_STATUSES, ...SENDING_STARTED_BROADCAST_STATUSES].map((s) => sql`${s}`),
     sql`, `,
   );
   return sql`${broadcasts.status}::text NOT IN (${list})`;

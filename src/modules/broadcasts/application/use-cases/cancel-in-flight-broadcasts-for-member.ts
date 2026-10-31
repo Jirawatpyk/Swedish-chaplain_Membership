@@ -129,13 +129,14 @@
  * so a re-drive with nothing left in flight still reports it (P7).
  *
  * Spec 140 s1 (#699, RoPA 8d) — the erasure mode then reaches the member's
- * TERMINAL rows too: every row outside the in-progress set, bar `sent`, that
- * still holds a Resend id (the scrub keeps `resend_broadcast_id`, so the
- * erased member's draft stays findable). No row lock and no row write. A
- * `sending` row can still be worked by `reconcile-stuck-sending` or an import
- * restart (review round 1, pdpa L3), so the lock is not what orders this pass:
- * Resend does — DELETE succeeds only on a draft and `/send` only on a draft,
- * so whichever lands first decides, and the other is refused.
+ * TERMINAL rows too: every row outside the in-progress set and outside the
+ * handed statuses (`sent`, and since review round 2 `sending`,
+ * `partially_sent`, `partial_delivery_accepted` — an old delivery is not
+ * erasure evidence) that still holds a Resend id (the scrub keeps
+ * `resend_broadcast_id`, so the erased member's draft stays findable). No row
+ * lock and no row write: the lock is not what orders this pass (pdpa L3) —
+ * Resend does: DELETE succeeds only on a draft and `/send` only on a draft, so
+ * whichever lands first decides, and the other is refused.
  *
  *   | DELETE once       | GET once                                        | outcome      |
  *   | deleted / absent  | —                                               | cleared      |
@@ -155,7 +156,11 @@
  * AFTER the in-flight loop; a row the loop settled at Resend in THIS run is
  * counted from that settlement and not DELETEd again (review round 1), so the
  * counts are the same on any run. The caller's `deadlineAt` bounds it: a row
- * not reached in time counts unexpected and the re-drive continues.
+ * not reached in time is `deferred` (its own metric label, not a stop-the-line
+ * error) but still counts into `unexpectedErrorCount`, so the re-drive
+ * continues. The handed arm stays for the rows still listed: a
+ * `failed_to_dispatch` after `sent_but_transition_lost` says unsent while
+ * Resend sent it.
  *
  * An EMPTY id is not an id: the row is cancelled without a Resend call.
  * Any other exception is treated as
@@ -806,10 +811,13 @@ export async function cancelInFlightBroadcastsForMember(
         }
         // Review round 1 (reliability H-1) — the caller's deadline: a row not
         // reached in time is unexpected, so the re-drive continues with it.
+        // Review round 2 (code-review #4) — a deferral is not a stop-the-line
+        // error: its own label, yet it still withholds `member_erased`.
         if (input.deadlineAt !== undefined && deps.clock.now().getTime() >= input.deadlineAt.getTime()) {
           deferredByDeadline += 1;
           unexpectedErrorCount += 1;
-          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'unexpected_error');
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'deferred');
+          logger.debug({ ...logBase, broadcastId: row.broadcastId as string }, 'broadcasts.cascade.terminal_draft_deferred');
           continue;
         }
         try {

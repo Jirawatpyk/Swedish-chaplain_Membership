@@ -1921,7 +1921,10 @@ export type BroadcastsCascadeOutcomeMetric =
   | 'unexpected_error'
   // Spec 140 s1 — the erasure cascade's terminal-draft pass.
   | 'terminal_draft_cleared'
-  | 'terminal_copy_retained';
+  | 'terminal_copy_retained'
+  // Spec 140 s1 review round 2 — a terminal row not reached before the
+  // caller's deadline (re-driven; not a stop-the-line error).
+  | 'deferred';
 
 export const broadcastsMetrics = {
   /**
@@ -3223,6 +3226,9 @@ export const broadcastsMetrics = {
    *   - `terminal_copy_retained` → spec 140 s1: a terminal row's copy Resend will
    *                             not delete (403 + cancelled / failed: unsent);
    *                             retained at the processor, RoPA 8d
+   *   - `deferred`            → spec 140 s1: a terminal row not reached before
+   *                             the caller's deadline; the erasure is withheld and
+   *                             re-driven — NOT stop-the-line
    *   - `unexpected_error`    → tx or audit emit threw something other than
    *                             concurrent-mutation; broadcast was NOT cancelled.
    *                             Any non-zero rate = stop-the-line (signal-loss

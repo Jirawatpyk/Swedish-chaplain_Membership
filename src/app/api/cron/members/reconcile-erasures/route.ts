@@ -43,6 +43,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { eraseMember, drizzleMemberRepo } from '@/modules/members';
 import { buildEraseMemberDeps } from '@/modules/members/members-deps';
 import { erasureMetrics } from '@/lib/metrics';
+import { erasureCascadeDeadline } from '@/lib/erasure-cascade-deadline';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
@@ -71,13 +72,15 @@ const MAX_PER_TICK = 50;
 const TIME_BUDGET_MS = 240_000;
 
 /**
- * Spec 140 s1 review round 1 (reliability H-1) — the deadline every re-drive's
- * broadcasts cascade gets for its terminal-draft pass: 30 s inside
- * `maxDuration`, room for the one row in progress (two bounded 10 s Resend
- * calls). A row not reached by then withholds `member_erased`; the next tick
- * continues.
+ * Spec 140 s1 review rounds 1–2 — every re-drive's broadcasts cascade gets the
+ * TICK's deadline (`erasureCascadeDeadline`, from this route's `maxDuration`):
+ * a member started late in the tick gets only the remainder. Acceptable
+ * because a row not reached withholds `member_erased` and the next tick (30
+ * min) continues — every re-drive is idempotent, already-cleared drafts cost one
+ * 404 round trip (~0.5 s, research § Limits) — and the stuck gauge shows a
+ * member that never completes (plan.md, review round 2).
  */
-const CASCADE_DEADLINE_MS = 270_000;
+const cascadeDeadlineFor = (startedAt: number): Date => erasureCascadeDeadline(startedAt, maxDuration);
 
 // System-actor sentinels for the re-driven erasure (COMP-1 US2a convention —
 // the F1 cascade uses `requestId = 'system:erase-cascade'`; this reconciler
@@ -113,9 +116,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Kill-switch returns 200 + {skipped:true} (parity with the F7 reconcile
   // route) so cron-job.org does NOT retry-storm a pause window.
   if (!env.features.memberErasureReconcile) {
-    // Spec 140 s1 review round 1 — nothing is being re-driven: say so, rather
-    // than leave the last tick's value standing for the whole pause.
-    erasureMetrics.stuckCount(0, tenant.slug);
+    // Spec 140 s1 review round 2 (code-review #7) — while paused nothing is
+    // re-driven, so the backlog only grows: read the candidates (capped at
+    // MAX_PER_TICK, a lower bound) and observe the real count. A failed read
+    // observes nothing new; the pause still answers 200.
+    try {
+      const paused = await runInTenant(tenant, (tx) =>
+        drizzleMemberRepo.findStuckErasuresInTx(tx, tenant.slug, MAX_PER_TICK),
+      );
+      erasureMetrics.stuckCount(paused.length, tenant.slug);
+    } catch (e) {
+      logger.warn(
+        { errKind: e instanceof Error ? e.constructor.name : 'unknown', tenantId: tenant.slug },
+        'cron.members.reconcile_erasures.paused_count_failed',
+      );
+    }
     logger.info(
       { tenantId: tenant.slug },
       'cron.members.reconcile_erasures.feature_disabled',
@@ -186,7 +201,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const res = await eraseMember(
         memberId,
         { reason },
-        { actorUserId: SYSTEM_ACTOR, requestId: SYSTEM_REQUEST_ID, deadlineAt: new Date(startedAt + CASCADE_DEADLINE_MS) },
+        { actorUserId: SYSTEM_ACTOR, requestId: SYSTEM_REQUEST_ID, deadlineAt: cascadeDeadlineFor(startedAt) },
         deps,
       );
       if (res.ok && res.value.cascadesComplete) {

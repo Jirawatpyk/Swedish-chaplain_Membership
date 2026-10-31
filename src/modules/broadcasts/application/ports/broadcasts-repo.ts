@@ -873,18 +873,22 @@ export interface BroadcastsRepo {
   /**
    * Spec 140 s1 (ED1–ED3, #699) — the member's rows the in-flight list does
    * NOT reach that still point at a Resend broadcast: every status outside
-   * `IN_PROGRESS_BROADCAST_STATUSES` except `sent`, with a non-empty
+   * `IN_PROGRESS_BROADCAST_STATUSES` except the handed ones, with a non-empty
    * `resend_broadcast_id`. The erasure scrub keeps that column, so such a
    * row's draft is still findable by member id. Read by the erasure cascade's
    * terminal-draft pass, which deletes each draft once at Resend.
    *
    * What lands in it, and why: `failed_to_dispatch`, `cancelled`, `rejected`
-   * and `expired_no_member_response` (closed; a draft may remain); `sending`,
-   * `partially_sent` and `partial_delivery_accepted` (handed over — the DELETE
-   * answers 403 and the probe records the copy as retained); `draft` (no tick
-   * works it). `sent` is left out: its copy is known undeletable and the F7
-   * retention sweep owns it, so probing every sent row on each erasure buys
-   * nothing.
+   * and `expired_no_member_response` (closed; a draft may remain), and `draft`.
+   * Left out, review round 2 (pdpa N-1): `sent`, `sending`, `partially_sent`
+   * and `partial_delivery_accepted` — both legs write `sending` only after
+   * `/send` was accepted (or a probe / replay saw it accepted), and the others
+   * are reached only through it, so such a copy was handed in the ordinary
+   * course, a DELETE can only answer 403, and an old delivery is not erasure
+   * evidence; the F7 retention sweep owns those copies. A listed row whose
+   * copy probes handed (a `failed_to_dispatch` after `sent_but_transition_lost`:
+   * the row says unsent, Resend sent it) becomes 8c evidence; an unsent copy
+   * Resend will not delete (canceled / failed) is `resend_copies_retained`.
    *
    * Tenant-scoped by an explicit `tenant_id` predicate inside `runInTenant`
    * (RLS + FORCE as well).
