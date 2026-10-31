@@ -538,7 +538,9 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error.kind).toBe('cascade.server_error');
-    expect(result.error.message).toContain('pool exhausted');
+    // Review round 4 (code-review #8) — the class only: a message can embed
+    // SQL parameter values, and the adapter logs this field.
+    expect(result.error.message).toBe('Error');
   });
 
   /**

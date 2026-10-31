@@ -233,6 +233,22 @@ describe('deleteDraftBeforeStandingRefusal (spec 140 s1 ED4, review round 1)', (
 
   // Review round 3 (code-review #4) — `failed` is unsendable too (MEASURED
   // 2026-10-29: only a draft can be sent): cleared, recorded as what it is.
+  // Review round 4 (code-review #9) — a standing refusal's 403 is decided by
+  // the probe, so the DELETE's own "unconfirmed" warn is not logged first:
+  // ONE line for the final outcome.
+  it('a 403 then probe_draft logs ONE warn, for the final outcome', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      await deleteDraftBeforeStandingRefusal(gw('forbidden', 'draft'), ids, draft);
+      const lines = warnSpy.mock.calls.filter((c) => String(c[1]).startsWith('broadcasts.dispatch.refused_draft'));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]![0]).toMatchObject({ errClass: 'probe_draft', observedResendStatus: 'draft' });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it('403, then the GET says failed → cleared (failed): an unsendable copy, not an undeleted draft', async () => {
     expect(await deleteDraftBeforeStandingRefusal(gw('forbidden', 'failed'), ids, draft)).toEqual({ kind: 'cleared', draftOutcome: 'failed' });
   });

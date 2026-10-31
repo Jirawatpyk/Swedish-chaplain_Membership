@@ -100,6 +100,7 @@ beforeEach(() => {
   runInTenantMock.mockReset();
   findStuckErasuresInTxMock.mockReset();
   countStuckErasuresInTxMock.mockReset();
+  countStuckErasuresInTxMock.mockResolvedValue(0);
   buildEraseMemberDepsMock.mockReset();
   buildEraseMemberDepsMock.mockReturnValue({});
   erasureOutcomeMock.mockReset();
@@ -337,13 +338,16 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
       .mockResolvedValueOnce(ok({ memberId: 'm1', erasedAt: new Date(), cascadesComplete: false }))
       .mockRejectedValueOnce(new Error('boom'))
       .mockResolvedValueOnce(ok({ memberId: 'm3', erasedAt: new Date(), cascadesComplete: true }));
+    // Review round 4 (code-review #7) — ONE meaning: the uncapped count, before
+    // the loop (the baseline a killed tick leaves) and after it.
+    countStuckErasuresInTxMock.mockResolvedValueOnce(70).mockResolvedValueOnce(68);
     const { POST } = await import(
       '@/app/api/cron/members/reconcile-erasures/route'
     );
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
     expect(erasureStuckCountMock.mock.calls).toEqual([
-      [3, 'test-tenant'],
-      [2, 'test-tenant'],
+      [70, 'test-tenant'],
+      [68, 'test-tenant'],
     ]);
     // The baseline lands before the first re-drive.
     expect(erasureStuckCountMock.mock.invocationCallOrder[0]!).toBeLessThan(eraseMemberMock.mock.invocationCallOrder[0]!);
@@ -391,9 +395,12 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
     const meta = eraseMemberMock.mock.calls[0]![2] as { deadlineAt?: Date };
     expect(meta.deadlineAt).toBeInstanceOf(Date);
-    const budget = meta.deadlineAt!.getTime() - before;
-    expect(budget).toBeGreaterThan(0);
-    expect(budget).toBeLessThanOrEqual(300_000);
+    // Review round 4 (senior-tester) — the exact rule, not just "some time":
+    // start + maxDuration − the reserve, within the test's own run time.
+    const { ERASURE_CASCADE_RESERVE_MS } = await import('@/lib/erasure-cascade-deadline');
+    const expected = before + 300_000 - ERASURE_CASCADE_RESERVE_MS;
+    expect(meta.deadlineAt!.getTime()).toBeGreaterThanOrEqual(expected);
+    expect(meta.deadlineAt!.getTime() - expected).toBeLessThan(5_000);
   });
 
   it('the stuck gauge is observed as 0 on a tick that finds nothing stuck', async () => {

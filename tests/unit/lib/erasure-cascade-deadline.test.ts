@@ -5,7 +5,36 @@
  * 10 s Resend calls) and the steps after the cascade.
  */
 import { describe, expect, it } from 'vitest';
-import { ERASURE_CASCADE_RESERVE_MS, erasureCascadeDeadline } from '@/lib/erasure-cascade-deadline';
+import {
+  ERASURE_CASCADE_RESERVE_MS,
+  ERASURE_MEMBER_START_FLOOR_MS,
+  erasureCascadeDeadline,
+  erasureMemberStartCutoff,
+} from '@/lib/erasure-cascade-deadline';
+
+/** A member started at `cutoff` still has one whole row (DELETE 10 s + GET 10 s + evidence) before `deadline`. */
+const leavesOneRow = (cutoff: Date, deadline: Date): boolean => cutoff.getTime() + ERASURE_MEMBER_START_FLOOR_MS <= deadline.getTime();
+
+// Review round 4 (code-review #2) — round 3 aligned the reconcile member-start
+// cutoff WITH the deadline, so a member started at 239 s got ~1 s and deferred
+// every terminal row. The cutoff sits a floor before the deadline instead.
+describe('erasureMemberStartCutoff', () => {
+  const start = Date.parse('2026-10-31T00:00:00Z');
+
+  it('the floor holds one row: a 10 s DELETE, a 10 s GET and the evidence tx', () => {
+    expect(ERASURE_MEMBER_START_FLOOR_MS).toBeGreaterThanOrEqual(30_000);
+  });
+
+  it('a member started at the cutoff still has the floor before the deadline', () => {
+    const deadline = erasureCascadeDeadline(start, 300);
+    expect(leavesOneRow(erasureMemberStartCutoff(deadline), deadline)).toBe(true);
+  });
+
+  it('positive control: a cutoff AT the deadline (round 3) leaves no row', () => {
+    const deadline = erasureCascadeDeadline(start, 300);
+    expect(leavesOneRow(deadline, deadline)).toBe(false);
+  });
+});
 
 describe('erasureCascadeDeadline', () => {
   it('is the route start + maxDuration, less the reserve', () => {

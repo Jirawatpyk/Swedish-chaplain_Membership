@@ -88,12 +88,12 @@ describe('spec 140 s1 — the erasure cascade deletes the drafts its terminal ro
     const t = await createTwoTestTenants();
     tenantA = t.a;
     tenantB = t.b;
-  }, 120_000);
+  });
 
   afterAll(async () => {
     await tenantA?.cleanup().catch(() => {});
     await tenantB?.cleanup().catch(() => {});
-  }, 120_000);
+  });
 
   async function seed(tenant: TestTenant, row: Partial<NewBroadcastRow> & { memberId: string; broadcastId?: string }): Promise<string> {
     const { memberId, broadcastId = randomUUID(), ...patch } = row;
