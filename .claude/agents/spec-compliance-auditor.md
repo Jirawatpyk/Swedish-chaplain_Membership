@@ -32,9 +32,14 @@ A spec written by the `feature-flow` skill has **Done when** lines instead of nu
 Also check the premises. A spec or plan that keeps an existing path compatible (or protects it) without a measured **usage line** (count · source · date), or that relies on a provider fact (a status string, an error code, a limit) marked neither MEASURED nor cited from the provider's docs, is a **Medium** finding (`feature-flow` § 0, retro 2026-10-30).
 
 For an L slice, also check:
-- **Carried findings.** Every finding that `plan.md` § Evidence records as *carried to slice k* must be named in slice *k*'s row or block in `plan.md` § Slices, or in that slice's section of the plan. That slice must not have merged yet. A carry to a slice that doesn't name the concern, or to one that has already merged, is a **Medium** finding (D-043).
+- **Carried out.** For each finding `plan.md` § Evidence records as *carried to slice k*, check all three:
+  - it is a Medium;
+  - slice *k* already named the concern in `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`), in *k*'s row in § Slices or in *k*'s section;
+  - slice *k*'s PR has not merged (`gh pr list --state merged --head <branch>`).
+  A carried High is a **High** finding. Any other failure is a **Medium** finding (D-043).
+- **Carried in.** Each finding an earlier slice carried into this one must be closed here (fixed, or refuted and confirmed) or carried on under the same rules. One left open is a finding at its original severity.
 - **Reviewer-requested mechanisms.** Read the review-round tables in `plan.md` § Evidence. Each mechanism they record as added at a reviewer's request (a column, counter, deadline, label or query) must have its own rows in the test plan, and in the state table where the plan has one. A mechanism with no row is a **Medium** finding (retro 2026-10-31).
-- **Verify after fixes.** If review fixes changed the path that Verify drove, the evidence must come from a run on the final head. Evidence from an earlier commit is a **Medium** finding.
+- **Verify after fixes.** If review fixes changed the path that Verify drove, the re-run block must name a commit at or after the last commit that changes code. Only docs or evidence commits may follow it. Evidence from before a fix that changes code is a **Medium** finding.
 
 ## Audit methodology
 

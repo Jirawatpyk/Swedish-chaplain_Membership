@@ -23,8 +23,13 @@ This section is the single source for how review works; `docs/workflow.md` step 
 - No High or Medium finding may remain at merge (D-015). A finding is never waived. It closes in one of three ways:
   - it is fixed;
   - it is refuted with evidence, and the reviewer confirms that on a re-run;
-  - for an L slice only, it is **carried to the slice that owns it** (D-043).
-- A carry needs `plan.md` § Slices to name that concern already, for a later slice of the same spec that has not merged. The carry is recorded in `plan.md` § Evidence with that slice's number, and `spec-compliance-auditor` checks that the owning slice's row names it. A concern no later slice names is fixed or refuted in this slice. It is never carried to a slice invented for it.
+  - for an L slice only, a **Medium** is **carried to the slice that owns it** (D-043). A High is never carried, because every merge deploys and a carried High would ship live.
+- A carry needs all of these, and `spec-compliance-auditor` checks each one:
+  - `plan.md` already names the concern for a later slice *k* of the same spec, in *k*'s row in § Slices or in *k*'s section of the plan. "Already" means in `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`), so the target cannot be written in the same change.
+  - Slice *k*'s PR has not merged. Check with `gh`, not the Slices row: the row says `done` before the merge.
+  - The carry is recorded in `plan.md` § Evidence with *k*'s number.
+- A concern no later slice names is fixed or refuted in this slice. It is never carried to a slice invented for it.
+- **The receiving slice closes what it inherits.** Slice *k*'s brief and its first review round's args list every finding carried into it. Each one closes there: fixed, or refuted and confirmed. It may be carried again only if a later slice already names it. Slice *k*'s auditor checks each one.
 - Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it.
 - Low findings are fixed or listed in the PR.
 - Any code change after review goes back through review.
@@ -35,8 +40,9 @@ This section is the single source for how review works; `docs/workflow.md` step 
   - It reports only **new** High or Medium findings that those commits introduce.
   - Tell it not to pad to a minimum count. An empty list is a valid answer. Pass this sentence verbatim in the args: *"Review ONLY these fix commits. Confirm each item from the last round closed. Report ONLY new High or Medium findings these commits introduce, each with a concrete failure scenario; do NOT pad to a minimum count, an empty list is a valid answer. Do not re-raise decided items."*
   - A round that returns only closed items, decided items or Lows ends the review (the stop rule).
+  - A **decided item** is a finding that an earlier round already closed by one of the three closures above, recorded in `plan.md` § Evidence (for size S, in the PR). A finding you argued against, but whose refutation the reviewer never confirmed on a re-run, is not decided.
   - If a targeted round finds a new Medium in a mechanism the plan puts in a later slice, carry the finding to that slice rather than build more here.
-- Review runs after Verify, so the reviewed code is the code that works. When review fixes touch the path Verify drove, run Verify again on the final head before the PR (`feature-flow` § 7).
+- Review runs after Verify, so the reviewed code is the code that works. When review fixes touch the path Verify drove, run Verify again after the last fix that changes code, before merge (`feature-flow` § 7).
 - Tell every reviewer to report only gaps that affect correctness or the stated requirements. A reviewer asked to find gaps always finds some, and chasing every one over-engineers.
 
 ## 2. Which project subagent reviews which surface

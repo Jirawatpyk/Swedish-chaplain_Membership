@@ -247,11 +247,16 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
     - The carry closure alone would not have caught it. Spec 140's committed plan names, for slice 2, time budgets for the dispatch cron and bounded gateway calls (DL8). It names no deadline for the erasure pass, so only the bounded-calls part could have been carried, and that part later was.
     - The plan-row rule would have caught it. The erasure-pass deadline would have needed its state-table cells and test-plan rows before it was built, and those rows are where the round-3 regression (the lost late-member floor) and the round-6 failure mode would have shown.
 - *Decision* (the maintainer, 31 Oct 2026):
-  - **A third closure, carried to slice *k*.** For an L slice, a High or Medium can be carried to slice *k*, but only when `plan.md` § Slices already names that concern for slice *k* of the same spec, and *k* has not merged. The carry is recorded in `plan.md` § Evidence. `spec-compliance-auditor` checks that slice *k*'s row names the concern. A concern that no later slice names is still fixed or refuted, as D-015 says; this is not a waiver.
-  - **Targeted rounds.** From round 3 on, a `/code-review` round reads only the fix commits since the last round. It confirms each earlier item closed, and reports only new High or Medium findings. It is told not to pad to a minimum count. A round that returns only closed or decided items, or Lows, ends the review.
-  - **New mechanisms need plan rows.** A mechanism a reviewer asks for mid-build (a column, a counter, a deadline, a label, a query) is a plan change. Its state-table cells and test-plan rows land in `plan.md` before its GREEN commit, unless it is carried.
+  - **A third closure, carried to slice *k*.** For an L slice, a **Medium** can be carried to a later slice *k* of the same spec when all of these hold:
+    - `plan.md` already names the concern for slice *k* at the branch's base commit;
+    - *k*'s PR has not merged;
+    - the carry is recorded in `plan.md` § Evidence;
+    - slice *k* inherits the finding and closes it.
+    A **High** is never carried: every merge deploys, so a carried High would ship live. `spec-compliance-auditor` checks both ends. A concern that no later slice names is still fixed or refuted, as D-015 says. This is not a waiver.
+  - **Targeted rounds.** From round 3 on, a `/code-review` round reads only the fix commits since the last round. It confirms each earlier item closed, and reports only new High or Medium findings. It is told not to pad to a minimum count. A round that returns only closed or decided items, or Lows, ends the review. A *decided* item is one already closed by one of the three closures and recorded. A refutation the reviewer never confirmed does not make an item decided.
+  - **New mechanisms need plan rows.** A mechanism a reviewer asks for during build or review (a column, a counter, a deadline, a label, a query) is a plan change. Its state-table cells and test-plan rows land in `plan.md` before its GREEN commit, unless it is carried.
   - **The main session runs the full gates.** A slice subagent runs only its scoped tests and `pnpm check`. After it hands back, the main session runs the full gates one at a time. A subagent's gate run counts as a heavy job.
-  - **Re-Verify after review fixes.** When review fixes touch the path Verify drove, Verify runs again on the final head before the PR.
+  - **Re-Verify after review fixes.** When review fixes touch the path Verify drove, Verify runs again after the last fix that changes code, and before merge. The auditor then re-checks that evidence.
 - *Consequence*:
   - Updated: `review-and-ship` § 1 and § 2 check 1, `feature-flow` §§ 4, 5 and 7, `docs/workflow.md` steps 4, 5 and 7, the `run-chamber-os` rules, and `spec-compliance-auditor`.
   - D-015 still stands: no High or Medium is waived. D-043 adds only the carry closure, and only between slices of one spec.

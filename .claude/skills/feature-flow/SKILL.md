@@ -46,10 +46,12 @@ For **L**, have `chamber-os-architect` and the surface reviewers for what the pl
 - RED commit, then GREEN commit, per row of the test plan (`superpowers:test-driven-development`). A guard whose test never went red has not been exercised. Exception (D-023): for UI presentation (React components, styles and markup; never `route.ts` handlers or server actions), copy, and size-S changes that are not guards, test and code may share a commit, but run the test against the old code first and record that failing run in `plan.md` § Evidence (or the PR for size S). The exception is never money, tax, auth/RBAC, tenancy, PII, audit log, a migration, a guard or validation, or domain/application logic.
 - For a migration, use the `new-migration` skill. For a new audit event type, use `add-audit-event`. For a bug, use `superpowers:systematic-debugging` before changing code.
 - Use the module's rule (`.claude/rules/modules/*.md`) for its traps. A tenant-scoped repo threads `tx` from `runInTenant`.
-- **A mechanism a reviewer asks for is a plan change** (D-043). This covers a column, a counter, a deadline, a label or a query.
-  - If `plan.md` § Slices names that concern for a later slice, carry the finding there (`review-and-ship` § 1).
-  - Otherwise, add its state-table cells and test-plan rows to `plan.md` before its GREEN commit, in the RED commit or before it.
+- **A mechanism a reviewer asks for is a plan change** (D-043), whether the request comes during build or review. This covers a column, a counter, a deadline, a label or a query.
+  - A Medium may be carried to a later slice when `plan.md` already names that concern for it (`review-and-ship` § 1).
+  - A High is always built here. So is any Medium that is not carried.
+  - Anything built here gets its state-table cells and test-plan rows added to `plan.md` before its GREEN commit, in the RED commit or earlier.
   - `spec-compliance-auditor` checks every test-plan row, so a mechanism with no row is a finding.
+- **A slice inherits its carries.** Give the slice's subagent every finding an earlier slice carried into it (recorded in `plan.md` § Evidence). Each one closes in this slice (`review-and-ship` § 1).
 - **A slice subagent runs only the scoped tests and `pnpm check`.** That means its own RED and GREEN runs and its mutation proofs. It does not run the full gates of § 5.
 - When the build is complete, run `/simplify` on the diff (reuse, simplification, efficiency), then go to Check. For L, don't re-enter plan mode per slice; only a slice that has to leave the plan goes back to plan mode, updates `plan.md` and is approved again.
 
@@ -77,9 +79,9 @@ Review the change as built **and verified**, so a fix found in Verify is reviewe
 3. For M / L, `spec-compliance-auditor` with `spec.md` and the Verify evidence in `plan.md` § Evidence (for an L slice, that slice's block): each Done-when line is checked against the code and against the evidence that claims it.
 4. `whole-branch-reviewer` last, only when the review was split (the `review-branch` Workflow, a per-module review, or slices sharing one long-lived branch); otherwise `/code-review high` with its target has already read the whole diff (D-022).
 
-Reviews run in subagents; the writer never reviews its own code. How findings close, the rounds by risk, and the staff review on sensitive surfaces are in `review-and-ship` §§ 1–2. **No High and no Medium finding may remain.** Three closures are allowed: fixed; refuted; or, for an L slice, carried to the later slice that `plan.md` already gives the concern to (D-043). From round 3 on, a round reviews only the fix commits.
+Reviews run in subagents; the writer never reviews its own code. How findings close, the rounds by risk, and the staff review on sensitive surfaces are in `review-and-ship` §§ 1–2. **No High and no Medium finding may remain.** Three closures are allowed: fixed; refuted; or, for a Medium in an L slice, carried to the later slice that `plan.md` already gives the concern to (D-043). From round 3 on, a round reviews only the fix commits.
 
-When review fixes touch the path Verify drove, run Verify again on the final head before the PR. Replace the evidence in `plan.md` § Evidence, or add a new block for the re-run.
+When review fixes touch the path Verify drove, run Verify again after the last fix that changes code, before merge. Any commit after that re-run may change only docs or evidence. Add a re-run block to `plan.md` § Evidence naming the commit it ran on, then run `spec-compliance-auditor` again on that block.
 
 ## 8. PR
 
