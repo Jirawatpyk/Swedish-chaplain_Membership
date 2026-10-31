@@ -127,24 +127,33 @@ describe('mapStripeError — direct unit', () => {
       });
     }
 
-    it('Unknown .code falls through to permanent (no false-retry on app errors)', () => {
+    it('#51 — an error of unknown type is NOT a refusal: retryable (fail closed)', () => {
       const e = Object.assign(new Error('app error'), {
         code: 'SOME_APP_CODE',
       });
       const result = mapStripeError(e, ctx);
-      // No matching SDK type → no matching network code → permanent.
-      expect(result.kind).toBe('permanent');
-      if (result.kind !== 'permanent') throw new Error('unreachable');
-      // The Error.code is preserved (audit #1: code = API code, not type).
-      expect(result.code).toBe('SOME_APP_CODE');
+      // `permanent` reads downstream as "the processor refused, nothing
+      // moved", which an unrecognised error cannot prove.
+      expect(result.kind).toBe('retryable');
     });
   });
 
-  it('Plain Error of unknown shape → permanent + unknown_stripe_error code', () => {
+  it('#51 — a plain Error of unknown shape → retryable (fail closed)', () => {
     const e = new Error('mystery failure');
+    const result = mapStripeError(e, ctx);
+    expect(result.kind).toBe('retryable');
+  });
+
+  it.each([
+    'StripeCardError',
+    'StripeInvalidRequestError',
+    'StripeAuthenticationError',
+    'StripePermissionError',
+  ])('#51 — %s is a refusal: permanent, with its API code', (type) => {
+    const e = Object.assign(new Error('refused'), { type, code: 'some_api_code' });
     const result = mapStripeError(e, ctx);
     expect(result.kind).toBe('permanent');
     if (result.kind !== 'permanent') throw new Error('unreachable');
-    expect(result.code).toBe('unknown_stripe_error');
+    expect(result.code).toBe('some_api_code');
   });
 });

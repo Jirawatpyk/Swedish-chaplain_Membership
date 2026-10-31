@@ -5,9 +5,8 @@
  *
  * A refund row marked `failed` is a claim about the world: **no money left
  * the account.** Downstream logic treats it as exactly that — `failed` rows
- * are excluded from `succeeded_sum_satang`, do not trip the
- * `refund_in_progress` guard, and are counted by the `COUNT(*)`-based
- * sequence that derives the Stripe idempotency key. So a wrong `failed` does
+ * are excluded from `succeeded_sum_satang` and do not trip the
+ * `refund_in_progress` guard. So a wrong `failed` does
  * not merely mislabel a row; it clears every guard that would stop the next
  * attempt from paying the customer a second time (finding F-3).
  *
@@ -29,8 +28,6 @@
  * through `RefundsRepo.updateStatus`'s `nextStatus: 'failed'` overload, at
  * which point terminalising an `unknown` exit stops compiling instead of
  * merely being wrong.
- *
- * NO CALL SITE YET — this is the primitive Task 6 consumes.
  *
  * Pure Domain — zero framework imports (Principle III).
  */
@@ -134,12 +131,13 @@ export function proveNothingMoved(exit: MoneyExit): RejectionProof | null {
  * than `classifyGatewayFailure`: not "our request errored" but "the refund
  * object we created reached a terminal non-settling state".
  *
- * Three call sites hold that evidence today:
+ * Three call sites hold that evidence today (`proveNoProcessorRefund`, below,
+ * is the other minting function, with its own evidence):
  *   - `issue-refund.ts` — `createRefund` returned status `failed`/`canceled`
  *   - `process-refund-updated.ts` — a `charge.refund.updated` webhook said so
  *   - `sweep-stale-pending-refunds.ts` — `retrieveRefund` said so
  *
- * ## Before adding a third minting function
+ * ## Before adding another minting function
  *
  * The point of the brand is that it is hard to obtain. Each new minting
  * function is a new way to claim "no money moved", so it needs its own
@@ -155,3 +153,55 @@ export function proveProcessorSettledFailed(
   void status;
   return { [REJECTION_PROOF]: true };
 }
+
+/**
+ * #50 — mint proof that an orphan refund row (no processor refund id) never
+ * reached the processor.
+ *
+ * ## The evidence that justifies this
+ *
+ * The stale-pending sweep lists every refund the processor holds for the
+ * parent payment intent and looks for one that names this row
+ * (`metadata.refundId`, set on every `createRefund`). The request that would
+ * have created it was a single call with a stable idempotency key, and
+ * nothing retries it. So, once that call is certainly over, a COMPLETE list
+ * in which no refund names this row and every refund is one already recorded
+ * on another of this payment's rows is the processor saying it made none:
+ * the money never moved.
+ *
+ * Each condition is part of the proof, so each is checked here, not trusted
+ * to the caller:
+ *   - `rowAgeMs >= ORPHAN_PROOF_MIN_AGE_MS`: the `createRefund` call (SDK
+ *     timeout and retries, well under a minute) has ended. Without it, an
+ *     operator's short `olderThanHours` override could close a row whose
+ *     refund Stripe is still making;
+ *   - `complete`: no further pages;
+ *   - `matchCount === 0`: no refund names this row;
+ *   - `unaccountedCount === 0`: every refund on the intent is recorded on
+ *     one of this payment's rows. One that is not (made before the marker
+ *     existed, by hand in the Dashboard, or with a marker copied from
+ *     another row) might be this row's money.
+ *
+ * Anything else proves nothing: the caller attaches a single clean match and
+ * leaves the rest `pending` for a person. An error never reaches here.
+ */
+export function proveNoProcessorRefund(lookup: {
+  readonly complete: boolean;
+  readonly matchCount: number;
+  readonly unaccountedCount: number;
+  readonly rowAgeMs: number;
+}): RejectionProof | null {
+  return lookup.complete &&
+    lookup.matchCount === 0 &&
+    lookup.unaccountedCount === 0 &&
+    lookup.rowAgeMs >= ORPHAN_PROOF_MIN_AGE_MS
+    ? { [REJECTION_PROOF]: true }
+    : null;
+}
+
+/**
+ * #50 — the youngest an orphan row may be before `proveNoProcessorRefund`
+ * accepts a lookup as proof. Far longer than any `createRefund` call; short
+ * enough that the documented `?olderThanHours=2` override still closes rows.
+ */
+export const ORPHAN_PROOF_MIN_AGE_MS = 60 * 60 * 1000;

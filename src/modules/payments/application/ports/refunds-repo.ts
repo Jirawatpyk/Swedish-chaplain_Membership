@@ -55,6 +55,13 @@ interface UpdateRefundStatusBase {
   readonly creditNoteWaiverReason?: CreditNoteWaiverReason | null;
   readonly completedAt: Date;
   /**
+   * #50 — when true, the UPDATE also requires `processor_refund_id IS NULL`.
+   * The sweep closes an orphan row without a processor-id lock, so a
+   * webhook that back-filled the id meanwhile must win: zero rows match and
+   * the repo returns `null`. Only meaningful with `expectedCurrentStatus`.
+   */
+  readonly expectProcessorRefundIdNull?: true;
+  /**
    * Optional optimistic-concurrency guard (S5 / RR-1). When set, the
    * UPDATE additionally filters `WHERE status = expectedCurrentStatus`.
    * Zero rows matched → repo returns `null` (NOT throw) so the caller
@@ -362,6 +369,18 @@ export interface RefundsRepo {
     readonly parentProcessorPaymentIntentId: string;
   } | null>;
 
+  /**
+   * #50 — the Stripe refund ids already recorded on this payment's refund
+   * rows. The orphan sweep's proof counts a listed Stripe refund as accounted
+   * for only when its id is here; a marker string alone proves nothing.
+   * Explicit `tenant_id` predicate (D-029) plus RLS on `tx`.
+   */
+  listProcessorRefundIdsForPayment(
+    tx: unknown,
+    tenantId: string,
+    paymentId: PaymentId,
+  ): Promise<ReadonlyArray<string>>;
+
   listPendingOlderThan(
     tx: unknown,
     tenantId: string,
@@ -376,6 +395,14 @@ export interface RefundsRepo {
       readonly correlationId: string;
       readonly initiatorUserId: string;
       readonly processorRefundId: string | null;
+      /** #50 — the parent payment's intent, to look an orphan up at Stripe. */
+      readonly paymentIntentId: string;
+      /**
+       * #50 — the Stripe environment the payment was taken in. An orphan is
+       * looked up only when it matches the tenant's current settings: under
+       * other keys, Stripe's answer is about a different account.
+       */
+      readonly paymentProcessorEnvironment: string;
     }>
   >;
 

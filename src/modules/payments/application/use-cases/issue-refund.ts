@@ -74,6 +74,7 @@ import {
   classifyGatewayFailure,
   proveNothingMoved,
   proveProcessorSettledFailed,
+  type MoneyExit,
   type RejectionProof,
 } from '../../domain/settlement/money-moved';
 import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
@@ -237,6 +238,13 @@ export type IssueRefundError =
       readonly code: 'processor_unavailable';
       readonly kind: 'retryable' | 'idempotency_conflict' | 'permanent';
       readonly reason: string;
+      /**
+       * #51 — the domain's verdict on the money (`rejected`: the processor
+       * refused, the row is `failed`; `unknown`: it may have gone, the row
+       * stays `pending`). Callers decide from this, never from `kind`:
+       * `permanent/processor_response_amount_invalid` is `unknown`.
+       */
+      readonly moneyExit: Extract<MoneyExit, 'rejected' | 'unknown'>;
     }
   /**
    * B.1 review Fix#1 (2026-07-12) — the PRE-FLIGHT F4 credited-total read
@@ -1011,9 +1019,8 @@ async function issueRefundBody(
     // convention. On an unknown we leave the row `pending` and let the
     // stale-pending sweep ask Stripe what actually happened — the machinery
     // it needs already exists.
-    const rejectionProof = proveNothingMoved(
-      classifyGatewayFailure(stripeRefund.error),
-    );
+    const moneyExit = classifyGatewayFailure(stripeRefund.error);
+    const rejectionProof = proveNothingMoved(moneyExit);
     if (rejectionProof !== null) {
       await finaliseFailedRefund(deps, {
         refundId: prepared.refundId,
@@ -1028,10 +1035,10 @@ async function issueRefundBody(
       });
     } else {
       // Unknown outcome — row stays `pending`. It has NO `processor_refund_id`
-      // (the attach below never ran), so the sweep cannot reconcile it against
-      // Stripe and will skip + escalate it once aged. That is deliberate: an
-      // escalated stuck refund is an ops signal, whereas the alternative is a
-      // silent double payout.
+      // (the attach below never ran), so the stale-pending sweep looks it up
+      // at Stripe by payment intent (#50): it attaches a single match, closes
+      // the row on a complete answer with none, and otherwise escalates it once
+      // aged. Never a silent double payout.
       deps.logger?.warn('issue_refund.processor_outcome_unknown', {
         tenantId: input.tenantId,
         refundId: prepared.refundId,
@@ -1051,6 +1058,7 @@ async function issueRefundBody(
       code: 'processor_unavailable',
       kind: stripeRefund.error.kind,
       reason: stripeRefund.error.reason,
+      moneyExit: rejectionProof !== null ? 'rejected' : 'unknown',
     });
   }
 
@@ -1117,6 +1125,7 @@ async function issueRefundBody(
       code: 'processor_unavailable',
       kind: 'permanent',
       reason: refundStatus,
+      moneyExit: 'rejected',
     });
   }
 

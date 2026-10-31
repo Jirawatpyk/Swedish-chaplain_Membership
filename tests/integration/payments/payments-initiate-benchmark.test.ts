@@ -105,6 +105,9 @@ function makeFastGateway(): ProcessorGatewayPort {
     async retrieveRefund() {
       throw new Error('not used in T148 benchmark');
     },
+    async listRefundsForPaymentIntent() {
+      throw new Error('not used in T148 benchmark');
+    },
   };
 }
 
