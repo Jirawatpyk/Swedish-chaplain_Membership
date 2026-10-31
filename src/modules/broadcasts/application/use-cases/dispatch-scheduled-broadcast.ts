@@ -507,6 +507,17 @@ export async function dispatchScheduledBroadcast(
         deps.tenant.slug,
         input.broadcastId,
       );
+      // Spec 140 s2a, DL7 (decision 8): a row the import leg has started is
+      // never worked here. Skipped under the row lock, before any Resend call,
+      // so reverting the leg retirement is safe with no env change. The route
+      // buckets the skip as `concurrent_skip`: no failure, no email.
+      if (row !== null && (row.audienceImportId !== null || row.audienceImportSubmittedAt !== null)) {
+        logger.info(
+          { tenantId: deps.tenant.slug, broadcastId: input.broadcastId },
+          'broadcasts.dispatch.import_row_skipped',
+        );
+        return null;
+      }
       return row;
     });
   } catch (e) {
