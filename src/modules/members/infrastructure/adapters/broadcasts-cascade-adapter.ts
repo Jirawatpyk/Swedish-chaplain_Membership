@@ -27,6 +27,8 @@ export const noopBroadcastsCascadeAdapter: BroadcastsCascadePort = {
       cancelledCount: 0,
       skippedConcurrentCount: 0,
       alreadySentCount: 0,
+      resendDraftsCleared: 0,
+      resendCopiesRetained: 0,
     };
   },
 };
@@ -44,6 +46,8 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
       initiatedByUserId: opts.initiatedByUserId,
       // Spec 139 — only erasure sets it; unset keeps F7's `skip` default.
       ...(opts.onDispatchBegun !== undefined ? { onDispatchBegun: opts.onDispatchBegun } : {}),
+      // Spec 140 s1 review round 1 — the erasure caller's deadline; archive sets none.
+      ...(opts.deadlineAt !== undefined ? { deadlineAt: opts.deadlineAt } : {}),
     });
     if (!result.ok) {
       // F7 cascade failure is non-fatal for F3 archival — the member
@@ -55,6 +59,8 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
       // via the audit-driven cleanup runbook.
       logger.error(
         {
+          // The F7 use case carries the error CLASS here (`errKind`), never a
+          // message (spec 140 s1 review round 4).
           err: result.error.message,
           tenantId: tenant.slug,
           memberId: memberId as string,
@@ -75,6 +81,9 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
         skippedConcurrentCount: result.value.skippedConcurrentCount,
         unexpectedErrorCount: result.value.unexpectedErrorCount,
         alreadySentCount: result.value.alreadySentCount,
+        resendDraftsCleared: result.value.resendDraftsCleared,
+        resendCopiesRetained: result.value.resendCopiesRetained,
+        deferredCount: result.value.deferredCount,
       };
     }
     return {
@@ -82,6 +91,8 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
       cancelledCount: result.value.cancelledCount,
       skippedConcurrentCount: result.value.skippedConcurrentCount,
       alreadySentCount: result.value.alreadySentCount,
+      resendDraftsCleared: result.value.resendDraftsCleared,
+      resendCopiesRetained: result.value.resendCopiesRetained,
     };
   },
 };

@@ -29,7 +29,9 @@ import { asTenantContext } from '@/modules/tenants';
 import { readMemberSendStanding } from '@/modules/broadcasts/application/use-cases/_member-send-standing';
 import {
   decideDispatchStanding,
-  deleteErasedDraftBeforeRefusal,
+  deleteDraftBeforeRefusal,
+  deleteDraftBeforeStandingRefusal,
+  deleteDraftBeforeErasedRefusal,
 } from '@/modules/broadcasts/application/use-cases/_dispatch-standing-gate';
 import { readDispatchHold } from '@/modules/broadcasts/application/use-cases/read-dispatch-hold';
 import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
@@ -134,9 +136,12 @@ describe('readDispatchHold — an erased member is never "held" (spec 139)', () 
  * Spec 139 P2 — the DELETE a dispatch leg makes before it refuses an erased
  * member's row. Cleared only on a confirmed delete (or a 403 on an id the probe
  * called `cancelled`, which can never be sent); anything else decides nothing.
+ * Spec 140 s1 (ED4) — the same DELETE before a halted / ended refusal
+ * (`refusal: 'standing'`); that caller records an undecided answer instead of
+ * stalling on it.
  */
-describe('deleteErasedDraftBeforeRefusal (spec 139 P2)', () => {
-  const ids = { tenantId: 'test-tenant', broadcastId: 'b-1', leg: 'live' as const };
+describe('deleteDraftBeforeRefusal (spec 139 P2, spec 140 s1 ED4)', () => {
+  const ids = { tenantId: 'test-tenant', broadcastId: 'b-1', leg: 'live' as const, refusal: 'erased' as const };
   const gw = (answer: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other' | 'throws') => ({
     deleteBroadcastOnce: vi.fn(async () => {
       if (answer === 'throws') throw new Error('gateway wiring fault');
@@ -149,13 +154,13 @@ describe('deleteErasedDraftBeforeRefusal (spec 139 P2)', () => {
     ['an empty id (not an id)', { resendBroadcastId: '', probedStatus: null }],
   ] as const)('%s → cleared (none), no Resend call', async (_label, draft) => {
     const g = gw('deleted');
-    expect(await deleteErasedDraftBeforeRefusal(g, ids, draft)).toEqual({ kind: 'cleared', draftOutcome: 'none' });
+    expect(await deleteDraftBeforeRefusal(g, ids, draft)).toEqual({ kind: 'cleared', draftOutcome: 'none' });
     expect(g.deleteBroadcastOnce).not.toHaveBeenCalled();
   });
 
   it.each(['deleted', 'absent'] as const)('DELETE answers %s → cleared', async (answer) => {
     const g = gw(answer);
-    expect(await deleteErasedDraftBeforeRefusal(g, ids, { resendBroadcastId: 'rb-1', probedStatus: 'draft' })).toEqual({
+    expect(await deleteDraftBeforeRefusal(g, ids, { resendBroadcastId: 'rb-1', probedStatus: 'draft' })).toEqual({
       kind: 'cleared',
       draftOutcome: answer,
     });
@@ -164,7 +169,7 @@ describe('deleteErasedDraftBeforeRefusal (spec 139 P2)', () => {
 
   it('403 on an id the probe called cancelled → cleared (a cancelled broadcast can never be sent)', async () => {
     expect(
-      await deleteErasedDraftBeforeRefusal(gw('forbidden'), ids, { resendBroadcastId: 'rb-1', probedStatus: 'cancelled' }),
+      await deleteDraftBeforeRefusal(gw('forbidden'), ids, { resendBroadcastId: 'rb-1', probedStatus: 'cancelled' }),
     ).toEqual({ kind: 'cleared', draftOutcome: 'cancelled' });
   });
 
@@ -174,11 +179,159 @@ describe('deleteErasedDraftBeforeRefusal (spec 139 P2)', () => {
     ['retryable (a timeout included)', 'retryable', 'draft', 'retryable'],
     ['other', 'other', 'draft', 'other'],
     ['a throw', 'throws', 'draft', 'threw'],
-  ] as const)('%s → undecided', async (_label, answer, probedStatus, errClass) => {
-    expect(await deleteErasedDraftBeforeRefusal(gw(answer), ids, { resendBroadcastId: 'rb-1', probedStatus })).toEqual({
-      kind: 'undecided',
-      message: 'member_erased_draft_not_deleted',
-      errClass,
+  ] as const)('%s → undecided, and logs nothing (the caller logs its final outcome)', async (_label, answer, probedStatus, errClass) => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      expect(await deleteDraftBeforeRefusal(gw(answer), ids, { resendBroadcastId: 'rb-1', probedStatus })).toEqual({
+        kind: 'undecided',
+        errClass,
+        // Review round 3 (code-review #10) — the id it DELETEd rides with the answer.
+        resendBroadcastId: 'rb-1',
+        // Review round 5 — and the thrown class (never a message), for that line.
+        err: answer === 'throws' ? 'Error' : null,
+        probedStatus: probedStatus ?? 'not_found',
+      });
+      // Review round 5 (LOW) — one line per refusal, written by the caller.
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  // Review round 6 — the erased wrapper owns its one line, with the same fields
+  // the standing line carries.
+  it('deleteDraftBeforeErasedRefusal — an undecided DELETE logs ONE line: probedStatus, outcome, errClass, err', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      const { leg, tenantId, broadcastId } = ids;
+      const result = await deleteDraftBeforeErasedRefusal(gw('throws'), { tenantId, broadcastId, leg }, { resendBroadcastId: 'rb-1', probedStatus: 'draft' });
+      expect(result).toMatchObject({ kind: 'undecided', errClass: 'threw' });
+      expect(warnSpy.mock.calls).toEqual([
+        [
+          {
+            tenantId,
+            broadcastId,
+            leg,
+            refusal: 'erased',
+            resendBroadcastId: 'rb-1',
+            probedStatus: 'draft',
+            outcome: 'threw',
+            errClass: 'threw',
+            err: 'Error',
+          },
+          'broadcasts.dispatch.refused_draft_delete_unconfirmed',
+        ],
+      ]);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+});
+
+/**
+ * Spec 140 s1 review round 1 (reliability M-1, code-review #4, security L2) —
+ * the halted / ended refusal's DELETE. A 403 on a draft the probe did not call
+ * `cancelled` may be a sibling tick that has just sent it: ONE bounded GET
+ * decides. Handed → `handed` (the leg answers a concurrent skip: no
+ * `failed_to_dispatch`, no member email); anything else → `undeleted`, with a
+ * closed `errClass` the leg records, and the refusal goes ahead.
+ */
+describe('deleteDraftBeforeStandingRefusal (spec 140 s1 ED4, review round 1)', () => {
+  const ids = { tenantId: 'test-tenant', broadcastId: 'b-1', leg: 'import' as const };
+  const gw = (
+    answer: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other',
+    probe: 'queued' | 'sending' | 'sent' | 'draft' | 'cancelled' | 'failed' | 'unknown' | 'not_found' | 'retryable' | 'other' | 'throws' = 'draft',
+  ) => ({
+    deleteBroadcastOnce: vi.fn(async () => ({ kind: answer })),
+    retrieveBroadcastOnce: vi.fn(async () => {
+      if (probe === 'throws') throw new Error('a fake that breaks the never-throws contract');
+      if (probe === 'not_found' || probe === 'retryable' || probe === 'other') return { kind: probe };
+      return { kind: 'present' as const, status: probe };
+    }),
+  });
+  const draft = { resendBroadcastId: 'rb-1', probedStatus: 'draft' as const };
+
+  it.each(['queued', 'sending', 'sent'] as const)('403, then the GET says %s → handed (a sibling sent it): no refusal', async (status) => {
+    const g = gw('forbidden', status);
+    expect(await deleteDraftBeforeStandingRefusal(g, ids, draft)).toEqual({ kind: 'handed', resendStatus: status });
+    expect(g.retrieveBroadcastOnce).toHaveBeenCalledTimes(1);
+    expect(g.retrieveBroadcastOnce).toHaveBeenCalledWith('rb-1');
+  });
+
+  // Review round 2 (code-review #6) — the class says what the GET read, from a
+  // closed set; a `cancelled` reading is an unsendable copy, so it clears.
+  it.each([
+    ['draft', 'probe_draft'],
+    ['unknown', 'probe_other'],
+    ['not_found', 'probe_not_found'],
+    ['retryable', 'probe_retryable'],
+    ['other', 'probe_other'],
+    ['throws', 'threw'],
+  ] as const)('403, then the GET says %s → undeleted (%s): the refusal goes ahead', async (probe, errClass) => {
+    expect(await deleteDraftBeforeStandingRefusal(gw('forbidden', probe), ids, draft)).toEqual({ kind: 'undeleted', errClass });
+  });
+
+  // Review round 3 (code-review #4) — `failed` is unsendable too (MEASURED
+  // 2026-10-29: only a draft can be sent): cleared, recorded as what it is.
+  // Review round 4 (code-review #9) — a standing refusal's 403 is decided by
+  // the probe, so the DELETE's own "unconfirmed" warn is not logged first:
+  // ONE line for the final outcome.
+  it('a 403 then probe_draft logs ONE warn, for the final outcome', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      await deleteDraftBeforeStandingRefusal(gw('forbidden', 'draft'), ids, draft);
+      const lines = warnSpy.mock.calls.filter((c) => String(c[1]).startsWith('broadcasts.dispatch.refused_draft'));
+      expect(lines).toHaveLength(1);
+      // Review round 5 — the one line carries the first probe, the DELETE's
+      // answer and the final reading.
+      expect(lines[0]![0]).toMatchObject({ errClass: 'probe_draft', probedStatus: 'draft', outcome: 'forbidden', observedResendStatus: 'draft' });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it.each(['retryable', 'other'] as const)('a DELETE that answers %s logs ONE line, from the wrapper, with the DELETE outcome', async (answer) => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      await deleteDraftBeforeStandingRefusal(gw(answer), ids, draft);
+      const lines = warnSpy.mock.calls.filter((c) => String(c[1]).startsWith('broadcasts.dispatch.refused_draft'));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]![0]).toMatchObject({ refusal: 'standing', errClass: answer, probedStatus: 'draft', outcome: answer, observedResendStatus: null });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('403, then the GET says failed → cleared (failed): an unsendable copy, not an undeleted draft', async () => {
+    expect(await deleteDraftBeforeStandingRefusal(gw('forbidden', 'failed'), ids, draft)).toEqual({ kind: 'cleared', draftOutcome: 'failed' });
+  });
+
+  it('403, then the GET says cancelled → cleared (cancelled): an unsendable copy, not an undeleted draft', async () => {
+    expect(await deleteDraftBeforeStandingRefusal(gw('forbidden', 'cancelled'), ids, draft)).toEqual({ kind: 'cleared', draftOutcome: 'cancelled' });
+  });
+
+  it.each(['retryable', 'other'] as const)('%s → undeleted with that class, no GET', async (answer) => {
+    const g = gw(answer);
+    expect(await deleteDraftBeforeStandingRefusal(g, ids, draft)).toEqual({ kind: 'undeleted', errClass: answer });
+    expect(g.retrieveBroadcastOnce).not.toHaveBeenCalled();
+  });
+
+  it('a 403 on an id the probe already called cancelled → cleared (cancelled), no GET', async () => {
+    const g = gw('forbidden');
+    expect(await deleteDraftBeforeStandingRefusal(g, ids, { resendBroadcastId: 'rb-1', probedStatus: 'cancelled' })).toEqual({
+      kind: 'cleared',
+      draftOutcome: 'cancelled',
     });
+    expect(g.retrieveBroadcastOnce).not.toHaveBeenCalled();
+  });
+
+  it.each(['deleted', 'absent'] as const)('%s → cleared, no GET', async (answer) => {
+    const g = gw(answer);
+    expect(await deleteDraftBeforeStandingRefusal(g, ids, draft)).toEqual({ kind: 'cleared', draftOutcome: answer });
+    expect(g.retrieveBroadcastOnce).not.toHaveBeenCalled();
   });
 });

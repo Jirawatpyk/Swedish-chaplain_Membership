@@ -24,6 +24,17 @@ import type { BroadcastStatus } from '../../domain/value-objects/broadcast-statu
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 
 /**
+ * Spec 140 s1 review round 1 (code-review #8) — what the erasure cascade's
+ * terminal-draft pass reads of a row: its id, its status and the Resend id it
+ * still holds (non-empty by the query). No content.
+ */
+export interface TerminalBroadcastDraftRef {
+  readonly broadcastId: BroadcastId;
+  readonly status: BroadcastStatus;
+  readonly resendBroadcastId: string;
+}
+
+/**
  * #400 item 1 — the ONLY `Broadcast` fields `applyTransition` writes besides
  * `status` / `updated_at`. The Drizzle adapter loops over this tuple, so a
  * key off the list used to be silently DROPPED; typing the parameter as
@@ -327,6 +338,11 @@ export interface BroadcastsRepo {
    * Set the `resend_audience_id` + `resend_broadcast_id` columns on
    * dispatch — separate write from the status flip so the unique
    * partial index lookup works on the next webhook event.
+   *
+   * Spec 140 s1 (ED5) — only while the row is still `approved`: a stale
+   * attach on a row that left it writes nothing and throws
+   * `BroadcastConcurrentMutationError` (the row moved) or
+   * `BroadcastNotFoundError` (the row is gone).
    */
   attachResendIds(
     tx: unknown,
@@ -853,6 +869,34 @@ export interface BroadcastsRepo {
     tenantId: TenantSlug,
     memberId: MemberId,
   ): Promise<ReadonlyArray<Broadcast>>;
+
+  /**
+   * Spec 140 s1 (ED1–ED3, #699) — the member's rows the in-flight list does
+   * NOT reach that still point at a Resend broadcast: every status outside
+   * `IN_PROGRESS_BROADCAST_STATUSES` except the handed ones, with a non-empty
+   * `resend_broadcast_id`. The erasure scrub keeps that column, so such a
+   * row's draft is still findable by member id. Read by the erasure cascade's
+   * terminal-draft pass, which deletes each draft once at Resend.
+   *
+   * What lands in it, and why: `failed_to_dispatch`, `cancelled`, `rejected`
+   * and `expired_no_member_response` (closed; a draft may remain), and `draft`.
+   * Left out, review round 2 (pdpa N-1): `sent`, `sending`, `partially_sent`
+   * and `partial_delivery_accepted` — both legs write `sending` only after
+   * `/send` was accepted (or a probe / replay saw it accepted), and the others
+   * are reached only through it, so such a copy was handed in the ordinary
+   * course, a DELETE can only answer 403, and an old delivery is not erasure
+   * evidence; the F7 retention sweep owns those copies. A listed row whose
+   * copy probes handed (a `failed_to_dispatch` after `sent_but_transition_lost`:
+   * the row says unsent, Resend sent it) becomes 8c evidence; an unsent copy
+   * Resend will not delete (canceled / failed) is `resend_copies_retained`.
+   *
+   * Tenant-scoped by an explicit `tenant_id` predicate inside `runInTenant`
+   * (RLS + FORCE as well).
+   */
+  listTerminalWithResendIdOwnedByMember(
+    tenantId: TenantSlug,
+    memberId: MemberId,
+  ): Promise<ReadonlyArray<TerminalBroadcastDraftRef>>;
 
   /**
    * COMP-1 US2b — GDPR Art.17 / PDPA §33 content redaction. Inside the

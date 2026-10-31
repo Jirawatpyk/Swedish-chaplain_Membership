@@ -23,14 +23,16 @@
  *                   cycle lapses (`terminated`).
  *   - `refuse`    — PERMANENT (`failed_to_dispatch`): the member's E-Blasts are
  *                   halted, or the membership has ENDED (F8 `terminated`:
- *                   cancelled / coverage ended, lapsed, refunded).
+ *                   cancelled / coverage ended, lapsed, refunded). The leg
+ *                   deletes the row's draft first (spec 140 s1 ED4,
+ *                   `deleteDraftBeforeRefusal`) but never stalls on it.
  *   - `refuse_erased` — spec 139: PERMANENT too, for a member who is erased.
  *                   (A requester NOT FOUND is `undecided` since review round 2,
  *                   P4: erasure never deletes a member row.) Its own kind because
  *                   it writes no standing-refusal audit row and sends the
  *                   member no email (P3), and because the leg must first
  *                   delete a pre-scrub draft the row still carries (P2,
- *                   `deleteErasedDraftBeforeRefusal`). The `failure_reason`
+ *                   `deleteDraftBeforeRefusal`). The `failure_reason`
  *                   token is the existing `member_not_in_good_standing`.
  *   - `undecided` — a read failed, or answered something this build does not
  *                   know. Fail CLOSED: nothing is sent, the row stays
@@ -53,6 +55,7 @@ import type { BroadcastsGatewayPort, DeleteBroadcastOnceOutcome } from '../ports
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { StandingRefusalFailureReason } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { readMemberSendStanding, type MemberSendStandingDeps, type StandingRefusal } from './_member-send-standing';
+import { isHandedStatus } from './_probe-refused-send';
 
 /** The standing reads a dispatch leg makes. */
 export interface DispatchStandingDeps extends MemberSendStandingDeps {
@@ -132,30 +135,57 @@ export async function decideDispatchStanding(
 }
 
 /**
- * What an erased refusal's DELETE of the row's pre-scrub draft decided (P2).
- * `cleared` — the draft THIS ROW carries is gone, or can never be sent, so the
- * leg may refuse terminally (other copies are not this function's reach —
- * residual 8d, below); `draftOutcome` is what it
- * found (`none` = the row carried no id). `undecided` — the draft may still
- * be there: nothing is sent, the row stays `approved`, the next tick (or the
- * `reconcile-erasures` cron's cascade) tries again.
+ * What a refusal's DELETE of the row's never-handed draft decided.
+ * `cleared` — the draft THIS ROW carries is gone, or can never be sent;
+ * `draftOutcome` is what it found (`none` = the row carried no id). Other
+ * copies are not this function's reach (RoPA residual 8d, below).
+ * `undecided` — the draft may still be there. The erased arm then decides
+ * nothing (`ERASED_DRAFT_NOT_DELETED`: nothing is sent, the row stays
+ * `approved`, the next tick or the `reconcile-erasures` cascade tries again);
+ * the halted / ended arm refuses anyway and records `undeleted` (spec 140 s1).
  */
-export type ErasedDraftClearance =
-  | { readonly kind: 'cleared'; readonly draftOutcome: 'none' | 'deleted' | 'absent' | 'cancelled' }
-  | { readonly kind: 'undecided'; readonly message: 'member_erased_draft_not_deleted'; readonly errClass: string };
+export type DraftClearance =
+  | { readonly kind: 'cleared'; readonly draftOutcome: 'none' | 'deleted' | 'absent' | 'cancelled' | 'failed' }
+  /**
+   * Review rounds 3 + 5 — carries the id it tried to DELETE, what the caller's
+   * probe had read, and the thrown class (`errKind`, never a message), so the
+   * CALLER writes the one log line for its final outcome.
+   */
+  | {
+      readonly kind: 'undecided';
+      readonly errClass: RefusedDraftErrClass;
+      readonly resendBroadcastId: string;
+      readonly probedStatus: 'draft' | 'cancelled' | 'not_found';
+      readonly err: string | null;
+    };
 
 /**
- * Spec 139 P2 — before an erased member's row is refused, delete the Resend
- * draft it still carries. Without this, an erasure cascade that failed
- * retryably (the next dispatch tick, every 5 min, reaches the gate before
- * `reconcile-erasures`, every 30 min) would make the row terminal and leave
- * the pre-scrub subject, body and from-name at Resend on that row's draft.
+ * Why a refusal's DELETE did not confirm — a CLOSED set (the DELETE's own
+ * outcome kind, or `threw`), never the provider's text, so it may ride in an
+ * append-only audit payload (`resendDraftErrClass`).
+ */
+export type RefusedDraftErrClass = 'forbidden' | 'retryable' | 'other' | 'threw';
+
+/** The `dispatch.server_error` message of an erased refusal whose draft DELETE did not confirm. */
+export const ERASED_DRAFT_NOT_DELETED = 'member_erased_draft_not_deleted';
+
+/**
+ * Before a dispatch leg refuses a row for the member's standing, delete the
+ * Resend draft the row still carries — so a terminal row no longer keeps one.
  *
- * It closes the SEND, not every Resend copy: a pre-scrub draft minted for an
- * E-Blast that is already terminal (`failed_to_dispatch`, or staff-cancelled
- * with an id), or a minted draft whose reclaim failed, is never on a row this
- * gate reaches and can stay at Resend after the erasure. It is never sent —
- * RoPA residual 8d (`docs/compliance/processing-records.md`).
+ * Spec 139 P2 (`refusal: 'erased'`): without it, an erasure cascade that
+ * failed retryably (the next dispatch tick, every 5 min, reaches the gate
+ * before `reconcile-erasures`, every 30 min) would make the row terminal and
+ * leave the pre-scrub subject, body and from-name at Resend on that row's
+ * draft. Spec 140 s1 ED4 (`refusal: 'standing'`): a halted or ENDED
+ * membership's refusal did the same — the plain `refuse` arm was a producer
+ * of terminal rows holding a draft (RoPA 8d).
+ *
+ * It closes the SEND and this row's draft, not every Resend copy: a minted
+ * draft whose reclaim failed is on no row (RoPA residual 8d; slice 2 records
+ * it). A terminal row's draft left behind (an undecided standing refusal, a
+ * probed-refused send, a budget-exhausted or stuck import) is reached by the
+ * erasure cascade's terminal-draft pass if the member is erased.
  *
  * Called only for an id the same tick's probe said was never handed to
  * `/send` (`draft`, `cancelled`, or `not_found`) — a handed id never reaches
@@ -169,31 +199,162 @@ export type ErasedDraftClearance =
  * Kept OUT of `decideDispatchStanding`, which the staff detail page reads
  * (`read-dispatch-hold.ts`): a page read must never delete anything.
  */
-export async function deleteErasedDraftBeforeRefusal(
+export async function deleteDraftBeforeRefusal(
   gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce'>,
-  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
+  ids: {
+    readonly tenantId: string;
+    readonly broadcastId: string;
+    readonly leg: 'live' | 'import';
+    readonly refusal: 'erased' | 'standing';
+  },
   draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
-): Promise<ErasedDraftClearance> {
+): Promise<DraftClearance> {
   if (draft === null || draft.resendBroadcastId === '') return { kind: 'cleared', draftOutcome: 'none' };
-  const logIds = { ...ids, resendBroadcastId: draft.resendBroadcastId, probedStatus: draft.probedStatus ?? 'not_found' };
+  const probedStatus: 'draft' | 'cancelled' | 'not_found' = draft.probedStatus ?? 'not_found';
+  const logIds = { ...ids, resendBroadcastId: draft.resendBroadcastId, probedStatus };
+  const undecided = { kind: 'undecided', resendBroadcastId: draft.resendBroadcastId, probedStatus } as const;
   let outcome: DeleteBroadcastOnceOutcome['kind'];
   try {
     outcome = (await gateway.deleteBroadcastOnce(draft.resendBroadcastId)).kind;
   } catch (e) {
-    logger.warn({ ...logIds, err: errKind(e) }, 'broadcasts.dispatch.erased_draft_delete_threw');
-    return { kind: 'undecided', message: 'member_erased_draft_not_deleted', errClass: 'threw' };
+    // Review round 5 — no line here: the caller logs its final outcome once.
+    return { ...undecided, errClass: 'threw', err: errKind(e) };
   }
   if (outcome === 'deleted' || outcome === 'absent') {
-    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_deleted');
+    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_deleted');
     return { kind: 'cleared', draftOutcome: outcome };
   }
   if (outcome === 'forbidden' && draft.probedStatus === 'cancelled') {
-    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_cancelled_unsendable');
+    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
     return { kind: 'cleared', draftOutcome: 'cancelled' };
   }
-  logger.warn({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_delete_unconfirmed');
-  return { kind: 'undecided', message: 'member_erased_draft_not_deleted', errClass: outcome };
+  // Review rounds 4–5 (code-review #9) — no line here: the caller decides the
+  // final outcome (a standing refusal probes a 403 first) and logs it once.
+  return { ...undecided, errClass: outcome, err: null };
 }
+
+/**
+ * Spec 140 s1 review round 6 — `deleteDraftBeforeRefusal` for an ERASED
+ * member's refusal, owning its one log line: on `undecided` it writes
+ * `refused_draft_delete_unconfirmed` with the fields the standing line carries
+ * (`probedStatus`, the DELETE `outcome`, `errClass`, and `err` on a throw).
+ * Both legs' erased arms call this and nothing else. Never provider text.
+ */
+export async function deleteDraftBeforeErasedRefusal(
+  gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce'>,
+  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
+  draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
+): Promise<DraftClearance> {
+  const cleared = await deleteDraftBeforeRefusal(gateway, { ...ids, refusal: 'erased' }, draft);
+  if (cleared.kind === 'undecided') {
+    logger.warn(
+      {
+        ...ids,
+        refusal: 'erased',
+        resendBroadcastId: cleared.resendBroadcastId,
+        probedStatus: cleared.probedStatus,
+        outcome: cleared.errClass,
+        errClass: cleared.errClass,
+        err: cleared.err,
+      },
+      'broadcasts.dispatch.refused_draft_delete_unconfirmed',
+    );
+  }
+  return cleared;
+}
+
+/**
+ * What a halted / ended refusal's DELETE decided (spec 140 s1 ED4). `handed` —
+ * a sibling tick sent the draft between this tick's probe and its DELETE: the
+ * mail is out, so the leg writes no `failed_to_dispatch`, emails nobody and
+ * answers a concurrent skip. `undeleted` — the refusal goes ahead and records
+ * `resendDraftOutcome: 'undeleted'` + `resendDraftErrClass`.
+ */
+export type StandingDraftClearance =
+  | Extract<DraftClearance, { kind: 'cleared' }>
+  | { readonly kind: 'undeleted'; readonly errClass: StandingDraftErrClass }
+  | { readonly kind: 'handed'; readonly resendStatus: 'queued' | 'sending' | 'sent' };
+
+/**
+ * Spec 140 s1 review round 2 (code-review #6) — why a standing refusal's draft
+ * stayed, as a CLOSED set for `resendDraftErrClass`: the DELETE's own answer
+ * (`retryable` / `other` / `threw`), or, after a 403, what the one GET read
+ * (`probe_*`, `threw`). Never the provider's text.
+ */
+export type StandingDraftErrClass =
+  | Exclude<RefusedDraftErrClass, 'forbidden'>
+  | 'probe_draft'
+  | 'probe_not_found'
+  | 'probe_retryable'
+  | 'probe_other';
+
+/**
+ * Spec 140 s1 review round 1 (reliability M-1, code-review #4, security L2) —
+ * `deleteDraftBeforeRefusal` for the plain refusal. A 403 on a draft the probe
+ * did not call `cancelled` is either a restricted key or a sibling tick that
+ * has just sent it; refusing the second would record `failed_to_dispatch`,
+ * release the quota slot and tell the member a delivered E-Blast failed. So ONE
+ * bounded `retrieveBroadcastOnce` decides: queued / sending / sent → `handed`;
+ * anything else (a throw included) → `undeleted`, and the refusal goes ahead.
+ */
+export async function deleteDraftBeforeStandingRefusal(
+  gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>,
+  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
+  draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
+): Promise<StandingDraftClearance> {
+  const cleared = await deleteDraftBeforeRefusal(gateway, { ...ids, refusal: 'standing' }, draft);
+  if (cleared.kind === 'cleared') return cleared;
+  // Review round 5 — ONE line per refusal, for its final outcome, carrying the
+  // tick's first probe, the DELETE's answer and (after a 403) the GET's reading.
+  const { resendBroadcastId } = cleared;
+  const logIds = {
+    ...ids,
+    refusal: 'standing',
+    resendBroadcastId,
+    probedStatus: cleared.probedStatus,
+    outcome: cleared.errClass,
+  };
+  // Only a 403 can hide a sibling's send; `cleared` above already took a 403 on
+  // a `cancelled` id.
+  if (cleared.errClass !== 'forbidden') {
+    logger.warn(
+      { ...logIds, observedResendStatus: null, errClass: cleared.errClass, err: cleared.err },
+      'broadcasts.dispatch.refused_draft_delete_unconfirmed',
+    );
+    return { kind: 'undeleted', errClass: cleared.errClass };
+  }
+  let probe: Awaited<ReturnType<BroadcastsGatewayPort['retrieveBroadcastOnce']>>;
+  try {
+    probe = await gateway.retrieveBroadcastOnce(resendBroadcastId);
+  } catch (e) {
+    logger.warn({ ...logIds, observedResendStatus: null, errClass: 'threw', err: errKind(e) }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
+    return { kind: 'undeleted', errClass: 'threw' };
+  }
+  const probed = probe.kind === 'present' ? probe.status : probe.kind;
+  if (isHandedStatus(probed)) {
+    logger.warn({ ...logIds, observedResendStatus: probed }, 'broadcasts.dispatch.refused_draft_handed_by_sibling');
+    return { kind: 'handed', resendStatus: probed };
+  }
+  // Review round 2 (code-review #6) — a `cancelled` reading is an unsendable
+  // copy: cleared, as `deleteDraftBeforeRefusal` clears a 403 on an id its
+  // probe already called cancelled. Review round 3 (code-review #4) — so is
+  // `failed` (MEASURED 2026-10-29: only a draft can be sent): cleared, and
+  // recorded as `failed` (`resendDraftOutcome`), not as an undeleted draft.
+  if (probed === 'cancelled' || probed === 'failed') {
+    logger.info({ ...logIds, observedResendStatus: probed }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
+    return { kind: 'cleared', draftOutcome: probed };
+  }
+  const errClass = PROBE_ERR_CLASS[probed] ?? 'probe_other';
+  logger.warn({ ...logIds, observedResendStatus: probed, errClass }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
+  return { kind: 'undeleted', errClass };
+}
+
+/** What a non-handed, non-cancelled GET after a 403 is recorded as; anything else is `probe_other`. */
+const PROBE_ERR_CLASS: Readonly<Record<string, StandingDraftErrClass>> = {
+  draft: 'probe_draft',
+  not_found: 'probe_not_found',
+  retryable: 'probe_retryable',
+};
 
 /**
  * Spec 139 P4 — the warn line a leg writes when the requester is not in the

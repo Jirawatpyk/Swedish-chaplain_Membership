@@ -367,6 +367,113 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     });
   });
 
+  // ---- Spec 140 s1 ED4 (review round 2, code-review #8) — on real Postgres ----
+  //
+  // A halted refusal deletes the row's never-handed draft before its terminal
+  // write and records `resendDraftOutcome`; a 403 whose one GET reads handed is
+  // a sibling tick's send — no terminal write, no member notice (not even the
+  // `…_notif_skipped_no_email` row), the row left `approved`.
+
+  it('ED4 legacy: a halted refusal deletes the draft on the row first; broadcast_failed_to_dispatch carries resendDraftOutcome deleted', async () => {
+    const memberId = await seedMember('halted');
+    const resendBroadcastId = `rb-ed4-${randomUUID()}`;
+    const row = approvedRow(memberId, { resendAudienceId: `aud-ed4-${randomUUID()}`, resendBroadcastId });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'deleted' },
+    });
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+
+    const r = await dispatchScheduledBroadcast(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason: 'member_halted' } });
+    expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
+    expect((await readRow(row.broadcastId!)).status).toBe('failed_to_dispatch');
+    const failed = (await dispatchAudits(row.broadcastId!)).find((a) => (a.eventType as string) === 'broadcast_failed_to_dispatch');
+    expect(failed?.payload).toMatchObject({ reason: 'member_halted', resendDraftOutcome: 'deleted' });
+  });
+
+  it('ED4 legacy: a 403 whose probe reads sent (a sibling sent it) → no terminal write, no member notice, the row stays approved', async () => {
+    const memberId = await seedMember('halted');
+    const resendBroadcastId = `rb-ed4-${randomUUID()}`;
+    const row = approvedRow(memberId, { resendAudienceId: `aud-ed4-${randomUUID()}`, resendBroadcastId });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'forbidden' },
+      retrieveBroadcastOnce: { kind: 'present', status: 'sent' },
+    });
+    const base = await makeDispatchScheduledBroadcastDeps(tenant.ctx.slug);
+
+    const r = await dispatchScheduledBroadcast(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+    expect((await readRow(row.broadcastId!)).status).toBe('approved');
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
+  it('ED4 import: a halted refusal deletes the draft on the row first; broadcast_failed_to_dispatch carries resendDraftOutcome deleted', async () => {
+    const memberId = await seedMember('halted');
+    const resendBroadcastId = `rb-ed4-${randomUUID()}`;
+    const row = approvedRow(memberId, {
+      resendAudienceId: `aud-ed4-${randomUUID()}`,
+      resendBroadcastId,
+      audienceImportId: `imp-ed4-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'deleted' },
+    });
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r.ok ? r.value : r.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_halted' });
+    expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
+    expect((await readRow(row.broadcastId!)).status).toBe('failed_to_dispatch');
+    const failed = (await dispatchAudits(row.broadcastId!)).find((a) => (a.eventType as string) === 'broadcast_failed_to_dispatch');
+    expect(failed?.payload).toMatchObject({ reason: 'member_halted', resendDraftOutcome: 'deleted' });
+  });
+
+  it('ED4 import: a 403 whose probe reads queued (a sibling sent it) → no terminal write, no member notice, the row stays approved', async () => {
+    const memberId = await seedMember('halted');
+    const resendBroadcastId = `rb-ed4-${randomUUID()}`;
+    const row = approvedRow(memberId, {
+      resendAudienceId: `aud-ed4-${randomUUID()}`,
+      resendBroadcastId,
+      audienceImportId: `imp-ed4-${randomUUID()}`,
+      audienceImportSubmittedAt: new Date(Date.now() - 300_000),
+    });
+    await runInTenant(tenant.ctx, (tx) => tx.insert(broadcasts).values(row));
+    const gw = allowingGateway({
+      retrieveBroadcast: { kind: 'present', resource: { id: resendBroadcastId, status: 'draft', sentAt: null } },
+      deleteBroadcastOnce: { kind: 'forbidden' },
+      retrieveBroadcastOnce: { kind: 'present', status: 'queued' },
+    });
+    const base = await makeBuildAudienceTickDeps(tenant.ctx.slug, membersBridge);
+
+    const r = await buildAudienceTick(
+      { ...base, broadcastsGateway: gw.port, brandChrome: NO_BRAND },
+      { broadcastId: asBroadcastId(row.broadcastId!) },
+    );
+
+    expect(r).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+    expect((await readRow(row.broadcastId!)).status).toBe('approved');
+    expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
+  });
+
   // ---- R1 — a SUSPENDED membership is HELD, never refused ------------------
   //
   // The seeded `suspended` member's latest cycle is `awaiting_payment` with a

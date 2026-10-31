@@ -970,6 +970,17 @@ export interface MemberRepo {
       readonly reason: 'gdpr_erasure_request' | 'pdpa_deletion_request';
     }>
   >;
+
+  /**
+   * Spec 140 s1 review rounds 3–5 — how many members the reconciler would find
+   * stuck: the ONLY value of the `members_erasure_stuck_count` gauge, read on
+   * every tick (paused: once; running: before the loop and after it, each in
+   * its own short tx, never under the candidate query's row locks). The SAME anti-join as `findStuckErasuresInTx` (one shared
+   * fragment), but a plain count — no `FOR UPDATE SKIP LOCKED` (it locks
+   * nothing, and a member being erased right now is counted, not skipped) and
+   * no cap.
+   */
+  countStuckErasuresInTx(tx: TenantTx, tenantSlug: string): Promise<number>;
 }
 
 // ---------------------------------------------------------------------------

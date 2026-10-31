@@ -64,7 +64,9 @@ import type { AuditEmitInput, AuditPort } from '../ports/audit-port';
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
   decideDispatchStanding,
-  deleteErasedDraftBeforeRefusal,
+  deleteDraftBeforeErasedRefusal,
+  deleteDraftBeforeStandingRefusal,
+  ERASED_DRAFT_NOT_DELETED,
   recordDispatchHold,
   recordRequesterNotFound,
   REQUESTER_NOT_FOUND,
@@ -686,10 +688,18 @@ async function probeInheritedBroadcast(
  *   audit rows in the terminal transaction: the `broadcast_failed_to_dispatch`
  *   row every terminal failure writes, and the standing refusal under submit's
  *   own event types (`surface: 'dispatch'`), so "why was this member's E-Blast
- *   refused" stays one query across every surface.
+ *   refused" stays one query across every surface. Spec 140 s1 (ED4): the
+ *   row's never-handed draft is deleted first (`deleteDraftBeforeRefusal`),
+ *   and the payload records `resendDraftOutcome`. An undecided DELETE does not
+ *   stall the refusal — left `approved`, the row could be sent once a halt is
+ *   lifted, and a permanent Resend answer would hold it there for ever — so it
+ *   is recorded `undeleted` (+ a closed `resendDraftErrClass`); the erasure
+ *   cascade's terminal pass reaches that draft if the member is erased, and
+ *   from slice 2 the orphan sweep. A 403 whose one GET reads handed is a
+ *   sibling's send: a concurrent skip, no terminal write, no email.
  * - `refuse_erased` (spec 139 — the member is erased; a missing requester is undecided, P4) — PERMANENT too,
  *   but only once the row's never-handed draft is confirmed deleted at Resend
- *   (P2, `deleteErasedDraftBeforeRefusal`; otherwise nothing is decided). ONE
+ *   (P2, `deleteDraftBeforeRefusal`; otherwise nothing is decided). ONE
  *   audit row (`broadcast_failed_to_dispatch` with `standing: 'erased'`), no
  *   standing-refusal row and no member email (P3).
  * - anything else — a read that FAILED decides nothing: `dispatch.server_error`
@@ -716,7 +726,22 @@ async function applySendStanding(
     await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
     return ok({ kind: 'dispatch_held_member_suspended' });
   }
+  // Reached only for a NOT-handed probe (a handed row returned at Step 1a).
+  const rowDraft =
+    broadcast.resendBroadcastId === null
+      ? null
+      : { resendBroadcastId: broadcast.resendBroadcastId, probedStatus: probe !== null && !probe.handed ? probe.status : null };
   if (standing.kind === 'refuse') {
+    const cleared = await deleteDraftBeforeStandingRefusal(
+      deps.broadcastsGateway,
+      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, leg: 'import' },
+      rowDraft,
+    );
+    // Review round 1 (reliability M-1) — a sibling tick sent the draft: the
+    // mail is out, so no terminal write and no member email — a concurrent skip.
+    if (cleared.kind === 'handed') {
+      return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+    }
     return failTerminally(
       deps,
       input,
@@ -729,6 +754,10 @@ async function applySendStanding(
         expected: null,
       },
       {
+        payloadExtra:
+          cleared.kind === 'cleared'
+            ? { resendDraftOutcome: cleared.draftOutcome }
+            : { resendDraftOutcome: 'undeleted', resendDraftErrClass: cleared.errClass },
         extraAudit: standingRefusalAuditEvent({
           refusal: standing.refusal,
           surface: 'dispatch',
@@ -743,16 +772,14 @@ async function applySendStanding(
     );
   }
   if (standing.kind === 'refuse_erased') {
-    const cleared = await deleteErasedDraftBeforeRefusal(
+    // Review round 6 — the erased wrapper writes this arm's one log line.
+    const cleared = await deleteDraftBeforeErasedRefusal(
       deps.broadcastsGateway,
       { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, leg: 'import' },
-      // Reached only for a NOT-handed probe (a handed row returned at Step 1a).
-      broadcast.resendBroadcastId === null
-        ? null
-        : { resendBroadcastId: broadcast.resendBroadcastId, probedStatus: probe !== null && !probe.handed ? probe.status : null },
+      rowDraft,
     );
     if (cleared.kind === 'undecided') {
-      return err({ kind: 'dispatch.server_error', message: cleared.message, errClass: cleared.errClass, phase: 'standing' });
+      return err({ kind: 'dispatch.server_error', message: ERASED_DRAFT_NOT_DELETED, errClass: cleared.errClass, phase: 'standing' });
     }
     return failTerminally(
       deps,
@@ -2011,9 +2038,13 @@ async function advanceToSending(
   // The broadcast id that makes the webhooks resolvable is already COMMITTED
   // by now — `persistBroadcastIdBeforeSend` wrote it before the send, and on
   // the handed path an earlier tick did. So `attachResendIds` below re-writes
-  // values the row already holds (it has no CAS and sets the same pair, so it
-  // is idempotent); it stays as the "row gone" detector and the parity write
-  // the legacy leg makes. It keeps its OWN tx, separate from the transition:
+  // values the row already holds (it sets the same pair, so it is idempotent);
+  // it stays as the "row gone" detector and the parity write the legacy leg
+  // makes. Since spec 140 s1 (ED5) it carries `status = 'approved'`, so on a
+  // row that left `approved` it writes nothing and throws the concurrent
+  // error, which takes the SAME re-read as a lost transition below (a sibling
+  // already `sending` this resource is no incident; a cancel that won is
+  // `sent_but_transition_lost`). It keeps its OWN tx, separate from the transition:
   // when both shared one, a cancel made the transition match 0 rows, roll the
   // id write back with it and escape as `uncaught_error`, and every later
   // delivery / bounce / complaint webhook failed to resolve the broadcast.
@@ -2036,7 +2067,7 @@ async function advanceToSending(
       );
     }),
   );
-  if (!idsAttached.ok) {
+  if (!idsAttached.ok && idsAttached.error.kind === 'broadcast_not_found') {
     // The row is gone (erasure cascade). The mail is out and there is nothing
     // left to attach it to — log at critical and let the cron count it a
     // concurrent skip rather than a programming fault.
@@ -2053,7 +2084,9 @@ async function advanceToSending(
     return err(idsAttached.error);
   }
 
-  const transitioned = await viaRepoConcurrency(input.broadcastId, () =>
+  // A lost attach CAS (ED5) is a lost transition: it takes the re-read below,
+  // and no transition is attempted on a row that already left `approved`.
+  const transitioned = !idsAttached.ok ? idsAttached : await viaRepoConcurrency(input.broadcastId, () =>
     deps.broadcastsRepo.withTx(async (tx) => {
       await deps.broadcastsRepo.applyTransition(
         tx,

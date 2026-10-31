@@ -100,7 +100,11 @@ type GatewayMethod =
   /** The inherited-id probe: was an earlier tick's broadcast handed to `/send`? */
   | 'retrieveBroadcast'
   /** A minted resource reclaimed (pre-send attach lost), or a hold's inherited draft. */
-  | 'deleteBroadcast';
+  | 'deleteBroadcast'
+  /** Spec 140 s1 (ED4) — a refusal deletes the row's never-handed draft before its terminal write. */
+  | 'deleteBroadcastOnce'
+  /** Spec 140 s1 review round 1 — the refusal's one GET after a 403. */
+  | 'retrieveBroadcastOnce';
 
 interface Recorder {
   readonly transitions: Array<{
@@ -345,9 +349,15 @@ function makeDeps(opts: {
   readonly readBackImportId?: string | null;
   /** What a `findById` read-back finds for the status; default: the row's. */
   readonly readBackStatus?: BroadcastStatus;
-}): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder } {
+  /** Spec 140 s1 (ED4) — what `deleteBroadcastOnce` answers; default: `deleted`. */
+  readonly deleteOnceOutcome?: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other';
+  /** Spec 140 s1 review round 1 — what `retrieveBroadcastOnce` reads after a 403; default: `draft`. */
+  readonly retrieveOnceStatus?: 'draft' | 'queued' | 'sending' | 'sent';
+}): { deps: DepsWithEveryPort & { sendStanding: ReturnType<typeof makeFakeSendStanding> }; rec: Recorder & { readonly deleteOnce: Array<{ id: string; transitionsBefore: number }> } } {
   let txSeq = 0;
-  const rec: Recorder = {
+  const deleteOnce: Array<{ id: string; transitionsBefore: number }> = [];
+  const rec: Recorder & { readonly deleteOnce: typeof deleteOnce } = {
+    deleteOnce,
     transitions: [],
     audits: [],
     memberEmails: [],
@@ -750,6 +760,15 @@ function makeDeps(opts: {
         async deleteBroadcast(id: string) {
           maybeThrow('deleteBroadcast');
           rec.broadcastsDeleted.push(id);
+        },
+        async deleteBroadcastOnce(id: string) {
+          rec.gatewayCalls.push('deleteBroadcastOnce');
+          rec.deleteOnce.push({ id, transitionsBefore: rec.transitions.length });
+          return { kind: opts.deleteOnceOutcome ?? ('deleted' as const) };
+        },
+        async retrieveBroadcastOnce() {
+          rec.gatewayCalls.push('retrieveBroadcastOnce');
+          return { kind: 'present' as const, status: opts.retrieveOnceStatus ?? ('draft' as const) };
         },
       },
       audit: {
@@ -2733,7 +2752,8 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
 
     expect(deps.sendStanding.membersBridge.getMembersHaltedInTenant).toHaveBeenCalled();
     expect(res.ok ? null : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_halted' });
-    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast']);
+    // Spec 140 s1 (ED4) — and the refusal deletes that never-handed draft first.
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
   });
 
   /** R8.5 — an EMPTY id is not an id: the row is still gated (fail closed). */
@@ -2776,6 +2796,159 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
     const res = await buildAudienceTick(tick2.deps as never, { broadcastId: BROADCAST_ID });
     expect(res.ok).toBe(true);
     expect(tick2.rec.sends).toEqual(['rb-1']);
+  });
+
+  /**
+   * Spec 140 s1 (ED4) — the plain refusal (halted, or the membership ENDED)
+   * deletes the never-handed draft the row carries BEFORE its terminal write,
+   * as `refuse_erased` does. An undecided DELETE does not stall it: the row
+   * still ends terminally (left `approved`, a lifted halt could send it) and
+   * the outcome is recorded; the erasure cascade's terminal pass reaches a
+   * draft left behind.
+   */
+  it.each([
+    ['halted', { halted: ['m-1'] }, 'member_halted'],
+    ['terminated', { access: 'terminated' }, 'member_not_in_good_standing'],
+  ] as const)('ED4 — a %s refusal deletes the row\'s draft before the terminal write (resendDraftOutcome deleted)', async (_label, standing, reason) => {
+    const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW, resendBroadcastId: 'rb-earlier-tick', standing });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? null : res.error).toMatchObject({ kind: 'audience_import_failed', reason });
+    expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
+    expect(rec.deleteOnce).toEqual([{ id: 'rb-earlier-tick', transitionsBefore: 0 }]);
+    expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+    expect(rec.audits[0]).toMatchObject({ eventType: 'broadcast_failed_to_dispatch', payload: { resendDraftOutcome: 'deleted' } });
+    expect(rec.sends).toEqual([]);
+  });
+
+  it.each(['retryable', 'other', 'forbidden'] as const)(
+    'ED4 — the DELETE answers %s → still refused terminally (never left approved), resendDraftOutcome undeleted',
+    async (deleteOnceOutcome) => {
+      const { deps, rec } = makeDeps({ resendBroadcastId: 'rb-earlier-tick', standing: { halted: ['m-1'] }, deleteOnceOutcome });
+
+      const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(res.ok ? null : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_halted' });
+      expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+      // Review round 1 — the closed class rides with the outcome, never provider text.
+      // Review round 2 — after a 403 the class is what the probe read (`draft`).
+      expect(rec.audits[0]?.payload).toMatchObject({
+        resendDraftOutcome: 'undeleted',
+        resendDraftErrClass: deleteOnceOutcome === 'forbidden' ? 'probe_draft' : deleteOnceOutcome,
+      });
+    },
+  );
+
+  // Review round 1 (reliability M-1) — a 403 whose probe reads handed is a
+  // sibling tick that sent the draft between this tick's probe and its DELETE:
+  // the mail is out, so no failed_to_dispatch and no member email.
+  it.each(['queued', 'sending', 'sent'] as const)(
+    'ED4 — the DELETE answers forbidden and the probe reads %s (a sibling sent it) → a concurrent skip, no terminal write, no email',
+    async (retrieveOnceStatus) => {
+      const { logger } = await import('@/lib/logger');
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const { deps, rec } = makeDeps({
+        resendBroadcastId: 'rb-earlier-tick',
+        standing: { halted: ['m-1'] },
+        deleteOnceOutcome: 'forbidden',
+        retrieveOnceStatus,
+      });
+
+      const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+      expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+      expect(rec.gatewayCalls).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce', 'retrieveBroadcastOnce']);
+      expect(rec.transitions).toEqual([]);
+      expect(rec.audits).toEqual([]);
+      expect(rec.memberEmails).toEqual([]);
+      expect(warnSpy.mock.calls.map((c) => c[1])).toContain('broadcasts.dispatch.refused_draft_handed_by_sibling');
+    },
+  );
+
+  // Review round 6 — the import leg's erased refusal: an undecided DELETE logs
+  // ONE line (the erased wrapper's), with the fields the standing line carries.
+  it('an ERASED refusal whose DELETE answers retryable logs one refused_draft line, refusal erased', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const { deps } = makeDeps({ resendBroadcastId: 'rb-earlier-tick', standing: { erased: true }, deleteOnceOutcome: 'retryable' });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const lines = warnSpy.mock.calls.filter((c) => String(c[1]).startsWith('broadcasts.dispatch.refused_draft'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toEqual([
+      expect.objectContaining({
+        refusal: 'erased',
+        leg: 'import',
+        resendBroadcastId: 'rb-earlier-tick',
+        probedStatus: 'draft',
+        outcome: 'retryable',
+        errClass: 'retryable',
+      }),
+      'broadcasts.dispatch.refused_draft_delete_unconfirmed',
+    ]);
+  });
+
+  it('ED4 — a row with no Resend id makes no Resend call; resendDraftOutcome none', async () => {
+    const { deps, rec } = makeDeps({ standing: { halted: ['m-1'] } });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(rec.gatewayCalls).toEqual([]);
+    expect(rec.audits[0]?.payload).toMatchObject({ resendDraftOutcome: 'none' });
+  });
+});
+
+/**
+ * Spec 140 s1 (ED5) — `attachResendIds` now carries `status = 'approved'`, so a
+ * stale post-send attach on a row that left `approved` writes nothing and
+ * throws the typed concurrent error. That loss must take the SAME re-read the
+ * lost `sending` transition takes: a sibling that already flipped the row to
+ * `sending` with this resource is no incident, a cancel that won is the
+ * critical `sent_but_transition_lost`; only a row that is GONE is
+ * `sent_but_row_unattachable`.
+ */
+describe('buildAudienceTick — the post-send attach loses its status CAS (spec 140 s1 ED5)', () => {
+  it('a sibling already flipped the row to sending with this resource → no critical log, no transition attempted', async () => {
+    const { logger } = await import('@/lib/logger');
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const { deps, rec } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      casThrowOn: 'attachResendIds',
+      casThrow: 'concurrent',
+      readBackStatus: 'sending',
+      readBackResendBroadcastId: 'rb-1',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? null : res.error.kind).toBe('broadcast_invalid_state_transition');
+    expect(rec.sends).toEqual(['rb-1']);
+    expect(rec.transitions).toEqual([]);
+    const criticals = errorSpy.mock.calls.map((c) => c[1]);
+    expect(criticals).not.toContain('broadcasts.audience_import.sent_but_row_unattachable');
+    expect(criticals).not.toContain('broadcasts.audience_import.sent_but_transition_lost');
+  });
+
+  it('a cancel won the race (the row is cancelled, not gone) → the critical sent_but_transition_lost, never row_unattachable', async () => {
+    const { logger } = await import('@/lib/logger');
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const { deps } = makeDeps({
+      ...POLLING,
+      audienceImportSubmittedAt: NOW,
+      casThrowOn: 'attachResendIds',
+      casThrow: 'concurrent',
+      readBackStatus: 'cancelled',
+    });
+
+    const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    expect(res.ok ? null : res.error.kind).toBe('broadcast_invalid_state_transition');
+    const criticals = errorSpy.mock.calls.map((c) => c[1]);
+    expect(criticals).toContain('broadcasts.audience_import.sent_but_transition_lost');
+    expect(criticals).not.toContain('broadcasts.audience_import.sent_but_row_unattachable');
   });
 });
 

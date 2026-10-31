@@ -43,6 +43,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { eraseMember, drizzleMemberRepo } from '@/modules/members';
 import { buildEraseMemberDeps } from '@/modules/members/members-deps';
 import { erasureMetrics } from '@/lib/metrics';
+import { erasureCascadeDeadline, erasureMemberStartCutoff } from '@/lib/erasure-cascade-deadline';
+import { errKind } from '@/lib/log-id';
 import { runInTenant } from '@/lib/db';
 import { asTenantContext } from '@/modules/tenants';
 import { env } from '@/lib/env';
@@ -57,18 +59,24 @@ export const maxDuration = 300;
 
 const MAX_PER_TICK = 50;
 
-/**
- * Spec 139 — no new member is started once this much of `maxDuration` has
- * gone. A re-drive's broadcasts cascade holds each dispatch-begun row's lock
- * across up to two bounded Resend calls and the 3 s re-probe pause after a 404
- * (≈ 23 s, review round 2), so 50 members can outrun the 300 s function; the
- * members left are deferred, and the next tick (they are still stuck)
- * continues with them. The budget is checked BETWEEN members only: one member
- * with several dispatch-begun rows (≈ 23 s each, × the cascade's CAS retries)
- * can still overrun `maxDuration` — fail closed (the row's lock tx rolls
- * back), and the next tick resumes. An accepted bound (plan.md, cron-jobs.md).
- */
-const TIME_BUDGET_MS = 240_000;
+// The time budget (spec 139; spec 140 s1 review rounds 1–4). The tick's
+// cascade deadline is `erasureCascadeDeadline` = maxDuration − 60 s = 240 s.
+// No new member is started after `erasureMemberStartCutoff` = the deadline −
+// one row's floor (30 s) = 210 s, so a member started last still has a row's
+// worth of time (round 3 put the cutoff AT the deadline, leaving ~0 s). A re-drive's broadcasts cascade holds each dispatch-begun row's
+// lock across up to two bounded Resend calls and the 3 s re-probe pause after a
+// 404 (≈ 23 s, review round 2), so 50 members can outrun the 300 s function;
+// the members left are deferred, and the next tick (they are still stuck)
+// continues with them. The same deadline bounds every re-drive's terminal-draft
+// pass, computed once per tick: a member started late gets only the remainder.
+// Acceptable because a row not reached withholds `member_erased` and the next
+// tick (30 min) continues — every re-drive is idempotent, already-cleared
+// drafts cost one 404 round trip (~0.5 s, research § Limits) — and the stuck
+// gauge shows a member that never completes (plan.md, review rounds 2–3). The
+// budget is checked BETWEEN members only: one member with several
+// dispatch-begun rows (≈ 23 s each, × the cascade's CAS retries) can still
+// overrun `maxDuration` — fail closed (the row's lock tx rolls back), and the
+// next tick resumes. An accepted bound (plan.md, cron-jobs.md).
 
 // System-actor sentinels for the re-driven erasure (COMP-1 US2a convention —
 // the F1 cascade uses `requestId = 'system:erase-cascade'`; this reconciler
@@ -101,9 +109,28 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const tenant = asTenantContext(resolveTenantFromRequest(request).slug);
 
+  // Spec 140 s1 review rounds 2–4 — `members_erasure_stuck_count` has ONE
+  // meaning wherever it is observed (paused, before the loop, after it): the
+  // non-locking, uncapped count of members whose erasure has no
+  // `member_erased`. A failed read observes nothing new.
+  const observeStuckCount = async (): Promise<void> => {
+    try {
+      const count = await runInTenant(tenant, (tx) => drizzleMemberRepo.countStuckErasuresInTx(tx, tenant.slug));
+      erasureMetrics.stuckCount(count, tenant.slug);
+    } catch (e) {
+      logger.warn({ err: errKind(e), tenantId: tenant.slug }, 'cron.members.reconcile_erasures.stuck_count_failed');
+    }
+  };
+
   // Kill-switch returns 200 + {skipped:true} (parity with the F7 reconcile
   // route) so cron-job.org does NOT retry-storm a pause window.
   if (!env.features.memberErasureReconcile) {
+    // Spec 140 s1 review round 2 (code-review #7) — while paused nothing is
+    // re-driven, so the backlog only grows: observe the real count. Review
+    // round 3 (code-review #8): a NON-locking, uncapped count — the paused tick
+    // locks no member row, and a member being erased right now is counted, not
+    // skipped. A failed read observes nothing new; the pause still answers 200.
+    await observeStuckCount();
     logger.info(
       { tenantId: tenant.slug },
       'cron.members.reconcile_erasures.feature_disabled',
@@ -139,7 +166,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // Forbidden-log hygiene (COMP-1 PR-review FIX D): never log the raw
         // error message — a Postgres error can embed SQL param VALUES (the
         // erased member's PII). Log only the error CLASS name.
-        errKind: e instanceof Error ? e.constructor.name : 'unknown',
+        err: errKind(e),
         tenantId: tenant.slug,
       },
       'cron.members.reconcile_erasures.query_failed',
@@ -147,19 +174,31 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });
   }
 
+  // Spec 140 s1 review rounds 1, 4, 6 — the BASELINE, in the gauge's one
+  // meaning (the uncapped, non-locking count), in its OWN short tx after the
+  // candidate tx has committed (round 5 folded it into the candidate tx and
+  // round 6 reverted that: a count failure failed the whole tick, and the
+  // anti-join ran under up to 50 FOR UPDATE locks). A tick killed mid-loop
+  // still leaves this tick's number. A failed count observes nothing new
+  // (`stuck_count_failed`) and the tick continues; a candidate-query failure
+  // (above) observes nothing and answers 500 (`query_failed`).
+  await observeStuckCount();
+
   // `processed` is derivable (reconciled + still_pending + error invariantly), so
   // it is NOT tracked here — it is computed at response time below.
   const summary = { reconciled: 0, still_pending: 0, error: 0 };
+  const cascadeDeadline = erasureCascadeDeadline(startedAt, maxDuration);
+  const memberStartCutoff = erasureMemberStartCutoff(cascadeDeadline);
   const deps = buildEraseMemberDeps(tenant);
 
   // Sequential per-member re-drive. Each `eraseMember` re-opens its own txs
   // (the durable scrub + each post-commit cascade adapter), so there is no
   // shared cross-member state; sequential keeps the failure isolation simple
-  // and the count at ≤50/tick (MAX_PER_TICK); TIME_BUDGET_MS keeps the loop
+  // and the count at ≤50/tick (MAX_PER_TICK); the cascade deadline keeps the loop
   // inside maxDuration (spec 139).
   let deferred = 0;
   for (const [index, { memberId, reason }] of stuck.entries()) {
-    if (Date.now() - startedAt >= TIME_BUDGET_MS) {
+    if (Date.now() >= memberStartCutoff.getTime()) {
       deferred = stuck.length - index;
       break;
     }
@@ -167,7 +206,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const res = await eraseMember(
         memberId,
         { reason },
-        { actorUserId: SYSTEM_ACTOR, requestId: SYSTEM_REQUEST_ID },
+        { actorUserId: SYSTEM_ACTOR, requestId: SYSTEM_REQUEST_ID, deadlineAt: cascadeDeadline },
         deps,
       );
       if (res.ok && res.value.cascadesComplete) {
@@ -201,7 +240,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           // Forbidden-log hygiene (COMP-1 PR-review FIX D): never log the raw
           // message or stack — both can embed SQL param VALUES (erased PII). The
           // error CLASS name + the (opaque) memberId are enough to triage.
-          errKind: e instanceof Error ? e.constructor.name : 'unknown',
+          err: errKind(e),
           tenantId: tenant.slug,
           memberId,
         },
@@ -221,9 +260,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // next tick picks them up.
     deferred,
   };
+  // Spec 140 s1 — what is still stuck after this tick, as the same uncapped
+  // count (review round 4: one meaning). A value that stays above 0 tick after
+  // tick is an erasure being re-driven for ever (a permanent Resend answer on
+  // a terminal draft, a cascade that never clears).
+  await observeStuckCount();
+
   if (deferred > 0) {
     logger.warn(
-      { tenantId: tenant.slug, deferred, budgetMs: TIME_BUDGET_MS },
+      { tenantId: tenant.slug, deferred, budgetMs: memberStartCutoff.getTime() - startedAt },
       'cron.members.reconcile_erasures.budget_deferred',
     );
   }
