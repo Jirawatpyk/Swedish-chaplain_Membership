@@ -5177,12 +5177,36 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
       async (outcome) => {
         const { audit, repo, gw, deps } = standingDeps(makeFakeSendStanding({ halted: ['m-1'] }), withDraft(), { retrieveStatus: 'draft' });
         vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: outcome });
+        // After a 403 the probe still reads a draft: not a sibling's send.
+        vi.spyOn(gw.port, 'retrieveBroadcastOnce').mockResolvedValue({ kind: 'present', status: 'draft' });
 
         const result = await dispatchScheduledBroadcast(deps, baseInput);
 
         expect(result).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason: 'member_halted' } });
         expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
-        expect(audit.emits[0]?.payload).toMatchObject({ resendDraftOutcome: 'undeleted' });
+        // Review round 1 — the closed class rides with the outcome, never provider text.
+        expect(audit.emits[0]?.payload).toMatchObject({ resendDraftOutcome: 'undeleted', resendDraftErrClass: outcome });
+      },
+    );
+
+    // Review round 1 (reliability M-1) — a 403 whose probe reads handed is a
+    // sibling tick that sent the draft between this tick's probe and its
+    // DELETE: the mail is out, so no failed_to_dispatch and no member email.
+    it.each(['queued', 'sending', 'sent'] as const)(
+      'the DELETE answers forbidden and the probe reads %s (a sibling sent it) → a concurrent skip: no terminal write, no email',
+      async (status) => {
+        const warnSpy = vi.spyOn(logger, 'warn');
+        const { audit, repo, gw, email, deps } = standingDeps(makeFakeSendStanding({ halted: ['m-1'] }), withDraft(), { retrieveStatus: 'draft' });
+        vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: 'forbidden' });
+        vi.spyOn(gw.port, 'retrieveBroadcastOnce').mockResolvedValue({ kind: 'present', status });
+
+        const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+        expect(result).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+        expect(repo.transitions).toEqual([]);
+        expect(audit.emits).toEqual([]);
+        expect(email.memberCalls).toEqual([]);
+        expect(warnSpy.mock.calls.map((c) => c[1])).toContain('broadcasts.dispatch.refused_draft_handed_by_sibling');
       },
     );
 

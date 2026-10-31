@@ -19,8 +19,12 @@
  *
  * The cross-tenant case seeds tenant B's terminal row for the SAME member uuid
  * and the SAME broadcast uuid: the list under tenant A must not see it, and its
- * draft must not be deleted. `neondb_owner` has BYPASSRLS, so what this proves
- * is the method's explicit `tenant_id` predicate.
+ * draft must not be deleted. Through the repo method that proves the two
+ * layers together (the `tenant_id` predicate and RLS under `runInTenant`).
+ * Review round 1 (security L1): a second case runs the method's own query
+ * builder (`terminalDraftsForMemberQuery`) on the bare `db` — `neondb_owner`
+ * has BYPASSRLS, so there it is the application predicate ALONE that keeps
+ * tenant B's row out.
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
@@ -34,7 +38,10 @@ import {
 import { asMemberId } from '@/modules/members';
 import type { BroadcastsGatewayPort } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
 import { BroadcastConcurrentMutationError } from '@/modules/broadcasts/application/ports/broadcasts-repo';
-import { makeDrizzleBroadcastsRepo } from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
+import {
+  makeDrizzleBroadcastsRepo,
+  terminalDraftsForMemberQuery,
+} from '@/modules/broadcasts/infrastructure/db/drizzle-broadcasts-repo';
 import { broadcasts, type NewBroadcastRow } from '@/modules/broadcasts/infrastructure/schema';
 import { createTwoTestTenants, type TestTenant } from '../helpers/test-tenant';
 
@@ -233,13 +240,42 @@ describe('spec 140 s1 — the erasure cascade deletes the drafts its terminal ro
       tenantA.ctx.slug,
       asMemberId(memberId),
     );
-    expect(listed.map((b) => [b.tenantId, b.resendBroadcastId])).toEqual([[tenantA.ctx.slug, draftA]]);
+    expect(listed).toEqual([{ broadcastId, status: 'failed_to_dispatch', resendBroadcastId: draftA }]);
+
+    // The application predicate alone: the same builder on the BYPASSRLS owner.
+    const bare = await terminalDraftsForMemberQuery(db as never, tenantA.ctx.slug, asMemberId(memberId));
+    expect(bare.map((row) => row.resendBroadcastId)).toEqual([draftA]);
 
     const result = await eraseCascade(tenantA, memberId, resend.port);
     expect(result).toMatchObject({ ok: true, value: { resendDraftsCleared: 1, unexpectedErrorCount: 0 } });
     expect(resend.deletes).toEqual([draftA]);
     expect(resend.state.get(draftB)).toBe('draft');
     expect(await readRow(tenantB, broadcastId)).toMatchObject({ status: 'failed_to_dispatch', resendBroadcastId: draftB });
+  });
+
+  // Review round 1 (code-review #1) — a 403 whose probe reads handed is a
+  // disclosure (8c): the same evidence row the in-flight arm writes, once.
+  it('a 403 + queued terminal copy is already-sent evidence, written once, not retained', async () => {
+    const memberId = randomUUID();
+    const resend = fakeResend();
+    const queuedId = `rb-hd-${randomUUID()}`;
+    resend.state.set(queuedId, 'queued');
+    const broadcastId = await seed(tenantA, { memberId, status: 'sending', sendingStartedAt: new Date(), resendBroadcastId: queuedId });
+
+    const first = await eraseCascade(tenantA, memberId, resend.port);
+    const again = await eraseCascade(tenantA, memberId, resend.port);
+
+    for (const result of [first, again]) {
+      expect(result).toMatchObject({ ok: true, value: { alreadySentCount: 1, resendCopiesRetained: 0, unexpectedErrorCount: 0 } });
+    }
+    const evidence = (await db.execute(sql`
+      SELECT payload->>'observedResendStatus' AS observed FROM audit_log
+       WHERE tenant_id = ${tenantA.ctx.slug}
+         AND event_type = 'broadcast_concurrent_action_blocked'
+         AND payload->>'resendOutcome' = 'already_sent'
+         AND payload->>'broadcastId' = ${broadcastId}
+    `)) as unknown as Array<{ observed: string }>;
+    expect(evidence).toEqual([{ observed: 'queued' }]);
   });
 
   it('ED5 — a non-approved row is not written by a stale attachResendIds', async () => {

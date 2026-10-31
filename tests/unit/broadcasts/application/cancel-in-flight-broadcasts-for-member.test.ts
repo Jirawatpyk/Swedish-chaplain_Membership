@@ -984,8 +984,8 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       },
     );
 
-    it.each(['cancelled', 'failed', 'queued', 'sending', 'sent'] as const)(
-      'DELETE answers forbidden and the GET says %s → retained at the processor (+1 resendCopiesRetained), NOT already-sent evidence',
+    it.each(['cancelled', 'failed'] as const)(
+      'DELETE answers forbidden and the GET says %s → an UNSENT copy retained at the processor (+1 resendCopiesRetained), NOT already-sent evidence',
       async (probe) => {
         const deps = makeDeps({ terminalRows: [terminalA], deleteOutcome: 'forbidden', probe }) as unknown as Seen;
         const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
@@ -998,6 +998,114 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['terminal_copy_retained']);
       },
     );
+
+    // Review round 1 (code-review #1/#2, pdpa M-1, security L3) — a handed copy
+    // is a disclosure (residual 8c), recorded through the SAME evidence path as
+    // the in-flight arm: its own tx, the evidence advisory lock, once per
+    // broadcast. It is not a retained copy, so it is counted once, in
+    // `alreadySentCount` (derived from the distinct evidence rows).
+    it.each(['queued', 'sending', 'sent'] as const)(
+      'DELETE answers forbidden and the GET says %s → already-sent evidence (8c), not retained',
+      async (probe) => {
+        const deps = makeDeps({ terminalRows: [terminalA], deleteOutcome: 'forbidden', probe }) as unknown as Seen;
+        const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+        expect(result).toEqual(value({ alreadySentCount: 1 }));
+        expect(deps.calls).toEqual(['delete:rb-term-a:no-lock', 'probe:rb-term-a:no-lock', `evidence:${broadcastIdA}`, 'evidence:count']);
+        const blocked = deps.audit.emit.mock.calls.filter((c) => (c[1] as { eventType: string }).eventType === 'broadcast_concurrent_action_blocked');
+        expect(blocked).toHaveLength(1);
+        expect(blocked[0]![0]).not.toBeNull();
+        expect(blocked[0]![1]).toMatchObject({
+          payload: expect.objectContaining({
+            broadcastId: broadcastIdA,
+            memberId,
+            resendOutcome: 'already_sent',
+            observedStatus: 'failed_to_dispatch',
+            observedResendStatus: probe,
+          }),
+        });
+        expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['already_sent']);
+      },
+    );
+
+    it('a handed copy whose evidence row already exists (an earlier run, or the in-flight arm) is not written twice', async () => {
+      const deps = makeDeps({ terminalRows: [terminalA], deleteOutcome: 'forbidden', probe: 'sent', alreadySentEvidence: [broadcastIdA] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value({ alreadySentCount: 1 }));
+      expect(deps.audit.emit).not.toHaveBeenCalled();
+    });
+
+    it('a handed copy whose evidence write fails → unexpected (member_erased withheld), nothing counted as sent', async () => {
+      const deps = makeDeps({
+        terminalRows: [terminalA],
+        deleteOutcome: 'forbidden',
+        probe: 'queued',
+        auditEmitImpl: async () => {
+          throw new TypeError('audit payload rejected');
+        },
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value({ unexpectedErrorCount: 1 }));
+    });
+
+    // Review round 1 (reliability L-2, code-review #3) — a row the in-flight
+    // loop settled at Resend in THIS run is not DELETEd again; its outcome is
+    // counted from the in-flight settlement, so the counts match a re-drive's.
+    it.each([
+      ['deleted', undefined, { cancelledCount: 1, resendDraftsCleared: 1 }],
+      ['forbidden', 'cancelled', { cancelledCount: 1, resendCopiesRetained: 1 }],
+    ] as const)('an in-flight row settled at Resend this run (DELETE %s) is not DELETEd again by the terminal pass', async (deleteOutcome, probe, counts) => {
+      const deps = makeDeps({
+        inFlightRows: [{ broadcastId: broadcastIdA, status: 'approved' }],
+        lockedRowImpl: async (id) => ({ broadcastId: id, status: 'approved', resendBroadcastId: 'rb-live-1', audienceImportId: null }),
+        // The cascade has just cancelled it: the terminal list now holds it.
+        terminalRows: [{ broadcastId: broadcastIdA, status: 'cancelled', resendBroadcastId: 'rb-live-1' }],
+        deleteOutcome,
+        ...(probe !== undefined ? { probe } : {}),
+      }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, erasureInput);
+      expect(result).toEqual(value(counts));
+      expect(deps.broadcastsGateway.deleteBroadcastOnce).toHaveBeenCalledTimes(1);
+    });
+
+    // Review round 1 (reliability H-1, code-review #6) — the pass is bounded by
+    // the caller's deadline: rows not reached count unexpected, so
+    // `member_erased` is withheld and the next re-drive continues.
+    it('deadline passed before the pass → no Resend call; every terminal row counts unexpected', async () => {
+      const deps = makeDeps({ terminalRows: [terminalA, terminalB] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, {
+        ...erasureInput,
+        deadlineAt: new Date('2026-05-02T23:59:59Z'),
+      });
+      expect(result).toEqual(value({ unexpectedErrorCount: 2 }));
+      expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+    });
+
+    it('deadline reached mid-pass → the rows before it settle, the rest count unexpected', async () => {
+      const deps = makeDeps({ terminalRows: [terminalA, terminalB] }) as unknown as Seen & { clock: { now: () => Date } };
+      let t = Date.parse('2026-05-03T00:00:00Z');
+      deps.clock.now = () => {
+        const at = new Date(t);
+        t += 1_000;
+        return at;
+      };
+      const result = await cancelInFlightBroadcastsForMember(deps as never, {
+        ...erasureInput,
+        // The cascade's own `now` read takes 00:00:00; row A is checked at
+        // 00:00:01 (before the deadline), row B at 00:00:02 (not before it).
+        deadlineAt: new Date('2026-05-03T00:00:02Z'),
+      });
+      expect(result).toEqual(value({ resendDraftsCleared: 1, unexpectedErrorCount: 1 }));
+      expect(deps.broadcastsGateway.deleteBroadcastOnce).toHaveBeenCalledTimes(1);
+    });
+
+    it('a deadline still ahead changes nothing', async () => {
+      const deps = makeDeps({ terminalRows: [terminalA] }) as unknown as Seen;
+      const result = await cancelInFlightBroadcastsForMember(deps as never, {
+        ...erasureInput,
+        deadlineAt: new Date('2026-05-04T00:00:00Z'),
+      });
+      expect(result).toEqual(value({ resendDraftsCleared: 1 }));
+    });
 
     it.each(['draft', 'unknown', 'not_found', 'retryable', 'other', 'throws'] as const)(
       'DELETE answers forbidden but the GET says %s → unexpected (fail closed): member_erased is withheld, nothing counted',

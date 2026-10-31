@@ -452,11 +452,11 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
 
     it('ERASURE: the attach commits while the cascade is waiting → the draft is deleted at Resend under the lock and the row is cancelled', async () => {
       const { cascaded, id, resendId, deletes } = await raceTheCascade('erasure');
-      // Spec 140 s1 — the terminal-draft pass then re-lists the row it has just
-      // cancelled (it still holds the id) and DELETEs once more: idempotent at
-      // Resend, and counted cleared, so a first run and a re-drive agree.
+      // Spec 140 s1 — the row it has just cancelled is counted cleared from
+      // that settlement; review round 1 (reliability L-2): the terminal pass
+      // does not DELETE it a second time in the same run.
       expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0 } });
-      expect(deletes).toEqual([resendId, resendId]);
+      expect(deletes).toEqual([resendId]);
       expect(await readRow(id)).toMatchObject({ status: 'cancelled', resendBroadcastId: resendId, cancellationReason: 'gdpr_erasure_request' });
     }, 60_000);
   });

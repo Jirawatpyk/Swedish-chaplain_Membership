@@ -317,10 +317,12 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
    * has already missed its `member_erased` once, so what is still stuck at the
    * end of a tick (still_pending + error + deferred) is the signal that an
    * erasure is being re-driven tick after tick (a permanent Resend answer, a
-   * cascade that never clears). Observed on EVERY tick, 0 included, so a
-   * cleared backlog does not leave the last value frozen.
+   * cascade that never clears). Review round 1: observed as a BASELINE
+   * (`stuck.length`) before the loop, so a tick killed mid-loop still leaves
+   * this tick's number, then the end-of-tick value; 0 when the kill switch is
+   * off; nothing new on a candidate-query failure (documented).
    */
-  it('the stuck gauge = still_pending + error + deferred at the end of the tick', async () => {
+  it('the stuck gauge: the candidate count before the loop, then still_pending + error + deferred', async () => {
     stubStuck([
       { memberId: 'm1', reason: 'gdpr_erasure_request' },
       { memberId: 'm2', reason: 'gdpr_erasure_request' },
@@ -334,8 +336,42 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
       '@/app/api/cron/members/reconcile-erasures/route'
     );
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    expect(erasureStuckCountMock).toHaveBeenCalledTimes(1);
-    expect(erasureStuckCountMock).toHaveBeenCalledWith(2, 'test-tenant');
+    expect(erasureStuckCountMock.mock.calls).toEqual([
+      [3, 'test-tenant'],
+      [2, 'test-tenant'],
+    ]);
+    // The baseline lands before the first re-drive.
+    expect(erasureStuckCountMock.mock.invocationCallOrder[0]!).toBeLessThan(eraseMemberMock.mock.invocationCallOrder[0]!);
+  });
+
+  it('the stuck gauge is 0 when the kill switch is off, and untouched when the candidate query fails', async () => {
+    envMock.features.memberErasureReconcile = false;
+    const { POST } = await import(
+      '@/app/api/cron/members/reconcile-erasures/route'
+    );
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(erasureStuckCountMock.mock.calls).toEqual([[0, 'test-tenant']]);
+
+    erasureStuckCountMock.mockReset();
+    envMock.features.memberErasureReconcile = true;
+    runInTenantMock.mockRejectedValueOnce(new Error('db down'));
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(erasureStuckCountMock).not.toHaveBeenCalled();
+  });
+
+  it('passes each re-drive a deadline inside maxDuration (the cascade bounds its terminal pass)', async () => {
+    stubStuck([{ memberId: 'm1', reason: 'gdpr_erasure_request' }]);
+    eraseMemberMock.mockResolvedValueOnce(ok({ memberId: 'm1', erasedAt: new Date(), cascadesComplete: true }));
+    const before = Date.now();
+    const { POST } = await import(
+      '@/app/api/cron/members/reconcile-erasures/route'
+    );
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const meta = eraseMemberMock.mock.calls[0]![2] as { deadlineAt?: Date };
+    expect(meta.deadlineAt).toBeInstanceOf(Date);
+    const budget = meta.deadlineAt!.getTime() - before;
+    expect(budget).toBeGreaterThan(0);
+    expect(budget).toBeLessThanOrEqual(300_000);
   });
 
   it('the stuck gauge is observed as 0 on a tick that finds nothing stuck', async () => {

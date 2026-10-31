@@ -78,6 +78,21 @@ describe('listTerminalWithResendIdOwnedByMember — SQL shape', () => {
     expect(where).toMatch(/"broadcasts"\."resend_broadcast_id"\s*<>\s*\$\d+/);
     expect(select!.params).toContain('');
   });
+
+  // Review round 1 (code-review #8) — the pass needs three columns, so it reads
+  // three: never the erased member's (pre-scrub or redacted) content.
+  it('projects only broadcast_id, status and resend_broadcast_id', async () => {
+    rec.statements.length = 0;
+    await makeDrizzleBroadcastsRepo(TENANT).listTerminalWithResendIdOwnedByMember(TENANT as never, MEMBER_ID as never);
+    const select = rec.statements.find((s) => /^select\b[\s\S]*\bfrom "broadcasts"/i.test(s.sql))!;
+    const columns = select.sql.slice(0, select.sql.search(/\bfrom\b/i));
+    expect(columns).toMatch(/"broadcast_id"/);
+    expect(columns).toMatch(/"status"/);
+    expect(columns).toMatch(/"resend_broadcast_id"/);
+    for (const col of ['subject', 'body_html', 'from_name', 'reply_to_email', 'tenant_id', 'requested_by_member_id']) {
+      expect(columns, `${col} must not be read`).not.toMatch(new RegExp(`"${col}"`));
+    }
+  });
 });
 
 describe('attachResendIds — SQL shape (ED5)', () => {

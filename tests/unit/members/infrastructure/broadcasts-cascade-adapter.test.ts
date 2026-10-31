@@ -169,6 +169,22 @@ describe('f7BroadcastsCascadeAdapter — spec 139 erasure mode', () => {
     await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, { initiatedByUserId: null, requestId: 'req-7' });
     const passed = cancelInFlightBroadcastsForMember.mock.calls[0]![1];
     expect(Object.prototype.hasOwnProperty.call(passed, 'onDispatchBegun')).toBe(false);
+    // Spec 140 s1 review round 1 — nor a deadline: archive is unchanged.
+    expect(Object.prototype.hasOwnProperty.call(passed, 'deadlineAt')).toBe(false);
+  });
+
+  it('forwards deadlineAt to the F7 use case when the caller sets it (spec 140 s1 review round 1)', async () => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({ cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0 }),
+    );
+    const deadlineAt = new Date('2026-10-31T00:04:30Z');
+    await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
+      initiatedByUserId: null,
+      requestId: 'req-7',
+      onDispatchBegun: 'delete_then_cancel',
+      deadlineAt,
+    });
+    expect(cancelInFlightBroadcastsForMember.mock.calls[0]![1]).toMatchObject({ deadlineAt });
   });
 
   it.each([

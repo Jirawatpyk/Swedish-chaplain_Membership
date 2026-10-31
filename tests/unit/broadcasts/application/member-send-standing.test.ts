@@ -30,6 +30,7 @@ import { readMemberSendStanding } from '@/modules/broadcasts/application/use-cas
 import {
   decideDispatchStanding,
   deleteDraftBeforeRefusal,
+  deleteDraftBeforeStandingRefusal,
 } from '@/modules/broadcasts/application/use-cases/_dispatch-standing-gate';
 import { readDispatchHold } from '@/modules/broadcasts/application/use-cases/read-dispatch-hold';
 import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
@@ -182,5 +183,64 @@ describe('deleteDraftBeforeRefusal (spec 139 P2, spec 140 s1 ED4)', () => {
       kind: 'undecided',
       errClass,
     });
+  });
+});
+
+/**
+ * Spec 140 s1 review round 1 (reliability M-1, code-review #4, security L2) —
+ * the halted / ended refusal's DELETE. A 403 on a draft the probe did not call
+ * `cancelled` may be a sibling tick that has just sent it: ONE bounded GET
+ * decides. Handed → `handed` (the leg answers a concurrent skip: no
+ * `failed_to_dispatch`, no member email); anything else → `undeleted`, with a
+ * closed `errClass` the leg records, and the refusal goes ahead.
+ */
+describe('deleteDraftBeforeStandingRefusal (spec 140 s1 ED4, review round 1)', () => {
+  const ids = { tenantId: 'test-tenant', broadcastId: 'b-1', leg: 'import' as const };
+  const gw = (
+    answer: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other',
+    probe: 'queued' | 'sending' | 'sent' | 'draft' | 'cancelled' | 'unknown' | 'not_found' | 'retryable' | 'throws' = 'draft',
+  ) => ({
+    deleteBroadcastOnce: vi.fn(async () => ({ kind: answer })),
+    retrieveBroadcastOnce: vi.fn(async () => {
+      if (probe === 'throws') throw new Error('a fake that breaks the never-throws contract');
+      if (probe === 'not_found' || probe === 'retryable') return { kind: probe };
+      return { kind: 'present' as const, status: probe };
+    }),
+  });
+  const draft = { resendBroadcastId: 'rb-1', probedStatus: 'draft' as const };
+
+  it.each(['queued', 'sending', 'sent'] as const)('403, then the GET says %s → handed (a sibling sent it): no refusal', async (status) => {
+    const g = gw('forbidden', status);
+    expect(await deleteDraftBeforeStandingRefusal(g, ids, draft)).toEqual({ kind: 'handed', resendStatus: status });
+    expect(g.retrieveBroadcastOnce).toHaveBeenCalledTimes(1);
+    expect(g.retrieveBroadcastOnce).toHaveBeenCalledWith('rb-1');
+  });
+
+  it.each(['draft', 'cancelled', 'unknown', 'not_found', 'retryable', 'throws'] as const)(
+    '403, then the GET says %s → undeleted (forbidden): the refusal goes ahead',
+    async (probe) => {
+      expect(await deleteDraftBeforeStandingRefusal(gw('forbidden', probe), ids, draft)).toEqual({ kind: 'undeleted', errClass: 'forbidden' });
+    },
+  );
+
+  it.each(['retryable', 'other'] as const)('%s → undeleted with that class, no GET', async (answer) => {
+    const g = gw(answer);
+    expect(await deleteDraftBeforeStandingRefusal(g, ids, draft)).toEqual({ kind: 'undeleted', errClass: answer });
+    expect(g.retrieveBroadcastOnce).not.toHaveBeenCalled();
+  });
+
+  it('a 403 on an id the probe already called cancelled → cleared (cancelled), no GET', async () => {
+    const g = gw('forbidden');
+    expect(await deleteDraftBeforeStandingRefusal(g, ids, { resendBroadcastId: 'rb-1', probedStatus: 'cancelled' })).toEqual({
+      kind: 'cleared',
+      draftOutcome: 'cancelled',
+    });
+    expect(g.retrieveBroadcastOnce).not.toHaveBeenCalled();
+  });
+
+  it.each(['deleted', 'absent'] as const)('%s → cleared, no GET', async (answer) => {
+    const g = gw(answer);
+    expect(await deleteDraftBeforeStandingRefusal(g, ids, draft)).toEqual({ kind: 'cleared', draftOutcome: answer });
+    expect(g.retrieveBroadcastOnce).not.toHaveBeenCalled();
   });
 });

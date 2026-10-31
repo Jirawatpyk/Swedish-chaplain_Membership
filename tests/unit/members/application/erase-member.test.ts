@@ -539,6 +539,23 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     }
   });
 
+  // Spec 140 s1 review round 1 (reliability H-1) — the caller's deadline bounds
+  // the cascade's terminal-draft pass; with none, none is passed.
+  it('spec 140 s1: forwards meta.deadlineAt to the broadcasts cascade, and omits it when unset', async () => {
+    const deadlineAt = new Date('2026-10-31T00:04:30Z');
+    const withDeadline = buildEraseDeps();
+    await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, { ...META, deadlineAt }, withDeadline);
+    expect(withDeadline.broadcastsCascade.cancelInFlightForMember).toHaveBeenCalledWith(
+      withDeadline.tenant,
+      asMemberId('m-1'),
+      expect.objectContaining({ deadlineAt }),
+    );
+    const without = buildEraseDeps();
+    await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, without);
+    const opts = (without.broadcastsCascade.cancelInFlightForMember as ReturnType<typeof vi.fn>).mock.calls[0]![2] as object;
+    expect(Object.prototype.hasOwnProperty.call(opts, 'deadlineAt')).toBe(false);
+  });
+
   // Spec 139 DE2 wiring — erasure is the ONE caller that selects the cascade's
   // `delete_then_cancel` mode (archive keeps the skip, DE4).
   it('spec 139: asks the broadcasts cascade to delete-then-cancel a dispatch-begun E-Blast', async () => {
