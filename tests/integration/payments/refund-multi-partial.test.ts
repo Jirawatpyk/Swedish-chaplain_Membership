@@ -591,4 +591,105 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       expect(errResult.error.code).toBe('refund_in_progress');
     }
   }, 60_000);
+
+  // #49 — a succeeded refund of the same amount on the same payment in the
+  // last 24 h refuses a new one unless the admin confirms; a different amount
+  // and an override go through; another tenant never sees this tenant's rows.
+  it('probable duplicate: same amount refused under check, other amount and override pass, cross-tenant blind', async () => {
+    const dupPaymentId = asPaymentId(`pmt_${randomUUID().replace(/-/g, '').slice(0, 26)}`);
+    const dupInvoiceId = randomUUID();
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.insert(invoices).values({
+        tenantId: tenant.ctx.slug,
+        invoiceId: dupInvoiceId,
+        memberId,
+        planYear: 2026,
+        planId: 'rfnd-mp-plan',
+        draftByUserId: user.userId,
+      });
+      await tx.insert(payments).values({
+        id: dupPaymentId,
+        tenantId: tenant.ctx.slug,
+        invoiceId: dupInvoiceId,
+        memberId,
+        method: 'card',
+        status: 'succeeded',
+        amountSatang: TOTAL_SATANG,
+        currency: 'THB',
+        processorPaymentIntentId: `pi_test_${randomUUID().slice(0, 8)}`,
+        processorChargeId: `ch_test_${randomUUID().slice(0, 8)}`,
+        processorEnvironment: 'test',
+        attemptSeq: 1,
+        cardBrand: 'visa',
+        cardLast4: '4242',
+        cardExpMonth: 12,
+        cardExpYear: 2030,
+        initiatedAt: new Date(),
+        completedAt: new Date(),
+        actorUserId: user.userId,
+        correlationId: 'corr-pay-dup',
+      });
+    });
+
+    const deps = buildHybridDeps(tenant.ctx.slug);
+    const cnIds = await seedPlaceholderCNs(3, dupInvoiceId);
+    const refundOf = (amount: bigint, tag: string, duplicateGuard: 'check' | 'override') =>
+      issueRefund(deps, {
+        tenantId: tenant.ctx.slug,
+        paymentId: dupPaymentId,
+        amountSatang: asSatang(amount),
+        reason: `dup ${tag}`,
+        actorUserId: user.userId,
+        correlationId: `corr-dup-${tag}`,
+        requestId: `req-dup-${tag}`,
+        duplicateGuard,
+      });
+
+    rebindBridgeForNextRefund(deps, cnIds[0]!, 'TC-2026-300001');
+    const first = await refundOf(1_000_000n, 'first', 'check');
+    expect(first.ok).toBe(true);
+    const firstId = first.ok && first.value.kind === 'succeeded' ? first.value.refund.id : null;
+    expect(firstId).not.toBeNull();
+
+    const again = await refundOf(1_000_000n, 'again', 'check');
+    expect(again.ok).toBe(false);
+    if (!again.ok) {
+      expect(again.error).toMatchObject({ code: 'possible_duplicate_refund', refundId: firstId });
+    }
+
+    rebindBridgeForNextRefund(deps, cnIds[1]!, 'TC-2026-300002');
+    expect((await refundOf(500_000n, 'other-amount', 'check')).ok).toBe(true);
+
+    rebindBridgeForNextRefund(deps, cnIds[2]!, 'TC-2026-300003');
+    expect((await refundOf(1_000_000n, 'override', 'override')).ok).toBe(true);
+
+    const counts = await runInTenant(tenant.ctx, async (tx) => {
+      const rows = (await tx.execute(sql`
+        SELECT status, count(*)::int AS c FROM refunds
+        WHERE tenant_id = ${tenant.ctx.slug} AND payment_id = ${dupPaymentId}
+        GROUP BY status
+      `)) as unknown as Array<{ status: string; c: number }>;
+      return Object.fromEntries(rows.map((r) => [r.status, Number(r.c)]));
+    });
+    // The refused attempt wrote nothing.
+    expect(counts).toEqual({ succeeded: 3 });
+
+    // Cross-tenant (Principle I): tenant B's repo, inside tenant B's scope,
+    // sees none of tenant A's refunds for the same payment and amount.
+    const other = await createTestTenant('test-swecham');
+    try {
+      const found = await runInTenant(other.ctx, (tx) =>
+        makeDrizzleRefundsRepo(other.ctx.slug).findRecentSameAmountSucceeded(
+          tx,
+          other.ctx.slug,
+          dupPaymentId,
+          asSatang(1_000_000n),
+          new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+        ),
+      );
+      expect(found).toBeNull();
+    } finally {
+      await other.cleanup().catch((e) => console.error('tenant B cleanup:', e));
+    }
+  }, 90_000);
 });
