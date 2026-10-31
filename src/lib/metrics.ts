@@ -976,6 +976,27 @@ export const erasureMetrics = {
   },
 
   /**
+   * Spec 140 s1 — `members_erasure_stuck_count{tenant}`: the members the
+   * `reconcile-erasures` sweep found stuck and did NOT complete this tick
+   * (still_pending + error + deferred). Every candidate has already missed its
+   * `member_erased` once, so a value that stays above 0 over several ticks is an
+   * erasure being re-driven for ever (a permanent Resend answer, a cascade that
+   * never clears). Observed twice per tick that reaches its loop: the candidate
+   * count before it (a baseline that survives a tick killed mid-loop) and this
+   * value after it; 0 while the kill switch is off. A candidate-query failure
+   * observes nothing new (the previous value stands; the 500 is the signal). A
+   * lower bound when the 50-member tick cap fills.
+   */
+  stuckCount(count: number, tenantId: string): void {
+    observeTenantGauge(
+      'members_erasure_stuck_count',
+      'Members whose erasure the reconcile-erasures sweep found stuck and did not complete this tick (still_pending + error + deferred)',
+      tenantId,
+      count,
+    );
+  },
+
+  /**
    * COMP-1 US3-C — sub-processor erasure propagation outcome, per tenant.
    * Fired once per `eraseMember` post-commit cascade. `resendOutcome` is the
    * Resend audience-contact removal aggregate (`ok` = every captured pair
@@ -994,24 +1015,6 @@ export const erasureMetrics = {
    * Cardinality: `resend_outcome` ∈ {ok, partial, failed} (bounded enum);
    * `tenant` small-cardinality. NO member/email/audience id labels.
    */
-  /**
-   * Spec 140 s1 — `members_erasure_stuck_count{tenant}`: the members the
-   * `reconcile-erasures` sweep found stuck and did NOT complete this tick
-   * (still_pending + error + deferred). Every candidate has already missed its
-   * `member_erased` once, so a value that stays above 0 over several ticks is an
-   * erasure being re-driven for ever (a permanent Resend answer, a cascade that
-   * never clears). Observed on every tick, 0 included, so a cleared backlog does
-   * not freeze the last value. A lower bound when the 50-member tick cap fills.
-   */
-  stuckCount(count: number, tenantId: string): void {
-    observeTenantGauge(
-      'members_erasure_stuck_count',
-      'Members whose erasure the reconcile-erasures sweep found stuck and did not complete this tick (still_pending + error + deferred)',
-      tenantId,
-      count,
-    );
-  },
-
   subprocessorErasure(resendOutcome: 'ok' | 'partial' | 'failed', tenantId: string): void {
     safeMetric(() => {
       counter(
@@ -3218,7 +3221,7 @@ export const broadcastsMetrics = {
    *   - `terminal_draft_cleared` → spec 140 s1: a TERMINAL row's Resend draft
    *                             is gone (DELETE 200 or 404) — erasure mode only
    *   - `terminal_copy_retained` → spec 140 s1: a terminal row's copy Resend will
-   *                             not delete (403 + cancelled / failed / handed);
+   *                             not delete (403 + cancelled / failed: unsent);
    *                             retained at the processor, RoPA 8d
    *   - `unexpected_error`    → tx or audit emit threw something other than
    *                             concurrent-mutation; broadcast was NOT cancelled.

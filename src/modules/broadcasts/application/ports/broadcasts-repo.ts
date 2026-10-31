@@ -24,6 +24,17 @@ import type { BroadcastStatus } from '../../domain/value-objects/broadcast-statu
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 
 /**
+ * Spec 140 s1 review round 1 (code-review #8) — what the erasure cascade's
+ * terminal-draft pass reads of a row: its id, its status and the Resend id it
+ * still holds (non-empty by the query). No content.
+ */
+export interface TerminalBroadcastDraftRef {
+  readonly broadcastId: BroadcastId;
+  readonly status: BroadcastStatus;
+  readonly resendBroadcastId: string;
+}
+
+/**
  * #400 item 1 — the ONLY `Broadcast` fields `applyTransition` writes besides
  * `status` / `updated_at`. The Drizzle adapter loops over this tuple, so a
  * key off the list used to be silently DROPPED; typing the parameter as
@@ -881,7 +892,7 @@ export interface BroadcastsRepo {
   listTerminalWithResendIdOwnedByMember(
     tenantId: TenantSlug,
     memberId: MemberId,
-  ): Promise<ReadonlyArray<Broadcast>>;
+  ): Promise<ReadonlyArray<TerminalBroadcastDraftRef>>;
 
   /**
    * COMP-1 US2b — GDPR Art.17 / PDPA §33 content redaction. Inside the

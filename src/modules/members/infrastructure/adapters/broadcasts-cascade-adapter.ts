@@ -46,6 +46,8 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
       initiatedByUserId: opts.initiatedByUserId,
       // Spec 139 — only erasure sets it; unset keeps F7's `skip` default.
       ...(opts.onDispatchBegun !== undefined ? { onDispatchBegun: opts.onDispatchBegun } : {}),
+      // Spec 140 s1 review round 1 — the erasure caller's deadline; archive sets none.
+      ...(opts.deadlineAt !== undefined ? { deadlineAt: opts.deadlineAt } : {}),
     });
     if (!result.ok) {
       // F7 cascade failure is non-fatal for F3 archival — the member

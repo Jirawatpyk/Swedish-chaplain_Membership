@@ -54,6 +54,14 @@ import { buildEraseMemberDeps } from '@/modules/members/members-deps';
  */
 export const maxDuration = 300;
 
+/**
+ * Spec 140 s1 review round 1 (reliability H-1) — the deadline the broadcasts
+ * cascade's terminal-draft pass gets: 30 s inside `maxDuration`, room for the
+ * row in progress (two bounded 10 s Resend calls). A row not reached withholds
+ * `member_erased`; `reconcile-erasures` continues it.
+ */
+const CASCADE_DEADLINE_MS = 270_000;
+
 const paramsSchema = z.object({ memberId: z.string().uuid() });
 
 // Route-boundary schema — STRICTER than the core eraseMemberSchema: the Art.12
@@ -72,6 +80,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string }> },
 ): Promise<NextResponse> {
+  const startedAt = Date.now();
   const ctx = await requireApiPermission(request, 'members.erasure');
   if ('response' in ctx) return ctx.response;
 
@@ -173,7 +182,7 @@ export async function POST(
     const result = await eraseMember(
       memberId,
       parsedBody.data,
-      { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
+      { actorUserId: ctx.current.user.id, requestId: ctx.requestId, deadlineAt: new Date(startedAt + CASCADE_DEADLINE_MS) },
       deps,
     );
 

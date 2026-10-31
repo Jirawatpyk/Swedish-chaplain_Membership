@@ -55,6 +55,7 @@ import type { BroadcastsGatewayPort, DeleteBroadcastOnceOutcome } from '../ports
 import type { MembersBridgePort } from '../ports/members-bridge-port';
 import type { StandingRefusalFailureReason } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { readMemberSendStanding, type MemberSendStandingDeps, type StandingRefusal } from './_member-send-standing';
+import { isHandedStatus } from './_probe-refused-send';
 
 /** The standing reads a dispatch leg makes. */
 export interface DispatchStandingDeps extends MemberSendStandingDeps {
@@ -145,7 +146,14 @@ export async function decideDispatchStanding(
  */
 export type DraftClearance =
   | { readonly kind: 'cleared'; readonly draftOutcome: 'none' | 'deleted' | 'absent' | 'cancelled' }
-  | { readonly kind: 'undecided'; readonly errClass: string };
+  | { readonly kind: 'undecided'; readonly errClass: RefusedDraftErrClass };
+
+/**
+ * Why a refusal's DELETE did not confirm — a CLOSED set (the DELETE's own
+ * outcome kind, or `threw`), never the provider's text, so it may ride in an
+ * append-only audit payload (`resendDraftErrClass`).
+ */
+export type RefusedDraftErrClass = 'forbidden' | 'retryable' | 'other' | 'threw';
 
 /** The `dispatch.server_error` message of an erased refusal whose draft DELETE did not confirm. */
 export const ERASED_DRAFT_NOT_DELETED = 'member_erased_draft_not_deleted';
@@ -209,6 +217,56 @@ export async function deleteDraftBeforeRefusal(
   }
   logger.warn({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
   return { kind: 'undecided', errClass: outcome };
+}
+
+/**
+ * What a halted / ended refusal's DELETE decided (spec 140 s1 ED4). `handed` —
+ * a sibling tick sent the draft between this tick's probe and its DELETE: the
+ * mail is out, so the leg writes no `failed_to_dispatch`, emails nobody and
+ * answers a concurrent skip. `undeleted` — the refusal goes ahead and records
+ * `resendDraftOutcome: 'undeleted'` + `resendDraftErrClass`.
+ */
+export type StandingDraftClearance =
+  | Extract<DraftClearance, { kind: 'cleared' }>
+  | { readonly kind: 'undeleted'; readonly errClass: RefusedDraftErrClass }
+  | { readonly kind: 'handed'; readonly resendStatus: 'queued' | 'sending' | 'sent' };
+
+/**
+ * Spec 140 s1 review round 1 (reliability M-1, code-review #4, security L2) —
+ * `deleteDraftBeforeRefusal` for the plain refusal. A 403 on a draft the probe
+ * did not call `cancelled` is either a restricted key or a sibling tick that
+ * has just sent it; refusing the second would record `failed_to_dispatch`,
+ * release the quota slot and tell the member a delivered E-Blast failed. So ONE
+ * bounded `retrieveBroadcastOnce` decides: queued / sending / sent → `handed`;
+ * anything else (a throw included) → `undeleted`, and the refusal goes ahead.
+ */
+export async function deleteDraftBeforeStandingRefusal(
+  gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce' | 'retrieveBroadcastOnce'>,
+  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
+  draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
+): Promise<StandingDraftClearance> {
+  const cleared = await deleteDraftBeforeRefusal(gateway, { ...ids, refusal: 'standing' }, draft);
+  if (cleared.kind === 'cleared') return cleared;
+  // Only a 403 can hide a sibling's send; `cleared` above already took a 403 on
+  // a `cancelled` id.
+  if (cleared.errClass !== 'forbidden') return { kind: 'undeleted', errClass: cleared.errClass };
+  // A DELETE was made, so the row carried an id: a null `draft` clears as `none`.
+  const resendBroadcastId = (draft as NonNullable<typeof draft>).resendBroadcastId;
+  let probed: string;
+  try {
+    const probe = await gateway.retrieveBroadcastOnce(resendBroadcastId);
+    probed = probe.kind === 'present' ? probe.status : probe.kind;
+  } catch {
+    probed = 'threw';
+  }
+  if (isHandedStatus(probed)) {
+    logger.warn(
+      { ...ids, refusal: 'standing', resendBroadcastId, observedResendStatus: probed },
+      'broadcasts.dispatch.refused_draft_handed_by_sibling',
+    );
+    return { kind: 'handed', resendStatus: probed };
+  }
+  return { kind: 'undeleted', errClass: 'forbidden' };
 }
 
 /**

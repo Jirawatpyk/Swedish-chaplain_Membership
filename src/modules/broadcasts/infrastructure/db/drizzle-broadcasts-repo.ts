@@ -40,6 +40,7 @@ import type {
   ListByTenantStatusResult,
   ListByTenantStatusSort,
   NewBroadcastDraftInput,
+  TerminalBroadcastDraftRef,
   TransitionFields,
 } from '../../application/ports/broadcasts-repo';
 import {
@@ -517,6 +518,44 @@ function terminalDraftStatusPredicate(): SQL {
     sql`, `,
   );
   return sql`${broadcasts.status}::text NOT IN (${list})`;
+}
+
+/**
+ * Spec 140 s1 — the query behind `listTerminalWithResendIdOwnedByMember`,
+ * exported so the integration suite can run it on the BYPASSRLS owner and prove
+ * the application `tenant_id` predicate alone (review round 1, security L1).
+ * Three columns only (review round 1, code-review #8): the pass needs no
+ * content. An empty id is not an id (`<> ''`), as everywhere else on this
+ * column.
+ */
+export async function terminalDraftsForMemberQuery(
+  tx: TenantTx,
+  tenantId: string,
+  memberId: MemberId,
+): Promise<ReadonlyArray<TerminalBroadcastDraftRef>> {
+  const rows = await tx
+    .select({
+      broadcastId: broadcasts.broadcastId,
+      status: broadcasts.status,
+      resendBroadcastId: broadcasts.resendBroadcastId,
+    })
+    .from(broadcasts)
+    .where(
+      and(
+        eq(broadcasts.tenantId, tenantId),
+        eq(broadcasts.requestedByMemberId, memberId),
+        terminalDraftStatusPredicate(),
+        isNotNull(broadcasts.resendBroadcastId),
+        ne(broadcasts.resendBroadcastId, ''),
+      ),
+    )
+    .orderBy(desc(broadcasts.createdAt), desc(broadcasts.broadcastId));
+  return rows.map((r) => ({
+    broadcastId: r.broadcastId as BroadcastId,
+    status: r.status as BroadcastStatus,
+    // NOT NULL by the WHERE; `''` would reach the gateway as `other` (fail closed).
+    resendBroadcastId: r.resendBroadcastId ?? '',
+  }));
 }
 
 /**
@@ -1892,27 +1931,9 @@ export function makeDrizzleBroadcastsRepo(
       });
     },
 
-    /**
-     * Spec 140 s1 — the erasure cascade's terminal-draft list (port docblock).
-     * An empty id is not an id (`<> ''`), as everywhere else on this column.
-     */
+    /** Spec 140 s1 — the erasure cascade's terminal-draft list (port docblock). */
     async listTerminalWithResendIdOwnedByMember(tenantIdArg, memberId) {
-      return runInTenant(ctx, async (tx) => {
-        const rows = await tx
-          .select()
-          .from(broadcasts)
-          .where(
-            and(
-              eq(broadcasts.tenantId, tenantIdArg),
-              eq(broadcasts.requestedByMemberId, memberId),
-              terminalDraftStatusPredicate(),
-              isNotNull(broadcasts.resendBroadcastId),
-              ne(broadcasts.resendBroadcastId, ''),
-            ),
-          )
-          .orderBy(desc(broadcasts.createdAt), desc(broadcasts.broadcastId));
-        return rows.map((r) => rowToBroadcast(r as BroadcastRow));
-      });
+      return runInTenant(ctx, (tx) => terminalDraftsForMemberQuery(tx, tenantIdArg, memberId));
     },
 
     /**

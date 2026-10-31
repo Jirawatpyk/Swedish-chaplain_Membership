@@ -70,6 +70,15 @@ const MAX_PER_TICK = 50;
  */
 const TIME_BUDGET_MS = 240_000;
 
+/**
+ * Spec 140 s1 review round 1 (reliability H-1) — the deadline every re-drive's
+ * broadcasts cascade gets for its terminal-draft pass: 30 s inside
+ * `maxDuration`, room for the one row in progress (two bounded 10 s Resend
+ * calls). A row not reached by then withholds `member_erased`; the next tick
+ * continues.
+ */
+const CASCADE_DEADLINE_MS = 270_000;
+
 // System-actor sentinels for the re-driven erasure (COMP-1 US2a convention —
 // the F1 cascade uses `requestId = 'system:erase-cascade'`; this reconciler
 // uses its own distinct requestId so the DPO log can attribute a re-drive to
@@ -104,6 +113,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Kill-switch returns 200 + {skipped:true} (parity with the F7 reconcile
   // route) so cron-job.org does NOT retry-storm a pause window.
   if (!env.features.memberErasureReconcile) {
+    // Spec 140 s1 review round 1 — nothing is being re-driven: say so, rather
+    // than leave the last tick's value standing for the whole pause.
+    erasureMetrics.stuckCount(0, tenant.slug);
     logger.info(
       { tenantId: tenant.slug },
       'cron.members.reconcile_erasures.feature_disabled',
@@ -147,6 +159,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });
   }
 
+  // Spec 140 s1 review round 1 — the BASELINE: every candidate is stuck until
+  // its re-drive completes, so a tick killed mid-loop (maxDuration) still
+  // leaves this tick's number. A candidate-query failure (above) observes
+  // nothing new: the gauge keeps the previous tick's value and the 500 + the
+  // `query_failed` log are that tick's signal (docs/observability.md).
+  erasureMetrics.stuckCount(stuck.length, tenant.slug);
+
   // `processed` is derivable (reconciled + still_pending + error invariantly), so
   // it is NOT tracked here — it is computed at response time below.
   const summary = { reconciled: 0, still_pending: 0, error: 0 };
@@ -167,7 +186,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const res = await eraseMember(
         memberId,
         { reason },
-        { actorUserId: SYSTEM_ACTOR, requestId: SYSTEM_REQUEST_ID },
+        { actorUserId: SYSTEM_ACTOR, requestId: SYSTEM_REQUEST_ID, deadlineAt: new Date(startedAt + CASCADE_DEADLINE_MS) },
         deps,
       );
       if (res.ok && res.value.cascadesComplete) {
@@ -224,8 +243,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Spec 140 s1 — what is still stuck after this tick. Every candidate already
   // missed its `member_erased` once, so a value that stays above 0 tick after
   // tick is an erasure being re-driven for ever (a permanent Resend answer on
-  // a terminal draft, a cascade that never clears). Observed on every tick, 0
-  // included; a lower bound when the MAX_PER_TICK cap fills.
+  // a terminal draft, a cascade that never clears). Observed at the end of
+  // every tick that reached the loop (0 included); a lower bound when the
+  // MAX_PER_TICK cap fills.
   erasureMetrics.stuckCount(summary.still_pending + summary.error + deferred, tenant.slug);
 
   if (deferred > 0) {

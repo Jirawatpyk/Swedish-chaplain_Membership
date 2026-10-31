@@ -79,6 +79,12 @@ export interface BroadcastsCascadePort {
       readonly initiatedByUserId: string | null;
       readonly requestId: string | null;
       readonly onDispatchBegun?: 'skip' | 'delete_then_cancel';
+      /**
+       * Spec 140 s1 review round 1 — when the erasure's function must be done;
+       * bounds the terminal-draft pass (rows not reached are unexpected, so the
+       * erasure is re-driven). Unset (archive): no bound, as before.
+       */
+      readonly deadlineAt?: Date;
     },
   ): Promise<CascadeResult>;
 }

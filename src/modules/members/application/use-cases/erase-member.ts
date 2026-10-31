@@ -218,7 +218,17 @@ export type EraseMemberDeps = {
   clock: ClockPort;
 };
 
-export type EraseMemberMeta = { actorUserId: string; requestId: string };
+export type EraseMemberMeta = {
+  actorUserId: string;
+  requestId: string;
+  /**
+   * Spec 140 s1 review round 1 (reliability H-1) — when the caller's function
+   * must be done (the erase route and `reconcile-erasures` set it inside their
+   * 300 s `maxDuration`). Bounds the broadcasts cascade's terminal-draft pass;
+   * what it does not reach withholds `member_erased` and is re-driven.
+   */
+  deadlineAt?: Date;
+};
 
 class EraseNotFoundError extends Error {
   constructor() {
@@ -771,6 +781,7 @@ export async function eraseMember(
       // Spec 139 DE2 — erasure (and only erasure) deletes a minted-but-unsent
       // draft at Resend and cancels the row; archive keeps the skip (DE4).
       onDispatchBegun: 'delete_then_cancel',
+      ...(meta.deadlineAt !== undefined ? { deadlineAt: meta.deadlineAt } : {}),
     });
     if (r.outcome === 'ok' || r.outcome === 'cascade_partial_failure') {
       broadcastsAlreadySentCount = r.alreadySentCount;

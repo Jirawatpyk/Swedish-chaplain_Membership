@@ -65,6 +65,7 @@ import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
   decideDispatchStanding,
   deleteDraftBeforeRefusal,
+  deleteDraftBeforeStandingRefusal,
   ERASED_DRAFT_NOT_DELETED,
   recordDispatchHold,
   recordRequesterNotFound,
@@ -692,8 +693,10 @@ async function probeInheritedBroadcast(
  *   and the payload records `resendDraftOutcome`. An undecided DELETE does not
  *   stall the refusal — left `approved`, the row could be sent once a halt is
  *   lifted, and a permanent Resend answer would hold it there for ever — so it
- *   is recorded `undeleted`; the erasure cascade's terminal pass reaches that
- *   draft if the member is erased.
+ *   is recorded `undeleted` (+ a closed `resendDraftErrClass`); the erasure
+ *   cascade's terminal pass reaches that draft if the member is erased, and
+ *   from slice 2 the orphan sweep. A 403 whose one GET reads handed is a
+ *   sibling's send: a concurrent skip, no terminal write, no email.
  * - `refuse_erased` (spec 139 — the member is erased; a missing requester is undecided, P4) — PERMANENT too,
  *   but only once the row's never-handed draft is confirmed deleted at Resend
  *   (P2, `deleteDraftBeforeRefusal`; otherwise nothing is decided). ONE
@@ -729,11 +732,16 @@ async function applySendStanding(
       ? null
       : { resendBroadcastId: broadcast.resendBroadcastId, probedStatus: probe !== null && !probe.handed ? probe.status : null };
   if (standing.kind === 'refuse') {
-    const cleared = await deleteDraftBeforeRefusal(
+    const cleared = await deleteDraftBeforeStandingRefusal(
       deps.broadcastsGateway,
-      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, leg: 'import', refusal: 'standing' },
+      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, leg: 'import' },
       rowDraft,
     );
+    // Review round 1 (reliability M-1) — a sibling tick sent the draft: the
+    // mail is out, so no terminal write and no member email — a concurrent skip.
+    if (cleared.kind === 'handed') {
+      return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+    }
     return failTerminally(
       deps,
       input,
@@ -746,7 +754,10 @@ async function applySendStanding(
         expected: null,
       },
       {
-        payloadExtra: { resendDraftOutcome: cleared.kind === 'cleared' ? cleared.draftOutcome : 'undeleted' },
+        payloadExtra:
+          cleared.kind === 'cleared'
+            ? { resendDraftOutcome: cleared.draftOutcome }
+            : { resendDraftOutcome: 'undeleted', resendDraftErrClass: cleared.errClass },
         extraAudit: standingRefusalAuditEvent({
           refusal: standing.refusal,
           surface: 'dispatch',
