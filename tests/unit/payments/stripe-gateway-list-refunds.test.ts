@@ -75,8 +75,9 @@ describe('stripeGateway.listRefundsForPaymentIntent', () => {
         complete: true,
       },
     });
-    expect(JSON.stringify(r)).not.toContain('ref_x');
-    expect(JSON.stringify(r)).not.toContain('free text');
+    const text = JSON.stringify(r, (_k, v: unknown) => (typeof v === 'bigint' ? String(v) : v));
+    expect(text).not.toContain('ref_x');
+    expect(text).not.toContain('free text');
     // The one log line carries tokens and counts only.
     expect(infoMock).toHaveBeenCalledTimes(1);
     expect(infoMock).toHaveBeenCalledWith(

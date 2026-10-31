@@ -134,7 +134,10 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
     statusByRe: Readonly<Record<string, string>>,
     // #50 — what Stripe lists for an orphan's payment intent. The default is
     // an incomplete answer, which never closes a row.
-    listed: { refunds: { id: string; status: string; appRefundId: string | null }[]; complete: boolean } = {
+    listed: {
+      refunds: { id: string; status: string; appRefundId: string | null; amountSatang: bigint | null }[];
+      complete: boolean;
+    } = {
       refunds: [],
       complete: false,
     },
@@ -706,6 +709,15 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
       { tenantId: tenant.ctx.slug, requestId: 'req-sweep-orphan-a' },
     );
     expect(run.ok).toBe(true);
+    // The intent asked about is the orphan's own parent payment's (the join).
+    const [parent] = await db
+      .select({ pi: payments.processorPaymentIntentId })
+      .from(payments)
+      .where(and(eq(payments.tenantId, tenant.ctx.slug), eq(payments.id, orphanPaymentId)));
+    expect(vi.mocked(gateway.listRefundsForPaymentIntent)).toHaveBeenCalledWith(
+      parent!.pi,
+      expect.any(String),
+    );
     const closed = await refundStatusFields(orphanRefundId);
     expect(closed.status).toBe('failed');
     expect(closed.failure_reason_code).toBe('no_processor_refund');

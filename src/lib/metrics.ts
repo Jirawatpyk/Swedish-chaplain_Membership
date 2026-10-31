@@ -1053,7 +1053,14 @@ export const erasureMetrics = {
 export type StalePendingRefundEscalationReason =
   | 'stripe_pending'
   | 'missing_processor_refund_id'
-  | 'credit_note_bridge_declined';
+  | 'credit_note_bridge_declined'
+  /** #50 — Stripe's retrieve keeps failing for a row with a processor id. */
+  | 'retrieve_failed'
+  /**
+   * #50 — Stripe refunds carrying one orphan row's marker disagree with it:
+   * two or more of them, or one at a different amount.
+   */
+  | 'orphan_marker_conflict';
 
 function bumpUnreconciled(
   path:
@@ -1752,9 +1759,15 @@ export const paymentsMetrics = {
     // never heals sit unattended. Reason is NOT added as a label on the
     // existing counter — that series predates this change and dashboards key
     // on its current shape.
+    //   retrieve_failed             → the next sweep retries the retrieve
+    //                                 → transient
+    //   orphan_marker_conflict      → a possible double refund or a forged
+    //                                 marker; the sweep never picks → permanent
     bumpUnreconciled(
       'stale_pending_refund_escalated',
-      reason === 'missing_processor_refund_id' ? 'permanent' : 'transient',
+      reason === 'missing_processor_refund_id' || reason === 'orphan_marker_conflict'
+        ? 'permanent'
+        : 'transient',
       tenantId,
     );
   },

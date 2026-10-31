@@ -385,6 +385,12 @@ export interface RefundsRepo {
       readonly processorRefundId: string | null;
       /** #50 — the parent payment's intent, to look an orphan up at Stripe. */
       readonly paymentIntentId: string;
+      /**
+       * #50 — the Stripe environment the payment was taken in. An orphan is
+       * looked up only when it matches the tenant's current settings: under
+       * other keys, Stripe's answer is about a different account.
+       */
+      readonly paymentProcessorEnvironment: string;
     }>
   >;
 

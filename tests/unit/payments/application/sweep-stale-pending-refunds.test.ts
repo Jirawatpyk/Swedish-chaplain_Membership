@@ -73,6 +73,7 @@ type StaleRow = {
   initiatorUserId: string;
   processorRefundId: string | null;
   paymentIntentId: string;
+  paymentProcessorEnvironment: string;
 };
 
 function makeStaleRow(

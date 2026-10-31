@@ -158,8 +158,8 @@ export interface ProcessorGatewayPort {
 }
 
 /**
- * #50 — PCI SAQ-A allow-list: id, status and the app's own refund id from
- * the refund's metadata. Nothing else crosses the boundary.
+ * #50 — PCI SAQ-A allow-list: id, status, amount and the app's own refund
+ * id from the refund's metadata. Nothing else crosses the boundary.
  */
 export interface ListedRefunds {
   readonly refunds: ReadonlyArray<{
@@ -167,6 +167,8 @@ export interface ListedRefunds {
     readonly status: string;
     /** `metadata.refundId` — the `refunds.id` that created it, or null. */
     readonly appRefundId: string | null;
+    /** The refunded amount, or null when Stripe's value cannot be trusted. */
+    readonly amountSatang: Satang | null;
   }>;
   readonly complete: boolean;
 }

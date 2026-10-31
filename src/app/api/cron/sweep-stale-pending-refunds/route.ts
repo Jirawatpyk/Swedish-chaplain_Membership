@@ -191,7 +191,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const olderThanHours = (() => {
     if (olderThanRaw === null) return DEFAULT_OLDER_THAN_HOURS;
     const parsed = Number(olderThanRaw);
-    if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 24 * 30) {
+    // Whole hours only: the orphan arm's proof also refuses a row under an
+    // hour old, but a fractional override has no use worth that risk.
+    if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 24 * 30) {
       return DEFAULT_OLDER_THAN_HOURS;
     }
     return parsed;

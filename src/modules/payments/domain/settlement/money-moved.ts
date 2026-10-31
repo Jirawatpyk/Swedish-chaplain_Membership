@@ -160,21 +160,45 @@ export function proveProcessorSettledFailed(
  *
  * ## The evidence that justifies this
  *
- * The stale-pending sweep, a day after the row was written, lists every
- * refund the processor holds for the parent payment intent and looks for one
- * that names this row (`metadata.refundId`, set on every `createRefund`). The
- * request that would have created it was a single call with a stable
- * idempotency key, long finished, and nothing retries it. So a COMPLETE list
- * with no refund naming this row is the processor saying it made none: the
- * money never moved.
+ * The stale-pending sweep lists every refund the processor holds for the
+ * parent payment intent and looks for one that names this row
+ * (`metadata.refundId`, set on every `createRefund`). The request that would
+ * have created it was a single call with a stable idempotency key, and
+ * nothing retries it. So, once that call is certainly over, a COMPLETE list
+ * in which no refund names this row and every refund carries some row's
+ * marker is the processor saying it made none: the money never moved.
  *
- * An incomplete list (more pages), or any match at all, proves nothing — the
- * caller attaches a single match, and leaves everything else `pending` for a
- * person. An error never reaches here.
+ * Each condition is part of the proof, so each is checked here, not trusted
+ * to the caller:
+ *   - `rowAgeMs >= ORPHAN_PROOF_MIN_AGE_MS`: the `createRefund` call (SDK
+ *     timeout and retries, well under a minute) has ended. Without it, an
+ *     operator's short `olderThanHours` override could close a row whose
+ *     refund Stripe is still making;
+ *   - `complete`: no further pages;
+ *   - `matchCount === 0`: no refund names this row;
+ *   - `unmarkedCount === 0`: no refund lacks a marker. One made before the
+ *     marker existed, or by hand in the Dashboard, might be this row's.
+ *
+ * Anything else proves nothing: the caller attaches a single clean match and
+ * leaves the rest `pending` for a person. An error never reaches here.
  */
 export function proveNoProcessorRefund(lookup: {
   readonly complete: boolean;
   readonly matchCount: number;
+  readonly unmarkedCount: number;
+  readonly rowAgeMs: number;
 }): RejectionProof | null {
-  return lookup.complete && lookup.matchCount === 0 ? { [REJECTION_PROOF]: true } : null;
+  return lookup.complete &&
+    lookup.matchCount === 0 &&
+    lookup.unmarkedCount === 0 &&
+    lookup.rowAgeMs >= ORPHAN_PROOF_MIN_AGE_MS
+    ? { [REJECTION_PROOF]: true }
+    : null;
 }
+
+/**
+ * #50 — the youngest an orphan row may be before `proveNoProcessorRefund`
+ * accepts a lookup as proof. Far longer than any `createRefund` call; short
+ * enough that the documented `?olderThanHours=2` override still closes rows.
+ */
+export const ORPHAN_PROOF_MIN_AGE_MS = 60 * 60 * 1000;

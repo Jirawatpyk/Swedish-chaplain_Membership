@@ -847,14 +847,18 @@ export const stripeGateway: ProcessorGatewayPort = {
         { payment_intent: paymentIntentId, limit: 100 },
         connectOptions(stripeAccount),
       );
-      // PCI allow-list: id, status and our own refund id only. Never the
-      // refund object itself (it carries `destination_details`), and never
-      // other metadata (it carries the admin's free-text reason).
+      // PCI allow-list: id, status, amount and our own refund id only. Never
+      // the refund object itself (it carries `destination_details`), and
+      // never other metadata (it carries the admin's free-text reason). An
+      // amount that is not a non-negative safe integer is unknown (null),
+      // which the sweep treats as a conflict, never as a number.
       const refunds = page.data.map((r) => ({
         id: r.id,
         status: r.status ?? 'pending',
         appRefundId:
           typeof r.metadata?.['refundId'] === 'string' ? r.metadata['refundId'] : null,
+        amountSatang:
+          Number.isSafeInteger(r.amount) && r.amount >= 0 ? asSatang(BigInt(r.amount)) : null,
       }));
       logger.info(
         { stripeAccount, paymentIntentId, count: refunds.length, hasMore: page.has_more },

@@ -438,6 +438,7 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         readonly initiatorUserId: string;
         readonly processorRefundId: string | null;
         readonly paymentIntentId: string;
+        readonly paymentProcessorEnvironment: string;
       }>
     > {
       const tx = txUnknown as TenantTx;
@@ -453,8 +454,10 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
           // A.14 — Stripe `re_…` id (nullable) so the sweep can
           // `retrieveRefund` the real outcome instead of blind-failing.
           processorRefundId: refunds.processorRefundId,
-          // #50 — the parent intent, so an orphan row can be looked up.
+          // #50 — the parent intent, so an orphan row can be looked up, and
+          // the environment it was taken in, checked against the settings.
           paymentIntentId: payments.processorPaymentIntentId,
+          paymentProcessorEnvironment: payments.processorEnvironment,
         })
         .from(refunds)
         .innerJoin(
@@ -495,6 +498,7 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         initiatorUserId: r.initiatorUserId,
         processorRefundId: r.processorRefundId,
         paymentIntentId: r.paymentIntentId,
+        paymentProcessorEnvironment: r.paymentProcessorEnvironment,
       }));
     },
 
