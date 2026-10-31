@@ -128,6 +128,40 @@
  * from the evidence the member holds (distinct broadcasts), never accumulated,
  * so a re-drive with nothing left in flight still reports it (P7).
  *
+ * Spec 140 s1 (#699, RoPA 8d) — the erasure mode then reaches the member's
+ * TERMINAL rows too: every row outside the in-progress set and outside the
+ * handed statuses (`sent`, and since review round 2 `sending`,
+ * `partially_sent`, `partial_delivery_accepted` — an old delivery is not
+ * erasure evidence) that still holds a Resend id (the scrub keeps
+ * `resend_broadcast_id`, so the erased member's draft stays findable). No row
+ * lock and no row write: the lock is not what orders this pass (pdpa L3) —
+ * Resend does: DELETE succeeds only on a draft and `/send` only on a draft, so
+ * whichever lands first decides, and the other is refused.
+ *
+ *   | DELETE once       | GET once                                        | outcome      |
+ *   | deleted / absent  | —                                               | cleared      |
+ *   | forbidden         | cancelled / failed                              | retained     |
+ *   | forbidden         | queued / sending / sent                         | already sent |
+ *   | forbidden         | draft / unknown / not_found / retryable / other | unexpected   |
+ *   | retryable / other | —                                               | unexpected   |
+ *
+ * `resendDraftsCleared` counts `cleared` (a 404 means Resend holds no such
+ * broadcast, so nothing is retained); `resendCopiesRetained` counts UNSENT
+ * copies Resend will not delete. A handed copy is a disclosure (residual 8c):
+ * review round 1 records it through `recordAlreadySent` — the in-flight arm's
+ * evidence row, its own tx, the evidence advisory lock, once per broadcast —
+ * so it is counted once, in `alreadySentCount`. Unexpected counts into
+ * `unexpectedErrorCount`, so `member_erased` is withheld and the reconciler
+ * re-drives (a deleted draft then answers `absent` → cleared). The pass runs
+ * AFTER the in-flight loop; a row the loop settled at Resend in THIS run is
+ * counted from that settlement and not DELETEd again (review round 1), so the
+ * counts are the same on any run. The caller's `deadlineAt` bounds it: a row
+ * not reached in time is `deferred` (its own metric label, not a stop-the-line
+ * error) but still counts into `unexpectedErrorCount`, so the re-drive
+ * continues. The handed arm stays for the rows still listed: a
+ * `failed_to_dispatch` after `sent_but_transition_lost` says unsent while
+ * Resend sent it.
+ *
  * An EMPTY id is not an id: the row is cancelled without a Resend call.
  * Any other exception is treated as
  * unexpected-error: the broadcast remains in flight, the cascade
@@ -153,6 +187,7 @@ import {
   type BroadcastsRepo,
 } from '../ports/broadcasts-repo';
 import type { ClockPort } from '../ports/clock-port';
+import type { TerminalBroadcastDraftRef } from '../ports/broadcasts-repo';
 import { isHandedStatus } from './_probe-refused-send';
 import { REPROBE_PAUSE_MS, sleepBeforeReprobe } from './_reprobe-pause';
 
@@ -194,6 +229,14 @@ export interface CancelInFlightForMemberInput {
    * delete the draft at Resend under the row lock, then cancel (docblock).
    */
   readonly onDispatchBegun?: 'skip' | 'delete_then_cancel';
+  /**
+   * Spec 140 s1 review round 1 (reliability H-1) — when the caller's function
+   * must be done (erasure only; archive passes none). Checked before each
+   * terminal row, so set it with room for one row's two bounded Resend calls
+   * (≈ 20 s). A row not reached counts unexpected: `member_erased` is withheld
+   * and the reconciler continues.
+   */
+  readonly deadlineAt?: Date;
 }
 
 export interface CancelInFlightForMemberOutput {
@@ -218,6 +261,30 @@ export interface CancelInFlightForMemberOutput {
    * E-Blast.
    */
   readonly alreadySentCount: number;
+  /**
+   * Spec 140 s1 (ED1) — the member's TERMINAL rows whose Resend draft is gone
+   * after this run (`deleted`, or `absent` because an earlier run or a refusal
+   * deleted it). DERIVED per run: the pass re-lists every terminal row with an
+   * id each time and never writes the row, so the run that writes
+   * `member_erased` (every row decided) reports the whole set. Always 0 in the
+   * `'skip'` mode.
+   */
+  readonly resendDraftsCleared: number;
+  /**
+   * Spec 140 s1 (ED2) — the member's TERMINAL rows whose UNSENT Resend copy
+   * Resend would not delete (403, then the probe read `cancelled` or `failed`):
+   * retained at the processor. A handed copy (`queued` / `sending` / `sent`) is
+   * not here: it is already-sent evidence, counted in `alreadySentCount`
+   * (review round 1). Derived per run, like `resendDraftsCleared`.
+   */
+  readonly resendCopiesRetained: number;
+  /**
+   * Spec 140 s1 review round 3 (code-review #3) — how many of
+   * `unexpectedErrorCount` are terminal rows the caller's deadline deferred
+   * (not reached). They still withhold `member_erased`; the members side tells
+   * a pure deferral apart from broadcasts left in flight.
+   */
+  readonly deferredCount: number;
 }
 
 export interface CancelInFlightForMemberDeps {
@@ -239,11 +306,12 @@ export interface CancelInFlightForMemberDeps {
  * the row. Thrown inside the locked tx so it rolls back with nothing written,
  * and the row is counted unexpected; `outcome` names what Resend answered
  * (`<delete>` or `<delete>_probe_<probe>`), for the log and the runbook.
+ * Spec 140 s1 — the terminal-draft pass throws it too (no lock there).
  */
-class DispatchBegunUnresolvedError extends Error {
+class ResendUnsettledError extends Error {
   constructor(public readonly outcome: string) {
-    super(`dispatch-begun row not settled at Resend (${outcome})`);
-    this.name = 'DispatchBegunUnresolvedError';
+    super(`row not settled at Resend (${outcome})`);
+    this.name = 'ResendUnsettledError';
   }
 }
 
@@ -300,7 +368,15 @@ export async function cancelInFlightBroadcastsForMember(
     let skippedConcurrentCount = 0;
     let unexpectedErrorCount = 0;
 
-    const countUnexpected = (e: unknown, broadcast: Broadcast, fromStatus: BroadcastStatus, msg: string): void => {
+    /** Review round 1 — the in-flight rows this run settled at Resend, by broadcast id. */
+    const settledAtResendThisRun = new Map<string, 'cleared' | 'retained'>();
+
+    const countUnexpected = (
+      e: unknown,
+      broadcast: Pick<Broadcast, 'broadcastId'>,
+      fromStatus: BroadcastStatus,
+      msg: string,
+    ): void => {
       // Stop-the-line metric + structured error log (the error CLASS only,
       // never its message); the cascade continues to the next broadcast
       // (best-effort) so a single bad row does not block the rest.
@@ -313,7 +389,7 @@ export async function cancelInFlightBroadcastsForMember(
           broadcastId: broadcast.broadcastId as string,
           previousStatus: fromStatus,
           // Spec 139 — what Resend answered, when that is why it failed.
-          ...(e instanceof DispatchBegunUnresolvedError ? { resendOutcome: e.outcome } : {}),
+          ...(e instanceof ResendUnsettledError ? { resendOutcome: e.outcome } : {}),
         },
         msg,
       );
@@ -336,7 +412,7 @@ export async function cancelInFlightBroadcastsForMember(
         return { kind: 'cancel', resendOutcome: 'deleted' };
       }
       if (deleted.kind !== 'absent' && deleted.kind !== 'forbidden') {
-        throw new DispatchBegunUnresolvedError(deleted.kind);
+        throw new ResendUnsettledError(deleted.kind);
       }
       // Review round 2 (code-review #1) — two not-founds need time between
       // them, or the GET can repeat a stale 404 for a send Resend accepted:
@@ -365,7 +441,39 @@ export async function cancelInFlightBroadcastsForMember(
       // A 403 to a DELETE of a cancelled broadcast (MEASURED): only a draft
       // can be sent, so nothing of it can go out — the gate's arm, too.
       if (deleted.kind === 'forbidden' && probed === 'cancelled') return { kind: 'cancel', resendOutcome: 'cancelled_at_resend' };
-      throw new DispatchBegunUnresolvedError(`${deleted.kind}_probe_${probed}`);
+      throw new ResendUnsettledError(`${deleted.kind}_probe_${probed}`);
+    };
+
+    /**
+     * Spec 140 s1 — one terminal row's Resend copy (the table in the
+     * docblock). No row lock and no row write; Resend's draft-only DELETE and
+     * `/send` order any race. One bounded DELETE; after a 403, one bounded GET
+     * (no pause: a 403 is not a not-found). Anything that does not decide the
+     * row throws.
+     */
+    type TerminalSettlement =
+      | { readonly kind: 'cleared' | 'retained' }
+      | { readonly kind: 'handed'; readonly resendStatus: 'queued' | 'sending' | 'sent' };
+    const settleTerminalDraft = async (row: TerminalBroadcastDraftRef): Promise<TerminalSettlement> => {
+      const resendId = row.resendBroadcastId;
+      const deleted = await deps.broadcastsGateway.deleteBroadcastOnce(resendId);
+      const ids = { ...logBase, broadcastId: row.broadcastId as string, status: row.status, resendBroadcastId: resendId };
+      if (deleted.kind === 'deleted' || deleted.kind === 'absent') {
+        logger.info({ ...ids, outcome: deleted.kind }, 'broadcasts.cascade.terminal_draft');
+        return { kind: 'cleared' };
+      }
+      if (deleted.kind !== 'forbidden') throw new ResendUnsettledError(deleted.kind);
+      const probe = await deps.broadcastsGateway.retrieveBroadcastOnce(resendId);
+      const probed = probe.kind === 'present' ? probe.status : probe.kind;
+      logger.info({ ...ids, outcome: deleted.kind, probe: probed }, 'broadcasts.cascade.terminal_draft');
+      // POSITIVE: a status that proves the copy can never be sent again
+      // (cancelled, failed), or that it was already handed (queued, sending,
+      // sent — a disclosure, residual 8c). `draft` after a 403 is a restricted
+      // key, `unknown` is unmeasured, and a not-found after a 403 is
+      // inconsistent — all fail closed.
+      if (isHandedStatus(probed)) return { kind: 'handed', resendStatus: probed };
+      if (probed === 'cancelled' || probed === 'failed') return { kind: 'retained' };
+      throw new ResendUnsettledError(`${deleted.kind}_probe_${probed}`);
     };
 
     /**
@@ -376,7 +484,7 @@ export async function cancelInFlightBroadcastsForMember(
      * Throws on a failed write — the caller counts it unexpected (P6).
      */
     const recordAlreadySent = async (
-      broadcast: Broadcast,
+      broadcast: Pick<Broadcast, 'broadcastId' | 'status'>,
       observed: { readonly status: BroadcastStatus | null; readonly resendStatus: 'queued' | 'sending' | 'sent' | null },
     ): Promise<void> => {
       const emitted = await deps.broadcastsRepo.withTx(async (tx): Promise<boolean> => {
@@ -439,7 +547,8 @@ export async function cancelInFlightBroadcastsForMember(
       fromStatus: BroadcastStatus,
     ): Promise<{ readonly kind: 'cancelled' | 'lost' | 'dispatch_begun' | 'already_sent' | 'unexpected' }> => {
       type Settled =
-        | { readonly kind: 'cancelled' | 'dispatch_begun' }
+        | { readonly kind: 'dispatch_begun' }
+        | { readonly kind: 'cancelled'; readonly resendOutcome: 'deleted' | 'absent' | 'cancelled_at_resend' | null }
         | { readonly kind: 'already_sent'; readonly lockedStatus: BroadcastStatus; readonly resendStatus: 'queued' | 'sending' | 'sent' };
       let settled: Settled;
       try {
@@ -510,7 +619,7 @@ export async function cancelInFlightBroadcastsForMember(
             },
             requestId: input.requestId,
           });
-          return { kind: 'cancelled' };
+          return { kind: 'cancelled', resendOutcome };
         });
       } catch (e) {
         // The CAS matched nothing: another writer moved the row. Where to
@@ -539,6 +648,15 @@ export async function cancelInFlightBroadcastsForMember(
       );
       broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'cancelled');
       cancelledCount += 1;
+      // Review round 1 (reliability L-2) — settled at Resend under the lock in
+      // this run: the terminal pass counts it from here and does not DELETE it
+      // again.
+      if (settled.resendOutcome !== null) {
+        settledAtResendThisRun.set(
+          broadcast.broadcastId as string,
+          settled.resendOutcome === 'cancelled_at_resend' ? 'retained' : 'cleared',
+        );
+      }
       return { kind: 'cancelled' };
     };
 
@@ -672,6 +790,71 @@ export async function cancelInFlightBroadcastsForMember(
       }
     }
 
+    // Spec 140 s1 — the terminal-draft pass (docblock), erasure mode only,
+    // AFTER the in-flight loop: a row it has just cancelled still holds its
+    // Resend id and is listed too (DELETE → `absent` → cleared), so the counts
+    // are the same on a first run and on a re-drive.
+    let resendDraftsCleared = 0;
+    let resendCopiesRetained = 0;
+    let deferredCount = 0;
+    if (erasure) {
+      let terminal: ReadonlyArray<TerminalBroadcastDraftRef> = [];
+      try {
+        terminal = await deps.broadcastsRepo.listTerminalWithResendIdOwnedByMember(input.tenant.slug, input.memberId);
+      } catch (e) {
+        unexpectedErrorCount += 1;
+        broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'unexpected_error');
+        logger.error({ ...logBase, err: errKind(e) }, 'broadcasts.cascade.terminal_list_failed');
+      }
+      for (const row of terminal) {
+        const settledHere = settledAtResendThisRun.get(row.broadcastId as string);
+        // Review round 3 (code-review #5) — the same metric label a re-drive's
+        // DELETE of this row would emit, so both runs show the same series.
+        if (settledHere === 'cleared') {
+          resendDraftsCleared += 1;
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'terminal_draft_cleared');
+          continue;
+        }
+        if (settledHere === 'retained') {
+          resendCopiesRetained += 1;
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'terminal_copy_retained');
+          continue;
+        }
+        // Review round 1 (reliability H-1) — the caller's deadline: a row not
+        // reached in time is unexpected, so the re-drive continues with it.
+        // Review round 2 (code-review #4) — a deferral is not a stop-the-line
+        // error: its own label, yet it still withholds `member_erased`.
+        if (input.deadlineAt !== undefined && deps.clock.now().getTime() >= input.deadlineAt.getTime()) {
+          deferredCount += 1;
+          unexpectedErrorCount += 1;
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'deferred');
+          logger.debug({ ...logBase, broadcastId: row.broadcastId as string }, 'broadcasts.cascade.terminal_draft_deferred');
+          continue;
+        }
+        try {
+          const settled = await settleTerminalDraft(row);
+          if (settled.kind === 'handed') {
+            // A disclosure (8c): the in-flight arm's evidence row, once.
+            await recordAlreadySent(row, { status: row.status, resendStatus: settled.resendStatus });
+            broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'already_sent');
+          } else if (settled.kind === 'cleared') {
+            resendDraftsCleared += 1;
+            broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'terminal_draft_cleared');
+          } else {
+            resendCopiesRetained += 1;
+            broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'terminal_copy_retained');
+          }
+        } catch (e) {
+          // Unexpected: `member_erased` is withheld and `reconcile-erasures`
+          // drives the erasure again; nothing was written, so a re-drive is safe.
+          countUnexpected(e, row, row.status, 'broadcasts.cascade.terminal_draft_unresolved');
+        }
+      }
+      if (deferredCount > 0) {
+        logger.warn({ ...logBase, deferredCount }, 'broadcasts.cascade.terminal_deadline_reached');
+      }
+    }
+
     // P7 — DERIVED, never accumulated: every E-Blast of this member Resend had
     // already accepted, from the evidence rows, so a re-drive with nothing
     // left in flight still reports it. Erasure mode only (archive never writes
@@ -694,7 +877,13 @@ export async function cancelInFlightBroadcastsForMember(
       }
     }
 
-    if (inFlight.length > 0 || alreadySentCount > 0 || unexpectedErrorCount > 0) {
+    if (
+      inFlight.length > 0 ||
+      alreadySentCount > 0 ||
+      unexpectedErrorCount > 0 ||
+      resendDraftsCleared > 0 ||
+      resendCopiesRetained > 0
+    ) {
       logger.info(
         {
           tenantId: input.tenant.slug,
@@ -703,6 +892,9 @@ export async function cancelInFlightBroadcastsForMember(
           skippedConcurrentCount,
           unexpectedErrorCount,
           alreadySentCount,
+          resendDraftsCleared,
+          resendCopiesRetained,
+          deferredCount,
           onDispatchBegun,
           cascade: 'f3_member_archival_or_erasure',
         },
@@ -710,11 +902,21 @@ export async function cancelInFlightBroadcastsForMember(
       );
     }
 
-    return ok({ cancelledCount, skippedConcurrentCount, unexpectedErrorCount, alreadySentCount });
+    return ok({
+      cancelledCount,
+      skippedConcurrentCount,
+      unexpectedErrorCount,
+      alreadySentCount,
+      resendDraftsCleared,
+      resendCopiesRetained,
+      deferredCount,
+    });
   } catch (e) {
     return err({
       kind: 'cascade.server_error',
-      message: e instanceof Error ? e.message : 'unknown error',
+      // Review round 4 (code-review #8) — the error CLASS only: a message can
+      // embed SQL parameter values, and the members adapter logs this field.
+      message: errKind(e),
     });
   }
 }

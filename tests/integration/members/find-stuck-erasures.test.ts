@@ -235,3 +235,47 @@ describe('MemberRepo.findStuckErasuresInTx — live Neon reconciler candidate qu
     );
   });
 });
+
+
+// Spec 140 s1 review round 4 (code-review #3) — the paused / gauge count, on
+// live Postgres: the SAME anti-join as the candidate query, counted, and
+// tenant-fenced (tenant B's stuck member is not tenant A's).
+describe('MemberRepo.countStuckErasuresInTx — live Neon', () => {
+  let tenantA: TestTenant;
+  let tenantB: TestTenant;
+  let admin: TestUser;
+
+  beforeAll(async () => {
+    admin = await createActiveTestUser('admin');
+    tenantA = await createTestTenant('test-swecham');
+    tenantB = await createTestTenant('test-swecham');
+    await seedPlan(tenantA, admin.userId);
+    await seedPlan(tenantB, admin.userId);
+    const erasedAt = new Date();
+    // Tenant A: one stuck, one complete, one live.
+    const stuckA = await seedMember(tenantA, { erasedAt });
+    await seedErasureAudit(tenantA, admin, { eventType: 'member_erasure_requested', memberId: stuckA, reason: 'gdpr_erasure_request' });
+    const completeA = await seedMember(tenantA, { erasedAt });
+    await seedErasureAudit(tenantA, admin, { eventType: 'member_erased', memberId: completeA, reason: 'gdpr_erasure_request' });
+    await seedMember(tenantA, { erasedAt: null });
+    // Tenant B: one stuck — never tenant A's.
+    const stuckB = await seedMember(tenantB, { erasedAt });
+    await seedErasureAudit(tenantB, admin, { eventType: 'member_erasure_requested', memberId: stuckB, reason: 'gdpr_erasure_request' });
+  });
+
+  afterAll(async () => {
+    await tenantA?.cleanup().catch(() => {});
+    await tenantB?.cleanup().catch(() => {});
+    if (admin) await deleteTestUser(admin).catch(() => {});
+  });
+
+  it('counts the one stuck member of tenant A: not the complete one, not the live one, not the one in tenant B', async () => {
+    const countA = await runInTenant(tenantA.ctx, (tx) => drizzleMemberRepo.countStuckErasuresInTx(tx, tenantA.ctx.slug));
+    expect(countA).toBe(1);
+    const countB = await runInTenant(tenantB.ctx, (tx) => drizzleMemberRepo.countStuckErasuresInTx(tx, tenantB.ctx.slug));
+    expect(countB).toBe(1);
+    // Agrees with the candidate query it counts.
+    const listedA = await runInTenant(tenantA.ctx, (tx) => drizzleMemberRepo.findStuckErasuresInTx(tx, tenantA.ctx.slug, 50));
+    expect(listedA).toHaveLength(countA);
+  });
+});

@@ -151,7 +151,7 @@ describe('f7BroadcastsCascadeAdapter — spec 139 erasure mode', () => {
 
   it('forwards onDispatchBegun to the F7 use case when the caller sets it', async () => {
     cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
-      ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 }),
+      ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0 }),
     );
     await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
       cancellationReason: 'gdpr_erasure_request',
@@ -164,11 +164,27 @@ describe('f7BroadcastsCascadeAdapter — spec 139 erasure mode', () => {
 
   it('omits onDispatchBegun when the caller does not set it (archive keeps the F7 default)', async () => {
     cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
-      ok({ cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0 }),
+      ok({ cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0 }),
     );
     await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, { initiatedByUserId: null, requestId: 'req-7' });
     const passed = cancelInFlightBroadcastsForMember.mock.calls[0]![1];
     expect(Object.prototype.hasOwnProperty.call(passed, 'onDispatchBegun')).toBe(false);
+    // Spec 140 s1 review round 1 — nor a deadline: archive is unchanged.
+    expect(Object.prototype.hasOwnProperty.call(passed, 'deadlineAt')).toBe(false);
+  });
+
+  it('forwards deadlineAt to the F7 use case when the caller sets it (spec 140 s1 review round 1)', async () => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({ cancelledCount: 0, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 0, resendCopiesRetained: 0 }),
+    );
+    const deadlineAt = new Date('2026-10-31T00:04:30Z');
+    await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
+      initiatedByUserId: null,
+      requestId: 'req-7',
+      onDispatchBegun: 'delete_then_cancel',
+      deadlineAt,
+    });
+    expect(cancelInFlightBroadcastsForMember.mock.calls[0]![1]).toMatchObject({ deadlineAt });
   });
 
   it.each([
@@ -176,13 +192,63 @@ describe('f7BroadcastsCascadeAdapter — spec 139 erasure mode', () => {
     { unexpectedErrorCount: 2, outcome: 'cascade_partial_failure' },
   ])('carries alreadySentCount on the $outcome arm', async ({ unexpectedErrorCount, outcome }) => {
     cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
-      ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount, alreadySentCount: 3 }),
+      ok({ cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount, alreadySentCount: 3, resendDraftsCleared: 0, resendCopiesRetained: 0 }),
     );
     const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
       initiatedByUserId: 'admin-7',
       requestId: 'req-7',
     });
     expect(result).toMatchObject({ outcome, alreadySentCount: 3 });
+  });
+
+  // Spec 140 s1 — the terminal-draft pass's two counts travel back to
+  // `member_erased` on both arms, exactly as `alreadySentCount` does.
+  it.each([
+    { unexpectedErrorCount: 0, outcome: 'ok' },
+    { unexpectedErrorCount: 1, outcome: 'cascade_partial_failure' },
+  ])('carries resendDraftsCleared and resendCopiesRetained on the $outcome arm', async ({ unexpectedErrorCount, outcome }) => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        unexpectedErrorCount,
+        alreadySentCount: 0,
+        resendDraftsCleared: 2,
+        resendCopiesRetained: 1,
+      }),
+    );
+    const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
+      initiatedByUserId: 'admin-7',
+      requestId: 'req-7',
+      onDispatchBegun: 'delete_then_cancel',
+    });
+    expect(result).toMatchObject({ outcome, resendDraftsCleared: 2, resendCopiesRetained: 1 });
+  });
+});
+
+describe('f7BroadcastsCascadeAdapter — spec 140 s1 review round 3', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('carries the deadline-deferred count on the partial arm', async () => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        unexpectedErrorCount: 3,
+        alreadySentCount: 0,
+        resendDraftsCleared: 0,
+        resendCopiesRetained: 0,
+        deferredCount: 2,
+      }),
+    );
+    const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
+      initiatedByUserId: null,
+      requestId: 'req-7',
+      onDispatchBegun: 'delete_then_cancel',
+    });
+    expect(result).toMatchObject({ outcome: 'cascade_partial_failure', unexpectedErrorCount: 3, deferredCount: 2 });
   });
 });
 

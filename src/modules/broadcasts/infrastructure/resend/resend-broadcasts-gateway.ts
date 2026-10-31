@@ -1142,7 +1142,11 @@ function retrieveOnceOutcomeFor(status: number, text: string): RetrieveBroadcast
     } catch {
       return { kind: 'other' };
     }
-    return typeof raw === 'string' ? { kind: 'present', status: normaliseStatus(raw) } : { kind: 'other' };
+    if (typeof raw !== 'string') return { kind: 'other' };
+    // Spec 140 s1 — MEASURED 2026-10-29 (an audience deleted under a queued
+    // broadcast). Named by this reader only; `normaliseStatus` keeps it
+    // `unknown` for every other caller (see `RetrieveBroadcastOnceOutcome`).
+    return { kind: 'present', status: raw === 'failed' ? 'failed' : normaliseStatus(raw) };
   }
   if (status === 404 || status === 410) return { kind: 'not_found' };
   if (status === 429 || status >= 500) return { kind: 'retryable' };

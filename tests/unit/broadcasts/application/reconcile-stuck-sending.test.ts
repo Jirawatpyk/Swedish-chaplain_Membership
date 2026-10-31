@@ -171,6 +171,7 @@ function makeBroadcastsRepo(args: {
       return { prunedDrafts: [] };
     },
     async listInFlightOwnedByMember() { return []; },
+    async listTerminalWithResendIdOwnedByMember() { return []; },
     async scrubContentForMemberInTx() { return { scrubbedCount: 0 }; },
     async tombstoneDeliveriesForMemberInTx() { return { tombstonedCount: 0 }; },
     async listMemberResendAudienceContactsInTx() { return []; },

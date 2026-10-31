@@ -165,6 +165,26 @@ describe('contract: POST /api/members/[memberId]/erase (COMP-1 US3-A)', () => {
     });
   });
 
+  // Spec 140 s1 review round 1 (reliability H-1) — the route bounds the
+  // broadcasts cascade's terminal-draft pass inside its 300 s maxDuration.
+  it('passes a deadline inside maxDuration to eraseMember', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    buildEraseMemberDepsMock.mockReturnValueOnce({});
+    eraseMemberMock.mockResolvedValueOnce(ok({ memberId: MEMBER_ID, erasedAt, cascadesComplete: true }));
+    const before = Date.now();
+
+    await invoke(VALID_BODY);
+
+    const meta = eraseMemberMock.mock.calls[0]![2] as { deadlineAt?: Date };
+    expect(meta.deadlineAt).toBeInstanceOf(Date);
+    // Review round 4 (senior-tester) — the exact rule, not just "some time":
+    // start + maxDuration − the reserve, within the test's own run time.
+    const { ERASURE_CASCADE_RESERVE_MS } = await import('@/lib/erasure-cascade-deadline');
+    const expected = before + 300_000 - ERASURE_CASCADE_RESERVE_MS;
+    expect(meta.deadlineAt!.getTime()).toBeGreaterThanOrEqual(expected);
+    expect(meta.deadlineAt!.getTime() - expected).toBeLessThan(5_000);
+  });
+
   it('200 cascadesComplete:false is still 200', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     buildEraseMemberDepsMock.mockReturnValueOnce({});

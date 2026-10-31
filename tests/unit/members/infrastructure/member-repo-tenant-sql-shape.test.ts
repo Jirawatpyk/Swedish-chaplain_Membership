@@ -158,6 +158,7 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
       findErasedAtByIdInTx: [tx, 'member-1'],
       findErasedAtById: [CTX, 'member-1'],
       findStuckErasuresInTx: [tx, T, 10],
+      countStuckErasuresInTx: [tx, T],
       findManyByIdsInTx: [tx, T, ['member-1']],
       enrolAutoInvoiceInTx: [tx, T, ['member-1'], NOW],
       findErasedIdsInTx: [tx, T, ['member-1']],
@@ -320,6 +321,21 @@ describe('members repo + adapters — tenant predicate on every statement (130 s
     // The erasure reconciler's read returns rows, not a Result: it throws.
     rec.statements.length = 0;
     await expect(drizzleMemberRepo.findStuckErasuresInTx(tx as never, 'other-tenant', 10)).rejects.toThrow();
+    expect(rec.statements).toEqual([]);
+  });
+
+  // Spec 140 s1 review round 3 (code-review #8) — the paused tick's count
+  // locks nothing: the same anti-join, no FOR UPDATE / SKIP LOCKED, no LIMIT.
+  it('countStuckErasuresInTx is a plain count — no row lock, no cap — and refuses another tenant', async () => {
+    const tx = rec.db;
+    rec.statements.length = 0;
+    await drizzleMemberRepo.countStuckErasuresInTx(tx as never, T);
+    const [stmt] = rec.statements;
+    expect(stmt?.sql).toMatch(/count\(/i);
+    expect(stmt?.sql).toMatch(/member_erased/);
+    expect(stmt?.sql).not.toMatch(/for update|skip locked|\blimit\b/i);
+    rec.statements.length = 0;
+    await expect(drizzleMemberRepo.countStuckErasuresInTx(tx as never, 'other-tenant')).rejects.toThrow();
     expect(rec.statements).toEqual([]);
   });
 

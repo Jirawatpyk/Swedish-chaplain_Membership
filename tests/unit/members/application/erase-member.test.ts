@@ -539,6 +539,35 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     }
   });
 
+  // Spec 140 s1 review round 2 (code-review #1, reliability N1) — the
+  // sub-processor propagation is the one step a re-drive cannot repeat (its
+  // pairs are captured only on the first pass), so it runs BEFORE the
+  // broadcasts cascade, whose terminal pass may spend the route's budget.
+  it('spec 140 s1: propagates to sub-processors before the broadcasts cascade runs', async () => {
+    const deps = buildEraseDeps();
+    await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    const propagateAt = (deps.subprocessorErasure.propagate as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    const cascadeAt = (deps.broadcastsCascade.cancelInFlightForMember as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    expect(propagateAt).toBeLessThan(cascadeAt);
+  });
+
+  // Spec 140 s1 review round 1 (reliability H-1) — the caller's deadline bounds
+  // the cascade's terminal-draft pass; with none, none is passed.
+  it('spec 140 s1: forwards meta.deadlineAt to the broadcasts cascade, and omits it when unset', async () => {
+    const deadlineAt = new Date('2026-10-31T00:04:30Z');
+    const withDeadline = buildEraseDeps();
+    await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, { ...META, deadlineAt }, withDeadline);
+    expect(withDeadline.broadcastsCascade.cancelInFlightForMember).toHaveBeenCalledWith(
+      withDeadline.tenant,
+      asMemberId('m-1'),
+      expect.objectContaining({ deadlineAt }),
+    );
+    const without = buildEraseDeps();
+    await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, without);
+    const opts = (without.broadcastsCascade.cancelInFlightForMember as ReturnType<typeof vi.fn>).mock.calls[0]![2] as object;
+    expect(Object.prototype.hasOwnProperty.call(opts, 'deadlineAt')).toBe(false);
+  });
+
   // Spec 139 DE2 wiring — erasure is the ONE caller that selects the cascade's
   // `delete_then_cancel` mode (archive keeps the skip, DE4).
   it('spec 139: asks the broadcasts cascade to delete-then-cancel a dispatch-begun E-Blast', async () => {
@@ -556,7 +585,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
   it('spec 139: records broadcasts_already_sent_count on the member_erased DPO payload', async () => {
     const deps = buildEraseDeps();
     deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
-      async () => ({ outcome: 'ok', cancelledCount: 1, skippedConcurrentCount: 0, alreadySentCount: 2 }) as const,
+      async () => ({ outcome: 'ok', cancelledCount: 1, skippedConcurrentCount: 0, alreadySentCount: 2, resendDraftsCleared: 0, resendCopiesRetained: 0 }) as const,
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
@@ -566,6 +595,36 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     expect(erased, 'member_erased was not emitted').toBeDefined();
     expect((erased?.[2] as { payload: Record<string, unknown> }).payload).toMatchObject({
       broadcasts_already_sent_count: 2,
+    });
+  });
+
+  // Spec 140 s1 (ED1 / ED2) — the drafts the erasure deleted at Resend, and the
+  // copies Resend would not delete, are on the completion proof. Both are
+  // DERIVED per run (the cascade re-lists every terminal row each run), so the
+  // run that writes `member_erased` reports them whole.
+  it('spec 140 s1: member_erased carries resend_drafts_cleared / resend_copies_retained', async () => {
+    const deps = buildEraseDeps();
+    deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+      async () =>
+        ({
+          outcome: 'ok',
+          cancelledCount: 0,
+          skippedConcurrentCount: 0,
+          alreadySentCount: 0,
+          resendDraftsCleared: 2,
+          resendCopiesRetained: 1,
+        }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    const erased = deps.audit.recordInTx.mock.calls.find(
+      (c) => (c[2] as { type: string }).type === 'member_erased',
+    );
+    expect(erased, 'member_erased was not emitted').toBeDefined();
+    expect((erased?.[2] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      broadcasts_already_sent_count: 0,
+      resend_drafts_cleared: 2,
+      resend_copies_retained: 1,
     });
   });
 
@@ -715,6 +774,9 @@ describe('eraseMember — requested audit + atomic scrub', () => {
           skippedConcurrentCount: 0,
           unexpectedErrorCount: 1,
           alreadySentCount: 0,
+          resendDraftsCleared: 0,
+          resendCopiesRetained: 0,
+          deferredCount: 0,
         }) as const,
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
@@ -726,6 +788,42 @@ describe('eraseMember — requested audit + atomic scrub', () => {
 
   // Spec 139 review round 1 — the partial-failure log names the derived
   // already-sent count, so the runbook can read it off a stuck erasure too.
+  // Spec 140 s1 review round 3 (code-review #3) — a partial result that is
+  // ONLY rows the deadline deferred is not "broadcasts remain in flight": it is
+  // logged at warn with the count, and still withholds member_erased.
+  it('spec 140 s1: a pure deadline deferral logs at warn (not the in-flight error) and still withholds member_erased', async () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      const deps = buildEraseDeps();
+      deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+        async () =>
+          ({
+            outcome: 'cascade_partial_failure',
+            cancelledCount: 0,
+            skippedConcurrentCount: 0,
+            unexpectedErrorCount: 2,
+            alreadySentCount: 0,
+            resendDraftsCleared: 1,
+            resendCopiesRetained: 0,
+            deferredCount: 2,
+          }) as const,
+      );
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(res.ok ? res.value.cascadesComplete : null).toBe(false);
+      const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+      expect(types).not.toContain('member_erased');
+      const isBroadcasts = (c: unknown[]) => (c[0] as { cascade?: string } | undefined)?.cascade === 'f7_in_flight_broadcast_cancel';
+      expect(errorSpy.mock.calls.filter(isBroadcasts)).toEqual([]);
+      const warned = warnSpy.mock.calls.find(isBroadcasts);
+      expect(warned?.[0]).toMatchObject({ deferredCount: 2 });
+      expect(warned?.[1]).toBe('erase-member: broadcasts cascade deferred by the deadline; the re-drive continues');
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
   it('broadcasts cascade_partial_failure logs alreadySentCount with the per-row counts', async () => {
     const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     try {
@@ -738,6 +836,9 @@ describe('eraseMember — requested audit + atomic scrub', () => {
             skippedConcurrentCount: 0,
             unexpectedErrorCount: 1,
             alreadySentCount: 3,
+            resendDraftsCleared: 0,
+            resendCopiesRetained: 0,
+            deferredCount: 0,
           }) as const,
       );
       await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
