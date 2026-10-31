@@ -656,6 +656,15 @@ describe('refund: no retry once the outcome may be a refund', () => {
     vi.unstubAllGlobals();
   });
 
+  it('the reason is a one-line text field, so Enter submits like the amount field (R114 note ii)', async () => {
+    await submitPartial(duplicateThenOk());
+    const reason = within(screen.getByRole('alertdialog', { name: refund.title })).getByTestId('refund-form-reason');
+    expect(reason.tagName).toBe('INPUT');
+    expect(reason).toHaveAttribute('type', 'text');
+    expect(reason).toHaveAttribute('maxlength', '500');
+    vi.unstubAllGlobals();
+  });
+
   it('the warning is announced once: a live alert, and focus is not moved onto it (UX L1)', async () => {
     await submitPartial(duplicateThenOk());
     const dialog = screen.getByRole('alertdialog', { name: refund.title });

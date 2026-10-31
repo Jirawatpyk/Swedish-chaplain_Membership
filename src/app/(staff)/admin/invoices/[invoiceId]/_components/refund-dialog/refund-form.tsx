@@ -11,7 +11,7 @@
  *     (the credit note to be issued — amount excl. VAT and VAT, read from
  *     the server — then refund total, still refundable afterwards) and names
  *     itself on Confirm.
- *   - Reason textarea — 500-char counter; aria-live polite.
+ *   - Reason, one line — 500-char counter; aria-live polite.
  *   - <TypedPhraseConfirm> — renders ONLY when amount === remaining
  *     (full refund) per FR-029(f).
  *   - 0306 — when the amount FULLY credits a MEMBERSHIP invoice (amount ===
@@ -41,7 +41,7 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { Alert, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { Alert, RadioGroup, Skeleton, TextField } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
@@ -784,13 +784,15 @@ export function RefundForm({
         </Alert>
       )}
 
-      {/* Reason — single-line textarea (server enforces no CR/LF too) */}
+      {/* Reason — one line, like the amount (the server refuses CR/LF too):
+        * Enter submits instead of adding a newline that disables the
+        * confirm (R114 note ii). */}
       <div className="flex flex-col gap-1">
-        <Textarea
+        <TextField
           id={reasonId}
           label={tForm('reason.label')}
           required
-          rows={3}
+          type="text"
           maxLength={REASON_MAX}
           placeholder={tForm('reason.placeholder')}
           aria-describedby={
