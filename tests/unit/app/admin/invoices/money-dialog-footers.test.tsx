@@ -426,7 +426,10 @@ describe('refund: no retry once the outcome may be a refund', () => {
 
   let rerenderRefund: (props: { pendingRefundExists: boolean }) => void = () => {};
 
-  async function submitPartial(postImpl: () => Promise<Response>) {
+  async function submitPartial(
+    postImpl: () => Promise<Response>,
+    { amount = '100', phrase }: { amount?: string; phrase?: string } = {},
+  ) {
     const spy = vi.fn((_url: string, init?: RequestInit) => (init?.method === 'POST' ? postImpl() : preview()));
     vi.stubGlobal('fetch', spy);
     const dialogFor = ({ pendingRefundExists }: { pendingRefundExists: boolean }) => (
@@ -451,9 +454,12 @@ describe('refund: no retry once the outcome may be a refund', () => {
     rerenderRefund = (props) => rerender(dialogFor(props));
     fireEvent.click(screen.getByTestId('refund-dialog-trigger'));
     const dialog = screen.getByRole('alertdialog', { name: refund.title });
-    fireEvent.change(within(dialog).getByTestId('refund-form-amount'), { target: { value: '100' } });
+    fireEvent.change(within(dialog).getByTestId('refund-form-amount'), { target: { value: amount } });
     fireEvent.change(within(dialog).getByTestId('refund-form-reason'), { target: { value: 'duplicate charge' } });
     fireEvent.blur(within(dialog).getByTestId('refund-form-reason'));
+    if (phrase !== undefined) {
+      fireEvent.change(await within(dialog).findByTestId('refund-typed-phrase-input'), { target: { value: phrase } });
+    }
     const confirm = within(dialog).getByTestId('refund-form-confirm');
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
@@ -604,6 +610,126 @@ describe('refund: no retry once the outcome may be a refund', () => {
     await waitFor(() => expect(confirm).not.toHaveAttribute('aria-busy'));
     fireEvent.click(screen.getByRole('button', { name: refund.cancel }));
     expect(screen.getByTestId('refund-dialog-trigger')).not.toHaveAttribute('aria-disabled');
+    vi.unstubAllGlobals();
+  });
+
+  // #49: a probable duplicate (the same amount refunded on this payment in
+  // the last 24 h) is refused; the admin may confirm and refund again. The
+  // confirm is the footer's, click-only (review H1/M2): Enter never overrides.
+  const duplicateThenOk = () => {
+    let call = 0;
+    return async () => {
+      call += 1;
+      return call === 1
+        ? new Response(
+            JSON.stringify({
+              error: { code: 'possible_duplicate_refund', duplicateRefundedAt: '2026-02-01T05:00:00.000Z' },
+            }),
+            { status: 409 },
+          )
+        : new Response(
+            JSON.stringify({ refund: { status: 'succeeded', creditNote: { kind: 'issued', id: 'cn', number: 'CN-1' } } }),
+            { status: 201 },
+          );
+    };
+  };
+  const bodyOf = (spy: ReturnType<typeof vi.fn>, i: number) =>
+    JSON.parse(String((posts(spy)[i]![1] as RequestInit).body)) as Record<string, unknown>;
+
+  it('a 409 possible_duplicate_refund warns inline; the footer confirm becomes "Refund again" and resends once with confirmDuplicate', async () => {
+    const spy = await submitPartial(duplicateThenOk());
+    const dialog = screen.getByRole('alertdialog', { name: refund.title });
+    const warning = await within(dialog).findByTestId('refund-form-duplicate');
+    expect(within(warning).queryByRole('button')).toBeNull();
+    // It names when the earlier refund was made (duplicateRefundedAt).
+    expect(warning).toHaveTextContent(/2026/);
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
+    const confirm = within(dialog).getByTestId('refund-form-confirm');
+    await waitFor(() => expect(confirm).toHaveTextContent(enMessages.admin.refund.duplicate.confirm));
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(posts(spy)).toHaveLength(2);
+    expect(bodyOf(spy, 0)).not.toHaveProperty('confirmDuplicate');
+    expect(bodyOf(spy, 1)['confirmDuplicate']).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('the reason is a one-line text field, so Enter submits like the amount field (R114 note ii)', async () => {
+    await submitPartial(duplicateThenOk());
+    const reason = within(screen.getByRole('alertdialog', { name: refund.title })).getByTestId('refund-form-reason');
+    expect(reason.tagName).toBe('INPUT');
+    expect(reason).toHaveAttribute('type', 'text');
+    expect(reason).toHaveAttribute('maxlength', '500');
+    vi.unstubAllGlobals();
+  });
+
+  it('the warning is announced once: a live alert, and focus is not moved onto it (UX L1)', async () => {
+    await submitPartial(duplicateThenOk());
+    const dialog = screen.getByRole('alertdialog', { name: refund.title });
+    const warning = await within(dialog).findByTestId('refund-form-duplicate');
+    expect(warning).toHaveAttribute('role', 'alert');
+    // No focusable wrapper of its own: a focused live region is read twice.
+    expect(warning.parentElement).not.toHaveAttribute('tabindex');
+    await waitFor(() => expect(within(dialog).getByTestId('refund-form-confirm')).not.toHaveAttribute('aria-busy'));
+    expect(document.activeElement).not.toBe(warning.parentElement);
+    expect(warning.contains(document.activeElement)).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('after the warning, submitting the form (Enter) checks again: no confirmDuplicate', async () => {
+    const spy = await submitPartial(duplicateThenOk());
+    const dialog = screen.getByRole('alertdialog', { name: refund.title });
+    await within(dialog).findByTestId('refund-form-duplicate');
+    await waitFor(() => expect(within(dialog).getByTestId('refund-form-confirm')).not.toHaveAttribute('aria-busy'));
+    fireEvent.submit(dialog.querySelector('form')!);
+    await waitFor(() => expect(posts(spy)).toHaveLength(2));
+    expect(bodyOf(spy, 1)).not.toHaveProperty('confirmDuplicate');
+    vi.unstubAllGlobals();
+  });
+
+  it('Enter in a field while the warning shows checks again, without confirmDuplicate (R114b step 3)', async () => {
+    const spy = await submitPartial(duplicateThenOk());
+    const dialog = screen.getByRole('alertdialog', { name: refund.title });
+    await within(dialog).findByTestId('refund-form-duplicate');
+    await waitFor(() => expect(within(dialog).getByTestId('refund-form-confirm')).not.toHaveAttribute('aria-busy'));
+    // An IME composing Thai commits with Enter: never a submit.
+    fireEvent.keyDown(within(dialog).getByTestId('refund-form-reason'), { key: 'Enter', isComposing: true });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posts(spy)).toHaveLength(1);
+    fireEvent.keyDown(within(dialog).getByTestId('refund-form-reason'), { key: 'Enter' });
+    await waitFor(() => expect(posts(spy)).toHaveLength(2));
+    expect(bodyOf(spy, 1)).not.toHaveProperty('confirmDuplicate');
+    vi.unstubAllGlobals();
+  });
+
+  it('changing the amount after the warning clears it; the next confirm sends no confirmDuplicate', async () => {
+    const spy = await submitPartial(duplicateThenOk());
+    const dialog = screen.getByRole('alertdialog', { name: refund.title });
+    await within(dialog).findByTestId('refund-form-duplicate');
+    fireEvent.change(within(dialog).getByTestId('refund-form-amount'), { target: { value: '200' } });
+    await waitFor(() => expect(within(dialog).queryByTestId('refund-form-duplicate')).toBeNull());
+    const confirm = within(dialog).getByTestId('refund-form-confirm');
+    expect(confirm).not.toHaveTextContent(enMessages.admin.refund.duplicate.confirm);
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posts(spy)).toHaveLength(2));
+    expect(bodyOf(spy, 1)).not.toHaveProperty('confirmDuplicate');
+    vi.unstubAllGlobals();
+  });
+
+  it('a full refund whose typed phrase was cleared after the warning cannot be confirmed or submitted', async () => {
+    const spy = await submitPartial(duplicateThenOk(), { amount: '38520', phrase: 'REFUND Acme AB' });
+    const dialog = screen.getByRole('alertdialog', { name: refund.title });
+    await within(dialog).findByTestId('refund-form-duplicate');
+    fireEvent.change(within(dialog).getByTestId('refund-typed-phrase-input'), { target: { value: '' } });
+    const confirm = within(dialog).getByTestId('refund-form-confirm');
+    await waitFor(() => expect(confirm).toBeDisabled());
+    fireEvent.click(confirm);
+    fireEvent.submit(dialog.querySelector('form')!);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posts(spy)).toHaveLength(1);
     vi.unstubAllGlobals();
   });
 

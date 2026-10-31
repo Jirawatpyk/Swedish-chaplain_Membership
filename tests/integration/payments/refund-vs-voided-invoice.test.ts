@@ -447,6 +447,7 @@ describe('issueRefund pre-flight mirrors F4 credit-note gates (F-4)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-void',
       requestId: 'req-void',
+      duplicateGuard: 'skip',
     });
 
     // MONEY FIRST — inverted from the pre-Track-B expectation, and this is the
@@ -492,6 +493,7 @@ describe('issueRefund pre-flight mirrors F4 credit-note gates (F-4)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-notrendered',
       requestId: 'req-notrendered',
+      duplicateGuard: 'skip',
     });
 
     expect(deps.processorGateway.createRefund).not.toHaveBeenCalled();
@@ -526,6 +528,7 @@ describe('issueRefund pre-flight mirrors F4 credit-note gates (F-4)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-control',
       requestId: 'req-control',
+      duplicateGuard: 'skip',
     });
 
     expect(r.ok).toBe(true);

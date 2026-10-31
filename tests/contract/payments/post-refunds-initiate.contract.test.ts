@@ -602,6 +602,61 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     expect(f5RateLimitEmitMock).toHaveBeenCalledTimes(1);
   });
 
+  // #49 — a probable duplicate (a succeeded same-amount refund on this payment
+  // in the last 24 h) is refused unless the admin confirms.
+  it('409 possible_duplicate_refund — names when, never the reason or a Stripe id', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    issueRefundMock.mockResolvedValueOnce(
+      err({
+        code: 'possible_duplicate_refund',
+        refundId: 'rfnd_earlier',
+        refundedAt: '2026-05-15T01:00:00.000Z',
+      }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    expect(res.status).toBe(409);
+    const error = ((await res.json()) as Record<string, unknown>)['error'] as Record<string, unknown>;
+    expect(error['code']).toBe('possible_duplicate_refund');
+    expect(error['duplicateRefundedAt']).toBe('2026-05-15T01:00:00.000Z');
+    expect(error['messageThai']).toBeDefined();
+    // PCI review L1: an allow-list, so a leaked id or reason fails here.
+    expect(Object.keys(error).sort()).toEqual(
+      ['code', 'duplicateRefundedAt', 'message', 'messageThai'].sort(),
+    );
+    expect(JSON.stringify(error)).not.toContain('rfnd_earlier');
+  });
+
+  it("the route asks the use case to check for a duplicate ('check')", async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    issueRefundMock.mockResolvedValueOnce(ok(SUCCESS_PAYLOAD));
+    const { POST } = await importRoute();
+    await POST(makeJsonRequest(VALID_BODY));
+    expect(issueRefundMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ duplicateGuard: 'check' }),
+    );
+  });
+
+  it("confirmDuplicate: true overrides the check ('override')", async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    issueRefundMock.mockResolvedValueOnce(ok(SUCCESS_PAYLOAD));
+    const { POST } = await importRoute();
+    await POST(makeJsonRequest({ ...VALID_BODY, confirmDuplicate: true }));
+    expect(issueRefundMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ duplicateGuard: 'override' }),
+    );
+  });
+
+  it('400 invalid_input — confirmDuplicate other than true', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    const { POST } = await importRoute();
+    const res = await POST(makeJsonRequest({ ...VALID_BODY, confirmDuplicate: 'yes' }));
+    expect(res.status).toBe(400);
+    expect(issueRefundMock).not.toHaveBeenCalled();
+  });
+
   // Task B — only a `permanent` gateway failure proves the money stayed put
   // (the use case finalises the row `failed`). `retryable` and
   // `idempotency_conflict` leave it `pending`: the outcome is unknown, so the

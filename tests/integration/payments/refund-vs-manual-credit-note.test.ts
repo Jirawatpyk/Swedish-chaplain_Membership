@@ -361,6 +361,7 @@ describe('issueRefund pre-flight caps at F4 credited_total (#4)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-reject',
       requestId: 'req-reject',
+      duplicateGuard: 'skip',
     });
 
     expect(r.ok).toBe(false);
@@ -390,6 +391,7 @@ describe('issueRefund pre-flight caps at F4 credited_total (#4)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-membership-partial',
       requestId: 'req-membership-partial',
+      duplicateGuard: 'skip',
       membershipEffect: 'cancel_membership',
     });
     expect(r.ok).toBe(false);
@@ -412,6 +414,7 @@ describe('issueRefund pre-flight caps at F4 credited_total (#4)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-allow',
       requestId: 'req-allow',
+      duplicateGuard: 'skip',
       // 0306 — exactly the headroom FULLY credits this membership invoice, so
       // End membership applies; it is pinned on the (pending) refund row for
       // the async finaliser.
