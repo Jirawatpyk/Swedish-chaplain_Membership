@@ -1759,15 +1759,17 @@ export const paymentsMetrics = {
     // never heals sit unattended. Reason is NOT added as a label on the
     // existing counter — that series predates this change and dashboards key
     // on its current shape.
-    //   retrieve_failed             → the next sweep retries the retrieve
-    //                                 → transient
+    //   retrieve_failed             → the sweep retries every pass, but it
+    //                                 only escalates after three days of
+    //                                 failing (e.g. the amount guard, which
+    //                                 never heals) → permanent
     //   orphan_marker_conflict      → a possible double refund or a forged
     //                                 marker; the sweep never picks → permanent
     bumpUnreconciled(
       'stale_pending_refund_escalated',
-      reason === 'missing_processor_refund_id' || reason === 'orphan_marker_conflict'
-        ? 'permanent'
-        : 'transient',
+      reason === 'stripe_pending' || reason === 'credit_note_bridge_declined'
+        ? 'transient'
+        : 'permanent',
       tenantId,
     );
   },

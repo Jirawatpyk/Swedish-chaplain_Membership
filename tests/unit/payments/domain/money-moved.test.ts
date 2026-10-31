@@ -150,7 +150,7 @@ describe('proveNothingMoved', () => {
 // processor's own complete answer that it holds no refund for this row.
 describe('proveNoProcessorRefund', () => {
   const HOUR = 60 * 60 * 1000;
-  const proven = { complete: true, matchCount: 0, unmarkedCount: 0, rowAgeMs: 24 * HOUR };
+  const proven = { complete: true, matchCount: 0, unaccountedCount: 0, rowAgeMs: 24 * HOUR };
 
   it('a complete lookup, a day on, with no refund for this row proves nothing moved', () => {
     expect(proveNoProcessorRefund(proven)).not.toBeNull();
@@ -176,6 +176,6 @@ describe('proveNoProcessorRefund', () => {
   });
 
   it('any refund without our marker on the intent → no proof (a legacy or Dashboard refund may be this one)', () => {
-    expect(proveNoProcessorRefund({ ...proven, unmarkedCount: 1 })).toBeNull();
+    expect(proveNoProcessorRefund({ ...proven, unaccountedCount: 1 })).toBeNull();
   });
 });

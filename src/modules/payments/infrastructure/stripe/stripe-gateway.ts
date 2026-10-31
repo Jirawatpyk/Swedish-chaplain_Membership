@@ -90,7 +90,7 @@ function connectOptions(stripeAccount: string): { stripeAccount?: string } {
 // webhook read-consistency means the object is INTERMITTENTLY not yet
 // retrievable right when the event fires — the retrieve throws a
 // `StripeInvalidRequestError` with `code: 'resource_missing'` / HTTP 404.
-// `mapStripeError` classifies that via its default arm as `permanent`,
+// `mapStripeError` classifies that (a `StripeInvalidRequestError`) as `permanent`,
 // so it was NOT retried → the payment row landed `method='other'` with
 // no card brand/last4 (UI shows "Other"). Impact is COSMETIC (method
 // label + brand/last4); the payment outcome / mark-paid / receipt are

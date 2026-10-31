@@ -494,6 +494,8 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     asMock(deps.processorGateway.listRefundsForPaymentIntent).mockResolvedValueOnce(
       ok({ refunds: [{ id: 're_other', status: 'succeeded', appRefundId: 'rfnd_someone_else', amountSatang: AMOUNT }], complete: true }),
     );
+    // That other refund is recorded on another of this payment's rows.
+    asMock(deps.refundsRepo.listProcessorRefundIdsForPayment).mockResolvedValueOnce(['re_other']);
 
     const r = await sweepStalePendingRefunds(deps, baseInput);
     expect(r.ok && r.value.sweptCount).toBe(1);

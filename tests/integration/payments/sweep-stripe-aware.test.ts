@@ -144,7 +144,10 @@ describe('sweepStalePendingRefunds — Stripe-aware, live Neon (A.14)', () => {
   ): SweepStalePendingRefundsDeps['processorGateway'] {
     return {
       createPaymentIntent: vi.fn(),
-      retrievePaymentIntent: vi.fn(),
+      // #50 — every intent the sweep checks exists on the account.
+      retrievePaymentIntent: vi.fn(async (pi: string) =>
+        ok({ id: pi, status: 'succeeded', clientSecret: null, promptpayQrSvgUrl: null }),
+      ),
       cancelPaymentIntent: vi.fn(),
       createRefund: vi.fn(),
       listRefundsForPaymentIntent: vi.fn(async () => ok(listed)),

@@ -18,7 +18,7 @@
  * MUST NOT leak into Application or Domain (Constitution Principle
  * III). The use-case calls these methods only through the port.
  */
-import { and, asc, desc, eq, gte, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type {
   RefundsRepo,
@@ -374,6 +374,25 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
     // INNER join — a refund with no visible parent payment yields null, which
     // routes the caller to the forensic rather than to a suppression with an
     // unverifiable PI.
+    async listProcessorRefundIdsForPayment(
+      txUnknown,
+      tenantIdArg: string,
+      paymentId: PaymentId,
+    ): Promise<ReadonlyArray<string>> {
+      const tx = txUnknown as TenantTx;
+      const rows = await tx
+        .select({ processorRefundId: refunds.processorRefundId })
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.tenantId, tenantIdArg),
+            eq(refunds.paymentId, paymentId),
+            isNotNull(refunds.processorRefundId),
+          ),
+        );
+      return rows.flatMap((r) => (r.processorRefundId === null ? [] : [r.processorRefundId]));
+    },
+
     async findAwaitingAttachByAppRefundId(
       txUnknown,
       tenantIdArg: string,

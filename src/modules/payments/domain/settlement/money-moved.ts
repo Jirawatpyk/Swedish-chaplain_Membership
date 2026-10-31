@@ -165,8 +165,9 @@ export function proveProcessorSettledFailed(
  * (`metadata.refundId`, set on every `createRefund`). The request that would
  * have created it was a single call with a stable idempotency key, and
  * nothing retries it. So, once that call is certainly over, a COMPLETE list
- * in which no refund names this row and every refund carries some row's
- * marker is the processor saying it made none: the money never moved.
+ * in which no refund names this row and every refund is one already recorded
+ * on another of this payment's rows is the processor saying it made none:
+ * the money never moved.
  *
  * Each condition is part of the proof, so each is checked here, not trusted
  * to the caller:
@@ -176,8 +177,10 @@ export function proveProcessorSettledFailed(
  *     refund Stripe is still making;
  *   - `complete`: no further pages;
  *   - `matchCount === 0`: no refund names this row;
- *   - `unmarkedCount === 0`: no refund lacks a marker. One made before the
- *     marker existed, or by hand in the Dashboard, might be this row's.
+ *   - `unaccountedCount === 0`: every refund on the intent is recorded on
+ *     one of this payment's rows. One that is not (made before the marker
+ *     existed, by hand in the Dashboard, or with a marker copied from
+ *     another row) might be this row's money.
  *
  * Anything else proves nothing: the caller attaches a single clean match and
  * leaves the rest `pending` for a person. An error never reaches here.
@@ -185,12 +188,12 @@ export function proveProcessorSettledFailed(
 export function proveNoProcessorRefund(lookup: {
   readonly complete: boolean;
   readonly matchCount: number;
-  readonly unmarkedCount: number;
+  readonly unaccountedCount: number;
   readonly rowAgeMs: number;
 }): RejectionProof | null {
   return lookup.complete &&
     lookup.matchCount === 0 &&
-    lookup.unmarkedCount === 0 &&
+    lookup.unaccountedCount === 0 &&
     lookup.rowAgeMs >= ORPHAN_PROOF_MIN_AGE_MS
     ? { [REJECTION_PROOF]: true }
     : null;

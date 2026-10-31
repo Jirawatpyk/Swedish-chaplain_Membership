@@ -95,6 +95,7 @@ import { STALE_REFUND_ESCALATION_AGE_MS as ESCALATION_AGE_MS } from '../../domai
 import { finalizeSucceededRefund } from './_finalize-succeeded-refund';
 import { commitTx, rollbackTx, runTxDecided } from '../settlement/tx-decision';
 import { paymentsMetrics, type StalePendingRefundEscalationReason } from '@/lib/metrics';
+import { errKind } from '@/lib/log-id';
 
 // --- M-i bounds (module consts per Constitution X) --------------------------
 // Sized against the cron route's Vercel function budget (`maxDuration=60`)
@@ -131,10 +132,11 @@ const STRIPE_CALL_TIMEOUT_MS = 8_000;
  *
  *   35s budget + ≤8s last retrieve + finalize allowance < 60s maxDuration
  *
- * #50 — an orphan row makes TWO Stripe calls (list, then retrieve). The
- * budget is re-checked between them, so the in-flight tail is still one
- * call: a row whose lookup tips the budget keeps the id it just attached
- * and is retrieved by the next run, like any other row.
+ * #50 — an orphan row makes TWO Stripe calls (the intent check, then the
+ * list) and is then reconciled from the listed entry, with no retrieve. The
+ * budget is re-checked between the two calls, so the in-flight tail is still
+ * one call: a row whose intent check tips the budget is left whole for the
+ * next run.
  *
  * This is coupled to BOTH the route's `maxDuration=60`
  * (`src/app/api/cron/sweep-stale-pending-refunds/route.ts`) AND the
@@ -284,15 +286,19 @@ function escalate(
 
 /** #50 — what the orphan lookup decided for one row. */
 type OrphanResolution =
-  | { readonly kind: 'attached'; readonly processorRefundId: string }
+  /** Attached; `status` is the listed refund's, so no second Stripe call. */
+  | { readonly kind: 'attached'; readonly processorRefundId: string; readonly status: string }
   | { readonly kind: 'closed' }
   /** Another writer got there first (webhook back-fill, a dual firing). */
   | { readonly kind: 'lost_race' }
   /**
-   * Stripe's refunds naming this row disagree with it (two or more, or one at
-   * another amount): a possible double refund or a forged marker.
+   * Stripe's refunds naming this row disagree with it (two or more, one at
+   * another amount, or one naming a row already closed on a no-money proof):
+   * a possible double refund or a forged marker.
    */
   | { readonly kind: 'marker_conflict' }
+  /** The run's budget ran out between the two Stripe calls. */
+  | { readonly kind: 'deferred' }
   | { readonly kind: 'unresolved' };
 
 /** The failure reason a row closed by the orphan lookup carries. */
@@ -301,7 +307,8 @@ const NO_PROCESSOR_REFUND = 'no_processor_refund';
 /**
  * #50 — resolve an orphan row (NULL processor_refund_id) against Stripe's own
  * list of refunds for the parent payment intent. Writes only on a single
- * match (attach) or a proven absence (close `failed`); see the call site.
+ * clean match (attach) or a proven absence (close `failed`); see the call
+ * site. Two Stripe calls at most: the intent check, then the list.
  */
 async function resolveOrphan(
   deps: SweepStalePendingRefundsDeps,
@@ -309,31 +316,50 @@ async function resolveOrphan(
   row: StaleRefundRow,
   stripeAccount: string,
   settingsEnvironment: string,
+  budgetSpent: () => boolean,
   logger: LoggerPort,
 ): Promise<OrphanResolution> {
+  const ids = { tenantId: input.tenantId, refundId: row.id, paymentId: row.paymentId };
+
   // Stripe's answer is about the account the current keys reach. A payment
   // taken under other keys (test → live, a reconnected account) is not in
-  // that answer, so "no refund" from it would prove nothing.
+  // that answer, so "no refund" from it would prove nothing. Two checks: the
+  // environment it was taken in, and that the intent itself is found on this
+  // account (payments carry no account id to compare).
   if (row.paymentProcessorEnvironment !== settingsEnvironment) {
     logger.warn('sweep_stale_pending_refunds.orphan_environment_mismatch', {
-      tenantId: input.tenantId,
-      refundId: row.id,
-      paymentId: row.paymentId,
+      ...ids,
       paymentEnvironment: row.paymentProcessorEnvironment,
       settingsEnvironment,
     });
     return { kind: 'unresolved' };
   }
+  const intent = await withTimeout(
+    deps.processorGateway.retrievePaymentIntent(row.paymentIntentId, stripeAccount),
+    STRIPE_CALL_TIMEOUT_MS,
+  );
+  if (intent === CALL_TIMED_OUT || !intent.ok || intent.value.id !== row.paymentIntentId) {
+    logger.warn('sweep_stale_pending_refunds.orphan_lookup_failed', {
+      ...ids,
+      step: 'intent',
+      // `kind` only — never `reason` (PCI: may embed account ids).
+      errKind:
+        intent === CALL_TIMED_OUT ? 'timeout' : !intent.ok ? intent.error.kind : 'intent_id_mismatch',
+    });
+    return { kind: 'unresolved' };
+  }
+  // Keep the in-flight tail to one Stripe call: a row whose intent check
+  // tipped the budget is left whole for the next run.
+  if (budgetSpent()) return { kind: 'deferred' };
+
   const listed = await withTimeout(
     deps.processorGateway.listRefundsForPaymentIntent(row.paymentIntentId, stripeAccount),
     STRIPE_CALL_TIMEOUT_MS,
   );
   if (listed === CALL_TIMED_OUT || !listed.ok) {
     logger.warn('sweep_stale_pending_refunds.orphan_lookup_failed', {
-      tenantId: input.tenantId,
-      refundId: row.id,
-      paymentId: row.paymentId,
-      // `kind` only — never `reason` (PCI: may embed account ids).
+      ...ids,
+      step: 'list',
       errKind: listed === CALL_TIMED_OUT ? 'timeout' : listed.error.kind,
     });
     return { kind: 'unresolved' };
@@ -347,9 +373,7 @@ async function resolveOrphan(
     // typed into the Dashboard). Never pick one, never attach: a credit note
     // for the row's amount would not match the money that moved.
     logger.error('sweep_stale_pending_refunds.orphan_marker_conflict', {
-      tenantId: input.tenantId,
-      refundId: row.id,
-      paymentId: row.paymentId,
+      ...ids,
       matchCount: matches.length,
       amountMatches,
     });
@@ -357,64 +381,74 @@ async function resolveOrphan(
   }
 
   if (matches.length === 1) {
-    const processorRefundId = matches[0]!.id;
+    const match = matches[0]!;
     // The same back-fill the webhook does (`_recognise-app-initiated-refund`),
     // under the same guard: re-read the row by its marker with
     // `processor_refund_id IS NULL`, and refuse a terminal row. The id is
     // stable per logical attempt, so a writer racing past the re-read writes
     // the same value. The row is then reconciled by the caller like any other.
-    const attached = await deps.paymentsRepo.withTx(async (tx) => {
-      const awaiting = await deps.refundsRepo.findAwaitingAttachByAppRefundId(
-        tx,
-        input.tenantId,
-        row.id,
-      );
-      if (awaiting === null) return 'lost_race' as const;
-      if (awaiting.status !== 'pending') {
-        // Closed `failed` on a proof that no money moved, yet Stripe now
-        // holds a refund naming it: a contradiction a person must see. The
-        // row keeps its NULL id (never quietly overwritten).
-        logger.error('sweep_stale_pending_refunds.orphan_match_on_terminal_row', {
-          tenantId: input.tenantId,
+    const { value: attached } = await runTxDecided<'lost_race' | 'terminal' | 'attached'>(
+      deps.paymentsRepo,
+      async (tx) => {
+        const awaiting = await deps.refundsRepo.findAwaitingAttachByAppRefundId(
+          tx,
+          input.tenantId,
+          row.id,
+        );
+        // Nothing written on either refusal: committing an empty tx is the
+        // pre-existing behaviour of the sweep's skip arms.
+        if (awaiting === null) return commitTx('lost_race');
+        if (awaiting.status !== 'pending') {
+          // Closed `failed` on a proof that no money moved, yet Stripe now
+          // holds a refund naming it. The row is no longer pending, so no later
+          // run revisits it: the caller escalates at once. The row keeps its
+          // NULL id (never quietly overwritten).
+          logger.error('sweep_stale_pending_refunds.orphan_match_on_terminal_row', {
+            ...ids,
+            processorRefundId: match.id,
+            rowStatus: awaiting.status,
+          });
+          return commitTx('terminal');
+        }
+        await deps.refundsRepo.attachProcessorRefundId(tx, {
           refundId: row.id,
-          paymentId: row.paymentId,
-          processorRefundId,
-          rowStatus: awaiting.status,
+          tenantId: input.tenantId,
+          processorRefundId: match.id,
         });
-        return 'lost_race' as const;
-      }
-      await deps.refundsRepo.attachProcessorRefundId(tx, {
-        refundId: row.id,
-        tenantId: input.tenantId,
-        processorRefundId,
-      });
-      return 'attached' as const;
-    });
+        return commitTx('attached');
+      },
+    );
     if (attached === 'lost_race') return { kind: 'lost_race' };
+    if (attached === 'terminal') return { kind: 'marker_conflict' };
     logger.info('sweep_stale_pending_refunds.orphan_attached', {
-      tenantId: input.tenantId,
-      refundId: row.id,
-      paymentId: row.paymentId,
-      processorRefundId,
+      ...ids,
+      processorRefundId: match.id,
     });
-    return { kind: 'attached', processorRefundId };
+    return { kind: 'attached', processorRefundId: match.id, status: match.status };
   }
 
-  const unmarkedCount = listed.value.refunds.filter((r) => r.appRefundId === null).length;
+  // Every other refund must be one this payment already recorded. A refund
+  // marked for some other row (copied metadata, a typo, a forged marker), or
+  // with no marker at all, may be this row's money: it proves nothing.
+  const { value: recordedIds } = await runTxDecided(deps.paymentsRepo, async (tx) =>
+    commitTx(
+      await deps.refundsRepo.listProcessorRefundIdsForPayment(tx, input.tenantId, row.paymentId),
+    ),
+  );
+  const recorded = new Set(recordedIds);
+  const unaccountedCount = listed.value.refunds.filter((r) => !recorded.has(r.id)).length;
   const rowAgeMs = deps.clock.nowMs() - row.initiatedAt.getTime();
   const proof = proveNoProcessorRefund({
     complete: listed.value.complete,
     matchCount: matches.length,
-    unmarkedCount,
+    unaccountedCount,
     rowAgeMs,
   });
   if (proof === null) {
     logger.warn('sweep_stale_pending_refunds.orphan_ambiguous', {
-      tenantId: input.tenantId,
-      refundId: row.id,
-      paymentId: row.paymentId,
+      ...ids,
       matchCount: matches.length,
-      unmarkedCount,
+      unaccountedCount,
       rowAgeMs,
       complete: listed.value.complete,
     });
@@ -424,7 +458,7 @@ async function resolveOrphan(
   // Stripe holds no refund for this row: close it `failed`. No processor-id
   // lock exists, so both guards ride the UPDATE: still `pending`, and still
   // no processor id (a webhook back-fill meanwhile wins → zero rows → skip).
-  const closed = await deps.paymentsRepo.withTx(async (tx) => {
+  const { value: closed } = await runTxDecided<boolean>(deps.paymentsRepo, async (tx) => {
     const updated = await deps.refundsRepo.updateStatus(tx, {
       refundId: row.id,
       tenantId: input.tenantId,
@@ -435,7 +469,8 @@ async function resolveOrphan(
       expectedCurrentStatus: 'pending',
       expectProcessorRefundIdNull: true,
     });
-    if (updated === null) return false;
+    // Zero rows: another writer won; nothing was written.
+    if (updated === null) return commitTx(false);
     await deps.audit.emit(tx, {
       tenantId: input.tenantId,
       requestId: input.requestId,
@@ -450,7 +485,7 @@ async function resolveOrphan(
       },
       retentionYears: retentionFor('refund_failed'),
     });
-    return true;
+    return commitTx(true);
   });
   if (!closed) return { kind: 'lost_race' };
   paymentsMetrics.refundFailedCount(input.tenantId, NO_PROCESSOR_REFUND);
@@ -569,7 +604,7 @@ export async function sweepStalePendingRefunds(
   let escalatedCount = 0;
   const startMs = deps.clock.nowMs();
 
-  for (let i = 0; i < batch.length; i++) {
+  rows: for (let i = 0; i < batch.length; i++) {
     const row = batch[i]!;
     const iterNowMs = deps.clock.nowMs();
 
@@ -590,17 +625,28 @@ export async function sweepStalePendingRefunds(
     // #50 — a NULL processor_refund_id row (an orphan: the Stripe call's
     // outcome was unknown, or it succeeded and the attach tx crashed). Ask
     // Stripe which refunds it holds for the payment intent:
-    //   - exactly one names this row → attach its id and reconcile it below
-    //     like any other row;
+    //   - exactly one names this row, at its amount → attach its id and
+    //     reconcile it below from the listed status (no second call);
     //   - a complete list with none → Stripe never made it: close `failed`
     //     under that proof, which unblocks the payment;
-    //   - anything else (more pages, several matches, an error, a timeout) →
-    //     NEVER guess. Skip, and escalate once aged; ops reconciles by hand.
+    //   - a conflicting match (several, another amount, a terminal row) →
+    //     escalate at once;
+    //   - anything else (more pages, an unaccounted refund, an error, a
+    //     timeout) → NEVER guess. Skip, and escalate once aged.
     let processorRefundId: string;
+    let stripeStatus: string;
     if (row.processorRefundId === null) {
       let resolved: OrphanResolution;
       try {
-        resolved = await resolveOrphan(deps, input, row, stripeAccount, settingsEnvironment, logger);
+        resolved = await resolveOrphan(
+          deps,
+          input,
+          row,
+          stripeAccount,
+          settingsEnvironment,
+          () => deps.clock.nowMs() - startMs > SWEEP_TOTAL_BUDGET_MS,
+          logger,
+        );
       } catch (cause) {
         // A fault on the attach or close tx: this row only, like the per-row
         // catch below. constructor.name only. Still escalated once aged: a
@@ -610,7 +656,7 @@ export async function sweepStalePendingRefunds(
           tenantId: input.tenantId,
           refundId: row.id,
           paymentId: row.paymentId,
-          errKind: cause instanceof Error ? cause.constructor.name : 'unknown',
+          errKind: errKind(cause),
         });
         skippedCount += 1;
         if (maybeEscalate(logger, input.tenantId, row, iterNowMs, 'missing_processor_refund_id')) {
@@ -620,8 +666,20 @@ export async function sweepStalePendingRefunds(
       }
       switch (resolved.kind) {
         case 'attached':
+          // Reconciled from the listed entry: its id, status and amount (the
+          // amount already matched the row) are what a retrieve would return.
           processorRefundId = resolved.processorRefundId;
+          stripeStatus = resolved.status;
           break;
+        case 'deferred':
+          skippedCount += 1;
+          logger.warn('sweep_stale_pending_refunds.budget_deferred', {
+            tenantId: input.tenantId,
+            processed: i,
+            deferred: batch.length - i,
+            budgetMs: SWEEP_TOTAL_BUDGET_MS,
+          });
+          break rows;
         case 'closed':
           sweptCount += 1;
           continue;
@@ -654,66 +712,53 @@ export async function sweepStalePendingRefunds(
           continue;
         }
       }
-
-      // Re-check the budget between the lookup and the retrieve, so the
-      // in-flight tail stays one Stripe call. The id is attached; the next
-      // run retrieves it like any other row.
-      if (deps.clock.nowMs() - startMs > SWEEP_TOTAL_BUDGET_MS) {
-        skippedCount += 1;
-        logger.warn('sweep_stale_pending_refunds.budget_deferred', {
-          tenantId: input.tenantId,
-          processed: i,
-          deferred: batch.length - i,
-          budgetMs: SWEEP_TOTAL_BUDGET_MS,
-        });
-        break;
-      }
     } else {
       processorRefundId = row.processorRefundId;
+
+      // Retrieve the real Stripe outcome OUTSIDE any row lock (external I/O),
+      // bounded by a per-call timeout.
+      const retrieved = await retrieveWithTimeout(
+        deps.processorGateway,
+        processorRefundId,
+        stripeAccount,
+        STRIPE_CALL_TIMEOUT_MS,
+      );
+      if (retrieved === CALL_TIMED_OUT) {
+        skippedCount += 1;
+        logger.warn('sweep_stale_pending_refunds.retrieve_timeout', {
+          tenantId: input.tenantId,
+          refundId: row.id,
+          paymentId: row.paymentId,
+          timeoutMs: STRIPE_CALL_TIMEOUT_MS,
+        });
+        if (maybeEscalate(logger, input.tenantId, row, iterNowMs, 'retrieve_failed')) {
+          escalatedCount += 1;
+        }
+        continue;
+      }
+      if (!retrieved.ok) {
+        // Retrieve error → skip + count, no state change. `kind` is the
+        // bounded gateway discriminator (never `reason` — PCI: may embed
+        // account ids / key prefixes).
+        skippedCount += 1;
+        logger.warn('sweep_stale_pending_refunds.retrieve_failed', {
+          tenantId: input.tenantId,
+          refundId: row.id,
+          paymentId: row.paymentId,
+          errKind: retrieved.error.kind,
+        });
+        // A retrieve that keeps failing (e.g. the amount guard on a refund
+        // Stripe made at an amount we did not expect) would otherwise leave the
+        // row pending, and the payment blocked, with no signal at all.
+        if (maybeEscalate(logger, input.tenantId, row, iterNowMs, 'retrieve_failed')) {
+          escalatedCount += 1;
+        }
+        continue;
+      }
+      stripeStatus = retrieved.value.status;
     }
 
-    // Retrieve the real Stripe outcome OUTSIDE any row lock (external I/O),
-    // bounded by a per-call timeout.
-    const retrieved = await retrieveWithTimeout(
-      deps.processorGateway,
-      processorRefundId,
-      stripeAccount,
-      STRIPE_CALL_TIMEOUT_MS,
-    );
-    if (retrieved === CALL_TIMED_OUT) {
-      skippedCount += 1;
-      logger.warn('sweep_stale_pending_refunds.retrieve_timeout', {
-        tenantId: input.tenantId,
-        refundId: row.id,
-        paymentId: row.paymentId,
-        timeoutMs: STRIPE_CALL_TIMEOUT_MS,
-      });
-      if (maybeEscalate(logger, input.tenantId, row, iterNowMs, 'retrieve_failed')) {
-        escalatedCount += 1;
-      }
-      continue;
-    }
-    if (!retrieved.ok) {
-      // Retrieve error → skip + count, no state change. `kind` is the
-      // bounded gateway discriminator (never `reason` — PCI: may embed
-      // account ids / key prefixes).
-      skippedCount += 1;
-      logger.warn('sweep_stale_pending_refunds.retrieve_failed', {
-        tenantId: input.tenantId,
-        refundId: row.id,
-        paymentId: row.paymentId,
-        errKind: retrieved.error.kind,
-      });
-      // A retrieve that keeps failing (e.g. the amount guard on a refund
-      // Stripe made at an amount we did not expect) would otherwise leave the
-      // row pending, and the payment blocked, with no signal at all.
-      if (maybeEscalate(logger, input.tenantId, row, iterNowMs, 'retrieve_failed')) {
-        escalatedCount += 1;
-      }
-      continue;
-    }
-
-    const cls = classifyRetrieved(retrieved.value.status);
+    const cls = classifyRetrieved(stripeStatus);
     if (cls.kind === 'skip') {
       // Stripe still pending / requires_action (or a null-coerced 'pending',
       // A.8) → NEVER mark failed. Skip + escalate if aged.

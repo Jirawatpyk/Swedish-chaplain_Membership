@@ -369,6 +369,18 @@ export interface RefundsRepo {
     readonly parentProcessorPaymentIntentId: string;
   } | null>;
 
+  /**
+   * #50 — the Stripe refund ids already recorded on this payment's refund
+   * rows. The orphan sweep's proof counts a listed Stripe refund as accounted
+   * for only when its id is here; a marker string alone proves nothing.
+   * Explicit `tenant_id` predicate (D-029) plus RLS on `tx`.
+   */
+  listProcessorRefundIdsForPayment(
+    tx: unknown,
+    tenantId: string,
+    paymentId: PaymentId,
+  ): Promise<ReadonlyArray<string>>;
+
   listPendingOlderThan(
     tx: unknown,
     tenantId: string,

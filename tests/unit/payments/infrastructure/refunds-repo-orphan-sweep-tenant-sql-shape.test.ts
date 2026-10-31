@@ -62,7 +62,7 @@ describe('refunds repo — orphan sweep statements are tenant-fenced (#50)', () 
         rejectionProof: proveNoProcessorRefund({
           complete: true,
           matchCount: 0,
-          unmarkedCount: 0,
+          unaccountedCount: 0,
           rowAgeMs: 24 * 60 * 60 * 1000,
         })!,
         failureReasonCode: 'no_processor_refund',

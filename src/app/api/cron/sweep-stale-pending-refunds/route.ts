@@ -194,6 +194,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     // Whole hours only: the orphan arm's proof also refuses a row under an
     // hour old, but a fractional override has no use worth that risk.
     if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 24 * 30) {
+      // Said out loud: an operator must not believe a discarded override ran.
+      logger.warn(
+        { requestId, raw: olderThanRaw.slice(0, 16), fallback: DEFAULT_OLDER_THAN_HOURS },
+        'cron.sweep_stale_pending_refunds.override_ignored',
+      );
       return DEFAULT_OLDER_THAN_HOURS;
     }
     return parsed;
