@@ -5309,8 +5309,9 @@
       },
       "title": "Utfärda återbetalning",
       "duplicate": {
-        "title": "Det här kan vara en dubbel återbetalning",
-        "body": "En återbetalning på {amount} gjordes för den här betalningen {when}. Kontrollera Betalningshändelser innan du återbetalar igen.",
+        "title": "Återbetalningen kan vara en dubblett",
+        "body": "En återbetalning på {amount} gjordes för den här betalningen den {when}. Kontrollera Betalningshändelser innan du återbetalar igen.",
+        "bodyNoTime": "En återbetalning på {amount} gjordes för den här betalningen de senaste 24 timmarna. Kontrollera Betalningshändelser innan du återbetalar igen.",
         "confirm": "Återbetala igen"
       },
       "button": {

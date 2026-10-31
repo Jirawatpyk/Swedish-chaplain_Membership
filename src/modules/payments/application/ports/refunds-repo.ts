@@ -262,7 +262,7 @@ export interface RefundsRepo {
 
   /**
    * #49 — the newest `succeeded` refund on this payment for exactly this
-   * amount, initiated at or after `sinceIso`, or `null`. The probable-duplicate
+   * amount, initiated OR completed at or after `sinceIso`, or `null`. The probable-duplicate
    * guard reads it under the payment row lock: after a lost or unconfirmed
    * response, a reload, a stale page or a second admin can start a new
    * attempt for the same amount. `pending` rows are refused earlier

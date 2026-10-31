@@ -5311,6 +5311,7 @@
       "duplicate": {
         "title": "This may be a duplicate refund",
         "body": "A refund of {amount} was made on this payment on {when}. Check Payment activity before refunding again.",
+        "bodyNoTime": "A refund of {amount} was made on this payment in the last 24 hours. Check Payment activity before refunding again.",
         "confirm": "Refund again"
       },
       "button": {

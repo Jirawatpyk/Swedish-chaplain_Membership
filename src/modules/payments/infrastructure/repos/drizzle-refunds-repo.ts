@@ -18,7 +18,7 @@
  * MUST NOT leak into Application or Domain (Constitution Principle
  * III). The use-case calls these methods only through the port.
  */
-import { and, asc, desc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, or, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type {
   RefundsRepo,
@@ -586,7 +586,12 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
             eq(refunds.paymentId, paymentId),
             eq(refunds.status, 'succeeded'),
             eq(refunds.amountSatang, amountSatang),
-            gte(refunds.initiatedAt, new Date(sinceIso)),
+            // Initiated in the window, or settled in it: a refund that sat
+            // pending and has just succeeded is as fresh to the admin.
+            or(
+              gte(refunds.initiatedAt, new Date(sinceIso)),
+              gte(refunds.completedAt, new Date(sinceIso)),
+            ),
           ),
         )
         .orderBy(desc(refunds.initiatedAt))
