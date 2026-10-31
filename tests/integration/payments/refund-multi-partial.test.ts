@@ -657,11 +657,39 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       expect(again.error).toMatchObject({ code: 'possible_duplicate_refund', refundId: firstId });
     }
 
+    // Financial review L-d: a refund that sat pending for days and settled
+    // an hour ago still counts, and the date returned is its settlement.
+    const settledAt = new Date(Date.now() - 60 * 60 * 1000);
+    await runInTenant(tenant.ctx, async (tx) => {
+      await tx.execute(sql`
+        UPDATE refunds
+        SET initiated_at = ${new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()}::timestamptz,
+            completed_at = ${settledAt.toISOString()}::timestamptz
+        WHERE tenant_id = ${tenant.ctx.slug} AND id = ${firstId}
+      `);
+    });
+    const lateSettled = await refundOf(1_000_000n, 'late-settled', 'check');
+    expect(lateSettled.ok).toBe(false);
+    if (!lateSettled.ok && lateSettled.error.code === 'possible_duplicate_refund') {
+      expect(lateSettled.error.refundId).toBe(firstId);
+      expect(new Date(lateSettled.error.refundedAt).getTime()).toBe(settledAt.getTime());
+    }
+
     rebindBridgeForNextRefund(deps, cnIds[1]!, 'TC-2026-300002');
     expect((await refundOf(500_000n, 'other-amount', 'check')).ok).toBe(true);
 
     rebindBridgeForNextRefund(deps, cnIds[2]!, 'TC-2026-300003');
     expect((await refundOf(1_000_000n, 'override', 'override')).ok).toBe(true);
+    // The override's audit names the refund it overrode.
+    const overrideAudit = await runInTenant(tenant.ctx, async (tx) => {
+      const rows = (await tx.execute(sql`
+        SELECT payload FROM audit_log
+        WHERE tenant_id = ${tenant.ctx.slug} AND event_type = 'refund_initiated'
+          AND payload->>'reason' = 'dup override'
+      `)) as unknown as Array<{ payload: Record<string, unknown> }>;
+      return rows[0]?.payload;
+    });
+    expect(overrideAudit).toMatchObject({ duplicate_override: true, duplicate_of_refund_id: firstId });
 
     const counts = await runInTenant(tenant.ctx, async (tx) => {
       const rows = (await tx.execute(sql`

@@ -623,7 +623,7 @@ describe('refund: no retry once the outcome may be a refund', () => {
       return call === 1
         ? new Response(
             JSON.stringify({
-              error: { code: 'possible_duplicate_refund', duplicateInitiatedAt: '2026-02-01T05:00:00.000Z' },
+              error: { code: 'possible_duplicate_refund', duplicateRefundedAt: '2026-02-01T05:00:00.000Z' },
             }),
             { status: 409 },
           )
@@ -641,6 +641,8 @@ describe('refund: no retry once the outcome may be a refund', () => {
     const dialog = screen.getByRole('alertdialog', { name: refund.title });
     const warning = await within(dialog).findByTestId('refund-form-duplicate');
     expect(within(warning).queryByRole('button')).toBeNull();
+    // It names when the earlier refund was made (duplicateRefundedAt).
+    expect(warning).toHaveTextContent(/2026/);
     expect(toast.error).not.toHaveBeenCalled();
     expect(toast.warning).not.toHaveBeenCalled();
     const confirm = within(dialog).getByTestId('refund-form-confirm');

@@ -42,6 +42,11 @@ describe('refunds repo — findRecentSameAmountSucceeded is tenant-fenced (#49)'
     // Financial review L1: a refund that sat pending, then settled in the
     // window, counts too.
     expect(rec.statements[0]!.sql).toMatch(/"completed_at" >= \$\d+/i);
+    // Code review: the date shown and the order are when it was REFUNDED —
+    // its settlement, else its start — not only when it was initiated.
+    expect(rec.statements[0]!.sql).toMatch(
+      /order by coalesce\("refunds"\."completed_at", "refunds"\."initiated_at"\) desc/i,
+    );
     const { blind, violations } = gateViolations(rec.statements, tenantScopedTables());
     expect(blind).toEqual([]);
     expect(violations).toEqual([]);

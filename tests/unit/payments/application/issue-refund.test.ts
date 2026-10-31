@@ -93,6 +93,7 @@ function baseInput(overrides: Partial<IssueRefundInput> = {}): IssueRefundInput 
     actorUserId: ACTOR_ID,
     correlationId: CORR_ID,
     requestId: 'req-rfnd-1',
+    duplicateGuard: 'skip',
     ...overrides,
   };
 }
@@ -1797,7 +1798,7 @@ describe('issueRefund — probable duplicate guard (#49)', () => {
     const deps = makeDeps();
     asMock(deps.refundsRepo.findRecentSameAmountSucceeded).mockResolvedValueOnce({
       refundId: 'rfnd_earlier',
-      initiatedAt: EARLIER,
+      refundedAt: EARLIER,
     });
     const r = await issueRefund(deps, baseInput({ duplicateGuard: 'check' }));
 
@@ -1806,7 +1807,7 @@ describe('issueRefund — probable duplicate guard (#49)', () => {
       expect(r.error).toEqual({
         code: 'possible_duplicate_refund',
         refundId: 'rfnd_earlier',
-        initiatedAt: EARLIER,
+        refundedAt: EARLIER,
       });
     }
     expect(asMock(deps.refundsRepo.findRecentSameAmountSucceeded)).toHaveBeenCalledWith(
@@ -1829,26 +1830,37 @@ describe('issueRefund — probable duplicate guard (#49)', () => {
     expect(refundInitiatedPayload(deps)).not.toHaveProperty('duplicate_override');
   });
 
-  it("'override' → proceeds without looking, and the audit records duplicate_override", async () => {
+  it("'override' → proceeds, and the audit names the refund it overrode", async () => {
     const deps = makeDeps();
     asMock(deps.refundsRepo.findRecentSameAmountSucceeded).mockResolvedValue({
       refundId: 'rfnd_earlier',
-      initiatedAt: EARLIER,
+      refundedAt: EARLIER,
     });
     const r = await issueRefund(deps, baseInput({ duplicateGuard: 'override' }));
     expect(r.ok).toBe(true);
-    expect(asMock(deps.refundsRepo.findRecentSameAmountSucceeded)).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.findRecentSameAmountSucceeded)).toHaveBeenCalledTimes(1);
     expect(asMock(deps.refundsRepo.insert)).toHaveBeenCalledTimes(1);
-    expect(refundInitiatedPayload(deps)).toMatchObject({ duplicate_override: true });
+    expect(refundInitiatedPayload(deps)).toMatchObject({
+      duplicate_override: true,
+      duplicate_of_refund_id: 'rfnd_earlier',
+    });
   });
 
-  it('no guard (the renewals bridge) → never looks, proceeds', async () => {
+  it("'override' with no match left (it settled out of the window) → proceeds, no override recorded", async () => {
+    const deps = makeDeps();
+    const r = await issueRefund(deps, baseInput({ duplicateGuard: 'override' }));
+    expect(r.ok).toBe(true);
+    expect(refundInitiatedPayload(deps)).not.toHaveProperty('duplicate_override');
+    expect(refundInitiatedPayload(deps)).not.toHaveProperty('duplicate_of_refund_id');
+  });
+
+  it("'skip' (the renewals bridge) → never looks, proceeds", async () => {
     const deps = makeDeps();
     asMock(deps.refundsRepo.findRecentSameAmountSucceeded).mockResolvedValue({
       refundId: 'rfnd_earlier',
-      initiatedAt: EARLIER,
+      refundedAt: EARLIER,
     });
-    const r = await issueRefund(deps, baseInput());
+    const r = await issueRefund(deps, baseInput({ duplicateGuard: 'skip' }));
     expect(r.ok).toBe(true);
     expect(asMock(deps.refundsRepo.findRecentSameAmountSucceeded)).not.toHaveBeenCalled();
   });
