@@ -689,6 +689,21 @@ describe('refund: no retry once the outcome may be a refund', () => {
     vi.unstubAllGlobals();
   });
 
+  it('Enter in a field while the warning shows checks again, without confirmDuplicate (R114b step 3)', async () => {
+    const spy = await submitPartial(duplicateThenOk());
+    const dialog = screen.getByRole('alertdialog', { name: refund.title });
+    await within(dialog).findByTestId('refund-form-duplicate');
+    await waitFor(() => expect(within(dialog).getByTestId('refund-form-confirm')).not.toHaveAttribute('aria-busy'));
+    // An IME composing Thai commits with Enter: never a submit.
+    fireEvent.keyDown(within(dialog).getByTestId('refund-form-reason'), { key: 'Enter', isComposing: true });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posts(spy)).toHaveLength(1);
+    fireEvent.keyDown(within(dialog).getByTestId('refund-form-reason'), { key: 'Enter' });
+    await waitFor(() => expect(posts(spy)).toHaveLength(2));
+    expect(bodyOf(spy, 1)).not.toHaveProperty('confirmDuplicate');
+    vi.unstubAllGlobals();
+  });
+
   it('changing the amount after the warning clears it; the next confirm sends no confirmDuplicate', async () => {
     const spy = await submitPartial(duplicateThenOk());
     const dialog = screen.getByRole('alertdialog', { name: refund.title });

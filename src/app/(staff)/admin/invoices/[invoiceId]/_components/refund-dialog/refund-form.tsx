@@ -642,6 +642,23 @@ export function RefundForm({
       ref={formRef}
       id={formId}
       onSubmit={submitOnce}
+      onKeyDown={(e) => {
+        // While the duplicate warning shows, the footer confirm is a
+        // click-only `type="button"`, so the form has no submit button and,
+        // with two text fields, the browser's implicit submission does
+        // nothing. Enter in a field re-runs the check instead — never the
+        // override, which only the click sets (R114b step 3).
+        if (
+          duplicateActive &&
+          e.key === 'Enter' &&
+          !e.nativeEvent.isComposing &&
+          e.target instanceof HTMLInputElement &&
+          e.target.type === 'text'
+        ) {
+          e.preventDefault();
+          formRef.current?.requestSubmit();
+        }
+      }}
       className="flex flex-col gap-6"
       noValidate
     >
