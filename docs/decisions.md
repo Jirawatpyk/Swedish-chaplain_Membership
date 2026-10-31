@@ -79,7 +79,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 **D-015 — No High or Medium review finding may remain at merge** (2026-10-17)
 - *Context*: the first draft allowed a Medium to stay open with a reason in the PR.
 - *Decision*: every High and every Medium is fixed. A finding closes unfixed only when it is refuted with evidence (code, test, measurement) and the reviewer confirms that on a re-run; it is never waived. Lows are fixed or listed in the PR.
-- *Consequence*: `docs/workflow.md` step 7 (Review) and the DoD, the PR template, `review-and-ship` § 1 and the substitute mapping.
+- *Consequence*: `docs/workflow.md` step 7 (Review) and the DoD, the PR template, `review-and-ship` § 1 and the substitute mapping. (Later: D-043, 31 Oct 2026, adds a third closure, *carried to slice k*, for a Medium in the L slices of one spec; and at the review-round cap, the maintainer may re-grade a Medium to Low with the reason in the PR.)
 
 **D-016 — Mechanical guards stay minimal: only what cannot be undone** (2026-10-17)
 - *Context*: the final setup audit found the "never" rules were prose only and reviewer subagents inherited every tool (mail, deploy). The maintainer wants Claude Code to work freely, with little blocking.
@@ -233,3 +233,34 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
   - Every provider fact a design or the code relies on (a status string, an error code, a limit) is MEASURED with a date or cites the provider's docs.
   - Claude does not present a plan without them (`feature-flow` § 3); `spec-compliance-auditor` reports a missing one as a Medium finding.
 - *Consequence*: `docs/workflow.md` step 1, `feature-flow`, the plan template, the auditor and the broadcasts rule carry the rule. The legacy-leg retirement decision planned for spec 140 takes the next number (D-042).
+
+**D-043 — A finding can be carried to the slice that owns it; review rounds are targeted from round 3 and capped by size; docs-only changes get no code review** (2026-10-31)
+
+*D-042 is reserved for spec 140's legacy-leg retirement decision (D-041, Consequence). It is written in slice 4, so D-043 comes first in this file.*
+
+- *Context*:
+  - Spec 140 slice 1 took seven `/code-review high` rounds. They returned 10, 9, 10, 10, 9, 9, then 0 items. The design had been agreed, and the first live Verify passed.
+  - Nearly every finding from round 2 on came from one mechanism, a time bound on the erasure pass. A reviewer asked for it in round 1. The plan had already put time budgets in slice 2, but D-015 offers only "fix or refute", so the mechanism was built in slice 1 with no plan row. Each fix then added code for the next round to find.
+  - Two full-gate runs were killed for low memory. The slice subagent and the main session had run gates at the same time.
+  - Retro 2026-10-31, issue #712.
+  - Checked against the case that triggered it:
+    - The carry closure alone would not have caught it. Spec 140's committed plan names, for slice 2, time budgets for the dispatch cron and bounded gateway calls (DL8). It names no deadline for the erasure pass, so only the bounded-calls part could have been carried, and that part later was.
+    - The plan-row rule would have caught it. The erasure-pass deadline would have needed its state-table cells and test-plan rows before it was built, and those rows are where the round-3 regression (the lost late-member floor) and the round-6 failure mode would have shown.
+- *Decision* (the maintainer, 31 Oct 2026):
+  - **A third closure, carried to slice *k*.** For an L slice, a **Medium** can be carried to a later slice *k* of the same spec when all of these hold:
+    - slice *k*'s row in the agreed plan names the concern in words (an ID alone does not count). The agreed plan is the version at the branch's base commit, or, when `plan.md` is not there yet, the commit that first added it;
+    - *k*'s PR has not merged;
+    - the carry is recorded in `plan.md` § Evidence;
+    - slice *k* inherits the finding and closes it.
+    A **High** is never carried: every merge deploys, so a carried High would ship live. `spec-compliance-auditor` checks both ends. A concern that no later slice names is still fixed or refuted, as D-015 says. This is not a waiver.
+  - **Targeted rounds.** From round 3 on, a `/code-review` round reads only the fix commits since the last round. It confirms each earlier item closed, and reports only new High or Medium findings. It is told not to pad to a minimum count. A round that returns only closed or decided items, or Lows, ends the review. A *decided* item is one already closed by one of the three closures and recorded. A refutation counts only once the reviewer that raised the finding confirms it.
+  - **New mechanisms need plan rows.** A mechanism a reviewer asks for during build or review (a column, a counter, a deadline, a label, a query) is a plan change. Its state-table cells and test-plan rows land in `plan.md` before its GREEN commit, unless it is carried.
+  - **The main session runs the full gates.** A slice subagent runs only its scoped tests and `pnpm check`. After it hands back, the main session runs the full gates one at a time. A subagent's gate run counts as a heavy job.
+  - **Re-Verify after review fixes.** When review fixes touch the path Verify drove, Verify runs again after the last fix that changes code, and before merge. A merge from `main` that resolves a conflict on that path counts as such a fix. The auditor then re-checks that evidence.
+  - **A cap on review rounds.** Size S gets 1 round plus 1 confirming round. Size M gets at most 3 `/code-review` rounds. Size L, or a sensitive surface, gets the ≥ 2 full rounds plus at most 2 targeted rounds. At the cap, Claude stops fixing and brings the open findings to the maintainer with a recommended closure for each. The maintainer decides each one, and may re-grade a Medium to Low with the reason in the PR.
+  - **Review metrics.** Every PR records how many review rounds ran, the items per round, the cap that applied and whether it was reached. A retro line carries the same figures. They are recorded by hand until enough PRs exist to judge D-043.
+  - **Docs-only changes get no `/code-review`.** That means Markdown in `docs/`, `.claude/` or `specs/`, the root `CLAUDE.md`, or the PR template. Claude checks the change against the files it touches and runs `pnpm check`, and the maintainer reads it. The § 2 surface reviewers still run when the docs are their domain (a RoPA edit still goes to pdpa).
+    - *Why:* #714 introduced this decision and is itself docs-only. It took four `/code-review` rounds, one full and three targeted, which returned 10, 4, 4 and 5 items. Each round found new wording edge cases in the clauses the previous round had added. The maintainer decided this on 31 Oct 2026.
+- *Consequence*:
+  - Updated: `review-and-ship` § 1 and § 2 check 1, `feature-flow` §§ 4, 5 and 7, `docs/workflow.md` steps 4, 5 and 7, the `run-chamber-os` rules, and `spec-compliance-auditor`.
+  - D-015 still stands: Claude never waives a High or Medium. D-043 adds the carry closure between slices of one spec, and gives the maintainer, not Claude, the re-grade at the round cap.

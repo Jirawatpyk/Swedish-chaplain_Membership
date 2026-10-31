@@ -19,7 +19,7 @@
 - [ ] Touched integration suites green (by path, `dev` branch); cross-tenant test for a tenant-scoped surface
 - [ ] Migration applied on `dev`, DDL confirmed in `information_schema`, unique `when` in `_journal.json`
 - [ ] Touched e2e specs green on chromium + mobile-chrome
-- [ ] Review: no High or Medium left (fixed, or refuted with evidence and confirmed on re-run), Lows fixed or listed below, `whole-branch-reviewer` done if the review was split; M / L: `spec-compliance-auditor` confirmed every Done-when line against its evidence
+- [ ] Review: no High or Medium left (fixed; refuted with evidence and confirmed on re-run; or, for a Medium in an L slice, carried to the later slice `plan.md` already gives it, D-043); findings carried into this slice closed; Lows fixed or listed below; from round 3 on, rounds targeted to the fix commits; Verify re-run after the last fix that changes code if fixes touched the driven path; `whole-branch-reviewer` done if the review was split; M / L: `spec-compliance-auditor` confirmed every Done-when line against its evidence
 - [ ] UI: `enterprise-ux-designer` pass; EN / TH / SV; 320 px and a 32 px font checked
 - [ ] Sensitive surface (auth / RBAC / payment / PII / audit / GDPR): ≥2 reviewers or the solo-maintainer review (`review-and-ship` § 2), security checklist signed
 - [ ] Docs: `docs/changelog.md`; `docs/operational-state.md` if a flag moved; module rule if a trap or dependency was added; `docs/decisions.md` if a decision was made
@@ -27,6 +27,8 @@
 - [ ] No `test.fixme` / bare `test.skip`, no secrets, no `.env*`, no PII workbook
 
 ## Review findings
+
+**Review metrics:** rounds run: … · items per round: … · cap (`review-and-ship` § 1): … · cap reached: yes / no
 
 <!-- Reviewer · severity · finding · the fixing commit, or the refutation evidence + the reviewer re-run that confirmed it. Lows may stay open only if listed here. -->
 
