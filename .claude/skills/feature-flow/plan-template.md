@@ -48,7 +48,7 @@ Each of the 10 principles in `.specify/memory/constitution.md`: pass, or the dev
 
 ## Evidence
 
-Filled in at Verify, one line per Done-when line: the test name, command output, number or screenshot that proves it. For L, one block per slice. `spec-compliance-auditor` checks it at Review, and the PR body copies it.
+Filled in from the maintainer's `/verify` report (`feature-flow` § 6), one line per Done-when line, with what it observed. A change with no driven surface cites its tests instead. For L, one block per slice. `spec-compliance-auditor` checks it at Review, and the PR body copies it.
 
 During review, add each round's table before the next round starts. A later round treats an item as decided only if it is recorded here (`review-and-ship` § 1 defines a decided item and the closures).
 
@@ -61,7 +61,7 @@ Record findings carried *into* this slice too, each with how it closed here.
 
 A mechanism added at a reviewer's request gets its rows in § Test plan before its GREEN commit.
 
-If review fixes, or a merge from `main` that resolves a conflict, touched the path Verify drove, add a re-Verify block naming the commit it ran on (`feature-flow` § 7).
+If review fixes, or a merge from `main` that resolves a conflict, touched the path Verify drove, add the new `/verify` report, naming the commit it ran on (`feature-flow` §§ 6–7).
 
 ## Rollout
 
