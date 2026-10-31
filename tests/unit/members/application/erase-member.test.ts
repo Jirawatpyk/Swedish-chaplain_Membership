@@ -569,6 +569,36 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     });
   });
 
+  // Spec 140 s1 (ED1 / ED2) — the drafts the erasure deleted at Resend, and the
+  // copies Resend would not delete, are on the completion proof. Both are
+  // DERIVED per run (the cascade re-lists every terminal row each run), so the
+  // run that writes `member_erased` reports them whole.
+  it('spec 140 s1: member_erased carries resend_drafts_cleared / resend_copies_retained', async () => {
+    const deps = buildEraseDeps();
+    deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+      async () =>
+        ({
+          outcome: 'ok',
+          cancelledCount: 0,
+          skippedConcurrentCount: 0,
+          alreadySentCount: 0,
+          resendDraftsCleared: 2,
+          resendCopiesRetained: 1,
+        }) as const,
+    );
+    const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    expect(res.ok).toBe(true);
+    const erased = deps.audit.recordInTx.mock.calls.find(
+      (c) => (c[2] as { type: string }).type === 'member_erased',
+    );
+    expect(erased, 'member_erased was not emitted').toBeDefined();
+    expect((erased?.[2] as { payload: Record<string, unknown> }).payload).toMatchObject({
+      broadcasts_already_sent_count: 0,
+      resend_drafts_cleared: 2,
+      resend_copies_retained: 1,
+    });
+  });
+
   it('records the discarded-draft count on the member_erased DPO payload', async () => {
     // Erasure is a compliance path — a silent discard is not acceptable. F4
     // emits `invoice_draft_deleted` per document; this count is the DPO-facing

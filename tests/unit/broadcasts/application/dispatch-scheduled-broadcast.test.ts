@@ -5135,6 +5135,67 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
     },
   );
 
+  /**
+   * Spec 140 s1 (ED4) — a halted or ENDED refusal deletes the never-handed
+   * draft the row carries BEFORE the terminal write, as the erased refusal
+   * does, so a terminal row no longer keeps a draft at Resend. Unlike the
+   * erased arm, an undecided DELETE does not stall the refusal: a halted
+   * member's row left `approved` could be sent by a later tick once the halt
+   * is lifted, and a permanent Resend answer would hold it there for ever. The
+   * outcome is recorded instead; the erasure cascade's terminal pass reaches
+   * a draft left behind.
+   */
+  describe('spec 140 s1 ED4 — a standing refusal deletes the row\'s draft before the terminal write', () => {
+    const withDraft = (): Broadcast => ({ ...makeBroadcast('approved'), resendAudienceId: 'aud-prev', resendBroadcastId: 'rb-prev-draft' });
+
+    it.each([
+      ['halted', { halted: ['m-1'] }, 'member_halted'],
+      ['terminated', { access: 'terminated' }, 'member_not_in_good_standing'],
+    ] as const)('a %s member: ONE deleteBroadcastOnce on the row\'s id, then failed_to_dispatch (resendDraftOutcome deleted)', async (_label, opts, reason) => {
+      const { audit, repo, gw, deps } = standingDeps(makeFakeSendStanding(opts), withDraft(), { retrieveStatus: 'draft' });
+      const transitionsAtDelete: number[] = [];
+      const del = vi.spyOn(gw.port, 'deleteBroadcastOnce').mockImplementation(async () => {
+        transitionsAtDelete.push(repo.transitions.length);
+        return { kind: 'deleted' };
+      });
+
+      const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+      expect(result).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason } });
+      expect(del).toHaveBeenCalledTimes(1);
+      expect(del).toHaveBeenCalledWith('rb-prev-draft');
+      // Before the terminal write, not after it.
+      expect(transitionsAtDelete).toEqual([0]);
+      expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+      expect(audit.emits[0]).toMatchObject({ eventType: 'broadcast_failed_to_dispatch', payload: { resendDraftOutcome: 'deleted' } });
+      expect(gw.sendCalls).toHaveLength(0);
+    });
+
+    it.each(['retryable', 'other', 'forbidden'] as const)(
+      'the DELETE answers %s → still refused terminally (never left approved), resendDraftOutcome undeleted',
+      async (outcome) => {
+        const { audit, repo, gw, deps } = standingDeps(makeFakeSendStanding({ halted: ['m-1'] }), withDraft(), { retrieveStatus: 'draft' });
+        vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: outcome });
+
+        const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+        expect(result).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason: 'member_halted' } });
+        expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+        expect(audit.emits[0]?.payload).toMatchObject({ resendDraftOutcome: 'undeleted' });
+      },
+    );
+
+    it('a row with no Resend id → no Resend call; resendDraftOutcome none', async () => {
+      const { audit, gw, deps } = standingDeps(makeFakeSendStanding({ halted: ['m-1'] }));
+      const del = vi.spyOn(gw.port, 'deleteBroadcastOnce');
+
+      await dispatchScheduledBroadcast(deps, baseInput);
+
+      expect(del).not.toHaveBeenCalled();
+      expect(audit.emits[0]?.payload).toMatchObject({ resendDraftOutcome: 'none' });
+    });
+  });
+
   it.each([
     ['the halt read throws', { haltReadThrows: true }, 'Error'],
     ['the access lookup answers its error arm', { access: 'lookup_error' }, 'membership_access.lookup_error'],

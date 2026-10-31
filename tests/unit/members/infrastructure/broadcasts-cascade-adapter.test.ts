@@ -184,6 +184,30 @@ describe('f7BroadcastsCascadeAdapter — spec 139 erasure mode', () => {
     });
     expect(result).toMatchObject({ outcome, alreadySentCount: 3 });
   });
+
+  // Spec 140 s1 — the terminal-draft pass's two counts travel back to
+  // `member_erased` on both arms, exactly as `alreadySentCount` does.
+  it.each([
+    { unexpectedErrorCount: 0, outcome: 'ok' },
+    { unexpectedErrorCount: 1, outcome: 'cascade_partial_failure' },
+  ])('carries resendDraftsCleared and resendCopiesRetained on the $outcome arm', async ({ unexpectedErrorCount, outcome }) => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        unexpectedErrorCount,
+        alreadySentCount: 0,
+        resendDraftsCleared: 2,
+        resendCopiesRetained: 1,
+      }),
+    );
+    const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
+      initiatedByUserId: 'admin-7',
+      requestId: 'req-7',
+      onDispatchBegun: 'delete_then_cancel',
+    });
+    expect(result).toMatchObject({ outcome, resendDraftsCleared: 2, resendCopiesRetained: 1 });
+  });
 });
 
 describe('noopBroadcastsCascadeAdapter', () => {

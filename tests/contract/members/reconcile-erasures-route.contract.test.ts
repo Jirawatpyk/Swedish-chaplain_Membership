@@ -28,6 +28,7 @@ const runInTenantMock = vi.fn();
 const findStuckErasuresInTxMock = vi.fn();
 const buildEraseMemberDepsMock = vi.fn();
 const erasureOutcomeMock = vi.fn();
+const erasureStuckCountMock = vi.fn();
 
 const envMock = {
   features: { memberErasureReconcile: true },
@@ -54,6 +55,7 @@ vi.mock('@/modules/tenants', () => ({
 vi.mock('@/lib/metrics', () => ({
   erasureMetrics: {
     outcome: (...args: unknown[]) => erasureOutcomeMock(...args),
+    stuckCount: (...args: unknown[]) => erasureStuckCountMock(...args),
   },
 }));
 vi.mock('@/modules/members', () => ({
@@ -97,6 +99,7 @@ beforeEach(() => {
   buildEraseMemberDepsMock.mockReset();
   buildEraseMemberDepsMock.mockReturnValue({});
   erasureOutcomeMock.mockReset();
+  erasureStuckCountMock.mockReset();
 });
 
 afterEach(() => {
@@ -307,5 +310,40 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
     expect(body.still_pending).toBe(0);
     expect(body.error).toBe(0);
     expect(eraseMemberMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Spec 140 s1 — the stuck-erasure gauge. Every member this sweep finds
+   * has already missed its `member_erased` once, so what is still stuck at the
+   * end of a tick (still_pending + error + deferred) is the signal that an
+   * erasure is being re-driven tick after tick (a permanent Resend answer, a
+   * cascade that never clears). Observed on EVERY tick, 0 included, so a
+   * cleared backlog does not leave the last value frozen.
+   */
+  it('the stuck gauge = still_pending + error + deferred at the end of the tick', async () => {
+    stubStuck([
+      { memberId: 'm1', reason: 'gdpr_erasure_request' },
+      { memberId: 'm2', reason: 'gdpr_erasure_request' },
+      { memberId: 'm3', reason: 'gdpr_erasure_request' },
+    ]);
+    eraseMemberMock
+      .mockResolvedValueOnce(ok({ memberId: 'm1', erasedAt: new Date(), cascadesComplete: false }))
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce(ok({ memberId: 'm3', erasedAt: new Date(), cascadesComplete: true }));
+    const { POST } = await import(
+      '@/app/api/cron/members/reconcile-erasures/route'
+    );
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(erasureStuckCountMock).toHaveBeenCalledTimes(1);
+    expect(erasureStuckCountMock).toHaveBeenCalledWith(2, 'test-tenant');
+  });
+
+  it('the stuck gauge is observed as 0 on a tick that finds nothing stuck', async () => {
+    stubStuck([]);
+    const { POST } = await import(
+      '@/app/api/cron/members/reconcile-erasures/route'
+    );
+    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(erasureStuckCountMock).toHaveBeenCalledWith(0, 'test-tenant');
   });
 });
