@@ -308,6 +308,20 @@ Mutation proofs (from `af56a75cc`, each file restored byte for byte, tree clean)
 - the legacy erased arm's line removed: 1 red.
 - the DELETE `outcome` dropped from the standing line: 3 red.
 
+### Slice 1 — review round 6 (targeted; round-5 items confirmed closed; 31 Oct 2026)
+
+Commits: RED `e700b0e93` and GREEN `5f8fe56a2`. Docs land in the commit after them. Only the scoped tests, the mutation proofs and `pnpm check` ran. The gate's pinned 100% coverage was re-checked under the broadcasts unit and contract suites (100/100/100/100).
+
+| Finding | Disposition |
+|---|---|
+| Medium (findings 2, 3, 7, 8) — round 5 put the baseline count inside the candidate tx | **Reverted** (RED `e700b0e93`, GREEN `5f8fe56a2`). The baseline count is back in its own short `runInTenant`, after the candidate tx has committed, as in round 4. One round trip fewer was not worth a new failure mode: a count failure failed the whole tick, and the uncapped anti-join ran while up to 50 `FOR UPDATE` row locks were held. A failed count logs `stuck_count_failed`, observes nothing new, and the tick continues. That path is pinned by a contract case (the members are still re-driven). The route and port docblocks are back to the round-4 meaning; observability and cron-jobs never carried the round-5 wording. |
+| Medium (findings 1, 4, 5, 6) — the erased arms' log line | **Fixed** (RED `e700b0e93`, GREEN `5f8fe56a2`). `deleteDraftBeforeErasedRefusal` owns the erased arms' one `refused_draft_delete_unconfirmed` line, with the fields the standing line carries (`probedStatus`, `outcome`, `errClass`, `err`). Both legs call it and nothing else. `recordRefusedDraftUndecided` is removed. It is pinned per leg; the import leg had no such test before. The undecided result now carries `probedStatus` already mapped (`null` → `not_found`), so neither wrapper has an untested branch; the base test's expected shape follows. |
+| Low (finding 9) — the standing line repeats `errClass` when it equals `outcome` | **Kept, listed.** Dropping it changes the line's field set, which two tests pin, and it is cosmetic; a later slice can drop it. |
+
+Mutation proofs (from `5f8fe56a2`, each file restored byte for byte, tree clean):
+- the erased wrapper's log call made inert: 3 red (the gate test and both legs).
+- the baseline count put back inside the candidate tx: 2 red.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
