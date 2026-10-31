@@ -166,6 +166,11 @@ describe('GET /api/cron/sweep-stale-pending-refunds', () => {
   ])('?olderThanHours=%s → the sweep runs with %i (whole hours only)', async (raw, expected) => {
     await GET(makeRequest(VALID_AUTH, `olderThanHours=${raw}`));
     expect(refundSweepMock.mock.calls[0]![1]).toMatchObject({ olderThanHours: expected });
+    // A discarded override is said out loud, never silent.
+    const ignored = logger.warn.mock.calls.some(
+      (c) => c[1] === 'cron.sweep_stale_pending_refunds.override_ignored',
+    );
+    expect(ignored).toBe(expected !== Number(raw));
   });
 
   it('logs each errored invoice with ids + errKind', async () => {

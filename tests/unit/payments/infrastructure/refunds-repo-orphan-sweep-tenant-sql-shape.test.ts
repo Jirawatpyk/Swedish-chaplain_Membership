@@ -78,4 +78,22 @@ describe('refunds repo — orphan sweep statements are tenant-fenced (#50)', () 
     expect(blind).toEqual([]);
     expect(violations).toEqual([]);
   });
+
+  it('listProcessorRefundIdsForPayment reads one payment\'s recorded Stripe ids, fenced', async () => {
+    rec.statements.length = 0;
+    const ids = await makeDrizzleRefundsRepo(T).listProcessorRefundIdsForPayment(
+      rec.db,
+      T,
+      'pmt_shape' as never,
+    );
+    expect(ids).toEqual([]);
+    expect(rec.statements).toHaveLength(1);
+    const sql = rec.statements[0]!.sql;
+    expect(sql).toMatch(/from "refunds"/i);
+    expect(sql).toMatch(/"refunds"\."payment_id" = /i);
+    expect(sql).toMatch(/"refunds"\."processor_refund_id" is not null/i);
+    const { blind, violations } = gateViolations(rec.statements, tenantScopedTables());
+    expect(blind).toEqual([]);
+    expect(violations).toEqual([]);
+  });
 });

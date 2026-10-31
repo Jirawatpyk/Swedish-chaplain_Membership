@@ -159,7 +159,7 @@ describe('payments_unreconciled_total — divergence roll-up', () => {
     // #50 — the sweep retries the retrieve next pass (re-driven), but two
     // Stripe refunds naming one row is a possible double refund only a
     // person can untangle.
-    ['retrieve_failed', 'transient'],
+    ['retrieve_failed', 'permanent'],
     ['orphan_marker_conflict', 'permanent'],
   ] as const)(
     'escalation reason %s is %s — permanence follows the re-drive mechanism',
