@@ -119,7 +119,9 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
 
    **Terminal E-Blasts that still point at a Resend draft (spec 140 s1,
    residual 8d).** The cascade also lists the member's rows outside the
-   in-progress set (bar `sent`) that still hold a `resend_broadcast_id` — the
+   in-progress set, bar every sending-started status (`sending`, `sent`,
+   `partially_sent`, `partial_delivery_accepted`), that still hold a
+   `resend_broadcast_id` — the
    scrub keeps that column — and deletes each draft once (no row lock, no row
    write). `member_erased` then carries `resend_drafts_cleared` (drafts gone at
    Resend — a 404 counts too: Resend holds no such broadcast) and
@@ -153,14 +155,16 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    next re-drive finishes.
 
    **A row the cascade cannot settle — manual recovery.** When Resend's
-   answers decide nothing (a 403 whose probe says `draft` or `not_found`, a
-   probe that reads `unknown`, or a 404 whose probe still finds the broadcast;
-   on the in-flight arm `failed` is undecided too), the row stays `approved`, the erasure stays not complete, and
+   answers decide nothing (a 403 whose probe says `draft`, `not_found`,
+   `unknown` or — on the in-flight arm — `failed`, or a 404 whose probe still
+   finds the broadcast), the row stays `approved`, the erasure stays not
+   complete, and
    `reconcile-erasures` re-drives it every 30 min without ever finishing.
    Recognise it by: the log line `broadcasts.cascade.tx_or_audit_failed` with
    `resendOutcome` such as `forbidden_probe_draft`, `forbidden_probe_not_found`,
-   `forbidden_probe_unknown`, `absent_probe_draft`, `absent_probe_cancelled` or
-   `absent_probe_unknown` (`retryable` / `other`, or any `*_probe_retryable` /
+   `forbidden_probe_failed`, `forbidden_probe_unknown`, `absent_probe_draft`,
+   `absent_probe_cancelled`, `absent_probe_failed` or `absent_probe_unknown`
+   (`retryable` / `other`, or any `*_probe_retryable` /
    `*_probe_other`, is a Resend outage and heals itself); `members_erasure_outcome_total{outcome="still_pending"}`
    staying non-zero for the member; and the erasure card showing a half-run
    (step 8). What to do: a `forbidden_probe_draft` / `_not_found` almost always
@@ -170,21 +174,26 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    finds the broadcast) is inconsistent: re-check the broadcast in the Resend
    dashboard; if it is a `draft`, delete it there and let the next re-drive
    cancel the row (its DELETE then answers 404 and the probe `not_found`). A
-   `forbidden_probe_unknown` is a `failed` broadcast: the paragraph below.
+   `forbidden_probe_failed` (or `absent_probe_failed`) is a `failed` broadcast:
+   the paragraph below. A `forbidden_probe_unknown` is a status Resend has not
+   been seen to answer: check it in the dashboard before acting.
    Record what you did on the DSR ticket.
 
-   **403 + `unknown` (a broadcast `failed` at Resend) — manual recovery.** The
-   cascade reads Resend's `failed` as `unknown` on purpose (both legs refuse it
-   fail closed), so `forbidden_probe_unknown` never settles by itself, and
-   Resend refuses to DELETE a `failed` broadcast (403). A `failed` broadcast
+   **403 + `failed` (a broadcast `failed` at Resend) — manual recovery.** The
+   bounded probe names Resend's `failed` (spec 140 s1), but the in-flight arm
+   treats it as undecided on purpose (fail closed; slice 3 brings one status
+   reader for both arms), so `forbidden_probe_failed` never settles by itself,
+   and Resend refuses to DELETE a `failed` broadcast (403). On a TERMINAL row the
+   same reading is recorded as an unsendable copy (`resend_copies_retained`), and
+   a standing refusal clears it (`resendDraftOutcome: 'failed'`). A `failed` broadcast
    cannot be sent. Confirm in the Resend dashboard that its status is `failed`
    (not `queued` / `sending` / `sent` — those are 8c, recorded above), then
    cancel the row by hand (the SQL below, with `cancellation_reason =
    'gdpr_erasure_request'` or `'pdpa_deletion_request'` as the request was
    filed). The next `reconcile-erasures` re-drive then finds nothing in flight
-   and completes the erasure. Mapping `failed` to a settled answer needs it out
-   of `normaliseStatus`'s `unknown` on both legs; it is deferred (plan.md §
-   Review round 2, code-review #2).
+   and completes the erasure. Settling `failed` on the in-flight arm too is
+   deferred to spec 140 slice 3 (one status reader; plan.md § review round 1,
+   code-review #10).
 
    **A requester who no longer exists (spec 139 P4) — find and cancel by hand.**
    `broadcasts.requested_by_member_id` has **no FK** to `members` (the dev branch

@@ -232,6 +232,33 @@ Mutation proofs (from `7499b8f2f`, each file restored byte for byte, tree clean)
 - the cancelled-reading clear made inert: 1 red.
 - the paused count dropped: 1 red.
 
+### Slice 1 — review round 3 (`/code-review high`; pdpa APPROVE, reliability MERGEABLE; 31 Oct 2026)
+
+Commits: RED `b7787b8b1` and GREEN `59a30c0fd`. Docs land in the commit after them. At RED, the unit and contract rows failed on the missing `deferredCount`, the failed-clears case, the 60 s reserve and the paused count.
+
+| Item | Disposition |
+|---|---|
+| 1 — the runbook's stale `failed` reading | **Fixed** (docs). The recognise list and the grep names now use `forbidden_probe_failed` / `absent_probe_failed` (the bounded probe names `failed`). The recovery paragraph says the in-flight arm treats `failed` as undecided until slice 3, while a terminal row records it as retained and a standing refusal clears it. |
+| 2 — the reserve is too thin | **Fixed** (RED `b7787b8b1`, GREEN `59a30c0fd`). `ERASURE_CASCADE_RESERVE_MS` is now 60 s. Its docblock names the worst case it covers: one row (DELETE 10 s + GET 10 s, each `AbortSignal.timeout`-bounded, + the evidence tx), then the later cascades (DB-only), `member_erased` and the response. **Aligned:** `reconcile-erasures` now stops starting members at the same deadline (maxDuration − 60 s = 240 s, the value its old `TIME_BUDGET_MS` had), so there is one rule and no second constant. |
+| 3 — a deferral still logs as an error one layer up | **Fixed** (RED `b7787b8b1`, GREEN `59a30c0fd`). `deferredCount` runs from the cascade output through the partial port arm and the adapter. When `unexpectedErrorCount === deferredCount`, `erase-member` logs at warn ("deferred by the deadline; the re-drive continues") with the count. `member_erased` is still withheld. |
+| 4 — a standing refusal's 403 + `failed` | **Fixed** (RED `b7787b8b1`, GREEN `59a30c0fd`). It now clears as an unsendable copy with `draftOutcome: 'failed'`, the measured status name, recorded in `resendDraftOutcome`. |
+| 5 — metric parity | **Fixed** (RED `b7787b8b1`, GREEN `59a30c0fd`). Rows settled by the in-flight loop in the same run now emit `terminal_draft_cleared` / `terminal_copy_retained`, so a first run and a re-drive show the same series. |
+| 6 — RoPA 8d and runbook wording · pdpa L-5 / L-6 | **Fixed** (docs). Both now say "bar every sending-started status (`sending`, `sent`, `partially_sent`, `partial_delivery_accepted`)". The stuck-import producer is named by the status it ends in: `failed_to_dispatch` (`audience_import_stuck`, after the 30-minute limit). |
+| 7 — a log field | **Fixed** (GREEN `59a30c0fd`). The paused-count failure logs `err: errKind(e)`. |
+| 8 — the paused gauge takes locks | **Fixed** (RED `b7787b8b1`, GREEN `59a30c0fd`). `countStuckErasuresInTx` runs the same anti-join as a plain count, **uncapped**, with no `FOR UPDATE` / `SKIP LOCKED` and no `LIMIT` (pinned by SQL shape). A paused tick therefore locks nothing and counts a member that is being erased concurrently. |
+| 9 — hoist the deadline | **Fixed** (GREEN `59a30c0fd`). `const cascadeDeadline = erasureCascadeDeadline(startedAt, maxDuration)` is computed once per tick, and the wrapper is gone. |
+| 10 — drop the cast | **Fixed** (RED `b7787b8b1`, GREEN `59a30c0fd`). `deleteDraftBeforeRefusal`'s `undecided` result carries the `resendBroadcastId` it DELETEd, and the standing wrapper reads it from there. |
+| pdpa verification note — the legacy post-send 409 replay | **Residual, recorded.** `dispatch-scheduled-broadcast.ts` (the `idempotency_conflict && sendAttempted` arm) writes `sending` on an *inferred* acceptance, with no probe. Three reasons it stays: a 409 from `/send` has never been observed (MEASURED 2026-10-29: a repeated `/send` answers 422, and `Idempotency-Key` is inert on broadcasts); it is legacy-only, and that leg is deleted in slice 4; and slice 3 reclassifies 409. |
+| reliability note — propagate has no time bound of its own | **Carried to slice 2.** `removeContactFromAudience` runs `withRetry` (up to ~31 s), and the SDK call has no timeout. Slice 2 bounds every broadcasts gateway call (DL8). |
+
+Mutation proofs (from `59a30c0fd`, each file restored byte for byte, tree clean):
+- reserve back to 30 s: 1 red.
+- the warn branch for a pure deferral made inert: 1 red.
+- `deferredCount` not incremented: 2 red.
+- the parity metric on a settled row dropped: 1 red.
+- `failed` no longer clears: 1 red.
+- the paused count back to the locking `findStuckErasuresInTx`: 1 red.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
