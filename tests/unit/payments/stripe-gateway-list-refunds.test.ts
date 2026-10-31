@@ -8,6 +8,11 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 
 const listMock = vi.fn();
+const infoMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@/lib/logger', () => ({
+  logger: { info: infoMock, warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
 
 vi.mock('@/modules/payments/infrastructure/stripe/stripe-client', () => ({
   getStripeClient: () => ({ refunds: { list: listMock } }),
@@ -21,7 +26,10 @@ import { env } from '@/lib/env';
 const PLATFORM_ACCOUNT = env.stripe.accountIdSwecham;
 const CONNECTED_ACCOUNT = 'acct_connected_tenant_test';
 
-beforeEach(() => listMock.mockReset());
+beforeEach(() => {
+  listMock.mockReset();
+  infoMock.mockReset();
+});
 
 describe('stripeGateway.listRefundsForPaymentIntent', () => {
   it('lists by payment intent and projects id, status and our refund id only', async () => {
@@ -30,10 +38,21 @@ describe('stripeGateway.listRefundsForPaymentIntent', () => {
         {
           id: 're_1',
           status: 'succeeded',
-          metadata: { refundId: 'rfnd_ours', reason: 'free text' },
+          amount: 50000,
+          charge: 'ch_1',
+          description: 'desc text',
+          failure_reason: null,
+          metadata: {
+            refundId: 'rfnd_ours',
+            reason: 'free text',
+            invoiceId: 'inv_1',
+            tenantId: 'tenant_1',
+            paymentId: 'pay_1',
+          },
           destination_details: { card: { reference: 'ref_x' } },
         },
         { id: 're_2', status: null, metadata: {} },
+        { id: 're_3', status: 'failed', metadata: { refundId: 42 } },
       ],
       has_more: false,
     });
@@ -50,12 +69,19 @@ describe('stripeGateway.listRefundsForPaymentIntent', () => {
         refunds: [
           { id: 're_1', status: 'succeeded', appRefundId: 'rfnd_ours' },
           { id: 're_2', status: 'pending', appRefundId: null },
+          { id: 're_3', status: 'failed', appRefundId: null },
         ],
         complete: true,
       },
     });
     expect(JSON.stringify(r)).not.toContain('ref_x');
     expect(JSON.stringify(r)).not.toContain('free text');
+    // The one log line carries tokens and counts only.
+    expect(infoMock).toHaveBeenCalledTimes(1);
+    expect(infoMock).toHaveBeenCalledWith(
+      { stripeAccount: CONNECTED_ACCOUNT, paymentIntentId: 'pi_1', count: 3, hasMore: false },
+      'stripe-gateway: listRefundsForPaymentIntent ok',
+    );
   });
 
   it('has_more → complete: false (the sweep must not treat it as "none")', async () => {
