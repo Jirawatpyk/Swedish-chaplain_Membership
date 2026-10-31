@@ -37,7 +37,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { runInTenant, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
 import { env } from '@/lib/env';
-import { buildRenewalCtaUrl } from './_lib/build-renewal-redeem-link-url';
+import { buildReminderSendInput } from './_lib/build-reminder-send-input';
 // BUG-2 — retry pass must re-apply the FR-033 outreach-pause gate (Gate 10)
 // the same way the main dispatcher does. Same use-cases/ dir, no cycle
 // (pause file imports only zod/result/otel + RenewalsDeps type).
@@ -254,46 +254,28 @@ async function attemptRetry(
     return { kind: 'blocked_by_gate' };
   }
   // Re-fire the gateway with the SAME idempotency key as the original
-  // attempt — Resend dedupes server-side.
-  // Email-locale audit 2026-07-16 — member.preferred_locale (explicit choice)
-  // wins over the contact column's NOT-NULL DEFAULT 'en' (see dispatch-one-cycle).
-  const locale =
-    candidate.member.preferredLocale ??
-    candidate.primaryContact.preferredLanguage ??
-    'en';
-  const gatewayResult = await deps.renewalGateway.sendRenewalEmail({
+  // attempt — Resend dedupes server-side on the HTTP Idempotency-Key (spec
+  // 141; before it the key rode in the email headers and nothing deduped).
+  // The CTA is signed with the reminder row's `createdAt`, the instant the
+  // first attempt used, so an unchanged member renders a byte-identical body
+  // and Resend answers the ORIGINAL message id instead of sending again
+  // (within its 24 h key window). A changed recipient / locale / name makes
+  // the body differ: Resend's 409 then reaches the permanent path below.
+  // The builder also resolves the locale (email-locale audit 2026-07-16);
+  // the audit reads the locale actually sent.
+  const sendInput = buildReminderSendInput({
+    signer: deps.tokenSigner,
+    baseUrl: env.app.baseUrl,
     tenantId: event.tenantId,
-    cycleId: asCycleId(event.cycleId),
+    candidate,
+    primaryContact: candidate.primaryContact,
     stepId: event.stepId,
     templateId: event.templateId,
-    recipient: {
-      memberId: candidate.member.memberId,
-      toEmail: candidate.primaryContact.email,
-      toName:
-        `${candidate.primaryContact.firstName} ${candidate.primaryContact.lastName}`.trim(),
-      preferredLocale: locale,
-    },
-    templateVariables: {
-      member_first_name: candidate.primaryContact.firstName,
-      member_company_name: candidate.member.companyName,
-      cycle_expires_at: candidate.cycle.expiresAt,
-      tier_bucket: candidate.cycle.tierAtCycleStart,
-      step_id: event.stepId,
-      // S1-P0-4 + go-live #8: same redeem-vs-plain CTA decision as the original
-      // dispatch path (single source of truth). A retry dispatched closer to
-      // expiry can upgrade an early step's plain link back to a redeem-link.
-      renewal_link_url: buildRenewalCtaUrl(deps.tokenSigner, env.app.baseUrl, {
-        tenantId: event.tenantId,
-        memberId: candidate.member.memberId,
-        cycleId: event.cycleId,
-        now: new Date(nowIso),
-        expiresAtIso: candidate.cycle.expiresAt,
-      }),
-      // S1-P1-3: footer opt-out link target.
-      preferences_url: `${env.app.baseUrl}/portal/preferences/renewals`,
-    },
-    idempotencyKey: event.reminderEventId,
+    reminderEventId: event.reminderEventId,
+    reminderCreatedAt: event.createdAt,
   });
+  const locale = sendInput.recipient.preferredLocale;
+  const gatewayResult = await deps.renewalGateway.sendRenewalEmail(sendInput);
 
   return runInTenant(deps.tenant, async (tx) => {
     if (gatewayResult.ok) {

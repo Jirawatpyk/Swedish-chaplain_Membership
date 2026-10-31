@@ -4,13 +4,28 @@
  *
  * Replaces the Wave I2c `stub-renewal-gateway.ts`. Renders the
  * `RenewalReminderEmail` React Email template into HTML + plain-text
- * fallback, then dispatches via the Resend SDK with an
- * `idempotency-key` header set from the reminder_event_id UUID.
+ * fallback, then dispatches via the Resend SDK with the HTTP
+ * `Idempotency-Key` set from the reminder_event_id UUID — the SDK's second
+ * argument, `emails.send(payload, { idempotencyKey })`. Spec 141: until then
+ * the key rode in the email's own `headers`, which Resend does not read, so
+ * nothing was ever deduped.
+ *
+ * Resend's idempotency (DOCUMENTED + MEASURED 2026-10-30, spec 141 § Premises):
+ * the same key + the same body answers the original id without a second
+ * email (within 24 h); the same key + a different body answers 409
+ * `invalid_idempotent_request`; a request Resend rejected (422) does not
+ * consume the key. Callers sign the CTA with the reminder row's `createdAt`,
+ * so a retry for an unchanged member renders the same body and gets the
+ * original id back. A 409 `invalid_idempotent_request` therefore means the
+ * recipient, locale or name changed after an attempt Resend accepted — it is
+ * permanent (`gateway_4xx`), so the failed-permanent path opens a manual
+ * outreach task for a person to decide. `concurrent_idempotent_requests` is
+ * transient.
  *
  * **NOT using F1's `emailSender`** because:
- *   1. F1's wrapper doesn't expose the `idempotency-key` header (Resend
- *      dedupes server-side on this — defence-in-depth alongside F8's
- *      DB-level `insertIfAbsent` idempotency primitive).
+ *   1. F1's wrapper doesn't expose the idempotency key (Resend dedupes
+ *      server-side on it — defence-in-depth alongside F8's DB-level
+ *      `insertIfAbsent` idempotency primitive).
  *   2. F1's retry semantics are 1s/2s/4s with `lastError` capture; F8
  *      mirrors this in-place without sharing the wrapper. Same Resend
  *      API key per FR-019 transactional-surface alignment.
@@ -29,6 +44,7 @@ import { ok, err, type Result } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { renewalsMetrics } from '@/lib/metrics';
 import { env } from '@/lib/env';
+import { RESEND_API_BASE_URL } from '@/lib/resend-api-base-url';
 import {
   RenewalReminderEmail,
   type RenewalReminderEmailProps,
@@ -82,7 +98,7 @@ let cachedResend: Resend | null = null;
 
 function resendClient(): Resend {
   if (!cachedResend) {
-    cachedResend = new Resend(env.resend.apiKey);
+    cachedResend = new Resend(env.resend.apiKey, { baseUrl: RESEND_API_BASE_URL });
   }
   return cachedResend;
 }
@@ -171,6 +187,13 @@ const PERMANENT_RESEND_ERROR_PATTERNS: ReadonlyArray<string> = [
   'sender_blocked',
 ];
 
+/** Resend error names that are transient by nature (spec 141). */
+const KNOWN_TRANSIENT_RESEND_NAMES: ReadonlySet<string> = new Set([
+  'application_error',
+  'rate_limit_exceeded',
+  'internal_server_error',
+]);
+
 function isPermanentResendName(nameLower: string): boolean {
   return PERMANENT_RESEND_ERROR_PATTERNS.some((p) => nameLower.includes(p));
 }
@@ -213,6 +236,28 @@ function mapResendError(
   if (isPermanentResendName(name)) {
     return { kind: 'gateway_4xx', retryable: false, message };
   }
+  // Spec 141 RI1b: this key was already used with a different body. The
+  // body is stable for an unchanged member (CTA signed at the row's
+  // `createdAt`), so the recipient / locale / name changed after an attempt
+  // Resend accepted — not retryable, and not "sent" either: permanent, so a
+  // person decides through the manual-outreach task.
+  if (name === 'invalid_idempotent_request' || name === 'invalid_idempotency_key') {
+    return { kind: 'gateway_4xx', retryable: false, message };
+  }
+  // Spec 141 RI1b: another request with this key is still in flight —
+  // transient; the next attempt gets that request's answer.
+  if (name === 'concurrent_idempotent_requests') {
+    return { kind: 'gateway_5xx', retryable: true, message };
+  }
+  // Spec 141: known transient names. resend@6.35 never throws on a network
+  // failure — it answers `application_error` (index.mjs:1750) — and Resend's
+  // own 429 / 500 carry these names. Retried like any 5xx, but not reported as
+  // an unknown name: that WARN + metric pages on-call and is reserved for a
+  // name nobody has classified yet. (A 429 does not consume the idempotency
+  // key — MEASURED 2026-10-30 — so the retry still delivers.)
+  if (KNOWN_TRANSIENT_RESEND_NAMES.has(name)) {
+    return { kind: 'gateway_5xx', retryable: true, message };
+  }
   // Truly-unknown name → log a WARN + emit metrics counter so the team
   // can extend the allowlist before the next retry storm. The default
   // classification stays transient (gateway_5xx) — defaulting NEW
@@ -249,7 +294,7 @@ async function delay(ms: number): Promise<void> {
 
 /**
  * 066 §3.2(2) extract-function — the Resend send loop (retry budget,
- * error mapping, replyTo threading, idempotency header) shared by the
+ * error mapping, replyTo threading, idempotency key) shared by the
  * tier-ladder path and the due-track branch of `sendRenewalEmail`.
  * Behaviour is verbatim the pre-066 loop; only the subject/html/text
  * assembly differs per caller.
@@ -267,21 +312,23 @@ async function sendViaResendWithRetry(args: {
 
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
     try {
-      const response = await resend.emails.send({
-        from,
-        to: input.recipient.toEmail,
-        subject,
-        html,
-        text,
-        headers: { 'idempotency-key': input.idempotencyKey },
-        ...(input.replyToEmail
-          ? {
-              replyTo: input.replyToDisplayName
-                ? `${input.replyToDisplayName} <${input.replyToEmail}>`
-                : input.replyToEmail,
-            }
-          : {}),
-      });
+      const response = await resend.emails.send(
+        {
+          from,
+          to: input.recipient.toEmail,
+          subject,
+          html,
+          text,
+          ...(input.replyToEmail
+            ? {
+                replyTo: input.replyToDisplayName
+                  ? `${input.replyToDisplayName} <${input.replyToEmail}>`
+                  : input.replyToEmail,
+              }
+            : {}),
+        },
+        { idempotencyKey: input.idempotencyKey },
+      );
       if (response.error) {
         const mapped = mapResendError(response.error);
         // Permanent failures abort immediately. Transient (gateway_5xx)
@@ -642,14 +689,16 @@ export const resendTransactionalRenewalGateway: RenewalGateway = {
 
     for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
       try {
-        const response = await resend.emails.send({
-          from,
-          to: input.recipient.toEmail,
-          subject,
-          html,
-          text,
-          headers: { 'idempotency-key': input.idempotencyKey },
-        });
+        const response = await resend.emails.send(
+          {
+            from,
+            to: input.recipient.toEmail,
+            subject,
+            html,
+            text,
+          },
+          { idempotencyKey: input.idempotencyKey },
+        );
         if (response.error) {
           const mapped = mapResendError(response.error);
           if (mapped.kind !== 'gateway_5xx') {

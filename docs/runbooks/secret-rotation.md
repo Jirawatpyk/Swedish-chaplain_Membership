@@ -65,6 +65,8 @@ Used for: `CRON_SECRET`, `UNSUBSCRIBE_TOKEN_SECRET`, `STRIPE_*`, `RESEND_*`, `AU
 
 Used for: `RENEWAL_LINK_TOKEN_SECRET_PRIMARY` + `RENEWAL_LINK_TOKEN_SECRET_FALLBACK`. The dual-key procedure is mandatory because in-flight reminder emails carry tokens signed with the OLD key — a cutover would invalidate every unclicked link in the wild.
 
+**Spec 141 side effect:** a reminder that failed on our side and is retried within 24 h is re-signed with the NEW primary key, so its body differs from the first attempt under the same Resend `Idempotency-Key`. If that first attempt had in fact reached Resend, the retry gets a 409 `invalid_idempotent_request` → a permanent failure + a manual-outreach task, though the member already has the email. Rotate outside the 23:00 UTC dispatch window and, after a rotation, check any new `manual_outreach_required` task against Resend's email log before contacting the member.
+
 Reference: research.md R16 (renewal-link token rotation).
 
 **Procedure** (4-step rolling window):

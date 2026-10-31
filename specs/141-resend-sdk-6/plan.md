@@ -11,7 +11,7 @@ After the bump we:
 - fix only what the suite or `tsc` flags — review rounds 1–5 widened this to the Broadcasts gateway's error reading, the empty-id guard and `listAudiences` paging (§ Evidence);
 - leave `RESEND_DEBUG` unset.
 
-Slice 2 is ordinary TDD on the renewals gateway.
+Slice 2 is TDD on the renewals send path: the gateway sends the key as the request option; one builder (`_lib/build-reminder-send-input.ts`) gives dispatch and retry a byte-identical body, the CTA signed at the reminder row's `createdAt`; plus the env guard (pinned `baseUrl` on every Resend client, `RESEND_DEBUG=true` refused in production). The design changed after review round 1 (§ Complexity Tracking).
 
 **Paths kept compatible:** auth email, outbox email and renewals email. Their usage lines are in `spec.md` § Premises (D-041).
 
@@ -33,6 +33,8 @@ Rules: `.claude/rules/modules/broadcasts.md`; the auth and renewals module rules
   - `src/modules/renewals/infrastructure/resend-transactional-renewal-gateway.tsx` (the send option, and `mapResendError` for the two idempotency 409s)
   - `tests/unit/renewals/infrastructure/resend-transactional-renewal-gateway.test.ts`
   - `tests/contract/resend/renewals-email.contract.test.ts` (re-recorded)
+  - **As built (31 Oct 2026, after review round 1):** `application/use-cases/_lib/dispatch-one-cycle.ts` + `dispatch-due-track.ts` (`dispatchEmailStep` takes the row's `createdAt`), `retry-failed-reminders.ts` and `_lib/build-renewal-redeem-link-url.ts` (sign the CTA at `createdAt`); the gateway's `mapResendError` (the two 409s). The option-A changes built first on 30 Oct — a replay success variant on the port, `deliveryId: string | null` on the repo, an `idempotent_replay` audit field, a replay metric, the tier-upgrade arm — are reverted to `main`'s shape.
+  - **Env guard (moved here in review round 2):** `baseUrl` on the three `new Resend(…)`; `src/lib/env.ts` refuses `RESEND_DEBUG` when `NODE_ENV=production`.
 
 ## Data model and migration
 
@@ -43,7 +45,7 @@ n/a
 | # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
 | 1 | The bump, behaviour identical | RS1–RS5 | security-engineer, pdpa-gdpr, spec-compliance-auditor | `141-resend-sdk-6-s1` | #704 · done |
-| 2 | Renewals send a real Idempotency-Key | RI1–RI3 | reliability-guardian, spec-compliance-auditor | `141-resend-sdk-6-s2` | — · open |
+| 2 | Renewals send a real Idempotency-Key | RI1–RI3 | reliability-guardian, spec-compliance-auditor | `141-resend-sdk-6-s2` | #705 · done |
 
 ## Test plan
 
@@ -56,6 +58,8 @@ n/a
 | RI1 | `resend-transactional-renewal-gateway.test.ts`: "sends the idempotency key as the request option, not an email header". It fails on the current code. | unit |
 | RI1b | the same file: one case per idempotency 409 code | unit |
 | RI2 | the live sink measurement (Evidence) | manual |
+| RI1b (stable body) | `build-reminder-send-input.test.ts` (two calls at one `createdAt` deep-equal; the redeem token's `iat` is `createdAt`); `dispatch-one-cycle.test.ts` + `retry-failed-reminders.test.ts` (the CTA decided at `createdAt`, not the tick) | unit |
+| Env guard | `tests/contract/resend/base-url-pinned.contract.test.ts` (RESEND_BASE_URL cannot move any client); `tests/unit/architecture/resend-client-base-url.test.ts` (every `new Resend` pins `RESEND_API_BASE_URL`, positive-controlled); `tests/unit/lib/env-stripe.test.ts` (`RESEND_DEBUG=true` refused in production, other values boot) | contract / unit |
 
 ## Constitution Check
 
@@ -76,6 +80,7 @@ n/a
 |---|---|---|
 | Solo-maintainer review (auth / PII email surface): the five checks in `review-and-ship` § 2 | No second human reviewer | — |
 | Slice 1's "RED" is the bump, not a test commit | The suite characterises existing behaviour, so it is green by design; each file's positive control is its recorded failing run | A test that fails before the change cannot exist for "nothing changes"; the positive control proves the suite can fail |
+| Slice 2: the CTA is signed at the reminder row's `createdAt`, not the tick | A cross-tick retry re-rendered a different body (a redeem link signed with `now`), so the same key met a changed payload. Signing at the first attempt's instant makes the retry byte-identical: Resend returns the original id, the row keeps a real `delivery_id`, webhooks still attach. Cost: a retry no longer upgrades an early step's plain link to a redeem-link. Residual: a retry can land up to about one dispatch pass (minutes) after the first request's 24 h mark, because the retry pass runs after the next tick's dispatch pass — then Resend sends again, as on `main`. A 409 can also come from a deploy or a link-secret rotation between attempt and retry; the manual-outreach task routes it to a person (secret-rotation runbook) | Option A (409 = "already sent", no delivery id) — built, then withdrawn by the maintainer after review round 1: the retry re-reads the current recipient, so a 409 after an address change recorded "sent" for an address that never got it, and the 24 h key window made the cross-tick protection a coin flip. Option B (key + body hash): leaves the double send open. Persisting the rendered body: a schema change |
 | RS4's void-notice cron run waived; the E-Blast draft lifecycle checked at the gateway | Driving a draft through the UI reaches Resend only at dispatch, which sends; the void-notice flag is off in prod | The maintainer chose (30 Oct 2026) to run :3400 for password reset and the E-Blast surface, and to waive the void-notice run. The attachment is pinned by the contract case and a delivered sink send |
 
 ## Evidence
@@ -130,6 +135,47 @@ n/a
 - **Already dispositioned** (the stop rule): email unencoded in the `contacts.remove` path, the id choke point / branded id, the twin status readers and their invented statuses → spec 140. **Pre-existing on `main`**, carried to spec 140: an import answering 2xx with no id is classified 502 and retried; `listAudiences` has no overall time budget across pages (one page today); a whitespace-only id is refused here while two callers test only `''`.
 - **Checks**: reclaim + erasure adapter + `tests/contract/resend/` 92 passed; `pnpm check` exit 0; the 4 gateway integration files on dev, 14 passed.
 - **Review ends here** under the stop rule: no new High or Medium remains.
+
+### Slice 2 (30 Oct 2026)
+
+| Done-when | Evidence |
+|---|---|
+| Step 0 | DOCUMENTED + MEASURED idempotency facts in spec § Premises (slice 2): same key + same body → same id `01a18d68-5028-…`, one email; same key + changed body → 409 `invalid_idempotent_request`; a 422 does not consume the key. The maintainer chose option A on these facts, then withdrew it after review round 1 for the stable body (below). |
+| RI1 | RED `d6467805c` → GREEN `622349fd5`: both sends call `emails.send(payload, { idempotencyKey })` with no `idempotency-key` in `payload.headers` (`resend-transactional-renewal-gateway.test.ts` — the reminder case and the tier-upgrade case). The tier-upgrade case first failed on the test's env mock lacking `app.baseUrl` (fixed in GREEN); its positive control on the committed GREEN — the key put back into `headers` — fails `expected { Object (idempotency-key) } to be undefined`. `tests/contract/resend/renewals-email.contract.test.ts` re-recorded: the body loses `headers`, the request gains `Idempotency-Key: reminder-event-id-1`. |
+| RI1b | Option A first (RED `d6467805c` → GREEN `622349fd5`), withdrawn after review round 1. Final: RED `9c601b4dd` → GREEN `4711b24dc` — `invalid_idempotent_request` → `gateway_4xx`, one call (`resend-transactional-renewal-gateway.test.ts`); `concurrent_idempotent_requests` → transient, retried, then the original id. Against HEAD's src the RED failed `expected true to be false`. |
+| RI2 | MEASURED through the real gateway (throwaway tsx probes, deleted; `delivered@resend.dev` only), one key three times: 2026-10-30 17:07 UTC on option A — send → `01a18dc8-350e-7500-90ae-0cfdb1009213`, same body → the same id, one email at Resend (`delivered`); 2026-10-30 17:35 UTC on the final code — send → `01a18de1-59a9-7ba7-a96d-df9390ae6371`, same body → the same id, changed `renewal_link_url` → `gateway_4xx`. Stable body: RED `9c601b4dd` (dispatch and retry rendered a redeem-link decided at the tick — `expected '…/api/portal/rene…' not to contain 'redeem-link'`) → GREEN `4711b24dc` (both decide and sign at `createdAt`). |
+| RI3 | The gateway docblock and the `retry-failed-reminders.ts` comment say what is now true; changelog. |
+| Env guard | RED `2de8f0459` → GREEN `c5e27a255`: with `RESEND_BASE_URL=https://elsewhere.invalid` set before any client loads, the auth sender, the Broadcasts gateway and the renewals gateway all reach `api.resend.com` (`tests/contract/resend/base-url-pinned.contract.test.ts`; RED: all three hit `elsewhere.invalid`); `env.ts` throws on `RESEND_DEBUG` in production and allows it in development (`tests/unit/lib/env-stripe.test.ts`; RED: "promise resolved … instead of rejecting"). `.env.example` documents `RESEND_DEBUG`; go-live § 6.6 and the broadcasts rule say "enforced in code". |
+| Checks | `pnpm check` exit 0 (after `pnpm install` brought the worktree to AURA 5.71.0 from #700); `tests/unit/renewals` 132 files, 1,633 tests passed (before the env guard); `tests/contract/resend/` + env 71 passed; renewals integration on dev: 10 files, 43 tests passed (`audit-emit-rollback`, `concurrent-admin-race`, `concurrent-admin-send`, `cross-tenant-isolation`, `cross-year-catchup-double-send`, `dispatch-cron-idempotency`, `dispatch-missed-cron-catchup`, `dispatch-unreconciled-invoice-guard`, `tier-upgrade-on-offline-mark`, `tier-upgrade-pending`). |
+
+
+**Slice 2 review round 1 (31 Oct 2026)** — `/code-review high`, reliability-guardian (mergeable, 2 Medium), security-engineer (APPROVE), spec-compliance-auditor (one HIGH, non-blocking):
+- **Option A withdrawn** (code-review + reliability): the retry re-reads the current recipient, so a 409 after an address change recorded "sent" for an address that never got it; the daily retry lands on Resend's 24 h key expiry. The maintainer chose the stable body (above).
+- **Fixed with it** (the option-A machinery is gone): the tier-upgrade path had no replay marker or metric (spec-compliance HIGH, reliability Low); the retried audit hid the replay; `dispatched_at` was the replay time; webhook linkage was lost on replay rows.
+- **Fixed**: an architecture scan gate — every `new Resend(` in src passes `baseUrl` (`tests/unit/architecture/resend-client-base-url.test.ts`, comments stripped; positive control: removing `baseUrl` from `resend-client.ts` fails naming that file); `RESEND_DEBUG` values `1` / `false` / `yes` refused too (security Lows); the broadcasts gateway uses `RESEND_API_BASE_URL` directly; the pin test restores `RESEND_BASE_URL` in `afterAll` (code-review).
+- **Carried**: the two send loops in the renewals gateway (code-review altitude) — both now share `mapResendError`, so the 409 mapping cannot drift; folding the loops is left for a renewals change.
+- **Checks**: `pnpm check` exit 0; `tests/unit/renewals` + `tests/contract/resend` + env + scan gate 139 files, 1,718 tests passed.
+
+
+**Slice 2 review round 2 (31 Oct 2026)** — reliability-guardian MERGEABLE (no High / Medium), `/code-review high` 8 items:
+- **Fixed** (RED `7e3ce942c` → GREEN `8ae745f30`): one `buildReminderSendInput` (`_lib/build-reminder-send-input.ts`) builds the gateway input for both dispatch and retry, so the byte-identical body is enforced by code, not by two hand-kept copies (code-review; reliability L3); its test pins that two calls at one `createdAt` are deep-equal and that the redeem token's `iat` is `createdAt`. The scan gate now requires `baseUrl: RESEND_API_BASE_URL` (an env-driven `baseUrl` no longer passes). `RESEND_DEBUG=''` in production is allowed and tested; `'true'` folded into the refused set. Hand-formatting of the two `emails.send` calls, the env guard and the `dispatchEmailStep` call; the Contacts Import docblock re-attached.
+- **Documented** (spec § Premises, Complexity Tracking, `docs/runbooks/secret-rotation.md`): the retry residual is seconds wide, not a coin flip (reliability L1 — `retry_until` bounds every retry inside 24 h of the first request); a 409 from a deploy or a link-secret rotation goes to a person (code-review; reliability L2); the CTA is decided at the DB clock while step selection uses `nowIso` — one moment in production (code-review; reliability L4).
+- **Carried**: folding the two renewals send loops (both share `mapResendError`). The RESEND_DEBUG suite stays in `env-stripe.test.ts`, which already hosts the env.ts cross-field guards.
+- **Checks**: `pnpm check` exit 0; `tests/unit/renewals` + env + scan gate + `tests/contract/resend` 140 files, 1,723 tests passed.
+
+
+**Slice 2 review round 3 (31 Oct 2026)** — `/code-review high`, 9 items:
+- **Refuted by MEASUREMENT** (2026-10-30 18:10 UTC, sink only): "if Resend stores a 429 under the key, a rate-limited reminder can never deliver" — a burst drew two 429s and the same key retried 3 s later sent (200). Recorded in spec § Premises.
+- **Fixed** (RED `399fcdb80` → GREEN, next commit): production refuses only `RESEND_DEBUG=true` (the one value the SDK honours, `index.mjs:1639`; `false` / `0` / `''` boot) — refusing every non-empty value could take production down on a harmless env edit; `invalid_idempotency_key` (a malformed key) is permanent; the builder takes `primaryContact` as its own argument (no spread copies); the audit's `recipient_locale` is read from the built input, not computed a second time; the scan gate covers `scripts/` as well as `src/`.
+- **Corrected**: the retry window is about one dispatch pass (minutes), not seconds — the retry pass runs after the next tick's dispatch pass (spec § Premises, Complexity Tracking, changelog).
+- **Carried**: the tenant's renewal reply-to (`tenant_renewal_config.reply_to_email`) never reaches the gateway — pre-existing on `main`; wiring it changes every reminder body, so it is its own change (issue to open on merge). Persisting the rendered body for a guaranteed byte-identical retry — a schema change, spec 140 territory (as in round 1).
+
+
+**Slice 2 review round 4 (31 Oct 2026)** — `/code-review high`, 10 items; the review ends here under the stop rule:
+- **Fixed** (RED `96e033531` → GREEN `e879db389`): `application_error` (6.35's network failure), `rate_limit_exceeded` and `internal_server_error` are known transients — retried without the unknown-name WARN + metric that pages on-call; the scan gate also reads `.mts/.cts/.js/.mjs/.cjs`; a duplicate `RESEND_DEBUG` case removed.
+- **Tried and dropped**: an integration assertion that due-track signs its CTA at `createdAt`. Its positive control (due-track wired to `nowIso`) still passed: the fixture's cycles expire a year out, so the CTA is the plain portal link and carries no timestamp (`580d4e699`). The argument is required by type and goes through the unit-tested `buildReminderSendInput`.
+- **Already dispositioned** (rounds 1–3): a Resend 5xx stored under the key (unmeasurable; 422 and 429 measured not to); a 409 after a deploy / edit / secret rotation goes to a person; the retry window; folding the send loops; persisting the rendered body; `primaryContact` as its own builder argument (round 3's own fix, kept).
+- **Checks**: `pnpm check` exit 0; `tests/unit/renewals` + `tests/contract/resend` + env + scan gate 140 files, 1,726 tests passed.
 
 ## Rollout
 

@@ -342,6 +342,25 @@ describe('dispatchOneCycle', () => {
       );
     });
 
+    it('spec 141: the CTA is decided and signed at the reminder row createdAt, not the tick', async () => {
+      // NOW (05-15) + 30-day token TTL reaches the 06-14 expiry → a redeem-link
+      // if decided at the tick. The row was created 05-14, one day earlier, so
+      // decided at createdAt the token would not outlive the cycle → plain link.
+      // The retry path decides at the same createdAt, so both render one body.
+      const { deps, gatewayMock, insertReminderMock } = fakeDeps({});
+      const base = insertReminderMock.getMockImplementation()!;
+      insertReminderMock.mockImplementation(async (...args: Parameters<typeof base>) => {
+        const r = await base(...args);
+        return { ...r, row: { ...r.row, createdAt: '2026-05-14T00:00:00.000Z' } };
+      });
+      const result = await dispatchOneCycle(deps, buildHappyCandidate(), happyCtx);
+      expect(result.kind).toBe('sent');
+      const vars = (gatewayMock.mock.calls[0] as unknown as [{ templateVariables: Record<string, unknown> }])[0]
+        .templateVariables;
+      expect(String(vars['renewal_link_url'])).not.toContain('redeem-link');
+      expect(String(vars['renewal_link_url'])).toContain('/portal/renewal/');
+    });
+
     it('locale: member.preferred_locale wins over the contact default (email-locale audit 2026-07-16)', async () => {
       // The member picked Thai in the portal (member.preferred_locale='th'); the
       // primary contact still carries the NOT-NULL DEFAULT 'en' (imported rows).

@@ -258,6 +258,20 @@ describe('retryFailedReminders', () => {
       );
     });
 
+    it('spec 141: the retry decides and signs the CTA at the reminder row createdAt, as the first attempt did', async () => {
+      // NOW (05-15 12:00) + 30 days reaches the 06-14 expiry → a redeem-link if
+      // decided at the retry tick; the row's createdAt (05-14 10:00) + 30 days
+      // does not → the plain link the first attempt rendered. Same body, so
+      // Resend's Idempotency-Key returns the first send instead of a second one.
+      const { deps, gatewayMock } = fakeDeps({ eligible: [buildFailedEvent()] });
+      const result = await retryFailedReminders(deps, VALID_INPUT);
+      assertOk(result);
+      const vars = (gatewayMock.mock.calls[0] as unknown as [{ templateVariables: Record<string, unknown> }])[0]
+        .templateVariables;
+      expect(String(vars['renewal_link_url'])).not.toContain('redeem-link');
+      expect(String(vars['renewal_link_url'])).toContain('/portal/renewal/');
+    });
+
     // BUG-2 — the retry pass must re-apply the dispatcher gates whose
     // conditions can flip during the 24h retry window. Each of these was a
     // silent re-send before the fix (retrySucceeded=1, gateway called).

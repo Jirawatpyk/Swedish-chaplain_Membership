@@ -15,8 +15,9 @@ import { env } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import { type Result, err, ok } from '@/lib/result';
+import { RESEND_API_BASE_URL } from '@/lib/resend-api-base-url';
 
-const resend = new Resend(env.resend.apiKey);
+const resend = new Resend(env.resend.apiKey, { baseUrl: RESEND_API_BASE_URL });
 
 /**
  * Default sender address. Resolution order:
