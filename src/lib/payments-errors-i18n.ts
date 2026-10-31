@@ -231,7 +231,7 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
     message:
       'A refund for this payment is still being confirmed. Check Payment activity on this invoice; do not start another refund.',
     messageThai:
-      'การคืนเงินของการชำระเงินนี้ยังรอการยืนยันอยู่ กรุณาตรวจสอบส่วนกิจกรรมการชำระเงินในหน้าใบแจ้งหนี้นี้ และอย่าเริ่มการคืนเงินใหม่',
+      'การคืนเงินสำหรับการชำระเงินนี้ยังรอการยืนยันอยู่ กรุณาตรวจสอบส่วนกิจกรรมการชำระเงินในหน้าใบแจ้งหนี้นี้ และอย่าเริ่มการคืนเงินใหม่',
   },
   possible_duplicate_refund: {
     message:
