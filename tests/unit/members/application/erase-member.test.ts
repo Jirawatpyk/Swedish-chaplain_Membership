@@ -556,7 +556,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
   it('spec 139: records broadcasts_already_sent_count on the member_erased DPO payload', async () => {
     const deps = buildEraseDeps();
     deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
-      async () => ({ outcome: 'ok', cancelledCount: 1, skippedConcurrentCount: 0, alreadySentCount: 2 }) as const,
+      async () => ({ outcome: 'ok', cancelledCount: 1, skippedConcurrentCount: 0, alreadySentCount: 2, resendDraftsCleared: 0, resendCopiesRetained: 0 }) as const,
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
     expect(res.ok).toBe(true);
@@ -745,6 +745,8 @@ describe('eraseMember — requested audit + atomic scrub', () => {
           skippedConcurrentCount: 0,
           unexpectedErrorCount: 1,
           alreadySentCount: 0,
+          resendDraftsCleared: 0,
+          resendCopiesRetained: 0,
         }) as const,
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
@@ -768,6 +770,8 @@ describe('eraseMember — requested audit + atomic scrub', () => {
             skippedConcurrentCount: 0,
             unexpectedErrorCount: 1,
             alreadySentCount: 3,
+            resendDraftsCleared: 0,
+            resendCopiesRetained: 0,
           }) as const,
       );
       await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);

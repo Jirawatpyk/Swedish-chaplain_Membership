@@ -52,7 +52,8 @@ import {
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
   decideDispatchStanding,
-  deleteErasedDraftBeforeRefusal,
+  deleteDraftBeforeRefusal,
+  ERASED_DRAFT_NOT_DELETED,
   recordDispatchHold,
   recordRequesterNotFound,
   REQUESTER_NOT_FOUND,
@@ -788,7 +789,25 @@ export async function dispatchScheduledBroadcast(
       await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.dispatch.retry_clock_clear_failed');
       return ok({ kind: 'dispatch_held_member_suspended' });
     }
+    // The draft the row carries, if any — the probe above said it was never
+    // handed to `/send` (a handed row skips this gate).
+    const rowDraft = {
+      resendBroadcastId: inheritedBroadcastId,
+      probedStatus:
+        observedResendStatus === 'draft' || observedResendStatus === 'cancelled' ? observedResendStatus : null,
+    };
     if (standing.kind === 'refuse') {
+      // Spec 140 s1 (ED4) — the halted / ended refusal deletes the row's draft
+      // first, as the erased one does, so the terminal row keeps none. It never
+      // stalls on the answer: left `approved`, the row could be sent once a
+      // halt is lifted, and a permanent Resend answer would hold it there for
+      // ever. An undecided DELETE is recorded `undeleted` instead; the erasure
+      // cascade's terminal pass reaches that draft if the member is erased.
+      const cleared = await deleteDraftBeforeRefusal(
+        deps.broadcastsGateway,
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, leg: 'live', refusal: 'standing' },
+        rowDraft,
+      );
       const { reason } = standing;
       const recorded = await failDispatchAndAudit(
         deps,
@@ -800,6 +819,7 @@ export async function dispatchScheduledBroadcast(
           broadcastId: input.broadcastId,
           reason,
           failedAt: now.toISOString(),
+          resendDraftOutcome: cleared.kind === 'cleared' ? cleared.draftOutcome : 'undeleted',
         },
         MEMBER_STANDING_PHASE,
         reason,
@@ -826,17 +846,13 @@ export async function dispatchScheduledBroadcast(
       // anything short of a confirmed delete decides nothing. P3: one audit
       // row only (`standing: 'erased'`), no "membership suspended" row, and no
       // member email (`broadcast` is not passed, so nothing is enqueued).
-      const cleared = await deleteErasedDraftBeforeRefusal(
+      const cleared = await deleteDraftBeforeRefusal(
         deps.broadcastsGateway,
-        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, leg: 'live' },
-        {
-          resendBroadcastId: inheritedBroadcastId,
-          probedStatus:
-            observedResendStatus === 'draft' || observedResendStatus === 'cancelled' ? observedResendStatus : null,
-        },
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, leg: 'live', refusal: 'erased' },
+        rowDraft,
       );
       if (cleared.kind === 'undecided') {
-        return err({ kind: 'dispatch.server_error', message: cleared.message, errClass: cleared.errClass, phase: 'standing' });
+        return err({ kind: 'dispatch.server_error', message: ERASED_DRAFT_NOT_DELETED, errClass: cleared.errClass, phase: 'standing' });
       }
       const { reason } = standing;
       const recorded = await failDispatchAndAudit(

@@ -144,6 +144,9 @@ function makeRepo(opts: {
       async listInFlightOwnedByMember() {
         return [];
       },
+      async listTerminalWithResendIdOwnedByMember() {
+        return [];
+      },
       async scrubContentForMemberInTx() {
         return { scrubbedCount: 0 };
       },

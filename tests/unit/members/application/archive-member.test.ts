@@ -207,6 +207,8 @@ function makeDeps(overrides: Partial<{
             cancelledCount: 0,
             skippedConcurrentCount: 0,
             alreadySentCount: 0,
+            resendDraftsCleared: 0,
+            resendCopiesRetained: 0,
           }) as const,
       ),
     };
@@ -464,6 +466,8 @@ describe('archiveMember use case (R009)', () => {
         cancelledCount: 0,
         skippedConcurrentCount: 0,
         alreadySentCount: 0,
+        resendDraftsCleared: 0,
+        resendCopiesRetained: 0,
       }));
       const deps = makeDeps({
         broadcastsCascade: { cancelInFlightForMember },
@@ -553,6 +557,8 @@ describe('archiveMember use case (R009)', () => {
         skippedConcurrentCount: 1,
         unexpectedErrorCount: 3,
         alreadySentCount: 0,
+        resendDraftsCleared: 0,
+        resendCopiesRetained: 0,
       }));
       const deps = makeDeps({
         broadcastsCascade: { cancelInFlightForMember },

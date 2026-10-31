@@ -23,14 +23,16 @@
  *                   cycle lapses (`terminated`).
  *   - `refuse`    — PERMANENT (`failed_to_dispatch`): the member's E-Blasts are
  *                   halted, or the membership has ENDED (F8 `terminated`:
- *                   cancelled / coverage ended, lapsed, refunded).
+ *                   cancelled / coverage ended, lapsed, refunded). The leg
+ *                   deletes the row's draft first (spec 140 s1 ED4,
+ *                   `deleteDraftBeforeRefusal`) but never stalls on it.
  *   - `refuse_erased` — spec 139: PERMANENT too, for a member who is erased.
  *                   (A requester NOT FOUND is `undecided` since review round 2,
  *                   P4: erasure never deletes a member row.) Its own kind because
  *                   it writes no standing-refusal audit row and sends the
  *                   member no email (P3), and because the leg must first
  *                   delete a pre-scrub draft the row still carries (P2,
- *                   `deleteErasedDraftBeforeRefusal`). The `failure_reason`
+ *                   `deleteDraftBeforeRefusal`). The `failure_reason`
  *                   token is the existing `member_not_in_good_standing`.
  *   - `undecided` — a read failed, or answered something this build does not
  *                   know. Fail CLOSED: nothing is sent, the row stays
@@ -132,30 +134,39 @@ export async function decideDispatchStanding(
 }
 
 /**
- * What an erased refusal's DELETE of the row's pre-scrub draft decided (P2).
- * `cleared` — the draft THIS ROW carries is gone, or can never be sent, so the
- * leg may refuse terminally (other copies are not this function's reach —
- * residual 8d, below); `draftOutcome` is what it
- * found (`none` = the row carried no id). `undecided` — the draft may still
- * be there: nothing is sent, the row stays `approved`, the next tick (or the
- * `reconcile-erasures` cron's cascade) tries again.
+ * What a refusal's DELETE of the row's never-handed draft decided.
+ * `cleared` — the draft THIS ROW carries is gone, or can never be sent;
+ * `draftOutcome` is what it found (`none` = the row carried no id). Other
+ * copies are not this function's reach (RoPA residual 8d, below).
+ * `undecided` — the draft may still be there. The erased arm then decides
+ * nothing (`ERASED_DRAFT_NOT_DELETED`: nothing is sent, the row stays
+ * `approved`, the next tick or the `reconcile-erasures` cascade tries again);
+ * the halted / ended arm refuses anyway and records `undeleted` (spec 140 s1).
  */
-export type ErasedDraftClearance =
+export type DraftClearance =
   | { readonly kind: 'cleared'; readonly draftOutcome: 'none' | 'deleted' | 'absent' | 'cancelled' }
-  | { readonly kind: 'undecided'; readonly message: 'member_erased_draft_not_deleted'; readonly errClass: string };
+  | { readonly kind: 'undecided'; readonly errClass: string };
+
+/** The `dispatch.server_error` message of an erased refusal whose draft DELETE did not confirm. */
+export const ERASED_DRAFT_NOT_DELETED = 'member_erased_draft_not_deleted';
 
 /**
- * Spec 139 P2 — before an erased member's row is refused, delete the Resend
- * draft it still carries. Without this, an erasure cascade that failed
- * retryably (the next dispatch tick, every 5 min, reaches the gate before
- * `reconcile-erasures`, every 30 min) would make the row terminal and leave
- * the pre-scrub subject, body and from-name at Resend on that row's draft.
+ * Before a dispatch leg refuses a row for the member's standing, delete the
+ * Resend draft the row still carries — so a terminal row no longer keeps one.
  *
- * It closes the SEND, not every Resend copy: a pre-scrub draft minted for an
- * E-Blast that is already terminal (`failed_to_dispatch`, or staff-cancelled
- * with an id), or a minted draft whose reclaim failed, is never on a row this
- * gate reaches and can stay at Resend after the erasure. It is never sent —
- * RoPA residual 8d (`docs/compliance/processing-records.md`).
+ * Spec 139 P2 (`refusal: 'erased'`): without it, an erasure cascade that
+ * failed retryably (the next dispatch tick, every 5 min, reaches the gate
+ * before `reconcile-erasures`, every 30 min) would make the row terminal and
+ * leave the pre-scrub subject, body and from-name at Resend on that row's
+ * draft. Spec 140 s1 ED4 (`refusal: 'standing'`): a halted or ENDED
+ * membership's refusal did the same — the plain `refuse` arm was a producer
+ * of terminal rows holding a draft (RoPA 8d).
+ *
+ * It closes the SEND and this row's draft, not every Resend copy: a minted
+ * draft whose reclaim failed is on no row (RoPA residual 8d; slice 2 records
+ * it). A terminal row's draft left behind (an undecided standing refusal, a
+ * probed-refused send, a budget-exhausted or stuck import) is reached by the
+ * erasure cascade's terminal-draft pass if the member is erased.
  *
  * Called only for an id the same tick's probe said was never handed to
  * `/send` (`draft`, `cancelled`, or `not_found`) — a handed id never reaches
@@ -169,30 +180,35 @@ export type ErasedDraftClearance =
  * Kept OUT of `decideDispatchStanding`, which the staff detail page reads
  * (`read-dispatch-hold.ts`): a page read must never delete anything.
  */
-export async function deleteErasedDraftBeforeRefusal(
+export async function deleteDraftBeforeRefusal(
   gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce'>,
-  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
+  ids: {
+    readonly tenantId: string;
+    readonly broadcastId: string;
+    readonly leg: 'live' | 'import';
+    readonly refusal: 'erased' | 'standing';
+  },
   draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
-): Promise<ErasedDraftClearance> {
+): Promise<DraftClearance> {
   if (draft === null || draft.resendBroadcastId === '') return { kind: 'cleared', draftOutcome: 'none' };
   const logIds = { ...ids, resendBroadcastId: draft.resendBroadcastId, probedStatus: draft.probedStatus ?? 'not_found' };
   let outcome: DeleteBroadcastOnceOutcome['kind'];
   try {
     outcome = (await gateway.deleteBroadcastOnce(draft.resendBroadcastId)).kind;
   } catch (e) {
-    logger.warn({ ...logIds, err: errKind(e) }, 'broadcasts.dispatch.erased_draft_delete_threw');
-    return { kind: 'undecided', message: 'member_erased_draft_not_deleted', errClass: 'threw' };
+    logger.warn({ ...logIds, err: errKind(e) }, 'broadcasts.dispatch.refused_draft_delete_threw');
+    return { kind: 'undecided', errClass: 'threw' };
   }
   if (outcome === 'deleted' || outcome === 'absent') {
-    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_deleted');
+    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_deleted');
     return { kind: 'cleared', draftOutcome: outcome };
   }
   if (outcome === 'forbidden' && draft.probedStatus === 'cancelled') {
-    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_cancelled_unsendable');
+    logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
     return { kind: 'cleared', draftOutcome: 'cancelled' };
   }
-  logger.warn({ ...logIds, outcome }, 'broadcasts.dispatch.erased_draft_delete_unconfirmed');
-  return { kind: 'undecided', message: 'member_erased_draft_not_deleted', errClass: outcome };
+  logger.warn({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
+  return { kind: 'undecided', errClass: outcome };
 }
 
 /**

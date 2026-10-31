@@ -327,6 +327,11 @@ export interface BroadcastsRepo {
    * Set the `resend_audience_id` + `resend_broadcast_id` columns on
    * dispatch — separate write from the status flip so the unique
    * partial index lookup works on the next webhook event.
+   *
+   * Spec 140 s1 (ED5) — only while the row is still `approved`: a stale
+   * attach on a row that left it writes nothing and throws
+   * `BroadcastConcurrentMutationError` (the row moved) or
+   * `BroadcastNotFoundError` (the row is gone).
    */
   attachResendIds(
     tx: unknown,
@@ -850,6 +855,30 @@ export interface BroadcastsRepo {
    * `replyToEmail` snapshots without a second roundtrip.
    */
   listInFlightOwnedByMember(
+    tenantId: TenantSlug,
+    memberId: MemberId,
+  ): Promise<ReadonlyArray<Broadcast>>;
+
+  /**
+   * Spec 140 s1 (ED1–ED3, #699) — the member's rows the in-flight list does
+   * NOT reach that still point at a Resend broadcast: every status outside
+   * `IN_PROGRESS_BROADCAST_STATUSES` except `sent`, with a non-empty
+   * `resend_broadcast_id`. The erasure scrub keeps that column, so such a
+   * row's draft is still findable by member id. Read by the erasure cascade's
+   * terminal-draft pass, which deletes each draft once at Resend.
+   *
+   * What lands in it, and why: `failed_to_dispatch`, `cancelled`, `rejected`
+   * and `expired_no_member_response` (closed; a draft may remain); `sending`,
+   * `partially_sent` and `partial_delivery_accepted` (handed over — the DELETE
+   * answers 403 and the probe records the copy as retained); `draft` (no tick
+   * works it). `sent` is left out: its copy is known undeletable and the F7
+   * retention sweep owns it, so probing every sent row on each erasure buys
+   * nothing.
+   *
+   * Tenant-scoped by an explicit `tenant_id` predicate inside `runInTenant`
+   * (RLS + FORCE as well).
+   */
+  listTerminalWithResendIdOwnedByMember(
     tenantId: TenantSlug,
     memberId: MemberId,
   ): Promise<ReadonlyArray<Broadcast>>;

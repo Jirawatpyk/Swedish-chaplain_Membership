@@ -994,6 +994,24 @@ export const erasureMetrics = {
    * Cardinality: `resend_outcome` ∈ {ok, partial, failed} (bounded enum);
    * `tenant` small-cardinality. NO member/email/audience id labels.
    */
+  /**
+   * Spec 140 s1 — `members_erasure_stuck_count{tenant}`: the members the
+   * `reconcile-erasures` sweep found stuck and did NOT complete this tick
+   * (still_pending + error + deferred). Every candidate has already missed its
+   * `member_erased` once, so a value that stays above 0 over several ticks is an
+   * erasure being re-driven for ever (a permanent Resend answer, a cascade that
+   * never clears). Observed on every tick, 0 included, so a cleared backlog does
+   * not freeze the last value. A lower bound when the 50-member tick cap fills.
+   */
+  stuckCount(count: number, tenantId: string): void {
+    observeTenantGauge(
+      'members_erasure_stuck_count',
+      'Members whose erasure the reconcile-erasures sweep found stuck and did not complete this tick (still_pending + error + deferred)',
+      tenantId,
+      count,
+    );
+  },
+
   subprocessorErasure(resendOutcome: 'ok' | 'partial' | 'failed', tenantId: string): void {
     safeMetric(() => {
       counter(
@@ -1893,7 +1911,14 @@ function safeMetric(fn: () => void): void {
  * (see `broadcastsMetrics.cascadeOutcome`). Exported so callers, tests,
  * and dashboard code reference one symbol — Round 2 type-design fix.
  */
-export type BroadcastsCascadeOutcomeMetric = 'cancelled' | 'concurrent_skip' | 'already_sent' | 'unexpected_error';
+export type BroadcastsCascadeOutcomeMetric =
+  | 'cancelled'
+  | 'concurrent_skip'
+  | 'already_sent'
+  | 'unexpected_error'
+  // Spec 140 s1 — the erasure cascade's terminal-draft pass.
+  | 'terminal_draft_cleared'
+  | 'terminal_copy_retained';
 
 export const broadcastsMetrics = {
   /**
@@ -3190,6 +3215,11 @@ export const broadcastsMetrics = {
    *                             E-Blast Resend had already accepted for sending
    *                             (residual 8c); the row is left, the evidence row
    *                             written. Not a benign skip: the mail went out
+   *   - `terminal_draft_cleared` → spec 140 s1: a TERMINAL row's Resend draft
+   *                             is gone (DELETE 200 or 404) — erasure mode only
+   *   - `terminal_copy_retained` → spec 140 s1: a terminal row's copy Resend will
+   *                             not delete (403 + cancelled / failed / handed);
+   *                             retained at the processor, RoPA 8d
    *   - `unexpected_error`    → tx or audit emit threw something other than
    *                             concurrent-mutation; broadcast was NOT cancelled.
    *                             Any non-zero rate = stop-the-line (signal-loss

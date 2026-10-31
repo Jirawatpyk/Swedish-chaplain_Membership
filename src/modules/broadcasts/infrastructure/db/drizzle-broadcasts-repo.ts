@@ -15,7 +15,7 @@
  * because the route handler does not yet know which tenant owns the
  * incoming `resend_broadcast_id`.
  */
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { db, runInTenant, withTenantTxOrOpen, type TenantTx } from '@/lib/db';
 import { logger } from '@/lib/logger';
@@ -506,6 +506,20 @@ function inProgressStatusPredicate(): SQL {
 }
 
 /**
+ * Spec 140 s1 — the erasure cascade's terminal-draft list: the COMPLEMENT of
+ * `inProgressStatusPredicate` minus `sent` (port docblock says what lands in
+ * it). Derived from the same Domain constant, so a new in-progress status is
+ * excluded here the day it is added.
+ */
+function terminalDraftStatusPredicate(): SQL {
+  const list = sql.join(
+    [...IN_PROGRESS_BROADCAST_STATUSES, 'sent' as const].map((s) => sql`${s}`),
+    sql`, `,
+  );
+  return sql`${broadcasts.status}::text NOT IN (${list})`;
+}
+
+/**
  * F7 retention sweep (migration 0310) — the Domain's anchor fields as the
  * `broadcasts` columns they name. A `Record` over the Domain union, so a new
  * anchor field is a compile error here until it is mapped.
@@ -980,6 +994,13 @@ export function makeDrizzleBroadcastsRepo(
           and(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
+            // Spec 140 s1 (ED5) — COMPARE-AND-SET on the status, as every
+            // sibling attach has. It had none, so a stale attach (a tick whose
+            // row was cancelled, refused or flipped to `sending` by a sibling
+            // since its lock committed) still wrote the pair onto a row that
+            // had left `approved`. Now it writes nothing: 0 rows, and the probe
+            // below names where the row went.
+            eq(broadcasts.status, 'approved'),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -987,12 +1008,13 @@ export function makeDrizzleBroadcastsRepo(
         // Round 4 F2 / L7(c) — this is the method `throwConcurrentMutation`'s
         // docblock describes, and round 3 changed its SIBLING instead.
         //
-        // Unlike `attachAudienceId` below there is no CAS predicate here: the
-        // WHERE is tenant + id, so 0 rows means the ROW IS GONE — an erasure
-        // cascade removed it between the claim query and this write, after the
-        // broadcast was already handed to Resend. `throwConcurrentMutation`
-        // probes and calls that `BroadcastNotFoundError`, which is exactly the
-        // right name for it; a bare `Error` was not a name at all.
+        // 0 rows: the row is GONE (an erasure cascade removed it between the
+        // claim query and this write, after the broadcast was already handed
+        // to Resend) → `BroadcastNotFoundError`; or, since spec 140 s1, it is
+        // no longer `approved` → `BroadcastConcurrentMutationError` carrying
+        // the status the probe read. Both callers already route both: the
+        // legacy leg's Step-4 catch, the import leg's `viaRepoConcurrency`.
+        // A bare `Error` was not a name at all.
         //
         // Two consequences downstream, both of which were dead code until now:
         //  - `buildAudienceTick`'s `viaRepoConcurrency` converts only these two
@@ -1863,6 +1885,29 @@ export function makeDrizzleBroadcastsRepo(
               eq(broadcasts.tenantId, tenantIdArg),
               eq(broadcasts.requestedByMemberId, memberId),
               inProgressStatusPredicate(),
+            ),
+          )
+          .orderBy(desc(broadcasts.createdAt), desc(broadcasts.broadcastId));
+        return rows.map((r) => rowToBroadcast(r as BroadcastRow));
+      });
+    },
+
+    /**
+     * Spec 140 s1 — the erasure cascade's terminal-draft list (port docblock).
+     * An empty id is not an id (`<> ''`), as everywhere else on this column.
+     */
+    async listTerminalWithResendIdOwnedByMember(tenantIdArg, memberId) {
+      return runInTenant(ctx, async (tx) => {
+        const rows = await tx
+          .select()
+          .from(broadcasts)
+          .where(
+            and(
+              eq(broadcasts.tenantId, tenantIdArg),
+              eq(broadcasts.requestedByMemberId, memberId),
+              terminalDraftStatusPredicate(),
+              isNotNull(broadcasts.resendBroadcastId),
+              ne(broadcasts.resendBroadcastId, ''),
             ),
           )
           .orderBy(desc(broadcasts.createdAt), desc(broadcasts.broadcastId));

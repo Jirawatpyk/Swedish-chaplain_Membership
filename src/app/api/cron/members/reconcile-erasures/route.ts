@@ -221,6 +221,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // next tick picks them up.
     deferred,
   };
+  // Spec 140 s1 — what is still stuck after this tick. Every candidate already
+  // missed its `member_erased` once, so a value that stays above 0 tick after
+  // tick is an erasure being re-driven for ever (a permanent Resend answer on
+  // a terminal draft, a cascade that never clears). Observed on every tick, 0
+  // included; a lower bound when the MAX_PER_TICK cap fills.
+  erasureMetrics.stuckCount(summary.still_pending + summary.error + deferred, tenant.slug);
+
   if (deferred > 0) {
     logger.warn(
       { tenantId: tenant.slug, deferred, budgetMs: TIME_BUDGET_MS },

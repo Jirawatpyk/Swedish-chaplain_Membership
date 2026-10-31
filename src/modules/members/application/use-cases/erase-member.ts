@@ -758,6 +758,10 @@ export async function eraseMember(
   // Spec 139 P7 — E-Blasts Resend had already accepted for sending when the
   // cascade's DELETE arrived (residual 8c); carried on `member_erased`.
   let broadcastsAlreadySentCount = 0;
+  // Spec 140 s1 — the drafts the cascade's terminal pass deleted at Resend,
+  // and the copies Resend would not delete (RoPA 8d); carried on `member_erased`.
+  let resendDraftsCleared = 0;
+  let resendCopiesRetained = 0;
 
   try {
     const r = await deps.broadcastsCascade.cancelInFlightForMember(deps.tenant, memberId, {
@@ -770,6 +774,8 @@ export async function eraseMember(
     });
     if (r.outcome === 'ok' || r.outcome === 'cascade_partial_failure') {
       broadcastsAlreadySentCount = r.alreadySentCount;
+      resendDraftsCleared = r.resendDraftsCleared;
+      resendCopiesRetained = r.resendCopiesRetained;
     }
     // Broadcasts `cascade_partial_failure` is NOT benign (unlike F8 renewals
     // below): it means `unexpectedErrorCount > 0` — one or more broadcasts hit
@@ -789,6 +795,8 @@ export async function eraseMember(
           unexpectedErrorCount: r.unexpectedErrorCount,
           // Spec 139 — derived from the evidence rows (residual 8c).
           alreadySentCount: r.alreadySentCount,
+          resendDraftsCleared: r.resendDraftsCleared,
+          resendCopiesRetained: r.resendCopiesRetained,
           cascade: 'f7_in_flight_broadcast_cancel',
         },
         'erase-member: broadcasts cascade partial — some broadcasts remain in flight',
@@ -1243,6 +1251,17 @@ export async function eraseMember(
             // from ALL of this member's evidence rows (distinct broadcasts), so
             // a re-drive's value is authoritative, not just what this run met.
             broadcasts_already_sent_count: broadcastsAlreadySentCount,
+            // Spec 140 s1 (ED1 / ED2, RoPA 8d) — the member's TERMINAL E-Blasts
+            // whose Resend draft is gone (`resend_drafts_cleared`) and whose
+            // copy Resend would not delete (`resend_copies_retained`: cancelled,
+            // failed or handed over — retained at the processor, NOT already
+            // sent). Same rule as the count above: DERIVED by the cascade on
+            // every run from every terminal row that still holds a Resend id
+            // (the rows are never rewritten), and `member_erased` is written
+            // only by a run in which every such row was decided — so the
+            // completing run's values are whole, re-drive or not.
+            resend_drafts_cleared: resendDraftsCleared,
+            resend_copies_retained: resendCopiesRetained,
             // L4 (DPO-log honesty): on a re-drive completion (alreadyErased) the
             // first pass already stamped contacts.removed_at, so this pass's
             // linked-user read is [] and the two counts above are 0/0. The flag

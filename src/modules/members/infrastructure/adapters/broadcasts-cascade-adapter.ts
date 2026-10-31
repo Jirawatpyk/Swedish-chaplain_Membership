@@ -27,6 +27,8 @@ export const noopBroadcastsCascadeAdapter: BroadcastsCascadePort = {
       cancelledCount: 0,
       skippedConcurrentCount: 0,
       alreadySentCount: 0,
+      resendDraftsCleared: 0,
+      resendCopiesRetained: 0,
     };
   },
 };
@@ -75,6 +77,8 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
         skippedConcurrentCount: result.value.skippedConcurrentCount,
         unexpectedErrorCount: result.value.unexpectedErrorCount,
         alreadySentCount: result.value.alreadySentCount,
+        resendDraftsCleared: result.value.resendDraftsCleared,
+        resendCopiesRetained: result.value.resendCopiesRetained,
       };
     }
     return {
@@ -82,6 +86,8 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
       cancelledCount: result.value.cancelledCount,
       skippedConcurrentCount: result.value.skippedConcurrentCount,
       alreadySentCount: result.value.alreadySentCount,
+      resendDraftsCleared: result.value.resendDraftsCleared,
+      resendCopiesRetained: result.value.resendCopiesRetained,
     };
   },
 };

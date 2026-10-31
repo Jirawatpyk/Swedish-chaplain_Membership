@@ -66,6 +66,10 @@ export interface BroadcastsCascadePort {
    * it deliver. `'delete_then_cancel'` (erasure only): F7 deletes the draft
    * at Resend under the row lock, then cancels; an E-Blast Resend had
    * already accepted is counted in `alreadySentCount` (residual 8c).
+   * Spec 140 s1 — the same mode also deletes the drafts the member's TERMINAL
+   * rows still point to: `resendDraftsCleared` counts those gone at Resend,
+   * `resendCopiesRetained` those Resend would not delete (RoPA 8d). Both are
+   * derived per run and are 0 outside erasure.
    */
   cancelInFlightForMember(
     tenant: TenantContext,
@@ -124,6 +128,10 @@ export type CascadeResult =
       readonly skippedConcurrentCount: number;
       /** Spec 139 P7 — E-Blasts Resend had already accepted when the erasure's DELETE arrived (0 outside erasure). */
       readonly alreadySentCount: number;
+      /** Spec 140 s1 — terminal rows whose Resend draft is gone after this run (0 outside erasure). */
+      readonly resendDraftsCleared: number;
+      /** Spec 140 s1 — terminal rows whose Resend copy Resend would not delete (0 outside erasure). */
+      readonly resendCopiesRetained: number;
     }
   | {
       readonly outcome: 'cascade_partial_failure';
@@ -131,5 +139,7 @@ export type CascadeResult =
       readonly skippedConcurrentCount: number;
       readonly unexpectedErrorCount: number;
       readonly alreadySentCount: number;
+      readonly resendDraftsCleared: number;
+      readonly resendCopiesRetained: number;
     }
   | { readonly outcome: 'cascade_failed' };

@@ -244,6 +244,9 @@ function makeBroadcastsRepo(counters: CallCounters): BroadcastsRepo {
     async listInFlightOwnedByMember() {
       return [];
     },
+    async listTerminalWithResendIdOwnedByMember() {
+      return [];
+    },
     async scrubContentForMemberInTx() {
       return { scrubbedCount: 0 };
     },
