@@ -197,13 +197,23 @@ export type DeleteBroadcastOnceOutcome =
  * throws:
  *
  *   - `present` — Resend has the resource; `status` is `normaliseStatus`'s
- *     reading (an unmeasured value is `'unknown'`, never invented);
+ *     reading (an unmeasured value is `'unknown'`, never invented), plus
+ *     `'failed'`, which only THIS reader names (spec 140 s1, below);
  *   - `not_found` (404, 410);
  *   - `retryable` — a 5xx, a 429, a transport failure or the 10 s timeout;
  *   - `other` — any other status, or a 2xx body without a status string.
+ *
+ * Spec 140 s1 — `failed` is MEASURED (2026-10-29: deleting the audience of a
+ * `queued` broadcast turns it `failed`, no mail). The erasure cascade's
+ * terminal-draft pass is the only caller that needs it: after a 403 it records
+ * such a copy as retained at Resend. It is added HERE, not to
+ * `RetrievedBroadcastResource['status']`, because that union is read by both
+ * dispatch legs and the live `reconcile-stuck-sending`, where `failed` must
+ * keep reading `unknown` (refused, fail closed). The in-flight arm of the
+ * cascade still treats `failed` as unexpected.
  */
 export type RetrieveBroadcastOnceOutcome =
-  | { readonly kind: 'present'; readonly status: RetrievedBroadcastResource['status'] }
+  | { readonly kind: 'present'; readonly status: RetrievedBroadcastResource['status'] | 'failed' }
   | { readonly kind: 'not_found' }
   | { readonly kind: 'retryable' }
   | { readonly kind: 'other' };
@@ -453,7 +463,9 @@ export interface BroadcastsGatewayPort {
    * 403 (MEASURED 2026-10-29). `sending` is INFERRED from that message, not
    * caught — Resend moved queued → sent without showing it.
    *
-   * **Never call this on an id read from the row** — with TWO exceptions. A
+   * **Never call this on an id read from the row** — with the exceptions below
+   * (two here; a third, which goes through {@link deleteBroadcastOnce}, is the
+   * erasure cascade's terminal-draft pass, spec 140 s1). A
    * persisted id is the resource a send may already have gone out on, so on
    * any live path only an id this tick minted and failed to persist is safe to
    * remove. The first exception is the import leg's restart
@@ -490,13 +502,19 @@ export interface BroadcastsGatewayPort {
    * `deleteBroadcast` can spend. Never throws: every failure is an arm of
    * {@link DeleteBroadcastOnceOutcome}.
    *
-   * The second caller is the dispatch legs' erased refusal (P2), which deletes
-   * a pre-scrub draft the probe said was never handed to `/send` before it
-   * refuses the row. Both are exceptions to `deleteBroadcast`'s "never on an
-   * id read from the row" rule for the same reason: Resend arbitrates — DELETE
-   * answers 200 only on a draft or scheduled broadcast, and `/send` works only
-   * on a draft — so a DELETE that lands first makes any later `/send` 404, and
-   * a send that landed first makes the DELETE 403.
+   * The second caller is the dispatch legs' standing refusal (spec 139 P2 for
+   * an erased member, spec 140 s1 ED4 for a halted or ended membership), which
+   * deletes a draft the probe said was never handed to `/send` before it
+   * refuses the row (`deleteDraftBeforeRefusal`). The third is the erasure
+   * cascade's terminal-draft pass (spec 140 s1): it calls this on the id a
+   * TERMINAL row of the erased member still holds (outside the in-progress
+   * set, not `sent`), with no row lock — no dispatch tick works a terminal row
+   * — and probes a 403 once with {@link retrieveBroadcastOnce}. All three are
+   * exceptions to `deleteBroadcast`'s "never on an id read from the row" rule
+   * for the same reason: Resend arbitrates — DELETE answers 200 only on a
+   * draft or scheduled broadcast, and `/send` works only on a draft — so a
+   * DELETE that lands first makes any later `/send` 404, and a send that
+   * landed first makes the DELETE 403.
    */
   deleteBroadcastOnce(broadcastId: string): Promise<DeleteBroadcastOnceOutcome>;
 

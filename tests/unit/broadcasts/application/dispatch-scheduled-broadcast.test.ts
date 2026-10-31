@@ -366,6 +366,7 @@ function makeRepo(opts: RepoOpts): {
         return { prunedDrafts: [] };
       },
     async listInFlightOwnedByMember() { return []; },
+    async listTerminalWithResendIdOwnedByMember() { return []; },
     async scrubContentForMemberInTx() { return { scrubbedCount: 0 }; },
     async tombstoneDeliveriesForMemberInTx() { return { tombstonedCount: 0 }; },
     async listMemberResendAudienceContactsInTx() { return []; },
@@ -5134,6 +5135,116 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
       expect(gw.sendCalls).toHaveLength(0);
     },
   );
+
+  /**
+   * Spec 140 s1 (ED4) — a halted or ENDED refusal deletes the never-handed
+   * draft the row carries BEFORE the terminal write, as the erased refusal
+   * does, so a terminal row no longer keeps a draft at Resend. Unlike the
+   * erased arm, an undecided DELETE does not stall the refusal: a halted
+   * member's row left `approved` could be sent by a later tick once the halt
+   * is lifted, and a permanent Resend answer would hold it there for ever. The
+   * outcome is recorded instead; the erasure cascade's terminal pass reaches
+   * a draft left behind.
+   */
+  describe('spec 140 s1 ED4 — a standing refusal deletes the row\'s draft before the terminal write', () => {
+    const withDraft = (): Broadcast => ({ ...makeBroadcast('approved'), resendAudienceId: 'aud-prev', resendBroadcastId: 'rb-prev-draft' });
+
+    it.each([
+      ['halted', { halted: ['m-1'] }, 'member_halted'],
+      ['terminated', { access: 'terminated' }, 'member_not_in_good_standing'],
+    ] as const)('a %s member: ONE deleteBroadcastOnce on the row\'s id, then failed_to_dispatch (resendDraftOutcome deleted)', async (_label, opts, reason) => {
+      const { audit, repo, gw, deps } = standingDeps(makeFakeSendStanding(opts), withDraft(), { retrieveStatus: 'draft' });
+      const transitionsAtDelete: number[] = [];
+      const del = vi.spyOn(gw.port, 'deleteBroadcastOnce').mockImplementation(async () => {
+        transitionsAtDelete.push(repo.transitions.length);
+        return { kind: 'deleted' };
+      });
+
+      const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+      expect(result).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason } });
+      expect(del).toHaveBeenCalledTimes(1);
+      expect(del).toHaveBeenCalledWith('rb-prev-draft');
+      // Before the terminal write, not after it.
+      expect(transitionsAtDelete).toEqual([0]);
+      expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+      expect(audit.emits[0]).toMatchObject({ eventType: 'broadcast_failed_to_dispatch', payload: { resendDraftOutcome: 'deleted' } });
+      expect(gw.sendCalls).toHaveLength(0);
+    });
+
+    it.each(['retryable', 'other', 'forbidden'] as const)(
+      'the DELETE answers %s → still refused terminally (never left approved), resendDraftOutcome undeleted',
+      async (outcome) => {
+        const { audit, repo, gw, deps } = standingDeps(makeFakeSendStanding({ halted: ['m-1'] }), withDraft(), { retrieveStatus: 'draft' });
+        vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: outcome });
+        // After a 403 the probe still reads a draft: not a sibling's send.
+        vi.spyOn(gw.port, 'retrieveBroadcastOnce').mockResolvedValue({ kind: 'present', status: 'draft' });
+
+        const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+        expect(result).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason: 'member_halted' } });
+        expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
+        // Review round 1 — the closed class rides with the outcome, never provider text.
+        // Review round 2 — after a 403 the class is what the probe read (`draft`).
+        expect(audit.emits[0]?.payload).toMatchObject({ resendDraftOutcome: 'undeleted', resendDraftErrClass: outcome === 'forbidden' ? 'probe_draft' : outcome });
+      },
+    );
+
+    // Review round 1 (reliability M-1) — a 403 whose probe reads handed is a
+    // sibling tick that sent the draft between this tick's probe and its
+    // DELETE: the mail is out, so no failed_to_dispatch and no member email.
+    it.each(['queued', 'sending', 'sent'] as const)(
+      'the DELETE answers forbidden and the probe reads %s (a sibling sent it) → a concurrent skip: no terminal write, no email',
+      async (status) => {
+        const warnSpy = vi.spyOn(logger, 'warn');
+        const { audit, repo, gw, email, deps } = standingDeps(makeFakeSendStanding({ halted: ['m-1'] }), withDraft(), { retrieveStatus: 'draft' });
+        vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: 'forbidden' });
+        vi.spyOn(gw.port, 'retrieveBroadcastOnce').mockResolvedValue({ kind: 'present', status });
+
+        const result = await dispatchScheduledBroadcast(deps, baseInput);
+
+        expect(result).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+        expect(repo.transitions).toEqual([]);
+        expect(audit.emits).toEqual([]);
+        expect(email.memberCalls).toEqual([]);
+        expect(warnSpy.mock.calls.map((c) => c[1])).toContain('broadcasts.dispatch.refused_draft_handed_by_sibling');
+      },
+    );
+
+    // Review round 5 (LOW) — an erased refusal whose DELETE stays undecided
+    // logs ONE line (the leg's), not the shared helper's as well.
+    it('an ERASED refusal whose DELETE answers retryable logs one refused_draft line, refusal erased', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const { gw, deps } = standingDeps(makeFakeSendStanding({ erased: true }), withDraft(), { retrieveStatus: 'draft' });
+      vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: 'retryable' });
+
+      await dispatchScheduledBroadcast(deps, baseInput);
+
+      const lines = warnSpy.mock.calls.filter((c) => String(c[1]).startsWith('broadcasts.dispatch.refused_draft'));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toEqual([
+        expect.objectContaining({
+          refusal: 'erased',
+          leg: 'live',
+          resendBroadcastId: 'rb-prev-draft',
+          probedStatus: 'draft',
+          outcome: 'retryable',
+          errClass: 'retryable',
+        }),
+        'broadcasts.dispatch.refused_draft_delete_unconfirmed',
+      ]);
+    });
+
+    it('a row with no Resend id → no Resend call; resendDraftOutcome none', async () => {
+      const { audit, gw, deps } = standingDeps(makeFakeSendStanding({ halted: ['m-1'] }));
+      const del = vi.spyOn(gw.port, 'deleteBroadcastOnce');
+
+      await dispatchScheduledBroadcast(deps, baseInput);
+
+      expect(del).not.toHaveBeenCalled();
+      expect(audit.emits[0]?.payload).toMatchObject({ resendDraftOutcome: 'none' });
+    });
+  });
 
   it.each([
     ['the halt read throws', { haltReadThrows: true }, 'Error'],

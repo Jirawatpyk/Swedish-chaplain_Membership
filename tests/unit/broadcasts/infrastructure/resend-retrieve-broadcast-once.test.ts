@@ -69,7 +69,11 @@ describe('resendBroadcastsGateway.retrieveBroadcastOnce (spec 139 review round 1
     // cancelled through POST /broadcasts/{id}/cancel answers `canceled` — ONE L,
     // as Resend's docs spell it. It is the same state as ours.
     ['canceled', 'cancelled'],
-    ['failed', 'unknown'],
+    // Spec 140 s1 — MEASURED 2026-10-29: deleting the audience of a queued
+    // broadcast turns it `failed`, no mail. This reader (and only this one —
+    // `retrieveBroadcast` still reads it `unknown`) names it, so the erasure
+    // cascade can record such a copy as retained at Resend.
+    ['failed', 'failed'],
     ['scheduled', 'unknown'],
   ] as const)('200 with status %s → present %s: one GET /broadcasts/{id}, authorised, carrying an abort signal', async (raw, status) => {
     stubFetch(() => json(200, { object: 'broadcast', id: BROADCAST_ID, status: raw }));

@@ -218,7 +218,17 @@ export type EraseMemberDeps = {
   clock: ClockPort;
 };
 
-export type EraseMemberMeta = { actorUserId: string; requestId: string };
+export type EraseMemberMeta = {
+  actorUserId: string;
+  requestId: string;
+  /**
+   * Spec 140 s1 review round 1 (reliability H-1) — when the caller's function
+   * must be done (the erase route and `reconcile-erasures` set it inside their
+   * 300 s `maxDuration`). Bounds the broadcasts cascade's terminal-draft pass;
+   * what it does not reach withholds `member_erased` and is re-driven.
+   */
+  deadlineAt?: Date;
+};
 
 class EraseNotFoundError extends Error {
   constructor() {
@@ -743,6 +753,67 @@ export async function eraseMember(
     return err({ type: 'server_error', message: 'erase scrub failed' });
   }
 
+  // COMP-1 US3-C — best-effort sub-processor erasure propagation. NON-BLOCKING
+  // (does NOT flip allCascadesClean): the Resend-removal inputs were captured
+  // only in the first-pass atomic tx and are destroyed by this same erasure, so
+  // a US2d reconciler re-drive re-captures an EMPTY set and cannot retry. The
+  // outcome is recorded in `subprocessor_erasure_propagated` + the metric for
+  // the DPO alert/runbook. member_erased reflects the controller's
+  // authoritative-copy erasure; sub-processor propagation is tracked separately.
+  // The adapter never throws; a defensive catch guards only the audit-emit.
+  //
+  // Spec 140 s1 review round 2 (code-review #1, reliability N1) — it runs
+  // FIRST, before every post-commit cascade: it reads only the pairs the
+  // atomic tx captured (no cascade's outcome), it does not gate
+  // `member_erased`, and it is the one step a re-drive cannot repeat — so
+  // the broadcasts cascade's terminal pass, bounded by the route's deadline,
+  // can never leave it starved of the function's remaining time.
+  try {
+    const sub = await deps.subprocessorErasure.propagate({
+      memberId,
+      reason,
+      audienceContacts: capturedSubprocessorPairs,
+      tenantSlug: deps.tenant.slug,
+      requestId: meta.requestId,
+    });
+    // Emit the metric for EVERY outcome (ok/partial/failed) so a partial/failed
+    // is never silently lost (it pages the DPO runbook).
+    erasureMetrics.subprocessorErasure(sub.resendOutcome, deps.tenant.slug);
+    await runInTenant(deps.tenant, async (tx) => {
+      const done = await deps.audit.recordInTx(tx, deps.tenant, {
+        type: 'subprocessor_erasure_propagated',
+        actorUserId: meta.actorUserId,
+        requestId: meta.requestId,
+        summary: `subprocessor_erasure_propagated ${memberId}`,
+        payload: {
+          member_id: memberId,
+          reason,
+          resend_outcome: sub.resendOutcome,
+          resend_contacts_removed_count: sub.resendContactsRemoved,
+          resend_contacts_already_absent_count: sub.resendContactsAlreadyAbsent,
+          resend_contacts_failed_count: sub.resendContactsFailed,
+          stripe_outcome: sub.stripeOutcome,
+        } satisfies SubprocessorErasurePropagatedAudit,
+      });
+      if (!done.ok) throw new Error('subprocessor_audit_failed');
+    });
+  } catch (auditErr) {
+    // The audit-emit (not the propagation) failed → log; do NOT block
+    // member_erased (the propagation outcome is lost from the trail but the
+    // erasure is authoritative; the metric above still fired). Named auditErr
+    // (not cascadeErr): propagate() is contractually never-throws, so only the
+    // recordInTx runInTenant above can reach this catch.
+    logger.error(
+      {
+        err: errKind(auditErr),
+        memberId,
+        requestId: meta.requestId,
+        cascade: 'subprocessor_erasure',
+      },
+      'erase-member: subprocessor cascade audit failed',
+    );
+  }
+
   // Idempotency / resumability (design §6): the scrub is repeatable (stable
   // sentinels), the cascades are individually idempotent, and member_erased is
   // emitted ONLY on a fully-clean run — so a partial erasure is completed by a
@@ -758,6 +829,10 @@ export async function eraseMember(
   // Spec 139 P7 — E-Blasts Resend had already accepted for sending when the
   // cascade's DELETE arrived (residual 8c); carried on `member_erased`.
   let broadcastsAlreadySentCount = 0;
+  // Spec 140 s1 — the drafts the cascade's terminal pass deleted at Resend,
+  // and the copies Resend would not delete (RoPA 8d); carried on `member_erased`.
+  let resendDraftsCleared = 0;
+  let resendCopiesRetained = 0;
 
   try {
     const r = await deps.broadcastsCascade.cancelInFlightForMember(deps.tenant, memberId, {
@@ -767,9 +842,12 @@ export async function eraseMember(
       // Spec 139 DE2 — erasure (and only erasure) deletes a minted-but-unsent
       // draft at Resend and cancels the row; archive keeps the skip (DE4).
       onDispatchBegun: 'delete_then_cancel',
+      ...(meta.deadlineAt !== undefined ? { deadlineAt: meta.deadlineAt } : {}),
     });
     if (r.outcome === 'ok' || r.outcome === 'cascade_partial_failure') {
       broadcastsAlreadySentCount = r.alreadySentCount;
+      resendDraftsCleared = r.resendDraftsCleared;
+      resendCopiesRetained = r.resendCopiesRetained;
     }
     // Broadcasts `cascade_partial_failure` is NOT benign (unlike F8 renewals
     // below): it means `unexpectedErrorCount > 0` — one or more broadcasts hit
@@ -779,20 +857,28 @@ export async function eraseMember(
     // broadcasts are stuck, not just the bare outcome label.
     if (r.outcome === 'cascade_partial_failure') {
       allCascadesClean = false;
-      logger.error(
-        {
-          memberId,
-          requestId: meta.requestId,
-          outcome: r.outcome,
-          cancelledCount: r.cancelledCount,
-          skippedConcurrentCount: r.skippedConcurrentCount,
-          unexpectedErrorCount: r.unexpectedErrorCount,
-          // Spec 139 — derived from the evidence rows (residual 8c).
-          alreadySentCount: r.alreadySentCount,
-          cascade: 'f7_in_flight_broadcast_cancel',
-        },
-        'erase-member: broadcasts cascade partial — some broadcasts remain in flight',
-      );
+      const fields = {
+        memberId,
+        requestId: meta.requestId,
+        outcome: r.outcome,
+        cancelledCount: r.cancelledCount,
+        skippedConcurrentCount: r.skippedConcurrentCount,
+        unexpectedErrorCount: r.unexpectedErrorCount,
+        // Spec 139 — derived from the evidence rows (residual 8c).
+        alreadySentCount: r.alreadySentCount,
+        resendDraftsCleared: r.resendDraftsCleared,
+        resendCopiesRetained: r.resendCopiesRetained,
+        deferredCount: r.deferredCount,
+        cascade: 'f7_in_flight_broadcast_cancel',
+      };
+      // Spec 140 s1 review round 3 (code-review #3) — when every unexpected row
+      // is one the deadline deferred, nothing is stuck in flight: the re-drive
+      // simply continues. Warn, not error; member_erased is still withheld.
+      if (r.unexpectedErrorCount === r.deferredCount) {
+        logger.warn(fields, 'erase-member: broadcasts cascade deferred by the deadline; the re-drive continues');
+      } else {
+        logger.error(fields, 'erase-member: broadcasts cascade partial — some broadcasts remain in flight');
+      }
     } else if (r.outcome !== 'ok') {
       allCascadesClean = false;
       logger.error(
@@ -1157,60 +1243,6 @@ export async function eraseMember(
     );
   }
 
-  // COMP-1 US3-C — best-effort sub-processor erasure propagation. NON-BLOCKING
-  // (does NOT flip allCascadesClean): the Resend-removal inputs were captured
-  // only in the first-pass atomic tx and are destroyed by this same erasure, so
-  // a US2d reconciler re-drive re-captures an EMPTY set and cannot retry. The
-  // outcome is recorded in `subprocessor_erasure_propagated` + the metric for
-  // the DPO alert/runbook. member_erased reflects the controller's
-  // authoritative-copy erasure; sub-processor propagation is tracked separately.
-  // The adapter never throws; a defensive catch guards only the audit-emit.
-  try {
-    const sub = await deps.subprocessorErasure.propagate({
-      memberId,
-      reason,
-      audienceContacts: capturedSubprocessorPairs,
-      tenantSlug: deps.tenant.slug,
-      requestId: meta.requestId,
-    });
-    // Emit the metric for EVERY outcome (ok/partial/failed) so a partial/failed
-    // is never silently lost (it pages the DPO runbook).
-    erasureMetrics.subprocessorErasure(sub.resendOutcome, deps.tenant.slug);
-    await runInTenant(deps.tenant, async (tx) => {
-      const done = await deps.audit.recordInTx(tx, deps.tenant, {
-        type: 'subprocessor_erasure_propagated',
-        actorUserId: meta.actorUserId,
-        requestId: meta.requestId,
-        summary: `subprocessor_erasure_propagated ${memberId}`,
-        payload: {
-          member_id: memberId,
-          reason,
-          resend_outcome: sub.resendOutcome,
-          resend_contacts_removed_count: sub.resendContactsRemoved,
-          resend_contacts_already_absent_count: sub.resendContactsAlreadyAbsent,
-          resend_contacts_failed_count: sub.resendContactsFailed,
-          stripe_outcome: sub.stripeOutcome,
-        } satisfies SubprocessorErasurePropagatedAudit,
-      });
-      if (!done.ok) throw new Error('subprocessor_audit_failed');
-    });
-  } catch (auditErr) {
-    // The audit-emit (not the propagation) failed → log; do NOT block
-    // member_erased (the propagation outcome is lost from the trail but the
-    // erasure is authoritative; the metric above still fired). Named auditErr
-    // (not cascadeErr): propagate() is contractually never-throws, so only the
-    // recordInTx runInTenant above can reach this catch.
-    logger.error(
-      {
-        err: errKind(auditErr),
-        memberId,
-        requestId: meta.requestId,
-        cascade: 'subprocessor_erasure',
-      },
-      'erase-member: subprocessor cascade audit failed',
-    );
-  }
-
   // 4. Completion proof — emit member_erased ONLY when every cascade is clean.
   //    A partial run leaves erased_at set with NO member_erased; the US2
   //    reconciliation sweep re-drives the remainder and emits it then.
@@ -1243,6 +1275,19 @@ export async function eraseMember(
             // from ALL of this member's evidence rows (distinct broadcasts), so
             // a re-drive's value is authoritative, not just what this run met.
             broadcasts_already_sent_count: broadcastsAlreadySentCount,
+            // Spec 140 s1 (ED1 / ED2, RoPA 8d) — the member's TERMINAL E-Blasts
+            // whose Resend draft is gone (`resend_drafts_cleared`) and whose
+            // UNSENT copy Resend would not delete (`resend_copies_retained`:
+            // cancelled or failed only — retained at the processor). A copy
+            // Resend had already handed over is NOT here: it is 8c evidence,
+            // counted in `broadcasts_already_sent_count` above (review round 1).
+            // Same rule as the count above: DERIVED by the cascade on
+            // every run from every terminal row that still holds a Resend id
+            // (the rows are never rewritten), and `member_erased` is written
+            // only by a run in which every such row was decided — so the
+            // completing run's values are whole, re-drive or not.
+            resend_drafts_cleared: resendDraftsCleared,
+            resend_copies_retained: resendCopiesRetained,
             // L4 (DPO-log honesty): on a re-drive completion (alreadyErased) the
             // first pass already stamped contacts.removed_at, so this pass's
             // linked-user read is [] and the two counts above are 0/0. The flag

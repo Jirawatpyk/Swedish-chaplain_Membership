@@ -37,6 +37,7 @@ import {
   reserveIdempotencyRecord,
   hashRequestBody,
 } from '@/lib/idempotency';
+import { erasureCascadeDeadline } from '@/lib/erasure-cascade-deadline';
 import { runIdempotent } from '@/lib/idempotency-run';
 import { logger } from '@/lib/logger';
 import {
@@ -53,6 +54,8 @@ import { buildEraseMemberDeps } from '@/modules/members/members-deps';
  * across up to two bounded Resend calls (≈ 20 s per row).
  */
 export const maxDuration = 300;
+// Spec 140 s1 — the broadcasts cascade's deadline is derived from it
+// (`erasureCascadeDeadline`, shared with reconcile-erasures).
 
 const paramsSchema = z.object({ memberId: z.string().uuid() });
 
@@ -72,6 +75,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ memberId: string }> },
 ): Promise<NextResponse> {
+  const startedAt = Date.now();
   const ctx = await requireApiPermission(request, 'members.erasure');
   if ('response' in ctx) return ctx.response;
 
@@ -173,7 +177,7 @@ export async function POST(
     const result = await eraseMember(
       memberId,
       parsedBody.data,
-      { actorUserId: ctx.current.user.id, requestId: ctx.requestId },
+      { actorUserId: ctx.current.user.id, requestId: ctx.requestId, deadlineAt: erasureCascadeDeadline(startedAt, maxDuration) },
       deps,
     );
 
