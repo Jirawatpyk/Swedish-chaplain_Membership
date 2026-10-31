@@ -264,3 +264,15 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
 - *Consequence*:
   - Updated: `review-and-ship` § 1 and § 2 check 1, `feature-flow` §§ 4, 5 and 7, `docs/workflow.md` steps 4, 5 and 7, the `run-chamber-os` rules, and `spec-compliance-auditor`.
   - D-015 still stands: Claude never waives a High or Medium. D-043 adds the carry closure between slices of one spec, and gives the maintainer, not Claude, the re-grade at the round cap.
+
+**D-044 — Verify is `/verify`, run by the maintainer; Claude hands over the command and never drives the change by hand** (2026-10-31)
+- *Context*:
+  - `docs/workflow.md` step 6 said the user "may also run `/verify`". In practice Claude drove every change itself, with :3400, the browser and live provider probes, and reported that as Verify. Nothing ever put a `/verify` command in front of the maintainer.
+  - On spec 140 slice 1 (#713), Claude's own Verify ran on a commit that six review rounds later replaced. It also had to be redone by hand.
+  - MEASURED 2026-10-31: the Skill tool refuses `verify` with `disable-model-invocation` and says "Do not replicate this skill's workflow by other means".
+- *Decision* (the maintainer, 31 Oct 2026: "ถ้ารันไม่ได้ ให้ส่งคำสั่งให้ผมรันให้ … ห้ามรันมือเอง" — "if you can't run it, send me the command and I'll run it … don't run it manually yourself"; then "ทางแรก", the first option):
+  - Verify is `/verify`, run by the maintainer. When Verify is reached, Claude stops and hands over the exact command, ready to paste: the PR, the worktree, the Done-when IDs, the persona, a wrong-input probe, the UI probes, and the safety limits.
+  - Claude does not drive the change by hand before `/verify` or in its place. It still prepares the branch and runs the e2e specs, which are automated tests.
+  - A change that no user or operator drives gets no `/verify`. That covers docs, a static gate and test-only changes. The PR says so, and the tests are the evidence.
+  - After review fixes on the driven path, Claude hands over a new command.
+- *Consequence*: `feature-flow` §§ 6–7, `docs/workflow.md` step 6 (with its who-does-what row and the DoD), the PR template, `run-chamber-os`, `review-and-ship` § 1 and `spec-compliance-auditor`. The auditor reports a Claude drive presented as Verify as a High finding. `feature-flow` § 6 is the one owner of the Verify rule. The other files link to it, and `check:process-docs` fails when one of its sentences is restated elsewhere (the same mechanism D-043 uses for the review rules).

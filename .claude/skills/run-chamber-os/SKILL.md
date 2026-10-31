@@ -1,6 +1,6 @@
 ---
 name: run-chamber-os
-description: The recipe for running a Chamber-OS branch locally so it can be verified — a worktree dev server on :3400 against the Neon dev branch, sign-in personas, Playwright attached to it, and the viewport/font/locale probes. The launch recipe /run and /verify follow; use at feature-flow step 6 or whenever a change must be watched working in the running app.
+description: The recipe for running a Chamber-OS branch locally so it can be verified — a worktree dev server on :3400 against the Neon dev branch, sign-in personas, Playwright attached to it, and the viewport/font/locale probes. The launch recipe /run and /verify follow; use at feature-flow step 6 or whenever a change must be watched working in the running app. Verify itself is the maintainer's /verify (feature-flow § 6, D-044); Claude uses this recipe to prepare a branch and run e2e specs, not to drive a change by hand.
 ---
 
 # Run Chamber-OS for verification
@@ -49,7 +49,7 @@ curl -s -o /dev/null -w '%{http_code}\n' --max-time 180 http://localhost:3400/ad
 
 ## 4. Drive it
 
-**Browser:** `/run` or the Browser pane (`mcp__Claude_Browser__*`), at `http://localhost:3400`. `/verify` runs only when the user invokes it. Prefer `read_page` / `get_page_text` over screenshots for reading. Take a screenshot as evidence.
+**Browser:** `/run` or the Browser pane (`mcp__Claude_Browser__*`), at `http://localhost:3400`. Verify itself is the maintainer's `/verify` (D-044). Claude uses this skill to prepare a branch and run e2e specs, never to drive a change by hand in place of `/verify`. Prefer `read_page` / `get_page_text` over screenshots for reading. Take a screenshot as evidence.
 
 **e2e against the running server:**
 ```bash
@@ -60,7 +60,7 @@ E2E_BASE_URL=http://localhost:3400 pnpm exec playwright test --config=playwright
 - Read `error-context.md` before the next run wipes it.
 - A red is real only if it also fails solo, on a cold server. If it is also red on `main`, report it as pre-existing, with that evidence.
 
-**Drive every changed screen, route or cron** in the browser, including one wrong-input probe (an invalid value, a missing field, a role that must be refused).
+**`/verify` drives every changed screen, route or cron** (run by the maintainer, `feature-flow` § 6) in the browser, including one wrong-input probe (an invalid value, a missing field, a role that must be refused).
 
 **A one-off probe:** write a throwaway spec in the scratchpad, copy it into `tests/e2e/` **as `zz-probe-<name>.spec.ts`** for the run, delete it afterwards, and never commit it. That prefix is gitignored and ESLint-ignored, so a `pnpm check` running meanwhile cannot trip over it. Have it print one JSON line (`console.log('PROBE ' + JSON.stringify(out))`) and parse that line.
 

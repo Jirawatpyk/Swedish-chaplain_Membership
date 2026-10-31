@@ -132,6 +132,11 @@ jobs:
       - name: F7.1a template seed matches its source
         run: pnpm check:template-seed
 
+      # D-043 (retro 2026-10-31) — the review rules have one owner,
+      # review-and-ship § 1; a restatement elsewhere fails.
+      - name: Review rules live only in review-and-ship
+        run: pnpm check:process-docs
+
       # Retro 2026-10-29 (spec 138) — Principle II's commit order: a fix:/feat:
       # commit changing application/domain code needs an earlier test: commit for
       # its module. PR-only: a squash merge leaves one commit on main. The
