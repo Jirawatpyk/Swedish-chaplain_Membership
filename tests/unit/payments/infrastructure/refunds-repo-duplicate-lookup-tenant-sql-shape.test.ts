@@ -39,6 +39,9 @@ describe('refunds repo — findRecentSameAmountSucceeded is tenant-fenced (#49)'
     expect(found).toBeNull();
     expect(rec.statements).toHaveLength(1);
     expect(rec.statements[0]!.sql).toMatch(/from "refunds"/i);
+    // Financial review L1: a refund that sat pending, then settled in the
+    // window, counts too.
+    expect(rec.statements[0]!.sql).toMatch(/"completed_at" >= \$\d+/i);
     const { blind, violations } = gateViolations(rec.statements, tenantScopedTables());
     expect(blind).toEqual([]);
     expect(violations).toEqual([]);

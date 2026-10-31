@@ -624,7 +624,11 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     expect(error['code']).toBe('possible_duplicate_refund');
     expect(error['duplicateInitiatedAt']).toBe('2026-05-15T01:00:00.000Z');
     expect(error['messageThai']).toBeDefined();
-    expect(JSON.stringify(error)).not.toContain('re_');
+    // PCI review L1: an allow-list, so a leaked id or reason fails here.
+    expect(Object.keys(error).sort()).toEqual(
+      ['code', 'duplicateInitiatedAt', 'message', 'messageThai'].sort(),
+    );
+    expect(JSON.stringify(error)).not.toContain('rfnd_earlier');
   });
 
   it("the route asks the use case to check for a duplicate ('check')", async () => {
