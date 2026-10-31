@@ -10,6 +10,8 @@ import {
   findProcessDocViolations,
   REVIEW_RULE_PHRASES,
   REVIEW_RULES_OWNER,
+  RULE_SETS,
+  VERIFY_RULES_OWNER,
   type DocFile,
 } from '../../../scripts/lib/process-docs';
 
@@ -79,6 +81,28 @@ describe('findProcessDocViolations', () => {
       '  - size L, or any sensitive surface: the ≥ 2 full rounds above plus at most 2 targeted rounds.',
     ].join('\n'),
   };
+
+  it('the Verify rule (D-044) has its own owner, feature-flow § 6, and a restatement elsewhere fails', () => {
+    const verify = RULE_SETS.find((r) => r.owner === VERIFY_RULES_OWNER)!;
+    expect(verify).toBeDefined();
+    const ownerFiles: DocFile[] = RULE_SETS.map((r) => ({ path: r.owner, text: r.phrases.join('\n') }));
+    const v = findProcessDocViolations([
+      ...ownerFiles,
+      // As docs/workflow.md step 6 read at 53b748fac, before the dedupe.
+      { path: 'docs/workflow.md', text: '| **6. Verify** | `/verify`, run by the maintainer, watches the change work through its real surface (D-044). Claude cannot invoke `/verify`, and it never drives the change by hand in its place.' },
+    ]);
+    expect(v.missingFromOwner).toEqual([]);
+    expect(v.restated.map((r) => r.path)).toContain('docs/workflow.md');
+  });
+
+  it('a Verify phrase missing from feature-flow § 6 fails, so that rule set cannot go inert either', () => {
+    const files: DocFile[] = RULE_SETS.map((r) => ({
+      path: r.owner,
+      text: r.owner === VERIFY_RULES_OWNER ? '' : r.phrases.join('\n'),
+    }));
+    const v = findProcessDocViolations(files);
+    expect(v.missingFromOwner.length).toBe(RULE_SETS.find((r) => r.owner === VERIFY_RULES_OWNER)!.phrases.length);
+  });
 
   it.each([
     [
