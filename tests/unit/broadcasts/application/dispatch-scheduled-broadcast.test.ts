@@ -5211,6 +5211,23 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
       },
     );
 
+    // Review round 5 (LOW) — an erased refusal whose DELETE stays undecided
+    // logs ONE line (the leg's), not the shared helper's as well.
+    it('an ERASED refusal whose DELETE answers retryable logs one refused_draft line, refusal erased', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const { gw, deps } = standingDeps(makeFakeSendStanding({ erased: true }), withDraft(), { retrieveStatus: 'draft' });
+      vi.spyOn(gw.port, 'deleteBroadcastOnce').mockResolvedValue({ kind: 'retryable' });
+
+      await dispatchScheduledBroadcast(deps, baseInput);
+
+      const lines = warnSpy.mock.calls.filter((c) => String(c[1]).startsWith('broadcasts.dispatch.refused_draft'));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toEqual([
+        expect.objectContaining({ refusal: 'erased', leg: 'live', resendBroadcastId: 'rb-prev-draft', errClass: 'retryable' }),
+        'broadcasts.dispatch.refused_draft_delete_unconfirmed',
+      ]);
+    });
+
     it('a row with no Resend id → no Resend call; resendDraftOutcome none', async () => {
       const { audit, gw, deps } = standingDeps(makeFakeSendStanding({ halted: ['m-1'] }));
       const del = vi.spyOn(gw.port, 'deleteBroadcastOnce');

@@ -31,6 +31,7 @@ import {
   decideDispatchStanding,
   deleteDraftBeforeRefusal,
   deleteDraftBeforeStandingRefusal,
+  recordRefusedDraftUndecided,
 } from '@/modules/broadcasts/application/use-cases/_dispatch-standing-gate';
 import { readDispatchHold } from '@/modules/broadcasts/application/use-cases/read-dispatch-hold';
 import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
@@ -178,13 +179,39 @@ describe('deleteDraftBeforeRefusal (spec 139 P2, spec 140 s1 ED4)', () => {
     ['retryable (a timeout included)', 'retryable', 'draft', 'retryable'],
     ['other', 'other', 'draft', 'other'],
     ['a throw', 'throws', 'draft', 'threw'],
-  ] as const)('%s → undecided', async (_label, answer, probedStatus, errClass) => {
-    expect(await deleteDraftBeforeRefusal(gw(answer), ids, { resendBroadcastId: 'rb-1', probedStatus })).toEqual({
-      kind: 'undecided',
-      errClass,
-      // Review round 3 (code-review #10) — the id it DELETEd rides with the answer.
-      resendBroadcastId: 'rb-1',
-    });
+  ] as const)('%s → undecided, and logs nothing (the caller logs its final outcome)', async (_label, answer, probedStatus, errClass) => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      expect(await deleteDraftBeforeRefusal(gw(answer), ids, { resendBroadcastId: 'rb-1', probedStatus })).toEqual({
+        kind: 'undecided',
+        errClass,
+        // Review round 3 (code-review #10) — the id it DELETEd rides with the answer.
+        resendBroadcastId: 'rb-1',
+        // Review round 5 — and the thrown class (never a message), for that line.
+        err: answer === 'throws' ? 'Error' : null,
+      });
+      // Review round 5 (LOW) — one line per refusal, written by the caller.
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('recordRefusedDraftUndecided — the one line of an erased arm: ids, the id, the class, the thrown class', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      recordRefusedDraftUndecided(ids, { kind: 'undecided', errClass: 'threw', resendBroadcastId: 'rb-1', err: 'TypeError' });
+      expect(warnSpy.mock.calls).toEqual([
+        [
+          { ...ids, resendBroadcastId: 'rb-1', errClass: 'threw', err: 'TypeError' },
+          'broadcasts.dispatch.refused_draft_delete_unconfirmed',
+        ],
+      ]);
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
 
@@ -243,7 +270,22 @@ describe('deleteDraftBeforeStandingRefusal (spec 140 s1 ED4, review round 1)', (
       await deleteDraftBeforeStandingRefusal(gw('forbidden', 'draft'), ids, draft);
       const lines = warnSpy.mock.calls.filter((c) => String(c[1]).startsWith('broadcasts.dispatch.refused_draft'));
       expect(lines).toHaveLength(1);
-      expect(lines[0]![0]).toMatchObject({ errClass: 'probe_draft', observedResendStatus: 'draft' });
+      // Review round 5 — the one line carries the first probe, the DELETE's
+      // answer and the final reading.
+      expect(lines[0]![0]).toMatchObject({ errClass: 'probe_draft', probedStatus: 'draft', outcome: 'forbidden', observedResendStatus: 'draft' });
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it.each(['retryable', 'other'] as const)('a DELETE that answers %s logs ONE line, from the wrapper, with the DELETE outcome', async (answer) => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      await deleteDraftBeforeStandingRefusal(gw(answer), ids, draft);
+      const lines = warnSpy.mock.calls.filter((c) => String(c[1]).startsWith('broadcasts.dispatch.refused_draft'));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]![0]).toMatchObject({ refusal: 'standing', errClass: answer, probedStatus: 'draft', outcome: answer, observedResendStatus: null });
     } finally {
       warnSpy.mockRestore();
     }
