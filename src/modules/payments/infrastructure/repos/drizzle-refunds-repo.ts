@@ -18,7 +18,7 @@
  * MUST NOT leak into Application or Domain (Constitution Principle
  * III). The use-case calls these methods only through the port.
  */
-import { and, asc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, or, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type {
   RefundsRepo,
@@ -565,6 +565,40 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         nextSeq: Number(row?.total_count ?? 0) + 1,
         settledUnbookedCount: Number(row?.settled_unbooked_count ?? 0),
       };
+    },
+
+    async findRecentSameAmountSucceeded(
+      txUnknown,
+      tenantIdArg: string,
+      paymentId: PaymentId,
+      amountSatang: Satang,
+      sinceIso: string,
+    ): Promise<{ readonly refundId: string; readonly refundedAt: string } | null> {
+      const tx = txUnknown as TenantTx;
+      // When it was refunded: its settlement, else its start.
+      const refundedAt = sql<Date>`coalesce(${refunds.completedAt}, ${refunds.initiatedAt})`;
+      // Explicit tenant predicate alongside RLS (D-029); served by
+      // refunds_tenant_payment_status_idx.
+      const [row] = await tx
+        .select({ id: refunds.id, refundedAt })
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.tenantId, tenantIdArg),
+            eq(refunds.paymentId, paymentId),
+            eq(refunds.status, 'succeeded'),
+            eq(refunds.amountSatang, amountSatang),
+            // Initiated in the window, or settled in it: a refund that sat
+            // pending and has just succeeded is as fresh to the admin.
+            or(
+              gte(refunds.initiatedAt, new Date(sinceIso)),
+              gte(refunds.completedAt, new Date(sinceIso)),
+            ),
+          ),
+        )
+        .orderBy(desc(refundedAt))
+        .limit(1);
+      return row ? { refundId: row.id, refundedAt: new Date(row.refundedAt).toISOString() } : null;
     },
 
     async sumWaivedByInvoice(

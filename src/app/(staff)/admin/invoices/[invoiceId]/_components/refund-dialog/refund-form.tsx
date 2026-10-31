@@ -11,7 +11,7 @@
  *     (the credit note to be issued — amount excl. VAT and VAT, read from
  *     the server — then refund total, still refundable afterwards) and names
  *     itself on Confirm.
- *   - Reason textarea — 500-char counter; aria-live polite.
+ *   - Reason, one line — 500-char counter; aria-live polite.
  *   - <TypedPhraseConfirm> — renders ONLY when amount === remaining
  *     (full refund) per FR-029(f).
  *   - 0306 — when the amount FULLY credits a MEMBERSHIP invoice (amount ===
@@ -41,7 +41,7 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { Alert, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { Alert, RadioGroup, Skeleton, TextField } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
@@ -52,6 +52,7 @@ import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import type { CreditNoteWaiverReason } from '@/modules/invoicing';
 import { useLocale } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
+import { formatDatePreset } from '@/lib/format-date-localised';
 import { TypedPhraseConfirm } from './typed-phrase-confirm';
 import { useCreditNotePreview } from './use-credit-note-preview';
 import {
@@ -201,6 +202,16 @@ export function RefundForm({
   // focus is on the (re-enabled) Confirm button is taken to the reason
   // (audit refund focus suggestion). role="alert" already announces it.
   const errorRef = useRef<HTMLDivElement>(null);
+  // #49 — the server found this amount already refunded on this payment in
+  // the last 24 h: when (null if it didn't say) and the amount it refused.
+  // Bound to that amount: editing the amount drops it (review M1).
+  const [duplicate, setDuplicate] = useState<{ readonly at: string | null; readonly amountSatang: bigint } | null>(
+    null,
+  );
+  // Set only by the footer's "Refund again" click, just before it submits;
+  // read once. Enter never sets it, so only a click overrides (review H1).
+  const confirmDuplicateRef = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
     if (submitError) errorRef.current?.focus();
   }, [submitError]);
@@ -268,31 +279,55 @@ export function RefundForm({
   // While submitting it is AURA's loading button (the click swallowed).
   const canSubmit = isValid && (!isFullRefund || phraseMatches);
 
-  // The dialog draws Cancel and the confirm in its footer (PR N2); the confirm
-  // submits this form from there (`form={formId}`), so Enter in a field still
-  // submits, and a disabled confirm still blocks it.
-  useReportMoneyDialogFooter(onFooterChange, {
-    pending: submitting,
-    canConfirm: canSubmit,
-    confirmLabel: submitting
-      ? t('dialog.processing')
-      : summaryAmountSatang !== null
-        ? t('dialog.confirmAmount', { amount: formatSatangThb(summaryAmountSatang, locale, currencyCode) })
-        : t('dialog.confirm'),
-  });
+  // The warning, its label and its override apply only to the amount the
+  // server refused; another amount is checked afresh.
+  const duplicateActive = duplicate !== null && amountSatang === duplicate.amountSatang;
 
   // Held from the submit event, before RHF's async validation, until the POST
   // settles: `submitting` flips only after validation and a render, so a
   // second submit in that window would otherwise send a second refund.
   const submittingRef = useRef(false);
 
+  // #49 — the footer's confirm while a duplicate warning shows. Click-only
+  // (the footer draws it as a plain button), gated like the confirm, and it
+  // submits through `submitOnce` like every other path.
+  const confirmDuplicateAgain = () => {
+    if (submittingRef.current || !canSubmit) return;
+    confirmDuplicateRef.current = true;
+    formRef.current?.requestSubmit();
+  };
+
+  // The dialog draws Cancel and the confirm in its footer (PR N2); the confirm
+  // submits this form from there (`form={formId}`), so Enter in a field still
+  // submits, and a disabled confirm still blocks it. While a duplicate warning
+  // shows, the confirm is "Refund again" and click-only (#49).
+  useReportMoneyDialogFooter(onFooterChange, {
+    pending: submitting,
+    canConfirm: canSubmit,
+    confirmLabel: submitting
+      ? t('dialog.processing')
+      : duplicateActive
+        ? t('duplicate.confirm')
+        : summaryAmountSatang !== null
+          ? t('dialog.confirmAmount', { amount: formatSatangThb(summaryAmountSatang, locale, currencyCode) })
+          : t('dialog.confirm'),
+    ...(duplicateActive ? { onConfirm: confirmDuplicateAgain } : {}),
+  });
+
   const onSubmit: SubmitHandler<FormValues> = async (values) => {
-    if (amountSatang === null) {
+    // The full-refund phrase gate holds on every submit path, not only the
+    // footer's disabled state (review H2).
+    if (amountSatang === null || (isFullRefund && !phraseMatches)) {
       submittingRef.current = false;
+      confirmDuplicateRef.current = false;
       return;
     }
+    // Only for the amount the server refused.
+    const confirmDuplicate = confirmDuplicateRef.current && duplicateActive;
+    confirmDuplicateRef.current = false;
     setSubmitting(true);
     setSubmitError(null);
+    setDuplicate(null);
     // I5: track success-path entry so the
     // `finally` block knows whether to keep the spinner alive
     // (parent unmounts via onClose → setSubmitting(false) is a no-op
@@ -331,6 +366,8 @@ export function RefundForm({
             // Only sent when the choice was shown; a partial / event refund
             // never touches membership.
             ...(isFullMembershipRefund ? { membershipEffect } : {}),
+            // #49 — the admin confirmed a probable duplicate.
+            ...(confirmDuplicate ? { confirmDuplicate: true } : {}),
           }),
         });
       } catch (e) {
@@ -349,7 +386,7 @@ export function RefundForm({
           return;
         }
         const body = raw as {
-          error?: { code?: string; remainingSatang?: string };
+          error?: { code?: string; remainingSatang?: string; duplicateRefundedAt?: string };
         };
         const code = body.error?.code ?? 'internal_error';
         // A 5xx that names no refusal (our own internal_error, no readable
@@ -357,6 +394,12 @@ export function RefundForm({
         // processor_outcome_unknown) may come after the refund was made.
         if (res.status >= 500 && (code === 'internal_error' || code === 'processor_outcome_unknown')) {
           settleUnconfirmed(tError('outcomeUnknown'));
+          return;
+        }
+        // #49 — refused before Stripe: nothing moved. The admin checks and
+        // may confirm with "Refund again".
+        if (code === 'possible_duplicate_refund') {
+          setDuplicate({ at: body.error?.duplicateRefundedAt ?? null, amountSatang });
           return;
         }
         // Money-remediation F-3 — NOT a failure. Stripe SETTLED this refund;
@@ -546,6 +589,7 @@ export function RefundForm({
     submittingRef.current = true;
     void handleSubmit(onSubmit, () => {
       submittingRef.current = false;
+      confirmDuplicateRef.current = false;
     })(e);
   };
 
@@ -595,8 +639,26 @@ export function RefundForm({
 
   return (
     <form
+      ref={formRef}
       id={formId}
       onSubmit={submitOnce}
+      onKeyDown={(e) => {
+        // While the duplicate warning shows, the footer confirm is a
+        // click-only `type="button"`, so the form has no submit button and,
+        // with two text fields, the browser's implicit submission does
+        // nothing. Enter in a field re-runs the check instead — never the
+        // override, which only the click sets (R114b step 3).
+        if (
+          duplicateActive &&
+          e.key === 'Enter' &&
+          !e.nativeEvent.isComposing &&
+          e.target instanceof HTMLInputElement &&
+          e.target.type === 'text'
+        ) {
+          e.preventDefault();
+          formRef.current?.requestSubmit();
+        }
+      }}
       className="flex flex-col gap-6"
       noValidate
     >
@@ -739,13 +801,15 @@ export function RefundForm({
         </Alert>
       )}
 
-      {/* Reason — single-line textarea (server enforces no CR/LF too) */}
+      {/* Reason — one line, like the amount (the server refuses CR/LF too):
+        * Enter submits instead of adding a newline that disables the
+        * confirm (R114 note ii). */}
       <div className="flex flex-col gap-1">
-        <Textarea
+        <TextField
           id={reasonId}
           label={tForm('reason.label')}
           required
-          rows={3}
+          type="text"
           maxLength={REASON_MAX}
           placeholder={tForm('reason.placeholder')}
           aria-describedby={
@@ -791,6 +855,21 @@ export function RefundForm({
           value={typedPhrase}
           onChange={setTypedPhrase}
         />
+      )}
+
+      {/* #49 — a probable duplicate: what and when. The confirm is the
+        * footer's ("Refund again"), so this Alert has no button. A warning
+        * Alert is role="alert" and announces itself; focus stays on the
+        * footer confirm, now "Refund again", so it is heard once (UX L1). */}
+      {duplicate !== null && duplicateActive && (
+        <Alert tone="warning" title={t('duplicate.title')} data-testid="refund-form-duplicate">
+          {duplicate.at === null
+            ? t('duplicate.bodyNoTime', { amount: formatSatangThb(duplicate.amountSatang, locale, currencyCode) })
+            : t('duplicate.body', {
+                amount: formatSatangThb(duplicate.amountSatang, locale, currencyCode),
+                when: formatDatePreset(duplicate.at, locale, 'dateTimeMedium'),
+              })}
+        </Alert>
       )}
 
       {/* Submit error — inline alert, above the footer's buttons (FR-029(g)). */}

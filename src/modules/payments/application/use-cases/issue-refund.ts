@@ -117,6 +117,14 @@ export interface IssueRefundInput {
    * ROUTE (never this use-case) orchestrates the renewals end.
    */
   readonly membershipEffect?: RefundMembershipEffect;
+  /**
+   * #49 — the admin refund route passes `'check'`, or `'override'` once the
+   * admin has confirmed a probable duplicate. `'skip'` is only for a caller
+   * that cannot double-pay by construction: the renewals bridge refunds the
+   * whole remainder, so a second identical refund already ends as
+   * `payment_not_refundable`. Required, so a new caller chooses.
+   */
+  readonly duplicateGuard: 'check' | 'override' | 'skip';
 }
 
 /**
@@ -208,6 +216,17 @@ export type IssueRefundError =
       readonly remainingSatang: Satang;
     }
   | { readonly code: 'refund_in_progress' }
+  /**
+   * #49 — a `succeeded` refund for the same amount on this payment was
+   * made in the last 24 h. `refundedAt` is when it settled, else when it
+   * started. Refused before Stripe and before any write; the admin may
+   * confirm (`duplicateGuard: 'override'`).
+   */
+  | {
+      readonly code: 'possible_duplicate_refund';
+      readonly refundId: string;
+      readonly refundedAt: string;
+    }
   /**
    * 0306 — `membershipEffect: 'cancel_membership'` on a refund that does NOT
    * fully credit a membership invoice (partial, or an event invoice). Refused
@@ -302,6 +321,9 @@ export type IssueRefundError =
  * form string.
  */
 const STRIPE_REFUND_REASON_REQUESTED_BY_CUSTOMER = 'requested_by_customer' as const;
+
+/** #49 — how far back a same-amount `succeeded` refund counts as a probable duplicate. */
+const DUPLICATE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Phase-B failure helper — flips the pending refund row to `failed`
@@ -800,6 +822,33 @@ async function issueRefundBody(
       } as const;
     }
 
+    // #49 — a probable duplicate: the same amount already refunded on this
+    // payment in the last 24 h. After a lost or unconfirmed response, a
+    // reload, a stale page or a second admin starts a NEW attempt, which the
+    // pending guard and the cap both let through on a partial refund. Under
+    // the payment row lock and above every write (`err()` commits). An
+    // override looks too, so its audit names the refund it overrode.
+    const duplicateOf =
+      input.duplicateGuard === 'skip'
+        ? null
+        : await deps.refundsRepo.findRecentSameAmountSucceeded(
+            tx,
+            input.tenantId,
+            paymentId,
+            input.amountSatang,
+            new Date(deps.clock.nowMs() - DUPLICATE_WINDOW_MS).toISOString(),
+          );
+    if (duplicateOf !== null && input.duplicateGuard === 'check') {
+      return {
+        kind: 'rejected',
+        error: {
+          code: 'possible_duplicate_refund',
+          refundId: duplicateOf.refundId,
+          refundedAt: duplicateOf.refundedAt,
+        },
+      } as const;
+    }
+
     // F-3 leg 3 — the key is derived from THIS refund row's own id, which is
     // immutable for the life of the logical attempt.
     //
@@ -853,6 +902,11 @@ async function issueRefundBody(
         // trail, since the async end is later performed by the cron actor.
         ...(input.membershipEffect !== undefined
           ? { membership_effect: input.membershipEffect }
+          : {}),
+        // #49 — the admin confirmed a probable duplicate; name the refund
+        // it duplicates.
+        ...(duplicateOf !== null
+          ? { duplicate_override: true, duplicate_of_refund_id: duplicateOf.refundId }
           : {}),
       },
       retentionYears: retentionFor('refund_initiated'),

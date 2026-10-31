@@ -371,6 +371,7 @@ describe('concurrent admin-refund + webhook → exactly ONE credit note (A.18 #1
         actorUserId: user.userId,
         correlationId: 'corr-cc-admin',
         requestId: 'req-cc-admin',
+        duplicateGuard: 'skip',
       }),
       processRefundUpdated(webhookDeps(), {
         tenantId: tenant.ctx.slug,

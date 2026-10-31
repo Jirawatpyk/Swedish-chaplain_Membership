@@ -395,6 +395,7 @@ describe('issueRefund — concurrent void in window W converts to waive (8B)', (
       actorUserId: user.userId,
       correlationId: 'corr-race',
       requestId: 'req-race',
+      duplicateGuard: 'skip',
     });
 
     // Money moved exactly once; the refund is a SUCCESS, not a dead-end defer.
