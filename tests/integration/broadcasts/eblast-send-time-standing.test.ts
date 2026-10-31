@@ -374,7 +374,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
   // a sibling tick's send — no terminal write, no member notice (not even the
   // `…_notif_skipped_no_email` row), the row left `approved`.
 
-  it('ED4 legacy: a halted refusal deletes the row's draft first; broadcast_failed_to_dispatch carries resendDraftOutcome deleted', async () => {
+  it('ED4 legacy: a halted refusal deletes the draft on the row first; broadcast_failed_to_dispatch carries resendDraftOutcome deleted', async () => {
     const memberId = await seedMember('halted');
     const resendBroadcastId = `rb-ed4-${randomUUID()}`;
     const row = approvedRow(memberId, { resendAudienceId: `aud-ed4-${randomUUID()}`, resendBroadcastId });
@@ -419,7 +419,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     expect(await dispatchAudits(row.broadcastId!)).toEqual([]);
   });
 
-  it('ED4 import: a halted refusal deletes the row's draft first; broadcast_failed_to_dispatch carries resendDraftOutcome deleted', async () => {
+  it('ED4 import: a halted refusal deletes the draft on the row first; broadcast_failed_to_dispatch carries resendDraftOutcome deleted', async () => {
     const memberId = await seedMember('halted');
     const resendBroadcastId = `rb-ed4-${randomUUID()}`;
     const row = approvedRow(memberId, {
