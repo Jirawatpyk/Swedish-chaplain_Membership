@@ -98,6 +98,9 @@ const InitiateRefundBody = z.object({
   // 0306 — staff's Keep / End membership choice on a FULL refund of a
   // membership invoice (the use-case refuses `cancel_membership` otherwise).
   membershipEffect: z.enum(['keep', 'cancel_membership']).optional(),
+  // #49 — the admin confirmed a probable duplicate (the same amount refunded
+  // on this payment in the last 24 h). Only `true` is meaningful.
+  confirmDuplicate: z.literal(true).optional(),
 });
 
 /**
@@ -127,6 +130,10 @@ function httpStatusForUseCaseError(error: IssueRefundError): {
       return { status: 409, routeCode: 'refund_exceeds_remaining' };
     case 'refund_in_progress':
       return { status: 409, routeCode: 'refund_in_progress' };
+    // #49 — a same-amount refund on this payment in the last 24 h; refused
+    // before Stripe. The admin may confirm and resend with confirmDuplicate.
+    case 'possible_duplicate_refund':
+      return { status: 409, routeCode: 'possible_duplicate_refund' };
     // 0306 — End membership on a refund that does not fully credit a
     // membership invoice. 422: well-formed, but the intent cannot apply.
     // Refused before Stripe — no money moved.
@@ -361,6 +368,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       ...(parsedBody.membershipEffect !== undefined
         ? { membershipEffect: parsedBody.membershipEffect }
         : {}),
+      // #49 — every admin refund is checked for a probable duplicate unless
+      // the admin confirmed it.
+      duplicateGuard: parsedBody.confirmDuplicate === true ? 'override' : 'check',
     });
 
     if (result.ok) {
@@ -512,6 +522,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       // page-load figure (which can be stale after a credit note / refund).
       ...(result.error.code === 'refund_exceeds_remaining'
         ? { remainingSatang: result.error.remainingSatang.toString() }
+        : {}),
+      // #49 — when only; never the earlier refund's id or reason.
+      ...(result.error.code === 'possible_duplicate_refund'
+        ? { duplicateInitiatedAt: result.error.initiatedAt }
         : {}),
     });
   } catch (e) {

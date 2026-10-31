@@ -41,7 +41,7 @@ import { useTranslations } from 'next-intl';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type SubmitHandler, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { Alert, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
+import { Alert, Button, RadioGroup, Skeleton, TextField, Textarea } from '@jirawatpyk/aura-react';
 import { toast } from '@/lib/toast';
 import { isReadOnlyRefusal } from '@/lib/http/read-only-refusal';
 import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
@@ -52,6 +52,7 @@ import { useReadOnlyToast } from '@/components/shell/use-read-only-toast';
 import type { CreditNoteWaiverReason } from '@/modules/invoicing';
 import { useLocale } from 'next-intl';
 import { formatSatangThb } from '@/lib/format-thb';
+import { formatDatePreset } from '@/lib/format-date-localised';
 import { TypedPhraseConfirm } from './typed-phrase-confirm';
 import { useCreditNotePreview } from './use-credit-note-preview';
 import {
@@ -201,6 +202,15 @@ export function RefundForm({
   // focus is on the (re-enabled) Confirm button is taken to the reason
   // (audit refund focus suggestion). role="alert" already announces it.
   const errorRef = useRef<HTMLDivElement>(null);
+  // #49 — the server found the same amount refunded on this payment in the
+  // last 24 h: when it was, until the admin confirms or cancels.
+  const [duplicateAt, setDuplicateAt] = useState<string | null>(null);
+  const duplicateRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (duplicateAt !== null) duplicateRef.current?.focus();
+  }, [duplicateAt]);
+  // Set by "Refund again" just before it submits the form; read once.
+  const confirmDuplicateRef = useRef(false);
   useEffect(() => {
     if (submitError) errorRef.current?.focus();
   }, [submitError]);
@@ -293,6 +303,9 @@ export function RefundForm({
     }
     setSubmitting(true);
     setSubmitError(null);
+    setDuplicateAt(null);
+    const confirmDuplicate = confirmDuplicateRef.current;
+    confirmDuplicateRef.current = false;
     // I5: track success-path entry so the
     // `finally` block knows whether to keep the spinner alive
     // (parent unmounts via onClose → setSubmitting(false) is a no-op
@@ -331,6 +344,8 @@ export function RefundForm({
             // Only sent when the choice was shown; a partial / event refund
             // never touches membership.
             ...(isFullMembershipRefund ? { membershipEffect } : {}),
+            // #49 — the admin confirmed a probable duplicate.
+            ...(confirmDuplicate ? { confirmDuplicate: true } : {}),
           }),
         });
       } catch (e) {
@@ -349,7 +364,7 @@ export function RefundForm({
           return;
         }
         const body = raw as {
-          error?: { code?: string; remainingSatang?: string };
+          error?: { code?: string; remainingSatang?: string; duplicateInitiatedAt?: string };
         };
         const code = body.error?.code ?? 'internal_error';
         // A 5xx that names no refusal (our own internal_error, no readable
@@ -357,6 +372,12 @@ export function RefundForm({
         // processor_outcome_unknown) may come after the refund was made.
         if (res.status >= 500 && (code === 'internal_error' || code === 'processor_outcome_unknown')) {
           settleUnconfirmed(tError('outcomeUnknown'));
+          return;
+        }
+        // #49 — refused before Stripe: nothing moved. The admin checks and
+        // may confirm with "Refund again".
+        if (code === 'possible_duplicate_refund') {
+          setDuplicateAt(body.error?.duplicateInitiatedAt ?? '');
           return;
         }
         // Money-remediation F-3 — NOT a failure. Stripe SETTLED this refund;
@@ -791,6 +812,33 @@ export function RefundForm({
           value={typedPhrase}
           onChange={setTypedPhrase}
         />
+      )}
+
+      {/* #49 — a probable duplicate: says when, and lets the admin confirm. */}
+      {duplicateAt !== null && (
+        <div ref={duplicateRef} tabIndex={-1} className="outline-none">
+          <Alert
+            tone="warning"
+            title={t('duplicate.title')}
+            data-testid="refund-form-duplicate"
+            action={
+              <Button
+                type="submit"
+                variant="secondary"
+                onClick={() => {
+                  if (!submittingRef.current) confirmDuplicateRef.current = true;
+                }}
+              >
+                {t('duplicate.confirm')}
+              </Button>
+            }
+          >
+            {t('duplicate.body', {
+              amount: amountSatang !== null ? formatSatangThb(amountSatang, locale, currencyCode) : '—',
+              when: duplicateAt === '' ? '—' : formatDatePreset(duplicateAt, locale, 'dateTimeMedium'),
+            })}
+          </Alert>
+        </div>
       )}
 
       {/* Submit error — inline alert, above the footer's buttons (FR-029(g)). */}

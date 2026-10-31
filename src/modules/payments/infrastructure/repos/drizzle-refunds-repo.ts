@@ -18,7 +18,7 @@
  * MUST NOT leak into Application or Domain (Constitution Principle
  * III). The use-case calls these methods only through the port.
  */
-import { and, asc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { asSatang, type Satang } from '@/lib/money';
 import type {
   RefundsRepo,
@@ -565,6 +565,33 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         nextSeq: Number(row?.total_count ?? 0) + 1,
         settledUnbookedCount: Number(row?.settled_unbooked_count ?? 0),
       };
+    },
+
+    async findRecentSameAmountSucceeded(
+      txUnknown,
+      tenantIdArg: string,
+      paymentId: PaymentId,
+      amountSatang: Satang,
+      sinceIso: string,
+    ): Promise<{ readonly refundId: string; readonly initiatedAt: string } | null> {
+      const tx = txUnknown as TenantTx;
+      // Explicit tenant predicate alongside RLS (D-029); served by
+      // refunds_tenant_payment_status_idx.
+      const [row] = await tx
+        .select({ id: refunds.id, initiatedAt: refunds.initiatedAt })
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.tenantId, tenantIdArg),
+            eq(refunds.paymentId, paymentId),
+            eq(refunds.status, 'succeeded'),
+            eq(refunds.amountSatang, amountSatang),
+            gte(refunds.initiatedAt, new Date(sinceIso)),
+          ),
+        )
+        .orderBy(desc(refunds.initiatedAt))
+        .limit(1);
+      return row ? { refundId: row.id, initiatedAt: row.initiatedAt.toISOString() } : null;
     },
 
     async sumWaivedByInvoice(

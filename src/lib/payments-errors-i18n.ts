@@ -57,6 +57,8 @@ export type F5RouteErrorCode =
   | 'payment_not_refundable'
   | 'refund_exceeds_remaining'
   | 'refund_in_progress'
+  // #49 — a same-amount refund on this payment in the last 24 h.
+  | 'possible_duplicate_refund'
   // 0306 — End membership was requested on a refund that does not fully
   // credit a membership invoice.
   | 'membership_effect_not_applicable'
@@ -226,6 +228,12 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   refund_in_progress: {
     message: 'Another refund is currently in progress for this payment. Please retry shortly.',
     messageThai: 'กำลังดำเนินการคืนเงินรายการอื่นอยู่ กรุณาลองใหม่อีกครั้งในอีกสักครู่',
+  },
+  possible_duplicate_refund: {
+    message:
+      'A refund of the same amount was made on this payment in the last 24 hours. Check Payment activity, then confirm if you mean to refund again.',
+    messageThai:
+      'มีการคืนเงินจำนวนเดียวกันสำหรับการชำระเงินนี้ภายใน 24 ชั่วโมงที่ผ่านมา กรุณาตรวจสอบกิจกรรมการชำระเงิน แล้วยืนยันหากต้องการคืนเงินอีกครั้ง',
   },
   f4_bridge_error: {
     message: 'Credit-note issuance failed. Operations have been notified.',

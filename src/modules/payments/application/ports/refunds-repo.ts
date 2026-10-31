@@ -261,6 +261,22 @@ export interface RefundsRepo {
   }>;
 
   /**
+   * #49 — the newest `succeeded` refund on this payment for exactly this
+   * amount, initiated at or after `sinceIso`, or `null`. The probable-duplicate
+   * guard reads it under the payment row lock: after a lost or unconfirmed
+   * response, a reload, a stale page or a second admin can start a new
+   * attempt for the same amount. `pending` rows are refused earlier
+   * (`refund_in_progress`); `failed` rows prove no money moved.
+   */
+  findRecentSameAmountSucceeded(
+    tx: unknown,
+    tenantId: string,
+    paymentId: PaymentId,
+    amountSatang: Satang,
+    sinceIso: string,
+  ): Promise<{ readonly refundId: string; readonly initiatedAt: string } | null>;
+
+  /**
    * T130a — list refunds in `pending` status older than the cutoff.
    * Used by the stale-pending-refund sweep cron to flip orphaned
    * pending rows to `failed` so they don't permanently block future

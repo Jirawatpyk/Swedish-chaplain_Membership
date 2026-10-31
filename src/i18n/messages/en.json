@@ -5308,6 +5308,11 @@
         }
       },
       "title": "Issue refund",
+      "duplicate": {
+        "title": "This may be a duplicate refund",
+        "body": "A refund of {amount} was made on this payment on {when}. Check Payment activity before refunding again.",
+        "confirm": "Refund again"
+      },
       "button": {
         "label": "Issue refund…",
         "ariaLabel": "Issue a refund for this invoice",
@@ -5392,6 +5397,7 @@
         "refund_in_progress": "A refund is already settling for this payment — no action is needed. It finishes on its own once the payment processor confirms.",
         "processor_unavailable": "The payment processor declined the refund, so no money was refunded. Check the details, then try again.",
         "processor_outcome_unknown": "We couldn't confirm whether the refund went through. Reload the page and check Payment activity on this invoice before doing anything else, and don't retry the refund until you have.",
+        "possible_duplicate_refund": "A refund of the same amount was made on this payment in the last 24 hours. Check Payment activity, then confirm if you mean to refund again.",
         "f4_bridge_error": "Credit-note issuance failed. Operations have been notified.",
         "f4_preflight_read_error": "Couldn't verify the refundable balance right now. No money was moved — please retry.",
         "f4_preflight_gate_underivable": "Could not determine whether this payment can be credited, so the refund was not attempted. No money was moved. This needs a fix on our side — please contact support.",

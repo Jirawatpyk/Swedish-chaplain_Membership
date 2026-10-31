@@ -67,6 +67,11 @@ export interface ErrorResponseExtra {
    * string, so the client quotes it instead of its possibly-stale figure.
    */
   readonly remainingSatang?: string;
+  /**
+   * #49 `possible_duplicate_refund` only — when the earlier same-amount
+   * refund was initiated (ISO 8601), so the dialog can say when.
+   */
+  readonly duplicateInitiatedAt?: string;
 }
 
 /**
@@ -98,6 +103,9 @@ export function errorResponse(
       ...(extra?.fieldErrors ? { fieldErrors: extra.fieldErrors } : {}),
       ...(extra?.remainingSatang !== undefined
         ? { remainingSatang: extra.remainingSatang }
+        : {}),
+      ...(extra?.duplicateInitiatedAt !== undefined
+        ? { duplicateInitiatedAt: extra.duplicateInitiatedAt }
         : {}),
     },
     correlationId,
