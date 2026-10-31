@@ -226,8 +226,12 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
     messageThai: 'การสิ้นสุดสมาชิกภาพใช้ได้เฉพาะการคืนเงินเต็มจำนวนของใบแจ้งหนี้ค่าสมาชิกเท่านั้น',
   },
   refund_in_progress: {
-    message: 'Another refund is currently in progress for this payment. Please retry shortly.',
-    messageThai: 'กำลังดำเนินการคืนเงินรายการอื่นอยู่ กรุณาลองใหม่อีกครั้งในอีกสักครู่',
+    // #51 — not "retry shortly": the earlier refund may never settle on its
+    // own (an orphan waits for the stale-pending sweep or a person).
+    message:
+      'A refund for this payment is still being confirmed. Check Payment activity on this invoice; do not start another refund.',
+    messageThai:
+      'การคืนเงินของการชำระเงินนี้ยังรอการยืนยันอยู่ กรุณาตรวจสอบส่วนกิจกรรมการชำระเงินในหน้าใบแจ้งหนี้นี้ และอย่าเริ่มการคืนเงินใหม่',
   },
   possible_duplicate_refund: {
     message:
@@ -320,3 +324,16 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
 export function messagesFor(code: F5RouteErrorCode): Bilingual {
   return F5_ERROR_MESSAGES[code];
 }
+
+/**
+ * #51 — the refund route's copy for `processor_unavailable`, which there
+ * means only a proven refusal (`moneyExit: 'rejected'`): the processor
+ * declined and no money moved. Matches the dialog's
+ * `admin.refund.error.processor_unavailable`.
+ */
+export const REFUND_DECLINED_MESSAGES = {
+  message:
+    'The payment processor declined the refund, so no money was refunded. Check the details, then try again.',
+  messageThai:
+    'ผู้ให้บริการชำระเงินปฏิเสธการคืนเงิน จึงยังไม่มีการคืนเงิน กรุณาตรวจสอบรายละเอียดแล้วลองอีกครั้ง',
+} as const;

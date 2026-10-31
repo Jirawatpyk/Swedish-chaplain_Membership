@@ -72,6 +72,11 @@ export interface ErrorResponseExtra {
    * refund was made — settled, else started (ISO 8601) — so the dialog can say when.
    */
   readonly duplicateRefundedAt?: string;
+  /**
+   * #51 — replaces the code's shared bilingual copy for one surface (the
+   * refund route's decline), keeping the code itself unchanged.
+   */
+  readonly messages?: { readonly message: string; readonly messageThai: string };
 }
 
 /**
@@ -94,7 +99,7 @@ export function errorResponse(
   correlationId: string,
   extra?: ErrorResponseExtra,
 ): NextResponse {
-  const { message, messageThai } = messagesFor(code);
+  const { message, messageThai } = extra?.messages ?? messagesFor(code);
   const body: Record<string, unknown> = {
     error: {
       code,

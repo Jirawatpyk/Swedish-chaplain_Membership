@@ -4855,7 +4855,7 @@
         "refundSettlingBadge": "Återbetalning behandlas",
         "dangerZone": "Oåterkalleliga åtgärder",
         "refundSettlingNoticeTitle": "Avslagen — återbetalning behandlas",
-        "refundSettlingNoticeBody": "Den här återaktiveringen avslogs och återbetalningen behandlas hos betalningsleverantören. Den stängs automatiskt när den bekräftas — ingen åtgärd behövs.",
+        "refundSettlingNoticeBody": "Den här återaktiveringen avslogs och återbetalningen väntar på bekräftelse från betalningsleverantören. Kontrollera Betalningshändelser på fakturan och starta ingen ny återbetalning.",
         "pendingReactivation": {
           "reactivate": {
             "button": "Godkänn återaktivering",
@@ -5318,7 +5318,7 @@
         "label": "Utfärda återbetalning…",
         "ariaLabel": "Utfärda en återbetalning för denna faktura",
         "settlingLabel": "Återbetalning behandlas…",
-        "settlingHint": "En återbetalning behandlas — ingen åtgärd behövs förrän den är klar.",
+        "settlingHint": "En återbetalning väntar på bekräftelse från betalningsleverantören. Kontrollera Betalningshändelser och starta ingen ny återbetalning.",
         "unconfirmedLabel": "Återbetalning obekräftad",
         "unconfirmedHint": "En återbetalning kan ha gått igenom. Ladda om sidan och kontrollera Betalningshändelser innan du återbetalar igen."
       },
@@ -5395,7 +5395,7 @@
         "payment_not_refundable": "Denna betalning kan inte återbetalas i sitt nuvarande tillstånd.",
         "refund_exceeds_remaining": "Återbetalningsbeloppet överskrider återstående återbetalningsbar saldo ({remaining} THB).",
         "membership_effect_not_applicable": "Att avsluta medlemskapet gäller bara en fullständig återbetalning av en medlemsfaktura. Återbetala hela det återstående beloppet eller välj Behåll medlemskapet.",
-        "refund_in_progress": "En återbetalning behandlas redan för den här betalningen — ingen åtgärd behövs. Den slutförs av sig själv när betalningsleverantören bekräftar.",
+        "refund_in_progress": "En återbetalning för den här betalningen väntar fortfarande på bekräftelse. Kontrollera Betalningshändelser på fakturan och starta ingen ny återbetalning.",
         "processor_unavailable": "Betalningsleverantören avvisade återbetalningen, så inga pengar har återbetalats. Kontrollera uppgifterna och försök igen.",
         "processor_outcome_unknown": "Vi kunde inte bekräfta om återbetalningen gick igenom. Ladda om sidan och kontrollera Betalningshändelser på den här fakturan innan du gör något annat, och försök inte återbetala igen förrän du har gjort det.",
         "possible_duplicate_refund": "En återbetalning på samma belopp gjordes för den här betalningen de senaste 24 timmarna. Kontrollera Betalningshändelser och bekräfta om du vill återbetala igen.",

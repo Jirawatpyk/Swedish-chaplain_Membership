@@ -133,16 +133,17 @@ export const f5RefundBridge: F5RefundBridge = {
       ) {
         return { status: 'refund_pending' };
       }
-      // Task B (#706) — only a `permanent` gateway failure proves the money
-      // stayed put (F5 finalises the row `failed`). On `retryable` /
-      // `idempotency_conflict` the outcome is unknown and F5 leaves the row
-      // `pending` for its sweep, so this is the WAIT side too: telling the
-      // admin it failed invites a hand refund in Stripe, i.e. a double payout.
-      // The pending row is what `findPendingRefundForInvoice` resolves, and it
-      // blocks any retry with `refund_in_progress`.
+      // Task B (#706) / #51 — only a proven refusal (`moneyExit: 'rejected'`,
+      // F5 finalised the row `failed`) is a failure. Any other processor
+      // outcome is unknown and F5 leaves the row `pending` for its sweep, so
+      // this is the WAIT side too: telling the admin it failed invites a hand
+      // refund in Stripe, i.e. a double payout. Read from F5's verdict, never
+      // re-derived from `kind` (`permanent/processor_response_amount_invalid`
+      // is unknown). The pending row is what `findPendingRefundForInvoice`
+      // resolves, and it blocks any retry with `refund_in_progress`.
       if (
         refundResult.error.code === 'processor_unavailable' &&
-        refundResult.error.kind !== 'permanent'
+        refundResult.error.moneyExit !== 'rejected'
       ) {
         return { status: 'refund_pending' };
       }

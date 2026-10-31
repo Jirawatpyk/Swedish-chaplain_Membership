@@ -140,15 +140,18 @@ function isWebhookReadLagError(e: unknown): boolean {
  *
  * Stripe exposes `error.type` (SDK-level) + `error.code` (API-level)
  * + `error.statusCode` (HTTP). We classify by `type`:
- *   - `StripeConnectionError` / `StripeAPIError` → retryable
+ *   - `StripeCardError` / `StripeInvalidRequestError` /
+ *     `StripeAuthenticationError` / `StripePermissionError` → permanent
+ *     (Stripe refused the request; nothing was done)
  *   - `StripeIdempotencyError` → idempotency_conflict
- *   - everything else (invalid_request, authentication, card, rate_limit,
- *     permission) → permanent
+ *   - `StripeConnectionError` / `StripeAPIError` / `StripeRateLimitError`,
+ *     network errors, and ANYTHING ELSE → retryable
  *
- * `rate_limit` is classified `permanent` at this layer because the SDK
- * already retries 3x under the hood (see stripe-client.ts config) —
- * if it still bubbles up, the caller should surface it to the user
- * rather than loop again.
+ * #51 — the default is `retryable`, not `permanent`. Downstream,
+ * `permanent` reads as "the processor refused, no money moved", which
+ * a refund then finalises `failed` and a retry can pay twice on. An
+ * error this mapper does not recognise proves no such thing, so it
+ * fails closed: the outcome is treated as unknown.
  *
  * Exported (vs. module-private) so a unit test can throw synthetic
  * Stripe error instances directly at the mapper without going through
@@ -236,8 +239,15 @@ export function mapStripeError(
       return { kind: 'retryable', reason };
     case 'StripeIdempotencyError':
       return { kind: 'idempotency_conflict', reason };
-    default:
+    // Stripe refused the request: nothing was done.
+    case 'StripeCardError':
+    case 'StripeInvalidRequestError':
+    case 'StripeAuthenticationError':
+    case 'StripePermissionError':
       return { kind: 'permanent', code, reason };
+    // #51 — anything unrecognised fails closed: the outcome is unknown.
+    default:
+      return { kind: 'retryable', reason };
   }
 }
 

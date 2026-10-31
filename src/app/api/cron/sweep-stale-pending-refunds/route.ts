@@ -51,8 +51,9 @@
  * unauthenticated fallback — every request MUST carry the bearer
  * token regardless of NODE_ENV.
  *
- * Idempotent: re-running the cron is safe — already-swept rows are
- * already in `failed` status and won't match `WHERE status='pending'`.
+ * Idempotent: re-running the cron is safe — a swept row is terminal
+ * (`succeeded` or `failed`, decided by Stripe's own answer) and no longer
+ * matches `WHERE status='pending'`.
  *
  * Runbook: `docs/runbooks/stale-pending-refund-sweep.md`
  *

@@ -4855,7 +4855,7 @@
         "refundSettlingBadge": "Refund settling",
         "dangerZone": "Danger zone",
         "refundSettlingNoticeTitle": "Rejected — refund settling",
-        "refundSettlingNoticeBody": "This reactivation was rejected and the refund is settling with the payment processor. This closes automatically once it confirms — no action is needed.",
+        "refundSettlingNoticeBody": "This reactivation was rejected and the refund is waiting for the payment processor to confirm. Check Payment activity on the invoice; don't start another refund.",
         "pendingReactivation": {
           "reactivate": {
             "button": "Approve reactivation",
@@ -5318,7 +5318,7 @@
         "label": "Issue refund…",
         "ariaLabel": "Issue a refund for this invoice",
         "settlingLabel": "Refund settling…",
-        "settlingHint": "A refund is settling — no action needed until it completes.",
+        "settlingHint": "A refund is waiting for the payment processor to confirm. Check Payment activity; don't start another refund.",
         "unconfirmedLabel": "Refund unconfirmed",
         "unconfirmedHint": "A refund may have gone through. Reload the page and check Payment activity before refunding again."
       },
@@ -5395,7 +5395,7 @@
         "payment_not_refundable": "This payment cannot be refunded in its current state.",
         "refund_exceeds_remaining": "Refund amount exceeds the remaining refundable balance ({remaining} THB).",
         "membership_effect_not_applicable": "Ending the membership only applies to a full refund of a membership invoice. Refund the full remaining amount, or choose Keep membership.",
-        "refund_in_progress": "A refund is already settling for this payment — no action is needed. It finishes on its own once the payment processor confirms.",
+        "refund_in_progress": "A refund for this payment is still being confirmed. Check Payment activity on this invoice; don't start another refund.",
         "processor_unavailable": "The payment processor declined the refund, so no money was refunded. Check the details, then try again.",
         "processor_outcome_unknown": "We couldn't confirm whether the refund went through. Reload the page and check Payment activity on this invoice before doing anything else, and don't retry the refund until you have.",
         "possible_duplicate_refund": "A refund of the same amount was made on this payment in the last 24 hours. Check Payment activity, then confirm if you mean to refund again.",
