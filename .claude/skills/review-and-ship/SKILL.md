@@ -43,6 +43,12 @@ This section is the single source for how review works; `docs/workflow.md` step 
   - size M: 3 `/code-review` rounds;
   - size L, or any sensitive surface: the ≥ 2 full rounds above plus at most 2 targeted rounds.
   At the cap, stop fixing. Bring the open findings to the maintainer, each with a recommended closure: fix, refute, or carry. The maintainer decides each one, and may re-grade a Medium to Low with the reason written in the PR. Record the round count and the decision in the PR's Review findings and in `plan.md` § Evidence.
+- **Review metrics, every PR** (D-043). The PR's Review findings section opens with a metrics line:
+  - rounds run;
+  - items per round;
+  - the cap that applied;
+  - whether the cap was reached.
+  A docs-only PR records 0 rounds. When a retro fires, its `docs/retro.md` line repeats the same figures. These figures are hand-recorded on purpose. A script to tally them waits until enough PRs exist to show whether D-043 reduced rounds.
 - **From round 3 on, each round is targeted** (D-043).
   - Run it on the fix commits since the last round only: `/code-review high <first-fix-sha>^..HEAD`.
   - It confirms that each item from the last round is closed.

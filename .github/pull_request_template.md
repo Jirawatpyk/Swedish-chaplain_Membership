@@ -28,6 +28,8 @@
 
 ## Review findings
 
+**Review metrics:** rounds run: … · items per round: … · cap (`review-and-ship` § 1): … · cap reached: yes / no
+
 <!-- Reviewer · severity · finding · the fixing commit, or the refutation evidence + the reviewer re-run that confirmed it. Lows may stay open only if listed here. -->
 
 ## Unflagged on merge
