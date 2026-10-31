@@ -3,10 +3,13 @@
  * process file links to it instead of restating it. On #714 the rules were
  * written into seven files and three copies were missed (retro 2026-10-31).
  *
- * The check is a phrase list: a short sentence from each rule that a
- * restatement would have to repeat. A phrase found outside the owner is a
- * restatement; a phrase missing from the owner means the rule was reworded
- * and this list must follow it, so the gate can never go quietly inert.
+ * The check is a phrase list: a short piece of each rule that a restatement
+ * would have to repeat. A phrase found outside the owner is a restatement; a
+ * phrase missing from the owner means the rule was reworded and this list
+ * must follow it, so the gate can never go quietly inert.
+ *
+ * It catches copies and near-copies (case, Markdown emphasis and line wraps
+ * are ignored). A true paraphrase still needs a reader.
  */
 export interface DocFile {
   readonly path: string;
@@ -15,23 +18,36 @@ export interface DocFile {
 
 export const REVIEW_RULES_OWNER = '.claude/skills/review-and-ship/SKILL.md';
 
-/** One sentence per rule, copied exactly from the owner. */
+/**
+ * Pieces of the owner's rules, in the normalised form `norm()` produces:
+ * lower case, no `*`, backticks or `_`, single spaces. Each was checked
+ * against the restatements found on main at e6d82d0c8 (#714).
+ */
 export const REVIEW_RULE_PHRASES: readonly string[] = [
-  'and the reviewer confirms that on a re-run',
-  'A High is never carried',
-  'From round 3 on, each round is targeted',
-  'An empty list is a valid answer',
-  'A **decided item** is',
+  // How a finding closes.
+  'refuted with evidence',
+  'a high is never carried',
+  // The carry conditions (the auditor once copied these word for word).
+  // (Not `git merge-base origin/main head` alone: whole-branch-reviewer uses
+  // that command for its own diff base, which is not a restatement.)
+  "at this branch's base commit",
+  'an id alone',
+  // Rounds, the cap, the stop rule.
+  'from round 3 on',
+  'an empty list is a valid answer',
+  'a decided item is',
   'at most 2 targeted rounds',
-  'A docs-only change gets no',
+  // Docs-only changes.
+  'docs-only change gets no',
 ];
 
 /** History, not restatement: these record what was decided or done. */
-const EXEMPT = [/^docs\/decisions\.md$/, /^docs\/retro\.md$/, /^docs\/changelog\.md$/, /^specs\//];
+const EXEMPT = [/^docs\/decisions\.md$/, /^docs\/retro\.md$/, /^docs\/changelog\.md$/];
 
-// Whitespace (including a CRLF line break inside a wrapped sentence) collapses
-// to one space on both sides, so a restatement cannot hide behind a line wrap.
-const norm = (s: string) => s.replace(/\s+/g, ' ');
+// Lower-case, drop Markdown emphasis and code marks, and collapse whitespace
+// (including a CRLF line break inside a wrapped sentence), so a near-copy
+// cannot hide behind case, bold or a line wrap.
+const norm = (s: string) => s.toLowerCase().replace(/[*`_]/g, '').replace(/\s+/g, ' ');
 
 export interface ProcessDocViolations {
   readonly restated: ReadonlyArray<{ readonly path: string; readonly phrase: string }>;

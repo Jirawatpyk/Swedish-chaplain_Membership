@@ -11,11 +11,12 @@ import { findProcessDocViolations, REVIEW_RULES_OWNER } from './lib/process-docs
 
 // The process docs: the skills, agents, workflows and rules under `.claude/`,
 // `docs/`, the PR template and the root CLAUDE.md. Agent memory is a local
-// cache, not a process doc.
-const paths = execFileSync('git', ['ls-files', '--', '.claude/*.md', 'docs/*.md', '.github/*.md', 'CLAUDE.md'], {
+// cache, not a process doc. `-z`: NUL-separated and unquoted, so a non-ASCII
+// file name (a Thai runbook title) reaches readFileSync as-is, not C-quoted.
+const paths = execFileSync('git', ['ls-files', '-z', '--', '.claude/*.md', 'docs/*.md', '.github/*.md', 'CLAUDE.md'], {
   encoding: 'utf8',
 })
-  .split(/\r?\n/)
+  .split('\0')
   .filter((p) => p !== '' && !p.startsWith('.claude/agent-memory/'));
 
 const files = paths.map((path) => ({ path, text: readFileSync(path, 'utf8') }));
