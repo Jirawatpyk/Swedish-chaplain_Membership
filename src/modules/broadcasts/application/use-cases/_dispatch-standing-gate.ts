@@ -210,8 +210,9 @@ export async function deleteDraftBeforeRefusal(
   draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
 ): Promise<DraftClearance> {
   if (draft === null || draft.resendBroadcastId === '') return { kind: 'cleared', draftOutcome: 'none' };
-  const logIds = { ...ids, resendBroadcastId: draft.resendBroadcastId, probedStatus: draft.probedStatus ?? 'not_found' };
-  const undecided = { kind: 'undecided', resendBroadcastId: draft.resendBroadcastId, probedStatus: logIds.probedStatus } as const;
+  const probedStatus: 'draft' | 'cancelled' | 'not_found' = draft.probedStatus ?? 'not_found';
+  const logIds = { ...ids, resendBroadcastId: draft.resendBroadcastId, probedStatus };
+  const undecided = { kind: 'undecided', resendBroadcastId: draft.resendBroadcastId, probedStatus } as const;
   let outcome: DeleteBroadcastOnceOutcome['kind'];
   try {
     outcome = (await gateway.deleteBroadcastOnce(draft.resendBroadcastId)).kind;
