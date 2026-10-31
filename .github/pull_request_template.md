@@ -19,6 +19,7 @@
 - [ ] Touched integration suites green (by path, `dev` branch); cross-tenant test for a tenant-scoped surface
 - [ ] Migration applied on `dev`, DDL confirmed in `information_schema`, unique `when` in `_journal.json`
 - [ ] Touched e2e specs green on chromium + mobile-chrome
+- [ ] `/verify` run by the maintainer on the final head, with the report recorded. If no user drives this change, say so (D-044).
 - [ ] Review complete as `review-and-ship` § 1 defines it (no High or Medium left; findings carried into this slice closed; Lows fixed or listed below; the metrics line filled in); Verify re-run if review fixes touched the driven path; `whole-branch-reviewer` done if the review was split; M / L: `spec-compliance-auditor` confirmed every Done-when line against its evidence
 - [ ] UI: `enterprise-ux-designer` pass; EN / TH / SV; 320 px and a 32 px font checked
 - [ ] Sensitive surface (auth / RBAC / payment / PII / audit / GDPR): ≥2 reviewers or the solo-maintainer review (`review-and-ship` § 2), security checklist signed

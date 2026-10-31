@@ -35,7 +35,8 @@ For an L slice, also check:
 - **Carried out.** Check each finding `plan.md` § Evidence records as *carried to slice k* against every carry condition in `review-and-ship` § 1. Read the agreed plan with `git show`, as that section describes. A carried High is a **High** finding. Any other unmet condition is a **Medium** finding (D-043).
 - **Carried in.** Each finding an earlier slice carried into this one must be closed here (fixed, or refuted and confirmed) or carried on under the same rules. One left open is a finding at its original severity.
 - **Reviewer-requested mechanisms.** Read the review-round tables in `plan.md` § Evidence. Each mechanism they record as added at a reviewer's request (a column, counter, deadline, label or query) must have its own rows in the test plan, and in the state table where the plan has one. A mechanism with no row is a **Medium** finding (retro 2026-10-31).
-- **Verify after fixes.** If review fixes, or a merge from `main` that resolves a conflict, changed the path that Verify drove, there must be a re-run block whose commit comes after the last such change. Only docs or evidence commits of this branch may follow it. Evidence from before such a change is a **Medium** finding.
+- **Verify is `/verify`.** For a Done-when line on a surface that a user or operator drives, the evidence must be a `/verify` report that the maintainer ran (D-044). A drive by Claude, reported as Verify, does not count, and is a **High** finding.
+- **Verify after fixes.** If review fixes changed the path that Verify drove, or a merge from `main` resolved a conflict on that path, check the order of commits. A `/verify` report's commit must come after the last such change, and only docs or evidence commits of this branch may follow it. Evidence from before such a change is a **Medium** finding.
 
 ## Audit methodology
 

@@ -49,7 +49,7 @@ curl -s -o /dev/null -w '%{http_code}\n' --max-time 180 http://localhost:3400/ad
 
 ## 4. Drive it
 
-**Browser:** `/run` or the Browser pane (`mcp__Claude_Browser__*`), at `http://localhost:3400`. `/verify` runs only when the user invokes it. Prefer `read_page` / `get_page_text` over screenshots for reading. Take a screenshot as evidence.
+**Browser:** `/run` or the Browser pane (`mcp__Claude_Browser__*`), at `http://localhost:3400`. Verify itself is the maintainer's `/verify` (D-044). Claude uses this skill to prepare a branch and run e2e specs, never to drive a change by hand in place of `/verify`. Prefer `read_page` / `get_page_text` over screenshots for reading. Take a screenshot as evidence.
 
 **e2e against the running server:**
 ```bash

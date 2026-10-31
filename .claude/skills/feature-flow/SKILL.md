@@ -65,11 +65,17 @@ For **L**, have `chamber-os-architect` and the surface reviewers for what the pl
 
 ## 6. Verify
 
-Meet `docs/workflow.md` step 6 (the contract: what to drive, which e2e projects, the UI probes, evidence per Done-when line) with the `run-chamber-os` skill as the recipe: worktree, :3400 after `rm -rf .next`, personas, Playwright attached.
-- Drive the change with `/run` or the Browser pane. `/verify` runs only when the user invokes it.
-- **At every Verify, hand the user a ready `/verify` command.** Claude cannot invoke `/verify`, so when Verify is reached it stops and gives the exact command, ready to paste, in the Verify report and in the PR: the PR number, the worktree, the Done-when IDs, the persona, and any safety limit (for Resend, the sink address `delivered@resend.dev` only). The maintainer runs it before merge. This applies to every change that has a runtime surface, not only risky ones; a change with none (docs only) says so instead. **Claude never runs `/verify` by hand:** its own drive above still happens and is recorded as Claude's Verify, but it is never reported as `/verify`, and Claude does not invoke the skill some other way. Only the maintainer's run counts as `/verify`.
-- A red that also fails on `main` is reported as pre-existing, with the evidence.
-- Write the evidence against each Done-when line now. For M / L, append it to `plan.md` under `## Evidence`, one line per Done-when line; Review checks it there and the PR body copies it.
+**Verify is `/verify`, run by the maintainer (D-044).** `docs/workflow.md` step 6 is the contract. Claude cannot invoke `/verify`. This was measured on 2026-10-31: the Skill tool refuses it with `disable-model-invocation`. Claude also must not replicate it by hand.
+- **Hand over a command.** When Verify is reached, Claude stops. It gives the maintainer the exact `/verify` command, ready to paste, in the reply and in the PR. The command names:
+  - the PR number, the worktree and the branch;
+  - the Done-when IDs to drive and the persona;
+  - one wrong-input probe;
+  - for a UI change, the UI probes: 320 px, a 32 px font, dark mode, TH/SV;
+  - any safety limit. For Resend, use the sink `delivered@resend.dev` only, and prefer probes that leave nothing undeletable at the provider.
+- **No hand-driving.** Claude does not drive the change itself before `/verify` or instead of it. That rules out a :3400 drive, the Browser pane, and a live provider probe of its own for Verify.
+- **What Claude still does.** It prepares the worktree, `.env.local` and any seed the command needs. It runs the touched e2e specs on chromium and mobile-chrome, because those are automated tests.
+- **No surface, no `/verify`.** Some changes have no surface that a user or operator drives: docs only, a static gate, or a test-only change. They get no `/verify`. The PR says so, and the tests are the evidence.
+- **The report is the evidence.** Record the `/verify` report against each Done-when line in `plan.md` § Evidence (for size S, in the PR). A FAIL goes back to Build. A red that also fails on `main` is reported as pre-existing, with the evidence.
 
 ## 7. Review
 
@@ -81,7 +87,7 @@ Review the change as built **and verified**, so a fix found in Verify is reviewe
 
 Reviews run in subagents; the writer never reviews its own code. **No High and no Medium finding may remain.** How a finding closes, the rounds and their cap, the staff review on sensitive surfaces and docs-only changes are defined in `review-and-ship` §§ 1–2 (the one owner, D-043); follow them from there.
 
-When review fixes touch the path Verify drove, run Verify again after the last fix that changes code, before merge. Any commit after that re-run may change only docs or evidence. Add a re-run block to `plan.md` § Evidence naming the commit it ran on, then run `spec-compliance-auditor` again on that block.
+When review fixes touch the path Verify drove, hand the maintainer a new `/verify` command (§ 6). Do it after the last fix that changes code, before merge. Any commit after that run may change only docs or evidence. Record its report in `plan.md` § Evidence with the commit it ran on, then run `spec-compliance-auditor` again on that block.
 
 ## 8. PR
 
