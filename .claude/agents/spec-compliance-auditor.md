@@ -31,6 +31,11 @@ A spec written by the `feature-flow` skill has **Done when** lines instead of nu
 
 Also check the premises. A spec or plan that keeps an existing path compatible (or protects it) without a measured **usage line** (count · source · date), or that relies on a provider fact (a status string, an error code, a limit) marked neither MEASURED nor cited from the provider's docs, is a **Medium** finding (`feature-flow` § 0, retro 2026-10-30).
 
+For an L slice, also check:
+- **Carried findings.** Every finding that `plan.md` § Evidence records as *carried to slice k* must be named in slice *k*'s row or block in `plan.md` § Slices, or in that slice's section of the plan. That slice must not have merged yet. A carry to a slice that doesn't name the concern, or to one that has already merged, is a **Medium** finding (D-043).
+- **Reviewer-requested mechanisms.** Read the review-round tables in `plan.md` § Evidence. Each mechanism they record as added at a reviewer's request (a column, counter, deadline, label or query) must have its own rows in the test plan, and in the state table where the plan has one. A mechanism with no row is a **Medium** finding (retro 2026-10-31).
+- **Verify after fixes.** If review fixes changed the path that Verify drove, the evidence must come from a run on the final head. Evidence from an earlier commit is a **Medium** finding.
+
 ## Audit methodology
 
 For each user story (process P1 → P2 → P3 in priority order):

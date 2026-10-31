@@ -12,7 +12,7 @@ This skill only starts the app. **What** to check comes from the change's Done-w
 - **Verify the branch's own code.** :3100 is the main checkout's `pnpm dev` (Claude may start it and open it in the built-in browser), so it serves `main`, not the branch. A branch is verified on **:3400** from its own worktree. Don't kill a :3100 server the user is using.
 - The database is the Neon **`dev`** branch, through `.env.local`. Never use prod. Prod reads are refused here; don't route around that.
 - Don't `rm -rf .next` in the main checkout; only in the worktree.
-- At most two heavy jobs at once (a dev server counts as one, and so does an e2e run).
+- At most two heavy jobs at once. Each of these counts as one: a dev server, an e2e run, a full gate run (`pnpm test:coverage`, the contract suite, a unit folder, an integration batch), and a subagent's own gate run. Don't run a gate while another agent is editing the worktree.
 
 ## 1. Worktree
 

@@ -20,11 +20,23 @@ This section is the single source for how review works; `docs/workflow.md` step 
 
 - **`/code-review ultra`** (or `/code-review ultra <PR#>`) is a multi-agent **cloud** review of the branch. The user triggers it and it is billed, so Claude never launches it; suggest it for a large, high-stakes branch.
 - A Workflow runs only on explicit opt-in ("use a workflow" / `ultracode`), never on Claude's own initiative. Otherwise, describe what it would do and roughly what it costs, and ask. If the user declines, review per module: `/code-review high <path>` for each touched module, the § 2 surface reviewers, then `whole-branch-reviewer`.
-- No High or Medium finding may remain at merge (D-015): fix it, or refute it with evidence and have the reviewer confirm on a re-run. There are no waivers.
+- No High or Medium finding may remain at merge (D-015). A finding is never waived. It closes in one of three ways:
+  - it is fixed;
+  - it is refuted with evidence, and the reviewer confirms that on a re-run;
+  - for an L slice only, it is **carried to the slice that owns it** (D-043).
+- A carry needs `plan.md` § Slices to name that concern already, for a later slice of the same spec that has not merged. The carry is recorded in `plan.md` § Evidence with that slice's number, and `spec-compliance-auditor` checks that the owning slice's row names it. A concern no later slice names is fixed or refuted in this slice. It is never carried to a slice invented for it.
 - Take findings with `superpowers:receiving-code-review`: verify each one against the code before acting on it.
 - Low findings are fixed or listed in the PR.
 - Any code change after review goes back through review.
-- **Rounds:** a normal change gets one review round, then the raising reviewer re-checks each fix. Run another `/code-review` round only when the last one had a High or Medium that changed code; stop once the latest round finds only Lows. The command is told to surface at least 5 findings, so re-running it to chase Lows never converges. A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) gets ≥ 2 rounds plus the staff review (§ 2). Review runs after Verify, so the reviewed code is the code that works.
+- **Rounds:** a normal change gets one review round, then the raising reviewer re-checks each fix. Run another `/code-review` round only when the last one had a High or Medium that changed code; stop once the latest round finds only Lows. The command is told to surface at least 5 findings, so re-running it to chase Lows never converges. A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) gets ≥ 2 rounds plus the staff review (§ 2).
+- **From round 3 on, each round is targeted** (D-043).
+  - Run it on the fix commits since the last round only: `/code-review high <first-fix-sha>^..HEAD`.
+  - It confirms that each item from the last round is closed.
+  - It reports only **new** High or Medium findings that those commits introduce.
+  - Tell it not to pad to a minimum count. An empty list is a valid answer. Pass this sentence verbatim in the args: *"Review ONLY these fix commits. Confirm each item from the last round closed. Report ONLY new High or Medium findings these commits introduce, each with a concrete failure scenario; do NOT pad to a minimum count, an empty list is a valid answer. Do not re-raise decided items."*
+  - A round that returns only closed items, decided items or Lows ends the review (the stop rule).
+  - If a targeted round finds a new Medium in a mechanism the plan puts in a later slice, carry the finding to that slice rather than build more here.
+- Review runs after Verify, so the reviewed code is the code that works. When review fixes touch the path Verify drove, run Verify again on the final head before the PR (`feature-flow` § 7).
 - Tell every reviewer to report only gaps that affect correctness or the stated requirements. A reviewer asked to find gaps always finds some, and chasing every one over-engineers.
 
 ## 2. Which project subagent reviews which surface
@@ -54,7 +66,7 @@ Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, o
 
 | Check | How |
 |---|---|
-| 1. Repeated independent review rounds | ≥ 2 rounds of `/code-review high <pr#>` + the § 2 surface reviewers, each in fresh subagents, until the latest round finds no High or Medium; record the finding counts per round in the PR |
+| 1. Repeated independent review rounds | ≥ 2 rounds of `/code-review high <pr#>` + the § 2 surface reviewers, each in fresh subagents, until the latest round finds no High or Medium (from round 3 on, rounds are targeted to the fix commits, § 1); record the finding counts per round in the PR |
 | 2. Staff review (correctness, security, tests) | `security-engineer` + `senior-tester` on the same diff, plus `whole-branch-reviewer` only when the review was split (D-022, D-036); a second round when any BLOCKER / CRITICAL / HIGH is found |
 | 3. Coverage + real-infrastructure tests | the pinned coverage thresholds, and integration tests on Neon for every security-critical use case |
 | 4. Defence in depth | DB- or platform-level enforcement (RLS, constraints, triggers) for every invariant that can live there |
