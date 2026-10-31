@@ -244,6 +244,10 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
       if (input.expectedCurrentStatus !== undefined) {
         whereClauses.push(eq(refunds.status, input.expectedCurrentStatus));
       }
+      // #50 — an orphan closed by the sweep must still have no processor id.
+      if (input.expectProcessorRefundIdNull === true) {
+        whereClauses.push(isNull(refunds.processorRefundId));
+      }
       const [updated] = await tx
         .update(refunds)
         .set({ ...patch, updatedAt: sql`now()` })
@@ -433,6 +437,7 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         readonly correlationId: string;
         readonly initiatorUserId: string;
         readonly processorRefundId: string | null;
+        readonly paymentIntentId: string;
       }>
     > {
       const tx = txUnknown as TenantTx;
@@ -448,8 +453,14 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
           // A.14 — Stripe `re_…` id (nullable) so the sweep can
           // `retrieveRefund` the real outcome instead of blind-failing.
           processorRefundId: refunds.processorRefundId,
+          // #50 — the parent intent, so an orphan row can be looked up.
+          paymentIntentId: payments.processorPaymentIntentId,
         })
         .from(refunds)
+        .innerJoin(
+          payments,
+          and(eq(payments.id, refunds.paymentId), eq(payments.tenantId, tenantIdArg)),
+        )
         .where(
           and(
             eq(refunds.tenantId, tenantIdArg),
@@ -483,6 +494,7 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
         correlationId: r.correlationId,
         initiatorUserId: r.initiatorUserId,
         processorRefundId: r.processorRefundId,
+        paymentIntentId: r.paymentIntentId,
       }));
     },
 

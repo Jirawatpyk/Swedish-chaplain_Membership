@@ -295,6 +295,7 @@ describe('concurrent admin-refund + webhook → exactly ONE credit note (A.18 #1
           ok({ id: processorRefundId, status: 'succeeded', amountSatang: asSatang(0n) }),
         ),
         retrieveRefund: vi.fn(),
+        listRefundsForPaymentIntent: vi.fn(),
       },
       invoicingBridge,
       audit: f5AuditAdapter,

@@ -31,6 +31,7 @@ import type {
   RetrievedPaymentIntent,
   CreatedRefund,
   RetrievedRefund,
+  ListedRefunds,
 } from '../../application/ports/processor-gateway-port';
 import { getStripeClient } from './stripe-client';
 
@@ -820,6 +821,38 @@ export const stripeGateway: ProcessorGatewayPort = {
       });
     } catch (e) {
       return err(mapStripeError(e, { stripeAccount }));
+    }
+  },
+
+  async listRefundsForPaymentIntent(
+    paymentIntentId,
+    stripeAccount,
+  ): Promise<Result<ListedRefunds, ProcessorGatewayError>> {
+    const client = getStripeClient();
+    try {
+      // One page of 100. A payment intent with more refunds than that is not a
+      // real case for a membership invoice, and `complete: false` makes the
+      // sweep leave the row for a person rather than guess.
+      const page = await client.refunds.list(
+        { payment_intent: paymentIntentId, limit: 100 },
+        connectOptions(stripeAccount),
+      );
+      // PCI allow-list: id, status and our own refund id only. Never the
+      // refund object itself (it carries `destination_details`), and never
+      // other metadata (it carries the admin's free-text reason).
+      const refunds = page.data.map((r) => ({
+        id: r.id,
+        status: r.status ?? 'pending',
+        appRefundId:
+          typeof r.metadata?.['refundId'] === 'string' ? r.metadata['refundId'] : null,
+      }));
+      logger.info(
+        { stripeAccount, paymentIntentId, count: refunds.length, hasMore: page.has_more },
+        'stripe-gateway: listRefundsForPaymentIntent ok',
+      );
+      return ok({ refunds, complete: !page.has_more });
+    } catch (e) {
+      return err(mapStripeError(e, { stripeAccount, paymentIntentId }));
     }
   },
 };

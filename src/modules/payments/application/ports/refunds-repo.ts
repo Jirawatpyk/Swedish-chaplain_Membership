@@ -55,6 +55,13 @@ interface UpdateRefundStatusBase {
   readonly creditNoteWaiverReason?: CreditNoteWaiverReason | null;
   readonly completedAt: Date;
   /**
+   * #50 — when true, the UPDATE also requires `processor_refund_id IS NULL`.
+   * The sweep closes an orphan row without a processor-id lock, so a
+   * webhook that back-filled the id meanwhile must win: zero rows match and
+   * the repo returns `null`. Only meaningful with `expectedCurrentStatus`.
+   */
+  readonly expectProcessorRefundIdNull?: true;
+  /**
    * Optional optimistic-concurrency guard (S5 / RR-1). When set, the
    * UPDATE additionally filters `WHERE status = expectedCurrentStatus`.
    * Zero rows matched → repo returns `null` (NOT throw) so the caller
@@ -376,6 +383,8 @@ export interface RefundsRepo {
       readonly correlationId: string;
       readonly initiatorUserId: string;
       readonly processorRefundId: string | null;
+      /** #50 — the parent payment's intent, to look an orphan up at Stripe. */
+      readonly paymentIntentId: string;
     }>
   >;
 

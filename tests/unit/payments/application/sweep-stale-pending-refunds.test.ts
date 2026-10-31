@@ -556,6 +556,19 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     );
   });
 
+  it('#50 orphan: a DB fault while closing it skips that row only; the next row is still swept', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan(), makeStaleRow()]);
+    asMock(deps.refundsRepo.updateStatus).mockRejectedValueOnce(new TypeError('neon blip'));
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok && r.value).toMatchObject({ sweptCount: 1, skippedCount: 1 });
+    expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+      'sweep_stale_pending_refunds.row_skipped',
+      expect.objectContaining({ refundId: 'rfnd_orphan', errKind: 'TypeError' }),
+    );
+  });
+
   it('#50 orphan: an ambiguous lookup on a young row → skip, NO escalation', async () => {
     const deps = makeDeps();
     asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan(30)]);

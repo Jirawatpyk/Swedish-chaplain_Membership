@@ -303,6 +303,7 @@ describe('async PromptPay refund lifecycle — live Neon (A.18 #3)', () => {
           ok({ id: processorRefundId, status: 'pending', amountSatang: asSatang(0n) }),
         ),
         retrieveRefund: vi.fn(),
+        listRefundsForPaymentIntent: vi.fn(),
       },
       // REAL bridge — NOT exercised on the pending path (issueRefund books no
       // CN until the webhook settles), but wired to prove that.
