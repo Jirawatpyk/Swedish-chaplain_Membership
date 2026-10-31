@@ -21,6 +21,7 @@ import {
   MONEY_MOVED_PERMANENT_CODES,
   classifyGatewayFailure,
   proveNothingMoved,
+  proveNoProcessorRefund,
   proveProcessorSettledFailed,
   type MoneyExit,
   type ProcessorFailure,
@@ -141,5 +142,22 @@ describe('proveNothingMoved', () => {
     // unknown money exit even with a non-null assertion at runtime.
     const maybe = proveNothingMoved(classifyGatewayFailure({ kind: 'retryable' }));
     expect(maybe).toBeNull();
+  });
+});
+
+// #50 — an orphan pending refund (no processor id) is closed only on the
+// processor's own complete answer that it holds no refund for this row.
+describe('proveNoProcessorRefund', () => {
+  it('a complete lookup with no refund for this row proves nothing moved', () => {
+    expect(proveNoProcessorRefund({ complete: true, matchCount: 0 })).not.toBeNull();
+  });
+
+  it.each([
+    { complete: false, matchCount: 0 },
+    { complete: true, matchCount: 1 },
+    { complete: true, matchCount: 2 },
+    { complete: false, matchCount: 1 },
+  ])('$matchCount match(es), complete=$complete → no proof', (lookup) => {
+    expect(proveNoProcessorRefund(lookup)).toBeNull();
   });
 });

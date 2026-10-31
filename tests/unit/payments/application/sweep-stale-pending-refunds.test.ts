@@ -72,6 +72,7 @@ type StaleRow = {
   correlationId: string;
   initiatorUserId: string;
   processorRefundId: string | null;
+  paymentIntentId: string;
 };
 
 function makeStaleRow(
@@ -94,6 +95,7 @@ function makeStaleRow(
       overrides.processorRefundId !== undefined
         ? overrides.processorRefundId
         : 're_stale1',
+    paymentIntentId: 'pi_1',
   };
 }
 
@@ -139,6 +141,7 @@ function makeDeps(): SweepStalePendingRefundsDeps {
     refundsRepo: {
       listPendingOlderThan: vi.fn(async () => [makeStaleRow()]),
       lockForUpdateByProcessorRefundId: vi.fn(async () => makeLockedRefund()),
+      attachProcessorRefundId: vi.fn(async () => undefined),
       // return value is ignored by the sweep's failed-branch flip
       updateStatus: vi.fn(async () => makeLockedRefund({ status: 'failed' })),
     } as unknown as SweepStalePendingRefundsDeps['refundsRepo'],
@@ -159,6 +162,7 @@ function makeDeps(): SweepStalePendingRefundsDeps {
     } as unknown as SweepStalePendingRefundsDeps['tenantSettingsRepo'],
     processorGateway: {
       retrieveRefund: vi.fn(async () => retrievedRefund('succeeded')),
+      listRefundsForPaymentIntent: vi.fn(async () => ok({ refunds: [], complete: true })),
     } as unknown as SweepStalePendingRefundsDeps['processorGateway'],
     invoicingBridge: {
       issueCreditNoteFromRefund: vi.fn(async () =>
@@ -461,47 +465,107 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
   });
 
-  // --- null processor_refund_id → skip + escalate (NEVER blind-fail) -------
-  it('null processor_refund_id + aged → skip + escalate; retrieve NOT called; never failed', async () => {
+  // --- #50: null processor_refund_id → ask Stripe by payment intent --------
+  const orphan = (ageHours = 30) =>
+    makeStaleRow({ id: 'rfnd_orphan', processorRefundId: null, ageHours });
+
+  it('#50 orphan: Stripe holds no refund for it (complete list) → closed failed with proof, refund_failed audit', async () => {
     const deps = makeDeps();
-    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
-      makeStaleRow({ id: 'rfnd_nullid', processorRefundId: null, ageHours: 100 }),
-    ]);
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan()]);
+    asMock(deps.processorGateway.listRefundsForPaymentIntent).mockResolvedValueOnce(
+      ok({ refunds: [{ id: 're_other', status: 'succeeded', appRefundId: 'rfnd_someone_else' }], complete: true }),
+    );
 
     const r = await sweepStalePendingRefunds(deps, baseInput);
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      expect(r.value.sweptCount).toBe(0);
-      expect(r.value.skippedCount).toBe(1);
-      expect(r.value.escalatedCount).toBe(1);
-    }
-    // Cannot reconcile → never retrieve, never flip.
+    expect(r.ok && r.value.sweptCount).toBe(1);
+    expect(asMock(deps.processorGateway.listRefundsForPaymentIntent)).toHaveBeenCalledWith('pi_1', STRIPE_ACCOUNT);
     expect(asMock(deps.processorGateway.retrieveRefund)).not.toHaveBeenCalled();
-    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+    const upd = asMock(deps.refundsRepo.updateStatus).mock.calls[0]?.[1];
+    expect(upd).toMatchObject({
+      refundId: 'rfnd_orphan',
+      nextStatus: 'failed',
+      failureReasonCode: 'no_processor_refund',
+      // Not locked by processor id (there is none): both guards ride the UPDATE.
+      expectedCurrentStatus: 'pending',
+      expectProcessorRefundIdNull: true,
+    });
+    expect(upd.rejectionProof).toBeDefined();
+    const audit = asMock(deps.audit.emit).mock.calls[0]?.[1];
+    expect(audit.eventType).toBe('refund_failed');
+    expect(audit.actorUserId).toBe(SYSTEM_ACTOR_STRIPE_WEBHOOK);
+    expect(audit.payload).toMatchObject({ refund_id: 'rfnd_orphan', failure_reason_code: 'no_processor_refund' });
+    expect(asMock(paymentsMetrics.refundFailedCount)).toHaveBeenCalledWith(TENANT_ID, 'no_processor_refund');
+  });
+
+  it('#50 orphan: the row changed meanwhile (UPDATE matched nothing) → skip, no audit', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan()]);
+    asMock(deps.refundsRepo.updateStatus).mockResolvedValueOnce(null);
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok && r.value.skippedCount).toBe(1);
     expect(asMock(deps.audit.emit)).not.toHaveBeenCalled();
-    expect(
-      asMock(paymentsMetrics.stalePendingRefundEscalated),
-    ).toHaveBeenCalledWith(TENANT_ID, 'missing_processor_refund_id');
-    expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
-      'sweep_stale_pending_refunds.escalation',
-      expect.objectContaining({ reason: 'missing_processor_refund_id' }),
+    expect(asMock(paymentsMetrics.refundFailedCount)).not.toHaveBeenCalled();
+  });
+
+  it('#50 orphan: exactly one Stripe refund names this row → its id is attached, then reconciled as usual', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan()]);
+    asMock(deps.processorGateway.listRefundsForPaymentIntent).mockResolvedValueOnce(
+      ok({ refunds: [{ id: 're_found', status: 'succeeded', appRefundId: 'rfnd_orphan' }], complete: true }),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok && r.value.sweptCount).toBe(1);
+    expect(asMock(deps.refundsRepo.attachProcessorRefundId)).toHaveBeenCalledWith(expect.anything(), {
+      refundId: 'rfnd_orphan',
+      tenantId: TENANT_ID,
+      processorRefundId: 're_found',
+    });
+    expect(asMock(deps.processorGateway.retrieveRefund)).toHaveBeenCalledWith('re_found', STRIPE_ACCOUNT);
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['an incomplete list', ok({ refunds: [], complete: false })],
+    [
+      'two Stripe refunds naming this row',
+      ok({
+        refunds: [
+          { id: 're_a', status: 'succeeded', appRefundId: 'rfnd_orphan' },
+          { id: 're_b', status: 'pending', appRefundId: 'rfnd_orphan' },
+        ],
+        complete: true,
+      }),
+    ],
+    ['a list error', err({ kind: 'retryable' as const, reason: 'boom' })],
+  ])('#50 orphan: %s → no write; aged past 3 days → escalated', async (_label, listed) => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan(100)]);
+    asMock(deps.processorGateway.listRefundsForPaymentIntent).mockResolvedValueOnce(listed);
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok && r.value).toMatchObject({ sweptCount: 0, skippedCount: 1, escalatedCount: 1 });
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.attachProcessorRefundId)).not.toHaveBeenCalled();
+    expect(asMock(deps.audit.emit)).not.toHaveBeenCalled();
+    expect(asMock(paymentsMetrics.stalePendingRefundEscalated)).toHaveBeenCalledWith(
+      TENANT_ID,
+      'missing_processor_refund_id',
     );
   });
 
-  it('null processor_refund_id + young → skip, NO escalation', async () => {
+  it('#50 orphan: an ambiguous lookup on a young row → skip, NO escalation', async () => {
     const deps = makeDeps();
-    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([
-      makeStaleRow({ id: 'rfnd_nullid_new', processorRefundId: null, ageHours: 10 }),
-    ]);
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan(30)]);
+    asMock(deps.processorGateway.listRefundsForPaymentIntent).mockResolvedValueOnce(
+      ok({ refunds: [], complete: false }),
+    );
 
     const r = await sweepStalePendingRefunds(deps, baseInput);
-    if (r.ok) {
-      expect(r.value.skippedCount).toBe(1);
-      expect(r.value.escalatedCount).toBe(0);
-    }
-    expect(
-      asMock(paymentsMetrics.stalePendingRefundEscalated),
-    ).not.toHaveBeenCalled();
+    expect(r.ok && r.value).toMatchObject({ skippedCount: 1, escalatedCount: 0 });
+    expect(asMock(paymentsMetrics.stalePendingRefundEscalated)).not.toHaveBeenCalled();
   });
 
   // --- retrieve error / timeout → skip + count -----------------------------
