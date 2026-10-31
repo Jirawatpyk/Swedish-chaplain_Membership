@@ -544,3 +544,59 @@ describe('Broadcasts gateway SDK calls on the wire (spec 141)', () => {
     });
   });
 });
+
+// Spec 140 s2a (DL5a, DL8): through the real SDK, a create goes on the wire
+// once, and every call hands `fetch` the AbortSignal that bounds it. The signal
+// is read off the stubbed `fetch`'s own arguments, so the snapshots above stay
+// as they are.
+describe('Broadcasts gateway bounded calls on the wire (spec 140 s2a)', () => {
+  const fetchInits = (): ReadonlyArray<RequestInit | undefined> =>
+    (globalThis.fetch as unknown as { mock: { calls: Array<[unknown, RequestInit | undefined]> } }).mock.calls.map(
+      (c) => c[1],
+    );
+  const input = {
+    audienceId: 'aud_1',
+    subject: 'Hello',
+    htmlBody: '<p>hi</p>',
+    fromName: 'SweCham',
+    fromEmail: 'noreply@example.com',
+    replyToEmail: 'office@example.com',
+    broadcastNameForResendDashboard: 'SweCham — Hello',
+    tenantDisplayName: 'SweCham',
+    locale: 'en',
+  } satisfies CreateBroadcastInput;
+
+  it.each([
+    ['createAudience', () => resendBroadcastsGateway.createAudience('probe')],
+    ['createBroadcast', () => resendBroadcastsGateway.createBroadcast(input)],
+    ['createContactImport', () => resendBroadcastsGateway.createContactImport('aud_1', ['a@example.com'])],
+  ])('%s answered 5xx sends one request', async (_name, run) => {
+    vi.useFakeTimers();
+    const calls = stubWire(() => json(500, { statusCode: 500, name: 'internal_server_error', message: 'boom' }));
+    const done = (run() as Promise<unknown>).then(
+      () => 'resolved',
+      (e: { kind?: string }) => e.kind ?? 'threw',
+    );
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect({ outcome: await done, attempts: calls.length }).toEqual({ outcome: 'retryable', attempts: 1 });
+  });
+
+  it.each([
+    ['createAudience', () => resendBroadcastsGateway.createAudience('probe')],
+    ['addContactsToAudience', () => resendBroadcastsGateway.addContactsToAudience('aud_1', [{ emailLower: 'a@example.com' }])],
+    ['createBroadcast', () => resendBroadcastsGateway.createBroadcast(input)],
+    ['sendBroadcast', () => resendBroadcastsGateway.sendBroadcast('bc_1', 'idem-key-1')],
+    ['getAudienceContactCount', () => resendBroadcastsGateway.getAudienceContactCount('aud_1')],
+    ['retrieveBroadcast', () => resendBroadcastsGateway.retrieveBroadcast('bc_1')],
+    ['removeContactFromAudience', () => resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@example.com')],
+    ['listAudiences', () => resendBroadcastsGateway.listAudiences()],
+    ['deleteAudience', () => resendBroadcastsGateway.deleteAudience('aud_1')],
+    ['deleteBroadcast', () => resendBroadcastsGateway.deleteBroadcast('bc_1')],
+  ])('%s: the signal reaches fetch', async (_name, run) => {
+    stubWire(() => json(200, { object: 'list', id: 'x_1', has_more: false, data: [] }));
+    await (run() as Promise<unknown>).catch(() => undefined);
+    const inits = fetchInits();
+    expect(inits.length).toBeGreaterThan(0);
+    expect(inits.every((i) => i?.signal instanceof AbortSignal)).toBe(true);
+  });
+});

@@ -30,6 +30,14 @@ import type { BrandSettings } from '../../domain/brand/brand-settings';
 
 export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'api';
 
+/**
+ * Spec 140 s2a (DL8) — the most time one gateway call may take, retries and
+ * their backoff included: one `AbortSignal.timeout` spans every attempt. 10 s
+ * against a measured round trip of ~0.5 s. Exported so the dispatch lease
+ * (slice 2b) can size its TTL and cutoff from the same number.
+ */
+export const RESEND_CALL_TIMEOUT_MS = 10_000;
+
 export type BroadcastsGatewayError =
   | {
       readonly kind: 'retryable';

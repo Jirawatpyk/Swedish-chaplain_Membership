@@ -22,6 +22,7 @@ import type { Resend } from 'resend';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
+import { RESEND_CALL_TIMEOUT_MS } from '../../application/ports/broadcasts-gateway-port';
 import type {
   AudienceContact,
   AudienceContactCount,
@@ -274,7 +275,19 @@ function client(): Resend {
   return getResendBroadcastsClient();
 }
 
-export const resendBroadcastsGateway: BroadcastsGatewayPort = {
+export interface ResendBroadcastsGatewayOptions {
+  /** The per-call budget, retries included. Default {@link RESEND_CALL_TIMEOUT_MS}; tests pass 50 ms. */
+  readonly callTimeoutMs?: number;
+}
+
+/** Spec 140 s2a — a gateway whose every call is bounded by `callTimeoutMs`. */
+export function createResendBroadcastsGateway(
+  options: ResendBroadcastsGatewayOptions = {},
+): BroadcastsGatewayPort {
+  return gatewayWith(options.callTimeoutMs ?? RESEND_CALL_TIMEOUT_MS);
+}
+
+const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
   async createAudience(name: string): Promise<{ readonly audienceId: string }> {
     return withRetry(
       async () => {
@@ -1023,7 +1036,7 @@ export const resendBroadcastsGateway: BroadcastsGatewayPort = {
     );
   },
 
-};
+});
 
 /**
  * T086 — the Contacts Import endpoints, spoken to with a raw `fetch`.
@@ -1236,3 +1249,6 @@ function normaliseStatus(
       return 'unknown';
   }
 }
+
+/** The production gateway: every call bounded by {@link RESEND_CALL_TIMEOUT_MS}. */
+export const resendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadcastsGateway();
