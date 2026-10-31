@@ -104,11 +104,15 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      IN ('sending','sent','partially_sent','partial_delivery_accepted') AND
      sent_at >= '<member_erasure_requested time>';` It is the check that needs
      no evidence write: a row already `sending` when the cascade listed the
-     member's in-flight rows had no evidence row before spec 140 s1. Since then
-     the terminal-draft pass probes such a row (if it still holds a Resend id)
-     and writes the evidence row, and that also covers a send made BEFORE the
-     erasure request, which this query (`sent_at >=` the request) does not
-     return — so read the evidence query and this query together.
+     member's in-flight rows has **no evidence row and is not in the count** —
+     only this query finds it (spec 140 s1 review round 2: the terminal-draft
+     pass no longer lists `sending` / `sent` / `partially_sent` /
+     `partial_delivery_accepted` rows). A send made BEFORE the erasure request
+     is an ordinary delivery, not erasure evidence: neither query reports it,
+     and the DSR answer covers it under the processing record, not 8c. The one
+     earlier-send case the evidence query does carry is a row that SAYS unsent
+     (`failed_to_dispatch` / `cancelled`) whose Resend copy probes handed (for
+     example after `sent_but_transition_lost`).
    Record each on the DSR ticket with its recipient count (residual 8c wording
    in step 7). **Archive never stands in for an erasure request**: archiving a
    member still skips a dispatch-begun E-Blast and deletes nothing at Resend.
@@ -127,14 +131,16 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    query. A `queued` copy is **not** cancelled at Resend (there is no cancel
    call in this slice); its send completes. Do **not** delete anything at
    Resend by hand. To list what the cascade reached (the TERMINAL query; its
-   status list mirrors `IN_PROGRESS_BROADCAST_STATUSES` + `sent` in
+   status list mirrors `IN_PROGRESS_BROADCAST_STATUSES` +
+   `SENDING_STARTED_BROADCAST_STATUSES` in
    `src/modules/broadcasts/domain/stage/in-progress-statuses.ts` — re-check it
-   if that constant changes):
+   if those constants change):
    `SELECT broadcast_id, status, resend_broadcast_id FROM broadcasts WHERE
    tenant_id = '<tenant>' AND requested_by_member_id = '<member>' AND
    resend_broadcast_id IS NOT NULL AND resend_broadcast_id <> '' AND status
    NOT IN ('submitted','approved','in_design','awaiting_member_approval',
-   'changes_requested','member_approved','sent');` Until the F7 retention sweep
+   'changes_requested','member_approved','sending','sent','partially_sent',
+   'partial_delivery_accepted');` Until the F7 retention sweep
    removes rows (years later), its row count equals `resend_drafts_cleared +
    resend_copies_retained` on the LATEST `member_erased` plus the handed rows
    among them (those counted in `broadcasts_already_sent_count`). An erasure
@@ -228,11 +234,10 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    - **run the step 3b STATE query on every erasure, whatever the count says**
      (`sent_at >= member_erasure_requested`, statuses `sending` / `sent` /
      `partially_sent` / `partial_delivery_accepted`). Any row it returns is
-     residual 8c **even when `broadcasts_already_sent_count` is 0** (an
-     evidence write can be missing — a row without a Resend id is never
-     probed). A send made before the erasure request is not in this query; it
-     is in the step 3b evidence query, written by the terminal-draft pass.
-     Record each on the DSR ticket;
+     residual 8c **even when `broadcasts_already_sent_count` is 0**: a row
+     already `sending` when the cascade listed in-flight rows writes no evidence
+     row. A send made before the erasure request is an ordinary delivery, not
+     8c. Record each on the DSR ticket;
    - for a member who used E-Blasts: the `broadcast_content_redacted` row carries
      `versions_redacted`, `decision_reasons_redacted` and `notifications_cancelled`, and the
      three-count query in § E-Blast approval round returns zeros.

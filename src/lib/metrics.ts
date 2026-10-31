@@ -983,9 +983,9 @@ export const erasureMetrics = {
    * erasure being re-driven for ever (a permanent Resend answer, a cascade that
    * never clears). Observed twice per tick that reaches its loop: the candidate
    * count before it (a baseline that survives a tick killed mid-loop) and this
-   * value after it; 0 while the kill switch is off. A candidate-query failure
-   * observes nothing new (the previous value stands; the 500 is the signal). A
-   * lower bound when the 50-member tick cap fills.
+   * value after it; the real candidate count while the kill switch is off. A
+   * candidate-query failure observes nothing new (the previous value stands;
+   * the 500 is the signal). A lower bound when the 50-member tick cap fills.
    */
   stuckCount(count: number, tenantId: string): void {
     observeTenantGauge(
