@@ -11,8 +11,12 @@
  *   - 404 audience/broadcast → `{kind: 'resource_missing', resourceType, resourceId}`
  *   - 4xx other → `{kind: 'permanent', code, reason}`
  *
- * Retry policy: 1/2/4/8/16s × 5 (CHK020) on retryable errors only.
- * Permanent errors throw immediately.
+ * Retry policy: 1/2/4/8/16s backoff (CHK020) on retryable errors only, inside
+ * ONE budget per call (`callTimeoutMs`, default `RESEND_CALL_TIMEOUT_MS` =
+ * 10 s; spec 140 s2a): a backoff is taken only while the budget left exceeds
+ * it + 1 s, so a retried call gives up within 10 s, not ~31 s. The creates
+ * (`createAudience`, `createBroadcast`, `createContactImport`) make ONE
+ * attempt. Permanent errors throw immediately.
  *
  * Logging: pino with `redact` configured globally to drop request
  * bodies; only metadata (audienceId, broadcastId, recipientCount,
@@ -225,22 +229,62 @@ function classifyResendError(
   return new GatewayThrowable({ kind: 'permanent', reason, code });
 }
 
-async function withRetry<T>(
-  op: () => Promise<T>,
-  ctx: { method: string },
+/**
+ * Spec 140 s2a — the least time an attempt after a backoff must have left. A
+ * retry is made only while the budget left exceeds the next backoff + this.
+ */
+const RETRY_MIN_ATTEMPT_MS = 1_000;
+
+/**
+ * Spec 140 s2a (DL5a, DL8, P6) — one bounded gateway call.
+ *
+ * ONE `AbortSignal.timeout(callTimeoutMs)` spans every attempt and every
+ * backoff, so a retried call never takes longer than `callTimeoutMs` in total;
+ * a per-attempt signal would let six attempts run ~6 × C. Every attempt hands
+ * the signal to its request (the SDK's `RequestOptions.signal` reaches
+ * `fetch`, `node_modules/resend/dist/index.mjs` `fetchRequest`).
+ *
+ * Once the signal has aborted, the failure is `retryable` / `timeout`,
+ * whatever shape it arrived in: the SDK's outer catch turns an aborted `fetch`
+ * (or an aborted `response.json()`) into `application_error` with
+ * `statusCode: null`, and a raw `fetch` rejects with a `TimeoutError`, before
+ * or mid-body.
+ *
+ * `retry: false` is one attempt (the creates: a retried create that reached
+ * Resend mints a second resource, so a failed create waits for the next tick,
+ * inside the FR-021 hour).
+ */
+async function boundedCall<T>(
+  op: (signal: AbortSignal) => Promise<T>,
+  ctx: { readonly method: string; readonly callTimeoutMs: number; readonly retry: boolean },
 ): Promise<T> {
+  const signal = AbortSignal.timeout(ctx.callTimeoutMs);
+  const deadline = Date.now() + ctx.callTimeoutMs;
   let lastErr: unknown = null;
-  for (let attempt = 0; attempt <= RETRY_BACKOFF_MS.length; attempt++) {
+  for (let attempt = 0; ; attempt++) {
     try {
-      return await op();
+      return await op(signal);
     } catch (e) {
       lastErr = e;
       // Only retry on `retryable` kind; everything else throws immediately
       if (e instanceof GatewayThrowable && e.kind !== 'retryable') {
         throw e;
       }
-      if (attempt === RETRY_BACKOFF_MS.length) break;
-      const backoff = RETRY_BACKOFF_MS[attempt] ?? 16_000;
+      if (signal.aborted) {
+        throw new GatewayThrowable({
+          kind: 'retryable',
+          subKind: 'timeout',
+          reason: `${ctx.method} gave up after ${ctx.callTimeoutMs} ms`,
+        });
+      }
+      const backoff = RETRY_BACKOFF_MS[attempt];
+      if (
+        !ctx.retry ||
+        backoff === undefined ||
+        deadline - Date.now() <= backoff + RETRY_MIN_ATTEMPT_MS
+      ) {
+        break;
+      }
       logger.warn(
         {
           method: ctx.method,
@@ -289,10 +333,10 @@ export function createResendBroadcastsGateway(
 
 const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
   async createAudience(name: string): Promise<{ readonly audienceId: string }> {
-    return withRetry(
-      async () => {
+    return boundedCall(
+      async (signal) => {
         const sdk = client();
-        const result = (await sdk.audiences.create({ name })) as ResendSdkResponse<{
+        const result = (await sdk.audiences.create({ name }, { signal })) as ResendSdkResponse<{
           id: string;
         }>;
         if (result.error || !result.data?.id) {
@@ -304,7 +348,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         );
         return { audienceId: result.data.id };
       },
-      { method: 'createAudience' },
+      { method: 'createAudience', callTimeoutMs, retry: false },
     );
   },
 
@@ -335,7 +379,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
     // See `specs/108-contact-recipient-rules/research.md` § R9 (T095 block).
     //
     // Wrap EACH single create in its own
-    // withRetry so that when Resend answers 429 (now classified retryable —
+    // boundedCall (its own 10 s budget; spec 140 s2a) so that when Resend answers 429 (now classified retryable —
     // see classifyResendError), the 1/2/4/8/16s backoff self-throttles just
     // that ONE contact and retries it, WITHOUT re-creating the contacts that
     // already succeeded. Previously the retry wrapped a whole 100-contact
@@ -357,8 +401,8 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
     // measured 2.08 req/s ⇒ ~623 per 300 s tick ⇒ a 500 accept bound. Anything
     // above that used to be accepted and never delivered.
     for (const c of contacts) {
-      await withRetry(
-        async () => {
+      await boundedCall(
+        async (signal) => {
           const sdk = client();
           const result = (await sdk.contacts.create({
             email: c.emailLower,
@@ -366,7 +410,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
             ...(c.firstName !== undefined && { firstName: c.firstName }),
             ...(c.lastName !== undefined && { lastName: c.lastName }),
             unsubscribed: false,
-          })) as ResendSdkResponse<{ id: string }>;
+          }, { signal })) as ResendSdkResponse<{ id: string }>;
           if (result.error) {
             throw classifyResendError(
               result.error ?? undefined,
@@ -375,7 +419,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
             );
           }
         },
-        { method: 'addContactsToAudience' },
+        { method: 'addContactsToAudience', callTimeoutMs, retry: true },
       );
     }
     logger.info(
@@ -388,8 +432,8 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
     input: CreateBroadcastInput,
   ): Promise<{ readonly broadcastId: string }> {
     assertNonEmpty({ audienceId: input.audienceId });
-    return withRetry(
-      async () => {
+    return boundedCall(
+      async (signal) => {
         const sdk = client();
         // T147 — wrap the sanitised inner body with the chamber-branded
         // shell + locale-aware footer (FR-029). The footer carries the
@@ -416,7 +460,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
           html: wrappedHtml,
           replyTo: input.replyToEmail,
           name: input.broadcastNameForResendDashboard,
-        })) as ResendSdkResponse<{ id: string }>;
+        }, { signal })) as ResendSdkResponse<{ id: string }>;
         if (result.error || !result.data?.id) {
           throw classifyResendError(result.error ?? undefined, 'broadcast');
         }
@@ -430,7 +474,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         );
         return { broadcastId: result.data.id };
       },
-      { method: 'createBroadcast' },
+      { method: 'createBroadcast', callTimeoutMs, retry: false },
     );
   },
 
@@ -439,8 +483,8 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
     idempotencyKey: string,
   ): Promise<void> {
     assertNonEmpty({ broadcastId });
-    await withRetry(
-      async () => {
+    await boundedCall(
+      async (signal) => {
         const sdk = client();
         // Spec 141: resend@6.35.0 fixed this upstream — `broadcasts.send(id,
         // payload, requestOptions)` now forwards the options to `post()`
@@ -470,7 +514,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         // serialises to `{}`.
         //
         // What a replay meets: MEASURED 2026-10-29, the key changes nothing —
-        // a `withRetry` replay INSIDE one tick (a lost response, or a 5xx after
+        // a `boundedCall` replay INSIDE one tick (a lost response, or a 5xx after
         // Resend already accepted the send) is answered `422 validation_error
         // "Only draft broadcasts can be sent or scheduled"` whatever the key,
         // and Resend delivers once. That 422 is classified `permanent` below;
@@ -485,6 +529,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         // the import leg in `build-audience-tick.ts`.
         const result = (await sdk.post(`/broadcasts/${broadcastId}/send`, {}, {
           idempotencyKey,
+          signal,
         })) as ResendSdkResponse<{ id: string }>;
         if (result.error) {
           throw classifyResendError(
@@ -498,7 +543,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
           'resend.broadcasts.broadcast_sent',
         );
       },
-      { method: 'sendBroadcast' },
+      { method: 'sendBroadcast', callTimeoutMs, retry: true },
     );
   },
 
@@ -531,10 +576,10 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
     // covered. If Resend ever changes that, the throw reaches the caller's
     // unverifiable arm, which is where "we could not count" already goes.
     assertNonEmpty({ audienceId });
-    return await withRetry(
-      async () => {
+    return await boundedCall(
+      async (signal) => {
         const sdk = client();
-        const result = (await sdk.contacts.list({ audienceId })) as ResendSdkResponse<{
+        const result = (await sdk.contacts.list({ audienceId }, { signal })) as ResendSdkResponse<{
           data: ReadonlyArray<unknown>;
           has_more?: boolean;
         }>;
@@ -547,7 +592,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         }
         return {
           // BOTH levels need `?.`: with only the outer one a payload-less 200
-          // threw a TypeError, which `withRetry` retries (it short-circuits
+          // threw a TypeError, which `boundedCall` retries (it short-circuits
           // only a `GatewayThrowable`) for 31 s and rethrows as a transport
           // timeout.
           count: result.data?.data?.length ?? 0,
@@ -557,7 +602,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
           complete: result.data?.has_more === false,
         };
       },
-      { method: 'getAudienceContactCount' },
+      { method: 'getAudienceContactCount', callTimeoutMs, retry: true },
     );
   },
 
@@ -566,10 +611,10 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
   ): Promise<RetrieveBroadcastOutcome> {
     assertNonEmpty({ broadcastId });
     try {
-      const resource = await withRetry(
-        async (): Promise<RetrievedBroadcastResource | null> => {
+      const resource = await boundedCall(
+        async (signal): Promise<RetrievedBroadcastResource | null> => {
           const sdk = client();
-          const result = (await sdk.broadcasts.get(broadcastId)) as ResendSdkResponse<{
+          const result = (await sdk.broadcasts.get(broadcastId, { signal })) as ResendSdkResponse<{
             id: string;
             status: string;
             sent_at?: string | null;
@@ -588,7 +633,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
             sentAt: result.data.sent_at ?? null,
           };
         },
-        { method: 'retrieveBroadcast' },
+        { method: 'retrieveBroadcast', callTimeoutMs, retry: true },
       );
       if (resource === null) return { kind: 'not_found' };
       return { kind: 'present', resource };
@@ -602,7 +647,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
 
   /**
    * Spec 139 review round 1 — the port docblock has the contract. A raw
-   * `fetch` with the same 10 s bound as {@link deleteBroadcastOnce}, because
+   * `fetch` with the same `callTimeoutMs` bound (10 s) as {@link deleteBroadcastOnce}, because
    * the erasure cascade calls it under the broadcast row's lock. The log line
    * carries the HTTP status and the outcome only, never the body.
    */
@@ -614,7 +659,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
     try {
       res = await fetch(`${RESEND_API_BASE_URL}/broadcasts/${encodeURIComponent(broadcastId)}`, {
         method: 'GET',
-        signal: AbortSignal.timeout(DELETE_ONCE_TIMEOUT_MS),
+        signal: AbortSignal.timeout(callTimeoutMs),
         headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
       });
     } catch (e) {
@@ -624,7 +669,10 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
       );
       return { kind: 'retryable' };
     }
-    const text = await res.text().catch(() => '');
+    // Spec 140 s2a — a body that stalls past the budget is a timeout, not an
+    // unreadable answer.
+    const text = await res.text().catch(() => null);
+    if (text === null) return { kind: 'retryable' };
     const outcome = retrieveOnceOutcomeFor(rawHttpStatusOf(res.status, text), text);
     logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.retrieve_once');
     return outcome;
@@ -636,18 +684,18 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
   ): Promise<RemoveContactOutcome> {
     assertNonEmpty({ audienceId, email });
     try {
-      await withRetry(
-        async () => {
+      await boundedCall(
+        async (signal) => {
           const sdk = client();
           const result = (await sdk.contacts.remove({
             audienceId,
             email,
-          })) as ResendSdkResponse<{ deleted: boolean }>;
+          }, { signal })) as ResendSdkResponse<{ deleted: boolean }>;
           if (result.error) {
             throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
           }
         },
-        { method: 'removeContactFromAudience' },
+        { method: 'removeContactFromAudience', callTimeoutMs, retry: true },
       );
       logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
       return { kind: 'detached' };
@@ -683,11 +731,12 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
   async deleteContactGlobally(email: string): Promise<void> {
     assertNonEmpty({ email });
     try {
-      await withRetry(
-        async () => {
+      await boundedCall(
+        async (signal) => {
           const body = await importFetch(
             `/contacts/${encodeURIComponent(email)}`,
             { method: 'DELETE' },
+            signal,
             // No resourceId: it would be the address, and that must not reach a
             // classified error's `reason`, which is logged.
           );
@@ -701,7 +750,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
             );
           }
         },
-        { method: 'deleteContactGlobally' },
+        { method: 'deleteContactGlobally', callTimeoutMs, retry: true },
       );
       // No email in the log line — forbidden-fields hygiene (FR-053a).
       logger.info({}, 'resend.broadcasts.contact_deleted_globally');
@@ -728,7 +777,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
     // Spec 141: on resend@6.35 `audiences.list` is the paginated
     // `GET /segments`, so follow `has_more` (cursor = the last id) instead of
     // reading page 1 only — reclaim-orphaned-audiences must see EVERY audience.
-    // Each page is its own `withRetry`, so a retry never re-reads earlier pages.
+    // Each page is its own `boundedCall`, so a retry never re-reads earlier pages.
     const byId = new Map<string, { id: string; name: string; created_at: string }>();
     const seenCursors = new Set<string>();
     let after: string | undefined;
@@ -738,13 +787,13 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         truncated = true;
         break;
       }
-      const result = await withRetry(
-        async () => {
+      const result = await boundedCall(
+        async (signal) => {
           const sdk = client();
           const res = (await sdk.audiences.list({
             limit: LIST_AUDIENCES_PAGE_SIZE,
             ...(after !== undefined && { after }),
-          })) as ResendSdkResponse<{
+          }, { signal })) as ResendSdkResponse<{
             object: string;
             has_more?: boolean;
             data: ReadonlyArray<{ id: string; name: string; created_at: string }>;
@@ -754,7 +803,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
           }
           return res.data;
         },
-        { method: 'listAudiences' },
+        { method: 'listAudiences', callTimeoutMs, retry: true },
       );
       const pageRows = result?.data ?? [];
       for (const r of pageRows) byId.set(r.id, r);
@@ -786,10 +835,10 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
 
   async deleteAudience(audienceId: string): Promise<void> {
     assertNonEmpty({ audienceId });
-    await withRetry(
-      async () => {
+    await boundedCall(
+      async (signal) => {
         const sdk = client();
-        const result = (await sdk.audiences.remove(audienceId)) as ResendSdkResponse<{
+        const result = (await sdk.audiences.remove(audienceId, { signal })) as ResendSdkResponse<{
           deleted: boolean;
           id: string;
           object: string;
@@ -808,7 +857,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         }
         logger.info({ audienceId }, 'resend.broadcasts.audience_deleted');
       },
-      { method: 'deleteAudience' },
+      { method: 'deleteAudience', callTimeoutMs, retry: true },
     );
   },
 
@@ -825,10 +874,10 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
    */
   async deleteBroadcast(broadcastId: string): Promise<void> {
     assertNonEmpty({ broadcastId });
-    await withRetry(
-      async () => {
+    await boundedCall(
+      async (signal) => {
         const sdk = client();
-        const result = (await sdk.broadcasts.remove(broadcastId)) as ResendSdkResponse<{
+        const result = (await sdk.broadcasts.remove(broadcastId, { signal })) as ResendSdkResponse<{
           deleted: boolean;
           id: string;
           object: string;
@@ -842,7 +891,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         }
         logger.info({ broadcastId }, 'resend.broadcasts.broadcast_deleted');
       },
-      { method: 'deleteBroadcast' },
+      { method: 'deleteBroadcast', callTimeoutMs, retry: true },
     );
   },
 
@@ -850,7 +899,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
    * Spec 139 P1 — the port docblock has the contract. A raw `fetch`, like
    * `importFetch`, because the SDK took no `signal` when this was written
    * (resend@4.8.0; 6.32+ accepts one, adopted by spec 140) and this
-   * call must not outlive {@link DELETE_ONCE_TIMEOUT_MS} while the caller holds
+   * call must not outlive the gateway's `callTimeoutMs` (10 s) while the caller holds
    * a row lock. One attempt; the outcome is the status class, never the
    * provider's text (the log line carries the HTTP status only).
    */
@@ -861,7 +910,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
     try {
       res = await fetch(`${RESEND_API_BASE_URL}/broadcasts/${encodeURIComponent(broadcastId)}`, {
         method: 'DELETE',
-        signal: AbortSignal.timeout(DELETE_ONCE_TIMEOUT_MS),
+        signal: AbortSignal.timeout(callTimeoutMs),
         headers: { Authorization: `Bearer ${env.broadcasts.apiKey}` },
       });
     } catch (e) {
@@ -874,7 +923,9 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
       return { kind: 'retryable' };
     }
     // The body decides one thing only: whether an error came from Resend.
-    const text = await res.text().catch(() => '');
+    // As `retrieveBroadcastOnce`: a stalled body is a timeout.
+    const text = await res.text().catch(() => null);
+    if (text === null) return { kind: 'retryable' };
     const outcome = deleteOnceOutcomeFor(rawHttpStatusOf(res.status, text));
     logger.info({ broadcastId, status: res.status, outcome: outcome.kind }, 'resend.broadcasts.delete_once');
     return outcome;
@@ -906,9 +957,11 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
    *     the caller retry a tick without tracking partial progress.
    */
   /**
-   * KNOWN, ACCEPTED: this call is wrapped in `withRetry` but carries no
+   * Spec 140 s2a (DL5a): ONE attempt, no in-process retry. It carries no
    * idempotency key, because `POST /contacts/imports` does not accept one
-   * (108 Phase 9 review S18).
+   * (108 Phase 9 review S18), so a retry after the request reached Resend made
+   * a second import job; a failed submit now waits for the next tick. The
+   * history of the retry this used to have follows.
    *
    * A transport failure AFTER the request reached Resend therefore creates a
    * SECOND import job, and only the second id is stored. State stays correct —
@@ -928,8 +981,8 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
     emails: readonly string[],
   ): Promise<{ readonly importId: string }> {
     assertNonEmpty({ audienceId });
-    return withRetry(
-      async () => {
+    return boundedCall(
+      async (signal) => {
         // BOUNDARY VALIDATION (108 Phase 9 review S16). `EmailLower` looks like
         // a guarantee and is not: `unsafeBrandEmailLower` is `return raw as
         // EmailLower` with no validation, and it is what feeds every path into
@@ -963,7 +1016,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         const body = await importFetch('/contacts/imports', {
           method: 'POST',
           body: form,
-        });
+        }, signal);
         if (body.id === undefined || body.id === '') {
           // A 2xx with no id is unusable and cannot be retried into existence.
           throw classifyResendError({
@@ -978,7 +1031,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         );
         return { importId: body.id };
       },
-      { method: 'createContactImport' },
+      { method: 'createContactImport', callTimeoutMs, retry: false },
     );
   },
 
@@ -1007,8 +1060,8 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
     };
   }> {
     assertNonEmpty({ importId });
-    return withRetry(
-      async () => {
+    return boundedCall(
+      async (signal) => {
         // `importId` is provider-controlled — it arrives as `body.id` from
         // Resend and is persisted without validation — and it goes straight into
         // a URL PATH. `fetch` normalises `..` segments, so an id carrying one
@@ -1018,6 +1071,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
         const body = await importFetch(
           `/contacts/imports/${encodeURIComponent(importId)}`,
           { method: 'GET' },
+          signal,
           importId,
         );
         const c = body.counts ?? {};
@@ -1032,7 +1086,7 @@ const gatewayWith = (callTimeoutMs: number): BroadcastsGatewayPort => ({
           },
         };
       },
-      { method: 'getContactImport' },
+      { method: 'getContactImport', callTimeoutMs, retry: true },
     );
   },
 
@@ -1095,22 +1149,6 @@ function throwImportError(
 }
 
 /**
- * A hung `fetch` has no default timeout. This one is bounded by the route's
- * `maxDuration = 300`, but that budget is shared with every remaining broadcast
- * in the same tick loop (`MAX_PER_TICK = 50`, no wall-clock check between rows),
- * so one stalled call can starve the rest of the tick. 30 s is generous against
- * a measured ~481 ms round trip and still leaves the loop time to continue.
- */
-const IMPORT_FETCH_TIMEOUT_MS = 30_000;
-
-/**
- * Spec 139 P1 — the erasure cascade holds the broadcast row's lock across the
- * DELETE and (after a 404 or 403) the GET, so each is bounded far tighter than
- * an import: 10 s against a measured round trip of ~0.5 s, ≈ 23 s at most with the 3 s pause after a 404 (D-040).
- */
-const DELETE_ONCE_TIMEOUT_MS = 10_000;
-
-/**
  * `AbortSignal.timeout` rejects with a `TimeoutError` (a `DOMException`, so
  * `errKind` alone reads only the class); kept apart from an abort or a network
  * failure so a slow Resend is visible on the log line.
@@ -1166,16 +1204,22 @@ function retrieveOnceOutcomeFor(status: number, text: string): RetrieveBroadcast
   return { kind: 'other' };
 }
 
+/**
+ * `signal` is the caller's `boundedCall` signal (spec 140 s2a: it replaced a
+ * 30 s per-request timeout), so one budget covers the request, its body and
+ * any retry.
+ */
 async function importFetch(
   path: string,
   init: RequestInit,
+  signal: AbortSignal,
   resourceId?: string,
 ): Promise<ResendImportResponse> {
   let res: Response;
   try {
     res = await fetch(`${RESEND_API_BASE_URL}${path}`, {
       ...init,
-      signal: AbortSignal.timeout(IMPORT_FETCH_TIMEOUT_MS),
+      signal,
       headers: {
         ...(init.headers ?? {}),
         Authorization: `Bearer ${env.broadcasts.apiKey}`,
@@ -1190,7 +1234,19 @@ async function importFetch(
       message: e instanceof Error ? e.message : String(e),
     });
   }
-  const text = await res.text();
+  let text: string;
+  try {
+    text = await res.text();
+  } catch (e) {
+    // The body stalled or broke mid-read (an aborted signal rejects here too):
+    // the answer is unknown, as for a transport failure. `boundedCall` reads an
+    // aborted signal as a timeout.
+    throw classifyResendError({
+      statusCode: 0,
+      name: 'network_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
+  }
   let body: ResendImportResponse;
   try {
     body = text.length > 0 ? (JSON.parse(text) as ResendImportResponse) : {};

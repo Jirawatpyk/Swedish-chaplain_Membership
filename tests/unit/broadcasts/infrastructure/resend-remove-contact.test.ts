@@ -25,7 +25,7 @@ describe('resendBroadcastsGateway.removeContactFromAudience', () => {
     await expect(
       resendBroadcastsGateway.removeContactFromAudience('aud_1', 'a@x.io'),
     ).resolves.toEqual({ kind: 'detached' });
-    expect(removeMock).toHaveBeenCalledWith({ audienceId: 'aud_1', email: 'a@x.io' });
+    expect(removeMock).toHaveBeenCalledWith({ audienceId: 'aud_1', email: 'a@x.io' }, { signal: expect.any(AbortSignal) });
   });
 
   it('answers `already_absent` on a 404 — still a success, but NOT a removal', async () => {
@@ -54,7 +54,7 @@ describe('resendBroadcastsGateway.deleteAudience', () => {
   it('deleteAudience resolves on success', async () => {
     removeAudMock.mockResolvedValue({ data: { deleted: true, id: 'aud_1', object: 'audience' }, error: null });
     await expect(resendBroadcastsGateway.deleteAudience('aud_1')).resolves.toBeUndefined();
-    expect(removeAudMock).toHaveBeenCalledWith('aud_1');
+    expect(removeAudMock).toHaveBeenCalledWith('aud_1', { signal: expect.any(AbortSignal) });
   });
 
   it('deleteAudience treats 404 (already gone) as success', async () => {

@@ -178,13 +178,15 @@ describe('resendBroadcastsGateway.addContactsToAudience — 429 rate-limit handl
       .addContactsToAudience('aud_fake_1', [contact('x@example.com')])
       .then(() => 'resolved')
       .catch((e: unknown) => e);
-    // Backoff schedule 1+2+4+8+16 = 31s across 5 retries.
+    // Spec 140 s2a: the backoff runs inside the 10 s call budget, and a
+    // backoff is taken only while the budget left exceeds it + 1 s, so the
+    // attempts land at 0, 1, 3 and 7 s.
     await vi.advanceTimersByTimeAsync(35_000);
     const outcome = await settled;
 
-    // Initial attempt + 5 retries = 6 calls proves 429 flows through withRetry
-    // (a 'permanent' classification would have thrown after a single call).
-    expect(createSpy).toHaveBeenCalledTimes(6);
+    // 4 calls proves 429 flows through the retry (a 'permanent'
+    // classification would have thrown after a single call).
+    expect(createSpy).toHaveBeenCalledTimes(4);
     expect(outcome).toBeInstanceOf(Error);
   });
 });

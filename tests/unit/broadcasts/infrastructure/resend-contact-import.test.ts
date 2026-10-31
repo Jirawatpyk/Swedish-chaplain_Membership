@@ -192,13 +192,10 @@ describe('createContactImport — the multipart contract (T086)', () => {
     expect(captured).toHaveLength(1);
   });
 
-  it('a 429 is RETRYABLE — the next attempt succeeds and the import is NOT resubmitted twice on success', async () => {
-    // Deliberately "429 then 201" rather than "429 forever": exhausting the
-    // 1/2/4/8/16 s schedule costs 31 real seconds, and the exhaustion path is
-    // already pinned for the sibling methods in
-    // `resend-broadcasts-gateway-contract.test.ts`. What is specific to THIS
-    // method is that a rate-limited first attempt must not leave a half-made
-    // import behind — `upsert` is what makes the second attempt harmless.
+  // Spec 140 s2a (DL5a): a create makes ONE attempt. The 429 stays
+  // `retryable`, so the row waits for the next tick, which submits again;
+  // `upsert` is what makes that second submit harmless.
+  it('a 429 is RETRYABLE and is not retried in-process — one submit, the next tick tries again', async () => {
     stubFetch((call) =>
       call === 1
         ? jsonResponse(429, {
@@ -209,17 +206,12 @@ describe('createContactImport — the multipart contract (T086)', () => {
         : jsonResponse(201, { id: 'imp_after_429' }),
     );
 
-    const result = await resendBroadcastsGateway.createContactImport(AUDIENCE_ID, [
-      'a@example.com',
-    ]);
-
-    expect(result).toEqual({ importId: 'imp_after_429' });
-    expect(captured).toHaveLength(2);
-    // Both attempts carried the same audience and the same single row, so the
-    // upsert cannot duplicate anyone.
-    expect(captured[0]!.fileText).toBe(captured[1]!.fileText);
-    expect(captured[1]!.fields['on_conflict']).toBe('upsert');
-  }, 15_000);
+    await expect(
+      resendBroadcastsGateway.createContactImport(AUDIENCE_ID, ['a@example.com']),
+    ).rejects.toMatchObject({ kind: 'retryable', subKind: 'api' });
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.fields['on_conflict']).toBe('upsert');
+  });
 });
 
 describe('getContactImport — the completion signal (T086)', () => {

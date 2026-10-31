@@ -43,7 +43,7 @@ describe('resendBroadcastsGateway.deleteBroadcast', () => {
     });
 
     await expect(resendBroadcastsGateway.deleteBroadcast(BROADCAST_ID)).resolves.toBeUndefined();
-    expect(removeBroadcastMock).toHaveBeenCalledWith(BROADCAST_ID);
+    expect(removeBroadcastMock).toHaveBeenCalledWith(BROADCAST_ID, { signal: expect.any(AbortSignal) });
   });
 
   it('404 → resolves (already gone is the goal, not a failure)', async () => {
