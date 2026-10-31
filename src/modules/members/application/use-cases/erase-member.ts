@@ -857,22 +857,28 @@ export async function eraseMember(
     // broadcasts are stuck, not just the bare outcome label.
     if (r.outcome === 'cascade_partial_failure') {
       allCascadesClean = false;
-      logger.error(
-        {
-          memberId,
-          requestId: meta.requestId,
-          outcome: r.outcome,
-          cancelledCount: r.cancelledCount,
-          skippedConcurrentCount: r.skippedConcurrentCount,
-          unexpectedErrorCount: r.unexpectedErrorCount,
-          // Spec 139 — derived from the evidence rows (residual 8c).
-          alreadySentCount: r.alreadySentCount,
-          resendDraftsCleared: r.resendDraftsCleared,
-          resendCopiesRetained: r.resendCopiesRetained,
-          cascade: 'f7_in_flight_broadcast_cancel',
-        },
-        'erase-member: broadcasts cascade partial — some broadcasts remain in flight',
-      );
+      const fields = {
+        memberId,
+        requestId: meta.requestId,
+        outcome: r.outcome,
+        cancelledCount: r.cancelledCount,
+        skippedConcurrentCount: r.skippedConcurrentCount,
+        unexpectedErrorCount: r.unexpectedErrorCount,
+        // Spec 139 — derived from the evidence rows (residual 8c).
+        alreadySentCount: r.alreadySentCount,
+        resendDraftsCleared: r.resendDraftsCleared,
+        resendCopiesRetained: r.resendCopiesRetained,
+        deferredCount: r.deferredCount,
+        cascade: 'f7_in_flight_broadcast_cancel',
+      };
+      // Spec 140 s1 review round 3 (code-review #3) — when every unexpected row
+      // is one the deadline deferred, nothing is stuck in flight: the re-drive
+      // simply continues. Warn, not error; member_erased is still withheld.
+      if (r.unexpectedErrorCount === r.deferredCount) {
+        logger.warn(fields, 'erase-member: broadcasts cascade deferred by the deadline; the re-drive continues');
+      } else {
+        logger.error(fields, 'erase-member: broadcasts cascade partial — some broadcasts remain in flight');
+      }
     } else if (r.outcome !== 'ok') {
       allCascadesClean = false;
       logger.error(

@@ -145,8 +145,9 @@ export async function decideDispatchStanding(
  * the halted / ended arm refuses anyway and records `undeleted` (spec 140 s1).
  */
 export type DraftClearance =
-  | { readonly kind: 'cleared'; readonly draftOutcome: 'none' | 'deleted' | 'absent' | 'cancelled' }
-  | { readonly kind: 'undecided'; readonly errClass: RefusedDraftErrClass };
+  | { readonly kind: 'cleared'; readonly draftOutcome: 'none' | 'deleted' | 'absent' | 'cancelled' | 'failed' }
+  /** Review round 3 (code-review #10) — carries the id it tried to DELETE. */
+  | { readonly kind: 'undecided'; readonly errClass: RefusedDraftErrClass; readonly resendBroadcastId: string };
 
 /**
  * Why a refusal's DELETE did not confirm — a CLOSED set (the DELETE's own
@@ -205,7 +206,7 @@ export async function deleteDraftBeforeRefusal(
     outcome = (await gateway.deleteBroadcastOnce(draft.resendBroadcastId)).kind;
   } catch (e) {
     logger.warn({ ...logIds, err: errKind(e) }, 'broadcasts.dispatch.refused_draft_delete_threw');
-    return { kind: 'undecided', errClass: 'threw' };
+    return { kind: 'undecided', errClass: 'threw', resendBroadcastId: draft.resendBroadcastId };
   }
   if (outcome === 'deleted' || outcome === 'absent') {
     logger.info({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_deleted');
@@ -216,7 +217,7 @@ export async function deleteDraftBeforeRefusal(
     return { kind: 'cleared', draftOutcome: 'cancelled' };
   }
   logger.warn({ ...logIds, outcome }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');
-  return { kind: 'undecided', errClass: outcome };
+  return { kind: 'undecided', errClass: outcome, resendBroadcastId: draft.resendBroadcastId };
 }
 
 /**
@@ -263,8 +264,7 @@ export async function deleteDraftBeforeStandingRefusal(
   // Only a 403 can hide a sibling's send; `cleared` above already took a 403 on
   // a `cancelled` id.
   if (cleared.errClass !== 'forbidden') return { kind: 'undeleted', errClass: cleared.errClass };
-  // A DELETE was made, so the row carried an id: a null `draft` clears as `none`.
-  const resendBroadcastId = (draft as NonNullable<typeof draft>).resendBroadcastId;
+  const { resendBroadcastId } = cleared;
   const logIds = { ...ids, refusal: 'standing', resendBroadcastId };
   let probe: Awaited<ReturnType<BroadcastsGatewayPort['retrieveBroadcastOnce']>>;
   try {
@@ -280,10 +280,12 @@ export async function deleteDraftBeforeStandingRefusal(
   }
   // Review round 2 (code-review #6) — a `cancelled` reading is an unsendable
   // copy: cleared, as `deleteDraftBeforeRefusal` clears a 403 on an id its
-  // probe already called cancelled.
-  if (probed === 'cancelled') {
+  // probe already called cancelled. Review round 3 (code-review #4) — so is
+  // `failed` (MEASURED 2026-10-29: only a draft can be sent): cleared, and
+  // recorded as `failed` (`resendDraftOutcome`), not as an undeleted draft.
+  if (probed === 'cancelled' || probed === 'failed') {
     logger.info({ ...logIds, observedResendStatus: probed }, 'broadcasts.dispatch.refused_draft_cancelled_unsendable');
-    return { kind: 'cleared', draftOutcome: 'cancelled' };
+    return { kind: 'cleared', draftOutcome: probed };
   }
   const errClass = PROBE_ERR_CLASS[probed] ?? 'probe_other';
   logger.warn({ ...logIds, observedResendStatus: probed, errClass }, 'broadcasts.dispatch.refused_draft_delete_unconfirmed');

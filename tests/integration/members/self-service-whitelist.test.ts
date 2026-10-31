@@ -124,6 +124,7 @@ function makeStubDeps(): MemberSelfUpdateDeps {
     findErasedAtById: async () => ok({ erasedAt: null }),
     // COMP-1 US2d (reconciler candidate) — interface compliance stub.
     findStuckErasuresInTx: async () => [],
+    countStuckErasuresInTx: async () => 0,
     findErasedIdsInTx: async () => ({
       ok: true as const,
       value: new Set<MemberId>(),

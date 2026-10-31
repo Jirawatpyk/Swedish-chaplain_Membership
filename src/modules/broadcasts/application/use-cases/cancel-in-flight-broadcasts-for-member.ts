@@ -278,6 +278,13 @@ export interface CancelInFlightForMemberOutput {
    * (review round 1). Derived per run, like `resendDraftsCleared`.
    */
   readonly resendCopiesRetained: number;
+  /**
+   * Spec 140 s1 review round 3 (code-review #3) — how many of
+   * `unexpectedErrorCount` are terminal rows the caller's deadline deferred
+   * (not reached). They still withhold `member_erased`; the members side tells
+   * a pure deferral apart from broadcasts left in flight.
+   */
+  readonly deferredCount: number;
 }
 
 export interface CancelInFlightForMemberDeps {
@@ -789,6 +796,7 @@ export async function cancelInFlightBroadcastsForMember(
     // are the same on a first run and on a re-drive.
     let resendDraftsCleared = 0;
     let resendCopiesRetained = 0;
+    let deferredCount = 0;
     if (erasure) {
       let terminal: ReadonlyArray<TerminalBroadcastDraftRef> = [];
       try {
@@ -798,15 +806,18 @@ export async function cancelInFlightBroadcastsForMember(
         broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'unexpected_error');
         logger.error({ ...logBase, err: errKind(e) }, 'broadcasts.cascade.terminal_list_failed');
       }
-      let deferredByDeadline = 0;
       for (const row of terminal) {
         const settledHere = settledAtResendThisRun.get(row.broadcastId as string);
+        // Review round 3 (code-review #5) — the same metric label a re-drive's
+        // DELETE of this row would emit, so both runs show the same series.
         if (settledHere === 'cleared') {
           resendDraftsCleared += 1;
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'terminal_draft_cleared');
           continue;
         }
         if (settledHere === 'retained') {
           resendCopiesRetained += 1;
+          broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'terminal_copy_retained');
           continue;
         }
         // Review round 1 (reliability H-1) — the caller's deadline: a row not
@@ -814,7 +825,7 @@ export async function cancelInFlightBroadcastsForMember(
         // Review round 2 (code-review #4) — a deferral is not a stop-the-line
         // error: its own label, yet it still withholds `member_erased`.
         if (input.deadlineAt !== undefined && deps.clock.now().getTime() >= input.deadlineAt.getTime()) {
-          deferredByDeadline += 1;
+          deferredCount += 1;
           unexpectedErrorCount += 1;
           broadcastsMetrics.cascadeOutcome(input.tenant.slug, 'deferred');
           logger.debug({ ...logBase, broadcastId: row.broadcastId as string }, 'broadcasts.cascade.terminal_draft_deferred');
@@ -839,8 +850,8 @@ export async function cancelInFlightBroadcastsForMember(
           countUnexpected(e, row, row.status, 'broadcasts.cascade.terminal_draft_unresolved');
         }
       }
-      if (deferredByDeadline > 0) {
-        logger.warn({ ...logBase, deferredByDeadline }, 'broadcasts.cascade.terminal_deadline_reached');
+      if (deferredCount > 0) {
+        logger.warn({ ...logBase, deferredCount }, 'broadcasts.cascade.terminal_deadline_reached');
       }
     }
 
@@ -883,6 +894,7 @@ export async function cancelInFlightBroadcastsForMember(
           alreadySentCount,
           resendDraftsCleared,
           resendCopiesRetained,
+          deferredCount,
           onDispatchBegun,
           cascade: 'f3_member_archival_or_erasure',
         },
@@ -897,6 +909,7 @@ export async function cancelInFlightBroadcastsForMember(
       alreadySentCount,
       resendDraftsCleared,
       resendCopiesRetained,
+      deferredCount,
     });
   } catch (e) {
     return err({

@@ -4,12 +4,17 @@
  * route's own `maxDuration` so the two routes (`POST /api/members/{id}/erase`,
  * `reconcile-erasures`) cannot drift apart.
  *
- * The reserve covers the row in progress when the deadline passes (two bounded
- * 10 s Resend calls) and the cascades that run after broadcasts. Sub-processor
- * propagation — the one step a re-drive cannot repeat — runs BEFORE the
- * broadcasts cascade (erase-member.ts), so it is never left only the reserve.
+ * Review round 3 (code-review #2) — the deadline is checked only BEFORE a row,
+ * so the reserve must hold the worst case after it: the row in progress
+ * (DELETE 10 s + GET 10 s, each `AbortSignal.timeout`-bounded, + its evidence
+ * tx, ~1 s), then every cascade after broadcasts (renewals, invoicing, the F1
+ * user erasure, the content scrub, events, directory — DB transactions, no
+ * provider call), `member_erased` and the response: ~22 s of bounded calls plus
+ * DB work, so 60 s. Sub-processor propagation — the one step a re-drive
+ * cannot repeat — runs BEFORE the broadcasts cascade (erase-member.ts), so it
+ * never competes for the reserve.
  */
-export const ERASURE_CASCADE_RESERVE_MS = 30_000;
+export const ERASURE_CASCADE_RESERVE_MS = 60_000;
 
 export function erasureCascadeDeadline(startedAtMs: number, maxDurationSeconds: number): Date {
   return new Date(startedAtMs + maxDurationSeconds * 1000 - ERASURE_CASCADE_RESERVE_MS);

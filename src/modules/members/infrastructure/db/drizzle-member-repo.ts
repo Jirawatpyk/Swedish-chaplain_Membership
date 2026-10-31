@@ -754,6 +754,26 @@ export const drizzleMemberRepo: MemberRepo = {
     }));
   },
 
+  async countStuckErasuresInTx(tx, tenantSlug) {
+    // Spec 140 s1 review round 3 — the port docblock: `findStuckErasuresInTx`'s
+    // anti-join as a plain count. No FOR UPDATE / SKIP LOCKED, no LIMIT; the
+    // same load-bearing `audit_log` tenant filter.
+    assertTxTenant(tx, tenantSlug);
+    const rows = (await tx.execute(sql`
+      SELECT count(*)::int AS stuck
+      FROM members m
+      WHERE m.tenant_id = ${tenantSlug}
+        AND m.erased_at IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM audit_log al2
+          WHERE al2.tenant_id = ${tenantSlug}
+            AND al2.event_type = 'member_erased'
+            AND al2.payload->>'member_id' = m.member_id::text
+        )
+    `)) as unknown as Array<{ stuck: number | string }>;
+    return Number(rows[0]?.stuck ?? 0);
+  },
+
   async findManyByIdsInTx(tx, tenantId, memberIds) {
     try {
       assertTxTenant(tx, tenantId);

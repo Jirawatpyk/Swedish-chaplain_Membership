@@ -147,5 +147,11 @@ export type CascadeResult =
       readonly alreadySentCount: number;
       readonly resendDraftsCleared: number;
       readonly resendCopiesRetained: number;
+      /**
+       * Spec 140 s1 review round 3 — how many of `unexpectedErrorCount` are
+       * terminal rows the deadline deferred. Equal → a pure deferral: logged at
+       * warn, not "broadcasts remain in flight"; `member_erased` still withheld.
+       */
+      readonly deferredCount: number;
     }
   | { readonly outcome: 'cascade_failed' };

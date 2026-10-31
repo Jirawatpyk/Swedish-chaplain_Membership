@@ -81,6 +81,7 @@ export const f7BroadcastsCascadeAdapter: BroadcastsCascadePort = {
         alreadySentCount: result.value.alreadySentCount,
         resendDraftsCleared: result.value.resendDraftsCleared,
         resendCopiesRetained: result.value.resendCopiesRetained,
+        deferredCount: result.value.deferredCount,
       };
     }
     return {
