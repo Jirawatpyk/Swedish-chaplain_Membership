@@ -181,6 +181,8 @@ function makeDeps(
       nextSeq: 1,
       settledUnbookedCount: 0,
     })),
+    // #49 — no recent same-amount refund by default.
+    findRecentSameAmountSucceeded: vi.fn(async () => null),
   };
   const tenantSettingsRepo = {
     getByTenantId: vi.fn(async () => ({
@@ -1773,5 +1775,81 @@ describe('issueRefund — membership effect (0306)', () => {
     expect(asMock(deps.refundsRepo.insert).mock.calls[0]![1]).toMatchObject({
       membershipEffect: null,
     });
+  });
+});
+
+// #49 — the server refuses a probable duplicate refund unless the admin
+// confirms. After a lost or unconfirmed response, a reload, a stale page or a
+// second admin can start a NEW attempt for the same amount; the cap still
+// allows it on a partial refund, so it would pay twice.
+describe('issueRefund — probable duplicate guard (#49)', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const EARLIER = '2026-05-15T01:00:00.000Z';
+  const refundInitiatedPayload = (deps: IssueRefundDeps) =>
+    (asMock(deps.audit.emit).mock.calls.find(
+      (c) => (c[1] as { eventType: string }).eventType === 'refund_initiated',
+    )?.[1] as { payload: Record<string, unknown> } | undefined)?.payload;
+
+  it("'check' + a succeeded same-amount refund in the last 24 h → possible_duplicate_refund, nothing written, no Stripe call", async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.findRecentSameAmountSucceeded).mockResolvedValueOnce({
+      refundId: 'rfnd_earlier',
+      initiatedAt: EARLIER,
+    });
+    const r = await issueRefund(deps, baseInput({ duplicateGuard: 'check' }));
+
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toEqual({
+        code: 'possible_duplicate_refund',
+        refundId: 'rfnd_earlier',
+        initiatedAt: EARLIER,
+      });
+    }
+    expect(asMock(deps.refundsRepo.findRecentSameAmountSucceeded)).toHaveBeenCalledWith(
+      expect.anything(),
+      TENANT_ID,
+      PAYMENT_ID,
+      350_000n,
+      new Date(NOW_MS - 24 * 60 * 60 * 1000).toISOString(),
+    );
+    expect(asMock(deps.refundsRepo.insert)).not.toHaveBeenCalled();
+    expect(asMock(deps.processorGateway.createRefund)).not.toHaveBeenCalled();
+    expect(refundInitiatedPayload(deps)).toBeUndefined();
+  });
+
+  it("'check' with no recent match → proceeds, no override flag in the audit", async () => {
+    const deps = makeDeps();
+    const r = await issueRefund(deps, baseInput({ duplicateGuard: 'check' }));
+    expect(r.ok).toBe(true);
+    expect(asMock(deps.refundsRepo.insert)).toHaveBeenCalledTimes(1);
+    expect(refundInitiatedPayload(deps)).not.toHaveProperty('duplicate_override');
+  });
+
+  it("'override' → proceeds without looking, and the audit records duplicate_override", async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.findRecentSameAmountSucceeded).mockResolvedValue({
+      refundId: 'rfnd_earlier',
+      initiatedAt: EARLIER,
+    });
+    const r = await issueRefund(deps, baseInput({ duplicateGuard: 'override' }));
+    expect(r.ok).toBe(true);
+    expect(asMock(deps.refundsRepo.findRecentSameAmountSucceeded)).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.insert)).toHaveBeenCalledTimes(1);
+    expect(refundInitiatedPayload(deps)).toMatchObject({ duplicate_override: true });
+  });
+
+  it('no guard (the renewals bridge) → never looks, proceeds', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.findRecentSameAmountSucceeded).mockResolvedValue({
+      refundId: 'rfnd_earlier',
+      initiatedAt: EARLIER,
+    });
+    const r = await issueRefund(deps, baseInput());
+    expect(r.ok).toBe(true);
+    expect(asMock(deps.refundsRepo.findRecentSameAmountSucceeded)).not.toHaveBeenCalled();
   });
 });

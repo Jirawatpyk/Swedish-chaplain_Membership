@@ -607,6 +607,40 @@ describe('refund: no retry once the outcome may be a refund', () => {
     vi.unstubAllGlobals();
   });
 
+  // #49: a probable duplicate (the same amount refunded on this payment in
+  // the last 24 h) is refused; the admin may confirm and refund again.
+  it('a 409 possible_duplicate_refund warns inline; "Refund again" resends once with confirmDuplicate', async () => {
+    let call = 0;
+    const spy = await submitPartial(async () => {
+      call += 1;
+      return call === 1
+        ? new Response(
+            JSON.stringify({
+              error: { code: 'possible_duplicate_refund', duplicateInitiatedAt: '2026-02-01T05:00:00.000Z' },
+            }),
+            { status: 409 },
+          )
+        : new Response(
+            JSON.stringify({ refund: { status: 'succeeded', creditNote: { kind: 'issued', id: 'cn', number: 'CN-1' } } }),
+            { status: 201 },
+          );
+    });
+    const dialog = screen.getByRole('alertdialog', { name: refund.title });
+    const warning = await within(dialog).findByTestId('refund-form-duplicate');
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.warning).not.toHaveBeenCalled();
+    const again = within(warning).getByRole('button', { name: enMessages.admin.refund.duplicate.confirm });
+    fireEvent.click(again);
+    fireEvent.click(again);
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(posts(spy)).toHaveLength(2);
+    const second = JSON.parse(String((posts(spy)[1]![1] as RequestInit).body)) as Record<string, unknown>;
+    expect(second['confirmDuplicate']).toBe(true);
+    const first = JSON.parse(String((posts(spy)[0]![1] as RequestInit).body)) as Record<string, unknown>;
+    expect(first).not.toHaveProperty('confirmDuplicate');
+    vi.unstubAllGlobals();
+  });
+
   it('a 504 with no readable body closes, refreshes and warns', async () => {
     const spy = await submitPartial(async () => new Response('<html>timeout</html>', { status: 504 }));
     await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown);

@@ -606,6 +606,57 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
   // (the use case finalises the row `failed`). `retryable` and
   // `idempotency_conflict` leave it `pending`: the outcome is unknown, so the
   // route must not answer with a code whose copy says "retry".
+  // #49 — a probable duplicate (a succeeded same-amount refund on this payment
+  // in the last 24 h) is refused unless the admin confirms.
+  it('409 possible_duplicate_refund — names when, never the reason or a Stripe id', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    issueRefundMock.mockResolvedValueOnce(
+      err({
+        code: 'possible_duplicate_refund',
+        refundId: 'rfnd_earlier',
+        initiatedAt: '2026-05-15T01:00:00.000Z',
+      }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    expect(res.status).toBe(409);
+    const error = ((await res.json()) as Record<string, unknown>)['error'] as Record<string, unknown>;
+    expect(error['code']).toBe('possible_duplicate_refund');
+    expect(error['duplicateInitiatedAt']).toBe('2026-05-15T01:00:00.000Z');
+    expect(error['messageThai']).toBeDefined();
+    expect(JSON.stringify(error)).not.toContain('re_');
+  });
+
+  it("the route asks the use case to check for a duplicate ('check')", async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    issueRefundMock.mockResolvedValueOnce(ok(SUCCESS_PAYLOAD));
+    const { POST } = await importRoute();
+    await POST(makeJsonRequest(VALID_BODY));
+    expect(issueRefundMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ duplicateGuard: 'check' }),
+    );
+  });
+
+  it("confirmDuplicate: true overrides the check ('override')", async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    issueRefundMock.mockResolvedValueOnce(ok(SUCCESS_PAYLOAD));
+    const { POST } = await importRoute();
+    await POST(makeJsonRequest({ ...VALID_BODY, confirmDuplicate: true }));
+    expect(issueRefundMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ duplicateGuard: 'override' }),
+    );
+  });
+
+  it('400 invalid_input — confirmDuplicate other than true', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    const { POST } = await importRoute();
+    const res = await POST(makeJsonRequest({ ...VALID_BODY, confirmDuplicate: 'yes' }));
+    expect(res.status).toBe(400);
+    expect(issueRefundMock).not.toHaveBeenCalled();
+  });
+
   it('502 processor_unavailable — a permanent refusal (row finalised failed; no CN)', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(
