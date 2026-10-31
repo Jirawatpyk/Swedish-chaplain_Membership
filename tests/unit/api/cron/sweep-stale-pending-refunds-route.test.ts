@@ -74,10 +74,10 @@ vi.mock('@/lib/request-id', () => ({ requestIdFromHeaders: () => 'req-route' }))
 
 import { GET } from '@/app/api/cron/sweep-stale-pending-refunds/route';
 
-function makeRequest(headers: Record<string, string> = {}): NextRequest {
+function makeRequest(headers: Record<string, string> = {}, query = ''): NextRequest {
   return {
     headers: { get: (k: string) => headers[k.toLowerCase()] ?? null },
-    nextUrl: { searchParams: new URLSearchParams() },
+    nextUrl: { searchParams: new URLSearchParams(query) },
   } as unknown as NextRequest;
 }
 const VALID_AUTH = { authorization: `Bearer ${CRON_SECRET}` };
@@ -157,6 +157,15 @@ describe('GET /api/cron/sweep-stale-pending-refunds', () => {
       ['deferred', 0],
     ]);
     expect(metrics.pendingOnUnpayableSweepFailed).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['2', 2],
+    ['0.001', 24],
+    ['1.5', 24],
+  ])('?olderThanHours=%s → the sweep runs with %i (whole hours only)', async (raw, expected) => {
+    await GET(makeRequest(VALID_AUTH, `olderThanHours=${raw}`));
+    expect(refundSweepMock.mock.calls[0]![1]).toMatchObject({ olderThanHours: expected });
   });
 
   it('logs each errored invoice with ids + errKind', async () => {

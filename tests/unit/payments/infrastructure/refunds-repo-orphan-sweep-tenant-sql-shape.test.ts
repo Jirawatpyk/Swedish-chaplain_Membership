@@ -44,6 +44,9 @@ describe('refunds repo — orphan sweep statements are tenant-fenced (#50)', () 
     expect(sql).toMatch(/from "refunds"/i);
     expect(sql).toMatch(/join "payments"/i);
     expect(sql).toMatch(/"payments"\."processor_payment_intent_id"/i);
+    // The environment the payment was taken in, checked against the current
+    // settings before Stripe's answer can close the row.
+    expect(sql).toMatch(/"payments"\."processor_environment"/i);
     const { blind, violations } = gateViolations(rec.statements, tenantScopedTables());
     expect(blind).toEqual([]);
     expect(violations).toEqual([]);
@@ -56,7 +59,12 @@ describe('refunds repo — orphan sweep statements are tenant-fenced (#50)', () 
         refundId: 'rfnd_orphan',
         tenantId: T,
         nextStatus: 'failed',
-        rejectionProof: proveNoProcessorRefund({ complete: true, matchCount: 0 })!,
+        rejectionProof: proveNoProcessorRefund({
+          complete: true,
+          matchCount: 0,
+          unmarkedCount: 0,
+          rowAgeMs: 24 * 60 * 60 * 1000,
+        })!,
         failureReasonCode: 'no_processor_refund',
         completedAt: new Date('2026-05-14T03:14:22.456Z'),
         expectedCurrentStatus: 'pending',

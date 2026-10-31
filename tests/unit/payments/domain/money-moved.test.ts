@@ -21,6 +21,7 @@ import {
   MONEY_MOVED_PERMANENT_CODES,
   classifyGatewayFailure,
   proveNothingMoved,
+  ORPHAN_PROOF_MIN_AGE_MS,
   proveNoProcessorRefund,
   proveProcessorSettledFailed,
   type MoneyExit,
@@ -148,16 +149,33 @@ describe('proveNothingMoved', () => {
 // #50 — an orphan pending refund (no processor id) is closed only on the
 // processor's own complete answer that it holds no refund for this row.
 describe('proveNoProcessorRefund', () => {
-  it('a complete lookup with no refund for this row proves nothing moved', () => {
-    expect(proveNoProcessorRefund({ complete: true, matchCount: 0 })).not.toBeNull();
+  const HOUR = 60 * 60 * 1000;
+  const proven = { complete: true, matchCount: 0, unmarkedCount: 0, rowAgeMs: 24 * HOUR };
+
+  it('a complete lookup, a day on, with no refund for this row proves nothing moved', () => {
+    expect(proveNoProcessorRefund(proven)).not.toBeNull();
+  });
+
+  it('the minimum age is one hour', () => {
+    expect(proveNoProcessorRefund({ ...proven, rowAgeMs: ORPHAN_PROOF_MIN_AGE_MS })).not.toBeNull();
+    expect(ORPHAN_PROOF_MIN_AGE_MS).toBe(HOUR);
   });
 
   it.each([
-    { complete: false, matchCount: 0 },
-    { complete: true, matchCount: 1 },
-    { complete: true, matchCount: 2 },
-    { complete: false, matchCount: 1 },
+    { ...proven, complete: false },
+    { ...proven, matchCount: 1 },
+    { ...proven, matchCount: 2 },
+    { ...proven, complete: false, matchCount: 1 },
   ])('$matchCount match(es), complete=$complete → no proof', (lookup) => {
     expect(proveNoProcessorRefund(lookup)).toBeNull();
+  });
+
+  it('a row younger than the minimum age → no proof (its createRefund may still be in flight)', () => {
+    expect(proveNoProcessorRefund({ ...proven, rowAgeMs: ORPHAN_PROOF_MIN_AGE_MS - 1 })).toBeNull();
+    expect(proveNoProcessorRefund({ ...proven, rowAgeMs: 4_000 })).toBeNull();
+  });
+
+  it('any refund without our marker on the intent → no proof (a legacy or Dashboard refund may be this one)', () => {
+    expect(proveNoProcessorRefund({ ...proven, unmarkedCount: 1 })).toBeNull();
   });
 });

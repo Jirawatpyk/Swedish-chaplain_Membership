@@ -51,8 +51,8 @@ describe('stripeGateway.listRefundsForPaymentIntent', () => {
           },
           destination_details: { card: { reference: 'ref_x' } },
         },
-        { id: 're_2', status: null, metadata: {} },
-        { id: 're_3', status: 'failed', metadata: { refundId: 42 } },
+        { id: 're_2', status: null, amount: 1200, metadata: {} },
+        { id: 're_3', status: 'failed', amount: Number.NaN, metadata: { refundId: 42 } },
       ],
       has_more: false,
     });
@@ -67,9 +67,10 @@ describe('stripeGateway.listRefundsForPaymentIntent', () => {
       ok: true,
       value: {
         refunds: [
-          { id: 're_1', status: 'succeeded', appRefundId: 'rfnd_ours' },
-          { id: 're_2', status: 'pending', appRefundId: null },
-          { id: 're_3', status: 'failed', appRefundId: null },
+          { id: 're_1', status: 'succeeded', appRefundId: 'rfnd_ours', amountSatang: 50000n },
+          { id: 're_2', status: 'pending', appRefundId: null, amountSatang: 1200n },
+          // An amount we cannot trust is unknown, never a number.
+          { id: 're_3', status: 'failed', appRefundId: null, amountSatang: null },
         ],
         complete: true,
       },
