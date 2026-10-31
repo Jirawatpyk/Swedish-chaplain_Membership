@@ -285,6 +285,29 @@ Mutation proofs (from `fb57cd688`, each file restored byte for byte, tree clean)
 - the cascade's error back to `e.message`: 1 red.
 - the premature unconfirmed warn back: 1 red.
 
+### Slice 1 — review round 5 (targeted; all round-4 items confirmed closed; 31 Oct 2026)
+
+Commits: RED `af1143e5c` and GREEN `af56a75cc`. Docs land in the commit after them. The machine was short of memory, so only the scoped tests, the mutation proofs and `pnpm check` ran.
+
+At RED the logging rows and the one-tx baseline failed. Two route cases were already green, because the behaviour existed since round 4: the floor pin, and `err` at the three log sites. The mutation proofs below show that both bind. In the GREEN commit, the base-helper test's expected shape gained the new `probedStatus` field (a shape change, not a behaviour assertion).
+
+| Item | Disposition |
+|---|---|
+| MEDIUM — the floor was not pinned at the route | **Fixed** (RED `af1143e5c`). A `reconcile-erasures-route` contract case steps the clock so m3 is reached at 220 s, between the 210 s cutoff and the 240 s deadline. It asserts m3 is not started (`deferred: 1`, `budget_deferred` with `budgetMs: 210000`). Mutation: the loop checking `cascadeDeadline` again turns it red. The tautological cutoff test is replaced by fixed arithmetic (a 300 s route's cutoff = start + 210 s). |
+| MEDIUM — the runbook | **Fixed** (docs). `cron-jobs.md`: the `deferred` row is now the 210 s member-start cutoff (the 240 s cascade deadline, i.e. a 60 s reserve, less the 30 s floor), `budgetMs: 210000`. The 504 row says the cutoff is checked between members, and that the terminal pass stops at the deadline. |
+| LOW — stale texts | **Fixed.** The gauge test's name and docblock and the "~240 s" title (RED `af1143e5c`); the `countStuckErasuresInTx` port docblock, which now says it is the gauge's only value on every tick (docs). |
+| LOW — route log fields | **Fixed** (RED `af1143e5c`). One case asserts `expect.objectContaining({ err: expect.any(String) })` for `query_failed`, `uncaught` and `stuck_count_failed`. |
+| LOW — one log line per refusal | **Fixed** (RED `af1143e5c`, GREEN `af56a75cc`). `deleteDraftBeforeRefusal` logs nothing on `undecided`; its result carries `probedStatus` and `err` (the class). The erased arms log their one line through `recordRefusedDraftUndecided`. The standing wrapper logs one line with `probedStatus`, the DELETE `outcome` and the final `observedResendStatus`. The two `*_threw` line names are gone; the runbooks grep none of these names. |
+| LOW — the baseline in the candidate tx | **Fixed** (RED `af1143e5c`, GREEN `af56a75cc`). The baseline count runs inside the candidate tx, so a tick makes two `runInTenant` calls, not three. A count failure there fails the tx: `query_failed`, 500, nothing observed. |
+| The renewals cascade's raw `e.message` (`cancel-in-flight-cycles-for-member.ts:544` → `renewals-cascade-adapter.ts:98`) | **Out of scope.** It predates this branch and is outside the diff; tracked as issue #711. |
+
+Mutation proofs (from `af56a75cc`, each file restored byte for byte, tree clean):
+- the route loop checks `cascadeDeadline` instead of `memberStartCutoff` (the check reverted, not the constant): 1 red.
+- the baseline read outside the candidate tx again: 1 red.
+- a warn added back to `deleteDraftBeforeRefusal`'s threw arm: 1 red.
+- the legacy erased arm's line removed: 1 red.
+- the DELETE `outcome` dropped from the standing line: 3 red.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.

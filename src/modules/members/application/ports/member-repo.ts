@@ -972,12 +972,13 @@ export interface MemberRepo {
   >;
 
   /**
-   * Spec 140 s1 review round 3 (code-review #8) — how many members the
-   * reconciler would find stuck, for the `members_erasure_stuck_count` gauge
-   * while the reconciler is paused: the SAME anti-join as
-   * `findStuckErasuresInTx`, but a plain count — no `FOR UPDATE SKIP LOCKED`
-   * (a paused tick locks nothing, and a member being erased right now is
-   * counted, not skipped) and no cap.
+   * Spec 140 s1 review rounds 3–5 — how many members the reconciler would find
+   * stuck: the ONLY value of the `members_erasure_stuck_count` gauge, read on
+   * every tick (paused: once; running: before the loop, in the candidate tx,
+   * and after it). The SAME anti-join as `findStuckErasuresInTx` (one shared
+   * fragment), but a plain count — no `FOR UPDATE SKIP LOCKED` (it locks
+   * nothing, and a member being erased right now is counted, not skipped) and
+   * no cap.
    */
   countStuckErasuresInTx(tx: TenantTx, tenantSlug: string): Promise<number>;
 }
