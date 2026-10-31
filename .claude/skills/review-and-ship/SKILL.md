@@ -25,7 +25,7 @@ This section is the single source for how review works; `docs/workflow.md` step 
   - it is refuted with evidence, and the reviewer confirms that on a re-run;
   - for an L slice only, a **Medium** is **carried to the slice that owns it** (D-043). A High is never carried, because every merge deploys and a carried High would ship live.
 - A carry needs all of these, and `spec-compliance-auditor` checks each one:
-  - `plan.md` already names the concern for a later slice *k* of the same spec, in *k*'s row in § Slices (its Slice or Done-when cell). "Already" means in the agreed plan: `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`) if it exists there; otherwise (slice 1, or slices sharing one branch) `plan.md` at the commit that first added it (`git log --diff-filter=A --format=%H -- specs/<nnn-name>/plan.md | tail -1`). A plan change the user approved again during the build also counts, from the commit that records it. A target cannot be written in the same change that carries to it.
+  - The concern is named for a later slice *k* of the same spec in the agreed plan: `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`) if it exists there, otherwise `plan.md` at the commit that first added it (`git log --diff-filter=A --format=%H -- specs/<nnn-name>/plan.md | tail -1`). *k*'s row in § Slices must name the concern **in words**; an ID alone (such as `DT3`) does not count. A target cannot be added after the plan was agreed.
   - Slice *k*'s PR has not merged. Check with `gh`, not the Slices row: the row says `done` before the merge.
   - The carry is recorded in `plan.md` § Evidence with *k*'s number.
 - A concern no later slice names is fixed or refuted in this slice. It is never carried to a slice invented for it.
@@ -34,13 +34,18 @@ This section is the single source for how review works; `docs/workflow.md` step 
 - Low findings are fixed or listed in the PR.
 - Any code change after review goes back through review.
 - **Rounds:** a normal change gets one review round, then the raising reviewer re-checks each fix. Run another `/code-review` round only when the last one had a High or Medium that changed code; stop once the latest round finds only Lows. The command is told to surface at least 5 findings, so re-running it to chase Lows never converges. A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) gets ≥ 2 rounds plus the staff review (§ 2).
+- **A docs-only change gets no `/code-review`** (D-043): one that touches only Markdown in `docs/`, `.claude/` or `specs/`, or the PR template. Claude checks it against the files it changes and runs `pnpm check`; the maintainer reads it. A change that also touches code, tests, scripts or config is reviewed as code.
+- **A cap on rounds** (D-043):
+  - size M: 3 `/code-review` rounds;
+  - size L, or any sensitive surface: the ≥ 2 full rounds above plus at most 2 targeted rounds.
+  At the cap, stop fixing. Bring the open findings to the maintainer, each with a recommended closure: fix, refute, or carry. The maintainer decides each one, and may re-grade a Medium to Low with the reason written in the PR. Record the round count and the decision in the PR's Review findings and in `plan.md` § Evidence.
 - **From round 3 on, each round is targeted** (D-043).
   - Run it on the fix commits since the last round only: `/code-review high <first-fix-sha>^..HEAD`.
   - It confirms that each item from the last round is closed.
   - It reports only **new** High or Medium findings that those commits introduce.
   - Tell it not to pad to a minimum count. An empty list is a valid answer. Pass this sentence verbatim in the args: *"Review ONLY these fix commits. Confirm each item from the last round closed. Report ONLY new High or Medium findings these commits introduce, each with a concrete failure scenario; do NOT pad to a minimum count, an empty list is a valid answer. Do not re-raise decided items."*
   - A round that returns only closed items, decided items or Lows ends the review (the stop rule).
-  - A **decided item** is a finding that an earlier round already closed by one of the three closures above, recorded in `plan.md` § Evidence (for size S, in the PR). A refuted finding is recorded as *refuted, awaiting confirmation* and becomes decided only when the next round confirms it; pass such items to that round as items to confirm, not as decided.
+  - A **decided item** is a finding already closed by one of the three closures above and recorded in `plan.md` § Evidence (for size S, in the PR). A refutation counts only once the reviewer that raised the finding confirms it on a re-run.
   - If a targeted round finds a new Medium in a mechanism the plan puts in a later slice, carry the finding to that slice rather than build more here.
 - Review runs after Verify, so the reviewed code is the code that works. When review fixes touch the path Verify drove, run Verify again after the last fix that changes code, before merge (`feature-flow` § 7).
 - Tell every reviewer to report only gaps that affect correctness or the stated requirements. A reviewer asked to find gaps always finds some, and chasing every one over-engineers.

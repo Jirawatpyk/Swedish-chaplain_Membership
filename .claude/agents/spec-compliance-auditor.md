@@ -34,12 +34,12 @@ Also check the premises. A spec or plan that keeps an existing path compatible (
 For an L slice, also check:
 - **Carried out.** For each finding `plan.md` § Evidence records as *carried to slice k*, check all three:
   - it is a Medium;
-  - slice *k* already named the concern in the agreed plan: `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`) if it exists there; otherwise (slice 1, or slices sharing one branch) `plan.md` at the commit that first added it (`git log --diff-filter=A --format=%H -- specs/<nnn-name>/plan.md | tail -1`). A plan change the user approved again during the build also counts, from the commit that records it. It must be named in *k*'s row in § Slices (its Slice or Done-when cell);
+  - slice *k* names the concern in the agreed plan: `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`) if it exists there, otherwise `plan.md` at the commit that first added it (`git log --diff-filter=A --format=%H -- specs/<nnn-name>/plan.md | tail -1`). *k*'s row in § Slices must name the concern **in words**; an ID alone (such as `DT3`) does not count;
   - slice *k*'s PR has not merged (`gh pr list --state merged --head <branch>`).
   A carried High is a **High** finding. Any other failure is a **Medium** finding (D-043).
 - **Carried in.** Each finding an earlier slice carried into this one must be closed here (fixed, or refuted and confirmed) or carried on under the same rules. One left open is a finding at its original severity.
 - **Reviewer-requested mechanisms.** Read the review-round tables in `plan.md` § Evidence. Each mechanism they record as added at a reviewer's request (a column, counter, deadline, label or query) must have its own rows in the test plan, and in the state table where the plan has one. A mechanism with no row is a **Medium** finding (retro 2026-10-31).
-- **Verify after fixes.** If review fixes changed the path that Verify drove, the re-run block must name a commit at or after the last commit that changes code. Only docs or evidence commits may follow it. Commits brought in from `main` (a merge or rebase) do not count; after a rebase, the block's commit is matched by its rebased equivalent (same patch, `git range-diff`). Evidence from before a fix that changes code is a **Medium** finding.
+- **Verify after fixes.** If review fixes, or a merge from `main` that resolves a conflict, changed the path that Verify drove, there must be a re-run block whose commit comes after the last such change. Only docs or evidence commits of this branch may follow it. Evidence from before such a change is a **Medium** finding.
 
 ## Audit methodology
 
