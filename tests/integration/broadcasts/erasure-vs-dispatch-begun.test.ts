@@ -328,7 +328,7 @@ describe('spec 139 DE3 — the erasure cascade vs a dispatch tick past its persi
     parkSend.open();
     const tick = await tickP;
 
-    expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0 } });
+    expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0, deferredCount: 0 } });
     expect(tick).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'cancelled' } });
     expect(resend.accepted).toEqual([]);
     expect(resend.state.get(persisted)).toBe('deleted');
@@ -353,7 +353,7 @@ describe('spec 139 DE3 — the erasure cascade vs a dispatch tick past its persi
     parkSend.open();
     const tick = await tickP;
 
-    expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0 } });
+    expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0, deferredCount: 0 } });
     expect(tick).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
     expect(resend.accepted).toEqual([]);
     expect((await readRow(broadcastId)).status).toBe('cancelled');
@@ -394,7 +394,7 @@ describe('spec 139 DE3 — the erasure cascade vs a dispatch tick past its persi
     parkDelete.open();
     const [cascaded, tick] = await Promise.all([cascadeP, tickP]);
 
-    expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0 } });
+    expect(cascaded).toEqual({ ok: true, value: { cancelledCount: 1, skippedConcurrentCount: 0, unexpectedErrorCount: 0, alreadySentCount: 0, resendDraftsCleared: 1, resendCopiesRetained: 0, deferredCount: 0 } });
     expect(tick.ok).toBe(false);
     expect(resend.accepted).toEqual([]);
     expect(resend.calls).not.toContain('sendBroadcast');

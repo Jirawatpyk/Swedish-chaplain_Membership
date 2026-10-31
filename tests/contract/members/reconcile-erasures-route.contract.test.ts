@@ -26,6 +26,7 @@ import { ok, err } from '@/lib/result';
 const eraseMemberMock = vi.fn();
 const runInTenantMock = vi.fn();
 const findStuckErasuresInTxMock = vi.fn();
+const countStuckErasuresInTxMock = vi.fn();
 const buildEraseMemberDepsMock = vi.fn();
 const erasureOutcomeMock = vi.fn();
 const erasureStuckCountMock = vi.fn();
@@ -64,6 +65,8 @@ vi.mock('@/modules/members', () => ({
   drizzleMemberRepo: {
     findStuckErasuresInTx: (...args: unknown[]) =>
       findStuckErasuresInTxMock(...args),
+    countStuckErasuresInTx: (...args: unknown[]) =>
+      countStuckErasuresInTxMock(...args),
   },
 }));
 vi.mock('@/modules/members/members-deps', () => ({
@@ -96,6 +99,7 @@ beforeEach(() => {
   eraseMemberMock.mockReset();
   runInTenantMock.mockReset();
   findStuckErasuresInTxMock.mockReset();
+  countStuckErasuresInTxMock.mockReset();
   buildEraseMemberDepsMock.mockReset();
   buildEraseMemberDepsMock.mockReturnValue({});
   erasureOutcomeMock.mockReset();
@@ -349,16 +353,19 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
   // the backlog GROWS: the gauge reads the real candidate count, never a 0.
   it('the stuck gauge reads the real candidate count while the kill switch is off, and is untouched when that read fails', async () => {
     envMock.features.memberErasureReconcile = false;
-    stubStuck([
-      { memberId: 'm1', reason: 'gdpr_erasure_request' },
-      { memberId: 'm2', reason: 'gdpr_erasure_request' },
-    ]);
+    stubStuck([]);
+    // Review round 3 (code-review #8) — a NON-locking count, uncapped: the
+    // paused tick locks no member row (no FOR UPDATE … SKIP LOCKED, which also
+    // skipped a member being erased concurrently).
+    countStuckErasuresInTxMock.mockResolvedValue(57);
     const { POST } = await import(
       '@/app/api/cron/members/reconcile-erasures/route'
     );
     const paused = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
     expect(paused.status).toBe(200);
-    expect(erasureStuckCountMock.mock.calls).toEqual([[2, 'test-tenant']]);
+    expect(erasureStuckCountMock.mock.calls).toEqual([[57, 'test-tenant']]);
+    expect(countStuckErasuresInTxMock).toHaveBeenCalledWith(expect.anything(), 'test-tenant');
+    expect(findStuckErasuresInTxMock).not.toHaveBeenCalled();
     expect(eraseMemberMock).not.toHaveBeenCalled();
 
     erasureStuckCountMock.mockReset();

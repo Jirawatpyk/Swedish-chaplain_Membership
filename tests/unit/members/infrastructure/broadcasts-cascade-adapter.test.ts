@@ -226,6 +226,32 @@ describe('f7BroadcastsCascadeAdapter — spec 139 erasure mode', () => {
   });
 });
 
+describe('f7BroadcastsCascadeAdapter — spec 140 s1 review round 3', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('carries the deadline-deferred count on the partial arm', async () => {
+    cancelInFlightBroadcastsForMember.mockResolvedValueOnce(
+      ok({
+        cancelledCount: 0,
+        skippedConcurrentCount: 0,
+        unexpectedErrorCount: 3,
+        alreadySentCount: 0,
+        resendDraftsCleared: 0,
+        resendCopiesRetained: 0,
+        deferredCount: 2,
+      }),
+    );
+    const result = await f7BroadcastsCascadeAdapter.cancelInFlightForMember(tenant, memberId, {
+      initiatedByUserId: null,
+      requestId: 'req-7',
+      onDispatchBegun: 'delete_then_cancel',
+    });
+    expect(result).toMatchObject({ outcome: 'cascade_partial_failure', unexpectedErrorCount: 3, deferredCount: 2 });
+  });
+});
+
 describe('noopBroadcastsCascadeAdapter', () => {
   it('returns outcome="ok" + zeros without invoking F7', async () => {
     const result = await noopBroadcastsCascadeAdapter.cancelInFlightForMember(

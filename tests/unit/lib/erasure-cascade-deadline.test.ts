@@ -13,8 +13,11 @@ describe('erasureCascadeDeadline', () => {
     expect(erasureCascadeDeadline(start, 300)).toEqual(new Date(start + 300_000 - ERASURE_CASCADE_RESERVE_MS));
   });
 
-  it('keeps at least 20 s for the row in progress (two bounded 10 s calls)', () => {
-    expect(ERASURE_CASCADE_RESERVE_MS).toBeGreaterThanOrEqual(20_000);
+  // Review round 3 (code-review #2) — the deadline is checked only BEFORE a
+  // row, so the reserve must hold the row in progress (DELETE 10 s + GET 10 s
+  // + its evidence tx) and every cascade after broadcasts + the response.
+  it('reserves at least 60 s: one row (two bounded 10 s calls + evidence) and the later cascades', () => {
+    expect(ERASURE_CASCADE_RESERVE_MS).toBeGreaterThanOrEqual(60_000);
   });
 
   it('follows the route: a shorter maxDuration gives an earlier deadline', () => {

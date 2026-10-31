@@ -559,6 +559,7 @@ describe('archiveMember use case (R009)', () => {
         alreadySentCount: 0,
         resendDraftsCleared: 0,
         resendCopiesRetained: 0,
+        deferredCount: 0,
       }));
       const deps = makeDeps({
         broadcastsCascade: { cancelInFlightForMember },

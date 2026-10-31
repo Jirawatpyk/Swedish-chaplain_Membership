@@ -776,6 +776,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
           alreadySentCount: 0,
           resendDraftsCleared: 0,
           resendCopiesRetained: 0,
+          deferredCount: 0,
         }) as const,
     );
     const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
@@ -787,6 +788,42 @@ describe('eraseMember — requested audit + atomic scrub', () => {
 
   // Spec 139 review round 1 — the partial-failure log names the derived
   // already-sent count, so the runbook can read it off a stuck erasure too.
+  // Spec 140 s1 review round 3 (code-review #3) — a partial result that is
+  // ONLY rows the deadline deferred is not "broadcasts remain in flight": it is
+  // logged at warn with the count, and still withholds member_erased.
+  it('spec 140 s1: a pure deadline deferral logs at warn (not the in-flight error) and still withholds member_erased', async () => {
+    const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      const deps = buildEraseDeps();
+      deps.broadcastsCascade.cancelInFlightForMember = vi.fn(
+        async () =>
+          ({
+            outcome: 'cascade_partial_failure',
+            cancelledCount: 0,
+            skippedConcurrentCount: 0,
+            unexpectedErrorCount: 2,
+            alreadySentCount: 0,
+            resendDraftsCleared: 1,
+            resendCopiesRetained: 0,
+            deferredCount: 2,
+          }) as const,
+      );
+      const res = await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+      expect(res.ok ? res.value.cascadesComplete : null).toBe(false);
+      const types = deps.audit.recordInTx.mock.calls.map((c) => (c[2] as { type: string }).type);
+      expect(types).not.toContain('member_erased');
+      const isBroadcasts = (c: unknown[]) => (c[0] as { cascade?: string } | undefined)?.cascade === 'f7_in_flight_broadcast_cancel';
+      expect(errorSpy.mock.calls.filter(isBroadcasts)).toEqual([]);
+      const warned = warnSpy.mock.calls.find(isBroadcasts);
+      expect(warned?.[0]).toMatchObject({ deferredCount: 2 });
+      expect(warned?.[1]).toBe('erase-member: broadcasts cascade deferred by the deadline; the re-drive continues');
+    } finally {
+      errorSpy.mockRestore();
+      warnSpy.mockRestore();
+    }
+  });
+
   it('broadcasts cascade_partial_failure logs alreadySentCount with the per-row counts', async () => {
     const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
     try {
@@ -801,6 +838,7 @@ describe('eraseMember — requested audit + atomic scrub', () => {
             alreadySentCount: 3,
             resendDraftsCleared: 0,
             resendCopiesRetained: 0,
+            deferredCount: 0,
           }) as const,
       );
       await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);

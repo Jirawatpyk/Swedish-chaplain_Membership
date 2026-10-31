@@ -163,6 +163,7 @@ describe('spec 140 s1 — the erasure cascade deletes the drafts its terminal ro
         alreadySentCount: 0,
         resendDraftsCleared: 1,
         resendCopiesRetained: 0,
+        deferredCount: 0,
       },
     });
     expect(resend.deletes).toEqual([draftId]);
@@ -190,6 +191,7 @@ describe('spec 140 s1 — the erasure cascade deletes the drafts its terminal ro
         alreadySentCount: 0,
         resendDraftsCleared: 0,
         resendCopiesRetained: 1,
+        deferredCount: 0,
       },
     });
     expect(resend.probes).toEqual([canceledId]);
