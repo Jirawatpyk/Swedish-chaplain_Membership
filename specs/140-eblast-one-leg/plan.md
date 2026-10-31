@@ -83,7 +83,8 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 | # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
 | 1 | Erasure deletes reachable drafts; refusals delete their draft | ED1–ED5 | pdpa-gdpr, security, reliability, spec-compliance | `140-eblast-one-leg-s1` | #713 · done |
-| 2 | Lease + fencing token + pre-call check; bounded calls; no retry on creates; orphan ids; legacy skips import rows | DL1–DL8 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | — · open |
+| 2a | Bounded Resend calls (one signal spans every attempt, C = 10 s); no in-process retry on creates; the legacy leg skips import rows; `propagate` bounded | DL5a, DL7, DL8, carry R3 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | — · open |
+| 2b | Lease + fencing token + pre-call check + budget; migration 0322; orphan-id table + drain; `failTerminally` choke point; the live-lease legacy skip | DL1–DL4, DL5b, DL6, carries R4 + R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2b` | — · open |
 | 3 | Error classes + import-leg table fixes | DT1–DT4 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
 
@@ -117,6 +118,300 @@ The row is not `approved`, and the pass takes no row lock: Resend's draft-only D
 | cascade port | `tests/contract/` broadcasts-cascade-port case for the new fields | contract |
 
 The cross-tenant check is the new repo method's integration case, with a second tenant's terminal row for the same member uuid. The e2e specs are n/a for slice 1 (no UI); the rows for slices 2–4 are written when each slice starts.
+
+### Slice 2 — split into s2a (bounded Resend calls) and s2b (the lease)
+
+`chamber-os-architect` drafted this section from the code at `b65ddbe5e`. On 31 Oct 2026 the maintainer chose:
+- **split.** s2a = gateway bounding, no in-process retry on creates, and the legacy skip of import rows. It has no migration. s2b = the lease, migration 0322, the orphan-id table, the drain and the `failTerminally` choke point.
+- **a timed-out create writes an orphan row with no id** (`create_unconfirmed`), counted in a gauge. This is s2b.
+- **any status change by a writer that does not hold the lease clears it,** in `applyTransition`. This is s2b.
+
+Carries re-homed (D-043):
+- R3 (`propagate` time bound) → s2a;
+- R4 (the evidence-lock concurrency test) → s2b;
+- R1 #5 (the refuse-arm transient DELETE) → s2b.
+
+**s2a covers:** state-table cells 22 and 24, the "not retried" half of cell 15 (DL5a), DL8 and R3. **s2b covers** every other cell, DL5b and the live-lease legacy skip (cell 23, which needs 0322).
+
+#### s2a test plan rows (RED first)
+
+| Line | Test (file · name) | Level |
+|---|---|---|
+| DL5a | `tests/unit/broadcasts/infrastructure/resend-gateway-bounded-calls.test.ts` · "createBroadcast / createAudience / createContactImport: one request on a 5xx and on a timeout" | unit |
+| DL8 | same file · it.each over every port method · "aborts at callTimeoutMs on a hung fetch" (50 ms) | unit |
+| one signal across retries | same file · "a retried GET never exceeds C in total" | unit |
+| DL7 | `dispatch-scheduled-broadcast.test.ts` · "the legacy leg skips a row that holds import columns" (cell 22); cell 24 is unchanged (existing suite) | unit |
+| R3 | `subprocessor-erasure-adapter` unit · "propagate with a hung gateway returns within pairs × C + 1 s" | unit |
+| contract | `tests/contract/resend/broadcasts-sdk.contract.test.ts` · creates send one request; the signal reaches `fetch` | contract |
+
+#### s2a Verify (D-044)
+
+The maintainer runs `/verify`. Claude prepares the seeds and does not drive the change.
+- **Live:**
+  - DL7: an `approved` row with import columns, flag OFF, GET the dispatch cron → `import_row_skipped`, with no `resend.*` line;
+  - a wrong Bearer → 401;
+  - an erasure of a terminal row holding a real **draft** → 404 at Resend.
+- **Test-only:** DL5a, DL8 and R3, because they need a hung or failing provider.
+- Resend goes to the sink address only. No `/send` and no cancel.
+
+The full state table and the s2b plan follow.
+
+#### Approach
+
+1. **Migration 0322** (`new-migration` skill; `when` after 0321's):
+   - `SET LOCAL lock_timeout = '5s'` (0311 precedent), reset as the last statement.
+   - `broadcasts.dispatch_lease_token uuid NULL`, `dispatch_lease_expires_at timestamptz NULL`; `CHECK ((dispatch_lease_token IS NULL) = (dispatch_lease_expires_at IS NULL))`. Catalogue-only ADD COLUMN, no backfill.
+   - `broadcasts_immutable_after_submit_fn` re-created: the GUC arm's blocklist gains both lease columns, so the erasure scrub cannot move a lease. The normal arm is a blocklist and needs nothing (0311 header, "WHY THE TRIGGER IS TOUCHED AT ALL"). `ALTER FUNCTION … SET search_path` repeated.
+   - `broadcast_orphaned_resend_ids`: `tenant_id` (same type as `broadcasts.tenant_id`), `orphan_id uuid DEFAULT gen_random_uuid()`, `broadcast_id uuid NOT NULL` (**no FK**: `row_vanished` exists by definition, and retention / prune hard-delete rows), `resend_broadcast_id text NULL`, `reason text NOT NULL CHECK (reason IN (…the 8 below))`, `created_at`, `settled_at timestamptz NULL`, `outcome text NULL CHECK (outcome IN ('deleted','absent','retained','handed'))`.
+     - PK `(tenant_id, orphan_id)`; partial UNIQUE `(tenant_id, resend_broadcast_id) WHERE resend_broadcast_id IS NOT NULL` (writers use `ON CONFLICT DO NOTHING`); partial index `(tenant_id, created_at) WHERE settled_at IS NULL` for the drain.
+     - `CHECK ((resend_broadcast_id IS NULL) = (reason = 'create_unconfirmed'))`, `CHECK ((settled_at IS NULL) = (outcome IS NULL))`, `CHECK (resend_broadcast_id IS NULL OR btrim(resend_broadcast_id) <> '')`.
+     - RLS ENABLE + FORCE, policy `tenant_id = current_setting('app.current_tenant', true)`; `chamber_app` gets SELECT / INSERT / UPDATE, no DELETE. Holds no content.
+   - **Deviation from the agreed data model** (plan.md § Data model lists `deleted_at`): `settled_at` + `outcome` instead, because a `canceled` draft answers 403 for ever (MEASURED 2026-10-30, research Q1) and must settle as `retained`, not "deleted"; and `resend_broadcast_id` is nullable for DL5 (premise P1 below).
+
+2. **Claim** (repo `claimDispatchLease`; replaces the step-1 tx body, `build-audience-tick.ts:431-438`, inside the same tx after `lockForUpdate`):
+   ```sql
+   UPDATE broadcasts
+      SET dispatch_lease_token = gen_random_uuid(),
+          dispatch_lease_expires_at = clock_timestamp() + make_interval(secs => $ttl_s)
+    WHERE tenant_id = $slug AND broadcast_id = $id
+      AND status = 'approved'
+      AND (dispatch_lease_token IS NULL OR dispatch_lease_expires_at < clock_timestamp())
+   RETURNING dispatch_lease_token;
+   ```
+   - `clock_timestamp()`, not `now()`: `now()` is the tx start, and `lockForUpdate` (`repo:922-929`) can wait ~23 s behind an erasure (D-040), which would stamp the lease 23 s short.
+   - No row + status `approved` → skip `lease_held` (`broadcasts.audience_import.lease_held`, info), no Resend call. Not `approved` → the existing `wrong_status` skip.
+   - Every lease statement carries `tenant_id = $slug`, runs in `runInTenant`, and calls `assertTenantBoundTx` first.
+   - The scan (`route.ts:180-187`) adds `AND (dispatch_lease_token IS NULL OR dispatch_lease_expires_at < now())`, so held rows do not fill the 50.
+
+3. **Release** (repo `releaseDispatchLease`, own tx, in a `finally` around the whole tick):
+   ```sql
+   UPDATE broadcasts SET dispatch_lease_token = NULL, dispatch_lease_expires_at = NULL
+    WHERE tenant_id = $slug AND broadcast_id = $id AND dispatch_lease_token = $mine;
+   ```
+   - No status predicate: the row may be `sending` or `failed_to_dispatch` by then, and `markAudienceImportCompleted` (`repo:1442`, no status predicate) runs after `sending`.
+   - 0 rows is not an error (a non-holder exit already cleared it). A failure logs `lease_release_failed`; the lease then expires (≤ 2 ticks, row 13 of the table).
+   - **Non-holder exits clear the lease** (concretises "hold and cancel also clear the token"): plain `applyTransition` NULLs both columns on any status change, in the same place it resets `dispatchFirstFailedAt` (`repo:974-980`). That covers staff cancel, confirm-schedule cancel, withdraw, start-formatted-version and the erasure cancel. The holder's own transitions go through a new `applyTransitionUnderLease` (token in the WHERE, columns left for the release).
+
+4. **Pre-call lease check** (repo `checkDispatchLease`, own short tx), before each of `createAudience`, `createContactImport`, `createBroadcast`, `sendBroadcast`, `deleteAudience`, `deleteBroadcast` / `deleteBroadcastOnce` on the import leg:
+   ```sql
+   SELECT 1 FROM broadcasts
+    WHERE tenant_id = $slug AND broadcast_id = $id
+      AND dispatch_lease_token = $t
+      AND dispatch_lease_expires_at > clock_timestamp() + make_interval(secs => $headroom_s)
+      FOR UPDATE;
+   ```
+   - The design's "UPDATE" is realised as `SELECT … FOR UPDATE`: the same row lock, so the check queues behind an erasure's lock (D-040 order) and then sees a cleared token; it writes nothing, so `broadcasts_set_updated_at` does not fire.
+   - 0 rows → no call; skip `lease_lost` (token gone) or `lease_expiring` (headroom short). The import-id-null restart (`:912`, no claim today) is covered: its two deletes are preceded by this check.
+
+5. **Constants** (one module, `application/use-cases/_dispatch-lease.ts`; `C` lives in the gateway port so infrastructure reads it from there):
+
+   | Constant | Value | Derivation | Label |
+   |---|---|---|---|
+   | `C` = `RESEND_CALL_TIMEOUT_MS` | 10 000 | D-040's `*Once` bound; ≈ 20× the RTT 0.48 s; import POST 412 ms, import GET 306 ms | MEASURED 2026-09-08 (research § Limits, endpoint table) |
+   | `E` erasure row-lock hold | 23 000 | 10 s DELETE + 3 s pause + 10 s GET | D-040 |
+   | `P` = `REPROBE_PAUSE_MS` | 3 000 | existing | code |
+   | `N` Resend calls, longest path | 9 | probe, re-probe, `getContactImport`, `getAudienceContactCount`, `createBroadcast`, `sendBroadcast`, refused-send probe, then `failTerminally`'s reclaim: `deleteBroadcastOnce` + `retrieveBroadcastOnce` | counted from the code |
+   | `k` lock waits per row | 2 | the claim, plus one pre-call check (one cascade per row per tick) | ASSUMED |
+   | `D` DB + resolve, one row | 15 000 | ~15 short statements + one `resolveRecipients` at the 900 ceiling | **ASSUMED**: build step measures p99 on dev (seeded 900) and replaces it |
+   | `W_max` | 154 000 | k·E + N·C + P + D = 46 + 90 + 3 + 15 | derived |
+   | `M` = `LEASE_MARGIN_MS` | 15 000 | ≥ C (design rule) + 5 s for the post-call CAS | derived |
+   | pre-call headroom | 25 000 | C + M | derived |
+   | `LEASE_TTL_MS` | 330 000 | > `maxDuration` 300 s (second line) and ≥ W_max + M = 169 s | derived |
+   | row-start cutoff | 131 000 | maxDuration − W_max − M = 300 − 154 − 15 | derived |
+
+   - The route passes `{ tickStartedAt, maxDurationMs }` into deps and starts no row after the cutoff (the rest stay `approved`, unleased, for the next tick). `MAX_PER_TICK` stays 50.
+   - A dead holder: claimed at t, expires t + 330 s, so the t + 300 tick skips the row and the t + 600 tick reclaims it: about 2 ticks, documented in `broadcast-audience-build.md`.
+   - D-040's 23 s figure does not change (C = the `*Once` bound).
+
+6. **Bounded calls** (`resend-broadcasts-gateway.ts`):
+   - **One signal per call**, `AbortSignal.timeout(C)`, spanning every attempt. `withRetry` (`:227-271`, 6 attempts + 31 s backoff) backs off only while the remaining budget exceeds the next backoff + 1 s. A per-attempt timeout would make a retried call 6C + 31 s and break "call timeout ≤ margin".
+   - SDK calls pass `{ signal }` through `RequestOptions` (resend 6.35: `post` / `get` / `delete` spread `options` into `fetch`, `index.mjs:1764-1819`). An aborted SDK call comes back as `application_error`, `statusCode: null` (`index.mjs` outer catch), which `httpStatusOf` reads as retryable `network`. An abort while reading the body rethrows `signal.reason` (`index.mjs:1707`): the adapter maps a `TimeoutError` / `AbortError` to retryable `timeout`.
+   - `importFetch` drops from 30 s (`:1091`) to C.
+   - **Creates are never retried** (security H-3): `createAudience`, `createBroadcast`, `createContactImport` make one attempt. GET, DELETE and `/send` retry inside C. This applies to both legs (shared adapter).
+   - `removeContactFromAudience` is a DELETE: it keeps retrying, now inside C, so `propagate` is bounded by (pairs × C). See premise P2.
+   - The factory takes `callTimeoutMs` so DL8 can run a hung fake at 50 ms (`AbortSignal.timeout` runs on real timers; fake timers do not advance it).
+
+7. **Fencing token in every CAS.** A branded `LeaseToken`; each method takes `lease: LeaseToken | null` as a **required** parameter (the legacy leg passes `null` explicitly). An optional parameter is the "forgotten at a call site" class. With a token: `AND dispatch_lease_token = $t`. The 12 sites are listed in the test plan. A lost token throws `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'` (`throwConcurrentMutation` reads the token), and every caller maps it to a concurrent skip, never a failure write. `failTerminally`'s catch (`:2463`) learns this arm, so a lost lease is not `cleanup_failed`.
+
+8. **Orphan-id writers** (`ON CONFLICT DO NOTHING`, own tx, best-effort; a failed insert logs and is the accepted 8d residual):
+
+   | reason | Where | id |
+   |---|---|---|
+   | `attach_lost` | `_persist-minted-broadcast-id.ts:109`, when the reclaim fails | minted |
+   | `row_vanished` | `:113`, when the reclaim fails | minted |
+   | `persist_failed` | `:142`, when the reclaim fails | minted |
+   | `read_back_failed_kept` | `:139` | minted |
+   | `dead_broadcast_replaced` | `build-audience-tick.ts:1865-1871` | the replaced id |
+   | `dead_broadcast_kept` | `build-audience-tick.ts:967` | the kept id |
+   | `terminal_reclaim_undecided` | the `failTerminally` choke point (item 10) | the row's id |
+   | `create_unconfirmed` | `createBroadcast` answered retryable with `subKind` `network` / `timeout` (status 0 or an abort: a timeout cannot be told from a request that never arrived). Not a 429 (`subKind: 'api'`, `gateway:197-208`), which created nothing. A 5xx is a judgment call (the request may have landed): proposed as included, to decide at review | **NULL** |
+
+   Only `createBroadcast` writes orphan rows:
+   - An unconfirmed audience is named `broadcast-<tenant>-<id>` (`build-audience-tick.ts:1452`). The daily `reclaim-orphan-audiences` cron exists for exactly that (`vercel.json:13`).
+   - An unconfirmed import lands in an audience the row still references, so the next tick's `stale_audience` teardown removes it (`:1441-1443`).
+
+   `_reclaim-minted-broadcast.ts` returns `'reclaimed' | 'leaked'` so the persist helper knows when to write the row. Both legs write rows (the helper is shared).
+
+9. **The drain**: `cleanupOrphanedAudiences` gains a second pass after the audience loop, at the same concurrency of 5, up to 20 rows:
+   - It lists unsettled rows with a non-null id, older than the grace period, **and no `broadcasts` row in the tenant holding that id** (`NOT EXISTS … b.resend_broadcast_id = o.resend_broadcast_id`). `read_back_failed_kept` keeps the resource because the id may be on the row (`_persist-minted-broadcast-id.ts:139-144`).
+   - `deleteBroadcastOnce`: `deleted` / `absent` settle as such. `forbidden` → `retrieveBroadcastOnce`: `canceled` / `failed` → `retained`, `queued` / `sent` → `handed` (8c). Anything else stays for the next tick.
+   - The settle is a CAS on `settled_at IS NULL`. A 4th documented port exception: an id read from this table.
+   - `create_unconfirmed` rows are never drained. They feed the gauge `broadcasts_orphaned_resend_ids_unconfirmed{tenant}` (the 8d residual, with a Review-by date).
+   - The `cleanup-audiences` route declares no `maxDuration` today. It gets `300`, and the drain stops at 240 s.
+
+10. **One reclaim choke point** (pdpa M-1): `failTerminally` re-reads the row's `resend_broadcast_id`. When one is held and no earlier arm settled it this tick, it runs a pre-call check, then slice 1's `deleteDraftBeforeRefusal`, **before** the terminal tx:
+    - `deleted` / `absent` / `cancelled` / `failed` → terminal, with `resendDraftOutcome`;
+    - handed → a concurrent skip: no terminal write, no member email;
+    - undecided → an orphan row `terminal_reclaim_undecided`, then terminal.
+
+    The two refuse arms already delete first and pass `draftSettled`, so nothing is deleted twice. `enqueueDispatchFailureNotification` (`:2541`) still runs only after the CAS commits.
+
+11. **The legacy leg skips import rows** (decision 8). In `dispatchScheduledBroadcast` step 1 (`:494-511`), inside the lock tx: a row with `audience_import_id` or `audience_import_submitted_at` set → `broadcasts.dispatch.import_row_skipped`, return `broadcast_invalid_state_transition`, no Resend call. **Extension (P3):** a live lease token is skipped too (`lease_held`).
+
+12. **Docs** (in the slice's diff):
+    - RoPA 8d: the residual narrows to `create_unconfirmed` plus the DB-down and crash-between-mint-and-persist cases, with a Review-by date; also the `:255` item the design names.
+    - `docs/observability.md`: the unconfirmed-orphan gauge and the `lease_held` / `lease_lost` / `lease_expiring` / `lease_release_failed` log names.
+    - `docs/runbooks/broadcast-audience-build.md`: the lease and the ~2-tick delay after a dead holder; the stale runbook `:77`.
+    - D-040's 23 s figure is unchanged (C = the `*Once` bound).
+    - #699 closes on merge.
+
+#### State table: slice 2 (writers × row status × lease × Resend answer)
+
+Lease: none / live-mine / live-other / expired. "Holder" = the tick that claimed. 29 cells; identical cells are collapsed.
+
+| # | Writer | Status | Lease | Resend / other | Decision | Test (file · name) | Split |
+|---|---|---|---|---|---|---|---|
+| 1 | tick A | approved | none | — | claim → token | `dispatch-lease-repo.test.ts` · "claim on an unleased approved row returns a token" (new) | a |
+| 2 | tick A | approved | expired | — | claim takes over, new token | same · "claim takes over an expired lease" (new) | a |
+| 3 | tick A / B (overlap) | approved | live-other | — | `lease_held`, 0 gateway calls, 0 writes | `import-leg-lease-pair.test.ts` · DL1 both orders (new); unit `build-audience-tick-lease.test.ts` · "a held lease skips with no gateway call" (new) | a |
+| 4 | tick A | not approved | any | — | `wrong_status` skip | `dispatch-lease-repo.test.ts` · "claim refuses a non-approved row" (new) | a |
+| 5 | holder | approved | live-mine, headroom ≥ C+M | — | irreversible call made | `build-audience-tick-lease.test.ts` · "pre-call check passes → call made" (new) | a |
+| 6 | holder | approved | live-mine, headroom < C+M | — | no call, `lease_expiring`, release | same · "within C+M of expiry no call is made" (new) + repo "check refuses inside the headroom" | a |
+| 7 | stale holder (lease expired + retaken) | any | live-other | — | every pre-call check false; every CAS 0 rows; no column written | `dispatch-lease-repo.test.ts` · it.each "stale token → 0 rows" over the 12 CAS + the check (new) | a |
+| 8 | holder, after a mint | approved | live-other at attach | — | concurrent skip; reclaim; orphan row if the reclaim fails | `build-audience-tick-lease.test.ts` · "a lost-token attach is a concurrent skip and the mint is reclaimed" (new) | a |
+| 9 | holder → `failTerminally` | approved | lost | — | no terminal write, no email, concurrent skip | same · "a lost lease never writes failed_to_dispatch" (new) | a |
+| 10 | holder → `failTerminally` | approved | live-mine | row holds a draft: deleted / absent / canceled / failed | reclaim, then terminal with `resendDraftOutcome` | same · it.each "choke point clears the draft" (new) | a |
+| 11 | same | same | same | 403 + handed | concurrent skip, no terminal | same · "choke point: a handed draft is a skip" (new) | a |
+| 12 | same | same | same | undecided | orphan `terminal_reclaim_undecided`, then terminal | same · "choke point: undecided writes an orphan row" (new) + `orphaned-resend-ids.test.ts` | a |
+| 13 | holder dies | approved | live-mine (dead) | — | scan excludes until expiry (≤ 330 s), then row 2 | `cron-dispatch-scheduled.contract` · "the scan excludes a live lease" (new) | a |
+| 14 | holder, end of tick | any | live-mine / cleared | — | release; 0 rows not an error | `dispatch-lease-repo.test.ts` · "release clears only my token, any status" (new) | a |
+| 15 | holder → `createBroadcast` | approved | live-mine | timeout / retryable | one attempt; orphan `create_unconfirmed` (id NULL); FR-021 path | gateway `resend-gateway-bounded-calls.test.ts` · "createBroadcast is not retried" (new) **(b)** + `build-audience-tick-lease.test.ts` · "a retryable create writes create_unconfirmed" **(a)** | **a+b** |
+| 16 | erasure (D-040) | approved | none / live-other | holds the row lock, then cancels | claim waits ≤ 23 s, then `wrong_status` skip | `dispatch-lease-erasure-order.test.ts` · DL3 (new, `chamber_app`) | a |
+| 17 | erasure | approved | live-mine (A mid-tick) | cancels (`applyTransition` clears the lease) | A's next check waits, sees no token → no call; A's CAS → 0 rows | same · "a cascade cancel mid-tick ends the holder" (new) | a |
+| 18 | erasure | approved | live-mine | undecided, no write | lease untouched; A continues after the lock | `erasure-vs-dispatch-begun.test.ts` (existing, re-run) | a |
+| 19 | staff exit (cancel, schedule-cancel, withdraw, new version) | approved | any; `hasDispatchBegun` true | — | refused `sending_started` (existing) | existing `eblast-approved-exit-vs-dispatch.test.ts` | — |
+| 20 | staff exit | approved | live-mine; `hasDispatchBegun` false (tick-1 window) | — | exit allowed; lease cleared; A stops at its next check / CAS; a left audience is torn down by cleanup (terminal) or by the next tick 1 (`stale_audience`) | `dispatch-lease-repo.test.ts` · "a non-holder status change clears the lease" (new) | a |
+| 21 | staff re-time (approved → approved) | approved | live-mine | — | lease kept (no status change) | same · "a same-status write keeps the lease" (new) | a |
+| 22 | legacy leg | approved | any | import columns set | `import_row_skipped`, no call | `dispatch-scheduled-broadcast.test.ts` · DL7 (new case) | b |
+| 23 | legacy leg | approved | live-other; no import columns | — | `lease_held` skip (P3 extension) | same · "legacy skips a live lease" (new) | a (needs 0322) |
+| 24 | legacy leg | approved | none / expired; no import columns | — | unchanged | existing suite | b |
+| 25 | drain | — | — | id still on a `broadcasts` row | skipped | `cleanup-orphaned-audiences.test.ts` · "an id a row still holds is not drained" (new) | a |
+| 26 | drain | — | — | DELETE deleted / absent | settled as such | same · it.each (new) + `orphaned-resend-ids.test.ts` DL6 | a |
+| 27 | drain | — | — | 403 + canceled / failed → retained; + queued / sent → handed | settled | same · it.each (new) | a |
+| 28 | drain | — | — | retryable / other / 403 + draft | left for next tick | same · it.each (new) | a |
+| 29 | drain | — | — | id NULL (`create_unconfirmed`) | never drained; counted in the gauge | same · "unconfirmed rows are counted, not drained" (new) | a |
+| — | `reconcile-stuck-sending` | sending > 24 h (`route.ts:110`) | — | — | **disjoint**: no live lease outlives 330 s; no cell | — | — |
+| — | retention sweep | terminal only | — | — | **disjoint**; it hard-deletes rows, hence no FK on the orphan table | — | — |
+
+#### Test plan rows (slice 2)
+
+RED first: every row below except the two marked *already green* (they pin existing behaviour) and the positive controls (they must fail on a mutant instead).
+
+| Line / CAS | Test that goes red first (file · name) | Level |
+|---|---|---|
+| DL1 | `tests/integration/broadcasts/import-leg-lease-pair.test.ts` · "two concurrent ticks: one audience, one import, one broadcast, one /send" × {A first, B first} (barrier in the fake gateway) | integration (Neon pair) |
+| DL2 | `dispatch-lease-repo.test.ts` it.each below + `build-audience-tick-lease.test.ts` · "an expired holder makes no Resend call after expiry" | integration + unit |
+| DL3 | `dispatch-lease-erasure-order.test.ts` · "the claim waits behind an erasure row lock, then skips the cancelled row" | integration, `chamber_app` |
+| DL4 | `dispatch-lease-repo.test.ts` · "two tenants, one uuid: claim and release touch only their own row", as `chamber_app`, plus the BYPASSRLS-owner builder case (application predicate alone; s1 security L1 precedent) | integration |
+| DL5 | gateway · "createBroadcast / createAudience / createContactImport: one request on a 5xx and on a timeout" + tick unit · "a retryable create writes create_unconfirmed" | unit |
+| DL6 | `tests/integration/broadcasts/orphaned-resend-ids.test.ts` · "a failed reclaim writes an orphan row and the drain settles it" (fake gateway) + RLS cross-tenant read case | integration |
+| DL7 | `dispatch-scheduled-broadcast.test.ts` · "the legacy leg skips a row that holds import columns" | unit |
+| DL8 | `tests/unit/broadcasts/infrastructure/resend-gateway-bounded-calls.test.ts` · it.each over every port method: "aborts at callTimeoutMs on a hung fetch" (50 ms; MSW `delay('infinite')`) | unit |
+| CAS 1 `attachAudienceId` | repo it.each "stale token → 0 rows" + SQL shape "carries tenant + token" (`broadcast-lease-sql-shape.test.ts`, new) | integration + unit |
+| CAS 2 `attachAudienceImport` | same pair | |
+| CAS 3 `attachBroadcastId` (persist + handed path) | same pair | |
+| CAS 4 `attachResendIds` | same pair | |
+| CAS 5 `applyTransitionUnderLease('sending')` | same pair | |
+| CAS 6 `applyTransitionUnderLease('failed_to_dispatch')` | same pair + "no member email on a lost lease" (unit) | |
+| CAS 7 `releaseAudienceImport` | same pair | |
+| CAS 8 `releaseResendAudience` | same pair | |
+| CAS 9 `clearDispatchRetryClock` | same pair | |
+| CAS 10 `markDispatchRetryStarted` | same pair | |
+| CAS 11 `markAudienceImportCompleted` | same pair | |
+| CAS 12 the no-import restart's deletes | tick unit · "the stale-audience restart checks the lease before each delete" | unit |
+| claim / release | rows 1, 2, 4, 14 above | integration |
+| plain `applyTransition` clears the lease | `dispatch-lease-repo.test.ts` · rows 20, 21 | integration |
+| scan filter + cutoff | `cron-dispatch-scheduled.contract` · "the scan excludes a live lease" · "no row starts after maxDuration − W_max − M" | contract |
+| TTL / budget pin | `tests/unit/broadcasts/application/dispatch-lease-budget.test.ts` · "TTL > maxDuration", "TTL ≥ W_max + M", "cutoff = 300 − 154 − 15 s", "C ≤ M"; positive control: a TTL of 300 s and a cutoff of maxDuration − M each fail | unit |
+| migration 0322 | `pnpm db:migrate` on dev + `db:verify`; `eblast-immutability-trigger.test.ts` · "the redaction GUC cannot move the lease columns" (new); the pair CHECK and the orphan CHECKs (`eblast-0308-check-constraints.test.ts` pattern) | integration |
+| positive controls | SQL-shape gate fails when its parse yields 0 CAS (`;\r?\n`, rules.md); mutation: drop the token from one CAS → its stale-token case goes red | unit |
+| two-tick happy path *already green* | `audience-import-two-tick.test.ts` (re-run with the lease) | integration |
+| erasure undecided *already green* | `erasure-vs-dispatch-begun.test.ts` | integration |
+
+e2e: n/a (no UI).
+
+#### Carried into slice 2 from slice 1 (D-043; each closes here)
+
+| From | Finding | Closing test |
+|---|---|---|
+| R4, senior-tester LOW–MEDIUM | The `broadcasts-evidence:` advisory lock has no concurrency test; the terminal pass records evidence with no row lock | `already-sent-evidence.test.ts` · "two concurrent recorders, one being the terminal pass with no row lock, write one evidence row" (the Neon pair harness from DL1; both orders) |
+| R3, reliability note | `subprocessorErasure.propagate` has no time bound: `removeContactFromAudience` runs `withRetry` (~31 s) on an untimed SDK call (`gateway:620`, `subprocessor-erasure-adapter.ts:114`) | adapter unit · "propagate with a hung gateway returns within pairs × C + 1 s and counts each as failed" (DL8's 50 ms factory) |
+| R1, code-review #5 (+ pdpa L-2) | A transient DELETE on the refuse arm leaves the draft until erasure (plan.md:211) | rows 10–12: `build-audience-tick-lease.test.ts` · "choke point: undecided writes an orphan row", and `dispatch-scheduled-broadcast.test.ts` the legacy twin; DL6 drains it |
+
+#### Verify plan (D-044)
+
+The maintainer runs `/verify`; Claude prepares the worktree, the `.env.local` and the seeds, and never drives the change.
+- **Driven surface:** the dispatch cron and the `cleanup-audiences` cron on :3400.
+- `isF7ImportAudienceEnabled()` needs both flags (`feature-flags.ts:91`): the worktree's `.env.local` only, never Vercel.
+- **Live (nothing undeletable left):** the scan skipping a live foreign lease; an expired lease taken over and released (tick 1 only); the legacy skip; the drain on a uuid-shaped id that does not exist.
+- **Not live:** tick 2 (a `/send` leaves a `sent` broadcast Resend will not delete). The step-3 import upserts the sink contact, which is deletable.
+- **Test-only:** DL1 (Neon pair, both orders), DL2 (needs a forced expiry mid-run), DL3 (erasure lock order), DL4 (two tenants as `chamber_app`), DL5 (needs a hung provider), DL8 (hung fake), and DL6's real-draft delete (integration with a fake).
+
+Ready to paste:
+
+```
+/verify PR #<s2-PR> · worktree <s2-worktree> · branch 140-eblast-one-leg-s2 · :3400, Neon dev, tenant swecham.
+Done-when, live: the lease mechanics behind DL1/DL2 (claim, scan exclusion, takeover of an expired lease, release); DL6 drain wiring (the 'absent' arm); DL7. DL1 itself is the Neon pair test; DL2-DL5 and DL8 are test-only: read their CI rows.
+Safety: Resend sink delivered@resend.dev only; stop at tick 1 (never let a tick-2 /send run); never set either flag in Vercel. Before step 1, check the shared Resend account holds <= 1 non-General segment (Free allows 3, General is one; research § Limits): R3's tick 1 creates one. Run step 4 only after the DL7 unit case is green in CI: a broken skip would let the legacy leg reuse R3's audience and /send.
+Setup: .env.local has FEATURE_F7_BROADCASTS=true and FEATURE_F7_IMPORT_AUDIENCE=true. Seeds (prepared): R2 approved+due, sink recipient, foreign lease expiring in +24 h (no step, restart included, ever lets the scan pick it); R3 approved+due, sink recipient, foreign lease expired 1 min ago; O1 orphan row, resend_broadcast_id = a random uuid, created_at 2 h ago (past the 1 h grace).
+0. pnpm db:query "SELECT count(*) FROM broadcasts WHERE tenant_id='swecham' AND status='approved' AND scheduled_for <= now()" must be 2 (R2, R3). Any other row: stop (dev litter would be dispatched).
+1. curl -H "Authorization: Bearer $CRON_SECRET" localhost:3400/api/cron/broadcasts/dispatch-scheduled
+   Expect: R2 not processed, its token and expiry unchanged; R3 import_submitted, its token replaced then NULL (log lease_claimed -> lease_released), audience_import_id set. Read with pnpm db:query.
+2. Wrong input: the same GET with a wrong Bearer -> 401; R2 and R3 unchanged since step 1.
+3. GET /api/cron/broadcasts/cleanup-audiences.
+   Expect: O1 settled_at set, outcome 'absent' (a 404 for a non-existent id is ASSUMED; if Resend answers otherwise, O1 stays unsettled: report it). The same tick also deletes the Resend audience of any terminal dev row past the grace: expected, not a finding.
+4. Set FEATURE_F7_IMPORT_AUDIENCE=false, restart :3400, GET dispatch-scheduled.
+   Expect: R3 (it holds import columns since step 1) logs broadcasts.dispatch.import_row_skipped, no resend.* line for it, row unchanged; R2 not processed.
+Teardown (not evidence): run the prepared step "r3-terminal" (R3 -> failed_to_dispatch on dev). Its updated_at is then now(), and cleanup-audiences waits out GRACE_MS = 1 h (route.ts:44), so GET cleanup-audiences again after >= 1 h and confirm R3.audience_deleted_at is set (the segment is freed).
+Report each step against its Done-when line.
+```
+
+#### Split (decided by the maintainer, 31 Oct 2026: s2a first, then s2b)
+
+Split. The cells fall into two lifecycles that share one cell:
+- **(a) the leased row:** cells 1–14, 16–18, 20–21, 23 and 25–29: **25 cells**. These are the claim, the token CASes, the pre-call checks, the budget, the orphan table, the drain, the choke point and migration 0322.
+- **(b) gateway bounding, no retry on creates, the legacy import-column skip:** cells 22 and 24: **2 cells**, plus DL8, which is not a row cell. No migration and no multi-writer table. It also closes carry R3 (propagate).
+- **Shared or neither:** cell 15 is shared (below). Cell 19 is existing behaviour. 25 + 2 + 1 + 1 = 29.
+- **The straddler:** DL5 (cell 15). "Not retried" belongs to (b); "writes an orphan row" needs (a)'s table. Write DL5 as DL5a in s2a and DL5b in s2b.
+- **s2a = (b) first.** C, and with it W_max, the TTL and the cutoff, comes from (b). The same applies to cell 23 (the legacy live-lease skip): it needs 0322, so it goes in s2b.
+- **D-043 bookkeeping.** The carries named "slice 2" must be re-homed in the agreed plan: R3 → s2a; R4 and R1 #5 → s2b.
+- **Risk.** s2a changes the **live** legacy leg and erasure: there are no create retries, and every call gives up in 10 s instead of 31 s or more. A transient create failure now waits for the next tick, inside the FR-021 hour.
+
+#### Premises the code contradicts (accepted 31 Oct 2026)
+
+- **P1.** DL5's orphan row cannot carry an id. A timed-out create returns none. The SDK's outer catch gives `application_error` with `statusCode: null`, and `httpStatusOf` reads that as `retryable/network`, so a timeout looks the same as a request that never arrived (`gateway:160-164`, `index.mjs` fetchRequest). → `resend_broadcast_id` must be nullable for `create_unconfirmed`, and those rows are never drained.
+- **P2.** "Only GET, DELETE and `/send` retry" conflicts with "removes the up-to-31 s retry inside eraseMember". `removeContactFromAudience` is a DELETE (`gateway:620-640`), and `propagate` is the step a re-drive cannot repeat (plan.md round 2). → Keep its retry, bound it inside C.
+- **P3.** The legacy skip rule (import columns) misses a tick-1 row that has a live lease and a `resend_audience_id` but no import yet. `hasDispatchBegun` ignores the audience id (`in-progress-statuses.ts:84-89`), and the legacy leg reuses `resend_audience_id` (`build-audience-tick.ts:2259-2264`). → The legacy leg also skips a live lease.
+- **P4.** 0322 must amend the immutability trigger's GUC blocklist (0311 header); the design omits this.
+- **P5.** The claim must use `clock_timestamp()`. `now()` after `lockForUpdate` (`repo:922-929`) can be ~23 s stale.
+- **P6.** "Call timeout ≤ margin" holds only if one signal spans `withRetry`'s 6 attempts (`gateway:227-271`).
+- **Minor.**
+  - The pre-call "UPDATE" is realised as `SELECT … FOR UPDATE`.
+  - The enqueue is at `:2541`, not `:2508`.
+  - `createContactImport` is a raw fetch with 30 s (`:1091`), not an SDK call.
+  - `cleanup-audiences` declares no `maxDuration`.
+  - The plan's `deleted_at` becomes `settled_at` + `outcome`.
+  - The cleanup log line writes `cause: e.message` (`cleanup-orphaned-audiences.ts:147`), against the log-hygiene rule. It predates s2, but s2 touches the file.
 
 ## Constitution Check
 
@@ -195,6 +490,18 @@ The probe was a throwaway spec, never committed. The seeds were removed afterwar
 | Full `pnpm test:coverage` | not run locally: low memory killed two runs. CI runs it. |
 
 **Review close.** Round 7 was a targeted confirmation of the round-6 commits. It returned no High and no Medium (`[]`), so the stop rule ends the review. The Lows still open are listed in the PR.
+
+**The maintainer's `/verify` (31 Oct 2026, before merge, on `8e8c740fe`): PASS.** This is the Verify evidence under D-044. Claude's own drives above came before that rule and are kept as history. The run used the branch on :3400, dev Neon, and the live Resend account with the sink address only. No broadcast was sent or cancelled, so nothing undeletable was left behind.
+
+| Done-when / probe | Observed |
+|---|---|
+| ED1 | A `failed_to_dispatch` row holding a real draft. Erase as super-admin → 200 `cascadesComplete:true`. The draft → **404**. `member_erased` has `resend_drafts_cleared:1, resend_copies_retained:0, broadcasts_already_sent_count:0`. |
+| Probe: ordinary admin | **403**. The draft is untouched. |
+| Probe: wrong method | `GET` on the erase route → **405**. |
+| Probe: wrong input | `identityVerified:false` → **400** `invalid_body`. The draft is untouched. |
+| Probe: erase twice | 200, and a **second** `member_erased` row is written. This is probably pre-existing and is tracked as #717, outside this spec. |
+
+ED2 was left out of the command on purpose: its setup cancels a queued broadcast, and Resend cannot delete a cancelled one. ED2 is covered by `erasure-terminal-drafts.test.ts`. The full report is on PR #713.
 
 ### Slice 1 — review round 1 (code-review high, pdpa, security, reliability; 31 Oct 2026)
 
