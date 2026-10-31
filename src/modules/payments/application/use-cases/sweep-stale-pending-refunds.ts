@@ -705,12 +705,9 @@ export async function sweepStalePendingRefunds(
             escalatedCount += 1;
           }
           continue;
-        default: {
-          const _exhaustive: never = resolved;
-          void _exhaustive;
-          skippedCount += 1;
-          continue;
-        }
+        // No `default`: an unhandled variant would reach the reconcile below
+        // with `processorRefundId` / `stripeStatus` unassigned, which tsc
+        // rejects (TS2454). Exhaustive at compile time, no dead arm.
       }
     } else {
       processorRefundId = row.processorRefundId;

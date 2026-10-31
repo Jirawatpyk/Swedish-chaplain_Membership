@@ -828,6 +828,65 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     );
   });
 
+  it('#50 orphan: the intent check times out → not listed; lookup_failed step=intent, timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = makeDeps();
+      asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan()]);
+      asMock(deps.processorGateway.retrievePaymentIntent).mockReturnValueOnce(new Promise(() => {}));
+
+      const p = sweepStalePendingRefunds(deps, baseInput);
+      await vi.advanceTimersByTimeAsync(8_000 + 50);
+      const r = await p;
+      expect(r.ok && r.value).toMatchObject({ sweptCount: 0, skippedCount: 1 });
+      expect(asMock(deps.processorGateway.listRefundsForPaymentIntent)).not.toHaveBeenCalled();
+      expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+        'sweep_stale_pending_refunds.orphan_lookup_failed',
+        expect.objectContaining({ refundId: 'rfnd_orphan', step: 'intent', errKind: 'timeout' }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('#50 orphan: Stripe answers with a different intent id → not listed; never closed', async () => {
+    const deps = makeDeps();
+    asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan()]);
+    asMock(deps.processorGateway.retrievePaymentIntent).mockResolvedValueOnce(
+      ok({ id: 'pi_other', status: 'succeeded', clientSecret: null, promptpayQrSvgUrl: null }),
+    );
+
+    const r = await sweepStalePendingRefunds(deps, baseInput);
+    expect(r.ok && r.value).toMatchObject({ sweptCount: 0, skippedCount: 1 });
+    expect(asMock(deps.processorGateway.listRefundsForPaymentIntent)).not.toHaveBeenCalled();
+    expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+    expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+      'sweep_stale_pending_refunds.orphan_lookup_failed',
+      expect.objectContaining({ step: 'intent', errKind: 'intent_id_mismatch' }),
+    );
+  });
+
+  it('#50 orphan: the list times out → lookup_failed step=list, timeout; never closed', async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = makeDeps();
+      asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan()]);
+      asMock(deps.processorGateway.listRefundsForPaymentIntent).mockReturnValueOnce(new Promise(() => {}));
+
+      const p = sweepStalePendingRefunds(deps, baseInput);
+      await vi.advanceTimersByTimeAsync(8_000 + 50);
+      const r = await p;
+      expect(r.ok && r.value).toMatchObject({ sweptCount: 0, skippedCount: 1 });
+      expect(asMock(deps.refundsRepo.updateStatus)).not.toHaveBeenCalled();
+      expect(asMock(deps.logger!.warn)).toHaveBeenCalledWith(
+        'sweep_stale_pending_refunds.orphan_lookup_failed',
+        expect.objectContaining({ step: 'list', errKind: 'timeout' }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('#50 orphan: an ambiguous lookup on a young row → skip, NO escalation', async () => {
     const deps = makeDeps();
     asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([orphan(30)]);
@@ -887,6 +946,26 @@ describe('sweepStalePendingRefunds — Stripe-aware (A.14)', () => {
     );
     const r = await sweepStalePendingRefunds(deps, baseInput);
     expect(r.ok && r.value).toMatchObject({ skippedCount: 1, escalatedCount: 0 });
+  });
+
+  it('per-retrieve timeout on a row aged past 3 days → escalated (retrieve_failed)', async () => {
+    vi.useFakeTimers();
+    try {
+      const deps = makeDeps();
+      asMock(deps.refundsRepo.listPendingOlderThan).mockResolvedValueOnce([makeStaleRow({ ageHours: 100 })]);
+      asMock(deps.processorGateway.retrieveRefund).mockReturnValueOnce(new Promise(() => {}));
+
+      const p = sweepStalePendingRefunds(deps, baseInput);
+      await vi.advanceTimersByTimeAsync(8_000 + 50);
+      const r = await p;
+      expect(r.ok && r.value).toMatchObject({ skippedCount: 1, escalatedCount: 1 });
+      expect(asMock(paymentsMetrics.stalePendingRefundEscalated)).toHaveBeenCalledWith(
+        TENANT_ID,
+        'retrieve_failed',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('per-retrieve timeout → skip + count (external-call bound)', async () => {
