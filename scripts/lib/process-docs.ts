@@ -41,6 +41,22 @@ export const REVIEW_RULE_PHRASES: readonly string[] = [
   'docs-only change gets no',
 ];
 
+export const VERIFY_RULES_OWNER = '.claude/skills/feature-flow/SKILL.md';
+
+/** The Verify rule (D-044), owned by `feature-flow` § 6. */
+export const VERIFY_RULE_PHRASES: readonly string[] = [
+  'claude cannot invoke /verify',
+  'no hand-driving',
+  'no surface, no /verify',
+  'leave nothing undeletable at the provider',
+];
+
+/** Each rule set: one owner file, and the pieces only it may carry. */
+export const RULE_SETS: ReadonlyArray<{ readonly owner: string; readonly phrases: readonly string[] }> = [
+  { owner: REVIEW_RULES_OWNER, phrases: REVIEW_RULE_PHRASES },
+  { owner: VERIFY_RULES_OWNER, phrases: VERIFY_RULE_PHRASES },
+];
+
 /** History, not restatement: these record what was decided or done. */
 const EXEMPT = [/^docs\/decisions\.md$/, /^docs\/retro\.md$/, /^docs\/changelog\.md$/];
 
@@ -55,15 +71,18 @@ export interface ProcessDocViolations {
 }
 
 export function findProcessDocViolations(files: readonly DocFile[]): ProcessDocViolations {
-  const ownerFile = files.find((f) => f.path === REVIEW_RULES_OWNER);
-  const ownerText = ownerFile === undefined ? '' : norm(ownerFile.text);
-  const missingFromOwner = REVIEW_RULE_PHRASES.filter((p) => !ownerText.includes(norm(p)));
+  const missingFromOwner: string[] = [];
   const restated: Array<{ path: string; phrase: string }> = [];
-  for (const f of files) {
-    if (f.path === REVIEW_RULES_OWNER || EXEMPT.some((re) => re.test(f.path))) continue;
-    const text = norm(f.text);
-    for (const phrase of REVIEW_RULE_PHRASES) {
-      if (text.includes(norm(phrase))) restated.push({ path: f.path, phrase });
+  for (const set of RULE_SETS) {
+    const ownerFile = files.find((f) => f.path === set.owner);
+    const ownerText = ownerFile === undefined ? '' : norm(ownerFile.text);
+    missingFromOwner.push(...set.phrases.filter((p) => !ownerText.includes(norm(p))));
+    for (const f of files) {
+      if (f.path === set.owner || EXEMPT.some((re) => re.test(f.path))) continue;
+      const text = norm(f.text);
+      for (const phrase of set.phrases) {
+        if (text.includes(norm(phrase))) restated.push({ path: f.path, phrase });
+      }
     }
   }
   return { restated, missingFromOwner };

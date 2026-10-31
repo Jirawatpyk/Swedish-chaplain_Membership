@@ -19,11 +19,15 @@ const owner = (extra = ''): DocFile => ({
   path: REVIEW_RULES_OWNER,
   text: REVIEW_RULE_PHRASES.join('\n') + extra,
 });
+// The other rule sets' owners, each carrying its own phrases, so a case about
+// the review rules is not failed by an absent Verify owner.
+const otherOwners = (): DocFile[] =>
+  RULE_SETS.filter((r) => r.owner !== REVIEW_RULES_OWNER).map((r) => ({ path: r.owner, text: r.phrases.join('\n') }));
 
 describe('findProcessDocViolations', () => {
   it('flags a rule phrase restated outside its owner (positive control)', () => {
     const phrase = REVIEW_RULE_PHRASES[0]!;
-    const v = findProcessDocViolations([owner(), { path: 'docs/workflow.md', text: `x ${phrase} y` }]);
+    const v = findProcessDocViolations([owner(), ...otherOwners(), { path: 'docs/workflow.md', text: `x ${phrase} y` }]);
     expect(v.restated).toEqual([{ path: 'docs/workflow.md', phrase }]);
     expect(v.missingFromOwner).toEqual([]);
   });
@@ -31,6 +35,7 @@ describe('findProcessDocViolations', () => {
   it('passes when only the owner carries the rules and others link to it', () => {
     const v = findProcessDocViolations([
       owner(),
+      ...otherOwners(),
       { path: 'docs/workflow.md', text: 'No High or Medium remains (`review-and-ship` § 1).' },
     ]);
     expect(v).toEqual({ restated: [], missingFromOwner: [] });
@@ -38,20 +43,20 @@ describe('findProcessDocViolations', () => {
 
   it('fails when the owner no longer carries a phrase, so the gate is never inert', () => {
     const [first, ...rest] = REVIEW_RULE_PHRASES;
-    const v = findProcessDocViolations([{ path: REVIEW_RULES_OWNER, text: rest.join('\n') }]);
+    const v = findProcessDocViolations([{ path: REVIEW_RULES_OWNER, text: rest.join('\n') }, ...otherOwners()]);
     expect(v.missingFromOwner).toEqual([first]);
   });
 
   it('fails when the owner file is not in the scanned set at all', () => {
-    const v = findProcessDocViolations([{ path: 'docs/workflow.md', text: 'nothing' }]);
+    const v = findProcessDocViolations([{ path: 'docs/workflow.md', text: 'nothing' }, ...otherOwners()]);
     expect(v.missingFromOwner).toEqual([...REVIEW_RULE_PHRASES]);
   });
 
   it('matches across a line break and CRLF, so a wrapped restatement is still caught', () => {
     const phrase = REVIEW_RULE_PHRASES[0]!;
     const wrapped = phrase.replace(' ', '\r\n');
-    const v = findProcessDocViolations([owner(), { path: '.claude/skills/feature-flow/SKILL.md', text: wrapped }]);
-    expect(v.restated.map((r) => r.path)).toEqual(['.claude/skills/feature-flow/SKILL.md']);
+    const v = findProcessDocViolations([owner(), ...otherOwners(), { path: 'docs/runbooks/x.md', text: wrapped }]);
+    expect(v.restated.map((r) => r.path)).toEqual(['docs/runbooks/x.md']);
   });
 
   it('ignores the decision log, the retro log and the changelog (history, not restatement)', () => {
@@ -119,7 +124,7 @@ describe('findProcessDocViolations', () => {
     ],
     ['a decided item without the bold markers', 'A decided item is a finding already closed by one of the closures.'],
   ])('catches a real restatement: %s', (_label, text) => {
-    const v = findProcessDocViolations([REAL_OWNER, { path: 'docs/workflow.md', text }]);
+    const v = findProcessDocViolations([REAL_OWNER, ...otherOwners(), { path: 'docs/workflow.md', text }]);
     expect(v.missingFromOwner).toEqual([]);
     expect(v.restated.length).toBeGreaterThan(0);
   });
