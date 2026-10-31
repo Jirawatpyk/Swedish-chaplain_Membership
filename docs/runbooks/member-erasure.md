@@ -102,9 +102,13 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    - and from state (**the STATE query — run it on every erasure**, step 4): `SELECT broadcast_id, status, sent_at FROM broadcasts WHERE
      tenant_id = '<tenant>' AND requested_by_member_id = '<member>' AND status
      IN ('sending','sent','partially_sent','partial_delivery_accepted') AND
-     sent_at >= '<member_erasure_requested time>';` A row that was already
-     `sending` when the cascade listed the member's in-flight rows has **no
-     evidence row and is not in the count** — only this query finds it.
+     sent_at >= '<member_erasure_requested time>';` It is the check that needs
+     no evidence write: a row already `sending` when the cascade listed the
+     member's in-flight rows had no evidence row before spec 140 s1. Since then
+     the terminal-draft pass probes such a row (if it still holds a Resend id)
+     and writes the evidence row, and that also covers a send made BEFORE the
+     erasure request, which this query (`sent_at >=` the request) does not
+     return — so read the evidence query and this query together.
    Record each on the DSR ticket with its recipient count (residual 8c wording
    in step 7). **Archive never stands in for an erasure request**: archiving a
    member still skips a dispatch-begun E-Blast and deletes nothing at Resend.
@@ -114,27 +118,38 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    in-progress set (bar `sent`) that still hold a `resend_broadcast_id` — the
    scrub keeps that column — and deletes each draft once (no row lock, no row
    write). `member_erased` then carries `resend_drafts_cleared` (drafts gone at
-   Resend) and `resend_copies_retained` (copies Resend would not delete:
-   canceled, failed, or handed over). Do **not** delete anything at Resend by
-   hand. A retained copy is NOT an already-sent E-Blast unless the step 4 STATE
-   query also returns it. To list what the cascade reached (the TERMINAL query):
+   Resend — a 404 counts too: Resend holds no such broadcast) and
+   `resend_copies_retained` (UNSENT copies Resend would not delete: canceled or
+   failed). A copy Resend already handed over (403, then `queued` / `sending` /
+   `sent`) is residual **8c**, not a retained copy: the pass writes the same
+   `broadcast_concurrent_action_blocked` evidence row as above (once per
+   broadcast), so it is in `broadcasts_already_sent_count` and in the evidence
+   query. A `queued` copy is **not** cancelled at Resend (there is no cancel
+   call in this slice); its send completes. Do **not** delete anything at
+   Resend by hand. To list what the cascade reached (the TERMINAL query; its
+   status list mirrors `IN_PROGRESS_BROADCAST_STATUSES` + `sent` in
+   `src/modules/broadcasts/domain/stage/in-progress-statuses.ts` — re-check it
+   if that constant changes):
    `SELECT broadcast_id, status, resend_broadcast_id FROM broadcasts WHERE
    tenant_id = '<tenant>' AND requested_by_member_id = '<member>' AND
    resend_broadcast_id IS NOT NULL AND resend_broadcast_id <> '' AND status
    NOT IN ('submitted','approved','in_design','awaiting_member_approval',
-   'changes_requested','member_approved','sent');` Its row count must equal
-   `resend_drafts_cleared + resend_copies_retained` on the LATEST
-   `member_erased` (both are derived per run from these rows). An erasure that
-   stays half-run because Resend keeps answering something undecided shows as
+   'changes_requested','member_approved','sent');` Until the F7 retention sweep
+   removes rows (years later), its row count equals `resend_drafts_cleared +
+   resend_copies_retained` on the LATEST `member_erased` plus the handed rows
+   among them (those counted in `broadcasts_already_sent_count`). An erasure
+   that stays half-run because Resend keeps answering something undecided, or
+   because the terminal pass ran out of its time budget
+   (`broadcasts.cascade.terminal_deadline_reached`), shows as
    `members_erasure_stuck_count` > 0 on `reconcile-erasures` tick after tick and
    as `broadcasts.cascade.terminal_draft_unresolved` error lines (ids and the
    Resend outcome only); fix the cause (the API key, Resend's status), and the
    next re-drive finishes.
 
    **A row the cascade cannot settle — manual recovery.** When Resend's
-   answers decide nothing (a 403 whose probe says `draft` or `not_found`, an
-   `unknown` status such as `failed`, or a 404 whose probe still finds the
-   broadcast), the row stays `approved`, the erasure stays not complete, and
+   answers decide nothing (a 403 whose probe says `draft` or `not_found`, a
+   probe that reads `unknown`, or a 404 whose probe still finds the broadcast;
+   on the in-flight arm `failed` is undecided too), the row stays `approved`, the erasure stays not complete, and
    `reconcile-erasures` re-drives it every 30 min without ever finishing.
    Recognise it by: the log line `broadcasts.cascade.tx_or_audit_failed` with
    `resendOutcome` such as `forbidden_probe_draft`, `forbidden_probe_not_found`,
@@ -205,15 +220,19 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
      from the LATEST `member_erased` (a re-drive's is authoritative); it must
      equal the number of distinct broadcasts the step 3b evidence query
      returns;
-   - `resend_drafts_cleared` + `resend_copies_retained` equals the row count of
-     the step 3b TERMINAL query. A non-zero `resend_copies_retained` is residual
-     8d: record on the DSR ticket that an unsent copy remains at Resend;
+   - `resend_drafts_cleared` + `resend_copies_retained` + the handed rows
+     equals the row count of the step 3b TERMINAL query (until the retention
+     sweep removes rows). A non-zero `resend_copies_retained` is residual 8d:
+     record on the DSR ticket that an unsent copy remains at Resend; a handed
+     row is 8c (above);
    - **run the step 3b STATE query on every erasure, whatever the count says**
      (`sent_at >= member_erasure_requested`, statuses `sending` / `sent` /
      `partially_sent` / `partial_delivery_accepted`). Any row it returns is
-     residual 8c **even when `broadcasts_already_sent_count` is 0**: a row
-     already `sending` when the cascade listed in-flight rows writes no evidence
-     row. Record each on the DSR ticket;
+     residual 8c **even when `broadcasts_already_sent_count` is 0** (an
+     evidence write can be missing — a row without a Resend id is never
+     probed). A send made before the erasure request is not in this query; it
+     is in the step 3b evidence query, written by the terminal-draft pass.
+     Record each on the DSR ticket;
    - for a member who used E-Blasts: the `broadcast_content_redacted` row carries
      `versions_redacted`, `decision_reasons_redacted` and `notifications_cancelled`, and the
      three-count query in § E-Blast approval round returns zeros.
@@ -254,9 +273,12 @@ Run these steps for every erasure request (GDPR Art. 17 / PDPA §33). The
    which has not been measured; **(g)** a **pre-scrub Resend copy the erasure
    could not delete** (residual 8d) — since spec 140 slice 1 the cascade deletes
    every draft a terminal row of the member still points to, so what remains is
-   a copy Resend refuses to delete (a canceled or failed broadcast, counted in
-   `member_erased.resend_copies_retained`) or a minted draft whose reclaim
-   failed and that no row records (until spec 140 slice 2); it is never sent.
+   an UNSENT copy Resend refuses to delete (a canceled or failed broadcast,
+   counted in `member_erased.resend_copies_retained`), a refusal's draft whose
+   DELETE stayed undecided (reached by the erasure, and from spec 140 slice 2
+   by the orphan sweep), or a minted draft whose reclaim failed and that no row
+   records (until spec 140 slice 2); it is never sent. A copy Resend already
+   handed over is (f), not (g).
    If the DSR
    specifically asks about these, explain the limitation honestly; they do not
    block closure of the controller-copy erasure.

@@ -98,7 +98,7 @@ As the chamber, when a member is erased, every Resend draft that our DB still po
 - **ED3.** A retryable answer from Resend:
   - `member_erased` is withheld;
   - the `reconcile-erasures` re-drive then succeeds.
-- **ED4.** A refusal for a halted or ended membership leaves no draft at Resend, on both legs.
+- **ED4.** On both legs, a refusal for a halted or ended membership deletes the row's draft at Resend. An undecided delete is recorded as `undeleted` (with a closed `resendDraftErrClass`). Erasure reaches that draft, and from slice 2 so does the orphan sweep. A 403 whose one GET reads handed means a sibling tick sent the draft: that is a concurrent skip, so no `failed_to_dispatch` is written and the member is not emailed. (Amended at review round 1, 31 Oct 2026.)
 - **ED5.** A stale `attachResendIds` on a row that is no longer `approved` writes nothing.
 
 ### US2 — One cron tick at a time works a row (slice 2)
