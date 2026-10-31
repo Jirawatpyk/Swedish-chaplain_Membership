@@ -667,6 +667,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
       err({
         code: 'processor_unavailable',
         kind: 'permanent',
+        moneyExit: 'rejected',
         reason: 'card_declined',
       }),
     );
@@ -688,6 +689,7 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
         err({
           code: 'processor_unavailable',
           kind,
+          moneyExit: 'unknown',
           reason: 'sk_live_FORBIDDEN_DETAIL_THAT_MUST_NOT_LEAK',
         }),
       );
@@ -711,12 +713,55 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     },
   );
 
+  it('#51 — the route follows moneyExit, not kind: permanent but unknown → 502 processor_outcome_unknown', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    issueRefundMock.mockResolvedValueOnce(
+      err({
+        code: 'processor_unavailable',
+        kind: 'permanent',
+        moneyExit: 'unknown',
+        reason: 'processor_response_amount_invalid',
+      }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    expect(res.status).toBe(502);
+    const error = ((await res.json()) as Record<string, unknown>)['error'] as Record<string, unknown>;
+    expect(error['code']).toBe('processor_outcome_unknown');
+  });
+
+  it('#51 — a refused refund says so: its own message, not the payments "temporarily unavailable, retry"', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    issueRefundMock.mockResolvedValueOnce(
+      err({ code: 'processor_unavailable', kind: 'permanent', moneyExit: 'rejected', reason: 'x' }),
+    );
+    const { POST } = await importRoute();
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    const error = ((await res.json()) as Record<string, unknown>)['error'] as Record<string, unknown>;
+    expect(error['code']).toBe('processor_unavailable');
+    expect(String(error['message'])).toMatch(/declined the refund/i);
+    expect(String(error['message'])).not.toMatch(/temporarily unavailable/i);
+    expect(String(error['messageThai'])).not.toBe('ระบบชำระเงินไม่พร้อมใช้งานชั่วคราว กรุณาลองใหม่อีกครั้ง');
+  });
+
+  it('#51 — refund_in_progress no longer tells the admin to retry shortly', async () => {
+    requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+    issueRefundMock.mockResolvedValueOnce(err({ code: 'refund_in_progress' }));
+    const { POST } = await importRoute();
+    const res = await POST(makeJsonRequest(VALID_BODY));
+    const error = ((await res.json()) as Record<string, unknown>)['error'] as Record<string, unknown>;
+    expect(error['code']).toBe('refund_in_progress');
+    expect(String(error['message'])).not.toMatch(/retry/i);
+    expect(String(error['message'])).toMatch(/Payment activity/);
+  });
+
   it('502 processor_unavailable — error envelope MUST NOT leak gateway `reason` (PCI hygiene)', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(
       err({
         code: 'processor_unavailable',
         kind: 'permanent',
+        moneyExit: 'rejected',
         reason: 'sk_live_FORBIDDEN_DETAIL_THAT_MUST_NOT_LEAK',
       }),
     );
