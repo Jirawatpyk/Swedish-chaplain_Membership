@@ -666,6 +666,20 @@ Commits: `1c69a7611` test (RED: DL5a, DL8, P6, R3, the contract rows), `b9c554d2
 10. **Carries closed (D-043).** R3 (the `propagate` time bound, carried from slice 1 review round 1 and re-homed to s2a): closed by `subprocessor-erasure-propagate-bound.test.ts` (real gateway at 50 ms, three hung pairs return within 3 x C + 1 s) and mutation M6. R4 and R1 #5 stay with s2b.
 11. **Live-path change** (plan § Risk): the legacy leg and erasure no longer retry a create, and every call gives up after 10 s instead of ~31 s or more (or never, for a hung SDK call).
 
+### Slice 2a — Verify: the maintainer's `/verify` (31 Oct 2026, on `9e05e70dc`): PASS
+
+The branch ran on :3400 with the import flag OFF, against dev Neon, tenant `swecham`, using the Resend sink only. Dev had 0 due `approved` rows before the seed.
+
+| Done-when / probe | Observed |
+|---|---|
+| DL7 | A due `approved` row with import columns set. The cron answered 200 `processed:1, concurrent_skip:1` and logged `broadcasts.dispatch.import_row_skipped` for that `broadcastId`. No Resend line appeared during the tick. The row was unchanged, `updated_at` included. |
+| Probe: wrong Bearer | **401** `unauthorized`. The row was unchanged. |
+| Probe: second tick | Skipped again. The row was unchanged. |
+| Erasure with bounded calls | A `failed_to_dispatch` row holding a real draft. Erase returned 200 `cascadesComplete:true`, the draft then answered **404**, and the payload carried `resend_drafts_cleared:1`. |
+| DL5a, DL8, R3 | Test-only: they need a provider that hangs or fails. |
+
+Finding for review: the route logs a DL7 skip at **WARN**, as `cron.broadcasts.dispatch.concurrent_skip`, after the INFO `import_row_skipped`.
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
