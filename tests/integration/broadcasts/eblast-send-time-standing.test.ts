@@ -393,7 +393,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     expect(r).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason: 'member_halted' } });
     expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
     expect((await readRow(row.broadcastId!)).status).toBe('failed_to_dispatch');
-    const failed = (await dispatchAudits(row.broadcastId!)).find((a) => a.eventType === 'broadcast_failed_to_dispatch');
+    const failed = (await dispatchAudits(row.broadcastId!)).find((a) => (a.eventType as string) === 'broadcast_failed_to_dispatch');
     expect(failed?.payload).toMatchObject({ reason: 'member_halted', resendDraftOutcome: 'deleted' });
   });
 
@@ -443,7 +443,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
     expect(r.ok ? r.value : r.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_halted' });
     expect(gw.calls.map((c) => c.method)).toEqual(['retrieveBroadcast', 'deleteBroadcastOnce']);
     expect((await readRow(row.broadcastId!)).status).toBe('failed_to_dispatch');
-    const failed = (await dispatchAudits(row.broadcastId!)).find((a) => a.eventType === 'broadcast_failed_to_dispatch');
+    const failed = (await dispatchAudits(row.broadcastId!)).find((a) => (a.eventType as string) === 'broadcast_failed_to_dispatch');
     expect(failed?.payload).toMatchObject({ reason: 'member_halted', resendDraftOutcome: 'deleted' });
   });
 
