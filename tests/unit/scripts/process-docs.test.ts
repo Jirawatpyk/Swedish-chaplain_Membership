@@ -52,15 +52,51 @@ describe('findProcessDocViolations', () => {
     expect(v.restated.map((r) => r.path)).toEqual(['.claude/skills/feature-flow/SKILL.md']);
   });
 
-  it('ignores the decision log, the retro log, the changelog and specs (history, not restatement)', () => {
+  it('ignores the decision log, the retro log and the changelog (history, not restatement)', () => {
     const phrase = REVIEW_RULE_PHRASES[0]!;
     const v = findProcessDocViolations([
       owner(),
       { path: 'docs/decisions.md', text: phrase },
       { path: 'docs/retro.md', text: phrase },
       { path: 'docs/changelog.md', text: phrase },
-      { path: 'specs/140-eblast-one-leg/plan.md', text: phrase },
     ]);
     expect(v.restated).toEqual([]);
+  });
+
+  // Real restatements, copied from the files as they stood on main at
+  // e6d82d0c8 (#714). The first version of this gate let every one of them
+  // through (review round 1 on #715), so they are the positive controls.
+  const REAL_OWNER: DocFile = {
+    path: REVIEW_RULES_OWNER,
+    text: [
+      '  - it is refuted with evidence, and the reviewer confirms that on a re-run;',
+      '  - for an L slice only, a **Medium** is **carried to the slice that owns it** (D-043). A High is never carried, because every merge deploys.',
+      '  - "Already" means in the agreed plan: `plan.md` at this branch\'s base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`). *k*\'s row in § Slices must name the concern **in words**; an ID alone (such as `DT3`) does not count.',
+      '- **A docs-only change gets no `/code-review`** (D-043).',
+      '- **From round 3 on, each round is targeted** (D-043).',
+      '  - Tell it not to pad to a minimum count. An empty list is a valid answer.',
+      '  - A **decided item** is a finding already closed.',
+      '  - size L, or any sensitive surface: the ≥ 2 full rounds above plus at most 2 targeted rounds.',
+    ].join('\n'),
+  };
+
+  it.each([
+    [
+      'workflow.md step 7 closures',
+      'A finding closes when it is fixed, when it is refuted with evidence and the reviewer confirms on a re-run, or (for a Medium in an L slice) when it is carried',
+    ],
+    [
+      'workflow.md step 7 rounds, lower-case docs-only',
+      'From round 3 on, a round reviews only the fix commits; rounds are capped by size, and at the cap the maintainer decides the open findings; a docs-only change gets no `/code-review` (D-043).',
+    ],
+    [
+      "the auditor's copied carry condition",
+      "slice *k* names the concern in the agreed plan: `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`). *k*'s row in § Slices must name the concern **in words**; an ID alone (such as `DT3`) does not count;",
+    ],
+    ['a decided item without the bold markers', 'A decided item is a finding already closed by one of the closures.'],
+  ])('catches a real restatement: %s', (_label, text) => {
+    const v = findProcessDocViolations([REAL_OWNER, { path: 'docs/workflow.md', text }]);
+    expect(v.missingFromOwner).toEqual([]);
+    expect(v.restated.length).toBeGreaterThan(0);
   });
 });
