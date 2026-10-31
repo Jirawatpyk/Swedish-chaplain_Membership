@@ -10,7 +10,8 @@
  *       400 invalid_input, 401 unauthorized, 403 forbidden_role,
  *       404 payment_not_found, 409 payment_not_refundable,
  *       409 refund_exceeds_remaining, 409 refund_in_progress,
- *       502 processor_unavailable
+ *       502 processor_unavailable (a refusal),
+ *       502 processor_outcome_unknown (Stripe outcome unknown)
  *   - 429 rate_limited (20 / 5 min admin) with Retry-After header
  *   - Response headers: X-Correlation-Id, Cache-Control: no-store, private
  *   - PCI / log hygiene: client_secret + raw stripe error.message MUST NOT
@@ -601,13 +602,17 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
     expect(f5RateLimitEmitMock).toHaveBeenCalledTimes(1);
   });
 
-  it('502 processor_unavailable — refund row inserted with status=failed; no CN', async () => {
+  // Task B — only a `permanent` gateway failure proves the money stayed put
+  // (the use case finalises the row `failed`). `retryable` and
+  // `idempotency_conflict` leave it `pending`: the outcome is unknown, so the
+  // route must not answer with a code whose copy says "retry".
+  it('502 processor_unavailable — a permanent refusal (row finalised failed; no CN)', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);
     issueRefundMock.mockResolvedValueOnce(
       err({
         code: 'processor_unavailable',
-        kind: 'retryable',
-        reason: 'retryable',
+        kind: 'permanent',
+        reason: 'card_declined',
       }),
     );
 
@@ -619,6 +624,37 @@ describe('contract: POST /api/refunds/initiate (T101)', () => {
       'processor_unavailable',
     );
   });
+
+  it.each(['retryable', 'idempotency_conflict'] as const)(
+    '502 processor_outcome_unknown — a %s gateway failure (row left pending for the sweep)',
+    async (kind) => {
+      requireApiPermissionMock.mockResolvedValueOnce(adminContext);
+      issueRefundMock.mockResolvedValueOnce(
+        err({
+          code: 'processor_unavailable',
+          kind,
+          reason: 'sk_live_FORBIDDEN_DETAIL_THAT_MUST_NOT_LEAK',
+        }),
+      );
+
+      const { POST } = await importRoute();
+      const res = await POST(makeJsonRequest(VALID_BODY));
+      expect(res.status).toBe(502);
+      const bodyText = await res.text();
+      const error = (JSON.parse(bodyText) as Record<string, unknown>)['error'] as Record<string, unknown>;
+      expect(error['code']).toBe('processor_outcome_unknown');
+      expect(error['messageThai']).toBeDefined();
+      // PCI hygiene, as for processor_unavailable.
+      expect(bodyText).not.toContain('FORBIDDEN_DETAIL');
+      // PCI review MEDIUM: the copy says not to retry, so no Retry-After
+      // tells a client or proxy to.
+      expect(res.headers.get('Retry-After')).toBeNull();
+      // PCI review HIGH: a refund's gateway `reason` is Stripe's raw message
+      // (an idempotency error repeats the key); it never reaches the logs.
+      const { logger } = await import('@/lib/logger');
+      expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toContain('FORBIDDEN_DETAIL');
+    },
+  );
 
   it('502 processor_unavailable — error envelope MUST NOT leak gateway `reason` (PCI hygiene)', async () => {
     requireApiPermissionMock.mockResolvedValueOnce(adminContext);

@@ -134,8 +134,14 @@ function httpStatusForUseCaseError(error: IssueRefundError): {
       return { status: 422, routeCode: 'membership_effect_not_applicable' };
     case 'tenant_settings_missing':
       return { status: 422, routeCode: 'tenant_settings_incomplete' };
+    // Task B — only a `permanent` gateway failure proves the money stayed
+    // put (the row is finalised `failed`), so only it may say "retry". A
+    // `retryable` or `idempotency_conflict` failure leaves the row `pending`
+    // for the stale-pending sweep: the refund may have gone through.
     case 'processor_unavailable':
-      return { status: 502, routeCode: 'processor_unavailable' };
+      return error.kind === 'permanent'
+        ? { status: 502, routeCode: 'processor_unavailable' }
+        : { status: 502, routeCode: 'processor_outcome_unknown' };
     case 'f4_preflight_read_error':
       // B.1 review Fix#1: the PRE-FLIGHT F4 credited-total read failed BEFORE
       // any Stripe call — money did NOT move, the refund is safe to retry, and
@@ -461,10 +467,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const errCode = result.error.code;
     const { status, routeCode } = httpStatusForUseCaseError(result.error);
-    // PCI: log ONLY the bounded `kind` discriminator + closed-union
-    // `reason` literal — never raw Stripe SDK text.
-    const { processorErrorKind, processorErrorReason, retryAfterSeconds } =
-      buildUseCaseErrorTelemetry(result.error);
+    // PCI: log ONLY the bounded `kind` discriminator — never raw Stripe SDK
+    // text. Unlike initiate-payment's closed-union `reason`, a refund's
+    // gateway `reason` IS Stripe's own message (an idempotency error repeats
+    // the key), so it is not logged at all (Task B PCI review).
+    // No Retry-After on any use-case error: the helper sets it only for a
+    // `retryable` processor failure, which this route answers with
+    // `processor_outcome_unknown`, whose copy says NOT to retry (Task B).
+    const { processorErrorKind } = buildUseCaseErrorTelemetry(result.error);
     logger.warn(
       {
         requestId,
@@ -475,7 +485,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         httpStatus: status,
         routeCode,
         ...(processorErrorKind ? { processorErrorKind } : {}),
-        ...(processorErrorReason ? { processorErrorReason } : {}),
         // I8 (Task 7 remediation) — the `status` payload on
         // `f4_preflight_invalid_status` was documented as letting ops tell a
         // voided invoice from a fully-credited one "without a second query",
@@ -499,7 +508,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       'refunds.initiate.use_case_error',
     );
     return errorResponse(status, routeCode, correlationId, {
-      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
       // The authoritative cap, so the dialog quotes it instead of its
       // page-load figure (which can be stale after a credit note / refund).
       ...(result.error.code === 'refund_exceeds_remaining'

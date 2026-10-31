@@ -143,14 +143,33 @@ describe('f5RefundBridge outcome mapping (F8-RP)', () => {
 
   it('REGRESSION: genuine processor_unavailable → refund_failed (unchanged)', async () => {
     issueRefundMock.mockResolvedValue(
-      err({ code: 'processor_unavailable', kind: 'permanent', reason: 'failed' }),
+      err({ code: 'processor_unavailable', kind: 'permanent', reason: 'sk_live_FORBIDDEN_DETAIL' }),
     );
     const result = await f5RefundBridge.issueRefundForInvoice(INPUT);
     expect(result.status).toBe('refund_failed');
     if (result.status === 'refund_failed') {
       expect(result.errorCode).toBe('processor_unavailable');
+      // Task B code review: a refund's gateway `reason` is Stripe's raw
+      // message, and the reject route returns `detail` to the browser. Only
+      // the bounded kind goes out.
+      expect(result.detail).toBe('permanent');
     }
   });
+
+  // Task B (financial review M2) — only `permanent` proves the money stayed
+  // put. On `retryable` / `idempotency_conflict` the F5 row stays `pending`
+  // for the sweep: the refund may have gone through, so the admin must not be
+  // told it failed (a hand refund in the Stripe Dashboard would pay twice).
+  it.each(['retryable', 'idempotency_conflict'] as const)(
+    'processor_unavailable kind:%s (outcome unknown) → refund_pending, not refund_failed',
+    async (kind) => {
+      issueRefundMock.mockResolvedValue(
+        err({ code: 'processor_unavailable', kind, reason: 'x' }),
+      );
+      const result = await f5RefundBridge.issueRefundForInvoice(INPUT);
+      expect(result.status).toBe('refund_pending');
+    },
+  );
 
   it('no succeeded payment / fully refunded → no_payment_found (refund never attempted)', async () => {
     computeRemainingMock.mockReturnValue(null);

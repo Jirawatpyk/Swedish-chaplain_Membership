@@ -44,6 +44,11 @@ export type F5RouteErrorCode =
   | 'primary_contact_missing'
   | 'rate_limited'
   | 'processor_unavailable'
+  // Task B — the refund's Stripe call failed in a way that does not prove
+  // the money stayed put (the answer was lost, or the idempotency key already
+  // existed). The refund row stays `pending` for the sweep; the copy says
+  // NOT to retry.
+  | 'processor_outcome_unknown'
   | 'internal_error'
   | 'missing_header'
   | 'bad_signature'
@@ -173,6 +178,12 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
   processor_unavailable: {
     message: 'Payment processor is temporarily unavailable. Please retry.',
     messageThai: 'ระบบชำระเงินไม่พร้อมใช้งานชั่วคราว กรุณาลองใหม่อีกครั้ง',
+  },
+  processor_outcome_unknown: {
+    message:
+      "We couldn't confirm whether the payment processor completed the refund. Do not retry the refund: reload the page and check Payment activity on this invoice.",
+    messageThai:
+      'ระบบยืนยันไม่ได้ว่าผู้ให้บริการชำระเงินคืนเงินสำเร็จหรือไม่ ห้ามสั่งคืนเงินซ้ำ กรุณาโหลดหน้านี้ใหม่และตรวจสอบส่วนกิจกรรมการชำระเงินในหน้าใบแจ้งหนี้นี้',
   },
   internal_error: {
     message: 'An unexpected error occurred. Support has been notified.',

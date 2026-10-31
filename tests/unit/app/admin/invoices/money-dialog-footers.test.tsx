@@ -574,6 +574,39 @@ describe('refund: no retry once the outcome may be a refund', () => {
     await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown);
   });
 
+  // Task B: Stripe's answer was lost (retryable) or the key already exists
+  // (idempotency_conflict); the server names it, and it may have refunded.
+  it('a 502 processor_outcome_unknown closes, refreshes, warns and locks', async () => {
+    const spy = await submitPartial(async () =>
+      new Response(JSON.stringify({ error: { code: 'processor_outcome_unknown' } }), { status: 502 }),
+    );
+    await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown);
+  });
+
+  // Task B: processor_unavailable now means Stripe refused, so nothing moved.
+  it('a 502 processor_unavailable (a refusal) shows the error inline and can be retried', async () => {
+    const spy = await submitPartial(async () =>
+      new Response(JSON.stringify({ error: { code: 'processor_unavailable' } }), { status: 502 }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('refund-form-error')).toHaveTextContent(
+        enMessages.admin.refund.error.processor_unavailable,
+      ),
+    );
+    expect(toast.warning).not.toHaveBeenCalled();
+    // R113: a refusal shows inline only, like issue and record payment; a
+    // toast with the same text stacked one more on every attempt.
+    expect(toast.error).not.toHaveBeenCalled();
+    const confirm = screen.getByTestId('refund-form-confirm');
+    await waitFor(() => expect(confirm).not.toHaveAttribute('aria-busy'));
+    fireEvent.click(confirm);
+    await waitFor(() => expect(posts(spy)).toHaveLength(2));
+    await waitFor(() => expect(confirm).not.toHaveAttribute('aria-busy'));
+    fireEvent.click(screen.getByRole('button', { name: refund.cancel }));
+    expect(screen.getByTestId('refund-dialog-trigger')).not.toHaveAttribute('aria-disabled');
+    vi.unstubAllGlobals();
+  });
+
   it('a 504 with no readable body closes, refreshes and warns', async () => {
     const spy = await submitPartial(async () => new Response('<html>timeout</html>', { status: 504 }));
     await expectClosedWithWarning(spy, enMessages.admin.refund.error.outcomeUnknown);
