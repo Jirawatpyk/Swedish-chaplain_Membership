@@ -248,7 +248,7 @@ Format: **D-NNN — title** (date) · *Context* · *Decision* · *Consequence*.
     - The plan-row rule would have caught it. The erasure-pass deadline would have needed its state-table cells and test-plan rows before it was built, and those rows are where the round-3 regression (the lost late-member floor) and the round-6 failure mode would have shown.
 - *Decision* (the maintainer, 31 Oct 2026):
   - **A third closure, carried to slice *k*.** For an L slice, a **Medium** can be carried to a later slice *k* of the same spec when all of these hold:
-    - `plan.md` already names the concern for slice *k* in the agreed plan: the version at the branch's base commit, or for slice 1 the commit that first added `plan.md`;
+    - `plan.md` already names the concern in slice *k*'s row in the agreed plan: the version at the branch's base commit, or, when `plan.md` is not there yet, the commit that first added it (a plan change the user approved again counts from the commit that records it);
     - *k*'s PR has not merged;
     - the carry is recorded in `plan.md` § Evidence;
     - slice *k* inherits the finding and closes it.
