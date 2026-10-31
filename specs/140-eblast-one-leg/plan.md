@@ -148,7 +148,7 @@ Filled in at Verify, one block per slice.
 
 Commits: `5ab2a9abd` test (RED), `14eac06e6` feat (GREEN). RED ran first: the unit, contract and integration rows above failed on the missing method, fields and arms (98 unit/contract failures; 5/5 integration in `erasure-terminal-drafts.test.ts`).
 
-1. **What the terminal list holds.** Every `BROADCAST_STATUSES` value outside `IN_PROGRESS_BROADCAST_STATUSES`, bar `sent`: `draft`, `sending`, `rejected`, `cancelled`, `failed_to_dispatch`, `partially_sent`, `partial_delivery_accepted`, `expired_no_member_response`; `resend_broadcast_id` NOT NULL and `<> ''`. Derived from the Domain constant (`terminalDraftStatusPredicate`). `sending` / `partially_sent` / `partial_delivery_accepted` hold a handed object: the DELETE answers 403 and the probe records it retained. `sent` is left out: its copy is known undeletable and the F7 retention sweep owns it.
+1. **What the terminal list holds** (superseded by round 2: every sending-started status is now left out, as `sent` is). Every `BROADCAST_STATUSES` value outside `IN_PROGRESS_BROADCAST_STATUSES`, bar `sent`: `draft`, `sending`, `rejected`, `cancelled`, `failed_to_dispatch`, `partially_sent`, `partial_delivery_accepted`, `expired_no_member_response`; `resend_broadcast_id` NOT NULL and `<> ''`. Derived from the Domain constant (`terminalDraftStatusPredicate`). `sending` / `partially_sent` / `partial_delivery_accepted` hold a handed object: the DELETE answers 403 and the probe records it retained. `sent` is left out: its copy is known undeletable and the F7 retention sweep owns it.
 2. **`failed`.** `normaliseStatus` read it `unknown`. Only `retrieveBroadcastOnce` names it now (`RetrieveBroadcastOnceOutcome`'s present status widened by `'failed'`); `RetrievedBroadcastResource['status']` and `normaliseStatus` are unchanged, so both dispatch legs and `reconcile-stuck-sending` still refuse it as `unknown`. The in-flight arm of the cascade still treats `failed` as unexpected. Gap: DELETE on `failed` is UNMEASURED (research Q4 row); only a 403 + `failed` reaches "retained", anything else stays undecided and shows on the stuck gauge.
 3. **Order and count rule** (superseded in part by review round 1 below: no second DELETE, and a handed copy is 8c evidence, not retained). The pass runs AFTER the in-flight loop and BEFORE the already-sent count read. A row the loop has just cancelled still holds its id and is listed (DELETE → `absent` → cleared), so a first run and a re-drive report the same numbers (the DE3 / R-H1 integration expectations now show `resendDraftsCleared: 1` and, where the fake answers `deleted` every time, a second DELETE). The counts are DERIVED per run, like `alreadySentCount`: the pass never writes the row, and `member_erased` is written only by a run in which every listed row was decided, so the completing run's counts are whole. A `forbidden` + `cancelled` in-flight row (`cancelled_at_resend`) is counted `resend_copies_retained` on every run. A row that moved to `sending` before the cascade reached it can be in BOTH `broadcasts_already_sent_count` (evidence) and `resend_copies_retained`; both are true (RoPA 8c / 8d). The pass has no per-member time bound; `reconcile-erasures` checks its budget between members.
 4. **ED4, an undecided DELETE on a halted / ended refusal.** Not mirrored from the erased arm: left `approved`, the row could be sent once a halt is lifted, and a permanent Resend answer would hold it there for ever. Both legs refuse terminally and record `resendDraftOutcome: 'undeleted'` (`deleted` / `absent` / `cancelled` / `none` otherwise) in the `broadcast_failed_to_dispatch` payload; the erasure cascade's terminal pass reaches that draft if the member is erased. The shared helper is renamed `deleteDraftBeforeRefusal` (with `refusal: 'erased' | 'standing'` in its log lines, `broadcasts.dispatch.refused_draft_*`); the erased arms keep their `member_erased_draft_not_deleted` message (`ERASED_DRAFT_NOT_DELETED`).
@@ -171,7 +171,7 @@ The probe was a throwaway spec, never committed. The seeds were removed afterwar
 | ED1 | A `failed_to_dispatch` row holding a real Resend `draft`. Erase → `200 cascadesComplete:true`. GET the draft → **404**. `member_erased` has `resend_drafts_cleared:1, resend_copies_retained:0, broadcasts_already_sent_count:0`. |
 | ED2 | A `cancelled` row whose id is a Resend broadcast cancelled while queued (GET answers `canceled`). Erase → `200 cascadesComplete:true`, and Resend still answers `canceled`. `member_erased` has `resend_drafts_cleared:0, resend_copies_retained:1, broadcasts_already_sent_count:0`. |
 | ED3 | Integration `erasure-terminal-drafts.test.ts` "a retryable answer withholds member_erased and the re-drive clears it" (a retryable answer cannot be provoked live). |
-| ED4 | Unit tests on both legs (`build-audience-tick-failure-paths.test.ts`, `dispatch-scheduled-broadcast.test.ts`). Not driven live: a live run would need a halted member with a due row and a real draft. |
+| ED4 | Unit tests on both legs (`build-audience-tick-failure-paths.test.ts`, `dispatch-scheduled-broadcast.test.ts`), and since review round 2 four real-Postgres cases in `eblast-send-time-standing.test.ts` (per leg: a halted refusal deletes the draft and records `resendDraftOutcome`; a 403 + handed probe writes nothing). Not driven live: a live run would need a halted member with a due row and a real draft. |
 | ED5 | `broadcast-erasure-terminal-sql-shape.test.ts` (the status CAS), plus the mutation proof (a) above. |
 | Wrong input | Erase with `identityVerified:false` and no `verificationMethod` → **400** `invalid_body`, and the draft is still `draft`. |
 
@@ -258,6 +258,32 @@ Mutation proofs (from `59a30c0fd`, each file restored byte for byte, tree clean)
 - the parity metric on a settled row dropped: 1 red.
 - `failed` no longer clears: 1 red.
 - the paused count back to the locking `findStuckErasuresInTx`: 1 red.
+
+**Solo-maintainer review, check (1)** (Complexity Tracking): evidenced by the security-engineer review (round 1, signed) and the senior-tester review (round 4, SHIP-READY).
+
+### Slice 1 — review round 4 (`/code-review high`, senior-tester SHIP-READY, spec-compliance COMPLIANT; 31 Oct 2026)
+
+Commits: RED `2fe15d7e0` and GREEN `fb57cd688`. Docs land in the commit after them. At RED, the floor, gauge, error-class and single-warn rows failed. Three rows passed already because they strengthen an assertion or cover built behaviour: the exact-deadline asserts and the live count case. The machine was short of memory, so per the coordinator only the scoped tests ran, plus the single integration file `find-stuck-erasures.test.ts` (3/3).
+
+| Item | Disposition |
+|---|---|
+| code-review #2 — no floor for a late member (a round-3 regression) | **Fixed** (RED `2fe15d7e0`, GREEN `fb57cd688`). The cascade deadline stays start + maxDuration − 60 s (240 s). `reconcile-erasures` now starts no member after `erasureMemberStartCutoff` = deadline − `ERASURE_MEMBER_START_FLOOR_MS` (30 s, one row) = 210 s. `cutoff + FLOOR ≤ deadline` is pinned by a test, with a positive control (a cutoff AT the deadline fails). |
+| code-review #3 · senior-tester MEDIUM — `countStuckErasuresInTx` never ran on live Postgres | **Fixed** (RED `2fe15d7e0`). `find-stuck-erasures.test.ts` now has a case where tenant A counts 1 (not its complete or live members) and tenant B's stuck member is not counted; the count also agrees with the candidate list. |
+| code-review #4 — the anti-join exists twice | **Fixed** (GREEN `fb57cd688`). `stuckErasurePredicate(tenantSlug)` is one fragment used by both queries; the `audit_log` tenant filter stays load-bearing. |
+| code-review #7 — the gauge had two meanings | **Fixed** (RED `2fe15d7e0`, GREEN `fb57cd688`). It is now the uncapped, non-locking count everywhere: paused, before the loop and after it. The capped-list value and its "lower bound" caveat are gone. The baseline stays, because it survives a tick killed mid-loop. |
+| code-review #8 — log hygiene | **Fixed** (RED `2fe15d7e0`, GREEN `fb57cd688`). `err: errKind(e)` is used at the three `reconcile-erasures` sites. The cascade's top-level error now carries `errKind(e)`, never `e.message`, and that is what the adapter's `err` field logs. |
+| code-review #9 — a noisy warn | **Fixed** (RED `2fe15d7e0`, GREEN `fb57cd688`). On a standing refusal's 403 the probe decides, and one line is logged for the final outcome. The runbook greps none of these names. |
+| code-review #10 — hook timeouts | **Fixed** (RED `2fe15d7e0`). The explicit `120_000` is dropped from the new `erasure-terminal-drafts.test.ts` only. |
+| senior-tester LOW — a deadline assert that cannot fail | **Fixed** (RED `2fe15d7e0`). Both route contract tests now assert the deadline = start + 300 s − `ERASURE_CASCADE_RESERVE_MS`, within 5 s. |
+| code-review #1 — the reserve docblock said every later cascade is DB-only | **Fixed** (GREEN `fb57cd688`). The reserve covers the DB work after broadcasts. The directory cascade's Vercel Blob `del` calls (up to 1 logo and 100 archives) have no timeout: a known, unbounded, pre-existing path, for a follow-up issue. No AbortSignal is added in this slice. |
+| spec-compliance Mediums (docs) | **Fixed** (docs commit). observability (the uncapped, non-locking count), changelog (the 240 s deadline and the sending-started exclusion), spec.md ED2 ("On a terminal row") and ED4 (the unsendable clears and the `probe_*` classes), the ED4 Verify row (4 integration cases), build note 1 marked superseded, and the SQL-shape test name and comment. |
+| senior-tester LOW–MEDIUM — the `broadcasts-evidence:` advisory lock has no concurrent test | **Carried to slice 2.** The lease tests there bring a Neon pair harness; the evidence lock's concurrency case uses it. |
+
+Mutation proofs (from `fb57cd688`, each file restored byte for byte, tree clean):
+- the floor set to 0: 2 red.
+- the end-of-tick gauge back to still_pending + error + deferred: 1 red.
+- the cascade's error back to `e.message`: 1 red.
+- the premature unconfirmed warn back: 1 red.
 
 ## Rollout
 

@@ -53,7 +53,7 @@ const BROADCAST_ID = asBroadcastId('7f3c1a52-0000-4000-8000-0000000000e1');
 const whereOf = (s: RecordedStatement): string => s.sql.slice(s.sql.search(/\bwhere\b/i));
 
 describe('listTerminalWithResendIdOwnedByMember — SQL shape', () => {
-  it('fences tenant + member; excludes the in-progress set and sent; requires a non-empty Resend id', async () => {
+  it('fences tenant + member; excludes the in-progress set and every sending-started status; requires a non-empty Resend id', async () => {
     rec.statements.length = 0;
     const repo = makeDrizzleBroadcastsRepo(TENANT);
 
@@ -73,7 +73,7 @@ describe('listTerminalWithResendIdOwnedByMember — SQL shape', () => {
     for (const status of [...IN_PROGRESS_BROADCAST_STATUSES, 'sent', 'sending', 'partially_sent', 'partial_delivery_accepted']) {
       expect(select!.params, `${status} is not excluded`).toContain(status);
     }
-    // Nothing else is excluded: `failed_to_dispatch`, `cancelled`, `sending` … are listed.
+    // Nothing else is excluded: `failed_to_dispatch`, `cancelled`, `rejected`, `draft` … are listed.
     for (const status of ['failed_to_dispatch', 'cancelled', 'rejected', 'draft', 'expired_no_member_response']) {
       expect(select!.params, `${status} must not be excluded`).not.toContain(status);
     }
