@@ -531,7 +531,7 @@ function terminalDraftStatusPredicate(): SQL {
 export async function terminalDraftsForMemberQuery(
   tx: TenantTx,
   tenantId: string,
-  memberId: MemberId,
+  memberId: string,
 ): Promise<ReadonlyArray<TerminalBroadcastDraftRef>> {
   const rows = await tx
     .select({
