@@ -594,6 +594,9 @@ describe('refund: no retry once the outcome may be a refund', () => {
       ),
     );
     expect(toast.warning).not.toHaveBeenCalled();
+    // R113: a refusal shows inline only, like issue and record payment; a
+    // toast with the same text stacked one more on every attempt.
+    expect(toast.error).not.toHaveBeenCalled();
     const confirm = screen.getByTestId('refund-form-confirm');
     await waitFor(() => expect(confirm).not.toHaveAttribute('aria-busy'));
     fireEvent.click(confirm);
