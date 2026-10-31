@@ -25,7 +25,7 @@ This section is the single source for how review works; `docs/workflow.md` step 
   - it is refuted with evidence, and the reviewer confirms that on a re-run;
   - for an L slice only, a **Medium** is **carried to the slice that owns it** (D-043). A High is never carried, because every merge deploys and a carried High would ship live.
 - A carry needs all of these, and `spec-compliance-auditor` checks each one:
-  - `plan.md` already names the concern for a later slice *k* of the same spec, in *k*'s row in § Slices or in *k*'s section of the plan. "Already" means in `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`), so the target cannot be written in the same change.
+  - `plan.md` already names the concern for a later slice *k* of the same spec, in *k*'s row in § Slices or in *k*'s section of the plan. "Already" means in the agreed plan: `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`) if it exists there; for slice 1, where `plan.md` is not on `main` yet, `plan.md` at the commit that first added it (`git log --diff-filter=A --format=%H -- specs/<nnn-name>/plan.md | tail -1`). A target cannot be written in the same change that carries to it.
   - Slice *k*'s PR has not merged. Check with `gh`, not the Slices row: the row says `done` before the merge.
   - The carry is recorded in `plan.md` § Evidence with *k*'s number.
 - A concern no later slice names is fixed or refuted in this slice. It is never carried to a slice invented for it.

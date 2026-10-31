@@ -34,7 +34,7 @@ Also check the premises. A spec or plan that keeps an existing path compatible (
 For an L slice, also check:
 - **Carried out.** For each finding `plan.md` § Evidence records as *carried to slice k*, check all three:
   - it is a Medium;
-  - slice *k* already named the concern in `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`), in *k*'s row in § Slices or in *k*'s section;
+  - slice *k* already named the concern in the agreed plan: `plan.md` at this branch's base commit (`git show $(git merge-base origin/main HEAD):specs/<nnn-name>/plan.md`) if it exists there; for slice 1, where `plan.md` is not on `main` yet, `plan.md` at the commit that first added it (`git log --diff-filter=A --format=%H -- specs/<nnn-name>/plan.md | tail -1`). It must be named in *k*'s row in § Slices or in *k*'s part of the plan;
   - slice *k*'s PR has not merged (`gh pr list --state merged --head <branch>`).
   A carried High is a **High** finding. Any other failure is a **Medium** finding (D-043).
 - **Carried in.** Each finding an earlier slice carried into this one must be closed here (fixed, or refuted and confirmed) or carried on under the same rules. One left open is a finding at its original severity.
