@@ -52,10 +52,9 @@ import {
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
   decideDispatchStanding,
-  deleteDraftBeforeRefusal,
+  deleteDraftBeforeErasedRefusal,
   deleteDraftBeforeStandingRefusal,
   ERASED_DRAFT_NOT_DELETED,
-  recordRefusedDraftUndecided,
   recordDispatchHold,
   recordRequesterNotFound,
   REQUESTER_NOT_FOUND,
@@ -857,11 +856,13 @@ export async function dispatchScheduledBroadcast(
       // anything short of a confirmed delete decides nothing. P3: one audit
       // row only (`standing: 'erased'`), no "membership suspended" row, and no
       // member email (`broadcast` is not passed, so nothing is enqueued).
-      const erasedIds = { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, leg: 'live', refusal: 'erased' } as const;
-      const cleared = await deleteDraftBeforeRefusal(deps.broadcastsGateway, erasedIds, rowDraft);
+      // Review round 6 — the erased wrapper writes this arm's one log line.
+      const cleared = await deleteDraftBeforeErasedRefusal(
+        deps.broadcastsGateway,
+        { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as string, leg: 'live' },
+        rowDraft,
+      );
       if (cleared.kind === 'undecided') {
-        // Review round 5 — this arm's one line for the outcome.
-        recordRefusedDraftUndecided(erasedIds, cleared);
         return err({ kind: 'dispatch.server_error', message: ERASED_DRAFT_NOT_DELETED, errClass: cleared.errClass, phase: 'standing' });
       }
       const { reason } = standing;

@@ -156,15 +156,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let stuck: Awaited<
     ReturnType<typeof drizzleMemberRepo.findStuckErasuresInTx>
   >;
-  let baseline = 0;
   try {
-    // Review round 5 — the gauge's BASELINE rides the candidate tx (one round
-    // trip fewer). A count failure there fails the tx: `query_failed`, 500.
-    stuck = await runInTenant(tenant, async (tx) => {
-      const candidates = await drizzleMemberRepo.findStuckErasuresInTx(tx, tenant.slug, MAX_PER_TICK);
-      baseline = await drizzleMemberRepo.countStuckErasuresInTx(tx, tenant.slug);
-      return candidates;
-    });
+    stuck = await runInTenant(tenant, (tx) =>
+      drizzleMemberRepo.findStuckErasuresInTx(tx, tenant.slug, MAX_PER_TICK),
+    );
   } catch (e) {
     logger.error(
       {
@@ -179,12 +174,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });
   }
 
-  // Spec 140 s1 review rounds 1, 4, 5 — the BASELINE, in the gauge's one
-  // meaning (the uncapped, non-locking count), read in the candidate tx: a tick
-  // killed mid-loop (maxDuration) still leaves this tick's number. A
-  // candidate-tx failure (above) observes nothing new: the gauge keeps the
-  // previous tick's value and the 500 + the `query_failed` log are the signal.
-  erasureMetrics.stuckCount(baseline, tenant.slug);
+  // Spec 140 s1 review rounds 1, 4, 6 — the BASELINE, in the gauge's one
+  // meaning (the uncapped, non-locking count), in its OWN short tx after the
+  // candidate tx has committed (round 5 folded it into the candidate tx and
+  // round 6 reverted that: a count failure failed the whole tick, and the
+  // anti-join ran under up to 50 FOR UPDATE locks). A tick killed mid-loop
+  // still leaves this tick's number. A failed count observes nothing new
+  // (`stuck_count_failed`) and the tick continues; a candidate-query failure
+  // (above) observes nothing and answers 500 (`query_failed`).
+  await observeStuckCount();
 
   // `processed` is derivable (reconciled + still_pending + error invariantly), so
   // it is NOT tracked here — it is computed at response time below.

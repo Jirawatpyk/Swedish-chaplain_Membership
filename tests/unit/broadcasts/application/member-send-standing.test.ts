@@ -190,7 +190,7 @@ describe('deleteDraftBeforeRefusal (spec 139 P2, spec 140 s1 ED4)', () => {
         resendBroadcastId: 'rb-1',
         // Review round 5 — and the thrown class (never a message), for that line.
         err: answer === 'throws' ? 'Error' : null,
-        probedStatus,
+        probedStatus: probedStatus ?? 'not_found',
       });
       // Review round 5 (LOW) — one line per refusal, written by the caller.
       expect(warnSpy).not.toHaveBeenCalled();

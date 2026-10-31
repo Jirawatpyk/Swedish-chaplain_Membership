@@ -155,7 +155,7 @@ export type DraftClearance =
       readonly kind: 'undecided';
       readonly errClass: RefusedDraftErrClass;
       readonly resendBroadcastId: string;
-      readonly probedStatus: 'draft' | 'cancelled' | null;
+      readonly probedStatus: 'draft' | 'cancelled' | 'not_found';
       readonly err: string | null;
     };
 
@@ -211,7 +211,7 @@ export async function deleteDraftBeforeRefusal(
 ): Promise<DraftClearance> {
   if (draft === null || draft.resendBroadcastId === '') return { kind: 'cleared', draftOutcome: 'none' };
   const logIds = { ...ids, resendBroadcastId: draft.resendBroadcastId, probedStatus: draft.probedStatus ?? 'not_found' };
-  const undecided = { kind: 'undecided', resendBroadcastId: draft.resendBroadcastId, probedStatus: draft.probedStatus } as const;
+  const undecided = { kind: 'undecided', resendBroadcastId: draft.resendBroadcastId, probedStatus: logIds.probedStatus } as const;
   let outcome: DeleteBroadcastOnceOutcome['kind'];
   try {
     outcome = (await gateway.deleteBroadcastOnce(draft.resendBroadcastId)).kind;
@@ -233,18 +233,33 @@ export async function deleteDraftBeforeRefusal(
 }
 
 /**
- * Spec 140 s1 review round 5 — the one line an ERASED refusal writes when its
- * DELETE stays undecided. Ids, the Resend id, the closed class and the thrown
- * class only; never provider text.
+ * Spec 140 s1 review round 6 — `deleteDraftBeforeRefusal` for an ERASED
+ * member's refusal, owning its one log line: on `undecided` it writes
+ * `refused_draft_delete_unconfirmed` with the fields the standing line carries
+ * (`probedStatus`, the DELETE `outcome`, `errClass`, and `err` on a throw).
+ * Both legs' erased arms call this and nothing else. Never provider text.
  */
-export function recordRefusedDraftUndecided(
-  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import'; readonly refusal: 'erased' | 'standing' },
-  clearance: Extract<DraftClearance, { kind: 'undecided' }>,
-): void {
-  logger.warn(
-    { ...ids, resendBroadcastId: clearance.resendBroadcastId, errClass: clearance.errClass, err: clearance.err },
-    'broadcasts.dispatch.refused_draft_delete_unconfirmed',
-  );
+export async function deleteDraftBeforeErasedRefusal(
+  gateway: Pick<BroadcastsGatewayPort, 'deleteBroadcastOnce'>,
+  ids: { readonly tenantId: string; readonly broadcastId: string; readonly leg: 'live' | 'import' },
+  draft: { readonly resendBroadcastId: string; readonly probedStatus: 'draft' | 'cancelled' | null } | null,
+): Promise<DraftClearance> {
+  const cleared = await deleteDraftBeforeRefusal(gateway, { ...ids, refusal: 'erased' }, draft);
+  if (cleared.kind === 'undecided') {
+    logger.warn(
+      {
+        ...ids,
+        refusal: 'erased',
+        resendBroadcastId: cleared.resendBroadcastId,
+        probedStatus: cleared.probedStatus,
+        outcome: cleared.errClass,
+        errClass: cleared.errClass,
+        err: cleared.err,
+      },
+      'broadcasts.dispatch.refused_draft_delete_unconfirmed',
+    );
+  }
+  return cleared;
 }
 
 /**
@@ -295,7 +310,7 @@ export async function deleteDraftBeforeStandingRefusal(
     ...ids,
     refusal: 'standing',
     resendBroadcastId,
-    probedStatus: cleared.probedStatus ?? 'not_found',
+    probedStatus: cleared.probedStatus,
     outcome: cleared.errClass,
   };
   // Only a 403 can hide a sibling's send; `cleared` above already took a 403 on
