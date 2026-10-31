@@ -67,6 +67,7 @@ For **L**, have `chamber-os-architect` and the surface reviewers for what the pl
 
 Meet `docs/workflow.md` step 6 (the contract: what to drive, which e2e projects, the UI probes, evidence per Done-when line) with the `run-chamber-os` skill as the recipe: worktree, :3400 after `rm -rf .next`, personas, Playwright attached.
 - Drive the change with `/run` or the Browser pane. `/verify` runs only when the user invokes it.
+- **Hand the user a ready `/verify` command** when the change touches money, tax, PII, auth/RBAC, tenancy or a path live in production. Claude cannot invoke it, so put the exact command in the Verify report and in the PR, ready to paste: the PR number, the worktree, the Done-when IDs, the persona, and any safety limit (for Resend, the sink address `delivered@resend.dev` only). The maintainer runs it before merge.
 - A red that also fails on `main` is reported as pre-existing, with the evidence.
 - Write the evidence against each Done-when line now. For M / L, append it to `plan.md` under `## Evidence`, one line per Done-when line; Review checks it there and the PR body copies it.
 
