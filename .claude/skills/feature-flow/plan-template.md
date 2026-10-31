@@ -50,6 +50,13 @@ Each of the 10 principles in `.specify/memory/constitution.md`: pass, or the dev
 
 Filled in at Verify, one line per Done-when line: the test name, command output, number or screenshot that proves it. For L, one block per slice. `spec-compliance-auditor` checks it at Review, and the PR body copies it.
 
+After review, add one table per review round. Each finding gets one line with one of three closures:
+- the fixing commits (RED and GREEN shas);
+- the refutation, with its evidence;
+- **carried to slice *k***, which that slice's section above must already name (D-043).
+
+A mechanism added at a reviewer's request also gets its rows in § Test plan before its GREEN commit. If review fixes touched the path Verify drove, add the re-Verify on the final head.
+
 ## Rollout
 
 Feature flag (default OFF, added only when ready to deploy); what goes live unflagged on merge; deploy and migration order; how to roll back.
