@@ -1563,6 +1563,22 @@ member key), as they do for every other `deleteBroadcast` caller.
 | `broadcasts_retention_sweep_failed_total` increments on **two consecutive daily runs** for the same `tenant` | **alarm** | one failed run is retried the next day; two in a row means the retention the RoPA says is enforced is not being enforced | `docs/runbooks/cron-jobs.md` § F7 — broadcasts/retention-sweep |
 | No `broadcast_retention_swept` audit row for a tenant in **48 h** | **warn** | the cron did not run at all (it writes a row per run even when it deletes nothing) | same |
 
+### 22.14 Spec 140 s2a — bounded Resend calls and the legacy import-row skip
+
+No new metric. Every Broadcasts gateway call (`resend-broadcasts-gateway.ts`
+`boundedCall`) runs under ONE `AbortSignal.timeout(RESEND_CALL_TIMEOUT_MS)`
+= 10 s that spans all its attempts, so a call that hits the budget surfaces to
+its caller as `retryable` with `subKind: 'timeout'` — the existing
+`cron.broadcasts.dispatch.retryable` line, the `broadcasts.dispatch_budget_exhausted.count`
+`sub_kind="timeout"` label and the import leg's retryable arm carry it; nothing
+is renamed. `resend.broadcasts.retry` (warn) now fires at most 3 times per call
+(backoffs of 1, 2 and 4 s fit the 10 s budget), and never for a create
+(`createAudience`, `createBroadcast`, `createContactImport` make one attempt).
+
+| Log line | Level | Fields | Meaning |
+|---|---|---|---|
+| `broadcasts.dispatch.import_row_skipped` | info | `tenantId`, `broadcastId` | The legacy (flag-OFF) dispatch leg found an `approved` row holding `audience_import_id` or `audience_import_submitted_at` and left it alone under the row lock, with no Resend call (DL7, decision 8). The route then logs `cron.broadcasts.dispatch.concurrent_skip` for the same row and counts it in `concurrent_skip`. Expected only after the import flag was turned OFF with an import in flight; a row that keeps logging it every tick waits for the flag to come back ON. |
+
 ---
 
 ## 23. F8 Renewal Tracking + Smart Reminders — observability
