@@ -47,8 +47,7 @@ For **L**, have `chamber-os-architect` and the surface reviewers for what the pl
 - For a migration, use the `new-migration` skill. For a new audit event type, use `add-audit-event`. For a bug, use `superpowers:systematic-debugging` before changing code.
 - Use the module's rule (`.claude/rules/modules/*.md`) for its traps. A tenant-scoped repo threads `tx` from `runInTenant`.
 - **A mechanism a reviewer asks for is a plan change** (D-043), whether the request comes during build or review. This covers a column, a counter, a deadline, a label or a query.
-  - A Medium may be carried to a later slice when `plan.md` already names that concern for it (`review-and-ship` § 1).
-  - A High is always built here. So is any Medium that is not carried.
+  - It may instead be carried to a later slice, only as `review-and-ship` § 1 allows.
   - Anything built here gets its state-table cells and test-plan rows added to `plan.md` before its GREEN commit, in the RED commit or earlier.
   - `spec-compliance-auditor` checks every test-plan row, so a mechanism with no row is a finding.
 - **A slice inherits its carries.** Give the slice's subagent every finding an earlier slice carried into it (recorded in `plan.md` § Evidence). Each one closes in this slice (`review-and-ship` § 1).
@@ -79,7 +78,7 @@ Review the change as built **and verified**, so a fix found in Verify is reviewe
 3. For M / L, `spec-compliance-auditor` with `spec.md` and the Verify evidence in `plan.md` § Evidence (for an L slice, that slice's block): each Done-when line is checked against the code and against the evidence that claims it.
 4. `whole-branch-reviewer` last, only when the review was split (the `review-branch` Workflow, a per-module review, or slices sharing one long-lived branch); otherwise `/code-review high` with its target has already read the whole diff (D-022).
 
-Reviews run in subagents; the writer never reviews its own code. How findings close, the rounds by risk, and the staff review on sensitive surfaces are in `review-and-ship` §§ 1–2. **No High and no Medium finding may remain.** Three closures are allowed: fixed; refuted; or, for a Medium in an L slice, carried to the later slice that `plan.md` already gives the concern to (D-043). From round 3 on, a round reviews only the fix commits. Rounds are capped by size, and at the cap the maintainer decides what stays open. A docs-only change gets no `/code-review` (`review-and-ship` § 1, D-043).
+Reviews run in subagents; the writer never reviews its own code. **No High and no Medium finding may remain.** How a finding closes, the rounds and their cap, the staff review on sensitive surfaces and docs-only changes are defined in `review-and-ship` §§ 1–2 (the one owner, D-043); follow them from there.
 
 When review fixes touch the path Verify drove, run Verify again after the last fix that changes code, before merge. Any commit after that re-run may change only docs or evidence. Add a re-run block to `plan.md` § Evidence naming the commit it ran on, then run `spec-compliance-auditor` again on that block.
 

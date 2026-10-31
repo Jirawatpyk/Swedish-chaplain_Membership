@@ -7,7 +7,7 @@ description: How to review a change and get it merged on Chamber-OS — which pr
 
 ## 1. Pick the review by diff size
 
-This section is the single source for how review works; `docs/workflow.md` step 7 and `feature-flow` § 7 point here.
+This section is the single source for how review works (D-043). `docs/workflow.md` step 7, `feature-flow` § 7, the PR template, the plan template and `spec-compliance-auditor` link here and do not restate the rules. `pnpm check:process-docs` fails when one of them does; if you reword a rule here, update `REVIEW_RULE_PHRASES` in `scripts/lib/process-docs.ts` to match.
 
 | Diff | Review |
 |---|---|
