@@ -398,6 +398,7 @@ describe('async PromptPay refund lifecycle — live Neon (A.18 #3)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-async-suc',
       requestId: 'req-async-suc',
+      duplicateGuard: 'skip',
     });
     expect(refundResult.ok).toBe(true);
     if (!refundResult.ok) return;
@@ -460,6 +461,7 @@ describe('async PromptPay refund lifecycle — live Neon (A.18 #3)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-async-xev',
       requestId: 'req-async-xev',
+      duplicateGuard: 'skip',
     });
     expect(refundResult.ok).toBe(true);
     if (!refundResult.ok) return;
@@ -524,6 +526,7 @@ describe('async PromptPay refund lifecycle — live Neon (A.18 #3)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-async-fail',
       requestId: 'req-async-fail',
+      duplicateGuard: 'skip',
     });
     // Assert the pending mapping EXPLICITLY before narrowing (mirror the
     // SUCCEEDED variant): a mis-mapped non-pending kind must fail loudly here,

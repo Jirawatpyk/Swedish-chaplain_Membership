@@ -525,7 +525,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         : {}),
       // #49 — when only; never the earlier refund's id or reason.
       ...(result.error.code === 'possible_duplicate_refund'
-        ? { duplicateInitiatedAt: result.error.initiatedAt }
+        ? { duplicateRefundedAt: result.error.refundedAt }
         : {}),
     });
   } catch (e) {

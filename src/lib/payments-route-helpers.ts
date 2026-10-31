@@ -69,9 +69,9 @@ export interface ErrorResponseExtra {
   readonly remainingSatang?: string;
   /**
    * #49 `possible_duplicate_refund` only — when the earlier same-amount
-   * refund was initiated (ISO 8601), so the dialog can say when.
+   * refund was made — settled, else started (ISO 8601) — so the dialog can say when.
    */
-  readonly duplicateInitiatedAt?: string;
+  readonly duplicateRefundedAt?: string;
 }
 
 /**
@@ -104,8 +104,8 @@ export function errorResponse(
       ...(extra?.remainingSatang !== undefined
         ? { remainingSatang: extra.remainingSatang }
         : {}),
-      ...(extra?.duplicateInitiatedAt !== undefined
-        ? { duplicateInitiatedAt: extra.duplicateInitiatedAt }
+      ...(extra?.duplicateRefundedAt !== undefined
+        ? { duplicateRefundedAt: extra.duplicateRefundedAt }
         : {}),
     },
     correlationId,

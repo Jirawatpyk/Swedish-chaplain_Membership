@@ -261,8 +261,9 @@ export interface RefundsRepo {
   }>;
 
   /**
-   * #49 — the newest `succeeded` refund on this payment for exactly this
-   * amount, initiated OR completed at or after `sinceIso`, or `null`. The probable-duplicate
+   * #49 — the most recently refunded `succeeded` refund on this payment for
+   * exactly this amount, initiated OR completed at or after `sinceIso`, or
+   * `null`. `refundedAt` is `completed_at`, else `initiated_at`. The probable-duplicate
    * guard reads it under the payment row lock: after a lost or unconfirmed
    * response, a reload, a stale page or a second admin can start a new
    * attempt for the same amount. `pending` rows are refused earlier
@@ -274,7 +275,7 @@ export interface RefundsRepo {
     paymentId: PaymentId,
     amountSatang: Satang,
     sinceIso: string,
-  ): Promise<{ readonly refundId: string; readonly initiatedAt: string } | null>;
+  ): Promise<{ readonly refundId: string; readonly refundedAt: string } | null>;
 
   /**
    * T130a — list refunds in `pending` status older than the cutoff.

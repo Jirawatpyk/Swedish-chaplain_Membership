@@ -233,7 +233,7 @@ export const F5_ERROR_MESSAGES: Record<F5RouteErrorCode, Bilingual> = {
     message:
       'A refund of the same amount was made on this payment in the last 24 hours. Check Payment activity, then confirm if you mean to refund again.',
     messageThai:
-      'มีการคืนเงินจำนวนเดียวกันสำหรับการชำระเงินนี้ภายใน 24 ชั่วโมงที่ผ่านมา กรุณาตรวจสอบกิจกรรมการชำระเงิน แล้วยืนยันหากต้องการคืนเงินอีกครั้ง',
+      'มีการคืนเงินจำนวนเดียวกันสำหรับการชำระเงินนี้ภายใน 24 ชั่วโมงที่ผ่านมา กรุณาตรวจสอบส่วนกิจกรรมการชำระเงิน แล้วยืนยันหากต้องการคืนเงินอีกครั้ง',
   },
   f4_bridge_error: {
     message: 'Credit-note issuance failed. Operations have been notified.',

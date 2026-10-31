@@ -69,6 +69,9 @@ export const f5RefundBridge: F5RefundBridge = {
         actorUserId: input.actorUserId,
         correlationId: input.correlationId,
         requestId: input.requestId,
+        // #49 — it refunds the whole remainder, so a second identical
+        // refund already ends as `payment_not_refundable`.
+        duplicateGuard: 'skip',
       },
     );
     if (!refundResult.ok) {

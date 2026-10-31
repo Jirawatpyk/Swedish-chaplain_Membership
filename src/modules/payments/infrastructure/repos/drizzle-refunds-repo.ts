@@ -573,12 +573,14 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
       paymentId: PaymentId,
       amountSatang: Satang,
       sinceIso: string,
-    ): Promise<{ readonly refundId: string; readonly initiatedAt: string } | null> {
+    ): Promise<{ readonly refundId: string; readonly refundedAt: string } | null> {
       const tx = txUnknown as TenantTx;
+      // When it was refunded: its settlement, else its start.
+      const refundedAt = sql<Date>`coalesce(${refunds.completedAt}, ${refunds.initiatedAt})`;
       // Explicit tenant predicate alongside RLS (D-029); served by
       // refunds_tenant_payment_status_idx.
       const [row] = await tx
-        .select({ id: refunds.id, initiatedAt: refunds.initiatedAt })
+        .select({ id: refunds.id, refundedAt })
         .from(refunds)
         .where(
           and(
@@ -594,9 +596,9 @@ export function makeDrizzleRefundsRepo(tenantId: string): RefundsRepo {
             ),
           ),
         )
-        .orderBy(desc(refunds.initiatedAt))
+        .orderBy(desc(refundedAt))
         .limit(1);
-      return row ? { refundId: row.id, initiatedAt: row.initiatedAt.toISOString() } : null;
+      return row ? { refundId: row.id, refundedAt: new Date(row.refundedAt).toISOString() } : null;
     },
 
     async sumWaivedByInvoice(

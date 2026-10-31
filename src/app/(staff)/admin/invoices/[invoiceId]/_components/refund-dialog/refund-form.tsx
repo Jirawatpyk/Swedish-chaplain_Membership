@@ -283,9 +283,8 @@ export function RefundForm({
   // While submitting it is AURA's loading button (the click swallowed).
   const canSubmit = isValid && (!isFullRefund || phraseMatches);
 
-  useEffect(() => {
-    if (duplicate !== null && amountSatang !== duplicate.amountSatang) setDuplicate(null);
-  }, [amountSatang, duplicate]);
+  // The warning, its label and its override apply only to the amount the
+  // server refused; another amount is checked afresh.
   const duplicateActive = duplicate !== null && amountSatang === duplicate.amountSatang;
 
   // Held from the submit event, before RHF's async validation, until the POST
@@ -328,7 +327,7 @@ export function RefundForm({
       return;
     }
     // Only for the amount the server refused.
-    const confirmDuplicate = confirmDuplicateRef.current && duplicate?.amountSatang === amountSatang;
+    const confirmDuplicate = confirmDuplicateRef.current && duplicateActive;
     confirmDuplicateRef.current = false;
     setSubmitting(true);
     setSubmitError(null);
@@ -391,7 +390,7 @@ export function RefundForm({
           return;
         }
         const body = raw as {
-          error?: { code?: string; remainingSatang?: string; duplicateInitiatedAt?: string };
+          error?: { code?: string; remainingSatang?: string; duplicateRefundedAt?: string };
         };
         const code = body.error?.code ?? 'internal_error';
         // A 5xx that names no refusal (our own internal_error, no readable
@@ -404,7 +403,7 @@ export function RefundForm({
         // #49 — refused before Stripe: nothing moved. The admin checks and
         // may confirm with "Refund again".
         if (code === 'possible_duplicate_refund') {
-          setDuplicate({ at: body.error?.duplicateInitiatedAt ?? null, amountSatang });
+          setDuplicate({ at: body.error?.duplicateRefundedAt ?? null, amountSatang });
           return;
         }
         // Money-remediation F-3 — NOT a failure. Stripe SETTLED this refund;
@@ -845,7 +844,7 @@ export function RefundForm({
 
       {/* #49 — a probable duplicate: what and when. The confirm is the
         * footer's ("Refund again"), so this Alert has no button. */}
-      {duplicate !== null && (
+      {duplicate !== null && duplicateActive && (
         <div ref={duplicateRef} tabIndex={-1} className="outline-none">
           <Alert tone="warning" title={t('duplicate.title')} data-testid="refund-form-duplicate">
             {duplicate.at === null

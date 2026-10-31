@@ -425,6 +425,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-r1',
       requestId: 'req-r1',
+      duplicateGuard: 'skip',
     });
     expect(r1.ok).toBe(true);
     if (r1.ok && r1.value.kind === 'succeeded') {
@@ -445,6 +446,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-r2',
       requestId: 'req-r2',
+      duplicateGuard: 'skip',
     });
     expect(r2.ok).toBe(true);
     if (r2.ok && r2.value.kind === 'succeeded') {
@@ -465,6 +467,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
         actorUserId: user.userId,
         correlationId: 'corr-r3',
         requestId: 'req-r3',
+        duplicateGuard: 'skip',
       },
     );
     expect(r3.ok).toBe(false);
@@ -495,6 +498,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
       actorUserId: user.userId,
       correlationId: 'corr-r4',
       requestId: 'req-r4',
+      duplicateGuard: 'skip',
     });
     expect(r4.ok).toBe(true);
     if (r4.ok && r4.value.kind === 'succeeded') {
@@ -567,6 +571,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
         actorUserId: user.userId,
         correlationId: 'corr-race-a',
         requestId: 'req-race-a',
+        duplicateGuard: 'skip',
       }),
       issueRefund(deps, {
         tenantId: tenant.ctx.slug,
@@ -576,6 +581,7 @@ describe('issueRefund — multi-partial + race (T102)', () => {
         actorUserId: user.userId,
         correlationId: 'corr-race-b',
         requestId: 'req-race-b',
+        duplicateGuard: 'skip',
       }),
     ]);
 
