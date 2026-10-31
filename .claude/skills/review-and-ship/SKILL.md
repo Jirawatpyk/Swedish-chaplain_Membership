@@ -34,8 +34,12 @@ This section is the single source for how review works; `docs/workflow.md` step 
 - Low findings are fixed or listed in the PR.
 - Any code change after review goes back through review.
 - **Rounds:** a normal change gets one review round, then the raising reviewer re-checks each fix. Run another `/code-review` round only when the last one had a High or Medium that changed code; stop once the latest round finds only Lows. The command is told to surface at least 5 findings, so re-running it to chase Lows never converges. A sensitive surface (auth, RBAC, payment, PII, audit log, GDPR) gets ≥ 2 rounds plus the staff review (§ 2).
-- **A docs-only change gets no `/code-review`** (D-043): one that touches only Markdown in `docs/`, `.claude/` or `specs/`, or the PR template. Claude checks it against the files it changes and runs `pnpm check`; the maintainer reads it. A change that also touches code, tests, scripts or config is reviewed as code.
+- **A docs-only change gets no `/code-review`** (D-043). Docs-only means the change touches only Markdown in `docs/`, `.claude/` or `specs/`, the root `CLAUDE.md`, or the PR template.
+  - Claude checks the change against the files it touches and runs `pnpm check`; the maintainer reads it.
+  - The § 2 surface reviewers still run when those docs are their domain. For example, a RoPA or retention edit still goes to `pdpa-gdpr-compliance-officer`.
+  - A change that also touches code, tests, scripts or config is reviewed as code.
 - **A cap on rounds** (D-043):
+  - size S: 1 round plus 1 confirming round;
   - size M: 3 `/code-review` rounds;
   - size L, or any sensitive surface: the ≥ 2 full rounds above plus at most 2 targeted rounds.
   At the cap, stop fixing. Bring the open findings to the maintainer, each with a recommended closure: fix, refute, or carry. The maintainer decides each one, and may re-grade a Medium to Low with the reason written in the PR. Record the round count and the decision in the PR's Review findings and in `plan.md` § Evidence.
@@ -77,7 +81,7 @@ Auth, RBAC, payment, PII, audit-log and GDPR surfaces need **≥2 reviewers**, o
 
 | Check | How |
 |---|---|
-| 1. Repeated independent review rounds | ≥ 2 rounds of `/code-review high <pr#>` + the § 2 surface reviewers, each in fresh subagents, until the latest round finds no High or Medium (from round 3 on, rounds are targeted to the fix commits, § 1); record the finding counts per round in the PR |
+| 1. Repeated independent review rounds | ≥ 2 rounds of `/code-review high <pr#>` + the § 2 surface reviewers, each in fresh subagents, until the latest round finds no High or Medium, or until the § 1 cap, where the maintainer decides the open findings (from round 3 on, rounds are targeted to the fix commits, § 1); record the finding counts per round in the PR |
 | 2. Staff review (correctness, security, tests) | `security-engineer` + `senior-tester` on the same diff, plus `whole-branch-reviewer` only when the review was split (D-022, D-036); a second round when any BLOCKER / CRITICAL / HIGH is found |
 | 3. Coverage + real-infrastructure tests | the pinned coverage thresholds, and integration tests on Neon for every security-critical use case |
 | 4. Defence in depth | DB- or platform-level enforcement (RLS, constraints, triggers) for every invariant that can live there |
