@@ -27,7 +27,8 @@
  *   2. POST /api/refunds/initiate — bigint amount as JSON number.
  *   3. On 201: toast.success with credit-note number; close dialog;
  *      router.refresh() to update payment timeline + status badges.
- *   4. On 4xx/5xx: inline alert above buttons (FR-029(g)) + a toast.
+ *   4. On a refusal (4xx/5xx): an inline alert above the buttons (FR-029(g)),
+ *      no toast (R113).
  *
  * Track B — a refund can legitimately carry NO §86/10 ใบลดหนี้ (the invoice was
  * voided, or the buyer holds a §105 receipt). Both success arms above therefore
@@ -411,8 +412,9 @@ export function RefundForm({
             return tError('internal_error');
           }
         })();
+        // Inline only, like issue and record payment: a toast with the same
+        // text stacked one more on every refused attempt (R113).
         setSubmitError(msg);
-        toast.error(msg);
         return;
       }
       // A 2xx: the refund went through or is settling. A body that can't be
@@ -520,9 +522,7 @@ export function RefundForm({
         console.error('refund submit: close after success failed', e);
         return;
       }
-      const msg = tError('internal_error');
-      setSubmitError(msg);
-      toast.error(msg);
+      setSubmitError(tError('internal_error'));
       // Only a failure the server answered gets here: a network error and
       // any 2xx are settled above.
       console.error('refund submit failed', e);
