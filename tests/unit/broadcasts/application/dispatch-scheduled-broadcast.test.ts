@@ -5185,7 +5185,8 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
         expect(result).toEqual({ ok: false, error: { kind: 'broadcast_failed_to_dispatch', reason: 'member_halted' } });
         expect(repo.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
         // Review round 1 — the closed class rides with the outcome, never provider text.
-        expect(audit.emits[0]?.payload).toMatchObject({ resendDraftOutcome: 'undeleted', resendDraftErrClass: outcome });
+        // Review round 2 — after a 403 the class is what the probe read (`draft`).
+        expect(audit.emits[0]?.payload).toMatchObject({ resendDraftOutcome: 'undeleted', resendDraftErrClass: outcome === 'forbidden' ? 'probe_draft' : outcome });
       },
     );
 

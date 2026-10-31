@@ -1078,6 +1078,9 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
       });
       expect(result).toEqual(value({ unexpectedErrorCount: 2 }));
       expect(deps.broadcastsGateway.deleteBroadcastOnce).not.toHaveBeenCalled();
+      // Review round 2 (code-review #4) — a deferral is its own label, not the
+      // stop-the-line `unexpected_error`; it still withholds member_erased.
+      expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['deferred', 'deferred']);
     });
 
     it('deadline reached mid-pass → the rows before it settle, the rest count unexpected', async () => {
@@ -1095,6 +1098,7 @@ describe('cancelInFlightBroadcastsForMember (Round 2 M4)', () => {
         deadlineAt: new Date('2026-05-03T00:00:02Z'),
       });
       expect(result).toEqual(value({ resendDraftsCleared: 1, unexpectedErrorCount: 1 }));
+      expect(cascadeOutcomeSpy.mock.calls.map((c) => c[1])).toEqual(['terminal_draft_cleared', 'deferred']);
       expect(deps.broadcastsGateway.deleteBroadcastOnce).toHaveBeenCalledTimes(1);
     });
 

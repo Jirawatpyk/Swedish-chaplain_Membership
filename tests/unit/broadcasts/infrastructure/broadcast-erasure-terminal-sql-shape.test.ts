@@ -67,11 +67,14 @@ describe('listTerminalWithResendIdOwnedByMember — SQL shape', () => {
     expect(select!.params).toEqual(expect.arrayContaining([TENANT, MEMBER_ID]));
     // The excluded statuses: every in-progress one, and `sent` — bound, not inlined.
     expect(where).toMatch(/"broadcasts"\."status"::text not in \(/i);
-    for (const status of [...IN_PROGRESS_BROADCAST_STATUSES, 'sent']) {
+    // Review round 2 (pdpa N-1) — and every status only reachable after a
+    // handed send: an old delivery is not erasure evidence, and its DELETE can
+    // only answer 403.
+    for (const status of [...IN_PROGRESS_BROADCAST_STATUSES, 'sent', 'sending', 'partially_sent', 'partial_delivery_accepted']) {
       expect(select!.params, `${status} is not excluded`).toContain(status);
     }
     // Nothing else is excluded: `failed_to_dispatch`, `cancelled`, `sending` … are listed.
-    for (const status of ['failed_to_dispatch', 'cancelled', 'rejected', 'sending', 'expired_no_member_response']) {
+    for (const status of ['failed_to_dispatch', 'cancelled', 'rejected', 'draft', 'expired_no_member_response']) {
       expect(select!.params, `${status} must not be excluded`).not.toContain(status);
     }
     expect(where).toMatch(/"broadcasts"\."resend_broadcast_id" is not null/i);

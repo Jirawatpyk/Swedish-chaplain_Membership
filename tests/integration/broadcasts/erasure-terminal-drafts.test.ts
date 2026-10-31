@@ -255,12 +255,18 @@ describe('spec 140 s1 — the erasure cascade deletes the drafts its terminal ro
 
   // Review round 1 (code-review #1) — a 403 whose probe reads handed is a
   // disclosure (8c): the same evidence row the in-flight arm writes, once.
-  it('a 403 + queued terminal copy is already-sent evidence, written once, not retained', async () => {
+  // Review round 2 — on a row that SAYS unsent (`failed_to_dispatch`, e.g.
+  // after a `sent_but_transition_lost`): `sending` rows are no longer listed.
+  it('a failed_to_dispatch row whose copy Resend queued is already-sent evidence, written once, not retained', async () => {
     const memberId = randomUUID();
     const resend = fakeResend();
     const queuedId = `rb-hd-${randomUUID()}`;
     resend.state.set(queuedId, 'queued');
-    const broadcastId = await seed(tenantA, { memberId, status: 'sending', sendingStartedAt: new Date(), resendBroadcastId: queuedId });
+    const broadcastId = await seed(tenantA, { memberId, resendBroadcastId: queuedId });
+    // An old delivery is not erasure evidence: a `sending` row is not listed.
+    const handedId = `rb-hd-sending-${randomUUID()}`;
+    resend.state.set(handedId, 'queued');
+    await seed(tenantA, { memberId, status: 'sending', sendingStartedAt: new Date(), resendBroadcastId: handedId });
 
     const first = await eraseCascade(tenantA, memberId, resend.port);
     const again = await eraseCascade(tenantA, memberId, resend.port);
@@ -276,6 +282,7 @@ describe('spec 140 s1 — the erasure cascade deletes the drafts its terminal ro
          AND payload->>'broadcastId' = ${broadcastId}
     `)) as unknown as Array<{ observed: string }>;
     expect(evidence).toEqual([{ observed: 'queued' }]);
+    expect(resend.deletes).not.toContain(handedId);
   });
 
   it('ED5 — a non-approved row is not written by a stale attachResendIds', async () => {

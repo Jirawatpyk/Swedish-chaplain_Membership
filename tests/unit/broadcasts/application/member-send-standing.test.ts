@@ -198,12 +198,12 @@ describe('deleteDraftBeforeStandingRefusal (spec 140 s1 ED4, review round 1)', (
   const ids = { tenantId: 'test-tenant', broadcastId: 'b-1', leg: 'import' as const };
   const gw = (
     answer: 'deleted' | 'absent' | 'forbidden' | 'retryable' | 'other',
-    probe: 'queued' | 'sending' | 'sent' | 'draft' | 'cancelled' | 'unknown' | 'not_found' | 'retryable' | 'throws' = 'draft',
+    probe: 'queued' | 'sending' | 'sent' | 'draft' | 'cancelled' | 'unknown' | 'not_found' | 'retryable' | 'other' | 'throws' = 'draft',
   ) => ({
     deleteBroadcastOnce: vi.fn(async () => ({ kind: answer })),
     retrieveBroadcastOnce: vi.fn(async () => {
       if (probe === 'throws') throw new Error('a fake that breaks the never-throws contract');
-      if (probe === 'not_found' || probe === 'retryable') return { kind: probe };
+      if (probe === 'not_found' || probe === 'retryable' || probe === 'other') return { kind: probe };
       return { kind: 'present' as const, status: probe };
     }),
   });
@@ -216,12 +216,22 @@ describe('deleteDraftBeforeStandingRefusal (spec 140 s1 ED4, review round 1)', (
     expect(g.retrieveBroadcastOnce).toHaveBeenCalledWith('rb-1');
   });
 
-  it.each(['draft', 'cancelled', 'unknown', 'not_found', 'retryable', 'throws'] as const)(
-    '403, then the GET says %s → undeleted (forbidden): the refusal goes ahead',
-    async (probe) => {
-      expect(await deleteDraftBeforeStandingRefusal(gw('forbidden', probe), ids, draft)).toEqual({ kind: 'undeleted', errClass: 'forbidden' });
-    },
-  );
+  // Review round 2 (code-review #6) — the class says what the GET read, from a
+  // closed set; a `cancelled` reading is an unsendable copy, so it clears.
+  it.each([
+    ['draft', 'probe_draft'],
+    ['unknown', 'probe_other'],
+    ['not_found', 'probe_not_found'],
+    ['retryable', 'probe_retryable'],
+    ['other', 'probe_other'],
+    ['throws', 'threw'],
+  ] as const)('403, then the GET says %s → undeleted (%s): the refusal goes ahead', async (probe, errClass) => {
+    expect(await deleteDraftBeforeStandingRefusal(gw('forbidden', probe), ids, draft)).toEqual({ kind: 'undeleted', errClass });
+  });
+
+  it('403, then the GET says cancelled → cleared (cancelled): an unsendable copy, not an undeleted draft', async () => {
+    expect(await deleteDraftBeforeStandingRefusal(gw('forbidden', 'cancelled'), ids, draft)).toEqual({ kind: 'cleared', draftOutcome: 'cancelled' });
+  });
 
   it.each(['retryable', 'other'] as const)('%s → undeleted with that class, no GET', async (answer) => {
     const g = gw(answer);

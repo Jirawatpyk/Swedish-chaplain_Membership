@@ -151,7 +151,8 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
     const body = (await res.json()) as { skipped?: boolean; reason?: string };
     expect(body.skipped).toBe(true);
     expect(body.reason).toBe('feature_disabled');
-    expect(runInTenantMock).not.toHaveBeenCalled();
+    // Spec 140 s1 review round 2 — the pause still READS the candidates (for
+    // the stuck gauge), but re-drives nothing.
     expect(eraseMemberMock).not.toHaveBeenCalled();
   });
 
@@ -344,13 +345,27 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
     expect(erasureStuckCountMock.mock.invocationCallOrder[0]!).toBeLessThan(eraseMemberMock.mock.invocationCallOrder[0]!);
   });
 
-  it('the stuck gauge is 0 when the kill switch is off, and untouched when the candidate query fails', async () => {
+  // Review round 2 (code-review #7) — while paused, nothing is re-driven, so
+  // the backlog GROWS: the gauge reads the real candidate count, never a 0.
+  it('the stuck gauge reads the real candidate count while the kill switch is off, and is untouched when that read fails', async () => {
     envMock.features.memberErasureReconcile = false;
+    stubStuck([
+      { memberId: 'm1', reason: 'gdpr_erasure_request' },
+      { memberId: 'm2', reason: 'gdpr_erasure_request' },
+    ]);
     const { POST } = await import(
       '@/app/api/cron/members/reconcile-erasures/route'
     );
-    await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    expect(erasureStuckCountMock.mock.calls).toEqual([[0, 'test-tenant']]);
+    const paused = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(paused.status).toBe(200);
+    expect(erasureStuckCountMock.mock.calls).toEqual([[2, 'test-tenant']]);
+    expect(eraseMemberMock).not.toHaveBeenCalled();
+
+    erasureStuckCountMock.mockReset();
+    runInTenantMock.mockRejectedValueOnce(new Error('db down'));
+    const pausedFailed = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(pausedFailed.status).toBe(200);
+    expect(erasureStuckCountMock).not.toHaveBeenCalled();
 
     erasureStuckCountMock.mockReset();
     envMock.features.memberErasureReconcile = true;

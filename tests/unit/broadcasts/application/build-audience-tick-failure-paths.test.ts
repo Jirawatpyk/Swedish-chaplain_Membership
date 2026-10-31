@@ -2832,7 +2832,11 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
       expect(res.ok ? null : res.error).toMatchObject({ kind: 'audience_import_failed', reason: 'member_halted' });
       expect(rec.transitions.map((t) => t.status)).toEqual(['failed_to_dispatch']);
       // Review round 1 — the closed class rides with the outcome, never provider text.
-      expect(rec.audits[0]?.payload).toMatchObject({ resendDraftOutcome: 'undeleted', resendDraftErrClass: deleteOnceOutcome });
+      // Review round 2 — after a 403 the class is what the probe read (`draft`).
+      expect(rec.audits[0]?.payload).toMatchObject({
+        resendDraftOutcome: 'undeleted',
+        resendDraftErrClass: deleteOnceOutcome === 'forbidden' ? 'probe_draft' : deleteOnceOutcome,
+      });
     },
   );
 

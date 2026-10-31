@@ -539,6 +539,18 @@ describe('eraseMember — requested audit + atomic scrub', () => {
     }
   });
 
+  // Spec 140 s1 review round 2 (code-review #1, reliability N1) — the
+  // sub-processor propagation is the one step a re-drive cannot repeat (its
+  // pairs are captured only on the first pass), so it runs BEFORE the
+  // broadcasts cascade, whose terminal pass may spend the route's budget.
+  it('spec 140 s1: propagates to sub-processors before the broadcasts cascade runs', async () => {
+    const deps = buildEraseDeps();
+    await eraseMember(asMemberId('m-1'), { reason: 'gdpr_erasure_request' }, META, deps);
+    const propagateAt = (deps.subprocessorErasure.propagate as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    const cascadeAt = (deps.broadcastsCascade.cancelInFlightForMember as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!;
+    expect(propagateAt).toBeLessThan(cascadeAt);
+  });
+
   // Spec 140 s1 review round 1 (reliability H-1) — the caller's deadline bounds
   // the cascade's terminal-draft pass; with none, none is passed.
   it('spec 140 s1: forwards meta.deadlineAt to the broadcasts cascade, and omits it when unset', async () => {
