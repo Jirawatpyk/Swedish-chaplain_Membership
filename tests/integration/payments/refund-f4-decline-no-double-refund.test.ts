@@ -364,6 +364,7 @@ describe('F-3 — F4 decline after a settled Stripe refund does not enable a dou
       actorUserId: user.userId,
       correlationId: 'corr-f3-1',
       requestId: 'req-f3-1',
+      duplicateGuard: 'skip' as const,
     };
 
     // Both attempts run BEFORE any assertion, and the money-safety assertion

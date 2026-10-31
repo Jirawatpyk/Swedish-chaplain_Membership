@@ -178,7 +178,8 @@ Idempotency-Key: <optional>
 {
   "paymentId": "pmt_01J...",
   "amountSatang": 350000,                                  // > 0; ≤ remaining
-  "reason": "Tier downgrade — partial refund of upgrade fee"
+  "reason": "Tier downgrade — partial refund of upgrade fee",
+  "confirmDuplicate": true                                 // optional (#49); only after a 409 possible_duplicate_refund
 }
 ```
 
@@ -188,7 +189,8 @@ zod schema:
 const InitiateRefundInput = z.object({
   paymentId: z.string().min(20).max(40),
   amountSatang: z.number().int().positive().max(2_000_000_000),  // 20M THB upper bound
-  reason: z.string().min(1).max(500).regex(/^[^\r\n]+$/)         // single-line; HTML-escaped at render
+  reason: z.string().min(1).max(500).regex(/^[^\r\n]+$/),        // single-line; HTML-escaped at render
+  confirmDuplicate: z.literal(true).optional(),                  // #49: the admin confirmed a probable duplicate
 });
 ```
 
@@ -250,6 +252,7 @@ An async Stripe refund (`pending` / `requires_action` at creation, e.g. some Pro
 | 409 | `payment_not_refundable` | payment status ≠ `succeeded`/`partially_refunded` |
 | 409 | `refund_exceeds_remaining` | `amountSatang > remaining` (FR-011b pre-flight) |
 | 409 | `refund_in_progress` | another concurrent refund holds the row lock; client may retry |
+| 409 | `possible_duplicate_refund` | (#49) a `succeeded` refund of the same amount on this payment was initiated or settled in the last 24 h; refused before Stripe, nothing written. `error.duplicateRefundedAt` (ISO: when it settled, else when it started) says when; no id or reason is returned. The client resends with `confirmDuplicate: true` only after the admin confirms; the `refund_initiated` audit then carries `duplicate_override: true` and `duplicate_of_refund_id` |
 | 502 | `processor_unavailable` | Stripe `refunds.create` failed with a `permanent` error (a refusal, or a refund that settled `failed`/`canceled`): no money moved; `refunds` row finalised `status='failed'`; a retry is safe |
 | 502 | `processor_outcome_unknown` | Stripe `refunds.create` failed with a `retryable` or `idempotency_conflict` error: the outcome is unknown, so the `refunds` row stays `pending` (no `processor_refund_id`) for the stale-pending sweep to escalate; the client must NOT retry (Task B) |
 | 502 | `f4_preflight_read_error` | the PRE-FLIGHT F4 credited-total read (`getInvoiceCreditedTotal`) failed BEFORE any Stripe call — money did NOT move, safe to retry, NO orphaned Stripe refund exists (DISTINCT from `f4_bridge_error` below — B.1 review Fix#1) |
