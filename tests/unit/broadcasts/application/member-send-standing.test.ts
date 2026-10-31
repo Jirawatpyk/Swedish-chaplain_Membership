@@ -190,6 +190,7 @@ describe('deleteDraftBeforeRefusal (spec 139 P2, spec 140 s1 ED4)', () => {
         resendBroadcastId: 'rb-1',
         // Review round 5 — and the thrown class (never a message), for that line.
         err: answer === 'throws' ? 'Error' : null,
+        probedStatus,
       });
       // Review round 5 (LOW) — one line per refusal, written by the caller.
       expect(warnSpy).not.toHaveBeenCalled();
@@ -202,7 +203,7 @@ describe('deleteDraftBeforeRefusal (spec 139 P2, spec 140 s1 ED4)', () => {
     const { logger } = await import('@/lib/logger');
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     try {
-      recordRefusedDraftUndecided(ids, { kind: 'undecided', errClass: 'threw', resendBroadcastId: 'rb-1', err: 'TypeError' });
+      recordRefusedDraftUndecided(ids, { kind: 'undecided', errClass: 'threw', resendBroadcastId: 'rb-1', probedStatus: 'draft', err: 'TypeError' });
       expect(warnSpy.mock.calls).toEqual([
         [
           { ...ids, resendBroadcastId: 'rb-1', errClass: 'threw', err: 'TypeError' },

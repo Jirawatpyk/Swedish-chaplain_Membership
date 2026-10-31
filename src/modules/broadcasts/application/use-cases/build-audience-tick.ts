@@ -67,6 +67,7 @@ import {
   deleteDraftBeforeRefusal,
   deleteDraftBeforeStandingRefusal,
   ERASED_DRAFT_NOT_DELETED,
+  recordRefusedDraftUndecided,
   recordDispatchHold,
   recordRequesterNotFound,
   REQUESTER_NOT_FOUND,
@@ -772,12 +773,11 @@ async function applySendStanding(
     );
   }
   if (standing.kind === 'refuse_erased') {
-    const cleared = await deleteDraftBeforeRefusal(
-      deps.broadcastsGateway,
-      { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, leg: 'import', refusal: 'erased' },
-      rowDraft,
-    );
+    const erasedIds = { tenantId: deps.tenant.slug, broadcastId: input.broadcastId as unknown as string, leg: 'import', refusal: 'erased' } as const;
+    const cleared = await deleteDraftBeforeRefusal(deps.broadcastsGateway, erasedIds, rowDraft);
     if (cleared.kind === 'undecided') {
+      // Review round 5 — this arm's one line for the outcome.
+      recordRefusedDraftUndecided(erasedIds, cleared);
       return err({ kind: 'dispatch.server_error', message: ERASED_DRAFT_NOT_DELETED, errClass: cleared.errClass, phase: 'standing' });
     }
     return failTerminally(

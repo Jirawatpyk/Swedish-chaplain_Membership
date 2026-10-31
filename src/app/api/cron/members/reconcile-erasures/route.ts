@@ -156,10 +156,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   let stuck: Awaited<
     ReturnType<typeof drizzleMemberRepo.findStuckErasuresInTx>
   >;
+  let baseline = 0;
   try {
-    stuck = await runInTenant(tenant, (tx) =>
-      drizzleMemberRepo.findStuckErasuresInTx(tx, tenant.slug, MAX_PER_TICK),
-    );
+    // Review round 5 — the gauge's BASELINE rides the candidate tx (one round
+    // trip fewer). A count failure there fails the tx: `query_failed`, 500.
+    stuck = await runInTenant(tenant, async (tx) => {
+      const candidates = await drizzleMemberRepo.findStuckErasuresInTx(tx, tenant.slug, MAX_PER_TICK);
+      baseline = await drizzleMemberRepo.countStuckErasuresInTx(tx, tenant.slug);
+      return candidates;
+    });
   } catch (e) {
     logger.error(
       {
@@ -174,12 +179,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: { code: 'internal_error' } }, { status: 500 });
   }
 
-  // Spec 140 s1 review rounds 1 + 4 — the BASELINE, in the gauge's one
-  // meaning (the uncapped, non-locking count): a tick killed mid-loop
-  // (maxDuration) still leaves this tick's number. A candidate-query failure
-  // (above) observes nothing new: the gauge keeps the previous tick's value
-  // and the 500 + the `query_failed` log are that tick's signal.
-  await observeStuckCount();
+  // Spec 140 s1 review rounds 1, 4, 5 — the BASELINE, in the gauge's one
+  // meaning (the uncapped, non-locking count), read in the candidate tx: a tick
+  // killed mid-loop (maxDuration) still leaves this tick's number. A
+  // candidate-tx failure (above) observes nothing new: the gauge keeps the
+  // previous tick's value and the 500 + the `query_failed` log are the signal.
+  erasureMetrics.stuckCount(baseline, tenant.slug);
 
   // `processed` is derivable (reconciled + still_pending + error invariantly), so
   // it is NOT tracked here — it is computed at response time below.
