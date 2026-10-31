@@ -175,6 +175,27 @@ The probe was a throwaway spec, never committed. The seeds were removed afterwar
 | ED5 | `broadcast-erasure-terminal-sql-shape.test.ts` (the status CAS), plus the mutation proof (a) above. |
 | Wrong input | Erase with `identityVerified:false` and no `verificationMethod` → **400** `invalid_body`, and the draft is still `draft`. |
 
+**Re-Verify on the final head `3a3248a1d` (31 Oct 2026, after review rounds 1–6).** It used the same setup and the same probe, and its seeds were removed afterwards. Every result matched the first run:
+
+| Done-when | Evidence |
+|---|---|
+| ED1 | Erase → `200 cascadesComplete:true`. The draft → **404**. `member_erased` has `resend_drafts_cleared:1, resend_copies_retained:0, broadcasts_already_sent_count:0`. |
+| ED2 | Resend answers `canceled`. Erase → `200 cascadesComplete:true`. `member_erased` has `resend_drafts_cleared:0, resend_copies_retained:1, broadcasts_already_sent_count:0`. |
+| Wrong input | **400** `invalid_body`, and the draft is still `draft`. |
+
+**Gates on `3a3248a1d`.** The coordinator ran them one at a time, after the subagent had stopped:
+
+| Gate | Result |
+|---|---|
+| `pnpm check` | exit 0 (run by the builder after the last code commit) |
+| Contract | 260 files, 2913 passed, 2 todo |
+| Unit (`broadcasts`, `broadcast`, `members`, `lib`) | 563 files, 6412 passed |
+| Integration: broadcasts | 6 files, 51 passed |
+| Integration: members | 10 files, 53 passed (the touched files, plus `erase-member*`, `reconcile-erasures` and `find-stuck-erasures`) |
+| Full `pnpm test:coverage` | not run locally: low memory killed two runs. CI runs it. |
+
+**Review close.** Round 7 was a targeted confirmation of the round-6 commits. It returned no High and no Medium (`[]`), so the stop rule ends the review. The Lows still open are listed in the PR.
+
 ### Slice 1 — review round 1 (code-review high, pdpa, security, reliability; 31 Oct 2026)
 
 RED `8b501e5ca`, GREEN `421541cad`; docs in the commit after them. The unit and contract rows went red first (43 failures). The two new integration cases (the handed copy written as evidence, and the builder on the BYPASSRLS owner) were committed with the RED tests but run only after GREEN; at RED the builder they import did not exist.
