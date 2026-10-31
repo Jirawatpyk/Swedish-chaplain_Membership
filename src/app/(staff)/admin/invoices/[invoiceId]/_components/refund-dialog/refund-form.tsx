@@ -208,10 +208,6 @@ export function RefundForm({
   const [duplicate, setDuplicate] = useState<{ readonly at: string | null; readonly amountSatang: bigint } | null>(
     null,
   );
-  const duplicateRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (duplicate !== null) duplicateRef.current?.focus();
-  }, [duplicate]);
   // Set only by the footer's "Refund again" click, just before it submits;
   // read once. Enter never sets it, so only a click overrides (review H1).
   const confirmDuplicateRef = useRef(false);
@@ -843,18 +839,18 @@ export function RefundForm({
       )}
 
       {/* #49 — a probable duplicate: what and when. The confirm is the
-        * footer's ("Refund again"), so this Alert has no button. */}
+        * footer's ("Refund again"), so this Alert has no button. A warning
+        * Alert is role="alert" and announces itself; focus stays on the
+        * footer confirm, now "Refund again", so it is heard once (UX L1). */}
       {duplicate !== null && duplicateActive && (
-        <div ref={duplicateRef} tabIndex={-1} className="outline-none">
-          <Alert tone="warning" title={t('duplicate.title')} data-testid="refund-form-duplicate">
-            {duplicate.at === null
-              ? t('duplicate.bodyNoTime', { amount: formatSatangThb(duplicate.amountSatang, locale, currencyCode) })
-              : t('duplicate.body', {
-                  amount: formatSatangThb(duplicate.amountSatang, locale, currencyCode),
-                  when: formatDatePreset(duplicate.at, locale, 'dateTimeMedium'),
-                })}
-          </Alert>
-        </div>
+        <Alert tone="warning" title={t('duplicate.title')} data-testid="refund-form-duplicate">
+          {duplicate.at === null
+            ? t('duplicate.bodyNoTime', { amount: formatSatangThb(duplicate.amountSatang, locale, currencyCode) })
+            : t('duplicate.body', {
+                amount: formatSatangThb(duplicate.amountSatang, locale, currencyCode),
+                when: formatDatePreset(duplicate.at, locale, 'dateTimeMedium'),
+              })}
+        </Alert>
       )}
 
       {/* Submit error — inline alert, above the footer's buttons (FR-029(g)). */}

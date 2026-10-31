@@ -656,6 +656,19 @@ describe('refund: no retry once the outcome may be a refund', () => {
     vi.unstubAllGlobals();
   });
 
+  it('the warning is announced once: a live alert, and focus is not moved onto it (UX L1)', async () => {
+    await submitPartial(duplicateThenOk());
+    const dialog = screen.getByRole('alertdialog', { name: refund.title });
+    const warning = await within(dialog).findByTestId('refund-form-duplicate');
+    expect(warning).toHaveAttribute('role', 'alert');
+    // No focusable wrapper of its own: a focused live region is read twice.
+    expect(warning.parentElement).not.toHaveAttribute('tabindex');
+    await waitFor(() => expect(within(dialog).getByTestId('refund-form-confirm')).not.toHaveAttribute('aria-busy'));
+    expect(document.activeElement).not.toBe(warning.parentElement);
+    expect(warning.contains(document.activeElement)).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
   it('after the warning, submitting the form (Enter) checks again: no confirmDuplicate', async () => {
     const spy = await submitPartial(duplicateThenOk());
     const dialog = screen.getByRole('alertdialog', { name: refund.title });
