@@ -31,7 +31,7 @@ import {
   decideDispatchStanding,
   deleteDraftBeforeRefusal,
   deleteDraftBeforeStandingRefusal,
-  recordRefusedDraftUndecided,
+  deleteDraftBeforeErasedRefusal,
 } from '@/modules/broadcasts/application/use-cases/_dispatch-standing-gate';
 import { readDispatchHold } from '@/modules/broadcasts/application/use-cases/read-dispatch-hold';
 import { makeFakeSendStanding } from '../../../helpers/eblast-approval-fakes';
@@ -199,14 +199,28 @@ describe('deleteDraftBeforeRefusal (spec 139 P2, spec 140 s1 ED4)', () => {
     }
   });
 
-  it('recordRefusedDraftUndecided — the one line of an erased arm: ids, the id, the class, the thrown class', async () => {
+  // Review round 6 — the erased wrapper owns its one line, with the same fields
+  // the standing line carries.
+  it('deleteDraftBeforeErasedRefusal — an undecided DELETE logs ONE line: probedStatus, outcome, errClass, err', async () => {
     const { logger } = await import('@/lib/logger');
     const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     try {
-      recordRefusedDraftUndecided(ids, { kind: 'undecided', errClass: 'threw', resendBroadcastId: 'rb-1', probedStatus: 'draft', err: 'TypeError' });
+      const { leg, tenantId, broadcastId } = ids;
+      const result = await deleteDraftBeforeErasedRefusal(gw('throws'), { tenantId, broadcastId, leg }, { resendBroadcastId: 'rb-1', probedStatus: 'draft' });
+      expect(result).toMatchObject({ kind: 'undecided', errClass: 'threw' });
       expect(warnSpy.mock.calls).toEqual([
         [
-          { ...ids, resendBroadcastId: 'rb-1', errClass: 'threw', err: 'TypeError' },
+          {
+            tenantId,
+            broadcastId,
+            leg,
+            refusal: 'erased',
+            resendBroadcastId: 'rb-1',
+            probedStatus: 'draft',
+            outcome: 'threw',
+            errClass: 'threw',
+            err: 'Error',
+          },
           'broadcasts.dispatch.refused_draft_delete_unconfirmed',
         ],
       ]);

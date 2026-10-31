@@ -5223,7 +5223,14 @@ describe('dispatch-scheduled-broadcast — member standing at dispatch (F119 PR-
       const lines = warnSpy.mock.calls.filter((c) => String(c[1]).startsWith('broadcasts.dispatch.refused_draft'));
       expect(lines).toHaveLength(1);
       expect(lines[0]).toEqual([
-        expect.objectContaining({ refusal: 'erased', leg: 'live', resendBroadcastId: 'rb-prev-draft', errClass: 'retryable' }),
+        expect.objectContaining({
+          refusal: 'erased',
+          leg: 'live',
+          resendBroadcastId: 'rb-prev-draft',
+          probedStatus: 'draft',
+          outcome: 'retryable',
+          errClass: 'retryable',
+        }),
         'broadcasts.dispatch.refused_draft_delete_unconfirmed',
       ]);
     });

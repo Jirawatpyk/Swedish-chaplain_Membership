@@ -354,6 +354,24 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ err: expect.any(String) }), 'cron.members.reconcile_erasures.stuck_count_failed');
   });
 
+  // Review round 6 — a failed BASELINE count observes nothing new and the tick
+  // continues: the members are still re-driven.
+  it('a failed baseline count logs stuck_count_failed and the tick still re-drives', async () => {
+    const { logger } = await import('@/lib/logger');
+    vi.mocked(logger.warn).mockClear();
+    stubStuck([{ memberId: 'm1', reason: 'gdpr_erasure_request' }]);
+    eraseMemberMock.mockResolvedValueOnce(ok({ memberId: 'm1', erasedAt: new Date(), cascadesComplete: true }));
+    countStuckErasuresInTxMock.mockRejectedValueOnce(new Error('count down')).mockResolvedValueOnce(0);
+    const { POST } = await import(
+      '@/app/api/cron/members/reconcile-erasures/route'
+    );
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    expect(res.status).toBe(200);
+    expect(eraseMemberMock).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ err: expect.any(String) }), 'cron.members.reconcile_erasures.stuck_count_failed');
+    expect(erasureStuckCountMock.mock.calls).toEqual([[0, 'test-tenant']]);
+  });
+
   it('no stuck members → 200 zeroed summary, eraseMember NOT called', async () => {
     stubStuck([]);
     const { POST } = await import(
@@ -372,11 +390,11 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
   /**
    * Spec 140 s1 — the stuck-erasure gauge, ONE meaning (review round 4): the
    * uncapped, non-locking count of members whose erasure has no
-   * `member_erased`. Observed before the loop (read in the candidate tx, a
-   * baseline a tick killed mid-loop still leaves) and after it; the real count
+   * `member_erased`. Observed before the loop (its own short tx, a baseline
+   * a tick killed mid-loop still leaves) and after it; the real count
    * while the kill switch is off; nothing new on a candidate-query failure.
    */
-  it('the stuck gauge: the uncapped count before the loop (in the candidate tx) and after it', async () => {
+  it('the stuck gauge: the uncapped count before the loop and after it, each in its own short tx', async () => {
     stubStuck([
       { memberId: 'm1', reason: 'gdpr_erasure_request' },
       { memberId: 'm2', reason: 'gdpr_erasure_request' },
@@ -399,9 +417,9 @@ describe('cron reconcile-erasures — wire contract (COMP-1 US2d)', () => {
     ]);
     // The baseline lands before the first re-drive.
     expect(erasureStuckCountMock.mock.invocationCallOrder[0]!).toBeLessThan(eraseMemberMock.mock.invocationCallOrder[0]!);
-    // Review round 5 (LOW) — the baseline count rides the candidate tx: two
-    // round trips per tick (the candidate tx + the end-of-tick count), not three.
-    expect(runInTenantMock).toHaveBeenCalledTimes(2);
+    // Review round 6 — the baseline count is back in its OWN short tx (round 5
+    // folded it into the candidate tx; reverted): candidate tx, baseline, end.
+    expect(runInTenantMock).toHaveBeenCalledTimes(3);
   });
 
   // Review round 2 (code-review #7) — while paused, nothing is re-driven, so

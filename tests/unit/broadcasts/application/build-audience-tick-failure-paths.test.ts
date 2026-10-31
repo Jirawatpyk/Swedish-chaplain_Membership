@@ -2866,6 +2866,30 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
     },
   );
 
+  // Review round 6 — the import leg's erased refusal: an undecided DELETE logs
+  // ONE line (the erased wrapper's), with the fields the standing line carries.
+  it('an ERASED refusal whose DELETE answers retryable logs one refused_draft line, refusal erased', async () => {
+    const { logger } = await import('@/lib/logger');
+    const warnSpy = vi.spyOn(logger, 'warn');
+    const { deps } = makeDeps({ resendBroadcastId: 'rb-earlier-tick', standing: { erased: true }, deleteOnceOutcome: 'retryable' });
+
+    await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+
+    const lines = warnSpy.mock.calls.filter((c) => String(c[1]).startsWith('broadcasts.dispatch.refused_draft'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toEqual([
+      expect.objectContaining({
+        refusal: 'erased',
+        leg: 'import',
+        resendBroadcastId: 'rb-earlier-tick',
+        probedStatus: 'draft',
+        outcome: 'retryable',
+        errClass: 'retryable',
+      }),
+      'broadcasts.dispatch.refused_draft_delete_unconfirmed',
+    ]);
+  });
+
   it('ED4 — a row with no Resend id makes no Resend call; resendDraftOutcome none', async () => {
     const { deps, rec } = makeDeps({ standing: { halted: ['m-1'] } });
 
