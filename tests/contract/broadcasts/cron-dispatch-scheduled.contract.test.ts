@@ -39,6 +39,8 @@ const cronUnknownErrorCountSpy = vi.fn();
 const STUB_BRIDGE = { kind: 'members-bridge-stub' } as const;
 const STUB_ACCESS = { kind: 'membership-access-stub' } as const;
 const buildDepsArgs: unknown[][] = [];
+/** Spec 140 s2a review round 3 — every `setAttribute` the route span receives. */
+const spanAttributes = new Map<string, unknown>();
 
 const envMock = {
   cron: { secret: 'test-cron-secret' },
@@ -72,7 +74,13 @@ vi.mock('@/lib/otel-tracer', () => ({
     _name: string,
     _attrs: unknown,
     fn: (span: { setAttribute: () => void; setStatus: () => void }) => Promise<unknown>,
-  ) => fn({ setAttribute: () => undefined, setStatus: () => undefined }),
+  ) =>
+    fn({
+      setAttribute: (key: string, value: unknown) => {
+        spanAttributes.set(key, value);
+      },
+      setStatus: () => undefined,
+    }),
 }));
 vi.mock('@/lib/metrics', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/metrics')>();
@@ -135,6 +143,7 @@ beforeEach(() => {
   cronSkippedCountSpy.mockReset();
   cronUnknownErrorCountSpy.mockReset();
   buildDepsArgs.length = 0;
+  spanAttributes.clear();
 });
 
 afterEach(() => {
@@ -681,5 +690,31 @@ describe('cron dispatch-scheduled — import rows with the import flag OFF (spec
     );
     const warned = vi.mocked(logger.warn).mock.calls.map((c) => c[1]);
     expect(warned).not.toContain('cron.broadcasts.dispatch.concurrent_skip');
+  });
+});
+
+/**
+ * Spec 140 s2a review round 3 (code-review #4, #5) — the route span carries
+ * EVERY bucket the response summary counts, as `cron.<key>`: the attributes are
+ * derived from the summary, so a new bucket cannot be left off the trace
+ * (round 2 had to add `import_row_skipped` by hand).
+ */
+describe('cron dispatch-scheduled — span attributes mirror the summary (spec 140 s2a)', () => {
+  it('every summary bucket, import_row_skipped included, is a cron.<key> span attribute', async () => {
+    runInTenantMock.mockImplementation(async (_ctx, fn) =>
+      fn({ execute: async () => [{ broadcast_id: BROADCAST_ID }] }),
+    );
+    dispatchScheduledBroadcastMock.mockResolvedValue(err({ kind: 'import_row_skipped' }));
+
+    const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
+    const res = await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
+    const body = (await res.json()) as Record<string, unknown>;
+    const buckets = Object.entries(body).filter(([, v]) => typeof v === 'number');
+    // Positive control: the summary has its buckets, this one counted.
+    expect(buckets.length).toBeGreaterThan(10);
+    expect(body['import_row_skipped']).toBe(1);
+    for (const [key, value] of buckets) {
+      expect(spanAttributes.get(`cron.${key}`), `cron.${key}`).toBe(value);
+    }
   });
 });
