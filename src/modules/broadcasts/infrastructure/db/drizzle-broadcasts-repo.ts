@@ -1178,11 +1178,9 @@ export function makeDrizzleBroadcastsRepo(
       // lease on the row (staff cancel, confirm-schedule cancel, withdraw, a
       // new working copy, the erasure cancel): the tick holding it stops at its
       // next pre-call check or fenced write. The holder's own transitions pass
-      // its token instead and leave the columns for its release. A re-time
-      // (`scheduledFor` set, review round 1 CR#3) ends it too — the holder was
-      // working to the replaced time; the same condition resets the retry
-      // clock above. Any other same-status write leaves the lease alone.
-      if (lease === null && (target !== expectedFromStatus || fields.scheduledFor !== undefined)) {
+      // its token instead and leave the columns for its release. A same-status
+      // write leaves the lease alone.
+      if (lease === null && target !== expectedFromStatus) {
         setClause['dispatchLeaseToken'] = null;
         setClause['dispatchLeaseExpiresAt'] = null;
       }
@@ -1201,6 +1199,16 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.broadcastId, broadcastId),
             eq(broadcasts.status, expectedFromStatus),
             leaseFence(lease),
+            // Spec 140 s2b review round 2 (reliability MED-1; supersedes round
+            // 1's "a re-time clears the lease") — a non-holder RE-TIME (same
+            // status, `scheduledFor` set) is refused while a tick holds a LIVE
+            // lease: the holder may already have sent at the old time, and a
+            // cleared lease would leave a sent row `approved` with a new time.
+            // 0 rows → the caller's concurrent-mutation answer; a dead holder
+            // blocks it for at most `LEASE_TTL_MS`.
+            lease === null && target === expectedFromStatus && fields.scheduledFor !== undefined
+              ? or(isNull(broadcasts.dispatchLeaseToken), lt(broadcasts.dispatchLeaseExpiresAt, sql`clock_timestamp()`))
+              : undefined,
           ),
         )
         .returning();

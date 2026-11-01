@@ -442,9 +442,11 @@ export interface BroadcastsRepo {
    *     with `observedStatus: 'lease_lost'`.
    *   - `null` (every other writer: staff, the approval flow, the cascade, the
    *     legacy leg) — a STATUS CHANGE also NULLs both lease columns, so a
-   *     tick holding the row stops at its next check or fenced write; so
-   *     does a re-time (`fields.scheduledFor` set, review round 1 CR#3).
-   *     Any other same-status write leaves the lease alone.
+   *     tick holding the row stops at its next check or fenced write. A
+   *     same-status RE-TIME (`fields.scheduledFor` set) is instead REFUSED
+   *     while a live lease is held (review round 2, reliability MED-1):
+   *     0 rows → `BroadcastConcurrentMutationError`. Any other same-status
+   *     write leaves the lease alone.
    */
   applyTransition(
     tx: unknown,

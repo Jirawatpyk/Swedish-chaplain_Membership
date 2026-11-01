@@ -86,6 +86,7 @@ import {
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../../ports/audit-port';
 import type { BroadcastsRepo, TransitionFields } from '../../ports/broadcasts-repo';
+import { BroadcastConcurrentMutationError, LEASE_LOST } from '../../ports/broadcasts-repo';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
@@ -306,6 +307,14 @@ export async function confirmSchedule(
       }),
     );
   } catch (e) {
+    // Spec 140 s2b review round 2 (reliability MED-1) — under the row lock the
+    // only way the transition matches 0 rows is a re-time of a row a dispatch
+    // tick holds a live lease on: the dispatch is at work, so the staff answer
+    // is the existing 409 `sending_started` (retry after the tick), not a 500.
+    // Nothing was written (the tx rolled back) and no email was queued.
+    if (e instanceof BroadcastConcurrentMutationError) {
+      return err({ kind: 'sending_started', status: e.observedStatus === LEASE_LOST ? 'approved' : e.observedStatus });
+    }
     if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: approvalErrKind(e) });
     // #400 item 5 — a refusal another use case raised is not ours to map.
     if (!isOwnRefusal(e, 'confirm-schedule')) throw e;
