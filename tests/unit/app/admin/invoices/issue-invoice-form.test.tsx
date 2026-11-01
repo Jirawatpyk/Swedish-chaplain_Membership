@@ -613,3 +613,43 @@ describe('IssueInvoiceDialog — AURA alertdialog', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// #48 — a dropped connection: the issue may or may not have committed.
+// ---------------------------------------------------------------------------
+
+describe('IssueInvoiceForm — the connection drops (#48)', () => {
+  it('shows an inline warning to refresh before retrying, keeps the dialog open, and allows a retry', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const onClose = vi.fn();
+    try {
+      renderForm({ onClose });
+      fireEvent.change(screen.getByLabelText(/to confirm/i), {
+        target: { value: 'ISSUE' },
+      });
+      const confirm = screen.getByRole('button', { name: /^Issue invoice · [\d,.]+ THB$/ });
+      fireEvent.click(confirm);
+
+      const alert = await screen.findByTestId('issue-invoice-error');
+      expect(alert).toHaveClass('aura-alert--warning');
+      expect(alert).toHaveTextContent(
+        enMessages.admin.invoices.issue.errors.unconfirmed,
+      );
+      await waitFor(() => expect(alert).toHaveFocus());
+      expect(onClose).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+
+      // The server refuses a second issue, so a retry stays possible.
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.click(confirm);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

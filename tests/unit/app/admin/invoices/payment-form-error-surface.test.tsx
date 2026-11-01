@@ -241,3 +241,32 @@ describe('PaymentForm — the POST is unchanged on AURA (T804)', () => {
     expect([...select.options].map((o) => o.value)).toEqual(['bank_transfer', 'cheque', 'cash', 'other']);
   });
 });
+
+describe('PaymentForm — the connection drops (#48)', () => {
+  it('shows an inline warning to refresh before retrying, stays open, and allows a retry', async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderForm();
+      submitPayment();
+
+      const alert = await screen.findByTestId('record-payment-error');
+      expect(alert).toHaveClass('aura-alert--warning');
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+      await waitFor(() => expect(alert).toHaveFocus());
+      expect(pushMock).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(refreshMock).toHaveBeenCalledTimes(1);
+
+      // The server refuses a second payment, so a retry stays possible.
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Record payment' })).toBeEnabled());
+      submitPayment();
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
