@@ -19,7 +19,7 @@
  * "checked BEFORE the call" is an ordering assertion, not two counters.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ok } from '@/lib/result';
+import { err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
@@ -59,6 +59,8 @@ interface Opts {
   readonly standing?: FakeSendStandingOpts;
   readonly probe?: 'draft' | 'not_found';
   readonly tickStartedAt?: number;
+  /** The resolver refuses: the audience grew past the ceiling. */
+  readonly resolveTooLarge?: boolean;
 }
 
 function harness(opts: Opts = {}) {
@@ -106,7 +108,9 @@ function harness(opts: Opts = {}) {
     locale: 'en' as const,
     brandChrome: { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) },
     resolveRecipients: async () =>
-      ok({ recipients: RECIPIENTS, estimatedCount: RECIPIENTS.length, orphans: [], droppedByPreference: 0 }),
+      opts.resolveTooLarge === true
+        ? err({ kind: 'broadcast_audience_too_large' as const, count: 99_999, cap: 900 })
+        : ok({ recipients: RECIPIENTS, estimatedCount: RECIPIENTS.length, orphans: [], droppedByPreference: 0 }),
     broadcastsRepo: {
       async withTx<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
         return fn(null);
@@ -351,6 +355,13 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(h.memberEmails).toEqual([]);
     expect(logged(error, 'broadcasts.audience_import.cleanup_failed')).toBe(false);
     expect(h.releases).toEqual([TOKEN]);
+  });
+
+  it('row 9 on the resolver path — a lost lease at the too_large terminal write is a skip, not broadcast_audience_too_large', async () => {
+    const h = harness({ resolveTooLarge: true, terminalTransitionThrows: 'lease_lost' });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' });
+    expect(h.memberEmails).toEqual([]);
   });
 
   it('the stale-audience restart checks the lease before EACH delete (CAS 12), and a lost lease deletes nothing more', async () => {
