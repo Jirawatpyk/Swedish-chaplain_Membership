@@ -89,10 +89,10 @@ function makeRepo(opts: {
       async markAudienceImportCompleted() {},
       async markDispatchRetryStarted() { return null; },
       async releaseAudienceImport() {
-        return false;
+        return 'cas_lost' as const;
       },
       async releaseResendAudience() {
-        return false;
+        return 'cas_lost' as const;
       },
       async readAlreadySentEvidenceInTx() {
         return { broadcastRecorded: false, memberBroadcastCount: 0 };
@@ -163,6 +163,10 @@ function makeRepo(opts: {
       async markAudienceDeletedInTx() { throw new Error('not used in prune-expired-drafts fixture'); },
       async deleteExpiredForRetention() { throw new Error('not used in prune-expired-drafts fixture'); },
       async listExpiredForRetention() { throw new Error('not used in prune-expired-drafts fixture'); },
+      async claimDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+      async checkDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+      async releaseDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+      async hasLiveDispatchLease(): Promise<never> { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
       async existingBroadcastIds() { throw new Error('not used in prune-expired-drafts fixture'); },
     },
   };

@@ -28,7 +28,7 @@ import {
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import type { MemberReminderStage } from '../../domain/approval/approval-schedule-policy';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
-import { IN_PROGRESS_BROADCAST_STATUSES, SENDING_STARTED_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
+import { IN_PROGRESS_BROADCAST_STATUSES, SENDING_STARTED_BROADCAST_STATUSES, hasSendingStarted } from '../../domain/stage/in-progress-statuses';
 import {
   RETENTION_ANCHOR_FIELD,
   type RetentionAnchorField,
@@ -36,19 +36,26 @@ import {
 import type { ChamberSubstitutedBody } from '../../domain/value-objects/template-snapshot';
 import type {
   BroadcastsRepo,
+  LeaseCheck,
+  LeaseToken,
   ListByTenantStatusOpts,
   ListByTenantStatusResult,
   ListByTenantStatusSort,
   NewBroadcastDraftInput,
+  ReleaseOutcome,
   TerminalBroadcastDraftRef,
   TransitionFields,
 } from '../../application/ports/broadcasts-repo';
 import {
+  asLeaseToken,
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
+  LEASE_HELD,
+  LEASE_LOST,
   TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
 import { CASCADE_CANCELLATION_REASONS } from '../../domain/value-objects/cascade-cancellation-reason';
+import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 
@@ -343,13 +350,41 @@ export function rowToBroadcast(row: BroadcastRow): Broadcast {
  * Left as-is and recorded rather than silently repaired — it is a separate
  * change with its own callers.)
  */
+/**
+ * Spec 140 s2b review round 4 (code-review #4) — why a release CAS matched no
+ * row ({@link ReleaseOutcome}): a token was passed and the row no longer
+ * carries it → `lease_lost`; anything else (an unfenced call, a moved id or
+ * status, a vanished row) → `cas_lost`. One PK read on the miss only.
+ */
+async function releaseMissOutcome(
+  tx: TenantTx,
+  tenantIdArg: TenantSlug,
+  broadcastId: BroadcastId,
+  lease: LeaseToken | null,
+): Promise<ReleaseOutcome> {
+  if (lease === null) return 'cas_lost';
+  const [probe] = await tx
+    .select({ leaseToken: broadcasts.dispatchLeaseToken })
+    .from(broadcasts)
+    .where(and(eq(broadcasts.tenantId, tenantIdArg), eq(broadcasts.broadcastId, broadcastId)))
+    .limit(1);
+  return probe !== undefined && probe.leaseToken !== lease ? 'lease_lost' : 'cas_lost';
+}
+
 async function throwConcurrentMutation(
   tx: TenantTx,
   tenantIdArg: TenantSlug,
   broadcastId: BroadcastId,
+  /**
+   * Spec 140 s2b — the token the failed write carried (`null` = unfenced). A
+   * row that no longer carries it reports `LEASE_LOST`, whatever its status: a
+   * non-holder cancel clears the token and moves the status in one UPDATE, and
+   * lease-lost is what every holder maps to a concurrent skip (A3).
+   */
+  lease: LeaseToken | null,
 ): Promise<never> {
   const probe = await tx
-    .select({ status: broadcasts.status })
+    .select({ status: broadcasts.status, leaseToken: broadcasts.dispatchLeaseToken })
     .from(broadcasts)
     .where(
       and(eq(broadcasts.tenantId, tenantIdArg), eq(broadcasts.broadcastId, broadcastId)),
@@ -359,7 +394,174 @@ async function throwConcurrentMutation(
   if (probeRow === undefined) {
     throw new BroadcastNotFoundError(tenantIdArg, broadcastId);
   }
+  if (lease !== null && probeRow.leaseToken !== lease) {
+    throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_LOST, probeRow.status);
+  }
   throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, probeRow.status);
+}
+
+/**
+ * Spec 140 s2b — the fencing-token predicate a writer adds when the import
+ * tick passes its lease (`undefined` drops out of `and(...)` for a non-holder).
+ */
+function leaseFence(lease: LeaseToken | null): SQL | undefined {
+  return lease === null ? undefined : eq(broadcasts.dispatchLeaseToken, lease);
+}
+
+/** postgres.js answers a raw boolean as `true`/`false`; a proxy may answer `'t'`/`'f'`. */
+function isTrue(value: unknown): boolean {
+  return value === true || value === 't';
+}
+
+/**
+ * Spec 140 s2b — the CLAIM statement (`claimDispatchLease`), exported so the
+ * DL4 owner-role case can run it on the BYPASSRLS `db`, where the
+ * `tenant_id` predicate alone keeps another tenant's row (same broadcast
+ * uuid) out. The repo method calls `assertTenantBoundTx` first; this does not.
+ *
+ * `clock_timestamp()`, never `now()`: `now()` is the tx START, and the claim
+ * runs after `lockForUpdate`, whose row lock can be waited on for ~23 s behind
+ * an erasure cascade (D-040) — `now()` would stamp the lease that much short.
+ * An expired lease (`expires < clock_timestamp()`) is taken over: its holder
+ * is dead or past its TTL, and every write it still makes is fenced off.
+ */
+export async function claimDispatchLeaseStatement(
+  tx: TenantTx,
+  tenantIdArg: string,
+  broadcastId: BroadcastId,
+  ttlMs: number,
+): Promise<LeaseToken | null> {
+  const rows = await tx
+    .update(broadcasts)
+    .set({
+      dispatchLeaseToken: sql`gen_random_uuid()`,
+      dispatchLeaseExpiresAt: sql`clock_timestamp() + make_interval(secs => ${ttlMs / 1000}::double precision)`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(broadcasts.tenantId, tenantIdArg),
+        eq(broadcasts.broadcastId, broadcastId),
+        eq(broadcasts.status, 'approved'),
+        or(
+          isNull(broadcasts.dispatchLeaseToken),
+          lt(broadcasts.dispatchLeaseExpiresAt, sql`clock_timestamp()`),
+        ),
+      ),
+    )
+    .returning({ token: broadcasts.dispatchLeaseToken });
+  const token = rows[0]?.token ?? null;
+  return token === null ? null : asLeaseToken(token);
+}
+
+/**
+ * Spec 140 s2b — the pre-call CHECK statement (`checkDispatchLease`), exported
+ * for the DL4 owner-role case (review round 1, security L4) and the
+ * lock-timeout case. `SELECT … FOR UPDATE`: the same row lock an UPDATE would
+ * take (it queues behind an erasure's lock, D-040, then reads the token the
+ * cascade's cancel cleared), and it writes nothing. It waits at most
+ * `lockTimeoutMs` (default `CHECK_LOCK_TIMEOUT_MS` = E + 5 s, reliability L2)
+ * for that lock; a timeout throws 55P03, which the tick answers as
+ * `lease_check_failed`. `SET LOCAL` lasts to the end of the caller's tx (the
+ * tick runs each check in its own).
+ *
+ * Review round 2 (security I2) — `fresh` can be stale by up to the lock wait
+ * (≤ `lockTimeoutMs`): the row can be read before the lock is granted, and
+ * Postgres re-reads it only when the blocker changed it. The limit is inert
+ * while `LEASE_TTL_MS` (330 s) exceeds the function's `maxDuration` (300 s):
+ * the holder is killed before its lease can end, and once another tick takes
+ * over, every write the old holder makes is fenced off by the token.
+ */
+export async function checkDispatchLeaseStatement(
+  tx: TenantTx,
+  tenantIdArg: string,
+  broadcastId: BroadcastId,
+  lease: LeaseToken,
+  headroomMs: number,
+  lockTimeoutMs: number = CHECK_LOCK_TIMEOUT_MS,
+): Promise<LeaseCheck> {
+  await setLocalLockTimeout(tx, lockTimeoutMs, 'checkDispatchLeaseStatement');
+  const rows = (await tx.execute(
+    sql`SELECT (dispatch_lease_token IS NOT DISTINCT FROM ${lease}::uuid) AS mine,
+               (dispatch_lease_expires_at > clock_timestamp() + make_interval(secs => ${headroomMs / 1000}::double precision)) AS fresh
+          FROM broadcasts
+         WHERE tenant_id = ${tenantIdArg}
+           AND broadcast_id = ${broadcastId}
+         FOR UPDATE`,
+  )) as unknown as Array<{ mine: unknown; fresh: unknown }>;
+  const row = rows[0];
+  if (row === undefined || !isTrue(row.mine)) return 'lost';
+  return isTrue(row.fresh) ? 'held' : 'expiring';
+}
+
+/**
+ * Spec 140 s2b (cell 23) — the legacy leg's live-lease read
+ * (`hasLiveDispatchLease`), exported for the DL4 owner-role case (review
+ * round 1, security L4).
+ */
+export async function hasLiveDispatchLeaseStatement(
+  tx: TenantTx,
+  tenantIdArg: string,
+  broadcastId: BroadcastId,
+): Promise<boolean> {
+  const rows = (await tx.execute(
+    sql`SELECT (dispatch_lease_token IS NOT NULL AND dispatch_lease_expires_at > clock_timestamp()) AS live
+          FROM broadcasts
+         WHERE tenant_id = ${tenantIdArg}
+           AND broadcast_id = ${broadcastId}`,
+  )) as unknown as Array<{ live: unknown }>;
+  const row = rows[0];
+  if (row === undefined) return false;
+  // Review round 1 (security L3) — fail CLOSED: an answer that is not a
+  // boolean (a driver or schema surprise) must not read as "no live lease",
+  // which would let the legacy leg work a row an import tick holds.
+  if (isTrue(row.live)) return true;
+  if (row.live === false || row.live === 'f') return false;
+  throw new Error(`hasLiveDispatchLease: expected a boolean, got ${typeof row.live}`);
+}
+
+/**
+ * `SET LOCAL lock_timeout` for the rest of the caller's tx (the lease check and
+ * the release each run in their own). A literal, not a bind parameter: SET
+ * takes none, so the value is validated as a positive integer first.
+ */
+async function setLocalLockTimeout(tx: TenantTx, lockTimeoutMs: number, callerName: string): Promise<void> {
+  if (!Number.isInteger(lockTimeoutMs) || lockTimeoutMs <= 0) {
+    throw new Error(`${callerName}: lockTimeoutMs must be a positive integer, got ${lockTimeoutMs}`);
+  }
+  await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${lockTimeoutMs}ms'`));
+}
+
+/**
+ * Spec 140 s2b — the RELEASE statement (`releaseDispatchLease`), exported for
+ * the same DL4 owner-role case. No status predicate: by the end of a tick the
+ * row may be `sending` or `failed_to_dispatch`, and the token is the fence.
+ */
+export async function releaseDispatchLeaseStatement(
+  tx: TenantTx,
+  tenantIdArg: string,
+  broadcastId: BroadcastId,
+  lease: LeaseToken,
+  /**
+   * Review round 2 (reliability LOW-1) — the release waits at most this long
+   * for the row lock (default `CHECK_LOCK_TIMEOUT_MS`); a 55P03 is the tick's
+   * `lease_release_failed`, and the lease then expires on its own.
+   */
+  lockTimeoutMs: number = CHECK_LOCK_TIMEOUT_MS,
+): Promise<boolean> {
+  await setLocalLockTimeout(tx, lockTimeoutMs, 'releaseDispatchLeaseStatement');
+  const rows = await tx
+    .update(broadcasts)
+    .set({ dispatchLeaseToken: null, dispatchLeaseExpiresAt: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(broadcasts.tenantId, tenantIdArg),
+        eq(broadcasts.broadcastId, broadcastId),
+        eq(broadcasts.dispatchLeaseToken, lease),
+      ),
+    )
+    .returning({ broadcastId: broadcasts.broadcastId });
+  return rows.length === 1;
 }
 
 /**
@@ -931,6 +1133,44 @@ export function makeDrizzleBroadcastsRepo(
       return row === undefined ? null : row.status;
     },
 
+    /** Spec 140 s2b — see the port docblock and `claimDispatchLeaseStatement`. */
+    async claimDispatchLease(txUnknown, tenantIdArg: TenantSlug, broadcastId: BroadcastId, ttlMs: number) {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'claimDispatchLease');
+      return claimDispatchLeaseStatement(tx, tenantIdArg, broadcastId, ttlMs);
+    },
+
+    /**
+     * Spec 140 s2b — the pre-call check. `SELECT … FOR UPDATE`: the same row
+     * lock an UPDATE would take (it queues behind an erasure's lock, D-040, then
+     * reads the token the cascade's cancel cleared), and it writes nothing.
+     */
+    async checkDispatchLease(
+      txUnknown,
+      tenantIdArg: TenantSlug,
+      broadcastId: BroadcastId,
+      lease: LeaseToken,
+      headroomMs: number,
+    ): Promise<LeaseCheck> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'checkDispatchLease');
+      return checkDispatchLeaseStatement(tx, tenantIdArg, broadcastId, lease, headroomMs);
+    },
+
+    /** Spec 140 s2b — see the port docblock and `releaseDispatchLeaseStatement`. */
+    async releaseDispatchLease(txUnknown, tenantIdArg: TenantSlug, broadcastId: BroadcastId, lease: LeaseToken) {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'releaseDispatchLease');
+      return releaseDispatchLeaseStatement(tx, tenantIdArg, broadcastId, lease);
+    },
+
+    /** Spec 140 s2b (cell 23) — the legacy leg's live-lease read, in its lock tx. */
+    async hasLiveDispatchLease(txUnknown, tenantIdArg: TenantSlug, broadcastId: BroadcastId): Promise<boolean> {
+      const tx = txUnknown as TenantTx;
+      await assertTenantBoundTx(tx, ctx.slug, 'hasLiveDispatchLease');
+      return hasLiveDispatchLeaseStatement(tx, tenantIdArg, broadcastId);
+    },
+
     async applyTransition(
       txUnknown,
       tenantIdArg: TenantSlug,
@@ -938,6 +1178,7 @@ export function makeDrizzleBroadcastsRepo(
       target: BroadcastStatus,
       fields: TransitionFields,
       expectedFromStatus: BroadcastStatus,
+      lease: LeaseToken | null,
     ): Promise<Broadcast> {
       const tx = txUnknown as TenantTx;
       // Round 4 T3 — the guard was MISSING here, on the busiest mutation on this
@@ -978,12 +1219,26 @@ export function makeDrizzleBroadcastsRepo(
       if (target !== expectedFromStatus || fields.scheduledFor !== undefined) {
         setClause['dispatchFirstFailedAt'] = null;
       }
+      // Spec 140 s2b (A9) — a NON-holder's status change ends any dispatch
+      // lease on the row (staff cancel, confirm-schedule cancel, withdraw, a
+      // new working copy, the erasure cancel): the tick holding it stops at its
+      // next pre-call check or fenced write. The holder's own transitions pass
+      // its token instead and leave the columns for its release. A same-status
+      // write leaves the lease alone.
+      if (lease === null && target !== expectedFromStatus) {
+        setClause['dispatchLeaseToken'] = null;
+        setClause['dispatchLeaseExpiresAt'] = null;
+      }
 
       // Verify-fix R4 (Types-#5, 2026-05-02): expectedFromStatus is
       // now REQUIRED. UPDATE adds `AND status = $expected` to its
       // WHERE clause. Returning 0 rows means the row drifted (TOCTOU)
       // OR doesn't exist; either way → BroadcastConcurrentMutationError
       // (caller maps to broadcast_concurrent_action_blocked / 409).
+      const retimeRefusal =
+        lease === null && target === expectedFromStatus && fields.scheduledFor !== undefined
+          ? or(isNull(broadcasts.dispatchLeaseToken), lt(broadcasts.dispatchLeaseExpiresAt, sql`clock_timestamp()`))
+          : undefined;
       const [row] = await tx
         .update(broadcasts)
         .set(setClause)
@@ -992,10 +1247,43 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
             eq(broadcasts.status, expectedFromStatus),
+            leaseFence(lease),
+            // Spec 140 s2b review round 2 (reliability MED-1; supersedes round
+            // 1's "a re-time clears the lease") — a non-holder RE-TIME (same
+            // status, `scheduledFor` set) is refused while a tick holds a LIVE
+            // lease: the holder may already have sent at the old time, and a
+            // cleared lease would leave a sent row `approved` with a new time.
+            // 0 rows → the caller's concurrent-mutation answer; a dead holder
+            // blocks it for at most `LEASE_TTL_MS`.
+            retimeRefusal,
           ),
         )
         .returning();
       if (!row) {
+        // Review rounds 3–4 (code-review #2, #3; reliability LOW-2) — the
+        // backstop behind confirm-schedule's pre-check. A refused re-time names
+        // itself (`LEASE_HELD`) when the probe finds the row where the caller
+        // expected it with a token set; it reads NO clock, so a lease that ended
+        // between the UPDATE and the probe is still the lease that refused it.
+        // Anything else is drift, reported with the PROBED status.
+        if (retimeRefusal !== undefined) {
+          const [probe] = await tx
+            .select({ status: broadcasts.status, leaseToken: broadcasts.dispatchLeaseToken })
+            .from(broadcasts)
+            .where(and(eq(broadcasts.tenantId, tenantIdArg), eq(broadcasts.broadcastId, broadcastId)))
+            .limit(1);
+          if (probe !== undefined) {
+            if (probe.status === expectedFromStatus && probe.leaseToken !== null) {
+              throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_HELD, probe.status);
+            }
+            throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, probe.status);
+          }
+        }
+        // Spec 140 s2b — a fenced transition names a lost token (A3). The
+        // unfenced path keeps reporting the status it expected (see
+        // `throwConcurrentMutation`'s docblock for why that is recorded, not
+        // repaired, here).
+        if (lease !== null) await throwConcurrentMutation(tx, tenantIdArg, broadcastId, lease);
         throw new BroadcastConcurrentMutationError(
           tenantIdArg,
           broadcastId,
@@ -1011,6 +1299,7 @@ export function makeDrizzleBroadcastsRepo(
       broadcastId: BroadcastId,
       resendAudienceId: string,
       resendBroadcastId: string,
+      lease: LeaseToken | null,
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
       // Review ERR-H1 (round 2): probe `current_tenant` BEFORE issuing
@@ -1041,6 +1330,7 @@ export function makeDrizzleBroadcastsRepo(
             // had left `approved`. Now it writes nothing: 0 rows, and the probe
             // below names where the row went.
             eq(broadcasts.status, 'approved'),
+            leaseFence(lease),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -1063,7 +1353,7 @@ export function makeDrizzleBroadcastsRepo(
         //    never print. The cron counted `uncaught_error` instead.
         //  - `dispatchScheduledBroadcast`'s `BroadcastNotFoundError` arm sat in
         //    a catch nothing could reach it from.
-        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId, lease);
       }
     },
 
@@ -1072,6 +1362,7 @@ export function makeDrizzleBroadcastsRepo(
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       resendAudienceId: string,
+      lease: LeaseToken | null,
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
       // Review ERR-H1 (round 2) + ERR-M4: probe tx binding then assert
@@ -1115,11 +1406,12 @@ export function makeDrizzleBroadcastsRepo(
             // its lost-CAS arm (reclaim what it minted, send nothing) instead of
             // sending a version nobody approves any more.
             eq(broadcasts.status, 'approved'),
+            leaseFence(lease),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
-        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId, lease);
       }
     },
 
@@ -1148,6 +1440,7 @@ export function makeDrizzleBroadcastsRepo(
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       resendBroadcastId: string,
+      lease: LeaseToken | null,
       fence?: { readonly expectedAudienceImportId: string; readonly replacesResendBroadcastId?: string },
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
@@ -1180,11 +1473,12 @@ export function makeDrizzleBroadcastsRepo(
             // it just minted and sends nothing, and no id is left behind for the
             // next round to inherit (and mistake for "already sent").
             eq(broadcasts.status, 'approved'),
+            leaseFence(lease),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
-        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId, lease);
       }
     },
 
@@ -1193,6 +1487,7 @@ export function makeDrizzleBroadcastsRepo(
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       importId: string,
+      lease: LeaseToken | null,
       fence: { readonly expectedResendAudienceId: string },
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
@@ -1251,11 +1546,12 @@ export function makeDrizzleBroadcastsRepo(
             // since this tick's `createContactImport`; an import left on a row
             // with no audience would later mint into `''`.
             eq(broadcasts.resendAudienceId, fence.expectedResendAudienceId),
+            leaseFence(lease),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
       if (updated.length !== 1) {
-        await throwConcurrentMutation(tx, tenantIdArg, broadcastId);
+        await throwConcurrentMutation(tx, tenantIdArg, broadcastId, lease);
       }
     },
 
@@ -1277,6 +1573,7 @@ export function makeDrizzleBroadcastsRepo(
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       at: Date,
+      lease: LeaseToken | null,
     ): Promise<Date | null> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'markDispatchRetryStarted');
@@ -1293,6 +1590,8 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.tenantId, tenantIdArg),
             eq(broadcasts.broadcastId, broadcastId),
             eq(broadcasts.status, 'approved'),
+            // Spec 140 s2b — a lost token is the same `null` (A3).
+            leaseFence(lease),
           ),
         )
         .returning({ dispatchFirstFailedAt: broadcasts.dispatchFirstFailedAt });
@@ -1308,6 +1607,7 @@ export function makeDrizzleBroadcastsRepo(
       txUnknown,
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
+      lease: LeaseToken | null,
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'clearDispatchRetryClock');
@@ -1320,6 +1620,8 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.broadcastId, broadcastId),
             eq(broadcasts.status, 'approved'),
             isNotNull(broadcasts.dispatchFirstFailedAt),
+            // Spec 140 s2b — a lost token is 0 rows, not an error (A3).
+            leaseFence(lease),
           ),
         );
     },
@@ -1347,7 +1649,8 @@ export function makeDrizzleBroadcastsRepo(
         readonly resendAudienceId: string;
         readonly resendBroadcastId: string | null;
       },
-    ): Promise<boolean> {
+      lease: LeaseToken | null,
+    ): Promise<ReleaseOutcome> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'releaseAudienceImport');
       const updated = await tx
@@ -1366,10 +1669,12 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.resendAudienceId, expected.resendAudienceId),
             sql`${broadcasts.resendBroadcastId} IS NOT DISTINCT FROM ${expected.resendBroadcastId}`,
             isNull(broadcasts.audienceImportCompletedAt),
+            // Spec 140 s2b — the token fence (A3); a miss is probed below.
+            leaseFence(lease),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
-      return updated.length === 1;
+      return updated.length === 1 ? 'ok' : releaseMissOutcome(tx, tenantIdArg, broadcastId, lease);
     },
 
     /**
@@ -1384,7 +1689,8 @@ export function makeDrizzleBroadcastsRepo(
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
       expected: { readonly resendAudienceId: string; readonly resendBroadcastId: string | null },
-    ): Promise<boolean> {
+      lease: LeaseToken | null,
+    ): Promise<ReleaseOutcome> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'releaseResendAudience');
       const updated = await tx
@@ -1398,10 +1704,12 @@ export function makeDrizzleBroadcastsRepo(
             eq(broadcasts.resendAudienceId, expected.resendAudienceId),
             isNull(broadcasts.audienceImportId),
             sql`${broadcasts.resendBroadcastId} IS NOT DISTINCT FROM ${expected.resendBroadcastId}`,
+            // Spec 140 s2b — the token fence (A3); a miss is probed below.
+            leaseFence(lease),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
-      return updated.length === 1;
+      return updated.length === 1 ? 'ok' : releaseMissOutcome(tx, tenantIdArg, broadcastId, lease);
     },
 
     /**
@@ -1443,6 +1751,7 @@ export function makeDrizzleBroadcastsRepo(
       txUnknown,
       tenantIdArg: TenantSlug,
       broadcastId: BroadcastId,
+      lease: LeaseToken | null,
     ): Promise<void> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'markAudienceImportCompleted');
@@ -1466,6 +1775,15 @@ export function makeDrizzleBroadcastsRepo(
             // the claim released the import; `completed_at` with no import is
             // the shape 0299 forbids. 0 rows → the probe below names it.
             isNotNull(broadcasts.audienceImportId),
+            // Spec 140 s2b — this write has no status CAS (it runs after
+            // `sending`), so the token is its only fence — until the row says
+            // the mail is out (review round 1, CR#2): once sending has started
+            // (`SENDING_STARTED_BROADCAST_STATUSES`, review round 2 spec L-e)
+            // the token guards nothing, and a webhook's `sending → sent` (a
+            // non-holder change that clears the lease) must not strand the stamp.
+            lease === null
+              ? undefined
+              : or(eq(broadcasts.dispatchLeaseToken, lease), inArray(broadcasts.status, [...SENDING_STARTED_BROADCAST_STATUSES])),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -1482,6 +1800,7 @@ export function makeDrizzleBroadcastsRepo(
             // cast past the compiler, ten lines from `throwConcurrentMutation`,
             // which probes the real one for exactly this reason.
             status: broadcasts.status,
+            leaseToken: broadcasts.dispatchLeaseToken,
           })
           .from(broadcasts)
           .where(
@@ -1494,6 +1813,12 @@ export function makeDrizzleBroadcastsRepo(
         const probeRow = probe[0];
         if (probeRow === undefined) {
           throw new BroadcastNotFoundError(tenantIdArg, broadcastId);
+        }
+        // Spec 140 s2b (A3) — the probe learns `lease_lost`: a row that no
+        // longer carries this tick's token was taken over or exited, so the
+        // stamp is not this tick's to write, stamped or not.
+        if (lease !== null && probeRow.leaseToken !== lease && !hasSendingStarted(probeRow.status)) {
+          throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_LOST, probeRow.status);
         }
         if (probeRow.completedAt === null) {
           // The row exists and is NOT stamped, yet the UPDATE matched nothing —

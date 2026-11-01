@@ -86,6 +86,7 @@ import {
 import type { BroadcastStatus } from '../../../domain/value-objects/broadcast-status';
 import type { AuditPort } from '../../ports/audit-port';
 import type { BroadcastsRepo, TransitionFields } from '../../ports/broadcasts-repo';
+import { BroadcastConcurrentMutationError, LEASE_HELD, LEASE_LOST } from '../../ports/broadcasts-repo';
 import type { BroadcastVersionsRepo } from '../../ports/broadcast-versions-repo';
 import type { ClockPort } from '../../ports/clock-port';
 import type { EblastNotificationOutboxPort } from '../../ports/eblast-notification-outbox-port';
@@ -116,7 +117,7 @@ export type ScheduleMode =
 export interface ConfirmScheduleDeps {
   readonly tenant: TenantContext;
   /** `findById` — the non-locking pre-read the standing read keys on (T166 follow-up). */
-  readonly broadcastsRepo: ApprovalBroadcastsRepo & Pick<BroadcastsRepo, 'findById'>;
+  readonly broadcastsRepo: ApprovalBroadcastsRepo & Pick<BroadcastsRepo, 'findById' | 'hasLiveDispatchLease'>;
   readonly versionsRepo: BroadcastVersionsRepo;
   readonly imageAllowlist: ImageAllowlistPort;
   readonly portalRecipients: MemberPortalRecipientPort;
@@ -163,6 +164,12 @@ export type ConfirmScheduleError =
   | { readonly kind: 'round_zero' }
   /** T166 R-H1 — the dispatcher already handed the row to the provider (`hasDispatchBegun`). */
   | { readonly kind: 'sending_started'; readonly status: BroadcastStatus }
+  /**
+   * Spec 140 s2b review round 3 — a re-time refused because a dispatch tick
+   * holds a live lease on the row: the send may be under way at the old time.
+   * Retryable once the tick ends (a dead holder blocks it ≤ `LEASE_TTL_MS`).
+   */
+  | { readonly kind: 'dispatch_in_progress' }
   | { readonly kind: 'no_proposal' }
   /** T166 S-H1 — the owning member's broadcasts are halted pending admin review. */
   | { readonly kind: 'member_halted'; readonly memberId: string }
@@ -222,6 +229,16 @@ export async function confirmSchedule(
         // a promotion over an inherited id would let the next dispatch record
         // this version as sent without sending it.
         if (hasDispatchBegun(broadcast)) refuse({ kind: 'sending_started', status: broadcast.status });
+        // Spec 140 s2b review round 4 (code-review #2, #3; reliability LOW-2) — a
+        // re-time of a row a dispatch tick holds a live lease on: the send may
+        // be under way at the old time. Asked first, under the row lock
+        // (`hasLiveDispatchLease` fails closed), so it is answered before any
+        // write; the repo's refusal (`LEASE_HELD`) stays as the backstop. A
+        // cancel is a status change, which ends the lease by design, and a
+        // promotion leaves `member_approved`, which no tick can hold.
+        if (!promoting && mode.mode !== 'cancel' && (await deps.broadcastsRepo.hasLiveDispatchLease(tx, slug, input.broadcastId))) {
+          refuse({ kind: 'dispatch_in_progress' });
+        }
         // A row the approval round produced always names the version the
         // member approved (only a void / withdrawal clears it, and both leave
         // these two stages). Missing ⇒ an invariant breach, not a refusal.
@@ -261,7 +278,7 @@ export async function confirmSchedule(
           fields = timing.kind === 'cancel' ? { scheduledFor: null, approvedVersionId: null } : { scheduledFor: confirmed };
         }
         const target = timing.kind === 'cancel' ? 'changes_requested' : 'approved';
-        await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, fields, broadcast.status);
+        await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, fields, broadcast.status, null);
 
         const proposed = broadcast.proposedSendAt;
         const common = {
@@ -306,6 +323,17 @@ export async function confirmSchedule(
       }),
     );
   } catch (e) {
+    // Spec 140 s2b review rounds 2–3 (reliability MED-1; code-review #2, #3) —
+    // a re-time of a row a dispatch tick holds a live lease on is refused by
+    // the repo as `LEASE_HELD`: the dispatch is at work, so staff get its own
+    // 409 `dispatch_in_progress` (try again in a few minutes), not a 500 and
+    // not `sending_started`. Any other refusal is status drift and keeps the
+    // existing `sending_started`. Nothing was written (the tx rolled back) and
+    // no email was queued.
+    if (e instanceof BroadcastConcurrentMutationError) {
+      if (e.observedStatus === LEASE_HELD) return err({ kind: 'dispatch_in_progress' });
+      return err({ kind: 'sending_started', status: e.observedStatus === LEASE_LOST ? 'approved' : e.observedStatus });
+    }
     if (!(e instanceof ApprovalRefusal)) return err({ kind: 'server_error', errKind: approvalErrKind(e) });
     // #400 item 5 — a refusal another use case raised is not ours to map.
     if (!isOwnRefusal(e, 'confirm-schedule')) throw e;

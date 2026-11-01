@@ -270,7 +270,7 @@ describe('broadcasts-deps — the legacy gateway instance (spec 140 s2a)', () =>
     const gateway = await import('@/modules/broadcasts/infrastructure/resend/resend-broadcasts-gateway');
     const dispatch = await deps.makeDispatchScheduledBroadcastDeps('swecham');
     expect(dispatch.broadcastsGateway).toBe(gateway.legacyResendBroadcastsGateway);
-    const importLeg = await deps.makeBuildAudienceTickDeps('swecham', dispatch.membersBridge);
+    const importLeg = await deps.makeBuildAudienceTickDeps('swecham', dispatch.membersBridge, { tickStartedAt: 0 });
     expect(importLeg.broadcastsGateway).toBe(gateway.resendBroadcastsGateway);
   });
 });

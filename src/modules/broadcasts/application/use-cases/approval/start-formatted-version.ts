@@ -173,6 +173,7 @@ export async function startFormattedVersion(
             ? { stageEnteredAt: now, approvedVersionId: null, scheduledFor: null }
             : { stageEnteredAt: now },
           broadcast.status,
+          null,
         );
 
         const relatedMemberId = broadcast.requestedByMemberId;

@@ -45,7 +45,7 @@ import { errKind } from '@/lib/log-id';
 import type { TenantContext } from '@/modules/tenants';
 import type { BroadcastId } from '../../domain/broadcast';
 import type { BroadcastsGatewayPort } from '../ports/broadcasts-gateway-port';
-import type { BroadcastsRepo } from '../ports/broadcasts-repo';
+import type { BroadcastsRepo, LeaseToken } from '../ports/broadcasts-repo';
 import { BroadcastConcurrentMutationError, BroadcastNotFoundError } from '../ports/broadcasts-repo';
 import { reclaimMintedBroadcast } from './_reclaim-minted-broadcast';
 
@@ -72,6 +72,15 @@ export async function persistBroadcastIdBeforeSend(
     /** Logged by the reclaim only. */
     readonly resendAudienceId: string;
     readonly minted: boolean;
+    /**
+     * Spec 140 s2b — the import tick's lease token (`null`: the legacy leg).
+     * A lost token is a `BroadcastConcurrentMutationError` (`lease_lost`), so it
+     * takes the concurrent arm below: a minted id is reclaimed. That reclaim is
+     * deliberately NOT lease-checked (A2): the id is on no row, so no other
+     * tick can be sending it, and a check would always fail at the very moment
+     * the lease is lost — leaking the draft.
+     */
+    readonly lease: LeaseToken | null;
     readonly fence?: { readonly expectedAudienceImportId: string; readonly replacesResendBroadcastId?: string };
     readonly logPrefix: 'broadcasts.dispatch' | 'broadcasts.audience_import';
     readonly logFields?: Readonly<Record<string, unknown>>;
@@ -85,6 +94,7 @@ export async function persistBroadcastIdBeforeSend(
         deps.tenant.slug,
         input.broadcastId,
         resendBroadcastId,
+        args.lease,
         ...(args.fence === undefined ? [] : [args.fence]),
       );
     });

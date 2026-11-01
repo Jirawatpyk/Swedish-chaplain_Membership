@@ -222,6 +222,15 @@ async function main(): Promise<void> {
         query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcasts' AND column_name = 'dispatch_first_failed_at' AND data_type = 'timestamp with time zone' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'broadcasts_immutable_after_submit_fn' AND prosrc LIKE '%NEW.dispatch_first_failed_at%')`,
       },
       {
+        // Spec 140 s2b (mig 0322) — the dispatch lease. All three halves: both
+        // columns (the mapper selects them, so a schema without them 500s
+        // every broadcasts read), the both-or-neither CHECK, and the
+        // immutability function's GUC-arm entries (without them the erasure
+        // scrub could take or drop a tick's lease). Asserted by SOURCE, as 0311.
+        name: 'broadcasts.dispatch_lease_token + dispatch_lease_expires_at + broadcasts_dispatch_lease_pair + GUC-arm entries (mig 0322)',
+        query: `SELECT 1 AS hit WHERE EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcasts' AND column_name = 'dispatch_lease_token' AND data_type = 'uuid' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'broadcasts' AND column_name = 'dispatch_lease_expires_at' AND data_type = 'timestamp with time zone' AND is_nullable = 'YES') AND EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'broadcasts_dispatch_lease_pair' AND conrelid = 'public.broadcasts'::regclass AND contype = 'c') AND EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'broadcasts_immutable_after_submit_fn' AND prosrc LIKE '%NEW.dispatch_lease_token%' AND prosrc LIKE '%NEW.dispatch_lease_expires_at%')`,
+      },
+      {
         // 124-invoice-dashboard slice 2 (mig 0318) — the Collected-figure
         // indexes. The tax-point one is asserted by its expression: an index
         // of that name on another expression would silently stop matching

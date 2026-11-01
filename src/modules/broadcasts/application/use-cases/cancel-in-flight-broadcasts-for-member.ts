@@ -590,6 +590,7 @@ export async function cancelInFlightBroadcastsForMember(
               cancellationReason: reason,
             },
             fromStatus,
+            null,
           );
 
           await deps.audit.emit(tx, {

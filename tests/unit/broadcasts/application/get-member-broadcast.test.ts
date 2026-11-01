@@ -66,8 +66,8 @@ function makeRepoMocks(opts: {
       // no-op
     },
     markDispatchRetryStarted: async () => null, // F119 PR-E; unused here.
-    releaseAudienceImport: async () => false, // unused here.
-    releaseResendAudience: async () => false, // unused here.
+    releaseAudienceImport: async () => 'cas_lost' as const, // unused here.
+    releaseResendAudience: async () => 'cas_lost' as const, // unused here.
     readAlreadySentEvidenceInTx: async () => ({ broadcastRecorded: false, memberBroadcastCount: 0 }), // unused here.
     clearDispatchRetryClock: async () => {
       // no-op — F119 PR-E; unused here.
@@ -102,6 +102,10 @@ function makeRepoMocks(opts: {
     markAudienceDeletedInTx: async () => { throw new Error('not used in get-member-broadcast fixture'); },
     deleteExpiredForRetention: async () => { throw new Error('not used in get-member-broadcast fixture'); },
     listExpiredForRetention: async () => { throw new Error('not used in get-member-broadcast fixture'); },
+    claimDispatchLease: async (): Promise<never> => { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    checkDispatchLease: async (): Promise<never> => { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    releaseDispatchLease: async (): Promise<never> => { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
+    hasLiveDispatchLease: async (): Promise<never> => { throw new Error('spec 140 s2b dispatch lease: not used in this fixture'); },
     existingBroadcastIds: async () => { throw new Error('not used in get-member-broadcast fixture'); },
   };
 }

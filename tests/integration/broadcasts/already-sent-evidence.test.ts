@@ -167,4 +167,61 @@ describe('broadcasts repo — readAlreadySentEvidenceInTx (spec 139 residual 8c)
     expect(secondRecorded).toBe(true);
     expect(await readEvidence(tenantA, memberId, null)).toEqual({ broadcastRecorded: false, memberBroadcastCount: 1 });
   });
+
+  /**
+   * Spec 140 s2b, carry R4 (s1 senior-tester) — the cascade records 8c evidence
+   * from TWO passes: the in-flight pass, which decides under the broadcast's
+   * ROW lock (`lockForUpdate`), and the terminal-draft pass, which takes no row
+   * lock at all. Only the `broadcasts-evidence:` advisory lock serialises them,
+   * and its key is disjoint from the row lock's `broadcasts:` — so this proves
+   * the evidence lock, not the row lock, is what keeps the row single. Both
+   * orders: whichever recorder reads first holds its tx open; the other must
+   * wait, then see the row, and write nothing.
+   */
+  it.each([
+    ['the in-flight pass (row lock) first', 'in_flight'],
+    ['the terminal pass (no row lock) first', 'terminal'],
+  ] as const)('R4 — two concurrent recorders, one being the terminal pass with no row lock, write one evidence row: %s', async (_label, firstPass) => {
+    const broadcastId = asBroadcastId(randomUUID());
+    const memberId = randomUUID();
+    const repo = makeDrizzleBroadcastsRepo(tenantA.ctx.slug);
+    let release!: () => void;
+    const released = new Promise<void>((r) => (release = r));
+    let firstRead!: () => void;
+    const firstHasRead = new Promise<void>((r) => (firstRead = r));
+
+    const record = (pass: 'in_flight' | 'terminal', hold: boolean) =>
+      repo.withTx(async (tx) => {
+        // The in-flight pass holds the broadcast's row lock (the `broadcasts:`
+        // advisory lock + `FOR UPDATE`); the terminal pass takes none.
+        if (pass === 'in_flight') await repo.lockForUpdate(tx, tenantA.ctx.slug, broadcastId);
+        const seen = await repo.readAlreadySentEvidenceInTx(tx, tenantA.ctx.slug, { memberId, broadcastId });
+        if (hold) {
+          firstRead();
+          await released;
+        }
+        if (!seen.broadcastRecorded) {
+          await f7AuditAdapter.emit(tx, evidenceEvent(tenantA, broadcastId as string, memberId, evidencePayload));
+        }
+        return seen.broadcastRecorded;
+      });
+
+    const secondPass = firstPass === 'in_flight' ? 'terminal' : 'in_flight';
+    const first = record(firstPass, true);
+    await firstHasRead;
+    let secondDone = false;
+    const second = record(secondPass, false).then((recorded) => {
+      secondDone = true;
+      return recorded;
+    });
+    // Short: the dev branch has statement_timeout = 0, so a wrong lock HANGS.
+    await new Promise((r) => setTimeout(r, 750));
+    const secondFinishedWhileFirstHeld = secondDone;
+    release();
+    const [firstRecorded, secondRecorded] = await Promise.all([first, second]);
+    expect(secondFinishedWhileFirstHeld).toBe(false);
+    expect(firstRecorded).toBe(false);
+    expect(secondRecorded).toBe(true);
+    expect(await readEvidence(tenantA, memberId, null)).toEqual({ broadcastRecorded: false, memberBroadcastCount: 1 });
+  });
 });

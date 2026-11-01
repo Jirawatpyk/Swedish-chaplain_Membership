@@ -214,7 +214,7 @@ export async function recordMemberDecision(
       switch (input.decision) {
         case 'approved':
           target = 'member_approved';
-          await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, { stageEnteredAt: now, approvedVersionId: input.versionId }, status);
+          await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, { stageEnteredAt: now, approvedVersionId: input.versionId }, status, null);
           await deps.audit.emitTyped(tx, {
             ...audit,
             eventType: 'broadcast_member_approved',
@@ -224,7 +224,7 @@ export async function recordMemberDecision(
           break;
         case 'changes_requested':
           target = 'changes_requested';
-          await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, { stageEnteredAt: now, memberReminderStage: 0 }, status);
+          await deps.broadcastsRepo.applyTransition(tx, slug, input.broadcastId, target, { stageEnteredAt: now, memberReminderStage: 0 }, status, null);
           await deps.audit.emitTyped(tx, {
             ...audit,
             eventType: 'broadcast_member_changes_requested',
@@ -241,6 +241,7 @@ export async function recordMemberDecision(
             target,
             { stageEnteredAt: now, approvedVersionId: null, scheduledFor: null },
             status,
+            null,
           );
           await deps.audit.emitTyped(tx, {
             ...audit,

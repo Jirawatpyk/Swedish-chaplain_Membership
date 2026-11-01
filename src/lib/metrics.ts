@@ -2966,7 +2966,11 @@ export const broadcastsMetrics = {
    * `standing` (F119 PR-A) — the member-standing read (F3 halt list or F8
    * access) failed, so nothing was sent; `terminal_write` (the live leg since
    * F119 PR-A) — a terminal `failed_to_dispatch` write did not commit, so the
-   * row is still `approved` (observability.md § 29).
+   * row is still `approved` (observability.md § 29). `lease` (spec 140 s2b,
+   * import leg) — a pre-call dispatch-lease check could not be read, so no
+   * Resend call was made. `attach_audience` (spec 140 s2b review round 4,
+   * import leg) — the write attaching a just-created audience faulted; the
+   * audience was read back and reclaimed or kept, nothing was sent.
    */
   dispatchResolveFailedTotal(
     tenantId: string,
@@ -2978,13 +2982,53 @@ export const broadcastsMetrics = {
       | 'persist_broadcast_id'
       | 'gateway'
       | 'terminal_write'
-      | 'audience_restart',
+      | 'audience_restart'
+      | 'lease'
+      | 'attach_audience',
   ): void {
     safeMetric(() => {
       counter(
         'broadcasts_dispatch_resolve_failed_total',
         'Dispatch ticks that answered dispatch.server_error, by phase (row stays approved; retried next tick)',
       ).add(1, { tenant: tenantId, phase });
+    });
+  },
+
+  /**
+   * `broadcasts_dispatch_lease_expiring_total{tenant}` — spec 140 s2b review
+   * round 1 (CR#4). One per import tick that stopped because its OWN lease
+   * would have ended inside the next call's headroom (`CALL_HEADROOM_MS` /
+   * `IMPORT_HEADROOM_MS`): the tick outran `LEASE_TTL_MS`. Steady state 0; a
+   * non-zero rate means the budget (`W_MAX_MS`) is wrong for this tenant.
+   */
+  dispatchLeaseExpiring(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_dispatch_lease_expiring_total',
+        'Import dispatch ticks that stopped because their own lease would end inside the next call headroom',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
+  /**
+   * `broadcasts_dispatch_lease_lost_after_send_total{tenant,step}` — spec 140
+   * s2b review round 1 (CR#1). One per import tick whose dispatch lease was
+   * lost AFTER `/send` handed the mail to Resend, at `step` = `attach_ids` /
+   * `sending_transition` / `completion_stamp`. Counted on both A4 arms: the
+   * INFO `lease_lost_after_send` (row `approved` / `sending`) and the critical
+   * line for any other row status — `sent_but_transition_lost` at the ids
+   * attach and the `sending` transition, `completion_stamp_failed` at the
+   * completion stamp (review round 2, spec L-a). Steady state 0.
+   */
+  dispatchLeaseLostAfterSend(
+    tenantId: string,
+    step: 'attach_ids' | 'sending_transition' | 'completion_stamp',
+  ): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_dispatch_lease_lost_after_send_total',
+        'Import dispatch ticks whose lease was lost after /send handed the mail to Resend, by step',
+      ).add(1, { tenant: tenantId, step });
     });
   },
 

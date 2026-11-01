@@ -499,6 +499,8 @@ function makeDeps(opts: {
     deps: {
       tenant,
       clock: { now: () => NOW },
+      // Spec 140 s2b (DL9) — a tick that has just begun: every row may start.
+      tickBudget: { tickStartedAt: NOW.getTime() },
       fromEmail: 'noreply@example.com',
       tenantDisplayName: 'Test Chamber',
       locale: 'en' as const,
@@ -569,6 +571,10 @@ function makeDeps(opts: {
           txSeq += 1;
           return fn({ txId: txSeq });
         },
+        // Spec 140 s2b — the dispatch lease: claimed, always held, released.
+        async claimDispatchLease() { return 'lease-token-test'; },
+        async checkDispatchLease() { return 'held' as const; },
+        async releaseDispatchLease() { return true; },
         async lockForUpdate() {
           rec.rowLocks += 1;
           if (opts.lockStatus === 'not_found') return null;
@@ -585,6 +591,7 @@ function makeDeps(opts: {
           _t: unknown,
           _b: unknown,
           id: string,
+          _lease: unknown,
           fence?: { readonly expectedResendAudienceId?: string },
         ) {
           maybeCasThrow('attachAudienceImport');
@@ -624,7 +631,7 @@ function makeDeps(opts: {
           if (opts.releaseImportThrows === true) {
             throw new Error('57P01 terminating connection due to administrator command');
           }
-          return opts.releaseImportLoses !== true;
+          return opts.releaseImportLoses === true ? ('cas_lost' as const) : ('ok' as const);
         },
         async releaseResendAudience(
           _tx: unknown,
@@ -633,7 +640,7 @@ function makeDeps(opts: {
           expected: { resendAudienceId: string; resendBroadcastId: string | null },
         ) {
           rec.releases.push({ method: 'releaseResendAudience', expected, afterGatewayCalls: rec.gatewayCalls.length });
-          return opts.releaseAudienceLoses !== true;
+          return opts.releaseAudienceLoses === true ? ('cas_lost' as const) : ('ok' as const);
         },
         async readAlreadySentEvidenceInTx() {
           return { broadcastRecorded: false, memberBroadcastCount: 0 };
@@ -643,6 +650,7 @@ function makeDeps(opts: {
           _t: unknown,
           _b: unknown,
           rbId: string,
+          _lease: unknown,
           fence?: { readonly expectedAudienceImportId?: string; readonly replacesResendBroadcastId?: string },
         ) {
           rec.broadcastIdAttaches.push({
@@ -1881,6 +1889,15 @@ describe('buildAudienceTick — attribution the port used to discard', () => {
         casThrow: 'other',
       });
 
+      // Spec 140 s2b review round 4 (reliability LOW-3) — at attachAudienceId
+      // the fault is no longer a throw but the transient, counted
+      // `dispatch.server_error` (phase `attach_audience`, after the audience
+      // reclaim): still never a benign skip, which is what this control guards.
+      if (method === 'attachAudienceId') {
+        const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
+        expect(res).toMatchObject({ ok: false, error: { kind: 'dispatch.server_error', phase: 'attach_audience' } });
+        return;
+      }
       await expect(
         buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID }),
       ).rejects.toThrow(/40001/);
@@ -2578,15 +2595,20 @@ describe('buildAudienceTick — member standing at send time (F119 PR-A)', () =>
    * this audience. Deleting it now would turn that send `failed` at Resend
    * while our row goes `sending`.
    */
-  it('tick 2 hold, the claim CAS is LOST (a sibling moved the row) → the audience is NOT deleted; still held, logged, not counted', async () => {
+  // Spec 140 s2b review round 3 (CR#4, CR#5) — a CAS miss (status or id) is
+  // `cas_lost`, labelled `unknown_or_already_processed`; only a lease check
+  // answers `lease_lost`. Not a hold either: nothing recorded.
+  it('tick 2 hold, the claim CAS is LOST (a sibling moved the row) → the audience is NOT deleted; an unknown_or_already_processed skip, logged, not counted', async () => {
     const { logger } = await import('@/lib/logger');
     const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
     const abandonedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportAbandonedOnHold');
+    const heldSpy = vi.spyOn(broadcastsMetrics, 'dispatchStandingHeldTotal');
     const { deps, rec } = makeDeps({ ...POLLING, audienceImportSubmittedAt: NOW, standing: { access: 'suspended' }, releaseImportLoses: true });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
+    expect(heldSpy).not.toHaveBeenCalled();
     expect(rec.gatewayCalls).toEqual([]);
     expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport']);
     expect(abandonedSpy).not.toHaveBeenCalled();
@@ -3107,7 +3129,7 @@ describe('buildAudienceTick — FR-021 budget anchors on the first failure (F119
 
     expect(res).toEqual({
       ok: false,
-      error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' },
+      error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' }, // spec 140 s2b review round 1 (security I5): the stamp is token-fenced
     });
     expect(rec.transitions).toHaveLength(0);
     expect(rec.audits).toHaveLength(0);
@@ -3121,16 +3143,18 @@ describe('buildAudienceTick — FR-021 budget anchors on the first failure (F119
    * The reset is the one write a hold makes; still no audit row, no email.
    */
   it.each([
-    ['tick 1 (no import yet)', {}, []],
-    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }, ['deleteAudience']],
-  ] as const)('H1 — %s, a hold on a STAMPED row resets the clock and still writes no audit, sends no email', async (_label, row, calls) => {
+    ['tick 1 (no import yet)', {}, [], 0],
+    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }, ['deleteAudience'], 1],
+  ] as const)('H1 — %s, a hold on a STAMPED row resets the clock and still writes no audit, sends no email', async (_label, row, calls, callsBeforeReset) => {
     const { deps, rec } = makeDeps({ ...row, dispatchFirstFailedAt: minutesAgo(30), standing: { access: 'suspended' } });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
-    // The reset comes BEFORE the tick-2 abandon's delete.
-    expect(rec.retryClears).toEqual([0]);
+    // Spec 140 s2b review round 3 (CR#4) — the reset comes AFTER the tick-2
+    // abandon's delete: only a tick that answers the hold resets the clock
+    // (a restart that loses the lease or a CAS answers a skip, and resets nothing).
+    expect(rec.retryClears).toEqual([callsBeforeReset]);
     expect(rec.retryStamps).toEqual([]);
     expect(rec.transitions).toEqual([]);
     expect(rec.audits).toEqual([]);
@@ -4011,7 +4035,8 @@ describe('buildAudienceTick — the remaining restart / fence arms', () => {
   const TICK2 = { ...POLLING, audienceImportSubmittedAt: NOW } as const;
   const AUDIENCE_404 = { method: 'createBroadcast', kind: 'permanent', code: 'not_found' } as const;
 
-  it('a hold whose final release CAS is LOST → still held, logged, not counted', async () => {
+  // Spec 140 s2b review round 3 (CR#5) — a CAS miss is cas_lost: the old label.
+  it('a hold whose final release CAS is LOST → an unknown_or_already_processed skip, logged, not counted', async () => {
     const { logger } = await import('@/lib/logger');
     const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
     const abandonedSpy = vi.spyOn(broadcastsMetrics, 'audienceImportAbandonedOnHold');
@@ -4019,14 +4044,15 @@ describe('buildAudienceTick — the remaining restart / fence arms', () => {
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
-    expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
+    expect(res).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' } });
     expect(rec.releases.map((r) => r.method)).toEqual(['releaseAudienceImport', 'releaseResendAudience']);
     expect(abandonedSpy).not.toHaveBeenCalled();
     const log = infoSpy.mock.calls.find((c) => c[1] === 'broadcasts.audience_import.hold_abandon_lost');
     expect(log?.[0]).toMatchObject({ step: 'release_audience' });
   });
 
-  it('the audience-missing self-heal LOSES its claim → a concurrent skip, nothing terminal', async () => {
+  // Spec 140 s2b review round 3 (CR#5) — a claim CAS miss is cas_lost, not a lost lease.
+  it('the audience-missing self-heal LOSES its claim → an unknown_or_already_processed skip, nothing terminal', async () => {
     const { deps, rec } = makeDeps({ ...TICK2, throwOn: AUDIENCE_404, releaseImportLoses: true });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });

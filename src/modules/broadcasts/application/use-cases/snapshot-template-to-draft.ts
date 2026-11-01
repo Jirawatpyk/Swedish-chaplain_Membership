@@ -54,7 +54,6 @@ import {
 } from '../ports/broadcasts-repo';
 import type { TenantDisplayNamePort } from '../ports/tenant-display-name-port';
 import type { AuditPort } from '../ports/audit-port';
-import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import { safeAuditEmit, safeAuditEmitTyped } from './_safe-audit-emit';
 import { emitTemplateCrossTenantProbeAudit } from './_emit-cross-tenant-probe';
 import { asMemberId } from '@/modules/members';
@@ -90,8 +89,13 @@ export type SnapshotTemplateToDraftError =
   // R1.2 H-sf-3: discriminate concurrent-mutation race from genuine
   // not-found so the route surfaces 409 (immutable-after-submit) instead
   // of a misleading 404. currentStatus comes from the repo's TOCTOU
-  // probe inside updateDraftFromTemplate.
-  | { readonly kind: 'draft_status_drift'; readonly currentStatus: BroadcastStatus };
+  // probe inside updateDraftFromTemplate. Typed as the error's own field (spec
+  // 140 s2b widened it with `lease_lost`, which this path cannot produce: the
+  // draft write carries no dispatch lease) so the value passes through as read.
+  | {
+      readonly kind: 'draft_status_drift';
+      readonly currentStatus: BroadcastConcurrentMutationError['observedStatus'];
+    };
 
 export interface SnapshotTemplateToDraftOutput {
   readonly draftId: string;

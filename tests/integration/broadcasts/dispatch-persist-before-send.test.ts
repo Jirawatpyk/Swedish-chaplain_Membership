@@ -305,16 +305,16 @@ describe('dispatch — resend_broadcast_id is persisted in its OWN tx before the
     const repo = makeDrizzleBroadcastsRepo(tenant.ctx.slug);
     const bid = asBroadcastId(broadcastId);
 
-    await repo.withTx((tx) => repo.attachBroadcastId(tx, tenant.ctx.slug, bid, 'bcast-cas-first'));
+    await repo.withTx((tx) => repo.attachBroadcastId(tx, tenant.ctx.slug, bid, 'bcast-cas-first', null));
     // Same value again: idempotent, no throw.
     await expect(
-      repo.withTx((tx) => repo.attachBroadcastId(tx, tenant.ctx.slug, bid, 'bcast-cas-first')),
+      repo.withTx((tx) => repo.attachBroadcastId(tx, tenant.ctx.slug, bid, 'bcast-cas-first', null)),
     ).resolves.toBeUndefined();
     // A DIFFERENT value: the CAS matches zero rows and the repo probes the
     // real status to name it — this is what the dispatch arm's `attach_lost`
     // reclaim keys on, and it is enforced by the UPDATE's WHERE, not a double.
     await expect(
-      repo.withTx((tx) => repo.attachBroadcastId(tx, tenant.ctx.slug, bid, 'bcast-cas-second')),
+      repo.withTx((tx) => repo.attachBroadcastId(tx, tenant.ctx.slug, bid, 'bcast-cas-second', null)),
     ).rejects.toBeInstanceOf(BroadcastConcurrentMutationError);
 
     const row = await readRow(tenant, broadcastId);

@@ -152,6 +152,7 @@ export async function sendVersionToMember(
         'awaiting_member_approval',
         { stageEnteredAt: now, currentRound: round, memberReminderStage: 0, memberExpiryNotifiedAt: null },
         'in_design',
+        null,
       );
 
       await deps.audit.emitTyped(tx, {

@@ -65,7 +65,7 @@ async function seedWithAudience(): Promise<string> {
   const raw = await seedApproved();
   const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
   await repo.withTx(async (tx) => {
-    await repo.attachAudienceId(tx, asTenantContext(TEST_TENANT).slug, asBroadcastId(raw), SEED_AUDIENCE);
+    await repo.attachAudienceId(tx, asTenantContext(TEST_TENANT).slug, asBroadcastId(raw), SEED_AUDIENCE, null);
   });
   return raw;
 }
@@ -135,7 +135,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const broadcastId = asBroadcastId(raw);
 
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, tenantCtx.slug, broadcastId, 'imp_live_1', FENCE);
+      await repo.attachAudienceImport(tx, tenantCtx.slug, broadcastId, 'imp_live_1', null, FENCE);
     });
 
     let row = await readImportCols(raw);
@@ -147,7 +147,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     expect(row.status).toBe('approved');
 
     await repo.withTx(async (tx) => {
-      await repo.markAudienceImportCompleted(tx, tenantCtx.slug, broadcastId);
+      await repo.markAudienceImportCompleted(tx, tenantCtx.slug, broadcastId, null);
     });
 
     row = await readImportCols(raw);
@@ -177,8 +177,8 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const broadcastId = asBroadcastId(raw);
 
     await runInTenant(tenantCtx, async (tx) => {
-      await repo.attachAudienceImport(tx, tenantCtx.slug, broadcastId, 'imp-f9-once', FENCE);
-      await repo.markAudienceImportCompleted(tx, tenantCtx.slug, broadcastId);
+      await repo.attachAudienceImport(tx, tenantCtx.slug, broadcastId, 'imp-f9-once', null, FENCE);
+      await repo.markAudienceImportCompleted(tx, tenantCtx.slug, broadcastId, null);
     });
     const readStamp = async (): Promise<string> => {
       const rows = (await runInTenant(tenantCtx, async (tx) =>
@@ -199,7 +199,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     // i.e. it tested nothing that 3-9 was about. The stamp answers "when was this
     // import consumed", so the assertion has to be the VALUE.
     await runInTenant(tenantCtx, async (tx) => {
-      await repo.markAudienceImportCompleted(tx, tenantCtx.slug, broadcastId);
+      await repo.markAudienceImportCompleted(tx, tenantCtx.slug, broadcastId, null);
     });
     const after = await readStamp();
     expect(after).toBe(before);
@@ -215,7 +215,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
 
     await expect(
       runInTenant(tenantCtx, async (tx) =>
-        repo.markAudienceImportCompleted(tx, tenantCtx.slug, ghost),
+        repo.markAudienceImportCompleted(tx, tenantCtx.slug, ghost, null),
       ),
     ).rejects.toThrow(/not found/i);
   });
@@ -284,12 +284,12 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     };
 
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first', FENCE);
+      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first', null, FENCE);
     });
     const firstStamp = await readSubmitted();
 
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first', FENCE);
+      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first', null, FENCE);
     });
 
     expect((await readImportCols(raw)).audience_import_id).toBe('imp_first');
@@ -311,12 +311,12 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const slug = asTenantContext(TEST_TENANT).slug;
 
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first', FENCE);
+      await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_first', null, FENCE);
     });
 
     await expect(
       repo.withTx(async (tx) => {
-        await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_second', FENCE);
+        await repo.attachAudienceImport(tx, slug, broadcastId, 'imp_second', null, FENCE);
       }),
     ).rejects.toThrow(BroadcastConcurrentMutationError);
 
@@ -332,16 +332,16 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const slug = asTenantContext(TEST_TENANT).slug;
 
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceId(tx, slug, broadcastId, 'aud_first');
+      await repo.attachAudienceId(tx, slug, broadcastId, 'aud_first', null);
     });
     // Same id is still fine (the retried-tick case).
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceId(tx, slug, broadcastId, 'aud_first');
+      await repo.attachAudienceId(tx, slug, broadcastId, 'aud_first', null);
     });
 
     await expect(
       repo.withTx(async (tx) => {
-        await repo.attachAudienceId(tx, slug, broadcastId, 'aud_second');
+        await repo.attachAudienceId(tx, slug, broadcastId, 'aud_second', null);
       }),
     ).rejects.toThrow(BroadcastConcurrentMutationError);
   });
@@ -643,7 +643,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const otherSlug = asTenantContext(OTHER).slug;
     await expect(
       runInTenant(asTenantContext(OTHER), async (tx) =>
-        repo.attachAudienceImport(tx, otherSlug, broadcastId, 'imp_evil', FENCE),
+        repo.attachAudienceImport(tx, otherSlug, broadcastId, 'imp_evil', null, FENCE),
       ),
     ).rejects.toThrow();
 
@@ -683,10 +683,10 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const id = asBroadcastId(raw);
     const slug = asTenantContext(TEST_TENANT).slug;
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceId(tx, slug, id, 'aud_fence');
+      await repo.attachAudienceId(tx, slug, id, 'aud_fence', null);
     });
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceImport(tx, slug, id, 'imp_fence', { expectedResendAudienceId: 'aud_fence' });
+      await repo.attachAudienceImport(tx, slug, id, 'imp_fence', null, { expectedResendAudienceId: 'aud_fence' });
     });
     return { raw, id };
   }
@@ -723,9 +723,9 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const slug = asTenantContext(TEST_TENANT).slug;
 
     const claimed = await repo.withTx((tx) =>
-      repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: null }),
+      repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: null }, null),
     );
-    expect(claimed).toBe(true);
+    expect(claimed).toBe('ok');
     // Legal under 0299 (the import id and its stamp go NULL together) and under
     // the immutability trigger's normal arm — proven by the write landing.
     expect(await readIds(raw)).toEqual({
@@ -738,15 +738,15 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
 
     await expect(
       repo.withTx(async (tx) => {
-        await repo.attachBroadcastId(tx, slug, id, 'rb_sender', { expectedAudienceImportId: 'imp_fence' });
+        await repo.attachBroadcastId(tx, slug, id, 'rb_sender', null, { expectedAudienceImportId: 'imp_fence' });
       }),
     ).rejects.toThrow(BroadcastConcurrentMutationError);
     expect((await readIds(raw)).resend_broadcast_id).toBeNull();
 
     // After the audience delete: both columns released together.
     expect(
-      await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: null })),
-    ).toBe(true);
+      await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: null }, null)),
+    ).toBe('ok');
     expect((await readIds(raw)).resend_audience_id).toBeNull();
   });
 
@@ -757,18 +757,18 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const slug = asTenantContext(TEST_TENANT).slug;
 
     await repo.withTx(async (tx) => {
-      await repo.attachBroadcastId(tx, slug, id, 'rb_sender', { expectedAudienceImportId: 'imp_fence' });
+      await repo.attachBroadcastId(tx, slug, id, 'rb_sender', null, { expectedAudienceImportId: 'imp_fence' });
     });
 
     // The hold probed no broadcast id before the sender attached one.
     const claimed = await repo.withTx((tx) =>
-      repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: null }),
+      repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: null }, null),
     );
-    expect(claimed).toBe(false);
+    expect(claimed).toBe('cas_lost');
     // And the release refuses a row that still carries an import.
     expect(
-      await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_sender' })),
-    ).toBe(false);
+      await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_sender' }, null)),
+    ).toBe('cas_lost');
     expect(await readIds(raw)).toEqual({
       resend_audience_id: 'aud_fence',
       resend_broadcast_id: 'rb_sender',
@@ -784,22 +784,22 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
     const slug = asTenantContext(TEST_TENANT).slug;
     await repo.withTx(async (tx) => {
-      await repo.attachBroadcastId(tx, slug, id, 'rb_draft', { expectedAudienceImportId: 'imp_fence' });
+      await repo.attachBroadcastId(tx, slug, id, 'rb_draft', null, { expectedAudienceImportId: 'imp_fence' });
     });
 
     expect(
       await repo.withTx((tx) =>
-        repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_draft' }),
+        repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_draft' }, null),
       ),
-    ).toBe(true);
+    ).toBe('ok');
     expect((await readIds(raw)).resend_broadcast_id).toBe('rb_draft');
     // A different id than the one deleted: refused.
     expect(
-      await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_other' })),
-    ).toBe(false);
+      await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_other' }, null)),
+    ).toBe('cas_lost');
     expect(
-      await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_draft' })),
-    ).toBe(true);
+      await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: 'rb_draft' }, null)),
+    ).toBe('ok');
     const after = await readIds(raw);
     expect(after.resend_broadcast_id).toBeNull();
     expect(after.resend_audience_id).toBeNull();
@@ -811,16 +811,16 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const repo = makeDrizzleBroadcastsRepo(TEST_TENANT);
     const slug = asTenantContext(TEST_TENANT).slug;
     await repo.withTx(async (tx) => {
-      await repo.attachBroadcastId(tx, slug, id, 'rb_dead', { expectedAudienceImportId: 'imp_fence' });
+      await repo.attachBroadcastId(tx, slug, id, 'rb_dead', null, { expectedAudienceImportId: 'imp_fence' });
     });
 
     await expect(
       repo.withTx(async (tx) => {
-        await repo.attachBroadcastId(tx, slug, id, 'rb_fresh', { expectedAudienceImportId: 'imp_fence' });
+        await repo.attachBroadcastId(tx, slug, id, 'rb_fresh', null, { expectedAudienceImportId: 'imp_fence' });
       }),
     ).rejects.toThrow(BroadcastConcurrentMutationError);
     await repo.withTx(async (tx) => {
-      await repo.attachBroadcastId(tx, slug, id, 'rb_fresh', {
+      await repo.attachBroadcastId(tx, slug, id, 'rb_fresh', null, {
         expectedAudienceImportId: 'imp_fence',
         replacesResendBroadcastId: 'rb_dead',
       });
@@ -835,15 +835,15 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     const id = asBroadcastId(raw);
     const slug = asTenantContext(TEST_TENANT).slug;
     await repo.withTx(async (tx) => {
-      await repo.attachAudienceId(tx, slug, id, 'aud_gone');
+      await repo.attachAudienceId(tx, slug, id, 'aud_gone', null);
     });
     expect(
-      await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_gone', resendBroadcastId: null })),
-    ).toBe(true);
+      await repo.withTx((tx) => repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_gone', resendBroadcastId: null }, null)),
+    ).toBe('ok');
 
     await expect(
       repo.withTx(async (tx) => {
-        await repo.attachAudienceImport(tx, slug, id, 'imp_late', { expectedResendAudienceId: 'aud_gone' });
+        await repo.attachAudienceImport(tx, slug, id, 'imp_late', null, { expectedResendAudienceId: 'aud_gone' });
       }),
     ).rejects.toThrow(BroadcastConcurrentMutationError);
     expect((await readIds(raw)).audience_import_id).toBeNull();
@@ -861,7 +861,7 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
     });
 
     await repo.withTx(async (tx) => {
-      await repo.attachBroadcastId(tx, slug, id, 'rb_after_empty');
+      await repo.attachBroadcastId(tx, slug, id, 'rb_after_empty', null);
     });
 
     expect((await readIds(raw)).resend_broadcast_id).toBe('rb_after_empty');
@@ -875,15 +875,15 @@ describe.runIf(RUN_INTEGRATION)('T086 — audience-import repo writes (live Neon
    */
   it.each([
     ['releaseAudienceImport', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never, id: ReturnType<typeof asBroadcastId>) =>
-      repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: null })],
+      repo.releaseAudienceImport(tx, slug, id, { importId: 'imp_fence', resendAudienceId: 'aud_fence', resendBroadcastId: null }, null)],
     ['releaseResendAudience', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never, id: ReturnType<typeof asBroadcastId>) =>
-      repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: null })],
+      repo.releaseResendAudience(tx, slug, id, { resendAudienceId: 'aud_fence', resendBroadcastId: null }, null)],
     ['attachBroadcastId (fenced)', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never, id: ReturnType<typeof asBroadcastId>) =>
-      repo.attachBroadcastId(tx, slug, id, 'rb_evil', { expectedAudienceImportId: 'imp_fence', replacesResendBroadcastId: 'rb_x' })],
+      repo.attachBroadcastId(tx, slug, id, 'rb_evil', null, { expectedAudienceImportId: 'imp_fence', replacesResendBroadcastId: 'rb_x' })],
     ['attachAudienceImport (fenced)', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never, id: ReturnType<typeof asBroadcastId>) =>
-      repo.attachAudienceImport(tx, slug, id, 'imp_evil', { expectedResendAudienceId: 'aud_fence' })],
+      repo.attachAudienceImport(tx, slug, id, 'imp_evil', null, { expectedResendAudienceId: 'aud_fence' })],
     ['markAudienceImportCompleted', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never, id: ReturnType<typeof asBroadcastId>) =>
-      repo.markAudienceImportCompleted(tx, slug, id)],
+      repo.markAudienceImportCompleted(tx, slug, id, null)],
     // Spec 139 — a read, but the erasure cascade decides a write on it (the
     // derived count and the locked evidence check).
     ['readAlreadySentEvidenceInTx', (repo: ReturnType<typeof makeDrizzleBroadcastsRepo>, tx: unknown, slug: never, id: ReturnType<typeof asBroadcastId>) =>
