@@ -2992,14 +2992,6 @@ export const broadcastsMetrics = {
   },
 
   /**
-   * `broadcasts_dispatch_lease_lost_after_send_total{tenant,step}` — spec 140
-   * s2b review round 1 (CR#1). One per import tick whose dispatch lease was
-   * lost AFTER `/send` handed the mail to Resend, at `step` = `attach_ids` /
-   * `sending_transition` / `completion_stamp`. Counted on both A4 arms: the
-   * INFO `lease_lost_after_send` (row `approved` / `sending`) and the critical
-   * `sent_but_transition_lost` (any other row status). Steady state 0.
-   */
-  /**
    * `broadcasts_dispatch_lease_expiring_total{tenant}` — spec 140 s2b review
    * round 1 (CR#4). One per import tick that stopped because its OWN lease
    * would have ended inside the next call's headroom (`CALL_HEADROOM_MS` /
@@ -3015,6 +3007,16 @@ export const broadcastsMetrics = {
     });
   },
 
+  /**
+   * `broadcasts_dispatch_lease_lost_after_send_total{tenant,step}` — spec 140
+   * s2b review round 1 (CR#1). One per import tick whose dispatch lease was
+   * lost AFTER `/send` handed the mail to Resend, at `step` = `attach_ids` /
+   * `sending_transition` / `completion_stamp`. Counted on both A4 arms: the
+   * INFO `lease_lost_after_send` (row `approved` / `sending`) and the critical
+   * line for any other row status — `sent_but_transition_lost` at the ids
+   * attach and the `sending` transition, `completion_stamp_failed` at the
+   * completion stamp (review round 2, spec L-a). Steady state 0.
+   */
   dispatchLeaseLostAfterSend(
     tenantId: string,
     step: 'attach_ids' | 'sending_transition' | 'completion_stamp',

@@ -374,7 +374,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
       : null;
 
-    for (const row of eligible) {
+    for (const [rowIndex, row] of eligible.entries()) {
       summary.processed++;
       try {
         if (importDeps !== null) {
@@ -388,8 +388,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // dashboard claim sends that have not happened.
             // Spec 140 s2b (DL9; review round 1 CR#7) — past the cutoff no
             // later row can start either: stop here and count every row left.
+            // Review round 2 (CR#5) — a deferred row is not processed:
+            // processed + deferred_past_cutoff = the rows reached.
             if (built.value.kind === 'deferred_past_cutoff') {
-              summary.deferred_past_cutoff += eligible.length - summary.processed + 1;
+              summary.processed--;
+              summary.deferred_past_cutoff += eligible.length - rowIndex;
               break;
             }
             if (built.value.kind === 'sent') summary.succeeded++;

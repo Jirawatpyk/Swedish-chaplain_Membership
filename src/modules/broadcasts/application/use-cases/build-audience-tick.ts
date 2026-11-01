@@ -566,10 +566,35 @@ async function checkLeaseBefore(
   return read;
 }
 
+/** Why a lease stopped the tick: lost to another holder, or running short on this one. */
+type LeaseStop = 'lost' | { readonly expiring: string };
+
+/**
+ * Review round 2 (CR#7) — the ONE mapping from a pre-call read to a stop:
+ * `null` = held, make the call; a stop otherwise; `{ failed }` passes through.
+ * `leaseGate` and the restart's per-delete gate both read it.
+ */
+function leaseReadStop(read: LeaseRead, step: string): LeaseStop | { readonly failed: unknown } | null {
+  if (read === 'held') return null;
+  if (typeof read === 'object') return read;
+  // Review round 1 (CR#4) — this tick's own lease ran short: its own answer.
+  if (read === 'expiring') return { expiring: step };
+  return 'lost';
+}
+
+/**
+ * A stop as the tick's answer — never a failure write: `lease_expiring` (a
+ * budget breach on its own holder) or the concurrent skip `lease_lost`.
+ */
+function leaseStopAnswer(stop: LeaseStop): Result<BuildAudienceTickOutput, BuildAudienceTickError> {
+  if (stop === 'lost') return err({ kind: 'broadcast_invalid_state_transition', observedStatus: LEASE_LOST });
+  return err({ kind: 'lease_expiring', step: stop.expiring });
+}
+
 /**
  * `checkLeaseBefore` as the tick's answer: `null` = held, make the call;
- * otherwise NO call is made — a lost or expiring lease is a concurrent skip
- * (never a failure write), a check that could not be read a transient error.
+ * otherwise NO call is made — a lost or expiring lease stops the tick
+ * (`leaseStopAnswer`), a check that could not be read is a transient error.
  */
 async function leaseGate(
   deps: LeasedTickDeps,
@@ -577,13 +602,12 @@ async function leaseGate(
   step: string,
   headroomMs: number = CALL_HEADROOM_MS,
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError> | null> {
-  const read = await checkLeaseBefore(deps, input, step, headroomMs);
-  if (read === 'held') return null;
-  if (typeof read === 'object') {
-    return err({ kind: 'dispatch.server_error', message: 'lease_check_failed', errClass: errKind(read.failed), phase: 'lease' });
+  const stop = leaseReadStop(await checkLeaseBefore(deps, input, step, headroomMs), step);
+  if (stop === null) return null;
+  if (typeof stop === 'object' && 'failed' in stop) {
+    return err({ kind: 'dispatch.server_error', message: 'lease_check_failed', errClass: errKind(stop.failed), phase: 'lease' });
   }
-  if (read === 'expiring') return err({ kind: 'lease_expiring', step });
-  return err({ kind: 'broadcast_invalid_state_transition', observedStatus: LEASE_LOST });
+  return leaseStopAnswer(stop);
 }
 
 /** A fenced write refused this tick's token (A3). */
@@ -912,8 +936,11 @@ async function applySendStanding(
     recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
     // Outside every tx: the Step-1 lock tx has committed.
     await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', deps.lease);
-    // Best-effort: the hold is already the decided answer, whatever this says.
-    await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
+    // Best-effort: a failed restart leaves the hold the decided answer. A lease
+    // lost or running short while it ran is the tick's answer instead (review
+    // round 2, CR#3): the restart stopped where the next holder resumes.
+    const restarted = await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
+    if (restarted === 'lost' || typeof restarted === 'object') return leaseStopAnswer(restarted);
     return ok({ kind: 'dispatch_held_member_suspended' });
   }
   // Reached only for a NOT-handed probe (a handed row returned at Step 1a).
@@ -1109,7 +1136,7 @@ async function restartAudienceBuild(
   row: RowIds,
   why: RestartReason,
   opts: { readonly bidIsDead: boolean },
-): Promise<'restarted' | 'nothing' | 'lost' | 'failed' | { readonly expiring: string }> {
+): Promise<'restarted' | 'nothing' | 'failed' | LeaseStop> {
   const { audienceId, importId, resendBroadcastId } = row;
   if (audienceId === null || audienceId === '') return 'nothing';
   const names = RESTART_LOG_NAMES[why];
@@ -1135,13 +1162,13 @@ async function restartAudienceBuild(
   // Spec 140 s2b (CAS 12) — each delete below is irreversible, so the lease is
   // checked first; a lost or expiring lease stops the restart where it is (the
   // shape the next tick redoes from), a check that cannot be read fails it.
-  const leaseGateStep = async (step: string): Promise<'lost' | 'failed' | { readonly expiring: string } | null> => {
-    const read = await checkLeaseBefore(deps, input, step);
-    if (read === 'held') return null;
-    if (typeof read === 'object') return failed(step, read.failed);
-    // Review round 1 (CR#4) — this tick's own lease ran short: its own answer.
-    if (read === 'expiring') return { expiring: step };
-    return lost(step);
+  // The adapter: `leaseReadStop`'s answer in the restart's vocabulary (its
+  // own failed / lost log lines and metric).
+  const leaseGateStep = async (step: string): Promise<LeaseStop | 'failed' | null> => {
+    const stop = leaseReadStop(await checkLeaseBefore(deps, input, step), step);
+    if (stop === null) return null;
+    if (typeof stop === 'object' && 'failed' in stop) return failed(step, stop.failed);
+    return stop === 'lost' ? lost(step) : stop;
   };
 
   // 1. CLAIM.
@@ -1243,10 +1270,8 @@ async function selfHealMissingAudience(
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const outcome = await restartAudienceBuild(deps, input, row, why, { bidIsDead });
   if (outcome === 'restarted') return ok({ kind: 'audience_restarted' });
-  if (typeof outcome === 'object') return err({ kind: 'lease_expiring', step: outcome.expiring });
-  if (outcome === 'lost') {
-    return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
-  }
+  // Review round 2 (spec L-g) — a restart that lost the lease says so.
+  if (outcome === 'lost' || typeof outcome === 'object') return leaseStopAnswer(outcome);
   return err({ kind: 'dispatch.server_error', message: 'audience_restart_failed', phase: 'audience_restart' });
 }
 
@@ -2730,12 +2755,20 @@ async function failTerminally(
     // Mirrors the single-tick path: if the transition itself failed, a concurrent
     // cancel probably won. Log loudly and do NOT notify — telling a member their
     // broadcast failed when it was cancelled is worse than silence.
+    // Review round 2 (reliability NIT) — what was being recorded, and where
+    // the row was when the CAS refused it (`null` for a non-CAS fault).
+    const lostCas = cleanupErr instanceof BroadcastConcurrentMutationError ? cleanupErr : null;
     logger.error(
       {
         err: errKind(cleanupErr),
+        errorKind: error.kind,
         tenantId: deps.tenant.slug,
         broadcastId: input.broadcastId,
+        importId: error.importId,
         dispatchFailureKind: reason,
+        expectedStatus: 'approved',
+        observedStatus: lostCas?.observedStatus ?? null,
+        rowStatus: lostCas?.rowStatus ?? null,
       },
       'broadcasts.audience_import.cleanup_failed',
     );

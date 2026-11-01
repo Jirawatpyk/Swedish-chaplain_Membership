@@ -28,7 +28,7 @@ import {
 import type { BroadcastStatus } from '../../domain/value-objects/broadcast-status';
 import type { MemberReminderStage } from '../../domain/approval/approval-schedule-policy';
 import { TERMINAL_BROADCAST_STATUSES } from '../../domain/value-objects/broadcast-status';
-import { IN_PROGRESS_BROADCAST_STATUSES, SENDING_STARTED_BROADCAST_STATUSES } from '../../domain/stage/in-progress-statuses';
+import { IN_PROGRESS_BROADCAST_STATUSES, SENDING_STARTED_BROADCAST_STATUSES, hasSendingStarted } from '../../domain/stage/in-progress-statuses';
 import {
   RETENTION_ANCHOR_FIELD,
   type RetentionAnchorField,
@@ -485,7 +485,7 @@ export async function hasLiveDispatchLeaseStatement(
   // Review round 1 (security L3) — fail CLOSED: an answer that is not a
   // boolean (a driver or schema surprise) must not read as "no live lease",
   // which would let the legacy leg work a row an import tick holds.
-  if (row.live === true || row.live === 't') return true;
+  if (isTrue(row.live)) return true;
   if (row.live === false || row.live === 'f') return false;
   throw new Error(`hasLiveDispatchLease: expected a boolean, got ${typeof row.live}`);
 }
@@ -1726,12 +1726,13 @@ export function makeDrizzleBroadcastsRepo(
             isNotNull(broadcasts.audienceImportId),
             // Spec 140 s2b — this write has no status CAS (it runs after
             // `sending`), so the token is its only fence — until the row says
-            // the mail is out (review round 1, CR#2): once `sending` or `sent`
+            // the mail is out (review round 1, CR#2): once sending has started
+            // (`SENDING_STARTED_BROADCAST_STATUSES`, review round 2 spec L-e)
             // the token guards nothing, and a webhook's `sending → sent` (a
             // non-holder change that clears the lease) must not strand the stamp.
             lease === null
               ? undefined
-              : or(eq(broadcasts.dispatchLeaseToken, lease), inArray(broadcasts.status, ['sending', 'sent'])),
+              : or(eq(broadcasts.dispatchLeaseToken, lease), inArray(broadcasts.status, [...SENDING_STARTED_BROADCAST_STATUSES])),
           ),
         )
         .returning({ broadcastId: broadcasts.broadcastId });
@@ -1765,7 +1766,7 @@ export function makeDrizzleBroadcastsRepo(
         // Spec 140 s2b (A3) — the probe learns `lease_lost`: a row that no
         // longer carries this tick's token was taken over or exited, so the
         // stamp is not this tick's to write, stamped or not.
-        if (lease !== null && probeRow.leaseToken !== lease && probeRow.status !== 'sending' && probeRow.status !== 'sent') {
+        if (lease !== null && probeRow.leaseToken !== lease && !hasSendingStarted(probeRow.status)) {
           throw new BroadcastConcurrentMutationError(tenantIdArg, broadcastId, LEASE_LOST, probeRow.status);
         }
         if (probeRow.completedAt === null) {
