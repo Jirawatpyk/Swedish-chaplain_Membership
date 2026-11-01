@@ -115,10 +115,11 @@ As the chamber, an E-Blast is built and sent by one cron invocation at a time. A
 - **DL3.** The claim waits behind an erasure's row lock, then skips the cancelled row.
 - **DL4.** With two tenants holding the same broadcast uuid, claim and release each touch only their own row (run as `chamber_app`).
 - **DL5a** (slice 2a). On the default gateway (the import leg, erasure, cleanup), a `createBroadcast`, `createAudience` or `createContactImport` that hits a 5xx or a timeout makes exactly one request: it is not retried in-process. The exception (maintainer, 1 Nov 2026): the legacy leg's `createBroadcast` retries inside its 10 s budget until s4 deletes that leg.
-- **DL5b** (slice 2b). A timed-out `createBroadcast` writes an orphan-id row with no id (`create_unconfirmed`), counted in a gauge.
-- **DL6.** A failed reclaim writes an orphan-id row, and the cleanup cron deletes it at Resend.
-- **DL7.** The legacy leg skips a row that holds import columns. (Slice 2a. In slice 2b it also skips a row holding a live lease.)
-- **DL8.** Every broadcasts gateway request aborts at its timeout: one budget per request, its retries included. A port call that makes several requests (`addContactsToAudience` per contact, `listAudiences` per page) can therefore run N × the timeout; its per-invocation budget is slice 2b's (review round 1, CR#2).
+- **DL5b** (slice 2c). A `createBroadcast` that ends in a 5xx, a network failure or a timeout writes an orphan-id row with no id (`create_unconfirmed`), counted in a gauge.
+- **DL6** (slice 2c). A failed reclaim writes an orphan-id row, and the cleanup cron deletes it at Resend.
+- **DL7.** The legacy leg skips a row that holds import columns. (Slice 2a. In slice 2b it also skips a row holding a live lease: cell 23.)
+- **DL8.** Every broadcasts gateway request aborts at its timeout: one budget per request, its retries included. A port call that makes several requests (`addContactsToAudience` per contact, `listAudiences` per page) can therefore run N × the timeout. The per-invocation budget has three homes (D-043): the import leg's tick is bounded by DL9 (slice 2b); `addContactsToAudience` is legacy-only, a residual moved to slice 4, which deletes it; `listAudiences` is DT5 (slice 3).
+- **DL9** (slice 2b). No row starts after the cutoff `maxDuration − W_max − M`, on either leg. W_max is the larger of the two longest paths (tick 1 with the import POST at `IMPORT_CALL_TIMEOUT_MS`, tick 2 at N × `RESEND_CALL_TIMEOUT_MS`), computed from the exported constants, and the lease TTL exceeds `maxDuration`.
 
 ### US3 — The import leg reads Resend correctly (slice 3)
 
@@ -129,6 +130,7 @@ As the chamber, an E-Blast is built and sent by one cron invocation at a time. A
   - a 409 `resource_locked` is retried;
   - a 429 `daily_quota_exceeded` or `monthly_quota_exceeded` is permanent;
   - a 409 followed by a 422 ends sent, with no failure write.
+- **DT5.** `listAudiences` stops at a per-invocation time budget, not N pages × C (`reclaim-orphaned-audiences.ts:169`; the s2a carry, D-043).
 - **DT4.** A `+` address and an uppercase address:
   - are each detached from their segment;
   - still exist as contacts afterwards.

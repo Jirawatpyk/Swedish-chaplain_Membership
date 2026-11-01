@@ -85,8 +85,9 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 |---|---|---|---|---|---|
 | 1 | Erasure deletes reachable drafts; refusals delete their draft | ED1–ED5 | pdpa-gdpr, security, reliability, spec-compliance | `140-eblast-one-leg-s1` | #713 · done |
 | 2a | Bounded Resend calls (one signal spans every attempt, C = 10 s); no in-process retry on creates; the legacy leg skips import rows; `propagate` bounded | DL5a, DL7, DL8, carry R3 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | #719 · done |
-| 2b | Lease + fencing token + pre-call check + budget; migration 0322; orphan-id table + drain; `failTerminally` choke point; the live-lease legacy skip | DL1–DL4, DL5b, DL6, carries R4 + R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2b` | — · open |
-| 3 | Error classes + import-leg table fixes | DT1–DT4 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
+| 2b | Lease + fencing token + pre-call check + row-start cutoff; migration 0322 (lease columns + trigger list); the live-lease legacy skip | DL1–DL4, DL9, cell 23, carry R4 | drizzle-migration, security, reliability, spec-compliance | `140-eblast-one-leg-s2b` | — · open |
+| 2c | Orphan-id table (migration 0323) + its writers incl. `create_unconfirmed` + the drain; `failTerminally` reclaim choke point; #699 closes | DL5b, DL6, carry R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2c` | — · open |
+| 3 | Error classes + import-leg table fixes | DT1–DT5 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
 
 ## Test plan
@@ -225,7 +226,7 @@ The full state table and the s2b plan follow.
    - A dead holder: claimed at t, expires t + 330 s, so the t + 300 tick skips the row and the t + 600 tick reclaims it: about 2 ticks, documented in `broadcast-audience-build.md`.
    - D-040's 23 s figure does not change (C = the `*Once` bound).
 
-6. **Bounded calls** (`resend-broadcasts-gateway.ts`):
+6. **Bounded calls** (`resend-broadcasts-gateway.ts`). **Done in s2a (#719).** Superseded detail: creates retry a 429 only, `createContactImport` has its own 30 s budget, and the legacy leg's `createBroadcast` retries (the maintainer's exception, review round 2).
    - **One signal per call**, `AbortSignal.timeout(C)`, spanning every attempt. `withRetry` (`:227-271`, 6 attempts + 31 s backoff) backs off only while the remaining budget exceeds the next backoff + 1 s. A per-attempt timeout would make a retried call 6C + 31 s and break "call timeout ≤ margin".
    - SDK calls pass `{ signal }` through `RequestOptions` (resend 6.35: `post` / `get` / `delete` spread `options` into `fetch`, `index.mjs:1764-1819`). An aborted SDK call comes back as `application_error`, `statusCode: null` (`index.mjs` outer catch), which `httpStatusOf` reads as retryable `network`. An abort while reading the body rethrows `signal.reason` (`index.mjs:1707`): the adapter maps a `TimeoutError` / `AbortError` to retryable `timeout`.
    - `importFetch` drops from 30 s (`:1091`) to C.
@@ -268,7 +269,7 @@ The full state table and the s2b plan follow.
 
     The two refuse arms already delete first and pass `draftSettled`, so nothing is deleted twice. `enqueueDispatchFailureNotification` (`:2541`) still runs only after the CAS commits.
 
-11. **The legacy leg skips import rows** (decision 8). In `dispatchScheduledBroadcast` step 1 (`:494-511`), inside the lock tx: a row with `audience_import_id` or `audience_import_submitted_at` set → `broadcasts.dispatch.import_row_skipped`, return `broadcast_invalid_state_transition`, no Resend call. **Extension (P3):** a live lease token is skipped too (`lease_held`).
+11. **The legacy leg skips import rows** (decision 8). **Done in s2a (#719)**, at the scan and in the use case; the live-lease extension (cell 23) is slice 2b. In `dispatchScheduledBroadcast` step 1 (`:494-511`), inside the lock tx: a row with `audience_import_id` or `audience_import_submitted_at` set → `broadcasts.dispatch.import_row_skipped`, return `broadcast_invalid_state_transition`, no Resend call. **Extension (P3):** a live lease token is skipped too (`lease_held`).
 
 12. **Docs** (in the slice's diff):
     - RoPA 8d: the residual narrows to `create_unconfirmed` plus the DB-down and crash-between-mint-and-persist cases, with a Review-by date; also the `:255` item the design names.
@@ -414,6 +415,144 @@ Split. The cells fall into two lifecycles that share one cell:
   - `cleanup-audiences` declares no `maxDuration`.
   - The plan's `deleted_at` becomes `settled_at` + `outcome`.
   - The cleanup log line writes `cause: e.message` (`cleanup-orphaned-audiences.ts:147`), against the log-hygiene rule. It predates s2, but s2 touches the file.
+
+### Slice 2b — build plan (agreed 1 Nov 2026; the maintainer approved the 2b / 2c split)
+
+Drafted from the code at `0363936f2` and read by `chamber-os-architect`; its findings are marked (A1)–(A10). It supersedes the design above where they differ (A2 reclaim exemption, A3 lost-signals per writer, A4 lost-after-send, A5 two-path W_max, A9 no `applyTransitionUnderLease`).
+
+#### Split: 2b and 2c (approving this plan approves the split)
+s2a was 2 cells and still reached the review cap. The remaining 25 cells split along the dependency. The architect confirmed the cut (A-a): no cell in 2b needs the orphan table, and 2c needs only the token and the pre-call check from 2b.
+
+| Slice | Covers | Migration | Cells |
+|---|---|---|---|
+| **2b — lease** | lease columns, plus the trigger GUC list; claim, release and the pre-call check (`clock_timestamp()`); the token in every row writer; `applyTransition` clears the lease on any status change; the row-start cutoff and the TTL; the scan excludes a live lease; the legacy leg skips a live lease (cell 23); a lost lease is a concurrent skip; carry **R4** | 0322 | 1–9, 13, 14, 16–18, 20, 21, 23 |
+| **2c — orphan ids** | `broadcast_orphaned_resend_ids` (RLS + FORCE); the eight writers, including `create_unconfirmed` with a NULL id (a 5xx is included, matching RoPA 8d: "a 5xx, a network failure, or our own timeout"); the drain in `cleanup-audiences` (`maxDuration` 300, stops at 240 s); the `failTerminally` reclaim choke point; the unconfirmed gauge; carry **R1 #5**; **#699 closes** | 0323 | 10–12, 15 (DL5b), 25–29 |
+
+- In 2b, cell 8 keeps today's critical `minted_broadcast_leaked` log (`_reclaim-minted-broadcast.ts:66`); 2c replaces it with an orphan row.
+- DL5b and DL6 move to 2c.
+
+#### First docs commit (before any code)
+1. **plan.md Slices table:** rows 2b and 2c. Approach items 6 and 11 are marked **done in s2a (#719)**. Item 6's "never retried … both legs" now points to the legacy exception.
+2. **Carry homes (D-043; A1).** s3 has no row for `listAudiences` yet, so this commit adds **DT5** to s3: "`listAudiences` gets a per-invocation time budget" (`reclaim-orphaned-audiences.ts:169`). DL8 (`spec.md:121`) then names three homes:
+   - the import leg → 2b, via the cutoff and the W_max pin;
+   - `addContactsToAudience` → s4. That is a deletion of a leg that is still live in prod, so it is recorded as a residual moved to s4, not as a closure;
+   - `listAudiences` → s3 DT5.
+3. **Constants (A5).** The budget test computes both longest paths from the exported constants and asserts that W_max is the larger one:
+   - tick 2 = k·E + N·C + P + D = 154 s;
+   - tick 1 = k·E + D + 5C + I + P = 144 s, where I = `IMPORT_CALL_TIMEOUT_MS` (ASSUMED).
+
+   It also asserts:
+   - TTL > maxDuration;
+   - TTL ≥ W_max + M;
+   - cutoff = maxDuration − W_max − M > 0;
+   - C ≤ M;
+   - (time spent before the import POST) + I + M ≤ TTL. This replaces "headroom ≥ 30 s + M", which is true by definition.
+
+   The pre-call headroom is C + M before every call, and I + M before `createContactImport`. Positive controls: a TTL of 300 s fails; an I that makes tick 1 the longest path changes W_max.
+4. **D (A10).** No seeder exists. A throwaway scratch script, never committed:
+   - seeds 900 members in a tenant whose prefix `scripts/lib/leaked-test-tenants.ts` already sweeps;
+   - times `resolveRecipients` 20 times, and the tick's ~15 statements;
+   - then deletes its tenant.
+
+   The p99 is labelled **MEASURED (dev, workstation, date)**, because a workstation is not the sin1 → Neon path. If the p99 is ≤ 15 s, D stays at 15 s with that label.
+5. **Verify command (A6),** see below.
+
+#### Build (2b)
+- **Branch** `140-eblast-one-leg-s2b` from `origin/main` `0363936f2`, in the existing f142 worktree (a real install, with `.husky/_`).
+- **Migration 0322** (`new-migration` skill):
+  - The journal `when` must be above 1798545400000 (0321's). No branch claims 0322 (Explore).
+  - `lease_token uuid NULL` and `lease_expires_at timestamptz NULL`, with a both-or-neither CHECK. A catalogue-only ADD COLUMN.
+  - The trigger is re-created from 0311's `CREATE OR REPLACE` (`0311:83`, the newest), checked against the live `pg_get_functiondef` on dev. The two columns go into the GUC-arm list (`:100-157`), as 0299, 0308 and 0311 did. Under the GUC, status cannot change, so a cancel's lease clear is not blocked (A-b).
+  - `SET LOCAL lock_timeout '5s'`.
+  - `pnpm db:migrate` on dev and `db:verify`, before the migration commit.
+- **Repo** (`drizzle-broadcasts-repo.ts`):
+  - **New methods:** `claimDispatchLease`, `releaseDispatchLease`, `checkDispatchLease` (`SELECT … FOR UPDATE`). Each is tenant-fenced in `runInTenant` and calls `assertTenantBoundTx` first.
+  - **No new `applyTransitionUnderLease` (A9).** `applyTransition` (`:934`, the only status writer) takes a **required** `lease: LeaseToken | null`. With a token, the token goes in the WHERE and the columns stay for the release. With `null`, a status change clears both columns, next to the `dispatchFirstFailedAt` reset at `:978-980`.
+  - **The token goes into each row writer, and each reports a lost lease its own way (A3):**
+
+    | Writer | On a lost token |
+    |---|---|
+    | `attachAudienceId` :1070, `attachAudienceImport` :1191, `attachBroadcastId` :1146, `attachResendIds` :1008, `applyTransition` :934 | throw `BroadcastConcurrentMutationError` with `observedStatus: 'lease_lost'` |
+    | `markDispatchRetryStarted` :1275 | return `null`; `_dispatch-retry-epoch.ts:89-99` must not log a stamp failure |
+    | `releaseAudienceImport` :1341, `releaseResendAudience` :1382 | the existing `false` |
+    | `clearDispatchRetryClock` :1307 | 0 rows (not an error) |
+    | `markAudienceImportCompleted` :1442 | its 0-row probe (`:1472`) learns `lease_lost`. It has no status CAS, so the token is its only fence |
+
+- **Use cases:**
+  - **`build-audience-tick.ts`:**
+    - Claim in the step-1 tx (`:431-438`).
+    - A pre-call check before every irreversible call:
+      - `createAudience` :1451, `createContactImport` :1475 (headroom I + M), `createBroadcast` :1823, `sendBroadcast`;
+      - the restart's deletes, `:957` and `:972`;
+      - the standing gate's `deleteBroadcastOnce` (`_dispatch-standing-gate.ts:218`; design item 4, A8).
+    - **Exempt (A2):** the reclaim of an id this tick just minted (`_reclaim-minted-broadcast.ts:42`, called from `_persist-minted-broadcast-id.ts:107-110`). That id is on no row, so no other tick can be sending it. A check there would always fail at the very moment the lease is lost, and the draft would leak.
+    - Release in a `finally`.
+    - **A lease lost after `/send` (A4):** in `advanceToSending` (`:2056-2139`) this logs its own INFO event, `lease_lost_after_send`, not the critical `sent_but_transition_lost`. The next tick's probe catches up.
+  - **`failTerminally`** (`:2325`): a `lease_lost` throw is a concurrent skip in its catch (`:2464`), so there is no terminal write and no member email (the enqueue is at `:2542`).
+  - **`dispatch-scheduled-broadcast.ts`:** the legacy leg skips a live lease (cell 23), inside its lock tx.
+- **Route** (`dispatch-scheduled/route.ts`):
+  - The lease exclusion goes into the scan (`:194-205`) **for every flag state**, never inside `importRowsFilter` (`:188`) (A7).
+  - `{ tickStartedAt, maxDurationMs }` go into deps.
+  - **No row starts after the cutoff, on both legs.** The legacy leg's row cost is also bounded by C per call, and one rule is simpler than two.
+- **Docs in the slice:**
+  - `observability.md`: `lease_claimed`, `lease_held`, `lease_lost`, `lease_expiring`, `lease_release_failed`, `lease_lost_after_send`;
+  - `broadcast-audience-build.md`: the lease, the ~2-tick delay after a dead holder, and the stale "lease ruled out" line;
+  - the broadcasts rule; the changelog.
+  - Every bound in that prose names its constant (the 1 Nov retro rule).
+- **Who does what:**
+  - One `software-engineer` builder with the complete brief: this slice's state-table rows, the anchors above, A1–A10 and the R4 finding text. It runs scoped tests and one `pnpm check`.
+  - The main session runs the gates one folder at a time, in the foreground.
+
+#### Test plan (2b) — RED first, one row per behaviour
+- **`dispatch-lease-repo.test.ts`** (integration):
+  - rows 1, 2, 4, 7, 14, 20, 21;
+  - an it.each "stale token → lost" over every writer, each asserting its own lost-signal (A3);
+  - DL4: two tenants with one uuid, as `chamber_app`, plus the BYPASSRLS-owner case.
+- **`import-leg-lease-pair.test.ts`:** DL1, both orders (Neon pair).
+- **`dispatch-lease-erasure-order.test.ts`:** DL3, rows 16 and 17, as `chamber_app`.
+- **`build-audience-tick-lease.test.ts`** (unit):
+  - rows 3, 5, 6, 8, 9;
+  - the restart deletes are checked first;
+  - **"the reclaim of a just-minted id runs although the lease is lost" (A2);**
+  - **"a lease lost after /send logs lease_lost_after_send, not sent_but_transition_lost" (A4);**
+  - the import POST demands I + M of headroom.
+- **`_dispatch-retry-epoch` unit:** "a lost lease on markDispatchRetryStarted is not a stamp failure" (A3).
+- **`dispatch-scheduled-broadcast.test.ts`:** cell 23, the legacy leg skips a live lease.
+- **`cron-dispatch-scheduled.contract`:**
+  - row 13, the scan excludes a live lease with the flag ON and OFF (A7);
+  - no row starts after the cutoff, on either leg.
+- **`dispatch-lease-budget.test.ts`:** the derived two-path inequalities, plus the positive controls (A5).
+- **`broadcast-lease-sql-shape.test.ts`:** tenant + token in every writer. It fails if its parse yields 0 (`;\r?\n`). Mutation check: drop one token, and its stale case goes red.
+- **Migration:** the immutability trigger test (the GUC cannot move the lease) and the pair CHECK.
+- **R4:** `already-sent-evidence.test.ts`, two concurrent recorders give one evidence row, both orders.
+- **Already green, re-run:** `audience-import-two-tick`, `erasure-vs-dispatch-begun`.
+
+#### Verify (D-044; A6)
+The maintainer runs `/verify` on :3400. The flags are set in `.env.local` only. Claude prepares the seeds and hands over the command.
+
+0. **Safety:**
+   - The due-row count on dev must equal the seeds; stop on any other row.
+   - The Resend account holds ≤ 1 non-General segment.
+   - Sink address only, and stop at tick 1 (no `/send`).
+1. **Flag ON:**
+   - a row with a live foreign lease is not picked up, and its token is unchanged;
+   - a row with an expired lease is claimed, makes its tick-1 import, and is released (token NULL, `audience_import_id` set).
+2. A wrong Bearer → 401, and nothing changes.
+3. **Flag OFF:** the live-lease row is still excluded by the scan.
+4. **Teardown:** the tick-1 row goes to terminal. After `GRACE_MS` (1 h), `cleanup-audiences` frees the segment.
+
+Cell 23 is test-only: the scan already excludes a leased row before it reaches the use case. DL1–DL4 and the lost-lease cases are test-only as well.
+
+#### Review (D-043; L, sensitive)
+- At least 2 full `/code-review high <pr>` rounds, then at most 2 targeted rounds.
+- Reviewers: drizzle-migration-reviewer, security, reliability, spec-compliance. pdpa only if RoPA 8d changes (it should not in 2b).
+- Staff review: security + senior-tester.
+- A mechanism a reviewer asks for gets its plan rows before GREEN.
+- Merge only on the maintainer's word.
+
+#### Risks
+- **The live legacy leg gains three behaviours:** the cell-23 skip, cleared-lease writes, and the cutoff. Prod held 0 `broadcasts` rows on 30 Oct 2026. The import leg stays dark (flag OFF).
+- **The migration is catalogue-only.** The trigger is re-created from the newest definition and checked against the live one.
 
 ## Constitution Check
 
