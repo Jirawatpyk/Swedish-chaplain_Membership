@@ -120,13 +120,14 @@ function renderForm(
     taxAtPayment?: boolean;
     vatRateBps?: number | null;
     locale?: 'en' | 'sv';
+    events?: readonly EventOption[];
   } = {},
 ) {
   const locale = opts.locale ?? 'en';
   return render(
     <NextIntlClientProvider locale={locale} messages={locale === 'sv' ? svMessages : enMessages}>
       <EventFeeForm
-        events={events}
+        events={opts.events ?? events}
         taxAtPayment={opts.taxAtPayment ?? false}
         vatRateBps={opts.vatRateBps === undefined ? 700 : opts.vatRateBps}
         {...(opts.initialEventId ? { initialEventId: opts.initialEventId } : {})}
@@ -176,6 +177,44 @@ describe('previewVatInclusive (pure, half-away)', () => {
   it('returns zero for non-positive input', () => {
     expect(previewVatInclusive(0, 700)).toEqual({ subtotal: 0, vat: 0 });
     expect(previewVatInclusive(-5, 700)).toEqual({ subtotal: 0, vat: 0 });
+  });
+});
+
+describe('EventFeeForm — a deep-linked event outside the newest 200 (#54)', () => {
+  // useTransition + fetch need real timers (this file's default is fake).
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.stubGlobal('fetch', mockFetchRegistrations([]));
+  });
+  afterEach(() => {
+    vi.useFakeTimers();
+    vi.unstubAllGlobals();
+  });
+
+  // The page loads 200 events and appends the deep-linked one as the 201st.
+  const many: EventOption[] = Array.from({ length: 200 }, (_, i) => ({
+    eventId: `ev-n${i}`,
+    label: `Recent ${i} (2026-10-01)`,
+  }));
+  const old: EventOption = {
+    eventId: 'ev-old',
+    label: 'Old Breakfast (2025-03-04)',
+    description: 'From your link (not in the recent list)',
+  };
+
+  it('the 201st option is preselected AND shown in the open list, with its marker', async () => {
+    renderForm({ initialEventId: 'ev-old', events: [...many, old] });
+    const input = document.getElementById('eventId') as HTMLInputElement;
+    expect(input).toHaveValue('Old Breakfast (2025-03-04)');
+    fireEvent.click(input);
+    fireEvent.keyDown(input, { key: 'ArrowDown' });
+    // Plain DOM query: role-name computation over 200 options is too slow.
+    await waitFor(() => expect(document.querySelectorAll('[role="option"]').length).toBeGreaterThan(0));
+    const option = Array.from(document.querySelectorAll('[role="option"]')).find((o) =>
+      o.textContent?.includes('Old Breakfast (2025-03-04)'),
+    );
+    expect(option).toBeDefined();
+    expect(option).toHaveTextContent('From your link (not in the recent list)');
   });
 });
 

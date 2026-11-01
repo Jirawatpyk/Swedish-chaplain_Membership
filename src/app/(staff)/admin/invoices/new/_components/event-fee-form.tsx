@@ -99,6 +99,12 @@ export type EventOption = {
   readonly eventId: string;
   /** Display label — event name + CE start date (YYYY-MM-DD). */
   readonly label: string;
+  /**
+   * #54 — a second line under the label. Set only on the deep-linked event the
+   * page adds when it is not among the newest 200, so the admin sees why it is
+   * there (and that it is archived, when it is).
+   */
+  readonly description?: string;
 };
 
 const MAX_THB = 1_000_000;
