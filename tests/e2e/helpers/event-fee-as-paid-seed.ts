@@ -90,7 +90,14 @@ export async function seedEventFeeAsPaidFixture(
     `;
 
     // 2. Dedicated event — unflagged (no partner-benefit / cultural quota
-    //    side-effects), future-dated so it sorts near the top of the picker.
+    //    side-effects). Dated 30 days from NOW on every run (refreshed by the
+    //    upsert below): /admin/invoices/new loads only the newest 200 events
+    //    (start_date DESC), and a fixed date slid out of that window once the
+    //    calendar passed it (#54: 9/9 timed out waiting for the picker row).
+    const startsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const day = startsAt.toISOString().slice(0, 10);
+    const eventStart = `${day}T11:00:00Z`;
+    const eventEnd = `${day}T15:00:00Z`;
     const eventRows = await client.sql<Array<{ event_id: string }>>`
       INSERT INTO events (
         tenant_id, source, external_id,
@@ -100,7 +107,7 @@ export async function seedEventFeeAsPaidFixture(
         ${tenantSlug}, 'eventcreate', ${EXT_EVENT_AS_PAID},
         'E2E 064 As-Paid Event',
         'Seeded by tests/e2e/helpers/event-fee-as-paid-seed.ts',
-        '2026-08-20T11:00:00Z', '2026-08-20T15:00:00Z',
+        ${eventStart}, ${eventEnd},
         'Bangkok', 'networking',
         FALSE, FALSE, NULL, '{}'::jsonb
       )
