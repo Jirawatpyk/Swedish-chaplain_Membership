@@ -192,10 +192,10 @@ describe('createContactImport — the multipart contract (T086)', () => {
     expect(captured).toHaveLength(1);
   });
 
-  // Spec 140 s2a (DL5a): a create makes ONE attempt. The 429 stays
-  // `retryable`, so the row waits for the next tick, which submits again;
-  // `upsert` is what makes that second submit harmless.
-  it('a 429 is RETRYABLE and is not retried in-process — one submit, the next tick tries again', async () => {
+  // Spec 140 s2a (DL5a + review round 1, CR#1): a create makes one attempt,
+  // except on a 429 — Resend refused it for its rate and created nothing, so it
+  // is retried inside the 10 s budget. `upsert` makes the second submit harmless.
+  it('a 429 is RETRYABLE — the next attempt succeeds and the import is NOT resubmitted twice on success', async () => {
     stubFetch((call) =>
       call === 1
         ? jsonResponse(429, {
@@ -206,11 +206,16 @@ describe('createContactImport — the multipart contract (T086)', () => {
         : jsonResponse(201, { id: 'imp_after_429' }),
     );
 
-    await expect(
-      resendBroadcastsGateway.createContactImport(AUDIENCE_ID, ['a@example.com']),
-    ).rejects.toMatchObject({ kind: 'retryable', subKind: 'api' });
-    expect(captured).toHaveLength(1);
-    expect(captured[0]!.fields['on_conflict']).toBe('upsert');
+    const result = await resendBroadcastsGateway.createContactImport(AUDIENCE_ID, [
+      'a@example.com',
+    ]);
+
+    expect(result).toEqual({ importId: 'imp_after_429' });
+    expect(captured).toHaveLength(2);
+    // Both attempts carried the same audience and the same single row, so the
+    // upsert cannot duplicate anyone.
+    expect(captured[0]!.fileText).toBe(captured[1]!.fileText);
+    expect(captured[1]!.fields['on_conflict']).toBe('upsert');
   });
 });
 

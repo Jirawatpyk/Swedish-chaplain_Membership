@@ -12,11 +12,12 @@
  *   - 4xx other → `{kind: 'permanent', code, reason}`
  *
  * Retry policy: 1/2/4/8/16s backoff (CHK020) on retryable errors only, inside
- * ONE budget per call (`callTimeoutMs`, default `RESEND_CALL_TIMEOUT_MS` =
+ * ONE budget per request (`callTimeoutMs`, default `RESEND_CALL_TIMEOUT_MS` =
  * 10 s; spec 140 s2a): a backoff is taken only while the budget left exceeds
  * it + 1 s, so a retried call gives up within 10 s, not ~31 s. The creates
  * (`createAudience`, `createBroadcast`, `createContactImport`) make ONE
- * attempt. Permanent errors throw immediately.
+ * attempt unless Resend answered 429 (it created nothing). Permanent errors
+ * throw immediately.
  *
  * Logging: pino with `redact` configured globally to drop request
  * bodies; only metadata (audienceId, broadcastId, recipientCount,
@@ -235,6 +236,11 @@ function classifyResendError(
  */
 const RETRY_MIN_ATTEMPT_MS = 1_000;
 
+/** A 429: `classifyResendError` gives it, and only it, `retryable` / `api`. */
+function isRateLimited(e: unknown): boolean {
+  return e instanceof GatewayThrowable && e.kind === 'retryable' && e.subKind === 'api';
+}
+
 /**
  * Spec 140 s2a (DL5a, DL8, P6) — one bounded gateway call.
  *
@@ -250,13 +256,20 @@ const RETRY_MIN_ATTEMPT_MS = 1_000;
  * `statusCode: null`, and a raw `fetch` rejects with a `TimeoutError`, before
  * or mid-body.
  *
- * `retry: false` is one attempt (the creates: a retried create that reached
- * Resend mints a second resource, so a failed create waits for the next tick,
- * inside the FR-021 hour).
+ * `retry: 'rate_limit'` (the creates) retries a 429 only: Resend refused the
+ * request for its rate and created nothing. Anything else that may have
+ * reached Resend (a 5xx, a network failure, a timeout) is one attempt, because
+ * a retried create that reached Resend mints a second resource; a failed
+ * create waits for the next tick, inside the FR-021 hour (review round 1,
+ * CR#1). `retry: 'retryable'` retries every retryable error.
  */
 async function boundedCall<T>(
   op: (signal: AbortSignal) => Promise<T>,
-  ctx: { readonly method: string; readonly callTimeoutMs: number; readonly retry: boolean },
+  ctx: {
+    readonly method: string;
+    readonly callTimeoutMs: number;
+    readonly retry: 'retryable' | 'rate_limit';
+  },
 ): Promise<T> {
   const signal = AbortSignal.timeout(ctx.callTimeoutMs);
   const deadline = Date.now() + ctx.callTimeoutMs;
@@ -279,7 +292,7 @@ async function boundedCall<T>(
       }
       const backoff = RETRY_BACKOFF_MS[attempt];
       if (
-        !ctx.retry ||
+        (ctx.retry === 'rate_limit' && !isRateLimited(e)) ||
         backoff === undefined ||
         deadline - Date.now() <= backoff + RETRY_MIN_ATTEMPT_MS
       ) {
@@ -351,7 +364,7 @@ export function createResendBroadcastsGateway({
           );
           return { audienceId: result.data.id };
         },
-        { method: 'createAudience', callTimeoutMs, retry: false },
+        { method: 'createAudience', callTimeoutMs, retry: 'rate_limit' },
       );
     },
 
@@ -422,7 +435,7 @@ export function createResendBroadcastsGateway({
               );
             }
           },
-          { method: 'addContactsToAudience', callTimeoutMs, retry: true },
+          { method: 'addContactsToAudience', callTimeoutMs, retry: 'retryable' },
         );
       }
       logger.info(
@@ -477,7 +490,7 @@ export function createResendBroadcastsGateway({
           );
           return { broadcastId: result.data.id };
         },
-        { method: 'createBroadcast', callTimeoutMs, retry: false },
+        { method: 'createBroadcast', callTimeoutMs, retry: 'rate_limit' },
       );
     },
 
@@ -546,7 +559,7 @@ export function createResendBroadcastsGateway({
             'resend.broadcasts.broadcast_sent',
           );
         },
-        { method: 'sendBroadcast', callTimeoutMs, retry: true },
+        { method: 'sendBroadcast', callTimeoutMs, retry: 'retryable' },
       );
     },
 
@@ -605,7 +618,7 @@ export function createResendBroadcastsGateway({
             complete: result.data?.has_more === false,
           };
         },
-        { method: 'getAudienceContactCount', callTimeoutMs, retry: true },
+        { method: 'getAudienceContactCount', callTimeoutMs, retry: 'retryable' },
       );
     },
 
@@ -636,7 +649,7 @@ export function createResendBroadcastsGateway({
               sentAt: result.data.sent_at ?? null,
             };
           },
-          { method: 'retrieveBroadcast', callTimeoutMs, retry: true },
+          { method: 'retrieveBroadcast', callTimeoutMs, retry: 'retryable' },
         );
         if (resource === null) return { kind: 'not_found' };
         return { kind: 'present', resource };
@@ -698,7 +711,7 @@ export function createResendBroadcastsGateway({
               throw classifyResendError(result.error ?? undefined, 'audience', audienceId);
             }
           },
-          { method: 'removeContactFromAudience', callTimeoutMs, retry: true },
+          { method: 'removeContactFromAudience', callTimeoutMs, retry: 'retryable' },
         );
         logger.info({ audienceId }, 'resend.broadcasts.contact_detached');
         return { kind: 'detached' };
@@ -753,7 +766,7 @@ export function createResendBroadcastsGateway({
               );
             }
           },
-          { method: 'deleteContactGlobally', callTimeoutMs, retry: true },
+          { method: 'deleteContactGlobally', callTimeoutMs, retry: 'retryable' },
         );
         // No email in the log line — forbidden-fields hygiene (FR-053a).
         logger.info({}, 'resend.broadcasts.contact_deleted_globally');
@@ -806,7 +819,7 @@ export function createResendBroadcastsGateway({
             }
             return res.data;
           },
-          { method: 'listAudiences', callTimeoutMs, retry: true },
+          { method: 'listAudiences', callTimeoutMs, retry: 'retryable' },
         );
         const pageRows = result?.data ?? [];
         for (const r of pageRows) byId.set(r.id, r);
@@ -860,7 +873,7 @@ export function createResendBroadcastsGateway({
           }
           logger.info({ audienceId }, 'resend.broadcasts.audience_deleted');
         },
-        { method: 'deleteAudience', callTimeoutMs, retry: true },
+        { method: 'deleteAudience', callTimeoutMs, retry: 'retryable' },
       );
     },
 
@@ -894,7 +907,7 @@ export function createResendBroadcastsGateway({
           }
           logger.info({ broadcastId }, 'resend.broadcasts.broadcast_deleted');
         },
-        { method: 'deleteBroadcast', callTimeoutMs, retry: true },
+        { method: 'deleteBroadcast', callTimeoutMs, retry: 'retryable' },
       );
     },
 
@@ -960,7 +973,8 @@ export function createResendBroadcastsGateway({
      *     the caller retry a tick without tracking partial progress.
      */
     /**
-     * Spec 140 s2a (DL5a): ONE attempt, no in-process retry. It carries no
+     * Spec 140 s2a (DL5a): ONE attempt, no in-process retry, a 429 aside (it
+     * created nothing; review round 1, CR#1). It carries no
      * idempotency key, because `POST /contacts/imports` does not accept one
      * (108 Phase 9 review S18), so a retry after the request reached Resend made
      * a second import job; a failed submit now waits for the next tick. The
@@ -1034,7 +1048,7 @@ export function createResendBroadcastsGateway({
           );
           return { importId: body.id };
         },
-        { method: 'createContactImport', callTimeoutMs, retry: false },
+        { method: 'createContactImport', callTimeoutMs, retry: 'rate_limit' },
       );
     },
 
@@ -1089,7 +1103,7 @@ export function createResendBroadcastsGateway({
             },
           };
         },
-        { method: 'getContactImport', callTimeoutMs, retry: true },
+        { method: 'getContactImport', callTimeoutMs, retry: 'retryable' },
       );
     },
 
