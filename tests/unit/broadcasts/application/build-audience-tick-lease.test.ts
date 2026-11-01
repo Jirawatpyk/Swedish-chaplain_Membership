@@ -37,7 +37,7 @@ const TOKEN = 'aaaaaaaa-0000-4000-8000-00000000000a';
 const CALL_HEADROOM_MS = 25_000;
 const IMPORT_HEADROOM_MS = 45_000;
 const LEASE_TTL_MS = 330_000;
-const ROW_START_CUTOFF_MS = 131_000;
+const ROW_START_CUTOFF_MS = 121_000;
 
 type DepsWithEveryPort = { [K in keyof BuildAudienceTickDeps]: unknown };
 

@@ -3,8 +3,8 @@
  * exported constants rather than restated.
  *
  * Two longest paths, one per tick of the import leg:
- *   tick 1 = k·E + D + 5·C + I + P   (the import POST at IMPORT_CALL_TIMEOUT_MS)
- *   tick 2 = k·E + N·C + P + D       (N Resend calls at RESEND_CALL_TIMEOUT_MS)
+ *   tick 1 = k·L + D + 5·C + I + P   (the import POST at IMPORT_CALL_TIMEOUT_MS; L = CHECK_LOCK_TIMEOUT_MS)
+ *   tick 2 = k·L + N·C + P + D       (N Resend calls at RESEND_CALL_TIMEOUT_MS)
  * W_max is the larger. The inequalities the lease rests on:
  *   - TTL > maxDuration          (a holder killed at maxDuration never outlives its lease)
  *   - TTL ≥ W_max + M            (a row started at the cutoff finishes inside its lease)
@@ -42,6 +42,7 @@ const ROUTE = 'src/app/api/cron/broadcasts/dispatch-scheduled/route.ts';
 
 describe('spec 140 s2b — the dispatch lease budget (DL9, A5)', () => {
   it('the inputs are the exported constants they name (C, I, P from their homes)', () => {
+    expect(LEASE_BUDGET_INPUTS.checkLockTimeoutMs).toBe(CHECK_LOCK_TIMEOUT_MS);
     expect(LEASE_BUDGET_INPUTS.callTimeoutMs).toBe(RESEND_CALL_TIMEOUT_MS);
     expect(LEASE_BUDGET_INPUTS.importCallTimeoutMs).toBe(IMPORT_CALL_TIMEOUT_MS);
     expect(LEASE_BUDGET_INPUTS.reprobePauseMs).toBe(REPROBE_PAUSE_MS);
@@ -54,19 +55,19 @@ describe('spec 140 s2b — the dispatch lease budget (DL9, A5)', () => {
     expect(Number(m![1]) * 1000).toBe(DISPATCH_MAX_DURATION_MS);
   });
 
-  it('tick 1 = k·E + D + 5·C + I + P and tick 2 = k·E + N·C + P + D; W_max is the larger (tick 2 today)', () => {
+  it('review round 2 — lock waits are charged at CHECK_LOCK_TIMEOUT_MS: tick 1 = k·L + D + 5·C + I + P and tick 2 = k·L + N·C + P + D; W_max is the larger (tick 2 today)', () => {
     const i = LEASE_BUDGET_INPUTS;
     const { tick1, tick2 } = longestPathsMs(i);
-    expect(tick1).toBe(i.lockWaitsPerRow * i.erasureRowLockHoldMs + i.dbAndResolveMs + i.tick1BoundedCalls * i.callTimeoutMs + i.importCallTimeoutMs + i.reprobePauseMs);
-    expect(tick2).toBe(i.lockWaitsPerRow * i.erasureRowLockHoldMs + i.tick2ResendCalls * i.callTimeoutMs + i.reprobePauseMs + i.dbAndResolveMs);
-    expect(tick1).toBe(144_000);
-    expect(tick2).toBe(154_000);
+    expect(tick1).toBe(i.lockWaitsPerRow * i.checkLockTimeoutMs + i.dbAndResolveMs + i.tick1BoundedCalls * i.callTimeoutMs + i.importCallTimeoutMs + i.reprobePauseMs);
+    expect(tick2).toBe(i.lockWaitsPerRow * i.checkLockTimeoutMs + i.tick2ResendCalls * i.callTimeoutMs + i.reprobePauseMs + i.dbAndResolveMs);
+    expect(tick1).toBe(154_000);
+    expect(tick2).toBe(164_000);
     expect(W_MAX_MS).toBe(Math.max(tick1, tick2));
   });
 
   it('the literal constants equal their derivation: cutoff = maxDuration − W_max − M, headroom = C + M and I + M', () => {
     expect(ROW_START_CUTOFF_MS).toBe(DISPATCH_MAX_DURATION_MS - W_MAX_MS - LEASE_MARGIN_MS);
-    expect(ROW_START_CUTOFF_MS).toBe(131_000);
+    expect(ROW_START_CUTOFF_MS).toBe(121_000);
     expect(CALL_HEADROOM_MS).toBe(RESEND_CALL_TIMEOUT_MS + LEASE_MARGIN_MS);
     expect(IMPORT_HEADROOM_MS).toBe(IMPORT_CALL_TIMEOUT_MS + LEASE_MARGIN_MS);
   });
