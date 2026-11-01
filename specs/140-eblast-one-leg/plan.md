@@ -1137,6 +1137,33 @@ Run because `route.ts` changed after `147bf6150` (the span attribute `757d7d01f`
 - **CR#8:** the route's loop has three exits (`continue`, the deferral `break`, the catch), so `processed` is counted once in a `finally`, skipped for the deferred row, rather than moved into one branch.
 - **`dispatch_in_progress` in the UI:** the schedule dialog renders every error code through `approvalErrorMessage` (`t.has(code)`), so the copy key `admin.broadcasts.approval.errors.dispatch_in_progress` is the whole UI change; a 409 closes the dialog with a toast and refreshes the page, as for every other 409 there.
 
+### Slice 2b — review round 4 (targeted; the last under the cap. `/code-review high f4f4528b0..06bdfc63a`, reliability MERGEABLE, i18n ship, enterprise-ux ship with follow-ups; 1 Nov 2026) — cap reached
+
+**Review metrics:** round 4 (targeted) · 7 + 3 + 2 + 3 items (code-review, reliability, i18n, enterprise-ux) · cap: 2 full + 2 targeted, **reached**. No High remained. The main session decided, as the maintainer asked on 1 Nov 2026 (act on judgment and report): fix every item, and run no further review round. The fixes are each named below with their test. The gates run on the final HEAD, and the maintainer's re-Verify covers the driven path.
+
+**Plan rows added before the fixes (D-043).**
+
+| Mechanism (asked by) | State / rule | Test that goes red first |
+|---|---|---|
+| **confirm-schedule checks the lease before the write** (code-review #2, #3; reliability LOW-2) | Under its `lockForUpdate` row lock, confirm-schedule calls `hasLiveDispatchLease(tx, …)`; this is fail-closed, so a non-boolean throws. A live lease returns `dispatch_in_progress` before any write. The repo's re-time predicate stays as a backstop. On a 0-row same-status re-time it reports `LEASE_HELD` whenever the probed status equals the expected one and the token is set, with no second clock read. Otherwise it reports drift with the **probed** status | confirm-schedule unit · "a live lease answers dispatch_in_progress before any write"; repo · "a refused re-time whose lease expires before the probe still reports lease_held"; · "a real drift reports the probed status" |
+| **A 0-row restart CAS probes the token** (code-review #4) | `releaseAudienceImport` / `releaseResendAudience` return `'ok' \| 'lease_lost' \| 'cas_lost'`, probing the token on 0 rows the way `throwConcurrentMutation` does. The restart's `lease_lost` and `cas_lost` therefore follow the real cause | repo · "a release whose token was cleared reports lease_lost; an id drift reports cas_lost" |
+| **A DB fault at the audience attach is `dispatch.server_error`** (reliability LOW-3) | After the read-back reclaim, a non-lease, non-not-found attach failure returns `dispatch.server_error` with phase `attach_audience` (retryable), not a thrown `uncaught_error` | tick unit · "a DB fault at attachAudienceId answers dispatch.server_error after the reclaim" |
+| **The `dispatch_in_progress` refusal stays inside the dialog** (enterprise-ux, code-review #1) | `schedule-confirm-dialog.tsx`: a 409 `dispatch_in_progress` renders an `InlineWarning` (`tone="warning"`, title and description) with focus moved to it, and keeps the dialog open with the picked time, as READ_ONLY_MODE does. Copy, EN: title "Being prepared for sending"; description "Nothing was changed. This E-Blast is being prepared for sending right now. Try again in a few minutes — if it has been sent by then, its time can no longer be changed." TH and SV follow, with TH using กรุณา (i18n). UI presentation, so D-023's shared commit is allowed, with the failing run recorded | component · "a 409 dispatch_in_progress keeps the dialog open with the picked time and an alert" |
+
+**Closures:**
+
+| # | Finding | Closure |
+|---|---|---|
+| CR#1 / ux | the new 409 closes the dialog and loses the picked time | **Fix:** row 4 above |
+| CR#2 / rel LOW-2 | the probe's second clock read can fall back to drift, and drift reports the expected status | **Fix:** row 1 above |
+| CR#3 | the inline probe duplicates `hasLiveDispatchLeaseStatement` without fail-closed | **Fix:** row 1 above (the pre-check uses the existing method; the repo backstop no longer re-reads the clock) |
+| CR#4 | a cleared token at the restart's release CAS is labelled `cas_lost` | **Fix:** row 2 above |
+| CR#5 / rel LOW-1 | the docblock says an audience kept after a lost attach ack is inherited; the next tick's `stale_audience` self-heal deletes it | **Fix (docs):** the docblock, observability § 22.15 and the runbook say the next tick's self-heal replaces it. The read-back-before-visibility race is documented and self-heals the same way |
+| CR#6 | the restart-outcome mapping is copied in two places | **Fix:** one `restartStopAnswer(outcome)` beside `leaseStopAnswer` |
+| CR#7 | the `'lease_held'` literal has two meanings | **Fix:** the claim's and the legacy leg's skip use a separate named constant `LEASE_HELD_BY_ANOTHER_TICK`; `LEASE_HELD` stays the staff re-time refusal; the port docblock lists each producer |
+| rel LOW-3 | a DB blip at the attach alerts as `uncaught_error` | **Fix:** row 3 above |
+| i18n | TH uses โปรด and a doubled progressive | **Fix:** with row 4's copy, TH uses กรุณา and drops ขณะนี้; `messageThai` matches |
+
 ## Rollout
 
 - **Slice 1:** unflagged. It changes only the erasure cascade (erasure mode) and the two legs' refuse arm. Rollback: a revert.
