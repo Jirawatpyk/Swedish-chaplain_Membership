@@ -72,7 +72,12 @@ interface Opts {
   readonly createAudienceRetryable?: boolean;
   /** What `markDispatchRetryStarted` answers (`null` = no row matched: here, a lost token). */
   readonly retryStampReturns?: Date | null;
-  readonly attachAudienceIdThrows?: 'lease_lost';
+  /** `db_fault` = a throw that is not a repo refusal; `conflict` = a status-drift CAS refusal. */
+  readonly attachAudienceIdThrows?: 'lease_lost' | 'db_fault' | 'conflict';
+  /** The write committed although the attach threw (a lost ack): the read-back finds the id. */
+  readonly attachLandsBeforeFault?: boolean;
+  /** The read-back after a failed attach throws. */
+  readonly readBackThrows?: boolean;
   readonly deleteAudienceThrows?: boolean;
 }
 
@@ -82,6 +87,7 @@ function harness(opts: Opts = {}) {
   const releases: unknown[] = [];
   const memberEmails: unknown[] = [];
   let checkIndex = 0;
+  let attachAttempted = false;
   const checks = opts.checks ?? ['held'];
   const broadcast = {
     broadcastId: BROADCAST_ID,
@@ -160,11 +166,21 @@ function harness(opts: Opts = {}) {
         return broadcast;
       },
       async findById() {
+        if (attachAttempted) {
+          events.push('readBack');
+          if (opts.readBackThrows === true) throw new Error('57P01 terminating connection');
+        }
         return broadcast;
       },
-      async attachAudienceId(_tx: unknown, _t: unknown, _b: unknown, _id: string, lease: unknown) {
+      async attachAudienceId(_tx: unknown, _t: unknown, _b: unknown, id: string, lease: unknown) {
         write('attachAudienceId', lease);
+        attachAttempted = true;
+        if (opts.attachLandsBeforeFault === true) broadcast.resendAudienceId = id;
         if (opts.attachAudienceIdThrows === 'lease_lost') throw leaseLost();
+        if (opts.attachAudienceIdThrows === 'db_fault') throw new Error('08006 connection failure');
+        if (opts.attachAudienceIdThrows === 'conflict') {
+          throw new (BroadcastConcurrentMutationError as unknown as new (...a: unknown[]) => Error)(tenant.slug, BROADCAST_ID, 'cancelled');
+        }
       },
       async attachAudienceImport(_tx: unknown, _t: unknown, _b: unknown, _id: string, lease: unknown) {
         write('attachAudienceImport', lease);
@@ -398,6 +414,45 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
       expect.objectContaining({ resendAudienceId: 'aud-new' }),
       'broadcasts.audience_import.audience_leaked',
     );
+  });
+
+  // Review round 3 (code-review #1) — any other failed attach: the row is read
+  // back (the `_persist-minted-broadcast-id.ts` pattern). The id on the row →
+  // the write committed, keep the audience; not on the row → delete it; a
+  // read-back that fails keeps it and logs audience_leaked.
+  it.each([
+    ['a DB fault', 'db_fault' as const],
+    ['a status-drift refusal', 'conflict' as const],
+  ])('%s at attachAudienceId whose read-back shows no id deletes the audience', async (_label, throws) => {
+    const h = harness({ attachAudienceIdThrows: throws });
+    await h.run().catch(() => undefined);
+    const afterCreate = h.events.slice(h.events.indexOf('gw:createAudience') + 1);
+    expect(afterCreate.filter((e) => e.startsWith('gw:') || e === 'readBack')).toEqual(['readBack', 'gw:deleteAudience:aud-new']);
+    expect(logged(info, 'broadcasts.audience_import.audience_reclaimed')).toBe(true);
+  });
+
+  it('a DB fault at attachAudienceId whose read-back shows the id keeps it', async () => {
+    const h = harness({ attachAudienceIdThrows: 'db_fault', attachLandsBeforeFault: true });
+    await h.run().catch(() => undefined);
+    expect(h.events).toContain('readBack');
+    expect(h.gatewayCalls()).not.toContain('gw:deleteAudience:aud-new');
+    expect(logged(warn, 'broadcasts.audience_import.attach_ack_lost_audience_kept')).toBe(true);
+  });
+
+  it('a read-back that fails keeps the audience and logs audience_leaked at ERROR with the id', async () => {
+    const h = harness({ attachAudienceIdThrows: 'db_fault', readBackThrows: true });
+    await h.run().catch(() => undefined);
+    expect(h.gatewayCalls()).not.toContain('gw:deleteAudience:aud-new');
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({ resendAudienceId: 'aud-new', step: 'read_back' }),
+      'broadcasts.audience_import.audience_leaked',
+    );
+  });
+
+  it('a DB fault at attachAudienceId still escapes the tick after the reclaim (its answer is unchanged)', async () => {
+    const h = harness({ attachAudienceIdThrows: 'db_fault' });
+    await expect(h.run()).rejects.toThrow('08006');
+    expect(h.releases).toEqual([TOKEN]);
   });
 
   it('row 8 — a lost-token attach after the mint is a concurrent skip; the mint is reclaimed with NO lease check (A2)', async () => {
