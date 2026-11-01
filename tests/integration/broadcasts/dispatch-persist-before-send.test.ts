@@ -248,6 +248,7 @@ describe('dispatch — resend_broadcast_id is persisted in its OWN tx before the
       eventAttendees: eventAttendeesStub,
       audit: f7AuditAdapter,
       clock: { now: () => FROZEN_NOW },
+      tickBudget: { tickStartedAt: FROZEN_NOW.getTime(), maxDurationMs: 300_000 },
       fromEmail: 'noreply@test.invalid-but-test-only',
       tenantDisplayName: 'Test Chamber',
       locale: 'en' as const,

@@ -284,6 +284,7 @@ describe('spec 139 DE3 — the erasure cascade vs a dispatch tick past its persi
     eventAttendees: eventAttendeesStub,
     audit: f7AuditAdapter,
     clock: { now: () => new Date() },
+    tickBudget: { tickStartedAt: Date.now(), maxDurationMs: 300_000 },
     fromEmail: 'noreply@test.invalid-but-test-only',
     tenantDisplayName: 'Test Chamber',
     locale: 'en' as const,

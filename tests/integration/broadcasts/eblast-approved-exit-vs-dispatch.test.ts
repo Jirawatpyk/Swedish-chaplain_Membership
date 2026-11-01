@@ -310,6 +310,7 @@ describe('F119 T166 R-H1 — an exit from approved vs the lock-free dispatch leg
           eventAttendees: eventAttendeesStub,
           audit: f7AuditAdapter,
           clock: { now: () => new Date() },
+          tickBudget: { tickStartedAt: Date.now(), maxDurationMs: 300_000 },
           fromEmail: 'noreply@test.invalid-but-test-only',
           tenantDisplayName: 'Test Chamber',
           locale: 'en' as const,
