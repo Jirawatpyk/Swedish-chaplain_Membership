@@ -157,6 +157,21 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
     });
   });
 
+  // The defensive arm: confirm-schedule writes unfenced (`lease: null`), so the
+  // repo never reports LEASE_LOST here today. If it ever did, the marker must
+  // not leak into the answer as a status — it reads as the row's `approved`.
+  it('a lease_lost marker from the repo answers sending_started with status approved, never the marker', async () => {
+    const row = makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: APPROVED.id });
+    const { store, run } = setup(row);
+    vi.mocked(store.broadcastsRepo.applyTransition).mockRejectedValueOnce(
+      new BroadcastConcurrentMutationError('test-tenant' as never, row.broadcastId, 'lease_lost' as never, 'approved'),
+    );
+    expect(await run({ mode: { mode: 'schedule', scheduledFor: new Date('2026-10-05T03:00:00Z') } })).toEqual({
+      ok: false,
+      error: { kind: 'sending_started', status: 'approved' },
+    });
+  });
+
   /**
    * T166 S-H1 — "the existing rules that block sending still apply at send
    * time" (spec § Edge Cases). Only submit read them; the 30-day round let a
