@@ -14,10 +14,13 @@
  * Retry policy: 1/2/4/8/16s backoff (CHK020) on retryable errors only, inside
  * ONE budget per request (`callTimeoutMs`, default `RESEND_CALL_TIMEOUT_MS` =
  * 10 s; spec 140 s2a): a backoff is taken only while the budget left exceeds
- * it + 1 s, so a retried call gives up within 10 s, not ~31 s. The creates
- * (`createAudience`, `createBroadcast`, `createContactImport`) make ONE
- * attempt unless Resend answered 429 (it created nothing). Permanent errors
- * throw immediately.
+ * it + 1 s, so a retried call gives up within 10 s, not ~31 s. On the
+ * default instance the creates (`createAudience`, `createBroadcast`,
+ * `createContactImport`) make ONE attempt unless Resend answered 429 (it
+ * created nothing); `createContactImport`'s budget is `IMPORT_CALL_TIMEOUT_MS`
+ * (30 s). The legacy instance (`legacyResendBroadcastsGateway`, the legacy
+ * dispatch leg only, until slice 4) retries `createBroadcast` on any retryable
+ * error inside the budget. Permanent errors throw immediately.
  *
  * Logging: pino with `redact` configured globally to drop request
  * bodies; only metadata (audienceId, broadcastId, recipientCount,

@@ -180,6 +180,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // the scan leaves it out rather than let it take a `LIMIT` slot every tick;
   // the use case's own check is the backstop. Hoisted out of the template so
   // the tenant-SQL shape scan reads the whole query (nested-template rule).
+  // Both predicates are kept on purpose: CHECK `broadcasts_audience_import_coherent`
+  // (read on dev 1 Nov 2026) is `(audience_import_id IS NULL) =
+  // (audience_import_submitted_at IS NULL)`, so either one alone is enough
+  // today; the redundant one costs nothing and is the path `/verify` drove
+  // (review round 2, CR#4).
   const importRowsFilter = importEnabled
     ? sql``
     : sql`AND audience_import_id IS NULL AND audience_import_submitted_at IS NULL`;
@@ -643,6 +648,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     cronSpan.setAttribute('cron.retryable', summary.retryable);
     cronSpan.setAttribute('cron.permanent_failed', summary.permanent_failed);
     cronSpan.setAttribute('cron.concurrent_skip', summary.concurrent_skip);
+    // Spec 140 s2a review round 2 (CR#5): every summary bucket is a span attribute.
+    cronSpan.setAttribute('cron.import_row_skipped', summary.import_row_skipped);
     cronSpan.setAttribute('cron.resource_missing', summary.resource_missing);
     cronSpan.setAttribute('cron.unknown_error', summary.unknown_error);
     cronSpan.setAttribute('cron.uncaught_error', summary.uncaught_error);
