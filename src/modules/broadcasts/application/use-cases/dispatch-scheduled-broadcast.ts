@@ -587,7 +587,8 @@ export async function dispatchScheduledBroadcast(
   // -- so ask instead of assuming a 409 will come back.
   //
   // **Position is the fix, not just the question.** This sat AFTER
-  // `addContactsToAudience`, and `withRetry` short-circuits a non-retryable
+  // `addContactsToAudience`, and the gateway's retry (`withRetry`, now
+  // `boundedCall`, spec 140 s2a) short-circuits a non-retryable
   // GatewayThrowable immediately -- so a 409 from the first duplicate contact
   // threw before the probe ever ran.
   //

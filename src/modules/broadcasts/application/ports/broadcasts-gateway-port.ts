@@ -312,8 +312,9 @@ export interface BroadcastsGatewayPort {
   ): Promise<RetrieveBroadcastOutcome>;
 
   /**
-   * Spec 139 review round 1 — ONE `GET /broadcasts/{id}`: no `withRetry`
-   * backoff and a hard 10 s timeout, like {@link deleteBroadcastOnce}. The
+   * Spec 139 review round 1 — ONE `GET /broadcasts/{id}`: no retry or backoff
+   * and a hard {@link RESEND_CALL_TIMEOUT_MS} (10 s) timeout, like
+   * {@link deleteBroadcastOnce}. The
    * erasure cascade calls it while it still holds the broadcast row's lock
    * (after a DELETE 404 or 403), so the row's whole decision is made under the
    * lock that did the DELETE; together the two calls hold it for at most
@@ -503,11 +504,12 @@ export interface BroadcastsGatewayPort {
   deleteBroadcast(broadcastId: string): Promise<void>;
 
   /**
-   * Spec 139 P1 — ONE `DELETE /broadcasts/{id}`: no `withRetry` backoff and a
-   * hard 10 s timeout (the SDK has none). The erasure cascade calls it while it
-   * holds the broadcast row's lock, so a slow Resend must not hold that lock —
-   * and every dispatch tick that reaches the row — for the 31 s of backoff
-   * `deleteBroadcast` can spend. Never throws: every failure is an arm of
+   * Spec 139 P1 — ONE `DELETE /broadcasts/{id}`: no retry or backoff and a
+   * hard {@link RESEND_CALL_TIMEOUT_MS} (10 s) timeout. The erasure cascade
+   * calls it while it holds the broadcast row's lock, so a slow Resend must not
+   * hold that lock — and every dispatch tick that reaches the row — for the
+   * backoff `deleteBroadcast` can spend (up to 10 s since spec 140 s2a; 31 s
+   * before). Never throws: every failure is an arm of
    * {@link DeleteBroadcastOnceOutcome}.
    *
    * The second caller is the dispatch legs' standing refusal (spec 139 P2 for
