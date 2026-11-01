@@ -775,6 +775,9 @@ export async function eraseMember(
       audienceContacts: capturedSubprocessorPairs,
       tenantSlug: deps.tenant.slug,
       requestId: meta.requestId,
+      // Spec 140 s2a review round 1 (pdpa H-1): the same cascade deadline, so
+      // the propagation's audit row is written inside the route's maxDuration.
+      ...(meta.deadlineAt !== undefined ? { deadlineAt: meta.deadlineAt } : {}),
     });
     // Emit the metric for EVERY outcome (ok/partial/failed) so a partial/failed
     // is never silently lost (it pages the DPO runbook).

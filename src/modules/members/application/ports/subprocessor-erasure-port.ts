@@ -84,6 +84,16 @@ export interface SubprocessorErasureInput {
   readonly audienceContacts: ReadonlyArray<SubprocessorAudienceContact>;
   readonly tenantSlug: string;
   readonly requestId: string;
+  /**
+   * Spec 140 s2a review round 1 (pdpa H-1) — the erasure cascade's deadline
+   * (`erasureCascadeDeadline`, set by the erase route and `reconcile-erasures`
+   * through `EraseMemberMeta.deadlineAt`). Before each pair the adapter stops
+   * when less than one gateway request budget is left, and counts every pair it
+   * did not try as failed, so the `subprocessor_erasure_propagated` row is
+   * written inside `maxDuration` and is never a false `ok`. Absent: no bound
+   * beyond the per-request one.
+   */
+  readonly deadlineAt?: Date;
 }
 
 /** Best-effort — NEVER throws (mirrors the F6/F7 cascade ports). */

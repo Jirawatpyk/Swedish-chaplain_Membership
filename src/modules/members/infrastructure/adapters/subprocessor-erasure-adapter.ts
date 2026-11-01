@@ -25,7 +25,7 @@
  * proof; a `partial`/`failed` outcome is re-driven by the US2d reconciler /
  * US3-E DPO runbook.
  */
-import { resendBroadcastsGateway } from '@/modules/broadcasts';
+import { RESEND_CALL_TIMEOUT_MS, resendBroadcastsGateway } from '@/modules/broadcasts';
 import { logger } from '@/lib/logger';
 import type {
   SubprocessorErasurePort,
@@ -109,7 +109,30 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
     let removed = 0;
     let alreadyAbsent = 0;
     let failed = 0;
-    for (const { audienceId, email } of input.audienceContacts) {
+    const pairs = input.audienceContacts;
+    for (let i = 0; i < pairs.length; i += 1) {
+      // Spec 140 s2a review round 1 (pdpa H-1): the caller's deadline. One
+      // request can take up to RESEND_CALL_TIMEOUT_MS, so a pair is started
+      // only while that much is left; every pair not tried counts as failed,
+      // never as removed or absent, so the outcome is never a false `ok`.
+      if (
+        input.deadlineAt !== undefined &&
+        input.deadlineAt.getTime() - Date.now() < RESEND_CALL_TIMEOUT_MS
+      ) {
+        const untriedPairs = pairs.length - i;
+        failed += untriedPairs;
+        logger.warn(
+          {
+            memberId: input.memberId,
+            requestId: input.requestId,
+            untriedPairs,
+            cascade: 'subprocessor_resend',
+          },
+          'erase-member: subprocessor Resend propagate deadline reached',
+        );
+        break;
+      }
+      const { audienceId, email } = pairs[i]!;
       try {
         const outcome = await resendBroadcastsGateway.removeContactFromAudience(
           audienceId,
