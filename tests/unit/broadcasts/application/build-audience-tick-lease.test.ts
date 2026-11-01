@@ -21,6 +21,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { err, ok } from '@/lib/result';
 import { logger } from '@/lib/logger';
+import { broadcastsMetrics } from '@/lib/metrics';
 import { asTenantContext } from '@/modules/tenants';
 import { asBroadcastId } from '@/modules/broadcasts/domain/broadcast';
 import { buildAudienceTick, type BuildAudienceTickDeps } from '@/modules/broadcasts/application/use-cases/build-audience-tick';
@@ -61,6 +62,9 @@ interface Opts {
   readonly tickStartedAt?: number;
   /** The resolver refuses: the audience grew past the ceiling. */
   readonly resolveTooLarge?: boolean;
+  /** Review round 1 (CR#1) — the row status a `lease_lost` throw reports it probed. */
+  readonly lostRowStatus?: string;
+  readonly completionStampThrows?: 'lease_lost';
 }
 
 function harness(opts: Opts = {}) {
@@ -94,7 +98,13 @@ function harness(opts: Opts = {}) {
     dispatchFirstFailedAt: null as Date | null,
     ...opts.row,
   };
-  const leaseLost = () => new BroadcastConcurrentMutationError(tenant.slug, BROADCAST_ID, 'lease_lost');
+  const leaseLost = () =>
+    new (BroadcastConcurrentMutationError as unknown as new (...a: unknown[]) => Error)(
+      tenant.slug,
+      BROADCAST_ID,
+      'lease_lost',
+      opts.lostRowStatus,
+    );
   const write = (method: string, lease: unknown) => {
     events.push(`write:${method}`);
     writeLeases.push({ method, lease });
@@ -164,6 +174,7 @@ function harness(opts: Opts = {}) {
       },
       async markAudienceImportCompleted(_tx: unknown, _t: unknown, _b: unknown, lease: unknown) {
         write('markAudienceImportCompleted', lease);
+        if (opts.completionStampThrows === 'lease_lost') throw leaseLost();
       },
       async markDispatchRetryStarted(_tx: unknown, _t: unknown, _b: unknown, at: Date, lease: unknown) {
         write('markDispatchRetryStarted', lease);
@@ -399,7 +410,7 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
   });
 
   it('A4 — a lease lost after /send (the ids attach) logs lease_lost_after_send at INFO, not sent_but_transition_lost', async () => {
-    const h = harness({ row: TICK2_ROW, attachResendIdsThrows: 'lease_lost' });
+    const h = harness({ row: TICK2_ROW, attachResendIdsThrows: 'lease_lost', lostRowStatus: 'approved' });
     const res = await h.run();
     expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' });
     expect(h.gatewayCalls()).toContain('gw:sendBroadcast');
@@ -408,10 +419,46 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
   });
 
   it('A4 — the same for a lease lost at the sending transition', async () => {
-    const h = harness({ row: TICK2_ROW, sendingTransitionThrows: 'lease_lost' });
+    const h = harness({ row: TICK2_ROW, sendingTransitionThrows: 'lease_lost', lostRowStatus: 'sending' });
     await h.run();
     expect(logged(info, 'broadcasts.audience_import.lease_lost_after_send')).toBe(true);
     expect(logged(error, 'broadcasts.audience_import.sent_but_transition_lost')).toBe(false);
+  });
+
+  // Review round 1 (CR#1, security M1, reliability M1) — `lease_lost` carries
+  // the row status the repo probed. After `/send`, only `approved` (a
+  // takeover) or `sending` (a sibling flipped it) is benign; a row a cancel
+  // took to `cancelled` after the mail went out still needs a human.
+  it.each([
+    ['attach_ids', { attachResendIdsThrows: 'lease_lost' as const }],
+    ['sending_transition', { sendingTransitionThrows: 'lease_lost' as const }],
+  ])('a lease cleared by a cancel after /send still logs sent_but_transition_lost (%s)', async (_step, throws) => {
+    const h = harness({ row: TICK2_ROW, ...throws, lostRowStatus: 'cancelled' });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_lost' });
+    expect(logged(error, 'broadcasts.audience_import.sent_but_transition_lost')).toBe(true);
+    expect(logged(info, 'broadcasts.audience_import.lease_lost_after_send')).toBe(false);
+  });
+
+  it.each([
+    ['attach_ids', { attachResendIdsThrows: 'lease_lost' as const }, 'approved'],
+    ['sending_transition', { sendingTransitionThrows: 'lease_lost' as const }, 'cancelled'],
+  ])('both A4 arms count broadcasts_dispatch_lease_lost_after_send_total{step} (%s)', async (step, throws, rowStatus) => {
+    const counted = vi.spyOn(broadcastsMetrics, 'dispatchLeaseLostAfterSend').mockImplementation(() => undefined);
+    const h = harness({ row: TICK2_ROW, ...throws, lostRowStatus: rowStatus });
+    await h.run();
+    expect(counted).toHaveBeenCalledWith('test-tenant', step);
+  });
+
+  // Spec L4 — the completion-stamp A4 site.
+  it('A4 — a lease lost at the completion stamp (row sending) logs lease_lost_after_send and counts it; the tick still reports sent', async () => {
+    const counted = vi.spyOn(broadcastsMetrics, 'dispatchLeaseLostAfterSend').mockImplementation(() => undefined);
+    const h = harness({ row: TICK2_ROW, completionStampThrows: 'lease_lost', lostRowStatus: 'sending' });
+    const res = await h.run();
+    expect(res.ok ? res.value.kind : res.error).toBe('sent');
+    expect(logged(info, 'broadcasts.audience_import.lease_lost_after_send')).toBe(true);
+    expect(logged(error, 'broadcasts.audience_import.completion_stamp_failed')).toBe(false);
+    expect(counted).toHaveBeenCalledWith('test-tenant', 'completion_stamp');
   });
 
   it('releases the lease in a finally, once, on success; a failed release is logged and changes nothing', async () => {
