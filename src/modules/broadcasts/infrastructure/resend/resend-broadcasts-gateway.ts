@@ -27,7 +27,10 @@ import type { Resend } from 'resend';
 import { logger } from '@/lib/logger';
 import { errKind } from '@/lib/log-id';
 import type { RemoveContactOutcome } from '@/modules/broadcasts/application/ports/broadcasts-gateway-port';
-import { RESEND_CALL_TIMEOUT_MS } from '../../application/ports/broadcasts-gateway-port';
+import {
+  IMPORT_CALL_TIMEOUT_MS,
+  RESEND_CALL_TIMEOUT_MS,
+} from '../../application/ports/broadcasts-gateway-port';
 import type {
   AudienceContact,
   AudienceContactCount,
@@ -256,12 +259,14 @@ function isRateLimited(e: unknown): boolean {
  * `statusCode: null`, and a raw `fetch` rejects with a `TimeoutError`, before
  * or mid-body.
  *
- * `retry: 'rate_limit'` (the creates) retries a 429 only: Resend refused the
- * request for its rate and created nothing. Anything else that may have
- * reached Resend (a 5xx, a network failure, a timeout) is one attempt, because
- * a retried create that reached Resend mints a second resource; a failed
- * create waits for the next tick, inside the FR-021 hour (review round 1,
- * CR#1). `retry: 'retryable'` retries every retryable error.
+ * `retry: 'rate_limit'` (the creates, on the default instance) retries a 429
+ * only: Resend refused the request for its rate and created nothing. Anything
+ * else that may have reached Resend (a 5xx, a network failure, a timeout) is
+ * one attempt, because a retried create that reached Resend mints a second
+ * resource; a failed create waits for the next tick, inside the FR-021 hour
+ * (review round 1, CR#1). `retry: 'retryable'` retries every retryable error;
+ * the legacy instance uses it for `createBroadcast` (review round 2, CR#2,
+ * until slice 4). A timeout is never retried: the signal is spent.
  */
 async function boundedCall<T>(
   op: (signal: AbortSignal) => Promise<T>,
@@ -341,11 +346,26 @@ export interface ResendBroadcastsGatewayOptions {
    * budget is spec 140 slice 2b's).
    */
   readonly callTimeoutMs?: number;
+  /**
+   * Spec 140 s2a review round 2 (CR#3) — `createContactImport`'s budget
+   * (one attempt, a 429 aside). Default {@link IMPORT_CALL_TIMEOUT_MS}.
+   */
+  readonly importCallTimeoutMs?: number;
+  /**
+   * Spec 140 s2a review round 2 (CR#2, the maintainer's decision, 1 Nov 2026)
+   * — `createBroadcast`'s retry. Default `'rate_limit'`: one attempt, a 429
+   * retried. `'retryable'` (only {@link legacyResendBroadcastsGateway}) also
+   * retries a 5xx or a network failure inside the budget, as the legacy leg
+   * did before s2a.
+   */
+  readonly createBroadcastRetry?: 'retryable' | 'rate_limit';
 }
 
 /** Spec 140 s2a — a gateway whose every request is bounded by `callTimeoutMs`. */
 export function createResendBroadcastsGateway({
   callTimeoutMs = RESEND_CALL_TIMEOUT_MS,
+  importCallTimeoutMs = IMPORT_CALL_TIMEOUT_MS,
+  createBroadcastRetry = 'rate_limit',
 }: ResendBroadcastsGatewayOptions = {}): BroadcastsGatewayPort {
   return {
     async createAudience(name: string): Promise<{ readonly audienceId: string }> {
@@ -490,7 +510,7 @@ export function createResendBroadcastsGateway({
           );
           return { broadcastId: result.data.id };
         },
-        { method: 'createBroadcast', callTimeoutMs, retry: 'rate_limit' },
+        { method: 'createBroadcast', callTimeoutMs, retry: createBroadcastRetry },
       );
     },
 
@@ -1048,7 +1068,7 @@ export function createResendBroadcastsGateway({
           );
           return { importId: body.id };
         },
-        { method: 'createContactImport', callTimeoutMs, retry: 'rate_limit' },
+        { method: 'createContactImport', callTimeoutMs: importCallTimeoutMs, retry: 'rate_limit' },
       );
     },
 
@@ -1328,3 +1348,15 @@ function normaliseStatus(
 
 /** The production gateway: every call bounded by {@link RESEND_CALL_TIMEOUT_MS}. */
 export const resendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadcastsGateway();
+
+/**
+ * Spec 140 s2a review round 2 (CR#2, the maintainer's decision, 1 Nov 2026) —
+ * the legacy dispatch leg's gateway: its `createBroadcast` retries a 5xx or a
+ * network failure inside the 10 s budget, as before s2a, so one 5xx does not
+ * end the tick and re-push every contact. Wired ONLY by
+ * `makeDispatchScheduledBroadcastDeps`. A retried 5xx that did mint leaves a
+ * draft at Resend (RoPA 8d). DELETED with the legacy leg in slice 4.
+ */
+export const legacyResendBroadcastsGateway: BroadcastsGatewayPort = createResendBroadcastsGateway({
+  createBroadcastRetry: 'retryable',
+});

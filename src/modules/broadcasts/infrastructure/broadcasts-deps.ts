@@ -24,7 +24,7 @@ import { eventAttendeesBridge } from './event-attendees-bridge';
 import { f7AuditAdapter } from './audit-adapter';
 import { broadcastsRateLimiter } from './rate-limiter';
 import { dompurifySanitizer } from './sanitizer/dompurify-sanitizer';
-import { resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
+import { legacyResendBroadcastsGateway, resendBroadcastsGateway } from './resend/resend-broadcasts-gateway';
 import { resendBroadcastsWebhookVerifier } from './resend/resend-broadcasts-webhook-verifier';
 import { makeDrizzleBroadcastDeliveriesRepo } from './db/drizzle-broadcast-deliveries-repo';
 import { unsubscribeTokenSigner } from './unsubscribe-token/hmac-signer';
@@ -491,7 +491,9 @@ export async function makeDispatchScheduledBroadcastDeps(
   return {
     tenant,
     broadcastsRepo: makeDrizzleBroadcastsRepo(tenantId),
-    broadcastsGateway: resendBroadcastsGateway,
+    // Spec 140 s2a review round 2 (CR#2): the legacy leg's createBroadcast
+    // retries a 5xx inside the budget. Deleted with the leg in slice 4.
+    broadcastsGateway: legacyResendBroadcastsGateway,
     membersBridge,
     marketingUnsubscribes: makeDrizzleMarketingUnsubscribesRepo(tenantId),
     eventAttendees: eventAttendeesBridge,

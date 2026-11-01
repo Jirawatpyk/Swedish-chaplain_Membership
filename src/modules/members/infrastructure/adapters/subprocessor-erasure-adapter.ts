@@ -45,6 +45,9 @@ function gatewayField(e: unknown, field: 'kind' | 'code'): string | null {
   return /^[a-z0-9_]{1,64}$/.test(v) ? v : 'unrecognised';
 }
 
+/** Spec 140 s2a review round 2 — the most untried audience ids one deadline log line names. */
+const UNTRIED_AUDIENCE_IDS_LOG_CAP = 50;
+
 /**
  * No-op sub-processor-erasure adapter for tests that don't exercise the F7
  * boundary (`SubprocessorErasurePort` is required in production deps; tests
@@ -121,11 +124,17 @@ export const subprocessorErasureAdapter: SubprocessorErasurePort = {
       ) {
         const untriedPairs = pairs.length - i;
         failed += untriedPairs;
+        // Review round 2 (CR#1, pdpa M-1): the audiences the DPO must clean by
+        // hand (a re-drive cannot repeat these pairs). Ids only, never an
+        // email; deduplicated and capped so one log line stays bounded.
+        const untried = [...new Set(pairs.slice(i).map((p) => p.audienceId))];
         logger.warn(
           {
             memberId: input.memberId,
             requestId: input.requestId,
             untriedPairs,
+            untriedAudienceIds: untried.slice(0, UNTRIED_AUDIENCE_IDS_LOG_CAP),
+            untriedAudienceIdsTruncated: untried.length > UNTRIED_AUDIENCE_IDS_LOG_CAP,
             cascade: 'subprocessor_resend',
           },
           'erase-member: subprocessor Resend propagate deadline reached',

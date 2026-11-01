@@ -38,6 +38,15 @@ export type GatewayRetryableSubKind = 'network' | 'timeout' | 'server_5xx' | 'ap
  */
 export const RESEND_CALL_TIMEOUT_MS = 10_000;
 
+/**
+ * Spec 140 s2a review round 2 (CR#3) — `createContactImport`'s budget: it
+ * uploads the whole audience as one CSV (up to the 5,000 / 50,000 ceiling), so
+ * 10 s is unsized for it. 30 s is the pre-s2a `importFetch` value and is
+ * **ASSUMED**, not measured at size: the import POST measured 412 ms for a
+ * small CSV (2026-09-08); slice 4's ceiling work measures it at 900 rows.
+ */
+export const IMPORT_CALL_TIMEOUT_MS = 30_000;
+
 export type BroadcastsGatewayError =
   | {
       readonly kind: 'retryable';
