@@ -12,7 +12,7 @@
  *     "already paid — refresh" message, NOT a red error, and prompt a reload so
  *     the admin picks up the already-minted `RC` number.
  *   - `failure`    — an irreversible §87-mint failure (`overflow`,
- *     `pdf_render_failed`, `blob_upload_failed`, the legacy-row guards, the
+ *     `pdf_render_failed` / `blob_upload_failed` (→ `errors.temporary`), the legacy-row guards, the
  *     088 flag-rollback guard, …): show an inline `role="alert"` (focused) with
  *     a dedicated message, a codeFallback carrying the raw code, or the generic
  *     unknown copy.
@@ -50,10 +50,22 @@ const DEDICATED_MESSAGE_CODES: ReadonlySet<string> = new Set([
   'membership_terminated',
 ]);
 
+/**
+ * #62(2) — render / upload failures are raised INSIDE the payment tx, which
+ * rolled back, so nothing was recorded and a retry is safe: show the
+ * "temporary problem — nothing was recorded" copy, not a raw code. Mirrors
+ * issue's `TRANSIENT_RETRY_CODES` → `errors.temporary`.
+ */
+const TEMPORARY_CODES: ReadonlySet<string> = new Set([
+  'pdf_render_failed',
+  'blob_upload_failed',
+]);
+
 export function routeRecordPaymentError(
   code: string | undefined | null,
 ): RecordPaymentErrorRouting {
   if (code && CONCURRENT_CODES.has(code)) return { kind: 'concurrent' };
+  if (code && TEMPORARY_CODES.has(code)) return { kind: 'failure', messageKey: 'errors.temporary' };
   if (code && DEDICATED_MESSAGE_CODES.has(code)) {
     return { kind: 'failure', messageKey: `errors.${code}` };
   }

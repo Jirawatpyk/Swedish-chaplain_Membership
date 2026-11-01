@@ -3598,6 +3598,7 @@
           "membership_terminated": "Medlemmens medlemskap har avslutats — använd \"Förnya medlem\" för att återaktivera och fakturera på nytt, registrera sedan betalningen mot den nya fakturan. Om medlemmens tidigare öppna faktura fortfarande finns kvar, annullera den.",
           "new_flow_bill_requires_flag_on": "Denna faktura skapades för skatt-vid-betalning-flödet, som för närvarande är avstängt. Aktivera det igen, eller annullera och utfärda fakturan på nytt, innan du registrerar betalning.",
           "concurrent": "Denna faktura har redan betalats eller ändrats. Uppdatera för att se dess status och kvittots RC-nummer.",
+          "temporary": "Ett tillfälligt problem stoppade registreringen av betalningen — inget registrerades. Försök igen och kontakta supporten om det fortsätter.",
           "unconfirmed": "Vi kunde inte bekräfta om betalningen registrerades. Uppdatera för att kontrollera innan du försöker igen — om den redan är registrerad registreras inget nytt.",
           "waitingForConnection": "Väntar på anslutningen…",
           "stillWorking": "Arbetar fortfarande — håll det här fönstret öppet.",

@@ -24,7 +24,7 @@
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { and, eq } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import { db, runInTenant } from '@/lib/db';
 import { auditLog } from '@/modules/auth/infrastructure/db/schema';
@@ -40,6 +40,7 @@ import { receiptPdfRenderEnqueueAdapter } from '@/modules/invoicing/infrastructu
 import { createTestTenant, type TestTenant } from '../helpers/test-tenant';
 import { createActiveTestUser, type TestUser } from '../helpers/test-users';
 import { nextSeedMemberNumber } from '../helpers/seed-member-number';
+import { createInMemoryBlobStorage } from '../../helpers/in-memory-blob-storage';
 
 const MATRIX: BenefitMatrix = {
   eblast_per_year: 1,
@@ -342,4 +343,94 @@ describe('R3-S1 — record-payment rollback observed on live Neon', () => {
     );
     expect(matched.length).toBe(0);
   }, 60_000);
+
+  // #60 — a rollback after the in-tx receipt upload must not leave the §86/4
+  // PDF at its deterministic key, and a retry must replace whatever an
+  // earlier attempt left there, so the stored file always hashes to the
+  // committed `receipt_pdf_sha256`. Sync PDF path, in-memory blob store (it
+  // mirrors the adapter's "already exists" arm).
+  it('#60 — rollback after the receipt upload leaves no blob; a retry over stale bytes stores the committed hash', async () => {
+    const { invoiceId } = await seedIssuedInvoice(tenant, user);
+    const blob = createInMemoryBlobStorage();
+    const receiptKeys = () => blob.keys().filter((k) => k.includes(`${invoiceId}_receipt_`));
+    const payInput = {
+      tenantId: tenant.ctx.slug,
+      actorUserId: user.userId,
+      invoiceId,
+      paymentMethod: 'other' as const,
+      paymentDate: '2026-05-01',
+      requestId: 'task-60-rollback',
+    };
+
+    // 1. A failure after the upload (the onPaid hook) rolls back → no blob.
+    await expect(
+      runInTenant(tenant.ctx, async () =>
+        recordPayment(
+          {
+            ...makeRecordPaymentDeps(tenant.ctx.slug, undefined, [
+              async () => {
+                throw new Error('task-60 simulated post-upload failure');
+              },
+            ]),
+            blob,
+            asyncReceiptPdf: false,
+            taxAtPayment: 'off',
+          },
+          payInput,
+        ),
+      ),
+    ).rejects.toThrow('task-60 simulated post-upload failure');
+    expect(receiptKeys()).toEqual([]);
+
+    // 2. Simulate a killed attempt whose cleanup never ran: stale bytes sit
+    //    at the key the retry will use. The retry must overwrite them.
+    const firstTry = await runInTenant(tenant.ctx, async () =>
+      recordPayment(
+        {
+          ...makeRecordPaymentDeps(tenant.ctx.slug, undefined, [
+            async () => {
+              throw new Error('task-60 capture the key');
+            },
+          ]),
+          blob: {
+            ...blob,
+            // Cleanup "never ran" — keep the bytes this attempt uploaded.
+            delete: async () => {},
+          },
+          asyncReceiptPdf: false,
+          taxAtPayment: 'off',
+        },
+        payInput,
+      ),
+    ).catch((e: unknown) => e);
+    expect(firstTry).toBeInstanceOf(Error);
+    const [staleKey] = receiptKeys();
+    expect(staleKey).toBeDefined();
+    await blob.uploadPdf({
+      key: staleKey!,
+      body: new TextEncoder().encode('%PDF-stale-bytes-from-a-rolled-back-attempt'),
+      contentType: 'application/pdf',
+      allowOverwrite: true,
+    });
+
+    const ok = await runInTenant(tenant.ctx, async () =>
+      recordPayment(
+        { ...makeRecordPaymentDeps(tenant.ctx.slug), blob, asyncReceiptPdf: false, taxAtPayment: 'off' },
+        payInput,
+      ),
+    );
+    expect(ok.ok).toBe(true);
+
+    const [invRow] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)))
+      .limit(1);
+    expect(invRow?.status).toBe('paid');
+    expect(invRow?.receiptPdfBlobKey).toBe(staleKey);
+    const stored = blob.bytesFor(staleKey!);
+    expect(stored).toBeDefined();
+    const storedSha = createHash('sha256').update(stored!).digest('hex');
+    expect(storedSha).toBe(invRow?.receiptPdfSha256);
+  }, 90_000);
 });

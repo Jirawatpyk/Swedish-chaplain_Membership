@@ -135,7 +135,9 @@ describe('PaymentForm — concurrent 409 inline recovery (FR-032)', () => {
 
 describe('PaymentForm — failure branch is focused + destructive (FR-032)', () => {
   it('renders the interpolated codeFallback copy and moves focus onto the alert', async () => {
-    const fetchMock = rejectingFetch('pdf_render_failed');
+    // `overflow` keeps the raw-code fallback; pdf_render_failed /
+    // blob_upload_failed read as `errors.temporary` (#62(2), below).
+    const fetchMock = rejectingFetch('overflow');
     vi.stubGlobal('fetch', fetchMock);
     try {
       renderForm();
@@ -143,7 +145,7 @@ describe('PaymentForm — failure branch is focused + destructive (FR-032)', () 
 
       const alert = await screen.findByTestId('record-payment-error');
       expect(alert).toHaveClass('aura-alert--danger');
-      expect(alert).toHaveTextContent('Error code: pdf_render_failed');
+      expect(alert).toHaveTextContent('Error code: overflow');
       // The irreversible §87-mint failure must not be missable: the component
       // parks focus on the alert (tabIndex={-1} + focus effect).
       expect(alert).toHaveAttribute('tabindex', '-1');
@@ -399,6 +401,9 @@ describe('PaymentForm — an unknown outcome is not a failure (#57, #58, #59)', 
       const alert = await screen.findByTestId('record-payment-error');
       expect(alert).toHaveAttribute('data-tone', 'destructive');
       expect(alert).not.toHaveTextContent(enMessages.admin.invoices.pay.errors.unconfirmed);
+      // #62(2) — the rolled-back render failure says so, never a raw code.
+      expect(alert).toHaveTextContent(enMessages.admin.invoices.pay.errors.temporary);
+      expect(alert).not.toHaveTextContent('pdf_render_failed');
     } finally {
       vi.unstubAllGlobals();
     }

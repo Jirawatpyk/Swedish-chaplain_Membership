@@ -754,8 +754,11 @@ export const invoicingMetrics = {
    * `pdf_sha256` does not match the stored document (silent
    * tax-document drift). Alert: any non-zero rate — ops must sweep the
    * logged key before the next issuance attempt of that invoice.
+   * `record_payment` (#60): the receipt PDF of a rolled-back payment, printed
+   * with a released RC number; a retry overwrites it, but until then it is a
+   * second §86/4 document carrying that number.
    */
-  orphanBlobCleanupFailed(useCase: 'issue' | 'issue_as_paid'): void {
+  orphanBlobCleanupFailed(useCase: 'issue' | 'issue_as_paid' | 'record_payment'): void {
     safeMetric(() => {
       counter(
         'invoicing_orphan_blob_cleanup_failed_total',

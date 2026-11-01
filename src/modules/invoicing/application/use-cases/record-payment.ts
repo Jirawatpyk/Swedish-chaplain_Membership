@@ -451,6 +451,10 @@ export async function recordPayment(
     }
   }
 
+  // #60 — the receipt key this attempt is about to write (sync path only).
+  // Set just before the in-tx upload so the outer catch can delete the bytes
+  // a rolled-back attempt left behind (065 L-3 parity with issueInvoice).
+  let receiptBlobKeyForCleanup: string | null = null;
   let result: Result<RecordPaymentSuccess, RecordPaymentError>;
   try {
   result = await time('tx', () => deps.invoiceRepo.withTx(async (tx) => {
@@ -950,7 +954,16 @@ export async function recordPayment(
                   : {}),
               },
               blobKey: receiptBlobKey,
+              // #60 (065 H-1a parity) — overwrite. Safe: this runs after
+              // `lockForUpdate` on an `issued` row (a paid row returned as a
+              // replay above), so one attempt per invoice reaches here at a
+              // time, and any bytes already at the key belong to a
+              // rolled-back attempt whose RC number was released. Without it
+              // the adapter's "already exists" arm keeps those OLD bytes while
+              // the row commits a new RC number and the NEW bytes' sha256.
+              allowOverwrite: true,
             };
+    if (receiptRenderRequest !== null) receiptBlobKeyForCleanup = receiptBlobKey;
     const rendered =
       receiptRenderRequest === null
         ? null
@@ -1418,6 +1431,32 @@ export async function recordPayment(
     return ok({ ...updated, emailDispatch, replayed: false });
   }));
   } catch (e) {
+    // #60 — orphan receipt cleanup (065 L-3 parity). Any failure after the
+    // upload rolled the tx back and released the RC number, but the PDF
+    // printed with that number stays at the key. Delete it on every caught
+    // error EXCEPT:
+    //   - `pdf_render_failed`: the render runs before the upload, so this
+    //     attempt wrote nothing; and
+    //   - `concurrent_state_change`: the state moved under us, so another
+    //     attempt may own bytes at the key.
+    // Best-effort: awaited, a failure is logged at ERROR and counted, and the
+    // original error is never masked. A retry also overwrites (above), so a
+    // missed delete cannot drift the stored file from `receipt_pdf_sha256`.
+    const orphanKey = receiptBlobKeyForCleanup;
+    const skipOrphanCleanup =
+      e instanceof RecordPaymentInternalError &&
+      (e.error.code === 'pdf_render_failed' || e.error.code === 'concurrent_state_change');
+    if (orphanKey !== null && !skipOrphanCleanup) {
+      try {
+        await deps.blob.delete(orphanKey);
+      } catch (delErr) {
+        logger.error(
+          { err: errKind(delErr), invoiceId: input.invoiceId, blobKey: orphanKey },
+          'recordPayment: orphan receipt blob cleanup failed',
+        );
+        invoicingMetrics.orphanBlobCleanupFailed('record_payment');
+      }
+    }
     if (e instanceof RecordPaymentInternalError) {
       logger.warn(
         {
