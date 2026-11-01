@@ -28,9 +28,10 @@
  * the dialog content.
  */
 
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Button, Dialog } from '@jirawatpyk/aura-react';
+import { resolveDialogFinalFocus } from '@/components/broadcast/resolve-dialog-final-focus';
 import { IssueInvoiceForm, type IssueInvoiceFormProps } from './issue-invoice-form';
 import {
   initialMoneyDialogFooter,
@@ -59,6 +60,21 @@ export function IssueInvoiceDialog(props: Props) {
   const t = useTranslations('admin.invoices.issue');
   const tDetail = useTranslations('admin.invoices.detail');
   const [open, setOpen] = useState(false);
+  // Raised when the form closes for a page refresh (a success, or Refresh on
+  // its inline alert): the refresh can unmount the trigger, so focus skips it
+  // for #main-content (WCAG 2.4.3, #48).
+  const closedForRefreshRef = useRef(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const finalFocus = useCallback(
+    (): HTMLElement | null =>
+      resolveDialogFinalFocus({
+        closedViaSuccess: closedForRefreshRef.current,
+        trigger: triggerRef.current,
+        fallback: null,
+        mainContent: document.getElementById('main-content'),
+      }),
+    [],
+  );
   const [footer, setFooter] = useState<MoneyDialogFooterState>(() =>
     initialMoneyDialogFooter(t(props.taxAtPayment ? 'issueBillButtonPlain' : 'issueInvoiceButtonPlain')),
   );
@@ -68,11 +84,15 @@ export function IssueInvoiceDialog(props: Props) {
       role="alertdialog"
       size="lg"
       open={open}
-      onOpen={() => setOpen(true)}
+      onOpen={() => {
+        closedForRefreshRef.current = false;
+        setOpen(true);
+      }}
       onClose={() => setOpen(false)}
       dismissible={!footer.pending}
+      finalFocus={finalFocus}
       trigger={
-        <Button variant="primary" touchHeight>
+        <Button ref={triggerRef} variant="primary" touchHeight>
           {tDetail('actions.issue')}
         </Button>
       }
@@ -89,7 +109,14 @@ export function IssueInvoiceDialog(props: Props) {
     >
       {/* The panel unmounts on close, so the typed phrase, treatment and
           certificate fields start fresh on every open. */}
-      <IssueInvoiceForm {...props} onClose={() => setOpen(false)} onFooterChange={setFooter} />
+      <IssueInvoiceForm
+        {...props}
+        onClose={(reason) => {
+          closedForRefreshRef.current = reason === 'refresh';
+          setOpen(false);
+        }}
+        onFooterChange={setFooter}
+      />
     </Dialog>
   );
 }
