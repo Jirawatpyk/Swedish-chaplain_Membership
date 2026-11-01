@@ -151,7 +151,7 @@ function makeDeps(opts: {
       tenant,
       clock: { now: () => NOW },
       // Spec 140 s2b (DL9) — a tick that has just begun: every row may start.
-      tickBudget: { tickStartedAt: NOW.getTime(), maxDurationMs: 300_000 },
+      tickBudget: { tickStartedAt: NOW.getTime() },
       fromEmail: 'noreply@example.com',
       tenantDisplayName: 'Test Chamber',
       locale: 'en' as const,

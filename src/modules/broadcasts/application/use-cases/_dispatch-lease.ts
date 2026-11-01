@@ -21,6 +21,15 @@
  * L = `CHECK_LOCK_TIMEOUT_MS` (28 s): each row-lock wait is charged at the
  * longest a pre-call check may wait, not at E (review round 2, code-review #2).
  *
+ * Outside W_max ON PURPOSE (review round 3, reliability LOW-A, accepted):
+ * - the end-of-tick RELEASE and its lock wait (≤ L). The release runs after the
+ *   last irreversible call, so a function killed mid-release has nothing left
+ *   to fence; its lease simply expires at TTL and the row waits one more tick.
+ * - the CLAIM's wait for the row lock is not bounded by `lock_timeout`; it
+ *   stays the ASSUMED k term (one cascade per row per tick, ≤ E).
+ * Neither can break the lease: safety rests on TTL > `maxDuration` (a holder
+ * is killed before its lease can end) and on the token fencing every write.
+ *
  * C = `RESEND_CALL_TIMEOUT_MS`, I = `IMPORT_CALL_TIMEOUT_MS` (both in the
  * gateway port, so infrastructure reads them from there), P =
  * `REPROBE_PAUSE_MS`. A dead holder's lease expires `LEASE_TTL_MS` after its
@@ -68,13 +77,6 @@ export const TICK1_BOUNDED_CALLS = 5;
  */
 export const DB_AND_RESOLVE_MS = 15_000;
 
-/**
- * The longest a pre-call check (`checkDispatchLease`, `SELECT … FOR UPDATE`)
- * waits for the row lock: `ERASURE_ROW_LOCK_HOLD_MS` + 5 s (review round 1,
- * reliability L2). An erasure cascade holds the lock at most E; anything longer
- * is a stuck holder, and the check fails as `lease_check_failed` (retryable)
- * rather than hang on a branch with no `statement_timeout`.
- */
 /**
  * L — the longest a pre-call check (`checkDispatchLease`) or the release
  * (`releaseDispatchLease`) waits for the row lock: `ERASURE_ROW_LOCK_HOLD_MS`
@@ -163,13 +165,14 @@ export function leaseBudgetViolations(i: LeaseBudgetInputs, ttlMs: number, maxDu
 }
 
 /**
- * When the cron invocation began and how long it may run (its route's
- * `maxDuration`). The dispatch route passes it to `makeBuildAudienceTickDeps`
- * (a required parameter) for the import leg only (DL9).
+ * When the cron invocation began. The dispatch route passes it to
+ * `makeBuildAudienceTickDeps` (a required parameter) for the import leg only
+ * (DL9). The invocation's length is not carried: the cutoff is the one
+ * literal `ROW_START_CUTOFF_MS`, derived from `DISPATCH_MAX_DURATION_MS`, which
+ * the budget test pins to the route's `maxDuration` (review round 3, CR#7).
  */
 export interface TickBudget {
   readonly tickStartedAt: number;
-  readonly maxDurationMs: number;
 }
 
 /**

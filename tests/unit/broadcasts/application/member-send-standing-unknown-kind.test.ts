@@ -121,7 +121,7 @@ describe('an unknown MemberSendStanding kind is never read as "may send"', () =>
         broadcastsGateway: gateway,
         sendStanding: makeFakeSendStanding(),
         clock: { now: () => store.now },
-        tickBudget: { tickStartedAt: store.now.getTime(), maxDurationMs: 300_000 },
+        tickBudget: { tickStartedAt: store.now.getTime() },
       } as never,
       { broadcastId: row.broadcastId },
     );

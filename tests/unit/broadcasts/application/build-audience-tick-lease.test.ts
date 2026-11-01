@@ -127,7 +127,7 @@ function harness(opts: Opts = {}) {
   const deps: DepsWithEveryPort = {
     tenant,
     clock: { now: () => NOW },
-    tickBudget: { tickStartedAt: opts.tickStartedAt ?? NOW.getTime(), maxDurationMs: 300_000 },
+    tickBudget: { tickStartedAt: opts.tickStartedAt ?? NOW.getTime() },
     fromEmail: 'noreply@example.com',
     tenantDisplayName: 'Test Chamber',
     locale: 'en' as const,

@@ -301,7 +301,7 @@ describe('spec 139 DE3 — the erasure cascade vs a dispatch tick past its persi
     audit: f7AuditAdapter,
     clock: { now: () => new Date() },
     // Spec 140 s2b (DL9) — a tick that has just begun.
-    tickBudget: { tickStartedAt: Date.now(), maxDurationMs: 300_000 },
+    tickBudget: { tickStartedAt: Date.now() },
     fromEmail: 'noreply@test.invalid-but-test-only',
     tenantDisplayName: 'Test Chamber',
     locale: 'en' as const,

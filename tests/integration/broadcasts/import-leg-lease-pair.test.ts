@@ -156,7 +156,7 @@ describe('spec 140 s2b DL1 — two concurrent import ticks on one row (live Neon
     broadcastsGateway: gateway,
     audit: f7AuditAdapter,
     clock: { now: () => new Date() },
-    tickBudget: { tickStartedAt: Date.now(), maxDurationMs: 300_000 },
+    tickBudget: { tickStartedAt: Date.now() },
     fromEmail: 'noreply@test.invalid-but-test-only',
     tenantDisplayName: 'Test Chamber',
     locale: 'en' as const,

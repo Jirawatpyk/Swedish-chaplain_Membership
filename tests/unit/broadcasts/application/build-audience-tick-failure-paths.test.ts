@@ -500,7 +500,7 @@ function makeDeps(opts: {
       tenant,
       clock: { now: () => NOW },
       // Spec 140 s2b (DL9) — a tick that has just begun: every row may start.
-      tickBudget: { tickStartedAt: NOW.getTime(), maxDurationMs: 300_000 },
+      tickBudget: { tickStartedAt: NOW.getTime() },
       fromEmail: 'noreply@example.com',
       tenantDisplayName: 'Test Chamber',
       locale: 'en' as const,
@@ -3134,16 +3134,18 @@ describe('buildAudienceTick — FR-021 budget anchors on the first failure (F119
    * The reset is the one write a hold makes; still no audit row, no email.
    */
   it.each([
-    ['tick 1 (no import yet)', {}, []],
-    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }, ['deleteAudience']],
-  ] as const)('H1 — %s, a hold on a STAMPED row resets the clock and still writes no audit, sends no email', async (_label, row, calls) => {
+    ['tick 1 (no import yet)', {}, [], 0],
+    ['tick 2 (import already submitted)', { ...POLLING, audienceImportSubmittedAt: NOW }, ['deleteAudience'], 1],
+  ] as const)('H1 — %s, a hold on a STAMPED row resets the clock and still writes no audit, sends no email', async (_label, row, calls, callsBeforeReset) => {
     const { deps, rec } = makeDeps({ ...row, dispatchFirstFailedAt: minutesAgo(30), standing: { access: 'suspended' } });
 
     const res = await buildAudienceTick(deps as never, { broadcastId: BROADCAST_ID });
 
     expect(res).toEqual({ ok: true, value: { kind: 'dispatch_held_member_suspended' } });
-    // The reset comes BEFORE the tick-2 abandon's delete.
-    expect(rec.retryClears).toEqual([0]);
+    // Spec 140 s2b review round 3 (CR#4) — the reset comes AFTER the tick-2
+    // abandon's delete: only a tick that answers the hold resets the clock
+    // (a restart that loses the lease or a CAS answers a skip, and resets nothing).
+    expect(rec.retryClears).toEqual([callsBeforeReset]);
     expect(rec.retryStamps).toEqual([]);
     expect(rec.transitions).toEqual([]);
     expect(rec.audits).toEqual([]);

@@ -98,7 +98,7 @@ describe('spec 140 s2b — the dispatch lease budget (DL9, A5)', () => {
   });
 
   it('rowStartAllowed: a row may start up to the cutoff after the tick began, not after', () => {
-    const budget = { tickStartedAt: 1_000_000, maxDurationMs: DISPATCH_MAX_DURATION_MS };
+    const budget = { tickStartedAt: 1_000_000 };
     expect(rowStartAllowed(budget, 1_000_000)).toBe(true);
     expect(rowStartAllowed(budget, 1_000_000 + ROW_START_CUTOFF_MS)).toBe(true);
     expect(rowStartAllowed(budget, 1_000_000 + ROW_START_CUTOFF_MS + 1)).toBe(false);

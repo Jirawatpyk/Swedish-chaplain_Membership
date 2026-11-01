@@ -678,6 +678,20 @@ function leaseLostAfterSendIsBenign(rowStatus: string | undefined): boolean {
 }
 
 /**
+ * Review round 3 (reliability LOW-B) — the not-critical arm's line. `sending`
+ * (a sibling flipped it) is INFO. `approved` has no remaining cause — no live
+ * holder can be taken over inside the TTL, and a re-time no longer clears a
+ * live lease — so it is WARN, "unexpected"; the counter is unchanged.
+ */
+function logLeaseLostAfterSend(fields: Readonly<Record<string, unknown>>, rowStatus: string | undefined): void {
+  if (rowStatus === 'approved') {
+    logger.warn({ ...fields, note: 'unexpected: no live holder can be taken over' }, 'broadcasts.audience_import.lease_lost_after_send');
+  } else {
+    logger.info(fields, 'broadcasts.audience_import.lease_lost_after_send');
+  }
+}
+
+/**
  * The A4 arm for a lost lease at the ids attach or the `sending` transition:
  * counted by `step` either way, then INFO when benign, else critical.
  */
@@ -692,7 +706,7 @@ function answerLeaseLostAfterSend(
   broadcastsMetrics.dispatchLeaseLostAfterSend(deps.tenant.slug, step);
   const ids = { tenantId: deps.tenant.slug, broadcastId: input.broadcastId, resendBroadcastId: fields.resendBroadcastId, importId: fields.importId, step, rowStatus: rowStatus ?? null };
   if (leaseLostAfterSendIsBenign(rowStatus)) {
-    logger.info(ids, 'broadcasts.audience_import.lease_lost_after_send');
+    logLeaseLostAfterSend(ids, rowStatus);
   } else {
     logger.error({ ...ids, recipientCount: fields.recipientCount, severity: 'critical' }, 'broadcasts.audience_import.sent_but_transition_lost');
   }
@@ -984,14 +998,17 @@ async function applySendStanding(
   );
   if (standing.kind === 'send') return null;
   if (standing.kind === 'hold') {
-    recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
-    // Outside every tx: the Step-1 lock tx has committed.
-    await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', deps.lease);
     // Best-effort: a failed restart leaves the hold the decided answer. A lease
     // lost or running short while it ran is the tick's answer instead (review
-    // round 2, CR#3): the restart stopped where the next holder resumes.
+    // round 2, CR#3), and so is a CAS the restart lost (round 3, CR#5): the
+    // restart stopped where the next holder resumes.
     const restarted = await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
     if (restarted === 'lost' || typeof restarted === 'object') return leaseStopAnswer(restarted);
+    if (restarted === 'cas_lost') return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+    // Review round 3 (CR#4) — only a tick that answers the hold records it and
+    // resets the retry clock (outside every tx: the Step-1 lock tx has committed).
+    recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
+    await resetDispatchRetryClock(deps, input.broadcastId, 'broadcasts.audience_import.retry_clock_clear_failed', deps.lease);
     return ok({ kind: 'dispatch_held_member_suspended' });
   }
   // Reached only for a NOT-handed probe (a handed row returned at Step 1a).
@@ -1187,7 +1204,7 @@ async function restartAudienceBuild(
   row: RowIds,
   why: RestartReason,
   opts: { readonly bidIsDead: boolean },
-): Promise<'restarted' | 'nothing' | 'failed' | LeaseStop> {
+): Promise<'restarted' | 'nothing' | 'failed' | 'cas_lost' | LeaseStop> {
   const { audienceId, importId, resendBroadcastId } = row;
   if (audienceId === null || audienceId === '') return 'nothing';
   const names = RESTART_LOG_NAMES[why];
@@ -1206,9 +1223,13 @@ async function restartAudienceBuild(
     );
     return 'failed';
   };
-  const lost = (step: string): 'lost' => {
-    logger.info({ ...ids, step }, `broadcasts.audience_import.${names.lost}`);
-    return 'lost';
+  // Review round 3 (CR#5) — `'lost'` is a lease check that read lost (the
+  // tick's `lease_lost`); `'cas_lost'` is a claim / release CAS that matched
+  // no row (status or ids moved, or the token): it keeps the old
+  // `unknown_or_already_processed` label. One log line, `cause` tells them apart.
+  const lost = <C extends 'lost' | 'cas_lost'>(step: string, outcome: C): C => {
+    logger.info({ ...ids, step, cause: outcome === 'lost' ? 'lease_lost' : 'cas_lost' }, `broadcasts.audience_import.${names.lost}`);
+    return outcome;
   };
   // Spec 140 s2b (CAS 12) — each delete below is irreversible, so the lease is
   // checked first; a lost or expiring lease stops the restart where it is (the
@@ -1219,7 +1240,7 @@ async function restartAudienceBuild(
     const stop = leaseReadStop(await checkLeaseBefore(deps, input, step), step);
     if (stop === null) return null;
     if (typeof stop === 'object' && 'failed' in stop) return failed(step, stop.failed);
-    return stop === 'lost' ? lost(step) : stop;
+    return stop === 'lost' ? lost(step, 'lost') : stop;
   };
 
   // 1. CLAIM.
@@ -1236,7 +1257,7 @@ async function restartAudienceBuild(
     } catch (e) {
       return failed('release_import', e);
     }
-    if (!claimed) return lost('release_import');
+    if (!claimed) return lost('release_import', 'cas_lost');
   }
   // 2. The broadcast resource (an empty id is not an id).
   if (resendBroadcastId !== null && resendBroadcastId !== '') {
@@ -1276,7 +1297,7 @@ async function restartAudienceBuild(
   } catch (e) {
     return failed('release_audience', e);
   }
-  if (!released) return lost('release_audience');
+  if (!released) return lost('release_audience', 'cas_lost');
 
   if (why === 'hold') {
     broadcastsMetrics.audienceImportAbandonedOnHold(deps.tenant.slug);
@@ -1321,8 +1342,12 @@ async function selfHealMissingAudience(
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const outcome = await restartAudienceBuild(deps, input, row, why, { bidIsDead });
   if (outcome === 'restarted') return ok({ kind: 'audience_restarted' });
-  // Review round 2 (spec L-g) — a restart that lost the lease says so.
+  // Review round 2 (spec L-g) — a restart that lost the lease says so; a CAS
+  // miss keeps the old label (round 3, CR#5).
   if (outcome === 'lost' || typeof outcome === 'object') return leaseStopAnswer(outcome);
+  if (outcome === 'cas_lost') {
+    return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+  }
   return err({ kind: 'dispatch.server_error', message: 'audience_restart_failed', phase: 'audience_restart' });
 }
 
@@ -2619,7 +2644,7 @@ async function advanceToSending(
       const leaseLost = stampErr instanceof BroadcastConcurrentMutationError && stampErr.observedStatus === LEASE_LOST;
       if (leaseLost) broadcastsMetrics.dispatchLeaseLostAfterSend(deps.tenant.slug, 'completion_stamp');
       if (leaseLost && leaseLostAfterSendIsBenign(stampErr.rowStatus ?? undefined)) {
-        logger.info({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, step: 'completion_stamp', rowStatus: stampErr.rowStatus }, 'broadcasts.audience_import.lease_lost_after_send');
+        logLeaseLostAfterSend({ tenantId: deps.tenant.slug, broadcastId: input.broadcastId, importId, step: 'completion_stamp', rowStatus: stampErr.rowStatus }, stampErr.rowStatus ?? undefined);
       } else logger.error(
         {
           err: errKind(stampErr),

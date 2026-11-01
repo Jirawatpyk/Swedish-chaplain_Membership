@@ -728,8 +728,8 @@ describe('cron dispatch-scheduled — span attributes mirror the summary (spec 1
  *            import flag ON and OFF (a held row must not take a `LIMIT` slot,
  *            and a dead holder's row waits out its lease, then is reclaimed);
  *            NOT inside `importRowsFilter`, which exists only flag OFF.
- *   DL9 — both legs get `{ tickStartedAt, maxDurationMs }` (the route's entry
- *            instant and its `maxDuration`), and a row deferred past the cutoff
+ *   DL9 — the import leg gets `{ tickStartedAt }` (the route's entry
+ *            instant), and a row deferred past the cutoff
  *            is its own bucket on either leg — never `succeeded` or
  *            `import_pending`, which an ok kind would otherwise fall into.
  */
@@ -765,7 +765,7 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
 
   // Review round 1 (CR#5) — the cutoff is the import leg's only: the legacy
   // leg's per-contact push is not in W_max, so a cutoff there bounded nothing.
-  it('DL9 — the import leg receives the tick budget (the route entry instant, maxDuration 300 s); the legacy leg none', async () => {
+  it('DL9 — the import leg receives the tick budget (the route entry instant); the legacy leg none', async () => {
     captureScan([{ broadcast_id: BROADCAST_ID }]);
     dispatchScheduledBroadcastMock.mockResolvedValue({ ok: true, value: { kind: 'sent' } });
     const before = Date.now();
@@ -777,8 +777,9 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     isF7ImportAudienceEnabledMock.mockReturnValue(true);
     buildAudienceTickMock.mockResolvedValue({ ok: true, value: { kind: 'deferred_past_cutoff' } });
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    const [importDeps] = buildAudienceTickMock.mock.calls[0] as [{ tickBudget?: { tickStartedAt: number; maxDurationMs: number } }];
-    expect(importDeps.tickBudget?.maxDurationMs).toBe(300_000);
+    const [importDeps] = buildAudienceTickMock.mock.calls[0] as [{ tickBudget?: { tickStartedAt: number } }];
+    // Review round 3 (CR#7) — the budget carries the entry instant only.
+    expect(importDeps.tickBudget).toEqual({ tickStartedAt: expect.any(Number) });
     expect(importDeps.tickBudget?.tickStartedAt).toBeGreaterThanOrEqual(before);
   });
 
@@ -807,8 +808,7 @@ describe('cron dispatch-scheduled — the dispatch lease (spec 140 s2b)', () => 
     const before = Date.now();
     const { POST } = await import('@/app/api/cron/broadcasts/dispatch-scheduled/route');
     await POST(makeRequest({ auth: 'Bearer test-cron-secret' }));
-    const budget = buildDepsArgs[0]?.[2] as { tickStartedAt: number; maxDurationMs: number } | undefined;
-    expect(budget?.maxDurationMs).toBe(300_000);
+    const budget = buildDepsArgs[0]?.[2] as { tickStartedAt: number } | undefined;
     expect(budget?.tickStartedAt).toBeGreaterThanOrEqual(before);
     const [importDeps] = buildAudienceTickMock.mock.calls[0] as [{ tickBudget?: unknown }];
     expect(importDeps.tickBudget).toBe(budget);

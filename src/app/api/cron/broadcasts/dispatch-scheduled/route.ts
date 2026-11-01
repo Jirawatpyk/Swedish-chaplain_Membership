@@ -119,7 +119,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   // Spec 140 s2b (DL9) — the invocation's start, for the row-start cutoff
   // (`ROW_START_CUTOFF_MS`): no row starts so late that its longest path could
   // outrun `maxDuration`.
-  const tickBudget = { tickStartedAt: Date.now(), maxDurationMs: maxDuration * 1000 };
+  const tickBudget = { tickStartedAt: Date.now() };
   // Verify-fix R3 (Code-M2, 2026-05-02): constant-time Bearer check
   // via shared `verifyCronBearer` helper (matches F4 outbox + F5
   // sweep-stale-pending-refunds). Avoids timing side-channel.
@@ -375,7 +375,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       : null;
 
     for (const [rowIndex, row] of eligible.entries()) {
-      summary.processed++;
+      // Review rounds 2–3 (CR#5, CR#8) — `processed` counts every row reached
+      // except a deferred one, once, in the `finally` below (every `continue`,
+      // the `break` and the catch pass through it): processed +
+      // deferred_past_cutoff = the rows reached.
+      let deferred = false;
       try {
         if (importDeps !== null) {
           const built = await buildAudienceTick(importDeps, {
@@ -388,10 +392,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             // dashboard claim sends that have not happened.
             // Spec 140 s2b (DL9; review round 1 CR#7) — past the cutoff no
             // later row can start either: stop here and count every row left.
-            // Review round 2 (CR#5) — a deferred row is not processed:
-            // processed + deferred_past_cutoff = the rows reached.
             if (built.value.kind === 'deferred_past_cutoff') {
-              summary.processed--;
+              deferred = true;
               summary.deferred_past_cutoff += eligible.length - rowIndex;
               break;
             }
@@ -667,6 +669,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           },
           'cron.broadcasts.dispatch.uncaught_error',
         );
+      } finally {
+        if (!deferred) summary.processed++;
       }
     }
 

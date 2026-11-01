@@ -118,7 +118,7 @@ describe('spec 140 s2b DL3 — the dispatch lease behind the erasure cascade\'s 
     broadcastsGateway: gateway,
     audit: f7AuditAdapter,
     clock: { now: () => new Date() },
-    tickBudget: { tickStartedAt: Date.now(), maxDurationMs: 300_000 },
+    tickBudget: { tickStartedAt: Date.now() },
     fromEmail: 'noreply@test.invalid-but-test-only',
     tenantDisplayName: 'Test Chamber',
     locale: 'en' as const,

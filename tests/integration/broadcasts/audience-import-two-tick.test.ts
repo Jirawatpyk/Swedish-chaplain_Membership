@@ -149,7 +149,7 @@ function makeDeps(gateway: FakeGateway, recipients: readonly string[] = RECIPIEN
     audit: f7AuditAdapter,
     clock: systemClock,
     // Spec 140 s2b (DL9) — a tick that has just begun.
-    tickBudget: { tickStartedAt: Date.now(), maxDurationMs: 300_000 },
+    tickBudget: { tickStartedAt: Date.now() },
     fromEmail: 'noreply@swecham.example',
     tenantDisplayName: 'Test Chamber',
     locale: 'en' as const,

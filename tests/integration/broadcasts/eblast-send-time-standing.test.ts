@@ -276,7 +276,7 @@ describe('F119 T166 S-H1 — approve-as-submitted and the promotion re-read memb
   // RECORDS every call — a refusal must make none.
 
   /** Spec 140 s2b (DL9) — the import deps maker's required budget: a tick that has just begun. */
-  const tickJustStarted = () => ({ tickStartedAt: Date.now(), maxDurationMs: 300_000 });
+  const tickJustStarted = () => ({ tickStartedAt: Date.now() });
   const NO_BRAND = { load: async () => ({ primaryColor: null, postalAddress: null, logoUrl: null }) };
 
   /** A Resend double that records every call and refuses all of them. */
