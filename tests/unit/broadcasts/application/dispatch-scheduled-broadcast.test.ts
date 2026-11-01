@@ -5994,7 +5994,7 @@ describe('spec 140 s2b — the legacy leg under the dispatch lease (cell 23)', (
       legacyDeps(repo, counting(makeGateway().port, calls), audit) as never,
       baseInput,
     );
-    expect(result).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_held' } });
+    expect(result).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'held_by_another_tick' } });
     expect(calls).toEqual([]);
     expect(repo.transitions).toEqual([]);
     expect(repo.attachAudienceCalls).toEqual([]);

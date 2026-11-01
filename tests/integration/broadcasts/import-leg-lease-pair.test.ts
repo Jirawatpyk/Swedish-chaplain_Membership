@@ -194,7 +194,7 @@ describe('spec 140 s2b DL1 — two concurrent import ticks on one row (live Neon
     const park1 = gate();
     const tick1 = sharedResend({ method: 'createAudience', gate: park1 });
     const t1 = await pair(id, tick1, park1, first, second);
-    expect(t1.secondResult).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_held' } });
+    expect(t1.secondResult).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'held_by_another_tick' } });
     expect(t1.secondCalls).toEqual([]);
     expect(t1.firstResult.ok ? t1.firstResult.value.kind : t1.firstResult.error).toBe('import_submitted');
     expect(tick1.count('createAudience')).toBe(1);
@@ -209,7 +209,7 @@ describe('spec 140 s2b DL1 — two concurrent import ticks on one row (live Neon
     const park2 = gate();
     const tick2 = sharedResend({ method: 'createBroadcast', gate: park2 });
     const t2 = await pair(id, tick2, park2, first, second);
-    expect(t2.secondResult).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_held' } });
+    expect(t2.secondResult).toEqual({ ok: false, error: { kind: 'broadcast_invalid_state_transition', observedStatus: 'held_by_another_tick' } });
     expect(t2.secondCalls).toEqual([]);
     expect(t2.firstResult.ok ? t2.firstResult.value.kind : t2.firstResult.error).toBe('sent');
     expect(tick2.count('createBroadcast')).toBe(1);

@@ -323,7 +323,7 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
   it('row 3 — a held lease (the claim answers null) skips with NO gateway call and NO write', async () => {
     const h = harness({ claim: null });
     const res = await h.run();
-    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_held' });
+    expect(res.ok ? res.value : res.error).toEqual({ kind: 'broadcast_invalid_state_transition', observedStatus: 'held_by_another_tick' });
     expect(h.gatewayCalls()).toEqual([]);
     expect(h.writeLeases).toEqual([]);
     expect(h.releases).toEqual([]);
