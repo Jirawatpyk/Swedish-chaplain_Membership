@@ -381,6 +381,13 @@ describe('R3-S1 — record-payment rollback observed on live Neon', () => {
       ),
     ).rejects.toThrow('task-60 simulated post-upload failure');
     expect(receiptKeys()).toEqual([]);
+    const [afterRollback] = await db
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, tenant.ctx.slug), eq(invoices.invoiceId, invoiceId)))
+      .limit(1);
+    expect(afterRollback?.status).toBe('issued');
+    expect(afterRollback?.receiptPdfBlobKey).toBeNull();
 
     // 2. Simulate a killed attempt whose cleanup never ran: stale bytes sit
     //    at the key the retry will use. The retry must overwrite them.

@@ -40,12 +40,23 @@ The sync receipt render uploads to a deterministic key inside the transaction:
 after the upload fails, the transaction rolls back and the RC number is
 released, but the PDF printed with that number would stay in Blob. Since #60:
 
-- the catch deletes that key (best-effort), except after `pdf_render_failed`
-  (nothing was uploaded) and `concurrent_state_change` (another attempt may
-  own the key);
+- the catch deletes that key best-effort (skipped only after
+  `pdf_render_failed`, when nothing was uploaded). It deletes under the
+  invoice row lock and only when the locked re-read shows no committed receipt
+  at that key, so an ambiguous COMMIT or a retry that won the lock keeps its
+  file. It logs `recordPayment: orphan receipt blob cleanup` with `outcome`
+  `deleted` or `kept_committed_owner`;
 - every upload overwrites the key (`allowOverwrite: true`, under the row lock),
-  so a retry replaces any stale bytes even when the delete never ran — for
-  example after a function kill.
+  so a retry of the same invoice replaces any stale bytes, even when the delete
+  never ran (for example after a function kill).
+
+**Known gaps (no alarm fires):** a killed function whose invoice is never
+retried (it was voided instead), a template-version bump between attempts (the
+key changes), and a caller-owned transaction (F5 webhook, F8 offline mark) that
+rolls back after `recordPayment` returned ok. In each, a PDF carrying a
+released RC number can stay in Blob. It was never sent (the email outbox row
+rolled back too). Finding them needs an orphan sweep: Blob keys matching
+`_receipt_` that no `invoices.receipt_pdf_blob_key` references.
 
 **When the alarm fires** (`use_case="record_payment"`): the delete failed, so a
 PDF carrying a released RC number may still be in Blob.
@@ -53,15 +64,20 @@ PDF carrying a released RC number may still be in Blob.
 1. Take `invoiceId` and `blobKey` from the ERROR log line. The log never holds
    the PDF or any payment reference.
 2. Read the invoice row (query above).
-   - Still `issued`: the stale PDF is an orphan. Delete the key from the Blob
-     store (Vercel dashboard → Storage → Blob, or `vercel blob rm <key>`). A
-     later payment would overwrite it anyway, but delete it so no one fetches a
-     receipt whose number was never issued.
    - `paid`, with `receipt_pdf_blob_key` = that key: a retry already overwrote
      it. Confirm the stored file matches the row: download it and compare
      `sha256sum <file>` with `receipt_pdf_sha256`. A match closes the alarm.
-3. A mismatch on a `paid` row is tax-document drift: escalate to the Invoicing
-   maintainers and follow the receipt re-render path in
+   - Still `issued` (or `void`), with `receipt_pdf_blob_key` NULL: the file is
+     an orphan. An admin may be retrying right now, so re-run the query
+     **immediately before deleting** and delete only if it still shows no
+     receipt at that key. Delete it in the Vercel dashboard (Storage → Blob →
+     the store → find the pathname → Delete), or with the CLI
+     (`vercel blob del <url>`; check `vercel blob --help` for the current
+     syntax). Re-run the query once more afterwards: if the row turned `paid`
+     with that key in between, the receipt file is gone and must be
+     re-rendered; escalate to the Invoicing maintainers.
+3. A hash mismatch on a `paid` row is tax-document drift: escalate to the
+   Invoicing maintainers and follow the receipt re-render path in
    [receipt-pdf-permanently-failed.md](./receipt-pdf-permanently-failed.md).
 
 The async receipt path (`FEATURE_F5_ASYNC_RECEIPT_PDF=true`) uploads outside

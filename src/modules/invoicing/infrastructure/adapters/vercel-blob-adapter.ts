@@ -14,6 +14,9 @@ import {
 } from '../../application/ports/blob-storage-port';
 import { env } from '@/lib/env';
 
+/** #60 — upper bound on one Blob delete, retries included. */
+const BLOB_DELETE_TIMEOUT_MS = 10_000;
+
 /**
  * `head()` for a READ, with NOT-FOUND classified by the SDK's own class and
  * handed on as the port's `BlobKeyNotFoundError` (the use cases map it to
@@ -138,7 +141,15 @@ export const vercelBlobAdapter: BlobStoragePort = {
   },
 
   async delete(key: string): Promise<void> {
-    await del(key, { token: env.blob.readWriteToken });
+    // #60 — bounded. The SDK retries a 5xx / network error with backoff for
+    // minutes, and record-payment's orphan cleanup deletes while holding the
+    // invoice row lock; a Blob outage must not hold that lock (or the failing
+    // request) open. The abort surfaces as an ordinary rejection, which every
+    // caller already treats as a best-effort cleanup failure.
+    await del(key, {
+      token: env.blob.readWriteToken,
+      abortSignal: AbortSignal.timeout(BLOB_DELETE_TIMEOUT_MS),
+    });
   },
 
   async list(prefix: string, limit: number): Promise<readonly string[]> {
