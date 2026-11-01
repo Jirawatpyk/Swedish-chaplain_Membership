@@ -31,7 +31,10 @@
 --      lease columns, so the erasure scrub can neither take, move nor drop a
 --      lease. Nothing else changes: reproduced from 0311 (the newest
 --      definition, checked byte-identical to the live `prosrc` on the dev
---      branch on 1 Nov 2026, md5 44592cc4f81d94cc968a481533e89bc6).
+--      branch on 1 Nov 2026). The dev body was applied from a CRLF checkout,
+--      so its md5 44592cc4f81d94cc968a481533e89bc6 is of the CRLF text; the
+--      same 0311 body with LF endings (as git stores it, and as a Linux
+--      deploy applies it) has md5 f0df5871707b1d4629c99546a3ec53bb.
 --
 -- WHY THE TRIGGER IS TOUCHED (0311's header, the same reason): the normal arm
 -- is a BLOCKLIST, so the claim, the release and a non-holder's clear (all on

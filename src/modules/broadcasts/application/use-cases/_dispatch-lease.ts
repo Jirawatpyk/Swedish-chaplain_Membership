@@ -4,8 +4,9 @@
  * The import tick CLAIMS a row (`BroadcastsRepo.claimDispatchLease`) for
  * `LEASE_TTL_MS`, re-checks it before every irreversible Resend call with
  * `CALL_HEADROOM_MS` (`IMPORT_HEADROOM_MS` before the import POST) of lease
- * left, and releases it at the end. The cron route starts no row after
- * `ROW_START_CUTOFF_MS` into its invocation, on either leg.
+ * left, and releases it at the end. The import leg starts no row after
+ * `ROW_START_CUTOFF_MS` into its invocation (DL9; review round 1 CR#5: the
+ * legacy leg has no cutoff — its per-contact push is not in `W_MAX_MS`).
  *
  * Every literal below is pinned to its derivation by
  * `tests/unit/broadcasts/application/dispatch-lease-budget.test.ts`, which
@@ -51,13 +52,14 @@ export const TICK1_BOUNDED_CALLS = 5;
 
 /**
  * D — DB statements plus one `resolveRecipients` for one row: ~15 short
- * statements and a resolve at the 900-recipient ceiling. **Bounded by
- * MEASURED figures** (plan.md § Slice 2b, A10), from a Bangkok workstation
- * (~220 ms RTT to Neon Singapore, slower than Vercel `sin1`):
- * - a 20,000-recipient resolve took 3.7 s (2026-09-07,
+ * statements and a resolve at the 900-recipient ceiling. Bounded by a
+ * MEASURED single run (3.7 s at 20,000) plus an ESTIMATE (~15 statements ×
+ * ~220 ms) — plan.md § Slice 2b, A10; review round 1 spec L5 — from a Bangkok
+ * workstation (~220 ms RTT to Neon Singapore, slower than Vercel `sin1`):
+ * - MEASURED: a 20,000-recipient resolve took 3.7 s once (2026-09-07,
  *   `tests/integration/broadcasts/audience-pagination-20k.test.ts`); 900
  *   recipients are one 5,000-row page;
- * - ~15 statements × ~220 ms ≈ 3.3 s.
+ * - ESTIMATE: ~15 statements × ~220 ms ≈ 3.3 s.
  * Together that is under 8 s, so 15 s keeps about 2× headroom. The prod p99 is
  * SLO-F7-013 (`broadcasts_recipient_count_ms`).
  */
@@ -150,7 +152,8 @@ export function leaseBudgetViolations(i: LeaseBudgetInputs, ttlMs: number, maxDu
 
 /**
  * When the cron invocation began and how long it may run (its route's
- * `maxDuration`). Passed into both legs' deps by the dispatch route (DL9).
+ * `maxDuration`). The dispatch route passes it to `makeBuildAudienceTickDeps`
+ * (a required parameter) for the import leg only (DL9).
  */
 export interface TickBudget {
   readonly tickStartedAt: number;

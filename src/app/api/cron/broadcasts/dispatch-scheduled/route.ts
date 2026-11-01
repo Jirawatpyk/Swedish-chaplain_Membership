@@ -254,8 +254,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      */
     held: 0,
     /**
-     * Spec 140 s2b (DL9) — rows NOT started because the invocation was past
-     * `ROW_START_CUTOFF_MS` (either leg). Nothing was locked, called or
+     * Spec 140 s2b (DL9) — import rows NOT started because the invocation was
+     * past `ROW_START_CUTOFF_MS`: the first one deferred and every row after it
+     * (the loop stops there, review round 1 CR#7). Nothing was locked, called or
      * written; they stay `approved`, unleased, for the next tick. Neither a
      * success nor a failure.
      */
