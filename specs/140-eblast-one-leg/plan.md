@@ -63,6 +63,7 @@ Rules: `.claude/rules/modules/broadcasts.md`, `members.md` (the erasure cascade)
 
 **Slice 4:** these are deletions, mapped in the 31 Oct exploration:
 - the legacy use case, its deps maker, `addContactsToAudience`, `deleteContactGlobally`, `audienceDriftDetected`;
+- the legacy gateway instance `legacyResendBroadcastsGateway` and its factory option `createBroadcastRetry` (s2a review round 2, CR#2);
 - the cron branch, the flag in `env.ts` and `.env.example`;
 - the legacy-only tests.
 
@@ -214,6 +215,7 @@ The full state table and the s2b plan follow.
    | `k` lock waits per row | 2 | the claim, plus one pre-call check (one cascade per row per tick) | ASSUMED |
    | `D` DB + resolve, one row | 15 000 | ~15 short statements + one `resolveRecipients` at the 900 ceiling | **ASSUMED**: build step measures p99 on dev (seeded 900) and replaces it |
    | `W_max` | 154 000 | k·E + N·C + P + D = 46 + 90 + 3 + 15 | derived |
+   | (s2a round 2) | — | `createContactImport` now has its own budget `IMPORT_CALL_TIMEOUT_MS` = 30 000, not C. **s2b recomputes W_max at build time** with that budget on any path that holds the lease across the import POST | note |
    | `M` = `LEASE_MARGIN_MS` | 15 000 | ≥ C (design rule) + 5 s for the post-call CAS | derived |
    | pre-call headroom | 25 000 | C + M | derived |
    | `LEASE_TTL_MS` | 330 000 | > `maxDuration` 300 s (second line) and ≥ W_max + M = 169 s | derived |
@@ -717,8 +719,31 @@ Finding for review: the route logs a DL7 skip at **WARN**, as `cron.broadcasts.d
 
 **Round-1 fix notes.**
 - Mutation proofs (from `043a72c9c`, each restored byte for byte): creates retrying every retryable → CR#1 5xx phase red; creates never retrying → CR#1 429 phase red; propagate ignoring the deadline, or not counting untried pairs → both deadline cases red; `deadlineAt` not threaded → "propagate receives the cascade deadline" red; the scan filter dropped → "flag OFF: the scan excludes import rows" red; the backstop returning the old kind → both DL7 cases red; the route bucketing it as `concurrent_skip` → the backstop contract case red.
-- **Contradiction found (runbook):** "cancel the row" is not always available. `cancel-broadcast.ts` refuses an `approved` row once `audience_import_id` is set (`hasDispatchBegun` → `sending_started`), so for such a row re-enabling the flag is the only route; a row with only `audience_import_submitted_at` can be cancelled. `broadcast-audience-build.md` says so.
+- **Contradiction found (runbook):** "cancel the row" is not always available. `cancel-broadcast.ts` refuses an `approved` row once `audience_import_id` is set (`hasDispatchBegun` → `sending_started`), so for such a row re-enabling the flag is the only route. (Corrected in round 2, CR#4: a row with only `audience_import_submitted_at` cannot exist; the CHECK `broadcasts_audience_import_coherent` sets both columns together.) `broadcast-audience-build.md` says so.
 - The flag is now read once per tick, above the due scan (it was read after it); the filter fragment is hoisted out of the scan template.
+
+### Slice 2a — review round 2 (`/code-review high 719`, pdpa M-1, reliability MERGEABLE; 1 Nov 2026)
+
+**Review metrics:** round 2 · 5 + 1 + 0 items (code-review, pdpa, reliability) · cap: ≥ 2 full (reached) + ≤ 2 targeted.
+
+**Maintainer decision (1 Nov 2026), CR#2:** the legacy leg retries `createBroadcast` as it did before this PR, inside the 10 s budget. It is the exception to H-3 on the leg that s4 deletes; prod held 0 `broadcasts` rows on 30 Oct 2026. The import leg keeps one attempt (s2b's orphan table records a timed-out create there).
+
+**Plan rows added before the fixes (D-043).** Two of the fixes are new mechanisms:
+
+| Mechanism (asked by) | State / rule | Test that goes red first |
+|---|---|---|
+| Factory option `createBroadcastRetry: 'retryable'`, used only by a second instance `legacyResendBroadcastsGateway`, which `makeDispatchScheduledBroadcastDeps` wires (CR#2, maintainer) | On that instance `createBroadcast` retries any retryable error (5xx, network) inside one C budget, ~3 attempts; a hung attempt still ends at C (the signal is spent, so no retry). The default instance (import leg, erasure, cleanup) is unchanged: one attempt, a 429 retried | gateway unit · "the legacy instance retries a createBroadcast 5xx; the default instance does not"; deps unit · "makeDispatchScheduledBroadcastDeps wires the legacy instance" |
+| `createContactImport` has its own budget `IMPORT_CALL_TIMEOUT_MS` = 30 000 (the pre-PR `importFetch` value), factory option `importCallTimeoutMs`, still one attempt (CR#3) | The 10 s C is unsized for a CSV at the 5,000 / 50,000 ceiling; a timeout churns the teardown and rebuild. 30 s is **ASSUMED** (the import POST measured 412 ms for a small CSV, 2026-09-08); s4's ceiling work measures it at 900 rows | gateway unit · "createContactImport aborts at importCallTimeoutMs, not callTimeoutMs" (DL8's it.each passes the import option at 50 ms) |
+
+**Closures:**
+
+| # | Finding | Closure |
+|---|---|---|
+| CR#1 + pdpa M-1 | The propagate deadline WARN logs only the count of untried pairs, so the DPO cannot find which audiences to clean by hand | **Fix:** the WARN also carries `untriedAudienceIds` (deduplicated, at most 50, plus `untriedAudienceIdsTruncated`); ids only, never an email. `member-erasure.md` names the log key and field |
+| CR#2 | On the legacy leg one `createBroadcast` 5xx ends the tick; the next tick re-pushes every contact | **Fix:** the plan row above (maintainer's decision). RoPA 8d records the residual: a retried 5xx that did mint leaves a draft at Resend, legacy leg only, until s4 |
+| CR#3 | `createContactImport`'s 10 s single attempt is unsized for a large CSV | **Fix:** the plan row above |
+| CR#4 | The runbook and the round-1 note say a row with only `audience_import_submitted_at` can be cancelled; the CHECK makes that row impossible | **Fix (docs):** the runbook and the round-1 note corrected. The CHECK, read on dev 1 Nov 2026: `(audience_import_id IS NULL) = (audience_import_submitted_at IS NULL)`. **The two-column scan predicate is kept**, with a comment naming the CHECK: it is redundant today and costs nothing; dropping it would change the path the maintainer drove in `/verify` |
+| CR#5 | The `import_row_skipped` bucket is not a span attribute (rule R2-15) | **Fix:** `cron.import_row_skipped` on the route span |
 
 ## Rollout
 
