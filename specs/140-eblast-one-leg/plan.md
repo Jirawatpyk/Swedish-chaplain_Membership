@@ -83,7 +83,7 @@ Also: the new ceiling env, the Segments names, `docs/decisions.md` D-042, go-liv
 | # | Slice | Done-when lines it covers | Surface reviewers | Branch | PR · status |
 |---|---|---|---|---|---|
 | 1 | Erasure deletes reachable drafts; refusals delete their draft | ED1–ED5 | pdpa-gdpr, security, reliability, spec-compliance | `140-eblast-one-leg-s1` | #713 · done |
-| 2a | Bounded Resend calls (one signal spans every attempt, C = 10 s); no in-process retry on creates; the legacy leg skips import rows; `propagate` bounded | DL5a, DL7, DL8, carry R3 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | — · open |
+| 2a | Bounded Resend calls (one signal spans every attempt, C = 10 s); no in-process retry on creates; the legacy leg skips import rows; `propagate` bounded | DL5a, DL7, DL8, carry R3 | security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2` | #719 · done |
 | 2b | Lease + fencing token + pre-call check + budget; migration 0322; orphan-id table + drain; `failTerminally` choke point; the live-lease legacy skip | DL1–DL4, DL5b, DL6, carries R4 + R1 #5 | drizzle-migration, security, reliability, pdpa-gdpr, spec-compliance | `140-eblast-one-leg-s2b` | — · open |
 | 3 | Error classes + import-leg table fixes | DT1–DT4 | security, reliability, spec-compliance | `140-eblast-one-leg-s3` | — · open |
 | 4 | Retire the legacy leg, drop the flag, ceiling 900, Segments names, D-042 | DR1–DR4 | security, pdpa-gdpr, reliability, i18n, spec-compliance | `140-eblast-one-leg-s4` | — · open |
