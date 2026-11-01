@@ -96,6 +96,34 @@ function boundTo(update: Sent, column: string): unknown {
   return m === null ? undefined : update.params[Number(m[1]) - 1];
 }
 
+describe('spec 140 s2b — hasLiveDispatchLease fails closed (review round 1, security L3)', () => {
+  const answering = (rows: unknown[]) =>
+    drizzle(async (sqlText) => {
+      if (sqlText.includes("current_setting('app.current_tenant'")) return { rows: [{ current_tenant: TENANT }] };
+      return { rows };
+    });
+
+  it.each([
+    ['true', [{ live: true }], true],
+    ['false', [{ live: false }], false],
+    ["'t'", [{ live: 't' }], true],
+    ["'f'", [{ live: 'f' }], false],
+    ['no row', [], false],
+  ])('a boolean answer (%s) is read as such', async (_label, rows, want) => {
+    const repo = makeDrizzleBroadcastsRepo(TENANT);
+    await expect(repo.hasLiveDispatchLease(answering(rows), TENANT as never, ID)).resolves.toBe(want);
+  });
+
+  it.each([
+    ['null', [{ live: null }]],
+    ["'yes'", [{ live: 'yes' }]],
+    ['a number', [{ live: 1 }]],
+  ])('a non-boolean answer (%s) throws instead of reading as "no live lease"', async (_label, rows) => {
+    const repo = makeDrizzleBroadcastsRepo(TENANT);
+    await expect(repo.hasLiveDispatchLease(answering(rows), TENANT as never, ID)).rejects.toThrow(/hasLiveDispatchLease/);
+  });
+});
+
 describe('spec 140 s2b — tenant + token on every fenced writer (SQL shape)', () => {
   it('positive control: the source declares exactly these ten fenced writers (the parse is not empty)', () => {
     const found = fencedWritersInSource();
