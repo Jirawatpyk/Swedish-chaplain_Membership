@@ -646,8 +646,13 @@ async function leaseGate(
  * - `read_back` — any other failure (a DB fault, a status-drift refusal, a
  *   vanished row): read the row back in a new tx, as
  *   `_persist-minted-broadcast-id.ts` does. The id on the row → the write
- *   committed, keep it (the next tick inherits it); absent → delete; a
- *   read-back that fails keeps it.
+ *   committed, keep it; absent → delete; a read-back that fails keeps it. A
+ *   kept audience is on a row with no import, which the next tick's
+ *   `stale_audience` self-heal deletes and replaces with a fresh tick 1 — it
+ *   is not inherited (review round 4, CR#5). The read-back can also run
+ *   before a commit whose ack was lost is visible, read no id, and delete an
+ *   audience the row then holds: that row heals the same way (its audience
+ *   delete answers 404, which counts as deleted).
  *
  * An audience that is kept unread, or whose delete is undecided, is the leak
  * an operator must see: `audience_leaked` at ERROR, with the id.

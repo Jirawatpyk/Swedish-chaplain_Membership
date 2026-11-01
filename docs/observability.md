@@ -1607,9 +1607,12 @@ row lock, and so does the end-of-tick release. Any non-holder status change
 (staff cancel, withdraw, a new version, the erasure cancel, a webhook's
 `sending → sent`) clears the lease. A non-holder re-time (the same status, a new
 `scheduledFor`) is REFUSED while a live lease is held and no longer clears it
-(review round 2): the repo reports it as `lease_held` and confirm-schedule
-answers 409 `dispatch_in_progress` (review round 3; status drift keeps
-`sending_started`), and staff try again in a few minutes. The completion stamp after `/send` is fenced on the token OR a
+(review round 2): confirm-schedule asks first, under its row lock
+(`hasLiveDispatchLease`, fail closed), and answers 409 `dispatch_in_progress`
+before any write (review round 4); the repo's refusal is the backstop and
+reports `lease_held` (one probe, no clock read; status drift reports the probed
+status and keeps `sending_started`). The schedule dialog shows the refusal as an
+inline warning and keeps the picked time; staff try again in a few minutes. The completion stamp after `/send` is fenced on the token OR a
 row whose sending has started (`SENDING_STARTED_BROADCAST_STATUSES`: `sending`,
 `sent`, `partially_sent`, `partial_delivery_accepted`). The due scan leaves out
 a row with a live lease on every flag state, and on the IMPORT leg no row
@@ -1626,14 +1629,17 @@ it over.
 | `broadcasts_dispatch_lease_lost_after_send_total` | counter | `tenant`, `step` | The lease was lost AFTER `/send` (`step` = `attach_ids`, `sending_transition`, `completion_stamp`). Counted on both arms: the INFO `lease_lost_after_send` and the critical line — `sent_but_transition_lost` at the ids attach and the `sending` transition, `completion_stamp_failed` at the completion stamp. Steady state 0. |
 | `broadcasts_dispatch_lease_expiring_total` | counter | `tenant` | A tick stopped because its OWN lease would have ended inside the next call's headroom: it outran `LEASE_TTL_MS`. Steady state 0; a rate means `W_MAX_MS` is wrong. |
 
-`broadcasts_dispatch_resolve_failed_total` gains the label `phase="lease"` (a
+`broadcasts_dispatch_resolve_failed_total` gains the labels `phase="lease"` (a
 pre-call check could not be read — a DB fault or its lock timeout; no Resend
-call was made). The cron response summary — and the route span, as `cron.<key>`
+call was made) and `phase="attach_audience"` (review round 4: the write
+attaching a just-created audience faulted; after the read-back reclaim the tick
+answers `dispatch.server_error`, retried next tick, not `uncaught_error`). The cron response summary — and the route span, as `cron.<key>`
 — gains `deferred_past_cutoff` (rows not started past the cutoff, the rest of
 the scan included; a deferred row is not `processed`, so `processed` +
 `deferred_past_cutoff` = the rows reached) and `lease_expiring` (its own bucket,
-never `concurrent_skip`); `lease_held` and `lease_lost` land in
-`concurrent_skip`.
+never `concurrent_skip`); a row held by another tick (`observedStatus`
+`held_by_another_tick`, review round 4 — distinct from the re-time refusal's
+`lease_held`) and `lease_lost` land in `concurrent_skip`.
 
 | Log line | Level | Fields | Meaning |
 |---|---|---|---|
@@ -1648,9 +1654,10 @@ never `concurrent_skip`); `lease_held` and `lease_lost` land in
 | `broadcasts.audience_import.lease_released` | info | `tenantId`, `broadcastId`, `released` | The end-of-tick release; `released: false` (0 rows) is not an error — a non-holder exit or a takeover already cleared it. |
 | `broadcasts.audience_import.lease_release_failed` | warn | `tenantId`, `broadcastId`, `err` | The release write failed — a DB fault, or it waited `CHECK_LOCK_TIMEOUT_MS` behind the row lock (55P03); the lease then expires `LEASE_TTL_MS` after the claim (about two ticks). |
 | `broadcasts.audience_import.audience_reclaimed` | info | `tenantId`, `broadcastId`, `resendAudienceId`, `mode` | `createAudience` succeeded and its attach did not; the audience was on no row, so the tick deleted it with no pre-call check. `mode`: `lease_lost` (deleted at once, review round 2) or `read_back` (any other failure; the row was read back and did not hold the id, review round 3). |
-| `broadcasts.audience_import.attach_ack_lost_audience_kept` | warn | `tenantId`, `broadcastId`, `resendAudienceId` | The attach threw, but the read-back found the id on the row: the write committed (a lost ack), so the audience is kept and the next tick inherits it. |
+| `broadcasts.audience_import.attach_ack_lost_audience_kept` | warn | `tenantId`, `broadcastId`, `resendAudienceId` | The attach threw, but the read-back found the id on the row: the write committed (a lost ack), so the audience is kept. The row has no import, so the next tick's `stale_audience` self-heal deletes it and starts a fresh tick 1 (review round 4: it is replaced, not inherited). |
+| `broadcasts.audience_import.attach_audience_failed` | warn | `tenantId`, `broadcastId`, `resendAudienceId`, `err` | The attach write faulted (a DB blip, not a refusal). After the read-back reclaim the tick answers `dispatch.server_error`, phase `attach_audience` (review round 4). |
 | `broadcasts.audience_import.audience_leaked` | **error** (`severity: 'critical'`) | `tenantId`, `broadcastId`, `resendAudienceId`, `step`, `err`, `errorKind` | `step: 'delete_audience'` — that delete did not land. `step: 'read_back'` — the read-back after a failed attach itself failed, so the audience was kept unread (it may or may not be on the row; check the row's `resend_audience_id` before deleting). An audience the row does not hold is reached by no cron while the broadcast row exists (`reclaim-orphan-audiences` deletes only audiences whose row is gone; `cleanup-orphaned-audiences` only the id a terminal row holds), so delete it at Resend by `resendAudienceId`. |
-| `broadcasts.audience_import.{hold_abandon,audience_missing_restart,stale_audience_restart}_lost` | info | `tenantId`, `broadcastId`, `importId`, `resendAudienceId`, `resendBroadcastId`, `step`, `cause` | A restart stopped: `cause: 'lease_lost'` (a pre-call check read lost; the tick answers `lease_lost`) or `cause: 'cas_lost'` (a claim / release CAS matched no row; the tick answers `unknown_or_already_processed`, review round 3). Neither is a hold: the hold is not recorded and the retry clock is not reset. |
+| `broadcasts.audience_import.{hold_abandon,audience_missing_restart,stale_audience_restart}_lost` | info | `tenantId`, `broadcastId`, `importId`, `resendAudienceId`, `resendBroadcastId`, `step`, `cause` | A restart stopped: `cause: 'lease_lost'` (a pre-call check read lost, or — review round 4 — a release CAS whose row no longer carries the token; the tick answers `lease_lost`) or `cause: 'cas_lost'` (a claim / release CAS matched no row for another reason — an id or the status moved; the tick answers `unknown_or_already_processed`, review round 3). Neither is a hold: the hold is not recorded and the retry clock is not reset. |
 | `broadcasts.audience_import.cleanup_failed` | error | `tenantId`, `broadcastId`, `importId`, `errorKind`, `dispatchFailureKind`, `expectedStatus`, `observedStatus`, `rowStatus`, `err` | A terminal `failed_to_dispatch` write did not commit and the row was not this tick's to skip. `errorKind` is the failure being recorded; `observedStatus` / `rowStatus` name where a refused CAS found the row (`null` for a non-CAS fault). The tick answers `dispatch.server_error` (`terminal_write`). |
 
 ---
