@@ -48,6 +48,7 @@ import type { BroadcastsRepo } from '../ports/broadcasts-repo';
 import {
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
+  LEASE_HELD_BY_ANOTHER_TICK,
 } from '../ports/broadcasts-repo';
 import { standingRefusalAuditEvent } from './_member-send-standing';
 import {
@@ -564,7 +565,7 @@ export async function dispatchScheduledBroadcast(
   }
 
   if (importRowSkipped) return err({ kind: 'import_row_skipped' });
-  if (leaseHeld) return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_held' });
+  if (leaseHeld) return err({ kind: 'broadcast_invalid_state_transition', observedStatus: LEASE_HELD_BY_ANOTHER_TICK });
   if (broadcast === null) {
     return err({
       kind: 'broadcast_invalid_state_transition',

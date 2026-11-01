@@ -80,6 +80,7 @@ import type { BroadcastsRepo, LeaseCheck, LeaseToken, ReleaseOutcome } from '../
 import {
   BroadcastConcurrentMutationError,
   BroadcastNotFoundError,
+  LEASE_HELD_BY_ANOTHER_TICK,
   LEASE_LOST,
 } from '../ports/broadcasts-repo';
 import {
@@ -514,7 +515,7 @@ export async function buildAudienceTick(
     // Row 3 — another tick holds a live lease on this row: it is working it.
     // No Resend call, no write; the cron counts a concurrent skip.
     logger.info(leaseIds, 'broadcasts.audience_import.lease_held');
-    return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'lease_held' });
+    return err({ kind: 'broadcast_invalid_state_transition', observedStatus: LEASE_HELD_BY_ANOTHER_TICK });
   }
   logger.info(leaseIds, 'broadcasts.audience_import.lease_claimed');
   const leased: LeasedTickDeps = { ...deps, lease: loaded.lease };
@@ -596,6 +597,21 @@ function leaseReadStop(read: LeaseRead, step: string): LeaseStop | { readonly fa
 function leaseStopAnswer(stop: LeaseStop): Result<BuildAudienceTickOutput, BuildAudienceTickError> {
   if (stop === 'lost') return err({ kind: 'broadcast_invalid_state_transition', observedStatus: LEASE_LOST });
   return err({ kind: 'lease_expiring', step: stop.expiring });
+}
+
+/**
+ * Review round 4 (CR#6) — a restart that STOPPED, as the tick's answer (the
+ * hold and the self-heal both read it): a lease stop is `leaseStopAnswer`'s;
+ * a CAS miss keeps the old `unknown_or_already_processed` label (round 3, CR#5).
+ */
+function restartStopAnswer(stop: LeaseStop | 'cas_lost'): Result<BuildAudienceTickOutput, BuildAudienceTickError> {
+  if (stop === 'cas_lost') return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+  return leaseStopAnswer(stop);
+}
+
+/** Did the restart stop (on the lease or a CAS) rather than finish or fail? */
+function isRestartStop(outcome: Awaited<ReturnType<typeof restartAudienceBuild>>): outcome is LeaseStop | 'cas_lost' {
+  return outcome === 'lost' || outcome === 'cas_lost' || typeof outcome === 'object';
 }
 
 /**
@@ -1010,8 +1026,7 @@ async function applySendStanding(
     // round 2, CR#3), and so is a CAS the restart lost (round 3, CR#5): the
     // restart stopped where the next holder resumes.
     const restarted = await restartAudienceBuild(deps, input, rowIds(broadcast), 'hold', { bidIsDead: isDeadProbe(probe) });
-    if (restarted === 'lost' || typeof restarted === 'object') return leaseStopAnswer(restarted);
-    if (restarted === 'cas_lost') return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
+    if (isRestartStop(restarted)) return restartStopAnswer(restarted);
     // Review round 3 (CR#4) — only a tick that answers the hold records it and
     // resets the retry clock (outside every tx: the Step-1 lock tx has committed).
     recordDispatchHold(deps.tenant.slug, input.broadcastId as unknown as string, 'import');
@@ -1352,10 +1367,7 @@ async function selfHealMissingAudience(
   if (outcome === 'restarted') return ok({ kind: 'audience_restarted' });
   // Review round 2 (spec L-g) — a restart that lost the lease says so; a CAS
   // miss keeps the old label (round 3, CR#5).
-  if (outcome === 'lost' || typeof outcome === 'object') return leaseStopAnswer(outcome);
-  if (outcome === 'cas_lost') {
-    return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
-  }
+  if (isRestartStop(outcome)) return restartStopAnswer(outcome);
   return err({ kind: 'dispatch.server_error', message: 'audience_restart_failed', phase: 'audience_restart' });
 }
 

@@ -66,13 +66,25 @@ export type LeaseCheck = 'held' | 'expiring' | 'lost';
 export const LEASE_LOST = 'lease_lost' as const;
 
 /**
- * Spec 140 s2b review round 3 (code-review #2, #3) — the `observedStatus` a
- * NON-holder same-status re-time reports when it was refused because a tick
- * holds a live lease on the row. Not a row status, and not status drift: the
- * row is where the caller expected it, and a dispatch tick is at work.
- * confirm-schedule answers it `dispatch_in_progress` (409).
+ * The lease-related `observedStatus` values (none is a row status), each with
+ * ONE producer and one meaning (review round 4, CR#7):
+ * - {@link LEASE_LOST} — a fenced writer whose token the row no longer carries
+ *   (the repo; every holder maps it to a concurrent skip);
+ * - {@link LEASE_HELD} — a NON-holder same-status re-time refused because a
+ *   tick holds the row (the repo's `applyTransition` backstop; confirm-schedule
+ *   answers it `dispatch_in_progress`, 409);
+ * - {@link LEASE_HELD_BY_ANOTHER_TICK} — a dispatch tick that found another
+ *   tick's live lease and skipped the row (the import claim in
+ *   `buildAudienceTick`, the legacy leg's cell-23 skip); the cron counts it
+ *   `concurrent_skip`.
+ *
+ * Spec 140 s2b review round 3 (code-review #2, #3) — `LEASE_HELD`: the row is
+ * where the caller expected it, and a dispatch tick is at work; not drift.
  */
 export const LEASE_HELD = 'lease_held' as const;
+
+/** See {@link LEASE_HELD} — a dispatch tick met another tick's live lease and skipped the row. */
+export const LEASE_HELD_BY_ANOTHER_TICK = 'held_by_another_tick' as const;
 
 /**
  * Spec 140 s2b review round 4 (code-review #4) — what the restart's two
