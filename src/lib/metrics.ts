@@ -2999,6 +2999,22 @@ export const broadcastsMetrics = {
    * INFO `lease_lost_after_send` (row `approved` / `sending`) and the critical
    * `sent_but_transition_lost` (any other row status). Steady state 0.
    */
+  /**
+   * `broadcasts_dispatch_lease_expiring_total{tenant}` — spec 140 s2b review
+   * round 1 (CR#4). One per import tick that stopped because its OWN lease
+   * would have ended inside the next call's headroom (`CALL_HEADROOM_MS` /
+   * `IMPORT_HEADROOM_MS`): the tick outran `LEASE_TTL_MS`. Steady state 0; a
+   * non-zero rate means the budget (`W_MAX_MS`) is wrong for this tenant.
+   */
+  dispatchLeaseExpiring(tenantId: string): void {
+    safeMetric(() => {
+      counter(
+        'broadcasts_dispatch_lease_expiring_total',
+        'Import dispatch ticks that stopped because their own lease would end inside the next call headroom',
+      ).add(1, { tenant: tenantId });
+    });
+  },
+
   dispatchLeaseLostAfterSend(
     tenantId: string,
     step: 'attach_ids' | 'sending_transition' | 'completion_stamp',

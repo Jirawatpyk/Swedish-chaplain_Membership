@@ -327,7 +327,15 @@ export type BuildAudienceTickError =
          * lease expires or is released; the next tick tries again.
          */
         | 'lease';
-    };
+    }
+  /**
+   * Spec 140 s2b review round 1 (CR#4) — this tick's OWN lease would end
+   * inside the headroom the next irreversible call needs (`step`): no call was
+   * made, the lease is released, the row stays `approved` and the next tick
+   * resumes. Not a concurrent skip — no other writer moved the row; the tick
+   * outran its budget. The cron counts it in its own bucket, at WARN.
+   */
+  | { readonly kind: 'lease_expiring'; readonly step: string };
 
 /**
  * What the resolver answers.
@@ -554,7 +562,7 @@ async function checkLeaseBefore(
     return { failed: e };
   }
   if (read === 'lost') logger.info(ids, 'broadcasts.audience_import.lease_lost');
-  if (read === 'expiring') logger.info({ ...ids, headroomMs }, 'broadcasts.audience_import.lease_expiring');
+  if (read === 'expiring') logger.warn({ ...ids, headroomMs }, 'broadcasts.audience_import.lease_expiring');
   return read;
 }
 
@@ -574,7 +582,8 @@ async function leaseGate(
   if (typeof read === 'object') {
     return err({ kind: 'dispatch.server_error', message: 'lease_check_failed', errClass: errKind(read.failed), phase: 'lease' });
   }
-  return err({ kind: 'broadcast_invalid_state_transition', observedStatus: read === 'lost' ? LEASE_LOST : 'lease_expiring' });
+  if (read === 'expiring') return err({ kind: 'lease_expiring', step });
+  return err({ kind: 'broadcast_invalid_state_transition', observedStatus: LEASE_LOST });
 }
 
 /** A fenced write refused this tick's token (A3). */
@@ -1100,7 +1109,7 @@ async function restartAudienceBuild(
   row: RowIds,
   why: RestartReason,
   opts: { readonly bidIsDead: boolean },
-): Promise<'restarted' | 'nothing' | 'lost' | 'failed'> {
+): Promise<'restarted' | 'nothing' | 'lost' | 'failed' | { readonly expiring: string }> {
   const { audienceId, importId, resendBroadcastId } = row;
   if (audienceId === null || audienceId === '') return 'nothing';
   const names = RESTART_LOG_NAMES[why];
@@ -1126,10 +1135,12 @@ async function restartAudienceBuild(
   // Spec 140 s2b (CAS 12) — each delete below is irreversible, so the lease is
   // checked first; a lost or expiring lease stops the restart where it is (the
   // shape the next tick redoes from), a check that cannot be read fails it.
-  const leaseGateStep = async (step: string): Promise<'lost' | 'failed' | null> => {
+  const leaseGateStep = async (step: string): Promise<'lost' | 'failed' | { readonly expiring: string } | null> => {
     const read = await checkLeaseBefore(deps, input, step);
     if (read === 'held') return null;
     if (typeof read === 'object') return failed(step, read.failed);
+    // Review round 1 (CR#4) — this tick's own lease ran short: its own answer.
+    if (read === 'expiring') return { expiring: step };
     return lost(step);
   };
 
@@ -1232,6 +1243,7 @@ async function selfHealMissingAudience(
 ): Promise<Result<BuildAudienceTickOutput, BuildAudienceTickError>> {
   const outcome = await restartAudienceBuild(deps, input, row, why, { bidIsDead });
   if (outcome === 'restarted') return ok({ kind: 'audience_restarted' });
+  if (typeof outcome === 'object') return err({ kind: 'lease_expiring', step: outcome.expiring });
   if (outcome === 'lost') {
     return err({ kind: 'broadcast_invalid_state_transition', observedStatus: 'unknown_or_already_processed' });
   }

@@ -285,6 +285,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
      */
     concurrent_skip: 0,
     /**
+     * Spec 140 s2b review round 1 (CR#4) — an import tick whose OWN dispatch
+     * lease would have ended inside the headroom of its next irreversible call
+     * (`CALL_HEADROOM_MS`, or `IMPORT_HEADROOM_MS` before the import POST): no
+     * call was made and the row resumes next tick. A budget breach, not a race
+     * — so not `concurrent_skip`; WARN + `broadcasts_dispatch_lease_expiring_total`.
+     */
+    lease_expiring: 0,
+    /**
      * Spec 140 s2a (DL7; review round 1, code-review #3) — the legacy leg's
      * backstop met a row holding import columns and left it alone. Not a race
      * and not a failure, so neither `concurrent_skip` nor a page: the row waits
@@ -449,6 +457,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               // sent, so re-polling produces the same answer. The use case has
               // already moved the row to `failed_to_dispatch` and audited it.
               summary.permanent_failed++;
+              break;
+            case 'lease_expiring':
+              summary.lease_expiring++;
+              broadcastsMetrics.dispatchLeaseExpiring(tenant.slug);
+              logger.warn(
+                { tenantId: tenant.slug, broadcastId: row.broadcast_id, step: built.error.step },
+                'cron.broadcasts.dispatch.lease_expiring',
+              );
               break;
             case 'broadcast_invalid_state_transition':
             case 'broadcast_not_found':
