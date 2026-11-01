@@ -365,12 +365,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // flag-OFF path. (`importEnabled` is read once, above the due scan.)
     const importDeps = importEnabled
       ? {
-          ...(await makeBuildAudienceTickDeps(tenant.slug, deps.membersBridge)),
+          ...(await makeBuildAudienceTickDeps(tenant.slug, deps.membersBridge, tickBudget)),
           brandChrome: brandChromePort,
           // Share the tick memo: several broadcasts on one segment resolve it
           // once, exactly as the single-tick path does.
           tenant: deps.tenant,
-          tickBudget,
         }
       : null;
 
