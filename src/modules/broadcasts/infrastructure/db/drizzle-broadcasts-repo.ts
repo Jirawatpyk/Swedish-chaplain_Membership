@@ -53,6 +53,7 @@ import {
   TRANSITION_FIELDS,
 } from '../../application/ports/broadcasts-repo';
 import { CASCADE_CANCELLATION_REASONS } from '../../domain/value-objects/cascade-cancellation-reason';
+import { CHECK_LOCK_TIMEOUT_MS } from '../../application/use-cases/_dispatch-lease';
 import { STANDING_REFUSAL_FAILURE_REASONS } from '../../domain/value-objects/standing-refusal-failure-reason';
 import { broadcastDeliveries, broadcasts, type BroadcastRow } from '../schema';
 
@@ -428,6 +429,62 @@ export async function claimDispatchLeaseStatement(
     .returning({ token: broadcasts.dispatchLeaseToken });
   const token = rows[0]?.token ?? null;
   return token === null ? null : asLeaseToken(token);
+}
+
+/**
+ * Spec 140 s2b — the pre-call CHECK statement (`checkDispatchLease`), exported
+ * for the DL4 owner-role case (review round 1, security L4) and the
+ * lock-timeout case. `SELECT … FOR UPDATE`: the same row lock an UPDATE would
+ * take (it queues behind an erasure's lock, D-040, then reads the token the
+ * cascade's cancel cleared), and it writes nothing. It waits at most
+ * `lockTimeoutMs` (default `CHECK_LOCK_TIMEOUT_MS` = E + 5 s, reliability L2)
+ * for that lock; a timeout throws 55P03, which the tick answers as
+ * `lease_check_failed`. `SET LOCAL` lasts to the end of the caller's tx (the
+ * tick runs each check in its own).
+ */
+export async function checkDispatchLeaseStatement(
+  tx: TenantTx,
+  tenantIdArg: string,
+  broadcastId: BroadcastId,
+  lease: LeaseToken,
+  headroomMs: number,
+  lockTimeoutMs: number = CHECK_LOCK_TIMEOUT_MS,
+): Promise<LeaseCheck> {
+  if (!Number.isInteger(lockTimeoutMs) || lockTimeoutMs <= 0) {
+    throw new Error(`checkDispatchLeaseStatement: lockTimeoutMs must be a positive integer, got ${lockTimeoutMs}`);
+  }
+  // A literal, not a bind parameter: SET takes none. Validated just above.
+  await tx.execute(sql.raw(`SET LOCAL lock_timeout = '${lockTimeoutMs}ms'`));
+  const rows = (await tx.execute(
+    sql`SELECT (dispatch_lease_token IS NOT DISTINCT FROM ${lease}::uuid) AS mine,
+               (dispatch_lease_expires_at > clock_timestamp() + make_interval(secs => ${headroomMs / 1000}::double precision)) AS fresh
+          FROM broadcasts
+         WHERE tenant_id = ${tenantIdArg}
+           AND broadcast_id = ${broadcastId}
+         FOR UPDATE`,
+  )) as unknown as Array<{ mine: unknown; fresh: unknown }>;
+  const row = rows[0];
+  if (row === undefined || !isTrue(row.mine)) return 'lost';
+  return isTrue(row.fresh) ? 'held' : 'expiring';
+}
+
+/**
+ * Spec 140 s2b (cell 23) — the legacy leg's live-lease read
+ * (`hasLiveDispatchLease`), exported for the DL4 owner-role case (review
+ * round 1, security L4).
+ */
+export async function hasLiveDispatchLeaseStatement(
+  tx: TenantTx,
+  tenantIdArg: string,
+  broadcastId: BroadcastId,
+): Promise<boolean> {
+  const rows = (await tx.execute(
+    sql`SELECT (dispatch_lease_token IS NOT NULL AND dispatch_lease_expires_at > clock_timestamp()) AS live
+          FROM broadcasts
+         WHERE tenant_id = ${tenantIdArg}
+           AND broadcast_id = ${broadcastId}`,
+  )) as unknown as Array<{ live: unknown }>;
+  return isTrue(rows[0]?.live);
 }
 
 /**
@@ -1045,17 +1102,7 @@ export function makeDrizzleBroadcastsRepo(
     ): Promise<LeaseCheck> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'checkDispatchLease');
-      const rows = (await tx.execute(
-        sql`SELECT (dispatch_lease_token IS NOT DISTINCT FROM ${lease}::uuid) AS mine,
-                   (dispatch_lease_expires_at > clock_timestamp() + make_interval(secs => ${headroomMs / 1000}::double precision)) AS fresh
-              FROM broadcasts
-             WHERE tenant_id = ${tenantIdArg}
-               AND broadcast_id = ${broadcastId}
-             FOR UPDATE`,
-      )) as unknown as Array<{ mine: unknown; fresh: unknown }>;
-      const row = rows[0];
-      if (row === undefined || !isTrue(row.mine)) return 'lost';
-      return isTrue(row.fresh) ? 'held' : 'expiring';
+      return checkDispatchLeaseStatement(tx, tenantIdArg, broadcastId, lease, headroomMs);
     },
 
     /** Spec 140 s2b — see the port docblock and `releaseDispatchLeaseStatement`. */
@@ -1069,13 +1116,7 @@ export function makeDrizzleBroadcastsRepo(
     async hasLiveDispatchLease(txUnknown, tenantIdArg: TenantSlug, broadcastId: BroadcastId): Promise<boolean> {
       const tx = txUnknown as TenantTx;
       await assertTenantBoundTx(tx, ctx.slug, 'hasLiveDispatchLease');
-      const rows = (await tx.execute(
-        sql`SELECT (dispatch_lease_token IS NOT NULL AND dispatch_lease_expires_at > clock_timestamp()) AS live
-              FROM broadcasts
-             WHERE tenant_id = ${tenantIdArg}
-               AND broadcast_id = ${broadcastId}`,
-      )) as unknown as Array<{ live: unknown }>;
-      return isTrue(rows[0]?.live);
+      return hasLiveDispatchLeaseStatement(tx, tenantIdArg, broadcastId);
     },
 
     async applyTransition(

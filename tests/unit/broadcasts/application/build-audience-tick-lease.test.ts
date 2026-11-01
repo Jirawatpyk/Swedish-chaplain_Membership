@@ -65,6 +65,8 @@ interface Opts {
   /** Review round 1 (CR#1) — the row status a `lease_lost` throw reports it probed. */
   readonly lostRowStatus?: string;
   readonly completionStampThrows?: 'lease_lost';
+  /** The pre-call check itself throws (e.g. its lock_timeout, 55P03). */
+  readonly checkThrows?: boolean;
 }
 
 function harness(opts: Opts = {}) {
@@ -134,6 +136,7 @@ function harness(opts: Opts = {}) {
         return opts.claim === undefined ? TOKEN : opts.claim;
       },
       async checkDispatchLease(_tx: unknown, _t: unknown, _b: unknown, lease: unknown, headroomMs: number) {
+        if (opts.checkThrows === true) throw Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' });
         const answer = checks[Math.min(checkIndex, checks.length - 1)]!;
         checkIndex += 1;
         events.push(`check:${headroomMs}:${answer}`);
@@ -331,6 +334,17 @@ describe('spec 140 s2b — buildAudienceTick under the dispatch lease', () => {
     expect(res.ok ? res.value : res.error).toEqual({ kind: 'lease_expiring', step: 'createAudience' });
     expect(h.gatewayCalls()).toEqual([]);
     expect(logged(warn, 'broadcasts.audience_import.lease_expiring')).toBe(true);
+    expect(h.releases).toEqual([TOKEN]);
+  });
+
+  // Review round 1 (reliability L2) — a check that times out on the row lock
+  // (`CHECK_LOCK_TIMEOUT_MS`) is `lease_check_failed`: retryable, no call.
+  it('a pre-call check that throws (its lock_timeout) is lease_check_failed: phase lease, no Resend call', async () => {
+    const h = harness({ checkThrows: true });
+    const res = await h.run();
+    expect(res.ok ? res.value : res.error).toMatchObject({ kind: 'dispatch.server_error', message: 'lease_check_failed', phase: 'lease' });
+    expect(h.gatewayCalls()).toEqual([]);
+    expect(logged(warn, 'broadcasts.audience_import.lease_check_failed')).toBe(true);
     expect(h.releases).toEqual([TOKEN]);
   });
 

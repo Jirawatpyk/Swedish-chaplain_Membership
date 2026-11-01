@@ -63,6 +63,15 @@ export const TICK1_BOUNDED_CALLS = 5;
  */
 export const DB_AND_RESOLVE_MS = 15_000;
 
+/**
+ * The longest a pre-call check (`checkDispatchLease`, `SELECT … FOR UPDATE`)
+ * waits for the row lock: `ERASURE_ROW_LOCK_HOLD_MS` + 5 s (review round 1,
+ * reliability L2). An erasure cascade holds the lock at most E; anything longer
+ * is a stuck holder, and the check fails as `lease_check_failed` (retryable)
+ * rather than hang on a branch with no `statement_timeout`.
+ */
+export const CHECK_LOCK_TIMEOUT_MS = ERASURE_ROW_LOCK_HOLD_MS + 5_000;
+
 /** M — the margin a pre-call check demands beyond the call's own timeout: ≥ C, + 5 s for the post-call CAS. */
 export const LEASE_MARGIN_MS = 15_000;
 
