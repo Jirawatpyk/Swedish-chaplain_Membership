@@ -90,14 +90,29 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
     expect(audit.events).toHaveLength(0);
   });
 
-  // Spec 140 s2b review round 2 (reliability MED-1) — a re-time of a row a
-  // dispatch tick holds a live lease on is refused by the repo (0 rows →
-  // BroadcastConcurrentMutationError). Staff get the existing 409
-  // `sending_started` (the tick is at work; retry after it), never a 500,
-  // and nothing is written or sent.
-  it('a re-time refused under a live dispatch lease → sending_started (409), nothing written, no email', async () => {
+  // Spec 140 s2b review rounds 2–3 (reliability MED-1; code-review #2, #3) —
+  // a re-time of a row a dispatch tick holds a live lease on is refused by
+  // the repo (`observedStatus: 'lease_held'`). Staff get its own 409,
+  // `dispatch_in_progress` (the tick is at work; try again in a few
+  // minutes), never a 500 and never `sending_started`; nothing is written or
+  // sent. Status drift keeps its existing `sending_started` mapping.
+  it('lease_held maps to dispatch_in_progress (409), nothing written, no email', async () => {
     const row = makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: APPROVED.id });
     const { store, audit, run } = setup(row);
+    vi.mocked(store.broadcastsRepo.applyTransition).mockRejectedValueOnce(
+      new BroadcastConcurrentMutationError('test-tenant' as never, row.broadcastId, 'lease_held' as never, 'approved'),
+    );
+    expect(await run({ mode: { mode: 'schedule', scheduledFor: new Date('2026-10-05T03:00:00Z') } })).toEqual({
+      ok: false,
+      error: { kind: 'dispatch_in_progress' },
+    });
+    expect(store.outbox.rows()).toHaveLength(0);
+    expect(audit.events).toHaveLength(0);
+  });
+
+  it('status drift at the re-time keeps its sending_started mapping', async () => {
+    const row = makeApprovalBroadcast({ status: 'approved', currentRound: 1, approvedVersionId: APPROVED.id });
+    const { store, run } = setup(row);
     vi.mocked(store.broadcastsRepo.applyTransition).mockRejectedValueOnce(
       new BroadcastConcurrentMutationError('test-tenant' as never, row.broadcastId, 'approved'),
     );
@@ -105,8 +120,6 @@ describe('confirmSchedule — the arms the route suites do not reach', () => {
       ok: false,
       error: { kind: 'sending_started', status: 'approved' },
     });
-    expect(store.outbox.rows()).toHaveLength(0);
-    expect(audit.events).toHaveLength(0);
   });
 
   /**

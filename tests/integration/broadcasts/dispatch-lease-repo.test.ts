@@ -527,6 +527,32 @@ describe('spec 140 s2b — the dispatch lease on the broadcasts repo (live Neon)
       expect(row.scheduledFor).toEqual(later);
       expect(row.dispatchLeaseToken).toBe(dead.dispatchLeaseToken);
     });
+
+    // Review round 3 (code-review #2, #3) — the refusal names itself, so a
+    // caller can tell "a tick is at work" from status drift.
+    it('a refused re-time reports observedStatus lease_held; status drift keeps the status it expected', async () => {
+      const later = new Date(Date.now() + 3_600_000);
+      const held = await seed(tenantA, foreignLease(120_000));
+      const refused = await repoA()
+        .withTx((tx) => repoA().applyTransition(tx, tenantA.ctx.slug, held, 'approved', { scheduledFor: later }, 'approved', null))
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect((refused as BroadcastConcurrentMutationError).observedStatus).toBe('lease_held');
+      expect((refused as BroadcastConcurrentMutationError).rowStatus).toBe('approved');
+
+      const drifted = await seed(tenantA, {});
+      const drift = await repoA()
+        .withTx((tx) =>
+          repoA().applyTransition(tx, tenantA.ctx.slug, drifted, 'member_approved', { scheduledFor: later }, 'member_approved', null),
+        )
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect((drift as BroadcastConcurrentMutationError).observedStatus).toBe('member_approved');
+    });
   });
 
   describe('DL4 — two tenants, one broadcast uuid', () => {
